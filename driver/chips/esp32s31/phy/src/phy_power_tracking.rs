@@ -319,15 +319,15 @@ impl PhyTxPowerTrackingExternalBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn execute_target<P: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl>(
+    pub fn execute_target<P>(
         self,
-        platform: &mut P,
+        _platform: &mut P,
         registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> PhyTxPowerTrackingCompletion {
         match self.operation {
             PhyTxPowerTrackingExternalOperation::SetBbpllCalibration { enabled } => {
                 open_esp_radio_esp32s31_hal::phy_i2c::configure_bbpll_calibration(
-                    platform, enabled,
+                    registers, enabled,
                 );
                 PhyTxPowerTrackingCompletion::BbpllCalibrationSet { enabled }
             }

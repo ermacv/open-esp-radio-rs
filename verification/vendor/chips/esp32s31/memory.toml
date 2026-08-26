@@ -135,7 +135,7 @@ end-exclusive = 0x2010F800
 permissions = "rw"
 
 [[regions]]
-name = "i2c-ana-mst-platform"
+name = "i2c-ana-mst"
 address-space = "cpu"
 kind = "mmio"
 start = 0x2010F800

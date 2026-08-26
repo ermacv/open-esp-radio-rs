@@ -5,7 +5,6 @@
 //! runs it, and returns only value/role owners after every temporary hardware
 //! borrow has ended.
 
-use open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl;
 use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyState, PhyTargetObserver};
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::CcmpKeyHardware,
@@ -176,7 +175,6 @@ where
         + BeamformingReportHardware
         + CcmpKeyHardware
         + 'hardware,
-    P: PhyI2cMasterControl,
     PO: PhyTargetObserver,
     PD: PhyAsyncDelay,
     D: Esp32s31RxFrontierDelay,

@@ -1,0 +1,3 @@
+disallowed-methods = [
+    { path = "core::hint::spin_loop", reason = "production radio code must yield through its executor or platform" },
+]

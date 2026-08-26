@@ -275,7 +275,7 @@ impl PhyColdI2cTransaction {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn start_target<P: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl>(
+    pub fn start_target<P: open_esp_radio_esp32s31_hal::SharedPhyAccess>(
         &mut self,
         platform: &mut P,
     ) -> Result<(), PhyColdI2cError> {
@@ -297,7 +297,7 @@ impl PhyColdI2cTransaction {
 
     /// Consume exactly one independently delivered target completion edge.
     #[cfg(target_arch = "riscv32")]
-    pub fn observe_target_edge<P: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl>(
+    pub fn observe_target_edge<P: open_esp_radio_esp32s31_hal::SharedPhyAccess>(
         &mut self,
         platform: &P,
     ) -> Result<PhyColdI2cObservation, PhyColdI2cError> {
@@ -381,7 +381,7 @@ impl PhyColdI2cBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn start_target<P: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl>(
+    pub fn start_target<P: open_esp_radio_esp32s31_hal::SharedPhyAccess>(
         &mut self,
         platform: &mut P,
     ) -> Result<(), PhyColdI2cError> {
@@ -389,7 +389,7 @@ impl PhyColdI2cBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn observe_target_edge<P: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl>(
+    pub fn observe_target_edge<P: open_esp_radio_esp32s31_hal::SharedPhyAccess>(
         &mut self,
         platform: &mut P,
     ) -> Result<PhyColdI2cObservation, PhyColdI2cError> {
@@ -1018,8 +1018,7 @@ impl PhyColdMmioBinding {
     /// identity token.
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target<
-        P: open_esp_radio_esp32s31_hal::analog_i2c::PhyPmuControl
-            + open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
+        P: open_esp_radio_esp32s31_hal::analog_i2c::PhyPmuControl,
         R: open_esp_radio_esp32s31_hal::SharedPhyAccess,
     >(
         self,
@@ -1050,18 +1049,18 @@ impl PhyColdMmioBinding {
             }
             PhyRfInitPrefixAction::ConfigureBbpllCalibration { enabled } => {
                 open_esp_radio_esp32s31_hal::phy_i2c::configure_bbpll_calibration(
-                    platform, enabled,
+                    registers, enabled,
                 );
                 return self.into_completion();
             }
             PhyRfInitPrefixAction::ConfigureI2cClockSelection { selection } => {
                 open_esp_radio_esp32s31_hal::phy_i2c::configure_clock_selection(
-                    platform, selection,
+                    registers, selection,
                 );
                 return self.into_completion();
             }
             PhyRfInitPrefixAction::ConfigureI2cMasterRegisters => {
-                open_esp_radio_esp32s31_hal::phy_i2c::configure_master_registers(platform);
+                open_esp_radio_esp32s31_hal::phy_i2c::configure_master_registers(registers);
                 return self.into_completion();
             }
             _ => {}

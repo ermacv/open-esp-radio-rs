@@ -6,7 +6,7 @@
 
 use core::{future::Future, marker::PhantomData};
 
-use open_esp_radio_esp32s31_hal::{RadioRuntimeOwner, phy_i2c::PhyI2cMasterControl};
+use open_esp_radio_esp32s31_hal::RadioRuntimeOwner;
 use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError};
 use open_esp_radio_esp32s31_wifi::cooperative_hardware::CooperativeRadioHardware;
 use open_esp_radio_esp32s31_wifi_mac::{

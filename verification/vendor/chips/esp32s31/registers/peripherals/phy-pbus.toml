@@ -92,9 +92,31 @@ description = "phy_force_txrx_off replaces bits 11:8 with one of four evidenced 
 bitOffset = 8
 bitWidth = 4
 
-[peripherals.registers.register.fields.writeConstraint.range]
-minimum = 0x0
-maximum = 0xF
+[peripherals.registers.register.fields.writeConstraint]
+useEnumeratedValues = true
+
+[[peripherals.registers.register.fields.enumeratedValues]]
+usage = "write"
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "ENABLE_INITIAL_PHASE"
+description = "First force-TX/RX enable write in complete phy_force_txrx_off."
+value = 8
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "ENABLE_FINAL_PHASE"
+description = "Second force-TX/RX enable write in complete phy_force_txrx_off."
+value = 10
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "DISABLE_INITIAL_PHASE"
+description = "First force-TX/RX disable write in complete phy_force_txrx_off."
+value = 2
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "DISABLE_FINAL_PHASE"
+description = "Second force-TX/RX disable write in complete phy_force_txrx_off."
+value = 0
 
 [[peripherals.registers.register.fields]]
 name = "RX_CLOCK_LOW_OR_RXIQ_STATUS_FIRST_UNKNOWN"
@@ -114,9 +136,21 @@ description = "phy_set_txclk_en writes both bits as a pair; individual clock ide
 bitOffset = 16
 bitWidth = 2
 
-[peripherals.registers.register.fields.writeConstraint.range]
-minimum = 0x0
-maximum = 0x3
+[peripherals.registers.register.fields.writeConstraint]
+useEnumeratedValues = true
+
+[[peripherals.registers.register.fields.enumeratedValues]]
+usage = "write"
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "DISABLED"
+description = "Disable both recovered TX clock bits."
+value = 0
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "ENABLED"
+description = "Enable both recovered TX clock bits."
+value = 3
 
 [[peripherals.registers.register.fields]]
 name = "BUSY"

@@ -96,6 +96,7 @@ peripherals = [
     "LP_AON_CLKRST",
     "LP_PERICLKRST",
     "LP_TSENS",
+    "I2C_ANA_MST",
     "PHY_MEMORY",
     "PHY_NRX_RECOVERED_GAPS",
     "PHY_PBUS",

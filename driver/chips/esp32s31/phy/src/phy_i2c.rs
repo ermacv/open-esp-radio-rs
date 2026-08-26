@@ -82,16 +82,7 @@ use open_esp_radio_esp32s31_hal::SharedPhyAccess;
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::{analog_i2c, phy_i2c as hal_phy_i2c};
 
-#[cfg(test)]
-const PHY_I2C_BUSY: u32 = 1 << 25;
-// ESP32-S31 ROM `phy_chip_i2c_readReg` publishes `0x0400_0000` and
-// `phy_chip_i2c_writeReg` publishes `0x0500_0000`. These command bits differ
-// from the older ESP PHY-I2C layout by one hexadecimal digit.
-#[cfg(test)]
-const PHY_I2C_READ: u32 = 1 << 26;
-#[cfg(test)]
-const PHY_I2C_WRITE: u32 = 1 << 24 | 1 << 26;
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(target_arch = "riscv32")]
 const PHY_I2C_MASTER_COMMAND_COUNT: usize = 45;
 const PHY_I2C_SDM_STABLE_VALUE: u8 = 0x5b;
 const PHY_I2C_SDM_DEADLINE_CYCLES: u32 = 9_999;
@@ -247,45 +238,10 @@ pub enum PhyI2cError {
     Busy,
 }
 
-#[cfg(test)]
-const fn encode_read(address: PhyI2cAddress) -> u32 {
-    PHY_I2C_READ | ((address.register as u32) << 8) | address.block as u32
-}
-
-#[cfg(test)]
-const fn encode_write(address: PhyI2cAddress, value: u8) -> u32 {
-    PHY_I2C_WRITE | ((value as u32) << 16) | ((address.register as u32) << 8) | address.block as u32
-}
-
-#[cfg(test)]
-const fn command_is_busy(command: u32) -> bool {
-    command & PHY_I2C_BUSY != 0
-}
-
-#[cfg(test)]
-const fn read_result(command: u32) -> u8 {
-    (command >> 16) as u8
-}
-
-/// Exact non-I/O arithmetic of complete rev0 ROM `phy_encode_i2c_master`.
-pub const fn phy_encode_i2c_master(block: u32, register: u32, value: u32) -> u32 {
-    block | register.wrapping_shl(8) | value.wrapping_shl(16)
-}
-
-/// Safe fixed-size replacement for complete rev0 ROM `phy_byte_to_word`.
-pub const fn phy_byte_to_word(bytes: &[u8; 4]) -> u32 {
-    u32::from_le_bytes(*bytes)
-}
-
-#[cfg(any(target_arch = "riscv32", test))]
-const fn encode_master_command(block: u8, register: u8, value: u8) -> u32 {
-    phy_encode_i2c_master(block as u32, register as u32, value as u32)
-}
-
 // Complete command order recovered from
 // `libphy.a[phy_i2c.o]::phy_i2c_master_cmd_mem_init`. Values which depend on
-// the explicit PHY parameter image are replaced in `master_command`.
-#[cfg(any(target_arch = "riscv32", test))]
+// the explicit PHY parameter image are supplied from the owned snapshot.
+#[cfg(target_arch = "riscv32")]
 const PHY_I2C_MASTER_TEMPLATE: [(u8, u8, u8); PHY_I2C_MASTER_COMMAND_COUNT] = [
     (0x67, 0x02, 0x07),
     (0x6b, 0x01, 0x01),
@@ -334,20 +290,12 @@ const PHY_I2C_MASTER_TEMPLATE: [(u8, u8, u8); PHY_I2C_MASTER_COMMAND_COUNT] = [
     (0x6a, 0x01, 0x7f),
 ];
 
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(target_arch = "riscv32")]
 const PHY_I2C_MASTER_DYNAMIC_INDICES: [usize; 19] = [
     20, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41,
 ];
 
-#[cfg(test)]
-fn master_dynamic_values(parameter: &[u8; LEGACY_PHY_PARAMETER_LEN]) -> [u8; 19] {
-    master_dynamic_values_from_snapshot(PhyRfInitParameterSnapshot::new(
-        FilterDcapParameters::from_legacy_parameter_image(parameter),
-        parameter[0x18e],
-    ))
-}
-
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(target_arch = "riscv32")]
 fn master_dynamic_values_from_snapshot(parameter: PhyRfInitParameterSnapshot) -> [u8; 19] {
     let filter = parameter.filter_dcap();
     let high_filter = saturate_phy_value(filter.parameter_ed as i32 + 6, 0x3c, 2);
@@ -374,38 +322,6 @@ fn master_dynamic_values_from_snapshot(parameter: PhyRfInitParameterSnapshot) ->
         filter.parameter_f0 | 0x40,
         filter.parameter_f0,
     ]
-}
-
-#[cfg(test)]
-fn master_command(index: usize, parameter: &[u8; LEGACY_PHY_PARAMETER_LEN]) -> u32 {
-    let (block, register, fixed_value) = PHY_I2C_MASTER_TEMPLATE[index];
-    let dynamic_values = master_dynamic_values(parameter);
-    let mut cursor = 0;
-    let mut value = fixed_value;
-    while cursor != PHY_I2C_MASTER_DYNAMIC_INDICES.len() {
-        if PHY_I2C_MASTER_DYNAMIC_INDICES[cursor] == index {
-            value = dynamic_values[cursor];
-            break;
-        }
-        cursor += 1;
-    }
-    encode_master_command(block, register, value)
-}
-
-#[cfg(test)]
-fn master_command_from_snapshot(index: usize, parameter: PhyRfInitParameterSnapshot) -> u32 {
-    let (block, register, fixed_value) = PHY_I2C_MASTER_TEMPLATE[index];
-    let dynamic_values = master_dynamic_values_from_snapshot(parameter);
-    let mut cursor = 0;
-    let mut value = fixed_value;
-    while cursor != PHY_I2C_MASTER_DYNAMIC_INDICES.len() {
-        if PHY_I2C_MASTER_DYNAMIC_INDICES[cursor] == index {
-            value = dynamic_values[cursor];
-            break;
-        }
-        cursor += 1;
-    }
-    encode_master_command(block, register, value)
 }
 
 /// Program the complete PHY-I2C command RAM from Rust-owned cold state.
@@ -436,12 +352,8 @@ pub fn configure_i2c_master_command_memory(
         } else {
             fixed_value
         };
-        hal_phy_i2c::write_command_memory(
-            registers,
-            index,
-            encode_master_command(block, register, value),
-        )
-        .unwrap_or_else(|_| unreachable!("bounded command-memory index"));
+        hal_phy_i2c::write_command_memory(registers, index, block, register, value)
+            .unwrap_or_else(|_| unreachable!("bounded command-memory index"));
         index += 1;
     }
 }
@@ -452,19 +364,26 @@ pub fn configure_i2c_master_command_memory(
 /// before publishing the command. This is a deliberate fail-fast ownership
 /// check, not a claim that the ROM performed the same pre-command check.
 ///
-/// The caller must keep borrowing the same platform I2C owner until
+/// The caller must keep borrowing the same shared-PHY register owner until
 /// [`try_finish_read`] succeeds.
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn try_start_read(
-    platform: &mut impl hal_phy_i2c::PhyI2cMasterControl,
+    registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     address: PhyI2cAddress,
 ) -> Result<(), PhyI2cError> {
-    let host = configure_and_select_phy_i2c_host(platform, address);
-    if platform.phy_i2c_master_is_busy(host) {
+    let host = configure_and_select_phy_i2c_host(registers, address);
+    if hal_phy_i2c::sample_master_reset_busy(registers, host) {
         return Err(PhyI2cError::Busy);
     }
-    platform.publish_phy_i2c_read_mask(address.read_mask());
-    platform.publish_phy_i2c_command(host, address.block(), address.register(), 0, false);
+    hal_phy_i2c::publish_read_mask(registers, address.read_mask());
+    hal_phy_i2c::publish_command(
+        registers,
+        host,
+        address.block(),
+        address.register(),
+        0,
+        false,
+    );
     Ok(())
 }
 
@@ -479,14 +398,14 @@ pub(crate) fn try_start_read(
 /// under the same borrowed radio ownership.
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn try_finish_read(
-    platform: &impl hal_phy_i2c::PhyI2cMasterControl,
+    registers: &impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     address: PhyI2cAddress,
 ) -> Result<u8, PhyI2cError> {
     let host = hal_host(address.host());
-    if platform.phy_i2c_master_is_busy(host) {
+    if hal_phy_i2c::sample_master_reset_busy(registers, host) {
         Err(PhyI2cError::Busy)
     } else {
-        Ok(platform.sample_phy_i2c_result(host))
+        Ok(hal_phy_i2c::sample_result(registers, host))
     }
 }
 
@@ -494,19 +413,26 @@ pub(crate) fn try_finish_read(
 /// pre-command busy state once. It never waits or loops on that state and
 /// leaves post-command completion to [`try_finish_write`].
 ///
-/// The caller must keep borrowing the same platform I2C owner until
+/// The caller must keep borrowing the same shared-PHY register owner until
 /// [`try_finish_write`] succeeds.
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn try_start_write(
-    platform: &mut impl hal_phy_i2c::PhyI2cMasterControl,
+    registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     address: PhyI2cAddress,
     value: u8,
 ) -> Result<(), PhyI2cError> {
-    let host = configure_and_select_phy_i2c_host(platform, address);
-    if platform.phy_i2c_master_is_busy(host) {
+    let host = configure_and_select_phy_i2c_host(registers, address);
+    if hal_phy_i2c::sample_master_reset_busy(registers, host) {
         return Err(PhyI2cError::Busy);
     }
-    platform.publish_phy_i2c_command(host, address.block(), address.register(), value, true);
+    hal_phy_i2c::publish_command(
+        registers,
+        host,
+        address.block(),
+        address.register(),
+        value,
+        true,
+    );
     Ok(())
 }
 
@@ -520,10 +446,10 @@ pub(crate) fn try_start_write(
 /// under the same borrowed radio ownership.
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn try_finish_write(
-    platform: &impl hal_phy_i2c::PhyI2cMasterControl,
+    registers: &impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     address: PhyI2cAddress,
 ) -> Result<(), PhyI2cError> {
-    if platform.phy_i2c_master_is_busy(hal_host(address.host())) {
+    if hal_phy_i2c::sample_master_reset_busy(registers, hal_host(address.host())) {
         Err(PhyI2cError::Busy)
     } else {
         Ok(())
@@ -540,11 +466,11 @@ pub(crate) fn try_finish_write(
 /// verification-only projection.
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn configure_and_select_phy_i2c_host(
-    platform: &mut impl hal_phy_i2c::PhyI2cMasterControl,
+    registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     address: PhyI2cAddress,
 ) -> hal_phy_i2c::PhyI2cHost {
     let host = hal_host(address.host());
-    platform.configure_phy_i2c_host_map();
+    hal_phy_i2c::configure_host_map(registers);
     host
 }
 
@@ -1166,7 +1092,7 @@ impl MaskedI2cWriteBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn start_target<P: hal_phy_i2c::PhyI2cMasterControl>(
+    pub fn start_target<P: open_esp_radio_esp32s31_hal::SharedPhyAccess>(
         &mut self,
         platform: &mut P,
     ) -> Result<(), crate::phy_cold::PhyColdI2cError> {
@@ -1174,7 +1100,7 @@ impl MaskedI2cWriteBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn observe_target_edge<P: hal_phy_i2c::PhyI2cMasterControl>(
+    pub fn observe_target_edge<P: open_esp_radio_esp32s31_hal::SharedPhyAccess>(
         &mut self,
         platform: &P,
     ) -> Result<crate::phy_cold::PhyColdI2cObservation, crate::phy_cold::PhyColdI2cError> {
@@ -2981,15 +2907,14 @@ mod tests {
         I2cInit1Transition, I2cInit1TransitionError, MaskedI2cWriteAction,
         MaskedI2cWriteCompletion, MaskedI2cWriteTransition, MaskedI2cWriteTransitionError,
         OpenI2cXpdAction, OpenI2cXpdCompletion, OpenI2cXpdOutcome, OpenI2cXpdTransition,
-        OpenI2cXpdTransitionError, PHY_I2C_MASTER_COMMAND_COUNT, PhyI2cAddress,
-        PhyRfInitParameterSnapshot, PhyRfInitPrefixAction, PhyRfInitPrefixCompletion,
-        PhyRfInitPrefixOutcome, PhyRfInitPrefixStep, PhyRfInitPrefixTransition,
-        PhyRfInitPrefixTransitionError, RcCalibrationAction, RcCalibrationCompletion,
-        RcCalibrationSetAction, RcCalibrationSetCompletion, RcCalibrationSetTransition,
-        RcCalibrationTransition, RcCalibrationTransitionError, RfpllChargePumpAction,
-        RfpllChargePumpCompletion, RfpllChargePumpOutcome, RfpllChargePumpTransition,
-        Sar2InitAction, Sar2InitCompletion, Sar2InitTransition, command_is_busy, encode_read,
-        encode_write, master_command, master_command_from_snapshot, read_result,
+        OpenI2cXpdTransitionError, PhyI2cAddress, PhyRfInitParameterSnapshot,
+        PhyRfInitPrefixAction, PhyRfInitPrefixCompletion, PhyRfInitPrefixOutcome,
+        PhyRfInitPrefixStep, PhyRfInitPrefixTransition, PhyRfInitPrefixTransitionError,
+        RcCalibrationAction, RcCalibrationCompletion, RcCalibrationSetAction,
+        RcCalibrationSetCompletion, RcCalibrationSetTransition, RcCalibrationTransition,
+        RcCalibrationTransitionError, RfpllChargePumpAction, RfpllChargePumpCompletion,
+        RfpllChargePumpOutcome, RfpllChargePumpTransition, Sar2InitAction, Sar2InitCompletion,
+        Sar2InitTransition,
     };
     use crate::phy_cold::PhyColdExternalBinding;
     use crate::phy_dc_iq::{
@@ -3000,18 +2925,6 @@ mod tests {
         PhyChannelFrequencyInitControl, PhyFrequencyI2cAction, PhyFrequencyI2cCompletion,
     };
 
-    #[test]
-    fn pure_rom_word_encoders_preserve_full_input_arithmetic() {
-        assert_eq!(super::phy_encode_i2c_master(0x67, 3, 0xab), 0x00ab_0367);
-        assert_eq!(
-            super::phy_encode_i2c_master(0xffff_ffff, 0xffff_ffff, 0xffff_ffff),
-            0xffff_ffff
-        );
-        assert_eq!(
-            super::phy_byte_to_word(&[0x67, 0x03, 0xab, 0x5a]),
-            0x5aab_0367
-        );
-    }
     use super::LEGACY_PHY_PARAMETER_LEN;
     use crate::phy_pbus::{PhyPbusClearAction, PhyPbusClearCompletion, PhyPbusForceTest};
     use crate::phy_rfpll::{RfpllFrequencyAction, RfpllFrequencyCompletion};
@@ -3503,93 +3416,6 @@ mod tests {
         }
         assert!(PhyI2cAddress::new(0x60, 0).is_none());
         assert!(PhyI2cAddress::new(0x6e, 0).is_none());
-    }
-
-    #[test]
-    fn command_words_match_complete_rom_leaf_encoding() {
-        let address = PhyI2cAddress::new(0x6b, 0x14).unwrap();
-        assert_eq!(encode_read(address), 0x0400_146b);
-        assert_eq!(encode_write(address, 0xa5), 0x05a5_146b);
-        assert!(!command_is_busy(0x05a5_146b));
-        assert!(command_is_busy(0x07a5_146b));
-        assert_eq!(read_result(0x043c_146b), 0x3c);
-    }
-
-    #[test]
-    fn master_command_table_matches_complete_vendor_body() {
-        let mut parameter = [0_u8; LEGACY_PHY_PARAMETER_LEN];
-        parameter[0x18e] = 0x55;
-        parameter[0xe9] = 0x12;
-        parameter[0xea] = 0x34;
-        parameter[0xed] = 0x20;
-        parameter[0xee] = 0xfe;
-        parameter[0xf0] = 0x9a;
-
-        let expected = [
-            (0x67, 0x02, 0x07),
-            (0x6b, 0x01, 0x01),
-            (0x6b, 0x02, 0x73),
-            (0x6b, 0x03, 0xba),
-            (0x6b, 0x04, 0x88),
-            (0x6b, 0x05, 0x01),
-            (0x6b, 0x06, 0x11),
-            (0x6b, 0x07, 0xfd),
-            (0x6b, 0x08, 0xbb),
-            (0x6b, 0x09, 0x02),
-            (0x6b, 0x0a, 0x08),
-            (0x6b, 0x0b, 0x04),
-            (0x6b, 0x0c, 0xa7),
-            (0x6b, 0x0d, 0x7a),
-            (0x6b, 0x0e, 0xf4),
-            (0x6b, 0x0f, 0x81),
-            (0x62, 0x00, 0x68),
-            (0x62, 0x04, 0xa8),
-            (0x62, 0x0b, 0x44),
-            (0x62, 0x0d, 0x0a),
-            (0x62, 0x0f, 0x55),
-            (0x62, 0x15, 0x08),
-            (0x66, 0x02, 0x70),
-            (0x67, 0x02, 0x27),
-            (0x67, 0x04, 0x12),
-            (0x67, 0x05, 0x12),
-            (0x67, 0x06, 0x34),
-            (0x67, 0x07, 0x34),
-            (0x67, 0x0c, 0x12),
-            (0x67, 0x0d, 0x12),
-            (0x67, 0x0e, 0x34),
-            (0x67, 0x0f, 0x34),
-            (0x67, 0x14, 0x26),
-            (0x67, 0x15, 0x26),
-            (0x67, 0x16, 0x1e),
-            (0x67, 0x17, 0x20),
-            (0x67, 0x18, 0x00),
-            (0x67, 0x19, 0x00),
-            (0x67, 0x1c, 0x9a),
-            (0x67, 0x1d, 0x9a),
-            (0x67, 0x1e, 0xda),
-            (0x67, 0x1f, 0x9a),
-            (0x63, 0x06, 0x00),
-            (0x6a, 0x00, 0xaf),
-            (0x6a, 0x01, 0x7f),
-        ];
-        assert_eq!(expected.len(), PHY_I2C_MASTER_COMMAND_COUNT);
-        let snapshot = PhyRfInitParameterSnapshot::new(
-            FilterDcapParameters::from_legacy_parameter_image(&parameter),
-            parameter[0x18e],
-        );
-        for (index, (block, register, value)) in expected.into_iter().enumerate() {
-            let expected_word = (block as u32) | ((register as u32) << 8) | ((value as u32) << 16);
-            assert_eq!(
-                master_command(index, &parameter),
-                expected_word,
-                "master command {index}"
-            );
-            assert_eq!(
-                master_command_from_snapshot(index, snapshot),
-                expected_word,
-                "owned master command {index}"
-            );
-        }
     }
 
     #[test]

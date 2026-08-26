@@ -1103,7 +1103,7 @@ impl PhyTxPowerI2cBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn start_target<P: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl>(
+    pub fn start_target<P: open_esp_radio_esp32s31_hal::SharedPhyAccess>(
         &mut self,
         platform: &mut P,
     ) -> Result<(), crate::phy_cold::PhyColdI2cError> {
@@ -1111,7 +1111,7 @@ impl PhyTxPowerI2cBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn observe_target_edge<P: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl>(
+    pub fn observe_target_edge<P: open_esp_radio_esp32s31_hal::SharedPhyAccess>(
         &mut self,
         platform: &mut P,
     ) -> Result<crate::phy_cold::PhyColdI2cObservation, crate::phy_cold::PhyColdI2cError> {

@@ -4876,10 +4876,93 @@ pub mod phy_pbus {
         pub type R = crate::R<StatusClockForceSpec>;
         #[doc = "Register `STATUS_CLOCK_FORCE` writer"]
         pub type W = crate::W<StatusClockForceSpec>;
+        #[doc = "phy_force_txrx_off replaces bits 11:8 with one of four evidenced encodings; the individual bit meanings remain unknown."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum ForceTxrxModeUnknown {
+            #[doc = "8: First force-TX/RX enable write in complete phy_force_txrx_off."]
+            EnableInitialPhase = 8,
+            #[doc = "10: Second force-TX/RX enable write in complete phy_force_txrx_off."]
+            EnableFinalPhase = 10,
+            #[doc = "2: First force-TX/RX disable write in complete phy_force_txrx_off."]
+            DisableInitialPhase = 2,
+            #[doc = "0: Second force-TX/RX disable write in complete phy_force_txrx_off."]
+            DisableFinalPhase = 0,
+        }
+        impl From<ForceTxrxModeUnknown> for u8 {
+            #[inline(always)]
+            fn from(variant: ForceTxrxModeUnknown) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for ForceTxrxModeUnknown {
+            type Ux = u8;
+        }
+        impl crate::IsEnum for ForceTxrxModeUnknown {}
         #[doc = "Field `FORCE_TXRX_MODE_UNKNOWN` reader - phy_force_txrx_off replaces bits 11:8 with one of four evidenced encodings; the individual bit meanings remain unknown."]
-        pub type ForceTxrxModeUnknownR = crate::FieldReader;
+        pub type ForceTxrxModeUnknownR = crate::FieldReader<ForceTxrxModeUnknown>;
+        impl ForceTxrxModeUnknownR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<ForceTxrxModeUnknown> {
+                match self.bits {
+                    8 => Some(ForceTxrxModeUnknown::EnableInitialPhase),
+                    10 => Some(ForceTxrxModeUnknown::EnableFinalPhase),
+                    2 => Some(ForceTxrxModeUnknown::DisableInitialPhase),
+                    0 => Some(ForceTxrxModeUnknown::DisableFinalPhase),
+                    _ => None,
+                }
+            }
+            #[doc = "First force-TX/RX enable write in complete phy_force_txrx_off."]
+            #[inline(always)]
+            pub fn is_enable_initial_phase(&self) -> bool {
+                *self == ForceTxrxModeUnknown::EnableInitialPhase
+            }
+            #[doc = "Second force-TX/RX enable write in complete phy_force_txrx_off."]
+            #[inline(always)]
+            pub fn is_enable_final_phase(&self) -> bool {
+                *self == ForceTxrxModeUnknown::EnableFinalPhase
+            }
+            #[doc = "First force-TX/RX disable write in complete phy_force_txrx_off."]
+            #[inline(always)]
+            pub fn is_disable_initial_phase(&self) -> bool {
+                *self == ForceTxrxModeUnknown::DisableInitialPhase
+            }
+            #[doc = "Second force-TX/RX disable write in complete phy_force_txrx_off."]
+            #[inline(always)]
+            pub fn is_disable_final_phase(&self) -> bool {
+                *self == ForceTxrxModeUnknown::DisableFinalPhase
+            }
+        }
         #[doc = "Field `FORCE_TXRX_MODE_UNKNOWN` writer - phy_force_txrx_off replaces bits 11:8 with one of four evidenced encodings; the individual bit meanings remain unknown."]
-        pub type ForceTxrxModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        pub type ForceTxrxModeUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 4, ForceTxrxModeUnknown>;
+        impl<'a, REG> ForceTxrxModeUnknownW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u8>,
+        {
+            #[doc = "First force-TX/RX enable write in complete phy_force_txrx_off."]
+            #[inline(always)]
+            pub fn enable_initial_phase(self) -> &'a mut crate::W<REG> {
+                self.variant(ForceTxrxModeUnknown::EnableInitialPhase)
+            }
+            #[doc = "Second force-TX/RX enable write in complete phy_force_txrx_off."]
+            #[inline(always)]
+            pub fn enable_final_phase(self) -> &'a mut crate::W<REG> {
+                self.variant(ForceTxrxModeUnknown::EnableFinalPhase)
+            }
+            #[doc = "First force-TX/RX disable write in complete phy_force_txrx_off."]
+            #[inline(always)]
+            pub fn disable_initial_phase(self) -> &'a mut crate::W<REG> {
+                self.variant(ForceTxrxModeUnknown::DisableInitialPhase)
+            }
+            #[doc = "Second force-TX/RX disable write in complete phy_force_txrx_off."]
+            #[inline(always)]
+            pub fn disable_final_phase(self) -> &'a mut crate::W<REG> {
+                self.variant(ForceTxrxModeUnknown::DisableFinalPhase)
+            }
+        }
         #[doc = "Field `RX_CLOCK_LOW_OR_RXIQ_STATUS_FIRST_UNKNOWN` reader - phy_set_rxclk_en writes this bit with its neighbor as a pair; complete phy_rxiq_cal_init independently sets it first at root entry. The shared electrical identity remains unknown."]
         pub type RxClockLowOrRxiqStatusFirstUnknownR = crate::BitReader;
         #[doc = "Field `RX_CLOCK_LOW_OR_RXIQ_STATUS_FIRST_UNKNOWN` writer - phy_set_rxclk_en writes this bit with its neighbor as a pair; complete phy_rxiq_cal_init independently sets it first at root entry. The shared electrical identity remains unknown."]
@@ -4888,10 +4971,66 @@ pub mod phy_pbus {
         pub type RxClockHighOrRxiqStatusSecondUnknownR = crate::BitReader;
         #[doc = "Field `RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_UNKNOWN` writer - phy_set_rxclk_en writes this bit with its neighbor as a pair; complete phy_rxiq_cal_init independently sets it at root entry and clears it during the successful cleanup suffix. The shared electrical identity remains unknown."]
         pub type RxClockHighOrRxiqStatusSecondUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "phy_set_txclk_en writes both bits as a pair; individual clock identities are unknown."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum TxClockEnablePair {
+            #[doc = "0: Disable both recovered TX clock bits."]
+            Disabled = 0,
+            #[doc = "3: Enable both recovered TX clock bits."]
+            Enabled = 3,
+        }
+        impl From<TxClockEnablePair> for u8 {
+            #[inline(always)]
+            fn from(variant: TxClockEnablePair) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for TxClockEnablePair {
+            type Ux = u8;
+        }
+        impl crate::IsEnum for TxClockEnablePair {}
         #[doc = "Field `TX_CLOCK_ENABLE_PAIR` reader - phy_set_txclk_en writes both bits as a pair; individual clock identities are unknown."]
-        pub type TxClockEnablePairR = crate::FieldReader;
+        pub type TxClockEnablePairR = crate::FieldReader<TxClockEnablePair>;
+        impl TxClockEnablePairR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<TxClockEnablePair> {
+                match self.bits {
+                    0 => Some(TxClockEnablePair::Disabled),
+                    3 => Some(TxClockEnablePair::Enabled),
+                    _ => None,
+                }
+            }
+            #[doc = "Disable both recovered TX clock bits."]
+            #[inline(always)]
+            pub fn is_disabled(&self) -> bool {
+                *self == TxClockEnablePair::Disabled
+            }
+            #[doc = "Enable both recovered TX clock bits."]
+            #[inline(always)]
+            pub fn is_enabled(&self) -> bool {
+                *self == TxClockEnablePair::Enabled
+            }
+        }
         #[doc = "Field `TX_CLOCK_ENABLE_PAIR` writer - phy_set_txclk_en writes both bits as a pair; individual clock identities are unknown."]
-        pub type TxClockEnablePairW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
+        pub type TxClockEnablePairW<'a, REG> = crate::FieldWriter<'a, REG, 2, TxClockEnablePair>;
+        impl<'a, REG> TxClockEnablePairW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u8>,
+        {
+            #[doc = "Disable both recovered TX clock bits."]
+            #[inline(always)]
+            pub fn disabled(self) -> &'a mut crate::W<REG> {
+                self.variant(TxClockEnablePair::Disabled)
+            }
+            #[doc = "Enable both recovered TX clock bits."]
+            #[inline(always)]
+            pub fn enabled(self) -> &'a mut crate::W<REG> {
+                self.variant(TxClockEnablePair::Enabled)
+            }
+        }
         #[doc = "Field `BUSY` reader - "]
         pub type BusyR = crate::BitReader;
         #[doc = "Field `BUSY` writer - "]
@@ -5162,6 +5301,808 @@ pub mod phy_pbus {
         }
         #[doc = "`read()` method returns [`read_result_4::R`](R) reader structure"]
         impl crate::Readable for ReadResult4Spec {}
+    }
+}
+#[doc = "Shared ESP32-S31 analog-register I2C master owned by the affine radio-PHY lifecycle."]
+pub type I2cAnaMst = crate::Periph<i2c_ana_mst::RegisterBlock, 0x2010_f800>;
+impl core::fmt::Debug for I2cAnaMst {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("I2cAnaMst").finish()
+    }
+}
+#[doc = "Shared ESP32-S31 analog-register I2C master owned by the affine radio-PHY lifecycle."]
+pub mod i2c_ana_mst {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        i2c0_ctrl: I2c0Ctrl,
+        i2c1_ctrl: I2c1Ctrl,
+        _reserved2: [u8; 0x10],
+        ana_conf0: AnaConf0,
+        ana_conf1: AnaConf1,
+        ana_conf2: AnaConf2,
+        i2c0_ctrl1: I2c0Ctrl1,
+        i2c1_ctrl1: I2c1Ctrl1,
+        hw_i2c_ctrl: HwI2cCtrl,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - Analog-register I2C host-0 command and completion word."]
+        #[inline(always)]
+        pub const fn i2c0_ctrl(&self) -> &I2c0Ctrl {
+            &self.i2c0_ctrl
+        }
+        #[doc = "0x04 - Analog-register I2C host-1 command and completion word."]
+        #[inline(always)]
+        pub const fn i2c1_ctrl(&self) -> &I2c1Ctrl {
+            &self.i2c1_ctrl
+        }
+        #[doc = "0x18 - Shared analog-I2C master control used by PHY register mode and BBPLL calibration."]
+        #[inline(always)]
+        pub const fn ana_conf0(&self) -> &AnaConf0 {
+            &self.ana_conf0
+        }
+        #[doc = "0x1c - Shared analog-I2C routing and read-mask word."]
+        #[inline(always)]
+        pub const fn ana_conf1(&self) -> &AnaConf1 {
+            &self.ana_conf1
+        }
+        #[doc = "0x20 - Shared analog-I2C host-selection word."]
+        #[inline(always)]
+        pub const fn ana_conf2(&self) -> &AnaConf2 {
+            &self.ana_conf2
+        }
+        #[doc = "0x24 - Host-0 timing and clock-selection control."]
+        #[inline(always)]
+        pub const fn i2c0_ctrl1(&self) -> &I2c0Ctrl1 {
+            &self.i2c0_ctrl1
+        }
+        #[doc = "0x28 - Host-1 timing and clock-selection control."]
+        #[inline(always)]
+        pub const fn i2c1_ctrl1(&self) -> &I2c1Ctrl1 {
+            &self.i2c1_ctrl1
+        }
+        #[doc = "0x2c - Hardware-host timing and clock-selection control."]
+        #[inline(always)]
+        pub const fn hw_i2c_ctrl(&self) -> &HwI2cCtrl {
+            &self.hw_i2c_ctrl
+        }
+    }
+    #[doc = "I2C0_CTRL (rw) register accessor: Analog-register I2C host-0 command and completion word.\n\nYou can [`read`](crate::Reg::read) this register and get [`i2c0_ctrl::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`i2c0_ctrl::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@i2c0_ctrl`] module"]
+    #[doc(alias = "I2C0_CTRL")]
+    pub type I2c0Ctrl = crate::Reg<i2c0_ctrl::I2c0CtrlSpec>;
+    #[doc = "Analog-register I2C host-0 command and completion word."]
+    pub mod i2c0_ctrl {
+        #[doc = "Register `I2C0_CTRL` reader"]
+        pub type R = crate::R<I2c0CtrlSpec>;
+        #[doc = "Register `I2C0_CTRL` writer"]
+        pub type W = crate::W<I2c0CtrlSpec>;
+        #[doc = "Field `SLAVE_ADDR` reader - "]
+        pub type SlaveAddrR = crate::FieldReader;
+        #[doc = "Field `SLAVE_ADDR` writer - "]
+        pub type SlaveAddrW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `SLAVE_REG_ADDR` reader - "]
+        pub type SlaveRegAddrR = crate::FieldReader;
+        #[doc = "Field `SLAVE_REG_ADDR` writer - "]
+        pub type SlaveRegAddrW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `DATA` reader - "]
+        pub type DataR = crate::FieldReader;
+        #[doc = "Field `DATA` writer - "]
+        pub type DataW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `READ_WRITE` reader - "]
+        pub type ReadWriteR = crate::BitReader;
+        #[doc = "Field `READ_WRITE` writer - "]
+        pub type ReadWriteW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BUSY` reader - "]
+        pub type BusyR = crate::BitReader;
+        #[doc = "Field `BUSY` writer - "]
+        pub type BusyW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `START_OR_RESET` reader - "]
+        pub type StartOrResetR = crate::BitReader;
+        #[doc = "Field `START_OR_RESET` writer - "]
+        pub type StartOrResetW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:7"]
+            #[inline(always)]
+            pub fn slave_addr(&self) -> SlaveAddrR {
+                SlaveAddrR::new((self.bits & 0xff) as u8)
+            }
+            #[doc = "Bits 8:15"]
+            #[inline(always)]
+            pub fn slave_reg_addr(&self) -> SlaveRegAddrR {
+                SlaveRegAddrR::new(((self.bits >> 8) & 0xff) as u8)
+            }
+            #[doc = "Bits 16:23"]
+            #[inline(always)]
+            pub fn data(&self) -> DataR {
+                DataR::new(((self.bits >> 16) & 0xff) as u8)
+            }
+            #[doc = "Bit 24"]
+            #[inline(always)]
+            pub fn read_write(&self) -> ReadWriteR {
+                ReadWriteR::new(((self.bits >> 24) & 1) != 0)
+            }
+            #[doc = "Bit 25"]
+            #[inline(always)]
+            pub fn busy(&self) -> BusyR {
+                BusyR::new(((self.bits >> 25) & 1) != 0)
+            }
+            #[doc = "Bit 26"]
+            #[inline(always)]
+            pub fn start_or_reset(&self) -> StartOrResetR {
+                StartOrResetR::new(((self.bits >> 26) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:7"]
+            #[inline(always)]
+            pub fn slave_addr(&mut self) -> SlaveAddrW<'_, I2c0CtrlSpec> {
+                SlaveAddrW::new(self, 0)
+            }
+            #[doc = "Bits 8:15"]
+            #[inline(always)]
+            pub fn slave_reg_addr(&mut self) -> SlaveRegAddrW<'_, I2c0CtrlSpec> {
+                SlaveRegAddrW::new(self, 8)
+            }
+            #[doc = "Bits 16:23"]
+            #[inline(always)]
+            pub fn data(&mut self) -> DataW<'_, I2c0CtrlSpec> {
+                DataW::new(self, 16)
+            }
+            #[doc = "Bit 24"]
+            #[inline(always)]
+            pub fn read_write(&mut self) -> ReadWriteW<'_, I2c0CtrlSpec> {
+                ReadWriteW::new(self, 24)
+            }
+            #[doc = "Bit 25"]
+            #[inline(always)]
+            pub fn busy(&mut self) -> BusyW<'_, I2c0CtrlSpec> {
+                BusyW::new(self, 25)
+            }
+            #[doc = "Bit 26"]
+            #[inline(always)]
+            pub fn start_or_reset(&mut self) -> StartOrResetW<'_, I2c0CtrlSpec> {
+                StartOrResetW::new(self, 26)
+            }
+        }
+        #[doc = "Analog-register I2C host-0 command and completion word.\n\nYou can [`read`](crate::Reg::read) this register and get [`i2c0_ctrl::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`i2c0_ctrl::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct I2c0CtrlSpec;
+        impl crate::RegisterSpec for I2c0CtrlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`i2c0_ctrl::R`](R) reader structure"]
+        impl crate::Readable for I2c0CtrlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`i2c0_ctrl::W`](W) writer structure"]
+        impl crate::Writable for I2c0CtrlSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets I2C0_CTRL to value 0"]
+        impl crate::Resettable for I2c0CtrlSpec {}
+    }
+    #[doc = "I2C1_CTRL (rw) register accessor: Analog-register I2C host-1 command and completion word.\n\nYou can [`read`](crate::Reg::read) this register and get [`i2c1_ctrl::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`i2c1_ctrl::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@i2c1_ctrl`] module"]
+    #[doc(alias = "I2C1_CTRL")]
+    pub type I2c1Ctrl = crate::Reg<i2c1_ctrl::I2c1CtrlSpec>;
+    #[doc = "Analog-register I2C host-1 command and completion word."]
+    pub mod i2c1_ctrl {
+        #[doc = "Register `I2C1_CTRL` reader"]
+        pub type R = crate::R<I2c1CtrlSpec>;
+        #[doc = "Register `I2C1_CTRL` writer"]
+        pub type W = crate::W<I2c1CtrlSpec>;
+        #[doc = "Field `SLAVE_ADDR` reader - "]
+        pub type SlaveAddrR = crate::FieldReader;
+        #[doc = "Field `SLAVE_ADDR` writer - "]
+        pub type SlaveAddrW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `SLAVE_REG_ADDR` reader - "]
+        pub type SlaveRegAddrR = crate::FieldReader;
+        #[doc = "Field `SLAVE_REG_ADDR` writer - "]
+        pub type SlaveRegAddrW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `DATA` reader - "]
+        pub type DataR = crate::FieldReader;
+        #[doc = "Field `DATA` writer - "]
+        pub type DataW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `READ_WRITE` reader - "]
+        pub type ReadWriteR = crate::BitReader;
+        #[doc = "Field `READ_WRITE` writer - "]
+        pub type ReadWriteW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BUSY` reader - "]
+        pub type BusyR = crate::BitReader;
+        #[doc = "Field `BUSY` writer - "]
+        pub type BusyW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `START_OR_RESET` reader - "]
+        pub type StartOrResetR = crate::BitReader;
+        #[doc = "Field `START_OR_RESET` writer - "]
+        pub type StartOrResetW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:7"]
+            #[inline(always)]
+            pub fn slave_addr(&self) -> SlaveAddrR {
+                SlaveAddrR::new((self.bits & 0xff) as u8)
+            }
+            #[doc = "Bits 8:15"]
+            #[inline(always)]
+            pub fn slave_reg_addr(&self) -> SlaveRegAddrR {
+                SlaveRegAddrR::new(((self.bits >> 8) & 0xff) as u8)
+            }
+            #[doc = "Bits 16:23"]
+            #[inline(always)]
+            pub fn data(&self) -> DataR {
+                DataR::new(((self.bits >> 16) & 0xff) as u8)
+            }
+            #[doc = "Bit 24"]
+            #[inline(always)]
+            pub fn read_write(&self) -> ReadWriteR {
+                ReadWriteR::new(((self.bits >> 24) & 1) != 0)
+            }
+            #[doc = "Bit 25"]
+            #[inline(always)]
+            pub fn busy(&self) -> BusyR {
+                BusyR::new(((self.bits >> 25) & 1) != 0)
+            }
+            #[doc = "Bit 26"]
+            #[inline(always)]
+            pub fn start_or_reset(&self) -> StartOrResetR {
+                StartOrResetR::new(((self.bits >> 26) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:7"]
+            #[inline(always)]
+            pub fn slave_addr(&mut self) -> SlaveAddrW<'_, I2c1CtrlSpec> {
+                SlaveAddrW::new(self, 0)
+            }
+            #[doc = "Bits 8:15"]
+            #[inline(always)]
+            pub fn slave_reg_addr(&mut self) -> SlaveRegAddrW<'_, I2c1CtrlSpec> {
+                SlaveRegAddrW::new(self, 8)
+            }
+            #[doc = "Bits 16:23"]
+            #[inline(always)]
+            pub fn data(&mut self) -> DataW<'_, I2c1CtrlSpec> {
+                DataW::new(self, 16)
+            }
+            #[doc = "Bit 24"]
+            #[inline(always)]
+            pub fn read_write(&mut self) -> ReadWriteW<'_, I2c1CtrlSpec> {
+                ReadWriteW::new(self, 24)
+            }
+            #[doc = "Bit 25"]
+            #[inline(always)]
+            pub fn busy(&mut self) -> BusyW<'_, I2c1CtrlSpec> {
+                BusyW::new(self, 25)
+            }
+            #[doc = "Bit 26"]
+            #[inline(always)]
+            pub fn start_or_reset(&mut self) -> StartOrResetW<'_, I2c1CtrlSpec> {
+                StartOrResetW::new(self, 26)
+            }
+        }
+        #[doc = "Analog-register I2C host-1 command and completion word.\n\nYou can [`read`](crate::Reg::read) this register and get [`i2c1_ctrl::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`i2c1_ctrl::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct I2c1CtrlSpec;
+        impl crate::RegisterSpec for I2c1CtrlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`i2c1_ctrl::R`](R) reader structure"]
+        impl crate::Readable for I2c1CtrlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`i2c1_ctrl::W`](W) writer structure"]
+        impl crate::Writable for I2c1CtrlSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets I2C1_CTRL to value 0"]
+        impl crate::Resettable for I2c1CtrlSpec {}
+    }
+    #[doc = "ANA_CONF0 (rw) register accessor: Shared analog-I2C master control used by PHY register mode and BBPLL calibration.\n\nYou can [`read`](crate::Reg::read) this register and get [`ana_conf0::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ana_conf0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ana_conf0`] module"]
+    #[doc(alias = "ANA_CONF0")]
+    pub type AnaConf0 = crate::Reg<ana_conf0::AnaConf0Spec>;
+    #[doc = "Shared analog-I2C master control used by PHY register mode and BBPLL calibration."]
+    pub mod ana_conf0 {
+        #[doc = "Register `ANA_CONF0` reader"]
+        pub type R = crate::R<AnaConf0Spec>;
+        #[doc = "Register `ANA_CONF0` writer"]
+        pub type W = crate::W<AnaConf0Spec>;
+        #[doc = "Reviewed two-bit BBPLL calibration mode; complete ROM uses encodings one and two.\n\nValue on reset: 2"]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum BbpllCalMode {
+            #[doc = "1: `1`"]
+            Disabled = 1,
+            #[doc = "2: `10`"]
+            Enabled = 2,
+        }
+        impl From<BbpllCalMode> for u8 {
+            #[inline(always)]
+            fn from(variant: BbpllCalMode) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for BbpllCalMode {
+            type Ux = u8;
+        }
+        impl crate::IsEnum for BbpllCalMode {}
+        #[doc = "Field `BBPLL_CAL_MODE` reader - Reviewed two-bit BBPLL calibration mode; complete ROM uses encodings one and two."]
+        pub type BbpllCalModeR = crate::FieldReader<BbpllCalMode>;
+        impl BbpllCalModeR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<BbpllCalMode> {
+                match self.bits {
+                    1 => Some(BbpllCalMode::Disabled),
+                    2 => Some(BbpllCalMode::Enabled),
+                    _ => None,
+                }
+            }
+            #[doc = "`1`"]
+            #[inline(always)]
+            pub fn is_disabled(&self) -> bool {
+                *self == BbpllCalMode::Disabled
+            }
+            #[doc = "`10`"]
+            #[inline(always)]
+            pub fn is_enabled(&self) -> bool {
+                *self == BbpllCalMode::Enabled
+            }
+        }
+        #[doc = "Field `BBPLL_CAL_MODE` writer - Reviewed two-bit BBPLL calibration mode; complete ROM uses encodings one and two."]
+        pub type BbpllCalModeW<'a, REG> = crate::FieldWriter<'a, REG, 2, BbpllCalMode>;
+        impl<'a, REG> BbpllCalModeW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u8>,
+        {
+            #[doc = "`1`"]
+            #[inline(always)]
+            pub fn disabled(self) -> &'a mut crate::W<REG> {
+                self.variant(BbpllCalMode::Disabled)
+            }
+            #[doc = "`10`"]
+            #[inline(always)]
+            pub fn enabled(self) -> &'a mut crate::W<REG> {
+                self.variant(BbpllCalMode::Enabled)
+            }
+        }
+        #[doc = "Field `PHY_REGISTER_ENABLE` reader - "]
+        pub type PhyRegisterEnableR = crate::BitReader;
+        #[doc = "Field `PHY_REGISTER_ENABLE` writer - "]
+        pub type PhyRegisterEnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "\n\nValue on reset: 2"]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum PhyRegisterMode {
+            #[doc = "2: `10`"]
+            RegisterMode = 2,
+        }
+        impl From<PhyRegisterMode> for u8 {
+            #[inline(always)]
+            fn from(variant: PhyRegisterMode) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for PhyRegisterMode {
+            type Ux = u8;
+        }
+        impl crate::IsEnum for PhyRegisterMode {}
+        #[doc = "Field `PHY_REGISTER_MODE` reader - "]
+        pub type PhyRegisterModeR = crate::FieldReader<PhyRegisterMode>;
+        impl PhyRegisterModeR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<PhyRegisterMode> {
+                match self.bits {
+                    2 => Some(PhyRegisterMode::RegisterMode),
+                    _ => None,
+                }
+            }
+            #[doc = "`10`"]
+            #[inline(always)]
+            pub fn is_register_mode(&self) -> bool {
+                *self == PhyRegisterMode::RegisterMode
+            }
+        }
+        #[doc = "Field `PHY_REGISTER_MODE` writer - "]
+        pub type PhyRegisterModeW<'a, REG> = crate::FieldWriter<'a, REG, 2, PhyRegisterMode>;
+        impl<'a, REG> PhyRegisterModeW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u8>,
+        {
+            #[doc = "`10`"]
+            #[inline(always)]
+            pub fn register_mode(self) -> &'a mut crate::W<REG> {
+                self.variant(PhyRegisterMode::RegisterMode)
+            }
+        }
+        #[doc = "Field `ANA_STATUS0` reader - "]
+        pub type AnaStatus0R = crate::FieldReader;
+        #[doc = "Field `ANA_STATUS0` writer - "]
+        pub type AnaStatus0W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        impl R {
+            #[doc = "Bits 2:3 - Reviewed two-bit BBPLL calibration mode; complete ROM uses encodings one and two."]
+            #[inline(always)]
+            pub fn bbpll_cal_mode(&self) -> BbpllCalModeR {
+                BbpllCalModeR::new(((self.bits >> 2) & 3) as u8)
+            }
+            #[doc = "Bit 6"]
+            #[inline(always)]
+            pub fn phy_register_enable(&self) -> PhyRegisterEnableR {
+                PhyRegisterEnableR::new(((self.bits >> 6) & 1) != 0)
+            }
+            #[doc = "Bits 9:10"]
+            #[inline(always)]
+            pub fn phy_register_mode(&self) -> PhyRegisterModeR {
+                PhyRegisterModeR::new(((self.bits >> 9) & 3) as u8)
+            }
+            #[doc = "Bits 24:31"]
+            #[inline(always)]
+            pub fn ana_status0(&self) -> AnaStatus0R {
+                AnaStatus0R::new(((self.bits >> 24) & 0xff) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 2:3 - Reviewed two-bit BBPLL calibration mode; complete ROM uses encodings one and two."]
+            #[inline(always)]
+            pub fn bbpll_cal_mode(&mut self) -> BbpllCalModeW<'_, AnaConf0Spec> {
+                BbpllCalModeW::new(self, 2)
+            }
+            #[doc = "Bit 6"]
+            #[inline(always)]
+            pub fn phy_register_enable(&mut self) -> PhyRegisterEnableW<'_, AnaConf0Spec> {
+                PhyRegisterEnableW::new(self, 6)
+            }
+            #[doc = "Bits 9:10"]
+            #[inline(always)]
+            pub fn phy_register_mode(&mut self) -> PhyRegisterModeW<'_, AnaConf0Spec> {
+                PhyRegisterModeW::new(self, 9)
+            }
+            #[doc = "Bits 24:31"]
+            #[inline(always)]
+            pub fn ana_status0(&mut self) -> AnaStatus0W<'_, AnaConf0Spec> {
+                AnaStatus0W::new(self, 24)
+            }
+        }
+        #[doc = "Shared analog-I2C master control used by PHY register mode and BBPLL calibration.\n\nYou can [`read`](crate::Reg::read) this register and get [`ana_conf0::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ana_conf0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AnaConf0Spec;
+        impl crate::RegisterSpec for AnaConf0Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`ana_conf0::R`](R) reader structure"]
+        impl crate::Readable for AnaConf0Spec {}
+        #[doc = "`write(|w| ..)` method takes [`ana_conf0::W`](W) writer structure"]
+        impl crate::Writable for AnaConf0Spec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets ANA_CONF0 to value 0xe408"]
+        impl crate::Resettable for AnaConf0Spec {
+            const RESET_VALUE: u32 = 0xe408;
+        }
+    }
+    #[doc = "ANA_CONF1 (rw) register accessor: Shared analog-I2C routing and read-mask word.\n\nYou can [`read`](crate::Reg::read) this register and get [`ana_conf1::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ana_conf1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ana_conf1`] module"]
+    #[doc(alias = "ANA_CONF1")]
+    pub type AnaConf1 = crate::Reg<ana_conf1::AnaConf1Spec>;
+    #[doc = "Shared analog-I2C routing and read-mask word."]
+    pub mod ana_conf1 {
+        #[doc = "Register `ANA_CONF1` reader"]
+        pub type R = crate::R<AnaConf1Spec>;
+        #[doc = "Register `ANA_CONF1` writer"]
+        pub type W = crate::W<AnaConf1Spec>;
+        #[doc = "Field `READ_MASK_COMPLEMENT_LOW` reader - Low 24 bits of the complete complemented PHY-I2C read-mask publication."]
+        pub type ReadMaskComplementLowR = crate::FieldReader<u32>;
+        #[doc = "Field `READ_MASK_COMPLEMENT_LOW` writer - Low 24 bits of the complete complemented PHY-I2C read-mask publication."]
+        pub type ReadMaskComplementLowW<'a, REG> =
+            crate::FieldWriter<'a, REG, 24, u32, crate::Safe>;
+        #[doc = "Field `READ_MASK_COMPLEMENT_HIGH` reader - High byte of the complete complemented PHY-I2C read-mask publication."]
+        pub type ReadMaskComplementHighR = crate::FieldReader;
+        #[doc = "Field `READ_MASK_COMPLEMENT_HIGH` writer - High byte of the complete complemented PHY-I2C read-mask publication."]
+        pub type ReadMaskComplementHighW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        impl R {
+            #[doc = "Bits 0:23 - Low 24 bits of the complete complemented PHY-I2C read-mask publication."]
+            #[inline(always)]
+            pub fn read_mask_complement_low(&self) -> ReadMaskComplementLowR {
+                ReadMaskComplementLowR::new(self.bits & 0x00ff_ffff)
+            }
+            #[doc = "Bits 24:31 - High byte of the complete complemented PHY-I2C read-mask publication."]
+            #[inline(always)]
+            pub fn read_mask_complement_high(&self) -> ReadMaskComplementHighR {
+                ReadMaskComplementHighR::new(((self.bits >> 24) & 0xff) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:23 - Low 24 bits of the complete complemented PHY-I2C read-mask publication."]
+            #[inline(always)]
+            pub fn read_mask_complement_low(&mut self) -> ReadMaskComplementLowW<'_, AnaConf1Spec> {
+                ReadMaskComplementLowW::new(self, 0)
+            }
+            #[doc = "Bits 24:31 - High byte of the complete complemented PHY-I2C read-mask publication."]
+            #[inline(always)]
+            pub fn read_mask_complement_high(
+                &mut self,
+            ) -> ReadMaskComplementHighW<'_, AnaConf1Spec> {
+                ReadMaskComplementHighW::new(self, 24)
+            }
+        }
+        #[doc = "Shared analog-I2C routing and read-mask word.\n\nYou can [`read`](crate::Reg::read) this register and get [`ana_conf1::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ana_conf1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AnaConf1Spec;
+        impl crate::RegisterSpec for AnaConf1Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`ana_conf1::R`](R) reader structure"]
+        impl crate::Readable for AnaConf1Spec {}
+        #[doc = "`write(|w| ..)` method takes [`ana_conf1::W`](W) writer structure"]
+        impl crate::Writable for AnaConf1Spec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets ANA_CONF1 to value 0x2d"]
+        impl crate::Resettable for AnaConf1Spec {
+            const RESET_VALUE: u32 = 0x2d;
+        }
+    }
+    #[doc = "ANA_CONF2 (rw) register accessor: Shared analog-I2C host-selection word.\n\nYou can [`read`](crate::Reg::read) this register and get [`ana_conf2::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ana_conf2::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ana_conf2`] module"]
+    #[doc(alias = "ANA_CONF2")]
+    pub type AnaConf2 = crate::Reg<ana_conf2::AnaConf2Spec>;
+    #[doc = "Shared analog-I2C host-selection word."]
+    pub mod ana_conf2 {
+        #[doc = "Register `ANA_CONF2` reader"]
+        pub type R = crate::R<AnaConf2Spec>;
+        #[doc = "Register `ANA_CONF2` writer"]
+        pub type W = crate::W<AnaConf2Spec>;
+        #[doc = "Complete host-selection field replaced by phy_get_i2c_hostid_new while unrelated bits are preserved.\n\nValue on reset: 0"]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u16)]
+        pub enum PhyHostMap {
+            #[doc = "16288: `11111110100000`"]
+            ReviewedRadioMap = 16288,
+        }
+        impl From<PhyHostMap> for u16 {
+            #[inline(always)]
+            fn from(variant: PhyHostMap) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for PhyHostMap {
+            type Ux = u16;
+        }
+        impl crate::IsEnum for PhyHostMap {}
+        #[doc = "Field `PHY_HOST_MAP` reader - Complete host-selection field replaced by phy_get_i2c_hostid_new while unrelated bits are preserved."]
+        pub type PhyHostMapR = crate::FieldReader<PhyHostMap>;
+        impl PhyHostMapR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<PhyHostMap> {
+                match self.bits {
+                    16288 => Some(PhyHostMap::ReviewedRadioMap),
+                    _ => None,
+                }
+            }
+            #[doc = "`11111110100000`"]
+            #[inline(always)]
+            pub fn is_reviewed_radio_map(&self) -> bool {
+                *self == PhyHostMap::ReviewedRadioMap
+            }
+        }
+        #[doc = "Field `PHY_HOST_MAP` writer - Complete host-selection field replaced by phy_get_i2c_hostid_new while unrelated bits are preserved."]
+        pub type PhyHostMapW<'a, REG> = crate::FieldWriter<'a, REG, 14, PhyHostMap>;
+        impl<'a, REG> PhyHostMapW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u16>,
+        {
+            #[doc = "`11111110100000`"]
+            #[inline(always)]
+            pub fn reviewed_radio_map(self) -> &'a mut crate::W<REG> {
+                self.variant(PhyHostMap::ReviewedRadioMap)
+            }
+        }
+        impl R {
+            #[doc = "Bits 4:17 - Complete host-selection field replaced by phy_get_i2c_hostid_new while unrelated bits are preserved."]
+            #[inline(always)]
+            pub fn phy_host_map(&self) -> PhyHostMapR {
+                PhyHostMapR::new(((self.bits >> 4) & 0x3fff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 4:17 - Complete host-selection field replaced by phy_get_i2c_hostid_new while unrelated bits are preserved."]
+            #[inline(always)]
+            pub fn phy_host_map(&mut self) -> PhyHostMapW<'_, AnaConf2Spec> {
+                PhyHostMapW::new(self, 4)
+            }
+        }
+        #[doc = "Shared analog-I2C host-selection word.\n\nYou can [`read`](crate::Reg::read) this register and get [`ana_conf2::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ana_conf2::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct AnaConf2Spec;
+        impl crate::RegisterSpec for AnaConf2Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`ana_conf2::R`](R) reader structure"]
+        impl crate::Readable for AnaConf2Spec {}
+        #[doc = "`write(|w| ..)` method takes [`ana_conf2::W`](W) writer structure"]
+        impl crate::Writable for AnaConf2Spec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets ANA_CONF2 to value 0x04"]
+        impl crate::Resettable for AnaConf2Spec {
+            const RESET_VALUE: u32 = 0x04;
+        }
+    }
+    #[doc = "I2C0_CTRL1 (rw) register accessor: Host-0 timing and clock-selection control.\n\nYou can [`read`](crate::Reg::read) this register and get [`i2c0_ctrl1::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`i2c0_ctrl1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@i2c0_ctrl1`] module"]
+    #[doc(alias = "I2C0_CTRL1")]
+    pub type I2c0Ctrl1 = crate::Reg<i2c0_ctrl1::I2c0Ctrl1Spec>;
+    #[doc = "Host-0 timing and clock-selection control."]
+    pub mod i2c0_ctrl1 {
+        #[doc = "Register `I2C0_CTRL1` reader"]
+        pub type R = crate::R<I2c0Ctrl1Spec>;
+        #[doc = "Register `I2C0_CTRL1` writer"]
+        pub type W = crate::W<I2c0Ctrl1Spec>;
+        #[doc = "Field `SCL_PULSE_DURATION` reader - "]
+        pub type SclPulseDurationR = crate::FieldReader;
+        #[doc = "Field `SCL_PULSE_DURATION` writer - "]
+        pub type SclPulseDurationW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
+        #[doc = "Field `SDA_SIDE_GUARD` reader - "]
+        pub type SdaSideGuardR = crate::FieldReader;
+        #[doc = "Field `SDA_SIDE_GUARD` writer - "]
+        pub type SdaSideGuardW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
+        impl R {
+            #[doc = "Bits 0:5"]
+            #[inline(always)]
+            pub fn scl_pulse_duration(&self) -> SclPulseDurationR {
+                SclPulseDurationR::new((self.bits & 0x3f) as u8)
+            }
+            #[doc = "Bits 6:10"]
+            #[inline(always)]
+            pub fn sda_side_guard(&self) -> SdaSideGuardR {
+                SdaSideGuardR::new(((self.bits >> 6) & 0x1f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:5"]
+            #[inline(always)]
+            pub fn scl_pulse_duration(&mut self) -> SclPulseDurationW<'_, I2c0Ctrl1Spec> {
+                SclPulseDurationW::new(self, 0)
+            }
+            #[doc = "Bits 6:10"]
+            #[inline(always)]
+            pub fn sda_side_guard(&mut self) -> SdaSideGuardW<'_, I2c0Ctrl1Spec> {
+                SdaSideGuardW::new(self, 6)
+            }
+        }
+        #[doc = "Host-0 timing and clock-selection control.\n\nYou can [`read`](crate::Reg::read) this register and get [`i2c0_ctrl1::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`i2c0_ctrl1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct I2c0Ctrl1Spec;
+        impl crate::RegisterSpec for I2c0Ctrl1Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`i2c0_ctrl1::R`](R) reader structure"]
+        impl crate::Readable for I2c0Ctrl1Spec {}
+        #[doc = "`write(|w| ..)` method takes [`i2c0_ctrl1::W`](W) writer structure"]
+        impl crate::Writable for I2c0Ctrl1Spec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets I2C0_CTRL1 to value 0x42"]
+        impl crate::Resettable for I2c0Ctrl1Spec {
+            const RESET_VALUE: u32 = 0x42;
+        }
+    }
+    #[doc = "I2C1_CTRL1 (rw) register accessor: Host-1 timing and clock-selection control.\n\nYou can [`read`](crate::Reg::read) this register and get [`i2c1_ctrl1::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`i2c1_ctrl1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@i2c1_ctrl1`] module"]
+    #[doc(alias = "I2C1_CTRL1")]
+    pub type I2c1Ctrl1 = crate::Reg<i2c1_ctrl1::I2c1Ctrl1Spec>;
+    #[doc = "Host-1 timing and clock-selection control."]
+    pub mod i2c1_ctrl1 {
+        #[doc = "Register `I2C1_CTRL1` reader"]
+        pub type R = crate::R<I2c1Ctrl1Spec>;
+        #[doc = "Register `I2C1_CTRL1` writer"]
+        pub type W = crate::W<I2c1Ctrl1Spec>;
+        #[doc = "Field `SCL_PULSE_DURATION` reader - "]
+        pub type SclPulseDurationR = crate::FieldReader;
+        #[doc = "Field `SCL_PULSE_DURATION` writer - "]
+        pub type SclPulseDurationW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
+        #[doc = "Field `SDA_SIDE_GUARD` reader - "]
+        pub type SdaSideGuardR = crate::FieldReader;
+        #[doc = "Field `SDA_SIDE_GUARD` writer - "]
+        pub type SdaSideGuardW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
+        impl R {
+            #[doc = "Bits 0:5"]
+            #[inline(always)]
+            pub fn scl_pulse_duration(&self) -> SclPulseDurationR {
+                SclPulseDurationR::new((self.bits & 0x3f) as u8)
+            }
+            #[doc = "Bits 6:10"]
+            #[inline(always)]
+            pub fn sda_side_guard(&self) -> SdaSideGuardR {
+                SdaSideGuardR::new(((self.bits >> 6) & 0x1f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:5"]
+            #[inline(always)]
+            pub fn scl_pulse_duration(&mut self) -> SclPulseDurationW<'_, I2c1Ctrl1Spec> {
+                SclPulseDurationW::new(self, 0)
+            }
+            #[doc = "Bits 6:10"]
+            #[inline(always)]
+            pub fn sda_side_guard(&mut self) -> SdaSideGuardW<'_, I2c1Ctrl1Spec> {
+                SdaSideGuardW::new(self, 6)
+            }
+        }
+        #[doc = "Host-1 timing and clock-selection control.\n\nYou can [`read`](crate::Reg::read) this register and get [`i2c1_ctrl1::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`i2c1_ctrl1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct I2c1Ctrl1Spec;
+        impl crate::RegisterSpec for I2c1Ctrl1Spec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`i2c1_ctrl1::R`](R) reader structure"]
+        impl crate::Readable for I2c1Ctrl1Spec {}
+        #[doc = "`write(|w| ..)` method takes [`i2c1_ctrl1::W`](W) writer structure"]
+        impl crate::Writable for I2c1Ctrl1Spec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets I2C1_CTRL1 to value 0x42"]
+        impl crate::Resettable for I2c1Ctrl1Spec {
+            const RESET_VALUE: u32 = 0x42;
+        }
+    }
+    #[doc = "HW_I2C_CTRL (rw) register accessor: Hardware-host timing and clock-selection control.\n\nYou can [`read`](crate::Reg::read) this register and get [`hw_i2c_ctrl::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`hw_i2c_ctrl::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@hw_i2c_ctrl`] module"]
+    #[doc(alias = "HW_I2C_CTRL")]
+    pub type HwI2cCtrl = crate::Reg<hw_i2c_ctrl::HwI2cCtrlSpec>;
+    #[doc = "Hardware-host timing and clock-selection control."]
+    pub mod hw_i2c_ctrl {
+        #[doc = "Register `HW_I2C_CTRL` reader"]
+        pub type R = crate::R<HwI2cCtrlSpec>;
+        #[doc = "Register `HW_I2C_CTRL` writer"]
+        pub type W = crate::W<HwI2cCtrlSpec>;
+        #[doc = "Field `SCL_PULSE_DURATION` reader - "]
+        pub type SclPulseDurationR = crate::FieldReader;
+        #[doc = "Field `SCL_PULSE_DURATION` writer - "]
+        pub type SclPulseDurationW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
+        #[doc = "Field `SDA_SIDE_GUARD` reader - "]
+        pub type SdaSideGuardR = crate::FieldReader;
+        #[doc = "Field `SDA_SIDE_GUARD` writer - "]
+        pub type SdaSideGuardW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
+        #[doc = "Field `ARBITER_DISABLE` reader - "]
+        pub type ArbiterDisableR = crate::BitReader;
+        #[doc = "Field `ARBITER_DISABLE` writer - "]
+        pub type ArbiterDisableW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bits 0:5"]
+            #[inline(always)]
+            pub fn scl_pulse_duration(&self) -> SclPulseDurationR {
+                SclPulseDurationR::new((self.bits & 0x3f) as u8)
+            }
+            #[doc = "Bits 6:10"]
+            #[inline(always)]
+            pub fn sda_side_guard(&self) -> SdaSideGuardR {
+                SdaSideGuardR::new(((self.bits >> 6) & 0x1f) as u8)
+            }
+            #[doc = "Bit 11"]
+            #[inline(always)]
+            pub fn arbiter_disable(&self) -> ArbiterDisableR {
+                ArbiterDisableR::new(((self.bits >> 11) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:5"]
+            #[inline(always)]
+            pub fn scl_pulse_duration(&mut self) -> SclPulseDurationW<'_, HwI2cCtrlSpec> {
+                SclPulseDurationW::new(self, 0)
+            }
+            #[doc = "Bits 6:10"]
+            #[inline(always)]
+            pub fn sda_side_guard(&mut self) -> SdaSideGuardW<'_, HwI2cCtrlSpec> {
+                SdaSideGuardW::new(self, 6)
+            }
+            #[doc = "Bit 11"]
+            #[inline(always)]
+            pub fn arbiter_disable(&mut self) -> ArbiterDisableW<'_, HwI2cCtrlSpec> {
+                ArbiterDisableW::new(self, 11)
+            }
+        }
+        #[doc = "Hardware-host timing and clock-selection control.\n\nYou can [`read`](crate::Reg::read) this register and get [`hw_i2c_ctrl::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`hw_i2c_ctrl::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct HwI2cCtrlSpec;
+        impl crate::RegisterSpec for HwI2cCtrlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`hw_i2c_ctrl::R`](R) reader structure"]
+        impl crate::Readable for HwI2cCtrlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`hw_i2c_ctrl::W`](W) writer structure"]
+        impl crate::Writable for HwI2cCtrlSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets HW_I2C_CTRL to value 0x42"]
+        impl crate::Resettable for HwI2cCtrlSpec {
+            const RESET_VALUE: u32 = 0x42;
+        }
     }
 }
 #[doc = "Official S31 reg_base.h names this aperture DR_REG_I2C_ANA_MST_MEM_BASE. The complete blob establishes its forty-five-entry command layout and the population order in phy_i2c_master_cmd_mem_init. Complete phy_i2c_check independently names ten logical banks, their block IDs, selected host and finite register-index ranges."]
@@ -51239,6 +52180,8 @@ pub struct Peripherals {
     pub phy_frequency_channel_oracle: PhyFrequencyChannelOracle,
     #[doc = "PHY_PBUS"]
     pub phy_pbus: PhyPbus,
+    #[doc = "I2C_ANA_MST"]
+    pub i2c_ana_mst: I2cAnaMst,
     #[doc = "PHY_I2C_COMMAND_RAM"]
     pub phy_i2c_command_ram: PhyI2cCommandRam,
     #[doc = "PHY_AGC_ORACLE"]
@@ -51461,6 +52404,7 @@ impl Peripherals {
             phy_memory: unsafe { PhyMemory::steal() },
             phy_frequency_channel_oracle: unsafe { PhyFrequencyChannelOracle::steal() },
             phy_pbus: unsafe { PhyPbus::steal() },
+            i2c_ana_mst: unsafe { I2cAnaMst::steal() },
             phy_i2c_command_ram: unsafe { PhyI2cCommandRam::steal() },
             phy_agc_oracle: unsafe { PhyAgcOracle::steal() },
             phy_baseband_config_oracle: unsafe { PhyBasebandConfigOracle::steal() },
@@ -51904,6 +52848,7 @@ pub mod peripheral_ownership {
         pub lp_aon_clkrst: crate::LpAonClkrst,
         pub lp_periclkrst: crate::LpPericlkrst,
         pub lp_tsens: crate::LpTsens,
+        pub i2c_ana_mst: crate::I2cAnaMst,
         pub phy_memory: crate::PhyMemory,
         pub phy_nrx_recovered_gaps: crate::PhyNrxRecoveredGaps,
         pub phy_pbus: crate::PhyPbus,
@@ -51996,6 +52941,7 @@ pub mod peripheral_ownership {
             phy_memory,
             phy_frequency_channel_oracle,
             phy_pbus,
+            i2c_ana_mst,
             phy_i2c_command_ram,
             phy_agc_oracle,
             phy_baseband_config_oracle,
@@ -52169,6 +53115,7 @@ pub mod peripheral_ownership {
                 lp_aon_clkrst,
                 lp_periclkrst,
                 lp_tsens,
+                i2c_ana_mst,
                 phy_memory,
                 phy_nrx_recovered_gaps,
                 phy_pbus,

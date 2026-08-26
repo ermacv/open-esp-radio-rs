@@ -795,7 +795,7 @@ impl PhyChipChannelMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn execute_channel_hal<P: open_esp_radio_esp32s31_hal::channel::RadioChannelPlatform>(
+    pub fn execute_channel_hal<P>(
         self,
         channel: &mut open_esp_radio_esp32s31_hal::channel::RadioChannelHal<'_, P>,
     ) -> PhyChipChannelCompletion {
@@ -860,9 +860,9 @@ impl PhyChipChannelMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn execute_target<P: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl>(
+    pub fn execute_target<P>(
         self,
-        platform: &mut P,
+        _platform: &mut P,
         registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> PhyChipChannelCompletion {
         match self.action {
@@ -872,7 +872,7 @@ impl PhyChipChannelMmioBinding {
             }
             PhyChipChannelAction::SetBbpllCalibration { enabled } => {
                 open_esp_radio_esp32s31_hal::phy_i2c::configure_bbpll_calibration(
-                    platform, enabled,
+                    registers, enabled,
                 );
                 PhyChipChannelCompletion::BbpllCalibrationSet { enabled }
             }
@@ -1048,7 +1048,7 @@ impl PhyChipChannelI2cBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn start_target<P: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl>(
+    pub fn start_target<P: open_esp_radio_esp32s31_hal::SharedPhyAccess>(
         &mut self,
         platform: &mut P,
     ) -> Result<(), crate::phy_cold::PhyColdI2cError> {
@@ -1056,7 +1056,7 @@ impl PhyChipChannelI2cBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn observe_target_edge<P: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl>(
+    pub fn observe_target_edge<P: open_esp_radio_esp32s31_hal::SharedPhyAccess>(
         &mut self,
         platform: &mut P,
     ) -> Result<crate::phy_cold::PhyColdI2cObservation, crate::phy_cold::PhyColdI2cError> {

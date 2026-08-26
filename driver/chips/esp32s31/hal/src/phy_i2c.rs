@@ -1,64 +1,39 @@
 //! Owned access to the ESP32-S31 PHY analog-register I2C master.
 
-#[cfg(target_arch = "riscv32")]
-use crate::{SharedPhyAccess, phy_pac_mut};
-
-/// One of the two analog-register command hosts.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PhyI2cHost {
-    Host0,
-    Host1,
-}
-
-/// Official `I2C_ANA_MST` capability needed by the open PHY.
-///
-/// The integration layer owns the chip-level singleton. The recovered radio
-/// PAC deliberately does not duplicate this peripheral.
-pub trait PhyI2cMasterControl {
-    fn configure_phy_i2c_host_map(&mut self);
-    fn pulse_phy_i2c_master_reset(&mut self, host: PhyI2cHost);
-    fn phy_i2c_master_is_busy(&self, host: PhyI2cHost) -> bool;
-    fn publish_phy_i2c_read_mask(&mut self, read_mask: u16);
-    fn publish_phy_i2c_command(
-        &mut self,
-        host: PhyI2cHost,
-        block: u8,
-        register: u8,
-        value: u8,
-        write: bool,
-    );
-    fn sample_phy_i2c_result(&self, host: PhyI2cHost) -> u8;
-    fn set_phy_i2c_clock_selection_high(&mut self, index: usize, value: u8) -> bool;
-    fn set_phy_i2c_clock_selection_low(&mut self, index: usize, value: u8) -> bool;
-    fn set_phy_i2c_register_mode(&mut self, mode: u8) -> bool;
-    fn enable_phy_i2c_register_mode(&mut self);
-    fn set_phy_i2c_bbpll_calibration(&mut self, enabled: bool);
-}
+use crate::{SharedPhyAccess, phy_pac, phy_pac_mut};
+pub use open_esp_radio_esp32s31_pac::PhyI2cHost;
 
 /// A finite PHY-I2C operation could not be published or observed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyI2cError {
     CommandMemoryIndexOutOfRange,
-    CommandMemoryWordOutOfRange,
 }
 
-/// Replace the complete S31 PHY-I2C host-map field while preserving every
-/// unrelated bit.
-///
-/// Complete archive `phy_get_i2c_hostid_new` proves the mask and replacement
-/// image. Platform adapters retain the official `I2C_ANA_MST` singleton and
-/// use this pure transform inside one fresh read-modify-write.
-pub const fn configured_host_map_image(previous: u32) -> u32 {
-    (previous & 0xfffc_000f) | 0x0003_fa00
+/// Install the complete reviewed host map through the affine PHY owner.
+pub fn configure_host_map(registers: &mut impl SharedPhyAccess) {
+    phy_pac_mut(registers).configure_phy_i2c_host_map();
 }
 
-/// Test the exact busy bit shared by both PHY-I2C master hosts.
-///
-/// Complete rev0 ROM `phy_i2c_master_reset` at `0x2f8260d0`, size `0x74`,
-/// samples bit 25 of both host words. Keeping this transform in the safe HAL
-/// lets the outer state machine carry only a semantic `busy` observation.
-pub fn master_reset_busy(command: u32) -> bool {
-    command & (1 << 25) != 0
+/// Publish the complete read-mask word through the affine PHY owner.
+pub fn publish_read_mask(registers: &mut impl SharedPhyAccess, read_mask: u16) {
+    phy_pac_mut(registers).publish_phy_i2c_read_mask(read_mask);
+}
+
+/// Publish one complete command through the selected affine host.
+pub fn publish_command(
+    registers: &mut impl SharedPhyAccess,
+    host: PhyI2cHost,
+    block: u8,
+    register: u8,
+    value: u8,
+    write: bool,
+) {
+    phy_pac_mut(registers).publish_phy_i2c_command(host, block, register, value, write);
+}
+
+/// Sample one completed host result through the affine PHY owner.
+pub fn sample_result(registers: &impl SharedPhyAccess, host: PhyI2cHost) -> u8 {
+    phy_pac(registers).sample_phy_i2c_result(host)
 }
 
 /// Publish one full-word PHY-I2C master reset command.
@@ -66,13 +41,13 @@ pub fn master_reset_busy(command: u32) -> bool {
 /// The complete ROM parent writes only bit 26 to a busy host and then polls
 /// bit 25. This finite method publishes that one edge; retry and timeout
 /// ownership remain in the Rust transition.
-pub fn pulse_master_reset(platform: &mut impl PhyI2cMasterControl, host: PhyI2cHost) {
-    platform.pulse_phy_i2c_master_reset(host);
+pub fn pulse_master_reset(registers: &mut impl SharedPhyAccess, host: PhyI2cHost) {
+    phy_pac_mut(registers).pulse_phy_i2c_master_reset(host);
 }
 
 /// Sample one PHY-I2C master reset busy edge without retrying.
-pub fn sample_master_reset_busy(platform: &impl PhyI2cMasterControl, host: PhyI2cHost) -> bool {
-    platform.phy_i2c_master_is_busy(host)
+pub fn sample_master_reset_busy(registers: &impl SharedPhyAccess, host: PhyI2cHost) -> bool {
+    phy_pac(registers).phy_i2c_master_is_busy(host)
 }
 
 /// Apply all six writes of the recovered PHY-I2C clock selection.
@@ -81,14 +56,8 @@ pub fn sample_master_reset_busy(platform: &impl PhyI2cMasterControl, host: PhyI2
 /// Each of three registers receives a high-field update followed by a fresh
 /// read and low-field update, preserving all instruction-evidenced
 /// intermediate states.
-pub fn configure_clock_selection(platform: &mut impl PhyI2cMasterControl, selection: u32) {
-    let high_value = ((selection >> 2) & 0x1f) as u8;
-    let low_value = ((selection >> 1) & 0x3f) as u8;
-    for index in 0..3 {
-        let high_written = platform.set_phy_i2c_clock_selection_high(index, high_value);
-        let low_written = platform.set_phy_i2c_clock_selection_low(index, low_value);
-        debug_assert!(high_written && low_written);
-    }
+pub fn configure_clock_selection(registers: &mut impl SharedPhyAccess, selection: u32) {
+    phy_pac_mut(registers).configure_phy_i2c_clock_selection(selection);
 }
 
 /// Configure the PHY-I2C master register mode and enable bit.
@@ -96,18 +65,8 @@ pub fn configure_clock_selection(platform: &mut impl PhyI2cMasterControl, select
 /// Basis: complete rev0 ROM `phy_i2cmst_reg_init` at `0x2f8276c4`, size
 /// `0x22`. It writes `MASTER_CONTROL.REGISTER_MODE = 2`, then sets
 /// `REGISTER_ENABLE`, using a fresh read for each update.
-pub fn configure_master_registers(platform: &mut impl PhyI2cMasterControl) {
-    let mode_written = platform.set_phy_i2c_register_mode(2);
-    // The write is part of the production sequence. Keeping it inside
-    // `debug_assert!` would erase it in release builds. SOURCE: rev0 ROM
-    // `phy_i2cmst_reg_init` at 0x2f82_76c4.
-    debug_assert!(mode_written);
-    platform.enable_phy_i2c_register_mode();
-}
-
-#[cfg(test)]
-fn bbpll_calibration_bits(enabled: bool) -> u32 {
-    (if enabled { 2 } else { 1 }) << 2
+pub fn configure_master_registers(registers: &mut impl SharedPhyAccess) {
+    phy_pac_mut(registers).configure_phy_i2c_master_registers();
 }
 
 /// Select the complete rev0 ROM `phy_bbpll_cal` mode.
@@ -116,54 +75,27 @@ fn bbpll_calibration_bits(enabled: bool) -> u32 {
 /// replacement of `MASTER_CONTROL` bits 3:2. Zero selects encoded mode one;
 /// every nonzero input selects encoded mode two. The boolean API makes that
 /// two-state contract explicit while preserving all unrelated shared fields.
-pub fn configure_bbpll_calibration(platform: &mut impl PhyI2cMasterControl, enabled: bool) {
-    platform.set_phy_i2c_bbpll_calibration(enabled);
+pub fn configure_bbpll_calibration(registers: &mut impl SharedPhyAccess, enabled: bool) {
+    phy_pac_mut(registers).set_phy_i2c_bbpll_calibration(enabled);
 }
 
-/// Write one of the 45 recovered PHY-I2C command-RAM words.
+/// Write one of the 45 recovered PHY-I2C command-RAM entries.
 ///
 /// Basis: complete S31
 /// `libphy.a[phy_i2c.o]::phy_i2c_master_cmd_mem_init`. The SVD `dim=45`
-/// array localizes every valid destination; the caller remains responsible
-/// for the instruction-recovered block/register/data word.
-#[cfg(target_arch = "riscv32")]
+/// array localizes every valid destination and the PAC owns the register-field
+/// encoding. The caller supplies only the instruction-recovered semantic
+/// block, byte-register, and data values.
 pub fn write_command_memory(
     registers: &mut impl SharedPhyAccess,
     index: usize,
-    command: u32,
+    block: u8,
+    register: u8,
+    value: u8,
 ) -> Result<(), PhyI2cError> {
     let registers = phy_pac_mut(registers);
-    if index >= 45 {
-        return Err(PhyI2cError::CommandMemoryIndexOutOfRange);
-    }
     registers
-        .write_phy_i2c_command_memory(index, command)
+        .write_phy_i2c_command_memory(index, block, register, value)
         .then_some(())
-        .ok_or(PhyI2cError::CommandMemoryWordOutOfRange)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{bbpll_calibration_bits, configured_host_map_image, master_reset_busy};
-
-    #[test]
-    fn host_map_transform_preserves_only_the_reviewed_outer_fields() {
-        assert_eq!(configured_host_map_image(0), 0x0003_fa00);
-        assert_eq!(configured_host_map_image(u32::MAX), 0xffff_fa0f);
-        assert_eq!(configured_host_map_image(0xa5a5_5a5a), 0xa5a7_fa0a);
-        assert_eq!(configured_host_map_image(0x5a5a_a5a5), 0x5a5b_fa05);
-    }
-
-    #[test]
-    fn bbpll_calibration_retains_both_complete_rom_encodings() {
-        assert_eq!(bbpll_calibration_bits(false), 0x04);
-        assert_eq!(bbpll_calibration_bits(true), 0x08);
-    }
-
-    #[test]
-    fn master_reset_busy_uses_only_the_pac_busy_field() {
-        assert!(!master_reset_busy(0xfdff_ffff));
-        assert!(master_reset_busy(0x0200_0000));
-        assert!(master_reset_busy(u32::MAX));
-    }
+        .ok_or(PhyI2cError::CommandMemoryIndexOutOfRange)
 }

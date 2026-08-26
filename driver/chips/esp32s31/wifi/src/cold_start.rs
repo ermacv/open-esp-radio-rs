@@ -6,8 +6,7 @@
 //! storage and diagnostics remain caller policy.
 
 use open_esp_radio_esp32s31_hal::{
-    PowerClockControl, PowerUpFailure, Radio, analog_i2c::PhyPmuControl,
-    phy_i2c::PhyI2cMasterControl, state::Powered,
+    PowerClockControl, PowerUpFailure, Radio, analog_i2c::PhyPmuControl, state::Powered,
 };
 use open_esp_radio_esp32s31_phy::{
     PhyAsyncDelay, PhyCalibrationCache, PhyCalibrationIdentity, PhyRegisterOutcome, PhyState,
@@ -122,7 +121,7 @@ pub async fn start_esp32s31_wifi<P, D, O>(
     observer: O,
 ) -> Result<Esp32s31WifiColdStart<P>, Esp32s31WifiColdStartFailure<P>>
 where
-    P: PowerClockControl + PhyPmuControl + PhyI2cMasterControl,
+    P: PowerClockControl + PhyPmuControl,
     D: PhyAsyncDelay,
     O: PhyTargetObserver + Clone,
 {

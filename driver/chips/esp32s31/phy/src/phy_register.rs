@@ -1227,12 +1227,9 @@ impl PhyRegisterMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn execute_target<
-        P: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
-        R: open_esp_radio_esp32s31_hal::PhyInitializationAccess,
-    >(
+    pub fn execute_target<P, R: open_esp_radio_esp32s31_hal::PhyInitializationAccess>(
         self,
-        platform: &mut P,
+        _platform: &mut P,
         registers: &mut R,
     ) -> PhyRegisterMmioCompletion {
         match self.action {
@@ -1254,7 +1251,7 @@ impl PhyRegisterMmioBinding {
                 } else {
                     open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cHost::Host1
                 };
-                open_esp_radio_esp32s31_hal::phy_i2c::pulse_master_reset(platform, host)
+                open_esp_radio_esp32s31_hal::phy_i2c::pulse_master_reset(registers, host)
             }
             PhyRegisterMmioAction::ConfigureXtal40Mhz => {
                 open_esp_radio_esp32s31_hal::phy_prelude::configure_fixed_xtal_40mhz(registers)
@@ -1263,7 +1260,9 @@ impl PhyRegisterMmioBinding {
                 crate::phy_hardware::set_phy_register_calibration_clock(registers, enabled)
             }
             PhyRegisterMmioAction::SetBbpllCalibration { enabled } => {
-                open_esp_radio_esp32s31_hal::phy_i2c::configure_bbpll_calibration(platform, enabled)
+                open_esp_radio_esp32s31_hal::phy_i2c::configure_bbpll_calibration(
+                    registers, enabled,
+                )
             }
         }
         PhyRegisterMmioCompletion {
@@ -1289,9 +1288,9 @@ impl PhyRegisterResetSampleBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn execute_target<P: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl>(
+    pub fn execute_target<P: open_esp_radio_esp32s31_hal::SharedPhyAccess>(
         self,
-        platform: &mut P,
+        registers: &mut P,
     ) -> PhyRegisterCompletion {
         let host = if self.index == 0 {
             open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cHost::Host0
@@ -1301,7 +1300,7 @@ impl PhyRegisterResetSampleBinding {
         PhyRegisterCompletion::I2cMasterResetSampled {
             index: self.index,
             sample: self.sample,
-            busy: open_esp_radio_esp32s31_hal::phy_i2c::sample_master_reset_busy(platform, host),
+            busy: open_esp_radio_esp32s31_hal::phy_i2c::sample_master_reset_busy(registers, host),
         }
     }
 }
@@ -1379,7 +1378,7 @@ impl PhyRegisterFinalI2cBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn start_target<P: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl>(
+    pub fn start_target<P: open_esp_radio_esp32s31_hal::SharedPhyAccess>(
         &mut self,
         platform: &mut P,
     ) -> Result<(), crate::phy_cold::PhyColdI2cError> {
@@ -1387,7 +1386,7 @@ impl PhyRegisterFinalI2cBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn observe_target_edge<P: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl>(
+    pub fn observe_target_edge<P: open_esp_radio_esp32s31_hal::SharedPhyAccess>(
         &mut self,
         platform: &mut P,
     ) -> Result<crate::phy_cold::PhyColdI2cObservation, crate::phy_cold::PhyColdI2cError> {

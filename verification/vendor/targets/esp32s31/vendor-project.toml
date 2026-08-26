@@ -248,6 +248,7 @@ owned-ranges = [
     "modem-radio-core-low",
     "modem-radio-core-mid",
     "coex-hw-timer",
+    "i2c-ana-mst",
     "modem-radio-core-high",
     "modem-syscon-radio",
     "modem-lpcon-lp-timer-clock",

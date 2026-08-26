@@ -222,6 +222,7 @@ pub use modem_syscon::{
     ModemSysconIeee802154ResetObservation, ModemSysconPowerObservation, WifiBasebandAgcUpdate,
 };
 use open_esp_radio_esp32s31_pac_raw as svd;
+pub use phy_i2c::PhyI2cHost;
 pub use table_memory::{PbusMemoryGroupBoundary, PhyMemoryError};
 
 /// Private Wi-Fi and shared-radio owners used by one exclusive Wi-Fi route.

@@ -1015,7 +1015,7 @@ impl PhyBluetoothI2cBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn start_target(
         &mut self,
-        platform: &mut impl open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
+        platform: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> Result<(), crate::phy_cold::PhyColdI2cError> {
         self.transaction.start_target(platform)
     }
@@ -1023,7 +1023,7 @@ impl PhyBluetoothI2cBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn observe_target_edge(
         &mut self,
-        platform: &mut impl open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
+        platform: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> Result<crate::phy_cold::PhyColdI2cObservation, crate::phy_cold::PhyColdI2cError> {
         self.transaction.observe_target_edge(platform)
     }

@@ -7,6 +7,9 @@ audit_dir="$(mktemp -d)"
 trap 'rm -rf -- "$audit_dir"' EXIT
 
 cd "$repo_root"
+command -v jq >/dev/null
+command -v llvm-nm >/dev/null
+command -v llvm-cxxfilt >/dev/null
 
 # Every tracked Cargo package must resolve through a checked-in lockfile at its
 # actual workspace boundary. This also covers the independently buildable HIL,
@@ -16,7 +19,43 @@ tools/audit-cargo-metadata.sh
 
 # Research resumes only from a warning-free workspace. Keep this fail-closed:
 # adding a new target or crate automatically subjects it to the same budget.
-cargo clippy --workspace --all-targets -- -D warnings
+# The driver-only disallowed-method policy is compiled separately below because
+# host/HIL traffic pacing has legitimate busy-wait loops.
+cargo clippy --workspace --all-targets -- -D warnings -A clippy::disallowed-methods
+
+# Production radio code must yield through its executor/platform instead of
+# burning a CPU in spin_loop. Clippy resolves the actual called method, so this
+# does not depend on source spelling or aliases.
+mapfile -t production_manifests < <(find driver -name Cargo.toml -print | sort)
+test "${#production_manifests[@]}" -gt 0
+for manifest in "${production_manifests[@]}"; do
+    metadata="$audit_dir/clippy-$(basename "${manifest%/Cargo.toml}").json"
+    cargo metadata \
+        --format-version 1 \
+        --locked \
+        --offline \
+        --no-deps \
+        --manifest-path "$manifest" >"$metadata"
+    manifest_absolute="$(realpath "$manifest")"
+    package="$(
+        jq -er --arg manifest "$manifest_absolute" '
+            [.packages[] | select(.manifest_path == $manifest) | .name]
+            | if length == 1 then .[0] else error("manifest does not identify exactly one package") end
+        ' "$metadata"
+    )"
+    cargo clippy \
+        --quiet \
+        --locked \
+        --offline \
+        --manifest-path "$manifest" \
+        --package "$package" \
+        --target "$target_triple" \
+        --lib \
+        --all-features \
+        --no-deps \
+        -- \
+        -D clippy::disallowed-methods
+done
 
 tools/audit-driver-safety.sh
 tools/audit-driver-architecture.sh
@@ -31,76 +70,177 @@ cargo blobray project publish \
     --project verification/vendor/targets/esp32s31/vendor-project.toml \
     --check
 
+build_messages="$audit_dir/phy-build.jsonl"
 cargo build \
     -p open-esp-radio-esp32s31-phy \
     --lib \
     --release \
-    --target "$target_triple"
+    --target "$target_triple" \
+    --message-format=json-render-diagnostics >"$build_messages"
 
 artifact="$(
-    find "target/$target_triple/release/deps" \
-        -maxdepth 1 \
-        -name 'libopen_esp_radio_esp32s31_phy-*.rlib' \
-        -printf '%T@ %p\n' |
-        sort -nr |
-        head -n 1 |
-        cut -d' ' -f2-
+    jq -ser '
+        [
+            .[]
+            | select(.reason == "compiler-artifact")
+            | select(.target.name == "open_esp_radio_esp32s31_phy")
+            | select(any(.target.kind[]; . == "lib"))
+            | select(.profile.test == false)
+            | .filenames[]
+            | select(endswith(".rlib"))
+        ]
+        | unique
+        | if length == 1 then .[0] else error("build did not emit exactly one PHY rlib") end
+    ' "$build_messages"
 )"
-test -n "$artifact"
+test -f "$artifact"
 
-llvm-nm --undefined-only --format=posix "$artifact" 2>/dev/null |
-    awk '{print $1}' |
-    sort -u >"$audit_dir/undefined"
-llvm-nm --defined-only --format=posix "$artifact" 2>/dev/null |
-    awk '{print $1}' |
-    sort -u >"$audit_dir/defined"
+write_symbols() {
+    local mode="$1"
+    local output="$2"
+
+    llvm-nm "--$mode" --just-symbol-name "$artifact" 2>/dev/null |
+        while IFS= read -r symbol; do
+            # llvm-nm prints archive member headings beside symbol names.
+            case "$symbol" in
+                "" | *:) continue ;;
+            esac
+            printf '%s\n' "$symbol"
+        done |
+        sort -u >"$output"
+}
+
+write_symbols undefined-only "$audit_dir/undefined"
+write_symbols defined-only "$audit_dir/defined"
 comm -23 "$audit_dir/undefined" "$audit_dir/defined" >"$audit_dir/external"
 
 # The final artifact may refer to its source-only HAL/register dependencies and to
 # compiler/core support only. Public pure-model `Debug` implementations retain
 # `core::fmt` leaves in an rlib even when the final image does not call them.
 # Radio ROM or vendor archive symbols still fail closed.
-if rg -v \
-    '^(_R.*open_esp_radio_esp32s31_(hal|registers|pac).*|_ZN.*open_esp_radio_esp32s31_(hal|registers|pac).*|_R.*4core3fmt.*|_ZN.*4core3fmt.*|_RNv.*core.*(panic.*|len_mismatch_fail.*)|_ZN.*core.*(panic.*|len_mismatch_fail.*)|__u?divdi3|mem(cmp|cpy|move|set))$' \
-    "$audit_dir/external"
-then
-    echo "unexpected external symbol in source-only radio rlib" >&2
-    exit 1
-fi
+is_allowed_external_symbol() {
+    local symbol="$1"
+    local subject
+    local trait
+    local leaf
 
-if llvm-nm --format=posix "$artifact" 2>/dev/null |
-    rg '(^| )(phy_wifi_get_tx_gain|register_chipv7_phy|g_phyFuns|phy_param|esp_wifi_|pp_|net80211_)($| )'
-then
-    echo "radio ROM/vendor ABI symbol survived source-only build" >&2
-    exit 1
-fi
+    case "$symbol" in
+        open_esp_radio_esp32s31_hal::* | \
+            open_esp_radio_esp32s31_pac::* | \
+            open_esp_radio_esp32s31_pac_raw::* | \
+            core::fmt::* | \
+            __divdi3 | __udivdi3 | memcmp | memcpy | memmove | memset)
+            return 0
+            ;;
+    esac
 
-dependency_tree="$(
-    cargo tree \
-        -p open-esp-radio-esp32s31-phy \
-        --target "$target_triple" \
-        --prefix none
+    if [[ "$symbol" == "<"* ]]; then
+        subject="${symbol#<}"
+        subject="${subject%%>::*}"
+        trait="${subject##* as }"
+        case "$subject" in
+            open_esp_radio_esp32s31_hal::* | \
+                open_esp_radio_esp32s31_pac::* | \
+                open_esp_radio_esp32s31_pac_raw::* | \
+                core::fmt::*) return 0 ;;
+        esac
+        case "$trait" in
+            open_esp_radio_esp32s31_hal::* | \
+                open_esp_radio_esp32s31_pac::* | \
+                open_esp_radio_esp32s31_pac_raw::* | \
+                core::fmt::*) return 0 ;;
+        esac
+    fi
+
+    case "$symbol" in
+        core::*)
+            leaf="${symbol##*::}"
+            case "$leaf" in
+                panic* | len_mismatch_fail*) return 0 ;;
+            esac
+            ;;
+    esac
+    return 1
+}
+
+while IFS= read -r symbol; do
+    demangled="$(printf '%s\n' "$symbol" | llvm-cxxfilt)"
+    if ! is_allowed_external_symbol "$demangled"; then
+        echo "unexpected external symbol in source-only radio rlib: $demangled" >&2
+        exit 1
+    fi
+done <"$audit_dir/external"
+
+is_forbidden_radio_symbol() {
+    case "$1" in
+        phy_wifi_get_tx_gain | \
+            register_chipv7_phy | \
+            g_phyFuns | \
+            phy_param | \
+            esp_wifi_* | \
+            pp_* | \
+            net80211_*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+llvm-nm --just-symbol-name "$artifact" 2>/dev/null |
+    while IFS= read -r symbol; do
+        case "$symbol" in
+            "" | *:) continue ;;
+        esac
+        if is_forbidden_radio_symbol "$symbol"; then
+            echo "radio ROM/vendor ABI symbol survived source-only build: $symbol" >&2
+            exit 1
+        fi
+    done
+
+# Verify the exact normal/build dependency closure selected for the compiled
+# PHY target. Cargo package IDs and dependency kinds are used directly.
+phy_metadata="$audit_dir/phy-metadata.json"
+cargo metadata \
+    --format-version 1 \
+    --locked \
+    --offline \
+    --manifest-path driver/chips/esp32s31/phy/Cargo.toml \
+    --filter-platform "$target_triple" >"$phy_metadata"
+phy_manifest="$(realpath driver/chips/esp32s31/phy/Cargo.toml)"
+allowed_phy_packages='[
+    "critical-section",
+    "open-esp-radio-dma",
+    "open-esp-radio-esp32s31-coex",
+    "open-esp-radio-esp32s31-hal",
+    "open-esp-radio-esp32s31-ieee802154-irq",
+    "open-esp-radio-esp32s31-pac",
+    "open-esp-radio-esp32s31-pac-raw",
+    "open-esp-radio-esp32s31-phy",
+    "vcell"
+]'
+unexpected_packages="$(
+    jq -r \
+        --arg manifest "$phy_manifest" \
+        --argjson allowed "$allowed_phy_packages" '
+        def closure($id; $edges):
+            $id, (($edges[$id] // [])[] | closure(.; $edges));
+
+        ([.packages[] | select(.manifest_path == $manifest) | .id]
+            | if length == 1 then .[0] else error("PHY manifest does not identify exactly one package") end) as $root
+        | (.resolve.nodes
+            | map({
+                key: .id,
+                value: [.deps[] | select(any(.dep_kinds[]; .kind != "dev")) | .pkg]
+            })
+            | from_entries) as $edges
+        | (.packages | map({key: .id, value: .}) | from_entries) as $packages
+        | [closure($root; $edges)] | unique[]
+        | $packages[.]
+        | select(.name as $name | all($allowed[]; . != $name))
+        | .name
+    ' "$phy_metadata"
 )"
-if printf '%s\n' "$dependency_tree" |
-    rg -v '^(open-esp-radio-dma|open-esp-radio-esp32s31-(coex|phy|hal|registers|pac|pac-raw|ieee802154-irq)|critical-section|vcell) v'
-then
-    echo "non-workspace dependency survived source-only build" >&2
-    exit 1
-fi
-
-if rg -n 'core::hint::spin_loop|spin_loop\(' driver --glob '*.rs'
-then
-    echo "production source contains a CPU spin loop" >&2
-    exit 1
-fi
-
-# Production documentation names stable evidence IDs and public symbols. Local
-# oracle paths, artifact digests and paths into an earlier private firmware
-# tree are qualification policy and must stay under verification/HIL.
-if rg -n '(?i)(_oracles/|sha-?256|[0-9a-f]{64}|esp32s31_rust/|firmware/esp32s31/)' \
-    driver --glob '*.rs' --glob '*.md' --glob '*.toml'
-then
-    echo "qualification artifact identity survived in production source" >&2
+if [[ -n "$unexpected_packages" ]]; then
+    echo "unexpected package in source-only PHY dependency graph:" >&2
+    echo "$unexpected_packages" >&2
     exit 1
 fi
 

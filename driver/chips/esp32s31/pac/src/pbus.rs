@@ -7,46 +7,22 @@
 
 use super::RadioPhyRegisters;
 
-const PBUS_COMMAND_PRESERVE_MASK: u32 = 0xfffe_0001;
-const PBUS_COMMAND_ARGUMENT_MASK: u32 = 0x0001_fffc;
-const PBUS_TRANSACTION_START: u32 = 1 << 1;
-
 const fn pbus_force_test_arguments(selector: u8, path: u8, test_value: u16) -> u32 {
     ((test_value as u32) << 6) | ((selector as u32) << 2) | ((path as u32) << 15)
 }
 
-/// Reproduce the complete rev0 ROM `phy_pbus_force_test` command encoder.
-///
-/// `esp32s31_rev0_rom.elf`, symbol `phy_pbus_force_test` at `0x2f82_4228`,
-/// shifts `test_value` left by six and masks the combined selector/value/path
-/// image with `0x0001_fffc`. It does not range-check `test_value` before that
-/// operation. Consequently the two high retained bits of a signed RX-DCO
-/// halfword can contribute to the physical path field. This helper preserves
-/// that instruction-exact behavior rather than silently narrowing the input
-/// to the separately described nine-bit result/value window.
-pub const fn pbus_force_test_command_image(
-    current: u32,
-    selector: u8,
-    path: u8,
-    test_value: u16,
-) -> u32 {
-    let arguments = pbus_force_test_arguments(selector, path, test_value);
-    (current & PBUS_COMMAND_PRESERVE_MASK)
-        | (arguments & PBUS_COMMAND_ARGUMENT_MASK)
-        | PBUS_TRANSACTION_START
-}
-
 impl RadioPhyRegisters {
-    /// Replace the four-bit force-TX/RX mode field.
-    pub fn set_pbus_force_txrx_mode(&mut self, mode: u8) -> bool {
-        if mode > 0x0f {
-            return false;
-        }
+    /// Publish one of the four reviewed force-TX/RX transition phases.
+    pub fn set_pbus_force_txrx_mode(&mut self, enabled: bool, initial_phase: bool) {
         self.peripherals
             .phy_pbus
             .status_clock_force()
-            .modify(|_, w| w.force_txrx_mode_unknown().set(mode));
-        true
+            .modify(|_, w| match (enabled, initial_phase) {
+                (true, true) => w.force_txrx_mode_unknown().enable_initial_phase(),
+                (true, false) => w.force_txrx_mode_unknown().enable_final_phase(),
+                (false, true) => w.force_txrx_mode_unknown().disable_initial_phase(),
+                (false, false) => w.force_txrx_mode_unknown().disable_final_phase(),
+            });
     }
 
     /// Enable or disable the PBus work-mode selector.
@@ -204,31 +180,15 @@ impl RadioPhyRegisters {
 
     /// Enable or disable both recovered TX clock bits as one pair.
     pub fn set_pbus_tx_clock_pair(&mut self, enabled: bool) {
-        let value = if enabled { 3 } else { 0 };
         self.peripherals
             .phy_pbus
             .status_clock_force()
-            .modify(|_, w| w.tx_clock_enable_pair().set(value));
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::pbus_force_test_command_image;
-
-    #[test]
-    fn force_test_encoder_matches_complete_rom_images() {
-        assert_eq!(pbus_force_test_command_image(0, 4, 1, 0), 0x0000_8012);
-        assert_eq!(
-            pbus_force_test_command_image(u32::MAX, 3, 2, 0x100),
-            0xffff_400f
-        );
-    }
-
-    #[test]
-    fn signed_rx_dco_halfword_keeps_the_rom_overlap_behavior() {
-        // `-251_i16 as u16 == 0xff05`. ROM keeps the low eleven value bits,
-        // so their upper two bits combine with path one into physical path 3.
-        assert_eq!(pbus_force_test_command_image(0, 3, 1, 0xff05), 0x0001_c14e);
+            .modify(|_, w| {
+                if enabled {
+                    w.tx_clock_enable_pair().enabled()
+                } else {
+                    w.tx_clock_enable_pair().disabled()
+                }
+            });
     }
 }

@@ -8,7 +8,6 @@
 use core::future::Future;
 
 use open_esp_radio_esp32s31_hal::SharedPhyAccess;
-use open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl;
 
 use crate::{
     HARDWARE_EDGE_LIMIT,
@@ -74,11 +73,11 @@ pub enum PhyTargetPortError {
 /// polling bound at this boundary.
 pub async fn complete_final_i2c<D: PhyAsyncDelay>(
     mut binding: PhyRegisterFinalI2cBinding,
-    platform: &mut impl PhyI2cMasterControl,
+    registers: &mut impl SharedPhyAccess,
 ) -> Result<PhyRegisterCompletion, PhyTargetPortError> {
     for _ in 0..HARDWARE_EDGE_LIMIT {
         match binding.action() {
-            PhyColdI2cAction::StartRead { .. } => match binding.start_target(platform) {
+            PhyColdI2cAction::StartRead { .. } => match binding.start_target(registers) {
                 Ok(()) => {}
                 Err(PhyColdI2cError::BusyAtStart) => D::after_micros(1).await,
                 Err(_) => return Err(PhyTargetPortError::UnexpectedBinding),
@@ -86,7 +85,7 @@ pub async fn complete_final_i2c<D: PhyAsyncDelay>(
             PhyColdI2cAction::AwaitReadCompletionEdge { .. } => {
                 D::after_micros(1).await;
                 match binding
-                    .observe_target_edge(platform)
+                    .observe_target_edge(registers)
                     .map_err(|_| PhyTargetPortError::UnexpectedBinding)?
                 {
                     PhyColdI2cObservation::EdgeConsumed | PhyColdI2cObservation::StillPending => {}
@@ -110,12 +109,12 @@ macro_rules! define_i2c_executor {
     ($function:ident, $binding:ty, $completion:ty) => {
         pub async fn $function<D: PhyAsyncDelay>(
             mut binding: $binding,
-            platform: &mut impl PhyI2cMasterControl,
+            registers: &mut impl SharedPhyAccess,
         ) -> Result<$completion, PhyTargetPortError> {
             for _ in 0..HARDWARE_EDGE_LIMIT {
                 match binding.action() {
                     PhyColdI2cAction::StartRead { .. } | PhyColdI2cAction::StartWrite { .. } => {
-                        match binding.start_target(platform) {
+                        match binding.start_target(registers) {
                             Ok(()) => {}
                             Err(PhyColdI2cError::BusyAtStart) => D::after_micros(1).await,
                             Err(_) => return Err(PhyTargetPortError::UnexpectedBinding),
@@ -125,7 +124,7 @@ macro_rules! define_i2c_executor {
                     | PhyColdI2cAction::AwaitWriteCompletionEdge { .. } => {
                         D::after_micros(1).await;
                         match binding
-                            .observe_target_edge(platform)
+                            .observe_target_edge(registers)
                             .map_err(|_| PhyTargetPortError::UnexpectedBinding)?
                         {
                             PhyColdI2cObservation::EdgeConsumed

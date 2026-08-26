@@ -10,21 +10,6 @@ pub enum PbusError {
     Busy,
 }
 
-#[cfg(any(test, target_arch = "riscv32"))]
-fn force_txrx_mode(enabled: bool, phase: u8) -> u8 {
-    match (enabled, phase) {
-        (true, 0) => 8,
-        (true, _) => 10,
-        (false, 0) => 2,
-        (false, _) => 0,
-    }
-}
-
-#[cfg(test)]
-fn force_txrx_mode_bits(enabled: bool, phase: u8) -> u32 {
-    u32::from(force_txrx_mode(enabled, phase)) << 8
-}
-
 /// Apply one finite force-TX/RX phase around its caller-owned delay edge.
 ///
 /// Basis: complete rev0 ROM `phy_force_txrx_off` at `0x2f827bb0`, size
@@ -34,11 +19,7 @@ fn force_txrx_mode_bits(enabled: bool, phase: u8) -> u32 {
 #[cfg(target_arch = "riscv32")]
 pub fn configure_force_txrx(registers: &mut impl SharedPhyAccess, enabled: bool, phase: u8) {
     let registers = phy_pac_mut(registers);
-    let written = registers.set_pbus_force_txrx_mode(force_txrx_mode(enabled, phase));
-    // Do not place the MMIO call itself in `debug_assert!`: release builds
-    // remove the complete assertion expression. SOURCE: rev0 ROM
-    // `phy_force_txrx_off` at 0x2f82_7bb0 performs this write in production.
-    debug_assert!(written);
+    registers.set_pbus_force_txrx_mode(enabled, phase == 0);
 }
 
 /// Enter the PBus debug mode used before force-test transactions.
@@ -138,17 +119,4 @@ pub fn configure_rx_clock(registers: &mut impl SharedPhyAccess, enabled: bool) {
 pub fn configure_tx_clock(registers: &mut impl SharedPhyAccess, enabled: bool) {
     let registers = phy_pac_mut(registers);
     registers.set_pbus_tx_clock_pair(enabled);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::force_txrx_mode_bits;
-
-    #[test]
-    fn force_txrx_phases_match_all_four_complete_rom_encodings() {
-        assert_eq!(force_txrx_mode_bits(true, 0), 0x0000_0800);
-        assert_eq!(force_txrx_mode_bits(true, 1), 0x0000_0a00);
-        assert_eq!(force_txrx_mode_bits(false, 0), 0x0000_0200);
-        assert_eq!(force_txrx_mode_bits(false, 1), 0);
-    }
 }

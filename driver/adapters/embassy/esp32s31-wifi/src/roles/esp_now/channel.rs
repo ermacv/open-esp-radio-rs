@@ -63,7 +63,6 @@ impl<P, D, O>
     Esp32s31StandaloneEspNowChannelControl<open_esp_radio_esp32s31_hal::RadioRuntimeOwner, P>
     for Esp32s31StandaloneEspNowPhyChannelControl<'_, '_, D, O>
 where
-    P: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
     D: open_esp_radio_esp32s31_phy::PhyAsyncDelay,
     O: open_esp_radio_esp32s31_phy::PhyTargetObserver,
 {

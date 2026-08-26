@@ -1,7 +1,7 @@
 //! ESP32-S31 lowering of portable Wi-Fi channel definitions.
 
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_hal::{RadioRuntimeOwner, phy_i2c::PhyI2cMasterControl};
+use open_esp_radio_esp32s31_hal::RadioRuntimeOwner;
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_phy::{
     PhyAsyncDelay, PhyState, PhyTargetObserver, PhyTargetPortError,
@@ -36,11 +36,7 @@ pub const fn lower_wifi_channel(channel: WifiChannel) -> Esp32s31PhyChannel {
 /// Retune an initialized Wi-Fi MAC while its role-specific DMA/IRQ service is
 /// stopped and therefore owns no asynchronous access to these registers.
 #[cfg(target_arch = "riscv32")]
-pub async fn switch_esp32s31_wifi_channel<
-    D: PhyAsyncDelay,
-    P: PhyI2cMasterControl,
-    O: PhyTargetObserver,
->(
+pub async fn switch_esp32s31_wifi_channel<D: PhyAsyncDelay, P, O: PhyTargetObserver>(
     state: &mut PhyState,
     channel: WifiChannel,
     platform: &mut P,

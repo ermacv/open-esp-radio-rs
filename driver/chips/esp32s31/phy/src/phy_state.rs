@@ -828,8 +828,14 @@ impl PhyState {
     pub fn apply_calibration_tracking_outcome(&mut self, outcome: PhyCalibrationTrackingOutcome) {
         match (outcome.common_updated, outcome.dcode, outcome.rx_gain) {
             (true, Some(dcode), Some(rx_gain)) => {
+                // The periodic parent forcibly clears both vendor completion
+                // guards. Its successful child must therefore contain fresh
+                // RX-DC data and freshly generated tables.
+                if rx_gain.dc.is_none() || !rx_gain.generated_tables {
+                    return;
+                }
                 self.apply_dcode_outcome(dcode);
-                self.apply_rx_gain_publish_outcome(rx_gain);
+                self.apply_rx_gain_init_outcome(rx_gain);
                 self.common.calibration_tracking_temperature = outcome.common_reference_temperature;
             }
             (false, None, None) => {}
@@ -849,15 +855,6 @@ impl PhyState {
                     outcome.bluetooth_ieee802154_reference_temperature;
             }
         }
-    }
-
-    fn apply_rx_gain_publish_outcome(
-        &mut self,
-        outcome: crate::phy_rx_gain::PhyRxGainPublishOutcome,
-    ) {
-        self.wifi.wifi_rx_table_last_index = outcome.wifi_entries.saturating_sub(1).min(0x4f);
-        self.wifi.shared_rx_table_last_index = outcome.shared_entries.saturating_sub(1).min(0x4f);
-        self.wifi.rx_gain_tables_initialized = true;
     }
 
     /// Project the semantic state consumed by periodic TX-power tracking.
@@ -1451,9 +1448,16 @@ mod tests {
             common_updated: true,
             class_updated: true,
             dcode: Some(PhyDcodeOutcome { codes: [7; 8] }),
-            rx_gain: Some(crate::phy_rx_gain::PhyRxGainPublishOutcome {
-                wifi_entries: 70,
-                shared_entries: 76,
+            rx_gain: Some(crate::phy_rx_gain::PhyRxGainInitOutcome {
+                dc: Some(crate::phy_rx_gain_cal::PhyRxGainDcOutcome {
+                    wifi_index_dc: [[1; 2]; 8],
+                    wifi_dc_base: [2; 2],
+                    shared_index_dc: [[3; 2]; 11],
+                    rxbb_dc_adjustments: [[4; 2]; 6],
+                }),
+                generated_tables: true,
+                wifi_last_index: 69,
+                shared_last_index: 75,
             }),
         });
         let committed = state.calibration_tracking_parameters(Some(31));
@@ -1464,6 +1468,9 @@ mod tests {
         assert_eq!(state.common.dcode, [7; 8]);
         assert_eq!(state.wifi.wifi_rx_table_last_index, 69);
         assert_eq!(state.wifi.shared_rx_table_last_index, 75);
+        assert_eq!(state.wifi.wifi_index_dc, [[1; 2]; 8]);
+        assert_eq!(state.wifi.shared_index_dc, [[3; 2]; 11]);
+        assert!(state.wifi.rx_gain_dc_calibrated);
         assert!(state.wifi.rx_gain_tables_initialized);
 
         state.apply_calibration_tracking_outcome(PhyCalibrationTrackingOutcome {
@@ -1480,6 +1487,26 @@ mod tests {
         let rejected = state.calibration_tracking_parameters(None);
         assert_eq!(rejected.common_reference_temperature, 50);
         assert_eq!(rejected.bluetooth_ieee802154_reference_temperature, 20);
+        assert_eq!(state.common.dcode, [7; 8]);
+
+        state.apply_calibration_tracking_outcome(PhyCalibrationTrackingOutcome {
+            class: crate::phy_param_tracking::PhyCalibrationTrackClass::Wifi,
+            threshold: 30,
+            common_reference_temperature: 70,
+            wifi_reference_temperature: 70,
+            bluetooth_ieee802154_reference_temperature: 20,
+            common_updated: true,
+            class_updated: false,
+            dcode: Some(PhyDcodeOutcome { codes: [9; 8] }),
+            rx_gain: Some(crate::phy_rx_gain::PhyRxGainInitOutcome {
+                dc: None,
+                generated_tables: true,
+                wifi_last_index: 69,
+                shared_last_index: 75,
+            }),
+        });
+        let rejected_partial_rx = state.calibration_tracking_parameters(None);
+        assert_eq!(rejected_partial_rx.common_reference_temperature, 50);
         assert_eq!(state.common.dcode, [7; 8]);
     }
 

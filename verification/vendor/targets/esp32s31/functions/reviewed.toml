@@ -600,7 +600,7 @@ width = 32
 status = "reviewed"
 name = "calibration_completion_flags"
 display-type = "u32"
-description = "Calibration completion flags read and updated by PHY initialization flows."
+description = "Calibration completion flags read and updated by PHY initialization flows. Complete phy_set_rx_gain_table uses bit 7 as the RX-DC-complete guard and bit 9 as the generated-table-complete guard. Complete phy_cal_param_track clears both with mask 0x00000280 before its periodic RX-gain recalibration call."
 
 [[types.fields]]
 offset = 0x0d0

@@ -592,14 +592,14 @@ impl<'state> PhyParamTrackingCalibrationTransition<'state> {
         self.child.begin_dcode()
     }
 
-    pub fn begin_rx_gain_publish(
+    pub fn begin_rx_gain_recalibration(
         &self,
     ) -> Result<
         crate::phy_cal_tracking::PhyCalibrationRxGainTransition,
         crate::phy_cal_tracking::PhyCalibrationTrackingChildError,
     > {
         self.child
-            .begin_rx_gain_publish(self.state.rx_gain_memory_parameters())
+            .begin_rx_gain_recalibration(self.state.rx_gain_init_parameters())
     }
 
     pub fn lower_external(
@@ -615,6 +615,10 @@ impl<'state> PhyParamTrackingCalibrationTransition<'state> {
         self.state
     }
 
+    #[expect(
+        clippy::result_large_err,
+        reason = "the pending variant must retain the allocation-free calibration outcome and live state owner"
+    )]
     pub fn commit(self) -> Result<PhyParamTrackingCompletion, Self> {
         let crate::phy_cal_tracking::PhyCalibrationTrackingAction::Complete(outcome) =
             self.child.action()

@@ -27,8 +27,9 @@ use core::fmt;
 
 use crate::phy_param_tracking::{
     PhyParamTrackRequest, PhyParamTrackingAction, PhyParamTrackingChildError,
-    PhyParamTrackingCompletion, PhyParamTrackingParameters, PhyParamTrackingTemperatureTransition,
-    PhyParamTrackingTransition, PhyParamTrackingTransitionError, PhyParamTrackingTxPowerTransition,
+    PhyParamTrackingCompletion, PhyParamTrackingParameters, PhyParamTrackingRfpllTransition,
+    PhyParamTrackingTemperatureTransition, PhyParamTrackingTransition,
+    PhyParamTrackingTransitionError, PhyParamTrackingTxPowerTransition,
     PhyParamTrackingWifiI2cTransition,
 };
 
@@ -551,6 +552,14 @@ impl PhyPendingTracking {
 
     pub const fn snapshot(&self) -> PhyClientSnapshot {
         self.owner.snapshot()
+    }
+
+    /// Lower the current RFPLL-cap action into its complete typed child.
+    pub fn begin_rfpll_cap_tracking<'state>(
+        &self,
+        state: &'state mut crate::phy_state::PhyState,
+    ) -> Result<PhyParamTrackingRfpllTransition<'state>, PhyParamTrackingChildError> {
+        self.transition.begin_rfpll_cap_tracking(state)
     }
 
     /// Lower the current outer TX-power action into its complete typed child.
@@ -1252,6 +1261,7 @@ mod tests {
         let mut tracking = pending.begin_tracking(PhyParamTrackingParameters {
             tracking_inhibited: true,
             rfpll_cap_tracking_enabled: true,
+            rfpll_cap_tracking_threshold: None,
             shared_tracking_control: 0x29,
             bluetooth_ieee802154_power_control: 0x51,
             calibration_tracking_enabled: true,
@@ -1292,6 +1302,7 @@ mod tests {
         let parameters = PhyParamTrackingParameters {
             tracking_inhibited: false,
             rfpll_cap_tracking_enabled: false,
+            rfpll_cap_tracking_threshold: None,
             shared_tracking_control: 0x29,
             bluetooth_ieee802154_power_control: 0x51,
             calibration_tracking_enabled: false,
@@ -1318,6 +1329,10 @@ mod tests {
 
         assert_eq!(
             tracking.begin_tx_power_tracking(&mut state).unwrap_err(),
+            PhyParamTrackingChildError::UnsupportedAction
+        );
+        assert_eq!(
+            tracking.begin_rfpll_cap_tracking(&mut state).unwrap_err(),
             PhyParamTrackingChildError::UnsupportedAction
         );
         assert_eq!(

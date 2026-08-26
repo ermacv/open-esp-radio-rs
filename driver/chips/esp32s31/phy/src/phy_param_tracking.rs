@@ -8,8 +8,9 @@
 //! TX-power actions lower into the complete source-owned transition in
 //! [`crate::phy_power_tracking`], and the final temperature action lowers into
 //! [`crate::phy_temperature`], while the Wi-Fi PHY-I2C action lowers into
-//! [`crate::phy_i2c_tracking`]. RFPLL-cap and calibration children remain
-//! separate obligations.
+//! [`crate::phy_i2c_tracking`]. The RFPLL-cap action lowers into
+//! [`crate::phy_rfpll`]; only calibration children remain separate
+//! obligations.
 //!
 //! The vendor function reads six bytes from a 508-byte `phy_param` image. The
 //! live driver does not retain that ABI layout. Its only behaviorally relevant
@@ -51,6 +52,7 @@ impl PhyParamTrackRequest {
 pub struct PhyParamTrackingParameters {
     pub tracking_inhibited: bool,
     pub rfpll_cap_tracking_enabled: bool,
+    pub rfpll_cap_tracking_threshold: Option<u8>,
     pub shared_tracking_control: u8,
     pub bluetooth_ieee802154_power_control: u8,
     pub calibration_tracking_enabled: bool,
@@ -125,9 +127,7 @@ pub enum PhyParamTrackingAction {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyParamTrackingCompletion {
     EnteredCritical,
-    RfpllCapTracked {
-        shared_tracking_control: u8,
-    },
+    RfpllCapTracked(PhyParamTrackingRfpllCompletion),
     BluetoothIeee802154TxPowerTracked {
         power_control: u8,
         shared_tracking_control: u8,
@@ -143,6 +143,25 @@ pub enum PhyParamTrackingCompletion {
     },
     TemperatureRead,
     ExitedCritical,
+}
+
+/// Opaque proof that the complete RFPLL-cap child reached its terminal action
+/// and committed its semantic reference-temperature outcome.
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_phy::phy_param_tracking::{
+///     PhyParamTrackingCompletion, PhyParamTrackingRfpllCompletion,
+/// };
+///
+/// let forged = PhyParamTrackingCompletion::RfpllCapTracked(
+///     PhyParamTrackingRfpllCompletion {
+///         shared_tracking_control: 0,
+///     },
+/// );
+/// ```
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyParamTrackingRfpllCompletion {
+    shared_tracking_control: u8,
 }
 
 /// Observable outer-wrapper result. Child hardware postconditions are not
@@ -249,10 +268,8 @@ impl PhyParamTrackingTransition {
             }
             (
                 PhyParamTrackingStep::RfpllCapTrack,
-                PhyParamTrackingCompletion::RfpllCapTracked {
-                    shared_tracking_control,
-                },
-            ) if shared_tracking_control == self.parameters.shared_tracking_control => {
+                PhyParamTrackingCompletion::RfpllCapTracked(completion),
+            ) if completion.shared_tracking_control == self.parameters.shared_tracking_control => {
                 self.first_client_step()
             }
             (
@@ -320,6 +337,15 @@ impl PhyParamTrackingTransition {
         Ok(())
     }
 
+    /// Lower only the RFPLL-cap action and retain exclusive access to the live
+    /// reference temperature until the complete child is committed.
+    pub fn begin_rfpll_cap_tracking<'state>(
+        &self,
+        state: &'state mut crate::phy_state::PhyState,
+    ) -> Result<PhyParamTrackingRfpllTransition<'state>, PhyParamTrackingChildError> {
+        PhyParamTrackingRfpllTransition::lower(self.action(), self.parameters, state)
+    }
+
     /// Lower only the currently selected TX-power child, using the immutable
     /// parameter snapshot captured with this outer transition.
     pub fn begin_tx_power_tracking<'state>(
@@ -367,6 +393,93 @@ impl PhyParamTrackingTransition {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyParamTrackingChildError {
     UnsupportedAction,
+}
+
+/// Complete RFPLL-cap child selected by the outer periodic transition.
+///
+/// The corresponding outer completion contains an opaque token. It can only
+/// be minted by [`Self::commit`] after the child has restored hardware
+/// frequency control and published its terminal outcome.
+pub struct PhyParamTrackingRfpllTransition<'state> {
+    parent_action: PhyParamTrackingAction,
+    child: crate::phy_rfpll::RfpllCapTrackingTransition,
+    state: &'state mut crate::phy_state::PhyState,
+}
+
+impl fmt::Debug for PhyParamTrackingRfpllTransition<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PhyParamTrackingRfpllTransition")
+            .field("parent_action", &self.parent_action)
+            .field("action", &self.child.action())
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'state> PhyParamTrackingRfpllTransition<'state> {
+    fn lower(
+        parent_action: PhyParamTrackingAction,
+        parameters: PhyParamTrackingParameters,
+        state: &'state mut crate::phy_state::PhyState,
+    ) -> Result<Self, PhyParamTrackingChildError> {
+        if !matches!(parent_action, PhyParamTrackingAction::RfpllCapTrack { .. }) {
+            return Err(PhyParamTrackingChildError::UnsupportedAction);
+        }
+        Ok(Self {
+            parent_action,
+            child: crate::phy_rfpll::RfpllCapTrackingTransition::new(
+                state.rfpll_cap_tracking_parameters(parameters.rfpll_cap_tracking_threshold),
+            ),
+            state,
+        })
+    }
+
+    pub const fn parent_action(&self) -> PhyParamTrackingAction {
+        self.parent_action
+    }
+
+    pub const fn action(&self) -> crate::phy_rfpll::RfpllCapTrackingAction {
+        self.child.action()
+    }
+
+    pub fn advance(
+        &mut self,
+        completion: crate::phy_rfpll::RfpllCapTrackingCompletion,
+    ) -> Result<(), crate::phy_rfpll::RfpllCapTrackingTransitionError> {
+        self.child.advance(completion)
+    }
+
+    pub fn lower_external(
+        &self,
+    ) -> Result<
+        crate::phy_rfpll::RfpllCapTrackingExternalBinding,
+        crate::phy_rfpll::RfpllCapTrackingBindingError,
+    > {
+        crate::phy_rfpll::RfpllCapTrackingExternalBinding::lower(self.action())
+    }
+
+    pub const fn state(&self) -> &crate::phy_state::PhyState {
+        self.state
+    }
+
+    pub fn commit(self) -> Result<PhyParamTrackingCompletion, Self> {
+        let crate::phy_rfpll::RfpllCapTrackingAction::Complete(outcome) = self.child.action()
+        else {
+            return Err(self);
+        };
+        let PhyParamTrackingAction::RfpllCapTrack {
+            shared_tracking_control,
+        } = self.parent_action
+        else {
+            unreachable!()
+        };
+        self.state.apply_rfpll_cap_tracking_outcome(outcome);
+        Ok(PhyParamTrackingCompletion::RfpllCapTracked(
+            PhyParamTrackingRfpllCompletion {
+                shared_tracking_control,
+            },
+        ))
+    }
 }
 
 /// One exact TX-power child selected by the outer tracking transition.
@@ -629,6 +742,7 @@ mod tests {
     const PARAMETERS: PhyParamTrackingParameters = PhyParamTrackingParameters {
         tracking_inhibited: false,
         rfpll_cap_tracking_enabled: true,
+        rfpll_cap_tracking_threshold: None,
         shared_tracking_control: 0x29,
         bluetooth_ieee802154_power_control: 0x51,
         calibration_tracking_enabled: true,
@@ -640,9 +754,9 @@ mod tests {
             PhyParamTrackingAction::EnterCritical => PhyParamTrackingCompletion::EnteredCritical,
             PhyParamTrackingAction::RfpllCapTrack {
                 shared_tracking_control,
-            } => PhyParamTrackingCompletion::RfpllCapTracked {
+            } => PhyParamTrackingCompletion::RfpllCapTracked(PhyParamTrackingRfpllCompletion {
                 shared_tracking_control,
-            },
+            }),
             PhyParamTrackingAction::BluetoothIeee802154TxPowerTrack {
                 power_control,
                 shared_tracking_control,
@@ -810,6 +924,77 @@ mod tests {
             transition.advance(PhyParamTrackingCompletion::ExitedCritical),
             Err(PhyParamTrackingTransitionError::AlreadyComplete)
         );
+    }
+
+    #[test]
+    fn rfpll_child_routes_threshold_and_mints_parent_proof_only_after_commit() {
+        let parameters = PhyParamTrackingParameters {
+            rfpll_cap_tracking_threshold: Some(6),
+            calibration_tracking_enabled: false,
+            ..PARAMETERS
+        };
+        let mut transition =
+            PhyParamTrackingTransition::new(PhyParamTrackRequest::new(false, true), parameters);
+        transition
+            .advance(PhyParamTrackingCompletion::EnteredCritical)
+            .unwrap();
+
+        let mut state = crate::phy_state::PhyState::new(crate::phy_state::PhyConfig::production());
+        state.apply_register_temperature_outcome(
+            crate::phy_state::PhyRegisterTemperatureControl::FULL,
+            crate::phy_temperature::PhyTemperatureOutcome {
+                temperature: 20,
+                sensor_index: 2,
+                next_dac: 15,
+            },
+        );
+        state.apply_temperature_outcome(crate::phy_temperature::PhyTemperatureOutcome {
+            temperature: 25,
+            sensor_index: 2,
+            next_dac: 15,
+        });
+
+        let child = transition.begin_rfpll_cap_tracking(&mut state).unwrap();
+        let crate::phy_rfpll::RfpllCapTrackingAction::Complete(outcome) = child.action() else {
+            panic!("six-degree override must skip a five-degree delta")
+        };
+        assert_eq!(outcome.threshold, 6);
+        assert!(!outcome.updated);
+        let completion = child.commit().unwrap();
+        assert_eq!(
+            state
+                .rfpll_cap_tracking_parameters(None)
+                .reference_temperature,
+            20
+        );
+        transition.advance(completion).unwrap();
+        assert!(matches!(
+            transition.action(),
+            PhyParamTrackingAction::BluetoothIeee802154TxPowerTrack { .. }
+        ));
+
+        let mut incomplete = PhyParamTrackingTransition::new(
+            PhyParamTrackRequest::new(false, false),
+            PhyParamTrackingParameters {
+                rfpll_cap_tracking_threshold: None,
+                ..parameters
+            },
+        );
+        incomplete
+            .advance(PhyParamTrackingCompletion::EnteredCritical)
+            .unwrap();
+        let child = incomplete.begin_rfpll_cap_tracking(&mut state).unwrap();
+        assert_eq!(
+            child.action(),
+            crate::phy_rfpll::RfpllCapTrackingAction::SetHardwareFrequencyControl {
+                enabled: false,
+            }
+        );
+        let child = child.commit().unwrap_err();
+        assert!(matches!(
+            child.lower_external(),
+            Ok(crate::phy_rfpll::RfpllCapTrackingExternalBinding::Mmio(_))
+        ));
     }
 
     #[test]

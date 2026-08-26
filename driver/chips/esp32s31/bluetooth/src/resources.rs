@@ -16,6 +16,7 @@ use open_esp_radio_esp32s31_hal::{BluetoothSharedPhyBorrow, SharedPhyHal};
 #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
 use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
 use open_esp_radio_esp32s31_pac::RadioHardware;
+use open_esp_radio_esp32s31_pac::RadioPhyReleaseError;
 
 #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 use crate::controller_time::{
@@ -36,6 +37,32 @@ pub struct BluetoothStopped<P> {
     platform: P,
 }
 
+/// Failed stopped-route transition retaining the complete Bluetooth owner.
+#[must_use = "failed Bluetooth route transition retains the platform and radio owners"]
+pub struct BluetoothStoppedReleaseFailure<P> {
+    stopped: BluetoothStopped<P>,
+    error: RadioPhyReleaseError,
+}
+
+impl<P> BluetoothStoppedReleaseFailure<P> {
+    pub const fn error(&self) -> RadioPhyReleaseError {
+        self.error
+    }
+
+    pub fn into_parts(self) -> (BluetoothStopped<P>, RadioPhyReleaseError) {
+        (self.stopped, self.error)
+    }
+}
+
+impl<P> core::fmt::Debug for BluetoothStoppedReleaseFailure<P> {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothStoppedReleaseFailure")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
 impl<P> BluetoothStopped<P> {
     /// Bind one platform lease to the exact protocol-neutral radio root.
     ///
@@ -49,8 +76,29 @@ impl<P> BluetoothStopped<P> {
     }
 
     /// Release an unpowered Bluetooth owner for another radio protocol.
-    pub fn release(self) -> (P, RadioHardware) {
-        (self.platform, self.registers.release())
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BluetoothStoppedReleaseFailure`] retaining the complete
+    /// stopped owner when TX-DC PWDET fields still await restoration.
+    pub fn release(self) -> Result<(P, RadioHardware), BluetoothStoppedReleaseFailure<P>> {
+        let Self {
+            registers,
+            platform,
+        } = self;
+        match registers.release() {
+            Ok(hardware) => Ok((platform, hardware)),
+            Err(failure) => {
+                let (registers, error) = failure.into_parts();
+                Err(BluetoothStoppedReleaseFailure {
+                    stopped: Self {
+                        registers,
+                        platform,
+                    },
+                    error,
+                })
+            }
+        }
     }
 
     pub(crate) fn into_parts(self) -> (HalBluetoothColdOwner, P) {
@@ -317,7 +365,8 @@ mod tests {
         let hardware = task
             .reunite(setup)
             .expect("untouched owners remain cold-reunitable")
-            .release();
+            .release()
+            .expect("an untouched Bluetooth route can be released");
 
         // Re-entering Wi-Fi proves that every inactive protocol and shared
         // owner survived the complete Bluetooth ownership roundtrip.

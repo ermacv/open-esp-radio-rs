@@ -10,7 +10,7 @@ use open_esp_radio_esp32s31_pac::{
     Ieee802154TaskRegisters, MacInterruptRegisters as PacMacInterruptRegisters,
     MacInterruptSetup as PacMacInterruptSetup,
     MacPowerInterruptRegisters as PacMacPowerInterruptRegisters, RadioHardware, RadioPhyRegisters,
-    WifiColdRegisters, WifiRadioRegisters,
+    RadioPhyReleaseError, WifiColdRegisters, WifiRadioRegisters,
 };
 pub mod analog_i2c;
 pub mod bluetooth;
@@ -49,8 +49,8 @@ pub mod validation;
 pub mod wifi_bb;
 pub mod wifi_mac;
 pub use bluetooth::{
-    BluetoothColdOwner, BluetoothControllerHal, BluetoothControllerHalBorrow,
-    BluetoothControllerHalInitConfig, BluetoothControllerLatchedTime,
+    BluetoothColdOwner, BluetoothColdOwnerReleaseFailure, BluetoothControllerHal,
+    BluetoothControllerHalBorrow, BluetoothControllerHalInitConfig, BluetoothControllerLatchedTime,
     BluetoothControllerSchedulerDisableBeginError, BluetoothControllerSchedulerDisableBeginFailure,
     BluetoothControllerSchedulerDisableBusyObserved,
     BluetoothControllerSchedulerDisableIdleObserved, BluetoothControllerSchedulerDisableStep,
@@ -499,6 +499,32 @@ pub struct Radio<P, State = state::Owned> {
     state: State,
 }
 
+/// Failed cold Wi-Fi release retaining both application and radio owners.
+#[must_use = "failed Wi-Fi release still owns the application token and radio route"]
+pub struct RadioReleaseFailure<P> {
+    radio: Radio<P, state::Owned>,
+    error: RadioPhyReleaseError,
+}
+
+impl<P> RadioReleaseFailure<P> {
+    pub const fn error(&self) -> RadioPhyReleaseError {
+        self.error
+    }
+
+    pub fn into_parts(self) -> (Radio<P, state::Owned>, RadioPhyReleaseError) {
+        (self.radio, self.error)
+    }
+}
+
+impl<P> core::fmt::Debug for RadioReleaseFailure<P> {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("RadioReleaseFailure")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
 /// Opaque task-side owner of the running radio register partition.
 ///
 /// This value can be moved between lifecycle owners and the runtime arena, but
@@ -801,8 +827,26 @@ impl<P> Radio<P, state::Owned> {
     /// Both singleton authorities are returned. Dropping the neutral radio
     /// root would permanently make the Wi-Fi and Bluetooth routes
     /// unavailable for this boot.
-    pub fn release(self) -> (P, RadioHardware) {
-        (self.peripheral, self.state.registers.release())
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RadioReleaseFailure`] with this complete radio owner when a
+    /// pending TX-DC PWDET operation must restore its PAC-owned fields first.
+    pub fn release(self) -> Result<(P, RadioHardware), RadioReleaseFailure<P>> {
+        let Self { peripheral, state } = self;
+        match state.registers.release() {
+            Ok(hardware) => Ok((peripheral, hardware)),
+            Err(failure) => {
+                let (registers, error) = failure.into_parts();
+                Err(RadioReleaseFailure {
+                    radio: Radio {
+                        peripheral,
+                        state: state::Owned { registers },
+                    },
+                    error,
+                })
+            }
+        }
     }
 
     /// Construct a powered owner inside an isolated validation process.
@@ -1039,10 +1083,15 @@ mod tests {
     fn unpowered_owner_releases_platform_and_neutral_radio_roots() {
         let owned = Radio::claim(TestPeripheral { id: 9, ready: true })
             .unwrap_or_else(|_| panic!("test radio claim failed"));
-        let (peripheral, hardware) = owned.release();
+        let (peripheral, hardware) = owned
+            .release()
+            .expect("an untouched Wi-Fi route can be released");
         assert_eq!(peripheral, TestPeripheral { id: 9, ready: true });
 
-        let hardware = hardware.into_bluetooth().release();
+        let hardware = hardware
+            .into_bluetooth()
+            .release()
+            .expect("an untouched Bluetooth route can be released");
         let _wifi = hardware.into_wifi();
     }
 
@@ -1053,12 +1102,19 @@ mod tests {
             ready: true,
         })
         .unwrap_or_else(|_| panic!("test radio claim failed"));
-        let (peripheral, hardware) = owned.release();
-        let hardware = hardware.into_bluetooth().release();
+        let (peripheral, hardware) = owned
+            .release()
+            .expect("an untouched Wi-Fi route can be released");
+        let hardware = hardware
+            .into_bluetooth()
+            .release()
+            .expect("an untouched Bluetooth route can be released");
 
         let returned = Radio::from_hardware(peripheral, hardware);
         require_owned(&returned);
-        let (peripheral, _hardware) = returned.release();
+        let (peripheral, _hardware) = returned
+            .release()
+            .expect("the returned untouched route can be released");
         assert_eq!(
             peripheral,
             TestPeripheral {

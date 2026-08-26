@@ -60,6 +60,7 @@ pub trait PhyAsyncDelay {
 pub enum PhyTargetPortError {
     HardwareEdgeTimedOut,
     HardwareCapabilityUnavailable,
+    HardwareInvariant,
     RfOperationLimit,
     UnexpectedBinding,
 }

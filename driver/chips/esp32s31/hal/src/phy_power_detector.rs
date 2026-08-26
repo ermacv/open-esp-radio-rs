@@ -13,9 +13,12 @@ use crate::{SharedPhyAccess, phy_pac_mut};
 /// performs six finite stores through the PAC's table-zero, table-one,
 /// control, reference, and auxiliary-mode identities.
 #[cfg(target_arch = "riscv32")]
-pub fn initialize_registers(registers: &mut impl SharedPhyAccess) {
-    phy_pac_mut(registers).initialize_power_detector_registers();
+pub fn initialize_registers(
+    registers: &mut impl SharedPhyAccess,
+) -> Result<(), open_esp_radio_esp32s31_pac::TxDcPwdetLifecycleError> {
+    phy_pac_mut(registers).initialize_power_detector_registers()?;
     crate::power_detector_platform::select_initialization_mode(registers);
+    Ok(())
 }
 
 /// Configure and enable the background TX power-control path.
@@ -52,17 +55,20 @@ pub fn configure_calibration_mode(registers: &mut impl SharedPhyAccess) {
     crate::power_detector_platform::select_calibration_mode(registers);
 }
 
-/// Capture and replace the two TX-DC power-detector fields.
+/// Prepare the two TX-DC power-detector fields for calibration.
 ///
 /// Complete pinned `libphy.a[phy_tx_cal.o]::phy_txdc_cal_pwdet_init`, size
 /// `0x208`, first reads `POWER_DETECTOR_TABLE_1` and
 /// `POWER_DETECTOR_CONTROL`, then replaces the low table byte with `0xf0` and
-/// control bits 11:4 with `0x78`. The returned tuple contains the original
-/// low byte and its original already-shifted mask.
+/// the calibration field with `0x78`. The PAC retains the original fields in
+/// its private restore slot and rejects an overlapping calibration before any
+/// MMIO.
 #[cfg(target_arch = "riscv32")]
-pub fn capture_txdc_fields(registers: &mut impl SharedPhyAccess) -> (u8, u32) {
+pub fn prepare_txdc_calibration(
+    registers: &mut impl SharedPhyAccess,
+) -> Result<(), open_esp_radio_esp32s31_pac::TxDcPwdetPrepareError> {
     let registers = phy_pac_mut(registers);
-    registers.capture_txdc_power_detector_fields()
+    registers.prepare_txdc_power_detector()
 }
 
 /// Select the TX-DC PWDET SAR mode after the initial PBus setup.
@@ -75,20 +81,19 @@ pub fn configure_txdc_sar(registers: &mut impl SharedPhyAccess) {
     registers.configure_txdc_power_detector_sar();
 }
 
-/// Restore captured TX-DC fields and select the final SAR mode.
+/// Restore the PAC-owned TX-DC fields and select the final SAR mode.
 ///
 /// The unconditional cleanup tail of complete pinned
 /// `libphy.a[phy_tx_cal.o]::phy_txdc_cal_pwdet_init`, size `0x208`, restores
 /// the table-one low byte and control calibration field, then sets the
-/// two-bit SAR-mode field.
+/// two-bit SAR-mode field. A caller without a pending PAC restore operation is
+/// rejected before any MMIO.
 #[cfg(target_arch = "riscv32")]
-pub fn restore_txdc_fields(
+pub fn restore_txdc_calibration(
     registers: &mut impl SharedPhyAccess,
-    power_table_low: u8,
-    shifted_power_control_field: u32,
-) {
+) -> Result<(), open_esp_radio_esp32s31_pac::TxDcPwdetRestoreError> {
     let registers = phy_pac_mut(registers);
-    registers.restore_txdc_power_detector_fields(power_table_low, shifted_power_control_field);
+    registers.restore_txdc_power_detector()
 }
 
 /// Publish one power-detector reference word.

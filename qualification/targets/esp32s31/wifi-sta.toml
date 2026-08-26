@@ -55,10 +55,15 @@ scope = "Cold phy_rf_init and phy_bb_init transitions needed by Wi-Fi registrati
 owners = [
   { path = "driver/chips/esp32s31/phy/src/phy_cold.rs", token = "PhyRfColdInit" },
   { path = "driver/chips/esp32s31/phy/src/phy_bb.rs", token = "PhyBbInitTransition" },
+  { path = "driver/chips/esp32s31/phy/src/phy_txdc_pwdet.rs", token = "PhyTxDcPwdetTransition" },
+  { path = "driver/chips/esp32s31/pac/src/baseband.rs", token = "TxDcPwdetRestoreSlot" },
 ]
 tests = [
   { path = "driver/chips/esp32s31/phy/src/phy_cold.rs", token = "open_i2c_deadline_keeps_one_epoch_and_the_inclusive_rom_bound" },
   { path = "driver/chips/esp32s31/phy/src/phy_bb.rs", token = "complete_parent_failure_always_restores_idle_mode_and_agc" },
+  { path = "driver/chips/esp32s31/phy/src/phy_txdc_pwdet.rs", token = "root_cleanup_restores_registers_before_terminal_failure" },
+  { path = "driver/chips/esp32s31/pac/src/baseband.rs", token = "txdc_restore_slot_rejects_interlopers_and_preserves_operation_order" },
+  { path = "driver/chips/esp32s31/pac/src/lib.rs", token = "pending_txdc_restore_survives_same_route_transitions_and_blocks_release" },
 ]
 async-contracts = [
   { path = "driver/chips/esp32s31/phy/src/phy_cold.rs", token = "open_i2c_deadline_keeps_one_epoch_and_the_inclusive_rom_bound" },

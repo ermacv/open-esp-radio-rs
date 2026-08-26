@@ -77,6 +77,7 @@ pub mod validation;
 #[cfg(feature = "validation-probes")]
 mod validation_transactions;
 pub use agc_runtime::ForcedRxGain;
+pub use baseband::{TxDcPwdetLifecycleError, TxDcPwdetPrepareError, TxDcPwdetRestoreError};
 pub use bluetooth_controller_hal_init::{
     BluetoothControllerHalInitConfig, BluetoothControllerTimeScale, BluetoothHalInitPeriod,
     BluetoothHalInitScale, BluetoothRawTimeDeltaProjection,
@@ -269,6 +270,40 @@ pub struct RadioPhyRegisters {
     peripherals: svd::peripheral_ownership::RadioPhyPeripherals,
     shared_clock: modem_shared_clock::SharedModemClockState,
     platform_clock_power: platform_clock_power::PlatformClockPowerState,
+    txdc_pwdet_restore: baseband::TxDcPwdetRestoreSlot,
+}
+
+/// Why a cold protocol route cannot release the neutral radio root.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RadioPhyReleaseError {
+    /// TX-DC PWDET still owns fields that must be restored in this route.
+    TxDcPwdetRestorePending,
+}
+
+/// Failed neutral-root release retaining the cold route owner unchanged.
+#[must_use = "the cold route owner remains live after failed release"]
+pub struct RadioPhyReleaseFailure<Owner> {
+    owner: Owner,
+    error: RadioPhyReleaseError,
+}
+
+impl<Owner> RadioPhyReleaseFailure<Owner> {
+    pub const fn error(&self) -> RadioPhyReleaseError {
+        self.error
+    }
+
+    pub fn into_parts(self) -> (Owner, RadioPhyReleaseError) {
+        (self.owner, self.error)
+    }
+}
+
+impl<Owner> core::fmt::Debug for RadioPhyReleaseFailure<Owner> {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("RadioPhyReleaseFailure")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Bluetooth owners retained, but not exposed, while Wi-Fi is exclusive.
@@ -344,6 +379,7 @@ impl RadioHardware {
                 peripherals: radio_phy,
                 shared_clock: modem_shared_clock::SharedModemClockState::new(),
                 platform_clock_power: platform_clock_power::PlatformClockPowerState::new(),
+                txdc_pwdet_restore: baseband::TxDcPwdetRestoreSlot::new(),
             },
             coexistence,
             bluetooth,
@@ -743,7 +779,24 @@ impl WifiColdRegisters {
     /// This is an ownership-only transition. Higher layers remain responsible
     /// for completing their clock/reset shutdown before changing protocols;
     /// releasing the owner does not claim to modify baseband hardware state.
-    pub fn release(mut self) -> RadioHardware {
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure retaining this owner when TX-DC PWDET fields still
+    /// await restoration. Recover the owner with
+    /// [`RadioPhyReleaseFailure::into_parts`] and complete that restore first.
+    pub fn release(mut self) -> Result<RadioHardware, RadioPhyReleaseFailure<Self>> {
+        if self
+            .registers
+            .peripherals
+            .radio_phy
+            .txdc_pwdet_restore_pending()
+        {
+            return Err(RadioPhyReleaseFailure {
+                owner: self,
+                error: RadioPhyReleaseError::TxDcPwdetRestorePending,
+            });
+        }
         self.registers.release_retained_shared_clocks();
         let Self {
             registers:
@@ -768,7 +821,7 @@ impl WifiColdRegisters {
                 },
             interrupts: wifi_interrupts,
         } = self;
-        RadioHardware {
+        Ok(RadioHardware {
             wifi_mac,
             wifi_interrupts,
             radio_phy,
@@ -777,7 +830,7 @@ impl WifiColdRegisters {
             bluetooth_interrupts,
             shared_radio,
             ieee802154: svd::peripheral_ownership::Ieee802154Peripherals { ieee802154_mac },
-        }
+        })
     }
 
     /// Prepare shared route clocks before the platform-owned power sequence
@@ -984,8 +1037,20 @@ impl Ieee802154ColdRegisters {
     ///
     /// This conversion performs no MMIO. A higher layer must first finish its
     /// state-specific STOP and shared-resource teardown sequence.
-    pub fn release(self) -> RadioHardware {
-        self.task.into_hardware(self.interrupts)
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure retaining this owner when TX-DC PWDET fields still
+    /// await restoration. Recover the owner with
+    /// [`RadioPhyReleaseFailure::into_parts`] and complete that restore first.
+    pub fn release(self) -> Result<RadioHardware, RadioPhyReleaseFailure<Self>> {
+        if self.task.peripherals.radio_phy.txdc_pwdet_restore_pending() {
+            return Err(RadioPhyReleaseFailure {
+                owner: self,
+                error: RadioPhyReleaseError::TxDcPwdetRestorePending,
+            });
+        }
+        Ok(self.task.into_hardware(self.interrupts))
     }
 
     /// Borrow the dedicated IEEE 802.15.4 radio owner during cold setup.
@@ -1288,9 +1353,21 @@ impl BluetoothColdRegisters {
     }
 
     /// Return every Wi-Fi, Bluetooth and shared owner to the neutral root.
-    pub fn release(self) -> RadioHardware {
+    ///
+    /// # Errors
+    ///
+    /// Returns a failure retaining this owner when TX-DC PWDET fields still
+    /// await restoration. Recover the owner with
+    /// [`RadioPhyReleaseFailure::into_parts`] and complete that restore first.
+    pub fn release(self) -> Result<RadioHardware, RadioPhyReleaseFailure<Self>> {
+        if self.task.radio_phy.txdc_pwdet_restore_pending() {
+            return Err(RadioPhyReleaseFailure {
+                owner: self,
+                error: RadioPhyReleaseError::TxDcPwdetRestorePending,
+            });
+        }
         let Self { task, interrupts } = self;
-        task.into_hardware(interrupts)
+        Ok(task.into_hardware(interrupts))
     }
 
     #[doc(hidden)]
@@ -1621,7 +1698,71 @@ pub struct BluetoothInterruptRegisters {
 
 #[cfg(test)]
 mod tests {
-    use super::{MacInterruptMask, RadioHardware};
+    use super::{MacInterruptMask, RadioHardware, RadioPhyReleaseError};
+
+    fn occupy_wifi_restore(registers: &mut super::WifiColdRegisters) {
+        registers
+            .registers
+            .peripherals
+            .radio_phy
+            .occupy_txdc_pwdet_restore_for_test();
+    }
+
+    fn occupy_ieee802154_restore(registers: &mut super::Ieee802154ColdRegisters) {
+        registers
+            .task
+            .peripherals
+            .radio_phy
+            .occupy_txdc_pwdet_restore_for_test();
+    }
+
+    fn occupy_bluetooth_restore(registers: &mut super::BluetoothColdRegisters) {
+        registers
+            .task
+            .radio_phy
+            .occupy_txdc_pwdet_restore_for_test();
+    }
+
+    #[test]
+    fn pending_txdc_restore_survives_same_route_transitions_and_blocks_release() {
+        let mut wifi = RadioHardware::for_validation().into_wifi();
+        occupy_wifi_restore(&mut wifi);
+        let (task, interrupts) = wifi.into_running();
+        let wifi = task.into_cold(interrupts);
+        let Err(failure) = wifi.release() else {
+            panic!("Wi-Fi released a pending restore");
+        };
+        assert_eq!(
+            failure.error(),
+            RadioPhyReleaseError::TxDcPwdetRestorePending
+        );
+
+        let mut ieee802154 = RadioHardware::for_validation().into_ieee802154();
+        occupy_ieee802154_restore(&mut ieee802154);
+        let (task, interrupts) = ieee802154.separate_interrupt_owner();
+        let ieee802154 = task.into_cold(interrupts);
+        let Err(failure) = ieee802154.release() else {
+            panic!("IEEE 802.15.4 released a pending restore");
+        };
+        assert_eq!(
+            failure.error(),
+            RadioPhyReleaseError::TxDcPwdetRestorePending
+        );
+
+        let mut bluetooth = RadioHardware::for_validation().into_bluetooth();
+        occupy_bluetooth_restore(&mut bluetooth);
+        let (task, interrupts) = bluetooth.separate_interrupt_owner();
+        let bluetooth = task
+            .into_cold(interrupts)
+            .expect("an idle Bluetooth task owner can be reunited");
+        let Err(failure) = bluetooth.release() else {
+            panic!("Bluetooth released a pending restore");
+        };
+        assert_eq!(
+            failure.error(),
+            RadioPhyReleaseError::TxDcPwdetRestorePending
+        );
+    }
 
     #[test]
     fn cold_owner_is_consumed_by_interrupt_setup_split() {
@@ -1633,10 +1774,15 @@ mod tests {
     fn wifi_route_roundtrip_returns_the_complete_root() {
         let wifi = RadioHardware::for_validation().into_wifi();
         let (task, setup) = wifi.into_running();
-        let hardware = task.into_cold(setup).release();
+        let hardware = task
+            .into_cold(setup)
+            .release()
+            .expect("an untouched cold route can be released");
 
         let bluetooth = hardware.into_bluetooth();
-        let _hardware = bluetooth.release();
+        let _hardware = bluetooth
+            .release()
+            .expect("an untouched Bluetooth route can be released");
     }
 
     #[test]
@@ -1646,34 +1792,48 @@ mod tests {
         let hardware = task
             .into_cold(setup)
             .expect("an idle Bluetooth task owner can be reunited")
-            .release();
+            .release()
+            .expect("an untouched Bluetooth route can be released");
 
         let wifi = hardware.into_wifi();
-        let _hardware = wifi.release();
+        let _hardware = wifi
+            .release()
+            .expect("an untouched Wi-Fi route can be released");
     }
 
     #[test]
     fn ieee802154_route_roundtrip_returns_every_other_protocol_owner() {
         let ieee802154 = RadioHardware::for_validation().into_ieee802154();
-        let hardware = ieee802154.release();
+        let hardware = ieee802154
+            .release()
+            .expect("a fresh IEEE 802.15.4 route has no pending PHY restore");
 
         // The IEEE 802.15.4 epoch retains the complete generated Bluetooth
         // controller partition behind its BTBB role and never consumes either
         // protocol's interrupt owner.
         let bluetooth = hardware.into_bluetooth();
-        let hardware = bluetooth.release();
+        let hardware = bluetooth
+            .release()
+            .expect("an untouched Bluetooth route can be released");
         let wifi = hardware.into_wifi();
-        let _hardware = wifi.release();
+        let _hardware = wifi
+            .release()
+            .expect("an untouched Wi-Fi route can be released");
     }
 
     #[test]
     fn ieee802154_task_and_interrupt_owners_reunite_without_mmio() {
         let ieee802154 = RadioHardware::for_validation().into_ieee802154();
         let (task, setup) = ieee802154.separate_interrupt_owner();
-        let hardware = task.into_cold(setup).release();
+        let hardware = task
+            .into_cold(setup)
+            .release()
+            .expect("an untouched IEEE 802.15.4 route can be released");
 
         let bluetooth = hardware.into_bluetooth();
-        let _hardware = bluetooth.release();
+        let _hardware = bluetooth
+            .release()
+            .expect("an untouched Bluetooth route can be released");
     }
 
     #[test]

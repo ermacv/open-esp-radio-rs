@@ -327,6 +327,7 @@ pub enum PhyColdLoweringError {
     UnsupportedAction,
     IncompleteTransaction,
     UnexpectedOutcome,
+    HardwareRestoreInvariant,
 }
 
 /// Identity-bound lowering of one RF-init action to one PHY-I2C transaction.
@@ -1032,7 +1033,8 @@ impl PhyColdMmioBinding {
                 return self.into_completion();
             }
             PhyRfInitPrefixAction::ConfigurePowerDetectorRegisters => {
-                open_esp_radio_esp32s31_hal::phy_power_detector::initialize_registers(registers);
+                open_esp_radio_esp32s31_hal::phy_power_detector::initialize_registers(registers)
+                    .map_err(|_| PhyColdLoweringError::HardwareRestoreInvariant)?;
                 return self.into_completion();
             }
             PhyRfInitPrefixAction::ConfigureTxPowerControlBackground => {

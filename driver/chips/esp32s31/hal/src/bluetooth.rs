@@ -22,7 +22,8 @@ use open_esp_radio_esp32s31_pac::{
     BluetoothSchedulerDisableStep as PacSchedulerDisableStep,
     BluetoothTaskRegisters as PacBluetoothTaskRegisters,
     BluetoothTaskReuniteError as PacBluetoothTaskReuniteError, ModemSysconBluetoothObservation,
-    PlatformClockPowerObservation, RadioHardware, SharedModemClockObservation,
+    PlatformClockPowerObservation, RadioHardware, RadioPhyReleaseError,
+    SharedModemClockObservation,
 };
 pub use open_esp_radio_esp32s31_pac::{
     BluetoothControllerHalInitConfig, BluetoothControllerLatchedTime,
@@ -49,6 +50,32 @@ pub struct BluetoothColdOwner {
     registers: PacBluetoothColdRegisters,
 }
 
+/// Failed cold Bluetooth release retaining the complete HAL owner.
+#[must_use = "failed Bluetooth release still owns the complete cold route"]
+pub struct BluetoothColdOwnerReleaseFailure {
+    owner: BluetoothColdOwner,
+    error: RadioPhyReleaseError,
+}
+
+impl BluetoothColdOwnerReleaseFailure {
+    pub const fn error(&self) -> RadioPhyReleaseError {
+        self.error
+    }
+
+    pub fn into_parts(self) -> (BluetoothColdOwner, RadioPhyReleaseError) {
+        (self.owner, self.error)
+    }
+}
+
+impl core::fmt::Debug for BluetoothColdOwnerReleaseFailure {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothColdOwnerReleaseFailure")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
 impl BluetoothColdOwner {
     /// Enter the exclusive Bluetooth route without touching hardware.
     pub fn from_radio_hardware(hardware: RadioHardware) -> Self {
@@ -58,8 +85,22 @@ impl BluetoothColdOwner {
     }
 
     /// Return the unchanged protocol-neutral radio root.
-    pub fn release(self) -> RadioHardware {
-        self.registers.release()
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BluetoothColdOwnerReleaseFailure`] retaining this owner when
+    /// TX-DC PWDET fields still await restoration in the PAC.
+    pub fn release(self) -> Result<RadioHardware, BluetoothColdOwnerReleaseFailure> {
+        match self.registers.release() {
+            Ok(hardware) => Ok(hardware),
+            Err(failure) => {
+                let (registers, error) = failure.into_parts();
+                Err(BluetoothColdOwnerReleaseFailure {
+                    owner: Self { registers },
+                    error,
+                })
+            }
+        }
     }
 
     #[doc(hidden)]
@@ -913,7 +954,8 @@ mod tests {
         let hardware = task
             .into_cold(interrupts)
             .expect("an untouched task owner can be reunited")
-            .release();
+            .release()
+            .expect("an untouched Bluetooth route can be released");
 
         // Re-entering Wi-Fi proves that the finite HAL borrow neither moved nor
         // duplicated any protocol-neutral owner.

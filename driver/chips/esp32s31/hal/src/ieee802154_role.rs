@@ -13,7 +13,7 @@ use core::fmt;
 
 use open_esp_radio_esp32s31_pac::{
     Ieee802154FoundationSnapshot, Ieee802154InterruptSetup, Ieee802154Pti, Ieee802154TaskRegisters,
-    Ieee802154TimingPrerequisite, Ieee802154TimingReady, RadioHardware,
+    Ieee802154TimingPrerequisite, Ieee802154TimingReady, RadioHardware, RadioPhyReleaseError,
 };
 
 #[cfg(feature = "validation-probes")]
@@ -56,6 +56,32 @@ struct OwnedIeee802154Backend<P> {
     platform: P,
     task: Ieee802154TaskRegisters,
     interrupts: Ieee802154InterruptSetup,
+}
+
+/// Failed cold-route release retaining the complete IEEE 802.15.4 owner.
+#[must_use = "failed IEEE 802.15.4 release still owns the platform and radio route"]
+pub struct Ieee802154OwnedReleaseFailure<P> {
+    owner: Ieee802154Owned<P>,
+    error: RadioPhyReleaseError,
+}
+
+impl<P> Ieee802154OwnedReleaseFailure<P> {
+    pub const fn error(&self) -> RadioPhyReleaseError {
+        self.error
+    }
+
+    pub fn into_parts(self) -> (Ieee802154Owned<P>, RadioPhyReleaseError) {
+        (self.owner, self.error)
+    }
+}
+
+impl<P> fmt::Debug for Ieee802154OwnedReleaseFailure<P> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Ieee802154OwnedReleaseFailure")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<P> OwnedIeee802154Backend<P> {
@@ -218,13 +244,35 @@ impl<P> Ieee802154Owned<P> {
     ///
     /// This method is intentionally unavailable after the first power
     /// transition, whose partial mutation requires typed retry ownership.
-    pub fn release(self) -> (P, RadioHardware) {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Ieee802154OwnedReleaseFailure`] retaining this owner and its
+    /// platform when TX-DC PWDET fields still await restoration in the PAC.
+    pub fn release(self) -> Result<(P, RadioHardware), Ieee802154OwnedReleaseFailure<P>> {
         let OwnedIeee802154Backend {
             platform,
             task,
             interrupts,
         } = self.backend;
-        (platform, task.into_cold(interrupts).release())
+        let cold = task.into_cold(interrupts);
+        match cold.release() {
+            Ok(hardware) => Ok((platform, hardware)),
+            Err(failure) => {
+                let (cold, error) = failure.into_parts();
+                let (task, interrupts) = cold.separate_interrupt_owner();
+                Err(Ieee802154OwnedReleaseFailure {
+                    owner: Self {
+                        backend: OwnedIeee802154Backend {
+                            platform,
+                            task,
+                            interrupts,
+                        },
+                    },
+                    error,
+                })
+            }
+        }
     }
 
     /// Borrow the integration token before any lifecycle mutation.
@@ -829,10 +877,15 @@ mod tests {
     #[test]
     fn untouched_owner_releases_the_complete_neutral_root() {
         let owned = Ieee802154Owned::from_hardware(FakePlatform, RadioHardware::for_validation());
-        let (_platform, hardware) = owned.release();
+        let (_platform, hardware) = owned
+            .release()
+            .expect("an untouched IEEE 802.15.4 route can be released");
 
         let ieee = hardware.into_ieee802154();
         let (task, interrupts) = ieee.separate_interrupt_owner();
-        let _hardware = task.into_cold(interrupts).release();
+        let _hardware = task
+            .into_cold(interrupts)
+            .release()
+            .expect("an untouched IEEE 802.15.4 route can be released");
     }
 }

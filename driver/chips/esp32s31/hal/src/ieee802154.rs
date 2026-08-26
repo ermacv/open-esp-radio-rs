@@ -831,6 +831,9 @@ mod tests {
 
         // Reuniting proves the combined borrow consumed neither disjoint
         // ownership half.
-        let _hardware = task.into_cold(interrupts).release();
+        let _hardware = task
+            .into_cold(interrupts)
+            .release()
+            .expect("an untouched IEEE 802.15.4 route can be released");
     }
 }

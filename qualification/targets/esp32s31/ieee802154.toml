@@ -98,6 +98,8 @@ owners = [
   { path = "driver/chips/esp32s31/phy/src/registered_ieee802154.rs", token = "RegisteredIeee802154TimingReady" },
   { path = "driver/chips/esp32s31/phy/src/phy_client.rs", token = "PhyClientState" },
   { path = "driver/chips/esp32s31/phy/src/phy_param_tracking.rs", token = "PhyParamTrackingTransition" },
+  { path = "driver/chips/esp32s31/phy/src/phy_txdc_pwdet.rs", token = "PhyTxDcPwdetTransition" },
+  { path = "driver/chips/esp32s31/pac/src/baseband.rs", token = "TxDcPwdetRestoreSlot" },
 ]
 tests = [
   { path = "driver/chips/esp32s31/phy/src/registered_ieee802154.rs", token = "registered_full_chain_and_typed_recovery_surface_connects" },
@@ -113,6 +115,9 @@ tests = [
   { path = "driver/chips/esp32s31/phy/src/phy_power_tracking.rs", token = "disabled_or_equal_gain_base_commits_nothing" },
   { path = "driver/chips/esp32s31/phy/src/phy_state.rs", token = "periodic_gain_tracking_commits_only_terminal_runtime_outcomes" },
   { path = "driver/chips/esp32s31/phy/src/phy_state.rs", token = "tracking_gain_regeneration_uses_live_typed_state_and_honors_wifi_skip" },
+  { path = "driver/chips/esp32s31/phy/src/phy_txdc_pwdet.rs", token = "root_cleanup_restores_registers_before_terminal_failure" },
+  { path = "driver/chips/esp32s31/pac/src/baseband.rs", token = "txdc_restore_slot_rejects_interlopers_and_preserves_operation_order" },
+  { path = "driver/chips/esp32s31/pac/src/lib.rs", token = "pending_txdc_restore_survives_same_route_transitions_and_blocks_release" },
 ]
 vendor-anchors = [
   { path = "verification/vendor/targets/esp32s31/analysis/ieee802154-lifecycle.md", token = "BTBB" },

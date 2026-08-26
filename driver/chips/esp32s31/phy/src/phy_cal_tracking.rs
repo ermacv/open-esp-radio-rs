@@ -1850,7 +1850,7 @@ mod tests {
             assert_eq!(child.class(), class);
             assert_eq!(
                 child.action(),
-                crate::phy_txdc_pwdet::PhyTxDcPwdetAction::CaptureRegisters
+                crate::phy_txdc_pwdet::PhyTxDcPwdetAction::PrepareRegisters
             );
             assert!(matches!(
                 child.lower_external(),

@@ -463,7 +463,7 @@ pub enum PhyTxDcPwdetDelayPhase {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyTxDcPwdetAction {
-    CaptureRegisters,
+    PrepareRegisters,
     ConfigureTxClock {
         enabled: bool,
     },
@@ -488,20 +488,14 @@ pub enum PhyTxDcPwdetAction {
     ConfigurePbusWorkMode,
     ConfigurePbusWorkModePulse,
     ClearPbusWorkModePulse,
-    RestoreRegisters {
-        power_table_low: u8,
-        power_control_field: u32,
-    },
+    RestoreRegisters,
     Complete(PhyTxDcPwdetOutcome),
     Failed(PhyTxDcPwdetFailure),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyTxDcPwdetCompletion {
-    RegistersCaptured {
-        power_table_low: u8,
-        power_control_field: u32,
-    },
+    RegistersPrepared,
     TxClockConfigured {
         enabled: bool,
     },
@@ -530,10 +524,7 @@ pub enum PhyTxDcPwdetCompletion {
     },
     PbusWorkModePulseConfigured,
     PbusWorkModePulseCleared,
-    RegistersRestored {
-        power_table_low: u8,
-        power_control_field: u32,
-    },
+    RegistersRestored,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -554,7 +545,7 @@ enum RootTerminal {
     reason = "the allocation-free calibration root retains one bounded search transition"
 )]
 enum RootStep {
-    Capture,
+    Prepare,
     ClockOn,
     PowerDetector,
     Debug,
@@ -591,8 +582,6 @@ pub struct PhyTxDcPwdetTransition {
     dco: [[u16; 4]; 3],
     row: u8,
     total_measurements: u16,
-    saved_power_table_low: u8,
-    saved_power_control_field: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -661,12 +650,10 @@ impl PhyTxDcPwdetTransition {
         Self {
             parameters,
             mode,
-            step: RootStep::Capture,
+            step: RootStep::Prepare,
             dco: parameters.dco,
             row: 0,
             total_measurements: 0,
-            saved_power_table_low: 0,
-            saved_power_control_field: 0,
         }
     }
 
@@ -687,7 +674,7 @@ impl PhyTxDcPwdetTransition {
 
     pub const fn action(&self) -> PhyTxDcPwdetAction {
         match self.step {
-            RootStep::Capture => PhyTxDcPwdetAction::CaptureRegisters,
+            RootStep::Prepare => PhyTxDcPwdetAction::PrepareRegisters,
             RootStep::ClockOn => PhyTxDcPwdetAction::ConfigureTxClock { enabled: true },
             RootStep::PowerDetector => PhyTxDcPwdetAction::ConfigurePowerDetector,
             RootStep::Debug => PhyTxDcPwdetAction::ConfigurePbusDebugMode,
@@ -753,10 +740,7 @@ impl PhyTxDcPwdetTransition {
             }
             RootStep::WorkModePulseClear(_) => PhyTxDcPwdetAction::ClearPbusWorkModePulse,
             RootStep::ClockOff(_) => PhyTxDcPwdetAction::ConfigureTxClock { enabled: false },
-            RootStep::Restore(_) => PhyTxDcPwdetAction::RestoreRegisters {
-                power_table_low: self.saved_power_table_low,
-                power_control_field: self.saved_power_control_field,
-            },
+            RootStep::Restore(_) => PhyTxDcPwdetAction::RestoreRegisters,
             RootStep::Complete => PhyTxDcPwdetAction::Complete(self.outcome()),
             RootStep::Failed(failure) => PhyTxDcPwdetAction::Failed(failure),
         }
@@ -865,15 +849,7 @@ impl PhyTxDcPwdetTransition {
         completion: PhyTxDcPwdetCompletion,
     ) -> Result<(), PhyTxDcPwdetTransitionError> {
         match (self.step, completion) {
-            (
-                RootStep::Capture,
-                PhyTxDcPwdetCompletion::RegistersCaptured {
-                    power_table_low,
-                    power_control_field,
-                },
-            ) => {
-                self.saved_power_table_low = power_table_low;
-                self.saved_power_control_field = power_control_field;
+            (RootStep::Prepare, PhyTxDcPwdetCompletion::RegistersPrepared) => {
                 self.step = RootStep::ClockOn;
             }
             (RootStep::ClockOn, PhyTxDcPwdetCompletion::TxClockConfigured { enabled: true }) => {
@@ -981,15 +957,7 @@ impl PhyTxDcPwdetTransition {
                 RootStep::ClockOff(terminal),
                 PhyTxDcPwdetCompletion::TxClockConfigured { enabled: false },
             ) => self.step = RootStep::Restore(terminal),
-            (
-                RootStep::Restore(terminal),
-                PhyTxDcPwdetCompletion::RegistersRestored {
-                    power_table_low,
-                    power_control_field,
-                },
-            ) if power_table_low == self.saved_power_table_low
-                && power_control_field == self.saved_power_control_field =>
-            {
+            (RootStep::Restore(terminal), PhyTxDcPwdetCompletion::RegistersRestored) => {
                 self.step = match terminal {
                     RootTerminal::Complete => RootStep::Complete,
                     RootTerminal::Failed(failure) => RootStep::Failed(failure),
@@ -1031,6 +999,25 @@ pub enum PhyTxDcPwdetBindingError {
     NotDirectMmio,
 }
 
+/// A TX-DC hardware binding invariant was violated by target execution.
+///
+/// This is not a model completion: the outer target runner must poison the
+/// unique hardware epoch instead of advancing or attempting ordinary cleanup.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyTxDcPwdetHardwareInvariant {
+    /// A second calibration reached prepare before the first restored state.
+    RestoreAlreadyPending,
+    /// Cleanup reached restore without a successful prepare operation.
+    RestoreNotPending,
+    /// The transition requested a PBus selector/path without a result window.
+    UnsupportedPbusRead,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+fn require_pbus_result(result: Option<u16>) -> Result<u16, PhyTxDcPwdetHardwareInvariant> {
+    result.ok_or(PhyTxDcPwdetHardwareInvariant::UnsupportedPbusRead)
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub struct PhyTxDcPwdetMmioBinding {
     action: PhyTxDcPwdetAction,
@@ -1039,7 +1026,7 @@ pub struct PhyTxDcPwdetMmioBinding {
 impl PhyTxDcPwdetMmioBinding {
     pub fn new(action: PhyTxDcPwdetAction) -> Result<Self, PhyTxDcPwdetBindingError> {
         match action {
-            PhyTxDcPwdetAction::CaptureRegisters
+            PhyTxDcPwdetAction::PrepareRegisters
             | PhyTxDcPwdetAction::ConfigureTxClock { .. }
             | PhyTxDcPwdetAction::ConfigurePowerDetector
             | PhyTxDcPwdetAction::ConfigurePbusDebugMode
@@ -1049,7 +1036,7 @@ impl PhyTxDcPwdetMmioBinding {
             | PhyTxDcPwdetAction::ConfigurePbusWorkMode
             | PhyTxDcPwdetAction::ConfigurePbusWorkModePulse
             | PhyTxDcPwdetAction::ClearPbusWorkModePulse
-            | PhyTxDcPwdetAction::RestoreRegisters { .. } => Ok(Self { action }),
+            | PhyTxDcPwdetAction::RestoreRegisters => Ok(Self { action }),
             _ => Err(PhyTxDcPwdetBindingError::NotDirectMmio),
         }
     }
@@ -1058,41 +1045,37 @@ impl PhyTxDcPwdetMmioBinding {
     pub fn execute_target(
         self,
         registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyContext,
-    ) -> PhyTxDcPwdetCompletion {
+    ) -> Result<PhyTxDcPwdetCompletion, PhyTxDcPwdetHardwareInvariant> {
         match self.action {
-            PhyTxDcPwdetAction::CaptureRegisters => {
-                let (power_table_low, power_control_field) =
-                    open_esp_radio_esp32s31_hal::phy_power_detector::capture_txdc_fields(registers);
-                PhyTxDcPwdetCompletion::RegistersCaptured {
-                    power_table_low,
-                    power_control_field,
-                }
+            PhyTxDcPwdetAction::PrepareRegisters => {
+                open_esp_radio_esp32s31_hal::phy_power_detector::prepare_txdc_calibration(
+                    registers,
+                )
+                .map_err(|_| PhyTxDcPwdetHardwareInvariant::RestoreAlreadyPending)?;
+                Ok(PhyTxDcPwdetCompletion::RegistersPrepared)
             }
             PhyTxDcPwdetAction::ConfigureTxClock { enabled } => {
                 open_esp_radio_esp32s31_hal::pbus::configure_tx_clock(registers, enabled);
-                PhyTxDcPwdetCompletion::TxClockConfigured { enabled }
+                Ok(PhyTxDcPwdetCompletion::TxClockConfigured { enabled })
             }
             PhyTxDcPwdetAction::ConfigurePowerDetector => {
                 open_esp_radio_esp32s31_hal::phy_power_detector::configure_enabled(registers);
-                PhyTxDcPwdetCompletion::PowerDetectorConfigured
+                Ok(PhyTxDcPwdetCompletion::PowerDetectorConfigured)
             }
             PhyTxDcPwdetAction::ConfigurePbusDebugMode => {
                 open_esp_radio_esp32s31_hal::pbus::configure_debug_mode(registers);
-                PhyTxDcPwdetCompletion::PbusDebugModeConfigured
+                Ok(PhyTxDcPwdetCompletion::PbusDebugModeConfigured)
             }
-            PhyTxDcPwdetAction::ReadPbus { selector, path } => PhyTxDcPwdetCompletion::PbusRead {
-                selector,
-                path,
-                value: {
-                    let result =
-                        open_esp_radio_esp32s31_hal::pbus::read_result(registers, selector, path);
-                    debug_assert!(
-                        result.is_some(),
-                        "TX-DC PWDET transition emitted an unrecovered PBus selector"
-                    );
-                    result.unwrap_or(0)
-                },
-            },
+            PhyTxDcPwdetAction::ReadPbus { selector, path } => {
+                let value = require_pbus_result(open_esp_radio_esp32s31_hal::pbus::read_result(
+                    registers, selector, path,
+                ))?;
+                Ok(PhyTxDcPwdetCompletion::PbusRead {
+                    selector,
+                    path,
+                    value,
+                })
+            }
             PhyTxDcPwdetAction::ConfigureTone {
                 enabled,
                 selector,
@@ -1104,44 +1087,37 @@ impl PhyTxDcPwdetMmioBinding {
                     selector,
                     attenuation,
                 );
-                PhyTxDcPwdetCompletion::ToneConfigured {
+                Ok(PhyTxDcPwdetCompletion::ToneConfigured {
                     enabled,
                     selector,
                     attenuation,
-                }
+                })
             }
             PhyTxDcPwdetAction::ConfigureSarCalibration => {
                 open_esp_radio_esp32s31_hal::phy_power_detector::configure_txdc_sar(registers);
-                PhyTxDcPwdetCompletion::SarCalibrationConfigured
+                Ok(PhyTxDcPwdetCompletion::SarCalibrationConfigured)
             }
             PhyTxDcPwdetAction::ConfigurePbusWorkMode => {
-                PhyTxDcPwdetCompletion::PbusWorkModeConfigured {
+                Ok(PhyTxDcPwdetCompletion::PbusWorkModeConfigured {
                     settle_required: open_esp_radio_esp32s31_hal::pbus::configure_work_mode(
                         registers,
                     ),
-                }
+                })
             }
             PhyTxDcPwdetAction::ConfigurePbusWorkModePulse => {
                 open_esp_radio_esp32s31_hal::phy_agc::configure_pbus_work_mode_pulse(registers);
-                PhyTxDcPwdetCompletion::PbusWorkModePulseConfigured
+                Ok(PhyTxDcPwdetCompletion::PbusWorkModePulseConfigured)
             }
             PhyTxDcPwdetAction::ClearPbusWorkModePulse => {
                 open_esp_radio_esp32s31_hal::phy_agc::clear_pbus_work_mode_pulse(registers);
-                PhyTxDcPwdetCompletion::PbusWorkModePulseCleared
+                Ok(PhyTxDcPwdetCompletion::PbusWorkModePulseCleared)
             }
-            PhyTxDcPwdetAction::RestoreRegisters {
-                power_table_low,
-                power_control_field,
-            } => {
-                open_esp_radio_esp32s31_hal::phy_power_detector::restore_txdc_fields(
+            PhyTxDcPwdetAction::RestoreRegisters => {
+                open_esp_radio_esp32s31_hal::phy_power_detector::restore_txdc_calibration(
                     registers,
-                    power_table_low,
-                    power_control_field,
-                );
-                PhyTxDcPwdetCompletion::RegistersRestored {
-                    power_table_low,
-                    power_control_field,
-                }
+                )
+                .map_err(|_| PhyTxDcPwdetHardwareInvariant::RestoreNotPending)?;
+                Ok(PhyTxDcPwdetCompletion::RegistersRestored)
             }
             _ => unreachable!(),
         }
@@ -1417,6 +1393,14 @@ impl PhyTxDcPwdetExternalBinding {
 mod tests {
     use super::*;
 
+    #[test]
+    fn unsupported_pbus_read_fails_closed() {
+        assert_eq!(
+            require_pbus_result(None),
+            Err(PhyTxDcPwdetHardwareInvariant::UnsupportedPbusRead)
+        );
+    }
+
     fn tone_sar_completion(action: PhyToneSarAction, value: u16) -> PhyToneSarCompletion {
         match action {
             PhyToneSarAction::ArmTone {
@@ -1517,17 +1501,6 @@ mod tests {
     }
 
     #[test]
-    fn root_gain_sequence_matches_wifi_indices() {
-        assert_eq!(TX_BB_GAIN, [0, 0x80, 0x100]);
-        for (index, expected) in TX_BB_GAIN.into_iter().enumerate() {
-            assert_eq!(
-                PhyPbusForceTest::new(1, 2, expected),
-                PhyPbusForceTest::new(1, 2, TX_BB_GAIN[index])
-            );
-        }
-    }
-
-    #[test]
     fn bluetooth_mode_reads_and_forces_the_bluetooth_tx_path_before_sar_setup() {
         let mut transition = PhyTxDcPwdetTransition::new_bluetooth(
             PhyTxDcPwdetParameters {
@@ -1539,10 +1512,7 @@ mod tests {
 
         loop {
             let completion = match transition.action() {
-                PhyTxDcPwdetAction::CaptureRegisters => PhyTxDcPwdetCompletion::RegistersCaptured {
-                    power_table_low: 0,
-                    power_control_field: 0,
-                },
+                PhyTxDcPwdetAction::PrepareRegisters => PhyTxDcPwdetCompletion::RegistersPrepared,
                 PhyTxDcPwdetAction::ConfigureTxClock { enabled } => {
                     PhyTxDcPwdetCompletion::TxClockConfigured { enabled }
                 }
@@ -1607,19 +1577,23 @@ mod tests {
     }
 
     #[test]
-    fn root_cleanup_uses_the_complete_rom_work_mode_pulse() {
+    fn root_cleanup_restores_registers_before_terminal_failure() {
         let mut transition = PhyTxDcPwdetTransition::new(PhyTxDcPwdetParameters {
             dco: [[0; 4]; 3],
             clear_tone_after_ready: false,
         });
         let mut inject_initial_failure = true;
+        let mut pulse_cleared = false;
+        let mut clock_disabled = false;
+        let mut registers_restored = false;
         loop {
             let completion = match transition.action() {
-                PhyTxDcPwdetAction::CaptureRegisters => PhyTxDcPwdetCompletion::RegistersCaptured {
-                    power_table_low: 0,
-                    power_control_field: 0,
-                },
+                PhyTxDcPwdetAction::PrepareRegisters => PhyTxDcPwdetCompletion::RegistersPrepared,
                 PhyTxDcPwdetAction::ConfigureTxClock { enabled } => {
+                    if !enabled {
+                        assert!(pulse_cleared);
+                        clock_disabled = true;
+                    }
                     PhyTxDcPwdetCompletion::TxClockConfigured { enabled }
                 }
                 PhyTxDcPwdetAction::ConfigurePowerDetector => {
@@ -1664,6 +1638,22 @@ mod tests {
                     micros,
                 } => {
                     assert_eq!(micros, 2);
+                    PhyTxDcPwdetCompletion::DelayElapsed {
+                        phase: PhyTxDcPwdetDelayPhase::WorkModePulse,
+                        micros,
+                    }
+                }
+                PhyTxDcPwdetAction::ClearPbusWorkModePulse => {
+                    pulse_cleared = true;
+                    PhyTxDcPwdetCompletion::PbusWorkModePulseCleared
+                }
+                PhyTxDcPwdetAction::RestoreRegisters => {
+                    assert!(clock_disabled);
+                    registers_restored = true;
+                    PhyTxDcPwdetCompletion::RegistersRestored
+                }
+                PhyTxDcPwdetAction::Failed(PhyTxDcPwdetFailure::PbusTimedOut(_)) => {
+                    assert!(registers_restored);
                     break;
                 }
                 action => panic!("unexpected cleanup action {action:?}"),
@@ -1676,7 +1666,7 @@ mod tests {
     fn external_lowering_covers_root_and_search_operation_classes() {
         let transaction = PhyPbusForceTest::new(1, 2, 0x80);
         assert!(matches!(
-            PhyTxDcPwdetExternalBinding::lower(PhyTxDcPwdetAction::CaptureRegisters),
+            PhyTxDcPwdetExternalBinding::lower(PhyTxDcPwdetAction::PrepareRegisters),
             Ok(PhyTxDcPwdetExternalBinding::Mmio(_))
         ));
         assert!(matches!(

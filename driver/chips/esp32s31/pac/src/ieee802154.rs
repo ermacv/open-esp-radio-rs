@@ -2768,7 +2768,9 @@ mod tests {
         // The host reaches only the architecture-neutral fence. The lease is
         // backed by the dedicated route rather than by a second raw singleton.
         lease.order_device_accesses();
-        let _hardware = cold.release();
+        let _hardware = cold
+            .release()
+            .expect("an untouched IEEE 802.15.4 route can be released");
     }
 
     #[derive(Debug, Eq, PartialEq)]

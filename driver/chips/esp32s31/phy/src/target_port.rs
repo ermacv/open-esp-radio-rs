@@ -956,7 +956,9 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         registers: &mut impl SharedPhyContext,
     ) -> Result<PhyTxDcPwdetCompletion, PhyTargetPortError> {
         match binding {
-            PhyTxDcPwdetExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
+            PhyTxDcPwdetExternalBinding::Mmio(binding) => binding
+                .execute_target(registers)
+                .map_err(|_| PhyTargetPortError::HardwareInvariant),
             PhyTxDcPwdetExternalBinding::Pbus(binding) => {
                 complete_tx_dc_pwdet_pbus::<D>(binding, registers).await
             }
@@ -1767,7 +1769,12 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
                 }
                 binding
                     .execute_target(registers)
-                    .map_err(|_| PhyTargetPortError::UnexpectedBinding)
+                    .map_err(|error| match error {
+                        crate::phy_cold::PhyColdLoweringError::HardwareRestoreInvariant => {
+                            PhyTargetPortError::HardwareInvariant
+                        }
+                        _ => PhyTargetPortError::UnexpectedBinding,
+                    })
             }
             PhyColdExternalBinding::Observation(binding) => {
                 if binding.outer_action() == PhyRfInitPrefixAction::CaptureChannelFrequencyControl {

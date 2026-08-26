@@ -137,7 +137,7 @@ pub use primary_interrupt::{
     BluetoothPrimaryReferenceRecoveryRequired, BluetoothPrimarySchedulerEvent,
     step_primary_interrupt,
 };
-pub use resources::BluetoothStopped;
+pub use resources::{BluetoothStopped, BluetoothStoppedReleaseFailure};
 pub use runtime_resources::{
     BluetoothControllerInterruptRuntime, BluetoothControllerRuntimeResources,
     BluetoothControllerTaskRuntime,

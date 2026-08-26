@@ -39,17 +39,100 @@ const fn low_bit(input: u32) -> bool {
     input & 1 != 0
 }
 
-const fn txdc_power_detector_images(table: u32, control: u32) -> (u8, u32, u32, u32) {
-    let saved_table_low = table as u8;
-    let saved_control_field = control & 0x0000_0ff0;
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct TxDcPwdetRestoreFields {
+    table_low: u8,
+    calibration: u8,
+}
+
+struct TxDcPwdetTemporaryImages {
+    table: super::generated::PowerDetectorTable1Image,
+    control: super::generated::PowerDetectorControlImage,
+}
+
+fn txdc_power_detector_capture(
+    table: u32,
+    control: u32,
+    fields: TxDcPwdetRestoreFields,
+) -> (TxDcPwdetRestoreFields, TxDcPwdetTemporaryImages) {
     let next_table = (table & !0x0000_00ff) | 0x0000_00f0;
     let next_control = (control & !0x0000_0ff0) | 0x0000_0780;
     (
-        saved_table_low,
-        saved_control_field,
-        next_table,
-        next_control,
+        fields,
+        TxDcPwdetTemporaryImages {
+            table: super::generated::PowerDetectorTable1Image::new(next_table),
+            control: super::generated::PowerDetectorControlImage::new(next_control),
+        },
     )
+}
+
+/// Preparing TX-DC PWDET was rejected before any register access.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TxDcPwdetPrepareError {
+    /// Another calibration still owns the one pending restore operation.
+    RestorePending,
+}
+
+/// Restoring TX-DC PWDET was rejected before any register access.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TxDcPwdetRestoreError {
+    /// No successful prepare operation owns saved fields.
+    RestoreNotPending,
+}
+
+/// A lifecycle operation would overwrite TX-DC fields awaiting restore.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TxDcPwdetLifecycleError {
+    RestorePending,
+}
+
+pub(super) struct TxDcPwdetRestoreSlot {
+    fields: Option<TxDcPwdetRestoreFields>,
+}
+
+impl TxDcPwdetRestoreSlot {
+    pub(super) const fn new() -> Self {
+        Self { fields: None }
+    }
+
+    pub(super) const fn is_pending(&self) -> bool {
+        self.fields.is_some()
+    }
+
+    #[cfg(test)]
+    pub(super) fn occupy_for_test(&mut self) {
+        self.fields = Some(TxDcPwdetRestoreFields::default());
+    }
+
+    fn prepare_with<Captured, Capture, Prepare>(
+        &mut self,
+        capture: Capture,
+        prepare: Prepare,
+    ) -> Result<(), TxDcPwdetPrepareError>
+    where
+        Capture: FnOnce() -> (TxDcPwdetRestoreFields, Captured),
+        Prepare: FnOnce(Captured),
+    {
+        if self.fields.is_some() {
+            return Err(TxDcPwdetPrepareError::RestorePending);
+        }
+        let (fields, captured) = capture();
+        self.fields = Some(fields);
+        prepare(captured);
+        Ok(())
+    }
+
+    fn restore_with<Restore>(&mut self, restore: Restore) -> Result<(), TxDcPwdetRestoreError>
+    where
+        Restore: FnOnce(TxDcPwdetRestoreFields),
+    {
+        let Some(fields) = self.fields else {
+            return Err(TxDcPwdetRestoreError::RestoreNotPending);
+        };
+        restore(fields);
+        self.fields = None;
+        Ok(())
+    }
 }
 
 const fn clear_baseband_tail_low(value: u8) -> u8 {
@@ -100,6 +183,15 @@ const fn tx_iq_phase_field(coefficient: i8) -> u8 {
 }
 
 impl RadioPhyRegisters {
+    pub(crate) const fn txdc_pwdet_restore_pending(&self) -> bool {
+        self.txdc_pwdet_restore.is_pending()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn occupy_txdc_pwdet_restore_for_test(&mut self) {
+        self.txdc_pwdet_restore.occupy_for_test();
+    }
+
     /// Enable both RX- and TX-IQ correction modes through two fresh RMWs.
     ///
     /// Complete rev0 ROM `phy_iq_corr_enable` at `0x2f82_7d8c` sets both
@@ -454,7 +546,10 @@ impl RadioPhyRegisters {
     }
 
     /// Apply the five internal-MMIO stores of complete ROM `phy_pwdet_reg_init`.
-    pub fn initialize_power_detector_registers(&mut self) {
+    pub fn initialize_power_detector_registers(&mut self) -> Result<(), TxDcPwdetLifecycleError> {
+        if self.txdc_pwdet_restore.is_pending() {
+            return Err(TxDcPwdetLifecycleError::RestorePending);
+        }
         let bb = &self.peripherals.phy_baseband_config_oracle;
         super::svd::fixed_register_image::initialize_power_detector_table_0(bb);
         super::svd::fixed_register_image::initialize_power_detector_table_1(bb);
@@ -463,6 +558,7 @@ impl RadioPhyRegisters {
         super::svd::zero_based_field_write::power_detector_reference(bb, 0xaaaa);
         bb.power_detector_control()
             .modify(|_, w| w.initialization_mode_unknown().set(2));
+        Ok(())
     }
 
     /// Apply the internal-MMIO portion of complete ROM `phy_en_pwdet`.
@@ -490,22 +586,31 @@ impl RadioPhyRegisters {
             .modify(|_, w| w.background_control_enable_unknown().set_bit());
     }
 
-    /// Capture and replace the two fields owned by TX-DC PWDET calibration.
-    pub fn capture_txdc_power_detector_fields(&mut self) -> (u8, u32) {
+    /// Save and replace the two fields owned by TX-DC PWDET calibration.
+    ///
+    /// The private restore slot is filled before either temporary field is
+    /// published. A second caller is rejected without touching MMIO, so it
+    /// cannot steal the first caller's restore authority.
+    pub fn prepare_txdc_power_detector(&mut self) -> Result<(), TxDcPwdetPrepareError> {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        let table = bb.power_detector_table_1().read().bits();
-        let control = bb.power_detector_control().read().bits();
-        let (saved_table, saved_control, next_table, next_control) =
-            txdc_power_detector_images(table, control);
-        super::generated::publish_power_detector_table_1_image(
-            bb,
-            super::generated::PowerDetectorTable1Image::new(next_table),
-        );
-        super::generated::publish_power_detector_control_image(
-            bb,
-            super::generated::PowerDetectorControlImage::new(next_control),
-        );
-        (saved_table, saved_control)
+        self.txdc_pwdet_restore.prepare_with(
+            || {
+                let table = bb.power_detector_table_1().read();
+                let control = bb.power_detector_control().read();
+                txdc_power_detector_capture(
+                    table.bits(),
+                    control.bits(),
+                    TxDcPwdetRestoreFields {
+                        table_low: table.tx_dc_temporary_low_unknown().bits(),
+                        calibration: control.calibration_field_unknown().bits(),
+                    },
+                )
+            },
+            |images| {
+                super::generated::publish_power_detector_table_1_image(bb, images.table);
+                super::generated::publish_power_detector_control_image(bb, images.control);
+            },
+        )
     }
 
     /// Select TX-DC SAR mode one after the initial PBus setup.
@@ -516,21 +621,21 @@ impl RadioPhyRegisters {
             .modify(|_, w| w.sar_mode_unknown().set(1));
     }
 
-    /// Restore the captured TX-DC fields and select final SAR mode three.
-    pub fn restore_txdc_power_detector_fields(
-        &mut self,
-        power_table_low: u8,
-        shifted_power_control_field: u32,
-    ) {
+    /// Restore the privately saved TX-DC fields and select final SAR mode.
+    ///
+    /// A caller without a successful prepare operation is rejected without
+    /// touching MMIO. The slot is cleared only after the complete restore
+    /// sequence has run.
+    pub fn restore_txdc_power_detector(&mut self) -> Result<(), TxDcPwdetRestoreError> {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        bb.power_detector_table_1()
-            .modify(|_, w| w.tx_dc_temporary_low_unknown().set(power_table_low));
-        bb.power_detector_control().modify(|_, w| {
-            w.calibration_field_unknown()
-                .set((shifted_power_control_field >> 4) as u8)
-        });
-        bb.power_detector_sar_control_status()
-            .modify(|_, w| w.sar_mode_unknown().set(3));
+        self.txdc_pwdet_restore.restore_with(|fields| {
+            bb.power_detector_table_1()
+                .modify(|_, w| w.tx_dc_temporary_low_unknown().set(fields.table_low));
+            bb.power_detector_control()
+                .modify(|_, w| w.calibration_field_unknown().set(fields.calibration));
+            bb.power_detector_sar_control_status()
+                .modify(|_, w| w.sar_mode_unknown().set(3));
+        })
     }
 
     /// Publish one zero-extended power-detector reference word.
@@ -958,8 +1063,61 @@ impl RadioPhyRegisters {
 #[cfg(test)]
 mod tests {
     use super::{
+        TxDcPwdetPrepareError, TxDcPwdetRestoreError, TxDcPwdetRestoreFields, TxDcPwdetRestoreSlot,
         decode_noise_floor_quarter_db, quarter_db_to_dbm, tx_iq_gain_field, tx_iq_phase_field,
     };
+    use std::{cell::RefCell, vec::Vec};
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum RestoreEvent {
+        Capture,
+        Prepare,
+        Restore,
+    }
+
+    #[test]
+    fn txdc_restore_slot_rejects_interlopers_and_preserves_operation_order() {
+        let mut slot = TxDcPwdetRestoreSlot::new();
+        let events = RefCell::new(Vec::new());
+        slot.prepare_with(
+            || {
+                events.borrow_mut().push(RestoreEvent::Capture);
+                (TxDcPwdetRestoreFields::default(), ())
+            },
+            |()| events.borrow_mut().push(RestoreEvent::Prepare),
+        )
+        .unwrap();
+        assert_eq!(
+            events.borrow().as_slice(),
+            [RestoreEvent::Capture, RestoreEvent::Prepare]
+        );
+
+        let rejected = slot.prepare_with(
+            || panic!("occupied restore slot must not capture registers"),
+            |_: ()| panic!("occupied restore slot must not prepare registers"),
+        );
+        assert_eq!(rejected, Err(TxDcPwdetPrepareError::RestorePending));
+        assert_eq!(
+            events.borrow().as_slice(),
+            [RestoreEvent::Capture, RestoreEvent::Prepare]
+        );
+
+        slot.restore_with(|_| {
+            events.borrow_mut().push(RestoreEvent::Restore);
+        })
+        .unwrap();
+        assert_eq!(
+            events.borrow().as_slice(),
+            [
+                RestoreEvent::Capture,
+                RestoreEvent::Prepare,
+                RestoreEvent::Restore
+            ]
+        );
+
+        let rejected = slot.restore_with(|_| panic!("empty restore slot must not touch registers"));
+        assert_eq!(rejected, Err(TxDcPwdetRestoreError::RestoreNotPending));
+    }
 
     #[test]
     fn noise_floor_decode_reproduces_both_complete_arithmetic_shifts() {

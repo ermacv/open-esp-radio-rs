@@ -40,6 +40,7 @@ pub struct PhyCalibrationTrackingOutcome {
     pub class_updated: bool,
     pub dcode: Option<crate::phy_dcode::PhyDcodeOutcome>,
     pub rx_gain: Option<crate::phy_rx_gain::PhyRxGainInitOutcome>,
+    pub channel: Option<crate::phy_channel::PhyChipChannelOutcome>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -65,7 +66,7 @@ pub enum PhyCalibrationTrackingCompletion {
     PbusClearCompleted(PhyCalibrationPbusClearCompletion),
     DcodeCompleted(PhyCalibrationDcodeCompletion),
     RxGainRecalibrated(PhyCalibrationRxGainCompletion),
-    ChipChannelRestored { channel: u16, cbw: u8 },
+    ChipChannelRestored(PhyCalibrationChannelCompletion),
     HardwareFrequencyControlSet { enabled: bool },
     ForceTxRxCompleted(PhyCalibrationForceTxRxCompletion),
     BasebandChannelConfigured { cbw: u8 },
@@ -155,11 +156,33 @@ pub struct PhyCalibrationRxGainCompletion {
         Result<crate::phy_rx_gain::PhyRxGainInitOutcome, crate::phy_rx_gain::PhyRxGainInitFailure>,
 }
 
+/// Opaque terminal result of the complete chip-channel child.
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_phy::phy_cal_tracking::{
+///     PhyCalibrationChannelCompletion, PhyCalibrationTrackingCompletion,
+/// };
+///
+/// let forged = PhyCalibrationTrackingCompletion::ChipChannelRestored(
+///     PhyCalibrationChannelCompletion {
+///         result: Err(open_esp_radio_esp32s31_phy::phy_channel::PhyChipChannelFailure::UnsupportedChannel(14)),
+///     },
+/// );
+/// ```
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyCalibrationChannelCompletion {
+    result: Result<
+        crate::phy_channel::PhyChipChannelOutcome,
+        crate::phy_channel::PhyChipChannelFailure,
+    >,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyCalibrationTrackingFailure {
     PbusClearTimedOut(crate::phy_pbus::PhyPbusForceTest),
     Dcode(crate::phy_dcode::PhyDcodeFailure),
     RxGain(crate::phy_rx_gain::PhyRxGainInitFailure),
+    Channel(crate::phy_channel::PhyChipChannelFailure),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -200,6 +223,7 @@ pub struct PhyCalibrationTrackingTransition {
     class_updated: bool,
     dcode: Option<crate::phy_dcode::PhyDcodeOutcome>,
     rx_gain: Option<crate::phy_rx_gain::PhyRxGainInitOutcome>,
+    channel: Option<crate::phy_channel::PhyChipChannelOutcome>,
     failure: Option<PhyCalibrationTrackingFailure>,
     step: Step,
 }
@@ -232,6 +256,7 @@ impl PhyCalibrationTrackingTransition {
             class_updated: false,
             dcode: None,
             rx_gain: None,
+            channel: None,
             failure: None,
             step,
         }
@@ -331,12 +356,22 @@ impl PhyCalibrationTrackingTransition {
             },
             (
                 Step::CommonRestoreChannel,
-                PhyCalibrationTrackingCompletion::ChipChannelRestored { channel, cbw },
-            ) if channel == self.parameters.current_channel
-                && cbw == self.parameters.channel_bandwidth =>
-            {
-                Step::CommonEnableMac
-            }
+                PhyCalibrationTrackingCompletion::ChipChannelRestored(completion),
+            ) => match completion.result {
+                Ok(outcome)
+                    if outcome.channel == self.parameters.current_channel
+                        && outcome.cbw == self.parameters.channel_bandwidth =>
+                {
+                    self.parameters.current_temperature = outcome.temperature.temperature;
+                    self.channel = Some(outcome);
+                    Step::CommonEnableMac
+                }
+                Ok(_) => return Err(PhyCalibrationTrackingTransitionError::WrongCompletion),
+                Err(failure) => {
+                    self.failure = Some(PhyCalibrationTrackingFailure::Channel(failure));
+                    Step::RestoreTxGainCompensation
+                }
+            },
             (Step::CommonEnableMac, PhyCalibrationTrackingCompletion::MacBasebandEnabled) => {
                 self.common_updated = true;
                 self.first_class_step()
@@ -459,6 +494,15 @@ impl PhyCalibrationTrackingTransition {
         PhyCalibrationRxGainTransition::lower(self.action(), parameters)
     }
 
+    /// Lower the selected common channel restore into complete asynchronous
+    /// channel, temperature, PHY-I2C, TX-gain and cleanup hardware ownership.
+    pub fn begin_channel_restore(
+        &self,
+        parameters: crate::phy_channel::PhyChipChannelParameters,
+    ) -> Result<PhyCalibrationChannelTransition, PhyCalibrationTrackingChildError> {
+        PhyCalibrationChannelTransition::lower(self.action(), parameters)
+    }
+
     const fn first_class_step(self) -> Step {
         if class_due(self.request, self.parameters, self.threshold) {
             Step::ClassDisableHardwareFrequency
@@ -505,6 +549,11 @@ impl PhyCalibrationTrackingTransition {
             } else {
                 None
             },
+            channel: if self.common_updated {
+                self.channel
+            } else {
+                None
+            },
         }
     }
 }
@@ -537,6 +586,68 @@ pub struct PhyCalibrationDcodeTransition {
 #[derive(Debug, Eq, PartialEq)]
 pub struct PhyCalibrationRxGainTransition {
     child: crate::phy_rx_gain::PhyRxGainInitTransition,
+}
+
+/// Non-cloneable calibration-child owner for complete channel restoration.
+#[derive(Debug, Eq, PartialEq)]
+pub struct PhyCalibrationChannelTransition {
+    child: crate::phy_channel::PhyChipChannelTransition,
+}
+
+impl PhyCalibrationChannelTransition {
+    fn lower(
+        parent_action: PhyCalibrationTrackingAction,
+        parameters: crate::phy_channel::PhyChipChannelParameters,
+    ) -> Result<Self, PhyCalibrationTrackingChildError> {
+        let PhyCalibrationTrackingAction::RestoreChipChannel { channel, cbw } = parent_action
+        else {
+            return Err(PhyCalibrationTrackingChildError::UnsupportedAction);
+        };
+        Ok(Self {
+            child: crate::phy_channel::PhyChipChannelTransition::new(
+                crate::phy_channel::PhyChipChannelRequest {
+                    channel_or_frequency: channel,
+                    cbw,
+                    parameters,
+                },
+            ),
+        })
+    }
+
+    pub const fn action(&self) -> crate::phy_channel::PhyChipChannelAction {
+        self.child.action()
+    }
+
+    pub fn advance(
+        &mut self,
+        completion: crate::phy_channel::PhyChipChannelCompletion,
+    ) -> Result<(), crate::phy_channel::PhyChipChannelTransitionError> {
+        self.child.advance(completion)
+    }
+
+    pub fn lower_external(
+        &self,
+    ) -> Result<
+        crate::phy_channel::PhyChipChannelExternalBinding,
+        crate::phy_channel::PhyChipChannelExternalBindingError,
+    > {
+        crate::phy_channel::PhyChipChannelExternalBinding::lower(self.action())
+    }
+
+    #[expect(
+        clippy::result_large_err,
+        reason = "the pending variant must return the allocation-free complete channel owner"
+    )]
+    pub fn commit(self) -> Result<PhyCalibrationTrackingCompletion, Self> {
+        let result = match self.child.action() {
+            crate::phy_channel::PhyChipChannelAction::Complete(outcome) => Ok(outcome),
+            crate::phy_channel::PhyChipChannelAction::Failed(failure) => Err(failure),
+            _ => return Err(self),
+        };
+        Ok(PhyCalibrationTrackingCompletion::ChipChannelRestored(
+            PhyCalibrationChannelCompletion { result },
+        ))
+    }
 }
 
 impl PhyCalibrationRxGainTransition {
@@ -922,6 +1033,24 @@ mod tests {
             shared_last_index: 75,
         };
 
+    const fn channel_outcome(
+        channel: u16,
+        cbw: u8,
+        temperature: i16,
+    ) -> crate::phy_channel::PhyChipChannelOutcome {
+        crate::phy_channel::PhyChipChannelOutcome {
+            channel,
+            frequency_mhz: 2_407 + channel * 5,
+            cbw,
+            init_complete: cbw != 0,
+            temperature: crate::phy_temperature::PhyTemperatureOutcome {
+                temperature,
+                sensor_index: 2,
+                next_dac: 15,
+            },
+        }
+    }
+
     fn completion(action: PhyCalibrationTrackingAction) -> PhyCalibrationTrackingCompletion {
         match action {
             PhyCalibrationTrackingAction::ClearPbus => {
@@ -944,7 +1073,15 @@ mod tests {
                 )
             }
             PhyCalibrationTrackingAction::RestoreChipChannel { channel, cbw } => {
-                PhyCalibrationTrackingCompletion::ChipChannelRestored { channel, cbw }
+                PhyCalibrationTrackingCompletion::ChipChannelRestored(
+                    PhyCalibrationChannelCompletion {
+                        result: Ok(channel_outcome(
+                            channel,
+                            cbw,
+                            PARAMETERS.current_temperature,
+                        )),
+                    },
+                )
             }
             PhyCalibrationTrackingAction::SetHardwareFrequencyControl { enabled } => {
                 PhyCalibrationTrackingCompletion::HardwareFrequencyControlSet { enabled }
@@ -1084,6 +1221,7 @@ mod tests {
                     class_updated: false,
                     dcode: None,
                     rx_gain: None,
+                    channel: None,
                 }),
             ]
         );
@@ -1157,6 +1295,7 @@ mod tests {
                 class_updated: false,
                 dcode: None,
                 rx_gain: None,
+                channel: None,
             }),
             PhyCalibrationTrackingAction::Failed(PhyCalibrationTrackingFailure::PbusClearTimedOut(
                 crate::phy_pbus::PhyPbusForceTest::new(4, 1, 0),
@@ -1320,6 +1459,83 @@ mod tests {
             Ok(crate::phy_rx_gain::PhyRxGainInitExternalBinding::Mmio(_))
         ));
         assert!(child.commit().is_err());
+    }
+
+    #[test]
+    fn channel_parent_proof_starts_the_complete_async_hardware_graph() {
+        let mut transition = PhyCalibrationTrackingTransition::new(
+            PhyCalibrationTrackingRequest {
+                class: PhyCalibrationTrackClass::Wifi,
+            },
+            PARAMETERS,
+        );
+        for action in [
+            PhyCalibrationTrackingAction::ClearPbus,
+            PhyCalibrationTrackingAction::CalibrateDcode,
+            PhyCalibrationTrackingAction::RecalibrateRxGain,
+        ] {
+            assert_eq!(transition.action(), action);
+            transition.advance(completion(action)).unwrap();
+        }
+
+        let state = crate::phy_state::PhyState::new(crate::phy_state::PhyConfig::production());
+        let child = transition
+            .begin_channel_restore(state.channel_parameters())
+            .unwrap();
+        assert_eq!(
+            child.action(),
+            crate::phy_channel::PhyChipChannelAction::SetAgc { enabled: false }
+        );
+        assert!(matches!(
+            child.lower_external(),
+            Ok(crate::phy_channel::PhyChipChannelExternalBinding::Mmio(_))
+        ));
+        assert!(child.commit().is_err());
+    }
+
+    #[test]
+    fn restored_channel_temperature_drives_following_class_threshold_and_references() {
+        let mut transition = PhyCalibrationTrackingTransition::new(
+            PhyCalibrationTrackingRequest {
+                class: PhyCalibrationTrackClass::Wifi,
+            },
+            PhyCalibrationTrackingParameters {
+                wifi_reference_temperature: 30,
+                ..PARAMETERS
+            },
+        );
+        for action in [
+            PhyCalibrationTrackingAction::ClearPbus,
+            PhyCalibrationTrackingAction::CalibrateDcode,
+            PhyCalibrationTrackingAction::RecalibrateRxGain,
+        ] {
+            transition.advance(completion(action)).unwrap();
+        }
+        transition
+            .advance(PhyCalibrationTrackingCompletion::ChipChannelRestored(
+                PhyCalibrationChannelCompletion {
+                    result: Ok(channel_outcome(11, 1, 60)),
+                },
+            ))
+            .unwrap();
+        transition
+            .advance(PhyCalibrationTrackingCompletion::MacBasebandEnabled)
+            .unwrap();
+        assert_eq!(
+            transition.action(),
+            PhyCalibrationTrackingAction::SetHardwareFrequencyControl { enabled: false }
+        );
+
+        loop {
+            let action = transition.action();
+            if let PhyCalibrationTrackingAction::Complete(outcome) = action {
+                assert_eq!(outcome.common_reference_temperature, 60);
+                assert_eq!(outcome.wifi_reference_temperature, 60);
+                assert_eq!(outcome.channel, Some(channel_outcome(11, 1, 60)));
+                break;
+            }
+            transition.advance(completion(action)).unwrap();
+        }
     }
 
     #[test]

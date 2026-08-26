@@ -826,20 +826,31 @@ impl PhyState {
     /// Commit only references whose complete calibration branch reached its
     /// terminal restore edge.
     pub fn apply_calibration_tracking_outcome(&mut self, outcome: PhyCalibrationTrackingOutcome) {
-        match (outcome.common_updated, outcome.dcode, outcome.rx_gain) {
-            (true, Some(dcode), Some(rx_gain)) => {
+        match (
+            outcome.common_updated,
+            outcome.dcode,
+            outcome.rx_gain,
+            outcome.channel,
+        ) {
+            (true, Some(dcode), Some(rx_gain), Some(channel)) => {
                 // The periodic parent forcibly clears both vendor completion
                 // guards. Its successful child must therefore contain fresh
-                // RX-DC data and freshly generated tables.
-                if rx_gain.dc.is_none() || !rx_gain.generated_tables {
+                // RX-DC data and freshly generated tables. The channel child
+                // also refreshes temperature before the vendor stores the
+                // common tracking reference.
+                if rx_gain.dc.is_none()
+                    || !rx_gain.generated_tables
+                    || channel.temperature.temperature != outcome.common_reference_temperature
+                {
                     return;
                 }
                 self.apply_dcode_outcome(dcode);
                 self.apply_rx_gain_init_outcome(rx_gain);
+                self.apply_channel_outcome(channel);
                 self.common.calibration_tracking_temperature = outcome.common_reference_temperature;
             }
-            (false, None, None) => {}
-            // A terminal common branch publishes both values atomically.
+            (false, None, None, None) => {}
+            // A terminal common branch publishes all three values atomically.
             // Reject structurally inconsistent caller-created outcomes.
             _ => return,
         }
@@ -1459,6 +1470,17 @@ mod tests {
                 wifi_last_index: 69,
                 shared_last_index: 75,
             }),
+            channel: Some(crate::phy_channel::PhyChipChannelOutcome {
+                channel: 11,
+                frequency_mhz: 2_462,
+                cbw: 1,
+                init_complete: true,
+                temperature: PhyTemperatureOutcome {
+                    temperature: 50,
+                    sensor_index: 3,
+                    next_dac: 15,
+                },
+            }),
         });
         let committed = state.calibration_tracking_parameters(Some(31));
         assert_eq!(committed.threshold_override, Some(31));
@@ -1472,6 +1494,8 @@ mod tests {
         assert_eq!(state.wifi.shared_index_dc, [[3; 2]; 11]);
         assert!(state.wifi.rx_gain_dc_calibrated);
         assert!(state.wifi.rx_gain_tables_initialized);
+        assert_eq!(state.current_wifi_channel(), 11);
+        assert_eq!(state.common.temperature, 50);
 
         state.apply_calibration_tracking_outcome(PhyCalibrationTrackingOutcome {
             class: crate::phy_param_tracking::PhyCalibrationTrackClass::BluetoothIeee802154,
@@ -1483,6 +1507,7 @@ mod tests {
             class_updated: true,
             dcode: None,
             rx_gain: None,
+            channel: None,
         });
         let rejected = state.calibration_tracking_parameters(None);
         assert_eq!(rejected.common_reference_temperature, 50);
@@ -1503,6 +1528,17 @@ mod tests {
                 generated_tables: true,
                 wifi_last_index: 69,
                 shared_last_index: 75,
+            }),
+            channel: Some(crate::phy_channel::PhyChipChannelOutcome {
+                channel: 11,
+                frequency_mhz: 2_462,
+                cbw: 1,
+                init_complete: true,
+                temperature: PhyTemperatureOutcome {
+                    temperature: 70,
+                    sensor_index: 3,
+                    next_dac: 15,
+                },
             }),
         });
         let rejected_partial_rx = state.calibration_tracking_parameters(None);

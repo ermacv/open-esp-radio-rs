@@ -602,6 +602,16 @@ impl<'state> PhyParamTrackingCalibrationTransition<'state> {
             .begin_rx_gain_recalibration(self.state.rx_gain_init_parameters())
     }
 
+    pub fn begin_channel_restore(
+        &self,
+    ) -> Result<
+        crate::phy_cal_tracking::PhyCalibrationChannelTransition,
+        crate::phy_cal_tracking::PhyCalibrationTrackingChildError,
+    > {
+        self.child
+            .begin_channel_restore(self.state.channel_parameters())
+    }
+
     pub fn lower_external(
         &self,
     ) -> Result<

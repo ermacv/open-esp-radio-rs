@@ -390,8 +390,12 @@ effects:
   results and table metadata commit atomically; a child failure restores gain
   without publishing common progress. The former common/class calibration
   reset actions were software-state artifacts, not missing PAC/HAL leaves, and
-  are gone. TXDC/gain operations remain explicit unbound children. The outer
-  transition alone is not an RF-readiness proof.
+  are gone. The following channel restore now composes the complete bounded
+  AGC/BBPLL/temperature/frequency/PHY-I2C/TX-gain graph and its cleanup; the
+  refreshed channel temperature drives the subsequent class threshold and the
+  committed reference, matching the vendor's post-call state reads. TXDC/gain
+  operations remain explicit unbound children. The outer transition alone is
+  not an RF-readiness proof.
 - `ieee802154_txon_delay_set()`: called during every MAC initialization after
   ED/PTI configuration and before the driver enters idle.
 - `bt_bb_get_tx_pwr_table(&length)`: needed both to initialize each channel's

@@ -6,70 +6,11 @@
 
 #![forbid(unsafe_code)]
 
+pub use open_esp_radio_esp32s31_hal::BluetoothSchedulerFinishedListIndex;
 use open_esp_radio_esp32s31_hal::{
     BluetoothControllerHal, BluetoothSchedulerFinishedListObservation,
+    BluetoothSchedulerFinishedListPop,
 };
-
-/// One of the sixteen scheduler hardware-list indices.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothSchedulerFinishedListIndex(u8);
-
-impl BluetoothSchedulerFinishedListIndex {
-    /// Return the zero-based index in `0..16`.
-    pub const fn get(self) -> u8 {
-        self.0
-    }
-}
-
-/// Remaining finite work from one sampled finished-list mask.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[must_use = "every finished-list bit must be drained or explicitly abandoned"]
-pub struct BluetoothSchedulerFinishedListDrain {
-    remaining: u16,
-}
-
-impl BluetoothSchedulerFinishedListDrain {
-    /// Begin draining one already transferred hardware observation.
-    pub const fn new(observation: BluetoothSchedulerFinishedListObservation) -> Self {
-        Self {
-            remaining: observation.bits(),
-        }
-    }
-
-    /// Whether every captured list bit has been consumed.
-    const fn is_empty(self) -> bool {
-        self.remaining == 0
-    }
-
-    /// Consume at most one lowest-numbered finished-list bit.
-    pub const fn step(self) -> BluetoothSchedulerFinishedListDrainStep {
-        if self.remaining == 0 {
-            BluetoothSchedulerFinishedListDrainStep::Complete
-        } else {
-            let index = self.remaining.trailing_zeros() as u8;
-            let remaining = self.remaining & !(1u16 << index);
-            BluetoothSchedulerFinishedListDrainStep::List {
-                index: BluetoothSchedulerFinishedListIndex(index),
-                remaining: Self { remaining },
-            }
-        }
-    }
-}
-
-/// Result of one bounded finished-list drain step.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[must_use = "the completed or remaining drain state must be handled"]
-pub enum BluetoothSchedulerFinishedListDrainStep {
-    /// Every bit from the sampled mask has been consumed.
-    Complete,
-    /// One list index is ready for item selection; more mask state is retained.
-    List {
-        /// Lowest numbered list selected in this step.
-        index: BluetoothSchedulerFinishedListIndex,
-        /// Remaining finite work after consuming `index`.
-        remaining: BluetoothSchedulerFinishedListDrain,
-    },
-}
 
 trait BluetoothSchedulerFinishedListBackend {
     fn transfer_scheduler_finished_lists(&mut self) -> BluetoothSchedulerFinishedListObservation;
@@ -84,7 +25,7 @@ impl BluetoothSchedulerFinishedListBackend for BluetoothControllerHal<'_> {
 /// Why a fresh task-side finished-list transfer was not admitted.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothSchedulerFinishedListCaptureError {
-    /// A previous captured mask still contains unconsumed list work.
+    /// A previous captured observation still contains unconsumed list work.
     DrainAlreadyActive,
 }
 
@@ -98,28 +39,28 @@ pub enum BluetoothSchedulerFinishedListWorkerStep {
     Complete,
     /// One hardware list requires a separately proven item-selection step.
     List {
-        /// Positional hardware list observed in the transferred mask.
+        /// Positional hardware list observed in the transferred set.
         index: BluetoothSchedulerFinishedListIndex,
-        /// Whether another captured list bit requires a later bounded step.
+        /// Whether another captured list requires a later bounded step.
         more: bool,
     },
 }
 
-/// Durable task-side owner of one captured finished-list mask.
+/// Durable task-side owner of one captured finished-list observation.
 ///
 /// Capture performs exactly one finite PAC/HAL transfer. Every subsequent
-/// [`Self::step`] consumes at most one list bit and returns to the executor.
+/// [`Self::step`] consumes at most one list and returns to the executor.
 pub struct BluetoothSchedulerFinishedListWorker {
-    drain: Option<BluetoothSchedulerFinishedListDrain>,
+    observation: Option<BluetoothSchedulerFinishedListObservation>,
 }
 
 impl BluetoothSchedulerFinishedListWorker {
     /// Construct an idle worker.
     pub const fn new() -> Self {
-        Self { drain: None }
+        Self { observation: None }
     }
 
-    /// Capture one fresh hardware mask through the unique task-side HAL owner.
+    /// Capture one fresh hardware observation through the unique task-side HAL owner.
     pub fn capture(
         &mut self,
         controller: &mut BluetoothControllerHal<'_>,
@@ -131,42 +72,40 @@ impl BluetoothSchedulerFinishedListWorker {
         &mut self,
         backend: &mut impl BluetoothSchedulerFinishedListBackend,
     ) -> Result<(), BluetoothSchedulerFinishedListCaptureError> {
-        if self.drain.is_some() {
+        if self.observation.is_some() {
             return Err(BluetoothSchedulerFinishedListCaptureError::DrainAlreadyActive);
         }
-        self.drain = Some(BluetoothSchedulerFinishedListDrain::new(
-            backend.transfer_scheduler_finished_lists(),
-        ));
+        self.observation = Some(backend.transfer_scheduler_finished_lists());
         Ok(())
     }
 
     /// Return at most one captured hardware-list index.
     ///
-    /// A list bit is not an item-completion proof. This worker therefore does
+    /// A finished list is not an item-completion proof. This worker therefore does
     /// not accept a software queue, select a descriptor or change ownership.
     /// The future completed-list owner must map `index` to an affine hardware
     /// item and establish device-to-CPU visibility independently.
     pub fn step(&mut self) -> BluetoothSchedulerFinishedListWorkerStep {
-        let Some(drain) = self.drain.take() else {
+        let Some(observation) = self.observation.take() else {
             return BluetoothSchedulerFinishedListWorkerStep::Idle;
         };
-        match drain.step() {
-            BluetoothSchedulerFinishedListDrainStep::Complete => {
+        match observation.pop_lowest() {
+            BluetoothSchedulerFinishedListPop::Complete => {
                 BluetoothSchedulerFinishedListWorkerStep::Complete
             }
-            BluetoothSchedulerFinishedListDrainStep::List { index, remaining } => {
+            BluetoothSchedulerFinishedListPop::List { index, remaining } => {
                 let more = !remaining.is_empty();
                 if more {
-                    self.drain = Some(remaining);
+                    self.observation = Some(remaining);
                 }
                 BluetoothSchedulerFinishedListWorkerStep::List { index, more }
             }
         }
     }
 
-    /// Whether a captured list bit remains for a later event step.
+    /// Whether a captured list remains for a later event step.
     pub const fn is_active(&self) -> bool {
-        self.drain.is_some()
+        self.observation.is_some()
     }
 }
 
@@ -182,7 +121,6 @@ mod tests {
 
     use super::{
         BluetoothSchedulerFinishedListBackend, BluetoothSchedulerFinishedListCaptureError,
-        BluetoothSchedulerFinishedListDrain, BluetoothSchedulerFinishedListDrainStep,
         BluetoothSchedulerFinishedListWorker, BluetoothSchedulerFinishedListWorkerStep,
     };
 
@@ -196,55 +134,6 @@ mod tests {
         ) -> BluetoothSchedulerFinishedListObservation {
             self.observation.take().expect("one scripted transfer")
         }
-    }
-
-    #[test]
-    fn one_step_consumes_only_the_lowest_finished_list() {
-        let drain = BluetoothSchedulerFinishedListDrain::new(
-            BluetoothSchedulerFinishedListObservation::from_lists_for_validation(&[2, 7, 15])
-                .expect("semantic list set is valid"),
-        );
-
-        let (index, drain) = match drain.step() {
-            BluetoothSchedulerFinishedListDrainStep::List { index, remaining } => {
-                (index, remaining)
-            }
-            BluetoothSchedulerFinishedListDrainStep::Complete => panic!("nonempty mask vanished"),
-        };
-        assert_eq!(index.get(), 2);
-
-        let (index, drain) = match drain.step() {
-            BluetoothSchedulerFinishedListDrainStep::List { index, remaining } => {
-                (index, remaining)
-            }
-            BluetoothSchedulerFinishedListDrainStep::Complete => panic!("second bit vanished"),
-        };
-        assert_eq!(index.get(), 7);
-
-        let (index, drain) = match drain.step() {
-            BluetoothSchedulerFinishedListDrainStep::List { index, remaining } => {
-                (index, remaining)
-            }
-            BluetoothSchedulerFinishedListDrainStep::Complete => panic!("last bit vanished"),
-        };
-        assert_eq!(index.get(), 15);
-        assert_eq!(
-            drain.step(),
-            BluetoothSchedulerFinishedListDrainStep::Complete
-        );
-    }
-
-    #[test]
-    fn empty_observation_completes_without_synthetic_work() {
-        let drain = BluetoothSchedulerFinishedListDrain::new(
-            BluetoothSchedulerFinishedListObservation::from_lists_for_validation(&[])
-                .expect("empty semantic set is valid"),
-        );
-
-        assert_eq!(
-            drain.step(),
-            BluetoothSchedulerFinishedListDrainStep::Complete
-        );
     }
 
     #[test]

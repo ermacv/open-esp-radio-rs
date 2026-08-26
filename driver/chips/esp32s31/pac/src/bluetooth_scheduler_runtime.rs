@@ -75,6 +75,32 @@ impl BluetoothSchedulerWorkObservation {
 #[must_use = "the scheduler finished-list observation must be drained or explicitly discarded"]
 pub struct BluetoothSchedulerFinishedListObservation(u16);
 
+/// One of the sixteen scheduler hardware-list indices.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothSchedulerFinishedListIndex(u8);
+
+impl BluetoothSchedulerFinishedListIndex {
+    /// Return the zero-based hardware-list index in `0..16`.
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
+/// Result of consuming at most one list from a captured finished-list set.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[must_use = "the selected list or remaining observation must be handled"]
+pub enum BluetoothSchedulerFinishedListPop {
+    /// The captured observation contains no remaining finished list.
+    Complete,
+    /// The lowest-numbered finished list was selected.
+    List {
+        /// Positional hardware-list index selected in this step.
+        index: BluetoothSchedulerFinishedListIndex,
+        /// Remaining captured lists after consuming `index`.
+        remaining: BluetoothSchedulerFinishedListObservation,
+    },
+}
+
 impl BluetoothSchedulerFinishedListObservation {
     /// Construct a semantic set of finished hardware lists for host-only
     /// controller tests.
@@ -91,19 +117,26 @@ impl BluetoothSchedulerFinishedListObservation {
         Some(Self(image))
     }
 
-    /// Return the complete sixteen-list mask.
-    pub const fn bits(self) -> u16 {
-        self.0
-    }
-
     /// Whether no hardware list was reported finished.
     pub const fn is_empty(self) -> bool {
         self.0 == 0
     }
 
-    /// Whether one representable hardware-list index was reported finished.
-    pub const fn contains(self, list_index: u8) -> bool {
-        list_index < 16 && self.0 & (1u16 << list_index) != 0
+    /// Consume at most one lowest-numbered finished list.
+    ///
+    /// The physical mask layout remains private to the PAC. Callers retain an
+    /// opaque observation between executor turns and receive only a semantic
+    /// list index for item selection.
+    pub const fn pop_lowest(self) -> BluetoothSchedulerFinishedListPop {
+        if self.0 == 0 {
+            BluetoothSchedulerFinishedListPop::Complete
+        } else {
+            let index = self.0.trailing_zeros() as u8;
+            BluetoothSchedulerFinishedListPop::List {
+                index: BluetoothSchedulerFinishedListIndex(index),
+                remaining: Self(self.0 & !(1u16 << index)),
+            }
+        }
     }
 }
 
@@ -270,7 +303,7 @@ mod tests {
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum FinishedListOperation {
         ReadStatus,
-        WriteReport(u16),
+        WriteReport,
     }
 
     struct FinishedListRecorder {
@@ -284,9 +317,8 @@ mod tests {
             self.status
         }
 
-        fn write_finished_list_report(&mut self, value: u16) {
-            self.operations
-                .push(FinishedListOperation::WriteReport(value));
+        fn write_finished_list_report(&mut self, _value: u16) {
+            self.operations.push(FinishedListOperation::WriteReport);
         }
     }
 
@@ -322,18 +354,13 @@ mod tests {
             operations: Vec::new(),
         };
 
-        let observation = execute_finished_list_transfer(&mut recorder);
+        let _observation = execute_finished_list_transfer(&mut recorder);
 
-        assert_eq!(observation.bits(), 0xa55a);
-        assert!(!observation.is_empty());
-        assert!(observation.contains(1));
-        assert!(!observation.contains(0));
-        assert!(!observation.contains(16));
         assert_eq!(
             recorder.operations,
             [
                 FinishedListOperation::ReadStatus,
-                FinishedListOperation::WriteReport(0xa55a),
+                FinishedListOperation::WriteReport,
             ]
         );
     }

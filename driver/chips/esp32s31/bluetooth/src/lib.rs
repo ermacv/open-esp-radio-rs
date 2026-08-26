@@ -148,8 +148,7 @@ pub use scheduler::{
     BluetoothSchedulerRuntimeResourcesBound, BluetoothSchedulerTableLowBitsCleared,
 };
 pub use scheduler_finished_lists::{
-    BluetoothSchedulerFinishedListCaptureError, BluetoothSchedulerFinishedListDrain,
-    BluetoothSchedulerFinishedListDrainStep, BluetoothSchedulerFinishedListIndex,
+    BluetoothSchedulerFinishedListCaptureError, BluetoothSchedulerFinishedListIndex,
     BluetoothSchedulerFinishedListWorker, BluetoothSchedulerFinishedListWorkerStep,
 };
 pub use scheduler_lock_modify::{

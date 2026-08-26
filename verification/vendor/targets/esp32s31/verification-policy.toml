@@ -500,8 +500,8 @@ requirement = "btbb-v2-init-arg-one-reviewed-domain"
 rationale = "The fingerprint pins the exact two-case arg-one profile, its correlated complete MMIO images, explicit diagnostic response assumption and reviewed linked gain-byte inputs. The effect contract admits only the production device-ordering fence after the required ordered MMIO effects; no diagnostic, return, common-PHY teardown or complete-controller equivalence is claimed."
 
 [[surfaces]]
-id = "shared-phy-i2c-host-map-bluetooth-adapter"
-description = "The shared PHY host selector and official Bluetooth ESP-HAL platform adapter preserve the complete target host return and ANA_CONF2 transaction for every accredited ESP32-S31 analog block."
+id = "shared-phy-i2c-host-map-bluetooth-route"
+description = "The shared PHY host selector and standalone Bluetooth custom-PAC route preserve the complete target host return and ANA_CONF2 transaction for every accredited ESP32-S31 analog block."
 kind = "bounded-property"
 
 [[surfaces.requirements]]

@@ -8,10 +8,11 @@
 //! words through the global `phy_param` pointer.
 //!
 //! Rust keeps the recovered constants in read-only storage, takes the only
-//! two varying bytes explicitly, publishes one finite entry per completion,
-//! and returns the six sampled words to the unique cold-state owner. The ROM
-//! `memcpy` calls and `phy_param` ABI cell are construction artifacts, not
-//! dependencies of the radio algorithm, and are intentionally absent.
+//! two varying bytes explicitly, and publishes one finite entry per
+//! completion. `phy_save_pbus_reg` only copied six ordinary register images
+//! into ROM's private `phy_param` buffer; no open runtime or restore path
+//! consumes them. That dead copy, its reads, the ROM `memcpy` calls, and the
+//! `phy_param` ABI cell are intentionally absent.
 
 pub const PHY_PBUS_MEMORY_ENTRY_COUNT: u8 = 60;
 
@@ -113,21 +114,17 @@ impl PhyPbusMemoryEntry {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PhyPbusMemoryOutcome {
-    pub saved_registers: [u32; 6],
-}
+pub struct PhyPbusMemoryOutcome;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyPbusMemoryAction {
     Program(PhyPbusMemoryEntry),
-    Capture,
     Complete(PhyPbusMemoryOutcome),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyPbusMemoryCompletion {
     Programmed(PhyPbusMemoryEntry),
-    Captured { values: [u32; 6] },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -144,7 +141,6 @@ enum PhyPbusMemoryStep {
         header_accumulator: u32,
         command_accumulator: u16,
     },
-    Capture,
     Complete(PhyPbusMemoryOutcome),
 }
 
@@ -238,11 +234,11 @@ const fn entry(
     }
 }
 
-/// Exact caller-driven replacement for the three-function ROM graph.
+/// Exact caller-driven replacement for the live PBUS programming graph.
 ///
 /// Every `Program` action contains at most one control-register RMW, one data
-/// write, and one command-register RMW. `Capture` is six fixed reads. No
-/// action contains a retry, readiness sample, delay, callback, or allocation.
+/// write, and one command-register RMW. No action contains a retry, readiness
+/// sample, delay, callback, or allocation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyPbusMemoryTransition {
     parameters: PhyPbusMemoryParameters,
@@ -276,7 +272,6 @@ impl PhyPbusMemoryTransition {
                 header_accumulator,
                 command_accumulator,
             )),
-            PhyPbusMemoryStep::Capture => PhyPbusMemoryAction::Capture,
             PhyPbusMemoryStep::Complete(outcome) => PhyPbusMemoryAction::Complete(outcome),
         }
     }
@@ -326,13 +321,8 @@ impl PhyPbusMemoryTransition {
                         command_accumulator: next_accumulator,
                     }
                 } else {
-                    PhyPbusMemoryStep::Capture
+                    PhyPbusMemoryStep::Complete(PhyPbusMemoryOutcome)
                 }
-            }
-            (PhyPbusMemoryStep::Capture, PhyPbusMemoryCompletion::Captured { values }) => {
-                PhyPbusMemoryStep::Complete(PhyPbusMemoryOutcome {
-                    saved_registers: values,
-                })
             }
             (PhyPbusMemoryStep::Complete(_), _) => {
                 return Err(PhyPbusMemoryTransitionError::AlreadyComplete);
@@ -359,7 +349,7 @@ pub struct PhyPbusMemoryMmioBinding {
 impl PhyPbusMemoryMmioBinding {
     pub fn new(action: PhyPbusMemoryAction) -> Result<Self, PhyPbusMemoryBindingError> {
         match action {
-            PhyPbusMemoryAction::Program(_) | PhyPbusMemoryAction::Capture => Ok(Self { action }),
+            PhyPbusMemoryAction::Program(_) => Ok(Self { action }),
             PhyPbusMemoryAction::Complete(_) => Err(PhyPbusMemoryBindingError::UnsupportedAction),
         }
     }
@@ -398,11 +388,6 @@ impl PhyPbusMemoryMmioBinding {
                 })?;
                 Ok(PhyPbusMemoryCompletion::Programmed(entry))
             }
-            PhyPbusMemoryAction::Capture => Ok(PhyPbusMemoryCompletion::Captured {
-                values: open_esp_radio_esp32s31_hal::phy_memory::capture_pbus_memory_boundaries(
-                    registers,
-                ),
-            }),
             PhyPbusMemoryAction::Complete(_) => unreachable!(),
         }
     }
@@ -448,58 +433,9 @@ mod tests {
 
         assert_eq!(seen, PHY_PBUS_MEMORY_ENTRY_COUNT);
         assert_eq!(seen_counts, expected_counts);
-        assert_eq!(transition.action(), PhyPbusMemoryAction::Capture);
-    }
-
-    #[test]
-    fn recovered_tables_include_all_parameter_derived_overrides() {
-        let mut transition = PhyPbusMemoryTransition::new(PARAMETERS);
-        let mut selected = [0_u32; 5];
-
-        while let PhyPbusMemoryAction::Program(entry) = transition.action() {
-            match (entry.group(), entry.index()) {
-                (0, 0) => selected[0] = entry.data(),
-                (6, 2) => selected[1] = entry.data(),
-                (8, 1) => selected[2] = entry.data(),
-                (8, 2) => selected[3] = entry.data(),
-                (10, 0) => selected[4] = entry.data(),
-                _ => {}
-            }
-            transition
-                .advance(PhyPbusMemoryCompletion::Programmed(entry))
-                .unwrap();
-        }
-
-        assert_eq!(
-            selected,
-            [
-                0x0009_7fff,
-                0x0017_17ff,
-                0x0014_fdff,
-                0x0480_11ff,
-                0x0014_fdff,
-            ]
-        );
-    }
-
-    #[test]
-    fn capture_identity_and_output_are_owned() {
-        let mut transition = PhyPbusMemoryTransition::new(PARAMETERS);
-        while let PhyPbusMemoryAction::Program(entry) = transition.action() {
-            transition
-                .advance(PhyPbusMemoryCompletion::Programmed(entry))
-                .unwrap();
-        }
-
-        let values = [1, 2, 3, 4, 5, 6];
-        transition
-            .advance(PhyPbusMemoryCompletion::Captured { values })
-            .unwrap();
         assert_eq!(
             transition.action(),
-            PhyPbusMemoryAction::Complete(PhyPbusMemoryOutcome {
-                saved_registers: values
-            })
+            PhyPbusMemoryAction::Complete(PhyPbusMemoryOutcome)
         );
     }
 
@@ -531,14 +467,11 @@ mod tests {
     }
 
     #[test]
-    fn mmio_binding_covers_program_and_capture_but_not_terminal() {
+    fn mmio_binding_accepts_program_but_not_terminal_state() {
         let transition = PhyPbusMemoryTransition::new(PARAMETERS);
         assert!(PhyPbusMemoryMmioBinding::new(transition.action()).is_ok());
-        assert!(PhyPbusMemoryMmioBinding::new(PhyPbusMemoryAction::Capture).is_ok());
         assert_eq!(
-            PhyPbusMemoryMmioBinding::new(PhyPbusMemoryAction::Complete(PhyPbusMemoryOutcome {
-                saved_registers: [0; 6],
-            })),
+            PhyPbusMemoryMmioBinding::new(PhyPbusMemoryAction::Complete(PhyPbusMemoryOutcome)),
             Err(PhyPbusMemoryBindingError::UnsupportedAction)
         );
     }

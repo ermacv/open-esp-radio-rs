@@ -2,9 +2,10 @@ schema = 3
 default-disposition = "not-yet-ported"
 default-protocol = "shared"
 
-# The probe constructs the official Bluetooth platform owner and projects the
-# typed host at the ABI boundary. The selected host and ANA_CONF2 transaction
-# are produced by the exact private production function and adapter.
+# The probe constructs the standalone Bluetooth route, borrows its shared-PHY
+# owner, and projects the typed host at the ABI boundary. The selected host and
+# ANA_CONF2 transaction are produced by the exact private production function
+# and custom PAC.
 [[functions]]
 source = "archive"
 symbol = "phy_get_i2c_hostid_new"

@@ -2,8 +2,6 @@
 
 //! Retained Bluetooth-only entry points for compiled production comparison.
 
-use core::mem::ManuallyDrop;
-
 use open_esp_radio_esp32s31_bluetooth::validation::{
     BluetoothControllerSramAddress, BluetoothMemoryListPointerImage, BluetoothMemoryListSelector,
     BluetoothMemoryListSlot,
@@ -94,37 +92,14 @@ pub extern "C" fn open_btbb_v2_init_trace_r_sym_bt_bb_v2_init_cmplx_x1(
 /// Compiled production entry for the accredited domain of
 /// `phy_get_i2c_hostid_new`.
 ///
-/// This wrapper only constructs the official Bluetooth platform owner and
-/// converts its typed result at the C ABI boundary. Host selection and the
-/// complete `ANA_CONF2` transaction remain in the production PHY and ESP-HAL
-/// adapter respectively.
+/// This wrapper delegates through the standalone Bluetooth route's shared-PHY
+/// owner and converts its typed result at the C ABI boundary. Host selection
+/// and the complete `ANA_CONF2` transaction remain in production PHY/PAC
+/// code.
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_i2c_host_trace_phy_get_i2c_hostid_new(block: u32) -> u32 {
-    // SAFETY: the verifier executes this entry in an isolated image and never
-    // creates a second peripheral owner during the same execution.
-    let peripherals = unsafe { esp_hal::peripherals::Peripherals::steal() };
-    let platform = ManuallyDrop::new(
-        open_esp_radio_esp32s31_radio_platform_esp_hal::EspHalRadioPlatform::new(
-            peripherals.MODEM_SYSCON,
-            peripherals.MODEM_LPCON,
-            peripherals.HP_SYS_CLKRST,
-            peripherals.PMU,
-            peripherals.LP_AON_CLK_RST,
-            peripherals.LP_PERI,
-            peripherals.LP_TSENS,
-            peripherals.I2C_ANA_MST,
-        ),
-    );
-    let mut bluetooth = ManuallyDrop::new(
-        platform
-            .try_bluetooth()
-            .unwrap_or_else(|_| unreachable!("isolated probe owns the Bluetooth lease")),
-    );
-    open_esp_radio_esp32s31_phy::validation::configure_and_select_phy_i2c_host(
-        &mut *bluetooth,
-        block as u8,
-    )
+    open_esp_radio_esp32s31_bluetooth::validation::configure_and_select_phy_i2c_host(block as u8)
 }
 
 #[inline(always)]

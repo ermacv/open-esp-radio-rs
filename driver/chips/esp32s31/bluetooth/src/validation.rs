@@ -33,6 +33,28 @@ pub fn clear_scheduler_table_low_bits() {
     let _powered_owners = (task, interrupts);
 }
 
+/// Execute the production PHY-I2C host selection through the standalone
+/// Bluetooth route's shared-PHY owner.
+#[cfg(target_arch = "riscv32")]
+#[inline(always)]
+pub fn configure_and_select_phy_i2c_host(block: u8) -> u32 {
+    let cold = open_esp_radio_esp32s31_hal::BluetoothColdOwner::from_radio_hardware(
+        open_esp_radio_esp32s31_pac::RadioHardware::for_validation(),
+    );
+    let (mut task, interrupts) = crate::resources::separate_interrupt_owner(cold);
+    let host = {
+        let mut shared_phy = task.shared_phy_hal();
+        open_esp_radio_esp32s31_phy::validation::configure_and_select_phy_i2c_host(
+            &mut shared_phy,
+            block,
+        )
+    };
+    // Host selection mutates shared PHY state. The isolated comparison image
+    // retains both partitions and must not advertise a reusable cold owner.
+    let _powered_owners = (task, interrupts);
+    host
+}
+
 /// Execute the exact finite MMIO transaction recovered for
 /// `bt_bb_v2_init_cmplx(1)` with the reviewed linked `phy_param` byte.
 ///

@@ -8,10 +8,8 @@ publish.workspace = true
 description = "Isolated ESP32-S31 Bluetooth production comparison probes"
 
 [dependencies]
-esp-hal.workspace = true
 open-esp-radio-esp32s31-bluetooth.workspace = true
 open-esp-radio-esp32s31-phy = { workspace = true, features = ["validation-probes"] }
-open-esp-radio-esp32s31-radio-platform-esp-hal.workspace = true
 
 [lib]
 crate-type = ["rlib", "staticlib"]

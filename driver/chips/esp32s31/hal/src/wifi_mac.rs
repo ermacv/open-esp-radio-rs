@@ -34,8 +34,9 @@ use open_esp_radio_esp32s31_pac::{
     WifiRadioRegisters,
 };
 
-fn coex_timer_clock(
+pub(crate) fn coex_timer_clock_for_chip(
     observation: Option<CoexistenceLowPowerClockObservation>,
+    real_chip: bool,
 ) -> Result<CoexTimerClock, CoexError> {
     let observation = observation.ok_or(CoexError::UnsupportedClock)?;
     let selector = match observation.source {
@@ -48,7 +49,7 @@ fn coex_timer_clock(
         selector,
         observation.divider_minus_one,
         40,
-        true,
+        real_chip,
     ))
 }
 
@@ -279,7 +280,7 @@ impl<'registers> WifiMacColdHal<'registers> {
 
 impl CoexClockHardware for WifiMacColdHal<'_> {
     fn sample(&mut self) -> Result<CoexTimerClock, CoexError> {
-        coex_timer_clock(self.registers.sample_coexistence_low_power_clock())
+        coex_timer_clock_for_chip(self.registers.sample_coexistence_low_power_clock(), true)
     }
 }
 
@@ -902,7 +903,7 @@ impl<'registers> WifiMacHal<'registers> {
 
 impl CoexClockHardware for WifiMacHal<'_> {
     fn sample(&mut self) -> Result<CoexTimerClock, CoexError> {
-        coex_timer_clock(self.pac().sample_coexistence_low_power_clock())
+        coex_timer_clock_for_chip(self.pac().sample_coexistence_low_power_clock(), true)
     }
 }
 

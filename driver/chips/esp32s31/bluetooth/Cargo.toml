@@ -8,7 +8,10 @@ repository.workspace = true
 description = "ESP32-S31 Bluetooth controller hardware boundary"
 
 [features]
-validation-probes = ["open-esp-radio-esp32s31-pac/validation-probes"]
+validation-probes = [
+    "open-esp-radio-esp32s31-pac/validation-probes",
+    "open-esp-radio-esp32s31-phy/validation-probes",
+]
 
 [dependencies]
 open-esp-radio-esp32s31-hal = { path = "../hal" }

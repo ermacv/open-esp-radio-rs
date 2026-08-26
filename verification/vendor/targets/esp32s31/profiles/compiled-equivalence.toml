@@ -1183,106 +1183,6 @@ address = 0x2010711c
 value = 0x5a5a5a5a
 
 [[profiles]]
-name = "rom-save-pbus-registers"
-claim = "whole-function-equivalence"
-vendor-source = "rom"
-vendor-symbol = "phy_save_pbus_reg"
-rust-symbol = "open_phy_trace_save_pbus_reg"
-compare-return = false
-
-[[profiles.cases]]
-name = "zeroed"
-arguments = [0x3fff0030]
-[[profiles.cases.ram]]
-address = 0x2f07fc40
-value = 0x3fff0000
-[[profiles.cases.ram]]
-address = 0x3fff0030
-value = 0
-[[profiles.cases.ram]]
-address = 0x3fff0034
-value = 0
-[[profiles.cases.ram]]
-address = 0x3fff0038
-value = 0
-[[profiles.cases.ram]]
-address = 0x3fff003c
-value = 0
-[[profiles.cases.ram]]
-address = 0x3fff0040
-value = 0
-[[profiles.cases.ram]]
-address = 0x3fff0044
-value = 0
-[[profiles.cases.mmio-initial]]
-address = 0x20100854
-value = 0
-[[profiles.cases.mmio-initial]]
-address = 0x20100858
-value = 0
-[[profiles.cases.mmio-initial]]
-address = 0x2010085c
-value = 0
-[[profiles.cases.mmio-initial]]
-address = 0x20100860
-value = 0
-[[profiles.cases.mmio-initial]]
-address = 0x20100864
-value = 0
-[[profiles.cases.mmio-initial]]
-address = 0x20100868
-value = 0
-[[profiles.cases.observe]]
-address = 0x3fff0030
-length = 24
-
-[[profiles.cases]]
-name = "patterned"
-arguments = [0x3fff0030]
-[[profiles.cases.mmio-initial]]
-address = 0x20100854
-value = 0x01234567
-[[profiles.cases.mmio-initial]]
-address = 0x20100858
-value = 0x89abcdef
-[[profiles.cases.mmio-initial]]
-address = 0x2010085c
-value = 0x13579bdf
-[[profiles.cases.mmio-initial]]
-address = 0x20100860
-value = 0x2468ace0
-[[profiles.cases.mmio-initial]]
-address = 0x20100864
-value = 0x55aa55aa
-[[profiles.cases.mmio-initial]]
-address = 0x20100868
-value = 0xa55aa55a
-[[profiles.cases.ram]]
-address = 0x2f07fc40
-value = 0x3fff0000
-[[profiles.cases.ram]]
-address = 0x3fff0030
-value = 0
-[[profiles.cases.ram]]
-address = 0x3fff0034
-value = 0
-[[profiles.cases.ram]]
-address = 0x3fff0038
-value = 0
-[[profiles.cases.ram]]
-address = 0x3fff003c
-value = 0
-[[profiles.cases.ram]]
-address = 0x3fff0040
-value = 0
-[[profiles.cases.ram]]
-address = 0x3fff0044
-value = 0
-[[profiles.cases.observe]]
-address = 0x3fff0030
-length = 24
-
-[[profiles]]
 name = "rom-absolute-temperature"
 claim = "whole-function-equivalence"
 vendor-source = "rom"
@@ -1311,30 +1211,6 @@ name = "maximum"
 arguments = [0x7fffffff]
 
 [[profiles]]
-name = "rom-encode-i2c-master"
-claim = "whole-function-equivalence"
-vendor-source = "rom"
-vendor-symbol = "phy_encode_i2c_master"
-rust-symbol = "open_phy_trace_ret_encode_i2c_master"
-compare-return = true
-
-[[profiles.cases]]
-name = "zero"
-arguments = [0, 0, 0]
-
-[[profiles.cases]]
-name = "typical"
-arguments = [0x67, 3, 0xab]
-
-[[profiles.cases]]
-name = "overlapping"
-arguments = [0xff000000, 0x00ff0000, 0x0000ff00]
-
-[[profiles.cases]]
-name = "full"
-arguments = [0xffffffff, 0xffffffff, 0xffffffff]
-
-[[profiles]]
 name = "rom-frequency-memory-address"
 claim = "whole-function-equivalence"
 vendor-source = "rom"
@@ -1357,35 +1233,6 @@ arguments = [1, 0x80000000, 2, 3]
 [[profiles.cases]]
 name = "full"
 arguments = [0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff]
-
-[[profiles]]
-name = "rom-byte-to-word"
-claim = "whole-function-equivalence"
-vendor-source = "rom"
-vendor-symbol = "phy_byte_to_word"
-rust-symbol = "open_phy_trace_ret_byte_to_word"
-compare-return = true
-
-[[profiles.cases]]
-name = "zero"
-arguments = [0x3fff0000]
-[[profiles.cases.ram]]
-address = 0x3fff0000
-value = 0
-
-[[profiles.cases]]
-name = "typical"
-arguments = [0x3fff0000]
-[[profiles.cases.ram]]
-address = 0x3fff0000
-value = 0x5aab0367
-
-[[profiles.cases]]
-name = "full"
-arguments = [0x3fff0000]
-[[profiles.cases.ram]]
-address = 0x3fff0000
-value = 0xffffffff
 
 [[profiles]]
 name = "rom-tx-power-tracking-slow-state"

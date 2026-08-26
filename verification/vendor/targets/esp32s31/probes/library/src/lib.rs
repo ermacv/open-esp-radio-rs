@@ -264,31 +264,6 @@ pub extern "C" fn open_coex_core_trace_timer_idx_get(event: u32) -> u32 {
         .map_or(0xff, |index| u32::from(index.value()))
 }
 
-struct CoexProbeClock {
-    is_real_chip: bool,
-}
-
-impl open_esp_radio_esp32s31_coex::CoexClockHardware for CoexProbeClock {
-    fn sample(
-        &mut self,
-    ) -> Result<open_esp_radio_esp32s31_coex::CoexTimerClock, open_esp_radio_esp32s31_coex::CoexError>
-    {
-        const COEX_LP_CLK_CONF: *const u32 = 0x2010_f008 as *const u32;
-        // SAFETY: this validation-only implementation runs under the
-        // blobray MMIO executor. Each volatile read intentionally mirrors
-        // one independent read in `coex_hw_timer_tick_get`.
-        let selector = unsafe { core::ptr::read_volatile(COEX_LP_CLK_CONF) };
-        // SAFETY: same validated MMIO word, deliberately sampled again.
-        let divider = unsafe { core::ptr::read_volatile(COEX_LP_CLK_CONF) };
-        open_esp_radio_esp32s31_coex::CoexTimerClock::from_register_images(
-            selector,
-            divider,
-            40,
-            self.is_real_chip,
-        )
-    }
-}
-
 /// Compiled production-path probe for the complete `coex_hw_timer_set`
 /// transaction. The public vendor ABI is `(index, client, pti, latency,
 /// duration)`; notably, duration is written to the primary word before
@@ -316,11 +291,13 @@ pub extern "C" fn open_coex_set_trace_coex_hw_timer_set(
     } else {
         CoexClient::Wifi
     };
-    let mut clock = CoexProbeClock {
-        is_real_chip: is_real_chip != 0,
-    };
     let _ = open_esp_radio_esp32s31_hal::coex::validation_program_timer(
-        &mut clock, index, client, pti, latency, duration,
+        is_real_chip != 0,
+        index,
+        client,
+        pti,
+        latency,
+        duration,
     );
 }
 
@@ -340,16 +317,13 @@ pub extern "C" fn open_coex_core_trace_request(
     let Ok(event) = CoexEventId::new(event as u8) else {
         return 0x102;
     };
-    let mut clock = CoexProbeClock {
-        is_real_chip: is_real_chip != 0,
-    };
     let request = CoexClientRequest {
         event,
         latency,
         duration,
     };
     let result = open_esp_radio_esp32s31_hal::coex::validation_core_request(
-        &mut clock,
+        is_real_chip != 0,
         client != 0,
         request,
     );
@@ -1627,27 +1601,8 @@ pub extern "C" fn open_phy_trace_sifs_reg_init(registers: &mut RadioPhyRegisters
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_phy_trace_save_pbus_reg(
-    output: &mut [u32; 6],
-    registers: &RadioPhyRegisters,
-) {
-    *output = open_esp_radio_esp32s31_hal::phy_memory::capture_pbus_memory_boundaries(registers);
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
 pub extern "C" fn open_phy_trace_ret_abs_temp(input: u32) -> u32 {
     open_esp_radio_esp32s31_phy::phy_math::absolute_temperature(input as i32)
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_ret_encode_i2c_master(
-    block: u32,
-    register: u32,
-    value: u32,
-) -> u32 {
-    open_esp_radio_esp32s31_phy::phy_i2c::phy_encode_i2c_master(block, register, value)
 }
 
 #[unsafe(no_mangle)]
@@ -1663,12 +1618,6 @@ pub extern "C" fn open_phy_trace_ret_get_freq_mem_addr(
             base, stride, index, offset,
         ),
     )
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_phy_trace_ret_byte_to_word(bytes: &[u8; 4]) -> u32 {
-    open_esp_radio_esp32s31_phy::phy_i2c::phy_byte_to_word(bytes)
 }
 
 #[unsafe(no_mangle)]
@@ -1834,11 +1783,8 @@ pub fn retain_all_probes() {
     core::hint::black_box(open_phy_trace_enable_cca as *const ());
     core::hint::black_box(open_phy_trace_disable_cca as *const ());
     core::hint::black_box(open_phy_trace_sifs_reg_init as *const ());
-    core::hint::black_box(open_phy_trace_save_pbus_reg as *const ());
     core::hint::black_box(open_phy_trace_ret_abs_temp as *const ());
-    core::hint::black_box(open_phy_trace_ret_encode_i2c_master as *const ());
     core::hint::black_box(open_phy_trace_ret_get_freq_mem_addr as *const ());
-    core::hint::black_box(open_phy_trace_ret_byte_to_word as *const ());
     core::hint::black_box(open_phy_trace_txpwr_track_slow as *const ());
     core::hint::black_box(open_phy_trace_freq_i2c_mem_write as *const ());
 }

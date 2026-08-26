@@ -6,6 +6,11 @@ use super::{CoexTimerClientValue, CoexTimerPtiValue, CoexTimerTickImage, WifiRad
 
 pub const COEX_TIMER_COUNT: u8 = 5;
 
+fn coex_timer_tick_image(value: u32) -> CoexTimerTickImage {
+    CoexTimerTickImage::new(value & CoexTimerTickImage::MAX)
+        .expect("the PAC-owned field mask always yields a valid timer image")
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
 pub enum CoexTimerRegister {
@@ -109,9 +114,10 @@ impl WifiRadioRegisters {
     pub fn set_coex_timer_primary_target(
         &mut self,
         timer: CoexTimerRegister,
-        primary_tick_image: CoexTimerTickImage,
+        primary_tick_image: u32,
     ) {
         let index = timer.index();
+        let primary_tick_image = coex_timer_tick_image(primary_tick_image);
         self.peripherals
             .coexistence
             .coex_hw_timer
@@ -124,9 +130,10 @@ impl WifiRadioRegisters {
     pub fn set_coex_timer_secondary_target(
         &mut self,
         timer: CoexTimerRegister,
-        secondary_tick_image: CoexTimerTickImage,
+        secondary_tick_image: u32,
     ) {
         let index = timer.index();
+        let secondary_tick_image = coex_timer_tick_image(secondary_tick_image);
         self.peripherals
             .coexistence
             .coex_hw_timer

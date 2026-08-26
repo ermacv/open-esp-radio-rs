@@ -27,7 +27,7 @@ use crate::{
     phy_i2c_tracking::{
         PhyWifiI2cTrackingBand, PhyWifiI2cTrackingOutcome, PhyWifiI2cTrackingParameters,
     },
-    phy_pbus_memory::{PhyPbusMemoryOutcome, PhyPbusMemoryParameters},
+    phy_pbus_memory::PhyPbusMemoryParameters,
     phy_power_tracking::{PhyTxPowerTrackingOutcome, PhyTxPowerTrackingParameters},
     phy_pwdet::{PhyPwdetOutcome, PhyPwdetParameters},
     phy_rfpll::{RfpllCapTrackingOutcome, RfpllCapTrackingParameters},
@@ -145,7 +145,6 @@ struct CommonPhyState {
     filter_dcap: [u8; 5],
     rc_calibrated: bool,
     dcode: [u8; 8],
-    pbus_saved_registers: [u32; 6],
     bbpll_register_snapshot: u8,
     i2c_frequency_parameter: u8,
     xtal_duty: [u8; 3],
@@ -239,7 +238,7 @@ pub struct PhyCalibrationSnapshot {
     pub bluetooth: PhyBluetoothCalibration,
 }
 
-pub const PHY_CALIBRATION_SNAPSHOT_SCHEMA: u16 = 1;
+pub const PHY_CALIBRATION_SNAPSHOT_SCHEMA: u16 = 2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyCommonCalibration {
@@ -250,7 +249,6 @@ pub struct PhyCommonCalibration {
     pub filter_dcap: [u8; 5],
     pub rc_calibrated: bool,
     pub dcode: [u8; 8],
-    pub pbus_saved_registers: [u32; 6],
     pub bbpll_register_snapshot: u8,
     pub i2c_frequency_parameter: u8,
     pub xtal_duty: [u8; 3],
@@ -384,7 +382,6 @@ impl PhyState {
                 filter_dcap: [0; 5],
                 rc_calibrated: false,
                 dcode: [0; 8],
-                pbus_saved_registers: [0; 6],
                 bbpll_register_snapshot: 0,
                 i2c_frequency_parameter: 0,
                 xtal_duty: [0; 3],
@@ -784,10 +781,6 @@ impl PhyState {
             parameter_002: self.config.pbus_rx_path,
             parameter_014: self.config.bluetooth_tx_path,
         }
-    }
-
-    pub fn apply_pbus_memory_outcome(&mut self, outcome: PhyPbusMemoryOutcome) {
-        self.common.pbus_saved_registers = outcome.saved_registers;
     }
 
     pub fn apply_temperature_outcome(&mut self, outcome: PhyTemperatureOutcome) {
@@ -1210,7 +1203,6 @@ impl PhyState {
                 filter_dcap: self.common.filter_dcap,
                 rc_calibrated: self.common.rc_calibrated,
                 dcode: self.common.dcode,
-                pbus_saved_registers: self.common.pbus_saved_registers,
                 bbpll_register_snapshot: self.common.bbpll_register_snapshot,
                 i2c_frequency_parameter: self.common.i2c_frequency_parameter,
                 xtal_duty: self.common.xtal_duty,
@@ -1839,8 +1831,6 @@ mod tests {
     #[test]
     fn calibration_outputs_have_named_cache_fields() {
         let mut state = PhyState::default();
-        let saved_registers = [1, 2, 3, 4, 5, 6];
-        state.apply_pbus_memory_outcome(PhyPbusMemoryOutcome { saved_registers });
         state.apply_temperature_outcome(PhyTemperatureOutcome {
             temperature: -37,
             sensor_index: 3,
@@ -1851,7 +1841,6 @@ mod tests {
         });
 
         let snapshot = state.calibration_cache(IDENTITY).into_snapshot();
-        assert_eq!(snapshot.common.pbus_saved_registers, saved_registers);
         assert_eq!(snapshot.common.temperature, -37);
         assert_eq!(snapshot.common.sensor_index, 3);
         assert_eq!(snapshot.common.dcode, [1, 2, 3, 4, 5, 6, 7, 8]);

@@ -157,16 +157,4 @@ impl RadioPhyRegisters {
                 .set_bit()
         });
     }
-
-    /// Capture all six packed PBUS-memory group-boundary words in ROM order.
-    pub fn capture_pbus_memory_boundaries(&self) -> [u32; 6] {
-        [
-            self.peripherals.phy_memory.group_boundary(0).read().bits(),
-            self.peripherals.phy_memory.group_boundary(1).read().bits(),
-            self.peripherals.phy_memory.group_boundary(2).read().bits(),
-            self.peripherals.phy_memory.group_boundary(3).read().bits(),
-            self.peripherals.phy_memory.group_boundary(4).read().bits(),
-            self.peripherals.phy_memory.group_boundary(5).read().bits(),
-        ]
-    }
 }

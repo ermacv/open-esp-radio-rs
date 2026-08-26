@@ -77,15 +77,3 @@ pub fn program_gain_memory_entry(registers: &mut impl SharedPhyAccess, words: [u
     let registers = phy_pac_mut(registers);
     registers.program_gain_memory_entry(words, index);
 }
-
-/// Capture all six packed PBUS-memory group-boundary words.
-///
-/// Basis: complete rev0 ROM `phy_save_pbus_reg` at `0x2f82_4602`, size
-/// `0x32`. It performs exactly six consecutive reads; Rust returns them to
-/// its unique state owner instead of storing through ROM's global
-/// `phy_param` pointer.
-#[cfg(target_arch = "riscv32")]
-pub fn capture_pbus_memory_boundaries(registers: &impl SharedPhyAccess) -> [u32; 6] {
-    let registers = phy_pac(registers);
-    registers.capture_pbus_memory_boundaries()
-}

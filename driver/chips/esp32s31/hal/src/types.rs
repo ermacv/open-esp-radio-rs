@@ -5,7 +5,7 @@
 //! register block, raw accessor, or generic MMIO capability is re-exported.
 
 pub use open_esp_radio_esp32s31_pac::{
-    CfrValue, CoexTimerClientValue, CoexTimerPtiValue, CoexTimerRegister, CoexTimerTickImage,
+    CfrValue, CoexTimerClientValue, CoexTimerPtiValue, CoexTimerRegister,
     ExtraSoftApRxBlockAckEntrySnapshot, ForcedRxGain, MAC_TX_POWER_RATE_COUNT,
     MacApReceivePolicySnapshot, MacExtraSoftApRxBlockAckEntryIndex, MacHe20PeerConfig,
     MacHe20PeerError, MacHeBeamformingReportProfile, MacHeBeamformingReportProfileError,

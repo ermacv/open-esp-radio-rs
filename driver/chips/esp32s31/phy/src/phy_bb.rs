@@ -1042,8 +1042,7 @@ impl PhyBbInitTransition {
                 }
             },
             PhyBbInitStep::PbusMemory(transition) => match transition.action() {
-                crate::phy_pbus_memory::PhyPbusMemoryAction::Complete(outcome) => {
-                    self.state.apply_pbus_memory_outcome(outcome);
+                crate::phy_pbus_memory::PhyPbusMemoryAction::Complete(_) => {
                     self.step = PhyBbInitStep::TemperatureSecond(
                         crate::phy_temperature::PhyTemperatureTransition::new(),
                     );

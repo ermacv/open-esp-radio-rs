@@ -10,7 +10,7 @@ use open_esp_radio_esp32s31_phy::{
 use serde::{Deserialize, Serialize};
 
 pub const MAX_ENCODED_LEN: usize = 512;
-const MAGIC: [u8; 8] = *b"ORCAL001";
+const MAGIC: [u8; 8] = *b"ORCAL002";
 
 #[derive(Serialize, Deserialize)]
 struct Artifact {
@@ -37,7 +37,6 @@ struct Common {
     filter_dcap: [u8; 5],
     rc_calibrated: bool,
     dcode: [u8; 8],
-    pbus_saved_registers: [u32; 6],
     bbpll_register_snapshot: u8,
     i2c_frequency_parameter: u8,
     xtal_duty: [u8; 3],

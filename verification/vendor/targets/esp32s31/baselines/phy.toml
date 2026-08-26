@@ -527,21 +527,6 @@ kind = "symbolic"
 
 [[evidence]]
 source = "rom"
-symbol = "phy_byte_to_word"
-kind = "whole-function-equivalence/profile:scenario/rom-byte-to-word"
-digest = "79563e05de54ac30331d5bceeacbaf82c92cd5c9061762ccebb55f51ae281399"
-
-[evidence.components]
-comparison-orchestrator = "acd193e24d6eaa785453b27b7b12cb1d262cbea83db314dda9e58e735051da67"
-diagnostic-contracts = "05b6d61d3d159755f14253601341637a1a1a6be9f4576b7f5c87506755266216"
-execution-image = "b4bc1d7eb5a5125c3517e8d95fbc09a97cdb18a637b3020062ed7d5a0da4b259"
-execution-machine = "ff4f453ddf8d7921e6525db9a1dc97c18fefa73b3e8250f206c162edc425b1fc"
-execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
-profile = "836e2626cacaaf98e8c5b494827588c1f556ef310c430d3b21904a94046083ca"
-profile-parser = "47752e5d19d316ed2c186e3851bac1101ba13da0e3a053591e059c682ea77fc4"
-
-[[evidence]]
-source = "rom"
 symbol = "phy_chan_dump_cfg"
 kind = "symbolic"
 
@@ -599,21 +584,6 @@ kind = "symbolic"
 source = "rom"
 symbol = "phy_enable_low_rate"
 kind = "symbolic"
-
-[[evidence]]
-source = "rom"
-symbol = "phy_encode_i2c_master"
-kind = "whole-function-equivalence/profile:scenario/rom-encode-i2c-master"
-digest = "182f36ccc9b73fcc03b24d8d60f0ecf7bc839b2657f808d31847445b6d5e07b0"
-
-[evidence.components]
-comparison-orchestrator = "acd193e24d6eaa785453b27b7b12cb1d262cbea83db314dda9e58e735051da67"
-diagnostic-contracts = "05b6d61d3d159755f14253601341637a1a1a6be9f4576b7f5c87506755266216"
-execution-image = "b4bc1d7eb5a5125c3517e8d95fbc09a97cdb18a637b3020062ed7d5a0da4b259"
-execution-machine = "ff4f453ddf8d7921e6525db9a1dc97c18fefa73b3e8250f206c162edc425b1fc"
-execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
-profile = "89e8d101630d8b4c4fd854be4f96722ac50b805a44d855246cd8e210ae54bbf8"
-profile-parser = "47752e5d19d316ed2c186e3851bac1101ba13da0e3a053591e059c682ea77fc4"
 
 [[evidence]]
 source = "rom"
@@ -813,21 +783,6 @@ execution-image = "b4bc1d7eb5a5125c3517e8d95fbc09a97cdb18a637b3020062ed7d5a0da4b
 execution-machine = "ff4f453ddf8d7921e6525db9a1dc97c18fefa73b3e8250f206c162edc425b1fc"
 execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
 profile = "f612d995c3add30cd55f03c80cbbba8000b874a5abff1a905ab05ca93cd9c622"
-profile-parser = "47752e5d19d316ed2c186e3851bac1101ba13da0e3a053591e059c682ea77fc4"
-
-[[evidence]]
-source = "rom"
-symbol = "phy_save_pbus_reg"
-kind = "whole-function-equivalence/profile:scenario/rom-save-pbus-registers"
-digest = "eb906ddce01a26b7b6bcefcf32f1ce0533296571ae525d71989bd395966a3077"
-
-[evidence.components]
-comparison-orchestrator = "acd193e24d6eaa785453b27b7b12cb1d262cbea83db314dda9e58e735051da67"
-diagnostic-contracts = "05b6d61d3d159755f14253601341637a1a1a6be9f4576b7f5c87506755266216"
-execution-image = "b4bc1d7eb5a5125c3517e8d95fbc09a97cdb18a637b3020062ed7d5a0da4b259"
-execution-machine = "ff4f453ddf8d7921e6525db9a1dc97c18fefa73b3e8250f206c162edc425b1fc"
-execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
-profile = "dff17c437a5844c7d340d4b0f61a5d3505f96b33db974ba6b6b1348cc9d90a15"
 profile-parser = "47752e5d19d316ed2c186e3851bac1101ba13da0e3a053591e059c682ea77fc4"
 
 [[evidence]]

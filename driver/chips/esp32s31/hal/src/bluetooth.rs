@@ -30,7 +30,7 @@ pub use open_esp_radio_esp32s31_pac::{
     BluetoothControllerTimeLatchStepError, BluetoothModemLpTimerCompareDisposition,
     BluetoothModemLpTimerCounterObservation, BluetoothModemLpTimerEpoch,
     BluetoothModemLpTimerHandlerRegisterObservation, BluetoothModemLpTimerInstant,
-    BluetoothModemLpTimerInterruptObservation, BluetoothNrtInterruptObservation,
+    BluetoothModemLpTimerInterruptObservation, BluetoothNrtInterruptAcknowledged,
     BluetoothSchedulerDisableBeginError as BluetoothControllerSchedulerDisableBeginError,
     BluetoothSchedulerFinishedListIndex, BluetoothSchedulerFinishedListObservation,
     BluetoothSchedulerFinishedListPop, BluetoothSchedulerLockModifyInterruptObservation,
@@ -567,7 +567,7 @@ impl BluetoothInterruptRegistersOwner {
     ///
     /// This preserves the PAC sample/sample/acknowledge/acknowledge order. It
     /// deliberately performs no feature dispatch and publishes no task wake.
-    pub fn capture_nrt_and_acknowledge(&mut self) -> BluetoothNrtInterruptObservation {
+    pub fn capture_nrt_and_acknowledge(&mut self) -> BluetoothNrtInterruptAcknowledged {
         self.registers.capture_nrt_and_acknowledge()
     }
 

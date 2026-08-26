@@ -194,10 +194,9 @@ title = "Live Controller interrupt epoch"
 scope = "Controller masks CPU route bounded hard-handler classification acknowledgement and task wake"
 depends-on = ["controller-initialization"]
 owners = [
-  { path = "driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs", token = "BluetoothNrtInterruptObservation" },
-  { path = "driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs", token = "BluetoothPrimaryInterruptObservation" },
+  { path = "driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs", token = "BluetoothNrtInterruptAcknowledged" },
   { path = "driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs", token = "BluetoothPrimaryInterruptEpoch" },
-  { path = "driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs", token = "BluetoothPrimaryFaultEvidence" },
+  { path = "driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs", token = "BluetoothPrimaryFaultSources" },
   { path = "driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs", token = "BluetoothInterruptOutputPrepared" },
   { path = "driver/chips/esp32s31/pac/src/bluetooth_modem_lp_timer.rs", token = "BluetoothModemLpTimerInterruptReady" },
   { path = "driver/chips/esp32s31/pac/src/bluetooth_modem_lp_timer.rs", token = "BluetoothModemLpTimerHandlerPending" },
@@ -240,8 +239,6 @@ owners = [
   { path = "driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_interrupt.rs", token = "BoundBluetoothInterruptRoutes" },
 ]
 tests = [
-  { path = "driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs", token = "nrt_observation_preserves_both_opaque_banks" },
-  { path = "driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs", token = "primary_observation_preserves_both_masked_banks" },
   { path = "driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs", token = "primary_epoch_acknowledges_before_conditional_fault_capture" },
   { path = "driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs", token = "primary_epoch_skips_diagnostic_reads_without_matching_sources" },
   { path = "driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs", token = "primary_prepare_preserves_clear_enable_strobe_order" },
@@ -277,6 +274,7 @@ tests = [
   { path = "driver/chips/esp32s31/bluetooth/src/primary_interrupt.rs", token = "ordinary_dynamic_epoch_produces_one_paired_scheduler_event" },
   { path = "driver/chips/esp32s31/bluetooth/src/primary_interrupt.rs", token = "idle_reference_gate_stops_before_clear_and_later_work_read" },
   { path = "driver/chips/esp32s31/bluetooth/src/primary_interrupt.rs", token = "busy_reference_gate_preserves_reference_then_uses_a_fresh_work_read" },
+  { path = "driver/chips/esp32s31/bluetooth/src/primary_interrupt.rs", token = "unclassified_status_fails_closed_without_reading_scheduler_state" },
   { path = "driver/chips/esp32s31/bluetooth/src/nrt_interrupt.rs", token = "default_profile_retains_one_epoch_without_synthetic_work" },
   { path = "driver/chips/esp32s31/bluetooth/src/modem_lp_timer_queue.rs", token = "queue_expires_oldest_due_timer_one_step_at_a_time" },
   { path = "driver/chips/esp32s31/bluetooth/src/modem_lp_timer_queue.rs", token = "cancellation_generation_cannot_target_a_reused_slot" },

@@ -121,7 +121,7 @@ intervening controller and BLE lifecycle prerequisites exist. Once the first pow
 mutation occurs, every owner is retained fail-stop because complete rollback
 and last-owner PHY teardown remain unrecovered. The interrupt slice now
 preserves two distinct vendor paths: primary source 124 samples masked status,
-NRT source 133 samples raw status, and both acknowledge through the same W1C
+NRT source 133 samples its dedicated snapshot status, and both acknowledge through the same W1C
 clear banks. The primary baseline groups (`0x00008000`, `0x00001300`), exact
 prepare/release ordering, level-3 policies and shared owner staging are typed.
 The pinned external ESP32-S31 PAC now exposes typed `BT_MAC` and
@@ -129,7 +129,7 @@ The pinned external ESP32-S31 PAC now exposes typed `BT_MAC` and
 against the reviewed policies before binding or disabling the pair on one
 core. The dynamic scheduler groups now have a positional classifier with two
 distinct scheduler-state observations and an RTOS-free sticky coalesced wake
-cell. Baseline/NRT meanings, shared ISR storage, the public live-route
+cell. Remaining NRT meanings, shared ISR storage, the public live-route
 lifecycle, scheduler-list drain and HCI readiness are still absent.
 
 The powered lifecycle is not ready yet, but its top-level S31 provenance is no

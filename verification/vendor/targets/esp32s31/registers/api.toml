@@ -795,22 +795,6 @@ clear-register = "IRQ_CLEAR_1"
 clear-field = "PENDING_BITS"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 
-[[interrupt-snapshots]]
-name = "bluetooth_primary_interrupt_bank_0"
-peripheral = "BLUETOOTH_INTERRUPT_BANK"
-status-register = "IRQ_STATUS_0"
-clear-register = "IRQ_CLEAR_0"
-clear-field = "PENDING_BITS"
-sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
-
-[[interrupt-snapshots]]
-name = "bluetooth_primary_interrupt_bank_1"
-peripheral = "BLUETOOTH_INTERRUPT_BANK"
-status-register = "IRQ_STATUS_1"
-clear-register = "IRQ_CLEAR_1"
-clear-field = "PENDING_BITS"
-sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
-
 [[full-register-writes]]
 name = "mac_interrupt_enable"
 peripheral = "WIFI_MAC_INTERRUPT"

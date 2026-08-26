@@ -66,7 +66,7 @@ impl BluetoothCpuInterruptRoutePolicy {
         pinned_to_controller_core: true,
     };
 
-    /// NRT source-133 route used by the raw-snapshot ISR.
+    /// NRT source-133 route used by the opaque acknowledgement ISR.
     pub const NRT: Self = Self {
         source: BluetoothCpuInterruptSource::NrtBtMacInt1,
         priority_level: 3,

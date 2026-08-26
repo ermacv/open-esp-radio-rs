@@ -65,8 +65,8 @@ handler request. The non-real-time (NRT) Bluetooth MAC INT1 route uses source
 133 and level 3 without requesting IRAM placement. The public OSAL installs
 both on the configured Controller core. The primary setup clears and enables
 baseline groups `0x0000_8000` in bank 0 and `0x0000_1300` in bank 1 before the
-output strobe. Its handler samples masked status; the NRT handler samples raw
-status. Both acknowledge through the same two W1C clear banks. The restricted
+output strobe. Its handler samples masked status; the NRT handler samples its
+dedicated snapshot status. Both acknowledge through the same two W1C clear banks. The restricted
 PAC therefore exposes a transition that stages a single shared register owner
 before either CPU route is bound and preserves the distinct snapshot modes.
 
@@ -95,8 +95,9 @@ policy, typed selector-4/6 actions, open completion queue and lost-wake-safe
 waker can make a lossless live epoch. The
 baseline groups are no longer opaque completion candidates: the complete
 source-124 prefix proves four fault/assert lanes, and the restricted PAC
-atomically retains their conditional diagnostic words before Bluetooth policy
-selects fail-stop over any simultaneous scheduler wake.
+performs their conditional diagnostic reads at the reviewed temporal points
+without exporting the opaque words. Bluetooth policy then selects fail-stop
+over any simultaneous scheduler wake.
 
 ## Reference Controller implementations
 
@@ -302,7 +303,7 @@ live.
 
 The decisive gaps are not HCI packet syntax. They are:
 
-- feature-specific raw NRT meanings plus their mask/re-arm ordering; the
+- feature-specific NRT snapshot meanings plus their mask/re-arm ordering; the
   primary fault disposition and diagnostics, dynamic scheduler branch, source
   identities, level-3 policy, exact masks, coalesced marker contract, affine
   ISR scheduler MMIO and shared clear-bank prefix are no longer unknown, but

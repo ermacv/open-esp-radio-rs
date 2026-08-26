@@ -69,12 +69,15 @@ baseline enable groups as fault/assert paths:
 | bank 1 source 12 | complete `IRQ_DIAGNOSTIC_STATE` at `0x2010_1070` |
 
 This is not a Link-Layer completion group. The restricted PAC therefore
-returns one `BluetoothPrimaryInterruptEpoch` containing the lossless masked
-observation plus conditional `BluetoothPrimaryFaultEvidence`. The Bluetooth
-classifier gives any fault lane precedence over simultaneous dynamic bits and
-returns `BluetoothPrimaryControllerFault`; a future live owner must retain it,
-skip ordinary LL work and enter fail-stop/quiesce. Rust does not reproduce the
-vendor assert routine in hard-interrupt context.
+projects the acknowledged status into one semantic
+`BluetoothPrimaryInterruptEpoch` and never exports the raw bank or diagnostic
+images. `BluetoothPrimaryFaultSources` also marks any pending status outside
+the reviewed dynamic and fault source groups as unclassified. The Bluetooth
+classifier gives known fault lanes and unclassified status precedence over
+simultaneous dynamic bits and returns `BluetoothPrimaryControllerFault`; a
+future live owner must retain it, skip ordinary LL work and enter
+fail-stop/quiesce. Rust does not reproduce the vendor assert routine in
+hard-interrupt context.
 
 Only after that prefix does the reference handler dispatch selector 0 with the
 two-word snapshot, execute the following dynamic branch, then dispatch selector
@@ -184,20 +187,20 @@ registrations, so absence here is not inferred merely from stripped names.
 
 This establishes an acknowledge-only NRT path for the pinned default software
 lifecycle, not a silicon guarantee that source 133 can be removed or that its
-raw bits have no meaning under future features. The open ISR must retain the
-opaque observation and shared-clear ordering. It must not invent LL wakes from
-those bits until a feature-specific producer/consumer path or HIL establishes
+snapshot fields have no meaning under future features. The open ISR must retain
+the affine acknowledgement token and shared-clear ordering. It must not invent
+LL wakes until a feature-specific producer/consumer path or HIL establishes
 them.
 
 ## Remaining publication blockers
 
-- feature-specific meanings and mask/re-arm policy for NRT raw status beyond
+- feature-specific meanings and mask/re-arm policy for NRT snapshot status beyond
   the pinned default lifecycle's acknowledge-only callback graph;
 - typed open equivalents for the selector-6 post-clear consistency action and
   selector-4 reference-state-driven scheduler retry;
 - an affine scheduler item lifecycle and bounded completion queue that replace
-  the recovered software intrusive list, including the raw-status-to-finished
-  mask edge, memory fence, abort and shutdown drain;
+  the recovered software intrusive list, including the semantic
+  status-to-finished-list edge, memory fence, abort and shutdown drain;
 - executor-neutral waker registration with a register-then-recheck poll
   protocol and a quiescent teardown barrier;
 - composition of the staged interrupt-bank plus scheduler-runtime owner into

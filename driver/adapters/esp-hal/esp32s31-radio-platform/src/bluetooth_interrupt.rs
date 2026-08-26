@@ -2,7 +2,7 @@
 //!
 //! This module deliberately stops below a live interrupt epoch. The caller
 //! must first publish the unique Bluetooth interrupt-register owner in stable
-//! ISR storage; primary fault/dynamic and raw NRT dispatch plus the scheduler-list
+//! ISR storage; primary semantic fault/dynamic and opaque NRT acknowledgement plus the scheduler-list
 //! drain remain incomplete. Keeping these primitives crate-private makes the
 //! PAC-to-ESP-HAL mapping compile checked without exposing a safe API that
 //! could enable either route prematurely.
@@ -73,7 +73,7 @@ pub(crate) fn bind(
 impl BoundBluetoothInterruptRoutes {
     /// Disable both routes on the core where the pair was installed.
     ///
-    /// NRT is closed first because its raw status path has no controller-side
+    /// NRT is closed first because its opaque acknowledgement path has no controller-side
     /// baseline mask. Teardown on any other core returns the intact route
     /// owner without changing the matrix. After success, neither handler can
     /// begin a new same-core epoch and the caller may recover shared storage.

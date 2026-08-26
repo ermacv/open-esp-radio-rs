@@ -41707,13 +41707,55 @@ pub mod bluetooth_interrupt_bank {
     pub mod irq_status_0 {
         #[doc = "Register `IRQ_STATUS_0` reader"]
         pub type R = crate::R<IrqStatus0Spec>;
-        #[doc = "Field `PENDING_BITS` reader - "]
-        pub type PendingBitsR = crate::FieldReader<u32>;
+        #[doc = "Field `UNCLASSIFIED_0_14` reader - "]
+        pub type Unclassified0_14R = crate::FieldReader<u16>;
+        #[doc = "Field `SOURCE_15` reader - "]
+        pub type Source15R = crate::BitReader;
+        #[doc = "Field `UNCLASSIFIED_16_20` reader - "]
+        pub type Unclassified16_20R = crate::FieldReader;
+        #[doc = "Field `SOURCE_21` reader - "]
+        pub type Source21R = crate::BitReader;
+        #[doc = "Field `UNCLASSIFIED_22_26` reader - "]
+        pub type Unclassified22_26R = crate::FieldReader;
+        #[doc = "Field `SOURCES_27_28` reader - "]
+        pub type Sources27_28R = crate::FieldReader;
+        #[doc = "Field `UNCLASSIFIED_29_31` reader - "]
+        pub type Unclassified29_31R = crate::FieldReader;
         impl R {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:14"]
             #[inline(always)]
-            pub fn pending_bits(&self) -> PendingBitsR {
-                PendingBitsR::new(self.bits)
+            pub fn unclassified_0_14(&self) -> Unclassified0_14R {
+                Unclassified0_14R::new((self.bits & 0x7fff) as u16)
+            }
+            #[doc = "Bit 15"]
+            #[inline(always)]
+            pub fn source_15(&self) -> Source15R {
+                Source15R::new(((self.bits >> 15) & 1) != 0)
+            }
+            #[doc = "Bits 16:20"]
+            #[inline(always)]
+            pub fn unclassified_16_20(&self) -> Unclassified16_20R {
+                Unclassified16_20R::new(((self.bits >> 16) & 0x1f) as u8)
+            }
+            #[doc = "Bit 21"]
+            #[inline(always)]
+            pub fn source_21(&self) -> Source21R {
+                Source21R::new(((self.bits >> 21) & 1) != 0)
+            }
+            #[doc = "Bits 22:26"]
+            #[inline(always)]
+            pub fn unclassified_22_26(&self) -> Unclassified22_26R {
+                Unclassified22_26R::new(((self.bits >> 22) & 0x1f) as u8)
+            }
+            #[doc = "Bits 27:28"]
+            #[inline(always)]
+            pub fn sources_27_28(&self) -> Sources27_28R {
+                Sources27_28R::new(((self.bits >> 27) & 3) as u8)
+            }
+            #[doc = "Bits 29:31"]
+            #[inline(always)]
+            pub fn unclassified_29_31(&self) -> Unclassified29_31R {
+                Unclassified29_31R::new(((self.bits >> 29) & 7) as u8)
             }
         }
         #[doc = "First masked controller interrupt-status bank; the primary source-124 handler reads this complete word before acknowledgement.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_status_0::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -41895,13 +41937,62 @@ pub mod bluetooth_interrupt_bank {
     pub mod irq_status_1 {
         #[doc = "Register `IRQ_STATUS_1` reader"]
         pub type R = crate::R<IrqStatus1Spec>;
-        #[doc = "Field `PENDING_BITS` reader - "]
-        pub type PendingBitsR = crate::FieldReader<u32>;
+        #[doc = "Field `UNCLASSIFIED_0_2` reader - "]
+        pub type Unclassified0_2R = crate::FieldReader;
+        #[doc = "Field `SOURCE_3` reader - "]
+        pub type Source3R = crate::BitReader;
+        #[doc = "Field `UNCLASSIFIED_4_7` reader - "]
+        pub type Unclassified4_7R = crate::FieldReader;
+        #[doc = "Field `SOURCE_8` reader - "]
+        pub type Source8R = crate::BitReader;
+        #[doc = "Field `SOURCE_9` reader - "]
+        pub type Source9R = crate::BitReader;
+        #[doc = "Field `UNCLASSIFIED_10_11` reader - "]
+        pub type Unclassified10_11R = crate::FieldReader;
+        #[doc = "Field `SOURCE_12` reader - "]
+        pub type Source12R = crate::BitReader;
+        #[doc = "Field `UNCLASSIFIED_13_31` reader - "]
+        pub type Unclassified13_31R = crate::FieldReader<u32>;
         impl R {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:2"]
             #[inline(always)]
-            pub fn pending_bits(&self) -> PendingBitsR {
-                PendingBitsR::new(self.bits)
+            pub fn unclassified_0_2(&self) -> Unclassified0_2R {
+                Unclassified0_2R::new((self.bits & 7) as u8)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn source_3(&self) -> Source3R {
+                Source3R::new(((self.bits >> 3) & 1) != 0)
+            }
+            #[doc = "Bits 4:7"]
+            #[inline(always)]
+            pub fn unclassified_4_7(&self) -> Unclassified4_7R {
+                Unclassified4_7R::new(((self.bits >> 4) & 0x0f) as u8)
+            }
+            #[doc = "Bit 8"]
+            #[inline(always)]
+            pub fn source_8(&self) -> Source8R {
+                Source8R::new(((self.bits >> 8) & 1) != 0)
+            }
+            #[doc = "Bit 9"]
+            #[inline(always)]
+            pub fn source_9(&self) -> Source9R {
+                Source9R::new(((self.bits >> 9) & 1) != 0)
+            }
+            #[doc = "Bits 10:11"]
+            #[inline(always)]
+            pub fn unclassified_10_11(&self) -> Unclassified10_11R {
+                Unclassified10_11R::new(((self.bits >> 10) & 3) as u8)
+            }
+            #[doc = "Bit 12"]
+            #[inline(always)]
+            pub fn source_12(&self) -> Source12R {
+                Source12R::new(((self.bits >> 12) & 1) != 0)
+            }
+            #[doc = "Bits 13:31"]
+            #[inline(always)]
+            pub fn unclassified_13_31(&self) -> Unclassified13_31R {
+                Unclassified13_31R::new((self.bits >> 13) & 0x0007_ffff)
             }
         }
         #[doc = "Second masked controller interrupt-status bank; the primary source-124 handler reads this complete word before acknowledgement.\n\nYou can [`read`](crate::Reg::read) this register and get [`irq_status_1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -53481,88 +53572,6 @@ pub mod interrupt_snapshot {
         bits: u32,
     ) -> BluetoothInterruptBank1Snapshot {
         BluetoothInterruptBank1Snapshot(bits)
-    }
-
-    /// Opaque event image sampled from `BLUETOOTH_INTERRUPT_BANK`.`IRQ_STATUS_0`.
-    #[must_use = "an interrupt snapshot must be inspected and acknowledged"]
-    #[derive(Debug)]
-    pub struct BluetoothPrimaryInterruptBank0Snapshot(u32);
-    impl BluetoothPrimaryInterruptBank0Snapshot {
-        /// Complete masked event image observed by the status read.
-        #[inline]
-        pub const fn bits(&self) -> u32 {
-            self.0
-        }
-    }
-    /// Sample the complete masked event image.
-    #[inline]
-    pub fn sample_bluetooth_primary_interrupt_bank_0(
-        registers: &crate::BluetoothInterruptBank,
-    ) -> BluetoothPrimaryInterruptBank0Snapshot {
-        BluetoothPrimaryInterruptBank0Snapshot(registers.irq_status_0().read().bits())
-    }
-    /// Acknowledge exactly the event image returned by the paired sample.
-    #[inline]
-    pub fn acknowledge_bluetooth_primary_interrupt_bank_0(
-        registers: &crate::BluetoothInterruptBank,
-        snapshot: BluetoothPrimaryInterruptBank0Snapshot,
-    ) {
-        // SAFETY: the opaque value can only be constructed by the paired
-        // STATUS read (or in a validation-only build) and CLEAR is an
-        // SVD-validated full-width write-one-to-clear register.
-        unsafe {
-            registers
-                .irq_clear_0()
-                .write_with_zero(|writer| writer.pending_bits().bits(snapshot.0));
-        }
-    }
-    #[cfg(feature = "validation-probes")]
-    #[doc(hidden)]
-    pub const fn bluetooth_primary_interrupt_bank_0_for_validation(
-        bits: u32,
-    ) -> BluetoothPrimaryInterruptBank0Snapshot {
-        BluetoothPrimaryInterruptBank0Snapshot(bits)
-    }
-
-    /// Opaque event image sampled from `BLUETOOTH_INTERRUPT_BANK`.`IRQ_STATUS_1`.
-    #[must_use = "an interrupt snapshot must be inspected and acknowledged"]
-    #[derive(Debug)]
-    pub struct BluetoothPrimaryInterruptBank1Snapshot(u32);
-    impl BluetoothPrimaryInterruptBank1Snapshot {
-        /// Complete masked event image observed by the status read.
-        #[inline]
-        pub const fn bits(&self) -> u32 {
-            self.0
-        }
-    }
-    /// Sample the complete masked event image.
-    #[inline]
-    pub fn sample_bluetooth_primary_interrupt_bank_1(
-        registers: &crate::BluetoothInterruptBank,
-    ) -> BluetoothPrimaryInterruptBank1Snapshot {
-        BluetoothPrimaryInterruptBank1Snapshot(registers.irq_status_1().read().bits())
-    }
-    /// Acknowledge exactly the event image returned by the paired sample.
-    #[inline]
-    pub fn acknowledge_bluetooth_primary_interrupt_bank_1(
-        registers: &crate::BluetoothInterruptBank,
-        snapshot: BluetoothPrimaryInterruptBank1Snapshot,
-    ) {
-        // SAFETY: the opaque value can only be constructed by the paired
-        // STATUS read (or in a validation-only build) and CLEAR is an
-        // SVD-validated full-width write-one-to-clear register.
-        unsafe {
-            registers
-                .irq_clear_1()
-                .write_with_zero(|writer| writer.pending_bits().bits(snapshot.0));
-        }
-    }
-    #[cfg(feature = "validation-probes")]
-    #[doc(hidden)]
-    pub const fn bluetooth_primary_interrupt_bank_1_for_validation(
-        bits: u32,
-    ) -> BluetoothPrimaryInterruptBank1Snapshot {
-        BluetoothPrimaryInterruptBank1Snapshot(bits)
     }
 }
 

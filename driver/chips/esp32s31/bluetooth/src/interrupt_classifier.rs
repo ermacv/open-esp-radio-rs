@@ -3,8 +3,8 @@
 //! The restricted PAC owns the exact masked-status sample and W1C prefix.
 //! This module first rejects the four baseline groups consumed by the complete
 //! assertion prefix, then classifies the three dynamic source groups consumed
-//! by the source-124 scheduler suffix. Still-opaque bits remain in the retained
-//! observation and are not assigned Link-Layer meanings here.
+//! by the source-124 scheduler suffix. Raw status and diagnostic images remain
+//! inside the PAC; this layer receives positional source facts only.
 //!
 //! The reference handler can observe `SCHEDULER_STATE` twice: once while
 //! handling bank-one source 3 and again while constructing scheduler work.
@@ -14,13 +14,9 @@
 
 #![forbid(unsafe_code)]
 
+use open_esp_radio_esp32s31_pac::{BluetoothPrimaryFaultSources, BluetoothPrimaryInterruptEpoch};
 pub use open_esp_radio_esp32s31_pac::{
-    BLUETOOTH_PRIMARY_DYNAMIC_BANK_0_MASK, BLUETOOTH_PRIMARY_DYNAMIC_BANK_1_MASK,
     BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerWorkObservation,
-};
-use open_esp_radio_esp32s31_pac::{
-    BluetoothPrimaryFaultEvidence, BluetoothPrimaryInterruptEpoch,
-    BluetoothPrimaryInterruptObservation,
 };
 
 /// Dynamic scheduler trigger selected from one acknowledged primary snapshot.
@@ -48,18 +44,18 @@ pub enum BluetoothPrimarySchedulerTrigger {
 }
 
 impl BluetoothPrimarySchedulerTrigger {
-    const fn from_observation(observation: BluetoothPrimaryInterruptObservation) -> Self {
-        let sources_27_or_28_pending = observation.bank_0_sources_27_or_28_pending();
+    const fn from_epoch(epoch: &BluetoothPrimaryInterruptEpoch) -> Self {
+        let sources_27_or_28_pending = epoch.bank_0_sources_27_or_28_pending();
 
-        if observation.bank_1_source_3_pending() {
+        if epoch.bank_1_source_3_pending() {
             Self::Bank1Source3 {
                 bank_0_sources_27_or_28_pending: sources_27_or_28_pending,
             }
         } else if sources_27_or_28_pending {
             Self::Bank0Sources27Or28 {
-                source_21_pending: observation.bank_0_source_21_pending(),
+                source_21_pending: epoch.bank_0_source_21_pending(),
             }
-        } else if observation.bank_0_source_21_pending() {
+        } else if epoch.bank_0_source_21_pending() {
             Self::Bank0Source21
         } else {
             Self::None
@@ -72,14 +68,12 @@ impl BluetoothPrimarySchedulerTrigger {
         sources_27_or_28_pending: bool,
         source_3_pending: bool,
     ) -> Self {
-        Self::from_observation(
-            BluetoothPrimaryInterruptEpoch::for_dynamic_validation(
-                source_21_pending,
-                sources_27_or_28_pending,
-                source_3_pending,
-            )
-            .observation(),
-        )
+        let epoch = BluetoothPrimaryInterruptEpoch::for_dynamic_validation(
+            source_21_pending,
+            sources_27_or_28_pending,
+            source_3_pending,
+        );
+        Self::from_epoch(&epoch)
     }
 
     const fn work_inputs(self) -> Option<(bool, bool)> {
@@ -96,9 +90,8 @@ impl BluetoothPrimarySchedulerTrigger {
 
 /// Classified dynamic suffix of one complete primary interrupt observation.
 ///
-/// The original two-bank observation remains available so later layers do not
-/// lose baseline or currently opaque pending bits while consuming the dynamic
-/// scheduler classification.
+/// The acknowledged PAC epoch remains affine while only semantic scheduler
+/// trigger facts are exposed.
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "a classified primary epoch must drive fault or scheduler handling"]
 pub struct BluetoothPrimaryInterruptClassification {
@@ -116,25 +109,14 @@ impl BluetoothPrimaryInterruptClassification {
     pub const fn from_epoch(
         epoch: BluetoothPrimaryInterruptEpoch,
     ) -> Result<Self, BluetoothPrimaryControllerFault> {
-        if epoch.fault_evidence().is_fault() {
+        if epoch.fault_sources().is_fault() {
             return Err(BluetoothPrimaryControllerFault { epoch });
         }
-        let observation = epoch.observation();
-        let scheduler_trigger = BluetoothPrimarySchedulerTrigger::from_observation(observation);
+        let scheduler_trigger = BluetoothPrimarySchedulerTrigger::from_epoch(&epoch);
         Ok(Self {
             epoch,
             scheduler_trigger,
         })
-    }
-
-    /// Return the lossless acknowledged status image.
-    pub const fn observation(&self) -> BluetoothPrimaryInterruptObservation {
-        self.epoch.observation()
-    }
-
-    /// Consume the classification and return its acknowledged epoch.
-    pub fn into_epoch(self) -> BluetoothPrimaryInterruptEpoch {
-        self.epoch
     }
 
     /// Return the positional dynamic scheduler trigger.
@@ -170,7 +152,7 @@ impl BluetoothPrimaryInterruptClassification {
     }
 }
 
-/// Fatal primary interrupt result retaining every captured diagnostic word.
+/// Fatal primary interrupt result retaining semantic source presence.
 ///
 /// The type classifies the reference handler's assertion path; it does not
 /// panic in interrupt context. The future Controller lifecycle owns the
@@ -182,19 +164,9 @@ pub struct BluetoothPrimaryControllerFault {
 }
 
 impl BluetoothPrimaryControllerFault {
-    /// Return the complete masked observation that selected the fault path.
-    pub const fn observation(&self) -> BluetoothPrimaryInterruptObservation {
-        self.epoch.observation()
-    }
-
-    /// Return every source and conditional diagnostic image captured by PAC.
-    pub const fn evidence(&self) -> BluetoothPrimaryFaultEvidence {
-        self.epoch.fault_evidence()
-    }
-
-    /// Return the complete acknowledged interrupt epoch.
-    pub fn into_epoch(self) -> BluetoothPrimaryInterruptEpoch {
-        self.epoch
+    /// Return the positional fault sources that selected fail-stop handling.
+    pub const fn sources(&self) -> BluetoothPrimaryFaultSources {
+        self.epoch.fault_sources()
     }
 }
 
@@ -339,22 +311,19 @@ mod tests {
     #[test]
     fn baseline_fault_preempts_dynamic_scheduler_work() {
         let epoch = BluetoothPrimaryInterruptEpoch::for_fault_validation();
-        let expected_observation = epoch.observation();
         let fault = BluetoothPrimaryInterruptClassification::from_epoch(epoch)
             .expect_err("a baseline assertion source must preempt scheduler work");
 
-        assert_eq!(fault.observation(), expected_observation);
-        assert!(fault.evidence().is_fault());
+        assert!(fault.sources().is_fault());
+        assert!(fault.sources().bank_1_source_8_pending());
     }
 
     #[test]
     fn fault_free_epoch_reaches_dynamic_scheduler_classifier() {
         let epoch = BluetoothPrimaryInterruptEpoch::for_dynamic_validation(false, true, true);
-        let expected_observation = epoch.observation();
         let classification = BluetoothPrimaryInterruptClassification::from_epoch(epoch)
             .expect("dynamic sources are not fault lanes");
 
-        assert_eq!(classification.observation(), expected_observation);
         assert_eq!(
             classification.scheduler_trigger(),
             BluetoothPrimarySchedulerTrigger::Bank1Source3 {

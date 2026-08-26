@@ -2,40 +2,32 @@
 //!
 //! The pinned default Controller lifecycle has no consumer registered for the
 //! NRT callback manager. Its complete hard-handler effect is therefore the
-//! restricted PAC raw sample/sample/acknowledge/acknowledge transaction. This
-//! module retains that opaque observation without assigning Link-Layer names
-//! or publishing synthetic work.
+//! restricted PAC sample/sample/acknowledge/acknowledge transaction. This
+//! module retains only an acknowledged token without assigning Link-Layer
+//! names or publishing synthetic work.
 
 #![forbid(unsafe_code)]
 
 use open_esp_radio_esp32s31_hal::{
-    BluetoothInterruptRegistersOwner, BluetoothNrtInterruptObservation,
+    BluetoothInterruptRegistersOwner, BluetoothNrtInterruptAcknowledged,
 };
 
 /// One acknowledged NRT epoch for the pinned standalone default profile.
 ///
-/// This is intentionally affine even though its contained observation is
-/// value-only. A future feature-specific policy must consume the epoch before
-/// it can publish any Link-Layer work.
+/// A future feature-specific policy must consume the epoch before it can
+/// publish any Link-Layer work. No raw status image crosses the PAC boundary.
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "the acknowledged NRT epoch must be retained or explicitly consumed"]
 pub struct BluetoothNrtDefaultInterruptEpoch {
-    observation: BluetoothNrtInterruptObservation,
-}
-
-impl BluetoothNrtDefaultInterruptEpoch {
-    /// Return both opaque raw status images captured before acknowledgement.
-    pub const fn observation(&self) -> BluetoothNrtInterruptObservation {
-        self.observation
-    }
+    _acknowledged: BluetoothNrtInterruptAcknowledged,
 }
 
 trait BluetoothNrtInterruptBackend {
-    fn capture_nrt_and_acknowledge(&mut self) -> BluetoothNrtInterruptObservation;
+    fn capture_nrt_and_acknowledge(&mut self) -> BluetoothNrtInterruptAcknowledged;
 }
 
 impl BluetoothNrtInterruptBackend for BluetoothInterruptRegistersOwner {
-    fn capture_nrt_and_acknowledge(&mut self) -> BluetoothNrtInterruptObservation {
+    fn capture_nrt_and_acknowledge(&mut self) -> BluetoothNrtInterruptAcknowledged {
         self.capture_nrt_and_acknowledge()
     }
 }
@@ -44,7 +36,7 @@ fn execute_nrt_default_interrupt_step(
     backend: &mut impl BluetoothNrtInterruptBackend,
 ) -> BluetoothNrtDefaultInterruptEpoch {
     BluetoothNrtDefaultInterruptEpoch {
-        observation: backend.capture_nrt_and_acknowledge(),
+        _acknowledged: backend.capture_nrt_and_acknowledge(),
     }
 }
 
@@ -64,28 +56,26 @@ mod tests {
     use super::*;
 
     struct Backend {
-        observation: Option<BluetoothNrtInterruptObservation>,
+        acknowledged: Option<BluetoothNrtInterruptAcknowledged>,
         captures: usize,
     }
 
     impl BluetoothNrtInterruptBackend for Backend {
-        fn capture_nrt_and_acknowledge(&mut self) -> BluetoothNrtInterruptObservation {
+        fn capture_nrt_and_acknowledge(&mut self) -> BluetoothNrtInterruptAcknowledged {
             self.captures += 1;
-            self.observation.take().expect("one NRT epoch")
+            self.acknowledged.take().expect("one NRT epoch")
         }
     }
 
     #[test]
     fn default_profile_retains_one_epoch_without_synthetic_work() {
-        let observation = BluetoothNrtInterruptObservation::for_validation(0, 0);
         let mut backend = Backend {
-            observation: Some(observation),
+            acknowledged: Some(BluetoothNrtInterruptAcknowledged::for_validation()),
             captures: 0,
         };
 
-        let epoch = execute_nrt_default_interrupt_step(&mut backend);
+        let _epoch = execute_nrt_default_interrupt_step(&mut backend);
 
-        assert_eq!(epoch.observation(), observation);
         assert_eq!(backend.captures, 1);
     }
 }

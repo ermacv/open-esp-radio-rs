@@ -87,11 +87,8 @@ pub use bluetooth_controller_time::{
     BluetoothControllerTimeLatchStep, BluetoothControllerTimeLatchStepError,
 };
 pub use bluetooth_interrupt::{
-    BLUETOOTH_PRIMARY_BASELINE_BANK_0_MASK, BLUETOOTH_PRIMARY_BASELINE_BANK_1_MASK,
-    BLUETOOTH_PRIMARY_DYNAMIC_BANK_0_MASK, BLUETOOTH_PRIMARY_DYNAMIC_BANK_1_MASK,
-    BluetoothInterruptOutputPrepared, BluetoothNrtInterruptObservation,
-    BluetoothPrimaryFaultEvidence, BluetoothPrimaryInterruptEpoch,
-    BluetoothPrimaryInterruptObservation,
+    BluetoothInterruptOutputPrepared, BluetoothNrtInterruptAcknowledged,
+    BluetoothPrimaryFaultSources, BluetoothPrimaryInterruptEpoch,
 };
 pub use bluetooth_memory_lists::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,

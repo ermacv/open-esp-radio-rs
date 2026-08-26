@@ -108,7 +108,6 @@ pub use interrupt::{
     BluetoothInterruptHandlerResidency,
 };
 pub use interrupt_classifier::{
-    BLUETOOTH_PRIMARY_DYNAMIC_BANK_0_MASK, BLUETOOTH_PRIMARY_DYNAMIC_BANK_1_MASK,
     BluetoothPrimaryControllerFault, BluetoothPrimaryInterruptClassification,
     BluetoothPrimarySchedulerTrigger, BluetoothSchedulerReferenceAction,
     BluetoothSchedulerReferenceGate, BluetoothSchedulerReferenceGateObservation,

@@ -11,9 +11,7 @@ use open_esp_radio_esp32s31_hal::{
     BluetoothInterruptRegistersOwner, BluetoothSchedulerLockModifyInterruptObservation,
     BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerWorkObservation,
 };
-use open_esp_radio_esp32s31_pac::{
-    BluetoothPrimaryInterruptEpoch, BluetoothPrimaryInterruptObservation,
-};
+use open_esp_radio_esp32s31_pac::BluetoothPrimaryInterruptEpoch;
 
 use crate::{
     BluetoothPrimaryControllerFault, BluetoothPrimaryInterruptClassification,
@@ -41,13 +39,6 @@ pub struct BluetoothPrimaryNoSchedulerWork {
     classification: BluetoothPrimaryInterruptClassification,
 }
 
-impl BluetoothPrimaryNoSchedulerWork {
-    /// Return the complete acknowledged primary observation.
-    pub const fn observation(&self) -> BluetoothPrimaryInterruptObservation {
-        self.classification.observation()
-    }
-}
-
 /// One classified scheduler publication derived from a single later state read.
 ///
 /// The ordinary scheduler wake and lock/modify BUSY value are intentionally
@@ -62,11 +53,6 @@ pub struct BluetoothPrimarySchedulerEvent {
 }
 
 impl BluetoothPrimarySchedulerEvent {
-    /// Return the complete acknowledged primary observation.
-    pub const fn observation(&self) -> BluetoothPrimaryInterruptObservation {
-        self.classification.observation()
-    }
-
     /// Return the scheduler-worker wake classification.
     pub const fn wake(&self) -> BluetoothSchedulerWorkerWake {
         self.wake
@@ -94,11 +80,6 @@ pub struct BluetoothPrimaryReferenceRecoveryRequired {
 }
 
 impl BluetoothPrimaryReferenceRecoveryRequired {
-    /// Return the complete acknowledged primary observation.
-    pub const fn observation(&self) -> BluetoothPrimaryInterruptObservation {
-        self.classification.observation()
-    }
-
     /// Return the semantic gate observation that required recovery.
     pub const fn gate_observation(&self) -> BluetoothSchedulerReferenceGateObservation {
         self.gate
@@ -228,6 +209,12 @@ mod tests {
             backend.epoch = Some(BluetoothPrimaryInterruptEpoch::for_fault_validation());
             backend
         }
+
+        fn unclassified() -> Self {
+            let mut backend = Self::dynamic(false, false, false, false, false, false);
+            backend.epoch = Some(BluetoothPrimaryInterruptEpoch::for_unclassified_validation());
+            backend
+        }
     }
 
     impl BluetoothPrimaryInterruptBackend for Backend {
@@ -328,5 +315,19 @@ mod tests {
             BluetoothPrimaryInterruptStep::NoSchedulerWork(_)
         ));
         assert_eq!(empty.operations, [Operation::PrimaryEpoch]);
+    }
+
+    #[test]
+    fn unclassified_status_fails_closed_without_reading_scheduler_state() {
+        let mut backend = Backend::unclassified();
+
+        let BluetoothPrimaryInterruptStep::Fault(fault) =
+            execute_primary_interrupt_step(&mut backend)
+        else {
+            panic!("unclassified status must fail closed");
+        };
+
+        assert!(fault.sources().unclassified_pending());
+        assert_eq!(backend.operations, [Operation::PrimaryEpoch]);
     }
 }

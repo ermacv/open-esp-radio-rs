@@ -2443,10 +2443,52 @@ scope = []
 register-method = "irq_status_0"
 
 [[registers.fields]]
-svd-name = "PENDING_BITS"
-method = "pending_bits"
+svd-name = "UNCLASSIFIED_0_14"
+method = "unclassified_0_14"
 bit-offset = 0
-bit-width = 32
+bit-width = 15
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "SOURCE_15"
+method = "source_15"
+bit-offset = 15
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "UNCLASSIFIED_16_20"
+method = "unclassified_16_20"
+bit-offset = 16
+bit-width = 5
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "SOURCE_21"
+method = "source_21"
+bit-offset = 21
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "UNCLASSIFIED_22_26"
+method = "unclassified_22_26"
+bit-offset = 22
+bit-width = 5
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "SOURCES_27_28"
+method = "sources_27_28"
+bit-offset = 27
+bit-width = 2
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "UNCLASSIFIED_29_31"
+method = "unclassified_29_31"
+bit-offset = 29
+bit-width = 3
 access = "read-only"
 
 [[registers]]
@@ -2546,10 +2588,59 @@ scope = []
 register-method = "irq_status_1"
 
 [[registers.fields]]
-svd-name = "PENDING_BITS"
-method = "pending_bits"
+svd-name = "UNCLASSIFIED_0_2"
+method = "unclassified_0_2"
 bit-offset = 0
-bit-width = 32
+bit-width = 3
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "SOURCE_3"
+method = "source_3"
+bit-offset = 3
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "UNCLASSIFIED_4_7"
+method = "unclassified_4_7"
+bit-offset = 4
+bit-width = 4
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "SOURCE_8"
+method = "source_8"
+bit-offset = 8
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "SOURCE_9"
+method = "source_9"
+bit-offset = 9
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "UNCLASSIFIED_10_11"
+method = "unclassified_10_11"
+bit-offset = 10
+bit-width = 2
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "SOURCE_12"
+method = "source_12"
+bit-offset = 12
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "UNCLASSIFIED_13_31"
+method = "unclassified_13_31"
+bit-offset = 13
+bit-width = 19
 access = "read-only"
 
 [[registers]]

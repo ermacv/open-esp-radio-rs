@@ -22,30 +22,8 @@ fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
 /// suffix; this function executes the exact restricted PAC transaction.
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_ble_interrupt_trace_r_sym_ble_ywjh0f9yj_t_be_i7_xg_s5da() -> u32 {
-    let [bank_0, bank_1] =
-        open_esp_radio_esp32s31_bluetooth::validation::capture_and_acknowledge_interrupts();
-    bank_0 ^ bank_1
-}
-
-/// Production-path probe for the primary BT MAC status/clear ISR prefix.
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_btdm_primary_interrupt_trace_r_sym_bt_r9_gzfn_ubtn7k6m_htozbv() -> u32 {
-    let [bank_0, bank_1] =
-        open_esp_radio_esp32s31_bluetooth::validation::capture_primary_and_acknowledge_interrupts();
-    bank_0 ^ bank_1
-}
-
-/// Production-path probe for baseline clear/enable and output preparation.
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_btdm_primary_interrupt_prepare_trace() {
-    // SAFETY: this isolated comparison image models completed controller
-    // HAL-init and performs no later Link-Layer or radio operation.
-    unsafe {
-        open_esp_radio_esp32s31_bluetooth::validation::prepare_primary_interrupt_output();
-    }
+pub extern "C" fn open_ble_interrupt_trace_r_sym_ble_ywjh0f9yj_t_be_i7_xg_s5da() {
+    open_esp_radio_esp32s31_bluetooth::validation::capture_and_acknowledge_interrupts();
 }
 
 /// Production-path probe for the finite scheduler-table MMIO transaction.

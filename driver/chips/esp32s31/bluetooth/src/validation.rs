@@ -13,40 +13,11 @@ pub use open_esp_radio_esp32s31_pac::{
     BluetoothMemoryListPointerImage, BluetoothMemoryListSelector, BluetoothMemoryListSlot,
 };
 
-/// Execute the exact production NRT raw-snapshot acknowledgement transaction.
+/// Execute the exact production NRT acknowledgement transaction.
 #[inline(always)]
-pub fn capture_and_acknowledge_interrupts() -> [u32; 2] {
+pub fn capture_and_acknowledge_interrupts() {
     let mut registers = open_esp_radio_esp32s31_pac::validation::bluetooth_interrupt_registers();
-    let observation = registers.capture_nrt_and_acknowledge();
-    [observation.bank_0_bits(), observation.bank_1_bits()]
-}
-
-/// Execute the exact primary BT MAC masked-status acknowledgement prefix.
-#[inline(always)]
-pub fn capture_primary_and_acknowledge_interrupts() -> [u32; 2] {
-    let mut registers = open_esp_radio_esp32s31_pac::validation::bluetooth_interrupt_registers();
-    let observation = registers.capture_primary_and_acknowledge().observation();
-    [observation.bank_0_bits(), observation.bank_1_bits()]
-}
-
-/// Execute the reviewed primary baseline clear/enable/output preparation.
-///
-/// # Safety
-///
-/// The caller must be an isolated compiled-production probe modeling enabled
-/// clocks, completed controller HAL-init and quiescent dynamic sources.
-#[allow(
-    unsafe_code,
-    reason = "the validation-only API preserves the post-controller-init IRQ prerequisite"
-)]
-#[inline(always)]
-pub unsafe fn prepare_primary_interrupt_output() {
-    let cold = open_esp_radio_esp32s31_hal::BluetoothColdOwner::from_radio_hardware(
-        open_esp_radio_esp32s31_pac::RadioHardware::for_validation(),
-    );
-    let (task, interrupts) = cold.separate_interrupt_owner();
-    let prepared = unsafe { interrupts.prepare_controller_output() };
-    let _powered_owners = (task, prepared);
+    let _acknowledged = registers.capture_nrt_and_acknowledge();
 }
 
 /// Execute the exact production scheduler-table low-bit clear transaction.

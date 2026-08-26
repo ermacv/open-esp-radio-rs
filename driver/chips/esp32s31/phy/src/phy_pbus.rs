@@ -355,13 +355,251 @@ impl PhyPbusHardwareBinding {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyForceTxRxAction {
+    Configure {
+        enabled: bool,
+        phase: u8,
+    },
+    DelayMicros {
+        enabled: bool,
+        completed_phase: u8,
+        micros: u32,
+    },
+    Complete {
+        enabled: bool,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyForceTxRxCompletion {
+    Configured {
+        enabled: bool,
+        phase: u8,
+    },
+    DelayElapsed {
+        enabled: bool,
+        completed_phase: u8,
+        micros: u32,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyForceTxRxTransitionError {
+    WrongCompletion,
+    AlreadyComplete,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PhyForceTxRxStep {
+    ConfigureFirst,
+    DelayFirst,
+    ConfigureSecond,
+    DelaySecond,
+    Complete,
+}
+
+/// Async-capable owner of complete rev0 ROM `phy_force_txrx_off`.
+///
+/// Both branches perform two distinct force-mode writes and retain the
+/// one-microsecond delay following each write as an external timer edge.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyForceTxRxTransition {
+    enabled: bool,
+    step: PhyForceTxRxStep,
+}
+
+impl PhyForceTxRxTransition {
+    pub const fn new(enabled: bool) -> Self {
+        Self {
+            enabled,
+            step: PhyForceTxRxStep::ConfigureFirst,
+        }
+    }
+
+    pub const fn action(self) -> PhyForceTxRxAction {
+        match self.step {
+            PhyForceTxRxStep::ConfigureFirst => PhyForceTxRxAction::Configure {
+                enabled: self.enabled,
+                phase: 0,
+            },
+            PhyForceTxRxStep::DelayFirst => PhyForceTxRxAction::DelayMicros {
+                enabled: self.enabled,
+                completed_phase: 0,
+                micros: 1,
+            },
+            PhyForceTxRxStep::ConfigureSecond => PhyForceTxRxAction::Configure {
+                enabled: self.enabled,
+                phase: 1,
+            },
+            PhyForceTxRxStep::DelaySecond => PhyForceTxRxAction::DelayMicros {
+                enabled: self.enabled,
+                completed_phase: 1,
+                micros: 1,
+            },
+            PhyForceTxRxStep::Complete => PhyForceTxRxAction::Complete {
+                enabled: self.enabled,
+            },
+        }
+    }
+
+    pub fn advance(
+        &mut self,
+        completion: PhyForceTxRxCompletion,
+    ) -> Result<(), PhyForceTxRxTransitionError> {
+        self.step = match (self.step, completion) {
+            (
+                PhyForceTxRxStep::ConfigureFirst,
+                PhyForceTxRxCompletion::Configured { enabled, phase: 0 },
+            ) if enabled == self.enabled => PhyForceTxRxStep::DelayFirst,
+            (
+                PhyForceTxRxStep::DelayFirst,
+                PhyForceTxRxCompletion::DelayElapsed {
+                    enabled,
+                    completed_phase: 0,
+                    micros: 1,
+                },
+            ) if enabled == self.enabled => PhyForceTxRxStep::ConfigureSecond,
+            (
+                PhyForceTxRxStep::ConfigureSecond,
+                PhyForceTxRxCompletion::Configured { enabled, phase: 1 },
+            ) if enabled == self.enabled => PhyForceTxRxStep::DelaySecond,
+            (
+                PhyForceTxRxStep::DelaySecond,
+                PhyForceTxRxCompletion::DelayElapsed {
+                    enabled,
+                    completed_phase: 1,
+                    micros: 1,
+                },
+            ) if enabled == self.enabled => PhyForceTxRxStep::Complete,
+            (PhyForceTxRxStep::Complete, _) => {
+                return Err(PhyForceTxRxTransitionError::AlreadyComplete);
+            }
+            _ => return Err(PhyForceTxRxTransitionError::WrongCompletion),
+        };
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyForceTxRxBindingError {
+    UnsupportedAction,
+}
+
+/// Non-cloneable identity for one force-mode register edge.
+#[derive(Debug, Eq, PartialEq)]
+pub struct PhyForceTxRxMmioBinding {
+    enabled: bool,
+    phase: u8,
+}
+
+impl PhyForceTxRxMmioBinding {
+    pub const fn new(action: PhyForceTxRxAction) -> Result<Self, PhyForceTxRxBindingError> {
+        match action {
+            PhyForceTxRxAction::Configure { enabled, phase } => Ok(Self { enabled, phase }),
+            _ => Err(PhyForceTxRxBindingError::UnsupportedAction),
+        }
+    }
+
+    pub const fn action(&self) -> PhyForceTxRxAction {
+        PhyForceTxRxAction::Configure {
+            enabled: self.enabled,
+            phase: self.phase,
+        }
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub fn execute_target(
+        self,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
+    ) -> PhyForceTxRxCompletion {
+        open_esp_radio_esp32s31_hal::pbus::configure_force_txrx(
+            registers,
+            self.enabled,
+            self.phase,
+        );
+        PhyForceTxRxCompletion::Configured {
+            enabled: self.enabled,
+            phase: self.phase,
+        }
+    }
+}
+
+/// Consumed identity for one caller-driven one-microsecond timer edge.
+#[derive(Debug, Eq, PartialEq)]
+pub struct PhyForceTxRxTimerBinding {
+    enabled: bool,
+    completed_phase: u8,
+    micros: u32,
+}
+
+impl PhyForceTxRxTimerBinding {
+    pub const fn new(action: PhyForceTxRxAction) -> Result<Self, PhyForceTxRxBindingError> {
+        match action {
+            PhyForceTxRxAction::DelayMicros {
+                enabled,
+                completed_phase,
+                micros,
+            } => Ok(Self {
+                enabled,
+                completed_phase,
+                micros,
+            }),
+            _ => Err(PhyForceTxRxBindingError::UnsupportedAction),
+        }
+    }
+
+    pub const fn action(&self) -> PhyForceTxRxAction {
+        PhyForceTxRxAction::DelayMicros {
+            enabled: self.enabled,
+            completed_phase: self.completed_phase,
+            micros: self.micros,
+        }
+    }
+
+    pub const fn micros(&self) -> u32 {
+        self.micros
+    }
+
+    pub const fn into_completion(self) -> PhyForceTxRxCompletion {
+        PhyForceTxRxCompletion::DelayElapsed {
+            enabled: self.enabled,
+            completed_phase: self.completed_phase,
+            micros: self.micros,
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum PhyForceTxRxExternalBinding {
+    Mmio(PhyForceTxRxMmioBinding),
+    Timer(PhyForceTxRxTimerBinding),
+}
+
+impl PhyForceTxRxExternalBinding {
+    pub const fn lower(action: PhyForceTxRxAction) -> Result<Self, PhyForceTxRxBindingError> {
+        match action {
+            PhyForceTxRxAction::Configure { .. } => match PhyForceTxRxMmioBinding::new(action) {
+                Ok(binding) => Ok(Self::Mmio(binding)),
+                Err(error) => Err(error),
+            },
+            PhyForceTxRxAction::DelayMicros { .. } => match PhyForceTxRxTimerBinding::new(action) {
+                Ok(binding) => Ok(Self::Timer(binding)),
+                Err(error) => Err(error),
+            },
+            PhyForceTxRxAction::Complete { .. } => Err(PhyForceTxRxBindingError::UnsupportedAction),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        PHY_PBUS_CLEAR_TRANSACTIONS, PhyPbusClearAction, PhyPbusClearCompletion,
-        PhyPbusClearOutcome, PhyPbusClearTransition, PhyPbusClearTransitionError, PhyPbusForceTest,
-        PhyPbusHardwareAction, PhyPbusHardwareBinding, PhyPbusHardwareBindingError,
-        PhyPbusHardwareObservation,
+        PHY_PBUS_CLEAR_TRANSACTIONS, PhyForceTxRxAction, PhyForceTxRxCompletion,
+        PhyForceTxRxExternalBinding, PhyForceTxRxTransition, PhyForceTxRxTransitionError,
+        PhyPbusClearAction, PhyPbusClearCompletion, PhyPbusClearOutcome, PhyPbusClearTransition,
+        PhyPbusClearTransitionError, PhyPbusForceTest, PhyPbusHardwareAction,
+        PhyPbusHardwareBinding, PhyPbusHardwareBindingError, PhyPbusHardwareObservation,
     };
 
     fn reach_work_mode(transition: &mut PhyPbusClearTransition) {
@@ -521,5 +759,70 @@ mod tests {
             PhyPbusHardwareObservation::EdgeConsumed
         );
         assert_eq!(binding.into_transaction().unwrap(), transaction);
+    }
+
+    #[test]
+    fn force_txrx_requires_both_writes_and_both_async_delays_for_each_branch() {
+        for enabled in [false, true] {
+            let mut transition = PhyForceTxRxTransition::new(enabled);
+            let mut actions = std::vec::Vec::new();
+            loop {
+                let action = transition.action();
+                actions.push(action);
+                let completion = match PhyForceTxRxExternalBinding::lower(action) {
+                    Ok(PhyForceTxRxExternalBinding::Mmio(binding)) => {
+                        let PhyForceTxRxAction::Configure { enabled, phase } = binding.action()
+                        else {
+                            panic!("MMIO binding lost its action identity")
+                        };
+                        PhyForceTxRxCompletion::Configured { enabled, phase }
+                    }
+                    Ok(PhyForceTxRxExternalBinding::Timer(binding)) => {
+                        assert_eq!(binding.micros(), 1);
+                        binding.into_completion()
+                    }
+                    Err(_) => break,
+                };
+                transition.advance(completion).unwrap();
+            }
+            assert_eq!(
+                actions,
+                [
+                    PhyForceTxRxAction::Configure { enabled, phase: 0 },
+                    PhyForceTxRxAction::DelayMicros {
+                        enabled,
+                        completed_phase: 0,
+                        micros: 1,
+                    },
+                    PhyForceTxRxAction::Configure { enabled, phase: 1 },
+                    PhyForceTxRxAction::DelayMicros {
+                        enabled,
+                        completed_phase: 1,
+                        micros: 1,
+                    },
+                    PhyForceTxRxAction::Complete { enabled },
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn force_txrx_rejects_a_stale_or_early_timer_edge() {
+        let mut transition = PhyForceTxRxTransition::new(true);
+        assert_eq!(
+            transition.advance(PhyForceTxRxCompletion::DelayElapsed {
+                enabled: true,
+                completed_phase: 0,
+                micros: 1,
+            }),
+            Err(PhyForceTxRxTransitionError::WrongCompletion)
+        );
+        assert_eq!(
+            transition.action(),
+            PhyForceTxRxAction::Configure {
+                enabled: true,
+                phase: 0,
+            }
+        );
     }
 }

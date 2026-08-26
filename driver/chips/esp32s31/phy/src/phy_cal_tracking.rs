@@ -66,7 +66,7 @@ pub enum PhyCalibrationTrackingCompletion {
     RxGainTablePublished,
     ChipChannelRestored { channel: u16, cbw: u8 },
     HardwareFrequencyControlSet { enabled: bool },
-    TxRxForcedOff { enabled: bool },
+    ForceTxRxCompleted(PhyCalibrationForceTxRxCompletion),
     ClassCalibrationStateReset,
     BasebandChannelConfigured { cbw: u8 },
     TxDcPwdetCalibrated { class: PhyCalibrationTrackClass },
@@ -74,6 +74,22 @@ pub enum PhyCalibrationTrackingCompletion {
     BluetoothIeee802154TxGainPublished,
     MacBasebandEnabled,
     TxGainCompensationRestored,
+}
+
+/// Opaque proof that both force-mode writes and both timer edges completed.
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_phy::phy_cal_tracking::{
+///     PhyCalibrationForceTxRxCompletion, PhyCalibrationTrackingCompletion,
+/// };
+///
+/// let forged = PhyCalibrationTrackingCompletion::ForceTxRxCompleted(
+///     PhyCalibrationForceTxRxCompletion { enabled: true },
+/// );
+/// ```
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyCalibrationForceTxRxCompletion {
+    enabled: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -229,8 +245,8 @@ impl PhyCalibrationTrackingTransition {
             ) => Step::ClassForceTxRxOff,
             (
                 Step::ClassForceTxRxOff,
-                PhyCalibrationTrackingCompletion::TxRxForcedOff { enabled: true },
-            ) => Step::ClassClearPbus,
+                PhyCalibrationTrackingCompletion::ForceTxRxCompleted(completion),
+            ) if completion.enabled => Step::ClassClearPbus,
             (Step::ClassClearPbus, PhyCalibrationTrackingCompletion::PbusCleared) => {
                 Step::ClassReset
             }
@@ -268,8 +284,8 @@ impl PhyCalibrationTrackingTransition {
             }
             (
                 Step::ClassReleaseTxRxOff,
-                PhyCalibrationTrackingCompletion::TxRxForcedOff { enabled: false },
-            ) => Step::ClassEnableHardwareFrequency,
+                PhyCalibrationTrackingCompletion::ForceTxRxCompleted(completion),
+            ) if !completion.enabled => Step::ClassEnableHardwareFrequency,
             (
                 Step::ClassEnableHardwareFrequency,
                 PhyCalibrationTrackingCompletion::HardwareFrequencyControlSet { enabled: true },
@@ -287,6 +303,14 @@ impl PhyCalibrationTrackingTransition {
             _ => return Err(PhyCalibrationTrackingTransitionError::WrongCompletion),
         };
         Ok(())
+    }
+
+    /// Lower the selected force/release action into both register and timer
+    /// phases of complete `phy_force_txrx_off`.
+    pub fn begin_force_txrx(
+        &self,
+    ) -> Result<PhyCalibrationForceTxRxTransition, PhyCalibrationTrackingChildError> {
+        PhyCalibrationForceTxRxTransition::lower(self.action())
     }
 
     const fn first_class_step(self) -> Step {
@@ -326,6 +350,65 @@ impl PhyCalibrationTrackingTransition {
             common_updated: self.common_updated,
             class_updated: self.class_updated,
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyCalibrationTrackingChildError {
+    UnsupportedAction,
+}
+
+/// Non-cloneable calibration-child owner for complete `phy_force_txrx_off`.
+#[derive(Debug, Eq, PartialEq)]
+pub struct PhyCalibrationForceTxRxTransition {
+    parent_action: PhyCalibrationTrackingAction,
+    child: crate::phy_pbus::PhyForceTxRxTransition,
+}
+
+impl PhyCalibrationForceTxRxTransition {
+    fn lower(
+        parent_action: PhyCalibrationTrackingAction,
+    ) -> Result<Self, PhyCalibrationTrackingChildError> {
+        let PhyCalibrationTrackingAction::ForceTxRxOff { enabled } = parent_action else {
+            return Err(PhyCalibrationTrackingChildError::UnsupportedAction);
+        };
+        Ok(Self {
+            parent_action,
+            child: crate::phy_pbus::PhyForceTxRxTransition::new(enabled),
+        })
+    }
+
+    pub const fn parent_action(&self) -> PhyCalibrationTrackingAction {
+        self.parent_action
+    }
+
+    pub const fn action(&self) -> crate::phy_pbus::PhyForceTxRxAction {
+        self.child.action()
+    }
+
+    pub fn advance(
+        &mut self,
+        completion: crate::phy_pbus::PhyForceTxRxCompletion,
+    ) -> Result<(), crate::phy_pbus::PhyForceTxRxTransitionError> {
+        self.child.advance(completion)
+    }
+
+    pub fn lower_external(
+        &self,
+    ) -> Result<
+        crate::phy_pbus::PhyForceTxRxExternalBinding,
+        crate::phy_pbus::PhyForceTxRxBindingError,
+    > {
+        crate::phy_pbus::PhyForceTxRxExternalBinding::lower(self.action())
+    }
+
+    pub fn commit(self) -> Result<PhyCalibrationTrackingCompletion, Self> {
+        let crate::phy_pbus::PhyForceTxRxAction::Complete { enabled } = self.child.action() else {
+            return Err(self);
+        };
+        Ok(PhyCalibrationTrackingCompletion::ForceTxRxCompleted(
+            PhyCalibrationForceTxRxCompletion { enabled },
+        ))
     }
 }
 
@@ -524,7 +607,9 @@ mod tests {
                 PhyCalibrationTrackingCompletion::HardwareFrequencyControlSet { enabled }
             }
             PhyCalibrationTrackingAction::ForceTxRxOff { enabled } => {
-                PhyCalibrationTrackingCompletion::TxRxForcedOff { enabled }
+                PhyCalibrationTrackingCompletion::ForceTxRxCompleted(
+                    PhyCalibrationForceTxRxCompletion { enabled },
+                )
             }
             PhyCalibrationTrackingAction::ResetClassCalibrationState => {
                 PhyCalibrationTrackingCompletion::ClassCalibrationStateReset
@@ -728,5 +813,50 @@ mod tests {
                 Err(PhyCalibrationTrackingBindingError::UnsupportedAction)
             );
         }
+    }
+
+    #[test]
+    fn force_txrx_parent_proof_requires_both_writes_and_timer_edges() {
+        let mut transition = PhyCalibrationTrackingTransition::new(
+            PhyCalibrationTrackingRequest {
+                class: PhyCalibrationTrackClass::BluetoothIeee802154,
+            },
+            PhyCalibrationTrackingParameters {
+                common_reference_temperature: 50,
+                wifi_reference_temperature: 0,
+                bluetooth_ieee802154_reference_temperature: 20,
+                ..PARAMETERS
+            },
+        );
+        transition
+            .advance(
+                PhyCalibrationTrackingCompletion::HardwareFrequencyControlSet { enabled: false },
+            )
+            .unwrap();
+
+        let child = transition.begin_force_txrx().unwrap();
+        assert_eq!(child.parent_action(), transition.action());
+        let mut child = child.commit().unwrap_err();
+        loop {
+            let completion = match child.lower_external() {
+                Ok(crate::phy_pbus::PhyForceTxRxExternalBinding::Mmio(binding)) => {
+                    let crate::phy_pbus::PhyForceTxRxAction::Configure { enabled, phase } =
+                        binding.action()
+                    else {
+                        panic!("force MMIO binding lost its identity")
+                    };
+                    crate::phy_pbus::PhyForceTxRxCompletion::Configured { enabled, phase }
+                }
+                Ok(crate::phy_pbus::PhyForceTxRxExternalBinding::Timer(binding)) => {
+                    assert_eq!(binding.micros(), 1);
+                    binding.into_completion()
+                }
+                Err(_) => break,
+            };
+            child.advance(completion).unwrap();
+        }
+        let completion = child.commit().unwrap();
+        transition.advance(completion).unwrap();
+        assert_eq!(transition.action(), PhyCalibrationTrackingAction::ClearPbus);
     }
 }

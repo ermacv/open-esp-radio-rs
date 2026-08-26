@@ -565,6 +565,15 @@ impl<'state> PhyParamTrackingCalibrationTransition<'state> {
         self.child.advance(completion)
     }
 
+    pub fn begin_force_txrx(
+        &self,
+    ) -> Result<
+        crate::phy_cal_tracking::PhyCalibrationForceTxRxTransition,
+        crate::phy_cal_tracking::PhyCalibrationTrackingChildError,
+    > {
+        self.child.begin_force_txrx()
+    }
+
     pub fn lower_external(
         &self,
     ) -> Result<

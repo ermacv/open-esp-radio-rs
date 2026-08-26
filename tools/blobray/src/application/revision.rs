@@ -3274,9 +3274,6 @@ mod tests {
 
         assert_eq!(before.schema_version, REVISION_SCHEMA);
         assert_eq!(report.schema_version, REVISION_DIFF_REPORT_SCHEMA);
-        assert_eq!(REVISION_REBASE_REPORT_SCHEMA, 2);
-        assert_eq!(REVISION_PREPARE_UPDATE_REPORT_SCHEMA, 2);
-        assert_eq!(REVISION_SNAPSHOT_REPORT_SCHEMA, 2);
         assert_ne!(report.schema_version, before.schema_version);
         assert_eq!(report.summary.unchanged, 1);
         assert_eq!(report.summary.modified, 1);

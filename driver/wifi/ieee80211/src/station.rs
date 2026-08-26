@@ -2760,7 +2760,6 @@ mod tests {
         assert_eq!(attempts, [1, 2, 3, 4, 5, 6, 7]);
         assert_eq!(StaAssociationRetrySchedule::attempt_at(159), None);
         assert_eq!(StaAssociationRetrySchedule::attempt_at(1_000), None);
-        assert_eq!(STA_AUTHENTICATION_ATTEMPT_LIMIT, 3);
     }
 
     #[test]

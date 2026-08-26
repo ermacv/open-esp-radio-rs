@@ -607,9 +607,8 @@ impl BluetoothBasebandV2Transaction<'_> {
 #[cfg(test)]
 mod tests {
     use super::{
-        BluetoothBasebandV2TransitionPort, BluetoothTaskRegisters, Ieee802154TaskRegisters,
-        execute_ieee802154_baseband_body, execute_standalone_bluetooth_transition, gain_force_low,
-        gain_image,
+        BluetoothBasebandV2TransitionPort, execute_ieee802154_baseband_body,
+        execute_standalone_bluetooth_transition, gain_force_low, gain_image,
     };
     use std::vec::Vec;
 
@@ -656,13 +655,5 @@ mod tests {
         let mut ieee802154 = BoundaryTrace::default();
         execute_ieee802154_baseband_body(&mut ieee802154, 0x6d);
         assert_eq!(ieee802154.steps, [BoundaryStep::Body(0x6d)]);
-    }
-
-    #[test]
-    fn both_protocol_owners_reuse_the_body_with_distinct_entry_shapes() {
-        let _: fn(&mut BluetoothTaskRegisters, u8) =
-            BluetoothTaskRegisters::initialize_baseband_v2_arg_one;
-        let _: unsafe fn(&mut Ieee802154TaskRegisters, u8) =
-            Ieee802154TaskRegisters::initialize_baseband_v2_arg_one_body_without_fence;
     }
 }

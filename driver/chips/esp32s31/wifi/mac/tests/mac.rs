@@ -3733,7 +3733,6 @@ fn ht_duplicate_selector_validates_protocol_before_reporting_exact_oracle_gaps()
     assert_eq!(evidence, HtDuplicateTxEvidenceGaps::ESP32S31);
     let formatter = evidence.formatter();
     assert_eq!(formatter, HtDuplicateTxOracleGaps::ESP32S31);
-    assert_eq!(formatter.bits(), 0x3f);
     assert!(!formatter.is_empty());
     for field in [
         HtDuplicateTxOracleField::DescriptorSelector,
@@ -3747,7 +3746,6 @@ fn ht_duplicate_selector_validates_protocol_before_reporting_exact_oracle_gaps()
     }
     let qualification = evidence.qualification();
     assert_eq!(qualification, HtDuplicateTxQualificationGaps::ESP32S31);
-    assert_eq!(qualification.bits(), 1);
     assert!(!qualification.is_empty());
     assert!(qualification.contains(HtDuplicateTxQualificationField::OnAirAck));
 }

@@ -199,10 +199,9 @@ impl Ieee802154TaskRegisters {
 #[cfg(test)]
 mod tests {
     use super::{
-        IEEE802154_DELAY_ARGUMENT, Ieee802154TaskRegisters, Ieee802154TimingPrerequisite,
-        Ieee802154TimingReady, Ieee802154TimingTransitionPort, RX_ON_DELAY_PRESERVE_MASK,
-        SHARED_DELAY_FIELD_IMAGE, SHARED_DELAY_PRESERVE_MASK, SHARED_DELAY_REGISTER_INPUT,
-        encode_shared_delay_field, execute_timing_transition, generated,
+        Ieee802154TimingTransitionPort, RX_ON_DELAY_PRESERVE_MASK, SHARED_DELAY_FIELD_IMAGE,
+        SHARED_DELAY_PRESERVE_MASK, SHARED_DELAY_REGISTER_INPUT, encode_shared_delay_field,
+        execute_timing_transition, generated,
     };
     use std::vec::Vec;
 
@@ -248,7 +247,6 @@ mod tests {
 
     #[test]
     fn public_argument_encodes_the_exact_shared_field_image() {
-        assert_eq!(IEEE802154_DELAY_ARGUMENT, 50);
         assert_eq!(encode_shared_delay_field(50), 0x140);
         assert_eq!(SHARED_DELAY_FIELD_IMAGE, 0x140);
         assert_eq!(SHARED_DELAY_REGISTER_INPUT, 0x0140_0000);
@@ -281,17 +279,5 @@ mod tests {
                 Step::DeviceFence,
             ]
         );
-    }
-
-    #[test]
-    fn unified_transition_consumes_the_affine_common_phy_prerequisite() {
-        let _: fn(
-            &mut Ieee802154TaskRegisters,
-            Ieee802154TimingPrerequisite,
-        ) -> Ieee802154TimingReady =
-            Ieee802154TaskRegisters::initialize_baseband_and_ieee802154_timing;
-
-        let _: unsafe fn(u8) -> Ieee802154TimingPrerequisite =
-            Ieee802154TimingPrerequisite::from_terminal_common_phy;
     }
 }

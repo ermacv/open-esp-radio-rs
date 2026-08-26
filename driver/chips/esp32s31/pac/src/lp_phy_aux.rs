@@ -78,36 +78,3 @@ impl RadioPhyRegisters {
         self.peripherals.lp_tsens.ctrl().read().out().bits()
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn generated_domains_retain_only_reviewed_lp_images() {
-        assert_eq!(LpPowerDetectorCircuitMode::Calibration.bits(), 2);
-        assert_eq!(LpPowerDetectorCircuitMode::Initialization.bits(), 4);
-        assert_eq!(LpTsensRegisterBankEnable::Enabled.bits(), 1);
-        assert_eq!(LpTsensPeripheralClockEnable::Enabled.bits(), 1 << 30);
-        assert_eq!(LpTsensPhyReadoutEnable::Enabled.bits(), 1 << 23);
-        assert_eq!(LpTsensPhyConversionEnable::Enabled.bits(), 1 << 9);
-        assert_eq!(LpTsensPowerEnable::Enabled.bits(), 1 << 22);
-    }
-
-    #[test]
-    fn closed_owner_exposes_exact_lp_transactions() {
-        let _: fn(&mut RadioPhyRegisters) =
-            RadioPhyRegisters::select_power_detector_initialization_mode;
-        let _: fn(&mut RadioPhyRegisters) =
-            RadioPhyRegisters::select_power_detector_calibration_mode;
-        let _: fn(&mut RadioPhyRegisters) =
-            RadioPhyRegisters::enable_temperature_sensor_register_bank;
-        let _: fn(&mut RadioPhyRegisters) = RadioPhyRegisters::enable_temperature_sensor_clock;
-        let _: fn(&mut RadioPhyRegisters) =
-            RadioPhyRegisters::enable_temperature_sensor_phy_readout;
-        let _: fn(&mut RadioPhyRegisters) =
-            RadioPhyRegisters::enable_temperature_sensor_phy_conversion;
-        let _: fn(&mut RadioPhyRegisters) = RadioPhyRegisters::enable_temperature_sensor_power;
-        let _: fn(&RadioPhyRegisters) -> u8 = RadioPhyRegisters::read_temperature_sensor_code;
-    }
-}

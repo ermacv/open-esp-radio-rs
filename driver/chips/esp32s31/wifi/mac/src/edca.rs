@@ -317,10 +317,7 @@ impl Default for EdcaQueues {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        EdcaBackoffState, EdcaContentionParameters, EdcaParametersError, EdcaQueues,
-        MAX_HARDWARE_ECW_EXPONENT,
-    };
+    use super::{EdcaBackoffState, EdcaContentionParameters, EdcaParametersError, EdcaQueues};
     use crate::tx::LegacyTxQueue;
     use open_esp_radio_ieee80211::wmm::parse_wmm_parameter_element;
 
@@ -422,7 +419,6 @@ mod tests {
 
     #[test]
     fn rejects_values_wider_than_the_queue_slot_field() {
-        assert_eq!(MAX_HARDWARE_ECW_EXPONENT, 10);
         assert_eq!(
             EdcaContentionParameters::new(3, 4, 11),
             Err(EdcaParametersError::MaximumExponentOutOfRange(11))

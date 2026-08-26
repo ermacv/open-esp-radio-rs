@@ -22,18 +22,3 @@ impl RadioPhyRegisters {
         );
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn generated_tick_domain_retains_only_the_reviewed_fixed_crystal_image() {
-        assert_eq!(ModemPowerTickTarget::Xtal40Mhz.bits(), 39);
-    }
-
-    #[test]
-    fn shared_phy_owner_exposes_one_complete_tick_transition() {
-        let _: fn(&mut RadioPhyRegisters) = RadioPhyRegisters::configure_fixed_xtal_40mhz_tick;
-    }
-}

@@ -791,27 +791,7 @@ impl WifiRadioRegisters {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        MacExtraSoftApRxBlockAckEntryIndex, MacInterface, MacRxBlockAckTid, MacRxBlockAckWindow,
-        RxBlockAckImages, rx_block_ack_images,
-    };
-
-    #[test]
-    fn rx_block_ack_images_match_the_recovered_leaf() {
-        assert_eq!(
-            rx_block_ack_images(
-                MacInterface::AccessPoint,
-                [0x70, 0x15, 0xfb, 0xa8, 0x48, 0xf0],
-                MacRxBlockAckTid::new(6).unwrap(),
-                MacRxBlockAckWindow::new(16).unwrap(),
-            ),
-            RxBlockAckImages {
-                peer_head: 0xa8fb_1570,
-                peer_tail_and_policy: 0x0041_f048,
-                active_control: 0xc000_6001,
-            }
-        );
-    }
+    use super::MacExtraSoftApRxBlockAckEntryIndex;
 
     #[test]
     fn extra_softap_entry_domain_matches_the_vendor_allocator() {

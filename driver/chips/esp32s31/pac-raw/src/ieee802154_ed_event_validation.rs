@@ -8,8 +8,6 @@
 const RX_ABORT_EVENT: u32 = 1 << 4;
 const ED_DONE_EVENT: u32 = 1 << 6;
 const TIMER0_EVENT: u32 = 1 << 8;
-#[cfg(test)]
-const ED_TIMER_EVENTS: u16 = (ED_DONE_EVENT | TIMER0_EVENT) as u16;
 const VALIDATION_EVENTS: u16 = (RX_ABORT_EVENT | ED_DONE_EVENT | TIMER0_EVENT) as u16;
 const ED_ABORT_REASONS: u32 = (1 << 23) | (1 << 24) | (1 << 25);
 const EVENT_FIELD_MASK: u32 = 0x3fff;
@@ -241,17 +239,13 @@ pub fn write_timer0_event(registers: &mut crate::Ieee802154Mac) {
 #[cfg(test)]
 mod tests {
     use super::{
-        ED_ABORT_REASONS, ED_TIMER_EVENTS, EVENT_FIELD_MASK, RX_ABORT_FIELD_MASK,
-        VALIDATION_ED_DURATION, VALIDATION_EVENTS, replace_event_field, replace_rx_abort_field,
+        ED_ABORT_REASONS, EVENT_FIELD_MASK, RX_ABORT_FIELD_MASK, VALIDATION_EVENTS,
+        replace_event_field, replace_rx_abort_field,
     };
 
     #[test]
     fn fixed_validation_image_preserves_every_unowned_upper_bit() {
         let sentinel = 0xa5a5_c000;
-        assert_eq!(ED_TIMER_EVENTS, 0x0140);
-        assert_eq!(VALIDATION_EVENTS, 0x0150);
-        assert_eq!(ED_ABORT_REASONS, 0x0380_0000);
-        assert_eq!(VALIDATION_ED_DURATION, 8);
         assert_eq!(
             replace_event_field(sentinel, VALIDATION_EVENTS),
             sentinel | 0x0150

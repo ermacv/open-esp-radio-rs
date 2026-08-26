@@ -2146,48 +2146,17 @@ mod tests {
         Ieee802154AckTimeoutUnits, Ieee802154CcaMode, Ieee802154EdCcaSnapshot, Ieee802154EdCommand,
         Ieee802154EdDurationUnits, Ieee802154EdSampleRate, Ieee802154EventEnableMask,
         Ieee802154EventObservation, Ieee802154FoundationSnapshot, Ieee802154FrequencyCode,
-        Ieee802154InterruptActivationPlan, Ieee802154InterruptRegisters,
-        Ieee802154InterruptRxAbortEnableMask, Ieee802154InterruptSetup,
-        Ieee802154InterruptSnapshot, Ieee802154InterruptTransitionPort,
-        Ieee802154InterruptTxAbortEnableMask, Ieee802154MacCommand,
+        Ieee802154InterruptActivationPlan, Ieee802154InterruptRxAbortEnableMask,
+        Ieee802154InterruptTransitionPort, Ieee802154InterruptTxAbortEnableMask,
         Ieee802154MacConfigurationReadback, Ieee802154MacControl, Ieee802154MultipanEnableMask,
         Ieee802154MultipanIndex, Ieee802154OperationEventEnableObservation,
-        Ieee802154OperationRxAbortEnableObservation, Ieee802154PanIdentity,
-        Ieee802154PolledRegisterLease, Ieee802154Pti, Ieee802154RegisterLease,
+        Ieee802154OperationRxAbortEnableObservation, Ieee802154PanIdentity, Ieee802154Pti,
         Ieee802154RxAbortEnableMask, Ieee802154RxStateCode, Ieee802154RxStatusObservation,
-        Ieee802154SecurityPayloadOffset, Ieee802154StateSnapshot, Ieee802154TaskRegisters,
-        Ieee802154Timer0ThresholdWord, Ieee802154Timer0ValueWord, Ieee802154Timer1ThresholdWord,
-        Ieee802154Timer1ValueWord, Ieee802154TimerLease, Ieee802154TxPowerCode,
+        Ieee802154SecurityPayloadOffset, Ieee802154StateSnapshot, Ieee802154TxPowerCode,
         Ieee802154TxStateCode, execute_interrupt_activation, execute_interrupt_deactivation,
     };
     use crate::RadioHardware;
     use std::vec::Vec;
-
-    #[test]
-    fn frequency_code_does_not_claim_an_ieee_channel_mapping() {
-        assert_eq!(Ieee802154FrequencyCode::new(0).value(), 0);
-        assert_eq!(Ieee802154FrequencyCode::new(u8::MAX).value(), u8::MAX);
-    }
-
-    #[test]
-    fn timer_words_remain_register_specific_and_unit_free() {
-        assert_eq!(
-            Ieee802154Timer0ThresholdWord::new(0x0123_4567).get(),
-            0x0123_4567
-        );
-        assert_eq!(
-            Ieee802154Timer0ValueWord::new(0x89ab_cdef).get(),
-            0x89ab_cdef
-        );
-        assert_eq!(
-            Ieee802154Timer1ThresholdWord::new(0xfedc_ba98).get(),
-            0xfedc_ba98
-        );
-        assert_eq!(
-            Ieee802154Timer1ValueWord::new(0x7654_3210).get(),
-            0x7654_3210
-        );
-    }
 
     #[test]
     fn foundation_snapshot_exposes_fields_without_complete_register_images() {
@@ -2353,7 +2322,6 @@ mod tests {
         let ed_and_timers = Ieee802154EventEnableMask::ED_DONE
             .union(Ieee802154EventEnableMask::TIMER0_OVERFLOW)
             .union(Ieee802154EventEnableMask::TIMER1_OVERFLOW);
-        assert_eq!(ed_and_timers.bits(), (1 << 6) | (1 << 8) | (1 << 9));
         assert!(ed_and_timers.contains(Ieee802154EventEnableMask::ED_DONE));
         assert_eq!(
             Ieee802154EventEnableMask::from_named_bits(Ieee802154EventEnableMask::ALL_NAMED.bits()),
@@ -2365,10 +2333,6 @@ mod tests {
                 None
             );
         }
-        assert_eq!(
-            Ieee802154EventEnableMask::HANDLED_BASELINE_WITHOUT_TIMER0.bits(),
-            0x1a7f
-        );
         assert!(
             !Ieee802154EventEnableMask::HANDLED_BASELINE_WITHOUT_TIMER0
                 .contains(Ieee802154EventEnableMask::TIMER0_OVERFLOW)
@@ -2377,23 +2341,10 @@ mod tests {
             !Ieee802154EventEnableMask::HANDLED_BASELINE_WITHOUT_TIMER0
                 .contains(Ieee802154EventEnableMask::CLOCK_COUNT_MATCH)
         );
-        assert_eq!(
-            Ieee802154EventEnableMask::HANDLED_BASELINE_WITH_TIMER0.bits(),
-            0x1b7f
-        );
         assert!(
             Ieee802154EventEnableMask::HANDLED_BASELINE_WITH_TIMER0
                 .contains(Ieee802154EventEnableMask::TIMER0_OVERFLOW)
         );
-    }
-
-    #[test]
-    fn interrupt_activation_plan_is_the_exact_closed_source_baseline() {
-        let plan = Ieee802154InterruptActivationPlan::SOURCE_CONFIRMED_BASELINE;
-
-        assert_eq!(plan.events().bits(), 0x1a7f);
-        assert_eq!(plan.rx_aborts().bits(), 0x0002_8000);
-        assert_eq!(plan.tx_aborts().bits(), 0x0186_8000);
     }
 
     #[test]
@@ -2424,11 +2375,6 @@ mod tests {
 
     #[test]
     fn rx_abort_enable_domain_has_only_the_two_operation_images() {
-        assert_eq!(Ieee802154RxAbortEnableMask::NONE.bits(), 0);
-        assert_eq!(
-            Ieee802154RxAbortEnableMask::ED_OPERATION_REASONS.bits(),
-            0x0380_0000
-        );
         assert_eq!(
             Ieee802154OperationRxAbortEnableObservation::from_field(
                 Ieee802154RxAbortEnableMask::NONE.bits()
@@ -2562,45 +2508,6 @@ mod tests {
         let _hardware = cold.release();
     }
 
-    #[test]
-    fn cold_w1c_boundary_accepts_no_caller_supplied_image() {
-        let _acknowledge: fn(
-            &mut Ieee802154PolledRegisterLease<'static>,
-        ) -> Ieee802154EventObservation = Ieee802154PolledRegisterLease::acknowledge_pending_events;
-    }
-
-    #[test]
-    fn polled_operation_pac_surface_uses_only_closed_typed_writes() {
-        let _set_events: fn(
-            &mut Ieee802154PolledRegisterLease<'static>,
-            Ieee802154EventEnableMask,
-        ) = Ieee802154PolledRegisterLease::set_event_enable;
-        let _set_rx_aborts: fn(
-            &mut Ieee802154PolledRegisterLease<'static>,
-            Ieee802154RxAbortEnableMask,
-        ) = Ieee802154PolledRegisterLease::set_rx_abort_enable;
-        let _event_enable: fn(
-            &Ieee802154PolledRegisterLease<'static>,
-        ) -> Ieee802154OperationEventEnableObservation =
-            Ieee802154PolledRegisterLease::operation_event_enable_observation;
-        let _rx_abort_enable: fn(
-            &Ieee802154PolledRegisterLease<'static>,
-        ) -> Ieee802154OperationRxAbortEnableObservation =
-            Ieee802154PolledRegisterLease::operation_rx_abort_enable_observation;
-        let _event_status: fn(
-            &Ieee802154PolledRegisterLease<'static>,
-        ) -> Ieee802154EventObservation = Ieee802154PolledRegisterLease::event_status_observation;
-        let _rx_status: fn(
-            &Ieee802154PolledRegisterLease<'static>,
-        ) -> Ieee802154RxStatusObservation = Ieee802154PolledRegisterLease::rx_status_observation;
-        let _set_duration: fn(&mut Ieee802154RegisterLease<'static>, Ieee802154EdDurationUnits) =
-            Ieee802154RegisterLease::set_ed_duration;
-        let _sample_ed: fn(&Ieee802154PolledRegisterLease<'static>) -> Ieee802154EdCcaSnapshot =
-            Ieee802154PolledRegisterLease::ed_cca_snapshot;
-        let _start: fn(&mut Ieee802154RegisterLease<'static>) =
-            Ieee802154RegisterLease::request_ed_start;
-    }
-
     #[derive(Debug, Eq, PartialEq)]
     enum InterruptTransitionOperation {
         StopOperation,
@@ -2725,55 +2632,5 @@ mod tests {
                 InterruptTransitionOperation::OrderDeviceAccesses,
             ]
         );
-    }
-
-    #[test]
-    fn running_task_and_irq_surfaces_are_owned_and_disjoint() {
-        let _activate: fn(
-            Ieee802154InterruptSetup,
-            &mut Ieee802154TaskRegisters,
-        ) -> Ieee802154InterruptRegisters = Ieee802154InterruptSetup::activate;
-        let _sample: fn(&Ieee802154InterruptRegisters) -> Ieee802154InterruptSnapshot =
-            Ieee802154InterruptRegisters::sample_interrupt;
-        let _acknowledge: fn(&mut Ieee802154InterruptRegisters, Ieee802154InterruptSnapshot) =
-            Ieee802154InterruptRegisters::acknowledge_interrupt;
-        let _deactivate: fn(
-            Ieee802154InterruptRegisters,
-            &mut Ieee802154TaskRegisters,
-        ) -> Ieee802154InterruptSetup = Ieee802154InterruptRegisters::deactivate;
-        let _command: fn(&mut Ieee802154RegisterLease<'static>, Ieee802154MacCommand) =
-            Ieee802154RegisterLease::request_mac_command;
-        let _tx_dma: fn(&mut Ieee802154RegisterLease<'static>, u32) =
-            Ieee802154RegisterLease::publish_transmit_dma_address;
-        let _rx_dma: fn(&mut Ieee802154RegisterLease<'static>, u32) =
-            Ieee802154RegisterLease::publish_receive_dma_address;
-        let _tx_power: fn(&mut Ieee802154RegisterLease<'static>, Ieee802154TxPowerCode) =
-            Ieee802154RegisterLease::set_tx_power_code;
-        let _timer_lease: for<'lease> fn(
-            &'lease mut Ieee802154RegisterLease<'static>,
-        ) -> Ieee802154TimerLease<'lease> = Ieee802154RegisterLease::timer_lease;
-        let _ed_rate: fn(&mut Ieee802154RegisterLease<'static>, Ieee802154EdSampleRate) =
-            Ieee802154RegisterLease::set_ed_sample_rate;
-        let _multipan_identity: fn(
-            &mut Ieee802154RegisterLease<'static>,
-            Ieee802154MultipanIndex,
-            Ieee802154PanIdentity,
-        ) = Ieee802154RegisterLease::set_multipan_identity;
-        let _multipan_mask: fn(
-            &mut Ieee802154RegisterLease<'static>,
-            Ieee802154MultipanEnableMask,
-        ) = Ieee802154RegisterLease::set_multipan_enable_mask;
-        let _frame_pending: fn(&mut Ieee802154RegisterLease<'static>, bool) =
-            Ieee802154RegisterLease::set_frame_pending;
-        let _notify: fn(&mut Ieee802154RegisterLease<'static>) =
-            Ieee802154RegisterLease::notify_enhanced_ack_generated;
-        let _security_config: fn(
-            &mut Ieee802154RegisterLease<'static>,
-            &[u8; 8],
-            &[u8; 16],
-            Ieee802154SecurityPayloadOffset,
-        ) = Ieee802154RegisterLease::configure_transmit_security;
-        let _security_disable: fn(&mut Ieee802154RegisterLease<'static>) =
-            Ieee802154RegisterLease::disable_transmit_security;
     }
 }

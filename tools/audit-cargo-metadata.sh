@@ -2,6 +2,21 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+scope="all"
+
+if (($# > 1)); then
+    echo "usage: $0 [--source-only]" >&2
+    exit 2
+fi
+if (($# == 1)); then
+    case "$1" in
+        --source-only) scope="source-only" ;;
+        *)
+            echo "usage: $0 [--source-only]" >&2
+            exit 2
+            ;;
+    esac
+fi
 
 cd "$repo_root"
 
@@ -10,6 +25,7 @@ cd "$repo_root"
 # local-only trees (in particular `_oracles/`) can never enter this source-only
 # gate accidentally.
 declare -A workspace_manifests=()
+declare -A excluded_workspace_manifests=()
 while IFS= read -r -d '' manifest; do
     workspace_manifest="$(
         cargo locate-project \
@@ -24,6 +40,15 @@ while IFS= read -r -d '' manifest; do
             exit 1
             ;;
     esac
+    if [[ "$scope" == "source-only" &&
+        "$workspace_manifest" == "$repo_root/verification/vendor/targets/esp32s31/oracle-firmware/Cargo.toml" ]]
+    then
+        # The oracle deliberately resolves the vendor PHY implementation. It
+        # remains covered by the default repository metadata audit, but must
+        # never enter the production source-only dependency boundary.
+        excluded_workspace_manifests["$workspace_manifest"]=1
+        continue
+    fi
     workspace_manifests["$workspace_manifest"]=1
 done < <(git ls-files -z -- 'Cargo.toml' '**/Cargo.toml')
 
@@ -46,4 +71,4 @@ for workspace_manifest in "${sorted_workspace_manifests[@]}"; do
         >/dev/null
 done
 
-echo "locked Cargo metadata passed for ${#sorted_workspace_manifests[@]} workspace(s)"
+echo "locked Cargo metadata passed for ${#sorted_workspace_manifests[@]} workspace(s) (scope=$scope, excluded=${#excluded_workspace_manifests[@]})"

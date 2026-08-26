@@ -213,16 +213,20 @@ pub(crate) fn configure_phy_txiq_correction(registers: &mut impl SharedPhyAccess
     registers.configure_tx_iq_correction(begin);
 }
 
-/// Capture the complete tone-control word saved by ROM `phy_rfcal_txiq`.
+/// Capture tone control into the PAC-private TX-IQ restore slot.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn read_phy_txiq_tone_control(registers: &mut impl SharedPhyAccess) -> u32 {
-    registers.txiq_tone_control()
+pub(crate) fn prepare_phy_txiq_tone_control_restore(
+    registers: &mut impl SharedPhyAccess,
+) -> Result<(), open_esp_radio_esp32s31_hal::types::TxIqToneControlPrepareError> {
+    registers.prepare_txiq_tone_control_restore()
 }
 
-/// Restore the exact tone-control word after TX-IQ work-mode cleanup.
+/// Restore and consume PAC-private tone control after TX-IQ cleanup.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn restore_phy_txiq_tone_control(registers: &mut impl SharedPhyAccess, saved: u32) {
-    registers.restore_txiq_tone_control(saved);
+pub(crate) fn restore_phy_txiq_tone_control(
+    registers: &mut impl SharedPhyAccess,
+) -> Result<(), open_esp_radio_esp32s31_hal::types::TxIqToneControlRestoreError> {
+    registers.restore_txiq_tone_control()
 }
 
 /// Configure one of the two mismatch-power polarities.

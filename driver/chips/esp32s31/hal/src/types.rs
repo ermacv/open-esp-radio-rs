@@ -22,4 +22,5 @@ pub use open_esp_radio_esp32s31_pac::{
     MacTxDetachOutcome, MacTxDetachReason, MacTxPowerPair, MacTxPowerTable, MacTxPtiCount,
     MacTxPtiProgram, MacTxQueueDetached, MacTxQueueIndex, PbusMemoryGroupBoundary,
     PhyGainMemoryEntry, PhyMemoryError, RxBlockAckEntrySnapshot, TxBlockAckPayload,
+    TxIqToneControlPrepareError, TxIqToneControlRestoreError,
 };

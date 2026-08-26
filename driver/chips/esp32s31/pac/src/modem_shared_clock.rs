@@ -38,6 +38,37 @@ impl From<SharedModemClock> for Requirement {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct RequirementBaselines {
+    enabled: u8,
+}
+
+impl RequirementBaselines {
+    const fn bit(requirement: Requirement) -> u8 {
+        match requirement {
+            Requirement::Coexistence => 1,
+            Requirement::PhyI2cMaster => 2,
+            Requirement::LowPowerTimer => 4,
+        }
+    }
+
+    fn set(&mut self, requirement: Requirement, enabled: bool) {
+        let bit = Self::bit(requirement);
+        if enabled {
+            self.enabled |= bit;
+        } else {
+            self.enabled &= !bit;
+        }
+    }
+
+    fn take(&mut self, requirement: Requirement) -> bool {
+        let bit = Self::bit(requirement);
+        let enabled = self.enabled & bit != 0;
+        self.enabled &= !bit;
+        enabled
+    }
+}
+
 /// Reviewed Bluetooth low-power timer sources.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ModemLowPowerClockSource {
@@ -58,7 +89,7 @@ struct BluetoothLowPowerTimerConfiguration {
 
 pub(crate) struct SharedModemClockState {
     counts: [u8; REQUIREMENT_COUNT],
-    baseline_enabled: [bool; REQUIREMENT_COUNT],
+    baselines: RequirementBaselines,
     low_power_timer_baseline: BluetoothLowPowerTimerConfiguration,
 }
 
@@ -66,7 +97,7 @@ impl SharedModemClockState {
     pub(crate) const fn new() -> Self {
         Self {
             counts: [0; REQUIREMENT_COUNT],
-            baseline_enabled: [false; REQUIREMENT_COUNT],
+            baselines: RequirementBaselines { enabled: 0 },
             low_power_timer_baseline: BluetoothLowPowerTimerConfiguration {
                 slow_oscillator_selected: false,
                 fast_oscillator_selected: false,
@@ -85,7 +116,7 @@ impl SharedModemClockState {
         let index = requirement.index();
         let first = self.counts[index] == 0;
         if first {
-            self.baseline_enabled[index] = observed;
+            self.baselines.set(requirement, observed);
         }
         self.counts[index] = self.counts[index]
             .checked_add(1)
@@ -101,8 +132,7 @@ impl SharedModemClockState {
         );
         self.counts[index] -= 1;
         if self.counts[index] == 0 {
-            let baseline = core::mem::take(&mut self.baseline_enabled[index]);
-            Some(baseline)
+            Some(self.baselines.take(requirement))
         } else {
             None
         }

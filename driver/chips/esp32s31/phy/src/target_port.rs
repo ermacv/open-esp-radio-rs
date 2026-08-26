@@ -1050,9 +1050,9 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         registers: &mut impl SharedPhyContext,
     ) -> Result<PhyTxIqCalibrationCompletion, PhyTargetPortError> {
         match binding {
-            PhyTxIqCalibrationExternalBinding::Mmio(binding) => {
-                Ok(binding.execute_target(registers))
-            }
+            PhyTxIqCalibrationExternalBinding::Mmio(binding) => binding
+                .execute_target(registers)
+                .map_err(|_| PhyTargetPortError::HardwareInvariant),
             PhyTxIqCalibrationExternalBinding::Loopback(binding) => {
                 Ok(PhyTxIqCalibrationCompletion::Loopback(
                     Self::complete_txiq_loopback(binding, platform, registers).await?,

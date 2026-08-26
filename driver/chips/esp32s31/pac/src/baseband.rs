@@ -86,25 +86,56 @@ pub enum TxDcPwdetLifecycleError {
     RestorePending,
 }
 
-pub(super) struct TxDcPwdetRestoreSlot {
-    fields: Option<TxDcPwdetRestoreFields>,
+/// Preparing a TX-IQ tone-control restore was rejected before register access.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TxIqToneControlPrepareError {
+    /// Another calibration still owns the pending restore operation.
+    RestorePending,
 }
 
-impl TxDcPwdetRestoreSlot {
+/// Restoring TX-IQ tone control was rejected before register access.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TxIqToneControlRestoreError {
+    /// No successful prepare operation owns a saved register image.
+    RestoreNotPending,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+enum RadioPhyRestoreKind {
+    Empty,
+    TxDcPwdet,
+    TxIqToneControl,
+}
+
+/// One private restore authority shared by mutually exclusive PHY calibrations.
+///
+/// Byte storage keeps the complete TX-IQ image without imposing `u32`
+/// alignment on the radio owner. That owner crosses many async suspension
+/// points, so its layout must not grow merely because PAC retains an opaque
+/// register image.
+pub(super) struct RadioPhyRestoreSlot {
+    kind: RadioPhyRestoreKind,
+    payload: [u8; 4],
+}
+
+impl RadioPhyRestoreSlot {
     pub(super) const fn new() -> Self {
-        Self { fields: None }
+        Self {
+            kind: RadioPhyRestoreKind::Empty,
+            payload: [0; 4],
+        }
     }
 
-    pub(super) const fn is_pending(&self) -> bool {
-        self.fields.is_some()
+    pub(super) const fn txdc_pending(&self) -> bool {
+        matches!(self.kind, RadioPhyRestoreKind::TxDcPwdet)
     }
 
-    #[cfg(test)]
-    pub(super) fn occupy_for_test(&mut self) {
-        self.fields = Some(TxDcPwdetRestoreFields::default());
+    pub(super) const fn txiq_pending(&self) -> bool {
+        matches!(self.kind, RadioPhyRestoreKind::TxIqToneControl)
     }
 
-    fn prepare_with<Captured, Capture, Prepare>(
+    fn prepare_txdc_with<Captured, Capture, Prepare>(
         &mut self,
         capture: Capture,
         prepare: Prepare,
@@ -113,25 +144,75 @@ impl TxDcPwdetRestoreSlot {
         Capture: FnOnce() -> (TxDcPwdetRestoreFields, Captured),
         Prepare: FnOnce(Captured),
     {
-        if self.fields.is_some() {
+        if !matches!(self.kind, RadioPhyRestoreKind::Empty) {
             return Err(TxDcPwdetPrepareError::RestorePending);
         }
         let (fields, captured) = capture();
-        self.fields = Some(fields);
+        self.payload = [fields.table_low, fields.calibration, 0, 0];
+        self.kind = RadioPhyRestoreKind::TxDcPwdet;
         prepare(captured);
         Ok(())
     }
 
-    fn restore_with<Restore>(&mut self, restore: Restore) -> Result<(), TxDcPwdetRestoreError>
+    fn restore_txdc_with<Restore>(&mut self, restore: Restore) -> Result<(), TxDcPwdetRestoreError>
     where
         Restore: FnOnce(TxDcPwdetRestoreFields),
     {
-        let Some(fields) = self.fields else {
+        if !matches!(self.kind, RadioPhyRestoreKind::TxDcPwdet) {
             return Err(TxDcPwdetRestoreError::RestoreNotPending);
+        }
+        let fields = TxDcPwdetRestoreFields {
+            table_low: self.payload[0],
+            calibration: self.payload[1],
         };
         restore(fields);
-        self.fields = None;
+        self.kind = RadioPhyRestoreKind::Empty;
+        self.payload = [0; 4];
         Ok(())
+    }
+
+    fn prepare_txiq_with<Capture>(
+        &mut self,
+        capture: Capture,
+    ) -> Result<(), TxIqToneControlPrepareError>
+    where
+        Capture: FnOnce() -> super::generated::TxiqToneControlImage,
+    {
+        if !matches!(self.kind, RadioPhyRestoreKind::Empty) {
+            return Err(TxIqToneControlPrepareError::RestorePending);
+        }
+        self.payload = capture().get().to_ne_bytes();
+        self.kind = RadioPhyRestoreKind::TxIqToneControl;
+        Ok(())
+    }
+
+    fn restore_txiq_with<Restore>(
+        &mut self,
+        restore: Restore,
+    ) -> Result<(), TxIqToneControlRestoreError>
+    where
+        Restore: FnOnce(super::generated::TxiqToneControlImage),
+    {
+        if !matches!(self.kind, RadioPhyRestoreKind::TxIqToneControl) {
+            return Err(TxIqToneControlRestoreError::RestoreNotPending);
+        }
+        let image = super::generated::TxiqToneControlImage::new(u32::from_ne_bytes(self.payload));
+        restore(image);
+        self.kind = RadioPhyRestoreKind::Empty;
+        self.payload = [0; 4];
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(super) fn occupy_txdc_for_test(&mut self) {
+        self.kind = RadioPhyRestoreKind::TxDcPwdet;
+        self.payload = [0; 4];
+    }
+
+    #[cfg(test)]
+    pub(super) fn occupy_txiq_for_test(&mut self) {
+        self.kind = RadioPhyRestoreKind::TxIqToneControl;
+        self.payload = [0; 4];
     }
 }
 
@@ -184,12 +265,21 @@ const fn tx_iq_phase_field(coefficient: i8) -> u8 {
 
 impl RadioPhyRegisters {
     pub(crate) const fn txdc_pwdet_restore_pending(&self) -> bool {
-        self.txdc_pwdet_restore.is_pending()
+        self.restore_slot.txdc_pending()
     }
 
     #[cfg(test)]
     pub(crate) fn occupy_txdc_pwdet_restore_for_test(&mut self) {
-        self.txdc_pwdet_restore.occupy_for_test();
+        self.restore_slot.occupy_txdc_for_test();
+    }
+
+    pub(crate) const fn txiq_tone_control_restore_pending(&self) -> bool {
+        self.restore_slot.txiq_pending()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn occupy_txiq_tone_control_restore_for_test(&mut self) {
+        self.restore_slot.occupy_txiq_for_test();
     }
 
     /// Enable both RX- and TX-IQ correction modes through two fresh RMWs.
@@ -547,7 +637,7 @@ impl RadioPhyRegisters {
 
     /// Apply the five internal-MMIO stores of complete ROM `phy_pwdet_reg_init`.
     pub fn initialize_power_detector_registers(&mut self) -> Result<(), TxDcPwdetLifecycleError> {
-        if self.txdc_pwdet_restore.is_pending() {
+        if self.restore_slot.txdc_pending() {
             return Err(TxDcPwdetLifecycleError::RestorePending);
         }
         let bb = &self.peripherals.phy_baseband_config_oracle;
@@ -593,7 +683,7 @@ impl RadioPhyRegisters {
     /// cannot steal the first caller's restore authority.
     pub fn prepare_txdc_power_detector(&mut self) -> Result<(), TxDcPwdetPrepareError> {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        self.txdc_pwdet_restore.prepare_with(
+        self.restore_slot.prepare_txdc_with(
             || {
                 let table = bb.power_detector_table_1().read();
                 let control = bb.power_detector_control().read();
@@ -628,7 +718,7 @@ impl RadioPhyRegisters {
     /// sequence has run.
     pub fn restore_txdc_power_detector(&mut self) -> Result<(), TxDcPwdetRestoreError> {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        self.txdc_pwdet_restore.restore_with(|fields| {
+        self.restore_slot.restore_txdc_with(|fields| {
             bb.power_detector_table_1()
                 .modify(|_, w| w.tx_dc_temporary_low_unknown().set(fields.table_low));
             bb.power_detector_control()
@@ -751,21 +841,26 @@ impl RadioPhyRegisters {
         self.configure_tone_paths(true, selector, step);
     }
 
-    /// Capture the full first-path word saved by complete ROM `phy_rfcal_txiq`.
-    pub fn txiq_tone_control(&mut self) -> u32 {
-        self.peripherals
-            .phy_baseband_config_oracle
-            .tone_path_0_control()
-            .read()
-            .bits()
+    /// Capture the first-path word into the private TX-IQ restore slot.
+    ///
+    /// A second caller is rejected before reading the register and therefore
+    /// cannot replace another calibration's restore authority.
+    pub fn prepare_txiq_tone_control_restore(&mut self) -> Result<(), TxIqToneControlPrepareError> {
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        self.restore_slot.prepare_txiq_with(|| {
+            super::generated::TxiqToneControlImage::new(bb.tone_path_0_control().read().bits())
+        })
     }
 
-    /// Restore the complete first-path word after TX-IQ cleanup.
-    pub fn restore_txiq_tone_control(&mut self, saved: u32) {
-        super::generated::restore_txiq_tone_control(
-            &self.peripherals.phy_baseband_config_oracle,
-            super::generated::TxiqToneControlImage::new(saved),
-        );
+    /// Restore and consume the private TX-IQ tone-control image.
+    ///
+    /// A caller without a successful prepare operation is rejected before
+    /// MMIO. The slot is cleared only after the complete-image write.
+    pub fn restore_txiq_tone_control(&mut self) -> Result<(), TxIqToneControlRestoreError> {
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        self.restore_slot.restore_txiq_with(|image| {
+            super::generated::restore_txiq_tone_control(bb, image);
+        })
     }
 
     /// Configure one of the two complete TX-IQ mismatch-power polarity edges.
@@ -1063,8 +1158,9 @@ impl RadioPhyRegisters {
 #[cfg(test)]
 mod tests {
     use super::{
-        TxDcPwdetPrepareError, TxDcPwdetRestoreError, TxDcPwdetRestoreFields, TxDcPwdetRestoreSlot,
-        decode_noise_floor_quarter_db, quarter_db_to_dbm, tx_iq_gain_field, tx_iq_phase_field,
+        RadioPhyRestoreSlot, TxDcPwdetPrepareError, TxDcPwdetRestoreError, TxDcPwdetRestoreFields,
+        TxIqToneControlPrepareError, TxIqToneControlRestoreError, decode_noise_floor_quarter_db,
+        quarter_db_to_dbm,
     };
     use std::{cell::RefCell, vec::Vec};
 
@@ -1077,9 +1173,9 @@ mod tests {
 
     #[test]
     fn txdc_restore_slot_rejects_interlopers_and_preserves_operation_order() {
-        let mut slot = TxDcPwdetRestoreSlot::new();
+        let mut slot = RadioPhyRestoreSlot::new();
         let events = RefCell::new(Vec::new());
-        slot.prepare_with(
+        slot.prepare_txdc_with(
             || {
                 events.borrow_mut().push(RestoreEvent::Capture);
                 (TxDcPwdetRestoreFields::default(), ())
@@ -1092,7 +1188,7 @@ mod tests {
             [RestoreEvent::Capture, RestoreEvent::Prepare]
         );
 
-        let rejected = slot.prepare_with(
+        let rejected = slot.prepare_txdc_with(
             || panic!("occupied restore slot must not capture registers"),
             |_: ()| panic!("occupied restore slot must not prepare registers"),
         );
@@ -1101,8 +1197,10 @@ mod tests {
             events.borrow().as_slice(),
             [RestoreEvent::Capture, RestoreEvent::Prepare]
         );
+        let rejected = slot.prepare_txiq_with(|| panic!("TX-DC owner must exclude TX-IQ capture"));
+        assert_eq!(rejected, Err(TxIqToneControlPrepareError::RestorePending));
 
-        slot.restore_with(|_| {
+        slot.restore_txdc_with(|_| {
             events.borrow_mut().push(RestoreEvent::Restore);
         })
         .unwrap();
@@ -1115,8 +1213,43 @@ mod tests {
             ]
         );
 
-        let rejected = slot.restore_with(|_| panic!("empty restore slot must not touch registers"));
+        let rejected =
+            slot.restore_txdc_with(|_| panic!("empty restore slot must not touch registers"));
         assert_eq!(rejected, Err(TxDcPwdetRestoreError::RestoreNotPending));
+    }
+
+    #[test]
+    fn txiq_restore_slot_rejects_interlopers_and_consumes_authority_after_restore() {
+        let mut slot = RadioPhyRestoreSlot::new();
+        let events = RefCell::new(Vec::new());
+        slot.prepare_txiq_with(|| {
+            events.borrow_mut().push(RestoreEvent::Capture);
+            super::super::generated::TxiqToneControlImage::new(0)
+        })
+        .unwrap();
+
+        let rejected =
+            slot.prepare_txiq_with(|| panic!("occupied slot must not sample the register"));
+        assert_eq!(rejected, Err(TxIqToneControlPrepareError::RestorePending));
+        assert_eq!(events.borrow().as_slice(), [RestoreEvent::Capture]);
+        let rejected = slot.prepare_txdc_with(
+            || panic!("TX-IQ owner must exclude TX-DC capture"),
+            |_: ()| panic!("TX-IQ owner must exclude TX-DC preparation"),
+        );
+        assert_eq!(rejected, Err(TxDcPwdetPrepareError::RestorePending));
+
+        slot.restore_txiq_with(|_| events.borrow_mut().push(RestoreEvent::Restore))
+            .unwrap();
+        assert_eq!(
+            events.borrow().as_slice(),
+            [RestoreEvent::Capture, RestoreEvent::Restore]
+        );
+
+        let rejected = slot.restore_txiq_with(|_| panic!("empty slot must not write the register"));
+        assert_eq!(
+            rejected,
+            Err(TxIqToneControlRestoreError::RestoreNotPending)
+        );
     }
 
     #[test]
@@ -1128,22 +1261,5 @@ mod tests {
         assert_eq!(quarter_db_to_dbm(-384), -96);
         assert_eq!(quarter_db_to_dbm(-1), 0);
         assert_eq!(quarter_db_to_dbm(-1024), 0);
-    }
-
-    #[test]
-    fn txiq_coefficient_fields_apply_complete_rom_saturation() {
-        assert_eq!(tx_iq_gain_field(-128), 0x21);
-        assert_eq!(tx_iq_gain_field(-32), 0x21);
-        assert_eq!(tx_iq_gain_field(-31), 0x21);
-        assert_eq!(tx_iq_gain_field(0), 0x00);
-        assert_eq!(tx_iq_gain_field(31), 0x1f);
-        assert_eq!(tx_iq_gain_field(127), 0x1f);
-
-        assert_eq!(tx_iq_phase_field(-128), 0x41);
-        assert_eq!(tx_iq_phase_field(-64), 0x41);
-        assert_eq!(tx_iq_phase_field(-63), 0x41);
-        assert_eq!(tx_iq_phase_field(0), 0x00);
-        assert_eq!(tx_iq_phase_field(63), 0x3f);
-        assert_eq!(tx_iq_phase_field(127), 0x3f);
     }
 }

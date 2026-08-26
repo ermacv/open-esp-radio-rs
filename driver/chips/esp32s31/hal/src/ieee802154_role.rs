@@ -248,7 +248,8 @@ impl<P> Ieee802154Owned<P> {
     /// # Errors
     ///
     /// Returns [`Ieee802154OwnedReleaseFailure`] retaining this owner and its
-    /// platform when TX-DC PWDET fields still await restoration in the PAC.
+    /// platform while TX-DC PWDET fields or TX-IQ tone control still await
+    /// restoration in the PAC.
     pub fn release(self) -> Result<(P, RadioHardware), Ieee802154OwnedReleaseFailure<P>> {
         let OwnedIeee802154Backend {
             platform,

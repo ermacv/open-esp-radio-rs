@@ -837,10 +837,10 @@ pub enum PhyTxIqCalibrationAction {
     Loopback(PhyTxIqLoopbackAction),
     ForcePbus(PhyPbusForceTest),
     Environment(PhyTxCalibrationEnvironmentAction),
-    CaptureToneControl,
+    PrepareToneControlRestore,
     PowerAttenuation(PhyPowerAttenuationAction),
     Cover(PhyTxIqCoverAction),
-    RestoreToneControl { saved: u32 },
+    RestoreToneControl,
     Complete(PhyTxIqCalibrationOutcome),
     Failed(PhyTxIqCalibrationFailure),
 }
@@ -853,10 +853,10 @@ pub enum PhyTxIqCalibrationCompletion {
     PbusCompleted(PhyPbusForceTest),
     PbusTimedOut(PhyPbusForceTest),
     Environment(PhyTxCalibrationEnvironmentCompletion),
-    ToneControlCaptured { value: u32 },
+    ToneControlRestorePrepared,
     PowerAttenuation(PhyPowerAttenuationCompletion),
     Cover(PhyTxIqCoverCompletion),
-    ToneControlRestored { saved: u32 },
+    ToneControlRestored,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -880,7 +880,7 @@ enum CalibrationStep {
     LoopbackGain {
         index: u8,
     },
-    Capture,
+    PrepareRestore,
     PowerAttenuation(PhyPowerAttenuationTransition),
     Cover(PhyTxIqCoverTransition),
     Exit {
@@ -918,8 +918,7 @@ const fn loopback_gain_transaction(index: u8, parameter_002: u8) -> PhyPbusForce
 pub struct PhyTxIqCalibrationTransition {
     request: PhyTxIqCalibrationRequest,
     step: CalibrationStep,
-    saved_tone_control: u32,
-    tone_control_captured: bool,
+    tone_control_restore_prepared: bool,
     attenuation: u8,
     gain: i8,
     phase: i8,
@@ -930,8 +929,7 @@ impl PhyTxIqCalibrationTransition {
         Self {
             request,
             step: CalibrationStep::Begin,
-            saved_tone_control: 0,
-            tone_control_captured: false,
+            tone_control_restore_prepared: false,
             attenuation: request.attenuation,
             gain: 0,
             phase: 0,
@@ -950,9 +948,20 @@ impl PhyTxIqCalibrationTransition {
     }
 
     fn after_exit(&mut self, terminal: CalibrationTerminal) {
-        self.step = if self.tone_control_captured {
+        self.step = if self.tone_control_restore_prepared {
             CalibrationStep::Restore { terminal }
         } else if self.request.variant == PhyTxIqCalibrationVariant::Loopback {
+            CalibrationStep::DisableLoopback {
+                terminal,
+                transition: PhyTxIqLoopbackTransition::new(false),
+            }
+        } else {
+            CalibrationStep::Finish { terminal }
+        };
+    }
+
+    fn after_restore(&mut self, terminal: CalibrationTerminal) {
+        self.step = if self.request.variant == PhyTxIqCalibrationVariant::Loopback {
             CalibrationStep::DisableLoopback {
                 terminal,
                 transition: PhyTxIqLoopbackTransition::new(false),
@@ -976,16 +985,14 @@ impl PhyTxIqCalibrationTransition {
             CalibrationStep::LoopbackGain { index } => PhyTxIqCalibrationAction::ForcePbus(
                 loopback_gain_transaction(index, self.request.environment.pbus_rx_path_value),
             ),
-            CalibrationStep::Capture => PhyTxIqCalibrationAction::CaptureToneControl,
+            CalibrationStep::PrepareRestore => PhyTxIqCalibrationAction::PrepareToneControlRestore,
             CalibrationStep::PowerAttenuation(transition) => {
                 PhyTxIqCalibrationAction::PowerAttenuation(transition.action())
             }
             CalibrationStep::Cover(transition) => {
                 PhyTxIqCalibrationAction::Cover(transition.action())
             }
-            CalibrationStep::Restore { .. } => PhyTxIqCalibrationAction::RestoreToneControl {
-                saved: self.saved_tone_control,
-            },
+            CalibrationStep::Restore { .. } => PhyTxIqCalibrationAction::RestoreToneControl,
             CalibrationStep::Finish { .. } => {
                 PhyTxIqCalibrationAction::ConfigureCorrection { begin: false }
             }
@@ -1048,7 +1055,7 @@ impl PhyTxIqCalibrationTransition {
                 match transition.action() {
                     PhyTxCalibrationEnvironmentAction::Complete(
                         PhyTxCalibrationEnvironment::Debug,
-                    ) => self.step = CalibrationStep::Capture,
+                    ) => self.step = CalibrationStep::PrepareRestore,
                     PhyTxCalibrationEnvironmentAction::Failed(failure) => {
                         self.fail(PhyTxIqCalibrationFailure::Environment(failure));
                     }
@@ -1084,7 +1091,7 @@ impl PhyTxIqCalibrationTransition {
                 ) =>
             {
                 self.step = if index == 6 {
-                    CalibrationStep::Capture
+                    CalibrationStep::PrepareRestore
                 } else {
                     CalibrationStep::LoopbackGain { index: index + 1 }
                 };
@@ -1101,11 +1108,10 @@ impl PhyTxIqCalibrationTransition {
                 self.fail(PhyTxIqCalibrationFailure::PbusTimedOut(transaction));
             }
             (
-                CalibrationStep::Capture,
-                PhyTxIqCalibrationCompletion::ToneControlCaptured { value },
+                CalibrationStep::PrepareRestore,
+                PhyTxIqCalibrationCompletion::ToneControlRestorePrepared,
             ) => {
-                self.saved_tone_control = value;
-                self.tone_control_captured = true;
+                self.tone_control_restore_prepared = true;
                 self.step = CalibrationStep::PowerAttenuation(self.power_attenuation());
             }
             (
@@ -1181,16 +1187,10 @@ impl PhyTxIqCalibrationTransition {
             }
             (
                 CalibrationStep::Restore { terminal },
-                PhyTxIqCalibrationCompletion::ToneControlRestored { saved },
-            ) if saved == self.saved_tone_control => {
-                self.step = if self.request.variant == PhyTxIqCalibrationVariant::Loopback {
-                    CalibrationStep::DisableLoopback {
-                        terminal,
-                        transition: PhyTxIqLoopbackTransition::new(false),
-                    }
-                } else {
-                    CalibrationStep::Finish { terminal }
-                };
+                PhyTxIqCalibrationCompletion::ToneControlRestored,
+            ) => {
+                self.tone_control_restore_prepared = false;
+                self.after_restore(terminal);
             }
             (
                 CalibrationStep::DisableLoopback {
@@ -1598,6 +1598,18 @@ pub enum PhyTxIqBindingError {
     NotDirectMmio,
 }
 
+/// A TX-IQ restore-slot invariant was violated by target execution.
+///
+/// This is not a model completion. The target runner must retain and poison
+/// the unique hardware epoch instead of attempting ordinary cleanup.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyTxIqHardwareInvariant {
+    /// A second calibration tried to replace a pending restore image.
+    RestoreAlreadyPending,
+    /// Cleanup reached restore without a successful prepare operation.
+    RestoreNotPending,
+}
+
 /// Non-cloneable direct-MMIO token for TXIQ-specific register edges.
 #[derive(Debug, Eq, PartialEq)]
 pub struct PhyTxIqMmioBinding {
@@ -1609,8 +1621,8 @@ impl PhyTxIqMmioBinding {
         match action {
             PhyTxIqCalibrationAction::ConfigureCorrection { .. }
             | PhyTxIqCalibrationAction::ConfigurePbusDebugMode
-            | PhyTxIqCalibrationAction::CaptureToneControl
-            | PhyTxIqCalibrationAction::RestoreToneControl { .. } => Ok(Self { action }),
+            | PhyTxIqCalibrationAction::PrepareToneControlRestore
+            | PhyTxIqCalibrationAction::RestoreToneControl => Ok(Self { action }),
             _ => Err(PhyTxIqBindingError::NotDirectMmio),
         }
     }
@@ -1623,24 +1635,25 @@ impl PhyTxIqMmioBinding {
     pub fn execute_target(
         self,
         registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
-    ) -> PhyTxIqCalibrationCompletion {
+    ) -> Result<PhyTxIqCalibrationCompletion, PhyTxIqHardwareInvariant> {
         match self.action {
             PhyTxIqCalibrationAction::ConfigureCorrection { begin } => {
                 crate::phy_hardware::configure_phy_txiq_correction(registers, begin);
-                PhyTxIqCalibrationCompletion::CorrectionConfigured { begin }
+                Ok(PhyTxIqCalibrationCompletion::CorrectionConfigured { begin })
             }
             PhyTxIqCalibrationAction::ConfigurePbusDebugMode => {
                 open_esp_radio_esp32s31_hal::pbus::configure_debug_mode(registers);
-                PhyTxIqCalibrationCompletion::PbusDebugModeConfigured
+                Ok(PhyTxIqCalibrationCompletion::PbusDebugModeConfigured)
             }
-            PhyTxIqCalibrationAction::CaptureToneControl => {
-                PhyTxIqCalibrationCompletion::ToneControlCaptured {
-                    value: crate::phy_hardware::read_phy_txiq_tone_control(registers),
-                }
+            PhyTxIqCalibrationAction::PrepareToneControlRestore => {
+                crate::phy_hardware::prepare_phy_txiq_tone_control_restore(registers)
+                    .map_err(|_| PhyTxIqHardwareInvariant::RestoreAlreadyPending)?;
+                Ok(PhyTxIqCalibrationCompletion::ToneControlRestorePrepared)
             }
-            PhyTxIqCalibrationAction::RestoreToneControl { saved } => {
-                crate::phy_hardware::restore_phy_txiq_tone_control(registers, saved);
-                PhyTxIqCalibrationCompletion::ToneControlRestored { saved }
+            PhyTxIqCalibrationAction::RestoreToneControl => {
+                crate::phy_hardware::restore_phy_txiq_tone_control(registers)
+                    .map_err(|_| PhyTxIqHardwareInvariant::RestoreNotPending)?;
+                Ok(PhyTxIqCalibrationCompletion::ToneControlRestored)
             }
             _ => unreachable!(),
         }
@@ -2372,8 +2385,8 @@ mod tests {
             PhyTxIqCalibrationAction::Environment(action) => {
                 PhyTxIqCalibrationCompletion::Environment(environment_completion(action))
             }
-            PhyTxIqCalibrationAction::CaptureToneControl => {
-                PhyTxIqCalibrationCompletion::ToneControlCaptured { value: 0xa5a5_5a5a }
+            PhyTxIqCalibrationAction::PrepareToneControlRestore => {
+                PhyTxIqCalibrationCompletion::ToneControlRestorePrepared
             }
             PhyTxIqCalibrationAction::PowerAttenuation(action) => {
                 PhyTxIqCalibrationCompletion::PowerAttenuation(power_attenuation_completion(
@@ -2383,8 +2396,8 @@ mod tests {
             PhyTxIqCalibrationAction::Cover(action) => {
                 PhyTxIqCalibrationCompletion::Cover(cover_completion(action, sample))
             }
-            PhyTxIqCalibrationAction::RestoreToneControl { saved } => {
-                PhyTxIqCalibrationCompletion::ToneControlRestored { saved }
+            PhyTxIqCalibrationAction::RestoreToneControl => {
+                PhyTxIqCalibrationCompletion::ToneControlRestored
             }
             terminal => panic!("unexpected calibration terminal: {terminal:?}"),
         }
@@ -2487,17 +2500,160 @@ mod tests {
                 clear_tone_after_ready: false,
             });
             let mut edges = 0_u16;
+            let mut prepare_edge = None;
+            let mut restore_edge = None;
+            let mut loopback_teardown_edge = None;
+            let mut correction_off_edge = None;
             loop {
                 let action = transition.action();
+                match action {
+                    PhyTxIqCalibrationAction::PrepareToneControlRestore => {
+                        assert!(prepare_edge.replace(edges).is_none());
+                    }
+                    PhyTxIqCalibrationAction::RestoreToneControl => {
+                        assert!(restore_edge.replace(edges).is_none());
+                    }
+                    PhyTxIqCalibrationAction::Loopback(_)
+                        if restore_edge.is_some() && loopback_teardown_edge.is_none() =>
+                    {
+                        loopback_teardown_edge = Some(edges);
+                    }
+                    PhyTxIqCalibrationAction::ConfigureCorrection { begin: false } => {
+                        assert!(correction_off_edge.replace(edges).is_none());
+                    }
+                    _ => {}
+                }
                 match action {
                     PhyTxIqCalibrationAction::Complete(outcome) => {
                         assert!((-31..=31).contains(&outcome.gain));
                         assert!((-63..=63).contains(&outcome.phase));
                         assert!(edges < 2_000);
+                        let prepare_edge = prepare_edge.expect("TX-IQ must prepare one restore");
+                        let restore_edge = restore_edge.expect("TX-IQ must restore exactly once");
+                        let correction_off_edge =
+                            correction_off_edge.expect("TX-IQ must leave correction mode");
+                        assert!(prepare_edge < restore_edge);
+                        assert!(restore_edge < correction_off_edge);
+                        match variant {
+                            PhyTxIqCalibrationVariant::Initial => {
+                                assert_eq!(loopback_teardown_edge, None);
+                            }
+                            PhyTxIqCalibrationVariant::Loopback => {
+                                let teardown_edge = loopback_teardown_edge
+                                    .expect("loopback teardown must follow restore");
+                                assert!(restore_edge < teardown_edge);
+                                assert!(teardown_edge < correction_off_edge);
+                            }
+                        }
                         break;
                     }
                     PhyTxIqCalibrationAction::Failed(failure) => {
                         panic!("unexpected calibration failure: {failure:?}")
+                    }
+                    _ => {
+                        transition
+                            .advance(calibration_completion(action, 100))
+                            .unwrap();
+                        edges += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn tone_sar_failure_after_prepare_restores_before_terminal_failure() {
+        for variant in [
+            PhyTxIqCalibrationVariant::Initial,
+            PhyTxIqCalibrationVariant::Loopback,
+        ] {
+            let mut transition = PhyTxIqCalibrationTransition::new(PhyTxIqCalibrationRequest {
+                identity: variant as u8,
+                variant,
+                environment: PhyTxCalibrationParameters {
+                    pbus_tx_path_value: 0x2f,
+                    pbus_rx_path_value: 0xbf,
+                    dco: [0x100; 4],
+                },
+                attenuation: 80,
+                selector: 0x80,
+                power_offset: 0,
+                reference_codes: [80, 120],
+                clear_tone_after_ready: false,
+            });
+            let mut edges = 0_u16;
+            let mut injected_failure = None;
+            let mut prepare_edge = None;
+            let mut restore_edge = None;
+            let mut loopback_teardown_edge = None;
+            let mut correction_off_edge = None;
+            loop {
+                let action = transition.action();
+                match action {
+                    PhyTxIqCalibrationAction::PrepareToneControlRestore => {
+                        assert!(prepare_edge.replace(edges).is_none());
+                    }
+                    PhyTxIqCalibrationAction::RestoreToneControl => {
+                        assert!(restore_edge.replace(edges).is_none());
+                    }
+                    PhyTxIqCalibrationAction::Loopback(_)
+                        if restore_edge.is_some() && loopback_teardown_edge.is_none() =>
+                    {
+                        loopback_teardown_edge = Some(edges);
+                    }
+                    PhyTxIqCalibrationAction::ConfigureCorrection { begin: false } => {
+                        assert!(correction_off_edge.replace(edges).is_none());
+                    }
+                    _ => {}
+                }
+                match action {
+                    PhyTxIqCalibrationAction::Failed(failure) => {
+                        assert_eq!(Some(failure), injected_failure);
+                        assert!(edges < 500);
+                        let prepare_edge = prepare_edge.expect("TX-IQ must prepare one restore");
+                        let restore_edge = restore_edge.expect("TX-IQ must restore exactly once");
+                        let correction_off_edge =
+                            correction_off_edge.expect("TX-IQ must leave correction mode");
+                        assert!(prepare_edge < restore_edge);
+                        assert!(restore_edge < correction_off_edge);
+                        match variant {
+                            PhyTxIqCalibrationVariant::Initial => {
+                                assert_eq!(loopback_teardown_edge, None);
+                            }
+                            PhyTxIqCalibrationVariant::Loopback => {
+                                let teardown_edge = loopback_teardown_edge
+                                    .expect("loopback teardown must follow restore");
+                                assert!(restore_edge < teardown_edge);
+                                assert!(teardown_edge < correction_off_edge);
+                            }
+                        }
+                        break;
+                    }
+                    PhyTxIqCalibrationAction::PowerAttenuation(
+                        PhyPowerAttenuationAction::ToneSar(PhyToneSarAction::PollReady {
+                            measurement,
+                            sample,
+                        }),
+                    ) if injected_failure.is_none() => {
+                        let failure = PhyToneSarFailure::ReadyDeadlineElapsed {
+                            measurement,
+                            sample,
+                        };
+                        injected_failure = Some(PhyTxIqCalibrationFailure::ToneSar(failure));
+                        transition
+                            .advance(PhyTxIqCalibrationCompletion::PowerAttenuation(
+                                PhyPowerAttenuationCompletion::ToneSar(
+                                    PhyToneSarCompletion::ReadyDeadlineElapsed {
+                                        measurement,
+                                        sample,
+                                    },
+                                ),
+                            ))
+                            .unwrap();
+                        edges += 1;
+                    }
+                    PhyTxIqCalibrationAction::Complete(outcome) => {
+                        panic!("failure injection unexpectedly completed TX-IQ: {outcome:?}")
                     }
                     _ => {
                         transition
@@ -2564,6 +2720,16 @@ mod tests {
             PhyTxIqCalibrationExternalBinding::lower(
                 PhyTxIqCalibrationAction::ConfigureCorrection { begin: true }
             ),
+            Ok(PhyTxIqCalibrationExternalBinding::Mmio(_))
+        ));
+        assert!(matches!(
+            PhyTxIqCalibrationExternalBinding::lower(
+                PhyTxIqCalibrationAction::PrepareToneControlRestore
+            ),
+            Ok(PhyTxIqCalibrationExternalBinding::Mmio(_))
+        ));
+        assert!(matches!(
+            PhyTxIqCalibrationExternalBinding::lower(PhyTxIqCalibrationAction::RestoreToneControl),
             Ok(PhyTxIqCalibrationExternalBinding::Mmio(_))
         ));
         assert!(matches!(

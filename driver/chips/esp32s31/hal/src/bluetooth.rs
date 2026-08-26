@@ -88,8 +88,9 @@ impl BluetoothColdOwner {
     ///
     /// # Errors
     ///
-    /// Returns [`BluetoothColdOwnerReleaseFailure`] retaining this owner when
-    /// TX-DC PWDET fields still await restoration in the PAC.
+    /// Returns [`BluetoothColdOwnerReleaseFailure`] retaining this owner while
+    /// TX-DC PWDET fields or TX-IQ tone control still await restoration in the
+    /// PAC.
     pub fn release(self) -> Result<RadioHardware, BluetoothColdOwnerReleaseFailure> {
         match self.registers.release() {
             Ok(hardware) => Ok(hardware),

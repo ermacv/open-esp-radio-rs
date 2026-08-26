@@ -9,7 +9,8 @@ This tree is limited to repository-wide generators and policy checks:
 | `qualification-check/` | Fail-closed readiness manifest validation |
 | `blobray/` | Blobray implementation, reusable backends, models and platform harnesses |
 | `audit-driver-safety.sh` | Unsafe-code boundary policy |
-| `audit-source-only.sh` | Production dependency and final-image source-only audit |
+| `audit-cargo-metadata.sh` | Locked metadata audit for every tracked Cargo workspace island |
+| `audit-source-only.sh` | Production dependency and final-image source-only audit (including all locked Cargo metadata) |
 
 Hardware scenarios and privileged network fixtures belong under `hil/host`,
 not in this directory. Chip target packs belong under `verification/` and

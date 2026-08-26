@@ -6,9 +6,9 @@
 //! those software decisions. It performs no MMIO and does not arm a real
 //! timer. A due request retains the unique owner while the exact outer
 //! [`crate::phy_param_tracking::PhyParamTrackingTransition`] is executed.
-//! Its recovered TX-power, Wi-Fi PHY-I2C and temperature children compose into
-//! live-state HAL/PAC bindings; the remaining child effects stay explicit
-//! unresolved actions.
+//! Its recovered TX-power, Wi-Fi PHY-I2C, calibration, RFPLL and temperature
+//! children compose into live-state owners; calibration hardware effects stay
+//! explicit unresolved actions until their target bindings are owned.
 //!
 //! Timer arm/stop and the PHY lock are represented only as atomic model facts.
 //! There is no fallible timer executor, rollback protocol, or target lock in
@@ -26,10 +26,10 @@
 use core::fmt;
 
 use crate::phy_param_tracking::{
-    PhyParamTrackRequest, PhyParamTrackingAction, PhyParamTrackingChildError,
-    PhyParamTrackingCompletion, PhyParamTrackingParameters, PhyParamTrackingRfpllTransition,
-    PhyParamTrackingTemperatureTransition, PhyParamTrackingTransition,
-    PhyParamTrackingTransitionError, PhyParamTrackingTxPowerTransition,
+    PhyParamTrackRequest, PhyParamTrackingAction, PhyParamTrackingCalibrationTransition,
+    PhyParamTrackingChildError, PhyParamTrackingCompletion, PhyParamTrackingParameters,
+    PhyParamTrackingRfpllTransition, PhyParamTrackingTemperatureTransition,
+    PhyParamTrackingTransition, PhyParamTrackingTransitionError, PhyParamTrackingTxPowerTransition,
     PhyParamTrackingWifiI2cTransition,
 };
 
@@ -560,6 +560,15 @@ impl PhyPendingTracking {
         state: &'state mut crate::phy_state::PhyState,
     ) -> Result<PhyParamTrackingRfpllTransition<'state>, PhyParamTrackingChildError> {
         self.transition.begin_rfpll_cap_tracking(state)
+    }
+
+    /// Lower the current calibration action while retaining all three live
+    /// semantic temperature references until terminal commit.
+    pub fn begin_calibration_tracking<'state>(
+        &self,
+        state: &'state mut crate::phy_state::PhyState,
+    ) -> Result<PhyParamTrackingCalibrationTransition<'state>, PhyParamTrackingChildError> {
+        self.transition.begin_calibration_tracking(state)
     }
 
     /// Lower the current outer TX-power action into its complete typed child.
@@ -1335,6 +1344,10 @@ mod tests {
         );
         assert_eq!(
             tracking.begin_rfpll_cap_tracking(&mut state).unwrap_err(),
+            PhyParamTrackingChildError::UnsupportedAction
+        );
+        assert_eq!(
+            tracking.begin_calibration_tracking(&mut state).unwrap_err(),
             PhyParamTrackingChildError::UnsupportedAction
         );
         assert_eq!(

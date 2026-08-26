@@ -378,10 +378,12 @@ effects:
   temperature children now retain live semantic state through complete typed
   transitions. `PhyCalibrationTrackingTransition` also owns the exact three
   threshold decisions and restore order. Its hardware-frequency, two-phase
-  force-TX/RX with both async delays, baseband-CBW, MAC/baseband-enable, and
-  final TX-gain-compensation leaves have target bindings; the nested PBus
-  clear, DCODE/RX, and TXDC/gain operations remain explicit unbound children.
-  The outer transition alone is not an RF-readiness proof.
+  force-TX/RX with both async delays, bounded PBus clear, baseband-CBW,
+  MAC/baseband-enable, and final TX-gain-compensation leaves have target
+  bindings. A PBus timeout runs force/frequency/gain cleanup before returning a
+  typed failure. The nested DCODE/RX, calibration-state reset, and TXDC/gain
+  operations remain explicit unbound children. The outer transition alone is
+  not an RF-readiness proof.
 - `ieee802154_txon_delay_set()`: called during every MAC initialization after
   ED/PTI configuration and before the driver enters idle.
 - `bt_bb_get_tx_pwr_table(&length)`: needed both to initialize each channel's

@@ -574,6 +574,15 @@ impl<'state> PhyParamTrackingCalibrationTransition<'state> {
         self.child.begin_force_txrx()
     }
 
+    pub fn begin_pbus_clear(
+        &self,
+    ) -> Result<
+        crate::phy_cal_tracking::PhyCalibrationPbusClearTransition,
+        crate::phy_cal_tracking::PhyCalibrationTrackingChildError,
+    > {
+        self.child.begin_pbus_clear()
+    }
+
     pub fn lower_external(
         &self,
     ) -> Result<

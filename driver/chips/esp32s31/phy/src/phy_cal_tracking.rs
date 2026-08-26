@@ -56,11 +56,12 @@ pub enum PhyCalibrationTrackingAction {
     EnableMacBaseband,
     RestoreTxGainCompensation,
     Complete(PhyCalibrationTrackingOutcome),
+    Failed(PhyCalibrationTrackingFailure),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyCalibrationTrackingCompletion {
-    PbusCleared,
+    PbusClearCompleted(PhyCalibrationPbusClearCompletion),
     DcodeCalibrated,
     CommonCalibrationStateReset,
     RxGainTablePublished,
@@ -92,6 +93,30 @@ pub struct PhyCalibrationForceTxRxCompletion {
     enabled: bool,
 }
 
+/// Opaque terminal result of the complete bounded PBus-clear child.
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_phy::phy_cal_tracking::{
+///     PhyCalibrationPbusClearCompletion, PhyCalibrationTrackingCompletion,
+/// };
+/// use open_esp_radio_esp32s31_phy::phy_pbus::PhyPbusClearOutcome;
+///
+/// let forged = PhyCalibrationTrackingCompletion::PbusClearCompleted(
+///     PhyCalibrationPbusClearCompletion {
+///         outcome: PhyPbusClearOutcome::Cleared,
+///     },
+/// );
+/// ```
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyCalibrationPbusClearCompletion {
+    outcome: crate::phy_pbus::PhyPbusClearOutcome,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyCalibrationTrackingFailure {
+    PbusClearTimedOut(crate::phy_pbus::PhyPbusForceTest),
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyCalibrationTrackingTransitionError {
     WrongCompletion,
@@ -119,6 +144,7 @@ enum Step {
     ClassEnableHardwareFrequency,
     RestoreTxGainCompensation,
     Complete,
+    Failed,
 }
 
 /// Finite exact-order parent for `phy_cal_param_track`.
@@ -129,6 +155,7 @@ pub struct PhyCalibrationTrackingTransition {
     threshold: u8,
     common_updated: bool,
     class_updated: bool,
+    failure: Option<PhyCalibrationTrackingFailure>,
     step: Step,
 }
 
@@ -158,6 +185,7 @@ impl PhyCalibrationTrackingTransition {
             threshold,
             common_updated: false,
             class_updated: false,
+            failure: None,
             step,
         }
     }
@@ -207,6 +235,10 @@ impl PhyCalibrationTrackingTransition {
                 PhyCalibrationTrackingAction::RestoreTxGainCompensation
             }
             Step::Complete => PhyCalibrationTrackingAction::Complete(self.outcome()),
+            Step::Failed => match self.failure {
+                Some(failure) => PhyCalibrationTrackingAction::Failed(failure),
+                None => unreachable!(),
+            },
         }
     }
 
@@ -215,9 +247,18 @@ impl PhyCalibrationTrackingTransition {
         completion: PhyCalibrationTrackingCompletion,
     ) -> Result<(), PhyCalibrationTrackingTransitionError> {
         self.step = match (self.step, completion) {
-            (Step::CommonClearPbus, PhyCalibrationTrackingCompletion::PbusCleared) => {
-                Step::CommonDcode
-            }
+            (
+                Step::CommonClearPbus,
+                PhyCalibrationTrackingCompletion::PbusClearCompleted(completion),
+            ) => match completion.outcome {
+                crate::phy_pbus::PhyPbusClearOutcome::Cleared => Step::CommonDcode,
+                crate::phy_pbus::PhyPbusClearOutcome::ForceTestTimedOut(transaction) => {
+                    self.failure = Some(PhyCalibrationTrackingFailure::PbusClearTimedOut(
+                        transaction,
+                    ));
+                    Step::RestoreTxGainCompensation
+                }
+            },
             (Step::CommonDcode, PhyCalibrationTrackingCompletion::DcodeCalibrated) => {
                 Step::CommonReset
             }
@@ -247,9 +288,18 @@ impl PhyCalibrationTrackingTransition {
                 Step::ClassForceTxRxOff,
                 PhyCalibrationTrackingCompletion::ForceTxRxCompleted(completion),
             ) if completion.enabled => Step::ClassClearPbus,
-            (Step::ClassClearPbus, PhyCalibrationTrackingCompletion::PbusCleared) => {
-                Step::ClassReset
-            }
+            (
+                Step::ClassClearPbus,
+                PhyCalibrationTrackingCompletion::PbusClearCompleted(completion),
+            ) => match completion.outcome {
+                crate::phy_pbus::PhyPbusClearOutcome::Cleared => Step::ClassReset,
+                crate::phy_pbus::PhyPbusClearOutcome::ForceTestTimedOut(transaction) => {
+                    self.failure = Some(PhyCalibrationTrackingFailure::PbusClearTimedOut(
+                        transaction,
+                    ));
+                    Step::ClassReleaseTxRxOff
+                }
+            },
             (Step::ClassReset, PhyCalibrationTrackingCompletion::ClassCalibrationStateReset) => {
                 Step::ClassConfigureBasebandZero
             }
@@ -290,14 +340,20 @@ impl PhyCalibrationTrackingTransition {
                 Step::ClassEnableHardwareFrequency,
                 PhyCalibrationTrackingCompletion::HardwareFrequencyControlSet { enabled: true },
             ) => {
-                self.class_updated = true;
+                self.class_updated = self.failure.is_none();
                 Step::RestoreTxGainCompensation
             }
             (
                 Step::RestoreTxGainCompensation,
                 PhyCalibrationTrackingCompletion::TxGainCompensationRestored,
-            ) => Step::Complete,
-            (Step::Complete, _) => {
+            ) => {
+                if self.failure.is_some() {
+                    Step::Failed
+                } else {
+                    Step::Complete
+                }
+            }
+            (Step::Complete | Step::Failed, _) => {
                 return Err(PhyCalibrationTrackingTransitionError::AlreadyComplete);
             }
             _ => return Err(PhyCalibrationTrackingTransitionError::WrongCompletion),
@@ -311,6 +367,14 @@ impl PhyCalibrationTrackingTransition {
         &self,
     ) -> Result<PhyCalibrationForceTxRxTransition, PhyCalibrationTrackingChildError> {
         PhyCalibrationForceTxRxTransition::lower(self.action())
+    }
+
+    /// Lower either selected PBus-clear action into the existing complete
+    /// cold-path hardware/timer binding graph.
+    pub fn begin_pbus_clear(
+        &self,
+    ) -> Result<PhyCalibrationPbusClearTransition, PhyCalibrationTrackingChildError> {
+        PhyCalibrationPbusClearTransition::lower(self.action())
     }
 
     const fn first_class_step(self) -> Step {
@@ -363,6 +427,64 @@ pub enum PhyCalibrationTrackingChildError {
 pub struct PhyCalibrationForceTxRxTransition {
     parent_action: PhyCalibrationTrackingAction,
     child: crate::phy_pbus::PhyForceTxRxTransition,
+}
+
+/// Non-cloneable calibration-child owner for complete bounded PBus clear.
+#[derive(Debug, Eq, PartialEq)]
+pub struct PhyCalibrationPbusClearTransition {
+    child: crate::phy_pbus::PhyPbusClearTransition,
+}
+
+impl PhyCalibrationPbusClearTransition {
+    fn lower(
+        parent_action: PhyCalibrationTrackingAction,
+    ) -> Result<Self, PhyCalibrationTrackingChildError> {
+        if parent_action != PhyCalibrationTrackingAction::ClearPbus {
+            return Err(PhyCalibrationTrackingChildError::UnsupportedAction);
+        }
+        Ok(Self {
+            child: crate::phy_pbus::PhyPbusClearTransition::new(),
+        })
+    }
+
+    pub const fn action(&self) -> crate::phy_pbus::PhyPbusClearAction {
+        self.child.action()
+    }
+
+    pub fn advance(
+        &mut self,
+        completion: crate::phy_pbus::PhyPbusClearCompletion,
+    ) -> Result<(), crate::phy_pbus::PhyPbusClearTransitionError> {
+        self.child.advance(completion)
+    }
+
+    pub fn advance_external(
+        &mut self,
+        completion: crate::phy_i2c::PhyRfInitPrefixCompletion,
+    ) -> Result<(), crate::phy_pbus::PhyPbusClearTransitionError> {
+        let crate::phy_i2c::PhyRfInitPrefixCompletion::PbusClear(completion) = completion else {
+            return Err(crate::phy_pbus::PhyPbusClearTransitionError::WrongCompletion);
+        };
+        self.advance(completion)
+    }
+
+    pub fn lower_external(
+        &self,
+    ) -> Result<crate::phy_cold::PhyColdExternalBinding, crate::phy_cold::PhyColdLoweringError>
+    {
+        crate::phy_cold::PhyColdExternalBinding::lower(
+            crate::phy_i2c::PhyRfInitPrefixAction::PbusClear(self.action()),
+        )
+    }
+
+    pub fn commit(self) -> Result<PhyCalibrationTrackingCompletion, Self> {
+        let crate::phy_pbus::PhyPbusClearAction::Complete(outcome) = self.child.action() else {
+            return Err(self);
+        };
+        Ok(PhyCalibrationTrackingCompletion::PbusClearCompleted(
+            PhyCalibrationPbusClearCompletion { outcome },
+        ))
+    }
 }
 
 impl PhyCalibrationForceTxRxTransition {
@@ -589,7 +711,11 @@ mod tests {
     fn completion(action: PhyCalibrationTrackingAction) -> PhyCalibrationTrackingCompletion {
         match action {
             PhyCalibrationTrackingAction::ClearPbus => {
-                PhyCalibrationTrackingCompletion::PbusCleared
+                PhyCalibrationTrackingCompletion::PbusClearCompleted(
+                    PhyCalibrationPbusClearCompletion {
+                        outcome: crate::phy_pbus::PhyPbusClearOutcome::Cleared,
+                    },
+                )
             }
             PhyCalibrationTrackingAction::CalibrateDcode => {
                 PhyCalibrationTrackingCompletion::DcodeCalibrated
@@ -632,7 +758,9 @@ mod tests {
             PhyCalibrationTrackingAction::RestoreTxGainCompensation => {
                 PhyCalibrationTrackingCompletion::TxGainCompensationRestored
             }
-            PhyCalibrationTrackingAction::Complete(_) => panic!("terminal action"),
+            PhyCalibrationTrackingAction::Complete(_) | PhyCalibrationTrackingAction::Failed(_) => {
+                panic!("terminal action")
+            }
         }
     }
 
@@ -645,7 +773,10 @@ mod tests {
         for _ in 0..24 {
             let action = transition.action();
             actions.push(action);
-            if matches!(action, PhyCalibrationTrackingAction::Complete(_)) {
+            if matches!(
+                action,
+                PhyCalibrationTrackingAction::Complete(_) | PhyCalibrationTrackingAction::Failed(_)
+            ) {
                 return actions;
             }
             transition.advance(completion(action)).unwrap();
@@ -806,6 +937,9 @@ mod tests {
                 common_updated: false,
                 class_updated: false,
             }),
+            PhyCalibrationTrackingAction::Failed(PhyCalibrationTrackingFailure::PbusClearTimedOut(
+                crate::phy_pbus::PhyPbusForceTest::new(4, 1, 0),
+            )),
         ];
         for action in unresolved {
             assert_eq!(
@@ -858,5 +992,92 @@ mod tests {
         let completion = child.commit().unwrap();
         transition.advance(completion).unwrap();
         assert_eq!(transition.action(), PhyCalibrationTrackingAction::ClearPbus);
+    }
+
+    #[test]
+    fn class_pbus_timeout_restores_force_frequency_and_gain_before_failure() {
+        let mut transition = PhyCalibrationTrackingTransition::new(
+            PhyCalibrationTrackingRequest {
+                class: PhyCalibrationTrackClass::BluetoothIeee802154,
+            },
+            PhyCalibrationTrackingParameters {
+                common_reference_temperature: 50,
+                wifi_reference_temperature: 0,
+                bluetooth_ieee802154_reference_temperature: 20,
+                ..PARAMETERS
+            },
+        );
+        transition
+            .advance(
+                PhyCalibrationTrackingCompletion::HardwareFrequencyControlSet { enabled: false },
+            )
+            .unwrap();
+        transition
+            .advance(PhyCalibrationTrackingCompletion::ForceTxRxCompleted(
+                PhyCalibrationForceTxRxCompletion { enabled: true },
+            ))
+            .unwrap();
+
+        let child = transition.begin_pbus_clear().unwrap();
+        let mut child = child.commit().unwrap_err();
+        let crate::phy_cold::PhyColdExternalBinding::Mmio(binding) =
+            child.lower_external().unwrap()
+        else {
+            panic!("PBus clear must begin with debug-mode MMIO")
+        };
+        child
+            .advance_external(binding.into_completion().unwrap())
+            .unwrap();
+
+        let crate::phy_pbus::PhyPbusClearAction::ForceTest(transaction) = child.action() else {
+            panic!("PBus clear did not publish its first transaction")
+        };
+        let crate::phy_cold::PhyColdExternalBinding::Pbus(mut binding) =
+            child.lower_external().unwrap()
+        else {
+            panic!("force-test action did not lower to a PBus owner")
+        };
+        binding.started().unwrap();
+        child
+            .advance_external(binding.into_timeout_completion().unwrap())
+            .unwrap();
+        let completion = child.commit().unwrap();
+        transition.advance(completion).unwrap();
+
+        assert_eq!(
+            transition.action(),
+            PhyCalibrationTrackingAction::ForceTxRxOff { enabled: false }
+        );
+        transition
+            .advance(PhyCalibrationTrackingCompletion::ForceTxRxCompleted(
+                PhyCalibrationForceTxRxCompletion { enabled: false },
+            ))
+            .unwrap();
+        assert_eq!(
+            transition.action(),
+            PhyCalibrationTrackingAction::SetHardwareFrequencyControl { enabled: true }
+        );
+        transition
+            .advance(
+                PhyCalibrationTrackingCompletion::HardwareFrequencyControlSet { enabled: true },
+            )
+            .unwrap();
+        assert_eq!(
+            transition.action(),
+            PhyCalibrationTrackingAction::RestoreTxGainCompensation
+        );
+        transition
+            .advance(PhyCalibrationTrackingCompletion::TxGainCompensationRestored)
+            .unwrap();
+        assert_eq!(
+            transition.action(),
+            PhyCalibrationTrackingAction::Failed(PhyCalibrationTrackingFailure::PbusClearTimedOut(
+                transaction
+            ))
+        );
+        assert_eq!(
+            transition.advance(PhyCalibrationTrackingCompletion::TxGainCompensationRestored),
+            Err(PhyCalibrationTrackingTransitionError::AlreadyComplete)
+        );
     }
 }

@@ -21,28 +21,15 @@ cargo clippy --workspace --all-targets -- -D warnings
 tools/audit-driver-safety.sh
 tools/audit-driver-architecture.sh
 
-# Verify generated code from its canonical input instead of inspecting Rust
-# source text for particular identifiers or function spellings.
+# Verify the complete generated publication from its canonical input. This
+# includes the SVD, raw PAC, semantic PAC API and bindings, so adding a new
+# output cannot silently bypass the source-only gate.
 cargo blobray project configure \
     --project verification/vendor/targets/esp32s31/vendor-project.toml \
     --check
-
-# Publication also validates local analysis products and therefore belongs to
-# artifact-backed CI.  The source-only gate checks each public register product
-# directly so a clean checkout never needs generated/findings or local.toml.
-for register_command in \
-    validate \
-    export-svd \
-    generate-pac-raw \
-    generate-bindings
-do
-    arguments=(registers "$register_command")
-    if [[ "$register_command" != validate ]]; then
-        arguments+=(--check)
-    fi
-    cargo blobray "${arguments[@]}" \
-        --project verification/vendor/targets/esp32s31/vendor-project.toml
-done
+cargo blobray project publish \
+    --project verification/vendor/targets/esp32s31/vendor-project.toml \
+    --check
 
 cargo build \
     -p open-esp-radio-esp32s31-phy \

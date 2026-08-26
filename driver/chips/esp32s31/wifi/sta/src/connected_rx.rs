@@ -47,6 +47,7 @@ use open_esp_radio_wifi_softmac::{
 use open_esp_radio_wifi_softmac::{MacRxCryptoStatus, MacRxEvidence};
 use open_esp_radio_wifi_sta::power_save::StaPsPollDelivery;
 use open_esp_radio_wpa2::{EapolKeyFrame, EapolParseError};
+use static_cell::StaticCell;
 
 use open_esp_radio_esp32s31_wifi_mac::{
     rx::{
@@ -134,76 +135,6 @@ impl StaCcmpRxReplayEpoch {
         self.group_key_id
     }
 
-    fn merge_group_frontiers(
-        &self,
-        group: &mut CcmpRxReplayState,
-    ) -> Result<(), StaCcmpRxReplayError> {
-        for lane in core::iter::once(CcmpReplayLane::NonQos).chain((0..16).map(CcmpReplayLane::Tid))
-        {
-            let current = self
-                .group
-                .highest(lane)
-                .ok_or(StaCcmpRxReplayError::Replay(CcmpReplayError::InvalidTid))?;
-            let incoming = group
-                .highest(lane)
-                .ok_or(StaCcmpRxReplayError::Replay(CcmpReplayError::InvalidTid))?;
-            if current > incoming {
-                let candidate = group
-                    .prepare(lane, current)
-                    .map_err(StaCcmpRxReplayError::Replay)?;
-                group
-                    .commit(candidate)
-                    .map_err(StaCcmpRxReplayError::Replay)?;
-            }
-        }
-        Ok(())
-    }
-
-    fn prepare_group_rotation(
-        &self,
-        group_key_id: u8,
-        group_receive_sequence: [u8; 8],
-    ) -> Result<StaCcmpGroupReplayReplacement, StaCcmpRxReplayError> {
-        let mut group = CcmpRxReplayState::from_receive_sequence(group_receive_sequence)
-            .map_err(|_| StaCcmpRxReplayError::InvalidGroupReceiveSequence)?;
-        let group_key_id = CcmpKeyId::new(group_key_id)
-            .ok_or(StaCcmpRxReplayError::InvalidGroupKeyId(group_key_id))?;
-        if group_key_id == self.group_key_id {
-            // Reinstalling the identical logical key must not roll any lane
-            // back to a lower descriptor RSC. The control owner separately
-            // proves temporal-key equality before admitting this same-KeyID
-            // path; retaining each lane's maximum therefore preserves every
-            // authenticated frontier while allowing a higher RSC to raise
-            // all lanes.
-            self.merge_group_frontiers(&mut group)?;
-        }
-        Ok(StaCcmpGroupReplayReplacement {
-            expected_key_id: self.group_key_id,
-            expected_revision: self.group_revision,
-            group,
-            group_key_id,
-        })
-    }
-
-    fn commit_group_rotation(
-        &mut self,
-        replacement: StaCcmpGroupReplayReplacement,
-    ) -> Result<(), StaCcmpRxReplayError> {
-        if self.group_key_id != replacement.expected_key_id
-            || self.group_revision != replacement.expected_revision
-        {
-            return Err(StaCcmpRxReplayError::StaleGroupRotation);
-        }
-        let revision = self
-            .group_revision
-            .checked_add(1)
-            .ok_or(StaCcmpRxReplayError::GroupRevisionExhausted)?;
-        self.group = replacement.group;
-        self.group_key_id = replacement.group_key_id;
-        self.group_revision = revision;
-        Ok(())
-    }
-
     fn prepare(
         &self,
         protection: ConnectedRxProtection,
@@ -259,6 +190,114 @@ impl StaCcmpRxReplayEpoch {
     }
 }
 
+/// Group-only replay state shared with GTK rotation. Pairwise lanes are moved
+/// into the unique RX endpoint and therefore need no per-MPDU mutex.
+struct StaCcmpSharedGroupReplayEpoch {
+    group: CcmpRxReplayState,
+    group_key_id: CcmpKeyId,
+    group_revision: u32,
+}
+
+impl StaCcmpSharedGroupReplayEpoch {
+    fn merge_group_frontiers(
+        &self,
+        group: &mut CcmpRxReplayState,
+    ) -> Result<(), StaCcmpRxReplayError> {
+        for lane in core::iter::once(CcmpReplayLane::NonQos).chain((0..16).map(CcmpReplayLane::Tid))
+        {
+            let current = self
+                .group
+                .highest(lane)
+                .ok_or(StaCcmpRxReplayError::Replay(CcmpReplayError::InvalidTid))?;
+            let incoming = group
+                .highest(lane)
+                .ok_or(StaCcmpRxReplayError::Replay(CcmpReplayError::InvalidTid))?;
+            if current > incoming {
+                let candidate = group
+                    .prepare(lane, current)
+                    .map_err(StaCcmpRxReplayError::Replay)?;
+                group
+                    .commit(candidate)
+                    .map_err(StaCcmpRxReplayError::Replay)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn prepare_group_rotation(
+        &self,
+        group_key_id: u8,
+        group_receive_sequence: [u8; 8],
+    ) -> Result<StaCcmpGroupReplayReplacement, StaCcmpRxReplayError> {
+        let mut group = CcmpRxReplayState::from_receive_sequence(group_receive_sequence)
+            .map_err(|_| StaCcmpRxReplayError::InvalidGroupReceiveSequence)?;
+        let group_key_id = CcmpKeyId::new(group_key_id)
+            .ok_or(StaCcmpRxReplayError::InvalidGroupKeyId(group_key_id))?;
+        if group_key_id == self.group_key_id {
+            self.merge_group_frontiers(&mut group)?;
+        }
+        Ok(StaCcmpGroupReplayReplacement {
+            expected_key_id: self.group_key_id,
+            expected_revision: self.group_revision,
+            group,
+            group_key_id,
+        })
+    }
+
+    fn commit_group_rotation(
+        &mut self,
+        replacement: StaCcmpGroupReplayReplacement,
+    ) -> Result<(), StaCcmpRxReplayError> {
+        if self.group_key_id != replacement.expected_key_id
+            || self.group_revision != replacement.expected_revision
+        {
+            return Err(StaCcmpRxReplayError::StaleGroupRotation);
+        }
+        let revision = self
+            .group_revision
+            .checked_add(1)
+            .ok_or(StaCcmpRxReplayError::GroupRevisionExhausted)?;
+        self.group = replacement.group;
+        self.group_key_id = replacement.group_key_id;
+        self.group_revision = revision;
+        Ok(())
+    }
+
+    fn prepare_group(
+        &self,
+        tid: Option<u8>,
+        header: CcmpHeader,
+    ) -> Result<StaCcmpRxReplayCandidate, StaCcmpRxReplayError> {
+        if header.key_id() != self.group_key_id {
+            return Err(StaCcmpRxReplayError::UnexpectedKeyId {
+                protection: ConnectedRxProtection::Group,
+                expected: self.group_key_id,
+                observed: header.key_id(),
+            });
+        }
+        let lane = match tid {
+            Some(tid) => CcmpReplayLane::Tid(tid),
+            None => CcmpReplayLane::NonQos,
+        };
+        self.group
+            .prepare(lane, header.packet_number())
+            .map(StaCcmpRxReplayCandidate::Group)
+            .map_err(StaCcmpRxReplayError::Replay)
+    }
+
+    fn commit_group(
+        &mut self,
+        candidate: StaCcmpRxReplayCandidate,
+    ) -> Result<(), StaCcmpRxReplayError> {
+        let StaCcmpRxReplayCandidate::Group(candidate) = candidate else {
+            return Err(StaCcmpRxReplayError::ForeignDestination);
+        };
+        self.group
+            .commit(candidate)
+            .map_err(StaCcmpRxReplayError::Replay)
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
 struct StaCcmpGroupReplayReplacement {
     expected_key_id: CcmpKeyId,
@@ -276,17 +315,25 @@ struct StaCcmpGroupReplayReplacement {
 /// publication visible until the synchronous sink callback has returned.
 pub struct StaCcmpRxReplayResource {
     state: Mutex<RefCell<StaCcmpRxReplayResourceState>>,
+    pairwise_arena: StaticCell<StaCcmpPairwiseReplaySlot>,
+}
+
+struct StaCcmpPairwiseReplaySlot {
+    resource: &'static StaCcmpRxReplayResource,
+    replay: CcmpRxReplayState,
 }
 
 struct StaCcmpRxReplayResourceState {
     generation: u32,
     next_rotation_ticket: u32,
-    replay: Option<StaCcmpRxReplayEpoch>,
+    replay: Option<StaCcmpSharedGroupReplayEpoch>,
     pending_rotation: Option<u32>,
     group_publications: u32,
     rx_active: bool,
     control_active: bool,
     group_quarantined: bool,
+    pairwise: Option<&'static mut StaCcmpPairwiseReplaySlot>,
+    pairwise_initialized: bool,
 }
 
 impl StaCcmpRxReplayResource {
@@ -301,7 +348,10 @@ impl StaCcmpRxReplayResource {
                 rx_active: false,
                 control_active: false,
                 group_quarantined: false,
+                pairwise: None,
+                pairwise_initialized: false,
             })),
+            pairwise_arena: StaticCell::new(),
         }
     }
 
@@ -332,7 +382,31 @@ impl StaCcmpRxReplayResource {
                 });
             };
             state.generation = generation;
-            state.replay = Some(replay);
+            let StaCcmpRxReplayEpoch {
+                pairwise,
+                group,
+                group_key_id,
+                group_revision,
+            } = replay;
+            let pairwise = if state.pairwise_initialized {
+                let slot = state
+                    .pairwise
+                    .take()
+                    .expect("an idle replay resource owns its pairwise arena");
+                slot.replay = pairwise;
+                slot
+            } else {
+                state.pairwise_initialized = true;
+                self.pairwise_arena.init(StaCcmpPairwiseReplaySlot {
+                    resource: self,
+                    replay: pairwise,
+                })
+            };
+            state.replay = Some(StaCcmpSharedGroupReplayEpoch {
+                group,
+                group_key_id,
+                group_revision,
+            });
             state.pending_rotation = None;
             state.group_publications = 0;
             state.rx_active = true;
@@ -341,9 +415,7 @@ impl StaCcmpRxReplayResource {
             let generation = state.generation;
             Ok((
                 StaCcmpRxReplayRxEndpoint {
-                    resource: self,
-                    generation,
-                    stopped: false,
+                    pairwise: Some(pairwise),
                 },
                 StaCcmpRxReplayControlEndpoint {
                     resource: self,
@@ -356,6 +428,7 @@ impl StaCcmpRxReplayResource {
 
     fn release_if_stopped(state: &mut StaCcmpRxReplayResourceState) {
         if !state.rx_active && !state.control_active && state.group_publications == 0 {
+            debug_assert!(state.pairwise.is_some());
             state.replay = None;
             state.pending_rotation = None;
             state.group_quarantined = false;
@@ -394,114 +467,206 @@ impl StaCcmpRxReplayStartFailure {
 /// RX half of one shared replay epoch. It is moved into exactly one connected
 /// dispatcher and explicitly stopped after that protocol task is quiescent.
 pub struct StaCcmpRxReplayRxEndpoint {
-    resource: &'static StaCcmpRxReplayResource,
-    generation: u32,
-    stopped: bool,
+    pairwise: Option<&'static mut StaCcmpPairwiseReplaySlot>,
 }
 
 impl core::fmt::Debug for StaCcmpRxReplayRxEndpoint {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         formatter
             .debug_struct("StaCcmpRxReplayRxEndpoint")
-            .field("generation", &self.generation)
-            .field("stopped", &self.stopped)
+            .field("stopped", &self.pairwise.is_none())
             .finish_non_exhaustive()
     }
 }
 
 impl PartialEq for StaCcmpRxReplayRxEndpoint {
     fn eq(&self, other: &Self) -> bool {
-        core::ptr::eq(self.resource, other.resource)
-            && self.generation == other.generation
-            && self.stopped == other.stopped
+        match (self.pairwise.as_deref(), other.pairwise.as_deref()) {
+            (Some(left), Some(right)) => core::ptr::eq(left, right),
+            (None, None) => true,
+            _ => false,
+        }
     }
 }
 
 impl Eq for StaCcmpRxReplayRxEndpoint {}
 
 impl StaCcmpRxReplayRxEndpoint {
+    pub const fn vacant() -> Self {
+        Self { pairwise: None }
+    }
+
+    pub const fn is_live(&self) -> bool {
+        self.pairwise.is_some()
+    }
+
+    fn resource(&self) -> Result<&'static StaCcmpRxReplayResource, StaCcmpRxReplayError> {
+        self.pairwise
+            .as_deref()
+            .map(|slot| slot.resource)
+            .ok_or(StaCcmpRxReplayError::StaleEpoch)
+    }
+
+    /// Advance one authenticated pairwise lane in a single replay-owner
+    /// transaction. Group publication and GTK rotation retain their split
+    /// prepare/commit protocol because they cross a publication boundary.
+    #[inline(always)]
+    fn commit_pairwise_immediate(
+        &mut self,
+        tid: Option<u8>,
+        header: CcmpHeader,
+    ) -> Result<(), StaCcmpRxReplayError> {
+        if header.key_id() != CcmpKeyId::PAIRWISE {
+            return Err(StaCcmpRxReplayError::UnexpectedKeyId {
+                protection: ConnectedRxProtection::Pairwise,
+                expected: CcmpKeyId::PAIRWISE,
+                observed: header.key_id(),
+            });
+        }
+        let lane = tid.map_or(CcmpReplayLane::NonQos, CcmpReplayLane::Tid);
+        self.pairwise
+            .as_deref_mut()
+            .ok_or(StaCcmpRxReplayError::StaleEpoch)?
+            .replay
+            .commit_immediate(lane, header.packet_number())
+            .map_err(StaCcmpRxReplayError::Replay)
+    }
+
+    fn prepare_pairwise(
+        &self,
+        tid: Option<u8>,
+        header: CcmpHeader,
+    ) -> Result<StaCcmpRxReplayCandidate, StaCcmpRxReplayError> {
+        if header.key_id() != CcmpKeyId::PAIRWISE {
+            return Err(StaCcmpRxReplayError::UnexpectedKeyId {
+                protection: ConnectedRxProtection::Pairwise,
+                expected: CcmpKeyId::PAIRWISE,
+                observed: header.key_id(),
+            });
+        }
+        let lane = tid.map_or(CcmpReplayLane::NonQos, CcmpReplayLane::Tid);
+        self.pairwise
+            .as_deref()
+            .ok_or(StaCcmpRxReplayError::StaleEpoch)?
+            .replay
+            .prepare(lane, header.packet_number())
+            .map(StaCcmpRxReplayCandidate::Pairwise)
+            .map_err(StaCcmpRxReplayError::Replay)
+    }
+
+    fn commit_pairwise(
+        &mut self,
+        candidate: StaCcmpRxReplayCandidate,
+    ) -> Result<(), StaCcmpRxReplayError> {
+        let StaCcmpRxReplayCandidate::Pairwise(candidate) = candidate else {
+            return Err(StaCcmpRxReplayError::ForeignDestination);
+        };
+        self.pairwise
+            .as_deref_mut()
+            .ok_or(StaCcmpRxReplayError::StaleEpoch)?
+            .replay
+            .commit(candidate)
+            .map_err(StaCcmpRxReplayError::Replay)
+    }
+
     fn prepare_candidate(
         &self,
-        protection: ConnectedRxProtection,
         tid: Option<u8>,
         header: CcmpHeader,
     ) -> Result<StaCcmpPreparedRxPublication, StaCcmpRxReplayError> {
+        let resource = self.resource()?;
         critical_section::with(|cs| {
-            let mut state = self.resource.state.borrow(cs).borrow_mut();
-            if state.generation != self.generation || !state.rx_active || self.stopped {
+            let mut state = resource.state.borrow(cs).borrow_mut();
+            if !state.rx_active || self.pairwise.is_none() {
                 return Err(StaCcmpRxReplayError::StaleEpoch);
             }
-            if protection == ConnectedRxProtection::Group
-                && (state.group_quarantined || state.pending_rotation.is_some())
-            {
+            if state.group_quarantined || state.pending_rotation.is_some() {
                 return Err(StaCcmpRxReplayError::GroupRotationInProgress);
             }
             let replay = state
                 .replay
                 .as_ref()
                 .ok_or(StaCcmpRxReplayError::OwnerUnavailable)?;
-            let candidate = replay.prepare(protection, tid, header)?;
-            let group = protection == ConnectedRxProtection::Group;
-            if group {
-                state.group_publications = state
-                    .group_publications
-                    .checked_add(1)
-                    .ok_or(StaCcmpRxReplayError::PublicationCountExhausted)?;
-            }
+            let candidate = replay.prepare_group(tid, header)?;
+            state.group_publications = state
+                .group_publications
+                .checked_add(1)
+                .ok_or(StaCcmpRxReplayError::PublicationCountExhausted)?;
             Ok(StaCcmpPreparedRxPublication {
-                resource: self.resource,
-                generation: self.generation,
+                resource,
+                generation: state.generation,
                 candidate,
-                group,
-                group_gate_armed: group,
+                group_gate_armed: true,
             })
         })
     }
 
     #[cfg(test)]
     fn prepare_publication(
-        &self,
+        &mut self,
         protection: ConnectedRxProtection,
         tid: Option<u8>,
         header: CcmpHeader,
     ) -> Result<StaCcmpRxPublicationPermit, StaCcmpRxReplayError> {
-        self.prepare_candidate(protection, tid, header)?.commit()
+        match protection {
+            ConnectedRxProtection::Pairwise => {
+                let candidate = self.prepare_pairwise(tid, header)?;
+                let resource = self.resource()?;
+                let generation =
+                    critical_section::with(|cs| resource.state.borrow(cs).borrow().generation);
+                self.commit_pairwise(candidate)?;
+                Ok(StaCcmpRxPublicationPermit {
+                    resource,
+                    generation,
+                    group: false,
+                })
+            }
+            ConnectedRxProtection::Group => self.prepare_candidate(tid, header)?.commit(),
+            ConnectedRxProtection::Other => Err(StaCcmpRxReplayError::ForeignDestination),
+        }
     }
 
     pub fn stop(&mut self) -> Result<(), StaCcmpRxReplayError> {
-        let result = critical_section::with(|cs| {
-            let mut state = self.resource.state.borrow(cs).borrow_mut();
-            if state.generation != self.generation || !state.rx_active {
+        let resource = self.resource()?;
+        critical_section::with(|cs| {
+            let mut state = resource.state.borrow(cs).borrow_mut();
+            if !state.rx_active || self.pairwise.is_none() {
                 return Err(StaCcmpRxReplayError::StaleEpoch);
             }
             if state.group_publications != 0 {
                 state.group_quarantined = true;
                 return Err(StaCcmpRxReplayError::PublicationInFlight);
             }
+            let pairwise = self
+                .pairwise
+                .take()
+                .ok_or(StaCcmpRxReplayError::OwnerUnavailable)?;
+            if state.pairwise.is_some() {
+                self.pairwise = Some(pairwise);
+                return Err(StaCcmpRxReplayError::OwnerUnavailable);
+            }
+            state.pairwise = Some(pairwise);
             state.rx_active = false;
             state.group_quarantined = true;
             StaCcmpRxReplayResource::release_if_stopped(&mut state);
             Ok(())
-        });
-        if result.is_ok() {
-            self.stopped = true;
-        }
-        result
+        })
     }
 }
 
 impl Drop for StaCcmpRxReplayRxEndpoint {
     fn drop(&mut self) {
-        if self.stopped {
+        let Some(resource) = self.pairwise.as_deref().map(|slot| slot.resource) else {
             return;
-        }
+        };
         critical_section::with(|cs| {
-            let mut state = self.resource.state.borrow(cs).borrow_mut();
-            if state.generation == self.generation {
-                state.rx_active = false;
-                state.group_quarantined = true;
-                StaCcmpRxReplayResource::release_if_stopped(&mut state);
+            let mut state = resource.state.borrow(cs).borrow_mut();
+            if state.pairwise.is_none() {
+                state.pairwise = self.pairwise.take();
             }
+            state.rx_active = false;
+            state.group_quarantined = true;
+            StaCcmpRxReplayResource::release_if_stopped(&mut state);
         });
     }
 }
@@ -726,7 +891,6 @@ struct StaCcmpPreparedRxPublication {
     resource: &'static StaCcmpRxReplayResource,
     generation: u32,
     candidate: StaCcmpRxReplayCandidate,
-    group: bool,
     group_gate_armed: bool,
 }
 
@@ -741,12 +905,12 @@ impl StaCcmpPreparedRxPublication {
                 .replay
                 .as_mut()
                 .ok_or(StaCcmpRxReplayError::OwnerUnavailable)?;
-            replay.commit(self.candidate)?;
+            replay.commit_group(self.candidate)?;
             self.group_gate_armed = false;
             Ok(StaCcmpRxPublicationPermit {
                 resource: self.resource,
                 generation: self.generation,
-                group: self.group,
+                group: true,
             })
         })
     }
@@ -995,6 +1159,16 @@ impl ConnectedRxEvent<'_> {
 pub trait ConnectedRxSink {
     fn publish(&mut self, event: ConnectedRxEvent<'_>);
 
+    /// Return whether connected control currently waits for one legacy
+    /// PS-Poll delivery observation.
+    ///
+    /// Ordinary active-mode traffic must not pay the publication and mailbox
+    /// cost for an event with no consumer. Test and simple observer sinks keep
+    /// the conservative default so their event contract is unchanged.
+    fn wants_power_save_delivery(&self) -> bool {
+        true
+    }
+
     /// Opt in only when the sink copies/reassembles v2 before dispatch returns.
     fn supports_esp_now_v2(&self) -> bool {
         false
@@ -1073,57 +1247,66 @@ pub enum ConnectedRxDispatch {
 pub struct ConnectedRxDispatcher {
     config: ConnectedRxConfig,
     duplicate_filter: RxDuplicateFilter,
-    ccmp_replay: Option<StaCcmpRxReplayOwner>,
+    shared_ccmp_replay: StaCcmpRxReplayRxEndpoint,
+    owned_ccmp_replay: Option<StaCcmpRxReplayEpoch>,
     esp_now: Option<EspNowRxEpoch>,
     fragments: OpenDataDefragmenter<OPEN_FRAGMENT_CONTEXTS, OPEN_DATA_REASSEMBLY_CAPACITY>,
-}
-
-#[expect(
-    clippy::large_enum_variant,
-    reason = "the no-alloc dispatcher supports both the legacy owned epoch and the production shared endpoint without boxing replay state"
-)]
-enum StaCcmpRxReplayOwner {
-    Owned(StaCcmpRxReplayEpoch),
-    Shared(StaCcmpRxReplayRxEndpoint),
+    fragment_admission_active: bool,
 }
 
 enum StaCcmpPreparedReplay {
     Owned(StaCcmpRxReplayCandidate),
-    Shared(StaCcmpPreparedRxPublication),
+    SharedPairwise(StaCcmpRxReplayCandidate),
+    SharedGroup(StaCcmpPreparedRxPublication),
 }
 
 fn prepare_ccmp_replay(
-    replay: &mut Option<StaCcmpRxReplayOwner>,
+    shared: &mut StaCcmpRxReplayRxEndpoint,
+    owned: &mut Option<StaCcmpRxReplayEpoch>,
     protection: ConnectedRxProtection,
     tid: Option<u8>,
     header: CcmpHeader,
 ) -> Result<StaCcmpPreparedReplay, StaCcmpRxReplayError> {
-    match replay
-        .as_mut()
-        .ok_or(StaCcmpRxReplayError::OwnerUnavailable)?
-    {
-        StaCcmpRxReplayOwner::Owned(replay) => replay
+    if shared.is_live() {
+        return match protection {
+            ConnectedRxProtection::Pairwise => shared
+                .prepare_pairwise(tid, header)
+                .map(StaCcmpPreparedReplay::SharedPairwise),
+            ConnectedRxProtection::Group => shared
+                .prepare_candidate(tid, header)
+                .map(StaCcmpPreparedReplay::SharedGroup),
+            ConnectedRxProtection::Other => Err(StaCcmpRxReplayError::ForeignDestination),
+        };
+    }
+    match owned.as_mut() {
+        Some(replay) => replay
             .prepare(protection, tid, header)
             .map(StaCcmpPreparedReplay::Owned),
-        StaCcmpRxReplayOwner::Shared(replay) => replay
-            .prepare_candidate(protection, tid, header)
-            .map(StaCcmpPreparedReplay::Shared),
+        None => Err(StaCcmpRxReplayError::OwnerUnavailable),
     }
 }
 
 fn commit_ccmp_replay(
-    replay: &mut Option<StaCcmpRxReplayOwner>,
+    shared: &mut StaCcmpRxReplayRxEndpoint,
+    owned: &mut Option<StaCcmpRxReplayEpoch>,
     prepared: StaCcmpPreparedReplay,
 ) -> Result<Option<StaCcmpRxPublicationPermit>, StaCcmpRxReplayError> {
     match prepared {
         StaCcmpPreparedReplay::Owned(candidate) => {
-            let Some(StaCcmpRxReplayOwner::Owned(replay)) = replay.as_mut() else {
+            let Some(replay) = owned.as_mut() else {
                 return Err(StaCcmpRxReplayError::StaleEpoch);
             };
             replay.commit(candidate)?;
             Ok(None)
         }
-        StaCcmpPreparedReplay::Shared(prepared) => prepared.commit().map(Some),
+        StaCcmpPreparedReplay::SharedPairwise(candidate) => {
+            if !shared.is_live() {
+                return Err(StaCcmpRxReplayError::StaleEpoch);
+            }
+            shared.commit_pairwise(candidate)?;
+            Ok(None)
+        }
+        StaCcmpPreparedReplay::SharedGroup(prepared) => prepared.commit().map(Some),
     }
 }
 
@@ -1152,9 +1335,11 @@ impl ConnectedRxDispatcher {
         Self {
             config,
             duplicate_filter: RxDuplicateFilter::new(),
-            ccmp_replay: None,
+            shared_ccmp_replay: StaCcmpRxReplayRxEndpoint::vacant(),
+            owned_ccmp_replay: None,
             esp_now: None,
             fragments: OpenDataDefragmenter::new(OPEN_DATA_FRAGMENT_TIMEOUT_MICROS),
+            fragment_admission_active: false,
         }
     }
 
@@ -1187,7 +1372,8 @@ impl ConnectedRxDispatcher {
             WifiSecurityMode::Wpa2Personal,
             "CCMP replay state requires a WPA2 connected epoch"
         );
-        self.ccmp_replay = Some(StaCcmpRxReplayOwner::Owned(replay));
+        self.shared_ccmp_replay = StaCcmpRxReplayRxEndpoint::vacant();
+        self.owned_ccmp_replay = Some(replay);
     }
 
     /// Install the RX half of an association replay resource shared with the
@@ -1198,21 +1384,22 @@ impl ConnectedRxDispatcher {
             WifiSecurityMode::Wpa2Personal,
             "CCMP replay state requires a WPA2 connected epoch"
         );
-        self.ccmp_replay = Some(StaCcmpRxReplayOwner::Shared(replay));
+        self.owned_ccmp_replay = None;
+        self.shared_ccmp_replay = replay;
     }
 
     pub const fn ccmp_rx_replay_enabled(&self) -> bool {
-        self.ccmp_replay.is_some()
+        self.shared_ccmp_replay.is_live() || self.owned_ccmp_replay.is_some()
     }
 
     /// Stop the shared RX endpoint after the protocol task is quiescent.
     pub fn stop_ccmp_rx_replay(&mut self) -> Result<(), StaCcmpRxReplayError> {
-        let Some(StaCcmpRxReplayOwner::Shared(replay)) = self.ccmp_replay.as_mut() else {
-            self.ccmp_replay = None;
+        self.owned_ccmp_replay = None;
+        if !self.shared_ccmp_replay.is_live() {
             return Ok(());
-        };
-        replay.stop()?;
-        self.ccmp_replay = None;
+        }
+        self.shared_ccmp_replay.stop()?;
+        self.shared_ccmp_replay = StaCcmpRxReplayRxEndpoint::vacant();
         Ok(())
     }
 
@@ -1224,7 +1411,13 @@ impl ConnectedRxDispatcher {
     /// instead drop that endpoint, whose `Drop` implementation revokes RX and
     /// keeps the shared group lane quarantined.
     pub fn quarantine_ccmp_rx_replay(&mut self) -> bool {
-        self.ccmp_replay.take().is_some()
+        let owned = self.owned_ccmp_replay.take().is_some();
+        let shared = core::mem::replace(
+            &mut self.shared_ccmp_replay,
+            StaCcmpRxReplayRxEndpoint::vacant(),
+        )
+        .is_live();
+        owned || shared
     }
 
     /// Attach one already station/channel-qualified ESP-NOW receive epoch.
@@ -1260,6 +1453,7 @@ impl ConnectedRxDispatcher {
 
     /// Revoke incomplete Open and CCMP MSDUs at the connected-epoch stop edge.
     pub fn clear_fragmentation(&mut self) -> usize {
+        self.fragment_admission_active = false;
         self.fragments.clear()
     }
 
@@ -1703,6 +1897,17 @@ impl ConnectedRxDispatcher {
         if observed_protected != expected_protected {
             return rejected(protection, ConnectedRxError::SecurityModeMismatch);
         }
+        if !fragmented
+            && protection == ConnectedRxProtection::Pairwise
+            && self.shared_ccmp_replay.is_live()
+        {
+            return self.dispatch_shared_pairwise_data(
+                segment,
+                public_frame_control,
+                runtime_received_at_micros,
+                sink,
+            );
+        }
         if fragmented {
             return match self.config.security {
                 WifiSecurityMode::Open => self.dispatch_open_fragment(
@@ -1823,8 +2028,13 @@ impl ConnectedRxDispatcher {
         }
         let mut shared_publication = None;
         if let Some(header) = ccmp_header {
-            let prepared = match prepare_ccmp_replay(&mut self.ccmp_replay, protection, tid, header)
-            {
+            let prepared = match prepare_ccmp_replay(
+                &mut self.shared_ccmp_replay,
+                &mut self.owned_ccmp_replay,
+                protection,
+                tid,
+                header,
+            ) {
                 Ok(prepared) => prepared,
                 Err(error) => return rejected(protection, ConnectedRxError::CcmpReplay(error)),
             };
@@ -1832,7 +2042,11 @@ impl ConnectedRxDispatcher {
             // peer admission have all completed. Commit before any Ethernet
             // publication; a malformed authenticated MPDU may burn a PN but
             // can never make it reusable.
-            shared_publication = match commit_ccmp_replay(&mut self.ccmp_replay, prepared) {
+            shared_publication = match commit_ccmp_replay(
+                &mut self.shared_ccmp_replay,
+                &mut self.owned_ccmp_replay,
+                prepared,
+            ) {
                 Ok(permit) => permit,
                 Err(error) => return rejected(protection, ConnectedRxError::CcmpReplay(error)),
             };
@@ -1843,7 +2057,7 @@ impl ConnectedRxDispatcher {
         {
             return ConnectedRxDispatch::Duplicate;
         }
-        if protection == ConnectedRxProtection::Pairwise {
+        if protection == ConnectedRxProtection::Pairwise && sink.wants_power_save_delivery() {
             sink.publish(ConnectedRxEvent::PowerSaveDelivery(StaPsPollDelivery {
                 more_data: public_frame_control & MORE_DATA != 0,
             }));
@@ -1870,6 +2084,106 @@ impl ConnectedRxDispatcher {
         };
         drop(shared_publication);
         result
+    }
+
+    open_esp_radio_esp32s31_wifi_dma::place_rx_hot_path! {
+      /// Dispatch an ordinary production WPA2 pairwise MPDU without routing
+      /// it through the group-publication and fragment-reassembly owner graph.
+      #[inline(never)]
+      fn dispatch_shared_pairwise_data<S: ConnectedRxSink>(
+        &mut self,
+        segment: RxSegment<'_>,
+        public_frame_control: u16,
+        runtime_received_at_micros: Option<u64>,
+        sink: &mut S,
+      ) -> ConnectedRxDispatch {
+        let protection = ConnectedRxProtection::Pairwise;
+        let view = match view_protected_data(segment, self.config.ingress) {
+            Ok(view) => view,
+            Err(error) => return rejected(protection, ConnectedRxError::Rx(error)),
+        };
+        if self.fragment_admission_active {
+            let identity = match parse_ccmp_data_identity(
+                DataInterfaceRole::Station,
+                view.mpdu,
+                view.ccmp_header,
+            ) {
+                Ok(identity) => identity,
+                Err(error) => {
+                    return rejected(protection, ConnectedRxError::Fragment(error));
+                }
+            };
+            if identity.transmitter_address() != self.config.bssid
+                || identity.receiver_address() != self.config.station_address
+            {
+                return ConnectedRxDispatch::Ignored;
+            }
+            match self.fragments.admit_unfragmented(
+                identity,
+                view.retry,
+                runtime_received_at_micros,
+            ) {
+                Ok(OpenDataUnfragmentedAdmission::Admitted { .. }) => {}
+                Ok(OpenDataUnfragmentedAdmission::Duplicate { .. }) => {
+                    return ConnectedRxDispatch::Duplicate;
+                }
+                Err(error) => {
+                    return rejected(protection, ConnectedRxError::Fragment(error));
+                }
+            }
+        }
+        if view.mpdu[10..16] != self.config.bssid {
+            return ConnectedRxDispatch::Ignored;
+        }
+        if view.tid.is_some() && !self.config.peer_qos {
+            return rejected(protection, ConnectedRxError::PeerQosMismatch);
+        }
+        let retry = view.retry;
+        let sequence_control = view.sequence_control;
+        let tid = view.tid;
+        let ccmp_header = view.ccmp_header;
+        let data = match view.decapsulate(DataInterfaceRole::Station) {
+            Ok(data) => data,
+            Err(error) => return rejected(protection, ConnectedRxError::Data(error)),
+        };
+        if let Err(error) = self
+            .shared_ccmp_replay
+            .commit_pairwise_immediate(tid, ccmp_header)
+        {
+            return rejected(protection, ConnectedRxError::CcmpReplay(error));
+        }
+        if self
+            .duplicate_filter
+            .is_duplicate(retry, sequence_control, tid)
+        {
+            return ConnectedRxDispatch::Duplicate;
+        }
+        if sink.wants_power_save_delivery() {
+            sink.publish(ConnectedRxEvent::PowerSaveDelivery(StaPsPollDelivery {
+                more_data: public_frame_control & MORE_DATA != 0,
+            }));
+        }
+        let mut frames = data.frames;
+        let amsdu = data.amsdu;
+        let mut count = 0_u8;
+        for frame in &mut frames {
+            let frame = match frame {
+                Ok(frame) => frame,
+                Err(error) => return rejected(protection, ConnectedRxError::Data(error)),
+            };
+            sink.publish(ConnectedRxEvent::Ethernet {
+                frame,
+                raw: data.raw,
+                amsdu,
+                metadata: data.metadata,
+            });
+            count = count.saturating_add(1);
+        }
+        ConnectedRxDispatch::Data {
+            ethernet_frames: count,
+            amsdu,
+        }
+      }
     }
 
     fn dispatch_open_fragment<S: ConnectedRxSink>(
@@ -1930,8 +2244,11 @@ impl ConnectedRxDispatcher {
             });
         let raw = view.raw;
         let metadata = view.metadata;
+        self.fragment_admission_active = true;
         match self.fragments.ingest(view.fragment, now_micros, |data| {
-            if let Some(delivery) = power_save_delivery {
+            if let Some(delivery) = power_save_delivery
+                && sink.wants_power_save_delivery()
+            {
                 sink.publish(ConnectedRxEvent::PowerSaveDelivery(delivery));
             }
             sink.publish(ConnectedRxEvent::Ethernet {
@@ -2013,7 +2330,12 @@ impl ConnectedRxDispatcher {
         let fragment = view.fragment;
         let more_fragments = fragment.more_fragments();
         let ccmp_header = view.ccmp_header;
-        let (fragments, replay) = (&mut self.fragments, &mut self.ccmp_replay);
+        self.fragment_admission_active = true;
+        let (fragments, shared_replay, owned_replay) = (
+            &mut self.fragments,
+            &mut self.shared_ccmp_replay,
+            &mut self.owned_ccmp_replay,
+        );
         let admission = match fragments.preflight_in_epoch(fragment, 0, now_micros) {
             Ok(OpenDataFragmentPreflight::Duplicate { .. }) => {
                 return ConnectedRxDispatch::Duplicate;
@@ -2021,10 +2343,11 @@ impl ConnectedRxDispatcher {
             Ok(OpenDataFragmentPreflight::Admitted(admission)) => admission,
             Err(error) => return rejected(protection, ConnectedRxError::Fragment(error)),
         };
-        let prepared = match prepare_ccmp_replay(replay, protection, tid, ccmp_header) {
-            Ok(prepared) => prepared,
-            Err(error) => return rejected(protection, ConnectedRxError::CcmpReplay(error)),
-        };
+        let prepared =
+            match prepare_ccmp_replay(shared_replay, owned_replay, protection, tid, ccmp_header) {
+                Ok(prepared) => prepared,
+                Err(error) => return rejected(protection, ConnectedRxError::CcmpReplay(error)),
+            };
 
         if more_fragments {
             let outcome =
@@ -2033,7 +2356,7 @@ impl ConnectedRxDispatcher {
                 Ok(outcome) => outcome,
                 Err(error) => return rejected(protection, ConnectedRxError::Fragment(error)),
             };
-            if let Err(error) = commit_ccmp_replay(replay, prepared) {
+            if let Err(error) = commit_ccmp_replay(shared_replay, owned_replay, prepared) {
                 fragments.discard(identity, 0);
                 return rejected(protection, ConnectedRxError::CcmpReplay(error));
             }
@@ -2049,10 +2372,12 @@ impl ConnectedRxDispatcher {
         }
 
         let outcome = admission.ingest(|data| {
-            let publication = commit_ccmp_replay(replay, prepared)?;
-            sink.publish(ConnectedRxEvent::PowerSaveDelivery(StaPsPollDelivery {
-                more_data,
-            }));
+            let publication = commit_ccmp_replay(shared_replay, owned_replay, prepared)?;
+            if sink.wants_power_save_delivery() {
+                sink.publish(ConnectedRxEvent::PowerSaveDelivery(StaPsPollDelivery {
+                    more_data,
+                }));
+            }
             sink.publish(ConnectedRxEvent::Ethernet {
                 frame: data.ethernet_frame(),
                 raw,
@@ -2431,7 +2756,7 @@ mod tests {
     #[test]
     fn endpoint_drop_defers_epoch_release_until_group_publication_returns() {
         let resource = std::boxed::Box::leak(std::boxed::Box::new(StaCcmpRxReplayResource::new()));
-        let (rx, control) = resource
+        let (mut rx, control) = resource
             .start(StaCcmpRxReplayEpoch::new([0; 8], 1, [0; 8]).unwrap())
             .unwrap();
         let permit = rx
@@ -3098,9 +3423,10 @@ mod tests {
             ConnectedRxDispatch::Duplicate
         );
         assert_eq!(sink.ethernet.len(), 1);
-        let Some(StaCcmpRxReplayOwner::Owned(replay)) = dispatcher.ccmp_replay.as_ref() else {
-            panic!("test dispatcher owns one replay epoch")
-        };
+        let replay = dispatcher
+            .owned_ccmp_replay
+            .as_ref()
+            .expect("test dispatcher owns one replay epoch");
         assert_eq!(
             replay.pairwise.highest(CcmpReplayLane::NonQos),
             open_esp_radio_ieee80211::ccmp::CcmpPacketNumber::new(4)
@@ -3188,9 +3514,10 @@ mod tests {
             ConnectedRxDispatch::Duplicate
         );
         assert_eq!(dispatcher.fragments.active_contexts(), 0);
-        let Some(StaCcmpRxReplayOwner::Owned(replay)) = dispatcher.ccmp_replay.as_ref() else {
-            panic!("test dispatcher owns one replay epoch")
-        };
+        let replay = dispatcher
+            .owned_ccmp_replay
+            .as_ref()
+            .expect("test dispatcher owns one replay epoch");
         assert_eq!(
             replay.pairwise.highest(CcmpReplayLane::NonQos),
             open_esp_radio_ieee80211::ccmp::CcmpPacketNumber::new(3),
@@ -3244,9 +3571,10 @@ mod tests {
             }
         );
         assert_eq!(sink.ethernet.len(), 2);
-        let Some(StaCcmpRxReplayOwner::Owned(replay)) = dispatcher.ccmp_replay.as_ref() else {
-            panic!("test dispatcher owns one replay epoch")
-        };
+        let replay = dispatcher
+            .owned_ccmp_replay
+            .as_ref()
+            .expect("test dispatcher owns one replay epoch");
         assert_eq!(
             replay.pairwise.highest(CcmpReplayLane::NonQos),
             open_esp_radio_ieee80211::ccmp::CcmpPacketNumber::new(5)
@@ -3508,15 +3836,20 @@ mod tests {
         let mut dispatcher = ConnectedRxDispatcher::new(original);
         dispatcher.install_shared_ccmp_rx_replay(rx);
         let prepared = prepare_ccmp_replay(
-            &mut dispatcher.ccmp_replay,
+            &mut dispatcher.shared_ccmp_replay,
+            &mut dispatcher.owned_ccmp_replay,
             ConnectedRxProtection::Group,
             None,
             ccmp_header(1, 1),
         )
         .unwrap();
-        let publication = commit_ccmp_replay(&mut dispatcher.ccmp_replay, prepared)
-            .unwrap()
-            .expect("shared replay prepares one publication permit");
+        let publication = commit_ccmp_replay(
+            &mut dispatcher.shared_ccmp_replay,
+            &mut dispatcher.owned_ccmp_replay,
+            prepared,
+        )
+        .unwrap()
+        .expect("shared replay prepares one publication permit");
 
         assert_eq!(
             dispatcher.try_reconfigure(replacement),
@@ -3569,7 +3902,9 @@ mod tests {
         );
         assert!(sink.ethernet.is_empty());
 
-        let mut dispatcher = dispatcher();
+        let (replay_rx, _replay_control) = replay_resource();
+        let mut dispatcher = ConnectedRxDispatcher::new(config());
+        dispatcher.install_shared_ccmp_rx_replay(replay_rx);
         assert!(!dispatcher.may_publish_amsdu(segment(&storage, SIGNAL)));
         assert_eq!(
             dispatcher.dispatch(

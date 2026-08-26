@@ -138,7 +138,24 @@ pub(crate) fn run(
             .transport
             .rx_units
             .saturating_mul(options.payload as u64);
-        let failure = if !structured.finished.summary.passed {
+        let link_failure = if options.phy == PhyExpectation::Ht40 {
+            fixture.as_ref().map_or_else(
+                || {
+                    Some(String::from(
+                        "HT40 performance requires a managed fixture link snapshot",
+                    ))
+                },
+                |fixture| {
+                    fixture
+                        .require_ht40_downlink()
+                        .err()
+                        .map(|error| error.to_string())
+                },
+            )
+        } else {
+            None
+        };
+        let transport_failure = if !structured.finished.summary.passed {
             Some(String::from(
                 "target did not complete the typed RX session normally",
             ))
@@ -167,11 +184,16 @@ pub(crate) fn run(
         } else {
             None
         };
+        let failure = link_failure.or(transport_failure);
         let result = if failure.is_some() { "FAIL" } else { "PASS" };
         let failure_report = failure
             .as_ref()
             .map(|failure| format!("- Acceptance failure: `{failure}`\n"))
             .unwrap_or_default();
+        let fixture_report = fixture.as_ref().map_or_else(
+            || String::from("- AP-side link vector: `external AP; not observed`\n"),
+            |fixture| fixture.markdown(),
+        );
         fs::write(
             output.join("report.md"),
             format!(
@@ -179,6 +201,7 @@ pub(crate) fn run(
                  - Result: `{result}`\n\
                  {failure_report}\
                  - Evidence boundary: `transport, external host offer, stack watermark; driver observation not collected`\n\
+                 {fixture_report}\
                  - Device: `{}`\n\
                  - Requested/actual host offer: `{:.3}` / `{:.3} Mbit/s`\n\
                  - Host payload: `{}` bytes in `{}` datagrams\n\

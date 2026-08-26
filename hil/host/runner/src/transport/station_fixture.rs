@@ -71,7 +71,7 @@ impl RxEvidence {
                 evidence.rx_bitrate,
             ),
             Self::OpenWrt(evidence) => format!(
-                "- OpenWrt filtered Ethernet ingress (diagnostic) / Wi-Fi egress (exact): `{}` / `{}`; interface RX/TX: `{}` / `{}`; station TX/retries/failed: `{}` / `{}` / `{}`; pre-air TID-0 AQM drops: `{}`; channel width: `{}` MHz\n",
+                "- OpenWrt filtered Ethernet ingress (diagnostic) / Wi-Fi egress (exact): `{}` / `{}`; interface RX/TX: `{}` / `{}`; station TX/retries/failed: `{}` / `{}` / `{}`; pre-air TID-0 AQM drops: `{}`; channel width: `{}` MHz; AP TX/RX bitrate: `{}` / `{}`\n",
                 evidence.ingress_packets,
                 evidence.wireless_packets,
                 evidence.ingress_interface_rx_packets,
@@ -81,7 +81,80 @@ impl RxEvidence {
                 evidence.station_tx_failed,
                 evidence.station_tid0_aqm_drops,
                 evidence.channel_width_mhz,
+                evidence.tx_bitrate,
+                evidence.rx_bitrate,
             ),
         }
+    }
+
+    pub(crate) fn require_ht40_downlink(&self) -> Result<()> {
+        match self {
+            Self::LocalLinux(evidence) => require_ht40_mcs7(
+                "STA RX/AP TX",
+                evidence.channel_width_mhz,
+                &evidence.tx_bitrate,
+            ),
+            Self::OpenWrt(evidence) => require_ht40_mcs7(
+                "STA RX/AP TX",
+                evidence.channel_width_mhz,
+                &evidence.tx_bitrate,
+            ),
+        }
+    }
+}
+
+/// Require the HT40 MCS7 ceiling family rather than comparing throughput
+/// samples produced at different widths or MCS values. The fixture snapshot
+/// is only the peer's most recent rate, so guard interval remains reported
+/// evidence instead of a whole-interval precondition.
+pub(crate) fn require_ht40_mcs7(
+    direction: &str,
+    interface_width_mhz: u8,
+    bitrate: &str,
+) -> Result<()> {
+    let fields = bitrate.split_whitespace().collect::<Vec<_>>();
+    let observed_mbps = fields
+        .first()
+        .ok_or_else(|| format!("{direction} link snapshot omitted bitrate"))?
+        .parse::<f64>()
+        .map_err(|error| format!("invalid {direction} bitrate `{bitrate}`: {error}"))?;
+    let mcs = fields
+        .windows(2)
+        .find_map(|pair| (pair[0] == "MCS").then_some(pair[1]))
+        .ok_or_else(|| format!("{direction} link snapshot omitted MCS: `{bitrate}`"))?
+        .parse::<u8>()
+        .map_err(|error| format!("invalid {direction} MCS in `{bitrate}`: {error}"))?;
+    let vector_width_mhz = fields
+        .iter()
+        .find_map(|field| field.strip_suffix("MHz"))
+        .ok_or_else(|| format!("{direction} link snapshot omitted channel width: `{bitrate}`"))?
+        .parse::<u8>()
+        .map_err(|error| format!("invalid {direction} channel width in `{bitrate}`: {error}"))?;
+    let mcs7_rate =
+        (134.9..=135.1).contains(&observed_mbps) || (149.9..=150.1).contains(&observed_mbps);
+    if interface_width_mhz != 40 || vector_width_mhz != 40 || mcs != 7 || !mcs7_rate {
+        return Err(format!(
+            "{direction} link precondition failed: required=MCS 7 40MHz (135.0 MBit/s long GI or 150.0 MBit/s short GI) observed_interface_width={interface_width_mhz} observed=`{bitrate}`"
+        )
+        .into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::require_ht40_mcs7;
+
+    #[test]
+    fn ht40_ceiling_vector_requires_mcs7_and_width_but_accepts_either_gi() {
+        require_ht40_mcs7("STA RX/AP TX", 40, "150.0 MBit/s MCS 7 40MHz short GI").unwrap();
+        require_ht40_mcs7("STA RX/AP TX", 40, "135.0 MBit/s MCS 7 40MHz").unwrap();
+        assert!(
+            require_ht40_mcs7("STA RX/AP TX", 20, "150.0 MBit/s MCS 7 40MHz short GI",).is_err()
+        );
+        assert!(
+            require_ht40_mcs7("STA RX/AP TX", 40, "135.0 MBit/s MCS 6 40MHz short GI",).is_err()
+        );
+        assert!(require_ht40_mcs7("STA RX/AP TX", 40, "120.0 MBit/s MCS 7 40MHz").is_err());
     }
 }

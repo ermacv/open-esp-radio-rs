@@ -12,7 +12,7 @@ use crate::{
     Result, qualification::scenario::PhyExpectation, transport::lab_config::OpenWrtConfig,
 };
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct OpenWrtRxEvidence {
     pub(crate) ingress_packets: u64,
     pub(crate) wireless_packets: u64,
@@ -23,9 +23,11 @@ pub(crate) struct OpenWrtRxEvidence {
     pub(crate) station_tx_failed: u64,
     pub(crate) station_tid0_aqm_drops: u64,
     pub(crate) channel_width_mhz: u8,
+    pub(crate) tx_bitrate: String,
+    pub(crate) rx_bitrate: String,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct Snapshot {
     station_mac: [u8; 6],
     ingress_rx_packets: u64,
@@ -35,6 +37,15 @@ struct Snapshot {
     station_tx_failed: u64,
     station_tid0_aqm_drops: u64,
     channel_width_mhz: u8,
+    tx_bitrate: String,
+    rx_bitrate: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct OpenWrtStationLinkEvidence {
+    pub(crate) channel_width_mhz: u8,
+    pub(crate) tx_bitrate: String,
+    pub(crate) rx_bitrate: String,
 }
 
 struct Capture {
@@ -147,8 +158,23 @@ impl OpenWrtRxCapture {
                 after.station_tid0_aqm_drops,
             )?,
             channel_width_mhz: after.channel_width_mhz,
+            tx_bitrate: after.tx_bitrate,
+            rx_bitrate: after.rx_bitrate,
         })
     }
+}
+
+/// Snapshot the final AP/STA link vector after one measured workload.
+pub(crate) fn station_link(
+    config: &OpenWrtConfig,
+    target: Ipv4Addr,
+) -> Result<OpenWrtStationLinkEvidence> {
+    let snapshot = snapshot(config, target, None)?;
+    Ok(OpenWrtStationLinkEvidence {
+        channel_width_mhz: snapshot.channel_width_mhz,
+        tx_bitrate: snapshot.tx_bitrate,
+        rx_bitrate: snapshot.rx_bitrate,
+    })
 }
 
 fn snapshot(
@@ -181,6 +207,8 @@ fn snapshot(
          printf 'station_tx=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/tx packets:/ {{print $3}}')\"; \
          printf 'station_retries=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/tx retries:/ {{print $3}}')\"; \
          printf 'station_failed=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/tx failed:/ {{print $3}}')\"; \
+         printf 'tx_bitrate=%s\\n' \"$(printf '%s\\n' \"$stats\" | sed -n 's/^[[:space:]]*tx bitrate:[[:space:]]*//p')\"; \
+         printf 'rx_bitrate=%s\\n' \"$(printf '%s\\n' \"$stats\" | sed -n 's/^[[:space:]]*rx bitrate:[[:space:]]*//p')\"; \
          set -- /sys/kernel/debug/ieee80211/*/netdev:{wireless}/stations/$mac/aqm; \
          test \"$#\" -eq 1; test -r \"$1\"; \
          printf 'station_tid0_aqm_drops=%s\\n' \"$(awk '$1 == 0 {{print $6}}' \"$1\")\"; \
@@ -210,6 +238,8 @@ fn snapshot(
         station_tx_failed: tagged(&stdout, "station_failed")?,
         station_tid0_aqm_drops: tagged(&stdout, "station_tid0_aqm_drops")?,
         channel_width_mhz: u8::try_from(tagged(&stdout, "channel_width")?)?,
+        tx_bitrate: nonempty_tagged_text(&stdout, "tx_bitrate")?.to_owned(),
+        rx_bitrate: nonempty_tagged_text(&stdout, "rx_bitrate")?.to_owned(),
     })
 }
 
@@ -218,6 +248,14 @@ fn tagged_text<'a>(output: &'a str, key: &str) -> Result<&'a str> {
         .lines()
         .find_map(|line| line.strip_prefix(key)?.strip_prefix('='))
         .ok_or_else(|| format!("OpenWrt snapshot omitted `{key}`").into())
+}
+
+fn nonempty_tagged_text<'a>(output: &'a str, key: &str) -> Result<&'a str> {
+    tagged_text(output, key).and_then(|value| {
+        (!value.is_empty())
+            .then_some(value)
+            .ok_or_else(|| format!("OpenWrt snapshot reported an empty `{key}`").into())
+    })
 }
 
 fn parse_mac(value: &str) -> Result<[u8; 6]> {

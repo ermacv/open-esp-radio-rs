@@ -687,6 +687,10 @@ struct ObservedConnectedRxSink<S> {
 
 #[cfg(feature = "diagnostics")]
 impl<S: MacConnectedRxSink> MacConnectedRxSink for ObservedConnectedRxSink<S> {
+    fn wants_power_save_delivery(&self) -> bool {
+        self.inner.wants_power_save_delivery()
+    }
+
     fn publish(&mut self, event: ConnectedRxEvent<'_>) {
         let include_phy = match event {
             ConnectedRxEvent::Ethernet { frame, .. } => self.observer.requests_phy(frame.into()),

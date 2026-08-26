@@ -240,6 +240,35 @@ impl CcmpRxReplayState {
         Ok(())
     }
 
+    /// Check and advance one lane while the caller holds its unique replay
+    /// owner across both operations.
+    ///
+    /// Split prepare/commit remains required when authentication, reassembly
+    /// or publication can interleave. An already authenticated ordinary MPDU
+    /// has no such edge, so it need not construct and then revalidate a
+    /// revision-bound candidate.
+    #[inline(always)]
+    pub fn commit_immediate(
+        &mut self,
+        lane: CcmpReplayLane,
+        packet_number: CcmpPacketNumber,
+    ) -> Result<(), CcmpReplayError> {
+        let index = lane.index().ok_or(CcmpReplayError::InvalidTid)?;
+        let highest = self.highest[index];
+        if packet_number <= highest {
+            return Err(CcmpReplayError::Replayed {
+                packet_number,
+                highest,
+            });
+        }
+        let revision = self.revisions[index]
+            .checked_add(1)
+            .ok_or(CcmpReplayError::RevisionExhausted)?;
+        self.highest[index] = packet_number;
+        self.revisions[index] = revision;
+        Ok(())
+    }
+
     pub const fn highest(&self, lane: CcmpReplayLane) -> Option<CcmpPacketNumber> {
         match lane.index() {
             Some(index) => Some(self.highest[index]),
@@ -357,8 +386,22 @@ mod tests {
         replay.commit(other_lane).unwrap();
         assert_eq!(replay.highest(tid7), Some(pn8));
         assert_eq!(replay.highest(CcmpReplayLane::NonQos), Some(initial));
+        replay.commit_immediate(tid7, pn9).unwrap();
+        assert_eq!(replay.highest(tid7), Some(pn9));
+        assert_eq!(
+            replay.commit_immediate(tid7, pn9),
+            Err(CcmpReplayError::Replayed {
+                packet_number: pn9,
+                highest: pn9,
+            })
+        );
+        assert_eq!(replay.highest(tid0), Some(pn8));
         assert_eq!(
             replay.prepare(CcmpReplayLane::Tid(16), pn9),
+            Err(CcmpReplayError::InvalidTid)
+        );
+        assert_eq!(
+            replay.commit_immediate(CcmpReplayLane::Tid(16), pn9),
             Err(CcmpReplayError::InvalidTid)
         );
     }

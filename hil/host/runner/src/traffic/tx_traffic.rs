@@ -23,6 +23,8 @@ use crate::{
     },
     transport::lab_config::{LabConfig, StationFixtureConfig},
     transport::local_linux_fixture::{LocalLinuxTxCapture, LocalLinuxTxEvidence},
+    transport::openwrt_fixture::{OpenWrtStationLinkEvidence, station_link},
+    transport::station_fixture::require_ht40_mcs7,
     transport::udp_socket::{configure_qualification_receive_buffer, open_reverse_flow},
 };
 
@@ -265,6 +267,10 @@ pub(crate) fn run(
     let local_ingress = local_ingress_capture
         .map(LocalLinuxTxCapture::finish)
         .transpose()?;
+    let openwrt_link = match &lab.station_fixture {
+        StationFixtureConfig::OpenWrt(config) => Some(station_link(config, options.device)?),
+        StationFixtureConfig::LocalLinux(_) | StationFixtureConfig::External(_) => None,
+    };
     if let Some(evidence) = local_ingress.as_ref() {
         write_local_ingress_evidence(output, evidence)?;
     }
@@ -324,16 +330,25 @@ pub(crate) fn run(
             )
             .into());
         }
-        if let Some(required) = options.throughput_floor_bps {
+        let link_report = require_performance_link(
+            &lab.station_fixture,
+            options.bandwidth_mhz,
+            local_ingress.as_ref(),
+            openwrt_link.as_ref(),
+        )?;
+        let throughput_failure = if let Some(required) = options.throughput_floor_bps {
             let measured_host = host_floor.saturating_mul(1_000);
             let measured_target = device_floor_kbps.saturating_mul(1_000);
             if measured_host < required || measured_target < required {
-                return Err(format!(
+                Some(format!(
                     "TX throughput is below the configured floor: required={required} host={measured_host} target={measured_target} bit/s"
-                )
-                .into());
+                ))
+            } else {
+                None
             }
-        }
+        } else {
+            None
+        };
         write_performance_report(
             output,
             TxPerformanceReport {
@@ -344,8 +359,13 @@ pub(crate) fn run(
                 device_floor_kbps,
                 structured,
                 host_receive_buffer_bytes,
+                link_report: &link_report,
+                failure: throughput_failure.as_deref(),
             },
         )?;
+        if let Some(failure) = throughput_failure {
+            return Err(failure.into());
+        }
         eprintln!(
             "OPENRADIOHOST result=PASS mode=tx-performance host_floor_kbps={host_floor} device_floor_kbps={device_floor_kbps} bursts={} host_receive_buffer_bytes={host_receive_buffer_bytes} report={}",
             qualified.len(),
@@ -521,6 +541,50 @@ fn write_local_ingress_evidence(output: &Path, evidence: &LocalLinuxTxEvidence) 
     Ok(())
 }
 
+fn require_performance_link(
+    fixture: &StationFixtureConfig,
+    bandwidth_mhz: u16,
+    local: Option<&LocalLinuxTxEvidence>,
+    openwrt: Option<&OpenWrtStationLinkEvidence>,
+) -> Result<String> {
+    match fixture {
+        StationFixtureConfig::LocalLinux(_) => {
+            let evidence = local.ok_or("local AP link snapshot is unavailable")?;
+            if bandwidth_mhz == 40 {
+                require_ht40_mcs7(
+                    "STA TX/AP RX",
+                    evidence.channel_width_mhz,
+                    &evidence.rx_bitrate,
+                )?;
+            }
+            Ok(format!(
+                "local AP interface width={} MHz; AP TX/RX bitrate=`{}` / `{}`",
+                evidence.channel_width_mhz, evidence.tx_bitrate, evidence.rx_bitrate
+            ))
+        }
+        StationFixtureConfig::OpenWrt(_) => {
+            let evidence = openwrt.ok_or("OpenWrt AP link snapshot is unavailable")?;
+            if bandwidth_mhz == 40 {
+                require_ht40_mcs7(
+                    "STA TX/AP RX",
+                    evidence.channel_width_mhz,
+                    &evidence.rx_bitrate,
+                )?;
+            }
+            Ok(format!(
+                "OpenWrt AP interface width={} MHz; AP TX/RX bitrate=`{}` / `{}`",
+                evidence.channel_width_mhz, evidence.tx_bitrate, evidence.rx_bitrate
+            ))
+        }
+        StationFixtureConfig::External(_) if bandwidth_mhz == 40 => {
+            Err("HT40 performance requires a managed fixture link snapshot".into())
+        }
+        StationFixtureConfig::External(_) => {
+            Ok(String::from("external AP; link vector not observed"))
+        }
+    }
+}
+
 fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
     let mut options = Options {
         device: Ipv4Addr::UNSPECIFIED,
@@ -663,6 +727,8 @@ struct TxPerformanceReport<'a> {
     device_floor_kbps: u64,
     structured: crate::evidence::traffic_capture::SessionEvidence,
     host_receive_buffer_bytes: usize,
+    link_report: &'a str,
+    failure: Option<&'a str>,
 }
 
 fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> Result<()> {
@@ -674,6 +740,8 @@ fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> R
         device_floor_kbps,
         structured,
         host_receive_buffer_bytes,
+        link_report,
+        failure,
     } = report;
     let datagrams = bursts.iter().map(|burst| burst.datagrams).sum::<u64>();
     let bytes = bursts.iter().map(|burst| burst.bytes).sum::<u64>();
@@ -684,12 +752,18 @@ fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> R
         .offered_rate_bps
         .map(|rate| format!("{:.3} Mbit/s", rate as f64 / 1_000_000.0))
         .unwrap_or_else(|| String::from("saturated"));
+    let result = if failure.is_some() { "FAIL" } else { "PASS" };
+    let failure_report = failure
+        .map(|failure| format!("- Acceptance failure: `{failure}`\n"))
+        .unwrap_or_default();
     fs::write(
         output.join("report.md"),
         format!(
             "# Open-radio TX performance HIL\n\n\
-             - Result: `PASS`\n\
+             - Result: `{result}`\n\
+             {failure_report}\
              - Evidence boundary: `transport, external host sink, stack watermark; driver observation not collected`\n\
+             - AP-side link vector: {link_report}\n\
              - Device/host: `{}` / `{host_address}`\n\
              - Complete host bursts: `{}`; datagrams: `{datagrams}`; bytes: `{bytes}`\n\
              - Payload / target offered-rate bound: `{}` bytes / `{offered_rate}`\n\

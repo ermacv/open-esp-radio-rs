@@ -151,6 +151,10 @@ impl<
         STAGE_SLOTS,
     >
 {
+    fn wants_power_save_delivery(&self) -> bool {
+        self.observer.wants_power_save_delivery()
+    }
+
     fn publish(&mut self, event: ConnectedRxEvent<'_>) {
         if let ConnectedRxEvent::Ethernet {
             frame,

@@ -63,6 +63,12 @@ max_bytes = 22528
 reason = "station attempt future retains every recoverable phase owner, including typed RX overload disposition, low-power and ESP-NOW state, until disposition on the PSRAM task stack"
 
 [[reviewed_frames]]
+function_contains = "::roles::station::connected::port::Esp32s31ConnectedStaPort>::compose::<"
+source_ends_with = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/connected/port/composition.rs"
+max_bytes = 8448
+reason = "atomic connected composition retains the validated plan and complete success-or-failure graph while transferring the affine pairwise replay endpoint; the separate 4-KiB move limit still rejects hidden owner copies"
+
+[[reviewed_frames]]
 function_contains = "::supervisor::new::{closure#0}"
 source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/supervisor/mod.rs"
 max_bytes = 17408
@@ -107,8 +113,8 @@ reason = "connected transition future preserves the exact join and teardown owne
 [[reviewed_frames]]
 function_contains = "::supervisor::station::run_connected::{closure#0}"
 source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/supervisor/station.rs"
-max_bytes = 32768
-reason = "connected epoch future owns the recoverable DMA, VIF-scoped BlockAck, WPA2 rekey, key, network, Rust rate-control, low-power/TWT, ESP-NOW and protected-fragment frontiers plus the parked paired-role scratch lease on the PSRAM task stack"
+max_bytes = 35072
+reason = "connected epoch future owns the recoverable DMA, VIF-scoped BlockAck, split pairwise/group WPA2 replay, rekey, key, network, Rust rate-control, low-power/TWT, ESP-NOW and protected-fragment frontiers plus the parked paired-role scratch lease on the PSRAM task stack"
 
 [[reviewed_frames]]
 function_contains = "::advance_station_to_paired_frontier::{closure#0}"
@@ -173,14 +179,14 @@ reason = "standalone AP service future owns the complete bounded power-save leas
 [[reviewed_frames]]
 function_contains = "::run_initial_join_epoch::{closure#0}"
 source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/supervisor/station_epoch.rs"
-max_bytes = 11776
-reason = "initial join future retains the recoverable scan, authentication, security and radio-owner frontier until the typed join disposition is returned"
+max_bytes = 13568
+reason = "initial join future retains the recoverable scan, authentication, split pairwise/group replay, security and radio-owner frontier until the typed join disposition is returned"
 
 [[reviewed_frames]]
 function_contains = "::run_reconnected_epoch::{closure#0}"
 source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/supervisor/station_epoch.rs"
-max_bytes = 11520
-reason = "reconnect future retains the recoverable connected owner and expanded protocol policy until the typed join disposition is returned"
+max_bytes = 13312
+reason = "reconnect future retains the recoverable connected owner, split pairwise/group replay and expanded protocol policy until the typed join disposition is returned"
 
 [[reviewed_frames]]
 function_contains = "::run_connected_epoch::{closure#0}"
@@ -191,14 +197,14 @@ reason = "station engine connected edge retains the exact connected owner or pai
 [[reviewed_frames]]
 function_contains = "::connected::transaction::run_and_quiesce_esp32s31_connected_epoch"
 source_ends_with = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/connected/transaction.rs"
-max_bytes = 9216
-reason = "connected transaction retains the classified runner exit and every affine service owner until IRQ and task quiescence completes"
+max_bytes = 9472
+reason = "connected transaction retains the classified runner exit, split pairwise/group replay and every affine service owner until IRQ and task quiescence completes"
 
 [[reviewed_frames]]
 function_contains = "::retry_quiesce::{closure#0}"
 source_ends_with = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/connected/transaction.rs"
-max_bytes = 9216
-reason = "retryable quiescence failure preserves the exact classified exit, interrupt epoch, runner and task owners without replaying DATAPATH"
+max_bytes = 9472
+reason = "retryable quiescence failure preserves the exact classified exit, split pairwise/group replay, interrupt epoch, runner and task owners without replaying DATAPATH"
 
 [[reviewed_frames]]
 function_contains = "::connected::shutdown::quiesce_esp32s31_connected_epoch"

@@ -266,6 +266,10 @@ pub struct ConnectedControlPublisher<'resources, M: RawMutex, const CAPACITY: us
 impl<M: RawMutex, const CAPACITY: usize> ConnectedRxSink
     for ConnectedControlPublisher<'_, M, CAPACITY>
 {
+    fn wants_power_save_delivery(&self) -> bool {
+        self.power_save_delivery_gate.load(Ordering::Acquire) != 0
+    }
+
     fn publish(&mut self, event: ConnectedRxEvent<'_>) {
         if let ConnectedRxEvent::UnprotectedEapol { source, payload } = event {
             if let Ok(frame) = OwnedEapolFrame::try_copy(Wpa2Interface::Station, source, payload) {
@@ -508,6 +512,7 @@ mod tests {
         data::EthernetFrameParts,
         station::{StaDisconnect, StaDisconnectKind},
     };
+    use open_esp_radio_wifi_sta::power_save::StaPsPollDelivery;
 
     use super::*;
 
@@ -573,6 +578,26 @@ mod tests {
             Some(ConnectedRxControlEvent::BlockAck(first))
         );
         assert_eq!(receiver.try_receive(), None);
+    }
+
+    #[test]
+    fn power_save_delivery_publication_is_requested_only_while_armed() {
+        let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
+        let (mut publisher, receiver) = resources.split();
+        assert!(!publisher.wants_power_save_delivery());
+
+        receiver.set_power_save_delivery_armed(true);
+        assert!(publisher.wants_power_save_delivery());
+        publisher.publish(ConnectedRxEvent::PowerSaveDelivery(StaPsPollDelivery {
+            more_data: false,
+        }));
+        assert_eq!(
+            receiver.try_receive_power_save_delivery(),
+            Some(ConnectedRxControlEvent::PowerSaveDelivery(
+                StaPsPollDelivery { more_data: false }
+            ))
+        );
+        assert!(!publisher.wants_power_save_delivery());
     }
 
     #[test]

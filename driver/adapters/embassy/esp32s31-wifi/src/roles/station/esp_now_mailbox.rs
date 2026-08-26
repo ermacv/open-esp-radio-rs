@@ -472,6 +472,10 @@ impl<'resources, M: RawMutex, S, const CAPACITY: usize>
 impl<M: RawMutex, S: ConnectedRxSink, const CAPACITY: usize> ConnectedRxSink
     for EspNowMailboxConnectedRxSink<'_, M, S, CAPACITY>
 {
+    fn wants_power_save_delivery(&self) -> bool {
+        self.inner.wants_power_save_delivery()
+    }
+
     fn publish(&mut self, event: ConnectedRxEvent<'_>) {
         if let ConnectedRxEvent::EspNow { received, metadata } = event {
             let _ = self.publisher.try_publish(received, metadata);

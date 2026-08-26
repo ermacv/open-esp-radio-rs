@@ -162,7 +162,9 @@ where
         #[cfg(any(feature = "diagnostics", test))]
         let dispatch_started = self.pipeline_observer.map(|observer| observer.now_micros());
         let (result, used, metadata, power_save_delivery) = {
-            let mut deferred = DeferredEthernetFrames::new(self.ethernet);
+            let wants_power_save_delivery = self.sink.wants_power_save_delivery();
+            let mut deferred =
+                DeferredEthernetFrames::new(self.ethernet, wants_power_save_delivery);
             let result =
                 self.runtime
                     .dispatcher
@@ -242,6 +244,10 @@ impl<'sink, S> StagedEthernetCapture<'sink, S> {
 }
 
 impl<S: ConnectedRxSink> ConnectedRxSink for StagedEthernetCapture<'_, S> {
+    fn wants_power_save_delivery(&self) -> bool {
+        self.sink.wants_power_save_delivery()
+    }
+
     fn publish(&mut self, event: ConnectedRxEvent<'_>) {
         let ConnectedRxEvent::Ethernet {
             frame,

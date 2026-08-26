@@ -100,6 +100,10 @@ impl<'storage, O> Esp32s31StaApStationRxSink<'storage, O> {
 }
 
 impl<O: ConnectedRxSink> ConnectedRxSink for Esp32s31StaApStationRxSink<'_, O> {
+    fn wants_power_save_delivery(&self) -> bool {
+        self.observer.wants_power_save_delivery()
+    }
+
     fn publish(&mut self, event: ConnectedRxEvent<'_>) {
         if let ConnectedRxEvent::Ethernet { frame, .. } = event
             && frame.ether_type != 0x888e

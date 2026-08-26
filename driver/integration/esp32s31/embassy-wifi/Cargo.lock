@@ -1304,6 +1304,7 @@ dependencies = [
  "open-esp-radio-wifi-softmac",
  "open-esp-radio-wifi-sta",
  "open-esp-radio-wpa2",
+ "static_cell",
 ]
 
 [[package]]

@@ -419,17 +419,18 @@ dependencies = [
 [[package]]
 name = "embassy-net"
 version = "0.9.1"
-source = "git+https://github.com/ermacv/embassy?rev=97da28a77e15a55c412da8b51710fecf5b7a8979#97da28a77e15a55c412da8b51710fecf5b7a8979"
+source = "git+https://github.com/ermacv/embassy?rev=5a981ab3ccad883520ef634566215feb350613ad#5a981ab3ccad883520ef634566215feb350613ad"
 dependencies = [
  "document-features",
- "embassy-net-driver",
+ "embassy-futures",
+ "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy?rev=5a981ab3ccad883520ef634566215feb350613ad)",
  "embassy-sync 0.8.0",
  "embassy-time",
  "embedded-io-async 0.7.0",
  "embedded-nal-async",
  "heapless 0.9.3",
  "managed",
- "smoltcp",
+ "xarxa",
 ]
 
 [[package]]
@@ -437,6 +438,11 @@ name = "embassy-net-driver"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "524eb3c489760508f71360112bca70f6e53173e6fe48fc5f0efd0f5ab217751d"
+
+[[package]]
+name = "embassy-net-driver"
+version = "0.2.0"
+source = "git+https://github.com/ermacv/embassy?rev=5a981ab3ccad883520ef634566215feb350613ad#5a981ab3ccad883520ef634566215feb350613ad"
 
 [[package]]
 name = "embassy-sync"
@@ -720,7 +726,7 @@ dependencies = [
  "document-features",
  "embassy-embedded-hal",
  "embassy-futures",
- "embassy-net-driver",
+ "embassy-net-driver 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-sync 0.8.0",
  "embassy-usb-driver",
  "embassy-usb-synopsys-otg",
@@ -1292,7 +1298,7 @@ version = "0.1.0"
 name = "open-esp-radio-embassy-net"
 version = "0.1.0"
 dependencies = [
- "embassy-net-driver",
+ "embassy-net-driver 0.2.0 (git+https://github.com/ermacv/embassy?rev=5a981ab3ccad883520ef634566215feb350613ad)",
  "embassy-sync 0.8.0",
  "open-esp-radio-dma",
 ]
@@ -1874,19 +1880,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 
 [[package]]
-name = "smoltcp"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f73d40463bba65efc9adc6370b56df76d563cc46e2482bba58351b4afb7535e"
-dependencies = [
- "bitflags",
- "byteorder",
- "cfg-if",
- "heapless 0.9.3",
- "managed",
-]
-
-[[package]]
 name = "somni-expr"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2221,6 +2214,24 @@ checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
 dependencies = [
  "memchr",
 ]
+
+[[package]]
+name = "xarxa"
+version = "0.13.1"
+source = "git+https://github.com/embassy-rs/xarxa?rev=1f332ac32cc33d86aefc8e1c1a9749b93234a6de#1f332ac32cc33d86aefc8e1c1a9749b93234a6de"
+dependencies = [
+ "bitflags",
+ "byteorder",
+ "cfg-if",
+ "heapless 0.9.3",
+ "managed",
+ "xarxa-driver",
+]
+
+[[package]]
+name = "xarxa-driver"
+version = "0.1.0"
+source = "git+https://github.com/embassy-rs/xarxa?rev=1f332ac32cc33d86aefc8e1c1a9749b93234a6de#1f332ac32cc33d86aefc8e1c1a9749b93234a6de"
 
 [[package]]
 name = "xtensa-lx"

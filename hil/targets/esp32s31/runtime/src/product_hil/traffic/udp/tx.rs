@@ -82,7 +82,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
     ));
     // A typed session supplies the fixed datagram size before its SessionReady
     // event. Size the active payload ring to an exact multiple of that value:
-    // smoltcp then never needs a metadata-bearing wrap-padding record and its
+    // xarxa then never needs a metadata-bearing wrap-padding record and its
     // zero-copy FnOnce callback cannot be consumed by a retryable post-callback
     // `BufferFull`. This configures only the HIL load generator, not the radio.
     let first_session = config.session_source.sessions.receive().await;
@@ -197,7 +197,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
                     if socket_payload_bytes.is_multiple_of(payload_bytes) {
                         socket
                             .send_to_with(payload_bytes, (server, server_port), |packet| {
-                                // An exact divisor never requires smoltcp's
+                                // An exact divisor never requires xarxa's
                                 // metadata-bearing ring padding, so the FnOnce
                                 // zero-copy callback cannot be consumed by a
                                 // retryable post-callback `BufferFull` result.

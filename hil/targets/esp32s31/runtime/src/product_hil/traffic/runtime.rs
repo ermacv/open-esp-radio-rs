@@ -71,7 +71,7 @@ impl ConnectedTrafficResources {
             udp_source_tx_buffer: ConstStaticCell::new(
                 [0; UDP_TX_QUEUE_DEPTH * UDP_PAYLOAD_CAPACITY],
             ),
-            // Non-divisor payload sizes can require an internal smoltcp
+            // Non-divisor payload sizes can require an internal xarxa
             // ring-padding record. Keep one repeatable fallback per endpoint.
             udp_source_packet: ConstStaticCell::new([0; UDP_PAYLOAD_CAPACITY]),
             tcp_rx_buffer: ConstStaticCell::new([0; TCP_RX_BUFFER_CAPACITY]),

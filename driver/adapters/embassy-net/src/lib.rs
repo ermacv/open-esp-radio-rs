@@ -50,10 +50,10 @@ pub use pinned::{
 /// Ethernet header length, excluding an FCS.
 pub const ETHERNET_HEADER_LEN: usize = 14;
 
-/// Breaks an unbounded `smoltcp::Interface::poll` ingress drain at the
+/// Breaks an unbounded network-stack ingress drain at the
 /// adapter's physical queue boundary.
 ///
-/// `smoltcp` deliberately drains a device until `receive` returns `None`.
+/// The ordinary stack poll drains a device until `receive` returns `None`.
 /// With a concurrently refilled radio queue that can fill an application
 /// socket and keep dropping later packets before its consumer is polled. The
 /// synthetic `None` self-wakes the network task; Embassy can then poll every

@@ -88,7 +88,7 @@ fn owned_device_ends_a_refilled_ingress_epoch_at_its_physical_depth() {
     let (second, _reply) = device.receive(&mut context()).unwrap();
     second.consume(|_| ());
 
-    // The producer refilled the queue while smoltcp's current poll was
+    // The producer refilled the queue while the network stack's current poll was
     // draining it. End that poll after the two-slot physical epoch; the
     // immediately self-woken next poll can consume the retained third frame.
     assert!(device.receive(&mut context()).is_none());

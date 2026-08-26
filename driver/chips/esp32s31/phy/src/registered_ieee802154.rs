@@ -81,6 +81,8 @@
 
 use core::fmt;
 
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_esp32s31_hal::SharedPhyHal;
 use open_esp_radio_esp32s31_hal::{
     Ieee802154Clocked, Ieee802154FoundationCheckpoint, Ieee802154FoundationConfigured,
     Ieee802154FoundationTransitionFailure, Ieee802154MacPolicy, Ieee802154MacPolicyCheckpoint,
@@ -92,7 +94,19 @@ use open_esp_radio_esp32s31_hal::{
     Ieee802154TimingReady as HalIeee802154TimingReady,
 };
 
-use crate::{PhyState, RegisteredPhyState};
+#[cfg(target_arch = "riscv32")]
+use crate::phy_client::DEFAULT_PLL_TRACK_PERIOD_MICROS;
+use crate::{
+    PhyState, RegisteredPhyState,
+    phy_client::{
+        PhyClientAcquireError, PhyClientAcquireFailure, PhyClientAcquireOrdering,
+        PhyClientAcquireOutcome, PhyClientSnapshot, PhyClientState, PhyModemClient,
+        PhyPendingTrack, PhyPendingTracking, PhyPllTrackClock, PhyTrackPoisoned,
+    },
+    phy_param_tracking::{
+        PhyParamTrackRequest, PhyParamTrackingAction, PhyParamTrackingParameters,
+    },
+};
 
 /// Registered whole-radio owner after IEEE 802.15.4 clock readback.
 ///
@@ -103,6 +117,7 @@ use crate::{PhyState, RegisteredPhyState};
 pub struct RegisteredIeee802154Clocked<P> {
     role: Ieee802154Clocked<P>,
     registered: RegisteredPhyState,
+    clients: PhyClientState,
 }
 
 impl<P> RegisteredIeee802154Clocked<P> {
@@ -120,6 +135,7 @@ impl<P> RegisteredIeee802154Clocked<P> {
         Self {
             role,
             registered: RegisteredPhyState::from_target_completion(state, witness),
+            clients: PhyClientState::for_registered_epoch(DEFAULT_PLL_TRACK_PERIOD_MICROS),
         }
     }
 
@@ -128,25 +144,32 @@ impl<P> RegisteredIeee802154Clocked<P> {
         self.registered.state()
     }
 
-    /// Initialize the source-owned common BTBB body and IEEE timing overrides.
-    ///
-    /// The gain parameter is projected only from this owner's terminal
-    /// common-PHY state. There is deliberately no caller argument and no
-    /// intermediate owner from which MAC reset or runtime ownership can be
-    /// acquired.
-    pub fn initialize_baseband_and_ieee802154_timing(self) -> RegisteredIeee802154TimingReady<P> {
-        let parts = establish_registered_timing(self, |role, registered| {
-            let prerequisite =
-                crate::ieee802154_timing_boundary::from_terminal_registration(role, registered);
-            role.initialize_baseband_and_ieee802154_timing(prerequisite)
-        });
-
-        RegisteredIeee802154TimingReady {
-            role: parts.role,
-            prerequisites: RegisteredIeee802154Prerequisites {
-                registered: parts.registered,
-                timing: parts.timing,
-            },
+    /// Acquire the dedicated IEEE 802.15.4 bit before BTBB/timing work.
+    #[allow(
+        clippy::result_large_err,
+        reason = "the allocation-free failure retains the IEEE role, PHY proof, and client owner"
+    )]
+    pub fn acquire_phy_client(
+        self,
+        clock: &mut impl PhyPllTrackClock,
+    ) -> Result<RegisteredIeee802154ClientAcquire<P>, RegisteredIeee802154ClientAcquireFailure<P>>
+    {
+        let Self {
+            role,
+            registered,
+            clients,
+        } = self;
+        match clients.acquire(PhyModemClient::Ieee802154, clock) {
+            Ok(outcome) => Ok(RegisteredIeee802154ClientAcquire {
+                role,
+                registered,
+                outcome,
+            }),
+            Err(failure) => Err(RegisteredIeee802154ClientAcquireFailure {
+                role,
+                registered,
+                failure,
+            }),
         }
     }
 }
@@ -158,30 +181,269 @@ impl<P: Ieee802154PlatformControl> RegisteredIeee802154Clocked<P> {
     }
 }
 
+/// Successful IEEE client acquisition retaining the registered role owner.
+#[must_use = "IEEE client acquisition retains the registered role owner"]
+pub struct RegisteredIeee802154ClientAcquire<P> {
+    role: Ieee802154Clocked<P>,
+    registered: RegisteredPhyState,
+    outcome: PhyClientAcquireOutcome,
+}
+
+impl<P> RegisteredIeee802154ClientAcquire<P> {
+    pub const fn ordering(&self) -> PhyClientAcquireOrdering {
+        self.outcome.ordering()
+    }
+
+    pub const fn request(&self) -> Option<&PhyParamTrackRequest> {
+        self.outcome.request()
+    }
+
+    #[allow(
+        clippy::result_large_err,
+        reason = "pending work retains the allocation-free IEEE role and registered PHY"
+    )]
+    pub fn into_owner(
+        self,
+    ) -> Result<RegisteredIeee802154Client<P>, RegisteredIeee802154PendingTrack<P>> {
+        let Self {
+            role,
+            registered,
+            outcome,
+        } = self;
+        match outcome.into_owner() {
+            Ok(clients) => Ok(RegisteredIeee802154Client {
+                role,
+                registered,
+                clients,
+            }),
+            Err(pending) => Err(RegisteredIeee802154PendingTrack {
+                role,
+                registered,
+                pending,
+            }),
+        }
+    }
+}
+
+/// Rejected IEEE client acquisition retaining the unchanged registered role.
+#[must_use = "failed IEEE client acquisition retains the registered role owner"]
+pub struct RegisteredIeee802154ClientAcquireFailure<P> {
+    role: Ieee802154Clocked<P>,
+    registered: RegisteredPhyState,
+    failure: PhyClientAcquireFailure,
+}
+
+impl<P> RegisteredIeee802154ClientAcquireFailure<P> {
+    pub const fn error(&self) -> PhyClientAcquireError {
+        self.failure.error()
+    }
+
+    pub fn into_owner(self) -> RegisteredIeee802154Clocked<P> {
+        RegisteredIeee802154Clocked {
+            role: self.role,
+            registered: self.registered,
+            clients: self.failure.into_owner(),
+        }
+    }
+}
+
+/// Registered IEEE route after the shared-PHY client bit was acquired.
+#[must_use = "the registered IEEE client owner is unique"]
+pub struct RegisteredIeee802154Client<P> {
+    role: Ieee802154Clocked<P>,
+    registered: RegisteredPhyState,
+    clients: PhyClientState,
+}
+
+impl<P> RegisteredIeee802154Client<P> {
+    pub const fn phy_state(&self) -> &PhyState {
+        self.registered.state()
+    }
+
+    pub const fn client_snapshot(&self) -> PhyClientSnapshot {
+        self.clients.snapshot()
+    }
+
+    /// Initialize common BTBB and IEEE timing only after client acquisition.
+    pub fn initialize_baseband_and_ieee802154_timing(self) -> RegisteredIeee802154TimingReady<P> {
+        let parts = establish_registered_timing(self, |role, registered| {
+            let prerequisite =
+                crate::ieee802154_timing_boundary::from_terminal_registration(role, registered);
+            role.initialize_baseband_and_ieee802154_timing(prerequisite)
+        });
+
+        RegisteredIeee802154TimingReady {
+            role: parts.role,
+            prerequisites: RegisteredIeee802154Prerequisites {
+                registered: parts.registered,
+                clients: parts.clients,
+                timing: parts.timing,
+            },
+        }
+    }
+}
+
+/// Pending immediate tracking request retaining the dedicated IEEE role.
+#[must_use = "pending IEEE tracking retains the registered role owner"]
+pub struct RegisteredIeee802154PendingTrack<P> {
+    role: Ieee802154Clocked<P>,
+    registered: RegisteredPhyState,
+    pending: PhyPendingTrack,
+}
+
+impl<P> RegisteredIeee802154PendingTrack<P> {
+    pub const fn request(&self) -> &PhyParamTrackRequest {
+        self.pending.request()
+    }
+
+    pub fn begin_tracking(
+        self,
+        parameters: PhyParamTrackingParameters,
+    ) -> RegisteredIeee802154PendingTracking<P> {
+        RegisteredIeee802154PendingTracking {
+            role: self.role,
+            registered: self.registered,
+            pending: self.pending.begin_tracking(parameters),
+        }
+    }
+
+    pub fn fail(self) -> RegisteredIeee802154TrackPoisoned<P> {
+        RegisteredIeee802154TrackPoisoned {
+            role: self.role,
+            registered: self.registered,
+            poisoned: self.pending.fail(),
+        }
+    }
+}
+
+/// In-flight tracking transition retaining the dedicated IEEE role.
+#[must_use = "in-flight IEEE tracking retains the registered role owner"]
+pub struct RegisteredIeee802154PendingTracking<P> {
+    role: Ieee802154Clocked<P>,
+    registered: RegisteredPhyState,
+    pending: PhyPendingTracking,
+}
+
+impl<P> RegisteredIeee802154PendingTracking<P> {
+    pub const fn action(&self) -> PhyParamTrackingAction {
+        self.pending.action()
+    }
+
+    pub const fn phy_state(&self) -> &PhyState {
+        self.registered.state()
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn target_tracking_parts(
+        &mut self,
+    ) -> (
+        &mut P,
+        SharedPhyHal<'_>,
+        &mut PhyState,
+        &mut PhyPendingTracking,
+    )
+    where
+        P: open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl,
+    {
+        let Self {
+            role,
+            registered,
+            pending,
+        } = self;
+        let (platform, registers) = role.common_phy_parts();
+        (platform, registers, registered.target_state_mut(), pending)
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        clippy::result_large_err,
+        reason = "incomplete target work retains the allocation-free IEEE hardware epoch"
+    )]
+    pub(crate) fn into_client_owner(self) -> Result<RegisteredIeee802154Client<P>, Self> {
+        let Self {
+            role,
+            registered,
+            pending,
+        } = self;
+        match pending.into_owner() {
+            Ok(clients) => Ok(RegisteredIeee802154Client {
+                role,
+                registered,
+                clients,
+            }),
+            Err(pending) => Err(Self {
+                role,
+                registered,
+                pending,
+            }),
+        }
+    }
+
+    pub fn fail(self) -> RegisteredIeee802154TrackPoisoned<P> {
+        RegisteredIeee802154TrackPoisoned {
+            role: self.role,
+            registered: self.registered,
+            poisoned: self.pending.fail(),
+        }
+    }
+}
+
+/// Fail-stop dedicated IEEE epoch after ambiguous tracking hardware work.
+#[must_use = "failed IEEE tracking poisons the registered role epoch"]
+pub struct RegisteredIeee802154TrackPoisoned<P> {
+    role: Ieee802154Clocked<P>,
+    registered: RegisteredPhyState,
+    poisoned: PhyTrackPoisoned,
+}
+
+impl<P> RegisteredIeee802154TrackPoisoned<P> {
+    pub const fn phy_state(&self) -> &PhyState {
+        self.registered.state()
+    }
+
+    pub const fn request(&self) -> &PhyParamTrackRequest {
+        self.poisoned.request()
+    }
+
+    pub const fn client_snapshot(&self) -> PhyClientSnapshot {
+        self.poisoned.snapshot()
+    }
+}
+
+impl<P: Ieee802154PlatformControl> RegisteredIeee802154TrackPoisoned<P> {
+    pub fn peripheral(&self) -> &P {
+        self.role.peripheral()
+    }
+}
+
 struct RegisteredIeee802154TimingParts<P, Timing> {
     role: Ieee802154Clocked<P>,
     registered: RegisteredPhyState,
+    clients: PhyClientState,
     timing: Timing,
 }
 
 fn establish_registered_timing<P, Timing>(
-    owner: RegisteredIeee802154Clocked<P>,
+    owner: RegisteredIeee802154Client<P>,
     transition: impl FnOnce(&mut Ieee802154Clocked<P>, &RegisteredPhyState) -> Timing,
 ) -> RegisteredIeee802154TimingParts<P, Timing> {
-    let RegisteredIeee802154Clocked {
+    let RegisteredIeee802154Client {
         mut role,
         registered,
+        clients,
     } = owner;
     let timing = transition(&mut role, &registered);
     RegisteredIeee802154TimingParts {
         role,
         registered,
+        clients,
         timing,
     }
 }
 
 struct RegisteredIeee802154Prerequisites {
     registered: RegisteredPhyState,
+    clients: PhyClientState,
     timing: HalIeee802154TimingReady,
 }
 
@@ -192,6 +454,10 @@ impl RegisteredIeee802154Prerequisites {
 
     const fn timing_gain_parameter(&self) -> u8 {
         self.timing.gain_parameter()
+    }
+
+    const fn client_snapshot(&self) -> PhyClientSnapshot {
+        self.clients.snapshot()
     }
 }
 
@@ -215,6 +481,11 @@ impl<P> RegisteredIeee802154TimingReady<P> {
     /// Inspect the gain byte projected from the terminal common-PHY state.
     pub const fn timing_gain_parameter(&self) -> u8 {
         self.prerequisites.timing_gain_parameter()
+    }
+
+    /// Inspect the retained shared-PHY client set.
+    pub const fn client_snapshot(&self) -> PhyClientSnapshot {
+        self.prerequisites.client_snapshot()
     }
 }
 
@@ -759,15 +1030,22 @@ mod tests {
         Ieee802154TimingReady as HalIeee802154TimingReady, PowerClockControl, PowerClockImages,
     };
 
-    use crate::{PhyConfig, PhyState, RegisteredPhyState};
+    use crate::{
+        PhyConfig, PhyState, RegisteredPhyState,
+        phy_client::{
+            DEFAULT_PLL_TRACK_PERIOD_MICROS, PhyClientAcquireOrdering, PhyClientState,
+            PhyModemClient, PhyPllTrackClock,
+        },
+        phy_param_tracking::{PhyParamTrackingAction, PhyParamTrackingParameters},
+    };
 
     use super::{
-        RegisteredIeee802154Clocked, RegisteredIeee802154FoundationTransitionFailure,
-        RegisteredIeee802154MacPolicyConfigured, RegisteredIeee802154MacPolicyRecovery,
-        RegisteredIeee802154MacPolicyTransitionFailure, RegisteredIeee802154Prerequisites,
-        RegisteredIeee802154Reset, RegisteredIeee802154ResetTransitionFailure,
-        RegisteredIeee802154TimingReady, establish_registered_timing, map_prerequisites,
-        preserve_prerequisites,
+        RegisteredIeee802154Client, RegisteredIeee802154Clocked,
+        RegisteredIeee802154FoundationTransitionFailure, RegisteredIeee802154MacPolicyConfigured,
+        RegisteredIeee802154MacPolicyRecovery, RegisteredIeee802154MacPolicyTransitionFailure,
+        RegisteredIeee802154Prerequisites, RegisteredIeee802154Reset,
+        RegisteredIeee802154ResetTransitionFailure, RegisteredIeee802154TimingReady,
+        establish_registered_timing, map_prerequisites, preserve_prerequisites,
     };
 
     #[derive(Debug)]
@@ -882,6 +1160,14 @@ mod tests {
         }
     }
 
+    struct FixedClock(u64);
+
+    impl PhyPllTrackClock for FixedClock {
+        fn now_micros(&mut self) -> u64 {
+            self.0
+        }
+    }
+
     fn owner(platform: FakePlatform) -> RegisteredIeee802154Clocked<FakePlatform> {
         let role = Ieee802154Owned::claim_for_validation(platform)
             .power_up()
@@ -891,6 +1177,17 @@ mod tests {
         RegisteredIeee802154Clocked {
             role,
             registered: registered_state(),
+            clients: PhyClientState::for_registered_epoch(DEFAULT_PLL_TRACK_PERIOD_MICROS),
+        }
+    }
+
+    fn client_owner(platform: FakePlatform) -> RegisteredIeee802154Client<FakePlatform> {
+        let acquired = owner(platform)
+            .acquire_phy_client(&mut FixedClock(0))
+            .unwrap_or_else(|_| panic!("fresh IEEE client acquisition must succeed"));
+        match acquired.into_owner() {
+            Ok(owner) => owner,
+            Err(_) => panic!("fresh IEEE timestamp must not request tracking"),
         }
     }
 
@@ -901,14 +1198,20 @@ mod tests {
     fn model_prerequisites() -> RegisteredIeee802154Prerequisites {
         let registered = registered_state();
         let gain_parameter = registered.state().register_init_parameters().parameter_120;
+        let clients = PhyClientState::for_registered_epoch(DEFAULT_PLL_TRACK_PERIOD_MICROS)
+            .acquire(PhyModemClient::Ieee802154, &mut FixedClock(0))
+            .unwrap_or_else(|_| panic!("model client acquisition must succeed"))
+            .into_owner()
+            .unwrap_or_else(|_| panic!("fresh model timestamp must settle"));
         RegisteredIeee802154Prerequisites {
             registered,
+            clients,
             timing: HalIeee802154TimingReady::for_host_ownership_model(gain_parameter),
         }
     }
 
     fn timing_ready_owner(platform: FakePlatform) -> RegisteredIeee802154TimingReady<FakePlatform> {
-        let parts = establish_registered_timing(owner(platform), |_, registered| {
+        let parts = establish_registered_timing(client_owner(platform), |_, registered| {
             let gain_parameter = registered.state().register_init_parameters().parameter_120;
             HalIeee802154TimingReady::for_host_ownership_model(gain_parameter)
         });
@@ -916,6 +1219,7 @@ mod tests {
             role: parts.role,
             prerequisites: RegisteredIeee802154Prerequisites {
                 registered: parts.registered,
+                clients: parts.clients,
                 timing: parts.timing,
             },
         }
@@ -958,9 +1262,9 @@ mod tests {
 
     #[test]
     fn registered_timing_projection_has_no_caller_gain_argument() {
-        let clocked = owner(FakePlatform::ready());
-        let expected_gain = clocked.phy_state().register_init_parameters().parameter_120;
-        let parts = establish_registered_timing(clocked, |_, registered| {
+        let client = client_owner(FakePlatform::ready());
+        let expected_gain = client.phy_state().register_init_parameters().parameter_120;
+        let parts = establish_registered_timing(client, |_, registered| {
             registered.state().register_init_parameters().parameter_120
         });
 
@@ -969,9 +1273,51 @@ mod tests {
         assert_eq!(parts.role.peripheral().clock_sequences, 1);
 
         let _: fn(
-            RegisteredIeee802154Clocked<FakePlatform>,
+            RegisteredIeee802154Client<FakePlatform>,
         ) -> RegisteredIeee802154TimingReady<FakePlatform> =
-            RegisteredIeee802154Clocked::initialize_baseband_and_ieee802154_timing;
+            RegisteredIeee802154Client::initialize_baseband_and_ieee802154_timing;
+    }
+
+    #[test]
+    fn ieee_client_bit_blocks_timing_until_immediate_tracking_is_resolved() {
+        let acquired = owner(FakePlatform::ready())
+            .acquire_phy_client(&mut FixedClock(DEFAULT_PLL_TRACK_PERIOD_MICROS + 1))
+            .unwrap_or_else(|_| panic!("fresh IEEE client acquisition must succeed"));
+        assert_eq!(
+            acquired.ordering(),
+            PhyClientAcquireOrdering::ArmThenSetThenEvaluate
+        );
+        let pending = match acquired.into_owner() {
+            Ok(_) => panic!("elapsed first acquisition must request immediate tracking"),
+            Err(pending) => pending,
+        };
+        assert!(!pending.request().wifi());
+        assert!(pending.request().bluetooth_ieee802154());
+
+        let tracking = pending.begin_tracking(PhyParamTrackingParameters {
+            tracking_inhibited: true,
+            rfpll_cap_tracking_enabled: false,
+            rfpll_cap_tracking_threshold: None,
+            calibration_tracking_threshold: None,
+            shared_tracking_control: 0,
+            bluetooth_ieee802154_power_control: 0,
+            calibration_tracking_enabled: false,
+            relaxed_power_tracking_threshold: false,
+        });
+        assert_eq!(tracking.action(), PhyParamTrackingAction::EnterCritical);
+        let poisoned = tracking.fail();
+        assert!(
+            poisoned
+                .client_snapshot()
+                .contains(PhyModemClient::Ieee802154)
+        );
+
+        let timing_ready = timing_ready_owner(FakePlatform::ready());
+        assert!(
+            timing_ready
+                .client_snapshot()
+                .contains(PhyModemClient::Ieee802154)
+        );
     }
 
     #[test]

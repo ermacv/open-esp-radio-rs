@@ -396,9 +396,30 @@ effects:
   committed reference, matching the vendor's post-call state reads. The class
   TXDC/PWDET edge now selects the exact complete Wi-Fi `(0, 0, 0)` or shared
   Bluetooth/IEEE 802.15.4 `(0, 0, 1)` graph and commits its DCO result to the
-  matching state bank only after outer cleanup. Only the Wi-Fi/shared TX-gain
-  publication edges remain unbound. The outer transition alone is not an
-  RF-readiness proof.
+  matching state bank only after outer cleanup. The following class TX-gain
+  edge selects the exact Wi-Fi `(current_channel, 0)` or shared
+  Bluetooth/IEEE 802.15.4 `(0)` publication, derives its seed from that pending
+  DCO rather than stale retained state, and owns the direct PAC-backed memory
+  write through an opaque completion. All children of
+  `PhyCalibrationTrackingTransition` are now bound. Its bounded no-std async
+  runner holds the live state owner until terminal commit, and the concrete
+  ESP32-S31 target port reuses the cold-registration completer for DCODE, RX
+  gain, channel, TXDC and PBus work. The complete outer
+  `PhyParamTrackingTransition` now has the same bounded async execution path
+  for RFPLL-cap, both TX-power classes, calibration, Wi-Fi PHY-I2C and final
+  temperature. Its critical boundary is the affine `PhyPendingTracking` owner,
+  not CPU interrupt masking across awaits; target failure consumes that owner
+  into `PhyTrackPoisoned`. The target runner now consumes the exact
+  `RegisteredPhyRadio` and borrows its platform, PAC capability, and semantic
+  state as one epoch; success returns them coupled and failure exposes no
+  retry/extractor. `RegisteredPhyRadio` now also owns the source-reviewed
+  client set: acquire, release, and periodic evaluation can return only the
+  complete registered owner or a pending request retaining that same epoch.
+  The dedicated IEEE route now has the same gate: it must acquire the IEEE
+  client bit and resolve any immediate tracking request through its own
+  `common_phy_parts` target runner before BTBB/timing initialization. The
+  remaining integration gap is the real periodic timer/serialization owner.
+  The transition alone is still not an RF-readiness proof.
 - `ieee802154_txon_delay_set()`: called during every MAC initialization after
   ED/PTI configuration and before the driver enters idle.
 - `bt_bb_get_tx_pwr_table(&length)`: needed both to initialize each channel's
@@ -442,8 +463,8 @@ already-due Wi-Fi check, and samples each active class again in refresh order.
 Host tests cover both immediate branches and the periodic callback. The exact
 outer tracking transition is also covered for IEEE-only, combined-client,
 guarded, optional-branch, and wrong-completion paths. A target timer/lock
-executor and the remaining nested calibration-tracking hardware bindings remain
-separate obligations.
+owner around the already-complete target executor remains a separate
+obligation.
 
 Until the opaque effects above are replaced with reviewed source logic or
 bounded hardware contracts, the strongest honest RF-lifecycle endpoint is:
@@ -477,11 +498,10 @@ does not mint a physical ready state.
    is not a prerequisite for implementing the source-derived ownership shape.
 2. Establish a reviewed BTBB initialization contract for
    `bt_bb_v2_init_cmplx(1)`, including ownership and required postconditions.
-3. Recover or replace the RF calibration/wakeup and the remaining
-   `phy_param_track_tot` child hardware effects behind the public PHY client
-   manager. Bind the reviewed client-mask, scheduler, and outer tracking
-   transition through explicit timer/lock failure ownership, and test
-   cold-start, warm-start, and already-owned paths separately.
+3. Bind the coupled client managers' periodic callback to a real
+   timer/serialization owner. Keep RF wakeup/shutdown as separate fail-closed
+   lifecycle transitions, and test cold-start, warm-start, and already-owned
+   paths separately.
 4. Determine the exact registers and timing rule set by
    `ieee802154_txon_delay_set()`.
 5. Establish a source-legal TX-power capability contract without copying an

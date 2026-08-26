@@ -3,15 +3,18 @@
 //! Blobray resolves the complete pinned `phy_param_track_tot` body to 47
 //! instructions and eleven basic blocks. This module preserves that body's
 //! critical-section boundary, guards, child-call order, arguments and optional
-//! branches. The child actions remain explicit obligations: completing this
-//! transition does not claim that every child effect is implemented. The two
-//! TX-power actions lower into the complete source-owned transition in
+//! branches. Completing the pure transition alone does not claim that child
+//! hardware effects ran. The two TX-power actions lower into the complete source-owned transition in
 //! [`crate::phy_power_tracking`], and the final temperature action lowers into
 //! [`crate::phy_temperature`], while the Wi-Fi PHY-I2C action lowers into
 //! [`crate::phy_i2c_tracking`]. The RFPLL-cap action lowers into
 //! [`crate::phy_rfpll`], and the calibration action lowers into
-//! [`crate::phy_cal_tracking`]. Calibration hardware actions remain explicit
-//! obligations until their target bindings are owned.
+//! [`crate::phy_cal_tracking`]. On ESP32-S31, the bounded async calibration
+//! runner and target port drive every nested binding through the same leaf
+//! completer used by cold registration. The outer bounded runner retains the
+//! affine PHY-client owner across every selected child; its ESP32-S31 target
+//! entry point consumes that owner into a poisoned epoch on any incomplete
+//! hardware path.
 //!
 //! The vendor function reads six bytes from a 508-byte `phy_param` image. The
 //! live driver does not retain that ABI layout. Its only behaviorally relevant
@@ -622,6 +625,15 @@ impl<'state> PhyParamTrackingCalibrationTransition<'state> {
             self.state.tx_dc_pwdet_parameters(),
             self.state.bluetooth_tx_dc_pwdet_transition(),
         )
+    }
+
+    pub fn begin_tx_gain_publication(
+        &self,
+    ) -> Result<
+        crate::phy_cal_tracking::PhyCalibrationTxGainBinding,
+        crate::phy_cal_tracking::PhyCalibrationTrackingChildError,
+    > {
+        self.child.begin_tx_gain_publication(self.state)
     }
 
     pub fn lower_external(

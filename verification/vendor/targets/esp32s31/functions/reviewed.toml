@@ -608,7 +608,7 @@ width = 32
 status = "reviewed"
 name = "tx_gain_configuration_word"
 display-type = "u32"
-description = "Machine-word observation containing the transmit-gain configuration bytes."
+description = "Machine-word observation containing the transmit-gain configuration bytes. Periodic phy_cal_param_track republishes the Wi-Fi gain bank with (current_channel, 0) and the shared Bluetooth/IEEE 802.15.4 bank with (0) immediately after the matching TXDC/PWDET child, before committing retained calibration state."
 
 [[types.fields]]
 offset = 0x0dc

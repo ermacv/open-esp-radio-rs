@@ -134,12 +134,11 @@ pub struct PhyClientState {
 }
 
 impl PhyClientState {
-    /// Mint an empty model at the crate-controlled physical-epoch boundary.
+    /// Mint an empty scheduler for one freshly registered hardware epoch.
     ///
-    /// The caller must not use this constructor as evidence about a target
-    /// global or vendor-owned client mask.
-    #[cfg(test)]
-    const fn new_empty(period_micros: u64) -> Self {
+    /// This constructor is crate-controlled so application code cannot create
+    /// an unrelated client mask and present it beside registered hardware.
+    pub(crate) const fn for_registered_epoch(period_micros: u64) -> Self {
         Self {
             bits: 0,
             tracker_model_armed: false,
@@ -147,6 +146,15 @@ impl PhyClientState {
             bluetooth_ieee802154_previous_micros: 0,
             period_micros,
         }
+    }
+
+    /// Mint an empty model at the crate-controlled physical-epoch boundary.
+    ///
+    /// The caller must not use this constructor as evidence about a target
+    /// global or vendor-owned client mask.
+    #[cfg(test)]
+    const fn new_empty(period_micros: u64) -> Self {
+        Self::for_registered_epoch(period_micros)
     }
 
     pub const fn snapshot(&self) -> PhyClientSnapshot {
@@ -539,6 +547,18 @@ impl fmt::Debug for PhyPendingTracking {
 }
 
 impl PhyPendingTracking {
+    #[cfg(test)]
+    pub(crate) fn for_test(
+        request: PhyParamTrackRequest,
+        parameters: PhyParamTrackingParameters,
+    ) -> Self {
+        Self {
+            owner: PhyClientState::new_empty(DEFAULT_PLL_TRACK_PERIOD_MICROS),
+            request,
+            transition: PhyParamTrackingTransition::new(request, parameters),
+        }
+    }
+
     pub const fn action(&self) -> PhyParamTrackingAction {
         self.transition.action()
     }

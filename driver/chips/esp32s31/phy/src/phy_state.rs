@@ -620,6 +620,17 @@ impl PhyState {
         calculate_bluetooth_tx_gain(parameters)
     }
 
+    /// Regenerate the shared calibration gain bank from a just-completed
+    /// TXDC/PWDET result that has not yet reached the outer state commit.
+    pub const fn bluetooth_ieee802154_calibration_gain_image(
+        &self,
+        tx_dc_pwdet: PhyTxDcPwdetOutcome,
+    ) -> PhyBluetoothTxGainImage {
+        let mut parameters = self.bluetooth_tx_gain_parameters();
+        parameters.seed = Self::packed_seed(&tx_dc_pwdet.dco);
+        calculate_bluetooth_tx_gain(parameters)
+    }
+
     pub fn bluetooth_tx_gain_init_transition(&self) -> PhyBluetoothTxGainInitTransition {
         PhyBluetoothTxGainInitTransition::new(PhyBluetoothTxGainInitParameters {
             crystal_selector: self.common.crystal_selector,
@@ -1136,6 +1147,26 @@ impl PhyState {
         Some(image)
     }
 
+    /// Regenerate the Wi-Fi calibration gain bank from a just-completed
+    /// TXDC/PWDET result that has not yet reached the outer state commit.
+    ///
+    /// The periodic parent invokes the gain publisher immediately after TXDC
+    /// and commits both effects only after restoring the RF guards. Using the
+    /// retained state seed here would therefore republish the previous DCO.
+    pub const fn wifi_calibration_gain_image(
+        &self,
+        channel: u16,
+        tx_dc_pwdet: PhyTxDcPwdetOutcome,
+    ) -> Option<PhyWifiTxGainImage> {
+        let mut image = match self.wifi_tracking_gain_image(channel, self.config.tx_gain_base as i8)
+        {
+            Some(image) => image,
+            None => return None,
+        };
+        image.seed = Self::packed_seed(&tx_dc_pwdet.dco);
+        Some(image)
+    }
+
     pub fn apply_channel_outcome(&mut self, outcome: PhyChipChannelOutcome) {
         self.wifi.current_channel = outcome.channel;
         self.wifi.channel_initialized = outcome.init_complete;
@@ -1645,6 +1676,32 @@ mod tests {
 
         state.config.tx_gain_skip_publication = true;
         assert_eq!(state.wifi_tracking_gain_image(11, 5), None);
+    }
+
+    #[test]
+    fn calibration_gain_regeneration_uses_pending_txdc_seed_before_state_commit() {
+        let mut state = PhyState::new(PhyConfig::production());
+        let pending = PhyTxDcPwdetOutcome {
+            dco: [[0x1234; 4]; 3],
+            total_measurements: 144,
+        };
+        let expected_seed = [0x1234_1234; 6];
+
+        assert_ne!(state.channel_parameters().tx_gain_seed, expected_seed);
+        assert_ne!(state.bluetooth_tx_gain_parameters().seed, expected_seed);
+        assert_eq!(
+            state.wifi_calibration_gain_image(11, pending).unwrap().seed,
+            expected_seed
+        );
+        assert_eq!(
+            state
+                .bluetooth_ieee802154_calibration_gain_image(pending)
+                .seed,
+            expected_seed
+        );
+
+        state.config.tx_gain_skip_publication = true;
+        assert_eq!(state.wifi_calibration_gain_image(11, pending), None);
     }
 
     #[test]

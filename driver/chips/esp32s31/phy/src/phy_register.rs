@@ -266,6 +266,13 @@ impl RegisteredPhyState {
         &self.state
     }
 
+    /// Borrow the live semantic state only inside a target operation which
+    /// already retains the matching registered-radio epoch.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn target_state_mut(&mut self) -> &mut crate::phy_state::PhyState {
+        &mut self.state
+    }
+
     /// Consume the proof at a crate-controlled legacy downgrade boundary.
     pub(crate) fn into_ordinary_state(self) -> crate::phy_state::PhyState {
         self.state

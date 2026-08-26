@@ -17,17 +17,26 @@ use open_esp_radio_esp32s31_hal::{
 };
 
 use crate::{
-    HARDWARE_EDGE_LIMIT, PhyRegisterPort, PhyRegisterRunError,
+    HARDWARE_EDGE_LIMIT, PhyCalibrationTrackingPort, PhyParamTrackingPort,
+    PhyParamTrackingRunError, PhyRegisterPort, PhyRegisterRunError,
     phy_bb::{PhyBbExternalBinding, PhyBbInitCompletion},
     phy_bluetooth::{
         PhyBluetoothTxGainInitCompletion, PhyBluetoothTxGainInitExternalBinding,
         PhyBluetoothTxPowerCompletion, PhyBluetoothTxPowerExternalBinding,
+    },
+    phy_cal_tracking::{
+        PhyCalibrationChannelTransition, PhyCalibrationDcodeTransition,
+        PhyCalibrationForceTxRxTransition, PhyCalibrationPbusClearTransition,
+        PhyCalibrationRxGainTransition, PhyCalibrationTrackingAction,
+        PhyCalibrationTrackingCompletion, PhyCalibrationTrackingExternalBinding,
+        PhyCalibrationTxDcPwdetTransition,
     },
     phy_channel::{
         PhyChipChannelAction, PhyChipChannelCompletion, PhyChipChannelExternalBinding,
         PhyChipChannelFailure, PhyChipChannelOutcome, PhyChipChannelRequest,
         PhyChipChannelTransition, PhyWifiTxGainImage, PhyWifiTxGainRequest,
     },
+    phy_client::PhyPendingTracking,
     phy_cold::{
         PhyColdExternalBinding, PhyColdI2cAction, PhyColdI2cError, PhyColdI2cObservation,
         PhyColdObservationRequest, PhyColdPbusObservation,
@@ -35,13 +44,24 @@ use crate::{
     phy_dc_iq::{PhyDcIqCompletion, PhyDcIqExternalBinding},
     phy_dcode::{PhyDcodeCompletion, PhyDcodeExternalBinding},
     phy_i2c::{PhyRfInitPrefixAction, PhyRfInitPrefixCompletion},
-    phy_pbus::PhyPbusHardwareObservation,
+    phy_i2c_tracking::PhyWifiI2cTrackingCompletion,
+    phy_param_tracking::{
+        PhyParamTrackingAction, PhyParamTrackingCalibrationTransition, PhyParamTrackingCompletion,
+        PhyParamTrackingOutcome, PhyParamTrackingRfpllTransition,
+        PhyParamTrackingTemperatureTransition, PhyParamTrackingTxPowerTransition,
+        PhyParamTrackingWifiI2cTransition,
+    },
+    phy_pbus::{PhyForceTxRxExternalBinding, PhyPbusHardwareObservation},
     phy_pwdet::{PhyPwdetCompletion, PhyPwdetExternalBinding, PhyPwdetPbusObservation},
     phy_register::{
         PhyCalibrationIdentity, PhyRegisterCompletion, PhyRegisterExternalBinding,
         PhyRegisterOutcome, PhyRegisterTransition,
     },
-    phy_rfpll::{RfpllFrequencyAction, RfpllFrequencyCompletion, RfpllFrequencyExternalBinding},
+    phy_rfpll::{
+        RfpllCapCorrectionCompletion, RfpllCapCorrectionExternalBinding,
+        RfpllCapTrackingCompletion, RfpllCapTrackingExternalBinding, RfpllFrequencyAction,
+        RfpllFrequencyCompletion, RfpllFrequencyExternalBinding,
+    },
     phy_rx_dco::{
         PhyRxDcMinimumCompletion, PhyRxDcMinimumExternalBinding, PhyRxDcoCompletion,
         PhyRxDcoExternalBinding,
@@ -85,8 +105,13 @@ use crate::{
         PhyTxIqLinearPowerCompletion, PhyTxIqLinearPowerExternalBinding, PhyTxIqLoopbackCompletion,
         PhyTxIqLoopbackExternalBinding, PhyTxIqMisPowerCompletion, PhyTxIqMisPowerExternalBinding,
     },
-    registered_radio::{RegisteredIeee802154Clocked, RegisteredPhyRadio},
-    run_phy_register,
+    registered_radio::{
+        RegisteredIeee802154Client, RegisteredIeee802154Clocked,
+        RegisteredIeee802154PendingTracking, RegisteredIeee802154TrackPoisoned,
+        RegisteredPhyPendingTracking, RegisteredPhyRadio, RegisteredPhyTrackPoisoned,
+        TargetRegisteredPhyEpoch,
+    },
+    run_phy_calibration_tracking, run_phy_param_tracking, run_phy_register,
     target_executor::{
         PhyAsyncDelay, PhyTargetPortError, complete_bluetooth_i2c, complete_bluetooth_pbus,
         complete_channel_i2c, complete_dcode_i2c, complete_final_i2c, complete_masked_i2c,
@@ -208,7 +233,7 @@ impl<P> TargetPhyRegisterAttempt<P> {
 /// This owner records execution through the concrete ESP32-S31 target port. It
 /// does not claim RF qualification or operational link readiness.
 pub struct TargetPhyRegisterSuccess<P> {
-    registered_radio: RegisteredPhyRadio<P>,
+    registered_epoch: TargetRegisteredPhyEpoch<P>,
     calibration_cache: Option<PhyCalibrationCache>,
     outcome: PhyRegisterOutcome,
     counters: PhyTargetPortCounters,
@@ -337,9 +362,9 @@ impl<P> TargetIeee802154PhyRegisterFailure<P> {
 }
 
 impl<P> TargetPhyRegisterSuccess<P> {
-    /// Inspect the coupled powered-radio and target-registration owner.
-    pub const fn registered_radio(&self) -> &RegisteredPhyRadio<P> {
-        &self.registered_radio
+    /// Inspect the target-registered state without releasing its radio epoch.
+    pub const fn state(&self) -> &PhyState {
+        self.registered_epoch.state()
     }
 
     pub const fn calibration_cache(&self) -> Option<&PhyCalibrationCache> {
@@ -368,7 +393,7 @@ impl<P> TargetPhyRegisterSuccess<P> {
         PhyTargetPortCounters,
     ) {
         (
-            self.registered_radio,
+            self.registered_epoch.into_registered_radio(),
             self.calibration_cache,
             self.outcome,
             self.counters,
@@ -390,7 +415,7 @@ impl<P> TargetPhyRegisterSuccess<P> {
         PhyRegisterOutcome,
         PhyTargetPortCounters,
     ) {
-        let (radio, state) = self.registered_radio.into_ordinary_parts();
+        let (radio, state) = self.registered_epoch.into_ordinary_parts();
         (
             radio,
             state,
@@ -501,6 +526,117 @@ pub struct TargetPhyRegisterPort<'a, P, R, D, O = NoopPhyTargetObserver> {
     delay: PhantomData<D>,
 }
 
+/// Complete target port for the bounded periodic-calibration parent.
+///
+/// It reuses the same leaf completer as cold registration, so periodic DCODE,
+/// RX gain, channel, TXDC and gain publication cannot drift into a second
+/// hardware implementation.
+pub struct TargetPhyCalibrationTrackingPort<'a, P, R, D, O = NoopPhyTargetObserver> {
+    platform: &'a mut P,
+    registers: &'a mut R,
+    observer: &'a mut O,
+    delay: PhantomData<D>,
+}
+
+/// Complete target port for one affine outer periodic-tracking request.
+pub struct TargetPhyParamTrackingPort<'a, P, R, D, O = NoopPhyTargetObserver> {
+    platform: &'a mut P,
+    registers: &'a mut R,
+    observer: O,
+    delay: PhantomData<D>,
+}
+
+/// Terminal successful outer periodic-tracking request.
+///
+/// The refreshed semantic state remains inseparable from the exact powered
+/// radio epoch on which the target bindings executed.
+pub struct TargetPhyParamTrackingSuccess<P> {
+    registered_radio: RegisteredPhyRadio<P>,
+    outcome: PhyParamTrackingOutcome,
+}
+
+impl<P> TargetPhyParamTrackingSuccess<P> {
+    pub const fn registered_radio(&self) -> &RegisteredPhyRadio<P> {
+        &self.registered_radio
+    }
+
+    pub const fn outcome(&self) -> PhyParamTrackingOutcome {
+        self.outcome
+    }
+
+    pub fn into_parts(self) -> (RegisteredPhyRadio<P>, PhyParamTrackingOutcome) {
+        (self.registered_radio, self.outcome)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TargetPhyParamTrackingError {
+    Run(PhyParamTrackingRunError<PhyTargetPortError>),
+    MissingCompletedOwner,
+}
+
+/// Fail-stop result retaining the poisoned PHY-client epoch.
+#[must_use = "failed periodic PHY tracking poisons its unique client owner"]
+pub struct TargetPhyParamTrackingFailure<P> {
+    poisoned: RegisteredPhyTrackPoisoned<P>,
+    error: TargetPhyParamTrackingError,
+}
+
+/// Terminal successful periodic tracking on the dedicated IEEE route.
+pub struct TargetIeee802154PhyParamTrackingSuccess<P> {
+    owner: RegisteredIeee802154Client<P>,
+    outcome: PhyParamTrackingOutcome,
+}
+
+impl<P> TargetIeee802154PhyParamTrackingSuccess<P> {
+    pub const fn owner(&self) -> &RegisteredIeee802154Client<P> {
+        &self.owner
+    }
+
+    pub const fn outcome(&self) -> PhyParamTrackingOutcome {
+        self.outcome
+    }
+
+    pub fn into_parts(self) -> (RegisteredIeee802154Client<P>, PhyParamTrackingOutcome) {
+        (self.owner, self.outcome)
+    }
+}
+
+/// Fail-stop periodic tracking result on the dedicated IEEE route.
+#[must_use = "failed IEEE PHY tracking poisons its registered role epoch"]
+pub struct TargetIeee802154PhyParamTrackingFailure<P> {
+    poisoned: RegisteredIeee802154TrackPoisoned<P>,
+    error: TargetPhyParamTrackingError,
+}
+
+impl<P> TargetIeee802154PhyParamTrackingFailure<P> {
+    pub const fn error(&self) -> TargetPhyParamTrackingError {
+        self.error
+    }
+
+    pub const fn poisoned(&self) -> &RegisteredIeee802154TrackPoisoned<P> {
+        &self.poisoned
+    }
+}
+
+impl<P> TargetPhyParamTrackingFailure<P> {
+    pub const fn error(&self) -> TargetPhyParamTrackingError {
+        self.error
+    }
+
+    pub const fn poisoned(&self) -> &RegisteredPhyTrackPoisoned<P> {
+        &self.poisoned
+    }
+
+    /// Inspect the last committed semantic state for fail-stop diagnostics.
+    ///
+    /// No extractor is provided: target hardware may have advanced beyond
+    /// this state, so the registered epoch cannot be retried or resumed.
+    pub const fn state(&self) -> &PhyState {
+        self.poisoned.state()
+    }
+}
+
 struct TargetCompleter<D>(PhantomData<D>);
 
 impl<D: PhyAsyncDelay> TargetCompleter<D> {
@@ -524,6 +660,64 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
             RfpllFrequencyExternalBinding::Timer(binding) => {
                 D::after_micros(u64::from(binding.micros())).await;
                 Ok(binding.into_completion())
+            }
+        }
+    }
+
+    async fn complete_rfpll_cap_correction<P: PhyI2cMasterControl>(
+        binding: RfpllCapCorrectionExternalBinding,
+        platform: &mut P,
+        registers: &mut impl SharedPhyAccess,
+    ) -> Result<RfpllCapCorrectionCompletion, PhyTargetPortError> {
+        match binding {
+            RfpllCapCorrectionExternalBinding::Memory(binding) => Ok(
+                RfpllCapCorrectionCompletion::Memory(binding.execute_target(registers)),
+            ),
+            RfpllCapCorrectionExternalBinding::I2c(mut binding) => {
+                for _ in 0..HARDWARE_EDGE_LIMIT {
+                    match binding.action() {
+                        PhyColdI2cAction::StartRead { .. }
+                        | PhyColdI2cAction::StartWrite { .. } => {
+                            match binding.start_target(platform) {
+                                Ok(()) => {}
+                                Err(PhyColdI2cError::BusyAtStart) => D::after_micros(1).await,
+                                Err(_) => return Err(PhyTargetPortError::UnexpectedBinding),
+                            }
+                        }
+                        PhyColdI2cAction::AwaitReadCompletionEdge { .. }
+                        | PhyColdI2cAction::AwaitWriteCompletionEdge { .. } => {
+                            D::after_micros(1).await;
+                            match binding
+                                .observe_target_edge(platform)
+                                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?
+                            {
+                                PhyColdI2cObservation::EdgeConsumed
+                                | PhyColdI2cObservation::StillPending => {}
+                            }
+                        }
+                        PhyColdI2cAction::Complete(_) => {
+                            return binding
+                                .into_completion()
+                                .map_err(|_| PhyTargetPortError::UnexpectedBinding);
+                        }
+                    }
+                }
+                Err(PhyTargetPortError::HardwareEdgeTimedOut)
+            }
+        }
+    }
+
+    async fn complete_rfpll_cap<P: PhyI2cMasterControl>(
+        binding: RfpllCapTrackingExternalBinding,
+        platform: &mut P,
+        registers: &mut impl SharedPhyAccess,
+    ) -> Result<RfpllCapTrackingCompletion, PhyTargetPortError> {
+        match binding {
+            RfpllCapTrackingExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
+            RfpllCapTrackingExternalBinding::Correction(binding) => {
+                Ok(RfpllCapTrackingCompletion::Correction(
+                    Self::complete_rfpll_cap_correction(binding, platform, registers).await?,
+                ))
             }
         }
     }
@@ -1665,6 +1859,230 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
             }
         }
     }
+
+    async fn run_calibration_pbus<
+        P: PhyPmuControl
+            + PhyPowerDetectorPlatformControl
+            + PhyTemperatureSystemControl
+            + PhyI2cMasterControl,
+        O: PhyTargetObserver,
+    >(
+        mut child: PhyCalibrationPbusClearTransition,
+        platform: &mut P,
+        registers: &mut impl SharedPhyContext,
+        observer: &mut O,
+    ) -> Result<PhyCalibrationTrackingCompletion, PhyTargetPortError> {
+        for _ in 0..RF_OPERATION_LIMIT {
+            child = match child.commit() {
+                Ok(completion) => return Ok(completion),
+                Err(child) => child,
+            };
+            let binding = child
+                .lower_external()
+                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+            let completion = Self::complete_rf(binding, platform, registers, observer).await?;
+            child
+                .advance_external(completion)
+                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+        }
+        Err(PhyTargetPortError::RfOperationLimit)
+    }
+
+    async fn run_calibration_dcode<P: PhyI2cMasterControl>(
+        mut child: PhyCalibrationDcodeTransition,
+        platform: &mut P,
+        registers: &mut impl SharedPhyAccess,
+    ) -> Result<PhyCalibrationTrackingCompletion, PhyTargetPortError> {
+        for _ in 0..RF_OPERATION_LIMIT {
+            child = match child.commit() {
+                Ok(completion) => return Ok(completion),
+                Err(child) => child,
+            };
+            let binding = child
+                .lower_external()
+                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+            let completion = Self::complete_dcode(binding, platform, registers).await?;
+            child
+                .advance(completion)
+                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+        }
+        Err(PhyTargetPortError::RfOperationLimit)
+    }
+
+    async fn run_calibration_rx_gain<P: PhyI2cMasterControl>(
+        mut child: PhyCalibrationRxGainTransition,
+        platform: &mut P,
+        registers: &mut impl SharedPhyContext,
+    ) -> Result<PhyCalibrationTrackingCompletion, PhyTargetPortError> {
+        for _ in 0..RF_OPERATION_LIMIT {
+            child = match child.commit() {
+                Ok(completion) => return Ok(completion),
+                Err(child) => child,
+            };
+            let binding = child
+                .lower_external()
+                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+            let completion = Self::complete_rx_gain(binding, platform, registers).await?;
+            child
+                .advance(completion)
+                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+        }
+        Err(PhyTargetPortError::RfOperationLimit)
+    }
+
+    async fn run_calibration_channel<
+        P: PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
+        O: PhyTargetObserver,
+    >(
+        mut child: PhyCalibrationChannelTransition,
+        platform: &mut P,
+        registers: &mut impl SharedPhyAccess,
+        observer: &mut O,
+    ) -> Result<PhyCalibrationTrackingCompletion, PhyTargetPortError> {
+        for _ in 0..RF_OPERATION_LIMIT {
+            child = match child.commit() {
+                Ok(completion) => return Ok(completion),
+                Err(child) => child,
+            };
+            let binding = child
+                .lower_external()
+                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+            let completion = Self::complete_channel(binding, platform, registers, observer).await?;
+            child
+                .advance(completion)
+                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+        }
+        Err(PhyTargetPortError::RfOperationLimit)
+    }
+
+    async fn run_calibration_force_txrx(
+        mut child: PhyCalibrationForceTxRxTransition,
+        registers: &mut impl SharedPhyAccess,
+    ) -> Result<PhyCalibrationTrackingCompletion, PhyTargetPortError> {
+        for _ in 0..RF_OPERATION_LIMIT {
+            child = match child.commit() {
+                Ok(completion) => return Ok(completion),
+                Err(child) => child,
+            };
+            let binding = child
+                .lower_external()
+                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+            let completion = match binding {
+                PhyForceTxRxExternalBinding::Mmio(binding) => binding.execute_target(registers),
+                PhyForceTxRxExternalBinding::Timer(binding) => {
+                    D::after_micros(u64::from(binding.micros())).await;
+                    binding.into_completion()
+                }
+            };
+            child
+                .advance(completion)
+                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+        }
+        Err(PhyTargetPortError::RfOperationLimit)
+    }
+
+    async fn run_calibration_tx_dc_pwdet<P: PhyPowerDetectorPlatformControl>(
+        mut child: PhyCalibrationTxDcPwdetTransition,
+        platform: &mut P,
+        registers: &mut impl SharedPhyContext,
+    ) -> Result<PhyCalibrationTrackingCompletion, PhyTargetPortError> {
+        for _ in 0..RF_OPERATION_LIMIT {
+            child = match child.commit() {
+                Ok(completion) => return Ok(completion),
+                Err(child) => child,
+            };
+            let binding = child
+                .lower_external()
+                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+            let completion = Self::complete_tx_dc_pwdet(binding, platform, registers).await?;
+            child
+                .advance(completion)
+                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+        }
+        Err(PhyTargetPortError::RfOperationLimit)
+    }
+
+    async fn run_param_rfpll<P: PhyI2cMasterControl>(
+        mut child: PhyParamTrackingRfpllTransition<'_>,
+        platform: &mut P,
+        registers: &mut impl SharedPhyAccess,
+    ) -> Result<PhyParamTrackingCompletion, PhyTargetPortError> {
+        for _ in 0..RF_OPERATION_LIMIT {
+            child = match child.commit() {
+                Ok(completion) => return Ok(completion),
+                Err(child) => child,
+            };
+            let binding = child
+                .lower_external()
+                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+            let completion = Self::complete_rfpll_cap(binding, platform, registers).await?;
+            child
+                .advance(completion)
+                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+        }
+        Err(PhyTargetPortError::RfOperationLimit)
+    }
+
+    async fn run_param_tx_power<P: PhyI2cMasterControl>(
+        mut child: PhyParamTrackingTxPowerTransition<'_>,
+        platform: &mut P,
+        registers: &mut impl SharedPhyAccess,
+    ) -> Result<PhyParamTrackingCompletion, PhyTargetPortError> {
+        for _ in 0..RF_OPERATION_LIMIT {
+            child = match child.commit() {
+                Ok(completion) => return Ok(completion),
+                Err(child) => child,
+            };
+            let binding = child
+                .lower_external()
+                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+            let completion = binding.execute_target(platform, registers);
+            child
+                .advance(completion)
+                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+        }
+        Err(PhyTargetPortError::RfOperationLimit)
+    }
+
+    async fn run_param_wifi_i2c<P: PhyI2cMasterControl>(
+        mut child: PhyParamTrackingWifiI2cTransition<'_>,
+        platform: &mut P,
+    ) -> Result<PhyParamTrackingCompletion, PhyTargetPortError> {
+        for _ in 0..RF_OPERATION_LIMIT {
+            child = match child.commit() {
+                Ok(completion) => return Ok(completion),
+                Err(child) => child,
+            };
+            let binding = child
+                .lower_external()
+                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+            let completion = complete_masked_i2c::<D>(binding, platform).await?;
+            child
+                .advance(PhyWifiI2cTrackingCompletion::MaskedWrite(completion))
+                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+        }
+        Err(PhyTargetPortError::RfOperationLimit)
+    }
+
+    async fn run_param_temperature<P: PhyTemperatureSystemControl + PhyI2cMasterControl>(
+        mut child: PhyParamTrackingTemperatureTransition<'_>,
+        platform: &mut P,
+    ) -> Result<PhyParamTrackingCompletion, PhyTargetPortError> {
+        for _ in 0..RF_OPERATION_LIMIT {
+            child = match child.commit() {
+                Ok(completion) => return Ok(completion),
+                Err(child) => child,
+            };
+            let binding = child
+                .lower_external()
+                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+            let completion = Self::complete_temperature(binding, platform).await?;
+            child
+                .advance(completion)
+                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+        }
+        Err(PhyTargetPortError::RfOperationLimit)
+    }
 }
 
 impl<'a, P, R, D, O> TargetPhyRegisterPort<'a, P, R, D, O> {
@@ -1682,6 +2100,332 @@ impl<'a, P, R, D, O> TargetPhyRegisterPort<'a, P, R, D, O> {
     /// Snapshot operation counts without releasing the radio borrow.
     pub const fn counters(&self) -> PhyTargetPortCounters {
         self.counters
+    }
+}
+
+impl<'a, P, R, D, O> TargetPhyCalibrationTrackingPort<'a, P, R, D, O> {
+    pub fn new(platform: &'a mut P, registers: &'a mut R, observer: &'a mut O) -> Self {
+        Self {
+            platform,
+            registers,
+            observer,
+            delay: PhantomData,
+        }
+    }
+}
+
+impl<'a, P, R, D, O> TargetPhyParamTrackingPort<'a, P, R, D, O> {
+    pub fn new(platform: &'a mut P, registers: &'a mut R, observer: O) -> Self {
+        Self {
+            platform,
+            registers,
+            observer,
+            delay: PhantomData,
+        }
+    }
+}
+
+impl<
+    P: PhyPmuControl
+        + PhyWifiBbControl
+        + PhyPowerDetectorPlatformControl
+        + PhyTemperatureSystemControl
+        + PhyI2cMasterControl,
+    R: PhyInitializationAccess,
+    D: PhyAsyncDelay,
+    O: PhyTargetObserver,
+> PhyCalibrationTrackingPort for TargetPhyCalibrationTrackingPort<'_, P, R, D, O>
+{
+    type Error = PhyTargetPortError;
+
+    async fn complete<'port, 'state>(
+        &'port mut self,
+        transition: &'port mut PhyParamTrackingCalibrationTransition<'state>,
+    ) -> Result<PhyCalibrationTrackingCompletion, Self::Error> {
+        self.observer.operation_started();
+        let completion = match transition.action() {
+            PhyCalibrationTrackingAction::ClearPbus => {
+                TargetCompleter::<D>::run_calibration_pbus(
+                    transition
+                        .begin_pbus_clear()
+                        .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
+                    self.platform,
+                    self.registers,
+                    &mut *self.observer,
+                )
+                .await?
+            }
+            PhyCalibrationTrackingAction::CalibrateDcode => {
+                TargetCompleter::<D>::run_calibration_dcode(
+                    transition
+                        .begin_dcode()
+                        .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
+                    self.platform,
+                    self.registers,
+                )
+                .await?
+            }
+            PhyCalibrationTrackingAction::RecalibrateRxGain => {
+                TargetCompleter::<D>::run_calibration_rx_gain(
+                    transition
+                        .begin_rx_gain_recalibration()
+                        .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
+                    self.platform,
+                    self.registers,
+                )
+                .await?
+            }
+            PhyCalibrationTrackingAction::RestoreChipChannel { .. } => {
+                TargetCompleter::<D>::run_calibration_channel(
+                    transition
+                        .begin_channel_restore()
+                        .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
+                    self.platform,
+                    self.registers,
+                    &mut *self.observer,
+                )
+                .await?
+            }
+            PhyCalibrationTrackingAction::ForceTxRxOff { .. } => {
+                TargetCompleter::<D>::run_calibration_force_txrx(
+                    transition
+                        .begin_force_txrx()
+                        .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
+                    self.registers,
+                )
+                .await?
+            }
+            PhyCalibrationTrackingAction::CalibrateTxDcPwdet { .. } => {
+                TargetCompleter::<D>::run_calibration_tx_dc_pwdet(
+                    transition
+                        .begin_tx_dc_pwdet()
+                        .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
+                    self.platform,
+                    self.registers,
+                )
+                .await?
+            }
+            PhyCalibrationTrackingAction::PublishWifiTxGain { .. }
+            | PhyCalibrationTrackingAction::PublishBluetoothIeee802154TxGain => transition
+                .begin_tx_gain_publication()
+                .map_err(|_| PhyTargetPortError::UnexpectedBinding)?
+                .execute_target(self.registers),
+            PhyCalibrationTrackingAction::SetHardwareFrequencyControl { .. }
+            | PhyCalibrationTrackingAction::ConfigureBasebandChannel { .. }
+            | PhyCalibrationTrackingAction::EnableMacBaseband
+            | PhyCalibrationTrackingAction::RestoreTxGainCompensation => {
+                match transition
+                    .lower_external()
+                    .map_err(|_| PhyTargetPortError::UnexpectedBinding)?
+                {
+                    PhyCalibrationTrackingExternalBinding::Register(binding) => {
+                        binding.execute_target(self.registers)
+                    }
+                    PhyCalibrationTrackingExternalBinding::MacBaseband(binding) => {
+                        binding.execute_target(self.platform, self.registers)
+                    }
+                }
+            }
+            PhyCalibrationTrackingAction::Complete(_) | PhyCalibrationTrackingAction::Failed(_) => {
+                return Err(PhyTargetPortError::UnexpectedBinding);
+            }
+        };
+        self.observer.operation_completed();
+        Ok(completion)
+    }
+}
+
+impl<
+    P: PhyPmuControl
+        + PhyWifiBbControl
+        + PhyPowerDetectorPlatformControl
+        + PhyTemperatureSystemControl
+        + PhyI2cMasterControl,
+    R: PhyInitializationAccess,
+    D: PhyAsyncDelay,
+    O: PhyTargetObserver,
+> PhyParamTrackingPort for TargetPhyParamTrackingPort<'_, P, R, D, O>
+{
+    type Error = PhyTargetPortError;
+
+    async fn complete<'port>(
+        &'port mut self,
+        pending: &'port mut PhyPendingTracking,
+        state: &'port mut PhyState,
+    ) -> Result<PhyParamTrackingCompletion, Self::Error> {
+        self.observer.operation_started();
+        let completion = match pending.action() {
+            PhyParamTrackingAction::EnterCritical => PhyParamTrackingCompletion::EnteredCritical,
+            PhyParamTrackingAction::ExitCritical => PhyParamTrackingCompletion::ExitedCritical,
+            PhyParamTrackingAction::RfpllCapTrack { .. } => {
+                TargetCompleter::<D>::run_param_rfpll(
+                    pending
+                        .begin_rfpll_cap_tracking(state)
+                        .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
+                    self.platform,
+                    self.registers,
+                )
+                .await?
+            }
+            PhyParamTrackingAction::BluetoothIeee802154TxPowerTrack { .. }
+            | PhyParamTrackingAction::WifiTxPowerTrack { .. } => {
+                TargetCompleter::<D>::run_param_tx_power(
+                    pending
+                        .begin_tx_power_tracking(state)
+                        .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
+                    self.platform,
+                    self.registers,
+                )
+                .await?
+            }
+            PhyParamTrackingAction::CalibrationTrack { .. } => {
+                let mut child = pending
+                    .begin_calibration_tracking(state)
+                    .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+                let mut port = TargetPhyCalibrationTrackingPort::<_, _, D, _>::new(
+                    self.platform,
+                    self.registers,
+                    &mut self.observer,
+                );
+                run_phy_calibration_tracking(&mut child, &mut port)
+                    .await
+                    .map_err(|_| PhyTargetPortError::UnexpectedBinding)?;
+                child
+                    .commit()
+                    .map_err(|_| PhyTargetPortError::UnexpectedBinding)?
+            }
+            PhyParamTrackingAction::WifiI2cTrack => {
+                TargetCompleter::<D>::run_param_wifi_i2c(
+                    pending
+                        .begin_wifi_i2c_tracking(state)
+                        .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
+                    self.platform,
+                )
+                .await?
+            }
+            PhyParamTrackingAction::TemperatureRead => {
+                TargetCompleter::<D>::run_param_temperature(
+                    pending
+                        .begin_temperature_read(state)
+                        .map_err(|_| PhyTargetPortError::UnexpectedBinding)?,
+                    self.platform,
+                )
+                .await?
+            }
+            PhyParamTrackingAction::Complete(_) => {
+                return Err(PhyTargetPortError::UnexpectedBinding);
+            }
+        };
+        self.observer.operation_completed();
+        Ok(completion)
+    }
+}
+
+/// Execute one complete affine periodic-tracking request on ESP32-S31.
+///
+/// This is the fail-closed production boundary. It consumes the exact
+/// [`RegisteredPhyPendingTracking`] whose platform, PAC capability, semantic
+/// state, client set, and scheduler request all belong to one epoch. Success
+/// returns the ordinary coupled radio only after the outer transition is terminal.
+/// Any child, port or transition error consumes the request into
+/// [`RegisteredPhyTrackPoisoned`] and retains the registered radio in an opaque
+/// failure, so ambiguous hardware work cannot be paired with another state or
+/// retried.
+///
+/// # Cancellation
+///
+/// Once polled, this future must run to a terminal result. Dropping it also
+/// drops the unique pending client owner and therefore cannot create a retry
+/// path, but the hardware epoch must be reset before reuse.
+#[must_use = "periodic PHY tracking must be driven to a terminal result"]
+#[allow(
+    clippy::result_large_err,
+    reason = "the allocation-free failure must retain the complete poisoned hardware epoch"
+)]
+pub async fn run_target_phy_param_tracking<P, D, O>(
+    mut tracking: RegisteredPhyPendingTracking<P>,
+    observer: O,
+) -> Result<TargetPhyParamTrackingSuccess<P>, TargetPhyParamTrackingFailure<P>>
+where
+    P: PhyPmuControl
+        + PhyWifiBbControl
+        + PhyPowerDetectorPlatformControl
+        + PhyTemperatureSystemControl
+        + PhyI2cMasterControl,
+    D: PhyAsyncDelay,
+    O: PhyTargetObserver,
+{
+    let result = {
+        let (platform, registers, state, pending) = tracking.target_tracking_parts();
+        let mut port = TargetPhyParamTrackingPort::<_, _, D, _>::new(platform, registers, observer);
+        run_phy_param_tracking(pending, state, &mut port).await
+    };
+    let outcome = match result {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            return Err(TargetPhyParamTrackingFailure {
+                poisoned: tracking.fail(),
+                error: TargetPhyParamTrackingError::Run(error),
+            });
+        }
+    };
+    match tracking.into_registered_radio() {
+        Ok(registered_radio) => Ok(TargetPhyParamTrackingSuccess {
+            registered_radio,
+            outcome,
+        }),
+        Err(tracking) => Err(TargetPhyParamTrackingFailure {
+            poisoned: tracking.fail(),
+            error: TargetPhyParamTrackingError::MissingCompletedOwner,
+        }),
+    }
+}
+
+/// Execute one immediate or periodic tracking request on the dedicated IEEE
+/// 802.15.4 route.
+///
+/// The affine input owns the clocked role, target-registration proof, live PHY
+/// state, IEEE client bit, and scheduler request. BTBB/timing initialization
+/// cannot begin until this function returns terminal success.
+#[must_use = "IEEE periodic PHY tracking must be driven to a terminal result"]
+#[allow(
+    clippy::result_large_err,
+    reason = "the allocation-free failure retains the complete poisoned IEEE hardware epoch"
+)]
+pub async fn run_target_ieee802154_phy_param_tracking<P, D, O>(
+    mut tracking: RegisteredIeee802154PendingTracking<P>,
+    observer: O,
+) -> Result<TargetIeee802154PhyParamTrackingSuccess<P>, TargetIeee802154PhyParamTrackingFailure<P>>
+where
+    P: PhyPmuControl
+        + PhyWifiBbControl
+        + PhyPowerDetectorPlatformControl
+        + PhyTemperatureSystemControl
+        + PhyI2cMasterControl,
+    D: PhyAsyncDelay,
+    O: PhyTargetObserver,
+{
+    let result = {
+        let (platform, mut registers, state, pending) = tracking.target_tracking_parts();
+        let mut port =
+            TargetPhyParamTrackingPort::<_, _, D, _>::new(platform, &mut registers, observer);
+        run_phy_param_tracking(pending, state, &mut port).await
+    };
+    let outcome = match result {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            return Err(TargetIeee802154PhyParamTrackingFailure {
+                poisoned: tracking.fail(),
+                error: TargetPhyParamTrackingError::Run(error),
+            });
+        }
+    };
+    match tracking.into_client_owner() {
+        Ok(owner) => Ok(TargetIeee802154PhyParamTrackingSuccess { owner, outcome }),
+        Err(tracking) => Err(TargetIeee802154PhyParamTrackingFailure {
+            poisoned: tracking.fail(),
+            error: TargetPhyParamTrackingError::MissingCompletedOwner,
+        }),
     }
 }
 
@@ -1911,7 +2655,7 @@ where
         }
     };
     Ok(TargetPhyRegisterSuccess {
-        registered_radio: RegisteredPhyRadio::from_target_completion(
+        registered_epoch: TargetRegisteredPhyEpoch::from_target_completion(
             attempt.radio,
             state,
             TargetRegistrationWitness::new(),

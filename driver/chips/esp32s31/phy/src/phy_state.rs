@@ -826,12 +826,13 @@ impl PhyState {
     /// Commit only references whose complete calibration branch reached its
     /// terminal restore edge.
     pub fn apply_calibration_tracking_outcome(&mut self, outcome: PhyCalibrationTrackingOutcome) {
-        match (outcome.common_updated, outcome.dcode) {
-            (true, Some(dcode)) => {
+        match (outcome.common_updated, outcome.dcode, outcome.rx_gain) {
+            (true, Some(dcode), Some(rx_gain)) => {
                 self.apply_dcode_outcome(dcode);
+                self.apply_rx_gain_publish_outcome(rx_gain);
                 self.common.calibration_tracking_temperature = outcome.common_reference_temperature;
             }
-            (false, None) => {}
+            (false, None, None) => {}
             // A terminal common branch publishes both values atomically.
             // Reject structurally inconsistent caller-created outcomes.
             _ => return,
@@ -848,6 +849,15 @@ impl PhyState {
                     outcome.bluetooth_ieee802154_reference_temperature;
             }
         }
+    }
+
+    fn apply_rx_gain_publish_outcome(
+        &mut self,
+        outcome: crate::phy_rx_gain::PhyRxGainPublishOutcome,
+    ) {
+        self.wifi.wifi_rx_table_last_index = outcome.wifi_entries.saturating_sub(1).min(0x4f);
+        self.wifi.shared_rx_table_last_index = outcome.shared_entries.saturating_sub(1).min(0x4f);
+        self.wifi.rx_gain_tables_initialized = true;
     }
 
     /// Project the semantic state consumed by periodic TX-power tracking.
@@ -1441,6 +1451,10 @@ mod tests {
             common_updated: true,
             class_updated: true,
             dcode: Some(PhyDcodeOutcome { codes: [7; 8] }),
+            rx_gain: Some(crate::phy_rx_gain::PhyRxGainPublishOutcome {
+                wifi_entries: 70,
+                shared_entries: 76,
+            }),
         });
         let committed = state.calibration_tracking_parameters(Some(31));
         assert_eq!(committed.threshold_override, Some(31));
@@ -1448,6 +1462,9 @@ mod tests {
         assert_eq!(committed.wifi_reference_temperature, 50);
         assert_eq!(committed.bluetooth_ieee802154_reference_temperature, 20);
         assert_eq!(state.common.dcode, [7; 8]);
+        assert_eq!(state.wifi.wifi_rx_table_last_index, 69);
+        assert_eq!(state.wifi.shared_rx_table_last_index, 75);
+        assert!(state.wifi.rx_gain_tables_initialized);
 
         state.apply_calibration_tracking_outcome(PhyCalibrationTrackingOutcome {
             class: crate::phy_param_tracking::PhyCalibrationTrackClass::BluetoothIeee802154,
@@ -1458,6 +1475,7 @@ mod tests {
             common_updated: true,
             class_updated: true,
             dcode: None,
+            rx_gain: None,
         });
         let rejected = state.calibration_tracking_parameters(None);
         assert_eq!(rejected.common_reference_temperature, 50);

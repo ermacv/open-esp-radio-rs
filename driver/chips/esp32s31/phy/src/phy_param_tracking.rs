@@ -592,6 +592,16 @@ impl<'state> PhyParamTrackingCalibrationTransition<'state> {
         self.child.begin_dcode()
     }
 
+    pub fn begin_rx_gain_publish(
+        &self,
+    ) -> Result<
+        crate::phy_cal_tracking::PhyCalibrationRxGainTransition,
+        crate::phy_cal_tracking::PhyCalibrationTrackingChildError,
+    > {
+        self.child
+            .begin_rx_gain_publish(self.state.rx_gain_memory_parameters())
+    }
+
     pub fn lower_external(
         &self,
     ) -> Result<

@@ -384,9 +384,11 @@ effects:
   typed failure. Common DCODE now composes the complete existing
   RFPLL/NRX/PHY-I2C graph and commits its eight output codes atomically with the
   common temperature reference; RFPLL failure restores gain without publishing
-  progress. The nested RX publication, calibration-state reset, and TXDC/gain
-  operations remain explicit unbound children. The outer transition alone is
-  not an RF-readiness proof.
+  progress. RX-gain publication now composes the existing bounded two-bank
+  70/76-entry PBus/clock/MMIO/timer graph and atomically commits its table
+  metadata; a publication timeout cleans up and returns a typed failure. The
+  calibration-state reset and TXDC/gain operations remain explicit unbound
+  children. The outer transition alone is not an RF-readiness proof.
 - `ieee802154_txon_delay_set()`: called during every MAC initialization after
   ED/PTI configuration and before the driver enters idle.
 - `bt_bb_get_tx_pwr_table(&length)`: needed both to initialize each channel's

@@ -39,6 +39,7 @@ pub struct PhyCalibrationTrackingOutcome {
     pub common_updated: bool,
     pub class_updated: bool,
     pub dcode: Option<crate::phy_dcode::PhyDcodeOutcome>,
+    pub rx_gain: Option<crate::phy_rx_gain::PhyRxGainPublishOutcome>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -66,7 +67,7 @@ pub enum PhyCalibrationTrackingCompletion {
     PbusClearCompleted(PhyCalibrationPbusClearCompletion),
     DcodeCompleted(PhyCalibrationDcodeCompletion),
     CommonCalibrationStateReset,
-    RxGainTablePublished,
+    RxGainTablePublished(PhyCalibrationRxGainCompletion),
     ChipChannelRestored { channel: u16, cbw: u8 },
     HardwareFrequencyControlSet { enabled: bool },
     ForceTxRxCompleted(PhyCalibrationForceTxRxCompletion),
@@ -134,10 +135,35 @@ pub struct PhyCalibrationDcodeCompletion {
     result: Result<crate::phy_dcode::PhyDcodeOutcome, crate::phy_dcode::PhyDcodeFailure>,
 }
 
+/// Opaque terminal result of the complete RX-gain publisher.
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_phy::phy_cal_tracking::{
+///     PhyCalibrationRxGainCompletion, PhyCalibrationTrackingCompletion,
+/// };
+///
+/// let forged = PhyCalibrationTrackingCompletion::RxGainTablePublished(
+///     PhyCalibrationRxGainCompletion {
+///         result: Ok(open_esp_radio_esp32s31_phy::phy_rx_gain::PhyRxGainPublishOutcome {
+///             wifi_entries: 70,
+///             shared_entries: 76,
+///         }),
+///     },
+/// );
+/// ```
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyCalibrationRxGainCompletion {
+    result: Result<
+        crate::phy_rx_gain::PhyRxGainPublishOutcome,
+        crate::phy_rx_gain::PhyRxGainPublishFailure,
+    >,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyCalibrationTrackingFailure {
     PbusClearTimedOut(crate::phy_pbus::PhyPbusForceTest),
     Dcode(crate::phy_dcode::PhyDcodeFailure),
+    RxGain(crate::phy_rx_gain::PhyRxGainPublishFailure),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -179,6 +205,7 @@ pub struct PhyCalibrationTrackingTransition {
     common_updated: bool,
     class_updated: bool,
     dcode: Option<crate::phy_dcode::PhyDcodeOutcome>,
+    rx_gain: Option<crate::phy_rx_gain::PhyRxGainPublishOutcome>,
     failure: Option<PhyCalibrationTrackingFailure>,
     step: Step,
 }
@@ -210,6 +237,7 @@ impl PhyCalibrationTrackingTransition {
             common_updated: false,
             class_updated: false,
             dcode: None,
+            rx_gain: None,
             failure: None,
             step,
         }
@@ -299,9 +327,19 @@ impl PhyCalibrationTrackingTransition {
             (Step::CommonReset, PhyCalibrationTrackingCompletion::CommonCalibrationStateReset) => {
                 Step::CommonPublishRxGain
             }
-            (Step::CommonPublishRxGain, PhyCalibrationTrackingCompletion::RxGainTablePublished) => {
-                Step::CommonRestoreChannel
-            }
+            (
+                Step::CommonPublishRxGain,
+                PhyCalibrationTrackingCompletion::RxGainTablePublished(completion),
+            ) => match completion.result {
+                Ok(outcome) => {
+                    self.rx_gain = Some(outcome);
+                    Step::CommonRestoreChannel
+                }
+                Err(failure) => {
+                    self.failure = Some(PhyCalibrationTrackingFailure::RxGain(failure));
+                    Step::RestoreTxGainCompensation
+                }
+            },
             (
                 Step::CommonRestoreChannel,
                 PhyCalibrationTrackingCompletion::ChipChannelRestored { channel, cbw },
@@ -419,6 +457,15 @@ impl PhyCalibrationTrackingTransition {
         PhyCalibrationDcodeTransition::lower(self.action(), self.parameters.crystal_selector)
     }
 
+    /// Lower the selected common publication step into the existing complete
+    /// two-bank RX-gain hardware graph.
+    pub fn begin_rx_gain_publish(
+        &self,
+        parameters: crate::phy_bb::PhyRxGainMemoryParameters,
+    ) -> Result<PhyCalibrationRxGainTransition, PhyCalibrationTrackingChildError> {
+        PhyCalibrationRxGainTransition::lower(self.action(), parameters)
+    }
+
     const fn first_class_step(self) -> Step {
         if class_due(self.request, self.parameters, self.threshold) {
             Step::ClassDisableHardwareFrequency
@@ -460,6 +507,11 @@ impl PhyCalibrationTrackingTransition {
             } else {
                 None
             },
+            rx_gain: if self.common_updated {
+                self.rx_gain
+            } else {
+                None
+            },
         }
     }
 }
@@ -486,6 +538,61 @@ pub struct PhyCalibrationPbusClearTransition {
 #[derive(Debug, Eq, PartialEq)]
 pub struct PhyCalibrationDcodeTransition {
     child: crate::phy_dcode::PhyDcodeTransition,
+}
+
+/// Non-cloneable calibration-child owner for complete RX-gain publication.
+#[derive(Debug, Eq, PartialEq)]
+pub struct PhyCalibrationRxGainTransition {
+    child: crate::phy_rx_gain::PhyRxGainPublishTransition,
+}
+
+impl PhyCalibrationRxGainTransition {
+    fn lower(
+        parent_action: PhyCalibrationTrackingAction,
+        parameters: crate::phy_bb::PhyRxGainMemoryParameters,
+    ) -> Result<Self, PhyCalibrationTrackingChildError> {
+        if parent_action != PhyCalibrationTrackingAction::PublishRxGainTable {
+            return Err(PhyCalibrationTrackingChildError::UnsupportedAction);
+        }
+        Ok(Self {
+            child: crate::phy_rx_gain::PhyRxGainPublishTransition::new(parameters),
+        })
+    }
+
+    pub fn action(&self) -> crate::phy_rx_gain::PhyRxGainPublishAction {
+        self.child.action()
+    }
+
+    pub fn advance(
+        &mut self,
+        completion: crate::phy_rx_gain::PhyRxGainPublishCompletion,
+    ) -> Result<(), crate::phy_rx_gain::PhyRxGainPublishTransitionError> {
+        self.child.advance(completion)
+    }
+
+    pub fn lower_external(
+        &self,
+    ) -> Result<
+        crate::phy_rx_gain::PhyRxGainPublishExternalBinding,
+        crate::phy_rx_gain::PhyRxGainExternalBindingError,
+    > {
+        crate::phy_rx_gain::PhyRxGainPublishExternalBinding::lower(self.action())
+    }
+
+    #[expect(
+        clippy::result_large_err,
+        reason = "the pending variant must return the non-allocating linear table owner"
+    )]
+    pub fn commit(self) -> Result<PhyCalibrationTrackingCompletion, Self> {
+        let result = match self.child.action() {
+            crate::phy_rx_gain::PhyRxGainPublishAction::Complete(outcome) => Ok(outcome),
+            crate::phy_rx_gain::PhyRxGainPublishAction::Failed(failure) => Err(failure),
+            _ => return Err(self),
+        };
+        Ok(PhyCalibrationTrackingCompletion::RxGainTablePublished(
+            PhyCalibrationRxGainCompletion { result },
+        ))
+    }
 }
 
 impl PhyCalibrationDcodeTransition {
@@ -825,7 +932,14 @@ mod tests {
                 PhyCalibrationTrackingCompletion::CommonCalibrationStateReset
             }
             PhyCalibrationTrackingAction::PublishRxGainTable => {
-                PhyCalibrationTrackingCompletion::RxGainTablePublished
+                PhyCalibrationTrackingCompletion::RxGainTablePublished(
+                    PhyCalibrationRxGainCompletion {
+                        result: Ok(crate::phy_rx_gain::PhyRxGainPublishOutcome {
+                            wifi_entries: 70,
+                            shared_entries: 76,
+                        }),
+                    },
+                )
             }
             PhyCalibrationTrackingAction::RestoreChipChannel { channel, cbw } => {
                 PhyCalibrationTrackingCompletion::ChipChannelRestored { channel, cbw }
@@ -919,6 +1033,13 @@ mod tests {
             outcome.dcode,
             Some(crate::phy_dcode::PhyDcodeOutcome { codes: [7; 8] })
         );
+        assert_eq!(
+            outcome.rx_gain,
+            Some(crate::phy_rx_gain::PhyRxGainPublishOutcome {
+                wifi_entries: 70,
+                shared_entries: 76,
+            })
+        );
         assert_eq!(outcome.common_reference_temperature, 50);
         assert_eq!(outcome.wifi_reference_temperature, 50);
         assert_eq!(outcome.bluetooth_ieee802154_reference_temperature, 20);
@@ -969,6 +1090,7 @@ mod tests {
                     common_updated: false,
                     class_updated: false,
                     dcode: None,
+                    rx_gain: None,
                 }),
             ]
         );
@@ -1043,6 +1165,7 @@ mod tests {
                 common_updated: false,
                 class_updated: false,
                 dcode: None,
+                rx_gain: None,
             }),
             PhyCalibrationTrackingAction::Failed(PhyCalibrationTrackingFailure::PbusClearTimedOut(
                 crate::phy_pbus::PhyPbusForceTest::new(4, 1, 0),
@@ -1159,6 +1282,85 @@ mod tests {
         assert_eq!(
             transition.action(),
             PhyCalibrationTrackingAction::Failed(PhyCalibrationTrackingFailure::Dcode(failure))
+        );
+    }
+
+    #[test]
+    fn rx_gain_parent_proof_starts_the_existing_two_bank_hardware_graph() {
+        let mut transition = PhyCalibrationTrackingTransition::new(
+            PhyCalibrationTrackingRequest {
+                class: PhyCalibrationTrackClass::Wifi,
+            },
+            PARAMETERS,
+        );
+        for action in [
+            PhyCalibrationTrackingAction::ClearPbus,
+            PhyCalibrationTrackingAction::CalibrateDcode,
+            PhyCalibrationTrackingAction::ResetCommonCalibrationState,
+        ] {
+            assert_eq!(transition.action(), action);
+            transition.advance(completion(action)).unwrap();
+        }
+
+        let child = transition
+            .begin_rx_gain_publish(crate::phy_bb::PhyRxGainMemoryParameters {
+                parameter_002: 3,
+                wifi_index_dc: [[0; 2]; 8],
+                wifi_dc_base: [0; 2],
+                shared_index_dc: [[0; 2]; 11],
+                rxbb_dc_adjustments: [[0; 2]; 6],
+                wifi_auxiliary: 0,
+            })
+            .unwrap();
+        assert_eq!(
+            child.action(),
+            crate::phy_rx_gain::PhyRxGainPublishAction::ConfigurePbusDebugMode {
+                bank: crate::phy_bb::PhyRxGainBank::Wifi,
+            }
+        );
+        assert!(matches!(
+            child.lower_external(),
+            Ok(crate::phy_rx_gain::PhyRxGainPublishExternalBinding::Mmio(_))
+        ));
+        assert!(child.commit().is_err());
+    }
+
+    #[test]
+    fn rx_gain_failure_restores_gain_without_publishing_common_progress() {
+        let mut transition = PhyCalibrationTrackingTransition::new(
+            PhyCalibrationTrackingRequest {
+                class: PhyCalibrationTrackClass::Wifi,
+            },
+            PARAMETERS,
+        );
+        for action in [
+            PhyCalibrationTrackingAction::ClearPbus,
+            PhyCalibrationTrackingAction::CalibrateDcode,
+            PhyCalibrationTrackingAction::ResetCommonCalibrationState,
+        ] {
+            transition.advance(completion(action)).unwrap();
+        }
+        let failure = crate::phy_rx_gain::PhyRxGainPublishFailure::PbusTimedOut {
+            bank: crate::phy_bb::PhyRxGainBank::Wifi,
+            transaction: crate::phy_pbus::PhyPbusForceTest::new(4, 1, 0),
+        };
+        transition
+            .advance(PhyCalibrationTrackingCompletion::RxGainTablePublished(
+                PhyCalibrationRxGainCompletion {
+                    result: Err(failure),
+                },
+            ))
+            .unwrap();
+        assert_eq!(
+            transition.action(),
+            PhyCalibrationTrackingAction::RestoreTxGainCompensation
+        );
+        transition
+            .advance(PhyCalibrationTrackingCompletion::TxGainCompensationRestored)
+            .unwrap();
+        assert_eq!(
+            transition.action(),
+            PhyCalibrationTrackingAction::Failed(PhyCalibrationTrackingFailure::RxGain(failure))
         );
     }
 

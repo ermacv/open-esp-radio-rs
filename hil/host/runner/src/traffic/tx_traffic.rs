@@ -21,6 +21,7 @@ use crate::{
         AmpduEvidence, MIN_QUALIFIED_AGGREGATES, TxQualification,
         post_block_ack_delivery_loss_lower_bound,
     },
+    traffic::host_network::BenchmarkIpv4Route,
     transport::lab_config::{LabConfig, StationFixtureConfig},
     transport::local_linux_fixture::{LocalLinuxTxCapture, LocalLinuxTxEvidence},
     transport::openwrt_fixture::{OpenWrtStationLinkEvidence, station_link},
@@ -200,11 +201,20 @@ pub(crate) fn run(
             }
         };
     options.device = discovered_address.address;
+    let host_route = match BenchmarkIpv4Route::discover(options.device, &lab.station_fixture) {
+        Ok(route) => route,
+        Err(error) => {
+            capture.finish_to(output)?;
+            return Err(error);
+        }
+    };
     socket.connect(SocketAddrV4::new(options.device, DEVICE_SOURCE_PORT))?;
     let host_address = match socket.local_addr()? {
         SocketAddr::V4(address) => *address.ip(),
         SocketAddr::V6(_) => return Err("TX qualification requires IPv4".into()),
     };
+    host_route.verify_socket_source(host_address)?;
+    host_route.record(output, options.device, host_address)?;
     // Admit the reverse benchmark flow through stateful host firewalls
     // without changing firewall policy. The TX-only firmware owns a bounded
     // one-packet RX queue on this port, so the probe cannot grow unbounded or

@@ -4,7 +4,6 @@ use std::{
     fs,
     net::Ipv4Addr,
     path::{Path, PathBuf},
-    process::Command,
     time::Duration,
 };
 
@@ -15,6 +14,7 @@ use open_esp_radio_hil_protocol::{
 use crate::{
     Result,
     evidence::traffic_capture::{SerialCapture, SessionEvidence, await_tcp_ready},
+    traffic::host_network::reject_overlapping_ipv4_links,
     traffic::paced_tcp::{
         Config as PacedTcpConfig, HostReception, HostTransmission, exchange, receive, send,
     },
@@ -267,63 +267,6 @@ fn validate(
     Ok(())
 }
 
-/// Reject a dual-homed host on the target's L2 subnet.
-///
-/// With Linux's default ARP-flux policy (`arp_ignore=0`), either interface may
-/// answer for the source address selected by the benchmark socket. The target
-/// then legitimately updates its neighbor cache to the other interface's MAC,
-/// and TCP stalls even though both the radio and TCP state machine are sound.
-/// A qualification cell must expose one unambiguous L2 identity instead of
-/// silently measuring that host configuration.
-fn reject_overlapping_ipv4_links(device: Ipv4Addr) -> Result<()> {
-    let output = match Command::new("ip")
-        .args(["-o", "-4", "addr", "show", "up", "scope", "global"])
-        .output()
-    {
-        Ok(output) if output.status.success() => output.stdout,
-        // The runner remains usable on non-Linux hosts. Linux qualification
-        // cells have `ip` and therefore get the strict ARP-flux preflight.
-        Ok(_) | Err(_) => return Ok(()),
-    };
-    let links = overlapping_ipv4_links(&String::from_utf8_lossy(&output), device);
-    if links.len() > 1 {
-        return Err(format!(
-            "TCP qualification has multiple active interfaces on the target subnet ({}); disable all but one to prevent ARP flux",
-            links.join(", ")
-        )
-        .into());
-    }
-    Ok(())
-}
-
-fn overlapping_ipv4_links(output: &str, device: Ipv4Addr) -> Vec<String> {
-    output
-        .lines()
-        .filter_map(|line| {
-            let mut fields = line.split_whitespace();
-            let _index = fields.next()?;
-            let name = fields.next()?.trim_end_matches(':');
-            fields.find(|field| *field == "inet")?;
-            let (address, prefix) = fields.next()?.split_once('/')?;
-            let address = address.parse::<Ipv4Addr>().ok()?;
-            let prefix = prefix.parse::<u8>().ok()?;
-            same_ipv4_subnet(address, device, prefix).then(|| format!("{name}={address}/{prefix}"))
-        })
-        .collect()
-}
-
-fn same_ipv4_subnet(left: Ipv4Addr, right: Ipv4Addr, prefix: u8) -> bool {
-    if prefix > 32 {
-        return false;
-    }
-    let mask = if prefix == 0 {
-        0
-    } else {
-        u32::MAX << (32 - prefix)
-    };
-    u32::from(left) & mask == u32::from(right) & mask
-}
-
 fn write_report(
     output: &Path,
     options: &Options,
@@ -499,40 +442,6 @@ const fn direction_name(direction: Direction) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn overlapping_link_parser_exposes_arp_flux_risk() {
-        let links = overlapping_ipv4_links(
-            "2: enp0: <UP> inet 192.168.178.129/24 scope global enp0\n\
-             3: wlan0: <UP> inet 192.168.178.107/24 scope global wlan0\n\
-             4: tailscale0: <UP> inet 100.64.0.1/32 scope global tailscale0\n",
-            Ipv4Addr::new(192, 168, 178, 131),
-        );
-
-        assert_eq!(
-            links,
-            ["enp0=192.168.178.129/24", "wlan0=192.168.178.107/24"]
-        );
-    }
-
-    #[test]
-    fn subnet_comparison_handles_boundary_prefixes() {
-        assert!(same_ipv4_subnet(
-            Ipv4Addr::new(1, 2, 3, 4),
-            Ipv4Addr::new(203, 0, 113, 9),
-            0
-        ));
-        assert!(!same_ipv4_subnet(
-            Ipv4Addr::new(1, 2, 3, 4),
-            Ipv4Addr::new(1, 2, 3, 5),
-            32
-        ));
-        assert!(!same_ipv4_subnet(
-            Ipv4Addr::LOCALHOST,
-            Ipv4Addr::LOCALHOST,
-            33
-        ));
-    }
 
     #[test]
     fn tcp_tx_defaults_separate_offer_from_acceptance_floor() {

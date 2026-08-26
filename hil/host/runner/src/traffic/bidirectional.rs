@@ -24,6 +24,7 @@ use open_esp_radio_hil_protocol::{
 use crate::{
     Result, evidence,
     evidence::traffic_capture::{SerialCapture, SessionEvidence, await_udp_rx_ready},
+    traffic::host_network::BenchmarkIpv4Route,
     traffic::paced_udp::{Config as PacedUdpConfig, HostTransmission, send as send_paced_udp},
     traffic::tx_traffic::{Burst, describe_bursts, receive_bursts},
     transport::lab_config::{LabConfig, StationFixtureConfig},
@@ -1193,11 +1194,20 @@ pub(crate) fn run(
         }
     };
     options.address = discovered_address.address;
+    let host_route = match BenchmarkIpv4Route::discover(options.address, &lab.station_fixture) {
+        Ok(route) => route,
+        Err(error) => {
+            capture.finish_to(output)?;
+            return Err(error);
+        }
+    };
     tx_sink.connect(SocketAddrV4::new(options.address, DEVICE_TX_SOURCE_PORT))?;
     let host_address = match tx_sink.local_addr()? {
         SocketAddr::V4(address) => *address.ip(),
         SocketAddr::V6(_) => return Err("bidirectional qualification requires IPv4".into()),
     };
+    host_route.verify_socket_source(host_address)?;
+    host_route.record(output, options.address, host_address)?;
     // Admit the reverse flow through stateful host firewalls before `Start`.
     if let Err(error) = open_reverse_flow(&tx_sink) {
         capture.finish_to(output)?;

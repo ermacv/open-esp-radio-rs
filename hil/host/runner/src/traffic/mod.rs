@@ -1,4 +1,5 @@
 pub(crate) mod bidirectional;
+pub(crate) mod host_network;
 pub(crate) mod icmp_latency;
 pub(crate) mod paced_tcp;
 pub(crate) mod paced_udp;

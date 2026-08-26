@@ -374,9 +374,12 @@ effects:
 - `phy_param_track_tot(bool, bool)`: Blobray now resolves its complete outer
   body. The source-owned `PhyParamTrackingTransition` preserves the critical
   section, guard branches, exact BT/IEEE-before-Wi-Fi child order, child
-  arguments, temperature read, and exit. Its RFPLL-cap, TX-power, calibration,
-  Wi-Fi-I2C, and temperature children remain separate hardware obligations;
-  the outer transition alone is not an RF-readiness proof.
+  arguments, temperature read, and exit. RFPLL-cap, TX-power, Wi-Fi-I2C, and
+  temperature children now retain live semantic state through complete typed
+  transitions. `PhyCalibrationTrackingTransition` also owns the exact three
+  threshold decisions and restore order, but its nested DCODE/RX/TXDC/gain
+  actions still require target bindings; the outer transition alone is not an
+  RF-readiness proof.
 - `ieee802154_txon_delay_set()`: called during every MAC initialization after
   ED/PTI configuration and before the driver enters idle.
 - `bt_bb_get_tx_pwr_table(&length)`: needed both to initialize each channel's
@@ -420,7 +423,8 @@ already-due Wi-Fi check, and samples each active class again in refresh order.
 Host tests cover both immediate branches and the periodic callback. The exact
 outer tracking transition is also covered for IEEE-only, combined-client,
 guarded, optional-branch, and wrong-completion paths. A target timer/lock
-executor and the unresolved tracking children remain separate obligations.
+executor and the nested calibration-tracking hardware bindings remain separate
+obligations.
 
 Until the opaque effects above are replaced with reviewed source logic or
 bounded hardware contracts, the strongest honest RF-lifecycle endpoint is:

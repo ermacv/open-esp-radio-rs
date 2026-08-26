@@ -16,6 +16,7 @@ use crate::{
         PhyBluetoothTxGainInitTransition, PhyBluetoothTxGainParameters, PhyBluetoothTxPowerOutcome,
         PhyBluetoothTxPowerParameters, PhyBluetoothTxPowerTransition, calculate_bluetooth_tx_gain,
     },
+    phy_cal_tracking::{PhyCalibrationTrackingOutcome, PhyCalibrationTrackingParameters},
     phy_channel::{
         PhyChipChannelOutcome, PhyChipChannelParameters, PhyWifiTxGainImage, PhyWifiTxGainRequest,
         calculate_wifi_tx_gain,
@@ -135,6 +136,7 @@ impl Default for PhyConfig {
 struct CommonPhyState {
     temperature: i16,
     rfpll_tracking_temperature: i16,
+    calibration_tracking_temperature: i16,
     tracking_temperature: i16,
     tracking_gain_base: i8,
     sensor_index: u8,
@@ -180,6 +182,7 @@ struct WifiPhyState {
     rx_iq_coefficients: [u16; 4],
     external_dcode: [u8; 2],
     calibration_temperature: i16,
+    txdc_tracking_temperature: i16,
     current_channel: u16,
     channel_initialized: bool,
     channel_bandwidth: u8,
@@ -200,6 +203,7 @@ struct BluetoothPhyState {
     tx_power_curve: [i8; 3],
     tx_power_corrections: [i8; 3],
     tx_power_adjustment: i8,
+    txdc_tracking_temperature: i16,
     channel_base: u8,
 }
 
@@ -371,6 +375,7 @@ impl PhyState {
             common: CommonPhyState {
                 temperature: 0,
                 rfpll_tracking_temperature: 0,
+                calibration_tracking_temperature: 0,
                 tracking_temperature: 0,
                 tracking_gain_base: 0,
                 sensor_index: 2,
@@ -414,6 +419,7 @@ impl PhyState {
                 rx_iq_coefficients: [0; 4],
                 external_dcode: [0; 2],
                 calibration_temperature: 0,
+                txdc_tracking_temperature: 0,
                 current_channel: 0,
                 channel_initialized: false,
                 channel_bandwidth: 0,
@@ -432,6 +438,7 @@ impl PhyState {
                 tx_power_curve: [0; 3],
                 tx_power_corrections: [0; 3],
                 tx_power_adjustment: 0,
+                txdc_tracking_temperature: 0,
                 channel_base: 0,
             },
         }
@@ -795,6 +802,43 @@ impl PhyState {
     pub fn apply_rfpll_cap_tracking_outcome(&mut self, outcome: RfpllCapTrackingOutcome) {
         if outcome.updated {
             self.common.rfpll_tracking_temperature = outcome.reference_temperature;
+        }
+    }
+
+    /// Project the three independent semantic references consumed by
+    /// `phy_cal_param_track`.
+    pub const fn calibration_tracking_parameters(
+        &self,
+        threshold_override: Option<u8>,
+    ) -> PhyCalibrationTrackingParameters {
+        PhyCalibrationTrackingParameters {
+            current_temperature: self.common.temperature,
+            common_reference_temperature: self.common.calibration_tracking_temperature,
+            wifi_reference_temperature: self.wifi.txdc_tracking_temperature,
+            bluetooth_ieee802154_reference_temperature: self.bluetooth.txdc_tracking_temperature,
+            threshold_override,
+            current_channel: self.wifi.current_channel,
+            channel_bandwidth: self.wifi.channel_bandwidth,
+        }
+    }
+
+    /// Commit only references whose complete calibration branch reached its
+    /// terminal restore edge.
+    pub fn apply_calibration_tracking_outcome(&mut self, outcome: PhyCalibrationTrackingOutcome) {
+        if outcome.common_updated {
+            self.common.calibration_tracking_temperature = outcome.common_reference_temperature;
+        }
+        if !outcome.class_updated {
+            return;
+        }
+        match outcome.class {
+            crate::phy_param_tracking::PhyCalibrationTrackClass::Wifi => {
+                self.wifi.txdc_tracking_temperature = outcome.wifi_reference_temperature;
+            }
+            crate::phy_param_tracking::PhyCalibrationTrackClass::BluetoothIeee802154 => {
+                self.bluetooth.txdc_tracking_temperature =
+                    outcome.bluetooth_ieee802154_reference_temperature;
+            }
         }
     }
 
@@ -1167,6 +1211,11 @@ impl PhyState {
         if control.updates_offset_130() {
             self.common.rfpll_tracking_temperature = outcome.temperature;
         }
+        if control.updates_reference_copies() {
+            self.common.calibration_tracking_temperature = outcome.temperature;
+            self.wifi.txdc_tracking_temperature = outcome.temperature;
+            self.bluetooth.txdc_tracking_temperature = outcome.temperature;
+        }
     }
 
     pub fn apply_full_calibration_temperature(&mut self, outcome: PhyTemperatureOutcome) {
@@ -1357,6 +1406,38 @@ mod tests {
                 .reference_temperature,
             25
         );
+    }
+
+    #[test]
+    fn calibration_tracking_references_are_semantic_and_commit_per_branch() {
+        let mut state = PhyState::new(PhyConfig::production());
+        state.apply_register_temperature_outcome(
+            PhyRegisterTemperatureControl::FULL,
+            PhyTemperatureOutcome {
+                temperature: 20,
+                sensor_index: 2,
+                next_dac: 15,
+            },
+        );
+        let initial = state.calibration_tracking_parameters(None);
+        assert_eq!(initial.common_reference_temperature, 20);
+        assert_eq!(initial.wifi_reference_temperature, 20);
+        assert_eq!(initial.bluetooth_ieee802154_reference_temperature, 20);
+
+        state.apply_calibration_tracking_outcome(PhyCalibrationTrackingOutcome {
+            class: crate::phy_param_tracking::PhyCalibrationTrackClass::Wifi,
+            threshold: 30,
+            common_reference_temperature: 50,
+            wifi_reference_temperature: 50,
+            bluetooth_ieee802154_reference_temperature: 99,
+            common_updated: true,
+            class_updated: true,
+        });
+        let committed = state.calibration_tracking_parameters(Some(31));
+        assert_eq!(committed.threshold_override, Some(31));
+        assert_eq!(committed.common_reference_temperature, 50);
+        assert_eq!(committed.wifi_reference_temperature, 50);
+        assert_eq!(committed.bluetooth_ieee802154_reference_temperature, 20);
     }
 
     #[test]

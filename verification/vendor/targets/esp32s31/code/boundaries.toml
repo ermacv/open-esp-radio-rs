@@ -145,7 +145,7 @@ artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227
 
 [[inputs]]
 source = "rust"
-artifact-sha256 = "9a350b56f360f28682eb2b5198a8d448dba828293e17430bbe86c4873c5af1e6"
+artifact-sha256 = "2f5671cbb29e006026a33efbdef6b4703154f76a3cbf5cdc491bc3d10177d186"
 
 [[inputs]]
 source = "wifi-key-role"

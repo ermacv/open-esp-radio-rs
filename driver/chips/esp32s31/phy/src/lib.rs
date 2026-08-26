@@ -18,6 +18,7 @@ pub mod target_port;
 mod ieee802154_timing_boundary;
 pub mod phy_bb;
 pub mod phy_bluetooth;
+pub mod phy_cal_tracking;
 pub mod phy_channel;
 pub mod phy_client;
 pub mod phy_cold;

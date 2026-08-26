@@ -45,6 +45,12 @@ max_bytes = 18432
 reason = "one-time radio start future returns the complete initialized radio owner graph"
 
 [[reviewed_frames]]
+function_contains = "::cold_start::start_esp32s31_wifi::<"
+source_ends_with = "driver/chips/esp32s31/wifi/src/cold_start.rs"
+max_bytes = 18432
+reason = "one-time source-only PHY cold-start future retains the unique powered radio, registration owner and recoverable channel-selection frontier when LTO materializes it out of line; runtime painting bounds the complete allocation-free call chain"
+
+[[reviewed_frames]]
 function_contains = "::target_port::run_target_phy_register::<"
 source_ends_with = "driver/chips/esp32s31/phy/src/target_port.rs"
 max_bytes = 15360

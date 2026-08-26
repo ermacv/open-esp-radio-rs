@@ -29,6 +29,7 @@ use crate::{
     phy_pbus_memory::{PhyPbusMemoryOutcome, PhyPbusMemoryParameters},
     phy_power_tracking::{PhyTxPowerTrackingOutcome, PhyTxPowerTrackingParameters},
     phy_pwdet::{PhyPwdetOutcome, PhyPwdetParameters},
+    phy_rfpll::{RfpllCapTrackingOutcome, RfpllCapTrackingParameters},
     phy_rx_gain::{PhyRxGainInitOutcome, PhyRxGainInitParameters},
     phy_rx_gain_cal::{PhyRxGainDcOutcome, PhyRxGainDcParameters},
     phy_rx_saturation::PhyRxSaturationOutcome,
@@ -133,6 +134,7 @@ impl Default for PhyConfig {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct CommonPhyState {
     temperature: i16,
+    rfpll_tracking_temperature: i16,
     tracking_temperature: i16,
     tracking_gain_base: i8,
     sensor_index: u8,
@@ -368,6 +370,7 @@ impl PhyState {
             config,
             common: CommonPhyState {
                 temperature: 0,
+                rfpll_tracking_temperature: 0,
                 tracking_temperature: 0,
                 tracking_gain_base: 0,
                 sensor_index: 2,
@@ -774,6 +777,27 @@ impl PhyState {
         self.common.sensor_index = outcome.sensor_index;
     }
 
+    /// Project the semantic state consumed by periodic RFPLL-cap tracking.
+    pub const fn rfpll_cap_tracking_parameters(
+        &self,
+        threshold_override: Option<u8>,
+    ) -> RfpllCapTrackingParameters {
+        RfpllCapTrackingParameters {
+            current_temperature: self.common.temperature,
+            reference_temperature: self.common.rfpll_tracking_temperature,
+            threshold_override,
+            current_channel: self.wifi.current_channel,
+        }
+    }
+
+    /// Commit only the reference-temperature effect of a terminal RFPLL
+    /// tracking transaction.
+    pub fn apply_rfpll_cap_tracking_outcome(&mut self, outcome: RfpllCapTrackingOutcome) {
+        if outcome.updated {
+            self.common.rfpll_tracking_temperature = outcome.reference_temperature;
+        }
+    }
+
     /// Project the semantic state consumed by periodic TX-power tracking.
     ///
     /// `relaxed_threshold` is supplied by the reviewed outer tracking policy;
@@ -1136,19 +1160,13 @@ impl PhyState {
 
     pub fn apply_register_temperature_outcome(
         &mut self,
-        _control: PhyRegisterTemperatureControl,
+        control: PhyRegisterTemperatureControl,
         outcome: PhyTemperatureOutcome,
     ) {
         self.apply_temperature_outcome(outcome);
-    }
-
-    pub fn apply_register_temperature_references(
-        &mut self,
-        _control: PhyRegisterTemperatureControl,
-    ) {
-        // The vendor image maintained several duplicate temperatures for
-        // pointer-based consumers. Every Rust consumer reads the canonical
-        // typed value, so no duplicated state is required.
+        if control.updates_offset_130() {
+            self.common.rfpll_tracking_temperature = outcome.temperature;
+        }
     }
 
     pub fn apply_full_calibration_temperature(&mut self, outcome: PhyTemperatureOutcome) {
@@ -1280,6 +1298,66 @@ mod tests {
             mac_sys0: 11,
             mac_sys1: 13,
         };
+
+    #[test]
+    fn rfpll_tracking_reference_is_initialized_and_committed_only_on_update() {
+        let mut state = PhyState::new(PhyConfig::production());
+        state.apply_register_temperature_outcome(
+            PhyRegisterTemperatureControl::FULL,
+            PhyTemperatureOutcome {
+                temperature: 20,
+                sensor_index: 3,
+                next_dac: 4,
+            },
+        );
+        assert_eq!(
+            state.rfpll_cap_tracking_parameters(None),
+            RfpllCapTrackingParameters {
+                current_temperature: 20,
+                reference_temperature: 20,
+                threshold_override: None,
+                current_channel: 0,
+            }
+        );
+
+        state.apply_temperature_outcome(PhyTemperatureOutcome {
+            temperature: 25,
+            sensor_index: 3,
+            next_dac: 4,
+        });
+        state.apply_rfpll_cap_tracking_outcome(RfpllCapTrackingOutcome {
+            threshold: 5,
+            current_temperature: 25,
+            previous_reference_temperature: 20,
+            reference_temperature: 99,
+            correction: None,
+            updated: false,
+        });
+        assert_eq!(
+            state
+                .rfpll_cap_tracking_parameters(Some(7))
+                .reference_temperature,
+            20
+        );
+
+        state.apply_rfpll_cap_tracking_outcome(RfpllCapTrackingOutcome {
+            threshold: 5,
+            current_temperature: 25,
+            previous_reference_temperature: 20,
+            reference_temperature: 25,
+            correction: Some(crate::phy_rfpll::RfpllCapCorrectionOutcome {
+                direction: crate::phy_rfpll::RfpllCapCorrectionDirection::StableZero,
+                update: None,
+            }),
+            updated: true,
+        });
+        assert_eq!(
+            state
+                .rfpll_cap_tracking_parameters(None)
+                .reference_temperature,
+            25
+        );
+    }
 
     #[test]
     fn periodic_gain_tracking_commits_only_terminal_runtime_outcomes() {

@@ -1029,6 +1029,159 @@ impl RfpllCapCorrectionTransition {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RfpllCapTrackingParameters {
+    pub current_temperature: i16,
+    pub reference_temperature: i16,
+    /// Exact replacement for the `phy_param[0x1b0].bit0` selection of
+    /// `phy_param[0x1b1]`; `None` selects the ROM default of five degrees.
+    pub threshold_override: Option<u8>,
+    pub current_channel: u16,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RfpllCapTrackingOutcome {
+    pub threshold: u8,
+    pub current_temperature: i16,
+    pub previous_reference_temperature: i16,
+    pub reference_temperature: i16,
+    pub correction: Option<RfpllCapCorrectionOutcome>,
+    pub updated: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RfpllCapTrackingAction {
+    SetHardwareFrequencyControl { enabled: bool },
+    Correct(RfpllCapCorrectionAction),
+    Complete(RfpllCapTrackingOutcome),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RfpllCapTrackingCompletion {
+    HardwareFrequencyControlSet { enabled: bool },
+    Correction(RfpllCapCorrectionCompletion),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RfpllCapTrackingTransitionError {
+    WrongCompletion,
+    AlreadyComplete,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum RfpllCapTrackingStep {
+    DisableHardwareFrequency,
+    Correction(RfpllCapCorrectionTransition),
+    EnableHardwareFrequency(RfpllCapCorrectionOutcome),
+    Complete(RfpllCapTrackingOutcome),
+}
+
+/// Exclusive caller-driven replacement for complete rev0 ROM
+/// `phy_rfpll_cap_track`.
+///
+/// Rust ownership replaces the vendor's transient `phy_param[0x194]` busy
+/// byte. The diagnostic-only argument and `ets_printf` branch are absent.
+#[derive(Debug, Eq, PartialEq)]
+pub struct RfpllCapTrackingTransition {
+    parameters: RfpllCapTrackingParameters,
+    threshold: u8,
+    step: RfpllCapTrackingStep,
+}
+
+impl RfpllCapTrackingTransition {
+    pub const fn new(parameters: RfpllCapTrackingParameters) -> Self {
+        let threshold = match parameters.threshold_override {
+            Some(value) => value,
+            None => 5,
+        };
+        let delta = (parameters.current_temperature as i32)
+            .wrapping_sub(parameters.reference_temperature as i32);
+        let update = crate::phy_math::absolute_temperature(delta) >= threshold as u32;
+        let step = if update {
+            RfpllCapTrackingStep::DisableHardwareFrequency
+        } else {
+            RfpllCapTrackingStep::Complete(RfpllCapTrackingOutcome {
+                threshold,
+                current_temperature: parameters.current_temperature,
+                previous_reference_temperature: parameters.reference_temperature,
+                reference_temperature: parameters.reference_temperature,
+                correction: None,
+                updated: false,
+            })
+        };
+        Self {
+            parameters,
+            threshold,
+            step,
+        }
+    }
+
+    pub const fn action(&self) -> RfpllCapTrackingAction {
+        match &self.step {
+            RfpllCapTrackingStep::DisableHardwareFrequency => {
+                RfpllCapTrackingAction::SetHardwareFrequencyControl { enabled: false }
+            }
+            RfpllCapTrackingStep::Correction(child) => {
+                RfpllCapTrackingAction::Correct(child.action())
+            }
+            RfpllCapTrackingStep::EnableHardwareFrequency(_) => {
+                RfpllCapTrackingAction::SetHardwareFrequencyControl { enabled: true }
+            }
+            RfpllCapTrackingStep::Complete(outcome) => RfpllCapTrackingAction::Complete(*outcome),
+        }
+    }
+
+    pub fn advance(
+        &mut self,
+        completion: RfpllCapTrackingCompletion,
+    ) -> Result<(), RfpllCapTrackingTransitionError> {
+        if let RfpllCapTrackingStep::Correction(child) = &mut self.step {
+            let RfpllCapTrackingCompletion::Correction(completion) = completion else {
+                return Err(RfpllCapTrackingTransitionError::WrongCompletion);
+            };
+            child.advance(completion).map_err(|error| match error {
+                RfpllCapCorrectionTransitionError::WrongCompletion => {
+                    RfpllCapTrackingTransitionError::WrongCompletion
+                }
+                RfpllCapCorrectionTransitionError::AlreadyComplete => {
+                    RfpllCapTrackingTransitionError::AlreadyComplete
+                }
+            })?;
+            if let RfpllCapCorrectionAction::Complete(outcome) = child.action() {
+                self.step = RfpllCapTrackingStep::EnableHardwareFrequency(outcome);
+            }
+            return Ok(());
+        }
+
+        self.step = match (&self.step, completion) {
+            (
+                RfpllCapTrackingStep::DisableHardwareFrequency,
+                RfpllCapTrackingCompletion::HardwareFrequencyControlSet { enabled: false },
+            ) => RfpllCapTrackingStep::Correction(RfpllCapCorrectionTransition::new(
+                RfpllCapCorrectionRequest {
+                    current_channel: self.parameters.current_channel,
+                },
+            )),
+            (
+                RfpllCapTrackingStep::EnableHardwareFrequency(correction),
+                RfpllCapTrackingCompletion::HardwareFrequencyControlSet { enabled: true },
+            ) => RfpllCapTrackingStep::Complete(RfpllCapTrackingOutcome {
+                threshold: self.threshold,
+                current_temperature: self.parameters.current_temperature,
+                previous_reference_temperature: self.parameters.reference_temperature,
+                reference_temperature: self.parameters.current_temperature,
+                correction: Some(*correction),
+                updated: true,
+            }),
+            (RfpllCapTrackingStep::Complete(_), _) => {
+                return Err(RfpllCapTrackingTransitionError::AlreadyComplete);
+            }
+            _ => return Err(RfpllCapTrackingTransitionError::WrongCompletion),
+        };
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RfpllFrequencyBindingError {
     UnsupportedAction,
     IncompleteTransaction,
@@ -1481,16 +1634,79 @@ impl RfpllCapCorrectionExternalBinding {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RfpllCapTrackingBindingError {
+    UnsupportedAction,
+}
+
+/// Non-cloneable owner of one hardware-frequency control edge.
+#[derive(Debug, Eq, PartialEq)]
+pub struct RfpllCapTrackingMmioBinding {
+    enabled: bool,
+}
+
+impl RfpllCapTrackingMmioBinding {
+    pub const fn new(action: RfpllCapTrackingAction) -> Result<Self, RfpllCapTrackingBindingError> {
+        match action {
+            RfpllCapTrackingAction::SetHardwareFrequencyControl { enabled } => Ok(Self { enabled }),
+            _ => Err(RfpllCapTrackingBindingError::UnsupportedAction),
+        }
+    }
+
+    pub const fn action(&self) -> RfpllCapTrackingAction {
+        RfpllCapTrackingAction::SetHardwareFrequencyControl {
+            enabled: self.enabled,
+        }
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub fn execute_target(
+        self,
+        registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
+    ) -> RfpllCapTrackingCompletion {
+        open_esp_radio_esp32s31_hal::phy_frequency::set_hardware_control(registers, self.enabled);
+        RfpllCapTrackingCompletion::HardwareFrequencyControlSet {
+            enabled: self.enabled,
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum RfpllCapTrackingExternalBinding {
+    Mmio(RfpllCapTrackingMmioBinding),
+    Correction(RfpllCapCorrectionExternalBinding),
+}
+
+impl RfpllCapTrackingExternalBinding {
+    pub fn lower(action: RfpllCapTrackingAction) -> Result<Self, RfpllCapTrackingBindingError> {
+        match action {
+            RfpllCapTrackingAction::SetHardwareFrequencyControl { .. } => {
+                RfpllCapTrackingMmioBinding::new(action).map(Self::Mmio)
+            }
+            RfpllCapTrackingAction::Correct(action) => {
+                RfpllCapCorrectionExternalBinding::lower(action)
+                    .map(Self::Correction)
+                    .map_err(|_| RfpllCapTrackingBindingError::UnsupportedAction)
+            }
+            RfpllCapTrackingAction::Complete(_) => {
+                Err(RfpllCapTrackingBindingError::UnsupportedAction)
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         CAP_SEARCH_LIMIT, RFPLL_BLOCK, RfpllCapCorrectionAction, RfpllCapCorrectionBindingError,
         RfpllCapCorrectionCompletion, RfpllCapCorrectionDirection,
         RfpllCapCorrectionExternalBinding, RfpllCapCorrectionRequest, RfpllCapCorrectionTransition,
-        RfpllCapCorrectionTransitionError, RfpllFrequencyAction, RfpllFrequencyBindingError,
-        RfpllFrequencyCompletion, RfpllFrequencyExternalBinding, RfpllFrequencyI2cBinding,
-        RfpllFrequencyOutcome, RfpllFrequencyRequest, RfpllFrequencyTransition, address,
-        calculate_rfpll_sdm,
+        RfpllCapCorrectionTransitionError, RfpllCapTrackingAction, RfpllCapTrackingBindingError,
+        RfpllCapTrackingCompletion, RfpllCapTrackingExternalBinding, RfpllCapTrackingParameters,
+        RfpllCapTrackingTransition, RfpllCapTrackingTransitionError, RfpllFrequencyAction,
+        RfpllFrequencyBindingError, RfpllFrequencyCompletion, RfpllFrequencyExternalBinding,
+        RfpllFrequencyI2cBinding, RfpllFrequencyOutcome, RfpllFrequencyRequest,
+        RfpllFrequencyTransition, address, calculate_rfpll_sdm,
     };
 
     fn cap_read_completion(
@@ -1532,6 +1748,111 @@ mod tests {
             }
             action => panic!("expected cap write action, got {action:?}"),
         }
+    }
+
+    #[test]
+    fn cap_tracking_threshold_uses_inclusive_default_and_override_boundaries() {
+        let base = RfpllCapTrackingParameters {
+            current_temperature: 24,
+            reference_temperature: 20,
+            threshold_override: None,
+            current_channel: 11,
+        };
+        let RfpllCapTrackingAction::Complete(outcome) =
+            RfpllCapTrackingTransition::new(base).action()
+        else {
+            panic!("four-degree default delta must be skipped");
+        };
+        assert_eq!(outcome.threshold, 5);
+        assert!(!outcome.updated);
+
+        assert_eq!(
+            RfpllCapTrackingTransition::new(RfpllCapTrackingParameters {
+                current_temperature: 25,
+                ..base
+            })
+            .action(),
+            RfpllCapTrackingAction::SetHardwareFrequencyControl { enabled: false }
+        );
+
+        let overridden = RfpllCapTrackingParameters {
+            current_temperature: 10,
+            reference_temperature: 20,
+            threshold_override: Some(10),
+            current_channel: 11,
+        };
+        assert_eq!(
+            RfpllCapTrackingTransition::new(overridden).action(),
+            RfpllCapTrackingAction::SetHardwareFrequencyControl { enabled: false }
+        );
+    }
+
+    #[test]
+    fn cap_tracking_owns_disable_correction_enable_and_reference_outcome() {
+        let mut transition = RfpllCapTrackingTransition::new(RfpllCapTrackingParameters {
+            current_temperature: 25,
+            reference_temperature: 20,
+            threshold_override: None,
+            current_channel: 11,
+        });
+        assert!(matches!(
+            RfpllCapTrackingExternalBinding::lower(transition.action()),
+            Ok(RfpllCapTrackingExternalBinding::Mmio(_))
+        ));
+        transition
+            .advance(RfpllCapTrackingCompletion::HardwareFrequencyControlSet { enabled: false })
+            .unwrap();
+        assert!(matches!(
+            RfpllCapTrackingExternalBinding::lower(transition.action()),
+            Ok(RfpllCapTrackingExternalBinding::Correction(
+                RfpllCapCorrectionExternalBinding::I2c(_)
+            ))
+        ));
+        let RfpllCapTrackingAction::Correct(action) = transition.action() else {
+            panic!("tracking did not enter correction");
+        };
+        transition
+            .advance(RfpllCapTrackingCompletion::Correction(cap_read_completion(
+                action, 0,
+            )))
+            .unwrap();
+        assert_eq!(
+            transition.action(),
+            RfpllCapTrackingAction::SetHardwareFrequencyControl { enabled: true }
+        );
+        transition
+            .advance(RfpllCapTrackingCompletion::HardwareFrequencyControlSet { enabled: true })
+            .unwrap();
+
+        let RfpllCapTrackingAction::Complete(outcome) = transition.action() else {
+            panic!("tracking did not complete");
+        };
+        assert!(outcome.updated);
+        assert_eq!(outcome.previous_reference_temperature, 20);
+        assert_eq!(outcome.reference_temperature, 25);
+        assert_eq!(
+            outcome.correction.unwrap().direction,
+            RfpllCapCorrectionDirection::StableZero
+        );
+        assert_eq!(
+            RfpllCapTrackingExternalBinding::lower(transition.action()),
+            Err(RfpllCapTrackingBindingError::UnsupportedAction)
+        );
+    }
+
+    #[test]
+    fn cap_tracking_rejects_an_enable_completion_before_the_disable_edge() {
+        let mut transition = RfpllCapTrackingTransition::new(RfpllCapTrackingParameters {
+            current_temperature: 25,
+            reference_temperature: 20,
+            threshold_override: None,
+            current_channel: 11,
+        });
+        assert_eq!(
+            transition
+                .advance(RfpllCapTrackingCompletion::HardwareFrequencyControlSet { enabled: true }),
+            Err(RfpllCapTrackingTransitionError::WrongCompletion)
+        );
     }
 
     #[test]

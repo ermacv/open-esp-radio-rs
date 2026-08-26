@@ -24,6 +24,8 @@ use open_esp_radio_esp32s31_ieee802154_dma::{
 };
 use open_esp_radio_esp32s31_ieee802154_irq::{
     Ieee802154AcknowledgedInterrupt, Ieee802154Event, Ieee802154EventMask,
+    Ieee802154EventObservationError, Ieee802154RxAbortReasonObservation,
+    Ieee802154TxAbortReasonObservation,
 };
 use open_esp_radio_esp32s31_ieee802154_mac::{
     MacActive, MacActivePhase, MacBatchConstructionError, MacBatchOutcome, MacBatchRejectReason,
@@ -367,23 +369,12 @@ pub struct AcknowledgedMacEventBatch {
 /// An acknowledged hard-IRQ value could not become a valid MAC event batch.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MacInterruptBatchError {
-    /// The raw event image contains bits absent from the public LL vocabulary.
-    UnsupportedEventBits {
-        /// Complete raw event image acknowledged by the ISR.
-        raw_event_bits: u16,
-        /// Bits not named by the public LL.
-        unsupported_bits: u16,
-    },
-    /// `RX_ABORT` was asserted with an unknown reason code.
-    UnknownRxAbortReason {
-        /// Raw `RX_STATUS[8:4]` value sampled before acknowledgement.
-        code: u8,
-    },
-    /// `TX_ABORT` was asserted with an unknown reason code.
-    UnknownTxAbortReason {
-        /// Raw `TX_STATUS[8:4]` value sampled before acknowledgement.
-        code: u8,
-    },
+    /// The PAC could not classify every sampled event.
+    UnclassifiedEvents(Ieee802154EventObservationError),
+    /// `RX_ABORT` was asserted without a source-confirmed reason.
+    UnknownRxAbortReason,
+    /// `TX_ABORT` was asserted without a source-confirmed reason.
+    UnknownTxAbortReason,
     /// `ED_DONE` arrived outside a CCA or energy-detection phase.
     UnexpectedMeasurementPhase {
         /// Active affine MAC phase at interrupt delivery.
@@ -403,29 +394,27 @@ impl AcknowledgedMacEventBatch {
         interrupt: Ieee802154AcknowledgedInterrupt,
         phase: MacActivePhase,
     ) -> Result<Self, MacInterruptBatchError> {
-        let raw_event_bits = interrupt.raw_event_bits();
-        let events = Ieee802154EventMask::from_named_bits(raw_event_bits).map_err(|error| {
-            MacInterruptBatchError::UnsupportedEventBits {
-                raw_event_bits,
-                unsupported_bits: error.unsupported_bits(),
-            }
-        })?;
+        let events = interrupt
+            .event_classification()
+            .map_err(MacInterruptBatchError::UnclassifiedEvents)?;
 
         let rx_abort_reason = if events.contains(Ieee802154Event::RxAbort) {
-            Some(interrupt.rx_abort_reason().ok_or(
-                MacInterruptBatchError::UnknownRxAbortReason {
-                    code: interrupt.raw_rx_abort_reason_code(),
-                },
-            )?)
+            Some(match interrupt.rx_abort_reason() {
+                Some(Ieee802154RxAbortReasonObservation::Named(reason)) => reason,
+                Some(Ieee802154RxAbortReasonObservation::Unclassified) | None => {
+                    return Err(MacInterruptBatchError::UnknownRxAbortReason);
+                }
+            })
         } else {
             None
         };
         let tx_abort_reason = if events.contains(Ieee802154Event::TxAbort) {
-            Some(interrupt.tx_abort_reason().ok_or(
-                MacInterruptBatchError::UnknownTxAbortReason {
-                    code: interrupt.raw_tx_abort_reason_code(),
-                },
-            )?)
+            Some(match interrupt.tx_abort_reason() {
+                Some(Ieee802154TxAbortReasonObservation::Named(reason)) => reason,
+                Some(Ieee802154TxAbortReasonObservation::Unclassified) | None => {
+                    return Err(MacInterruptBatchError::UnknownTxAbortReason);
+                }
+            })
         } else {
             None
         };
@@ -866,7 +855,8 @@ mod tests {
         RxArm, RxCompletionKind, RxPoolStorage, RxSlotState, TxAckRequested, TxState, TxStorage,
     };
     use open_esp_radio_esp32s31_ieee802154_irq::{
-        Ieee802154AcknowledgedInterrupt, acknowledged_interrupt_for_validation,
+        Ieee802154AcknowledgedInterrupt, Ieee802154RxAbortReason,
+        acknowledged_interrupt_for_validation,
     };
     use open_esp_radio_esp32s31_ieee802154_mac::{MacMeasurementSample, MacTransmitAccess};
     use std::{boxed::Box, vec::Vec};
@@ -1017,19 +1007,31 @@ mod tests {
     }
 
     fn interrupt(
-        events: u16,
-        rx_abort: u8,
-        tx_abort: u8,
+        event_classification: Result<Ieee802154EventMask, Ieee802154EventObservationError>,
+        rx_abort: Option<Ieee802154RxAbortReasonObservation>,
+        tx_abort: Option<Ieee802154TxAbortReasonObservation>,
         ed_rss: i8,
         cca_busy: bool,
     ) -> Ieee802154AcknowledgedInterrupt {
-        acknowledged_interrupt_for_validation(events, rx_abort, tx_abort, ed_rss, cca_busy)
+        acknowledged_interrupt_for_validation(
+            event_classification,
+            rx_abort,
+            tx_abort,
+            ed_rss,
+            cca_busy,
+        )
     }
 
     #[test]
     fn acknowledged_irq_decodes_measurement_for_the_active_phase() {
         let energy = AcknowledgedMacEventBatch::from_interrupt(
-            interrupt(Ieee802154Event::EdDone.bit(), 0, 0, -42, true),
+            interrupt(
+                Ok(Ieee802154Event::EdDone.mask()),
+                None,
+                None,
+                -42,
+                true,
+            ),
             MacActivePhase::EnergyDetection {
                 duration: open_esp_radio_esp32s31_ieee802154_mac::MacEnergyDetectionDuration::from_hardware_units(8),
             },
@@ -1044,7 +1046,7 @@ mod tests {
         );
 
         let cca = AcknowledgedMacEventBatch::from_interrupt(
-            interrupt(Ieee802154Event::EdDone.bit(), 0, 0, -1, true),
+            interrupt(Ok(Ieee802154Event::EdDone.mask()), None, None, -1, true),
             MacActivePhase::ClearChannelAssessment,
         )
         .unwrap();
@@ -1055,23 +1057,28 @@ mod tests {
     }
 
     #[test]
-    fn acknowledged_irq_rejects_unknown_bits_and_abort_reasons() {
+    fn acknowledged_irq_rejects_unclassified_events_and_abort_reasons() {
         assert!(matches!(
             AcknowledgedMacEventBatch::from_interrupt(
-                interrupt(1 << 7, 0, 0, 0, false),
+                interrupt(Err(Ieee802154EventObservationError), None, None, 0, false),
                 MacActivePhase::ClearChannelAssessment,
             ),
-            Err(MacInterruptBatchError::UnsupportedEventBits {
-                raw_event_bits: 0x80,
-                unsupported_bits: 0x80,
-            })
+            Err(MacInterruptBatchError::UnclassifiedEvents(
+                Ieee802154EventObservationError
+            ))
         ));
         assert!(matches!(
             AcknowledgedMacEventBatch::from_interrupt(
-                interrupt(Ieee802154Event::RxAbort.bit(), 31, 0, 0, false),
+                interrupt(
+                    Ok(Ieee802154Event::RxAbort.mask()),
+                    Some(Ieee802154RxAbortReasonObservation::Unclassified),
+                    None,
+                    0,
+                    false,
+                ),
                 MacActivePhase::Receive,
             ),
-            Err(MacInterruptBatchError::UnknownRxAbortReason { code: 31 })
+            Err(MacInterruptBatchError::UnknownRxAbortReason)
         ));
     }
 
@@ -1230,7 +1237,7 @@ mod tests {
         let actor = MacReady::new().request_transmit_without_ack(armed, MacTransmitAccess::Direct);
         let active = runtime(FakeExecutor::new()).start(actor).unwrap();
         let sampled = AcknowledgedMacEventBatch::from_interrupt(
-            interrupt(Ieee802154Event::TxDone.bit(), 0, 0, 0, false),
+            interrupt(Ok(Ieee802154Event::TxDone.mask()), None, None, 0, false),
             active.phase(),
         )
         .unwrap();
@@ -1264,7 +1271,7 @@ mod tests {
         let actor = MacReady::new().request_receive_without_auto_ack(armed);
         let active = runtime(FakeExecutor::new()).start(actor).unwrap();
         let sampled = AcknowledgedMacEventBatch::from_interrupt(
-            interrupt(Ieee802154Event::RxDone.bit(), 0, 0, 0, false),
+            interrupt(Ok(Ieee802154Event::RxDone.mask()), None, None, 0, false),
             active.phase(),
         )
         .unwrap();
@@ -1304,7 +1311,13 @@ mod tests {
         let actor = MacReady::new().request_receive_without_auto_ack(armed);
         let active = runtime(FakeExecutor::new()).start(actor).unwrap();
         let sampled = AcknowledgedMacEventBatch::from_interrupt(
-            interrupt(Ieee802154Event::RxAbort.bit(), 2, 0, 0, false),
+            interrupt(
+                Ok(Ieee802154Event::RxAbort.mask()),
+                Some(Ieee802154RxAbortReason::SfdTimeout.into()),
+                None,
+                0,
+                false,
+            ),
             active.phase(),
         )
         .unwrap();
@@ -1345,7 +1358,7 @@ mod tests {
         );
         let active = runtime(FakeExecutor::new()).start(actor).unwrap();
         let tx_done = AcknowledgedMacEventBatch::from_interrupt(
-            interrupt(Ieee802154Event::TxDone.bit(), 0, 0, 0, false),
+            interrupt(Ok(Ieee802154Event::TxDone.mask()), None, None, 0, false),
             active.phase(),
         )
         .unwrap();
@@ -1354,7 +1367,13 @@ mod tests {
             MacRuntimeBatchOutcome::Completed(_) => panic!("TX_DONE must await ACK"),
         };
         let timeout = AcknowledgedMacEventBatch::from_interrupt(
-            interrupt(Ieee802154Event::Timer0Overflow.bit(), 0, 0, 0, false),
+            interrupt(
+                Ok(Ieee802154Event::Timer0Overflow.mask()),
+                None,
+                None,
+                0,
+                false,
+            ),
             pending.phase(),
         )
         .unwrap();
@@ -1387,7 +1406,7 @@ mod tests {
         let rejected = active.process_batch(sampled).unwrap_err();
         assert!(matches!(
             rejected.reason(),
-            MacBatchRejectReason::UnexpectedEventBits { .. }
+            MacBatchRejectReason::UnexpectedEvents(_)
         ));
     }
 
@@ -1416,7 +1435,7 @@ mod tests {
             .unwrap_err();
         assert!(matches!(
             rejected.reason(),
-            MacBatchRejectReason::UnexpectedEventBits { .. }
+            MacBatchRejectReason::UnexpectedEvents(_)
         ));
         assert_eq!(
             rejected._hardware.executor.log.last(),

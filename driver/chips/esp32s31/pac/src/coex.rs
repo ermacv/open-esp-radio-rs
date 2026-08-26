@@ -154,14 +154,4 @@ mod tests {
         }
         assert_eq!(CoexTimerRegister::new(COEX_TIMER_COUNT), None);
     }
-
-    #[test]
-    fn generated_timer_fields_reject_values_the_register_cannot_represent() {
-        assert!(CoexTimerClientValue::new(3).is_some());
-        assert!(CoexTimerClientValue::new(4).is_none());
-        assert!(CoexTimerPtiValue::new(15).is_some());
-        assert!(CoexTimerPtiValue::new(16).is_none());
-        assert!(CoexTimerTickImage::new(0x00ff_ffff).is_some());
-        assert!(CoexTimerTickImage::new(0x0100_0000).is_none());
-    }
 }

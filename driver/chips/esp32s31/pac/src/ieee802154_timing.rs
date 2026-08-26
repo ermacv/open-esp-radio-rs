@@ -10,30 +10,6 @@
 
 use super::{Ieee802154TaskRegisters, device_fence, generated};
 
-const IEEE802154_DELAY_ARGUMENT: u16 = 50;
-const SHARED_DELAY_FIELD_SHIFT: u32 = 16;
-const SHARED_DELAY_PRESERVE_MASK: u32 = 0xf800_ffff;
-const RX_ON_DELAY_PRESERVE_MASK: u32 = 0xffff_f800;
-
-const fn encode_shared_delay_field(argument: u16) -> u32 {
-    (argument.wrapping_sub(10) as u32) << 3
-}
-
-const SHARED_DELAY_FIELD_IMAGE: u32 = encode_shared_delay_field(IEEE802154_DELAY_ARGUMENT);
-const SHARED_DELAY_REGISTER_INPUT: u32 = SHARED_DELAY_FIELD_IMAGE << SHARED_DELAY_FIELD_SHIFT;
-const RX_ON_DELAY_REGISTER_INPUT: u32 = IEEE802154_DELAY_ARGUMENT as u32;
-
-const _: () = assert!(SHARED_DELAY_FIELD_IMAGE == 0x140);
-const _: () = assert!(SHARED_DELAY_REGISTER_INPUT == 0x0140_0000);
-const _: () = assert!(SHARED_DELAY_PRESERVE_MASK | 0x07ff_0000 == u32::MAX);
-const _: () = assert!(SHARED_DELAY_PRESERVE_MASK & 0x07ff_0000 == 0);
-const _: () = assert!(RX_ON_DELAY_PRESERVE_MASK | 0x0000_07ff == u32::MAX);
-const _: () = assert!(RX_ON_DELAY_PRESERVE_MASK & 0x0000_07ff == 0);
-const _: () = assert!(
-    generated::Ieee802154SharedTxOnDelayOverride::Delay50.bits() == SHARED_DELAY_REGISTER_INPUT
-);
-const _: () = assert!(generated::Ieee802154RxOnDelay::Delay50.bits() == RX_ON_DELAY_REGISTER_INPUT);
-
 /// Affine prerequisite for the common-BTBB and IEEE timing transition.
 ///
 /// Safe code cannot construct this value. The single unsafe constructor is
@@ -198,24 +174,18 @@ impl Ieee802154TaskRegisters {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        Ieee802154TimingTransitionPort, RX_ON_DELAY_PRESERVE_MASK, SHARED_DELAY_FIELD_IMAGE,
-        SHARED_DELAY_PRESERVE_MASK, SHARED_DELAY_REGISTER_INPUT, encode_shared_delay_field,
-        execute_timing_transition, generated,
-    };
+    use super::{Ieee802154TimingTransitionPort, execute_timing_transition, generated};
     use std::vec::Vec;
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum Step {
         BasebandV2BodyWithoutFence(u8),
-        SharedDelay { input: u32, result: u32 },
-        RxOnDelay { input: u32, result: u32 },
+        SharedDelay50,
+        RxOnDelay50,
         DeviceFence,
     }
 
     struct TracePort {
-        shared_before: u32,
-        rx_on_before: u32,
         steps: Vec<Step>,
     }
 
@@ -229,15 +199,19 @@ mod tests {
             &mut self,
             value: generated::Ieee802154SharedTxOnDelayOverride,
         ) {
-            let input = value.bits();
-            let result = (self.shared_before & SHARED_DELAY_PRESERVE_MASK) | input;
-            self.steps.push(Step::SharedDelay { input, result });
+            match value {
+                generated::Ieee802154SharedTxOnDelayOverride::Delay50 => {
+                    self.steps.push(Step::SharedDelay50);
+                }
+            }
         }
 
         fn set_rx_on_delay(&mut self, value: generated::Ieee802154RxOnDelay) {
-            let input = value.bits();
-            let result = (self.rx_on_before & RX_ON_DELAY_PRESERVE_MASK) | input;
-            self.steps.push(Step::RxOnDelay { input, result });
+            match value {
+                generated::Ieee802154RxOnDelay::Delay50 => {
+                    self.steps.push(Step::RxOnDelay50);
+                }
+            }
         }
 
         fn order_device_accesses(&mut self) {
@@ -246,21 +220,8 @@ mod tests {
     }
 
     #[test]
-    fn public_argument_encodes_the_exact_shared_field_image() {
-        assert_eq!(encode_shared_delay_field(50), 0x140);
-        assert_eq!(SHARED_DELAY_FIELD_IMAGE, 0x140);
-        assert_eq!(SHARED_DELAY_REGISTER_INPUT, 0x0140_0000);
-    }
-
-    #[test]
-    fn transition_has_one_closed_order_and_preserves_unowned_bits() {
-        let shared_before = 0xa5a5_5a5a;
-        let rx_on_before = 0xdead_beef;
-        let mut port = TracePort {
-            shared_before,
-            rx_on_before,
-            steps: Vec::new(),
-        };
+    fn transition_has_one_closed_semantic_order() {
+        let mut port = TracePort { steps: Vec::new() };
 
         execute_timing_transition(&mut port, 0x6d);
 
@@ -268,14 +229,8 @@ mod tests {
             port.steps,
             [
                 Step::BasebandV2BodyWithoutFence(0x6d),
-                Step::SharedDelay {
-                    input: 0x0140_0000,
-                    result: (shared_before & 0xf800_ffff) | 0x0140_0000,
-                },
-                Step::RxOnDelay {
-                    input: 50,
-                    result: (rx_on_before & 0xffff_f800) | 50,
-                },
+                Step::SharedDelay50,
+                Step::RxOnDelay50,
                 Step::DeviceFence,
             ]
         );

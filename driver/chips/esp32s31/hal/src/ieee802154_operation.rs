@@ -16,6 +16,13 @@
 
 use core::convert::Infallible;
 
+#[cfg(test)]
+use open_esp_radio_esp32s31_pac::Ieee802154RxAbortReason;
+use open_esp_radio_esp32s31_pac::{
+    Ieee802154Event, Ieee802154EventMask, Ieee802154EventObservationError,
+    Ieee802154RxAbortReasonObservation,
+};
+
 use crate::{ieee802154_lifecycle::Ieee802154Channel, ieee802154_policy::Ieee802154CcaMode};
 
 /// Source-confirmed ED duration used by the standalone CCA entry path.
@@ -124,45 +131,82 @@ pub enum Ieee802154OperationRxAbortMaskState {
     Unexpected,
 }
 
-/// Complete non-acknowledging `EVENT_STATUS` observation.
+/// Complete semantic classification of one non-acknowledging `EVENT_STATUS`
+/// observation.
 ///
-/// Keeping the full register image is intentional: accepting only two booleans
-/// would hide an unrelated latched event and could incorrectly permit reuse.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Ieee802154OperationEventObservation(u16);
+/// The PAC retains the physical register image. This operation layer accepts
+/// either its complete named-event classification or an opaque unclassified
+/// result, so an unknown latched event still fails closed without exporting
+/// register geometry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Ieee802154OperationEventObservation(
+    Result<Ieee802154EventMask, Ieee802154EventObservationError>,
+);
 
 impl Ieee802154OperationEventObservation {
-    const RX_ABORT: u16 = 0x0010;
-    const ED_DONE: u16 = 0x0040;
-
-    /// Preserve the complete source-confirmed 14-bit status image.
-    pub(crate) const fn from_raw(raw: u16) -> Self {
-        Self(raw)
+    /// Retain the PAC-owned complete semantic classification.
+    pub(crate) const fn from_classification(
+        classification: Result<Ieee802154EventMask, Ieee802154EventObservationError>,
+    ) -> Self {
+        Self(classification)
     }
 
-    /// Return the complete retained status image.
-    pub const fn raw(self) -> u16 {
+    /// Return the complete PAC-owned semantic classification without exposing
+    /// the retained physical register image.
+    pub const fn classification(
+        self,
+    ) -> Result<Ieee802154EventMask, Ieee802154EventObservationError> {
         self.0
+    }
+
+    #[cfg(test)]
+    const fn events(events: Ieee802154EventMask) -> Self {
+        Self(Ok(events))
+    }
+
+    #[cfg(test)]
+    const fn event(event: Ieee802154Event) -> Self {
+        Self::events(event.mask())
+    }
+
+    #[cfg(test)]
+    const fn unclassified() -> Self {
+        Self(Err(Ieee802154EventObservationError))
     }
 
     /// Return whether no event is latched.
     pub const fn is_clear(self) -> bool {
-        self.0 == 0
+        matches!(self.0, Ok(events) if events.is_empty())
+    }
+
+    /// Return the closed semantic status without exposing register geometry.
+    pub const fn state(self) -> open_esp_radio_esp32s31_pac::Ieee802154ObservedEventState {
+        match self.0 {
+            Ok(events) => events.state(),
+            Err(_) => open_esp_radio_esp32s31_pac::Ieee802154ObservedEventState::Unclassified,
+        }
     }
 
     /// Return whether this is exactly the one recoverable terminal status.
     const fn is_ed_done_only(self) -> bool {
-        self.0 == Self::ED_DONE
+        matches!(self.0, Ok(events) if events.contains(Ieee802154Event::EdDone)
+            && events.difference(Ieee802154Event::EdDone.mask()).is_empty())
     }
 
-    /// Return whether `RX_ABORT` is present in the full observation.
+    /// Return whether `RX_ABORT` is present in a fully classified observation.
     const fn has_rx_abort(self) -> bool {
-        self.0 & Self::RX_ABORT != 0
+        matches!(self.0, Ok(events) if events.contains(Ieee802154Event::RxAbort))
     }
 
-    /// Return whether `ED_DONE` is present in the full observation.
+    /// Return whether `ED_DONE` is present in a fully classified observation.
     const fn has_ed_done(self) -> bool {
-        self.0 & Self::ED_DONE != 0
+        matches!(self.0, Ok(events) if events.contains(Ieee802154Event::EdDone))
+    }
+}
+
+impl Default for Ieee802154OperationEventObservation {
+    fn default() -> Self {
+        Self(Ok(Ieee802154EventMask::NONE))
     }
 }
 
@@ -228,8 +272,9 @@ pub(crate) trait Ieee802154PolledOperationBackend: Sized {
         &mut self,
     ) -> Result<Ieee802154OperationEventObservation, Self::Error>;
 
-    /// Retain the complete receive-abort status after `RX_ABORT`.
-    fn sample_rx_abort_status(&mut self) -> Result<u32, Self::Error>;
+    /// Classify the receive-abort reason after `RX_ABORT`.
+    fn sample_rx_abort_reason(&mut self)
+    -> Result<Ieee802154RxAbortReasonObservation, Self::Error>;
 
     /// Sample the signed `ED_RSS` result after `ED_DONE`.
     fn sample_ed_rss_code(&mut self) -> Result<i8, Self::Error>;
@@ -676,7 +721,7 @@ impl<Backend> Ieee802154PolledOperationRecovered<Backend> {
 pub struct Ieee802154PolledOperationAbortEvidence {
     operation: Ieee802154PolledOperation,
     event_status: Ieee802154OperationEventObservation,
-    rx_abort_status: u32,
+    rx_abort_reason: Ieee802154RxAbortReasonObservation,
     polls: u32,
 }
 
@@ -686,14 +731,14 @@ impl Ieee802154PolledOperationAbortEvidence {
         self.operation
     }
 
-    /// Return the complete event status observed at abort.
+    /// Return the complete semantic event classification observed at abort.
     pub const fn event_status(self) -> Ieee802154OperationEventObservation {
         self.event_status
     }
 
-    /// Return the complete receive-abort status sampled before containment.
-    pub const fn rx_abort_status(self) -> u32 {
-        self.rx_abort_status
+    /// Return the classified receive-abort reason sampled before containment.
+    pub const fn rx_abort_reason(self) -> Ieee802154RxAbortReasonObservation {
+        self.rx_abort_reason
     }
 
     /// Return the number of completed event-status samples.
@@ -794,24 +839,24 @@ pub enum Ieee802154PolledOperationFailure {
         /// Complete semantic classification observed there.
         observed: Ieee802154OperationRxAbortMaskState,
     },
-    /// A nonzero event was already pending before `ED_START`.
+    /// A nonempty or unclassified event was already pending before `ED_START`.
     StaleEventStatus {
-        /// Complete fourteen-bit pre-command status.
+        /// Complete semantic pre-command observation.
         observed: Ieee802154OperationEventObservation,
     },
-    /// A nonzero status was neither `RX_ABORT` nor lone `ED_DONE`.
+    /// A nonempty semantic status was neither `RX_ABORT` nor lone `ED_DONE`.
     UnexpectedTerminalStatus {
-        /// Complete fourteen-bit terminal status.
+        /// Complete semantic terminal observation.
         observed: Ieee802154OperationEventObservation,
     },
-    /// The W1C snapshot actually consumed was not exactly lone `ED_DONE`.
+    /// The W1C snapshot actually consumed was not classified as lone `ED_DONE`.
     UnexpectedAcknowledgedEvents {
-        /// Complete fourteen-bit acknowledged status.
+        /// Complete semantic acknowledged observation.
         observed: Ieee802154OperationEventObservation,
     },
     /// `ED_DONE` and `RX_ABORT` were observed in the same status sample.
     ConflictingTerminalEvents {
-        /// Complete fourteen-bit conflicting status.
+        /// Complete semantic conflicting observation.
         observed: Ieee802154OperationEventObservation,
     },
 }
@@ -946,8 +991,8 @@ where
         }
 
         if status.has_rx_abort() {
-            let rx_abort_status = match backend.sample_rx_abort_status() {
-                Ok(status) => status,
+            let rx_abort_reason = match backend.sample_rx_abort_reason() {
+                Ok(reason) => reason,
                 Err(error) => {
                     return Ieee802154PolledOperationPoll::Quarantined(quarantined_after_cleanup(
                         backend,
@@ -962,7 +1007,7 @@ where
                         evidence: Ieee802154PolledOperationAbortEvidence {
                             operation: self.operation,
                             event_status: status,
-                            rx_abort_status,
+                            rx_abort_reason,
                             polls,
                         },
                     })
@@ -1192,7 +1237,7 @@ mod tests {
         EdStart,
         EventStatus(Ieee802154OperationEventObservation),
         AcknowledgePendingEvents(Ieee802154OperationEventObservation),
-        RxAbortStatus(u32),
+        RxAbortReason(Ieee802154RxAbortReasonObservation),
         EdRss(i8),
         CcaBusy(bool),
     }
@@ -1205,7 +1250,7 @@ mod tests {
         event_status: Ieee802154OperationEventObservation,
         pending_at_acknowledge: Option<Ieee802154OperationEventObservation>,
         samples: VecDeque<Ieee802154OperationEventObservation>,
-        rx_abort_status: u32,
+        rx_abort_reason: Ieee802154RxAbortReasonObservation,
         polling: bool,
         rss_code: i8,
         cca_busy: bool,
@@ -1223,7 +1268,7 @@ mod tests {
                 event_status: Ieee802154OperationEventObservation::default(),
                 pending_at_acknowledge: None,
                 samples: samples.into_iter().collect(),
-                rx_abort_status: 0x0300_0000,
+                rx_abort_reason: Ieee802154RxAbortReason::EdAbort.into(),
                 polling: false,
                 rss_code: -42,
                 cca_busy: false,
@@ -1358,11 +1403,13 @@ mod tests {
             Ok(acknowledged)
         }
 
-        fn sample_rx_abort_status(&mut self) -> Result<u32, Self::Error> {
+        fn sample_rx_abort_reason(
+            &mut self,
+        ) -> Result<Ieee802154RxAbortReasonObservation, Self::Error> {
             self.before_call()?;
             self.operations
-                .push(Operation::RxAbortStatus(self.rx_abort_status));
-            Ok(self.rx_abort_status)
+                .push(Operation::RxAbortReason(self.rx_abort_reason));
+            Ok(self.rx_abort_reason)
         }
 
         fn sample_ed_rss_code(&mut self) -> Result<i8, Self::Error> {
@@ -1384,6 +1431,17 @@ mod tests {
 
     fn budget(samples: u32) -> Ieee802154OperationPollBudget {
         Ieee802154OperationPollBudget::new(samples).unwrap()
+    }
+
+    fn event(event: Ieee802154Event) -> Ieee802154OperationEventObservation {
+        Ieee802154OperationEventObservation::event(event)
+    }
+
+    fn events(
+        first: Ieee802154Event,
+        second: Ieee802154Event,
+    ) -> Ieee802154OperationEventObservation {
+        Ieee802154OperationEventObservation::events(first.mask().union(second.mask()))
     }
 
     fn owner(backend: FakeBackend) -> Ieee802154PolledOperationOwner<FakeBackend> {
@@ -1440,7 +1498,7 @@ mod tests {
                 Operation::RouteRead,
                 Operation::MaskRead,
                 Operation::RxAbortMaskRead,
-                Operation::EventStatus(Ieee802154OperationEventObservation::from_raw(0)),
+                Operation::EventStatus(Ieee802154OperationEventObservation::default()),
                 Operation::EdStart,
             ]
         );
@@ -1458,7 +1516,7 @@ mod tests {
     fn energy_detection_completion_recovers_in_proved_order() {
         let operation = Ieee802154PolledOperation::energy_detection(channel(), 27);
         let active = start(
-            FakeBackend::new([Ieee802154OperationEventObservation::from_raw(0x0040)]),
+            FakeBackend::new([event(Ieee802154Event::EdDone)]),
             operation,
             2,
         );
@@ -1498,14 +1556,12 @@ mod tests {
             Ieee802154OperationRxAbortMaskState::AllMasked
         );
         assert!(recovered.owner.backend.operations.ends_with(&[
-            Operation::EventStatus(Ieee802154OperationEventObservation::from_raw(0x0040)),
+            Operation::EventStatus(event(Ieee802154Event::EdDone)),
             Operation::EdRss(-42),
             Operation::RouteRead,
             Operation::MaskRead,
             Operation::RxAbortMaskRead,
-            Operation::AcknowledgePendingEvents(Ieee802154OperationEventObservation::from_raw(
-                0x0040
-            ),),
+            Operation::AcknowledgePendingEvents(event(Ieee802154Event::EdDone)),
             Operation::MaskOperationEvents,
             Operation::MaskOperationRxAborts,
             Operation::Fence,
@@ -1517,7 +1573,7 @@ mod tests {
 
     #[test]
     fn cca_completion_samples_busy_without_reading_rss() {
-        let mut backend = FakeBackend::new([Ieee802154OperationEventObservation::from_raw(0x0040)]);
+        let mut backend = FakeBackend::new([event(Ieee802154Event::EdDone)]);
         backend.cca_busy = true;
         let active = start(
             backend,
@@ -1556,8 +1612,8 @@ mod tests {
     fn recovered_owner_supports_back_to_back_serialized_ed() {
         let operation = Ieee802154PolledOperation::energy_detection(channel(), 8);
         let backend = FakeBackend::new([
-            Ieee802154OperationEventObservation::from_raw(0x0040),
-            Ieee802154OperationEventObservation::from_raw(0x0040),
+            event(Ieee802154Event::EdDone),
+            event(Ieee802154Event::EdDone),
         ]);
         let completed = match start(backend, operation, 1).poll() {
             Ieee802154PolledOperationPoll::Completed(completed) => completed,
@@ -1646,7 +1702,7 @@ mod tests {
     #[test]
     fn stale_status_is_contained_before_ed_start_without_acknowledgement() {
         let mut backend = FakeBackend::new([]);
-        backend.event_status = Ieee802154OperationEventObservation::from_raw(0x0100);
+        backend.event_status = event(Ieee802154Event::Timer0Overflow);
         let prepared = owner(backend)
             .prepare(
                 Ieee802154PolledOperation::energy_detection(channel(), 1),
@@ -1661,7 +1717,7 @@ mod tests {
         assert_eq!(
             quarantine.reason(),
             &Ieee802154OperationQuarantineReason::StaleEventStatus {
-                observed: Ieee802154OperationEventObservation::from_raw(0x0100),
+                observed: event(Ieee802154Event::Timer0Overflow),
             }
         );
         assert!(!quarantine.backend.operations.contains(&Operation::EdStart));
@@ -1746,7 +1802,7 @@ mod tests {
     #[test]
     fn conflicting_terminal_events_are_remasked_and_quarantined() {
         let active = start(
-            FakeBackend::new([Ieee802154OperationEventObservation::from_raw(0x0050)]),
+            FakeBackend::new([events(Ieee802154Event::EdDone, Ieee802154Event::RxAbort)]),
             Ieee802154PolledOperation::energy_detection(channel(), 1),
             1,
         );
@@ -1758,7 +1814,7 @@ mod tests {
         assert_eq!(
             quarantine.reason(),
             &Ieee802154OperationQuarantineReason::ConflictingTerminalEvents {
-                observed: Ieee802154OperationEventObservation::from_raw(0x0050),
+                observed: events(Ieee802154Event::EdDone, Ieee802154Event::RxAbort),
             }
         );
         assert_eq!(
@@ -1780,8 +1836,9 @@ mod tests {
 
     #[test]
     fn rx_abort_retains_full_evidence_and_never_acknowledges() {
-        let mut backend = FakeBackend::new([Ieee802154OperationEventObservation::from_raw(0x0110)]);
-        backend.rx_abort_status = 0x0380_0000;
+        let event_status = events(Ieee802154Event::RxAbort, Ieee802154Event::Timer0Overflow);
+        let mut backend = FakeBackend::new([event_status]);
+        backend.rx_abort_reason = Ieee802154RxAbortReason::EdCoexistenceReject.into();
         let active = start(
             backend,
             Ieee802154PolledOperation::energy_detection(channel(), 1),
@@ -1796,8 +1853,11 @@ mod tests {
             aborted.evidence().operation(),
             Ieee802154PolledOperation::energy_detection(channel(), 1)
         );
-        assert_eq!(aborted.evidence().event_status().raw(), 0x0110);
-        assert_eq!(aborted.evidence().rx_abort_status(), 0x0380_0000);
+        assert_eq!(aborted.evidence().event_status(), event_status);
+        assert_eq!(
+            aborted.evidence().rx_abort_reason(),
+            Ieee802154RxAbortReasonObservation::Named(Ieee802154RxAbortReason::EdCoexistenceReject)
+        );
         assert_eq!(aborted.evidence().polls(), 1);
         assert_eq!(
             aborted.backend.mask,
@@ -1817,10 +1877,10 @@ mod tests {
                 .windows(2)
                 .any(|operations| operations
                     == [
-                        Operation::EventStatus(Ieee802154OperationEventObservation::from_raw(
-                            0x0110
+                        Operation::EventStatus(event_status),
+                        Operation::RxAbortReason(Ieee802154RxAbortReasonObservation::Named(
+                            Ieee802154RxAbortReason::EdCoexistenceReject,
                         )),
-                        Operation::RxAbortStatus(0x0380_0000),
                     ])
         );
     }
@@ -1828,7 +1888,7 @@ mod tests {
     #[test]
     fn unrelated_terminal_status_is_contained_without_acknowledgement() {
         let active = start(
-            FakeBackend::new([Ieee802154OperationEventObservation::from_raw(0x0100)]),
+            FakeBackend::new([event(Ieee802154Event::Timer0Overflow)]),
             Ieee802154PolledOperation::energy_detection(channel(), 1),
             1,
         );
@@ -1840,7 +1900,7 @@ mod tests {
         assert_eq!(
             quarantine.reason(),
             &Ieee802154OperationQuarantineReason::UnexpectedTerminalStatus {
-                observed: Ieee802154OperationEventObservation::from_raw(0x0100),
+                observed: event(Ieee802154Event::Timer0Overflow),
             }
         );
         assert!(
@@ -1854,10 +1914,14 @@ mod tests {
 
     #[test]
     fn acknowledged_snapshot_must_be_exactly_lone_ed_done() {
-        for acknowledged_bits in [0, 0x0100, 0x0140, 0x0050] {
-            let acknowledged = Ieee802154OperationEventObservation::from_raw(acknowledged_bits);
-            let mut backend =
-                FakeBackend::new([Ieee802154OperationEventObservation::from_raw(0x0040)]);
+        for acknowledged in [
+            Ieee802154OperationEventObservation::default(),
+            event(Ieee802154Event::Timer0Overflow),
+            events(Ieee802154Event::Timer0Overflow, Ieee802154Event::EdDone),
+            events(Ieee802154Event::RxAbort, Ieee802154Event::EdDone),
+            Ieee802154OperationEventObservation::unclassified(),
+        ] {
+            let mut backend = FakeBackend::new([event(Ieee802154Event::EdDone)]);
             backend.pending_at_acknowledge = Some(acknowledged);
             let completed = match start(
                 backend,
@@ -1897,7 +1961,7 @@ mod tests {
     #[test]
     fn recovery_rechecks_active_window_before_acknowledgement() {
         let active = start(
-            FakeBackend::new([Ieee802154OperationEventObservation::from_raw(0x0040)]),
+            FakeBackend::new([event(Ieee802154Event::EdDone)]),
             Ieee802154PolledOperation::energy_detection(channel(), 1),
             1,
         );
@@ -1934,7 +1998,7 @@ mod tests {
     #[test]
     fn acknowledgement_backend_failure_contains_and_never_recovers() {
         let active = start(
-            FakeBackend::new([Ieee802154OperationEventObservation::from_raw(0x0040)]),
+            FakeBackend::new([event(Ieee802154Event::EdDone)]),
             Ieee802154PolledOperation::energy_detection(channel(), 1),
             1,
         );

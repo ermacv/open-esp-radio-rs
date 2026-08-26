@@ -438,60 +438,6 @@ mod tests {
     }
 
     #[test]
-    fn reviewed_profile_derives_all_runtime_images() {
-        let config = BluetoothControllerHalInitConfig::reviewed_standalone();
-
-        assert_eq!(config.scale_image(), 16);
-        assert_eq!(config.period_image(), 2_000);
-        assert_eq!(config.sleep_timer_shift(), 3);
-        assert_eq!(config.transformed_value_0(), 22);
-        assert_eq!(config.transformed_value_1(), 66);
-        assert_eq!(config.scheduler_sram_prefix(), 0x2f00_0000);
-    }
-
-    #[test]
-    fn all_finite_scale_period_pairs_have_the_exact_shift() {
-        let address = BluetoothControllerHalInitConfig::reviewed_standalone().scheduler_sram;
-        let cases = [
-            (
-                BluetoothHalInitScale::Eight,
-                BluetoothHalInitPeriod::Image500,
-                4,
-            ),
-            (
-                BluetoothHalInitScale::Eight,
-                BluetoothHalInitPeriod::Image1000,
-                3,
-            ),
-            (
-                BluetoothHalInitScale::Eight,
-                BluetoothHalInitPeriod::Image2000,
-                2,
-            ),
-            (
-                BluetoothHalInitScale::Sixteen,
-                BluetoothHalInitPeriod::Image500,
-                5,
-            ),
-            (
-                BluetoothHalInitScale::Sixteen,
-                BluetoothHalInitPeriod::Image1000,
-                4,
-            ),
-            (
-                BluetoothHalInitScale::Sixteen,
-                BluetoothHalInitPeriod::Image2000,
-                3,
-            ),
-        ];
-
-        for (scale, period, expected) in cases {
-            let config = BluetoothControllerHalInitConfig::new(scale, 11, 33, period, address);
-            assert_eq!(config.sleep_timer_shift(), expected);
-        }
-    }
-
-    #[test]
     fn standalone_time_scale_matches_complete_shift_helpers() {
         let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
 

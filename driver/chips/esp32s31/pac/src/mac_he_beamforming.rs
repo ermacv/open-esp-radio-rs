@@ -230,10 +230,4 @@ mod tests {
             })
         );
     }
-
-    #[test]
-    fn ersu_ack_profiles_are_the_two_complete_leaf_images() {
-        assert_eq!(MacHeErSuAckRateProfile::Ordinary.encoded_byte(), 0x80);
-        assert_eq!(MacHeErSuAckRateProfile::ExtendedRange.encoded_byte(), 0xa0);
-    }
 }

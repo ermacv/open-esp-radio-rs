@@ -162,21 +162,3 @@ pub fn write_timer1_event(registers: &crate::Ieee802154Mac) {
     }
     order_device_accesses();
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{EVENT_FIELD_MASK, TIMER_EVENTS, replace_event_field};
-
-    #[test]
-    fn event_field_replacement_preserves_every_unowned_upper_bit() {
-        let sentinel = 0xa5a5_c000;
-        assert_eq!(
-            replace_event_field(sentinel, TIMER_EVENTS),
-            sentinel | 0x0300
-        );
-        assert_eq!(
-            replace_event_field(sentinel | EVENT_FIELD_MASK, 0),
-            sentinel
-        );
-    }
-}

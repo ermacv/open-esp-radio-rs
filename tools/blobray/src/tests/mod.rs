@@ -1,7 +1,5 @@
 use super::*;
 
-mod architecture_boundaries;
-
 fn generate_reference(
     trace: &FunctionAnalysis,
     artifact: &str,

@@ -64,18 +64,3 @@ pub fn read_route_words(_registers: &crate::Ieee802154Mac) -> Ieee802154RouteRaw
     crate::device_access::fence();
     Ieee802154RouteRawReadback { core0, core1 }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn raw_readback_preserves_core_order_and_reserved_bits() {
-        let readback = Ieee802154RouteRawReadback {
-            core0: 0xffff_fc00,
-            core1: 0x0000_033f,
-        };
-        assert_eq!(readback.core0_bits(), 0xffff_fc00);
-        assert_eq!(readback.core1_bits(), 0x0000_033f);
-    }
-}

@@ -10,7 +10,8 @@ use std::{fs, path::Path, time::Duration};
 
 use open_esp_radio_hil_protocol::{
     Ieee802154EventStatusProbeEvidence, Ieee802154EventStatusProbeRequest,
-    Ieee802154EventStatusProbeStop,
+    Ieee802154EventStatusProbeStop, Ieee802154ObservedEventState,
+    Ieee802154ValidationEventEnableState,
 };
 use serde::Serialize;
 
@@ -18,10 +19,6 @@ use crate::{Result, evidence::traffic_capture::SerialCapture, transport::lab_con
 
 const CAPABILITIES_TIMEOUT: Duration = Duration::from_secs(10);
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
-const TIMER0_EVENT: u16 = 1 << 8;
-const TIMER1_EVENT: u16 = 1 << 9;
-const TIMER_EVENTS: u16 = TIMER0_EVENT | TIMER1_EVENT;
-const PUBLIC_EVENT_MASK: u16 = 0x3fff;
 const RESULT: &str = "route-detached-enabled-selective-ack-and-distinct-arrival-observed";
 
 pub(crate) struct Config {
@@ -124,37 +121,6 @@ fn probe(
 }
 
 fn validate(evidence: Ieee802154EventStatusProbeEvidence) -> Result<()> {
-    for (checkpoint, events) in [
-        ("reset_events", evidence.reset_events),
-        ("post_enable_events", evidence.post_enable_events),
-        ("dual_observed_events", evidence.dual_observed_events),
-        ("dual_latched_events", evidence.dual_latched_events),
-        ("after_timer0_ack_events", evidence.after_timer0_ack_events),
-        ("after_timer1_ack_events", evidence.after_timer1_ack_events),
-        (
-            "distinct_snapshot_events",
-            evidence.distinct_snapshot_events,
-        ),
-        (
-            "distinct_before_ack_events",
-            evidence.distinct_before_ack_events,
-        ),
-        (
-            "distinct_after_ack_events",
-            evidence.distinct_after_ack_events,
-        ),
-        ("cleanup_pending_events", evidence.cleanup_pending_events),
-        ("final_events", evidence.final_events),
-    ] {
-        let unsupported = events & !PUBLIC_EVENT_MASK;
-        if unsupported != 0 {
-            return Err(format!(
-                "IEEE 802.15.4 EVENT_STATUS {checkpoint} contains unsupported bits {unsupported:#06x}"
-            )
-            .into());
-        }
-    }
-
     if evidence.stop != Ieee802154EventStatusProbeStop::Complete {
         return Err(format!(
             "IEEE 802.15.4 EVENT_STATUS probe stopped at {:?}: {evidence:?}",
@@ -162,109 +128,92 @@ fn validate(evidence: Ieee802154EventStatusProbeEvidence) -> Result<()> {
         )
         .into());
     }
-    if evidence.event_enable_before != 0 {
+    if evidence.event_enable_before != Ieee802154ValidationEventEnableState::AllMasked {
         return checkpoint_error(
             "event_enable_before",
             evidence.event_enable_before,
-            "equal zero",
+            "be AllMasked",
         );
     }
-    if evidence.event_enable_active != TIMER_EVENTS {
+    if evidence.event_enable_active != Ieee802154ValidationEventEnableState::TimerPairOnly {
         return checkpoint_error(
             "event_enable_active",
             evidence.event_enable_active,
-            "equal the exact timer-event mask 0x0300",
+            "be TimerPairOnly",
         );
     }
-    if evidence.event_enable_after != 0 {
+    if evidence.event_enable_after != Ieee802154ValidationEventEnableState::AllMasked {
         return checkpoint_error(
             "event_enable_after",
             evidence.event_enable_after,
-            "equal zero",
+            "be AllMasked",
         );
     }
 
-    for (checkpoint, route_word) in [
-        (
-            "route_core0_before_enable",
-            evidence.route_core0_before_enable,
-        ),
-        (
-            "route_core1_before_enable",
-            evidence.route_core1_before_enable,
-        ),
-        (
-            "route_core0_with_events_enabled",
-            evidence.route_core0_with_events_enabled,
-        ),
-        (
-            "route_core1_with_events_enabled",
-            evidence.route_core1_with_events_enabled,
-        ),
-        (
-            "route_core0_after_cleanup",
-            evidence.route_core0_after_cleanup,
-        ),
-        (
-            "route_core1_after_cleanup",
-            evidence.route_core1_after_cleanup,
-        ),
-    ] {
-        if route_word != 0 {
-            return route_checkpoint_error(checkpoint, route_word);
-        }
-    }
-
     for (checkpoint, observed, expected) in [
-        ("reset_events", evidence.reset_events, 0),
-        ("post_enable_events", evidence.post_enable_events, 0),
+        (
+            "reset_events",
+            evidence.reset_events,
+            Ieee802154ObservedEventState::Clear,
+        ),
+        (
+            "post_enable_events",
+            evidence.post_enable_events,
+            Ieee802154ObservedEventState::Clear,
+        ),
         (
             "dual_observed_events",
             evidence.dual_observed_events,
-            TIMER_EVENTS,
+            Ieee802154ObservedEventState::Timer0AndTimer1,
         ),
         (
             "dual_latched_events",
             evidence.dual_latched_events,
-            TIMER_EVENTS,
+            Ieee802154ObservedEventState::Timer0AndTimer1,
         ),
         (
             "after_timer0_ack_events",
             evidence.after_timer0_ack_events,
-            TIMER1_EVENT,
+            Ieee802154ObservedEventState::Timer1Only,
         ),
         (
             "after_timer1_ack_events",
             evidence.after_timer1_ack_events,
-            0,
+            Ieee802154ObservedEventState::Clear,
         ),
         (
             "distinct_snapshot_events",
             evidence.distinct_snapshot_events,
-            TIMER0_EVENT,
+            Ieee802154ObservedEventState::Timer0Only,
         ),
         (
             "distinct_before_ack_events",
             evidence.distinct_before_ack_events,
-            TIMER_EVENTS,
+            Ieee802154ObservedEventState::Timer0AndTimer1,
         ),
         (
             "distinct_after_ack_events",
             evidence.distinct_after_ack_events,
-            TIMER1_EVENT,
+            Ieee802154ObservedEventState::Timer1Only,
         ),
-        ("final_events", evidence.final_events, 0),
+        (
+            "final_events",
+            evidence.final_events,
+            Ieee802154ObservedEventState::Clear,
+        ),
     ] {
         if observed != expected {
-            return checkpoint_error(checkpoint, observed, "equal its exact isolated image");
+            return checkpoint_error(checkpoint, observed, "equal its exact semantic state");
         }
     }
 
-    if evidence.cleanup_pending_events != 0 && evidence.cleanup_pending_events != TIMER1_EVENT {
+    if evidence.cleanup_pending_events != Ieee802154ObservedEventState::Clear
+        && evidence.cleanup_pending_events != Ieee802154ObservedEventState::Timer1Only
+    {
         return checkpoint_error(
             "cleanup_pending_events",
             evidence.cleanup_pending_events,
-            "equal zero or the retained timer1 image after delivery is masked",
+            "be Clear or Timer1Only after delivery is masked",
         );
     }
 
@@ -292,18 +241,15 @@ fn validate(evidence: Ieee802154EventStatusProbeEvidence) -> Result<()> {
     Ok(())
 }
 
-fn checkpoint_error<T>(checkpoint: &str, observed: u16, expected: &str) -> Result<T> {
-    Err(format!(
-        "IEEE 802.15.4 EVENT_STATUS {checkpoint}={observed:#06x}, expected it to {expected}"
+fn checkpoint_error<T, Observation: core::fmt::Debug>(
+    checkpoint: &str,
+    observed: Observation,
+    expected: &str,
+) -> Result<T> {
+    Err(
+        format!("IEEE 802.15.4 EVENT_STATUS {checkpoint}={observed:?}, expected it to {expected}")
+            .into(),
     )
-    .into())
-}
-
-fn route_checkpoint_error<T>(checkpoint: &str, observed: u32) -> Result<T> {
-    Err(format!(
-        "IEEE 802.15.4 source-132 route {checkpoint}={observed:#010x}, expected the complete reset word 0x00000000"
-    )
-    .into())
 }
 
 #[cfg(test)]
@@ -313,16 +259,10 @@ mod tests {
     fn nominal() -> Ieee802154EventStatusProbeEvidence {
         Ieee802154EventStatusProbeEvidence {
             stop: Ieee802154EventStatusProbeStop::Complete,
-            event_enable_before: 0,
-            event_enable_active: TIMER_EVENTS,
-            event_enable_after: 0,
-            route_core0_before_enable: 0,
-            route_core1_before_enable: 0,
-            route_core0_with_events_enabled: 0,
-            route_core1_with_events_enabled: 0,
-            route_core0_after_cleanup: 0,
-            route_core1_after_cleanup: 0,
-            post_enable_events: 0,
+            event_enable_before: Ieee802154ValidationEventEnableState::AllMasked,
+            event_enable_active: Ieee802154ValidationEventEnableState::TimerPairOnly,
+            event_enable_after: Ieee802154ValidationEventEnableState::AllMasked,
+            post_enable_events: Ieee802154ObservedEventState::Clear,
             timer0_value_before_start: 0,
             timer1_value_before_start: 0,
             timer0_value_min: 0,
@@ -331,16 +271,16 @@ mod tests {
             timer1_value_max: 1,
             timer0_value_after_stop: 1,
             timer1_value_after_stop: 1,
-            reset_events: 0,
-            dual_observed_events: TIMER_EVENTS,
-            dual_latched_events: TIMER_EVENTS,
-            after_timer0_ack_events: TIMER1_EVENT,
-            after_timer1_ack_events: 0,
-            distinct_snapshot_events: TIMER0_EVENT,
-            distinct_before_ack_events: TIMER_EVENTS,
-            distinct_after_ack_events: TIMER1_EVENT,
-            cleanup_pending_events: 0,
-            final_events: 0,
+            reset_events: Ieee802154ObservedEventState::Clear,
+            dual_observed_events: Ieee802154ObservedEventState::Timer0AndTimer1,
+            dual_latched_events: Ieee802154ObservedEventState::Timer0AndTimer1,
+            after_timer0_ack_events: Ieee802154ObservedEventState::Timer1Only,
+            after_timer1_ack_events: Ieee802154ObservedEventState::Clear,
+            distinct_snapshot_events: Ieee802154ObservedEventState::Timer0Only,
+            distinct_before_ack_events: Ieee802154ObservedEventState::Timer0AndTimer1,
+            distinct_after_ack_events: Ieee802154ObservedEventState::Timer1Only,
+            cleanup_pending_events: Ieee802154ObservedEventState::Clear,
+            final_events: Ieee802154ObservedEventState::Clear,
         }
     }
 
@@ -390,7 +330,7 @@ mod tests {
     }
 
     #[test]
-    fn failed_report_preserves_raw_target_evidence() {
+    fn failed_report_preserves_semantic_target_evidence() {
         let mut evidence = nominal();
         evidence.stop = Ieee802154EventStatusProbeStop::TimerActivityTimeout;
         evidence.timer0_value_max = 0;
@@ -413,71 +353,71 @@ mod tests {
         let mut cases = Vec::new();
 
         let mut evidence = nominal();
-        evidence.event_enable_before = TIMER0_EVENT;
+        evidence.event_enable_before = Ieee802154ValidationEventEnableState::Unexpected;
         cases.push(("entry event enable", evidence));
 
         let mut evidence = nominal();
-        evidence.event_enable_active = TIMER0_EVENT;
+        evidence.event_enable_active = Ieee802154ValidationEventEnableState::AllMasked;
         cases.push(("active event enable", evidence));
 
         let mut evidence = nominal();
-        evidence.event_enable_after = TIMER1_EVENT;
+        evidence.event_enable_after = Ieee802154ValidationEventEnableState::TimerPairOnly;
         cases.push(("final event enable", evidence));
 
         let mut evidence = nominal();
-        evidence.reset_events = TIMER0_EVENT;
+        evidence.reset_events = Ieee802154ObservedEventState::Timer0Only;
         cases.push(("reset", evidence));
 
         let mut evidence = nominal();
-        evidence.post_enable_events = TIMER0_EVENT;
+        evidence.post_enable_events = Ieee802154ObservedEventState::Timer0Only;
         cases.push(("post enable", evidence));
 
         let mut evidence = nominal();
-        evidence.dual_latched_events = TIMER0_EVENT;
+        evidence.dual_latched_events = Ieee802154ObservedEventState::Timer0Only;
         cases.push(("dual missing timer1", evidence));
 
         let mut evidence = nominal();
-        evidence.dual_observed_events = TIMER0_EVENT;
+        evidence.dual_observed_events = Ieee802154ObservedEventState::Timer0Only;
         cases.push(("dual union omits terminal timer1", evidence));
 
         let mut evidence = nominal();
-        evidence.after_timer0_ack_events = TIMER_EVENTS;
+        evidence.after_timer0_ack_events = Ieee802154ObservedEventState::Timer0AndTimer1;
         cases.push(("timer0 not acknowledged", evidence));
 
         let mut evidence = nominal();
-        evidence.after_timer0_ack_events = 0;
+        evidence.after_timer0_ack_events = Ieee802154ObservedEventState::Clear;
         cases.push(("timer1 removed with timer0", evidence));
 
         let mut evidence = nominal();
-        evidence.after_timer1_ack_events = TIMER1_EVENT;
+        evidence.after_timer1_ack_events = Ieee802154ObservedEventState::Timer1Only;
         cases.push(("timer1 not acknowledged", evidence));
 
         let mut evidence = nominal();
-        evidence.distinct_snapshot_events = 0;
+        evidence.distinct_snapshot_events = Ieee802154ObservedEventState::Clear;
         cases.push(("distinct first timer missing", evidence));
 
         let mut evidence = nominal();
-        evidence.distinct_snapshot_events = TIMER_EVENTS;
+        evidence.distinct_snapshot_events = Ieee802154ObservedEventState::Timer0AndTimer1;
         cases.push(("distinct second timer arrived too early", evidence));
 
         let mut evidence = nominal();
-        evidence.distinct_before_ack_events = TIMER0_EVENT;
+        evidence.distinct_before_ack_events = Ieee802154ObservedEventState::Timer0Only;
         cases.push(("distinct second timer missing", evidence));
 
         let mut evidence = nominal();
-        evidence.distinct_after_ack_events = TIMER_EVENTS;
+        evidence.distinct_after_ack_events = Ieee802154ObservedEventState::Timer0AndTimer1;
         cases.push(("distinct timer0 not acknowledged", evidence));
 
         let mut evidence = nominal();
-        evidence.distinct_after_ack_events = 0;
+        evidence.distinct_after_ack_events = Ieee802154ObservedEventState::Clear;
         cases.push(("distinct timer1 removed with timer0", evidence));
 
         let mut evidence = nominal();
-        evidence.cleanup_pending_events = TIMER_EVENTS;
+        evidence.cleanup_pending_events = Ieee802154ObservedEventState::Timer0AndTimer1;
         cases.push(("masked cleanup observation", evidence));
 
         let mut evidence = nominal();
-        evidence.final_events = TIMER1_EVENT;
+        evidence.final_events = Ieee802154ObservedEventState::Timer1Only;
         cases.push(("final cleanup", evidence));
 
         for (checkpoint, evidence) in cases {
@@ -491,31 +431,8 @@ mod tests {
     #[test]
     fn accepts_either_masked_cleanup_visibility() {
         let mut visible = nominal();
-        visible.cleanup_pending_events = TIMER1_EVENT;
+        visible.cleanup_pending_events = Ieee802154ObservedEventState::Timer1Only;
         assert!(validate(visible).is_ok());
-    }
-
-    #[test]
-    fn route_validation_rejects_each_raw_bit_on_each_core_and_checkpoint() {
-        for bit in 0..u32::BITS {
-            let word = 1_u32 << bit;
-            for checkpoint in 0..6 {
-                let mut evidence = nominal();
-                match checkpoint {
-                    0 => evidence.route_core0_before_enable = word,
-                    1 => evidence.route_core1_before_enable = word,
-                    2 => evidence.route_core0_with_events_enabled = word,
-                    3 => evidence.route_core1_with_events_enabled = word,
-                    4 => evidence.route_core0_after_cleanup = word,
-                    5 => evidence.route_core1_after_cleanup = word,
-                    _ => unreachable!(),
-                }
-                assert!(
-                    validate(evidence).is_err(),
-                    "accepted route bit {bit} at checkpoint {checkpoint}"
-                );
-            }
-        }
     }
 
     #[test]
@@ -530,28 +447,13 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unsupported_bits_at_every_checkpoint() {
-        const UNSUPPORTED: u16 = 1 << 14;
-        for checkpoint in 0..11 {
-            let mut evidence = nominal();
-            match checkpoint {
-                0 => evidence.reset_events |= UNSUPPORTED,
-                1 => evidence.post_enable_events |= UNSUPPORTED,
-                2 => evidence.dual_observed_events |= UNSUPPORTED,
-                3 => evidence.dual_latched_events |= UNSUPPORTED,
-                4 => evidence.after_timer0_ack_events |= UNSUPPORTED,
-                5 => evidence.after_timer1_ack_events |= UNSUPPORTED,
-                6 => evidence.distinct_snapshot_events |= UNSUPPORTED,
-                7 => evidence.distinct_before_ack_events |= UNSUPPORTED,
-                8 => evidence.distinct_after_ack_events |= UNSUPPORTED,
-                9 => evidence.cleanup_pending_events |= UNSUPPORTED,
-                10 => evidence.final_events |= UNSUPPORTED,
-                _ => unreachable!(),
-            }
-            assert!(
-                validate(evidence).is_err(),
-                "accepted unsupported bits at checkpoint {checkpoint}"
-            );
-        }
+    fn rejects_unexpected_or_unclassified_semantic_events() {
+        let mut unexpected = nominal();
+        unexpected.reset_events = Ieee802154ObservedEventState::UnexpectedNamed;
+        assert!(validate(unexpected).is_err());
+
+        let mut unclassified = nominal();
+        unclassified.reset_events = Ieee802154ObservedEventState::Unclassified;
+        assert!(validate(unclassified).is_err());
     }
 }

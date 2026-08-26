@@ -8,22 +8,17 @@ use std::{fs, path::Path, time::Duration};
 
 use open_esp_radio_hil_protocol::{
     Ieee802154EdEventProbeEvidence, Ieee802154EdEventProbeRequest, Ieee802154EdEventProbeStop,
-    Ieee802154PolledEdOutcome,
+    Ieee802154ObservedEventState, Ieee802154PolledEdOutcome, Ieee802154ValidationEdDurationState,
+    Ieee802154ValidationEventEnableState, Ieee802154ValidationRxAbortEnableState,
 };
+#[cfg(test)]
+use open_esp_radio_hil_protocol::{Ieee802154RxAbortObservation, Ieee802154RxAbortReason};
 use serde::Serialize;
 
 use crate::{Result, evidence::traffic_capture::SerialCapture, transport::lab_config::LabConfig};
 
 const CAPABILITIES_TIMEOUT: Duration = Duration::from_secs(10);
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
-const RX_ABORT_EVENT: u16 = 1 << 4;
-const ED_DONE_EVENT: u16 = 1 << 6;
-const TIMER0_EVENT: u16 = 1 << 8;
-const ED_TIMER_EVENTS: u16 = ED_DONE_EVENT | TIMER0_EVENT;
-const VALIDATION_EVENTS: u16 = RX_ABORT_EVENT | ED_TIMER_EVENTS;
-const ED_ABORT_REASONS: u32 = (1 << 23) | (1 << 24) | (1 << 25);
-const PUBLIC_EVENT_MASK: u16 = 0x3fff;
-const ED_DURATION: u32 = 8;
 const RESULT: &str = "back-to-back-production-ed-and-selected-write-recovery";
 const REPORT_NAME: &str = "ieee802154-ed-event.json";
 
@@ -158,31 +153,6 @@ fn validate(evidence: Ieee802154EdEventProbeEvidence, poll_limit: u32) -> Result
     };
     validate_production("second", second)?;
 
-    for (checkpoint, events) in [
-        ("reset_events", evidence.reset_events),
-        ("post_enable_events", evidence.post_enable_events),
-        ("observed_events", evidence.observed_events),
-        ("terminal_events", evidence.terminal_events),
-        (
-            "after_ed_done_write_events",
-            evidence.after_ed_done_write_events,
-        ),
-        (
-            "after_timer0_write_events",
-            evidence.after_timer0_write_events,
-        ),
-        ("cleanup_pending_events", evidence.cleanup_pending_events),
-        ("final_events", evidence.final_events),
-    ] {
-        let unsupported = events & !PUBLIC_EVENT_MASK;
-        if unsupported != 0 {
-            return Err(format!(
-                "IEEE 802.15.4 ED event {checkpoint} contains unsupported bits {unsupported:#06x}"
-            )
-            .into());
-        }
-    }
-
     if evidence.stop != Ieee802154EdEventProbeStop::Complete {
         return Err(format!(
             "IEEE 802.15.4 ED event probe stopped at {:?}: {evidence:?}",
@@ -191,92 +161,109 @@ fn validate(evidence: Ieee802154EdEventProbeEvidence, poll_limit: u32) -> Result
         .into());
     }
     for (checkpoint, observed, expected) in [
-        ("event_enable_before", evidence.event_enable_before, 0),
+        (
+            "event_enable_before",
+            evidence.event_enable_before,
+            Ieee802154ValidationEventEnableState::AllMasked,
+        ),
         (
             "event_enable_active",
             evidence.event_enable_active,
-            VALIDATION_EVENTS,
+            Ieee802154ValidationEventEnableState::EdDoneTimer0RxAbortOnly,
         ),
-        ("event_enable_after", evidence.event_enable_after, 0),
-        ("reset_events", evidence.reset_events, 0),
-        ("post_enable_events", evidence.post_enable_events, 0),
-        ("observed_events", evidence.observed_events, ED_TIMER_EVENTS),
-        ("terminal_events", evidence.terminal_events, ED_TIMER_EVENTS),
+        (
+            "event_enable_after",
+            evidence.event_enable_after,
+            Ieee802154ValidationEventEnableState::AllMasked,
+        ),
+    ] {
+        if observed != expected {
+            return semantic_checkpoint_error(checkpoint, observed, expected);
+        }
+    }
+    for (checkpoint, observed, expected) in [
+        (
+            "reset_events",
+            evidence.reset_events,
+            Ieee802154ObservedEventState::Clear,
+        ),
+        (
+            "post_enable_events",
+            evidence.post_enable_events,
+            Ieee802154ObservedEventState::Clear,
+        ),
+        (
+            "observed_events",
+            evidence.observed_events,
+            Ieee802154ObservedEventState::EdDoneAndTimer0,
+        ),
+        (
+            "terminal_events",
+            evidence.terminal_events,
+            Ieee802154ObservedEventState::EdDoneAndTimer0,
+        ),
         (
             "after_ed_done_write_events",
             evidence.after_ed_done_write_events,
-            TIMER0_EVENT,
+            Ieee802154ObservedEventState::Timer0Only,
         ),
         (
             "after_timer0_write_events",
             evidence.after_timer0_write_events,
-            0,
+            Ieee802154ObservedEventState::Clear,
         ),
-        ("cleanup_pending_events", evidence.cleanup_pending_events, 0),
-        ("final_events", evidence.final_events, 0),
+        (
+            "cleanup_pending_events",
+            evidence.cleanup_pending_events,
+            Ieee802154ObservedEventState::Clear,
+        ),
+        (
+            "final_events",
+            evidence.final_events,
+            Ieee802154ObservedEventState::Clear,
+        ),
     ] {
         if observed != expected {
-            return event_checkpoint_error(checkpoint, observed, expected);
+            return semantic_checkpoint_error(checkpoint, observed, expected);
         }
     }
 
-    if evidence.rx_abort_enable_active != ED_ABORT_REASONS {
-        return word_checkpoint_error(
+    if evidence.rx_abort_enable_active
+        != Ieee802154ValidationRxAbortEnableState::EdOperationReasonsOnly
+    {
+        return semantic_checkpoint_error(
             "rx_abort_enable_active",
             evidence.rx_abort_enable_active,
-            ED_ABORT_REASONS,
+            Ieee802154ValidationRxAbortEnableState::EdOperationReasonsOnly,
         );
     }
-    if evidence.rx_abort_enable_before != 0 {
-        return word_checkpoint_error("rx_abort_enable_before", evidence.rx_abort_enable_before, 0);
+    if evidence.rx_abort_enable_before != Ieee802154ValidationRxAbortEnableState::AllMasked {
+        return semantic_checkpoint_error(
+            "rx_abort_enable_before",
+            evidence.rx_abort_enable_before,
+            Ieee802154ValidationRxAbortEnableState::AllMasked,
+        );
     }
     if evidence.rx_abort_enable_after != evidence.rx_abort_enable_before {
-        return word_checkpoint_error(
+        return semantic_checkpoint_error(
             "rx_abort_enable_after",
             evidence.rx_abort_enable_after,
             evidence.rx_abort_enable_before,
         );
     }
-    if evidence.ed_duration_active != ED_DURATION {
-        return word_checkpoint_error(
+    if evidence.ed_duration_active != Ieee802154ValidationEdDurationState::ValidationEight {
+        return semantic_checkpoint_error(
             "ed_duration_active",
             evidence.ed_duration_active,
-            ED_DURATION,
+            Ieee802154ValidationEdDurationState::ValidationEight,
         );
     }
-    if evidence.ed_duration_after != ED_DURATION {
-        return word_checkpoint_error("ed_duration_after", evidence.ed_duration_after, ED_DURATION);
-    }
-
-    for (checkpoint, route_word) in [
-        (
-            "route_core0_before_enable",
-            evidence.route_core0_before_enable,
-        ),
-        (
-            "route_core1_before_enable",
-            evidence.route_core1_before_enable,
-        ),
-        (
-            "route_core0_with_events_enabled",
-            evidence.route_core0_with_events_enabled,
-        ),
-        (
-            "route_core1_with_events_enabled",
-            evidence.route_core1_with_events_enabled,
-        ),
-        (
-            "route_core0_after_cleanup",
-            evidence.route_core0_after_cleanup,
-        ),
-        (
-            "route_core1_after_cleanup",
-            evidence.route_core1_after_cleanup,
-        ),
-    ] {
-        if route_word != 0 {
-            return word_checkpoint_error(checkpoint, route_word, 0);
-        }
+    if evidence.ed_duration_after != Ieee802154ValidationEdDurationState::ValidationEight {
+        return semantic_checkpoint_error(
+            "ed_duration_after",
+            evidence.ed_duration_after,
+            Ieee802154ValidationEdDurationState::ValidationEight,
+        );
     }
 
     // The HAL terminal state proves only the selected-write relation. HIL
@@ -295,10 +282,10 @@ fn validate(evidence: Ieee802154EdEventProbeEvidence, poll_limit: u32) -> Result
         )
         .into());
     }
-    if evidence.rx_status_at_abort.is_some() {
+    if evidence.rx_abort_reason.is_some() {
         return Err(format!(
-            "IEEE 802.15.4 ED event probe retained unexpected RX_ABORT status {:?}",
-            evidence.rx_status_at_abort
+            "IEEE 802.15.4 ED event probe retained unexpected RX_ABORT reason {:?}",
+            evidence.rx_abort_reason
         )
         .into());
     }
@@ -311,18 +298,12 @@ fn validate(evidence: Ieee802154EdEventProbeEvidence, poll_limit: u32) -> Result
     Ok(())
 }
 
-fn event_checkpoint_error<T>(checkpoint: &str, observed: u16, expected: u16) -> Result<T> {
-    Err(
-        format!("IEEE 802.15.4 ED event {checkpoint}={observed:#06x}, expected {expected:#06x}")
-            .into(),
-    )
-}
-
-fn word_checkpoint_error<T>(checkpoint: &str, observed: u32, expected: u32) -> Result<T> {
-    Err(
-        format!("IEEE 802.15.4 ED event {checkpoint}={observed:#010x}, expected {expected:#010x}")
-            .into(),
-    )
+fn semantic_checkpoint_error<T, Observation: core::fmt::Debug>(
+    checkpoint: &str,
+    observed: Observation,
+    expected: Observation,
+) -> Result<T> {
+    Err(format!("IEEE 802.15.4 ED event {checkpoint}={observed:?}, expected {expected:?}").into())
 }
 
 #[cfg(test)]
@@ -340,34 +321,28 @@ mod tests {
                 rss_code: -18,
                 polls: 3,
             }),
-            event_enable_before: 0,
-            event_enable_active: VALIDATION_EVENTS,
-            event_enable_after: 0,
-            rx_abort_enable_before: 0,
-            rx_abort_enable_active: ED_ABORT_REASONS,
-            rx_abort_enable_after: 0,
-            route_core0_before_enable: 0,
-            route_core1_before_enable: 0,
-            route_core0_with_events_enabled: 0,
-            route_core1_with_events_enabled: 0,
-            route_core0_after_cleanup: 0,
-            route_core1_after_cleanup: 0,
-            ed_duration_before: 0,
-            ed_duration_active: ED_DURATION,
-            ed_duration_after: ED_DURATION,
+            event_enable_before: Ieee802154ValidationEventEnableState::AllMasked,
+            event_enable_active: Ieee802154ValidationEventEnableState::EdDoneTimer0RxAbortOnly,
+            event_enable_after: Ieee802154ValidationEventEnableState::AllMasked,
+            rx_abort_enable_before: Ieee802154ValidationRxAbortEnableState::AllMasked,
+            rx_abort_enable_active: Ieee802154ValidationRxAbortEnableState::EdOperationReasonsOnly,
+            rx_abort_enable_after: Ieee802154ValidationRxAbortEnableState::AllMasked,
+            ed_duration_before: Ieee802154ValidationEdDurationState::Other,
+            ed_duration_active: Ieee802154ValidationEdDurationState::ValidationEight,
+            ed_duration_after: Ieee802154ValidationEdDurationState::ValidationEight,
             timer0_value_before_start: 0,
             timer0_value_min: 0,
             timer0_value_max: 1,
             timer0_value_after_stop: 1,
-            reset_events: 0,
-            post_enable_events: 0,
-            observed_events: ED_TIMER_EVENTS,
-            terminal_events: ED_TIMER_EVENTS,
-            after_ed_done_write_events: TIMER0_EVENT,
-            after_timer0_write_events: 0,
-            cleanup_pending_events: 0,
-            final_events: 0,
-            rx_status_at_abort: None,
+            reset_events: Ieee802154ObservedEventState::Clear,
+            post_enable_events: Ieee802154ObservedEventState::Clear,
+            observed_events: Ieee802154ObservedEventState::EdDoneAndTimer0,
+            terminal_events: Ieee802154ObservedEventState::EdDoneAndTimer0,
+            after_ed_done_write_events: Ieee802154ObservedEventState::Timer0Only,
+            after_timer0_write_events: Ieee802154ObservedEventState::Clear,
+            cleanup_pending_events: Ieee802154ObservedEventState::Clear,
+            final_events: Ieee802154ObservedEventState::Clear,
+            rx_abort_reason: None,
             stop_command_issued: false,
             cleanup_clear: true,
         }
@@ -378,17 +353,20 @@ mod tests {
         assert!(validate(nominal(), 100_000).is_ok());
 
         let mut unexpected = nominal();
-        unexpected.observed_events |= RX_ABORT_EVENT;
-        unexpected.rx_status_at_abort = Some(25 << 4);
+        unexpected.observed_events = Ieee802154ObservedEventState::UnexpectedNamed;
+        unexpected.rx_abort_reason = Some(Ieee802154RxAbortObservation::Named(
+            Ieee802154RxAbortReason::EdStop,
+        ));
         assert!(validate(unexpected, 100_000).is_err());
 
         let mut wrong_write = nominal();
-        wrong_write.after_ed_done_write_events = ED_TIMER_EVENTS;
+        wrong_write.after_ed_done_write_events = Ieee802154ObservedEventState::EdDoneAndTimer0;
         assert!(validate(wrong_write, 100_000).is_err());
 
-        let mut dirty_abort_mask = nominal();
-        dirty_abort_mask.rx_abort_enable_before = ED_ABORT_REASONS;
-        assert!(validate(dirty_abort_mask, 100_000).is_err());
+        let mut unexpected_abort_enable = nominal();
+        unexpected_abort_enable.rx_abort_enable_before =
+            Ieee802154ValidationRxAbortEnableState::EdOperationReasonsOnly;
+        assert!(validate(unexpected_abort_enable, 100_000).is_err());
 
         let mut restored_duration = nominal();
         restored_duration.ed_duration_after = restored_duration.ed_duration_before;
@@ -435,12 +413,14 @@ mod tests {
     }
 
     #[test]
-    fn failed_report_preserves_raw_abort_diagnostics() {
+    fn failed_report_preserves_semantic_abort_diagnostics() {
         let mut evidence = nominal();
         evidence.stop = Ieee802154EdEventProbeStop::UnexpectedEvent;
-        evidence.observed_events = RX_ABORT_EVENT;
-        evidence.terminal_events = RX_ABORT_EVENT;
-        evidence.rx_status_at_abort = Some(25 << 4);
+        evidence.observed_events = Ieee802154ObservedEventState::RxAbortOnly;
+        evidence.terminal_events = Ieee802154ObservedEventState::RxAbortOnly;
+        evidence.rx_abort_reason = Some(Ieee802154RxAbortObservation::Named(
+            Ieee802154RxAbortReason::EdStop,
+        ));
         let report = failed_report_document(
             &[BootReport {
                 boot: 1,
@@ -450,7 +430,13 @@ mod tests {
         );
 
         assert_eq!(report["status"], "failed");
-        assert_eq!(report["boots"][0]["target"]["terminal_events"], 16);
-        assert_eq!(report["boots"][0]["target"]["rx_status_at_abort"], 400);
+        assert_eq!(
+            report["boots"][0]["target"]["terminal_events"],
+            "RxAbortOnly"
+        );
+        assert_eq!(
+            report["boots"][0]["target"]["rx_abort_reason"]["Named"],
+            "EdStop"
+        );
     }
 }

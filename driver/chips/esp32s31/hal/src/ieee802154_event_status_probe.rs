@@ -2,18 +2,16 @@
 //! `EVENT_STATUS` write class.
 //!
 //! The transaction enables exactly the two validation timer events only after
-//! read-only checks prove the source-132 CPU route controls are at their boot
-//! reset values on both cores. It never writes a route. This remains evidence
+//! read-only checks prove the source-132 CPU routes are semantically
+//! reset-detached on both cores. It never writes a route. This remains evidence
 //! collection, not an active IRQ owner, acknowledge capability, or MAC-ready
 //! transition.
 
-const TIMER0_EVENT: u16 = 1 << 8;
-const TIMER1_EVENT: u16 = 1 << 9;
-const TIMER_EVENTS: u16 = TIMER0_EVENT | TIMER1_EVENT;
-
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use open_esp_radio_esp32s31_ieee802154_irq::Ieee802154RouteReadback;
+use open_esp_radio_esp32s31_pac::{
+    Ieee802154ObservedEventState, Ieee802154RouteState, Ieee802154ValidationEventEnableState,
+};
 
 static RESET_ISOLATION_CLAIMED: AtomicBool = AtomicBool::new(false);
 
@@ -22,8 +20,8 @@ static RESET_ISOLATION_CLAIMED: AtomicBool = AtomicBool::new(false);
 /// The capability is available only with `validation-probes`, cannot be
 /// constructed or cloned by callers, and is never released. It proves that at
 /// most one transaction in the dedicated image may rely on both source-132
-/// routes remaining untouched. The transaction still checks both complete raw
-/// route words before and during the active phase.
+/// routes remaining untouched. The transaction still checks the semantic
+/// reset-detached state before and during the active phase.
 #[must_use = "the reset-isolation claim must be consumed by the terminal validation transaction"]
 pub struct Ieee802154EventStatusProbeIsolation {
     _private: (),
@@ -86,7 +84,7 @@ impl Ieee802154EventStatusProbeConfig {
 
 /// Terminal classification for one closed validation transaction.
 ///
-/// These variants report raw experimental control flow only. Even
+/// These variants report bounded experimental control flow only. Even
 /// [`Complete`](Self::Complete) publishes validation evidence, not a production
 /// acknowledgement capability. Production uses the separate generated affine
 /// W1C snapshot transaction; this probe never mints that owner.
@@ -96,11 +94,11 @@ pub enum Ieee802154EventStatusProbeStop {
     Complete,
     /// MAC event delivery was not masked at entry.
     UnsupportedSetup,
-    /// A source-132 route word had a non-reset MAP or PASS_LEVEL field.
+    /// A source-132 route was not semantically reset-detached.
     RouteNotQuiesced,
     /// The post-reset entry sample was not clear.
     ResetNotClear,
-    /// The exact timer-event enable image did not read back.
+    /// The closed timer-pair enable state did not read back.
     EventEnableReadbackMismatch,
     /// Enabling delivery revealed a pre-existing status before timer start.
     PostEnableStatusNotClear,
@@ -109,7 +107,7 @@ pub enum Ieee802154EventStatusProbeStop {
     TimerActivityTimeout,
     /// Both independently started timers did not latch within the bound.
     DualLatchTimeout,
-    /// A selected raw write did not clear only the selected timer event.
+    /// A selected write did not clear only the selected timer event.
     SelectiveAcknowledgeMismatch,
     /// Timer zero did not latch alone within the bound.
     DistinctFirstLatchTimeout,
@@ -120,31 +118,21 @@ pub enum Ieee802154EventStatusProbeStop {
     CleanupNotClear,
 }
 
-/// Raw trace from one closed validation transaction.
+/// Semantic trace from one closed validation transaction.
 ///
-/// Every event image is the complete fourteen-bit `EVENT_STATUS` field.  The
-/// fields intentionally carry observations rather than typed IRQ events so
-/// the HIL oracle can test selective-W1C compatibility without publishing an
-/// acknowledge access class or collapsing mismatches into invented semantics.
-/// Route fields retain complete raw words and every nonzero bit fails the
-/// reset-isolation gate. `dual_observed_events` is the bitwise union of every
-/// sample in the first bounded wait, while `dual_latched_events` is its last
-/// sample and therefore preserves the simultaneous two-bit condition.
+/// Every event observation is classified by the PAC without exposing register
+/// positions. `dual_observed_events` is the semantic union of every sample in the first
+/// bounded wait, while `dual_latched_events` is its last sample and therefore
+/// preserves the simultaneous two-bit condition.
 /// `cleanup_pending_events` is sampled after delivery is masked and may hide a
 /// retained latch; cleanup selection also retains every pre-mask timer sample.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Ieee802154EventStatusProbeEvidence {
     pub stop: Ieee802154EventStatusProbeStop,
-    pub event_enable_before: u16,
-    pub event_enable_active: u16,
-    pub event_enable_after: u16,
-    pub route_core0_before_enable: u32,
-    pub route_core1_before_enable: u32,
-    pub route_core0_with_events_enabled: u32,
-    pub route_core1_with_events_enabled: u32,
-    pub route_core0_after_cleanup: u32,
-    pub route_core1_after_cleanup: u32,
-    pub post_enable_events: u16,
+    pub event_enable_before: Ieee802154ValidationEventEnableState,
+    pub event_enable_active: Ieee802154ValidationEventEnableState,
+    pub event_enable_after: Ieee802154ValidationEventEnableState,
+    pub post_enable_events: Ieee802154ObservedEventState,
     pub timer0_value_before_start: u32,
     pub timer1_value_before_start: u32,
     pub timer0_value_min: u32,
@@ -153,32 +141,26 @@ pub struct Ieee802154EventStatusProbeEvidence {
     pub timer1_value_max: u32,
     pub timer0_value_after_stop: u32,
     pub timer1_value_after_stop: u32,
-    pub reset_events: u16,
-    pub dual_observed_events: u16,
-    pub dual_latched_events: u16,
-    pub after_timer0_ack_events: u16,
-    pub after_timer1_ack_events: u16,
-    pub distinct_snapshot_events: u16,
-    pub distinct_before_ack_events: u16,
-    pub distinct_after_ack_events: u16,
-    pub cleanup_pending_events: u16,
-    pub final_events: u16,
+    pub reset_events: Ieee802154ObservedEventState,
+    pub dual_observed_events: Ieee802154ObservedEventState,
+    pub dual_latched_events: Ieee802154ObservedEventState,
+    pub after_timer0_ack_events: Ieee802154ObservedEventState,
+    pub after_timer1_ack_events: Ieee802154ObservedEventState,
+    pub distinct_snapshot_events: Ieee802154ObservedEventState,
+    pub distinct_before_ack_events: Ieee802154ObservedEventState,
+    pub distinct_after_ack_events: Ieee802154ObservedEventState,
+    pub cleanup_pending_events: Ieee802154ObservedEventState,
+    pub final_events: Ieee802154ObservedEventState,
 }
 
 impl Ieee802154EventStatusProbeEvidence {
     const fn empty() -> Self {
         Self {
             stop: Ieee802154EventStatusProbeStop::UnsupportedSetup,
-            event_enable_before: 0,
-            event_enable_active: 0,
-            event_enable_after: 0,
-            route_core0_before_enable: 0,
-            route_core1_before_enable: 0,
-            route_core0_with_events_enabled: 0,
-            route_core1_with_events_enabled: 0,
-            route_core0_after_cleanup: 0,
-            route_core1_after_cleanup: 0,
-            post_enable_events: 0,
+            event_enable_before: Ieee802154ValidationEventEnableState::AllMasked,
+            event_enable_active: Ieee802154ValidationEventEnableState::AllMasked,
+            event_enable_after: Ieee802154ValidationEventEnableState::AllMasked,
+            post_enable_events: Ieee802154ObservedEventState::Clear,
             timer0_value_before_start: 0,
             timer1_value_before_start: 0,
             timer0_value_min: 0,
@@ -187,16 +169,16 @@ impl Ieee802154EventStatusProbeEvidence {
             timer1_value_max: 0,
             timer0_value_after_stop: 0,
             timer1_value_after_stop: 0,
-            reset_events: 0,
-            dual_observed_events: 0,
-            dual_latched_events: 0,
-            after_timer0_ack_events: 0,
-            after_timer1_ack_events: 0,
-            distinct_snapshot_events: 0,
-            distinct_before_ack_events: 0,
-            distinct_after_ack_events: 0,
-            cleanup_pending_events: 0,
-            final_events: 0,
+            reset_events: Ieee802154ObservedEventState::Clear,
+            dual_observed_events: Ieee802154ObservedEventState::Clear,
+            dual_latched_events: Ieee802154ObservedEventState::Clear,
+            after_timer0_ack_events: Ieee802154ObservedEventState::Clear,
+            after_timer1_ack_events: Ieee802154ObservedEventState::Clear,
+            distinct_snapshot_events: Ieee802154ObservedEventState::Clear,
+            distinct_before_ack_events: Ieee802154ObservedEventState::Clear,
+            distinct_after_ack_events: Ieee802154ObservedEventState::Clear,
+            cleanup_pending_events: Ieee802154ObservedEventState::Clear,
+            final_events: Ieee802154ObservedEventState::Clear,
         }
     }
 }
@@ -207,11 +189,11 @@ impl Ieee802154EventStatusProbeEvidence {
 /// Tests implement this trait only inside this module; callers cannot provide
 /// raw addresses or broaden the two selected writes.
 pub(crate) trait Ieee802154EventStatusProbeBackend {
-    fn event_enable_events(&mut self) -> u16;
+    fn event_enable_state(&mut self) -> Ieee802154ValidationEventEnableState;
     fn enable_timer_events(&mut self);
     fn disable_all_events(&mut self);
-    fn interrupt_route_readback(&mut self) -> Ieee802154RouteReadback;
-    fn event_status_events(&mut self) -> u16;
+    fn interrupt_route_state(&mut self) -> Ieee802154RouteState;
+    fn event_status_state(&mut self) -> Ieee802154ObservedEventState;
     fn timer0_value(&mut self) -> u32;
     fn timer1_value(&mut self) -> u32;
     fn set_timer_thresholds(&mut self, threshold: u32);
@@ -225,8 +207,8 @@ pub(crate) trait Ieee802154EventStatusProbeBackend {
 
 #[cfg(feature = "validation-probes")]
 impl Ieee802154EventStatusProbeBackend for crate::ieee802154::Ieee802154PacHal<'_> {
-    fn event_enable_events(&mut self) -> u16 {
-        self.validation_event_enable_events()
+    fn event_enable_state(&mut self) -> Ieee802154ValidationEventEnableState {
+        self.validation_event_enable_state()
     }
 
     fn enable_timer_events(&mut self) {
@@ -237,12 +219,12 @@ impl Ieee802154EventStatusProbeBackend for crate::ieee802154::Ieee802154PacHal<'
         self.validation_disable_all_events();
     }
 
-    fn interrupt_route_readback(&mut self) -> Ieee802154RouteReadback {
-        self.interrupt_route_readback()
+    fn interrupt_route_state(&mut self) -> Ieee802154RouteState {
+        self.interrupt_route_state()
     }
 
-    fn event_status_events(&mut self) -> u16 {
-        self.validation_event_status_events()
+    fn event_status_state(&mut self) -> Ieee802154ObservedEventState {
+        self.validation_event_status_state()
     }
 
     fn timer0_value(&mut self) -> u32 {
@@ -282,14 +264,18 @@ impl Ieee802154EventStatusProbeBackend for crate::ieee802154::Ieee802154PacHal<'
     }
 }
 
-fn poll_events<B, F>(backend: &mut B, poll_limit: u32, predicate: F) -> (bool, u16)
+fn poll_events<B, F>(
+    backend: &mut B,
+    poll_limit: u32,
+    predicate: F,
+) -> (bool, Ieee802154ObservedEventState)
 where
     B: Ieee802154EventStatusProbeBackend,
-    F: Fn(u16) -> bool,
+    F: Fn(Ieee802154ObservedEventState) -> bool,
 {
-    let mut observed = 0;
+    let mut observed = Ieee802154ObservedEventState::Clear;
     for _ in 0..poll_limit {
-        observed = backend.event_status_events();
+        observed = backend.event_status_state();
         if predicate(observed) {
             return (true, observed);
         }
@@ -301,7 +287,7 @@ fn finish<B>(
     backend: &mut B,
     mut evidence: Ieee802154EventStatusProbeEvidence,
     stop: Ieee802154EventStatusProbeStop,
-    retained_events: u16,
+    retained_events: Ieee802154ObservedEventState,
     status_cleanup_allowed: bool,
 ) -> Ieee802154EventStatusProbeEvidence
 where
@@ -310,27 +296,27 @@ where
     backend.stop_timer0();
     backend.stop_timer1();
     backend.disable_all_events();
-    evidence.event_enable_after = backend.event_enable_events();
+    evidence.event_enable_after = backend.event_enable_state();
 
-    let pending = backend.event_status_events();
+    let pending = backend.event_status_state();
     evidence.cleanup_pending_events = pending;
-    if evidence.event_enable_after == 0 && status_cleanup_allowed {
-        let selected = (retained_events | pending) & TIMER_EVENTS;
-        if selected & TIMER0_EVENT != 0 {
+    if evidence.event_enable_after == Ieee802154ValidationEventEnableState::AllMasked
+        && status_cleanup_allowed
+    {
+        let selected = retained_events.union(pending);
+        if selected.has_timer0() {
             backend.write_timer0_event();
         }
-        if selected & TIMER1_EVENT != 0 {
+        if selected.has_timer1() {
             backend.write_timer1_event();
         }
     }
 
-    evidence.final_events = backend.event_status_events();
-    let route = backend.interrupt_route_readback();
-    evidence.route_core0_after_cleanup = route.core0().raw_bits();
-    evidence.route_core1_after_cleanup = route.core1().raw_bits();
-    evidence.stop = if evidence.final_events == 0
-        && evidence.event_enable_after == 0
-        && route.is_full_reset()
+    evidence.final_events = backend.event_status_state();
+    let route = backend.interrupt_route_state();
+    evidence.stop = if evidence.final_events.is_clear()
+        && evidence.event_enable_after == Ieee802154ValidationEventEnableState::AllMasked
+        && route.is_reset_detached()
     {
         stop
     } else {
@@ -347,11 +333,8 @@ fn finish_without_writes<B>(
 where
     B: Ieee802154EventStatusProbeBackend,
 {
-    evidence.final_events = backend.event_status_events();
-    evidence.event_enable_after = backend.event_enable_events();
-    let route = backend.interrupt_route_readback();
-    evidence.route_core0_after_cleanup = route.core0().raw_bits();
-    evidence.route_core1_after_cleanup = route.core1().raw_bits();
+    evidence.final_events = backend.event_status_state();
+    evidence.event_enable_after = backend.event_enable_state();
     evidence.stop = stop;
     evidence
 }
@@ -366,8 +349,8 @@ where
 {
     let mut evidence = Ieee802154EventStatusProbeEvidence::empty();
 
-    evidence.event_enable_before = backend.event_enable_events();
-    if evidence.event_enable_before != 0 {
+    evidence.event_enable_before = backend.event_enable_state();
+    if evidence.event_enable_before != Ieee802154ValidationEventEnableState::AllMasked {
         return finish_without_writes(
             backend,
             evidence,
@@ -375,10 +358,8 @@ where
         );
     }
 
-    let route = backend.interrupt_route_readback();
-    evidence.route_core0_before_enable = route.core0().raw_bits();
-    evidence.route_core1_before_enable = route.core1().raw_bits();
-    if !route.is_full_reset() {
+    let route = backend.interrupt_route_state();
+    if !route.is_reset_detached() {
         return finish_without_writes(
             backend,
             evidence,
@@ -386,8 +367,8 @@ where
         );
     }
 
-    evidence.reset_events = backend.event_status_events();
-    if evidence.reset_events != 0 {
+    evidence.reset_events = backend.event_status_state();
+    if !evidence.reset_events.is_clear() {
         return finish_without_writes(
             backend,
             evidence,
@@ -397,20 +378,20 @@ where
 
     backend.set_timer_thresholds(config.timer_threshold());
     backend.enable_timer_events();
-    evidence.event_enable_active = backend.event_enable_events();
-    if evidence.event_enable_active != TIMER_EVENTS {
+    evidence.event_enable_active = backend.event_enable_state();
+    if evidence.event_enable_active != Ieee802154ValidationEventEnableState::TimerPairOnly {
         return finish(
             backend,
             evidence,
             Ieee802154EventStatusProbeStop::EventEnableReadbackMismatch,
-            0,
+            Ieee802154ObservedEventState::Clear,
             false,
         );
     }
 
-    evidence.post_enable_events = backend.event_status_events();
+    evidence.post_enable_events = backend.event_status_state();
     let mut retained_events = evidence.post_enable_events;
-    if evidence.post_enable_events != 0 {
+    if !evidence.post_enable_events.is_clear() {
         return finish(
             backend,
             evidence,
@@ -420,10 +401,8 @@ where
         );
     }
 
-    let route = backend.interrupt_route_readback();
-    evidence.route_core0_with_events_enabled = route.core0().raw_bits();
-    evidence.route_core1_with_events_enabled = route.core1().raw_bits();
-    if !route.is_full_reset() {
+    let route = backend.interrupt_route_state();
+    if !route.is_reset_detached() {
         return finish(
             backend,
             evidence,
@@ -457,17 +436,19 @@ where
         if !timer1_changed && timer1_value != evidence.timer1_value_before_start {
             timer1_changed = true;
         }
-        evidence.dual_latched_events = backend.event_status_events();
-        evidence.dual_observed_events |= evidence.dual_latched_events;
-        retained_events |= evidence.dual_latched_events;
-        if evidence.dual_latched_events & TIMER_EVENTS == TIMER_EVENTS {
+        evidence.dual_latched_events = backend.event_status_state();
+        evidence.dual_observed_events = evidence
+            .dual_observed_events
+            .union(evidence.dual_latched_events);
+        retained_events = retained_events.union(evidence.dual_latched_events);
+        if evidence.dual_latched_events == Ieee802154ObservedEventState::Timer0AndTimer1 {
             dual_latched = true;
             break;
         }
     }
 
     // Freeze both independent stimuli before classifying the bounded wait or
-    // testing selected raw writes. Counter samples distinguish timer activity
+    // testing selected acknowledgements. Counter samples distinguish timer activity
     // from absent status observations while exactly the timer events remain
     // enabled and the CPU route remains reset-detached.
     backend.stop_timer0();
@@ -484,9 +465,9 @@ where
     }
 
     backend.write_timer0_event();
-    evidence.after_timer0_ack_events = backend.event_status_events();
-    retained_events |= evidence.after_timer0_ack_events;
-    if evidence.after_timer0_ack_events & TIMER_EVENTS != TIMER1_EVENT {
+    evidence.after_timer0_ack_events = backend.event_status_state();
+    retained_events = retained_events.union(evidence.after_timer0_ack_events);
+    if evidence.after_timer0_ack_events != Ieee802154ObservedEventState::Timer1Only {
         return finish(
             backend,
             evidence,
@@ -497,9 +478,9 @@ where
     }
 
     backend.write_timer1_event();
-    evidence.after_timer1_ack_events = backend.event_status_events();
-    retained_events |= evidence.after_timer1_ack_events;
-    if evidence.after_timer1_ack_events & TIMER_EVENTS != 0 {
+    evidence.after_timer1_ack_events = backend.event_status_state();
+    retained_events = retained_events.union(evidence.after_timer1_ack_events);
+    if !evidence.after_timer1_ack_events.is_clear() {
         return finish(
             backend,
             evidence,
@@ -514,10 +495,10 @@ where
     backend.set_timer_thresholds(config.timer_threshold());
     backend.start_timer0();
     let (first_latched, first_events) = poll_events(backend, config.poll_limit(), |events| {
-        events & TIMER_EVENTS == TIMER0_EVENT
+        events == Ieee802154ObservedEventState::Timer0Only
     });
     evidence.distinct_snapshot_events = first_events;
-    retained_events |= first_events;
+    retained_events = retained_events.union(first_events);
     if !first_latched {
         return finish(
             backend,
@@ -530,13 +511,13 @@ where
     backend.stop_timer0();
 
     // Timer one is introduced strictly after the retained timer-zero sample
-    // and before the raw write of timer zero's earlier selected bit.
+    // and before the selected acknowledgement of timer zero's earlier event.
     backend.start_timer1();
     let (second_latched, second_events) = poll_events(backend, config.poll_limit(), |events| {
-        events & TIMER_EVENTS == TIMER_EVENTS
+        events == Ieee802154ObservedEventState::Timer0AndTimer1
     });
     evidence.distinct_before_ack_events = second_events;
-    retained_events |= second_events;
+    retained_events = retained_events.union(second_events);
     if !second_latched {
         return finish(
             backend,
@@ -549,9 +530,9 @@ where
     backend.stop_timer1();
 
     backend.write_timer0_event();
-    evidence.distinct_after_ack_events = backend.event_status_events();
-    retained_events |= evidence.distinct_after_ack_events;
-    if evidence.distinct_after_ack_events & TIMER_EVENTS != TIMER1_EVENT {
+    evidence.distinct_after_ack_events = backend.event_status_state();
+    retained_events = retained_events.union(evidence.distinct_after_ack_events);
+    if evidence.distinct_after_ack_events != Ieee802154ObservedEventState::Timer1Only {
         return finish(
             backend,
             evidence,
@@ -576,20 +557,25 @@ mod tests {
 
     use super::{
         Ieee802154EventStatusProbeBackend, Ieee802154EventStatusProbeConfig,
-        Ieee802154EventStatusProbeIsolation, Ieee802154EventStatusProbeStop, TIMER_EVENTS,
-        TIMER0_EVENT, TIMER1_EVENT, run_ieee802154_event_status_probe,
+        Ieee802154EventStatusProbeIsolation, Ieee802154EventStatusProbeStop,
+        Ieee802154ObservedEventState, Ieee802154RouteState, Ieee802154ValidationEventEnableState,
+        run_ieee802154_event_status_probe,
     };
-    use open_esp_radio_esp32s31_ieee802154_irq::{Ieee802154RouteReadback, Ieee802154RouteWord};
 
-    const fn route(core0: u32, core1: u32) -> Ieee802154RouteReadback {
-        Ieee802154RouteReadback::new(
-            Ieee802154RouteWord::from_raw(core0),
-            Ieee802154RouteWord::from_raw(core1),
-        )
-    }
+    const CLEAR: Ieee802154ObservedEventState = Ieee802154ObservedEventState::Clear;
+    const TIMER0: Ieee802154ObservedEventState = Ieee802154ObservedEventState::Timer0Only;
+    const TIMER1: Ieee802154ObservedEventState = Ieee802154ObservedEventState::Timer1Only;
+    const TIMERS: Ieee802154ObservedEventState = Ieee802154ObservedEventState::Timer0AndTimer1;
+    const UNEXPECTED: Ieee802154ObservedEventState = Ieee802154ObservedEventState::UnexpectedNamed;
+    const MASKED: Ieee802154ValidationEventEnableState =
+        Ieee802154ValidationEventEnableState::AllMasked;
+    const TIMER_PAIR: Ieee802154ValidationEventEnableState =
+        Ieee802154ValidationEventEnableState::TimerPairOnly;
+    const UNEXPECTED_ENABLE: Ieee802154ValidationEventEnableState =
+        Ieee802154ValidationEventEnableState::Unexpected;
 
-    const fn reset_route() -> Ieee802154RouteReadback {
-        route(0, 0)
+    const fn reset_route() -> Ieee802154RouteState {
+        Ieee802154RouteState::ResetDetached
     }
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -597,7 +583,7 @@ mod tests {
         EventEnable,
         EnableTimerEvents,
         DisableAllEvents,
-        RouteReadback,
+        RouteState,
         EventStatus,
         Timer0Value,
         Timer1Value,
@@ -611,12 +597,12 @@ mod tests {
     }
 
     struct FakeBackend {
-        event_enable: u16,
-        enabled_writeback: u16,
-        disabled_writeback: u16,
-        route_reads: VecDeque<Ieee802154RouteReadback>,
-        route_default: Ieee802154RouteReadback,
-        status_reads: VecDeque<u16>,
+        event_enable: Ieee802154ValidationEventEnableState,
+        enabled_writeback: Ieee802154ValidationEventEnableState,
+        disabled_writeback: Ieee802154ValidationEventEnableState,
+        route_reads: VecDeque<Ieee802154RouteState>,
+        route_default: Ieee802154RouteState,
+        status_reads: VecDeque<Ieee802154ObservedEventState>,
         timer0_advances: bool,
         timer1_advances: bool,
         timer0_value: u32,
@@ -625,11 +611,14 @@ mod tests {
     }
 
     impl FakeBackend {
-        fn new(event_enable: u16, status_reads: &[u16]) -> Self {
+        fn new(
+            event_enable: Ieee802154ValidationEventEnableState,
+            status_reads: &[Ieee802154ObservedEventState],
+        ) -> Self {
             Self {
                 event_enable,
-                enabled_writeback: TIMER_EVENTS,
-                disabled_writeback: 0,
+                enabled_writeback: TIMER_PAIR,
+                disabled_writeback: MASKED,
                 route_reads: VecDeque::new(),
                 route_default: reset_route(),
                 status_reads: status_reads.iter().copied().collect(),
@@ -657,17 +646,23 @@ mod tests {
             self
         }
 
-        fn with_enabled_writeback(mut self, writeback: u16) -> Self {
+        fn with_enabled_writeback(
+            mut self,
+            writeback: Ieee802154ValidationEventEnableState,
+        ) -> Self {
             self.enabled_writeback = writeback;
             self
         }
 
-        fn with_disabled_writeback(mut self, writeback: u16) -> Self {
+        fn with_disabled_writeback(
+            mut self,
+            writeback: Ieee802154ValidationEventEnableState,
+        ) -> Self {
             self.disabled_writeback = writeback;
             self
         }
 
-        fn with_routes(mut self, routes: &[Ieee802154RouteReadback]) -> Self {
+        fn with_routes(mut self, routes: &[Ieee802154RouteState]) -> Self {
             self.route_reads = routes.iter().copied().collect();
             self
         }
@@ -682,7 +677,7 @@ mod tests {
     }
 
     impl Ieee802154EventStatusProbeBackend for FakeBackend {
-        fn event_enable_events(&mut self) -> u16 {
+        fn event_enable_state(&mut self) -> Ieee802154ValidationEventEnableState {
             self.operations.push(Operation::EventEnable);
             self.event_enable
         }
@@ -697,16 +692,16 @@ mod tests {
             self.event_enable = self.disabled_writeback;
         }
 
-        fn interrupt_route_readback(&mut self) -> Ieee802154RouteReadback {
-            self.operations.push(Operation::RouteReadback);
+        fn interrupt_route_state(&mut self) -> Ieee802154RouteState {
+            self.operations.push(Operation::RouteState);
             self.route_reads.pop_front().unwrap_or(self.route_default)
         }
 
-        fn event_status_events(&mut self) -> u16 {
+        fn event_status_state(&mut self) -> Ieee802154ObservedEventState {
             self.operations.push(Operation::EventStatus);
             self.status_reads
                 .pop_front()
-                .expect("fake must provide every requested raw status sample")
+                .expect("fake must provide every requested semantic status sample")
         }
 
         fn timer0_value(&mut self) -> u32 {
@@ -806,34 +801,19 @@ mod tests {
     #[test]
     fn complete_trace_orders_detached_route_enabled_stimulus_and_masked_cleanup() {
         let mut backend = FakeBackend::new(
-            0,
+            MASKED,
             &[
-                0,
-                0,
-                TIMER_EVENTS,
-                TIMER1_EVENT,
-                0,
-                TIMER0_EVENT,
-                TIMER_EVENTS,
-                TIMER1_EVENT,
-                0,
-                0,
+                CLEAR, CLEAR, TIMERS, TIMER1, CLEAR, TIMER0, TIMERS, TIMER1, CLEAR, CLEAR,
             ],
         );
 
         let evidence = run_ieee802154_event_status_probe(&mut backend, config(2));
 
         assert_eq!(evidence.stop, Ieee802154EventStatusProbeStop::Complete);
-        assert_eq!(evidence.event_enable_before, 0);
-        assert_eq!(evidence.event_enable_active, TIMER_EVENTS);
-        assert_eq!(evidence.event_enable_after, 0);
-        assert_eq!(evidence.route_core0_before_enable, 0);
-        assert_eq!(evidence.route_core1_before_enable, 0);
-        assert_eq!(evidence.route_core0_with_events_enabled, 0);
-        assert_eq!(evidence.route_core1_with_events_enabled, 0);
-        assert_eq!(evidence.route_core0_after_cleanup, 0);
-        assert_eq!(evidence.route_core1_after_cleanup, 0);
-        assert_eq!(evidence.post_enable_events, 0);
+        assert_eq!(evidence.event_enable_before, MASKED);
+        assert_eq!(evidence.event_enable_active, TIMER_PAIR);
+        assert_eq!(evidence.event_enable_after, MASKED);
+        assert_eq!(evidence.post_enable_events, CLEAR);
         assert_eq!(evidence.timer0_value_before_start, 0);
         assert_eq!(evidence.timer0_value_min, 0);
         assert_eq!(evidence.timer0_value_max, 1);
@@ -842,27 +822,27 @@ mod tests {
         assert_eq!(evidence.timer1_value_min, 0);
         assert_eq!(evidence.timer1_value_max, 1);
         assert_eq!(evidence.timer1_value_after_stop, 1);
-        assert_eq!(evidence.reset_events, 0);
-        assert_eq!(evidence.dual_observed_events, TIMER_EVENTS);
-        assert_eq!(evidence.dual_latched_events, TIMER_EVENTS);
-        assert_eq!(evidence.after_timer0_ack_events, TIMER1_EVENT);
-        assert_eq!(evidence.after_timer1_ack_events, 0);
-        assert_eq!(evidence.distinct_snapshot_events, TIMER0_EVENT);
-        assert_eq!(evidence.distinct_before_ack_events, TIMER_EVENTS);
-        assert_eq!(evidence.distinct_after_ack_events, TIMER1_EVENT);
-        assert_eq!(evidence.cleanup_pending_events, 0);
-        assert_eq!(evidence.final_events, 0);
+        assert_eq!(evidence.reset_events, CLEAR);
+        assert_eq!(evidence.dual_observed_events, TIMERS);
+        assert_eq!(evidence.dual_latched_events, TIMERS);
+        assert_eq!(evidence.after_timer0_ack_events, TIMER1);
+        assert_eq!(evidence.after_timer1_ack_events, CLEAR);
+        assert_eq!(evidence.distinct_snapshot_events, TIMER0);
+        assert_eq!(evidence.distinct_before_ack_events, TIMERS);
+        assert_eq!(evidence.distinct_after_ack_events, TIMER1);
+        assert_eq!(evidence.cleanup_pending_events, CLEAR);
+        assert_eq!(evidence.final_events, CLEAR);
         assert_eq!(
             backend.operations,
             vec![
                 Operation::EventEnable,
-                Operation::RouteReadback,
+                Operation::RouteState,
                 Operation::EventStatus,
                 Operation::Thresholds(37),
                 Operation::EnableTimerEvents,
                 Operation::EventEnable,
                 Operation::EventStatus,
-                Operation::RouteReadback,
+                Operation::RouteState,
                 Operation::Timer0Value,
                 Operation::Timer1Value,
                 Operation::StartTimer0,
@@ -895,7 +875,7 @@ mod tests {
                 Operation::WriteTimer0,
                 Operation::WriteTimer1,
                 Operation::EventStatus,
-                Operation::RouteReadback,
+                Operation::RouteState,
             ]
         );
         backend.assert_consumed();
@@ -903,21 +883,20 @@ mod tests {
 
     #[test]
     fn unsupported_setup_never_programs_or_writes_the_mac() {
-        let mut backend = FakeBackend::new(1, &[0x0123]);
+        let mut backend = FakeBackend::new(UNEXPECTED_ENABLE, &[UNEXPECTED]);
         let evidence = run_ieee802154_event_status_probe(&mut backend, config(1));
 
         assert_eq!(
             evidence.stop,
             Ieee802154EventStatusProbeStop::UnsupportedSetup
         );
-        assert_eq!(evidence.final_events, 0x0123);
+        assert_eq!(evidence.final_events, UNEXPECTED);
         assert_eq!(
             backend.operations,
             [
                 Operation::EventEnable,
                 Operation::EventStatus,
                 Operation::EventEnable,
-                Operation::RouteReadback,
             ]
         );
         backend.assert_consumed();
@@ -925,12 +904,12 @@ mod tests {
 
     #[test]
     fn reset_not_clear_returns_without_any_register_write() {
-        let mut backend = FakeBackend::new(0, &[TIMER0_EVENT, TIMER0_EVENT]);
+        let mut backend = FakeBackend::new(MASKED, &[TIMER0, TIMER0]);
         let evidence = run_ieee802154_event_status_probe(&mut backend, config(1));
 
         assert_eq!(evidence.stop, Ieee802154EventStatusProbeStop::ResetNotClear);
-        assert_eq!(evidence.reset_events, TIMER0_EVENT);
-        assert_eq!(evidence.final_events, TIMER0_EVENT);
+        assert_eq!(evidence.reset_events, TIMER0);
+        assert_eq!(evidence.final_events, TIMER0);
         assert!(backend.operations.iter().all(|operation| {
             !matches!(
                 operation,
@@ -950,8 +929,8 @@ mod tests {
 
     #[test]
     fn active_route_at_entry_returns_without_any_register_write() {
-        let active = route(1, 0);
-        let mut backend = FakeBackend::new(0, &[0]).with_routes(&[active, active]);
+        let active = Ieee802154RouteState::DestinationAssigned;
+        let mut backend = FakeBackend::new(MASKED, &[CLEAR]).with_routes(&[active]);
 
         let evidence = run_ieee802154_event_status_probe(&mut backend, config(1));
 
@@ -959,12 +938,10 @@ mod tests {
             evidence.stop,
             Ieee802154EventStatusProbeStop::RouteNotQuiesced
         );
-        assert_eq!(evidence.route_core0_before_enable, 1);
-        assert_eq!(evidence.route_core0_after_cleanup, 1);
         assert!(backend.operations.iter().all(|operation| {
             matches!(
                 operation,
-                Operation::EventEnable | Operation::EventStatus | Operation::RouteReadback
+                Operation::EventEnable | Operation::EventStatus | Operation::RouteState
             )
         }));
         backend.assert_consumed();
@@ -972,8 +949,8 @@ mod tests {
 
     #[test]
     fn enable_readback_mismatch_restores_zero_before_any_start_or_status_write() {
-        let mut backend =
-            FakeBackend::new(0, &[0, TIMER0_EVENT, 0]).with_enabled_writeback(TIMER0_EVENT);
+        let mut backend = FakeBackend::new(MASKED, &[CLEAR, TIMER0, CLEAR])
+            .with_enabled_writeback(UNEXPECTED_ENABLE);
 
         let evidence = run_ieee802154_event_status_probe(&mut backend, config(1));
 
@@ -981,8 +958,8 @@ mod tests {
             evidence.stop,
             Ieee802154EventStatusProbeStop::EventEnableReadbackMismatch
         );
-        assert_eq!(evidence.event_enable_active, TIMER0_EVENT);
-        assert_eq!(evidence.event_enable_after, 0);
+        assert_eq!(evidence.event_enable_active, UNEXPECTED_ENABLE);
+        assert_eq!(evidence.event_enable_after, MASKED);
         assert!(!backend.operations.contains(&Operation::StartTimer0));
         assert!(!backend.operations.contains(&Operation::StartTimer1));
         assert!(!backend.operations.contains(&Operation::WriteTimer0));
@@ -992,7 +969,7 @@ mod tests {
 
     #[test]
     fn status_revealed_by_enable_is_not_counted_as_fresh_stimulus() {
-        let mut backend = FakeBackend::new(0, &[0, TIMER0_EVENT, 0, 0]);
+        let mut backend = FakeBackend::new(MASKED, &[CLEAR, TIMER0, CLEAR, CLEAR]);
 
         let evidence = run_ieee802154_event_status_probe(&mut backend, config(1));
 
@@ -1000,8 +977,8 @@ mod tests {
             evidence.stop,
             Ieee802154EventStatusProbeStop::PostEnableStatusNotClear
         );
-        assert_eq!(evidence.post_enable_events, TIMER0_EVENT);
-        assert_eq!(evidence.dual_observed_events, 0);
+        assert_eq!(evidence.post_enable_events, TIMER0);
+        assert_eq!(evidence.dual_observed_events, CLEAR);
         assert!(!backend.operations.contains(&Operation::StartTimer0));
         assert!(!backend.operations.contains(&Operation::StartTimer1));
         let disable = backend
@@ -1020,8 +997,8 @@ mod tests {
 
     #[test]
     fn route_change_while_enabled_restores_mask_before_any_timer_start() {
-        let active = route(0, 0x100);
-        let mut backend = FakeBackend::new(0, &[0, 0, TIMER0_EVENT, 0]).with_routes(&[
+        let active = Ieee802154RouteState::PassLevelConfigured;
+        let mut backend = FakeBackend::new(MASKED, &[CLEAR, CLEAR, TIMER0, CLEAR]).with_routes(&[
             reset_route(),
             active,
             reset_route(),
@@ -1033,8 +1010,7 @@ mod tests {
             evidence.stop,
             Ieee802154EventStatusProbeStop::RouteNotQuiesced
         );
-        assert_eq!(evidence.route_core1_with_events_enabled, 0x100);
-        assert_eq!(evidence.event_enable_after, 0);
+        assert_eq!(evidence.event_enable_after, MASKED);
         assert!(!backend.operations.contains(&Operation::StartTimer0));
         assert!(!backend.operations.contains(&Operation::StartTimer1));
         assert!(!backend.operations.contains(&Operation::WriteTimer0));
@@ -1044,33 +1020,33 @@ mod tests {
 
     #[test]
     fn dual_latch_timeout_retains_the_last_bounded_sample() {
-        let mut backend = FakeBackend::new(0, &[0, 0, 0, TIMER0_EVENT, TIMER0_EVENT, 0]);
+        let mut backend = FakeBackend::new(MASKED, &[CLEAR, CLEAR, CLEAR, TIMER0, TIMER0, CLEAR]);
         let evidence = run_ieee802154_event_status_probe(&mut backend, config(2));
 
         assert_eq!(
             evidence.stop,
             Ieee802154EventStatusProbeStop::DualLatchTimeout
         );
-        assert_eq!(evidence.dual_latched_events, TIMER0_EVENT);
-        assert_eq!(evidence.dual_observed_events, TIMER0_EVENT);
-        assert_eq!(evidence.cleanup_pending_events, TIMER0_EVENT);
-        assert_eq!(evidence.final_events, 0);
+        assert_eq!(evidence.dual_latched_events, TIMER0);
+        assert_eq!(evidence.dual_observed_events, TIMER0);
+        assert_eq!(evidence.cleanup_pending_events, TIMER0);
+        assert_eq!(evidence.final_events, CLEAR);
         backend.assert_consumed();
     }
 
     #[test]
     fn dual_wait_union_retains_a_transient_separately_from_the_last_sample() {
-        let mut backend = FakeBackend::new(0, &[0, 0, TIMER0_EVENT, 0, 0, 0]);
+        let mut backend = FakeBackend::new(MASKED, &[CLEAR, CLEAR, TIMER0, CLEAR, CLEAR, CLEAR]);
         let evidence = run_ieee802154_event_status_probe(&mut backend, config(2));
 
         assert_eq!(
             evidence.stop,
             Ieee802154EventStatusProbeStop::DualLatchTimeout
         );
-        assert_eq!(evidence.dual_observed_events, TIMER0_EVENT);
-        assert_eq!(evidence.dual_latched_events, 0);
-        assert_eq!(evidence.cleanup_pending_events, 0);
-        assert_eq!(evidence.final_events, 0);
+        assert_eq!(evidence.dual_observed_events, TIMER0);
+        assert_eq!(evidence.dual_latched_events, CLEAR);
+        assert_eq!(evidence.cleanup_pending_events, CLEAR);
+        assert_eq!(evidence.final_events, CLEAR);
         assert!(backend.operations.contains(&Operation::WriteTimer0));
         assert!(!backend.operations.contains(&Operation::WriteTimer1));
         backend.assert_consumed();
@@ -1078,7 +1054,7 @@ mod tests {
 
     #[test]
     fn inactive_timer_counters_are_distinguished_from_masked_status() {
-        let mut backend = FakeBackend::new(0, &[0, 0, 0, 0, 0, 0]).with_inactive_timers();
+        let mut backend = FakeBackend::new(MASKED, &[CLEAR; 6]).with_inactive_timers();
         let evidence = run_ieee802154_event_status_probe(&mut backend, config(2));
 
         assert_eq!(
@@ -1093,13 +1069,13 @@ mod tests {
             evidence.timer1_value_before_start,
             evidence.timer1_value_max
         );
-        assert_eq!(evidence.final_events, 0);
+        assert_eq!(evidence.final_events, CLEAR);
         backend.assert_consumed();
     }
 
     #[test]
     fn either_inactive_timer_is_fail_closed_with_individual_extrema() {
-        let mut timer0_inactive = FakeBackend::new(0, &[0, 0, 0, 0, 0, 0]).with_inactive_timer0();
+        let mut timer0_inactive = FakeBackend::new(MASKED, &[CLEAR; 6]).with_inactive_timer0();
         let evidence = run_ieee802154_event_status_probe(&mut timer0_inactive, config(2));
         assert_eq!(
             evidence.stop,
@@ -1109,7 +1085,7 @@ mod tests {
         assert!(evidence.timer1_value_min < evidence.timer1_value_max);
         timer0_inactive.assert_consumed();
 
-        let mut timer1_inactive = FakeBackend::new(0, &[0, 0, 0, 0, 0, 0]).with_inactive_timer1();
+        let mut timer1_inactive = FakeBackend::new(MASKED, &[CLEAR; 6]).with_inactive_timer1();
         let evidence = run_ieee802154_event_status_probe(&mut timer1_inactive, config(2));
         assert_eq!(
             evidence.stop,
@@ -1122,31 +1098,23 @@ mod tests {
 
     #[test]
     fn first_selected_write_mismatch_is_fail_closed() {
-        let mut backend = FakeBackend::new(0, &[0, 0, TIMER_EVENTS, TIMER_EVENTS, TIMER_EVENTS, 0]);
+        let mut backend = FakeBackend::new(MASKED, &[CLEAR, CLEAR, TIMERS, TIMERS, TIMERS, CLEAR]);
         let evidence = run_ieee802154_event_status_probe(&mut backend, config(1));
 
         assert_eq!(
             evidence.stop,
             Ieee802154EventStatusProbeStop::SelectiveAcknowledgeMismatch
         );
-        assert_eq!(evidence.after_timer0_ack_events, TIMER_EVENTS);
-        assert_eq!(evidence.final_events, 0);
+        assert_eq!(evidence.after_timer0_ack_events, TIMERS);
+        assert_eq!(evidence.final_events, CLEAR);
         backend.assert_consumed();
     }
 
     #[test]
     fn second_selected_write_mismatch_is_fail_closed() {
         let mut backend = FakeBackend::new(
-            0,
-            &[
-                0,
-                0,
-                TIMER_EVENTS,
-                TIMER1_EVENT,
-                TIMER1_EVENT,
-                TIMER1_EVENT,
-                0,
-            ],
+            MASKED,
+            &[CLEAR, CLEAR, TIMERS, TIMER1, TIMER1, TIMER1, CLEAR],
         );
         let evidence = run_ieee802154_event_status_probe(&mut backend, config(1));
 
@@ -1154,40 +1122,36 @@ mod tests {
             evidence.stop,
             Ieee802154EventStatusProbeStop::SelectiveAcknowledgeMismatch
         );
-        assert_eq!(evidence.after_timer1_ack_events, TIMER1_EVENT);
-        assert_eq!(evidence.final_events, 0);
+        assert_eq!(evidence.after_timer1_ack_events, TIMER1);
+        assert_eq!(evidence.final_events, CLEAR);
         backend.assert_consumed();
     }
 
     #[test]
     fn distinct_first_latch_timeout_retains_the_last_sample() {
-        let mut backend = FakeBackend::new(0, &[0, 0, TIMER_EVENTS, TIMER1_EVENT, 0, 0, 0, 0, 0]);
+        let mut backend = FakeBackend::new(
+            MASKED,
+            &[
+                CLEAR, CLEAR, TIMERS, TIMER1, CLEAR, CLEAR, CLEAR, CLEAR, CLEAR,
+            ],
+        );
         let evidence = run_ieee802154_event_status_probe(&mut backend, config(2));
 
         assert_eq!(
             evidence.stop,
             Ieee802154EventStatusProbeStop::DistinctFirstLatchTimeout
         );
-        assert_eq!(evidence.distinct_snapshot_events, 0);
-        assert_eq!(evidence.final_events, 0);
+        assert_eq!(evidence.distinct_snapshot_events, CLEAR);
+        assert_eq!(evidence.final_events, CLEAR);
         backend.assert_consumed();
     }
 
     #[test]
     fn distinct_second_latch_timeout_retains_timer_zero() {
         let mut backend = FakeBackend::new(
-            0,
+            MASKED,
             &[
-                0,
-                0,
-                TIMER_EVENTS,
-                TIMER1_EVENT,
-                0,
-                TIMER0_EVENT,
-                TIMER0_EVENT,
-                TIMER0_EVENT,
-                TIMER0_EVENT,
-                0,
+                CLEAR, CLEAR, TIMERS, TIMER1, CLEAR, TIMER0, TIMER0, TIMER0, TIMER0, CLEAR,
             ],
         );
         let evidence = run_ieee802154_event_status_probe(&mut backend, config(2));
@@ -1196,26 +1160,17 @@ mod tests {
             evidence.stop,
             Ieee802154EventStatusProbeStop::DistinctSecondLatchTimeout
         );
-        assert_eq!(evidence.distinct_before_ack_events, TIMER0_EVENT);
-        assert_eq!(evidence.final_events, 0);
+        assert_eq!(evidence.distinct_before_ack_events, TIMER0);
+        assert_eq!(evidence.final_events, CLEAR);
         backend.assert_consumed();
     }
 
     #[test]
     fn distinct_selected_write_mismatch_is_fail_closed() {
         let mut backend = FakeBackend::new(
-            0,
+            MASKED,
             &[
-                0,
-                0,
-                TIMER_EVENTS,
-                TIMER1_EVENT,
-                0,
-                TIMER0_EVENT,
-                TIMER_EVENTS,
-                TIMER_EVENTS,
-                TIMER_EVENTS,
-                0,
+                CLEAR, CLEAR, TIMERS, TIMER1, CLEAR, TIMER0, TIMERS, TIMERS, TIMERS, CLEAR,
             ],
         );
         let evidence = run_ieee802154_event_status_probe(&mut backend, config(1));
@@ -1224,22 +1179,21 @@ mod tests {
             evidence.stop,
             Ieee802154EventStatusProbeStop::SelectiveAcknowledgeMismatch
         );
-        assert_eq!(evidence.distinct_after_ack_events, TIMER_EVENTS);
-        assert_eq!(evidence.final_events, 0);
+        assert_eq!(evidence.distinct_after_ack_events, TIMERS);
+        assert_eq!(evidence.final_events, CLEAR);
         backend.assert_consumed();
     }
 
     #[test]
-    fn failed_mask_restore_skips_raw_cleanup_and_overrides_the_probe_stop() {
-        let mut backend =
-            FakeBackend::new(0, &[0, 0, 0, 0, 0]).with_disabled_writeback(TIMER_EVENTS);
+    fn failed_mask_restore_skips_selected_cleanup_and_overrides_the_probe_stop() {
+        let mut backend = FakeBackend::new(MASKED, &[CLEAR; 5]).with_disabled_writeback(TIMER_PAIR);
         let evidence = run_ieee802154_event_status_probe(&mut backend, config(1));
 
         assert_eq!(
             evidence.stop,
             Ieee802154EventStatusProbeStop::CleanupNotClear
         );
-        assert_eq!(evidence.event_enable_after, TIMER_EVENTS);
+        assert_eq!(evidence.event_enable_after, TIMER_PAIR);
         assert!(!backend.operations.contains(&Operation::WriteTimer0));
         assert!(!backend.operations.contains(&Operation::WriteTimer1));
         backend.assert_consumed();

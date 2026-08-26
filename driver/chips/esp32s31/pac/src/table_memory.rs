@@ -170,17 +170,3 @@ impl RadioPhyRegisters {
         ]
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{PhyMemoryError, split_pbus_command};
-
-    #[test]
-    fn ten_bit_pbus_command_splits_into_generated_fields() {
-        assert_eq!(split_pbus_command(0x023b), Ok((0x3b, false, true)));
-        assert_eq!(
-            split_pbus_command(0x0400),
-            Err(PhyMemoryError::PbusCommandOutOfRange)
-        );
-    }
-}

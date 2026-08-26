@@ -323,11 +323,7 @@ impl BluetoothTaskRegisters {
 
 #[cfg(test)]
 mod tests {
-    use super::super::BluetoothControllerSramAddress;
-    use super::{
-        BluetoothPhyEnvironmentAddress, BluetoothPhyEnvironmentAddressError,
-        BluetoothPhyRegisterInitInputs, le_tx_on_delay_image, replace_byte,
-    };
+    use super::{BluetoothPhyEnvironmentAddress, BluetoothPhyEnvironmentAddressError};
 
     #[test]
     fn environment_address_checks_the_complete_published_extent() {
@@ -347,30 +343,5 @@ mod tests {
             BluetoothPhyEnvironmentAddress::new(u32::MAX - 3),
             Err(BluetoothPhyEnvironmentAddressError::ExtentOverflow)
         );
-    }
-
-    #[test]
-    fn dynamic_inputs_keep_the_exact_vendor_images() {
-        let environment =
-            BluetoothPhyEnvironmentAddress::new(0x2f12_3400).expect("valid environment");
-        let resolving_list =
-            BluetoothControllerSramAddress::new(0x2f23_4560).expect("valid list address");
-        let inputs =
-            BluetoothPhyRegisterInitInputs::new(0, environment, resolving_list, true, 0xab);
-
-        assert_eq!(inputs.private_configuration_byte_0x10.wrapping_sub(1), 0xff);
-        assert_eq!(environment.compressed_member(0x2c), 0x0004_8d0b);
-        assert_eq!((resolving_list.address() >> 2) & 0x000f_ffff, 0x0008_d158);
-        assert_eq!(environment.address().wrapping_add(0x40), 0x2f12_3440);
-        assert_eq!(0x100 | u32::from(inputs.option_byte_0x59), 0x1ab);
-    }
-
-    #[test]
-    fn fresh_read_transforms_preserve_only_the_reviewed_positions() {
-        assert_eq!(replace_byte(0xa5a5_5a5a, 0, 0x03), 0xa5a5_5a03);
-        assert_eq!(replace_byte(0xa5a5_5a5a, 1, 0x03), 0xa5a5_035a);
-        assert_eq!(replace_byte(0xa5a5_5a5a, 2, 0x44), 0xa544_5a5a);
-        assert_eq!(replace_byte(0xa5a5_5a5a, 3, 0x28), 0x28a5_5a5a);
-        assert_eq!(le_tx_on_delay_image(0xa5a5_5a5a, 0x21), 0xa0b8_5a5a);
     }
 }

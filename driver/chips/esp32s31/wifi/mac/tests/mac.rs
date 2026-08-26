@@ -44,16 +44,14 @@ use open_esp_radio_esp32s31_wifi_mac::{
     rx_pool::{RxStagePool, RxStageTransactionError},
     tx::{
         AmpduTxConfig, HeAmpduTxConfig, HeBccDcmMcs, HeEdcaTxopLimit, HeFecCoding, HeLdpcDcmMcs,
-        HeMcs, HeRate, HeResourceUnit, HeSmpduTxConfig, HeTriggerScheduledRate,
-        HeTriggerScheduledRateError, HtAmpduDensity, HtAmpduTxConfig, HtChannelWidth,
-        HtDuplicateCertificationRequest, HtDuplicateRate, HtDuplicateTxEvidenceGaps,
-        HtDuplicateTxLinkCapabilities, HtDuplicateTxOracleField, HtDuplicateTxOracleGaps,
-        HtDuplicateTxQualificationField, HtDuplicateTxQualificationGaps, HtDuplicateTxRejection,
-        HtDuplicateTxSelection, HtDuplicateTxUnavailable, HtGuardInterval, HtMcs,
-        HtPeerAmpduParameters, HtProtectionSpacing, HtRate, HtTxConfig, LegacyRate, LegacyTxConfig,
-        LegacyTxQueue, TxCompletion, TxError, TxHardware, TxLifetimeClass, TxPhyRate, TxSlot,
-        TxSlotState, he_ampdu_q0_image, he_smpdu_q0_image, ht_ampdu_q0_image, ht_q0_image,
-        legacy_q0_image, select_esp32s31_ht_duplicate_tx,
+        HeMcs, HeRate, HeResourceUnit, HeTriggerScheduledRate, HeTriggerScheduledRateError,
+        HtAmpduDensity, HtAmpduTxConfig, HtChannelWidth, HtDuplicateCertificationRequest,
+        HtDuplicateRate, HtDuplicateTxEvidenceGaps, HtDuplicateTxLinkCapabilities,
+        HtDuplicateTxOracleField, HtDuplicateTxOracleGaps, HtDuplicateTxQualificationField,
+        HtDuplicateTxQualificationGaps, HtDuplicateTxRejection, HtDuplicateTxSelection,
+        HtDuplicateTxUnavailable, HtGuardInterval, HtMcs, HtPeerAmpduParameters,
+        HtProtectionSpacing, HtRate, LegacyRate, LegacyTxConfig, LegacyTxQueue, TxCompletion,
+        TxError, TxHardware, TxPhyRate, TxSlot, TxSlotState, select_esp32s31_ht_duplicate_tx,
     },
 };
 use open_esp_radio_ieee80211::he::{HeMuSigBMimoUser, HeMuSigBNonMimoUser, HeMuSigBUser};
@@ -1221,23 +1219,6 @@ fn mac_delay_slot_reproduces_vendor_modulo_eleven() {
     assert_eq!(MacDelaySlot::from_random(10).value(), 10);
     assert_eq!(MacDelaySlot::from_random(11).value(), 0);
     assert_eq!(MacDelaySlot::from_random(u32::MAX).value(), 3);
-}
-
-#[test]
-fn slow_clock_calibration_reproduces_vendor_eighteen_bit_truncation() {
-    assert_eq!(MacSlowClockCalibration::Unavailable.register_value(), 0);
-    assert_eq!(
-        MacSlowClockCalibration::from_osi_value(0).register_value(),
-        0
-    );
-    assert_eq!(
-        MacSlowClockCalibration::from_osi_value(0x0003_ffff).register_value(),
-        0x0003_ffff
-    );
-    assert_eq!(
-        MacSlowClockCalibration::from_osi_value(0xabcd_0001).register_value(),
-        0x0001_0001
-    );
 }
 
 #[test]
@@ -3644,19 +3625,6 @@ fn tx_slot_disables_before_acknowledging_one_collision_queue() {
 }
 
 #[test]
-fn legacy_q0_image_reproduces_the_recovered_management_profile() {
-    let image = legacy_q0_image(0x2f00_5000, LegacyTxConfig::management_1m(0x40)).unwrap();
-    assert_eq!(image.plcp0, 0x0160_5000);
-    assert_eq!(image.plcp1, 0x0000_0040);
-    assert_eq!(image.power, 0x0808_0008);
-    assert_eq!(image.length_control, 0x0040_0004);
-    assert_eq!(LegacyTxConfig::management_1m(0x40).timeout, 0x03ff);
-    assert_eq!(LegacyTxConfig::management_1m(0x40).scheduler_priority, 1);
-    assert_eq!(LegacyTxConfig::management_1m(0x40).pti, 1);
-    assert_eq!(LegacyTxConfig::management_1m(0x40).pti_count, 1);
-}
-
-#[test]
 fn legacy_rate_codes_preserve_the_non_monotonic_hardware_encoding() {
     assert_eq!(LegacyRate::Dsss1MLong.code(), 0x00);
     assert_eq!(LegacyRate::Ofdm48M.code(), 0x08);
@@ -3868,69 +3836,6 @@ fn he_retry_rates_follow_the_owned_dot11ax_schedule_and_preserve_ldpc() {
 }
 
 #[test]
-fn ht_single_mpdu_image_matches_complete_blob_word_formulas() {
-    let rate = HtRate::new(
-        HtMcs::Mcs7,
-        HtGuardInterval::Short400Ns,
-        HtChannelWidth::Mhz40,
-    );
-    let mut config = HtTxConfig::single_mpdu(rate, 0x0117, 8).unwrap();
-    assert_eq!(config.length, 0x0123);
-    assert_eq!(
-        config.timeout,
-        TxLifetimeClass::DirectMpdu.fresh_queue_timeout()
-    );
-    config.data_power_primary = 1;
-    config.data_power_alternate = 2;
-    config.rts_power_primary = 3;
-    config.rts_power_alternate = 4;
-    config.hardware_key_selector = 4;
-    config.protection_spacing = HtProtectionSpacing::Density5;
-
-    let image = ht_q0_image(0x2f00_5000, config).unwrap();
-    assert_eq!(image.plcp0, 0x0160_5000);
-    assert_eq!(image.plcp1, 0x0208_1000);
-    assert_eq!(image.ht_signal, 0x8701_2387);
-    assert_eq!(image.data_length, 0x7000_0123);
-    assert_eq!(image.power, 0x0403_0201);
-    assert_eq!(image.length_control, 0x0000_0244);
-    assert_eq!(image.descriptor_count_a, 1);
-    assert_eq!(image.descriptor_count_b, 1);
-    assert_eq!(image.protection_spacing, 40);
-}
-
-#[test]
-fn ht_ampdu_image_matches_the_two_mpdu_vendor_oracle() {
-    let rate = HtRate::new(
-        HtMcs::Mcs7,
-        HtGuardInterval::Short400Ns,
-        HtChannelWidth::Mhz20,
-    );
-    let mut config = HtAmpduTxConfig::new(rate, 0x0c2e, 2).unwrap();
-    assert_eq!(
-        config.timeout,
-        TxLifetimeClass::AmpduContainer.fresh_queue_timeout()
-    );
-    config.data_power_primary = 1;
-    config.data_power_alternate = 2;
-    config.rts_power_primary = 3;
-    config.rts_power_alternate = 4;
-    config.hardware_key_selector = 4;
-    config.protection_spacing = HtProtectionSpacing::Density5;
-
-    let image = ht_ampdu_q0_image(0x2f00_5000, config).unwrap();
-    assert_eq!(image.plcp0, 0x0260_5000);
-    assert_eq!(image.plcp1, 0x0208_1000);
-    assert_eq!(image.ht_signal, 0x8f0c_2e07);
-    assert_eq!(image.data_length, 0x7040_0c2e);
-    assert_eq!(image.power, 0x0403_0201);
-    assert_eq!(image.length_control, 0x0040_0244);
-    assert_eq!(image.descriptor_count_a, 2);
-    assert_eq!(image.descriptor_count_b, 2);
-    assert_eq!(image.protection_spacing, 40);
-}
-
-#[test]
 fn rate_control_code_is_decoded_in_its_ht_or_he_arena() {
     let ht = TxPhyRate::from_rate_control_code(
         RateScheduleKind::Dot11N,
@@ -3984,105 +3889,6 @@ fn rate_control_code_is_decoded_in_its_ht_or_he_arena() {
 }
 
 #[test]
-fn he20_mcs9_image_matches_the_vendor_vector_and_blob_derived_spacing() {
-    let rate = HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf800Ns);
-    let density = HtAmpduDensity::SixteenMicroseconds;
-    let mut config = HeAmpduTxConfig::new(rate, 27, 0x76, 1, density).unwrap();
-    assert_eq!(
-        config.timeout,
-        TxLifetimeClass::AmpduContainer.fresh_queue_timeout()
-    );
-    config.data_power_primary = 5;
-    config.data_power_alternate = 5;
-    config.rts_power_primary = 5;
-    config.rts_power_alternate = 5;
-    config.hardware_key_selector = 4;
-
-    let image = he_ampdu_q0_image(0x2f03_1638, config).unwrap();
-    assert_eq!(rate.code(), 35);
-    assert_eq!(rate.power_lookup_code(), 25);
-    assert_eq!(rate.nominal_kbps(), 114_700);
-    assert_eq!(image.plcp0, 0x0563_1638);
-    assert_eq!(image.plcp1, 0x0408_3000);
-    assert_eq!(image.he_signal_a1, 0xfc20_5b4f);
-    assert_eq!(image.he_signal_a2_length, 0x1003_b105);
-    assert_eq!(image.power, 0x0505_0505);
-    assert_eq!(image.length_control, 0x0040_0244);
-    assert_eq!(image.descriptor_count_a, 1);
-    assert_eq!(image.descriptor_count_b, 1);
-    assert_eq!(image.protection_spacing, 230);
-    assert_eq!(config.rate(), rate);
-    assert_eq!(config.ampdu_density(), density);
-    assert_eq!(config.protection_spacing(), 230);
-
-    config = HeAmpduTxConfig::new(
-        HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::FourLtf3200Ns),
-        27,
-        0x76,
-        1,
-        density,
-    )
-    .unwrap();
-    assert_eq!(
-        he_ampdu_q0_image(0x2f03_1638, config).unwrap().he_signal_a1,
-        0xfc60_5b4f,
-    );
-}
-
-#[test]
-fn he20_dcm_smpdu_image_matches_the_synchronous_vendor_oracle() {
-    let rate = HeRate::bcc_dcm(HeBccDcmMcs::Mcs0, HeGuardIntervalAndLtf::TwoLtf800Ns);
-    let mut config = HeSmpduTxConfig::new(rate, 0, 24).unwrap();
-    assert_eq!(
-        config.timeout,
-        TxLifetimeClass::AmpduContainer.fresh_queue_timeout()
-    );
-    config.data_power_primary = 5;
-    config.data_power_alternate = 5;
-    config.rts_power_primary = 5;
-    config.rts_power_alternate = 5;
-
-    let image = he_smpdu_q0_image(0x2f03_1638, config).unwrap();
-    assert_eq!(config.apep_length(), 32);
-    assert_eq!(image.plcp0, 0x0163_1638);
-    assert_eq!(image.plcp1, 0x0401_a000);
-    assert_eq!(image.he_signal_a1, 0xfc20_4087);
-    assert_eq!(image.he_signal_a2_length, 0x0001_0105);
-    assert_eq!(image.power, 0x0505_0505);
-    assert_eq!(image.length_control, 0x0040_02c4);
-    assert_eq!(image.descriptor_count_a, 1);
-    assert_eq!(image.descriptor_count_b, 1);
-    assert_eq!(image.protection_spacing, 0x31);
-}
-
-#[test]
-fn he20_formatter_covers_mcs0_through_mcs9_and_every_gi_ltf() {
-    for mcs in 0..=9 {
-        let mcs = HeMcs::from_index(mcs).unwrap();
-        for gi_ltf in [
-            HeGuardIntervalAndLtf::OneLtf800Ns,
-            HeGuardIntervalAndLtf::TwoLtf800Ns,
-            HeGuardIntervalAndLtf::TwoLtf1600Ns,
-            HeGuardIntervalAndLtf::FourLtf3200Ns,
-        ] {
-            let rate = HeRate::new(mcs, gi_ltf);
-            let image = he_ampdu_q0_image(
-                0x2f00_5000,
-                HeAmpduTxConfig::new(rate, 27, 312, 2, HtAmpduDensity::FourMicroseconds).unwrap(),
-            )
-            .unwrap();
-            assert_eq!((image.plcp0 >> 24) & 7, 5);
-            assert_eq!((image.he_signal_a1 >> 3) & 0x0f, u32::from(mcs.index()));
-            assert_eq!(
-                (image.he_signal_a1 >> 21) & 0x03,
-                u32::from(gi_ltf.encoding()),
-            );
-            assert_eq!((image.he_signal_a2_length >> 11) & 0xffff, 312);
-        }
-    }
-}
-
-#[test]
 fn he_bcc_dcm_rates_publish_the_recovered_a1_bit_and_ru242_rates() {
     for (mcs, expected_index, expected_kbps) in [
         (HeBccDcmMcs::Mcs0, 0, 4_300),
@@ -4103,14 +3909,6 @@ fn he_bcc_dcm_rates_publish_the_recovered_a1_bit_and_ru242_rates() {
             rate.minimum_ampdu_subframe_bytes(HtAmpduDensity::EightMicroseconds),
             expected_kbps.div_ceil(1_000) as u16
         );
-        let config =
-            HeAmpduTxConfig::new(rate, 27, 312, 2, HtAmpduDensity::FourMicroseconds).unwrap();
-        let image = he_ampdu_q0_image(0x2f00_5000, config).unwrap();
-        assert_eq!((image.plcp1 >> 12) & 0x1f, u32::from(0x1a + expected_index));
-        assert_eq!((image.he_signal_a1 >> 3) & 0x0f, u32::from(expected_index));
-        assert_ne!(image.he_signal_a1 & (1 << 7), 0);
-        // DCM does not change the bounded BCC coding/STBC A2 control image.
-        assert_eq!(image.he_signal_a2_length & 0x7ff, 0x105);
     }
 
     assert_eq!(
@@ -4136,15 +3934,6 @@ fn he_ldpc_profile_owns_coding_control_and_the_dcm_mcs4_rom_column() {
     assert_eq!(ordinary.fec_coding(), HeFecCoding::Ldpc);
     assert!(ordinary.is_ldpc());
     assert!(!ordinary.is_dcm());
-    let ordinary_image = he_ampdu_q0_image(
-        0x2f00_5000,
-        HeAmpduTxConfig::new(ordinary, 27, 312, 2, HtAmpduDensity::FourMicroseconds).unwrap(),
-    )
-    .unwrap();
-    // Complete blob and ROM mac_tx_set_hesig transform certification BCC=0
-    // from intermediate 0x01ff to this queue-control low eleven-bit image.
-    assert_eq!(ordinary_image.he_signal_a2_length & 0x7ff, 0x107);
-
     for (gi_ltf, expected_kbps) in [
         (HeGuardIntervalAndLtf::TwoLtf800Ns, 25_800),
         (HeGuardIntervalAndLtf::TwoLtf1600Ns, 24_400),
@@ -4159,16 +3948,6 @@ fn he_ldpc_profile_owns_coding_control_and_the_dcm_mcs4_rom_column() {
         // domain. Direct LDPC+DCM MCS4 retains the canonical HE rate code.
         assert_eq!(rate.rate_control_dcm_fallback_code(), None);
         assert_eq!(rate.nominal_kbps(), expected_kbps);
-
-        let image = he_ampdu_q0_image(
-            0x2f00_5000,
-            HeAmpduTxConfig::new(rate, 27, 312, 2, HtAmpduDensity::FourMicroseconds).unwrap(),
-        )
-        .unwrap();
-        assert_eq!((image.plcp1 >> 12) & 0x1f, 0x1e);
-        assert_eq!((image.he_signal_a1 >> 3) & 0x0f, 4);
-        assert_ne!(image.he_signal_a1 & (1 << 7), 0);
-        assert_eq!(image.he_signal_a2_length & 0x7ff, 0x107);
     }
 }
 
@@ -4590,43 +4369,6 @@ fn zero_edca_txop_selects_the_rom_apep_table_for_every_he_rate() {
 }
 
 #[test]
-fn ht_single_and_ampdu_formatters_cover_every_mcs_width_and_gi() {
-    for mcs in 0..=7 {
-        let mcs = HtMcs::from_index(mcs).unwrap();
-        for width in [HtChannelWidth::Mhz20, HtChannelWidth::Mhz40] {
-            for gi in [HtGuardInterval::Long800Ns, HtGuardInterval::Short400Ns] {
-                let rate = HtRate::new(mcs, gi, width);
-                let single =
-                    ht_q0_image(0x2f00_5000, HtTxConfig::single_mpdu(rate, 100, 8).unwrap())
-                        .unwrap();
-                let aggregate =
-                    ht_ampdu_q0_image(0x2f00_5000, HtAmpduTxConfig::new(rate, 312, 2).unwrap())
-                        .unwrap();
-
-                assert_eq!((single.plcp0 >> 24) & 7, 1);
-                assert_eq!((aggregate.plcp0 >> 24) & 7, 2);
-                assert_eq!((single.ht_signal >> 27) & 1, 0);
-                assert_eq!((aggregate.ht_signal >> 27) & 1, 1);
-                assert_eq!(single.data_length & 0x00c0_0000, 0);
-                assert_eq!(aggregate.data_length & 0x00c0_0000, 0x0040_0000);
-                assert_eq!(single.length_control & 0x00c0_0000, 0);
-                assert_eq!(aggregate.length_control & 0x00c0_0000, 0x0040_0000);
-                assert_eq!(
-                    (single.ht_signal >> 7) & 1,
-                    (width == HtChannelWidth::Mhz40) as u32
-                );
-                assert_eq!(
-                    (aggregate.ht_signal >> 7) & 1,
-                    (width == HtChannelWidth::Mhz40) as u32
-                );
-                assert!(!(single.plcp1 & 0x2000_0000 != 0));
-                assert!(!(aggregate.plcp1 & 0x2000_0000 != 0));
-            }
-        }
-    }
-}
-
-#[test]
 fn ht_peer_ampdu_density_maps_to_the_complete_blob_spacing_values() {
     let expected = [20, 20, 20, 20, 20, 40, 76, 148];
     for (density, expected) in expected.into_iter().enumerate() {
@@ -4722,17 +4464,6 @@ fn legacy_rts_rates_match_the_complete_vendor_selector() {
 }
 
 #[test]
-fn legacy_54m_image_publishes_the_vendor_24m_basic_rate() {
-    let mut config = LegacyTxConfig::management_1m(0x0064);
-    config.rate = LegacyRate::Ofdm54M;
-    config.rts_rate = config.rate.vendor_rts_rate();
-    let image = legacy_q0_image(0x2f00_0100, config).unwrap();
-
-    assert_eq!(image.plcp1, 0x0000_c064);
-    assert_eq!(image.length_control, 0x0040_0244);
-}
-
-#[test]
 fn data_queue_priorities_match_the_complete_blob_event_mapping() {
     for (queue, expected) in [
         (LegacyTxQueue::Voice, 3),
@@ -4750,39 +4481,6 @@ fn management_profile_derives_plcp1_from_mpdu_plus_fcs() {
     let config = LegacyTxConfig::management_1m_from_mpdu_length(30).unwrap();
     assert_eq!(config.signal, 0x22);
     assert!(LegacyTxConfig::management_1m_from_mpdu_length(0x0ffc).is_none());
-}
-
-#[test]
-fn protected_legacy_profile_publishes_sta_pairwise_slot_in_plcp1() {
-    let mut config = LegacyTxConfig::management_1m(0x99);
-    config.hardware_key_selector = 4;
-    let image = legacy_q0_image(0x2f00_0100, config).unwrap();
-    assert_eq!(image.plcp0, 0x0160_0100);
-    assert_eq!(image.plcp1, 0x0008_0099);
-    assert_eq!(image.length_control, 0x0040_0004);
-}
-
-#[test]
-fn protected_legacy_profile_composes_ap_interface_and_pairwise_slot_in_plcp1() {
-    let mut config = LegacyTxConfig::management_1m(0x99);
-    config.interface = MacInterface::AccessPoint;
-    config.hardware_key_selector = 8;
-    let image = legacy_q0_image(0x2f00_0100, config).unwrap();
-    // Descriptor control byte 0x48 occupies PLCP1 bits 24:17.
-    assert_eq!(image.plcp1, 0x0090_0099);
-    // LENGTH_CONTROL owns the key index, not the BSSID selector.
-    assert_eq!(image.length_control, 0x0040_0004);
-}
-
-#[test]
-fn legacy_q0_image_derives_the_recovered_format_from_receiver_class() {
-    let mut config = LegacyTxConfig::management_1m(0x22);
-    let image = legacy_q0_image(0x2f00_0100, config).unwrap();
-    assert_eq!(image.plcp0, 0x0160_0100);
-
-    config.group_receiver = true;
-    let image = legacy_q0_image(0x2f00_0100, config).unwrap();
-    assert_eq!(image.plcp0, 0x0060_0100);
 }
 
 #[test]

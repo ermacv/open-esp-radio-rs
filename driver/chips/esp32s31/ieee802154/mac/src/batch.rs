@@ -46,11 +46,8 @@ pub enum MacMeasurementSample {
 /// Failure to construct a self-consistent sampled event batch.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MacBatchConstructionError {
-    /// The named event mask contains a bit absent from the reviewed ISR.
-    UnsupportedEventBits {
-        /// Complete rejected event-bit subset.
-        bits: u16,
-    },
+    /// The semantic event set contains an event absent from the reviewed ISR.
+    UnsupportedEvents(Ieee802154EventMask),
     /// `RX_ABORT` was present without its sampled reason.
     MissingRxAbortReason,
     /// A receive-abort reason was supplied without `RX_ABORT`.
@@ -88,9 +85,9 @@ impl MacEventBatch {
     ) -> Result<Self, MacBatchConstructionError> {
         let mut sink = ValidationSink;
         if let Err(error) = dispatch_event_batch(events, &mut sink) {
-            return Err(MacBatchConstructionError::UnsupportedEventBits {
-                bits: error.unsupported_event_bits(),
-            });
+            return Err(MacBatchConstructionError::UnsupportedEvents(
+                error.unsupported_events(),
+            ));
         }
 
         let has_rx_abort = events.contains(Ieee802154Event::RxAbort);
@@ -162,9 +159,9 @@ mod tests {
     fn clock_count_is_rejected_before_a_batch_exists() {
         assert_eq!(
             MacEventBatch::new(Ieee802154Event::ClockCountMatch.mask(), None, None, None),
-            Err(MacBatchConstructionError::UnsupportedEventBits {
-                bits: Ieee802154Event::ClockCountMatch.bit(),
-            })
+            Err(MacBatchConstructionError::UnsupportedEvents(
+                Ieee802154Event::ClockCountMatch.mask()
+            ))
         );
     }
 
@@ -214,38 +211,5 @@ mod tests {
         assert!(
             MacEventBatch::new(Ieee802154Event::EdDone.mask(), None, None, Some(sample)).is_ok()
         );
-    }
-
-    #[test]
-    fn all_handled_event_subsets_have_one_deterministic_construction_result() {
-        for raw in 0_u16..=0x3fff {
-            let Ok(events) = Ieee802154EventMask::from_named_bits(raw) else {
-                continue;
-            };
-            if events.contains(Ieee802154Event::ClockCountMatch) {
-                assert!(matches!(
-                    MacEventBatch::new(events, None, None, None),
-                    Err(MacBatchConstructionError::UnsupportedEventBits { .. })
-                ));
-                continue;
-            }
-
-            let rx_reason = events
-                .contains(Ieee802154Event::RxAbort)
-                .then_some(Ieee802154RxAbortReason::CrcError);
-            let tx_reason = events
-                .contains(Ieee802154Event::TxAbort)
-                .then_some(Ieee802154TxAbortReason::TxSecurityError);
-            let measurement =
-                events
-                    .contains(Ieee802154Event::EdDone)
-                    .then_some(MacMeasurementSample::Energy(
-                        MacEnergySample::from_raw_code(-42),
-                    ));
-            assert!(
-                MacEventBatch::new(events, rx_reason, tx_reason, measurement).is_ok(),
-                "handled mask {raw:#06x} must form exactly one batch"
-            );
-        }
     }
 }

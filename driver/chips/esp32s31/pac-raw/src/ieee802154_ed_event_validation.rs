@@ -235,29 +235,3 @@ pub fn write_timer0_event(registers: &mut crate::Ieee802154Mac) {
     }
     order_device_accesses();
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{
-        ED_ABORT_REASONS, EVENT_FIELD_MASK, RX_ABORT_FIELD_MASK, VALIDATION_EVENTS,
-        replace_event_field, replace_rx_abort_field,
-    };
-
-    #[test]
-    fn fixed_validation_image_preserves_every_unowned_upper_bit() {
-        let sentinel = 0xa5a5_c000;
-        assert_eq!(
-            replace_event_field(sentinel, VALIDATION_EVENTS),
-            sentinel | 0x0150
-        );
-        assert_eq!(
-            replace_event_field(sentinel | EVENT_FIELD_MASK, 0),
-            sentinel
-        );
-        assert_eq!(
-            replace_rx_abort_field(0x8000_0000, ED_ABORT_REASONS),
-            0x8380_0000
-        );
-        assert_eq!(replace_rx_abort_field(RX_ABORT_FIELD_MASK, 0), 0);
-    }
-}

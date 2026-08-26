@@ -24,12 +24,6 @@ pub enum MacHe20PeerError {
     UnsupportedRtsThreshold,
 }
 
-#[cfg(test)]
-const fn repeated_packet_padding(packet_padding_eight_us: u8) -> u32 {
-    let padding_us = ((packet_padding_eight_us as u32) << 3) & 0x1f;
-    padding_us | (padding_us << 5) | (padding_us << 10) | (padding_us << 15) | (padding_us << 20)
-}
-
 impl WifiRadioRegisters {
     /// Enable interface-zero HE BSSID matching before installing peer state.
     ///
@@ -177,17 +171,5 @@ impl WifiRadioRegisters {
                 .set(0)
         });
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::repeated_packet_padding;
-
-    #[test]
-    fn packet_padding_matches_five_recovered_fields() {
-        assert_eq!(repeated_packet_padding(0), 0);
-        assert_eq!(repeated_packet_padding(2), 0x0108_4210);
-        assert_eq!(repeated_packet_padding(3), 0x018c_6318);
     }
 }

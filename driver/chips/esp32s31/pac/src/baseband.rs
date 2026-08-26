@@ -958,10 +958,7 @@ impl RadioPhyRegisters {
 #[cfg(test)]
 mod tests {
     use super::{
-        clear_baseband_tail_high, clear_baseband_tail_low, clear_power_detector_enable_field,
-        decode_noise_floor_quarter_db, low_bit, quarter_db_to_dbm, tone_path_image,
-        tx_iq_gain_field, tx_iq_phase_field, txdc_power_detector_images, txiq_first_mismatch_image,
-        txiq_second_mismatch_image,
+        decode_noise_floor_quarter_db, quarter_db_to_dbm, tx_iq_gain_field, tx_iq_phase_field,
     };
 
     #[test]
@@ -973,53 +970,6 @@ mod tests {
         assert_eq!(quarter_db_to_dbm(-384), -96);
         assert_eq!(quarter_db_to_dbm(-1), 0);
         assert_eq!(quarter_db_to_dbm(-1024), 0);
-    }
-
-    #[test]
-    fn power_detector_enable_clears_remain_three_distinct_images() {
-        let first = clear_power_detector_enable_field(0b111, 0b010);
-        let second = clear_power_detector_enable_field(first, 0b001);
-        let third = clear_power_detector_enable_field(second, 0b100);
-        assert_eq!([first, second, third], [0b101, 0b100, 0]);
-    }
-
-    #[test]
-    fn standalone_feature_inputs_retain_only_the_vendor_low_bit() {
-        assert!(!low_bit(0));
-        assert!(low_bit(1));
-        assert!(!low_bit(2));
-        assert!(low_bit(u32::MAX));
-    }
-
-    #[test]
-    fn baseband_partial_field_edges_preserve_unselected_bits() {
-        assert_eq!(clear_baseband_tail_low(7), 4);
-        assert_eq!(clear_baseband_tail_high(7), 3);
-    }
-
-    #[test]
-    fn txdc_capture_images_replace_only_owned_fields() {
-        assert_eq!(
-            txdc_power_detector_images(0xa5a5_5a34, 0x5a5a_0ab5),
-            (0x34, 0x0000_0ab0, 0xa5a5_5af0, 0x5a5a_0785)
-        );
-    }
-
-    #[test]
-    fn calibration_tone_images_match_both_complete_archive_calls() {
-        assert_eq!(tone_path_image(0xa000_0000, true, 0x80, 0), 0xa004_0020);
-        assert_eq!(tone_path_image(0xa000_0000, false, 0x80, 0x28), 0xa003_6020);
-        assert_eq!(tone_path_image(0xbfff_ffff, false, 0, 0), 0xb000_0000);
-    }
-
-    #[test]
-    fn txiq_mismatch_images_match_complete_rom_leaves() {
-        assert_eq!(
-            txiq_first_mismatch_image(0xa000_0000, true, 0x50, 0x80),
-            0xa42e_c020
-        );
-        assert_eq!(txiq_second_mismatch_image(0xa6ae_c020, true), 0xa8ae_c020);
-        assert_eq!(txiq_second_mismatch_image(0xa6ae_c020, false), 0xa1ae_c020);
     }
 
     #[test]

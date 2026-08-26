@@ -114,7 +114,6 @@ use std::process::ExitCode;
 use std::{
     collections::{BTreeMap, BTreeSet},
     env, fs,
-    path::Path,
 };
 
 type Error = BlobrayError;

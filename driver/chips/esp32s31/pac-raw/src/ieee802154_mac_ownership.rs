@@ -1056,6 +1056,38 @@ impl TaskRegisters {
 /// Inactive or ISR-owned IEEE 802.15.4 event/status capability.
 ///
 /// There is no conversion to the task owner and no raw register accessor.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InterruptRxStatusReadback {
+    bits: u32,
+    abort_reason_code: u8,
+}
+
+impl InterruptRxStatusReadback {
+    pub const fn bits(&self) -> u32 {
+        self.bits
+    }
+
+    pub const fn abort_reason_code(&self) -> u8 {
+        self.abort_reason_code
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InterruptTxStatusReadback {
+    bits: u32,
+    abort_reason_code: u8,
+}
+
+impl InterruptTxStatusReadback {
+    pub const fn bits(&self) -> u32 {
+        self.bits
+    }
+
+    pub const fn abort_reason_code(&self) -> u8 {
+        self.abort_reason_code
+    }
+}
+
 #[must_use = "the interrupt owner must be deactivated and reunited"]
 pub struct InterruptRegisters {
     registers: crate::Ieee802154Mac,
@@ -1084,14 +1116,22 @@ impl InterruptRegisters {
 
     /// Observe the complete RX status word captured for an RX-abort event.
     #[inline]
-    pub fn rx_status_bits(&self) -> u32 {
-        self.registers.rx_status().read().bits()
+    pub fn rx_status_readback(&self) -> InterruptRxStatusReadback {
+        let status = self.registers.rx_status().read();
+        InterruptRxStatusReadback {
+            bits: status.bits(),
+            abort_reason_code: status.abort_reason().bits(),
+        }
     }
 
     /// Observe the complete TX status word captured for a TX-abort event.
     #[inline]
-    pub fn tx_status_bits(&self) -> u32 {
-        self.registers.tx_status().read().bits()
+    pub fn tx_status_readback(&self) -> InterruptTxStatusReadback {
+        let status = self.registers.tx_status().read();
+        InterruptTxStatusReadback {
+            bits: status.bits(),
+            abort_reason_code: status.abort_reason().bits(),
+        }
     }
 
     /// Observe the signed energy-detection result captured for ED-DONE.

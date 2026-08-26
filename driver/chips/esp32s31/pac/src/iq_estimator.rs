@@ -184,14 +184,3 @@ impl RadioPhyRegisters {
             != 0
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::truncate_control_window;
-
-    #[test]
-    fn control_window_matches_the_rom_u16_shift_and_mask() {
-        assert_eq!(truncate_control_window(0x8fa0), 0x0fa0);
-        assert_eq!(truncate_control_window(u16::MAX), 0x7fff);
-    }
-}

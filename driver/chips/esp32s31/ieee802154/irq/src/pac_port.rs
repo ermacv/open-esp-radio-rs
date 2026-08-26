@@ -1,26 +1,28 @@
 //! Production interrupt-port glue for the restricted ESP32-S31 PAC owner.
 
 use open_esp_radio_esp32s31_pac::{
+    Ieee802154EventMask, Ieee802154EventObservationError,
     Ieee802154InterruptRegisters as PacInterruptRegisters,
-    Ieee802154InterruptSnapshot as PacInterruptSnapshot,
+    Ieee802154InterruptSnapshot as PacInterruptSnapshot, Ieee802154RxAbortReasonObservation,
+    Ieee802154TxAbortReasonObservation,
 };
 
 use crate::{InterruptPort, InterruptSnapshot};
 
 impl InterruptSnapshot for PacInterruptSnapshot {
     #[inline]
-    fn raw_event_bits(&self) -> u16 {
-        self.events().bits()
+    fn event_classification(&self) -> Result<Ieee802154EventMask, Ieee802154EventObservationError> {
+        self.event_classification()
     }
 
     #[inline]
-    fn raw_rx_abort_reason_code(&self) -> u8 {
-        self.rx_abort_reason_code().unwrap_or(0)
+    fn rx_abort_reason(&self) -> Option<Ieee802154RxAbortReasonObservation> {
+        self.rx_abort_reason()
     }
 
     #[inline]
-    fn raw_tx_abort_reason_code(&self) -> u8 {
-        self.tx_abort_reason_code().unwrap_or(0)
+    fn tx_abort_reason(&self) -> Option<Ieee802154TxAbortReasonObservation> {
+        self.tx_abort_reason()
     }
 
     #[inline]

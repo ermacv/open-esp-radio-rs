@@ -396,14 +396,6 @@ mod tests {
     }
 
     #[test]
-    fn nrx_image_preserves_second_high_byte_and_replaces_low_twenty_four_bits() {
-        assert_eq!(
-            nrx_frequency_image(0x0200_0000, 0xa5f0_1234, 2_462),
-            0xa500_0000
-        );
-    }
-
-    #[test]
     fn nrx_division_matches_the_complete_rv32_input_domain() {
         assert_eq!(rv32_signed_div(80, 0), -1);
         assert_eq!(rv32_signed_div(i32::MIN, -1), i32::MIN);

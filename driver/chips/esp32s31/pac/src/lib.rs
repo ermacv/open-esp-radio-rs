@@ -143,21 +143,22 @@ const BLUETOOTH_MAIN_XTAL_LOW_POWER_DIVIDER: ModemLowPowerClockDivider =
         Some(divider) => divider,
         None => panic!("reviewed Bluetooth low-power divider exceeds its PAC field"),
     };
-#[doc(hidden)]
-pub use ieee802154::Ieee802154RouteRawReadback;
 pub use ieee802154::{
     Ieee802154AckTimeoutUnits, Ieee802154CcaMode, Ieee802154EdCcaSnapshot, Ieee802154EdCommand,
-    Ieee802154EdDurationUnits, Ieee802154EdSampleRate, Ieee802154EventEnableMask,
-    Ieee802154EventObservation, Ieee802154FoundationSnapshot, Ieee802154FrequencyCode,
-    Ieee802154InterruptSnapshot, Ieee802154MacCommand, Ieee802154MacConfigurationReadback,
-    Ieee802154MacControl, Ieee802154MacPolicySnapshot, Ieee802154MultipanEnableMask,
-    Ieee802154MultipanIndex, Ieee802154OperationEventEnableObservation,
+    Ieee802154EdDurationUnits, Ieee802154EdSampleRate, Ieee802154Event, Ieee802154EventEnableMask,
+    Ieee802154EventMask, Ieee802154EventObservation, Ieee802154EventObservationError,
+    Ieee802154FoundationSnapshot, Ieee802154FrequencyCode, Ieee802154InterruptSnapshot,
+    Ieee802154MacCommand, Ieee802154MacConfigurationReadback, Ieee802154MacControl,
+    Ieee802154MacPolicySnapshot, Ieee802154MultipanEnableMask, Ieee802154MultipanIndex,
+    Ieee802154ObservedEventState, Ieee802154OperationEventEnableObservation,
     Ieee802154OperationRxAbortEnableObservation, Ieee802154PanIdentity, Ieee802154Pti,
-    Ieee802154RxAbortEnableMask, Ieee802154RxStateCode, Ieee802154RxStatusObservation,
-    Ieee802154SecurityPayloadOffset, Ieee802154StateSnapshot, Ieee802154Timer0ThresholdWord,
-    Ieee802154Timer0ValueWord, Ieee802154Timer1ThresholdWord, Ieee802154Timer1ValueWord,
-    Ieee802154TimerLease, Ieee802154TransmitSecurityControl, Ieee802154TxPowerCode,
-    Ieee802154TxStateCode,
+    Ieee802154RouteState, Ieee802154RxAbortEnableMask, Ieee802154RxAbortReason,
+    Ieee802154RxAbortReasonObservation, Ieee802154RxStateCode, Ieee802154SecurityPayloadOffset,
+    Ieee802154StateSnapshot, Ieee802154Timer0ThresholdWord, Ieee802154Timer0ValueWord,
+    Ieee802154Timer1ThresholdWord, Ieee802154Timer1ValueWord, Ieee802154TimerLease,
+    Ieee802154TransmitSecurityControl, Ieee802154TxAbortReason, Ieee802154TxAbortReasonObservation,
+    Ieee802154TxPowerCode, Ieee802154TxStateCode, Ieee802154ValidationEdDurationState,
+    Ieee802154ValidationEventEnableState,
 };
 #[doc(hidden)]
 pub use ieee802154::{Ieee802154PolledRegisterLease, Ieee802154RegisterLease};

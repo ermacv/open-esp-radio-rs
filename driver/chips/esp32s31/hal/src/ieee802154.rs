@@ -14,7 +14,6 @@
 
 use core::convert::Infallible;
 
-use open_esp_radio_esp32s31_ieee802154_irq::{Ieee802154RouteReadback, Ieee802154RouteWord};
 use open_esp_radio_esp32s31_pac::{
     Ieee802154AckTimeoutUnits as PacAckTimeoutUnits, Ieee802154CcaMode as PacCcaMode,
     Ieee802154EdDurationUnits as PacEdDurationUnits,
@@ -23,11 +22,17 @@ use open_esp_radio_esp32s31_pac::{
     Ieee802154OperationEventEnableObservation as PacOperationEventEnableObservation,
     Ieee802154OperationRxAbortEnableObservation as PacOperationRxAbortEnableObservation,
     Ieee802154PanIdentity as PacPanIdentity, Ieee802154RxAbortEnableMask as PacRxAbortEnableMask,
+    Ieee802154RxAbortReasonObservation,
 };
 pub(crate) use open_esp_radio_esp32s31_pac::{
     Ieee802154FoundationSnapshot, Ieee802154FrequencyCode, Ieee802154InterruptSetup,
-    Ieee802154PolledRegisterLease, Ieee802154Pti, Ieee802154RegisterLease, Ieee802154StateSnapshot,
-    Ieee802154TaskRegisters,
+    Ieee802154PolledRegisterLease, Ieee802154Pti, Ieee802154RegisterLease, Ieee802154RouteState,
+    Ieee802154StateSnapshot, Ieee802154TaskRegisters,
+};
+#[cfg(feature = "validation-probes")]
+use open_esp_radio_esp32s31_pac::{
+    Ieee802154ObservedEventState, Ieee802154ValidationEdDurationState,
+    Ieee802154ValidationEventEnableState,
 };
 
 use crate::ieee802154_operation::{
@@ -173,16 +178,6 @@ pub(crate) struct Ieee802154Hal<B: Ieee802154RegisterBackend> {
 pub(crate) type Ieee802154PacHal<'registers> =
     Ieee802154Hal<Ieee802154PolledRegisterLease<'registers>>;
 
-const fn decode_interrupt_route_readback(
-    core0_bits: u32,
-    core1_bits: u32,
-) -> Ieee802154RouteReadback {
-    Ieee802154RouteReadback::new(
-        Ieee802154RouteWord::from_raw(core0_bits),
-        Ieee802154RouteWord::from_raw(core1_bits),
-    )
-}
-
 impl<'registers> Ieee802154PacHal<'registers> {
     /// Borrow the IEEE 802.15.4 leaf from the unique task-side radio owner.
     pub(crate) fn from_owned(
@@ -193,8 +188,8 @@ impl<'registers> Ieee802154PacHal<'registers> {
     }
 
     #[cfg(feature = "validation-probes")]
-    pub(crate) fn validation_event_enable_events(&mut self) -> u16 {
-        self.backend.validation_event_enable_events()
+    pub(crate) fn validation_event_enable_state(&mut self) -> Ieee802154ValidationEventEnableState {
+        self.backend.validation_event_enable_state()
     }
 
     #[cfg(feature = "validation-probes")]
@@ -207,14 +202,13 @@ impl<'registers> Ieee802154PacHal<'registers> {
         self.backend.validation_disable_all_events();
     }
 
-    pub(crate) fn interrupt_route_readback(&mut self) -> Ieee802154RouteReadback {
-        let readback = self.backend.interrupt_route_readback();
-        decode_interrupt_route_readback(readback.core0_bits(), readback.core1_bits())
+    pub(crate) fn interrupt_route_state(&mut self) -> Ieee802154RouteState {
+        self.backend.interrupt_route_state()
     }
 
     #[cfg(feature = "validation-probes")]
-    pub(crate) fn validation_event_status_events(&mut self) -> u16 {
-        self.backend.validation_event_status_events()
+    pub(crate) fn validation_event_status_state(&mut self) -> Ieee802154ObservedEventState {
+        self.backend.validation_event_status_state()
     }
 
     #[cfg(feature = "validation-probes")]
@@ -264,8 +258,10 @@ impl<'registers> Ieee802154PacHal<'registers> {
     }
 
     #[cfg(feature = "validation-probes")]
-    pub(crate) fn validation_ed_event_enable_events(&mut self) -> u16 {
-        self.backend.validation_ed_event_enable_events()
+    pub(crate) fn validation_ed_event_enable_state(
+        &mut self,
+    ) -> Ieee802154ValidationEventEnableState {
+        self.backend.validation_ed_event_enable_state()
     }
 
     #[cfg(feature = "validation-probes")]
@@ -279,8 +275,10 @@ impl<'registers> Ieee802154PacHal<'registers> {
     }
 
     #[cfg(feature = "validation-probes")]
-    pub(crate) fn validation_ed_rx_abort_enable_events(&mut self) -> u32 {
-        self.backend.validation_ed_rx_abort_enable_events()
+    pub(crate) fn validation_ed_rx_abort_enable_state(
+        &mut self,
+    ) -> PacOperationRxAbortEnableObservation {
+        self.backend.validation_ed_rx_abort_enable_state()
     }
 
     #[cfg(feature = "validation-probes")]
@@ -294,18 +292,18 @@ impl<'registers> Ieee802154PacHal<'registers> {
     }
 
     #[cfg(feature = "validation-probes")]
-    pub(crate) fn validation_ed_event_status_events(&mut self) -> u16 {
-        self.backend.validation_ed_event_status_events()
+    pub(crate) fn validation_ed_event_status_state(&mut self) -> Ieee802154ObservedEventState {
+        self.backend.validation_ed_event_status_state()
     }
 
     #[cfg(feature = "validation-probes")]
-    pub(crate) fn validation_ed_rx_status_raw(&mut self) -> u32 {
-        self.backend.validation_ed_rx_status_raw()
+    pub(crate) fn validation_ed_rx_abort_reason(&mut self) -> Ieee802154RxAbortReasonObservation {
+        self.backend.validation_ed_rx_abort_reason()
     }
 
     #[cfg(feature = "validation-probes")]
-    pub(crate) fn validation_ed_duration(&mut self) -> u32 {
-        self.backend.validation_ed_duration()
+    pub(crate) fn validation_ed_duration_state(&mut self) -> Ieee802154ValidationEdDurationState {
+        self.backend.validation_ed_duration_state()
     }
 
     #[cfg(feature = "validation-probes")]
@@ -381,7 +379,7 @@ impl Ieee802154PolledOperationBackend for Ieee802154PacHal<'_> {
     }
 
     fn cpu_interrupt_route_is_detached(&mut self) -> Result<bool, Self::Error> {
-        Ok(self.interrupt_route_readback().is_full_reset())
+        Ok(self.interrupt_route_state().is_reset_detached())
     }
 
     fn operation_event_mask_state(
@@ -449,21 +447,23 @@ impl Ieee802154PolledOperationBackend for Ieee802154PacHal<'_> {
     }
 
     fn sample_event_status(&mut self) -> Result<Ieee802154OperationEventObservation, Self::Error> {
-        Ok(Ieee802154OperationEventObservation::from_raw(
-            self.backend.event_status_observation().bits(),
+        Ok(Ieee802154OperationEventObservation::from_classification(
+            self.backend.event_status_observation().classification(),
         ))
     }
 
     fn acknowledge_pending_events(
         &mut self,
     ) -> Result<Ieee802154OperationEventObservation, Self::Error> {
-        Ok(Ieee802154OperationEventObservation::from_raw(
-            self.backend.acknowledge_pending_events().bits(),
+        Ok(Ieee802154OperationEventObservation::from_classification(
+            self.backend.acknowledge_pending_events().classification(),
         ))
     }
 
-    fn sample_rx_abort_status(&mut self) -> Result<u32, Self::Error> {
-        Ok(self.backend.rx_status_observation().bits())
+    fn sample_rx_abort_reason(
+        &mut self,
+    ) -> Result<Ieee802154RxAbortReasonObservation, Self::Error> {
+        Ok(self.backend.rx_abort_reason_observation())
     }
 
     fn sample_ed_rss_code(&mut self) -> Result<i8, Self::Error> {
@@ -583,9 +583,6 @@ mod tests {
     use crate::ieee802154_policy::{
         Ieee802154AckTimeout, Ieee802154CcaMode, Ieee802154MacControl, Ieee802154PanIdentity,
     };
-
-    #[cfg(feature = "validation-probes")]
-    use super::decode_interrupt_route_readback;
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum Operation {
@@ -835,16 +832,5 @@ mod tests {
         // Reuniting proves the combined borrow consumed neither disjoint
         // ownership half.
         let _hardware = task.into_cold(interrupts).release();
-    }
-
-    #[cfg(feature = "validation-probes")]
-    #[test]
-    fn validation_route_decoder_preserves_both_words_and_pure_predicates() {
-        let readback = decode_interrupt_route_readback(0, 0x200);
-
-        assert_eq!(readback.core0().raw_bits(), 0);
-        assert_eq!(readback.core1().raw_bits(), 0x200);
-        assert!(readback.is_reset_unassigned());
-        assert!(!readback.is_full_reset());
     }
 }

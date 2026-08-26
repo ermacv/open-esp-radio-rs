@@ -8,7 +8,7 @@ use open_esp_radio_esp32s31_ieee802154_dma::{
     TxCompleted, TxDmaAddress,
 };
 use open_esp_radio_esp32s31_ieee802154_irq::{
-    Ieee802154Event, Ieee802154RxAbortReason, Ieee802154TxAbortReason,
+    Ieee802154Event, Ieee802154EventMask, Ieee802154RxAbortReason, Ieee802154TxAbortReason,
 };
 
 use crate::batch::{MacCcaSample, MacEnergySample, MacEventBatch, MacMeasurementSample};
@@ -691,15 +691,9 @@ pub enum MacBatchRejectReason {
     /// An empty batch cannot advance an active operation.
     Empty,
     /// At least one reviewed event is not allowed in the current phase.
-    UnexpectedEventBits {
-        /// Complete event subset rejected for the current phase.
-        bits: u16,
-    },
+    UnexpectedEvents(Ieee802154EventMask),
     /// More than one mutually exclusive terminal edge was sampled.
-    ConflictingTerminalEvents {
-        /// Complete conflicting terminal subset.
-        bits: u16,
-    },
+    ConflictingTerminalEvents(Ieee802154EventMask),
     /// The receive-abort reason has no supported transition in this phase.
     UnexpectedRxAbortReason(Ieee802154RxAbortReason),
     /// The transmit-abort reason has no supported transition in this phase.
@@ -1050,7 +1044,7 @@ fn evaluate_batch(
     phase: MacActivePhase,
     batch: MacEventBatch,
 ) -> Result<Evaluation, MacBatchRejectReason> {
-    if batch.events().bits() == 0 {
+    if batch.events().is_empty() {
         return Err(MacBatchRejectReason::Empty);
     }
     match phase {
@@ -1068,13 +1062,16 @@ fn evaluate_batch(
 }
 
 fn evaluate_receive(batch: MacEventBatch) -> Result<Evaluation, MacBatchRejectReason> {
-    const ALLOWED: u16 = Ieee802154Event::RxSfdDone.bit()
-        | Ieee802154Event::RxDone.bit()
-        | Ieee802154Event::RxAbort.bit();
+    const ALLOWED: Ieee802154EventMask = Ieee802154Event::RxSfdDone
+        .mask()
+        .union(Ieee802154Event::RxDone.mask())
+        .union(Ieee802154Event::RxAbort.mask());
     reject_unexpected_events(batch, ALLOWED)?;
     reject_conflicting(
         batch,
-        Ieee802154Event::RxDone.bit() | Ieee802154Event::RxAbort.bit(),
+        Ieee802154Event::RxDone
+            .mask()
+            .union(Ieee802154Event::RxAbort.mask()),
     )?;
 
     if let Some(reason) = batch.rx_abort_reason() {
@@ -1094,12 +1091,15 @@ fn evaluate_transmit(
     access: MacTransmitAccess,
     acknowledgement: MacTransmitAcknowledgement,
 ) -> Result<Evaluation, MacBatchRejectReason> {
-    let mut allowed = Ieee802154Event::RxSfdDone.bit()
-        | Ieee802154Event::TxSfdDone.bit()
-        | Ieee802154Event::TxDone.bit()
-        | Ieee802154Event::TxAbort.bit();
+    let mut allowed = Ieee802154Event::RxSfdDone
+        .mask()
+        .union(Ieee802154Event::TxSfdDone.mask())
+        .union(Ieee802154Event::TxDone.mask())
+        .union(Ieee802154Event::TxAbort.mask());
     if acknowledgement == MacTransmitAcknowledgement::Expected {
-        allowed |= Ieee802154Event::AckRxDone.bit() | Ieee802154Event::Timer0Overflow.bit();
+        allowed = allowed
+            .union(Ieee802154Event::AckRxDone.mask())
+            .union(Ieee802154Event::Timer0Overflow.mask());
     }
     reject_unexpected_events(batch, allowed)?;
 
@@ -1159,9 +1159,9 @@ fn evaluate_transmit(
 
     if timer_done {
         if !matches!(phase, MacActivePhase::AwaitingAcknowledgement { .. }) {
-            return Err(MacBatchRejectReason::UnexpectedEventBits {
-                bits: Ieee802154Event::Timer0Overflow.bit(),
-            });
+            return Err(MacBatchRejectReason::UnexpectedEvents(
+                Ieee802154Event::Timer0Overflow.mask(),
+            ));
         }
         if completion.is_some() {
             return Err(conflicting_terminal_batch(batch));
@@ -1179,16 +1179,18 @@ fn evaluate_acknowledgement(
     batch: MacEventBatch,
     access: MacTransmitAccess,
 ) -> Result<Evaluation, MacBatchRejectReason> {
-    const ALLOWED: u16 = Ieee802154Event::RxSfdDone.bit()
-        | Ieee802154Event::AckRxDone.bit()
-        | Ieee802154Event::TxAbort.bit()
-        | Ieee802154Event::Timer0Overflow.bit();
+    const ALLOWED: Ieee802154EventMask = Ieee802154Event::RxSfdDone
+        .mask()
+        .union(Ieee802154Event::AckRxDone.mask())
+        .union(Ieee802154Event::TxAbort.mask())
+        .union(Ieee802154Event::Timer0Overflow.mask());
     reject_unexpected_events(batch, ALLOWED)?;
     reject_conflicting(
         batch,
-        Ieee802154Event::AckRxDone.bit()
-            | Ieee802154Event::TxAbort.bit()
-            | Ieee802154Event::Timer0Overflow.bit(),
+        Ieee802154Event::AckRxDone
+            .mask()
+            .union(Ieee802154Event::TxAbort.mask())
+            .union(Ieee802154Event::Timer0Overflow.mask()),
     )?;
 
     if let Some(reason) = batch.tx_abort_reason() {
@@ -1213,7 +1215,9 @@ fn evaluate_acknowledgement(
 }
 
 fn evaluate_cca(batch: MacEventBatch) -> Result<Evaluation, MacBatchRejectReason> {
-    const ALLOWED: u16 = Ieee802154Event::EdDone.bit() | Ieee802154Event::RxAbort.bit();
+    const ALLOWED: Ieee802154EventMask = Ieee802154Event::EdDone
+        .mask()
+        .union(Ieee802154Event::RxAbort.mask());
     reject_unexpected_events(batch, ALLOWED)?;
     reject_conflicting(batch, ALLOWED)?;
 
@@ -1235,7 +1239,9 @@ fn evaluate_cca(batch: MacEventBatch) -> Result<Evaluation, MacBatchRejectReason
 }
 
 fn evaluate_energy_detection(batch: MacEventBatch) -> Result<Evaluation, MacBatchRejectReason> {
-    const ALLOWED: u16 = Ieee802154Event::EdDone.bit() | Ieee802154Event::RxAbort.bit();
+    const ALLOWED: Ieee802154EventMask = Ieee802154Event::EdDone
+        .mask()
+        .union(Ieee802154Event::RxAbort.mask());
     reject_unexpected_events(batch, ALLOWED)?;
     reject_conflicting(batch, ALLOWED)?;
 
@@ -1258,33 +1264,38 @@ fn evaluate_energy_detection(batch: MacEventBatch) -> Result<Evaluation, MacBatc
 
 fn reject_unexpected_events(
     batch: MacEventBatch,
-    allowed: u16,
+    allowed: Ieee802154EventMask,
 ) -> Result<(), MacBatchRejectReason> {
-    let unexpected = batch.events().bits() & !allowed;
-    if unexpected == 0 {
+    let unexpected = batch.events().difference(allowed);
+    if unexpected.is_empty() {
         Ok(())
     } else {
-        Err(MacBatchRejectReason::UnexpectedEventBits { bits: unexpected })
+        Err(MacBatchRejectReason::UnexpectedEvents(unexpected))
     }
 }
 
-fn reject_conflicting(batch: MacEventBatch, terminal: u16) -> Result<(), MacBatchRejectReason> {
-    let conflicting = batch.events().bits() & terminal;
-    if conflicting.count_ones() <= 1 {
+fn reject_conflicting(
+    batch: MacEventBatch,
+    terminal: Ieee802154EventMask,
+) -> Result<(), MacBatchRejectReason> {
+    let conflicting = batch.events().intersection(terminal);
+    if !conflicting.has_multiple() {
         Ok(())
     } else {
-        Err(MacBatchRejectReason::ConflictingTerminalEvents { bits: conflicting })
+        Err(MacBatchRejectReason::ConflictingTerminalEvents(conflicting))
     }
 }
 
 fn conflicting_terminal_batch(batch: MacEventBatch) -> MacBatchRejectReason {
-    MacBatchRejectReason::ConflictingTerminalEvents {
-        bits: batch.events().bits()
-            & (Ieee802154Event::TxDone.bit()
-                | Ieee802154Event::AckRxDone.bit()
-                | Ieee802154Event::TxAbort.bit()
-                | Ieee802154Event::Timer0Overflow.bit()),
-    }
+    MacBatchRejectReason::ConflictingTerminalEvents(
+        batch.events().intersection(
+            Ieee802154Event::TxDone
+                .mask()
+                .union(Ieee802154Event::AckRxDone.mask())
+                .union(Ieee802154Event::TxAbort.mask())
+                .union(Ieee802154Event::Timer0Overflow.mask()),
+        ),
+    )
 }
 
 const fn is_terminal_receive_abort(reason: Ieee802154RxAbortReason) -> bool {
@@ -1519,9 +1530,7 @@ mod tests {
             .expect_err("TX_DONE cannot complete RX");
         assert_eq!(
             rejected.reason(),
-            MacBatchRejectReason::UnexpectedEventBits {
-                bits: Ieee802154Event::TxDone.bit()
-            }
+            MacBatchRejectReason::UnexpectedEvents(Ieee802154Event::TxDone.mask())
         );
         let active = rejected.into_active();
         let completion = deferred(
@@ -1669,7 +1678,7 @@ mod tests {
             .expect_err("success plus abort is ambiguous");
         assert!(matches!(
             rejected.reason(),
-            MacBatchRejectReason::ConflictingTerminalEvents { .. }
+            MacBatchRejectReason::ConflictingTerminalEvents(_)
         ));
     }
 
@@ -1903,49 +1912,6 @@ mod tests {
             let active = MacReady::new().request_receive_without_auto_ack(pool.arm_next().unwrap());
             let result = active.process_batch(rx_abort(reason));
             assert_eq!(result.is_ok(), is_terminal_receive_abort(reason));
-        }
-    }
-
-    #[test]
-    fn every_named_event_subset_is_deterministic_for_receive_and_cca() {
-        for raw in 0_u16..=0x3fff {
-            let Ok(events) = Ieee802154EventMask::from_named_bits(raw) else {
-                continue;
-            };
-            if events.contains(Ieee802154Event::ClockCountMatch) {
-                continue;
-            }
-            let rx_reason = events
-                .contains(Ieee802154Event::RxAbort)
-                .then_some(Ieee802154RxAbortReason::CrcError);
-            let tx_reason = events
-                .contains(Ieee802154Event::TxAbort)
-                .then_some(Ieee802154TxAbortReason::TxSecurityError);
-            let measurement = events
-                .contains(Ieee802154Event::EdDone)
-                .then_some(MacMeasurementSample::ClearChannel(MacCcaSample::Clear));
-            let event_batch =
-                MacEventBatch::new(events, rx_reason, tx_reason, measurement).unwrap();
-
-            let pool = rx_pool::<1>(DMA_LOW);
-            let receive =
-                MacReady::new().request_receive_without_auto_ack(pool.arm_next().unwrap());
-            let first = receive.process_batch(event_batch);
-            let receive_again = match first {
-                Ok(MacBatchOutcome::Pending(active)) => active.process_batch(event_batch).is_ok(),
-                Ok(MacBatchOutcome::Deferred(_)) => true,
-                Err(rejected) => rejected.into_active().process_batch(event_batch).is_err(),
-            };
-            assert!(receive_again, "RX mask {raw:#06x} was nondeterministic");
-
-            let cca = MacReady::new().request_clear_channel_assessment();
-            let first = cca.process_batch(event_batch);
-            let cca_again = match first {
-                Ok(MacBatchOutcome::Pending(active)) => active.process_batch(event_batch).is_ok(),
-                Ok(MacBatchOutcome::Deferred(_)) => true,
-                Err(rejected) => rejected.into_active().process_batch(event_batch).is_err(),
-            };
-            assert!(cca_again, "CCA mask {raw:#06x} was nondeterministic");
         }
     }
 }

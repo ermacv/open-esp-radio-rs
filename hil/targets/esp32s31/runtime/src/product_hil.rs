@@ -56,9 +56,12 @@ use open_esp_radio_esp32s31_hal::{
     Ieee802154EdEventProbeEvidence as HalIeee802154EdEventProbeEvidence,
     Ieee802154EdEventProbeIsolation, Ieee802154EdEventProbeStop as HalIeee802154EdEventProbeStop,
     Ieee802154MacControl, Ieee802154MacPolicy, Ieee802154OperationEventMaskState,
-    Ieee802154OperationPollBudget, Ieee802154OperationRxAbortMaskState, Ieee802154OperationStage,
-    Ieee802154PanIdentity, Ieee802154PolledOperationEvidence, Ieee802154PolledOperationFailure,
-    Ieee802154PolledOperationResult,
+    Ieee802154OperationPollBudget, Ieee802154OperationRxAbortEnableObservation,
+    Ieee802154OperationRxAbortMaskState, Ieee802154OperationStage, Ieee802154PanIdentity,
+    Ieee802154PolledOperationEvidence, Ieee802154PolledOperationFailure,
+    Ieee802154PolledOperationResult, Ieee802154RxAbortReason as HalIeee802154RxAbortReason,
+    Ieee802154RxAbortReasonObservation as HalIeee802154RxAbortReasonObservation,
+    Ieee802154ValidationEdDurationState as HalIeee802154ValidationEdDurationState,
 };
 #[cfg(feature = "ieee802154-event-status-probe")]
 use open_esp_radio_esp32s31_hal::{
@@ -66,6 +69,14 @@ use open_esp_radio_esp32s31_hal::{
     Ieee802154EventStatusProbeEvidence as HalIeee802154EventStatusProbeEvidence,
     Ieee802154EventStatusProbeIsolation,
     Ieee802154EventStatusProbeStop as HalIeee802154EventStatusProbeStop,
+};
+#[cfg(any(
+    feature = "ieee802154-event-status-probe",
+    feature = "ieee802154-ed-event-probe"
+))]
+use open_esp_radio_esp32s31_hal::{
+    Ieee802154ObservedEventState as HalIeee802154ObservedEventState,
+    Ieee802154ValidationEventEnableState as HalIeee802154ValidationEventEnableState,
 };
 use open_esp_radio_esp32s31_phy::{
     PhyCalibrationIdentity, PhyCalibrationPath, phy_rfpll::phy_get_rf_cal_version,
@@ -85,19 +96,28 @@ use open_esp_radio_hil_esp32s31_telemetry::{
     rx_pipeline::RxPipelineCounters, task_poll::TaskPollSet,
 };
 use open_esp_radio_hil_protocol::{
-    Capabilities, Event as HilEvent, FeatureCapabilities, MAX_WIRE_FRAME_BYTES, NetworkCredentials,
-    NetworkInfo, NetworkIpv4Configuration, StartupArtifactDisposition, StationDisconnectReason,
-    StationEpochEvidence, WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, WifiAccessPointEvidence,
-    WifiChannelWidth as HilWifiChannelWidth, WifiDataPlanePlacement, WifiMonitorCaptureRequest,
-    WifiMonitorEvidence, WifiMonitorEvidenceSource, WifiMonitorFrameChunk, WifiMonitorObserved,
-    WifiMonitorPhyEvidence, WifiMonitorPhyFormat, WifiNetworkInterface, WifiRole,
-    WifiRoleFailureEvidence, WifiRoleFailureReason, WifiRoleOperation, WifiRoleTransitionEvidence,
-    WifiScanEvidence, WifiStationAccessPointStopEvidence,
+    Capabilities, Event as HilEvent, FeatureCapabilities, MAX_WIRE_FRAME_BYTES,
+    NetworkCredentials, NetworkInfo, NetworkIpv4Configuration, StartupArtifactDisposition,
+    StationDisconnectReason, StationEpochEvidence, WIFI_MONITOR_FRAME_CHUNK_MAX_LEN,
+    WifiAccessPointEvidence, WifiChannelWidth as HilWifiChannelWidth, WifiDataPlanePlacement,
+    WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorEvidenceSource, WifiMonitorFrameChunk,
+    WifiMonitorObserved, WifiMonitorPhyEvidence, WifiMonitorPhyFormat, WifiNetworkInterface,
+    WifiRole, WifiRoleFailureEvidence, WifiRoleFailureReason, WifiRoleOperation,
+    WifiRoleTransitionEvidence, WifiScanEvidence, WifiStationAccessPointStopEvidence,
+};
+#[cfg(any(
+    feature = "ieee802154-event-status-probe",
+    feature = "ieee802154-ed-event-probe"
+))]
+use open_esp_radio_hil_protocol::{
+    Ieee802154ObservedEventState, Ieee802154ValidationEventEnableState,
 };
 #[cfg(feature = "ieee802154-ed-event-probe")]
 use open_esp_radio_hil_protocol::{
     Ieee802154EdEventProbeEvidence, Ieee802154EdEventProbeRequest, Ieee802154EdEventProbeStop,
     Ieee802154PolledEdMaskState, Ieee802154PolledEdOutcome, Ieee802154PolledEdStage,
+    Ieee802154RxAbortObservation, Ieee802154RxAbortReason, Ieee802154ValidationEdDurationState,
+    Ieee802154ValidationRxAbortEnableState,
 };
 #[cfg(feature = "ieee802154-event-status-probe")]
 use open_esp_radio_hil_protocol::{
@@ -1453,20 +1473,145 @@ async fn report_network(stack: Stack<'static>, network_interface: WifiNetworkInt
     }
 }
 
+#[cfg(any(
+    feature = "ieee802154-event-status-probe",
+    feature = "ieee802154-ed-event-probe"
+))]
+const fn map_ieee802154_observed_events(
+    state: HalIeee802154ObservedEventState,
+) -> Ieee802154ObservedEventState {
+    match state {
+        HalIeee802154ObservedEventState::Clear => Ieee802154ObservedEventState::Clear,
+        HalIeee802154ObservedEventState::Timer0Only => Ieee802154ObservedEventState::Timer0Only,
+        HalIeee802154ObservedEventState::Timer1Only => Ieee802154ObservedEventState::Timer1Only,
+        HalIeee802154ObservedEventState::Timer0AndTimer1 => {
+            Ieee802154ObservedEventState::Timer0AndTimer1
+        }
+        HalIeee802154ObservedEventState::EdDoneOnly => Ieee802154ObservedEventState::EdDoneOnly,
+        HalIeee802154ObservedEventState::EdDoneAndTimer0 => {
+            Ieee802154ObservedEventState::EdDoneAndTimer0
+        }
+        HalIeee802154ObservedEventState::RxAbortOnly => Ieee802154ObservedEventState::RxAbortOnly,
+        HalIeee802154ObservedEventState::RxAbortWithOther => {
+            Ieee802154ObservedEventState::RxAbortWithOther
+        }
+        HalIeee802154ObservedEventState::EdDoneWithOther => {
+            Ieee802154ObservedEventState::EdDoneWithOther
+        }
+        HalIeee802154ObservedEventState::EdDoneAndRxAbortWithOther => {
+            Ieee802154ObservedEventState::EdDoneAndRxAbortWithOther
+        }
+        HalIeee802154ObservedEventState::UnexpectedNamed => {
+            Ieee802154ObservedEventState::UnexpectedNamed
+        }
+        HalIeee802154ObservedEventState::Unclassified => Ieee802154ObservedEventState::Unclassified,
+    }
+}
+
+#[cfg(any(
+    feature = "ieee802154-event-status-probe",
+    feature = "ieee802154-ed-event-probe"
+))]
+const fn map_ieee802154_validation_event_enable(
+    state: HalIeee802154ValidationEventEnableState,
+) -> Ieee802154ValidationEventEnableState {
+    match state {
+        HalIeee802154ValidationEventEnableState::AllMasked => {
+            Ieee802154ValidationEventEnableState::AllMasked
+        }
+        HalIeee802154ValidationEventEnableState::TimerPairOnly => {
+            Ieee802154ValidationEventEnableState::TimerPairOnly
+        }
+        HalIeee802154ValidationEventEnableState::EdDoneTimer0RxAbortOnly => {
+            Ieee802154ValidationEventEnableState::EdDoneTimer0RxAbortOnly
+        }
+        HalIeee802154ValidationEventEnableState::Unexpected => {
+            Ieee802154ValidationEventEnableState::Unexpected
+        }
+    }
+}
+
+#[cfg(feature = "ieee802154-ed-event-probe")]
+const fn map_ieee802154_validation_ed_duration(
+    state: HalIeee802154ValidationEdDurationState,
+) -> Ieee802154ValidationEdDurationState {
+    match state {
+        HalIeee802154ValidationEdDurationState::ValidationEight => {
+            Ieee802154ValidationEdDurationState::ValidationEight
+        }
+        HalIeee802154ValidationEdDurationState::Other => Ieee802154ValidationEdDurationState::Other,
+    }
+}
+
+#[cfg(feature = "ieee802154-ed-event-probe")]
+const fn map_ieee802154_validation_rx_abort_enable(
+    state: Ieee802154OperationRxAbortEnableObservation,
+) -> Ieee802154ValidationRxAbortEnableState {
+    match state {
+        Ieee802154OperationRxAbortEnableObservation::AllMasked => {
+            Ieee802154ValidationRxAbortEnableState::AllMasked
+        }
+        Ieee802154OperationRxAbortEnableObservation::EdOperationReasonsOnly => {
+            Ieee802154ValidationRxAbortEnableState::EdOperationReasonsOnly
+        }
+        Ieee802154OperationRxAbortEnableObservation::Unexpected => {
+            Ieee802154ValidationRxAbortEnableState::Unexpected
+        }
+    }
+}
+
+#[cfg(feature = "ieee802154-ed-event-probe")]
+const fn map_ieee802154_rx_abort_reason(
+    reason: HalIeee802154RxAbortReason,
+) -> Ieee802154RxAbortReason {
+    match reason {
+        HalIeee802154RxAbortReason::RxStop => Ieee802154RxAbortReason::RxStop,
+        HalIeee802154RxAbortReason::SfdTimeout => Ieee802154RxAbortReason::SfdTimeout,
+        HalIeee802154RxAbortReason::CrcError => Ieee802154RxAbortReason::CrcError,
+        HalIeee802154RxAbortReason::InvalidLength => Ieee802154RxAbortReason::InvalidLength,
+        HalIeee802154RxAbortReason::FilterFail => Ieee802154RxAbortReason::FilterFail,
+        HalIeee802154RxAbortReason::NoRss => Ieee802154RxAbortReason::NoRss,
+        HalIeee802154RxAbortReason::CoexistenceBreak => Ieee802154RxAbortReason::CoexistenceBreak,
+        HalIeee802154RxAbortReason::UnexpectedAck => Ieee802154RxAbortReason::UnexpectedAck,
+        HalIeee802154RxAbortReason::RxRestart => Ieee802154RxAbortReason::RxRestart,
+        HalIeee802154RxAbortReason::TxAckTimeout => Ieee802154RxAbortReason::TxAckTimeout,
+        HalIeee802154RxAbortReason::TxAckStop => Ieee802154RxAbortReason::TxAckStop,
+        HalIeee802154RxAbortReason::TxAckCoexistenceBreak => {
+            Ieee802154RxAbortReason::TxAckCoexistenceBreak
+        }
+        HalIeee802154RxAbortReason::EnhancedAckSecurityError => {
+            Ieee802154RxAbortReason::EnhancedAckSecurityError
+        }
+        HalIeee802154RxAbortReason::EdAbort => Ieee802154RxAbortReason::EdAbort,
+        HalIeee802154RxAbortReason::EdStop => Ieee802154RxAbortReason::EdStop,
+        HalIeee802154RxAbortReason::EdCoexistenceReject => {
+            Ieee802154RxAbortReason::EdCoexistenceReject
+        }
+    }
+}
+
+#[cfg(feature = "ieee802154-ed-event-probe")]
+const fn map_ieee802154_rx_abort_observation(
+    observation: HalIeee802154RxAbortReasonObservation,
+) -> Ieee802154RxAbortObservation {
+    match observation {
+        HalIeee802154RxAbortReasonObservation::Named(reason) => {
+            Ieee802154RxAbortObservation::Named(map_ieee802154_rx_abort_reason(reason))
+        }
+        HalIeee802154RxAbortReasonObservation::Unclassified => {
+            Ieee802154RxAbortObservation::Unclassified
+        }
+    }
+}
+
 #[cfg(feature = "ieee802154-event-status-probe")]
 const fn unsupported_ieee802154_event_status_probe() -> Ieee802154EventStatusProbeEvidence {
     Ieee802154EventStatusProbeEvidence {
         stop: Ieee802154EventStatusProbeStop::UnsupportedSetup,
-        event_enable_before: 0,
-        event_enable_active: 0,
-        event_enable_after: 0,
-        route_core0_before_enable: 0,
-        route_core1_before_enable: 0,
-        route_core0_with_events_enabled: 0,
-        route_core1_with_events_enabled: 0,
-        route_core0_after_cleanup: 0,
-        route_core1_after_cleanup: 0,
-        post_enable_events: 0,
+        event_enable_before: Ieee802154ValidationEventEnableState::AllMasked,
+        event_enable_active: Ieee802154ValidationEventEnableState::AllMasked,
+        event_enable_after: Ieee802154ValidationEventEnableState::AllMasked,
+        post_enable_events: Ieee802154ObservedEventState::Clear,
         timer0_value_before_start: 0,
         timer1_value_before_start: 0,
         timer0_value_min: 0,
@@ -1475,16 +1620,16 @@ const fn unsupported_ieee802154_event_status_probe() -> Ieee802154EventStatusPro
         timer1_value_max: 0,
         timer0_value_after_stop: 0,
         timer1_value_after_stop: 0,
-        reset_events: 0,
-        dual_observed_events: 0,
-        dual_latched_events: 0,
-        after_timer0_ack_events: 0,
-        after_timer1_ack_events: 0,
-        distinct_snapshot_events: 0,
-        distinct_before_ack_events: 0,
-        distinct_after_ack_events: 0,
-        cleanup_pending_events: 0,
-        final_events: 0,
+        reset_events: Ieee802154ObservedEventState::Clear,
+        dual_observed_events: Ieee802154ObservedEventState::Clear,
+        dual_latched_events: Ieee802154ObservedEventState::Clear,
+        after_timer0_ack_events: Ieee802154ObservedEventState::Clear,
+        after_timer1_ack_events: Ieee802154ObservedEventState::Clear,
+        distinct_snapshot_events: Ieee802154ObservedEventState::Clear,
+        distinct_before_ack_events: Ieee802154ObservedEventState::Clear,
+        distinct_after_ack_events: Ieee802154ObservedEventState::Clear,
+        cleanup_pending_events: Ieee802154ObservedEventState::Clear,
+        final_events: Ieee802154ObservedEventState::Clear,
     }
 }
 
@@ -1530,16 +1675,10 @@ const fn map_ieee802154_event_status_probe(
     };
     Ieee802154EventStatusProbeEvidence {
         stop,
-        event_enable_before: evidence.event_enable_before,
-        event_enable_active: evidence.event_enable_active,
-        event_enable_after: evidence.event_enable_after,
-        route_core0_before_enable: evidence.route_core0_before_enable,
-        route_core1_before_enable: evidence.route_core1_before_enable,
-        route_core0_with_events_enabled: evidence.route_core0_with_events_enabled,
-        route_core1_with_events_enabled: evidence.route_core1_with_events_enabled,
-        route_core0_after_cleanup: evidence.route_core0_after_cleanup,
-        route_core1_after_cleanup: evidence.route_core1_after_cleanup,
-        post_enable_events: evidence.post_enable_events,
+        event_enable_before: map_ieee802154_validation_event_enable(evidence.event_enable_before),
+        event_enable_active: map_ieee802154_validation_event_enable(evidence.event_enable_active),
+        event_enable_after: map_ieee802154_validation_event_enable(evidence.event_enable_after),
+        post_enable_events: map_ieee802154_observed_events(evidence.post_enable_events),
         timer0_value_before_start: evidence.timer0_value_before_start,
         timer1_value_before_start: evidence.timer1_value_before_start,
         timer0_value_min: evidence.timer0_value_min,
@@ -1548,16 +1687,20 @@ const fn map_ieee802154_event_status_probe(
         timer1_value_max: evidence.timer1_value_max,
         timer0_value_after_stop: evidence.timer0_value_after_stop,
         timer1_value_after_stop: evidence.timer1_value_after_stop,
-        reset_events: evidence.reset_events,
-        dual_observed_events: evidence.dual_observed_events,
-        dual_latched_events: evidence.dual_latched_events,
-        after_timer0_ack_events: evidence.after_timer0_ack_events,
-        after_timer1_ack_events: evidence.after_timer1_ack_events,
-        distinct_snapshot_events: evidence.distinct_snapshot_events,
-        distinct_before_ack_events: evidence.distinct_before_ack_events,
-        distinct_after_ack_events: evidence.distinct_after_ack_events,
-        cleanup_pending_events: evidence.cleanup_pending_events,
-        final_events: evidence.final_events,
+        reset_events: map_ieee802154_observed_events(evidence.reset_events),
+        dual_observed_events: map_ieee802154_observed_events(evidence.dual_observed_events),
+        dual_latched_events: map_ieee802154_observed_events(evidence.dual_latched_events),
+        after_timer0_ack_events: map_ieee802154_observed_events(evidence.after_timer0_ack_events),
+        after_timer1_ack_events: map_ieee802154_observed_events(evidence.after_timer1_ack_events),
+        distinct_snapshot_events: map_ieee802154_observed_events(evidence.distinct_snapshot_events),
+        distinct_before_ack_events: map_ieee802154_observed_events(
+            evidence.distinct_before_ack_events,
+        ),
+        distinct_after_ack_events: map_ieee802154_observed_events(
+            evidence.distinct_after_ack_events,
+        ),
+        cleanup_pending_events: map_ieee802154_observed_events(evidence.cleanup_pending_events),
+        final_events: map_ieee802154_observed_events(evidence.final_events),
     }
 }
 
@@ -1602,34 +1745,28 @@ const fn unsupported_ieee802154_ed_event_probe() -> Ieee802154EdEventProbeEviden
         stop: Ieee802154EdEventProbeStop::UnsupportedSetup,
         production_ed_first: Ieee802154PolledEdOutcome::NotRun,
         production_ed_second: None,
-        event_enable_before: 0,
-        event_enable_active: 0,
-        event_enable_after: 0,
-        rx_abort_enable_before: 0,
-        rx_abort_enable_active: 0,
-        rx_abort_enable_after: 0,
-        route_core0_before_enable: 0,
-        route_core1_before_enable: 0,
-        route_core0_with_events_enabled: 0,
-        route_core1_with_events_enabled: 0,
-        route_core0_after_cleanup: 0,
-        route_core1_after_cleanup: 0,
-        ed_duration_before: 0,
-        ed_duration_active: 0,
-        ed_duration_after: 0,
+        event_enable_before: Ieee802154ValidationEventEnableState::AllMasked,
+        event_enable_active: Ieee802154ValidationEventEnableState::AllMasked,
+        event_enable_after: Ieee802154ValidationEventEnableState::AllMasked,
+        rx_abort_enable_before: Ieee802154ValidationRxAbortEnableState::AllMasked,
+        rx_abort_enable_active: Ieee802154ValidationRxAbortEnableState::AllMasked,
+        rx_abort_enable_after: Ieee802154ValidationRxAbortEnableState::AllMasked,
+        ed_duration_before: Ieee802154ValidationEdDurationState::Other,
+        ed_duration_active: Ieee802154ValidationEdDurationState::Other,
+        ed_duration_after: Ieee802154ValidationEdDurationState::Other,
         timer0_value_before_start: 0,
         timer0_value_min: 0,
         timer0_value_max: 0,
         timer0_value_after_stop: 0,
-        reset_events: 0,
-        post_enable_events: 0,
-        observed_events: 0,
-        terminal_events: 0,
-        after_ed_done_write_events: 0,
-        after_timer0_write_events: 0,
-        cleanup_pending_events: 0,
-        final_events: 0,
-        rx_status_at_abort: None,
+        reset_events: Ieee802154ObservedEventState::Clear,
+        post_enable_events: Ieee802154ObservedEventState::Clear,
+        observed_events: Ieee802154ObservedEventState::Clear,
+        terminal_events: Ieee802154ObservedEventState::Clear,
+        after_ed_done_write_events: Ieee802154ObservedEventState::Clear,
+        after_timer0_write_events: Ieee802154ObservedEventState::Clear,
+        cleanup_pending_events: Ieee802154ObservedEventState::Clear,
+        final_events: Ieee802154ObservedEventState::Clear,
+        rx_abort_reason: None,
         stop_command_issued: false,
         cleanup_clear: false,
     }
@@ -1682,8 +1819,8 @@ const fn map_ieee802154_polled_failure(
 ) -> Ieee802154PolledEdOutcome {
     match failure {
         Ieee802154PolledOperationFailure::Aborted(evidence) => Ieee802154PolledEdOutcome::Aborted {
-            event_status: evidence.event_status().raw(),
-            rx_abort_status: evidence.rx_abort_status(),
+            event_status: map_ieee802154_observed_events(evidence.event_status().state()),
+            rx_abort_reason: map_ieee802154_rx_abort_observation(evidence.rx_abort_reason()),
             polls: evidence.polls(),
         },
         Ieee802154PolledOperationFailure::Timeout { polls, .. } => {
@@ -1708,22 +1845,22 @@ const fn map_ieee802154_polled_failure(
         }
         Ieee802154PolledOperationFailure::StaleEventStatus { observed } => {
             Ieee802154PolledEdOutcome::StaleEventStatus {
-                event_status: observed.raw(),
+                event_status: map_ieee802154_observed_events(observed.state()),
             }
         }
         Ieee802154PolledOperationFailure::UnexpectedTerminalStatus { observed } => {
             Ieee802154PolledEdOutcome::UnexpectedTerminalStatus {
-                event_status: observed.raw(),
+                event_status: map_ieee802154_observed_events(observed.state()),
             }
         }
         Ieee802154PolledOperationFailure::UnexpectedAcknowledgedEvents { observed } => {
             Ieee802154PolledEdOutcome::UnexpectedAcknowledgedEvents {
-                event_status: observed.raw(),
+                event_status: map_ieee802154_observed_events(observed.state()),
             }
         }
         Ieee802154PolledOperationFailure::ConflictingTerminalEvents { observed } => {
             Ieee802154PolledEdOutcome::ConflictingTerminalEvents {
-                event_status: observed.raw(),
+                event_status: map_ieee802154_observed_events(observed.state()),
             }
         }
     }
@@ -1802,34 +1939,41 @@ const fn map_ieee802154_ed_event_probe(
         stop,
         production_ed_first: Ieee802154PolledEdOutcome::NotRun,
         production_ed_second: None,
-        event_enable_before: evidence.event_enable_before,
-        event_enable_active: evidence.event_enable_active,
-        event_enable_after: evidence.event_enable_after,
-        rx_abort_enable_before: evidence.rx_abort_enable_before,
-        rx_abort_enable_active: evidence.rx_abort_enable_active,
-        rx_abort_enable_after: evidence.rx_abort_enable_after,
-        route_core0_before_enable: evidence.route_core0_before_enable,
-        route_core1_before_enable: evidence.route_core1_before_enable,
-        route_core0_with_events_enabled: evidence.route_core0_with_events_enabled,
-        route_core1_with_events_enabled: evidence.route_core1_with_events_enabled,
-        route_core0_after_cleanup: evidence.route_core0_after_cleanup,
-        route_core1_after_cleanup: evidence.route_core1_after_cleanup,
-        ed_duration_before: evidence.ed_duration_before,
-        ed_duration_active: evidence.ed_duration_active,
-        ed_duration_after: evidence.ed_duration_after,
+        event_enable_before: map_ieee802154_validation_event_enable(evidence.event_enable_before),
+        event_enable_active: map_ieee802154_validation_event_enable(evidence.event_enable_active),
+        event_enable_after: map_ieee802154_validation_event_enable(evidence.event_enable_after),
+        rx_abort_enable_before: map_ieee802154_validation_rx_abort_enable(
+            evidence.rx_abort_enable_before,
+        ),
+        rx_abort_enable_active: map_ieee802154_validation_rx_abort_enable(
+            evidence.rx_abort_enable_active,
+        ),
+        rx_abort_enable_after: map_ieee802154_validation_rx_abort_enable(
+            evidence.rx_abort_enable_after,
+        ),
+        ed_duration_before: map_ieee802154_validation_ed_duration(evidence.ed_duration_before),
+        ed_duration_active: map_ieee802154_validation_ed_duration(evidence.ed_duration_active),
+        ed_duration_after: map_ieee802154_validation_ed_duration(evidence.ed_duration_after),
         timer0_value_before_start: evidence.timer0_value_before_start,
         timer0_value_min: evidence.timer0_value_min,
         timer0_value_max: evidence.timer0_value_max,
         timer0_value_after_stop: evidence.timer0_value_after_stop,
-        reset_events: evidence.reset_events,
-        post_enable_events: evidence.post_enable_events,
-        observed_events: evidence.observed_events,
-        terminal_events: evidence.terminal_events,
-        after_ed_done_write_events: evidence.after_ed_done_write_events,
-        after_timer0_write_events: evidence.after_timer0_write_events,
-        cleanup_pending_events: evidence.cleanup_pending_events,
-        final_events: evidence.final_events,
-        rx_status_at_abort: evidence.rx_status_at_abort,
+        reset_events: map_ieee802154_observed_events(evidence.reset_events),
+        post_enable_events: map_ieee802154_observed_events(evidence.post_enable_events),
+        observed_events: map_ieee802154_observed_events(evidence.observed_events),
+        terminal_events: map_ieee802154_observed_events(evidence.terminal_events),
+        after_ed_done_write_events: map_ieee802154_observed_events(
+            evidence.after_ed_done_write_events,
+        ),
+        after_timer0_write_events: map_ieee802154_observed_events(
+            evidence.after_timer0_write_events,
+        ),
+        cleanup_pending_events: map_ieee802154_observed_events(evidence.cleanup_pending_events),
+        final_events: map_ieee802154_observed_events(evidence.final_events),
+        rx_abort_reason: match evidence.rx_abort_reason {
+            Some(observation) => Some(map_ieee802154_rx_abort_observation(observation)),
+            None => None,
+        },
         stop_command_issued: evidence.stop_command_issued,
         cleanup_clear: evidence.cleanup_clear,
     }

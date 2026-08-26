@@ -281,7 +281,8 @@ mod tests {
     use embassy_futures::block_on;
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use open_esp_radio_esp32s31_ieee802154_irq::{
-        Ieee802154Event, acknowledged_interrupt_for_validation,
+        Ieee802154Event, Ieee802154EventMask, Ieee802154EventObservationError,
+        acknowledged_interrupt_for_validation,
     };
     use open_esp_radio_esp32s31_ieee802154_mac::{MacNoDmaResources, MacReady};
     use open_esp_radio_esp32s31_ieee802154_runtime::{MacRuntime, ValidationMacCommandExecutor};
@@ -290,11 +291,27 @@ mod tests {
 
     fn publish<M: RawMutex, const DEPTH: usize>(
         irq: &EmbassyIeee802154IrqRuntime<M, DEPTH>,
-        events: u16,
+        events: Ieee802154EventMask,
         ed_rss: i8,
     ) -> Result<(), Ieee802154AcknowledgedInterrupt> {
         irq.post(acknowledged_interrupt_for_validation(
-            events, 0, 0, ed_rss, false,
+            Ok(events),
+            None,
+            None,
+            ed_rss,
+            false,
+        ))
+    }
+
+    fn publish_unclassified<M: RawMutex, const DEPTH: usize>(
+        irq: &EmbassyIeee802154IrqRuntime<M, DEPTH>,
+    ) -> Result<(), Ieee802154AcknowledgedInterrupt> {
+        irq.post(acknowledged_interrupt_for_validation(
+            Err(Ieee802154EventObservationError),
+            None,
+            None,
+            0,
+            false,
         ))
     }
 
@@ -307,24 +324,33 @@ mod tests {
     #[test]
     fn acknowledged_values_cross_the_async_handoff_in_order() {
         let irq = EmbassyIeee802154IrqRuntime::<NoopRawMutex, 2>::new();
-        publish(&irq, Ieee802154Event::TxSfdDone.bit(), -20).unwrap();
-        publish(&irq, Ieee802154Event::TxDone.bit(), -21).unwrap();
+        publish(&irq, Ieee802154Event::TxSfdDone.mask(), -20).unwrap();
+        publish(&irq, Ieee802154Event::TxDone.mask(), -21).unwrap();
 
         let first = block_on(irq.wait()).unwrap();
         let second = block_on(irq.wait()).unwrap();
-        assert_eq!(first.raw_event_bits(), Ieee802154Event::TxSfdDone.bit());
+        assert_eq!(
+            first.event_classification(),
+            Ok(Ieee802154Event::TxSfdDone.mask())
+        );
         assert_eq!(first.ed_rss_code(), -20);
-        assert_eq!(second.raw_event_bits(), Ieee802154Event::TxDone.bit());
+        assert_eq!(
+            second.event_classification(),
+            Ok(Ieee802154Event::TxDone.mask())
+        );
         assert_eq!(second.ed_rss_code(), -21);
     }
 
     #[test]
     fn overflow_is_a_fail_closed_operation_error() {
         let irq = EmbassyIeee802154IrqRuntime::<NoopRawMutex, 1>::new();
-        publish(&irq, Ieee802154Event::TxSfdDone.bit(), 0).unwrap();
-        let rejected = publish(&irq, Ieee802154Event::TxDone.bit(), 0)
+        publish(&irq, Ieee802154Event::TxSfdDone.mask(), 0).unwrap();
+        let rejected = publish(&irq, Ieee802154Event::TxDone.mask(), 0)
             .expect_err("the full handoff returns the exact rejected token");
-        assert_eq!(rejected.raw_event_bits(), Ieee802154Event::TxDone.bit());
+        assert_eq!(
+            rejected.event_classification(),
+            Ok(Ieee802154Event::TxDone.mask())
+        );
 
         assert!(matches!(block_on(irq.wait()), Err(Ieee802154IrqOverflow)));
         assert_eq!(irq.drain(), Ieee802154IrqDrain::default());
@@ -347,10 +373,13 @@ mod tests {
     #[test]
     fn consumed_overflow_decode_and_rejection_errors_quarantine_the_owner() {
         let overflow_irq = EmbassyIeee802154IrqRuntime::<NoopRawMutex, 1>::new();
-        publish(&overflow_irq, Ieee802154Event::TxSfdDone.bit(), 0).unwrap();
-        let rejected = publish(&overflow_irq, Ieee802154Event::TxDone.bit(), 0)
+        publish(&overflow_irq, Ieee802154Event::TxSfdDone.mask(), 0).unwrap();
+        let rejected = publish(&overflow_irq, Ieee802154Event::TxDone.mask(), 0)
             .expect_err("the full handoff returns the exact rejected token");
-        assert_eq!(rejected.raw_event_bits(), Ieee802154Event::TxDone.bit());
+        assert_eq!(
+            rejected.event_classification(),
+            Ok(Ieee802154Event::TxDone.mask())
+        );
         let mut overflow = EmbassyIeee802154Operation::new(active_cca());
         assert!(matches!(
             block_on(overflow.advance(&overflow_irq)),
@@ -361,12 +390,12 @@ mod tests {
         assert!(overflow.into_active().is_none());
 
         let decode_irq = EmbassyIeee802154IrqRuntime::<NoopRawMutex, 1>::new();
-        publish(&decode_irq, 1 << 7, 0).unwrap();
+        publish_unclassified(&decode_irq).unwrap();
         let mut decode = EmbassyIeee802154Operation::new(active_cca());
         assert!(matches!(
             block_on(decode.advance(&decode_irq)),
             Err(EmbassyIeee802154OperationError::Interrupt(
-                MacInterruptBatchError::UnsupportedEventBits { .. }
+                MacInterruptBatchError::UnclassifiedEvents(_)
             ))
         ));
         assert!(!decode.is_active());
@@ -374,7 +403,7 @@ mod tests {
         assert!(decode.into_active().is_none());
 
         let rejected_irq = EmbassyIeee802154IrqRuntime::<NoopRawMutex, 1>::new();
-        publish(&rejected_irq, Ieee802154Event::TxDone.bit(), 0).unwrap();
+        publish(&rejected_irq, Ieee802154Event::TxDone.mask(), 0).unwrap();
         let mut rejected = EmbassyIeee802154Operation::new(active_cca());
         assert!(matches!(
             block_on(rejected.advance(&rejected_irq)),
@@ -388,8 +417,8 @@ mod tests {
     #[test]
     fn quiesced_epoch_drain_reports_every_stale_value() {
         let irq = EmbassyIeee802154IrqRuntime::<NoopRawMutex, 2>::new();
-        publish(&irq, Ieee802154Event::RxSfdDone.bit(), 0).unwrap();
-        publish(&irq, Ieee802154Event::RxDone.bit(), 0).unwrap();
+        publish(&irq, Ieee802154Event::RxSfdDone.mask(), 0).unwrap();
+        publish(&irq, Ieee802154Event::RxDone.mask(), 0).unwrap();
 
         assert_eq!(
             irq.drain(),

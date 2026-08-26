@@ -90,6 +90,7 @@ peripherals = [
     "PHY_FREQUENCY_CHANNEL_ORACLE",
     "PHY_I2C_COMMAND_RAM",
     "PHY_IQ_ESTIMATOR_ORACLE",
+    "MODEM_LPCON_SHARED_CLOCK",
     "MODEM_LPCON_PHY_TICK",
     "LP_AON_CLKRST",
     "LP_PERICLKRST",
@@ -237,6 +238,64 @@ description = "The fixed 40 MHz ESP32-S31 crystal encoded by complete phy_get_xt
 sources = ["BLOB_LIBPHY_PHY_GET_XTAL_FREQ"]
 
 [[enum-domains]]
+name = "SharedModemClockMapImage"
+description = "The reviewed active-state bits published into all four shared MODEM_LPCON clock-map nibbles while preserving every other bit."
+
+[[enum-domains.values]]
+name = "ActiveStates"
+value = 0x66660000
+description = "Set state-map bits one and two in each nibble; this is the common image used by the existing Wi-Fi, Bluetooth and IEEE 802.15.4 clock preparation paths."
+sources = ["S31_MODEM_LPCON_STRUCT", "ESP_HAL_63E97BE_S31_MODEM_CLOCK_MAP"]
+
+[[enum-domains]]
+name = "CoexistenceClockGateImage"
+description = "Bit-aligned coexistence clock gate images for the shared MODEM_LPCON owner."
+
+[[enum-domains.values]]
+name = "Disabled"
+value = 0x00000000
+description = "Clear CLK_COEX_EN while preserving the rest of CLK_CONF."
+sources = ["S31_MODEM_LPCON_STRUCT"]
+
+[[enum-domains.values]]
+name = "Enabled"
+value = 0x00000002
+description = "Set CLK_COEX_EN while preserving the rest of CLK_CONF."
+sources = ["S31_MODEM_LPCON_STRUCT"]
+
+[[enum-domains]]
+name = "PhyI2cMasterClockGateImage"
+description = "Bit-aligned PHY-I2C-master clock gate images for the shared MODEM_LPCON owner."
+
+[[enum-domains.values]]
+name = "Disabled"
+value = 0x00000000
+description = "Clear CLK_I2C_MST_EN while preserving the rest of CLK_CONF."
+sources = ["S31_MODEM_LPCON_STRUCT"]
+
+[[enum-domains.values]]
+name = "Enabled"
+value = 0x00000004
+description = "Set CLK_I2C_MST_EN while preserving the rest of CLK_CONF."
+sources = ["S31_MODEM_LPCON_STRUCT"]
+
+[[enum-domains]]
+name = "LowPowerTimerClockGateImage"
+description = "Bit-aligned Bluetooth low-power timer gate images for the shared MODEM_LPCON owner."
+
+[[enum-domains.values]]
+name = "Disabled"
+value = 0x00000000
+description = "Clear CLK_LP_TIMER_EN while preserving the rest of CLK_CONF."
+sources = ["S31_MODEM_LPCON_STRUCT"]
+
+[[enum-domains.values]]
+name = "Enabled"
+value = 0x00000008
+description = "Set CLK_LP_TIMER_EN while preserving the rest of CLK_CONF."
+sources = ["S31_MODEM_LPCON_STRUCT"]
+
+[[enum-domains]]
 name = "LpPowerDetectorCircuitMode"
 description = "The two complete-ROM-evidenced power-detector circuit-mode encodings; no other three-bit value crosses the closed PAC."
 
@@ -318,6 +377,20 @@ description = "One reviewed four-bit Wi-Fi packet-traffic-information value. Its
 min = 0
 max = 15
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME", "BLOB_LIBPP_HAL_INIT_COEX", "BLOB_LIBPP_HAL_MAC_TX"]
+
+[[bounded-domains]]
+name = "ModemLowPowerClockDivider"
+description = "Twelve-bit divider accepted by the canonical MODEM_LPCON low-power timer selector."
+min = 0
+max = 0x00000fff
+sources = ["S31_MODEM_LPCON_STRUCT"]
+
+[[bounded-domains]]
+name = "ModemLowPowerTimerConfigurationBits"
+description = "Complete reviewed low sixteen-bit LP_TIMER_CONF input assembled by the closed route owner; possession of this data value alone grants no register authority."
+min = 0
+max = 0x0000ffff
+sources = ["S31_MODEM_LPCON_STRUCT"]
 
 [[bounded-domains]]
 name = "MacItwtClearIndex"
@@ -1654,6 +1727,61 @@ input-mask = 0x0000003f
 set-mask = 0x00000000
 exposure = "facade"
 sources = ["S31_MODEM_LPCON_STRUCT", "BLOB_LIBPHY_PHY_GET_XTAL_FREQ"]
+
+[[masked-register-modifies]]
+name = "prepare_shared_modem_clock_map"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "CLK_CONF_POWER_ST"
+domain = "SharedModemClockMapImage"
+preserve-mask = 0x9999ffff
+input-mask = 0x66660000
+set-mask = 0x00000000
+exposure = "raw-only"
+sources = ["S31_MODEM_LPCON_STRUCT", "ESP_HAL_63E97BE_S31_MODEM_CLOCK_MAP"]
+
+[[masked-register-modifies]]
+name = "set_shared_coexistence_clock_gate"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "CLK_CONF"
+domain = "CoexistenceClockGateImage"
+preserve-mask = 0xfffffffd
+input-mask = 0x00000002
+set-mask = 0x00000000
+exposure = "raw-only"
+sources = ["S31_MODEM_LPCON_STRUCT"]
+
+[[masked-register-modifies]]
+name = "set_shared_phy_i2c_master_clock_gate"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "CLK_CONF"
+domain = "PhyI2cMasterClockGateImage"
+preserve-mask = 0xfffffffb
+input-mask = 0x00000004
+set-mask = 0x00000000
+exposure = "raw-only"
+sources = ["S31_MODEM_LPCON_STRUCT"]
+
+[[masked-register-modifies]]
+name = "set_shared_low_power_timer_clock_gate"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "CLK_CONF"
+domain = "LowPowerTimerClockGateImage"
+preserve-mask = 0xfffffff7
+input-mask = 0x00000008
+set-mask = 0x00000000
+exposure = "raw-only"
+sources = ["S31_MODEM_LPCON_STRUCT"]
+
+[[masked-register-modifies]]
+name = "configure_shared_low_power_timer"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "LP_TIMER_CONF"
+domain = "ModemLowPowerTimerConfigurationBits"
+preserve-mask = 0xffff0000
+input-mask = 0x0000ffff
+set-mask = 0x00000000
+exposure = "raw-only"
+sources = ["S31_MODEM_LPCON_STRUCT"]
 
 [[masked-register-modifies]]
 name = "select_lp_power_detector_circuit_mode"

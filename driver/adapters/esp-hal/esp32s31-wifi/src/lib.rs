@@ -17,9 +17,8 @@ use esp_hal::{
     rng::Rng,
     system::Cpu,
 };
-use open_esp_radio_esp32s31_coex::{CoexClockHardware, CoexError, CoexTimerClock};
 use open_esp_radio_esp32s31_hal::{
-    PowerClockControl, PowerClockImages,
+    PlatformPowerClockImages, PowerClockControl,
     analog_i2c::PhyPmuControl,
     phy_i2c::{PhyI2cHost, PhyI2cMasterControl},
     wifi_bb::PhyWifiBbControl,
@@ -33,6 +32,10 @@ use open_esp_radio_esp32s31_wifi_mac::init::{
 
 pub mod ieee802154;
 pub mod mac_interrupt_epoch;
+
+const fn icg_map_contains(observed: u8, required: u8) -> bool {
+    observed & required == required
+}
 
 /// Complete platform capability needed by the open radio power transition.
 ///
@@ -111,18 +114,6 @@ impl Esp32s31WifiMacPlatform for EspHalRadioPeripheral {
     }
 }
 
-impl CoexClockHardware for EspHalRadioPeripheral {
-    fn sample(&mut self) -> Result<CoexTimerClock, CoexError> {
-        // Complete `coex_hw_timer_tick_get` samples the selector and divider
-        // through two independent volatile reads of the platform-owned
-        // MODEM_LPCON register. The fixed 40 MHz crystal is established by
-        // the qualified ESP32-S31 PHY prelude.
-        let selector_image = MODEM_LPCON::regs().coex_lp_clk_conf().read().bits();
-        let divider_image = MODEM_LPCON::regs().coex_lp_clk_conf().read().bits();
-        CoexTimerClock::from_register_images(selector_image, divider_image, 40, true)
-    }
-}
-
 impl PowerClockControl for EspHalRadioPeripheral {
     fn set_wifi_baseband_and_mac_reset(&mut self, asserted: bool) {
         MODEM_SYSCON::regs()
@@ -170,20 +161,6 @@ impl PowerClockControl for EspHalRadioPeripheral {
                 .clk_modem_peri_st_map()
                 .set(4)
                 .clk_modem_apb_st_map()
-                .set(6)
-        });
-    }
-
-    fn configure_shared_modem_clock_map(&mut self) {
-        // Value 6 reproduces the qualified esp-hal S31 clock implementation.
-        MODEM_LPCON::regs().clk_conf_power_st().modify(|_, w| {
-            w.clk_wifipwr_st_map()
-                .set(6)
-                .clk_coex_st_map()
-                .set(6)
-                .clk_i2c_mst_st_map()
-                .set(6)
-                .clk_lp_apb_st_map()
                 .set(6)
         });
     }
@@ -258,38 +235,39 @@ impl PowerClockControl for EspHalRadioPeripheral {
             .modify(|_, w| w.clk_i2c_mst_sel_160m().set_bit());
     }
 
-    fn enable_phy_i2c_master_clock(&mut self) {
-        MODEM_LPCON::regs()
-            .clk_conf()
-            .modify(|_, w| w.clk_i2c_mst_en().set_bit());
-    }
-
-    fn power_clock_images(&self) -> PowerClockImages {
+    fn platform_power_clock_images(&self) -> PlatformPowerClockImages {
         let modem_reset = MODEM_SYSCON::regs().modem_rst_conf().read();
         let hp_active_icg = PMU::regs().hp_active_icg_modem().read();
         let modem_bus_clock = HP_SYS_CLKRST::regs().modem_ctrl0().read();
         let hp_active_map = MODEM_SYSCON::regs().clk_conf_power_st().read();
-        let shared_map = MODEM_LPCON::regs().clk_conf_power_st().read();
         let modem_source = HP_SYS_CLKRST::regs().modem_conf().read();
         let phy_clocks = MODEM_SYSCON::regs().clk_conf1().read();
         let i2c_source = MODEM_SYSCON::regs().clk_conf().read();
-        let i2c_clock = MODEM_LPCON::regs().clk_conf().read();
 
-        PowerClockImages {
+        PlatformPowerClockImages {
             reset_released: modem_reset.rst_wifibb().bit_is_clear()
                 && modem_reset.rst_wifimac().bit_is_clear(),
             hp_active_icg_selected: hp_active_icg.hp_active_dig_icg_modem_code().bits() == 2,
             modem_bus_clock_enabled: modem_bus_clock.modem_clk_en().bit_is_set(),
-            hp_active_clock_map_configured: hp_active_map.clk_zb_st_map().bits() == 4
-                && hp_active_map.clk_fe_st_map().bits() == 6
-                && hp_active_map.clk_bt_st_map().bits() == 4
-                && hp_active_map.clk_wifi_st_map().bits() == 6
-                && hp_active_map.clk_modem_peri_st_map().bits() == 4
-                && hp_active_map.clk_modem_apb_st_map().bits() == 6,
-            shared_clock_map_configured: shared_map.clk_wifipwr_st_map().bits() == 6
-                && shared_map.clk_coex_st_map().bits() == 6
-                && shared_map.clk_i2c_mst_st_map().bits() == 6
-                && shared_map.clk_lp_apb_st_map().bits() == 6,
+            hp_active_clock_map_configured: icg_map_contains(
+                hp_active_map.clk_zb_st_map().bits(),
+                4,
+            ) && icg_map_contains(
+                hp_active_map.clk_fe_st_map().bits(),
+                6,
+            ) && icg_map_contains(
+                hp_active_map.clk_bt_st_map().bits(),
+                4,
+            ) && icg_map_contains(
+                hp_active_map.clk_wifi_st_map().bits(),
+                6,
+            ) && icg_map_contains(
+                hp_active_map.clk_modem_peri_st_map().bits(),
+                4,
+            ) && icg_map_contains(
+                hp_active_map.clk_modem_apb_st_map().bits(),
+                6,
+            ),
             modem_source_clocks_configured: modem_source.modem_apb_clk_en().bit_is_set()
                 && modem_source.modem_rst_en().bit_is_clear()
                 && modem_source.modem_clk_en().bit_is_set()
@@ -315,7 +293,6 @@ impl PowerClockControl for EspHalRadioPeripheral {
                 && phy_clocks.clk_fe_adc_en().bit_is_set()
                 && phy_clocks.clk_fe_dac_en().bit_is_set(),
             phy_i2c_160mhz_selected: i2c_source.clk_i2c_mst_sel_160m().bit_is_set(),
-            phy_i2c_master_clock_enabled: i2c_clock.clk_i2c_mst_en().bit_is_set(),
         }
     }
 }
@@ -623,12 +600,6 @@ impl MacClockControl for EspHalRadioPeripheral {
                 .clk_wifi_apb_en()
                 .set_bit()
         });
-    }
-
-    fn enable_coexistence_clock(&mut self) {
-        MODEM_LPCON::regs()
-            .clk_conf()
-            .modify(|_, w| w.clk_coex_en().set_bit());
     }
 
     fn configure_modem_source_clocks(&mut self) {

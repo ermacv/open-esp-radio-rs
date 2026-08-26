@@ -91,7 +91,6 @@ pub trait Ieee802154PlatformControl {
     /// multi-client clock manager rather than an unconditional register clear.
     fn configure_modem_source_clock(&mut self);
 
-    fn enable_coexistence_clock(&mut self);
     fn enable_wifi_bb_80x1_clock(&mut self);
     fn enable_etm_clock(&mut self);
 
@@ -104,7 +103,7 @@ pub trait Ieee802154PlatformControl {
     fn enable_ieee802154_mac_clocks(&mut self);
 
     /// Sample all shared and private clock prerequisites.
-    fn ieee802154_clock_images(&self) -> Ieee802154ClockImages;
+    fn ieee802154_platform_clock_images(&self) -> Ieee802154PlatformClockImages;
 
     /// Assert or release only the IEEE 802.15.4 MAC reset line.
     fn set_ieee802154_mac_reset(&mut self, asserted: bool);
@@ -123,6 +122,12 @@ pub trait Ieee802154PlatformControl {
 /// particular, implementations must not reconstruct the IEEE 802.15.4 block
 /// from an address or independently claim a second peripheral singleton.
 pub(crate) trait Ieee802154LifecycleBackend: Ieee802154PlatformControl {
+    /// Retain the route-owned MODEM_LPCON coexistence clock.
+    fn enable_coexistence_clock(&mut self);
+
+    /// Join platform and route-owned clock observations.
+    fn ieee802154_clock_images(&self) -> Ieee802154ClockImages;
+
     /// Prevent every peripheral event from reaching the future MAC IRQ route.
     fn mask_all_events(&mut self);
 
@@ -150,6 +155,21 @@ pub struct Ieee802154ClockImages {
     pub pll_160m_clock_enabled: bool,
     pub modem_source_clock_configured: bool,
     pub coexistence_clock_enabled: bool,
+    pub wifi_bb_80x1_clock_enabled: bool,
+    pub etm_clock_enabled: bool,
+    pub bt_apb_clock_enabled: bool,
+    pub modem_security_apb_clock_enabled: bool,
+    pub bt_ieee802154_common_baseband_clock_enabled: bool,
+    pub ieee802154_apb_clock_enabled: bool,
+    pub ieee802154_mac_clock_enabled: bool,
+}
+
+/// System-PAC-only portion of the IEEE 802.15.4 clock checkpoint.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Ieee802154PlatformClockImages {
+    pub hp_active_clock_maps_configured: bool,
+    pub pll_160m_clock_enabled: bool,
+    pub modem_source_clock_configured: bool,
     pub wifi_bb_80x1_clock_enabled: bool,
     pub etm_clock_enabled: bool,
     pub bt_apb_clock_enabled: bool,
@@ -516,9 +536,9 @@ mod tests {
     use super::{
         COEX_DISABLED_PTI, IEEE802154_MAX_CHANNEL, IEEE802154_MIN_CHANNEL, Ieee802154Channel,
         Ieee802154ChannelError, Ieee802154ClockCheckpoint, Ieee802154ClockImages,
-        Ieee802154FoundationCheckpoint, Ieee802154LifecycleBackend, Ieee802154PlatformControl,
-        Ieee802154ReadbackError, Ieee802154ResetCheckpoint, Ieee802154ResetImages,
-        establish_ieee802154_clocks,
+        Ieee802154FoundationCheckpoint, Ieee802154LifecycleBackend, Ieee802154PlatformClockImages,
+        Ieee802154PlatformControl, Ieee802154ReadbackError, Ieee802154ResetCheckpoint,
+        Ieee802154ResetImages, establish_ieee802154_clocks,
     };
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -592,10 +612,6 @@ mod tests {
             self.operations.push(Operation::ConfigureModemSource);
         }
 
-        fn enable_coexistence_clock(&mut self) {
-            self.operations.push(Operation::EnableCoex);
-        }
-
         fn enable_wifi_bb_80x1_clock(&mut self) {
             self.operations.push(Operation::EnableWifiBb80x1);
         }
@@ -616,8 +632,23 @@ mod tests {
             self.operations.push(Operation::EnableIeee802154MacClocks);
         }
 
-        fn ieee802154_clock_images(&self) -> Ieee802154ClockImages {
-            self.clock_images
+        fn ieee802154_platform_clock_images(&self) -> Ieee802154PlatformClockImages {
+            Ieee802154PlatformClockImages {
+                hp_active_clock_maps_configured: self.clock_images.modem_clock_maps_configured,
+                pll_160m_clock_enabled: self.clock_images.pll_160m_clock_enabled,
+                modem_source_clock_configured: self.clock_images.modem_source_clock_configured,
+                wifi_bb_80x1_clock_enabled: self.clock_images.wifi_bb_80x1_clock_enabled,
+                etm_clock_enabled: self.clock_images.etm_clock_enabled,
+                bt_apb_clock_enabled: self.clock_images.bt_apb_clock_enabled,
+                modem_security_apb_clock_enabled: self
+                    .clock_images
+                    .modem_security_apb_clock_enabled,
+                bt_ieee802154_common_baseband_clock_enabled: self
+                    .clock_images
+                    .bt_ieee802154_common_baseband_clock_enabled,
+                ieee802154_apb_clock_enabled: self.clock_images.ieee802154_apb_clock_enabled,
+                ieee802154_mac_clock_enabled: self.clock_images.ieee802154_mac_clock_enabled,
+            }
         }
 
         fn set_ieee802154_mac_reset(&mut self, asserted: bool) {
@@ -634,6 +665,14 @@ mod tests {
     }
 
     impl Ieee802154LifecycleBackend for FakeBackend {
+        fn enable_coexistence_clock(&mut self) {
+            self.operations.push(Operation::EnableCoex);
+        }
+
+        fn ieee802154_clock_images(&self) -> Ieee802154ClockImages {
+            self.clock_images
+        }
+
         fn mask_all_events(&mut self) {
             self.operations.push(Operation::MaskEvents);
         }

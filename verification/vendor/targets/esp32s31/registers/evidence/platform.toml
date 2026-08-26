@@ -10,6 +10,10 @@ id = "S31_MODEM_LPCON_STRUCT"
 description = "esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, c/include/esp32s31/modem/modem_lpcon_struct.h, sha256 af916837fb4c4ed8092fba78a844cc656299acfd63764a420c4c4fdac3472453"
 
 [[sources]]
+id = "ESP_HAL_63E97BE_S31_MODEM_CLOCK_MAP"
+description = "Official esp-rs/esp-hal commit 63e97be553f435f29171f7ae5f37a41ad737a75a, https://raw.githubusercontent.com/esp-rs/esp-hal/63e97be553f435f29171f7ae5f37a41ad737a75a/esp-hal/src/rtc_cntl/rtc/esp32s31.rs, sha256 2958839efd1f008574ca93c45e947646d2cc2057ba62c23f24e786b0dea426d3. modem_clock_domain_power_state_icg_map_init defines ICG_NOGATING_ACTIVE_MODEM as bits one and two and ORs that value into all four MODEM_LPCON shared state-map nibbles."
+
+[[sources]]
 id = "S31_ESP_PACS_SVD"
 description = "ermacv/esp-pacs commit d0fb94ef39e992ca0b5fed51cb98a34c8aa8bcd5, esp32s31/pac/esp32s31.svd, pinned by Cargo.lock; exact LP_AON_CLKRST, LP_PERICLKRST and LP_TSENS register/field geometry"
 

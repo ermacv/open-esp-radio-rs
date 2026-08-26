@@ -7,7 +7,7 @@
 use esp_hal::peripherals::{
     HP_SYS_CLKRST, I2C_ANA_MST, LP_AON_CLK_RST, LP_PERI, LP_TSENS, MODEM_LPCON, MODEM_SYSCON, PMU,
 };
-use open_esp_radio_esp32s31_bluetooth::{BluetoothClockControl, BluetoothClockState};
+use open_esp_radio_esp32s31_bluetooth::{BluetoothClockControl, BluetoothPlatformClockState};
 use open_esp_radio_esp32s31_hal::{
     analog_i2c::PhyPmuControl,
     phy_i2c::{PhyI2cHost, PhyI2cMasterControl},
@@ -16,7 +16,6 @@ use open_esp_radio_esp32s31_hal::{
 
 use crate::coordinator::{
     BluetoothPlatformBusy, BluetoothPlatformLease, ClockCoordinator, ClockDevice, ClockIo,
-    LowPowerClockState,
 };
 
 const ICG_NOGATING_ACTIVE: u8 = 4;
@@ -88,8 +87,12 @@ pub struct EspHalBluetoothPlatform<'a> {
 }
 
 impl BluetoothClockControl for EspHalBluetoothPlatform<'_> {
-    fn enable_bluetooth_controller_clocks(&mut self) {
-        self.inner.enable_bluetooth_controller_clocks();
+    fn enable_bluetooth_controller_pll_source(&mut self) {
+        self.inner.enable_bluetooth_controller_pll_source();
+    }
+
+    fn enable_bluetooth_controller_dependents(&mut self) {
+        self.inner.enable_bluetooth_controller_dependents();
     }
 
     fn enable_bluetooth_apb_clocks(&mut self) {
@@ -100,24 +103,20 @@ impl BluetoothClockControl for EspHalBluetoothPlatform<'_> {
         self.inner.reset_bluetooth_controller_domains();
     }
 
-    fn select_main_xtal_low_power_clock(&mut self, divider: u16) {
-        self.inner.select_main_xtal_low_power_clock(divider);
-    }
-
-    fn bluetooth_clock_state(&mut self) -> BluetoothClockState {
-        self.inner.bluetooth_clock_state()
-    }
-
-    fn deselect_low_power_clock(&mut self) {
-        self.inner.deselect_low_power_clock();
+    fn bluetooth_platform_clock_state(&mut self) -> BluetoothPlatformClockState {
+        self.inner.bluetooth_platform_clock_state()
     }
 
     fn disable_bluetooth_apb_clocks(&mut self) {
         self.inner.disable_bluetooth_apb_clocks();
     }
 
-    fn disable_bluetooth_controller_clocks(&mut self) {
-        self.inner.disable_bluetooth_controller_clocks();
+    fn disable_bluetooth_controller_pll_source(&mut self) {
+        self.inner.disable_bluetooth_controller_pll_source();
+    }
+
+    fn disable_bluetooth_controller_dependents(&mut self) {
+        self.inner.disable_bluetooth_controller_dependents();
     }
 }
 
@@ -425,26 +424,11 @@ impl ClockIo for EspHalClockIo {
                 .clk_zb_st_map()
                 .set(r.clk_zb_st_map().bits() | ICG_NOGATING_ACTIVE)
         });
-        MODEM_LPCON::regs().clk_conf_power_st().modify(|r, w| {
-            w.clk_lp_apb_st_map()
-                .set(r.clk_lp_apb_st_map().bits() | ICG_NOGATING_ACTIVE_MODEM)
-                .clk_i2c_mst_st_map()
-                .set(r.clk_i2c_mst_st_map().bits() | ICG_NOGATING_ACTIVE_MODEM)
-                .clk_coex_st_map()
-                .set(r.clk_coex_st_map().bits() | ICG_NOGATING_ACTIVE_MODEM)
-                .clk_wifipwr_st_map()
-                .set(r.clk_wifipwr_st_map().bits() | ICG_NOGATING_ACTIVE_MODEM)
-        });
     }
 
     fn clock_is_enabled(&self, device: ClockDevice) -> bool {
         match device {
             ClockDevice::Pll160mSource => Self::pll_160m_source_is_enabled(),
-            ClockDevice::Coexistence => MODEM_LPCON::regs()
-                .clk_conf()
-                .read()
-                .clk_coex_en()
-                .bit_is_set(),
             ClockDevice::WifiBaseband80x1 => MODEM_SYSCON::regs()
                 .clk_conf1()
                 .read()
@@ -492,11 +476,6 @@ impl ClockIo for EspHalClockIo {
     fn set_clock_enabled(&mut self, device: ClockDevice, enabled: bool) {
         match device {
             ClockDevice::Pll160mSource => Self::set_pll_160m_source(enabled),
-            ClockDevice::Coexistence => {
-                MODEM_LPCON::regs()
-                    .clk_conf()
-                    .modify(|_, w| w.clk_coex_en().bit(enabled));
-            }
             ClockDevice::WifiBaseband80x1 => {
                 MODEM_SYSCON::regs()
                     .clk_conf1()
@@ -572,57 +551,5 @@ impl ClockIo for EspHalClockIo {
             && reset.rst_modem_ccm().bit_is_clear()
             && reset.rst_modem_bah().bit_is_clear()
             && reset.rst_modem_sec().bit_is_clear()
-    }
-
-    #[allow(
-        unsafe_code,
-        reason = "the official S31 PAC lacks a checked writer for this 12-bit field; the range assertion is the complete safety precondition"
-    )]
-    fn select_main_xtal_low_power_clock(&mut self, divider: u16) {
-        let configuration = MODEM_LPCON::regs().lp_timer_conf();
-        configuration.modify(|_, w| w.clk_lp_timer_sel_osc_slow().clear_bit());
-        configuration.modify(|_, w| w.clk_lp_timer_sel_osc_fast().clear_bit());
-        configuration.modify(|_, w| w.clk_lp_timer_sel_xtal32k().clear_bit());
-        configuration.modify(|_, w| w.clk_lp_timer_sel_xtal().clear_bit());
-        configuration.modify(|_, w| w.clk_lp_timer_sel_xtal().set_bit());
-        assert!(
-            divider <= 0x0fff,
-            "BLE low-power divider exceeds its 12-bit field"
-        );
-        configuration.modify(|_, w| {
-            // SAFETY: the preceding assertion proves that the semantic
-            // divider fits the official 12-bit S31 LP_TIMER_CONF field.
-            unsafe { w.clk_lp_timer_div_num().bits(divider) }
-        });
-        MODEM_LPCON::regs()
-            .clk_conf()
-            .modify(|_, w| w.clk_lp_timer_en().set_bit());
-    }
-
-    fn deselect_low_power_clock(&mut self) {
-        let configuration = MODEM_LPCON::regs().lp_timer_conf();
-        configuration.modify(|_, w| w.clk_lp_timer_sel_osc_slow().clear_bit());
-        configuration.modify(|_, w| w.clk_lp_timer_sel_osc_fast().clear_bit());
-        configuration.modify(|_, w| w.clk_lp_timer_sel_xtal32k().clear_bit());
-        configuration.modify(|_, w| w.clk_lp_timer_sel_xtal().clear_bit());
-        MODEM_LPCON::regs()
-            .clk_conf()
-            .modify(|_, w| w.clk_lp_timer_en().clear_bit());
-    }
-
-    fn low_power_clock_state(&self) -> LowPowerClockState {
-        let configuration = MODEM_LPCON::regs().lp_timer_conf().read();
-        LowPowerClockState {
-            slow_oscillator_selected: configuration.clk_lp_timer_sel_osc_slow().bit_is_set(),
-            fast_oscillator_selected: configuration.clk_lp_timer_sel_osc_fast().bit_is_set(),
-            main_xtal_selected: configuration.clk_lp_timer_sel_xtal().bit_is_set(),
-            xtal32k_selected: configuration.clk_lp_timer_sel_xtal32k().bit_is_set(),
-            divider: configuration.clk_lp_timer_div_num().bits(),
-            timer_enabled: MODEM_LPCON::regs()
-                .clk_conf()
-                .read()
-                .clk_lp_timer_en()
-                .bit_is_set(),
-        }
     }
 }

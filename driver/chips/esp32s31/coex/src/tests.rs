@@ -138,39 +138,18 @@ fn timer_map_rejects_ff_entries_and_reaches_every_timer() {
 
 #[test]
 fn clock_conversion_matches_instruction_level_constants() {
-    let fast = CoexTimerClock {
-        selector: CoexClockSelector::Selector8,
-        divider_field: 0,
-        xtal_mhz: 40,
-        real_chip: true,
-    };
+    let fast = CoexTimerClock::from_hardware_fields(CoexClockSelector::Selector8, 0, 40, true);
     assert_eq!(fast.tick_image(1_000).unwrap(), 32);
     assert_eq!(fast.tick_image(1_000_000).unwrap(), 32_768);
-    let emulator = CoexTimerClock {
-        real_chip: false,
-        ..fast
-    };
+    let emulator = CoexTimerClock::from_hardware_fields(CoexClockSelector::Selector8, 0, 40, false);
     assert_eq!(emulator.tick_image(1_000_000).unwrap(), 32_000);
-    let slow = CoexTimerClock {
-        selector: CoexClockSelector::Selector1,
-        divider_field: 0,
-        xtal_mhz: 40,
-        real_chip: true,
-    };
+    let slow = CoexTimerClock::from_hardware_fields(CoexClockSelector::Selector1, 0, 40, true);
     assert_eq!(slow.tick_image(1).unwrap(), 524_288);
-    let source_two = CoexTimerClock {
-        selector: CoexClockSelector::Selector2,
-        divider_field: 39,
-        xtal_mhz: 40,
-        real_chip: true,
-    };
+    let source_two =
+        CoexTimerClock::from_hardware_fields(CoexClockSelector::Selector2, 39, 40, true);
     assert_eq!(source_two.tick_image(1_000).unwrap(), 500);
-    let source_four = CoexTimerClock {
-        selector: CoexClockSelector::Selector4,
-        divider_field: 49,
-        xtal_mhz: 40,
-        real_chip: true,
-    };
+    let source_four =
+        CoexTimerClock::from_hardware_fields(CoexClockSelector::Selector4, 49, 40, true);
     assert_eq!(source_four.tick_image(1_000).unwrap(), 800);
 }
 
@@ -189,12 +168,7 @@ fn request_programs_then_enables_and_release_disables() {
         duration: 3,
     };
     let mut clock = ClockModel {
-        clock: CoexTimerClock {
-            selector: CoexClockSelector::Selector1,
-            divider_field: 0,
-            xtal_mhz: 40,
-            real_chip: true,
-        },
+        clock: CoexTimerClock::from_hardware_fields(CoexClockSelector::Selector1, 0, 40, true),
         samples: 0,
         operations: operations.clone(),
     };
@@ -230,12 +204,7 @@ fn unmapped_events_return_vendor_invalid_event_without_hardware_effects() {
     let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
     let mut hardware = TimerModel::default();
     let mut clock = ClockModel {
-        clock: CoexTimerClock {
-            selector: CoexClockSelector::Selector8,
-            divider_field: 0,
-            xtal_mhz: 40,
-            real_chip: true,
-        },
+        clock: CoexTimerClock::from_hardware_fields(CoexClockSelector::Selector8, 0, 40, true),
         samples: 0,
         operations: OperationTrace::default(),
     };

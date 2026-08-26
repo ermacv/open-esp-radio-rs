@@ -44,9 +44,19 @@ pub const MAC_COLD_RX_INTERRUPT_MASK: MacInterruptMask = MacInterruptMask::COLD_
 /// these operations with its official chip PAC singleton tokens.
 pub trait MacClockControl {
     fn enable_wifi_mac_clocks(&mut self);
-    fn enable_coexistence_clock(&mut self);
     fn configure_modem_source_clocks(&mut self);
     fn set_wifi_mac_reset(&mut self, asserted: bool);
+}
+
+/// Route-owned shared clock edge kept separate from platform clock tokens.
+pub trait MacSharedClockHardware {
+    fn retain_coexistence_clock(&mut self) -> bool;
+}
+
+impl MacSharedClockHardware for open_esp_radio_esp32s31_hal::wifi_mac::WifiMacColdHal<'_> {
+    fn retain_coexistence_clock(&mut self) -> bool {
+        self.retain_coexistence_clock()
+    }
 }
 
 /// Platform entropy used by the on-chip branch of `hal_he_set_mac_delay`.
@@ -98,7 +108,8 @@ pub fn initialize_wifi_mac<
         + MacColdRxPolicyHardware
         + MacColdTxRxHardware
         + MacInterfaceAddressHardware
-        + MacLowRateHardware,
+        + MacLowRateHardware
+        + MacSharedClockHardware,
     P: MacClockControl
         + MacCoexPtiSource
         + MacDelayEntropy
@@ -115,7 +126,9 @@ pub fn initialize_wifi_mac<
     // a cold MAC register state after a warm SoC reset. Reset only WIFIMAC
     // here; the calibrated Wi-Fi baseband remains live.
     platform.enable_wifi_mac_clocks();
-    platform.enable_coexistence_clock();
+    if !mmio.retain_coexistence_clock() {
+        return Err(MacColdStartError::SharedClockUnavailable);
+    }
     platform.configure_modem_source_clocks();
     platform.set_wifi_mac_reset(true);
     platform.set_wifi_mac_reset(false);

@@ -129,10 +129,7 @@ mod tests {
 
     use open_esp_radio_esp32s31_pac::RadioHardware;
 
-    use crate::{
-        BluetoothClockControl, BluetoothClockState, BluetoothControllerRuntimeResources,
-        BluetoothStopped,
-    };
+    use crate::{BluetoothClockedResources, BluetoothControllerRuntimeResources, BluetoothStopped};
 
     static PLATFORM_DROPS: AtomicUsize = AtomicUsize::new(0);
 
@@ -144,37 +141,13 @@ mod tests {
         }
     }
 
-    impl BluetoothClockControl for FakePlatform {
-        fn enable_bluetooth_controller_clocks(&mut self) {}
-        fn enable_bluetooth_apb_clocks(&mut self) {}
-        fn reset_bluetooth_controller_domains(&mut self) {}
-        fn select_main_xtal_low_power_clock(&mut self, _divider: u16) {}
-
-        fn bluetooth_clock_state(&mut self) -> BluetoothClockState {
-            BluetoothClockState {
-                controller_clocks_enabled: true,
-                apb_clocks_enabled: true,
-                controller_resets_released: true,
-                main_xtal_selected: true,
-                low_power_divider: 399,
-                low_power_timer_enabled: true,
-            }
-        }
-
-        fn deselect_low_power_clock(&mut self) {}
-        fn disable_bluetooth_apb_clocks(&mut self) {}
-        fn disable_bluetooth_controller_clocks(&mut self) {}
-    }
-
     #[test]
     fn scheduler_prefix_consumes_reversible_clocks_and_arms_fail_stop() {
         PLATFORM_DROPS.store(0, Ordering::Relaxed);
         let stopped =
             BluetoothStopped::from_hardware(FakePlatform, RadioHardware::for_validation());
-        let clocked = match stopped.enable_clocks() {
-            Ok(clocked) => clocked,
-            Err(_) => panic!("ready fake platform was rejected"),
-        };
+        let (registers, platform) = stopped.into_parts();
+        let clocked = BluetoothClockedResources::for_validation(registers, platform);
         let mut called = false;
 
         let scheduler = clocked.clear_scheduler_table_low_bits_with(|_| called = true);

@@ -218,12 +218,12 @@ mod tests {
         let (mut control, owner) = resources.split();
         let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
         let mut hardware = Hardware::default();
-        let mut clock = Clock(CoexTimerClock {
-            selector: CoexClockSelector::Selector8,
-            divider_field: 0,
-            xtal_mhz: 40,
-            real_chip: true,
-        });
+        let mut clock = Clock(CoexTimerClock::from_hardware_fields(
+            CoexClockSelector::Selector8,
+            0,
+            40,
+            true,
+        ));
         let request = CoexClientRequest {
             event: CoexEventId::new(1).unwrap(),
             latency: 1_000,

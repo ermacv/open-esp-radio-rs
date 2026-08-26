@@ -44,7 +44,7 @@
 
     <peripheral>
       <name>MODEM_LPCON</name>
-      <description>SOURCE[ESP32S31_PAC_D0FB94E,S31_MODEM_LPCON_STRUCT]. Remaining platform-owned modem low-power configuration registers from the pinned ESP32-S31 PAC; TICK_CONF is carved into the canonical shared-PHY model.</description>
+      <description>SOURCE[ESP32S31_PAC_D0FB94E,S31_MODEM_LPCON_STRUCT]. Remaining platform-owned modem low-power configuration registers from the pinned ESP32-S31 PAC; the shared clock registers and TICK_CONF are carved into canonical route-owned models.</description>
       <baseAddress>0x2010F000</baseAddress>
       <registers>
         <register>
@@ -59,76 +59,6 @@
               <name>CLK_EN</name>
               <bitOffset>0</bitOffset>
               <bitWidth>1</bitWidth>
-            </field>
-          </fields>
-        </register>
-        <register>
-          <name>LP_TIMER_CONF</name>
-          <description>LP_TIMER_CONF</description>
-          <addressOffset>0x4</addressOffset>
-          <size>0x20</size>
-          <access>read-write</access>
-          <resetValue>0x00000000</resetValue>
-          <fields>
-            <field>
-              <name>CLK_LP_TIMER_SEL_OSC_SLOW</name>
-              <bitOffset>0</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-            <field>
-              <name>CLK_LP_TIMER_SEL_OSC_FAST</name>
-              <bitOffset>1</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-            <field>
-              <name>CLK_LP_TIMER_SEL_XTAL</name>
-              <bitOffset>2</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-            <field>
-              <name>CLK_LP_TIMER_SEL_XTAL32K</name>
-              <bitOffset>3</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-            <field>
-              <name>CLK_LP_TIMER_DIV_NUM</name>
-              <bitOffset>4</bitOffset>
-              <bitWidth>12</bitWidth>
-            </field>
-          </fields>
-        </register>
-        <register>
-          <name>COEX_LP_CLK_CONF</name>
-          <description>COEX_LP_CLK_CONF</description>
-          <addressOffset>0x8</addressOffset>
-          <size>0x20</size>
-          <access>read-write</access>
-          <resetValue>0x00000000</resetValue>
-          <fields>
-            <field>
-              <name>CLK_COEX_LP_SEL_OSC_SLOW</name>
-              <bitOffset>0</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-            <field>
-              <name>CLK_COEX_LP_SEL_OSC_FAST</name>
-              <bitOffset>1</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-            <field>
-              <name>CLK_COEX_LP_SEL_XTAL</name>
-              <bitOffset>2</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-            <field>
-              <name>CLK_COEX_LP_SEL_XTAL32K</name>
-              <bitOffset>3</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-            <field>
-              <name>CLK_COEX_LP_DIV_NUM</name>
-              <bitOffset>4</bitOffset>
-              <bitWidth>12</bitWidth>
             </field>
           </fields>
         </register>
@@ -203,36 +133,6 @@
           </fields>
         </register>
         <register>
-          <name>CLK_CONF</name>
-          <description>CLK_CONF</description>
-          <addressOffset>0x18</addressOffset>
-          <size>0x20</size>
-          <access>read-write</access>
-          <resetValue>0x00000000</resetValue>
-          <fields>
-            <field>
-              <name>CLK_WIFIPWR_EN</name>
-              <bitOffset>0</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-            <field>
-              <name>CLK_COEX_EN</name>
-              <bitOffset>1</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-            <field>
-              <name>CLK_I2C_MST_EN</name>
-              <bitOffset>2</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-            <field>
-              <name>CLK_LP_TIMER_EN</name>
-              <bitOffset>3</bitOffset>
-              <bitWidth>1</bitWidth>
-            </field>
-          </fields>
-        </register>
-        <register>
           <name>CLK_CONF_FORCE_ON</name>
           <description>CLK_CONF_FORCE_ON</description>
           <addressOffset>0x1C</addressOffset>
@@ -264,36 +164,6 @@
               <name>CLK_FE_MEM_FO</name>
               <bitOffset>4</bitOffset>
               <bitWidth>1</bitWidth>
-            </field>
-          </fields>
-        </register>
-        <register>
-          <name>CLK_CONF_POWER_ST</name>
-          <description>CLK_CONF_POWER_ST</description>
-          <addressOffset>0x20</addressOffset>
-          <size>0x20</size>
-          <access>read-write</access>
-          <resetValue>0x00000000</resetValue>
-          <fields>
-            <field>
-              <name>CLK_WIFIPWR_ST_MAP</name>
-              <bitOffset>16</bitOffset>
-              <bitWidth>4</bitWidth>
-            </field>
-            <field>
-              <name>CLK_COEX_ST_MAP</name>
-              <bitOffset>20</bitOffset>
-              <bitWidth>4</bitWidth>
-            </field>
-            <field>
-              <name>CLK_I2C_MST_ST_MAP</name>
-              <bitOffset>24</bitOffset>
-              <bitWidth>4</bitWidth>
-            </field>
-            <field>
-              <name>CLK_LP_APB_ST_MAP</name>
-              <bitOffset>28</bitOffset>
-              <bitWidth>4</bitWidth>
             </field>
           </fields>
         </register>

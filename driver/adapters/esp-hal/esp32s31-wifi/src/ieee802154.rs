@@ -4,11 +4,11 @@
 //! ownership of the IEEE 802.15.4 MAC register lease and owns the transition
 //! order. Completion here is not evidence of PHY or RF readiness.
 
-use esp_hal::peripherals::{HP_SYS_CLKRST, MODEM_LPCON, MODEM_SYSCON};
+use esp_hal::peripherals::{HP_SYS_CLKRST, MODEM_SYSCON};
 use open_esp_radio_esp32s31_hal::{
     PowerClockControl,
     ieee802154_lifecycle::{
-        Ieee802154ClockImages, Ieee802154PlatformControl, Ieee802154ResetImages,
+        Ieee802154PlatformClockImages, Ieee802154PlatformControl, Ieee802154ResetImages,
     },
 };
 
@@ -53,22 +53,6 @@ impl Ieee802154PlatformControl for EspHalRadioPeripheral {
         MODEM_SYSCON::regs()
             .clk_conf_power_st()
             .modify(|r, w| w.clk_zb_st_map().set(r.clk_zb_st_map().bits() | ICG_CODE_4));
-        MODEM_LPCON::regs().clk_conf_power_st().modify(|r, w| {
-            w.clk_lp_apb_st_map()
-                .set(r.clk_lp_apb_st_map().bits() | ICG_CODE_6)
-        });
-        MODEM_LPCON::regs().clk_conf_power_st().modify(|r, w| {
-            w.clk_i2c_mst_st_map()
-                .set(r.clk_i2c_mst_st_map().bits() | ICG_CODE_6)
-        });
-        MODEM_LPCON::regs().clk_conf_power_st().modify(|r, w| {
-            w.clk_coex_st_map()
-                .set(r.clk_coex_st_map().bits() | ICG_CODE_6)
-        });
-        MODEM_LPCON::regs().clk_conf_power_st().modify(|r, w| {
-            w.clk_wifipwr_st_map()
-                .set(r.clk_wifipwr_st_map().bits() | ICG_CODE_6)
-        });
     }
 
     fn configure_modem_source_clock(&mut self) {
@@ -77,12 +61,6 @@ impl Ieee802154PlatformControl for EspHalRadioPeripheral {
         // pinned vendor dependency without inventing a second clock owner.
         // `ieee802154_clock_images` proves the upstream gate separately.
         PowerClockControl::configure_modem_source_clocks(self);
-    }
-
-    fn enable_coexistence_clock(&mut self) {
-        MODEM_LPCON::regs()
-            .clk_conf()
-            .modify(|_, w| w.clk_coex_en().set_bit());
     }
 
     fn enable_wifi_bb_80x1_clock(&mut self) {
@@ -125,19 +103,17 @@ impl Ieee802154PlatformControl for EspHalRadioPeripheral {
             .modify(|_, w| w.clk_zbmac_en().set_bit());
     }
 
-    fn ieee802154_clock_images(&self) -> Ieee802154ClockImages {
+    fn ieee802154_platform_clock_images(&self) -> Ieee802154PlatformClockImages {
         // Sample each additional register once so related fields are decoded
         // from one coherent hardware image.
         let pll_160m = HP_SYS_CLKRST::regs().ref_160m_ctrl0().read();
         let modem_source = HP_SYS_CLKRST::regs().modem_conf().read();
-        let lp_clock = MODEM_LPCON::regs().clk_conf().read();
         let hp_active_map = MODEM_SYSCON::regs().clk_conf_power_st().read();
-        let shared_map = MODEM_LPCON::regs().clk_conf_power_st().read();
         let modem_clock = MODEM_SYSCON::regs().clk_conf().read();
         let modem_clock1 = MODEM_SYSCON::regs().clk_conf1().read();
 
-        Ieee802154ClockImages {
-            modem_clock_maps_configured: contains_icg_code(
+        Ieee802154PlatformClockImages {
+            hp_active_clock_maps_configured: contains_icg_code(
                 hp_active_map.clk_zb_st_map().bits(),
                 ICG_CODE_4,
             ) && contains_icg_code(
@@ -155,24 +131,11 @@ impl Ieee802154PlatformControl for EspHalRadioPeripheral {
             ) && contains_icg_code(
                 hp_active_map.clk_modem_apb_st_map().bits(),
                 ICG_CODE_6,
-            ) && contains_icg_code(
-                shared_map.clk_wifipwr_st_map().bits(),
-                ICG_CODE_6,
-            ) && contains_icg_code(
-                shared_map.clk_coex_st_map().bits(),
-                ICG_CODE_6,
-            ) && contains_icg_code(
-                shared_map.clk_i2c_mst_st_map().bits(),
-                ICG_CODE_6,
-            ) && contains_icg_code(
-                shared_map.clk_lp_apb_st_map().bits(),
-                ICG_CODE_6,
             ),
             pll_160m_clock_enabled: pll_160m.ref_160m_clk_en().bit_is_set(),
             // This matches the pinned vendor check, which compares the whole
             // S31 MODEM_CONF image rather than a subset of named fields.
             modem_source_clock_configured: modem_source.bits() == 0x3d,
-            coexistence_clock_enabled: lp_clock.clk_coex_en().bit_is_set(),
             wifi_bb_80x1_clock_enabled: modem_clock1.clk_wifibb_80x1_en().bit_is_set(),
             etm_clock_enabled: modem_clock.clk_etm_en().bit_is_set(),
             bt_apb_clock_enabled: modem_clock1.clk_bt_apb_en().bit_is_set(),

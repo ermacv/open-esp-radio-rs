@@ -38078,6 +38078,176 @@ bit-width = 32
 access = "read-write"
 
 [[registers]]
+address = 537980932
+width = 32
+access = "read-write"
+identity = "MODEM_LPCON_SHARED_CLOCK.LP_TIMER_CONF"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+peripheral-type = "ModemLpconSharedClock"
+peripheral-module = "modem_lpcon_shared_clock"
+scope = []
+register-method = "lp_timer_conf"
+
+[[registers.fields]]
+svd-name = "CLK_LP_TIMER_SEL_OSC_SLOW"
+method = "clk_lp_timer_sel_osc_slow"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_LP_TIMER_SEL_OSC_FAST"
+method = "clk_lp_timer_sel_osc_fast"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_LP_TIMER_SEL_XTAL"
+method = "clk_lp_timer_sel_xtal"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_LP_TIMER_SEL_XTAL32K"
+method = "clk_lp_timer_sel_xtal32k"
+bit-offset = 3
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_LP_TIMER_DIV_NUM"
+method = "clk_lp_timer_div_num"
+bit-offset = 4
+bit-width = 12
+access = "read-write"
+
+[[registers]]
+address = 537980936
+width = 32
+access = "read-write"
+identity = "MODEM_LPCON_SHARED_CLOCK.COEX_LP_CLK_CONF"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+peripheral-type = "ModemLpconSharedClock"
+peripheral-module = "modem_lpcon_shared_clock"
+scope = []
+register-method = "coex_lp_clk_conf"
+
+[[registers.fields]]
+svd-name = "CLK_COEX_LP_SEL_OSC_SLOW"
+method = "clk_coex_lp_sel_osc_slow"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_COEX_LP_SEL_OSC_FAST"
+method = "clk_coex_lp_sel_osc_fast"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_COEX_LP_SEL_XTAL"
+method = "clk_coex_lp_sel_xtal"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_COEX_LP_SEL_XTAL32K"
+method = "clk_coex_lp_sel_xtal32k"
+bit-offset = 3
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_COEX_LP_DIV_NUM"
+method = "clk_coex_lp_div_num"
+bit-offset = 4
+bit-width = 12
+access = "read-write"
+
+[[registers]]
+address = 537980952
+width = 32
+access = "read-write"
+identity = "MODEM_LPCON_SHARED_CLOCK.CLK_CONF"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+peripheral-type = "ModemLpconSharedClock"
+peripheral-module = "modem_lpcon_shared_clock"
+scope = []
+register-method = "clk_conf"
+
+[[registers.fields]]
+svd-name = "CLK_WIFIPWR_EN"
+method = "clk_wifipwr_en"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_COEX_EN"
+method = "clk_coex_en"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_I2C_MST_EN"
+method = "clk_i2c_mst_en"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_LP_TIMER_EN"
+method = "clk_lp_timer_en"
+bit-offset = 3
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537980960
+width = 32
+access = "read-write"
+identity = "MODEM_LPCON_SHARED_CLOCK.CLK_CONF_POWER_ST"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+peripheral-type = "ModemLpconSharedClock"
+peripheral-module = "modem_lpcon_shared_clock"
+scope = []
+register-method = "clk_conf_power_st"
+
+[[registers.fields]]
+svd-name = "CLK_WIFIPWR_ST_MAP"
+method = "clk_wifipwr_st_map"
+bit-offset = 16
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_COEX_ST_MAP"
+method = "clk_coex_st_map"
+bit-offset = 20
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_I2C_MST_ST_MAP"
+method = "clk_i2c_mst_st_map"
+bit-offset = 24
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLK_LP_APB_ST_MAP"
+method = "clk_lp_apb_st_map"
+bit-offset = 28
+bit-width = 4
+access = "read-write"
+
+[[registers]]
 address = 537980968
 width = 32
 access = "read-write"

@@ -21,9 +21,10 @@ use open_esp_radio_esp32s31_wifi_mac::{
         MacColdLastRxBufferHardware, MacColdRxBufferHardware, MacColdRxPolicyHardware,
         MacColdStartConfig, MacColdStartError, MacColdStartOutcome, MacColdTxRxHardware,
         MacDelayEntropy, MacDelaySlot, MacInterfaceAddressHardware, MacLowRateHardware,
-        MacSlowClockCalibration, MacSlowClockCalibrationSource, MacSnifferHardware, MacTxPowerPair,
-        MacTxPowerSource, MacTxPowerTable, StaLinkRxPolicyHardware, activate_promiscuous_receive,
-        configure_sta_link_receive_policy, initialize_wifi_mac,
+        MacSharedClockHardware, MacSlowClockCalibration, MacSlowClockCalibrationSource,
+        MacSnifferHardware, MacTxPowerPair, MacTxPowerSource, MacTxPowerTable,
+        StaLinkRxPolicyHardware, activate_promiscuous_receive, configure_sta_link_receive_policy,
+        initialize_wifi_mac,
     },
     irq::{
         IrqDisposition, IrqState, IrqWork, MAC_INT_COLLISION, MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK,
@@ -285,6 +286,7 @@ enum Operation {
     InitializeHePrefix,
     InitializeTxPower(MacTxPowerTable),
     InitializeHeSuffix,
+    RetainCoexistenceClock,
     ConfigureOpenPromiscuousReceive,
     ReadInterruptStatus,
     WriteInterruptEnable(u32),
@@ -323,6 +325,13 @@ impl Mmio for MockMmio {
 
     fn fence(&mut self) {
         self.operations.push(Operation::Fence);
+    }
+}
+
+impl MacSharedClockHardware for MockMmio {
+    fn retain_coexistence_clock(&mut self) -> bool {
+        self.operations.push(Operation::RetainCoexistenceClock);
+        true
     }
 }
 
@@ -1094,7 +1103,6 @@ impl TxHardware for MockMmio {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PlatformOperation {
     EnableWifiMacClocks,
-    EnableCoexistenceClock,
     ConfigureModemSourceClocks,
     SetWifiMacReset(bool),
     RequestMacDelayRandom,
@@ -1111,11 +1119,6 @@ struct MockPlatform {
 impl MacClockControl for MockPlatform {
     fn enable_wifi_mac_clocks(&mut self) {
         self.operations.push(PlatformOperation::EnableWifiMacClocks);
-    }
-
-    fn enable_coexistence_clock(&mut self) {
-        self.operations
-            .push(PlatformOperation::EnableCoexistenceClock);
     }
 
     fn configure_modem_source_clocks(&mut self) {
@@ -1252,8 +1255,9 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
     assert_eq!(outcome.handshake_samples, 0);
     assert_eq!(outcome.handshake_value, 3);
     assert_eq!(
-        &mmio.operations()[..5],
+        &mmio.operations()[..6],
         [
+            Operation::RetainCoexistenceClock,
             Operation::Read(mac_init::HANDSHAKE),
             Operation::Write(mac_init::HANDSHAKE, 3),
             Operation::Read(mac_init::HANDSHAKE),
@@ -1477,6 +1481,10 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
             ]
     }));
     assert!(mmio.operations().contains(&Operation::InitializeMacAntenna));
+    assert!(
+        mmio.operations()
+            .contains(&Operation::RetainCoexistenceClock)
+    );
     assert!(mmio.operations().contains(&Operation::InitializeHalTail(
         0x19a8_79e0,
         MacSlowClockCalibration::Unavailable,
@@ -1495,7 +1503,6 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
     assert!(mmio.operations().contains(&Operation::InitializeHeSuffix));
     let mut expected_platform = vec![
         PlatformOperation::EnableWifiMacClocks,
-        PlatformOperation::EnableCoexistenceClock,
         PlatformOperation::ConfigureModemSourceClocks,
         PlatformOperation::SetWifiMacReset(true),
         PlatformOperation::SetWifiMacReset(false),
@@ -1554,6 +1561,7 @@ fn cold_mac_handshake_timeout_does_not_touch_interrupt_state() {
     assert_eq!(
         mmio.operations(),
         [
+            Operation::RetainCoexistenceClock,
             Operation::Read(mac_init::HANDSHAKE),
             Operation::Write(mac_init::HANDSHAKE, 2),
             Operation::Read(mac_init::HANDSHAKE),

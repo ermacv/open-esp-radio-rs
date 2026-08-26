@@ -1025,9 +1025,10 @@ fn map_prerequisites<Before, After>(
 #[cfg(test)]
 mod tests {
     use open_esp_radio_esp32s31_hal::{
-        Ieee802154ClockImages, Ieee802154MacPolicy, Ieee802154Owned, Ieee802154PlatformControl,
-        Ieee802154ReadbackError, Ieee802154ResetCheckpoint, Ieee802154ResetImages,
-        Ieee802154TimingReady as HalIeee802154TimingReady, PowerClockControl, PowerClockImages,
+        Ieee802154MacPolicy, Ieee802154Owned, Ieee802154PlatformClockImages,
+        Ieee802154PlatformControl, Ieee802154ReadbackError, Ieee802154ResetCheckpoint,
+        Ieee802154ResetImages, Ieee802154TimingReady as HalIeee802154TimingReady,
+        PlatformPowerClockImages, PowerClockControl,
     };
 
     use crate::{
@@ -1050,9 +1051,9 @@ mod tests {
 
     #[derive(Debug)]
     struct FakePlatform {
-        clocks: Ieee802154ClockImages,
+        clocks: Ieee802154PlatformClockImages,
         resets: Ieee802154ResetImages,
-        power: PowerClockImages,
+        power: PlatformPowerClockImages,
         clock_sequences: u8,
         reset_edges: u8,
     }
@@ -1060,11 +1061,10 @@ mod tests {
     impl FakePlatform {
         const fn ready() -> Self {
             Self {
-                clocks: Ieee802154ClockImages {
-                    modem_clock_maps_configured: true,
+                clocks: Ieee802154PlatformClockImages {
+                    hp_active_clock_maps_configured: true,
                     pll_160m_clock_enabled: true,
                     modem_source_clock_configured: true,
-                    coexistence_clock_enabled: true,
                     wifi_bb_80x1_clock_enabled: true,
                     etm_clock_enabled: true,
                     bt_apb_clock_enabled: true,
@@ -1077,16 +1077,14 @@ mod tests {
                     mac_reset_released: true,
                     apb_reset_released: true,
                 },
-                power: PowerClockImages {
+                power: PlatformPowerClockImages {
                     reset_released: true,
                     hp_active_icg_selected: true,
                     modem_bus_clock_enabled: true,
                     hp_active_clock_map_configured: true,
-                    shared_clock_map_configured: true,
                     modem_source_clocks_configured: true,
                     phy_calibration_clocks_enabled: true,
                     phy_i2c_160mhz_selected: true,
-                    phy_i2c_master_clock_enabled: true,
                 },
                 clock_sequences: 0,
                 reset_edges: 0,
@@ -1107,8 +1105,6 @@ mod tests {
 
         fn configure_hp_active_modem_clock_map(&mut self) {}
 
-        fn configure_shared_modem_clock_map(&mut self) {}
-
         fn configure_modem_source_clocks(&mut self) {}
 
         fn set_wifi_baseband_reset(&mut self, _asserted: bool) {}
@@ -1117,9 +1113,7 @@ mod tests {
 
         fn select_phy_i2c_160mhz_source(&mut self) {}
 
-        fn enable_phy_i2c_master_clock(&mut self) {}
-
-        fn power_clock_images(&self) -> PowerClockImages {
+        fn platform_power_clock_images(&self) -> PlatformPowerClockImages {
             self.power
         }
     }
@@ -1128,8 +1122,6 @@ mod tests {
         fn configure_modem_clock_maps(&mut self) {}
 
         fn configure_modem_source_clock(&mut self) {}
-
-        fn enable_coexistence_clock(&mut self) {}
 
         fn enable_wifi_bb_80x1_clock(&mut self) {}
 
@@ -1143,7 +1135,7 @@ mod tests {
             self.clock_sequences += 1;
         }
 
-        fn ieee802154_clock_images(&self) -> Ieee802154ClockImages {
+        fn ieee802154_platform_clock_images(&self) -> Ieee802154PlatformClockImages {
             self.clocks
         }
 

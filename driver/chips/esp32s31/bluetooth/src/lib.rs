@@ -66,6 +66,7 @@ pub mod validation;
 pub use clock::{
     BluetoothClockCheckpoint, BluetoothClockControl, BluetoothClockEnableFailure,
     BluetoothClockError, BluetoothClockState, BluetoothClockedResources,
+    BluetoothPlatformClockState,
 };
 pub use controller_time::{BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample};
 pub use dtm_event_prepare::{

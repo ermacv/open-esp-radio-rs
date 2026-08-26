@@ -11752,6 +11752,422 @@ pub mod phy_clock_oracle {
         }
     }
 }
+#[doc = "Role-neutral MODEM_LPCON clock-map, gate and low-power selector registers shared by the exclusive Wi-Fi, Bluetooth and IEEE 802.15.4 routes."]
+pub type ModemLpconSharedClock =
+    crate::Periph<modem_lpcon_shared_clock::RegisterBlock, 0x2010_f000>;
+impl core::fmt::Debug for ModemLpconSharedClock {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("ModemLpconSharedClock").finish()
+    }
+}
+#[doc = "Role-neutral MODEM_LPCON clock-map, gate and low-power selector registers shared by the exclusive Wi-Fi, Bluetooth and IEEE 802.15.4 routes."]
+pub mod modem_lpcon_shared_clock {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        _reserved0: [u8; 0x04],
+        lp_timer_conf: LpTimerConf,
+        coex_lp_clk_conf: CoexLpClkConf,
+        _reserved2: [u8; 0x0c],
+        clk_conf: ClkConf,
+        _reserved3: [u8; 0x04],
+        clk_conf_power_st: ClkConfPowerSt,
+    }
+    impl RegisterBlock {
+        #[doc = "0x04 - Bluetooth low-power timer source selector and twelve-bit divider."]
+        #[inline(always)]
+        pub const fn lp_timer_conf(&self) -> &LpTimerConf {
+            &self.lp_timer_conf
+        }
+        #[doc = "0x08 - Coexistence low-power source selector and twelve-bit divider sampled by the coexistence time conversion."]
+        #[inline(always)]
+        pub const fn coex_lp_clk_conf(&self) -> &CoexLpClkConf {
+            &self.coex_lp_clk_conf
+        }
+        #[doc = "0x18 - Shared MODEM_LPCON clock gates used by radio lifecycles."]
+        #[inline(always)]
+        pub const fn clk_conf(&self) -> &ClkConf {
+            &self.clk_conf
+        }
+        #[doc = "0x20 - Four shared clock power-state map fields programmed with the reviewed active-state image."]
+        #[inline(always)]
+        pub const fn clk_conf_power_st(&self) -> &ClkConfPowerSt {
+            &self.clk_conf_power_st
+        }
+    }
+    #[doc = "LP_TIMER_CONF (rw) register accessor: Bluetooth low-power timer source selector and twelve-bit divider.\n\nYou can [`read`](crate::Reg::read) this register and get [`lp_timer_conf::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`lp_timer_conf::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@lp_timer_conf`] module"]
+    #[doc(alias = "LP_TIMER_CONF")]
+    pub type LpTimerConf = crate::Reg<lp_timer_conf::LpTimerConfSpec>;
+    #[doc = "Bluetooth low-power timer source selector and twelve-bit divider."]
+    pub mod lp_timer_conf {
+        #[doc = "Register `LP_TIMER_CONF` reader"]
+        pub type R = crate::R<LpTimerConfSpec>;
+        #[doc = "Register `LP_TIMER_CONF` writer"]
+        pub type W = crate::W<LpTimerConfSpec>;
+        #[doc = "Field `CLK_LP_TIMER_SEL_OSC_SLOW` reader - Select the slow oscillator."]
+        pub type ClkLpTimerSelOscSlowR = crate::BitReader;
+        #[doc = "Field `CLK_LP_TIMER_SEL_OSC_SLOW` writer - Select the slow oscillator."]
+        pub type ClkLpTimerSelOscSlowW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_LP_TIMER_SEL_OSC_FAST` reader - Select the fast oscillator."]
+        pub type ClkLpTimerSelOscFastR = crate::BitReader;
+        #[doc = "Field `CLK_LP_TIMER_SEL_OSC_FAST` writer - Select the fast oscillator."]
+        pub type ClkLpTimerSelOscFastW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_LP_TIMER_SEL_XTAL` reader - Select the crystal clock."]
+        pub type ClkLpTimerSelXtalR = crate::BitReader;
+        #[doc = "Field `CLK_LP_TIMER_SEL_XTAL` writer - Select the crystal clock."]
+        pub type ClkLpTimerSelXtalW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_LP_TIMER_SEL_XTAL32K` reader - Select the 32 kHz crystal clock."]
+        pub type ClkLpTimerSelXtal32kR = crate::BitReader;
+        #[doc = "Field `CLK_LP_TIMER_SEL_XTAL32K` writer - Select the 32 kHz crystal clock."]
+        pub type ClkLpTimerSelXtal32kW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_LP_TIMER_DIV_NUM` reader - Twelve-bit low-power timer divider image."]
+        pub type ClkLpTimerDivNumR = crate::FieldReader<u16>;
+        #[doc = "Field `CLK_LP_TIMER_DIV_NUM` writer - Twelve-bit low-power timer divider image."]
+        pub type ClkLpTimerDivNumW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        impl R {
+            #[doc = "Bit 0 - Select the slow oscillator."]
+            #[inline(always)]
+            pub fn clk_lp_timer_sel_osc_slow(&self) -> ClkLpTimerSelOscSlowR {
+                ClkLpTimerSelOscSlowR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - Select the fast oscillator."]
+            #[inline(always)]
+            pub fn clk_lp_timer_sel_osc_fast(&self) -> ClkLpTimerSelOscFastR {
+                ClkLpTimerSelOscFastR::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2 - Select the crystal clock."]
+            #[inline(always)]
+            pub fn clk_lp_timer_sel_xtal(&self) -> ClkLpTimerSelXtalR {
+                ClkLpTimerSelXtalR::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3 - Select the 32 kHz crystal clock."]
+            #[inline(always)]
+            pub fn clk_lp_timer_sel_xtal32k(&self) -> ClkLpTimerSelXtal32kR {
+                ClkLpTimerSelXtal32kR::new(((self.bits >> 3) & 1) != 0)
+            }
+            #[doc = "Bits 4:15 - Twelve-bit low-power timer divider image."]
+            #[inline(always)]
+            pub fn clk_lp_timer_div_num(&self) -> ClkLpTimerDivNumR {
+                ClkLpTimerDivNumR::new(((self.bits >> 4) & 0x0fff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0 - Select the slow oscillator."]
+            #[inline(always)]
+            pub fn clk_lp_timer_sel_osc_slow(
+                &mut self,
+            ) -> ClkLpTimerSelOscSlowW<'_, LpTimerConfSpec> {
+                ClkLpTimerSelOscSlowW::new(self, 0)
+            }
+            #[doc = "Bit 1 - Select the fast oscillator."]
+            #[inline(always)]
+            pub fn clk_lp_timer_sel_osc_fast(
+                &mut self,
+            ) -> ClkLpTimerSelOscFastW<'_, LpTimerConfSpec> {
+                ClkLpTimerSelOscFastW::new(self, 1)
+            }
+            #[doc = "Bit 2 - Select the crystal clock."]
+            #[inline(always)]
+            pub fn clk_lp_timer_sel_xtal(&mut self) -> ClkLpTimerSelXtalW<'_, LpTimerConfSpec> {
+                ClkLpTimerSelXtalW::new(self, 2)
+            }
+            #[doc = "Bit 3 - Select the 32 kHz crystal clock."]
+            #[inline(always)]
+            pub fn clk_lp_timer_sel_xtal32k(
+                &mut self,
+            ) -> ClkLpTimerSelXtal32kW<'_, LpTimerConfSpec> {
+                ClkLpTimerSelXtal32kW::new(self, 3)
+            }
+            #[doc = "Bits 4:15 - Twelve-bit low-power timer divider image."]
+            #[inline(always)]
+            pub fn clk_lp_timer_div_num(&mut self) -> ClkLpTimerDivNumW<'_, LpTimerConfSpec> {
+                ClkLpTimerDivNumW::new(self, 4)
+            }
+        }
+        #[doc = "Bluetooth low-power timer source selector and twelve-bit divider.\n\nYou can [`read`](crate::Reg::read) this register and get [`lp_timer_conf::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`lp_timer_conf::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct LpTimerConfSpec;
+        impl crate::RegisterSpec for LpTimerConfSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`lp_timer_conf::R`](R) reader structure"]
+        impl crate::Readable for LpTimerConfSpec {}
+        #[doc = "`write(|w| ..)` method takes [`lp_timer_conf::W`](W) writer structure"]
+        impl crate::Writable for LpTimerConfSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets LP_TIMER_CONF to value 0"]
+        impl crate::Resettable for LpTimerConfSpec {}
+    }
+    #[doc = "COEX_LP_CLK_CONF (rw) register accessor: Coexistence low-power source selector and twelve-bit divider sampled by the coexistence time conversion.\n\nYou can [`read`](crate::Reg::read) this register and get [`coex_lp_clk_conf::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`coex_lp_clk_conf::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@coex_lp_clk_conf`] module"]
+    #[doc(alias = "COEX_LP_CLK_CONF")]
+    pub type CoexLpClkConf = crate::Reg<coex_lp_clk_conf::CoexLpClkConfSpec>;
+    #[doc = "Coexistence low-power source selector and twelve-bit divider sampled by the coexistence time conversion."]
+    pub mod coex_lp_clk_conf {
+        #[doc = "Register `COEX_LP_CLK_CONF` reader"]
+        pub type R = crate::R<CoexLpClkConfSpec>;
+        #[doc = "Register `COEX_LP_CLK_CONF` writer"]
+        pub type W = crate::W<CoexLpClkConfSpec>;
+        #[doc = "Field `CLK_COEX_LP_SEL_OSC_SLOW` reader - Select the slow oscillator."]
+        pub type ClkCoexLpSelOscSlowR = crate::BitReader;
+        #[doc = "Field `CLK_COEX_LP_SEL_OSC_SLOW` writer - Select the slow oscillator."]
+        pub type ClkCoexLpSelOscSlowW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_COEX_LP_SEL_OSC_FAST` reader - Select the fast oscillator."]
+        pub type ClkCoexLpSelOscFastR = crate::BitReader;
+        #[doc = "Field `CLK_COEX_LP_SEL_OSC_FAST` writer - Select the fast oscillator."]
+        pub type ClkCoexLpSelOscFastW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_COEX_LP_SEL_XTAL` reader - Select the crystal clock."]
+        pub type ClkCoexLpSelXtalR = crate::BitReader;
+        #[doc = "Field `CLK_COEX_LP_SEL_XTAL` writer - Select the crystal clock."]
+        pub type ClkCoexLpSelXtalW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_COEX_LP_SEL_XTAL32K` reader - Select the 32 kHz crystal clock."]
+        pub type ClkCoexLpSelXtal32kR = crate::BitReader;
+        #[doc = "Field `CLK_COEX_LP_SEL_XTAL32K` writer - Select the 32 kHz crystal clock."]
+        pub type ClkCoexLpSelXtal32kW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_COEX_LP_DIV_NUM` reader - Twelve-bit coexistence low-power clock divider image."]
+        pub type ClkCoexLpDivNumR = crate::FieldReader<u16>;
+        #[doc = "Field `CLK_COEX_LP_DIV_NUM` writer - Twelve-bit coexistence low-power clock divider image."]
+        pub type ClkCoexLpDivNumW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        impl R {
+            #[doc = "Bit 0 - Select the slow oscillator."]
+            #[inline(always)]
+            pub fn clk_coex_lp_sel_osc_slow(&self) -> ClkCoexLpSelOscSlowR {
+                ClkCoexLpSelOscSlowR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - Select the fast oscillator."]
+            #[inline(always)]
+            pub fn clk_coex_lp_sel_osc_fast(&self) -> ClkCoexLpSelOscFastR {
+                ClkCoexLpSelOscFastR::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2 - Select the crystal clock."]
+            #[inline(always)]
+            pub fn clk_coex_lp_sel_xtal(&self) -> ClkCoexLpSelXtalR {
+                ClkCoexLpSelXtalR::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3 - Select the 32 kHz crystal clock."]
+            #[inline(always)]
+            pub fn clk_coex_lp_sel_xtal32k(&self) -> ClkCoexLpSelXtal32kR {
+                ClkCoexLpSelXtal32kR::new(((self.bits >> 3) & 1) != 0)
+            }
+            #[doc = "Bits 4:15 - Twelve-bit coexistence low-power clock divider image."]
+            #[inline(always)]
+            pub fn clk_coex_lp_div_num(&self) -> ClkCoexLpDivNumR {
+                ClkCoexLpDivNumR::new(((self.bits >> 4) & 0x0fff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0 - Select the slow oscillator."]
+            #[inline(always)]
+            pub fn clk_coex_lp_sel_osc_slow(
+                &mut self,
+            ) -> ClkCoexLpSelOscSlowW<'_, CoexLpClkConfSpec> {
+                ClkCoexLpSelOscSlowW::new(self, 0)
+            }
+            #[doc = "Bit 1 - Select the fast oscillator."]
+            #[inline(always)]
+            pub fn clk_coex_lp_sel_osc_fast(
+                &mut self,
+            ) -> ClkCoexLpSelOscFastW<'_, CoexLpClkConfSpec> {
+                ClkCoexLpSelOscFastW::new(self, 1)
+            }
+            #[doc = "Bit 2 - Select the crystal clock."]
+            #[inline(always)]
+            pub fn clk_coex_lp_sel_xtal(&mut self) -> ClkCoexLpSelXtalW<'_, CoexLpClkConfSpec> {
+                ClkCoexLpSelXtalW::new(self, 2)
+            }
+            #[doc = "Bit 3 - Select the 32 kHz crystal clock."]
+            #[inline(always)]
+            pub fn clk_coex_lp_sel_xtal32k(
+                &mut self,
+            ) -> ClkCoexLpSelXtal32kW<'_, CoexLpClkConfSpec> {
+                ClkCoexLpSelXtal32kW::new(self, 3)
+            }
+            #[doc = "Bits 4:15 - Twelve-bit coexistence low-power clock divider image."]
+            #[inline(always)]
+            pub fn clk_coex_lp_div_num(&mut self) -> ClkCoexLpDivNumW<'_, CoexLpClkConfSpec> {
+                ClkCoexLpDivNumW::new(self, 4)
+            }
+        }
+        #[doc = "Coexistence low-power source selector and twelve-bit divider sampled by the coexistence time conversion.\n\nYou can [`read`](crate::Reg::read) this register and get [`coex_lp_clk_conf::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`coex_lp_clk_conf::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct CoexLpClkConfSpec;
+        impl crate::RegisterSpec for CoexLpClkConfSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`coex_lp_clk_conf::R`](R) reader structure"]
+        impl crate::Readable for CoexLpClkConfSpec {}
+        #[doc = "`write(|w| ..)` method takes [`coex_lp_clk_conf::W`](W) writer structure"]
+        impl crate::Writable for CoexLpClkConfSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets COEX_LP_CLK_CONF to value 0"]
+        impl crate::Resettable for CoexLpClkConfSpec {}
+    }
+    #[doc = "CLK_CONF (rw) register accessor: Shared MODEM_LPCON clock gates used by radio lifecycles.\n\nYou can [`read`](crate::Reg::read) this register and get [`clk_conf::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clk_conf::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@clk_conf`] module"]
+    #[doc(alias = "CLK_CONF")]
+    pub type ClkConf = crate::Reg<clk_conf::ClkConfSpec>;
+    #[doc = "Shared MODEM_LPCON clock gates used by radio lifecycles."]
+    pub mod clk_conf {
+        #[doc = "Register `CLK_CONF` reader"]
+        pub type R = crate::R<ClkConfSpec>;
+        #[doc = "Register `CLK_CONF` writer"]
+        pub type W = crate::W<ClkConfSpec>;
+        #[doc = "Field `CLK_WIFIPWR_EN` reader - Wi-Fi power clock gate."]
+        pub type ClkWifipwrEnR = crate::BitReader;
+        #[doc = "Field `CLK_WIFIPWR_EN` writer - Wi-Fi power clock gate."]
+        pub type ClkWifipwrEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_COEX_EN` reader - Coexistence clock gate."]
+        pub type ClkCoexEnR = crate::BitReader;
+        #[doc = "Field `CLK_COEX_EN` writer - Coexistence clock gate."]
+        pub type ClkCoexEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_I2C_MST_EN` reader - PHY I2C master clock gate."]
+        pub type ClkI2cMstEnR = crate::BitReader;
+        #[doc = "Field `CLK_I2C_MST_EN` writer - PHY I2C master clock gate."]
+        pub type ClkI2cMstEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLK_LP_TIMER_EN` reader - Bluetooth low-power timer clock gate."]
+        pub type ClkLpTimerEnR = crate::BitReader;
+        #[doc = "Field `CLK_LP_TIMER_EN` writer - Bluetooth low-power timer clock gate."]
+        pub type ClkLpTimerEnW<'a, REG> = crate::BitWriter<'a, REG>;
+        impl R {
+            #[doc = "Bit 0 - Wi-Fi power clock gate."]
+            #[inline(always)]
+            pub fn clk_wifipwr_en(&self) -> ClkWifipwrEnR {
+                ClkWifipwrEnR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - Coexistence clock gate."]
+            #[inline(always)]
+            pub fn clk_coex_en(&self) -> ClkCoexEnR {
+                ClkCoexEnR::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2 - PHY I2C master clock gate."]
+            #[inline(always)]
+            pub fn clk_i2c_mst_en(&self) -> ClkI2cMstEnR {
+                ClkI2cMstEnR::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3 - Bluetooth low-power timer clock gate."]
+            #[inline(always)]
+            pub fn clk_lp_timer_en(&self) -> ClkLpTimerEnR {
+                ClkLpTimerEnR::new(((self.bits >> 3) & 1) != 0)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0 - Wi-Fi power clock gate."]
+            #[inline(always)]
+            pub fn clk_wifipwr_en(&mut self) -> ClkWifipwrEnW<'_, ClkConfSpec> {
+                ClkWifipwrEnW::new(self, 0)
+            }
+            #[doc = "Bit 1 - Coexistence clock gate."]
+            #[inline(always)]
+            pub fn clk_coex_en(&mut self) -> ClkCoexEnW<'_, ClkConfSpec> {
+                ClkCoexEnW::new(self, 1)
+            }
+            #[doc = "Bit 2 - PHY I2C master clock gate."]
+            #[inline(always)]
+            pub fn clk_i2c_mst_en(&mut self) -> ClkI2cMstEnW<'_, ClkConfSpec> {
+                ClkI2cMstEnW::new(self, 2)
+            }
+            #[doc = "Bit 3 - Bluetooth low-power timer clock gate."]
+            #[inline(always)]
+            pub fn clk_lp_timer_en(&mut self) -> ClkLpTimerEnW<'_, ClkConfSpec> {
+                ClkLpTimerEnW::new(self, 3)
+            }
+        }
+        #[doc = "Shared MODEM_LPCON clock gates used by radio lifecycles.\n\nYou can [`read`](crate::Reg::read) this register and get [`clk_conf::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clk_conf::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ClkConfSpec;
+        impl crate::RegisterSpec for ClkConfSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`clk_conf::R`](R) reader structure"]
+        impl crate::Readable for ClkConfSpec {}
+        #[doc = "`write(|w| ..)` method takes [`clk_conf::W`](W) writer structure"]
+        impl crate::Writable for ClkConfSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets CLK_CONF to value 0"]
+        impl crate::Resettable for ClkConfSpec {}
+    }
+    #[doc = "CLK_CONF_POWER_ST (rw) register accessor: Four shared clock power-state map fields programmed with the reviewed active-state image.\n\nYou can [`read`](crate::Reg::read) this register and get [`clk_conf_power_st::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clk_conf_power_st::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@clk_conf_power_st`] module"]
+    #[doc(alias = "CLK_CONF_POWER_ST")]
+    pub type ClkConfPowerSt = crate::Reg<clk_conf_power_st::ClkConfPowerStSpec>;
+    #[doc = "Four shared clock power-state map fields programmed with the reviewed active-state image."]
+    pub mod clk_conf_power_st {
+        #[doc = "Register `CLK_CONF_POWER_ST` reader"]
+        pub type R = crate::R<ClkConfPowerStSpec>;
+        #[doc = "Register `CLK_CONF_POWER_ST` writer"]
+        pub type W = crate::W<ClkConfPowerStSpec>;
+        #[doc = "Field `CLK_WIFIPWR_ST_MAP` reader - Wi-Fi power clock state map."]
+        pub type ClkWifipwrStMapR = crate::FieldReader;
+        #[doc = "Field `CLK_WIFIPWR_ST_MAP` writer - Wi-Fi power clock state map."]
+        pub type ClkWifipwrStMapW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `CLK_COEX_ST_MAP` reader - Coexistence clock state map."]
+        pub type ClkCoexStMapR = crate::FieldReader;
+        #[doc = "Field `CLK_COEX_ST_MAP` writer - Coexistence clock state map."]
+        pub type ClkCoexStMapW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `CLK_I2C_MST_ST_MAP` reader - PHY I2C master clock state map."]
+        pub type ClkI2cMstStMapR = crate::FieldReader;
+        #[doc = "Field `CLK_I2C_MST_ST_MAP` writer - PHY I2C master clock state map."]
+        pub type ClkI2cMstStMapW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `CLK_LP_APB_ST_MAP` reader - Low-power APB clock state map."]
+        pub type ClkLpApbStMapR = crate::FieldReader;
+        #[doc = "Field `CLK_LP_APB_ST_MAP` writer - Low-power APB clock state map."]
+        pub type ClkLpApbStMapW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        impl R {
+            #[doc = "Bits 16:19 - Wi-Fi power clock state map."]
+            #[inline(always)]
+            pub fn clk_wifipwr_st_map(&self) -> ClkWifipwrStMapR {
+                ClkWifipwrStMapR::new(((self.bits >> 16) & 0x0f) as u8)
+            }
+            #[doc = "Bits 20:23 - Coexistence clock state map."]
+            #[inline(always)]
+            pub fn clk_coex_st_map(&self) -> ClkCoexStMapR {
+                ClkCoexStMapR::new(((self.bits >> 20) & 0x0f) as u8)
+            }
+            #[doc = "Bits 24:27 - PHY I2C master clock state map."]
+            #[inline(always)]
+            pub fn clk_i2c_mst_st_map(&self) -> ClkI2cMstStMapR {
+                ClkI2cMstStMapR::new(((self.bits >> 24) & 0x0f) as u8)
+            }
+            #[doc = "Bits 28:31 - Low-power APB clock state map."]
+            #[inline(always)]
+            pub fn clk_lp_apb_st_map(&self) -> ClkLpApbStMapR {
+                ClkLpApbStMapR::new(((self.bits >> 28) & 0x0f) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 16:19 - Wi-Fi power clock state map."]
+            #[inline(always)]
+            pub fn clk_wifipwr_st_map(&mut self) -> ClkWifipwrStMapW<'_, ClkConfPowerStSpec> {
+                ClkWifipwrStMapW::new(self, 16)
+            }
+            #[doc = "Bits 20:23 - Coexistence clock state map."]
+            #[inline(always)]
+            pub fn clk_coex_st_map(&mut self) -> ClkCoexStMapW<'_, ClkConfPowerStSpec> {
+                ClkCoexStMapW::new(self, 20)
+            }
+            #[doc = "Bits 24:27 - PHY I2C master clock state map."]
+            #[inline(always)]
+            pub fn clk_i2c_mst_st_map(&mut self) -> ClkI2cMstStMapW<'_, ClkConfPowerStSpec> {
+                ClkI2cMstStMapW::new(self, 24)
+            }
+            #[doc = "Bits 28:31 - Low-power APB clock state map."]
+            #[inline(always)]
+            pub fn clk_lp_apb_st_map(&mut self) -> ClkLpApbStMapW<'_, ClkConfPowerStSpec> {
+                ClkLpApbStMapW::new(self, 28)
+            }
+        }
+        #[doc = "Four shared clock power-state map fields programmed with the reviewed active-state image.\n\nYou can [`read`](crate::Reg::read) this register and get [`clk_conf_power_st::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clk_conf_power_st::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ClkConfPowerStSpec;
+        impl crate::RegisterSpec for ClkConfPowerStSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`clk_conf_power_st::R`](R) reader structure"]
+        impl crate::Readable for ClkConfPowerStSpec {}
+        #[doc = "`write(|w| ..)` method takes [`clk_conf_power_st::W`](W) writer structure"]
+        impl crate::Writable for ClkConfPowerStSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets CLK_CONF_POWER_ST to value 0"]
+        impl crate::Resettable for ClkConfPowerStSpec {}
+    }
+}
 #[doc = "Role-neutral MODEM_LPCON tick target used by the reviewed common-PHY prelude. Other MODEM_LPCON registers remain platform-owned."]
 pub type ModemLpconPhyTick = crate::Periph<modem_lpcon_phy_tick::RegisterBlock, 0x2010_f000>;
 impl core::fmt::Debug for ModemLpconPhyTick {
@@ -49678,6 +50094,8 @@ pub struct Peripherals {
     pub phy_cold_deadline_oracle: PhyColdDeadlineOracle,
     #[doc = "PHY_CLOCK_ORACLE"]
     pub phy_clock_oracle: PhyClockOracle,
+    #[doc = "MODEM_LPCON_SHARED_CLOCK"]
+    pub modem_lpcon_shared_clock: ModemLpconSharedClock,
     #[doc = "MODEM_LPCON_PHY_TICK"]
     pub modem_lpcon_phy_tick: ModemLpconPhyTick,
     #[doc = "LP_AON_CLKRST"]
@@ -49889,6 +50307,7 @@ impl Peripherals {
             phy_rx_dco_oracle: unsafe { PhyRxDcoOracle::steal() },
             phy_cold_deadline_oracle: unsafe { PhyColdDeadlineOracle::steal() },
             phy_clock_oracle: unsafe { PhyClockOracle::steal() },
+            modem_lpcon_shared_clock: unsafe { ModemLpconSharedClock::steal() },
             modem_lpcon_phy_tick: unsafe { ModemLpconPhyTick::steal() },
             lp_aon_clkrst: unsafe { LpAonClkrst::steal() },
             lp_periclkrst: unsafe { LpPericlkrst::steal() },
@@ -50317,6 +50736,7 @@ pub mod peripheral_ownership {
         pub phy_frequency_channel_oracle: crate::PhyFrequencyChannelOracle,
         pub phy_i2c_command_ram: crate::PhyI2cCommandRam,
         pub phy_iq_estimator_oracle: crate::PhyIqEstimatorOracle,
+        pub modem_lpcon_shared_clock: crate::ModemLpconSharedClock,
         pub modem_lpcon_phy_tick: crate::ModemLpconPhyTick,
         pub lp_aon_clkrst: crate::LpAonClkrst,
         pub lp_periclkrst: crate::LpPericlkrst,
@@ -50420,6 +50840,7 @@ pub mod peripheral_ownership {
             phy_rx_dco_oracle,
             phy_cold_deadline_oracle,
             phy_clock_oracle,
+            modem_lpcon_shared_clock,
             modem_lpcon_phy_tick,
             lp_aon_clkrst,
             lp_periclkrst,
@@ -50578,6 +50999,7 @@ pub mod peripheral_ownership {
                 phy_frequency_channel_oracle,
                 phy_i2c_command_ram,
                 phy_iq_estimator_oracle,
+                modem_lpcon_shared_clock,
                 modem_lpcon_phy_tick,
                 lp_aon_clkrst,
                 lp_periclkrst,
@@ -52514,6 +52936,67 @@ pub mod masked_register_modify {
     ) {
         registers.tick_conf().modify(|reader, writer| {
             let image = (reader.bits() & 0xffffffc0) | (input & 0x0000003f);
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0x9999ffff, accept input mask 0x66660000, and set 0x00000000 in MODEM_LPCON_SHARED_CLOCK.CLK_CONF_POWER_ST.
+    #[inline]
+    pub fn prepare_shared_modem_clock_map(registers: &crate::ModemLpconSharedClock, input: u32) {
+        registers.clk_conf_power_st().modify(|reader, writer| {
+            let image = (reader.bits() & 0x9999ffff) | (input & 0x66660000);
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0xfffffffd, accept input mask 0x00000002, and set 0x00000000 in MODEM_LPCON_SHARED_CLOCK.CLK_CONF.
+    #[inline]
+    pub fn set_shared_coexistence_clock_gate(registers: &crate::ModemLpconSharedClock, input: u32) {
+        registers.clk_conf().modify(|reader, writer| {
+            let image = (reader.bits() & 0xfffffffd) | (input & 0x00000002);
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0xfffffffb, accept input mask 0x00000004, and set 0x00000000 in MODEM_LPCON_SHARED_CLOCK.CLK_CONF.
+    #[inline]
+    pub fn set_shared_phy_i2c_master_clock_gate(
+        registers: &crate::ModemLpconSharedClock,
+        input: u32,
+    ) {
+        registers.clk_conf().modify(|reader, writer| {
+            let image = (reader.bits() & 0xfffffffb) | (input & 0x00000004);
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0xfffffff7, accept input mask 0x00000008, and set 0x00000000 in MODEM_LPCON_SHARED_CLOCK.CLK_CONF.
+    #[inline]
+    pub fn set_shared_low_power_timer_clock_gate(
+        registers: &crate::ModemLpconSharedClock,
+        input: u32,
+    ) {
+        registers.clk_conf().modify(|reader, writer| {
+            let image = (reader.bits() & 0xfffffff7) | (input & 0x00000008);
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0xffff0000, accept input mask 0x0000ffff, and set 0x00000000 in MODEM_LPCON_SHARED_CLOCK.LP_TIMER_CONF.
+    #[inline]
+    pub fn configure_shared_low_power_timer(registers: &crate::ModemLpconSharedClock, input: u32) {
+        registers.lp_timer_conf().modify(|reader, writer| {
+            let image = (reader.bits() & 0xffff0000) | (input & 0x0000ffff);
             // SAFETY: generator validation proves the three masks are
             // disjoint and partition every bit of this ordinary register.
             unsafe { writer.bits(image) }

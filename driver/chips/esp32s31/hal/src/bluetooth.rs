@@ -8,7 +8,7 @@
 
 use open_esp_radio_esp32s31_pac::{
     BluetoothColdRegisters as PacBluetoothColdRegisters, BluetoothInterruptRegisters,
-    BluetoothInterruptSetup as PacBluetoothInterruptSetup,
+    BluetoothInterruptSetup as PacBluetoothInterruptSetup, BluetoothLowPowerClockObservation,
     BluetoothModemLpTimerHandlerPending as PacBluetoothModemLpTimerHandlerPending,
     BluetoothModemLpTimerHandlerRegisterStep as PacBluetoothModemLpTimerHandlerRegisterStep,
     BluetoothModemLpTimerInterruptReady as PacBluetoothModemLpTimerInterruptReady,
@@ -22,6 +22,7 @@ use open_esp_radio_esp32s31_pac::{
     BluetoothSchedulerDisableStep as PacSchedulerDisableStep,
     BluetoothTaskRegisters as PacBluetoothTaskRegisters,
     BluetoothTaskReuniteError as PacBluetoothTaskReuniteError, RadioHardware,
+    SharedModemClockObservation,
 };
 pub use open_esp_radio_esp32s31_pac::{
     BluetoothControllerHalInitConfig, BluetoothControllerLatchedTime,
@@ -58,6 +59,41 @@ impl BluetoothColdOwner {
     /// Return the unchanged protocol-neutral radio root.
     pub fn release(self) -> RadioHardware {
         self.registers.release()
+    }
+
+    #[doc(hidden)]
+    pub fn prepare_shared_modem_clock_map(&mut self) {
+        self.registers.prepare_shared_modem_clock_map();
+    }
+
+    #[doc(hidden)]
+    pub fn retain_coexistence_clock(&mut self) -> bool {
+        self.registers.retain_coexistence_clock()
+    }
+
+    #[doc(hidden)]
+    pub fn release_coexistence_clock(&mut self) {
+        self.registers.release_coexistence_clock();
+    }
+
+    #[doc(hidden)]
+    pub fn select_main_xtal_low_power_clock(&mut self, divider: u16) -> bool {
+        self.registers.select_main_xtal_low_power_clock(divider)
+    }
+
+    #[doc(hidden)]
+    pub fn release_bluetooth_low_power_timer(&mut self) {
+        self.registers.release_bluetooth_low_power_timer();
+    }
+
+    #[doc(hidden)]
+    pub fn bluetooth_shared_clock_observation(
+        &self,
+    ) -> (
+        SharedModemClockObservation,
+        BluetoothLowPowerClockObservation,
+    ) {
+        self.registers.bluetooth_shared_clock_observation()
     }
 
     /// Split ordinary task ownership from the inactive controller IRQ bank.

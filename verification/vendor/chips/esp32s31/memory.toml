@@ -35,6 +35,62 @@ name = "modem-lpcon-platform"
 address-space = "cpu"
 kind = "mmio"
 start = 0x2010F000
+end-exclusive = 0x2010F004
+permissions = "rw"
+
+[[regions]]
+name = "modem-lpcon-lp-timer-clock"
+address-space = "cpu"
+kind = "mmio"
+start = 0x2010F004
+end-exclusive = 0x2010F008
+permissions = "rw"
+
+[[regions]]
+name = "modem-lpcon-coex-lp-clock"
+address-space = "cpu"
+kind = "mmio"
+start = 0x2010F008
+end-exclusive = 0x2010F00C
+permissions = "rw"
+
+[[regions]]
+name = "modem-lpcon-platform-between-shared-clock-selectors-and-gates"
+address-space = "cpu"
+kind = "mmio"
+start = 0x2010F00C
+end-exclusive = 0x2010F018
+permissions = "rw"
+
+[[regions]]
+name = "modem-lpcon-shared-clock-gates"
+address-space = "cpu"
+kind = "mmio"
+start = 0x2010F018
+end-exclusive = 0x2010F01C
+permissions = "rw"
+
+[[regions]]
+name = "modem-lpcon-platform-between-shared-clock-gates-and-map"
+address-space = "cpu"
+kind = "mmio"
+start = 0x2010F01C
+end-exclusive = 0x2010F020
+permissions = "rw"
+
+[[regions]]
+name = "modem-lpcon-shared-clock-map"
+address-space = "cpu"
+kind = "mmio"
+start = 0x2010F020
+end-exclusive = 0x2010F024
+permissions = "rw"
+
+[[regions]]
+name = "modem-lpcon-platform-before-phy-tick"
+address-space = "cpu"
+kind = "mmio"
+start = 0x2010F024
 end-exclusive = 0x2010F028
 permissions = "rw"
 

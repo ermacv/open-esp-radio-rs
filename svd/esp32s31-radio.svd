@@ -7,10 +7,10 @@
   <version>3.52</version>
   <description>Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.
-    HP_SYS_CLKRST, MODEM_SYSCON, the remaining MODEM_LPCON registers, PMU and
-    I2C_ANA_MST remain delegated to esp-hal and the official ESP32-S31 PAC.
-    MODEM_LPCON_PHY_TICK, LP_AON_CLKRST, LP_PERICLKRST and LP_TSENS are
-    canonical reviewed radio-PHY dependencies.
+    HP_SYS_CLKRST, MODEM_SYSCON, the remaining unclaimed MODEM_LPCON registers,
+    PMU and I2C_ANA_MST remain delegated to esp-hal and the official ESP32-S31
+    PAC. MODEM_LPCON_SHARED_CLOCK, MODEM_LPCON_PHY_TICK, LP_AON_CLKRST,
+    LP_PERICLKRST and LP_TSENS are canonical reviewed radio-PHY dependencies.
     These are independently decoded
     MMIO windows, not one monolithic radio peripheral. Covered functions include PHY-PBus,
     PHY-I2C, IQ estimation, RX-DCO, cold deadlines, temperature sensing,
@@ -4746,6 +4746,161 @@
                   <value>4294967295</value>
                 </enumeratedValue>
               </enumeratedValues>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>MODEM_LPCON_SHARED_CLOCK</name>
+      <description>Role-neutral MODEM_LPCON clock-map, gate and low-power selector registers shared by the exclusive Wi-Fi, Bluetooth and IEEE 802.15.4 routes.</description>
+      <baseAddress>0x2010F000</baseAddress>
+      <registers>
+        <register>
+          <name>LP_TIMER_CONF</name>
+          <description>Bluetooth low-power timer source selector and twelve-bit divider.</description>
+          <addressOffset>0x4</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000000</resetValue>
+          <fields>
+            <field>
+              <name>CLK_LP_TIMER_SEL_OSC_SLOW</name>
+              <description>Select the slow oscillator.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CLK_LP_TIMER_SEL_OSC_FAST</name>
+              <description>Select the fast oscillator.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CLK_LP_TIMER_SEL_XTAL</name>
+              <description>Select the crystal clock.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CLK_LP_TIMER_SEL_XTAL32K</name>
+              <description>Select the 32 kHz crystal clock.</description>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CLK_LP_TIMER_DIV_NUM</name>
+              <description>Twelve-bit low-power timer divider image.</description>
+              <bitOffset>4</bitOffset>
+              <bitWidth>12</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>COEX_LP_CLK_CONF</name>
+          <description>Coexistence low-power source selector and twelve-bit divider sampled by the coexistence time conversion.</description>
+          <addressOffset>0x8</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000000</resetValue>
+          <fields>
+            <field>
+              <name>CLK_COEX_LP_SEL_OSC_SLOW</name>
+              <description>Select the slow oscillator.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CLK_COEX_LP_SEL_OSC_FAST</name>
+              <description>Select the fast oscillator.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CLK_COEX_LP_SEL_XTAL</name>
+              <description>Select the crystal clock.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CLK_COEX_LP_SEL_XTAL32K</name>
+              <description>Select the 32 kHz crystal clock.</description>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CLK_COEX_LP_DIV_NUM</name>
+              <description>Twelve-bit coexistence low-power clock divider image.</description>
+              <bitOffset>4</bitOffset>
+              <bitWidth>12</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>CLK_CONF</name>
+          <description>Shared MODEM_LPCON clock gates used by radio lifecycles.</description>
+          <addressOffset>0x18</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000000</resetValue>
+          <fields>
+            <field>
+              <name>CLK_WIFIPWR_EN</name>
+              <description>Wi-Fi power clock gate.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CLK_COEX_EN</name>
+              <description>Coexistence clock gate.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CLK_I2C_MST_EN</name>
+              <description>PHY I2C master clock gate.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CLK_LP_TIMER_EN</name>
+              <description>Bluetooth low-power timer clock gate.</description>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>CLK_CONF_POWER_ST</name>
+          <description>Four shared clock power-state map fields programmed with the reviewed active-state image.</description>
+          <addressOffset>0x20</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000000</resetValue>
+          <fields>
+            <field>
+              <name>CLK_WIFIPWR_ST_MAP</name>
+              <description>Wi-Fi power clock state map.</description>
+              <bitOffset>16</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+            <field>
+              <name>CLK_COEX_ST_MAP</name>
+              <description>Coexistence clock state map.</description>
+              <bitOffset>20</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+            <field>
+              <name>CLK_I2C_MST_ST_MAP</name>
+              <description>PHY I2C master clock state map.</description>
+              <bitOffset>24</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+            <field>
+              <name>CLK_LP_APB_ST_MAP</name>
+              <description>Low-power APB clock state map.</description>
+              <bitOffset>28</bitOffset>
+              <bitWidth>4</bitWidth>
             </field>
           </fields>
         </register>

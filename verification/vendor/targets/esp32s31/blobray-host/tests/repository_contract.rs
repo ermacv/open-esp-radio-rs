@@ -1390,6 +1390,57 @@ fn modem_lpcon_phy_tick_has_one_route_owned_transaction() {
 }
 
 #[test]
+fn modem_lpcon_shared_registers_are_owned_only_by_the_radio_pac() {
+    let repository = repository_root();
+    let generated_svd = fs::read_to_string(repository.join("svd/esp32s31-radio.svd"))
+        .expect("read generated radio SVD");
+    for name in [
+        "<name>MODEM_LPCON_SHARED_CLOCK</name>",
+        "<name>LP_TIMER_CONF</name>",
+        "<name>COEX_LP_CLK_CONF</name>",
+        "<name>CLK_CONF_POWER_ST</name>",
+    ] {
+        assert!(
+            generated_svd.contains(name),
+            "the radio PAC must publish the reviewed shared MODEM_LPCON register {name}"
+        );
+    }
+
+    let mut production = Vec::new();
+    rust_files(&repository.join("driver"), &mut production);
+    let bypasses = production
+        .into_iter()
+        .filter(|path| {
+            !path.starts_with(repository.join("driver/chips/esp32s31/pac"))
+                && fs::read_to_string(path)
+                    .expect("read production Rust source")
+                    .contains("MODEM_LPCON::regs()")
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        bypasses.is_empty(),
+        "production code bypasses the route-owned MODEM_LPCON PAC: {bypasses:#?}"
+    );
+}
+
+#[test]
+fn failed_wifi_power_transition_has_no_cold_owner_escape() {
+    let repository = repository_root();
+    let hal = fs::read_to_string(repository.join("driver/chips/esp32s31/hal/src/lib.rs"))
+        .expect("read ESP32-S31 HAL root");
+    let failure = hal
+        .split("impl<P> PowerUpFailure<P>")
+        .nth(1)
+        .expect("find PowerUpFailure implementation")
+        .split("impl<P: PowerClockControl> PowerUpFailure<P>")
+        .next()
+        .expect("bound the observation-only failure implementation");
+    assert!(!failure.contains("into_radio"));
+    assert!(!failure.contains("into_parts"));
+    assert!(hal.contains("pub fn retry(self) -> Result<Radio<P, state::Powered>, Self>"));
+}
+
+#[test]
 fn channel_lifecycle_reaches_the_pac_only_through_the_hal() {
     let repository = repository_root();
     let driver = repository.join("driver/chips/esp32s31");

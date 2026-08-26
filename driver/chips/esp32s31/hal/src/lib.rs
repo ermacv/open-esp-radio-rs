@@ -84,8 +84,8 @@ pub use ieee802154_event_status_probe::{
 pub use ieee802154_lifecycle::{
     IEEE802154_MAX_CHANNEL, IEEE802154_MIN_CHANNEL, Ieee802154Channel, Ieee802154ChannelError,
     Ieee802154ClockCheckpoint, Ieee802154ClockImages, Ieee802154FoundationCheckpoint,
-    Ieee802154PlatformControl, Ieee802154ReadbackError, Ieee802154ResetCheckpoint,
-    Ieee802154ResetImages,
+    Ieee802154PlatformClockImages, Ieee802154PlatformControl, Ieee802154ReadbackError,
+    Ieee802154ResetCheckpoint, Ieee802154ResetImages,
 };
 pub use ieee802154_operation::{
     Ieee802154OperationEventMaskState, Ieee802154OperationEventObservation,
@@ -122,7 +122,9 @@ pub use open_esp_radio_esp32s31_pac::{
     StaTbttWakePrepareError, StaTbttWakeRestore, StaTbttWakeRestoreError,
     StaTbttWakeRestoreFailure, StaWakeProtectEarlyTimeRaw,
 };
-pub use power::{PowerCheckpoint, PowerClockControl, PowerClockImages, PowerError};
+pub use power::{
+    PlatformPowerClockImages, PowerCheckpoint, PowerClockControl, PowerClockImages, PowerError,
+};
 pub use types::{
     CfrValue, ForcedRxGain, MacInterruptEvents, MacInterruptMask, MacInterruptSnapshot,
     MacPowerInterruptSnapshot,
@@ -718,7 +720,11 @@ impl MacInterruptSetup {
     }
 }
 
-/// Failed power transition retaining the unique unpowered radio owner.
+/// Failed power transition retaining the unique partially-mutated radio owner.
+///
+/// The contained owner deliberately has no `release` or protocol-switch
+/// escape. Platform clocks and resets may already differ from the cold
+/// baseline, so only a controlled retry may recover a powered owner.
 pub struct PowerUpFailure<P> {
     radio: Radio<P, state::Owned>,
     error: PowerError,
@@ -729,15 +735,13 @@ impl<P> PowerUpFailure<P> {
     pub const fn error(&self) -> PowerError {
         self.error
     }
+}
 
-    /// Recover the owner for diagnostics, reset, or a controlled retry.
-    pub fn into_radio(self) -> Radio<P, state::Owned> {
-        self.radio
-    }
-
-    /// Recover both the owner and the checkpoint error.
-    pub fn into_parts(self) -> (Radio<P, state::Owned>, PowerError) {
-        (self.radio, self.error)
+impl<P: PowerClockControl> PowerUpFailure<P> {
+    /// Retry the idempotent prerequisite sequence without exposing a cold
+    /// owner or allowing a protocol switch through partially-mutated state.
+    pub fn retry(self) -> Result<Radio<P, state::Powered>, Self> {
+        self.radio.power_up()
     }
 }
 
@@ -836,7 +840,7 @@ impl<P: PowerClockControl> Radio<P, state::Owned> {
     /// `P` owns the official platform capability. A successful read-back is
     /// the only safe path into `Radio<P, Powered>`.
     pub fn power_up(mut self) -> Result<Radio<P, state::Powered>, PowerUpFailure<P>> {
-        if let Err(error) = power::execute_owned(&mut self.peripheral) {
+        if let Err(error) = power::execute_owned(&mut self.peripheral, &mut self.state.registers) {
             return Err(PowerUpFailure { radio: self, error });
         }
         Ok(Radio {
@@ -986,7 +990,7 @@ pub trait AsyncEvent {
 
 #[cfg(test)]
 mod tests {
-    use super::{PowerClockControl, PowerClockImages, Radio, state};
+    use super::{PlatformPowerClockImages, PowerClockControl, Radio, state};
 
     #[derive(Debug, Eq, PartialEq)]
     struct TestPeripheral {
@@ -1004,24 +1008,20 @@ mod tests {
         fn apply_sleep_icg_selection(&mut self) {}
         fn enable_modem_register_bus_clock(&mut self) {}
         fn configure_hp_active_modem_clock_map(&mut self) {}
-        fn configure_shared_modem_clock_map(&mut self) {}
         fn configure_modem_source_clocks(&mut self) {}
         fn set_wifi_baseband_reset(&mut self, _asserted: bool) {}
         fn enable_phy_calibration_clocks(&mut self) {}
         fn select_phy_i2c_160mhz_source(&mut self) {}
-        fn enable_phy_i2c_master_clock(&mut self) {}
 
-        fn power_clock_images(&self) -> PowerClockImages {
-            PowerClockImages {
+        fn platform_power_clock_images(&self) -> PlatformPowerClockImages {
+            PlatformPowerClockImages {
                 reset_released: self.ready,
                 hp_active_icg_selected: self.ready,
                 modem_bus_clock_enabled: self.ready,
                 hp_active_clock_map_configured: self.ready,
-                shared_clock_map_configured: self.ready,
                 modem_source_clocks_configured: self.ready,
                 phy_calibration_clocks_enabled: self.ready,
                 phy_i2c_160mhz_selected: self.ready,
-                phy_i2c_master_clock_enabled: self.ready,
             }
         }
     }
@@ -1038,6 +1038,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_arch = "riscv32")]
     fn peripheral_token_follows_the_type_state_owner() {
         let owned = Radio::claim(TestPeripheral { id: 7, ready: true })
             .unwrap_or_else(|_| panic!("test radio claim failed"));
@@ -1108,6 +1109,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_arch = "riscv32")]
     fn failed_power_transition_returns_the_unique_owned_radio() {
         let owned = Radio::claim(TestPeripheral {
             id: 11,

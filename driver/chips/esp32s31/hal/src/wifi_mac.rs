@@ -24,11 +24,33 @@ use crate::types::{
     MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
 };
 use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma, StableDmaRange};
+use open_esp_radio_esp32s31_coex::{
+    CoexClockHardware, CoexClockSelector, CoexError, CoexTimerClock,
+};
 use open_esp_radio_esp32s31_pac::{
-    StaModemWakeConfig, StaModemWakePrepareError, StaModemWakeRestore, StaModemWakeRestoreFailure,
+    CoexistenceLowPowerClockObservation, CoexistenceLowPowerClockSource, StaModemWakeConfig,
+    StaModemWakePrepareError, StaModemWakeRestore, StaModemWakeRestoreFailure,
     StaTbttWakePrepareError, StaTbttWakeRestore, StaTbttWakeRestoreFailure, WifiColdRegisters,
     WifiRadioRegisters,
 };
+
+fn coex_timer_clock(
+    observation: Option<CoexistenceLowPowerClockObservation>,
+) -> Result<CoexTimerClock, CoexError> {
+    let observation = observation.ok_or(CoexError::UnsupportedClock)?;
+    let selector = match observation.source {
+        CoexistenceLowPowerClockSource::Selector1 => CoexClockSelector::Selector1,
+        CoexistenceLowPowerClockSource::Selector2 => CoexClockSelector::Selector2,
+        CoexistenceLowPowerClockSource::Selector4 => CoexClockSelector::Selector4,
+        CoexistenceLowPowerClockSource::Selector8 => CoexClockSelector::Selector8,
+    };
+    Ok(CoexTimerClock::from_hardware_fields(
+        selector,
+        observation.divider_minus_one,
+        40,
+        true,
+    ))
+}
 
 /// Complete identity of one hardware MAC interface.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -93,6 +115,10 @@ pub struct WifiMacColdHal<'registers> {
 impl<'registers> WifiMacColdHal<'registers> {
     pub(crate) fn from_owned(registers: &'registers mut WifiColdRegisters) -> Self {
         Self { registers }
+    }
+
+    pub fn retain_coexistence_clock(&mut self) -> bool {
+        self.registers.radio_mut().retain_coexistence_clock()
     }
 
     pub fn initialize_antenna(&mut self) {
@@ -195,6 +221,12 @@ impl<'registers> WifiMacColdHal<'registers> {
         self.registers
             .radio_mut()
             .configure_open_mac_promiscuous_receive();
+    }
+}
+
+impl CoexClockHardware for WifiMacColdHal<'_> {
+    fn sample(&mut self) -> Result<CoexTimerClock, CoexError> {
+        coex_timer_clock(self.registers.sample_coexistence_low_power_clock())
     }
 }
 
@@ -812,6 +844,12 @@ impl<'registers> WifiMacHal<'registers> {
         self.registers
             .pac_mut()
             .set_he_trigger_based_tid_enabled(tid, enabled);
+    }
+}
+
+impl CoexClockHardware for WifiMacHal<'_> {
+    fn sample(&mut self) -> Result<CoexTimerClock, CoexError> {
+        coex_timer_clock(self.pac().sample_coexistence_low_power_clock())
     }
 }
 

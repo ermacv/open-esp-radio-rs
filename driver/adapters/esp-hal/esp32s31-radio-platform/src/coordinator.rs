@@ -3,13 +3,13 @@
 use core::cell::RefCell;
 
 use critical_section::Mutex;
-use open_esp_radio_esp32s31_bluetooth::{BluetoothClockControl, BluetoothClockState};
+use open_esp_radio_esp32s31_bluetooth::{BluetoothClockControl, BluetoothPlatformClockState};
 
 const DEVICE_COUNT: usize = ClockDevice::Count as usize;
 
-const BLUETOOTH_CONTROLLER_DEPENDENCIES: [ClockDevice; 8] = [
-    ClockDevice::Pll160mSource,
-    ClockDevice::Coexistence,
+const BLUETOOTH_CONTROLLER_PLL_SOURCE: [ClockDevice; 1] = [ClockDevice::Pll160mSource];
+
+const BLUETOOTH_CONTROLLER_DEPENDENTS: [ClockDevice; 6] = [
     ClockDevice::WifiBaseband80x1,
     ClockDevice::Etm,
     ClockDevice::BluetoothMac,
@@ -28,7 +28,6 @@ const BLUETOOTH_APB_DEPENDENCIES: [ClockDevice; 4] = [
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ClockDevice {
     Pll160mSource,
-    Coexistence,
     WifiBaseband80x1,
     Etm,
     BluetoothMac,
@@ -44,25 +43,12 @@ impl ClockDevice {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) struct LowPowerClockState {
-    pub(crate) slow_oscillator_selected: bool,
-    pub(crate) fast_oscillator_selected: bool,
-    pub(crate) main_xtal_selected: bool,
-    pub(crate) xtal32k_selected: bool,
-    pub(crate) divider: u16,
-    pub(crate) timer_enabled: bool,
-}
-
 pub(crate) trait ClockIo {
     fn prepare_icg_maps(&mut self);
     fn clock_is_enabled(&self, device: ClockDevice) -> bool;
     fn set_clock_enabled(&mut self, device: ClockDevice, enabled: bool);
     fn reset_bluetooth_controller_domains(&mut self);
     fn controller_resets_released(&self) -> bool;
-    fn select_main_xtal_low_power_clock(&mut self, divider: u16);
-    fn deselect_low_power_clock(&mut self);
-    fn low_power_clock_state(&self) -> LowPowerClockState;
 }
 
 #[derive(Clone, Copy)]
@@ -126,9 +112,9 @@ impl<I: ClockIo> ClockCoordinator<I> {
         if acquired {
             Ok(BluetoothPlatformLease {
                 coordinator: self,
-                controller_clocks_acquired: false,
+                controller_pll_source_acquired: false,
+                controller_dependents_acquired: false,
                 apb_clocks_acquired: false,
-                low_power_clock_selected: false,
             })
         } else {
             Err(BluetoothPlatformBusy)
@@ -185,32 +171,16 @@ impl<I: ClockIo> ClockCoordinator<I> {
         self.with_inner(|inner| inner.io.reset_bluetooth_controller_domains());
     }
 
-    fn select_main_xtal_low_power_clock(&self, divider: u16) {
-        self.with_inner(|inner| inner.io.select_main_xtal_low_power_clock(divider));
-    }
-
-    fn deselect_low_power_clock(&self) {
-        self.with_inner(|inner| inner.io.deselect_low_power_clock());
-    }
-
-    fn bluetooth_clock_state(&self) -> BluetoothClockState {
-        self.with_inner(|inner| {
-            let low_power = inner.io.low_power_clock_state();
-            BluetoothClockState {
-                controller_clocks_enabled: BLUETOOTH_CONTROLLER_DEPENDENCIES
-                    .iter()
-                    .all(|&device| inner.io.clock_is_enabled(device)),
-                apb_clocks_enabled: BLUETOOTH_APB_DEPENDENCIES
-                    .iter()
-                    .all(|&device| inner.io.clock_is_enabled(device)),
-                controller_resets_released: inner.io.controller_resets_released(),
-                main_xtal_selected: low_power.main_xtal_selected
-                    && !low_power.slow_oscillator_selected
-                    && !low_power.fast_oscillator_selected
-                    && !low_power.xtal32k_selected,
-                low_power_divider: low_power.divider,
-                low_power_timer_enabled: low_power.timer_enabled,
-            }
+    fn bluetooth_clock_state(&self) -> BluetoothPlatformClockState {
+        self.with_inner(|inner| BluetoothPlatformClockState {
+            controller_clocks_enabled: BLUETOOTH_CONTROLLER_PLL_SOURCE
+                .iter()
+                .chain(BLUETOOTH_CONTROLLER_DEPENDENTS.iter())
+                .all(|&device| inner.io.clock_is_enabled(device)),
+            apb_clocks_enabled: BLUETOOTH_APB_DEPENDENCIES
+                .iter()
+                .all(|&device| inner.io.clock_is_enabled(device)),
+            controller_resets_released: inner.io.controller_resets_released(),
         })
     }
 
@@ -231,16 +201,23 @@ pub struct BluetoothPlatformBusy;
 
 pub(crate) struct BluetoothPlatformLease<'a, I: ClockIo> {
     coordinator: &'a ClockCoordinator<I>,
-    controller_clocks_acquired: bool,
+    controller_pll_source_acquired: bool,
+    controller_dependents_acquired: bool,
     apb_clocks_acquired: bool,
-    low_power_clock_selected: bool,
 }
 
 impl<I: ClockIo> BluetoothClockControl for BluetoothPlatformLease<'_, I> {
-    fn enable_bluetooth_controller_clocks(&mut self) {
-        if !self.controller_clocks_acquired {
-            self.coordinator.acquire(&BLUETOOTH_CONTROLLER_DEPENDENCIES);
-            self.controller_clocks_acquired = true;
+    fn enable_bluetooth_controller_pll_source(&mut self) {
+        if !self.controller_pll_source_acquired {
+            self.coordinator.acquire(&BLUETOOTH_CONTROLLER_PLL_SOURCE);
+            self.controller_pll_source_acquired = true;
+        }
+    }
+
+    fn enable_bluetooth_controller_dependents(&mut self) {
+        if !self.controller_dependents_acquired {
+            self.coordinator.acquire(&BLUETOOTH_CONTROLLER_DEPENDENTS);
+            self.controller_dependents_acquired = true;
         }
     }
 
@@ -255,20 +232,8 @@ impl<I: ClockIo> BluetoothClockControl for BluetoothPlatformLease<'_, I> {
         self.coordinator.reset_bluetooth_controller_domains();
     }
 
-    fn select_main_xtal_low_power_clock(&mut self, divider: u16) {
-        self.coordinator.select_main_xtal_low_power_clock(divider);
-        self.low_power_clock_selected = true;
-    }
-
-    fn bluetooth_clock_state(&mut self) -> BluetoothClockState {
+    fn bluetooth_platform_clock_state(&mut self) -> BluetoothPlatformClockState {
         self.coordinator.bluetooth_clock_state()
-    }
-
-    fn deselect_low_power_clock(&mut self) {
-        if self.low_power_clock_selected {
-            self.coordinator.deselect_low_power_clock();
-            self.low_power_clock_selected = false;
-        }
     }
 
     fn disable_bluetooth_apb_clocks(&mut self) {
@@ -278,19 +243,26 @@ impl<I: ClockIo> BluetoothClockControl for BluetoothPlatformLease<'_, I> {
         }
     }
 
-    fn disable_bluetooth_controller_clocks(&mut self) {
-        if self.controller_clocks_acquired {
-            self.coordinator.release(&BLUETOOTH_CONTROLLER_DEPENDENCIES);
-            self.controller_clocks_acquired = false;
+    fn disable_bluetooth_controller_pll_source(&mut self) {
+        if self.controller_pll_source_acquired {
+            self.coordinator.release(&BLUETOOTH_CONTROLLER_PLL_SOURCE);
+            self.controller_pll_source_acquired = false;
+        }
+    }
+
+    fn disable_bluetooth_controller_dependents(&mut self) {
+        if self.controller_dependents_acquired {
+            self.coordinator.release(&BLUETOOTH_CONTROLLER_DEPENDENTS);
+            self.controller_dependents_acquired = false;
         }
     }
 }
 
 impl<I: ClockIo> Drop for BluetoothPlatformLease<'_, I> {
     fn drop(&mut self) {
-        self.deselect_low_power_clock();
         self.disable_bluetooth_apb_clocks();
-        self.disable_bluetooth_controller_clocks();
+        self.disable_bluetooth_controller_pll_source();
+        self.disable_bluetooth_controller_dependents();
         self.coordinator.release_bluetooth_reservation();
     }
 }
@@ -300,8 +272,9 @@ mod tests {
     use std::vec::Vec;
 
     use super::{
-        BLUETOOTH_APB_DEPENDENCIES, BLUETOOTH_CONTROLLER_DEPENDENCIES, BluetoothClockControl,
-        ClockCoordinator, ClockDevice, ClockIo, DEVICE_COUNT, LowPowerClockState,
+        BLUETOOTH_APB_DEPENDENCIES, BLUETOOTH_CONTROLLER_DEPENDENTS,
+        BLUETOOTH_CONTROLLER_PLL_SOURCE, BluetoothClockControl, ClockCoordinator, ClockDevice,
+        ClockIo, DEVICE_COUNT,
     };
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -309,14 +282,11 @@ mod tests {
         PrepareIcg,
         SetClock(ClockDevice, bool),
         ResetDomains,
-        SelectMainXtal(u16),
-        DeselectLowPower,
     }
 
     struct FakeIo {
         enabled: [bool; DEVICE_COUNT],
         resets_released: bool,
-        low_power: LowPowerClockState,
         operations: Vec<Operation>,
     }
 
@@ -325,7 +295,6 @@ mod tests {
             Self {
                 enabled: [false; DEVICE_COUNT],
                 resets_released: false,
-                low_power: LowPowerClockState::default(),
                 operations: Vec::new(),
             }
         }
@@ -353,25 +322,6 @@ mod tests {
         fn controller_resets_released(&self) -> bool {
             self.resets_released
         }
-
-        fn select_main_xtal_low_power_clock(&mut self, divider: u16) {
-            self.low_power = LowPowerClockState {
-                main_xtal_selected: true,
-                divider,
-                timer_enabled: true,
-                ..LowPowerClockState::default()
-            };
-            self.operations.push(Operation::SelectMainXtal(divider));
-        }
-
-        fn deselect_low_power_clock(&mut self) {
-            self.low_power = LowPowerClockState::default();
-            self.operations.push(Operation::DeselectLowPower);
-        }
-
-        fn low_power_clock_state(&self) -> LowPowerClockState {
-            self.low_power
-        }
     }
 
     #[test]
@@ -379,26 +329,22 @@ mod tests {
         let coordinator = ClockCoordinator::new(FakeIo::new());
         let mut bluetooth = coordinator.try_bluetooth().unwrap();
 
-        bluetooth.enable_bluetooth_controller_clocks();
+        bluetooth.enable_bluetooth_controller_pll_source();
+        bluetooth.enable_bluetooth_controller_dependents();
         bluetooth.enable_bluetooth_apb_clocks();
         bluetooth.reset_bluetooth_controller_domains();
-        bluetooth.select_main_xtal_low_power_clock(399);
-
         assert_eq!(
-            bluetooth.bluetooth_clock_state(),
-            open_esp_radio_esp32s31_bluetooth::BluetoothClockState {
+            bluetooth.bluetooth_platform_clock_state(),
+            open_esp_radio_esp32s31_bluetooth::BluetoothPlatformClockState {
                 controller_clocks_enabled: true,
                 apb_clocks_enabled: true,
                 controller_resets_released: true,
-                main_xtal_selected: true,
-                low_power_divider: 399,
-                low_power_timer_enabled: true,
             }
         );
 
-        bluetooth.deselect_low_power_clock();
         bluetooth.disable_bluetooth_apb_clocks();
-        bluetooth.disable_bluetooth_controller_clocks();
+        bluetooth.disable_bluetooth_controller_pll_source();
+        bluetooth.disable_bluetooth_controller_dependents();
         drop(bluetooth);
 
         coordinator.with_inner(|inner| {
@@ -414,8 +360,14 @@ mod tests {
                 .iter()
                 .filter(|operation| matches!(operation, Operation::SetClock(_, false)))
                 .count();
-            assert_eq!(enabled, BLUETOOTH_CONTROLLER_DEPENDENCIES.len());
-            assert_eq!(disabled, BLUETOOTH_CONTROLLER_DEPENDENCIES.len());
+            assert_eq!(
+                enabled,
+                BLUETOOTH_CONTROLLER_PLL_SOURCE.len() + BLUETOOTH_CONTROLLER_DEPENDENTS.len()
+            );
+            assert_eq!(
+                disabled,
+                BLUETOOTH_CONTROLLER_PLL_SOURCE.len() + BLUETOOTH_CONTROLLER_DEPENDENTS.len()
+            );
             assert_eq!(
                 inner
                     .io
@@ -423,7 +375,7 @@ mod tests {
                     .iter()
                     .filter(|operation| matches!(operation, Operation::PrepareIcg))
                     .count(),
-                2
+                3
             );
             assert_eq!(
                 inner
@@ -431,24 +383,6 @@ mod tests {
                     .operations
                     .iter()
                     .filter(|operation| matches!(operation, Operation::ResetDomains))
-                    .count(),
-                1
-            );
-            assert_eq!(
-                inner
-                    .io
-                    .operations
-                    .iter()
-                    .filter(|operation| matches!(operation, Operation::SelectMainXtal(399)))
-                    .count(),
-                1
-            );
-            assert_eq!(
-                inner
-                    .io
-                    .operations
-                    .iter()
-                    .filter(|operation| matches!(operation, Operation::DeselectLowPower))
                     .count(),
                 1
             );
@@ -462,10 +396,12 @@ mod tests {
         let coordinator = ClockCoordinator::new(io);
 
         let mut bluetooth = coordinator.try_bluetooth().unwrap();
-        bluetooth.enable_bluetooth_controller_clocks();
+        bluetooth.enable_bluetooth_controller_pll_source();
+        bluetooth.enable_bluetooth_controller_dependents();
         bluetooth.enable_bluetooth_apb_clocks();
         bluetooth.disable_bluetooth_apb_clocks();
-        bluetooth.disable_bluetooth_controller_clocks();
+        bluetooth.disable_bluetooth_controller_pll_source();
+        bluetooth.disable_bluetooth_controller_dependents();
         drop(bluetooth);
 
         coordinator.with_inner(|inner| {
@@ -485,16 +421,15 @@ mod tests {
 
         {
             let mut bluetooth = coordinator.try_bluetooth().unwrap();
-            bluetooth.enable_bluetooth_controller_clocks();
+            bluetooth.enable_bluetooth_controller_pll_source();
+            bluetooth.enable_bluetooth_controller_dependents();
             bluetooth.enable_bluetooth_apb_clocks();
-            bluetooth.select_main_xtal_low_power_clock(399);
         }
 
         coordinator.with_inner(|inner| {
             assert!(!inner.state.bluetooth_reserved);
             assert!(inner.state.devices.iter().all(|device| device.count == 0));
             assert!(inner.io.enabled.iter().all(|enabled| !enabled));
-            assert_eq!(inner.io.low_power, LowPowerClockState::default());
         });
 
         assert!(coordinator.try_bluetooth().is_ok());
@@ -511,10 +446,9 @@ mod tests {
 
     #[test]
     fn apb_dependency_set_is_a_subset_of_controller_set() {
-        assert!(
-            BLUETOOTH_APB_DEPENDENCIES
-                .iter()
-                .all(|dependency| { BLUETOOTH_CONTROLLER_DEPENDENCIES.contains(dependency) })
-        );
+        assert!(BLUETOOTH_APB_DEPENDENCIES.iter().all(|dependency| {
+            BLUETOOTH_CONTROLLER_PLL_SOURCE.contains(dependency)
+                || BLUETOOTH_CONTROLLER_DEPENDENTS.contains(dependency)
+        }));
     }
 }

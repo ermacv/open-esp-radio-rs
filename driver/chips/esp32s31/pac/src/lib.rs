@@ -65,6 +65,7 @@ mod mac_tx_power_init;
 mod mac_tx_queue;
 mod mac_txrx_init;
 mod modem_lpcon_phy;
+mod modem_shared_clock;
 pub mod pbus;
 pub mod phy;
 pub mod phy_i2c;
@@ -132,7 +133,7 @@ pub use generated::{
     CoexTimerClientValue, CoexTimerPtiValue, CoexTimerTickImage,
     MacExtraSoftApRxBlockAckEntryIndex, MacInterface, MacItwtClearIndex, MacKeyEntryIndex, MacPti,
     MacRxBlockAckEntryIndex, MacRxBlockAckStartingSequence, MacRxBlockAckTid, MacRxBlockAckWindow,
-    MacTxPtiCount, MacTxQueueIndex,
+    MacTxPtiCount, MacTxQueueIndex, ModemLowPowerClockDivider,
 };
 #[doc(hidden)]
 pub use ieee802154::Ieee802154RouteRawReadback;
@@ -203,6 +204,11 @@ pub use mac_tx_power_init::{
     MAC_TX_POWER_RATE_COUNT, MacPartialRuPowerSelector, MacTxPowerIndex, MacTxPowerPair,
     MacTxPowerTable,
 };
+pub use modem_shared_clock::{
+    BluetoothLowPowerClockObservation, CoexistenceLowPowerClockObservation,
+    CoexistenceLowPowerClockSource, ModemLowPowerClockSource, SharedModemClockObservation,
+};
+use modem_shared_clock::{BluetoothLowPowerTimerLease, SharedModemClock, SharedModemClockLease};
 use open_esp_radio_esp32s31_pac_raw as svd;
 pub use table_memory::{PbusMemoryGroupBoundary, PhyMemoryError};
 
@@ -247,6 +253,7 @@ struct Ieee802154BtbbPeripheralOwners {
 #[must_use = "the shared PHY owner must remain inside its active radio route"]
 pub struct RadioPhyRegisters {
     peripherals: svd::peripheral_ownership::RadioPhyPeripherals,
+    shared_clock: modem_shared_clock::SharedModemClockState,
 }
 
 /// Bluetooth owners retained, but not exposed, while Wi-Fi is exclusive.
@@ -289,7 +296,7 @@ struct RetainedIeee802154PeripheralOwners {
 pub struct RadioHardware {
     wifi_mac: svd::peripheral_ownership::WifiMacPeripherals,
     wifi_interrupts: svd::peripheral_ownership::WifiInterruptPeripherals,
-    radio_phy: svd::peripheral_ownership::RadioPhyPeripherals,
+    radio_phy: RadioPhyRegisters,
     coexistence: svd::peripheral_ownership::CoexistencePeripherals,
     bluetooth: svd::peripheral_ownership::BluetoothControllerPeripherals,
     bluetooth_interrupts: svd::peripheral_ownership::BluetoothInterruptPeripherals,
@@ -318,7 +325,10 @@ impl RadioHardware {
         Self {
             wifi_mac,
             wifi_interrupts,
-            radio_phy,
+            radio_phy: RadioPhyRegisters {
+                peripherals: radio_phy,
+                shared_clock: modem_shared_clock::SharedModemClockState::new(),
+            },
             coexistence,
             bluetooth,
             bluetooth_interrupts,
@@ -351,9 +361,7 @@ impl RadioHardware {
                 peripherals: WifiRadioPeripheralOwners {
                     wifi_mac,
                     ieee802154_mac: ieee802154.ieee802154_mac,
-                    radio_phy: RadioPhyRegisters {
-                        peripherals: radio_phy,
-                    },
+                    radio_phy,
                     coexistence,
                     shared_radio,
                 },
@@ -362,6 +370,8 @@ impl RadioHardware {
                     bluetooth_interrupts,
                 },
                 wifi_baseband_enabled: false,
+                phy_i2c_clock: None,
+                coexistence_clock: None,
                 station_tbtt_wake_prepared: false,
                 station_modem_wakeup: mac_modem_wakeup::StaModemWakeOwnership::new(),
             },
@@ -387,9 +397,7 @@ impl RadioHardware {
         BluetoothColdRegisters {
             task: BluetoothTaskRegisters {
                 bluetooth,
-                radio_phy: RadioPhyRegisters {
-                    peripherals: radio_phy,
-                },
+                radio_phy,
                 coexistence,
                 shared_radio,
                 retained_wifi: RetainedWifiPeripheralOwners {
@@ -397,6 +405,8 @@ impl RadioHardware {
                     wifi_interrupts,
                     ieee802154,
                 },
+                coexistence_clock: None,
+                low_power_timer_clock: None,
                 controller_time_latch:
                     bluetooth_controller_time::BluetoothControllerTimeLatchOwnership::new(),
             },
@@ -432,9 +442,7 @@ impl RadioHardware {
             task: Ieee802154TaskRegisters {
                 peripherals: Ieee802154TaskPeripheralOwners {
                     ieee802154_mac: task_mac,
-                    radio_phy: RadioPhyRegisters {
-                        peripherals: radio_phy,
-                    },
+                    radio_phy,
                     coexistence,
                     btbb: Ieee802154BtbbPeripheralOwners {
                         bluetooth,
@@ -446,6 +454,8 @@ impl RadioHardware {
                     wifi_interrupts,
                     bluetooth_interrupts,
                 },
+                phy_i2c_clock: None,
+                coexistence_clock: None,
             },
             interrupts: Ieee802154InterruptSetup {
                 registers: interrupt_mac,
@@ -590,11 +600,66 @@ pub struct WifiRadioRegisters {
     peripherals: WifiRadioPeripheralOwners,
     retained_bluetooth: RetainedBluetoothPeripheralOwners,
     wifi_baseband_enabled: bool,
+    phy_i2c_clock: Option<SharedModemClockLease>,
+    coexistence_clock: Option<SharedModemClockLease>,
     station_tbtt_wake_prepared: bool,
     station_modem_wakeup: mac_modem_wakeup::StaModemWakeOwnership,
 }
 
 impl WifiRadioRegisters {
+    /// Prepare the shared state maps and retain the PHY-I2C clock for this
+    /// complete Wi-Fi route epoch.
+    pub fn prepare_shared_modem_clock_map(&mut self) {
+        self.peripherals.radio_phy.prepare_shared_modem_clock_map();
+    }
+
+    /// Retain the PHY-I2C gate at its exact late power-sequence edge.
+    pub fn retain_phy_i2c_master_clock(&mut self) -> bool {
+        if self.phy_i2c_clock.is_none() {
+            self.phy_i2c_clock = Some(
+                self.peripherals
+                    .radio_phy
+                    .retain_shared_modem_clock(SharedModemClock::PhyI2cMaster),
+            );
+        }
+        true
+    }
+
+    /// Retain the coexistence clock once for the Wi-Fi MAC epoch.
+    pub fn retain_coexistence_clock(&mut self) -> bool {
+        if self.coexistence_clock.is_none() {
+            self.coexistence_clock = Some(
+                self.peripherals
+                    .radio_phy
+                    .retain_shared_modem_clock(SharedModemClock::Coexistence),
+            );
+        }
+        true
+    }
+
+    /// Read the route-owned shared clock checkpoint.
+    pub fn shared_modem_clock_observation(&self) -> SharedModemClockObservation {
+        self.peripherals.radio_phy.shared_modem_clock_observation()
+    }
+
+    /// Preserve the vendor two-read coexistence clock sampling rule.
+    #[doc(hidden)]
+    pub fn sample_coexistence_low_power_clock(
+        &self,
+    ) -> Option<CoexistenceLowPowerClockObservation> {
+        self.peripherals
+            .radio_phy
+            .sample_coexistence_low_power_clock()
+    }
+
+    fn release_retained_shared_clocks(&mut self) {
+        if let Some(lease) = self.coexistence_clock.take() {
+            self.peripherals.radio_phy.release_shared_modem_clock(lease);
+        }
+        if let Some(lease) = self.phy_i2c_clock.take() {
+            self.peripherals.radio_phy.release_shared_modem_clock(lease);
+        }
+    }
     /// Reunite a quiescent Wi-Fi task owner with its inactive interrupt setup.
     ///
     /// The caller must first disable the CPU routes and recover `interrupts`
@@ -679,7 +744,8 @@ impl WifiColdRegisters {
     /// This is an ownership-only transition. Higher layers remain responsible
     /// for completing their clock/reset shutdown before changing protocols;
     /// the next Wi-Fi route starts with a fresh disabled baseband cache.
-    pub fn release(self) -> RadioHardware {
+    pub fn release(mut self) -> RadioHardware {
+        self.registers.release_retained_shared_clocks();
         let Self {
             registers:
                 WifiRadioRegisters {
@@ -697,6 +763,8 @@ impl WifiColdRegisters {
                             bluetooth_interrupts,
                         },
                     wifi_baseband_enabled: _,
+                    phy_i2c_clock: _,
+                    coexistence_clock: _,
                     station_tbtt_wake_prepared: _,
                     station_modem_wakeup: _,
                 },
@@ -705,13 +773,40 @@ impl WifiColdRegisters {
         RadioHardware {
             wifi_mac,
             wifi_interrupts,
-            radio_phy: radio_phy.peripherals,
+            radio_phy,
             coexistence,
             bluetooth,
             bluetooth_interrupts,
             shared_radio,
             ieee802154: svd::peripheral_ownership::Ieee802154Peripherals { ieee802154_mac },
         }
+    }
+
+    /// Prepare shared route clocks before the platform-owned power sequence
+    /// reaches its readback checkpoint.
+    #[doc(hidden)]
+    pub fn prepare_shared_modem_clock_map(&mut self) {
+        self.registers.prepare_shared_modem_clock_map();
+    }
+
+    /// Retain the route-owned PHY-I2C clock at its ordered power edge.
+    #[doc(hidden)]
+    pub fn retain_phy_i2c_master_clock(&mut self) -> bool {
+        self.registers.retain_phy_i2c_master_clock()
+    }
+
+    /// Read the shared route-owned portion of the power checkpoint.
+    #[doc(hidden)]
+    pub fn shared_modem_clock_observation(&self) -> SharedModemClockObservation {
+        self.registers.shared_modem_clock_observation()
+    }
+
+    /// Preserve the vendor two-read coexistence clock sampling rule.
+    #[doc(hidden)]
+    pub fn sample_coexistence_low_power_clock(
+        &self,
+    ) -> Option<CoexistenceLowPowerClockObservation> {
+        self.registers.sample_coexistence_low_power_clock()
     }
 
     /// Borrow the radio-register capability during the cold lifecycle.
@@ -808,10 +903,13 @@ impl Ieee802154ColdRegisters {
 pub struct Ieee802154TaskRegisters {
     peripherals: Ieee802154TaskPeripheralOwners,
     retained: RetainedIeee802154PeripheralOwners,
+    phy_i2c_clock: Option<SharedModemClockLease>,
+    coexistence_clock: Option<SharedModemClockLease>,
 }
 
 impl Ieee802154TaskRegisters {
-    fn into_hardware(self, interrupts: Ieee802154InterruptSetup) -> RadioHardware {
+    fn into_hardware(mut self, interrupts: Ieee802154InterruptSetup) -> RadioHardware {
+        self.release_retained_shared_clocks();
         let Self {
             peripherals:
                 Ieee802154TaskPeripheralOwners {
@@ -830,17 +928,58 @@ impl Ieee802154TaskRegisters {
                     wifi_interrupts,
                     bluetooth_interrupts,
                 },
+            phy_i2c_clock: _,
+            coexistence_clock: _,
         } = self;
         let ieee802154_mac = svd::ieee802154_mac_ownership::reunite(task_mac, interrupts.registers);
         RadioHardware {
             wifi_mac,
             wifi_interrupts,
-            radio_phy: radio_phy.peripherals,
+            radio_phy,
             coexistence,
             bluetooth,
             bluetooth_interrupts,
             shared_radio,
             ieee802154: svd::peripheral_ownership::Ieee802154Peripherals { ieee802154_mac },
+        }
+    }
+
+    pub fn prepare_shared_modem_clock_map(&mut self) {
+        self.peripherals.radio_phy.prepare_shared_modem_clock_map();
+    }
+
+    pub fn retain_phy_i2c_master_clock(&mut self) -> bool {
+        if self.phy_i2c_clock.is_none() {
+            let lease = self
+                .peripherals
+                .radio_phy
+                .retain_shared_modem_clock(SharedModemClock::PhyI2cMaster);
+            self.phy_i2c_clock = Some(lease);
+        }
+        true
+    }
+
+    pub fn retain_coexistence_clock(&mut self) -> bool {
+        if self.coexistence_clock.is_none() {
+            let lease = self
+                .peripherals
+                .radio_phy
+                .retain_shared_modem_clock(SharedModemClock::Coexistence);
+            self.coexistence_clock = Some(lease);
+        }
+        true
+    }
+
+    pub fn shared_modem_clock_observation(&self) -> SharedModemClockObservation {
+        self.peripherals.radio_phy.shared_modem_clock_observation()
+    }
+
+    fn release_retained_shared_clocks(&mut self) {
+        if let Some(lease) = self.coexistence_clock.take() {
+            self.peripherals.radio_phy.release_shared_modem_clock(lease);
+        }
+        if let Some(lease) = self.phy_i2c_clock.take() {
+            self.peripherals.radio_phy.release_shared_modem_clock(lease);
         }
     }
 
@@ -919,6 +1058,41 @@ impl BluetoothColdRegisters {
         let Self { task, interrupts } = self;
         task.into_hardware(interrupts)
     }
+
+    #[doc(hidden)]
+    pub fn prepare_shared_modem_clock_map(&mut self) {
+        self.task.prepare_shared_modem_clock_map();
+    }
+
+    #[doc(hidden)]
+    pub fn retain_coexistence_clock(&mut self) -> bool {
+        self.task.retain_coexistence_clock()
+    }
+
+    #[doc(hidden)]
+    pub fn release_coexistence_clock(&mut self) {
+        self.task.release_coexistence_clock();
+    }
+
+    #[doc(hidden)]
+    pub fn select_main_xtal_low_power_clock(&mut self, divider: u16) -> bool {
+        self.task.select_main_xtal_low_power_clock(divider)
+    }
+
+    #[doc(hidden)]
+    pub fn release_bluetooth_low_power_timer(&mut self) {
+        self.task.release_bluetooth_low_power_timer();
+    }
+
+    #[doc(hidden)]
+    pub fn bluetooth_shared_clock_observation(
+        &self,
+    ) -> (
+        SharedModemClockObservation,
+        BluetoothLowPowerClockObservation,
+    ) {
+        self.task.bluetooth_shared_clock_observation()
+    }
 }
 
 /// Ordinary task-side owner for one exclusive standalone Bluetooth route.
@@ -934,6 +1108,8 @@ pub struct BluetoothTaskRegisters {
     coexistence: svd::peripheral_ownership::CoexistencePeripherals,
     shared_radio: svd::peripheral_ownership::SharedRadioPeripherals,
     retained_wifi: RetainedWifiPeripheralOwners,
+    coexistence_clock: Option<SharedModemClockLease>,
+    low_power_timer_clock: Option<BluetoothLowPowerTimerLease>,
     controller_time_latch: bluetooth_controller_time::BluetoothControllerTimeLatchOwnership,
 }
 
@@ -980,7 +1156,60 @@ impl core::fmt::Debug for BluetoothTaskReuniteFailure {
 }
 
 impl BluetoothTaskRegisters {
-    fn into_hardware(self, interrupts: BluetoothInterruptSetup) -> RadioHardware {
+    fn prepare_shared_modem_clock_map(&mut self) {
+        self.radio_phy.prepare_shared_modem_clock_map();
+    }
+
+    fn retain_coexistence_clock(&mut self) -> bool {
+        if self.coexistence_clock.is_none() {
+            self.coexistence_clock = Some(
+                self.radio_phy
+                    .retain_shared_modem_clock(SharedModemClock::Coexistence),
+            );
+        }
+        true
+    }
+
+    fn release_coexistence_clock(&mut self) {
+        if let Some(lease) = self.coexistence_clock.take() {
+            self.radio_phy.release_shared_modem_clock(lease);
+        }
+    }
+
+    fn select_main_xtal_low_power_clock(&mut self, divider: u16) -> bool {
+        let Some(divider) = ModemLowPowerClockDivider::new(u32::from(divider)) else {
+            return false;
+        };
+        if self.low_power_timer_clock.is_none() {
+            self.low_power_timer_clock = Some(
+                self.radio_phy
+                    .retain_bluetooth_low_power_timer(ModemLowPowerClockSource::Crystal, divider),
+            );
+        }
+        true
+    }
+
+    fn release_bluetooth_low_power_timer(&mut self) {
+        if let Some(lease) = self.low_power_timer_clock.take() {
+            self.radio_phy.release_bluetooth_low_power_timer(lease);
+        }
+    }
+
+    fn bluetooth_shared_clock_observation(
+        &self,
+    ) -> (
+        SharedModemClockObservation,
+        BluetoothLowPowerClockObservation,
+    ) {
+        (
+            self.radio_phy.shared_modem_clock_observation(),
+            self.radio_phy.bluetooth_low_power_clock_observation(),
+        )
+    }
+
+    fn into_hardware(mut self, interrupts: BluetoothInterruptSetup) -> RadioHardware {
+        self.release_bluetooth_low_power_timer();
+        self.release_coexistence_clock();
         let Self {
             bluetooth,
             radio_phy,
@@ -992,12 +1221,14 @@ impl BluetoothTaskRegisters {
                     wifi_interrupts,
                     ieee802154,
                 },
+            coexistence_clock: _,
+            low_power_timer_clock: _,
             controller_time_latch: _,
         } = self;
         RadioHardware {
             wifi_mac,
             wifi_interrupts,
-            radio_phy: radio_phy.peripherals,
+            radio_phy,
             coexistence,
             bluetooth,
             bluetooth_interrupts: interrupts.peripherals,

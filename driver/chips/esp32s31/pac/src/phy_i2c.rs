@@ -144,6 +144,7 @@ const fn saturate_phy_i2c_value(value: i32, upper: u8, lower: u8) -> u8 {
 const PHY_FILTER_DCAP_COMMAND_COUNT: u8 = 18;
 const PHY_I2C_INITIALIZATION_STAGE_ONE_COMMAND_COUNT: u8 = 26;
 const PHY_BIAS_REGISTER_COMMAND_COUNT: u8 = 2;
+const PHY_RC_CALIBRATION_SETTINGS_COMMAND_COUNT: u8 = 3;
 const PHY_SAR2_INITIALIZATION_COMMAND_COUNT: u8 = 2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -295,6 +296,7 @@ pub enum PhyI2cConfigurationOperation {
     BiasRegisters,
     FilterDcap(PhyFilterDcapInputs),
     InitializationStageOne(PhyI2cInitializationStageOneInputs),
+    RcCalibrationSettings,
     Sar2Initialization,
 }
 
@@ -304,6 +306,29 @@ impl PhyI2cConfigurationOperation {
             Self::BiasRegisters => bias_register_command(index),
             Self::FilterDcap(inputs) => inputs.command(index),
             Self::InitializationStageOne(inputs) => inputs.command(index),
+            Self::RcCalibrationSettings => {
+                return match index {
+                    0 => Some(PhyI2cConfigurationCommand::Modify {
+                        block: 0x6b,
+                        register: 0x11,
+                        mask: 0x30,
+                        value: 0x30,
+                    }),
+                    1 => Some(PhyI2cConfigurationCommand::Modify {
+                        block: 0x6b,
+                        register: 0x0f,
+                        mask: 0xf8,
+                        value: 0x08,
+                    }),
+                    2 => Some(PhyI2cConfigurationCommand::Modify {
+                        block: 0x6b,
+                        register: 0x13,
+                        mask: 0x3c,
+                        value: 0x24,
+                    }),
+                    _ => None,
+                };
+            }
             Self::Sar2Initialization => {
                 return match index {
                     0 => Some(PhyI2cConfigurationCommand::Modify {
@@ -336,6 +361,7 @@ impl PhyI2cConfigurationOperation {
             Self::BiasRegisters => PHY_BIAS_REGISTER_COMMAND_COUNT,
             Self::FilterDcap(_) => PHY_FILTER_DCAP_COMMAND_COUNT,
             Self::InitializationStageOne(_) => PHY_I2C_INITIALIZATION_STAGE_ONE_COMMAND_COUNT,
+            Self::RcCalibrationSettings => PHY_RC_CALIBRATION_SETTINGS_COMMAND_COUNT,
             Self::Sar2Initialization => PHY_SAR2_INITIALIZATION_COMMAND_COUNT,
         }
     }
@@ -1391,6 +1417,14 @@ mod tests {
         drive_configuration(&mut sar2, &mut access);
         assert_eq!(sar2.action(), PhyI2cConfigurationAction::Complete);
         assert_eq!(access.accepted_commands, 3);
+
+        access.accepted_commands = 0;
+        let mut rc_calibration = PhyI2cConfigurationTransaction::new(
+            PhyI2cConfigurationOperation::RcCalibrationSettings,
+        );
+        drive_configuration(&mut rc_calibration, &mut access);
+        assert_eq!(rc_calibration.action(), PhyI2cConfigurationAction::Complete);
+        assert_eq!(access.accepted_commands, 6);
     }
 
     fn drive(

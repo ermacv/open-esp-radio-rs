@@ -951,117 +951,6 @@ impl MaskedI2cWriteBinding {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RcCalibrationSetAction {
-    MaskedWrite(MaskedI2cWriteAction),
-    Complete,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RcCalibrationSetCompletion {
-    MaskedWrite(MaskedI2cWriteCompletion),
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RcCalibrationSetTransitionError {
-    WrongCompletion,
-    AlreadyComplete,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RcCalibrationSetStep {
-    MaskedWrite {
-        index: u8,
-        transition: MaskedI2cWriteTransition,
-    },
-    Complete,
-}
-
-/// Exact three-field async plan for ROM `phy_i2c_rc_cal_set(3, 1, 9)`.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct RcCalibrationSetTransition {
-    step: RcCalibrationSetStep,
-}
-
-impl RcCalibrationSetTransition {
-    const fn write(index: u8) -> MaskedI2cWriteTransition {
-        let (register, high_bit, low_bit, value) = match index {
-            0 => (0x11, 5, 4, 3),
-            1 => (0x0f, 7, 3, 1),
-            _ => (0x13, 5, 2, 9),
-        };
-        MaskedI2cWriteTransition {
-            address: PhyI2cAddress {
-                block: 0x6b,
-                register,
-            },
-            high_bit,
-            low_bit,
-            field_value: value,
-            step: MaskedI2cWriteStep::ReadByte,
-        }
-    }
-
-    pub const fn new() -> Self {
-        Self {
-            step: RcCalibrationSetStep::MaskedWrite {
-                index: 0,
-                transition: Self::write(0),
-            },
-        }
-    }
-
-    pub const fn action(self) -> RcCalibrationSetAction {
-        match self.step {
-            RcCalibrationSetStep::MaskedWrite { transition, .. } => {
-                RcCalibrationSetAction::MaskedWrite(transition.action())
-            }
-            RcCalibrationSetStep::Complete => RcCalibrationSetAction::Complete,
-        }
-    }
-
-    pub fn advance(
-        &mut self,
-        completion: RcCalibrationSetCompletion,
-    ) -> Result<(), RcCalibrationSetTransitionError> {
-        self.step = match (self.step, completion) {
-            (
-                RcCalibrationSetStep::MaskedWrite {
-                    index,
-                    mut transition,
-                },
-                RcCalibrationSetCompletion::MaskedWrite(completion),
-            ) => {
-                transition
-                    .advance(completion)
-                    .map_err(|_| RcCalibrationSetTransitionError::WrongCompletion)?;
-                if transition.action() == MaskedI2cWriteAction::Complete {
-                    if index == 2 {
-                        RcCalibrationSetStep::Complete
-                    } else {
-                        RcCalibrationSetStep::MaskedWrite {
-                            index: index + 1,
-                            transition: Self::write(index + 1),
-                        }
-                    }
-                } else {
-                    RcCalibrationSetStep::MaskedWrite { index, transition }
-                }
-            }
-            (RcCalibrationSetStep::Complete, _) => {
-                return Err(RcCalibrationSetTransitionError::AlreadyComplete);
-            }
-        };
-        Ok(())
-    }
-}
-
-impl Default for RcCalibrationSetTransition {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Five explicit parameter bytes consumed by ROM `phy_filter_dcap_set`.
 ///
 /// Offset-based names are deliberate: the electrical meaning of these
@@ -1503,7 +1392,7 @@ pub enum PhyRfInitPrefixAction {
     ConfigureFrontEndRegisters,
     ConfigureTemperatureSensorRead,
     ConfigureTxPowerControlBackground,
-    RcCalibrationSet(RcCalibrationSetAction),
+    ConfigureRcCalibrationSettings,
     InspectRcCalibrationState,
     RcCalibration(RcCalibrationAction),
     CaptureFilterDcapParameters,
@@ -1546,7 +1435,7 @@ pub enum PhyRfInitPrefixCompletion {
     FrontEndRegistersConfigured,
     TemperatureSensorReadConfigured,
     TxPowerControlBackgroundConfigured,
-    RcCalibrationSet(RcCalibrationSetCompletion),
+    RcCalibrationSettingsConfigured,
     RcCalibrationStateInspected { already_complete: bool },
     RcCalibration(RcCalibrationCompletion),
     FilterDcapParametersCaptured(FilterDcapParameters),
@@ -1600,8 +1489,7 @@ enum PhyRfInitPrefixStep {
     TxPowerControlBackground {
         bbpll_register_snapshot: u8,
     },
-    RcCalibrationSet {
-        transition: RcCalibrationSetTransition,
+    RcCalibrationSettings {
         bbpll_register_snapshot: u8,
     },
     RcCalibrationState {
@@ -1760,15 +1648,9 @@ impl PhyRfInitPrefixTransition {
             PhyRfInitPrefixStep::TxPowerControlBackground { .. } => {
                 PhyRfInitPrefixAction::ConfigureTxPowerControlBackground
             }
-            PhyRfInitPrefixStep::RcCalibrationSet {
-                transition,
-                bbpll_register_snapshot: _,
-            } => match transition.action() {
-                RcCalibrationSetAction::Complete => {
-                    PhyRfInitPrefixAction::InspectRcCalibrationState
-                }
-                action => PhyRfInitPrefixAction::RcCalibrationSet(action),
-            },
+            PhyRfInitPrefixStep::RcCalibrationSettings { .. } => {
+                PhyRfInitPrefixAction::ConfigureRcCalibrationSettings
+            }
             PhyRfInitPrefixStep::RcCalibrationState { .. } => {
                 PhyRfInitPrefixAction::InspectRcCalibrationState
             }
@@ -1995,31 +1877,17 @@ impl PhyRfInitPrefixTransition {
                     bbpll_register_snapshot,
                 },
                 PhyRfInitPrefixCompletion::TxPowerControlBackgroundConfigured,
-            ) => PhyRfInitPrefixStep::RcCalibrationSet {
-                transition: RcCalibrationSetTransition::new(),
+            ) => PhyRfInitPrefixStep::RcCalibrationSettings {
                 bbpll_register_snapshot,
             },
             (
-                PhyRfInitPrefixStep::RcCalibrationSet {
-                    mut transition,
+                PhyRfInitPrefixStep::RcCalibrationSettings {
                     bbpll_register_snapshot,
                 },
-                PhyRfInitPrefixCompletion::RcCalibrationSet(completion),
-            ) => {
-                transition
-                    .advance(completion)
-                    .map_err(|_| PhyRfInitPrefixTransitionError::WrongCompletion)?;
-                if transition.action() == RcCalibrationSetAction::Complete {
-                    PhyRfInitPrefixStep::RcCalibrationState {
-                        bbpll_register_snapshot,
-                    }
-                } else {
-                    PhyRfInitPrefixStep::RcCalibrationSet {
-                        transition,
-                        bbpll_register_snapshot,
-                    }
-                }
-            }
+                PhyRfInitPrefixCompletion::RcCalibrationSettingsConfigured,
+            ) => PhyRfInitPrefixStep::RcCalibrationState {
+                bbpll_register_snapshot,
+            },
             (
                 PhyRfInitPrefixStep::RcCalibrationState {
                     bbpll_register_snapshot,
@@ -2531,8 +2399,7 @@ mod tests {
         OpenI2cXpdTransitionError, PhyI2cAddress, PhyRfInitParameterSnapshot,
         PhyRfInitPrefixAction, PhyRfInitPrefixCompletion, PhyRfInitPrefixOutcome,
         PhyRfInitPrefixStep, PhyRfInitPrefixTransition, PhyRfInitPrefixTransitionError,
-        RcCalibrationAction, RcCalibrationCompletion, RcCalibrationSetAction,
-        RcCalibrationSetCompletion, RcCalibrationSetTransition, RcCalibrationTransition,
+        RcCalibrationAction, RcCalibrationCompletion, RcCalibrationTransition,
         RcCalibrationTransitionError, RfpllChargePumpAction, RfpllChargePumpCompletion,
         RfpllChargePumpOutcome, RfpllChargePumpTransition,
     };
@@ -3157,40 +3024,6 @@ mod tests {
     }
 
     #[test]
-    fn rc_calibration_set_preserves_all_three_rom_masked_writes() {
-        let requests = [
-            (PhyI2cAddress::new(0x6b, 0x11).unwrap(), 0x30),
-            (PhyI2cAddress::new(0x6b, 0x0f).unwrap(), 0x08),
-            (PhyI2cAddress::new(0x6b, 0x13).unwrap(), 0x24),
-        ];
-        let mut transition = RcCalibrationSetTransition::new();
-        for (address, expected_value) in requests {
-            assert_eq!(
-                transition.action(),
-                RcCalibrationSetAction::MaskedWrite(MaskedI2cWriteAction::ReadByte { address })
-            );
-            transition
-                .advance(RcCalibrationSetCompletion::MaskedWrite(
-                    MaskedI2cWriteCompletion::I2cReadCompleted { address, value: 0 },
-                ))
-                .unwrap();
-            assert_eq!(
-                transition.action(),
-                RcCalibrationSetAction::MaskedWrite(MaskedI2cWriteAction::WriteByte {
-                    address,
-                    value: expected_value,
-                })
-            );
-            transition
-                .advance(RcCalibrationSetCompletion::MaskedWrite(
-                    MaskedI2cWriteCompletion::I2cWriteCompleted { address },
-                ))
-                .unwrap();
-        }
-        assert_eq!(transition.action(), RcCalibrationSetAction::Complete);
-    }
-
-    #[test]
     fn filter_dcap_exposes_one_semantic_operation() {
         let parameter = FilterDcapParameters::new(0x12, 0x34, 0x3a, 0x56, 0x87);
         let mut transition = FilterDcapTransition::new(parameter);
@@ -3649,41 +3482,13 @@ mod tests {
         transition
             .advance(PhyRfInitPrefixCompletion::TxPowerControlBackgroundConfigured)
             .unwrap();
-        for (address, expected_value) in [
-            (PhyI2cAddress::new(0x6b, 0x11).unwrap(), 0x30),
-            (PhyI2cAddress::new(0x6b, 0x0f).unwrap(), 0x08),
-            (PhyI2cAddress::new(0x6b, 0x13).unwrap(), 0x24),
-        ] {
-            assert_eq!(
-                transition.action(),
-                PhyRfInitPrefixAction::RcCalibrationSet(RcCalibrationSetAction::MaskedWrite(
-                    MaskedI2cWriteAction::ReadByte { address }
-                ))
-            );
-            transition
-                .advance(PhyRfInitPrefixCompletion::RcCalibrationSet(
-                    RcCalibrationSetCompletion::MaskedWrite(
-                        MaskedI2cWriteCompletion::I2cReadCompleted { address, value: 0 },
-                    ),
-                ))
-                .unwrap();
-            assert_eq!(
-                transition.action(),
-                PhyRfInitPrefixAction::RcCalibrationSet(RcCalibrationSetAction::MaskedWrite(
-                    MaskedI2cWriteAction::WriteByte {
-                        address,
-                        value: expected_value,
-                    }
-                ))
-            );
-            transition
-                .advance(PhyRfInitPrefixCompletion::RcCalibrationSet(
-                    RcCalibrationSetCompletion::MaskedWrite(
-                        MaskedI2cWriteCompletion::I2cWriteCompleted { address },
-                    ),
-                ))
-                .unwrap();
-        }
+        assert_eq!(
+            transition.action(),
+            PhyRfInitPrefixAction::ConfigureRcCalibrationSettings
+        );
+        transition
+            .advance(PhyRfInitPrefixCompletion::RcCalibrationSettingsConfigured)
+            .unwrap();
         assert_eq!(
             transition.action(),
             PhyRfInitPrefixAction::InspectRcCalibrationState

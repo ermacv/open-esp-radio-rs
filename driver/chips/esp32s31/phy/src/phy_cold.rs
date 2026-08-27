@@ -29,11 +29,10 @@ use crate::{
     },
     phy_i2c::{
         AdcRateAction, AdcRateCompletion, FilterDcapAction, FilterDcapCompletion, I2cBbpllAction,
-        I2cBbpllCompletion, I2cInit1Action, I2cInit1Completion, MaskedI2cWriteAction,
-        MaskedI2cWriteCompletion, OpenI2cXpdAction, OpenI2cXpdCompletion, PhyI2cAddress,
-        PhyI2cError, PhyRfInitPrefixAction, PhyRfInitPrefixCompletion, PhyRfInitPrefixOutcome,
-        PhyRfInitPrefixTransition, PhyRfInitPrefixTransitionError, RcCalibrationAction,
-        RcCalibrationCompletion, RcCalibrationSetAction, RcCalibrationSetCompletion,
+        I2cBbpllCompletion, I2cInit1Action, I2cInit1Completion, OpenI2cXpdAction,
+        OpenI2cXpdCompletion, PhyI2cAddress, PhyI2cError, PhyRfInitPrefixAction,
+        PhyRfInitPrefixCompletion, PhyRfInitPrefixOutcome, PhyRfInitPrefixTransition,
+        PhyRfInitPrefixTransitionError, RcCalibrationAction, RcCalibrationCompletion,
         RfpllChargePumpAction, RfpllChargePumpCompletion,
     },
     phy_pbus::{PhyPbusClearAction, PhyPbusClearCompletion, PhyPbusForceTest},
@@ -418,6 +417,9 @@ impl PhyColdI2cConfigurationBinding {
             PhyRfInitPrefixAction::ConfigureBiasRegisters => {
                 open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cConfigurationOperation::BiasRegisters
             }
+            PhyRfInitPrefixAction::ConfigureRcCalibrationSettings => {
+                open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cConfigurationOperation::RcCalibrationSettings
+            }
             PhyRfInitPrefixAction::ConfigureSar2 => {
                 open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cConfigurationOperation::Sar2Initialization
             }
@@ -487,6 +489,9 @@ impl PhyColdI2cConfigurationBinding {
         match self.outer_action {
             PhyRfInitPrefixAction::ConfigureBiasRegisters => {
                 Ok(PhyRfInitPrefixCompletion::BiasRegistersConfigured)
+            }
+            PhyRfInitPrefixAction::ConfigureRcCalibrationSettings => {
+                Ok(PhyRfInitPrefixCompletion::RcCalibrationSettingsConfigured)
             }
             PhyRfInitPrefixAction::ConfigureSar2 => Ok(PhyRfInitPrefixCompletion::Sar2Configured),
             PhyRfInitPrefixAction::FilterDcap(FilterDcapAction::Configure(_)) => Ok(
@@ -561,12 +566,6 @@ fn lower_prefix_i2c_request(action: PhyRfInitPrefixAction) -> Option<PhyColdI2cR
                 RfpllFrequencyAction::ReadByte { address },
             )),
         )) => Some(PhyColdI2cRequest::read_byte(address)),
-        PhyRfInitPrefixAction::RcCalibrationSet(RcCalibrationSetAction::MaskedWrite(
-            MaskedI2cWriteAction::ReadByte { address },
-        )) => Some(PhyColdI2cRequest::read_byte(address)),
-        PhyRfInitPrefixAction::RcCalibrationSet(RcCalibrationSetAction::MaskedWrite(
-            MaskedI2cWriteAction::WriteByte { address, value },
-        )) => Some(PhyColdI2cRequest::write_byte(address, value)),
         PhyRfInitPrefixAction::RcCalibration(RcCalibrationAction::WriteMasked {
             address,
             high_bit,
@@ -715,30 +714,6 @@ fn lower_prefix_i2c_completion(
             PhyColdI2cOutcome::Written { address: completed },
         ) if address == completed => Some(PhyRfInitPrefixCompletion::AdcRate(
             AdcRateCompletion::I2cWriteCompleted { address },
-        )),
-        (
-            PhyRfInitPrefixAction::RcCalibrationSet(RcCalibrationSetAction::MaskedWrite(
-                MaskedI2cWriteAction::ReadByte { address },
-            )),
-            PhyColdI2cOutcome::Read {
-                address: completed,
-                value,
-            },
-        ) if address == completed => Some(PhyRfInitPrefixCompletion::RcCalibrationSet(
-            RcCalibrationSetCompletion::MaskedWrite(MaskedI2cWriteCompletion::I2cReadCompleted {
-                address,
-                value,
-            }),
-        )),
-        (
-            PhyRfInitPrefixAction::RcCalibrationSet(RcCalibrationSetAction::MaskedWrite(
-                MaskedI2cWriteAction::WriteByte { address, .. },
-            )),
-            PhyColdI2cOutcome::Written { address: completed },
-        ) if address == completed => Some(PhyRfInitPrefixCompletion::RcCalibrationSet(
-            RcCalibrationSetCompletion::MaskedWrite(MaskedI2cWriteCompletion::I2cWriteCompleted {
-                address,
-            }),
         )),
         (
             PhyRfInitPrefixAction::RcCalibration(RcCalibrationAction::WriteMasked { .. }),
@@ -3311,6 +3286,10 @@ mod tests {
         ));
         assert!(matches!(
             PhyColdExternalBinding::lower(PhyRfInitPrefixAction::ConfigureBiasRegisters),
+            Ok(PhyColdExternalBinding::I2cConfiguration(_))
+        ));
+        assert!(matches!(
+            PhyColdExternalBinding::lower(PhyRfInitPrefixAction::ConfigureRcCalibrationSettings),
             Ok(PhyColdExternalBinding::I2cConfiguration(_))
         ));
         assert!(matches!(

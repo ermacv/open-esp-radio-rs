@@ -1136,16 +1136,23 @@ impl PhyColdMmioBinding {
                 XtalDutyPassAction::Prepare(XtalDutyPrepareAction::ConfigurePbusDebugMode),
             )) => open_esp_radio_esp32s31_hal::pbus::configure_debug_mode(registers),
             PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
-                XtalDutyPassAction::Prepare(XtalDutyPrepareAction::RestoreRxDcoControl {
-                    saved_field,
-                    ..
-                }),
+                XtalDutyPassAction::Prepare(XtalDutyPrepareAction::PrepareRxDcoControlRestore),
             ))
             | PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
                 XtalDutyPassAction::Prepare(XtalDutyPrepareAction::RxDco(
-                    PhyRxDcoAction::RestoreRxDcoControl { saved_field, .. },
+                    PhyRxDcoAction::PrepareRxDcoControlRestore,
                 )),
-            )) => open_esp_radio_esp32s31_hal::phy_rx_dco::restore_control(registers, saved_field),
+            )) => open_esp_radio_esp32s31_hal::phy_rx_dco::prepare_control_restore(registers)
+                .map_err(|_| PhyColdLoweringError::HardwareRestoreInvariant)?,
+            PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
+                XtalDutyPassAction::Prepare(XtalDutyPrepareAction::RestoreRxDcoControl),
+            ))
+            | PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
+                XtalDutyPassAction::Prepare(XtalDutyPrepareAction::RxDco(
+                    PhyRxDcoAction::RestoreRxDcoControl,
+                )),
+            )) => open_esp_radio_esp32s31_hal::phy_rx_dco::restore_control(registers)
+                .map_err(|_| PhyColdLoweringError::HardwareRestoreInvariant)?,
             PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
                 XtalDutyPassAction::Prepare(XtalDutyPrepareAction::RxDco(PhyRxDcoAction::DcIq(
                     PhyDcIqAction::Configure(request),
@@ -1331,21 +1338,35 @@ fn lower_prefix_mmio_completion(
             )),
         )),
         PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
-            XtalDutyPassAction::Prepare(XtalDutyPrepareAction::RestoreRxDcoControl { saved_field }),
+            XtalDutyPassAction::Prepare(XtalDutyPrepareAction::PrepareRxDcoControlRestore),
         )) => Some(PhyRfInitPrefixCompletion::XtalDuty(
             XtalDutyCalibrationCompletion::Pass(XtalDutyPassCompletion::Prepare(
-                XtalDutyPrepareCompletion::RxDcoControlRestored { saved_field },
+                XtalDutyPrepareCompletion::RxDcoControlRestorePrepared,
             )),
         )),
         PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
             XtalDutyPassAction::Prepare(XtalDutyPrepareAction::RxDco(
-                PhyRxDcoAction::RestoreRxDcoControl { saved_field },
+                PhyRxDcoAction::PrepareRxDcoControlRestore,
             )),
         )) => Some(PhyRfInitPrefixCompletion::XtalDuty(
             XtalDutyCalibrationCompletion::Pass(XtalDutyPassCompletion::Prepare(
-                XtalDutyPrepareCompletion::RxDco(PhyRxDcoCompletion::RxDcoControlRestored {
-                    saved_field,
-                }),
+                XtalDutyPrepareCompletion::RxDco(PhyRxDcoCompletion::RxDcoControlRestorePrepared),
+            )),
+        )),
+        PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
+            XtalDutyPassAction::Prepare(XtalDutyPrepareAction::RestoreRxDcoControl),
+        )) => Some(PhyRfInitPrefixCompletion::XtalDuty(
+            XtalDutyCalibrationCompletion::Pass(XtalDutyPassCompletion::Prepare(
+                XtalDutyPrepareCompletion::RxDcoControlRestored,
+            )),
+        )),
+        PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
+            XtalDutyPassAction::Prepare(XtalDutyPrepareAction::RxDco(
+                PhyRxDcoAction::RestoreRxDcoControl,
+            )),
+        )) => Some(PhyRfInitPrefixCompletion::XtalDuty(
+            XtalDutyCalibrationCompletion::Pass(XtalDutyPassCompletion::Prepare(
+                XtalDutyPrepareCompletion::RxDco(PhyRxDcoCompletion::RxDcoControlRestored),
             )),
         )),
         PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
@@ -1682,7 +1703,6 @@ pub enum PhyColdObservationRequest {
         maximum_cycles: u32,
     },
     ConfigurePbusWorkMode,
-    MaskRxDcoControl,
     ReadRxDcoPbus {
         selector: u8,
         path: u8,
@@ -1711,9 +1731,6 @@ pub enum PhyColdObservationResult {
     },
     PbusWorkMode {
         settle_required: bool,
-    },
-    RxDcoControlMasked {
-        saved_field: u8,
     },
     RxDcoPbusRead {
         selector: u8,
@@ -1767,14 +1784,6 @@ impl PhyColdObservationBinding {
             | PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
                 XtalDutyPassAction::Restore(XtalDutyRestoreAction::ConfigurePbusWorkMode),
             )) => PhyColdObservationRequest::ConfigurePbusWorkMode,
-            PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
-                XtalDutyPassAction::Prepare(XtalDutyPrepareAction::MaskRxDcoControl),
-            ))
-            | PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
-                XtalDutyPassAction::Prepare(XtalDutyPrepareAction::RxDco(
-                    PhyRxDcoAction::MaskRxDcoControl,
-                )),
-            )) => PhyColdObservationRequest::MaskRxDcoControl,
             PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
                 XtalDutyPassAction::Prepare(XtalDutyPrepareAction::RxDco(
                     PhyRxDcoAction::ReadPbus { selector, path },
@@ -1865,30 +1874,6 @@ impl PhyColdObservationBinding {
             ) => Ok(PhyRfInitPrefixCompletion::XtalDuty(
                 XtalDutyCalibrationCompletion::Pass(XtalDutyPassCompletion::Restore(
                     XtalDutyRestoreCompletion::PbusWorkModeConfigured { settle_required },
-                )),
-            )),
-            (
-                PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
-                    XtalDutyPassAction::Prepare(XtalDutyPrepareAction::MaskRxDcoControl),
-                )),
-                PhyColdObservationResult::RxDcoControlMasked { saved_field },
-            ) => Ok(PhyRfInitPrefixCompletion::XtalDuty(
-                XtalDutyCalibrationCompletion::Pass(XtalDutyPassCompletion::Prepare(
-                    XtalDutyPrepareCompletion::RxDcoControlMasked { saved_field },
-                )),
-            )),
-            (
-                PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
-                    XtalDutyPassAction::Prepare(XtalDutyPrepareAction::RxDco(
-                        PhyRxDcoAction::MaskRxDcoControl,
-                    )),
-                )),
-                PhyColdObservationResult::RxDcoControlMasked { saved_field },
-            ) => Ok(PhyRfInitPrefixCompletion::XtalDuty(
-                XtalDutyCalibrationCompletion::Pass(XtalDutyPassCompletion::Prepare(
-                    XtalDutyPrepareCompletion::RxDco(PhyRxDcoCompletion::RxDcoControlMasked {
-                        saved_field,
-                    }),
                 )),
             )),
             (
@@ -2059,11 +2044,6 @@ impl PhyColdObservationBinding {
                 let settle_required =
                     open_esp_radio_esp32s31_hal::pbus::configure_work_mode(registers);
                 self.into_completion(PhyColdObservationResult::PbusWorkMode { settle_required })
-            }
-            PhyColdObservationRequest::MaskRxDcoControl => {
-                let saved_field =
-                    open_esp_radio_esp32s31_hal::phy_rx_dco::capture_and_clear_control(registers);
-                self.into_completion(PhyColdObservationResult::RxDcoControlMasked { saved_field })
             }
             PhyColdObservationRequest::ReadRxDcoPbus { selector, path } => {
                 let value = u32::from(
@@ -3133,17 +3113,17 @@ mod tests {
     }
 
     #[test]
-    fn nested_sampled_edges_are_one_shot_semantic_observations() {
-        let mask_action = PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
-            XtalDutyPassAction::Prepare(XtalDutyPrepareAction::MaskRxDcoControl),
+    fn nested_external_edges_are_one_shot_semantic_bindings() {
+        let prepare_action = PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
+            XtalDutyPassAction::Prepare(XtalDutyPrepareAction::PrepareRxDcoControlRestore),
         ));
-        let mask = PhyColdObservationBinding::new(mask_action).unwrap();
-        assert_eq!(mask.request(), PhyColdObservationRequest::MaskRxDcoControl);
         assert_eq!(
-            mask.into_completion(PhyColdObservationResult::RxDcoControlMasked { saved_field: 2 }),
+            PhyColdMmioBinding::new(prepare_action)
+                .unwrap()
+                .into_completion(),
             Ok(PhyRfInitPrefixCompletion::XtalDuty(
                 XtalDutyCalibrationCompletion::Pass(XtalDutyPassCompletion::Prepare(
-                    XtalDutyPrepareCompletion::RxDcoControlMasked { saved_field: 2 }
+                    XtalDutyPrepareCompletion::RxDcoControlRestorePrepared
                 ))
             ))
         );

@@ -58,25 +58,25 @@ pub enum PhyRxDcCalibrationFailure {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyRxDcCalibrationAction {
-    MaskControl,
+    PrepareControlRestore,
     ReadPbus { selector: u8, path: u8 },
     ForcePbus(PhyPbusForceTest),
     DelayMicros { measurement: u8, micros: u32 },
     Minimum(PhyRxDcMinimumAction),
-    RestoreControl { saved_field: u8 },
+    RestoreControl,
     Complete(PhyRxDcCalibrationOutcome),
     Failed(PhyRxDcCalibrationFailure),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyRxDcCalibrationCompletion {
-    ControlMasked { saved_field: u8 },
+    ControlRestorePrepared,
     PbusRead { selector: u8, path: u8, value: u32 },
     PbusForceCompleted(PhyPbusForceTest),
     PbusForceTimedOut(PhyPbusForceTest),
     DelayElapsed { measurement: u8, micros: u32 },
     Minimum(PhyRxDcMinimumCompletion),
-    ControlRestored { saved_field: u8 },
+    ControlRestored,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -93,39 +93,27 @@ enum Terminal {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Step {
-    MaskControl,
-    ReadPbus {
-        saved_field: u8,
-    },
-    ForceI {
-        saved_field: u8,
-    },
-    ForceQ {
-        saved_field: u8,
-    },
+    PrepareControlRestore,
+    ReadPbus,
+    ForceI,
+    ForceQ,
     ForceRadioLevel {
-        saved_field: u8,
         high: bool,
     },
     Delay {
-        saved_field: u8,
         high: bool,
     },
     Minimum {
-        saved_field: u8,
         high: bool,
         transition: PhyRxDcMinimumTransition,
     },
     CleanupI {
-        saved_field: u8,
         terminal: Terminal,
     },
     CleanupQ {
-        saved_field: u8,
         terminal: Terminal,
     },
     Restore {
-        saved_field: u8,
         terminal: Terminal,
     },
     Complete(PhyRxDcCalibrationOutcome),
@@ -197,7 +185,7 @@ impl PhyRxDcCalibrationTransition {
     pub const fn new(request: PhyRxDcCalibrationRequest) -> Self {
         Self {
             request,
-            step: Step::MaskControl,
+            step: Step::PrepareControlRestore,
             initial: request.initial,
             current: request.initial,
             population: 0,
@@ -260,13 +248,13 @@ impl PhyRxDcCalibrationTransition {
 
     pub const fn action(self) -> PhyRxDcCalibrationAction {
         match self.step {
-            Step::MaskControl => PhyRxDcCalibrationAction::MaskControl,
-            Step::ReadPbus { .. } => PhyRxDcCalibrationAction::ReadPbus {
+            Step::PrepareControlRestore => PhyRxDcCalibrationAction::PrepareControlRestore,
+            Step::ReadPbus => PhyRxDcCalibrationAction::ReadPbus {
                 selector: 1,
                 path: 2,
             },
-            Step::ForceI { .. } => PhyRxDcCalibrationAction::ForcePbus(self.current_force(2)),
-            Step::ForceQ { .. } => PhyRxDcCalibrationAction::ForcePbus(self.current_force(3)),
+            Step::ForceI => PhyRxDcCalibrationAction::ForcePbus(self.current_force(2)),
+            Step::ForceQ => PhyRxDcCalibrationAction::ForcePbus(self.current_force(3)),
             Step::ForceRadioLevel { high, .. } => PhyRxDcCalibrationAction::ForcePbus(
                 PhyPbusForceTest::new(1, 2, if high { 0x20 } else { 0 }),
             ),
@@ -283,35 +271,27 @@ impl PhyRxDcCalibrationTransition {
             Step::CleanupQ { terminal, .. } => PhyRxDcCalibrationAction::ForcePbus(
                 PhyPbusForceTest::new(3, self.path(), self.cleanup_configuration(terminal)[1]),
             ),
-            Step::Restore { saved_field, .. } => {
-                PhyRxDcCalibrationAction::RestoreControl { saved_field }
-            }
+            Step::Restore { .. } => PhyRxDcCalibrationAction::RestoreControl,
             Step::Complete(outcome) => PhyRxDcCalibrationAction::Complete(outcome),
             Step::Failed(failure) => PhyRxDcCalibrationAction::Failed(failure),
         }
     }
 
-    fn begin_cleanup(&mut self, saved_field: u8, terminal: Terminal) {
-        self.step = Step::CleanupI {
-            saved_field,
-            terminal,
-        };
+    fn begin_cleanup(&mut self, terminal: Terminal) {
+        self.step = Step::CleanupI { terminal };
     }
 
-    fn fail(&mut self, saved_field: u8, failure: PhyRxDcCalibrationFailure) {
-        self.begin_cleanup(saved_field, Terminal::Failed(failure));
+    fn fail(&mut self, failure: PhyRxDcCalibrationFailure) {
+        self.begin_cleanup(Terminal::Failed(failure));
     }
 
-    fn accept_measurement(&mut self, saved_field: u8, high: bool, outcome: PhyRxDcMinimumOutcome) {
+    fn accept_measurement(&mut self, high: bool, outcome: PhyRxDcMinimumOutcome) {
         self.readiness_activity_edges = self
             .readiness_activity_edges
             .wrapping_add(outcome.readiness_activity_edges);
         if self.request.stage == PhyRxDcCalibrationStage::Baseband && !high {
             self.low = outcome.estimate;
-            self.step = Step::ForceRadioLevel {
-                saved_field,
-                high: true,
-            };
+            self.step = Step::ForceRadioLevel { high: true };
             return;
         }
 
@@ -386,19 +366,16 @@ impl PhyRxDcCalibrationTransition {
                 } else {
                     self.current
                 };
-            self.begin_cleanup(
-                saved_field,
-                Terminal::Complete(PhyRxDcCalibrationOutcome {
-                    request: self.request,
-                    configuration,
-                    iterations,
-                    converged,
-                    readiness_activity_edges: self.readiness_activity_edges,
-                }),
-            );
+            self.begin_cleanup(Terminal::Complete(PhyRxDcCalibrationOutcome {
+                request: self.request,
+                configuration,
+                iterations,
+                converged,
+                readiness_activity_edges: self.readiness_activity_edges,
+            }));
         } else {
             self.iteration = iterations;
-            self.step = Step::ForceI { saved_field };
+            self.step = Step::ForceI;
         }
     }
 
@@ -407,13 +384,11 @@ impl PhyRxDcCalibrationTransition {
         completion: PhyRxDcCalibrationCompletion,
     ) -> Result<(), PhyRxDcCalibrationTransitionError> {
         match (self.step, completion) {
-            (Step::MaskControl, PhyRxDcCalibrationCompletion::ControlMasked { saved_field })
-                if saved_field <= 3 =>
-            {
-                self.step = Step::ReadPbus { saved_field };
+            (Step::PrepareControlRestore, PhyRxDcCalibrationCompletion::ControlRestorePrepared) => {
+                self.step = Step::ReadPbus;
             }
             (
-                Step::ReadPbus { saved_field },
+                Step::ReadPbus,
                 PhyRxDcCalibrationCompletion::PbusRead {
                     selector: 1,
                     path: 2,
@@ -431,51 +406,41 @@ impl PhyRxDcCalibrationTransition {
                         }
                     }
                 };
-                self.step = Step::ForceI { saved_field };
+                self.step = Step::ForceI;
             }
-            (
-                Step::ForceI { saved_field },
-                PhyRxDcCalibrationCompletion::PbusForceCompleted(transaction),
-            ) if transaction == self.current_force(2) => {
-                self.step = Step::ForceQ { saved_field };
+            (Step::ForceI, PhyRxDcCalibrationCompletion::PbusForceCompleted(transaction))
+                if transaction == self.current_force(2) =>
+            {
+                self.step = Step::ForceQ;
             }
-            (
-                Step::ForceQ { saved_field },
-                PhyRxDcCalibrationCompletion::PbusForceCompleted(transaction),
-            ) if transaction == self.current_force(3) => {
+            (Step::ForceQ, PhyRxDcCalibrationCompletion::PbusForceCompleted(transaction))
+                if transaction == self.current_force(3) =>
+            {
                 self.step = match self.request.stage {
-                    PhyRxDcCalibrationStage::Radio => Step::Delay {
-                        saved_field,
-                        high: false,
-                    },
-                    PhyRxDcCalibrationStage::Baseband => Step::ForceRadioLevel {
-                        saved_field,
-                        high: false,
-                    },
+                    PhyRxDcCalibrationStage::Radio => Step::Delay { high: false },
+                    PhyRxDcCalibrationStage::Baseband => Step::ForceRadioLevel { high: false },
                 };
             }
             (
-                Step::ForceRadioLevel { saved_field, high },
+                Step::ForceRadioLevel { high },
                 PhyRxDcCalibrationCompletion::PbusForceCompleted(transaction),
             ) if transaction == PhyPbusForceTest::new(1, 2, if high { 0x20 } else { 0 }) => {
-                self.step = Step::Delay { saved_field, high };
+                self.step = Step::Delay { high };
             }
             (
-                Step::Delay { saved_field, high },
+                Step::Delay { high },
                 PhyRxDcCalibrationCompletion::DelayElapsed {
                     measurement,
                     micros: 10,
                 },
             ) if measurement == self.measurement_identity(high) => {
                 self.step = Step::Minimum {
-                    saved_field,
                     high,
                     transition: PhyRxDcMinimumTransition::new(self.minimum_request(high)),
                 };
             }
             (
                 Step::Minimum {
-                    saved_field,
                     high,
                     mut transition,
                 },
@@ -486,34 +451,22 @@ impl PhyRxDcCalibrationTransition {
                     .map_err(|_| PhyRxDcCalibrationTransitionError::WrongCompletion)?;
                 match transition.action() {
                     PhyRxDcMinimumAction::Complete(outcome) => {
-                        self.accept_measurement(saved_field, high, outcome);
+                        self.accept_measurement(high, outcome);
                     }
                     PhyRxDcMinimumAction::Failed(failure) => {
-                        self.fail(saved_field, PhyRxDcCalibrationFailure::Minimum(failure));
+                        self.fail(PhyRxDcCalibrationFailure::Minimum(failure));
                     }
                     _ => {
-                        self.step = Step::Minimum {
-                            saved_field,
-                            high,
-                            transition,
-                        };
+                        self.step = Step::Minimum { high, transition };
                     }
                 }
             }
             (
-                Step::ForceI { saved_field }
-                | Step::ForceQ { saved_field }
-                | Step::ForceRadioLevel { saved_field, .. },
+                Step::ForceI | Step::ForceQ | Step::ForceRadioLevel { .. },
                 PhyRxDcCalibrationCompletion::PbusForceTimedOut(transaction),
-            ) => self.fail(
-                saved_field,
-                PhyRxDcCalibrationFailure::PbusForceTimedOut(transaction),
-            ),
+            ) => self.fail(PhyRxDcCalibrationFailure::PbusForceTimedOut(transaction)),
             (
-                Step::CleanupI {
-                    saved_field,
-                    terminal,
-                },
+                Step::CleanupI { terminal },
                 PhyRxDcCalibrationCompletion::PbusForceCompleted(transaction)
                 | PhyRxDcCalibrationCompletion::PbusForceTimedOut(transaction),
             ) if transaction
@@ -523,16 +476,10 @@ impl PhyRxDcCalibrationTransition {
                     self.cleanup_configuration(terminal)[0],
                 ) =>
             {
-                self.step = Step::CleanupQ {
-                    saved_field,
-                    terminal,
-                };
+                self.step = Step::CleanupQ { terminal };
             }
             (
-                Step::CleanupQ {
-                    saved_field,
-                    terminal,
-                },
+                Step::CleanupQ { terminal },
                 PhyRxDcCalibrationCompletion::PbusForceCompleted(transaction)
                 | PhyRxDcCalibrationCompletion::PbusForceTimedOut(transaction),
             ) if transaction
@@ -542,20 +489,9 @@ impl PhyRxDcCalibrationTransition {
                     self.cleanup_configuration(terminal)[1],
                 ) =>
             {
-                self.step = Step::Restore {
-                    saved_field,
-                    terminal,
-                };
+                self.step = Step::Restore { terminal };
             }
-            (
-                Step::Restore {
-                    saved_field,
-                    terminal,
-                },
-                PhyRxDcCalibrationCompletion::ControlRestored {
-                    saved_field: completed_field,
-                },
-            ) if saved_field == completed_field => {
+            (Step::Restore { terminal }, PhyRxDcCalibrationCompletion::ControlRestored) => {
                 self.step = match terminal {
                     Terminal::Complete(outcome) => Step::Complete(outcome),
                     Terminal::Failed(failure) => Step::Failed(failure),
@@ -1838,6 +1774,13 @@ pub enum PhyRxGainCalibrationBindingError {
     Pbus(crate::phy_pbus::PhyPbusHardwareBindingError),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyRxDcCalibrationHardwareInvariant {
+    RestoreOwnedByOtherCalibration,
+    RestoreNestingExceeded,
+    RestoreNotPending,
+}
+
 /// Non-cloneable token for one direct MMIO edge of
 /// `phy_pbus_rx_dco_cal_1step`.
 #[derive(Debug, Eq, PartialEq)]
@@ -1848,9 +1791,9 @@ pub struct PhyRxDcCalibrationMmioBinding {
 impl PhyRxDcCalibrationMmioBinding {
     pub fn new(action: PhyRxDcCalibrationAction) -> Result<Self, PhyRxGainCalibrationBindingError> {
         match action {
-            PhyRxDcCalibrationAction::MaskControl
+            PhyRxDcCalibrationAction::PrepareControlRestore
             | PhyRxDcCalibrationAction::ReadPbus { .. }
-            | PhyRxDcCalibrationAction::RestoreControl { .. } => Ok(Self { action }),
+            | PhyRxDcCalibrationAction::RestoreControl => Ok(Self { action }),
             _ => Err(PhyRxGainCalibrationBindingError::NotDirectMmio),
         }
     }
@@ -1863,15 +1806,22 @@ impl PhyRxDcCalibrationMmioBinding {
     pub fn execute_target(
         self,
         registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyContext,
-    ) -> PhyRxDcCalibrationCompletion {
+    ) -> Result<PhyRxDcCalibrationCompletion, PhyRxDcCalibrationHardwareInvariant> {
         match self.action {
-            PhyRxDcCalibrationAction::MaskControl => PhyRxDcCalibrationCompletion::ControlMasked {
-                saved_field: open_esp_radio_esp32s31_hal::phy_rx_dco::capture_and_clear_control(
-                    registers,
-                ),
-            },
+            PhyRxDcCalibrationAction::PrepareControlRestore => {
+                open_esp_radio_esp32s31_hal::phy_rx_dco::prepare_control_restore(registers)
+                    .map_err(|error| match error {
+                        open_esp_radio_esp32s31_hal::types::RxDcoControlPrepareError::RestorePending => {
+                            PhyRxDcCalibrationHardwareInvariant::RestoreOwnedByOtherCalibration
+                        }
+                        open_esp_radio_esp32s31_hal::types::RxDcoControlPrepareError::RestoreStackFull => {
+                            PhyRxDcCalibrationHardwareInvariant::RestoreNestingExceeded
+                        }
+                    })?;
+                Ok(PhyRxDcCalibrationCompletion::ControlRestorePrepared)
+            }
             PhyRxDcCalibrationAction::ReadPbus { selector, path } => {
-                PhyRxDcCalibrationCompletion::PbusRead {
+                Ok(PhyRxDcCalibrationCompletion::PbusRead {
                     selector,
                     path,
                     value: {
@@ -1884,11 +1834,12 @@ impl PhyRxDcCalibrationMmioBinding {
                         );
                         u32::from(result.unwrap_or(0))
                     },
-                }
+                })
             }
-            PhyRxDcCalibrationAction::RestoreControl { saved_field } => {
-                open_esp_radio_esp32s31_hal::phy_rx_dco::restore_control(registers, saved_field);
-                PhyRxDcCalibrationCompletion::ControlRestored { saved_field }
+            PhyRxDcCalibrationAction::RestoreControl => {
+                open_esp_radio_esp32s31_hal::phy_rx_dco::restore_control(registers)
+                    .map_err(|_| PhyRxDcCalibrationHardwareInvariant::RestoreNotPending)?;
+                Ok(PhyRxDcCalibrationCompletion::ControlRestored)
             }
             _ => unreachable!(),
         }
@@ -2386,7 +2337,7 @@ mod tests {
     fn converged_radio_measurement_restores_field_after_final_pbus_values() {
         let mut transition = PhyRxDcCalibrationTransition::new(RADIO);
         transition
-            .advance(PhyRxDcCalibrationCompletion::ControlMasked { saved_field: 2 })
+            .advance(PhyRxDcCalibrationCompletion::ControlRestorePrepared)
             .unwrap();
         transition
             .advance(PhyRxDcCalibrationCompletion::PbusRead {
@@ -2420,7 +2371,7 @@ mod tests {
             })
             .unwrap();
         let request = transition.minimum_request(false);
-        transition.accept_measurement(2, false, outcome(request, 1, -1, 20));
+        transition.accept_measurement(false, outcome(request, 1, -1, 20));
         for selector in [2, 3] {
             let PhyRxDcCalibrationAction::ForcePbus(transaction) = transition.action() else {
                 panic!("missing cleanup PBus action");
@@ -2434,10 +2385,10 @@ mod tests {
         }
         assert!(matches!(
             transition.action(),
-            PhyRxDcCalibrationAction::RestoreControl { saved_field: 2, .. }
+            PhyRxDcCalibrationAction::RestoreControl
         ));
         transition
-            .advance(PhyRxDcCalibrationCompletion::ControlRestored { saved_field: 2 })
+            .advance(PhyRxDcCalibrationCompletion::ControlRestored)
             .unwrap();
         let PhyRxDcCalibrationAction::Complete(outcome) = transition.action() else {
             panic!("calibration did not complete");
@@ -2451,24 +2402,20 @@ mod tests {
     fn child_failure_uses_initial_configuration_for_cleanup() {
         let mut transition = PhyRxDcCalibrationTransition::new(RADIO);
         transition.step = Step::Minimum {
-            saved_field: 0,
             high: false,
             transition: PhyRxDcMinimumTransition::new(transition.minimum_request(false)),
         };
-        transition.fail(
-            0,
-            PhyRxDcCalibrationFailure::Minimum(PhyRxDcMinimumFailure::DcIq(
-                crate::phy_dc_iq::PhyDcIqFailure::ReadinessTimedOut {
-                    request: crate::phy_dc_iq::PhyDcIqEstimateRequest {
-                        iteration: 0,
-                        chain: 1,
-                        control: RADIO.control,
-                        mode: 0,
-                    },
-                    readiness_activity_edges: 0,
+        transition.fail(PhyRxDcCalibrationFailure::Minimum(
+            PhyRxDcMinimumFailure::DcIq(crate::phy_dc_iq::PhyDcIqFailure::ReadinessTimedOut {
+                request: crate::phy_dc_iq::PhyDcIqEstimateRequest {
+                    iteration: 0,
+                    chain: 1,
+                    control: RADIO.control,
+                    mode: 0,
                 },
-            )),
-        );
+                readiness_activity_edges: 0,
+            }),
+        ));
         assert_eq!(
             transition.action(),
             PhyRxDcCalibrationAction::ForcePbus(PhyPbusForceTest::new(2, 2, RADIO.initial[0]))

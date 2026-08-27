@@ -100,12 +100,30 @@ pub enum TxIqToneControlRestoreError {
     RestoreNotPending,
 }
 
+/// Preparing an RX-DCO control restore was rejected before register access.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RxDcoControlPrepareError {
+    /// A different calibration owns the shared restore slot.
+    RestorePending,
+    /// Both reviewed RX-DCO nesting levels already own saved fields.
+    RestoreStackFull,
+}
+
+/// Restoring RX-DCO control was rejected before register access.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RxDcoControlRestoreError {
+    /// No RX-DCO control field is awaiting restoration.
+    RestoreNotPending,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
 enum RadioPhyRestoreKind {
     Empty,
     TxDcPwdet,
     TxIqToneControl,
+    RxDcoControlOne,
+    RxDcoControlTwo,
 }
 
 /// One private restore authority shared by mutually exclusive PHY calibrations.
@@ -133,6 +151,13 @@ impl RadioPhyRestoreSlot {
 
     pub(super) const fn txiq_pending(&self) -> bool {
         matches!(self.kind, RadioPhyRestoreKind::TxIqToneControl)
+    }
+
+    pub(super) const fn rx_dco_pending(&self) -> bool {
+        matches!(
+            self.kind,
+            RadioPhyRestoreKind::RxDcoControlOne | RadioPhyRestoreKind::RxDcoControlTwo
+        )
     }
 
     fn prepare_txdc_with<Captured, Capture, Prepare>(
@@ -203,6 +228,44 @@ impl RadioPhyRestoreSlot {
         Ok(())
     }
 
+    pub(super) fn prepare_rx_dco_with<Capture>(
+        &mut self,
+        capture: Capture,
+    ) -> Result<(), RxDcoControlPrepareError>
+    where
+        Capture: FnOnce() -> u8,
+    {
+        let (index, next_kind) = match self.kind {
+            RadioPhyRestoreKind::Empty => (0, RadioPhyRestoreKind::RxDcoControlOne),
+            RadioPhyRestoreKind::RxDcoControlOne => (1, RadioPhyRestoreKind::RxDcoControlTwo),
+            RadioPhyRestoreKind::RxDcoControlTwo => {
+                return Err(RxDcoControlPrepareError::RestoreStackFull);
+            }
+            _ => return Err(RxDcoControlPrepareError::RestorePending),
+        };
+        self.payload[index] = capture();
+        self.kind = next_kind;
+        Ok(())
+    }
+
+    pub(super) fn restore_rx_dco_with<Restore>(
+        &mut self,
+        restore: Restore,
+    ) -> Result<(), RxDcoControlRestoreError>
+    where
+        Restore: FnOnce(u8),
+    {
+        let (index, next_kind) = match self.kind {
+            RadioPhyRestoreKind::RxDcoControlOne => (0, RadioPhyRestoreKind::Empty),
+            RadioPhyRestoreKind::RxDcoControlTwo => (1, RadioPhyRestoreKind::RxDcoControlOne),
+            _ => return Err(RxDcoControlRestoreError::RestoreNotPending),
+        };
+        restore(self.payload[index]);
+        self.payload[index] = 0;
+        self.kind = next_kind;
+        Ok(())
+    }
+
     #[cfg(test)]
     pub(super) fn occupy_txdc_for_test(&mut self) {
         self.kind = RadioPhyRestoreKind::TxDcPwdet;
@@ -212,6 +275,12 @@ impl RadioPhyRestoreSlot {
     #[cfg(test)]
     pub(super) fn occupy_txiq_for_test(&mut self) {
         self.kind = RadioPhyRestoreKind::TxIqToneControl;
+        self.payload = [0; 4];
+    }
+
+    #[cfg(test)]
+    pub(super) fn occupy_rx_dco_for_test(&mut self) {
+        self.kind = RadioPhyRestoreKind::RxDcoControlOne;
         self.payload = [0; 4];
     }
 }
@@ -280,6 +349,15 @@ impl RadioPhyRegisters {
     #[cfg(test)]
     pub(crate) fn occupy_txiq_tone_control_restore_for_test(&mut self) {
         self.restore_slot.occupy_txiq_for_test();
+    }
+
+    pub(crate) const fn rx_dco_control_restore_pending(&self) -> bool {
+        self.restore_slot.rx_dco_pending()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn occupy_rx_dco_control_restore_for_test(&mut self) {
+        self.restore_slot.occupy_rx_dco_for_test();
     }
 
     /// Enable both RX- and TX-IQ correction modes through two fresh RMWs.
@@ -1158,7 +1236,8 @@ impl RadioPhyRegisters {
 #[cfg(test)]
 mod tests {
     use super::{
-        RadioPhyRestoreSlot, TxDcPwdetPrepareError, TxDcPwdetRestoreError, TxDcPwdetRestoreFields,
+        RadioPhyRestoreSlot, RxDcoControlPrepareError, RxDcoControlRestoreError,
+        TxDcPwdetPrepareError, TxDcPwdetRestoreError, TxDcPwdetRestoreFields,
         TxIqToneControlPrepareError, TxIqToneControlRestoreError, decode_noise_floor_quarter_db,
         quarter_db_to_dbm,
     };
@@ -1250,6 +1329,31 @@ mod tests {
             rejected,
             Err(TxIqToneControlRestoreError::RestoreNotPending)
         );
+    }
+
+    #[test]
+    fn rx_dco_restore_slot_is_a_bounded_lifo_and_excludes_other_calibrations() {
+        let mut slot = RadioPhyRestoreSlot::new();
+        slot.prepare_rx_dco_with(|| 1).unwrap();
+        slot.prepare_rx_dco_with(|| 2).unwrap();
+
+        let rejected = slot.prepare_rx_dco_with(|| panic!("full stack must not capture"));
+        assert_eq!(rejected, Err(RxDcoControlPrepareError::RestoreStackFull));
+        let rejected = slot.prepare_txiq_with(|| panic!("RX-DCO must exclude TX-IQ capture"));
+        assert_eq!(rejected, Err(TxIqToneControlPrepareError::RestorePending));
+
+        let restored = RefCell::new(Vec::new());
+        slot.restore_rx_dco_with(|field| restored.borrow_mut().push(field))
+            .unwrap();
+        assert!(slot.rx_dco_pending());
+        slot.restore_rx_dco_with(|field| restored.borrow_mut().push(field))
+            .unwrap();
+        assert_eq!(restored.borrow().as_slice(), [2, 1]);
+        assert!(!slot.rx_dco_pending());
+
+        let rejected =
+            slot.restore_rx_dco_with(|_| panic!("empty stack must not write the register"));
+        assert_eq!(rejected, Err(RxDcoControlRestoreError::RestoreNotPending));
     }
 
     #[test]

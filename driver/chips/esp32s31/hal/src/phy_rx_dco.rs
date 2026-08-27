@@ -8,25 +8,28 @@
 #[cfg(target_arch = "riscv32")]
 use crate::{SharedPhyAccess, phy_pac_mut};
 
-/// Capture and clear the two RX-DCO calibration-control bits.
+/// Retain and clear the RX-DCO calibration-control field inside PAC.
 ///
 /// Complete pinned `phy_xtal_duty_cal` saves bits 23:22 and clears them with
-/// one fresh read before entering the nested RX-DCO measurement. The returned
-/// value is the generated two-bit field value, with no physical register
-/// identity exposed to the caller.
+/// one fresh read before entering the nested RX-DCO measurement. PAC owns the
+/// saved field and supports the two reviewed nesting levels.
 #[cfg(target_arch = "riscv32")]
-pub fn capture_and_clear_control(registers: &mut impl SharedPhyAccess) -> u8 {
+pub fn prepare_control_restore(
+    registers: &mut impl SharedPhyAccess,
+) -> Result<(), open_esp_radio_esp32s31_pac::RxDcoControlPrepareError> {
     let registers = phy_pac_mut(registers);
-    registers.capture_and_clear_rx_dco_control()
+    registers.prepare_rx_dco_control_restore()
 }
 
 /// Restore the captured RX-DCO calibration-control bits.
 ///
 /// Complete pinned `phy_xtal_duty_cal` performs one fresh read and replaces
-/// only the generated field after the nested measurement, preserving every
-/// unrelated hardware bit.
+/// only the generated field after the nested measurement. The saved value
+/// never leaves PAC.
 #[cfg(target_arch = "riscv32")]
-pub fn restore_control(registers: &mut impl SharedPhyAccess, saved_field: u8) {
+pub fn restore_control(
+    registers: &mut impl SharedPhyAccess,
+) -> Result<(), open_esp_radio_esp32s31_pac::RxDcoControlRestoreError> {
     let registers = phy_pac_mut(registers);
-    registers.restore_rx_dco_control(saved_field);
+    registers.restore_rx_dco_control()
 }

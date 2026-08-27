@@ -2,24 +2,29 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioPhyRegisters;
+use super::{RadioPhyRegisters, RxDcoControlPrepareError, RxDcoControlRestoreError};
 
 impl RadioPhyRegisters {
-    /// Capture and clear the two RX-DCO control bits through two fresh reads.
-    pub fn capture_and_clear_rx_dco_control(&mut self) -> u8 {
+    /// Retain and clear the RX-DCO control field through two fresh reads.
+    ///
+    /// The private PAC restore slot is a two-entry LIFO because the crystal
+    /// duty operation masks this field around a nested RX-DCO calibration
+    /// which independently performs the same save/clear/restore sequence.
+    pub fn prepare_rx_dco_control_restore(&mut self) -> Result<(), RxDcoControlPrepareError> {
         let control = self.peripherals.phy_rx_dco_oracle.control();
-        let saved = control.read().calibration_control_unknown().bits();
-        control.modify(|_, w| w.calibration_control_unknown().set(0));
-        saved
+        self.restore_slot.prepare_rx_dco_with(|| {
+            let saved = control.read().calibration_control_unknown().bits();
+            control.modify(|_, w| w.calibration_control_unknown().set(0));
+            saved
+        })
     }
 
-    /// Restore only the captured RX-DCO control field through one fresh RMW.
-    pub fn restore_rx_dco_control(&mut self, saved_field: u8) {
-        debug_assert!(saved_field <= 3);
-        self.peripherals
-            .phy_rx_dco_oracle
-            .control()
-            .modify(|_, w| w.calibration_control_unknown().set(saved_field & 3));
+    /// Restore the most recently retained RX-DCO control field.
+    pub fn restore_rx_dco_control(&mut self) -> Result<(), RxDcoControlRestoreError> {
+        let control = self.peripherals.phy_rx_dco_oracle.control();
+        self.restore_slot.restore_rx_dco_with(|saved| {
+            control.modify(|_, w| w.calibration_control_unknown().set(saved));
+        })
     }
 
     /// Sample the full-width counter used by the SDM-stability deadline.

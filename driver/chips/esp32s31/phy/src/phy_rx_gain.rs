@@ -709,9 +709,9 @@ pub enum PhyRxGainInitFailure {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyRxGainInitAction {
-    CaptureAndClearDcControl,
+    PrepareDcControlRestore,
     Dc(PhyRxGainDcAction),
-    RestoreDcControl { saved_field: u8 },
+    RestoreDcControl,
     Publish(PhyRxGainPublishAction),
     ConfigureLimits { wifi_last_index: u8 },
     EnableIqCorrection,
@@ -721,9 +721,9 @@ pub enum PhyRxGainInitAction {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyRxGainInitCompletion {
-    DcControlCleared { saved_field: u8 },
+    DcControlRestorePrepared,
     Dc(PhyRxGainDcCompletion),
-    DcControlRestored { saved_field: u8 },
+    DcControlRestored,
     Publish(PhyRxGainPublishCompletion),
     LimitsConfigured { wifi_last_index: u8 },
     IqCorrectionEnabled,
@@ -741,15 +741,10 @@ pub enum PhyRxGainInitTransitionError {
     reason = "the allocation-free RX-gain owner retains one bounded child transition"
 )]
 enum InitStep {
-    CaptureDcControl,
-    Dc {
-        saved_field: u8,
-        transition: PhyRxGainDcTransition,
-    },
-    RestoreDcControl {
-        saved_field: u8,
-        outcome: PhyRxGainDcOutcome,
-    },
+    PrepareDcControlRestore,
+    Dc(PhyRxGainDcTransition),
+    RestoreDcControl { outcome: PhyRxGainDcOutcome },
+    RestoreDcControlAfterFailure(PhyRxGainDcFailure),
     Publish(PhyRxGainPublishTransition),
     Limits,
     IqCorrection,
@@ -782,7 +777,7 @@ impl PhyRxGainInitTransition {
         } else if parameters.dc_calibrated {
             InitStep::Publish(PhyRxGainPublishTransition::new(parameters.memory))
         } else {
-            InitStep::CaptureDcControl
+            InitStep::PrepareDcControlRestore
         };
         Self {
             parameters,
@@ -808,10 +803,10 @@ impl PhyRxGainInitTransition {
 
     pub fn action(&self) -> PhyRxGainInitAction {
         match self.step {
-            InitStep::CaptureDcControl => PhyRxGainInitAction::CaptureAndClearDcControl,
-            InitStep::Dc { transition, .. } => PhyRxGainInitAction::Dc(transition.action()),
-            InitStep::RestoreDcControl { saved_field, .. } => {
-                PhyRxGainInitAction::RestoreDcControl { saved_field }
+            InitStep::PrepareDcControlRestore => PhyRxGainInitAction::PrepareDcControlRestore,
+            InitStep::Dc(transition) => PhyRxGainInitAction::Dc(transition.action()),
+            InitStep::RestoreDcControl { .. } | InitStep::RestoreDcControlAfterFailure(_) => {
+                PhyRxGainInitAction::RestoreDcControl
             }
             InitStep::Publish(transition) => PhyRxGainInitAction::Publish(transition.action()),
             InitStep::Limits => PhyRxGainInitAction::ConfigureLimits {
@@ -834,55 +829,39 @@ impl PhyRxGainInitTransition {
     ) -> Result<(), PhyRxGainInitTransitionError> {
         match (self.step, completion) {
             (
-                InitStep::CaptureDcControl,
-                PhyRxGainInitCompletion::DcControlCleared { saved_field },
+                InitStep::PrepareDcControlRestore,
+                PhyRxGainInitCompletion::DcControlRestorePrepared,
             ) => {
-                self.step = InitStep::Dc {
-                    saved_field,
-                    transition: PhyRxGainDcTransition::new(self.parameters.dc),
-                };
+                self.step = InitStep::Dc(PhyRxGainDcTransition::new(self.parameters.dc));
             }
-            (
-                InitStep::Dc {
-                    saved_field,
-                    mut transition,
-                },
-                PhyRxGainInitCompletion::Dc(completion),
-            ) => {
+            (InitStep::Dc(mut transition), PhyRxGainInitCompletion::Dc(completion)) => {
                 transition
                     .advance(completion)
                     .map_err(|_| PhyRxGainInitTransitionError::WrongCompletion)?;
                 match transition.action() {
                     PhyRxGainDcAction::Complete(outcome) => {
-                        self.step = InitStep::RestoreDcControl {
-                            saved_field,
-                            outcome,
-                        };
+                        self.step = InitStep::RestoreDcControl { outcome };
                     }
                     PhyRxGainDcAction::Failed(failure) => {
-                        self.step = InitStep::Failed(PhyRxGainInitFailure::Dc(failure));
+                        self.step = InitStep::RestoreDcControlAfterFailure(failure);
                     }
-                    _ => {
-                        self.step = InitStep::Dc {
-                            saved_field,
-                            transition,
-                        };
-                    }
+                    _ => self.step = InitStep::Dc(transition),
                 }
             }
             (
-                InitStep::RestoreDcControl {
-                    saved_field,
-                    outcome,
-                },
-                PhyRxGainInitCompletion::DcControlRestored {
-                    saved_field: completed_field,
-                },
-            ) if completed_field == saved_field => {
+                InitStep::RestoreDcControl { outcome },
+                PhyRxGainInitCompletion::DcControlRestored,
+            ) => {
                 self.dc_outcome = Some(outcome);
                 self.step = InitStep::Publish(PhyRxGainPublishTransition::new(
                     self.memory_with_dc(outcome),
                 ));
+            }
+            (
+                InitStep::RestoreDcControlAfterFailure(failure),
+                PhyRxGainInitCompletion::DcControlRestored,
+            ) => {
+                self.step = InitStep::Failed(PhyRxGainInitFailure::Dc(failure));
             }
             (InitStep::Publish(mut transition), PhyRxGainInitCompletion::Publish(completion)) => {
                 transition
@@ -922,6 +901,13 @@ pub enum PhyRxGainInitBindingError {
     NotDirectMmio,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyRxGainInitHardwareInvariant {
+    RestoreOwnedByOtherCalibration,
+    RestoreNestingExceeded,
+    RestoreNotPending,
+}
+
 /// Non-cloneable identity token for the three direct-MMIO root operations.
 #[derive(Debug, Eq, PartialEq)]
 pub struct PhyRxGainInitMmioBinding {
@@ -931,8 +917,8 @@ pub struct PhyRxGainInitMmioBinding {
 impl PhyRxGainInitMmioBinding {
     pub fn new(action: PhyRxGainInitAction) -> Result<Self, PhyRxGainInitBindingError> {
         match action {
-            PhyRxGainInitAction::CaptureAndClearDcControl
-            | PhyRxGainInitAction::RestoreDcControl { .. }
+            PhyRxGainInitAction::PrepareDcControlRestore
+            | PhyRxGainInitAction::RestoreDcControl
             | PhyRxGainInitAction::ConfigureLimits { .. }
             | PhyRxGainInitAction::EnableIqCorrection => Ok(Self { action }),
             _ => Err(PhyRxGainInitBindingError::NotDirectMmio),
@@ -947,27 +933,35 @@ impl PhyRxGainInitMmioBinding {
     pub fn execute_target(
         self,
         registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
-    ) -> PhyRxGainInitCompletion {
+    ) -> Result<PhyRxGainInitCompletion, PhyRxGainInitHardwareInvariant> {
         match self.action {
-            PhyRxGainInitAction::CaptureAndClearDcControl => {
-                let saved_field =
-                    open_esp_radio_esp32s31_hal::phy_rx_dco::capture_and_clear_control(registers);
-                PhyRxGainInitCompletion::DcControlCleared { saved_field }
+            PhyRxGainInitAction::PrepareDcControlRestore => {
+                open_esp_radio_esp32s31_hal::phy_rx_dco::prepare_control_restore(registers)
+                    .map_err(|error| match error {
+                        open_esp_radio_esp32s31_hal::types::RxDcoControlPrepareError::RestorePending => {
+                            PhyRxGainInitHardwareInvariant::RestoreOwnedByOtherCalibration
+                        }
+                        open_esp_radio_esp32s31_hal::types::RxDcoControlPrepareError::RestoreStackFull => {
+                            PhyRxGainInitHardwareInvariant::RestoreNestingExceeded
+                        }
+                    })?;
+                Ok(PhyRxGainInitCompletion::DcControlRestorePrepared)
             }
-            PhyRxGainInitAction::RestoreDcControl { saved_field } => {
-                open_esp_radio_esp32s31_hal::phy_rx_dco::restore_control(registers, saved_field);
-                PhyRxGainInitCompletion::DcControlRestored { saved_field }
+            PhyRxGainInitAction::RestoreDcControl => {
+                open_esp_radio_esp32s31_hal::phy_rx_dco::restore_control(registers)
+                    .map_err(|_| PhyRxGainInitHardwareInvariant::RestoreNotPending)?;
+                Ok(PhyRxGainInitCompletion::DcControlRestored)
             }
             PhyRxGainInitAction::ConfigureLimits { wifi_last_index } => {
                 open_esp_radio_esp32s31_hal::phy_agc::configure_rx_gain_limits(
                     registers,
                     wifi_last_index,
                 );
-                PhyRxGainInitCompletion::LimitsConfigured { wifi_last_index }
+                Ok(PhyRxGainInitCompletion::LimitsConfigured { wifi_last_index })
             }
             PhyRxGainInitAction::EnableIqCorrection => {
                 open_esp_radio_esp32s31_hal::phy_baseband::enable_iq_correction(registers);
-                PhyRxGainInitCompletion::IqCorrectionEnabled
+                Ok(PhyRxGainInitCompletion::IqCorrectionEnabled)
             }
             _ => unreachable!(),
         }
@@ -1013,6 +1007,19 @@ mod tests {
             shared_index_dc: [[0x100; 2]; 11],
             rxbb_dc_adjustments: [[0; 2]; 6],
             wifi_auxiliary: 0,
+        }
+    }
+
+    fn init_parameters() -> PhyRxGainInitParameters {
+        PhyRxGainInitParameters {
+            dc_calibrated: false,
+            tables_initialized: false,
+            dc: PhyRxGainDcParameters {
+                crystal_selector: 0,
+                pbus_rx_path_value: 0,
+                rx_saturation_detected: false,
+            },
+            memory: parameters(),
         }
     }
 
@@ -1116,6 +1123,25 @@ mod tests {
                 bank,
                 transaction,
             })
+        );
+    }
+
+    #[test]
+    fn nested_dc_failure_restores_outer_control_before_becoming_terminal() {
+        let failure = PhyRxGainDcFailure::Pbus {
+            bank: crate::phy_rx_gain_cal::PhyRxGainDcBank::Wifi,
+            transaction: crate::phy_pbus::PhyPbusForceTest::new(2, 1, 0x100),
+        };
+        let mut transition = PhyRxGainInitTransition::new(init_parameters());
+        transition.step = InitStep::RestoreDcControlAfterFailure(failure);
+
+        assert_eq!(transition.action(), PhyRxGainInitAction::RestoreDcControl);
+        transition
+            .advance(PhyRxGainInitCompletion::DcControlRestored)
+            .unwrap();
+        assert_eq!(
+            transition.action(),
+            PhyRxGainInitAction::Failed(PhyRxGainInitFailure::Dc(failure))
         );
     }
 

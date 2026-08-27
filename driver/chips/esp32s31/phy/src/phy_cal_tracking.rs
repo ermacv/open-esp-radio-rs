@@ -1733,7 +1733,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             child.action(),
-            crate::phy_rx_gain::PhyRxGainInitAction::CaptureAndClearDcControl
+            crate::phy_rx_gain::PhyRxGainInitAction::PrepareDcControlRestore
         );
         assert!(matches!(
             child.lower_external(),

@@ -1130,7 +1130,9 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         registers: &mut impl SharedPhyAccess,
     ) -> Result<PhyRxDcoCompletion, PhyTargetPortError> {
         match binding {
-            PhyRxDcoExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
+            PhyRxDcoExternalBinding::Mmio(binding) => binding
+                .execute_target(registers)
+                .map_err(|_| PhyTargetPortError::HardwareInvariant),
             PhyRxDcoExternalBinding::Pbus(binding) => {
                 complete_rx_dco_pbus::<D>(binding, registers).await
             }
@@ -1300,9 +1302,9 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         registers: &mut impl SharedPhyContext,
     ) -> Result<PhyRxDcCalibrationCompletion, PhyTargetPortError> {
         match binding {
-            PhyRxDcCalibrationExternalBinding::Mmio(binding) => {
-                Ok(binding.execute_target(registers))
-            }
+            PhyRxDcCalibrationExternalBinding::Mmio(binding) => binding
+                .execute_target(registers)
+                .map_err(|_| PhyTargetPortError::HardwareInvariant),
             PhyRxDcCalibrationExternalBinding::Pbus(binding) => {
                 complete_rx_dc_calibration_pbus::<D>(binding, registers).await
             }
@@ -1371,7 +1373,9 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         registers: &mut impl SharedPhyContext,
     ) -> Result<PhyRxGainInitCompletion, PhyTargetPortError> {
         match binding {
-            PhyRxGainInitExternalBinding::Mmio(binding) => Ok(binding.execute_target(registers)),
+            PhyRxGainInitExternalBinding::Mmio(binding) => binding
+                .execute_target(registers)
+                .map_err(|_| PhyTargetPortError::HardwareInvariant),
             PhyRxGainInitExternalBinding::Dc(binding) => Ok(PhyRxGainInitCompletion::Dc(
                 Self::complete_rx_gain_dc(binding, platform, registers).await?,
             )),

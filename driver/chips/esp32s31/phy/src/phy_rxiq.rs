@@ -3272,8 +3272,8 @@ mod tests {
 
     fn dco_completion(action: PhyRxDcoAction) -> PhyRxDcoCompletion {
         match action {
-            PhyRxDcoAction::MaskRxDcoControl => {
-                PhyRxDcoCompletion::RxDcoControlMasked { saved_field: 0 }
+            PhyRxDcoAction::PrepareRxDcoControlRestore => {
+                PhyRxDcoCompletion::RxDcoControlRestorePrepared
             }
             PhyRxDcoAction::ReadPbus { selector, path } => PhyRxDcoCompletion::PbusRead {
                 selector,
@@ -3287,9 +3287,7 @@ mod tests {
                 PhyRxDcoCompletion::DelayElapsed { iteration, micros }
             }
             PhyRxDcoAction::DcIq(action) => PhyRxDcoCompletion::DcIq(dc_iq_completion(action)),
-            PhyRxDcoAction::RestoreRxDcoControl { saved_field } => {
-                PhyRxDcoCompletion::RxDcoControlRestored { saved_field }
-            }
+            PhyRxDcoAction::RestoreRxDcoControl => PhyRxDcoCompletion::RxDcoControlRestored,
             action => panic!("unexpected RX-DCO terminal: {action:?}"),
         }
     }
@@ -3682,7 +3680,7 @@ mod tests {
         ));
         assert!(matches!(
             PhyRxIqGainExternalBinding::lower(PhyRxIqGainAction::Dco(
-                PhyRxDcoAction::MaskRxDcoControl
+                PhyRxDcoAction::PrepareRxDcoControlRestore
             )),
             Ok(PhyRxIqGainExternalBinding::Dco(_))
         ));

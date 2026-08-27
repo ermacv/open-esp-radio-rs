@@ -3043,8 +3043,8 @@ mod tests {
 
     fn complete_rx_dco(action: PhyRxDcoAction) -> PhyRxDcoCompletion {
         match action {
-            PhyRxDcoAction::MaskRxDcoControl => {
-                PhyRxDcoCompletion::RxDcoControlMasked { saved_field: 0 }
+            PhyRxDcoAction::PrepareRxDcoControlRestore => {
+                PhyRxDcoCompletion::RxDcoControlRestorePrepared
             }
             PhyRxDcoAction::ReadPbus { selector, path } => PhyRxDcoCompletion::PbusRead {
                 selector,
@@ -3058,9 +3058,7 @@ mod tests {
                 PhyRxDcoCompletion::DelayElapsed { iteration, micros }
             }
             PhyRxDcoAction::DcIq(action) => PhyRxDcoCompletion::DcIq(complete_dc_iq(action)),
-            PhyRxDcoAction::RestoreRxDcoControl { saved_field } => {
-                PhyRxDcoCompletion::RxDcoControlRestored { saved_field }
-            }
+            PhyRxDcoAction::RestoreRxDcoControl => PhyRxDcoCompletion::RxDcoControlRestored,
             action => panic!("unexpected terminal RX-DCO action: {action:?}"),
         }
     }
@@ -3143,14 +3141,14 @@ mod tests {
             XtalDutyPrepareAction::ForcePbus(transaction) => {
                 XtalDutyPrepareCompletion::PbusForceCompleted(transaction)
             }
-            XtalDutyPrepareAction::MaskRxDcoControl => {
-                XtalDutyPrepareCompletion::RxDcoControlMasked { saved_field: 1 }
+            XtalDutyPrepareAction::PrepareRxDcoControlRestore => {
+                XtalDutyPrepareCompletion::RxDcoControlRestorePrepared
             }
             XtalDutyPrepareAction::RxDco(action) => {
                 XtalDutyPrepareCompletion::RxDco(complete_rx_dco(action))
             }
-            XtalDutyPrepareAction::RestoreRxDcoControl { saved_field } => {
-                XtalDutyPrepareCompletion::RxDcoControlRestored { saved_field }
+            XtalDutyPrepareAction::RestoreRxDcoControl => {
+                XtalDutyPrepareCompletion::RxDcoControlRestored
             }
             action => panic!("unexpected terminal preparation action: {action:?}"),
         }

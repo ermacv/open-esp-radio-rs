@@ -835,7 +835,7 @@ impl<P> Radio<P, state::Owned> {
     /// # Errors
     ///
     /// Returns [`RadioReleaseFailure`] with this complete radio owner when a
-    /// pending TX-DC PWDET operation or TX-IQ calibration must restore its
+    /// pending TX-DC PWDET, TX-IQ, or RX-DCO calibration must restore its
     /// PAC-owned state first.
     pub fn release(self) -> Result<(P, RadioHardware), RadioReleaseFailure<P>> {
         let Self { peripheral, state } = self;

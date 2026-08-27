@@ -4,25 +4,26 @@ use crate::{SharedPhyAccess, phy_pac, phy_pac_mut};
 pub use open_esp_radio_esp32s31_pac::{
     BluetoothTxPowerControlAction, BluetoothTxPowerControlCompletion, BluetoothTxPowerControlError,
     BluetoothTxPowerControlObservation, BluetoothTxPowerControlOperation,
-    BluetoothTxPowerControlTransaction, PhyFilterDcapAction, PhyFilterDcapError,
-    PhyFilterDcapInputs, PhyFilterDcapObservation, PhyFilterDcapTransaction,
-    PhyI2cCommandMemoryInputs, PhyI2cHost,
+    BluetoothTxPowerControlTransaction, PhyFilterDcapInputs, PhyI2cCommandMemoryInputs,
+    PhyI2cConfigurationAction, PhyI2cConfigurationError, PhyI2cConfigurationObservation,
+    PhyI2cConfigurationOperation, PhyI2cConfigurationTransaction, PhyI2cHost,
+    PhyI2cInitializationStageOneInputs,
 };
 
-/// Start the current command of one PAC-owned filter-DCAP transaction.
-pub fn start_filter_dcap(
-    transaction: &mut PhyFilterDcapTransaction,
+/// Start the current command of one PAC-owned PHY-I²C configuration.
+pub fn start_configuration(
+    transaction: &mut PhyI2cConfigurationTransaction,
     registers: &mut impl SharedPhyAccess,
-) -> Result<(), PhyFilterDcapError> {
+) -> Result<(), PhyI2cConfigurationError> {
     transaction.start(phy_pac_mut(registers))
 }
 
-/// Consume one filter-DCAP completion edge without exposing analog-register
+/// Consume one configuration-completion edge without exposing analog-register
 /// identities or value encodings outside the PAC.
-pub fn observe_filter_dcap(
-    transaction: &mut PhyFilterDcapTransaction,
+pub fn observe_configuration(
+    transaction: &mut PhyI2cConfigurationTransaction,
     registers: &mut impl SharedPhyAccess,
-) -> Result<PhyFilterDcapObservation, PhyFilterDcapError> {
+) -> Result<PhyI2cConfigurationObservation, PhyI2cConfigurationError> {
     transaction.observe_completion_edge(phy_pac_mut(registers))
 }
 

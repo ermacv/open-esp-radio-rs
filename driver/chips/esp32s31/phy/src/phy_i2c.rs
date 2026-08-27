@@ -1161,10 +1161,6 @@ impl FilterDcapParameters {
         }
     }
 
-    pub const fn parameter_ee(self) -> u8 {
-        self.parameter_ee
-    }
-
     pub(crate) const fn pac_inputs(
         self,
     ) -> open_esp_radio_esp32s31_hal::phy_i2c::PhyFilterDcapInputs {
@@ -1266,99 +1262,69 @@ impl PhyRfInitParameterSnapshot {
             parameter_18e,
         }
     }
+
+    pub(crate) const fn pac_initialization_stage_one_inputs(
+        self,
+    ) -> open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cInitializationStageOneInputs {
+        open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cInitializationStageOneInputs::new(
+            self.parameter_18e,
+            self.filter_dcap.parameter_ee,
+        )
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum I2cInit1Action {
-    Write { address: PhyI2cAddress, value: u8 },
+    Configure(PhyRfInitParameterSnapshot),
     Complete,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum I2cInit1Completion {
-    WriteCompleted { address: PhyI2cAddress },
+    Configured,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum I2cInit1TransitionError {
-    WrongCompletion,
     AlreadyComplete,
 }
 
-/// Exact finite 26-write plan recovered from
-/// `libphy.a[phy_i2c.o]::phy_i2c_init1`.
+/// Semantic owner of complete `libphy.a[phy_i2c.o]::phy_i2c_init1`.
 ///
-/// The vendor body reads `phy_param[0x18e]` and `phy_param[0xee]`. This
-/// transition receives both through an owned snapshot and binds every write
-/// completion to the address that was published.
+/// The PAC owns the finite write plan. This transition receives the two
+/// dynamic vendor facts through an owned snapshot without exposing any analog
+/// register geometry.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct I2cInit1Transition {
     parameter: PhyRfInitParameterSnapshot,
-    index: u8,
+    complete: bool,
 }
 
 impl I2cInit1Transition {
     pub const fn new(parameter: PhyRfInitParameterSnapshot) -> Self {
         Self {
             parameter,
-            index: 0,
-        }
-    }
-
-    const fn write(block: u8, register: u8, value: u8) -> I2cInit1Action {
-        I2cInit1Action::Write {
-            address: PhyI2cAddress { block, register },
-            value,
+            complete: false,
         }
     }
 
     pub const fn action(self) -> I2cInit1Action {
-        let parameter_ee_plus_two = self.parameter.filter_dcap().parameter_ee().wrapping_add(2);
-        match self.index {
-            0 => Self::write(0x6b, 0x01, 0x01),
-            1 => Self::write(0x6b, 0x02, 0x73),
-            2 => Self::write(0x6b, 0x03, 0xba),
-            3 => Self::write(0x6b, 0x04, 0x88),
-            4 => Self::write(0x6b, 0x0e, 0xf4),
-            5 => Self::write(0x6b, 0x09, 0x02),
-            6 => Self::write(0x6b, 0x07, 0xfd),
-            7 => Self::write(0x6b, 0x08, 0xbb),
-            8 => Self::write(0x6b, 0x05, 0x01),
-            9 => Self::write(0x6b, 0x06, 0x11),
-            10 => Self::write(0x6b, 0x0c, 0xa7),
-            11 => Self::write(0x6b, 0x0d, 0x7a),
-            12 => Self::write(0x6b, 0x0a, 0x08),
-            13 => Self::write(0x6b, 0x0b, 0x04),
-            14 => Self::write(0x6b, 0x0f, 0x81),
-            15 => Self::write(0x62, 0x00, 0x68),
-            16 => Self::write(0x62, 0x04, 0xa8),
-            17 => Self::write(0x62, 0x0f, self.parameter.parameter_18e()),
-            18 => Self::write(0x62, 0x0b, 0x44),
-            19 => Self::write(0x62, 0x15, 0x08),
-            20 => Self::write(0x63, 0x06, 0x00),
-            21 => Self::write(0x62, 0x0d, 0x0a),
-            22 => Self::write(0x67, 0x02, 0x27),
-            23 => Self::write(0x66, 0x02, 0x70),
-            24 => Self::write(0x67, 0x18, parameter_ee_plus_two),
-            25 => Self::write(0x67, 0x19, parameter_ee_plus_two),
-            _ => I2cInit1Action::Complete,
+        if self.complete {
+            I2cInit1Action::Complete
+        } else {
+            I2cInit1Action::Configure(self.parameter)
         }
     }
 
     pub fn advance(
         &mut self,
-        completion: I2cInit1Completion,
+        _completion: I2cInit1Completion,
     ) -> Result<(), I2cInit1TransitionError> {
-        match (self.action(), completion) {
-            (
-                I2cInit1Action::Write { address, .. },
-                I2cInit1Completion::WriteCompleted { address: completed },
-            ) if address == completed => {
-                self.index += 1;
-                Ok(())
-            }
-            (I2cInit1Action::Complete, _) => Err(I2cInit1TransitionError::AlreadyComplete),
-            _ => Err(I2cInit1TransitionError::WrongCompletion),
+        if self.complete {
+            Err(I2cInit1TransitionError::AlreadyComplete)
+        } else {
+            self.complete = true;
+            Ok(())
         }
     }
 }
@@ -3478,54 +3444,15 @@ mod tests {
     }
 
     #[test]
-    fn i2c_init1_owns_both_dynamic_parameters_and_all_26_writes() {
+    fn i2c_init1_exposes_one_semantic_operation() {
         let filter = FilterDcapParameters::new(1, 2, 3, 0xfe, 5);
         let parameter = PhyRfInitParameterSnapshot::new(filter, 0x55);
         let mut transition = I2cInit1Transition::new(parameter);
-        let expected = [
-            (0x6b, 0x01, 0x01),
-            (0x6b, 0x02, 0x73),
-            (0x6b, 0x03, 0xba),
-            (0x6b, 0x04, 0x88),
-            (0x6b, 0x0e, 0xf4),
-            (0x6b, 0x09, 0x02),
-            (0x6b, 0x07, 0xfd),
-            (0x6b, 0x08, 0xbb),
-            (0x6b, 0x05, 0x01),
-            (0x6b, 0x06, 0x11),
-            (0x6b, 0x0c, 0xa7),
-            (0x6b, 0x0d, 0x7a),
-            (0x6b, 0x0a, 0x08),
-            (0x6b, 0x0b, 0x04),
-            (0x6b, 0x0f, 0x81),
-            (0x62, 0x00, 0x68),
-            (0x62, 0x04, 0xa8),
-            (0x62, 0x0f, 0x55),
-            (0x62, 0x0b, 0x44),
-            (0x62, 0x15, 0x08),
-            (0x63, 0x06, 0x00),
-            (0x62, 0x0d, 0x0a),
-            (0x67, 0x02, 0x27),
-            (0x66, 0x02, 0x70),
-            (0x67, 0x18, 0x00),
-            (0x67, 0x19, 0x00),
-        ];
-
-        for (block, register, value) in expected {
-            let address = PhyI2cAddress::new(block, register).unwrap();
-            assert_eq!(
-                transition.action(),
-                I2cInit1Action::Write { address, value }
-            );
-            transition
-                .advance(I2cInit1Completion::WriteCompleted { address })
-                .unwrap();
-        }
+        assert_eq!(transition.action(), I2cInit1Action::Configure(parameter));
+        transition.advance(I2cInit1Completion::Configured).unwrap();
         assert_eq!(transition.action(), I2cInit1Action::Complete);
         assert_eq!(
-            transition.advance(I2cInit1Completion::WriteCompleted {
-                address: PhyI2cAddress::new(0x67, 0x19).unwrap(),
-            }),
+            transition.advance(I2cInit1Completion::Configured),
             Err(I2cInit1TransitionError::AlreadyComplete)
         );
         assert_eq!(parameter.parameter_18e(), 0x55);
@@ -4187,15 +4114,15 @@ mod tests {
                 value: 0x55,
             })
             .unwrap();
-        while let PhyRfInitPrefixAction::I2cInit1(I2cInit1Action::Write { address, .. }) =
-            transition.action()
-        {
-            transition
-                .advance(PhyRfInitPrefixCompletion::I2cInit1(
-                    I2cInit1Completion::WriteCompleted { address },
-                ))
-                .unwrap();
-        }
+        assert!(matches!(
+            transition.action(),
+            PhyRfInitPrefixAction::I2cInit1(I2cInit1Action::Configure(_))
+        ));
+        transition
+            .advance(PhyRfInitPrefixCompletion::I2cInit1(
+                I2cInit1Completion::Configured,
+            ))
+            .unwrap();
         for _ in 0..3 {
             transition
                 .advance(PhyRfInitPrefixCompletion::RfpllChargePump(

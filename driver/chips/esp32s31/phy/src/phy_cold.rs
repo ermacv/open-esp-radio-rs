@@ -29,9 +29,9 @@ use crate::{
     },
     phy_i2c::{
         AdcRateAction, AdcRateCompletion, BiasRegAction, BiasRegCompletion, FilterDcapAction,
-        FilterDcapCompletion, FilterDcapParameters, I2cBbpllAction, I2cBbpllCompletion,
-        I2cInit1Action, I2cInit1Completion, MaskedI2cWriteAction, MaskedI2cWriteCompletion,
-        OpenI2cXpdAction, OpenI2cXpdCompletion, PhyI2cAddress, PhyI2cError, PhyRfInitPrefixAction,
+        FilterDcapCompletion, I2cBbpllAction, I2cBbpllCompletion, I2cInit1Action,
+        I2cInit1Completion, MaskedI2cWriteAction, MaskedI2cWriteCompletion, OpenI2cXpdAction,
+        OpenI2cXpdCompletion, PhyI2cAddress, PhyI2cError, PhyRfInitPrefixAction,
         PhyRfInitPrefixCompletion, PhyRfInitPrefixOutcome, PhyRfInitPrefixTransition,
         PhyRfInitPrefixTransitionError, RcCalibrationAction, RcCalibrationCompletion,
         RcCalibrationSetAction, RcCalibrationSetCompletion, RfpllChargePumpAction,
@@ -406,40 +406,38 @@ impl PhyColdI2cBinding {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PhyColdFilterDcapAction {
-    StartCommand,
-    AwaitCompletionEdge,
-    Complete,
-}
-
-/// Non-cloneable owner of the PAC-owned filter-DCAP transaction.
+/// Non-cloneable identity-bound owner of a PAC-owned PHY-I²C configuration.
 #[derive(Debug, Eq, PartialEq)]
-pub struct PhyColdFilterDcapBinding {
-    transaction: open_esp_radio_esp32s31_hal::phy_i2c::PhyFilterDcapTransaction,
+pub struct PhyColdI2cConfigurationBinding {
+    outer_action: PhyRfInitPrefixAction,
+    transaction: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cConfigurationTransaction,
 }
 
-impl PhyColdFilterDcapBinding {
-    pub const fn new(parameters: FilterDcapParameters) -> Self {
-        Self {
-            transaction: open_esp_radio_esp32s31_hal::phy_i2c::PhyFilterDcapTransaction::new(
-                parameters.pac_inputs(),
+impl PhyColdI2cConfigurationBinding {
+    pub const fn new(outer_action: PhyRfInitPrefixAction) -> Result<Self, PhyColdLoweringError> {
+        let operation = match outer_action {
+            PhyRfInitPrefixAction::FilterDcap(FilterDcapAction::Configure(parameters)) => {
+                open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cConfigurationOperation::FilterDcap(
+                    parameters.pac_inputs(),
+                )
+            }
+            PhyRfInitPrefixAction::I2cInit1(I2cInit1Action::Configure(parameters)) => {
+                open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cConfigurationOperation::InitializationStageOne(
+                    parameters.pac_initialization_stage_one_inputs(),
+                )
+            }
+            _ => return Err(PhyColdLoweringError::UnsupportedAction),
+        };
+        Ok(Self {
+            outer_action,
+            transaction: open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cConfigurationTransaction::new(
+                operation,
             ),
-        }
+        })
     }
 
-    pub const fn action(&self) -> PhyColdFilterDcapAction {
-        match self.transaction.action() {
-            open_esp_radio_esp32s31_hal::phy_i2c::PhyFilterDcapAction::StartCommand => {
-                PhyColdFilterDcapAction::StartCommand
-            }
-            open_esp_radio_esp32s31_hal::phy_i2c::PhyFilterDcapAction::AwaitCompletionEdge => {
-                PhyColdFilterDcapAction::AwaitCompletionEdge
-            }
-            open_esp_radio_esp32s31_hal::phy_i2c::PhyFilterDcapAction::Complete => {
-                PhyColdFilterDcapAction::Complete
-            }
-        }
+    pub const fn action(&self) -> open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cConfigurationAction {
+        self.transaction.action()
     }
 
     #[cfg(target_arch = "riscv32")]
@@ -447,9 +445,9 @@ impl PhyColdFilterDcapBinding {
         &mut self,
         platform: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> Result<(), PhyColdI2cError> {
-        open_esp_radio_esp32s31_hal::phy_i2c::start_filter_dcap(&mut self.transaction, platform)
+        open_esp_radio_esp32s31_hal::phy_i2c::start_configuration(&mut self.transaction, platform)
             .map_err(|error| match error {
-                open_esp_radio_esp32s31_hal::phy_i2c::PhyFilterDcapError::BusyAtStart => {
+                open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cConfigurationError::BusyAtStart => {
                     PhyColdI2cError::BusyAtStart
                 }
                 _ => PhyColdI2cError::WrongEdge,
@@ -461,23 +459,34 @@ impl PhyColdFilterDcapBinding {
         &mut self,
         platform: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> Result<PhyColdI2cObservation, PhyColdI2cError> {
-        open_esp_radio_esp32s31_hal::phy_i2c::observe_filter_dcap(&mut self.transaction, platform)
-            .map(|observation| match observation {
-                open_esp_radio_esp32s31_hal::phy_i2c::PhyFilterDcapObservation::StillPending => {
-                    PhyColdI2cObservation::StillPending
-                }
-                open_esp_radio_esp32s31_hal::phy_i2c::PhyFilterDcapObservation::EdgeConsumed => {
-                    PhyColdI2cObservation::EdgeConsumed
-                }
+        open_esp_radio_esp32s31_hal::phy_i2c::observe_configuration(&mut self.transaction, platform)
+            .map(|observation| {
+                match observation {
+            open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cConfigurationObservation::StillPending => {
+                PhyColdI2cObservation::StillPending
+            }
+            open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cConfigurationObservation::EdgeConsumed => {
+                PhyColdI2cObservation::EdgeConsumed
+            }
+        }
             })
             .map_err(|_| PhyColdI2cError::WrongEdge)
     }
 
-    pub fn into_completion(self) -> Result<FilterDcapCompletion, PhyColdLoweringError> {
-        if self.action() == PhyColdFilterDcapAction::Complete {
-            Ok(FilterDcapCompletion::Configured)
-        } else {
-            Err(PhyColdLoweringError::IncompleteTransaction)
+    pub fn into_completion(self) -> Result<PhyRfInitPrefixCompletion, PhyColdLoweringError> {
+        if self.action()
+            != open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cConfigurationAction::Complete
+        {
+            return Err(PhyColdLoweringError::IncompleteTransaction);
+        }
+        match self.outer_action {
+            PhyRfInitPrefixAction::FilterDcap(FilterDcapAction::Configure(_)) => Ok(
+                PhyRfInitPrefixCompletion::FilterDcap(FilterDcapCompletion::Configured),
+            ),
+            PhyRfInitPrefixAction::I2cInit1(I2cInit1Action::Configure(_)) => Ok(
+                PhyRfInitPrefixCompletion::I2cInit1(I2cInit1Completion::Configured),
+            ),
+            _ => Err(PhyColdLoweringError::UnexpectedOutcome),
         }
     }
 }
@@ -502,7 +511,6 @@ fn checked_masked_write(
 fn lower_prefix_i2c_request(action: PhyRfInitPrefixAction) -> Option<PhyColdI2cRequest> {
     match action {
         PhyRfInitPrefixAction::Bias(BiasRegAction::Write { address, value })
-        | PhyRfInitPrefixAction::I2cInit1(I2cInit1Action::Write { address, value })
         | PhyRfInitPrefixAction::Sar2Init(Sar2InitAction::WriteByte { address, value })
         | PhyRfInitPrefixAction::I2cBbpll(I2cBbpllAction::WriteByte { address, value })
         | PhyRfInitPrefixAction::AdcRate(AdcRateAction::WriteI2c { address, value })
@@ -758,12 +766,6 @@ fn lower_prefix_i2c_completion(
         ) if address == completed => {
             Some(PhyRfInitPrefixCompletion::Parameter18eRead { address, value })
         }
-        (
-            PhyRfInitPrefixAction::I2cInit1(I2cInit1Action::Write { address, .. }),
-            PhyColdI2cOutcome::Written { address: completed },
-        ) if address == completed => Some(PhyRfInitPrefixCompletion::I2cInit1(
-            I2cInit1Completion::WriteCompleted { address },
-        )),
         (
             PhyRfInitPrefixAction::RfpllChargePump(RfpllChargePumpAction::WriteMasked { .. }),
             PhyColdI2cOutcome::Written { .. },
@@ -1736,7 +1738,7 @@ impl PhyColdTimerBinding {
 /// generic vendor callback or synchronous fallback variant.
 #[derive(Debug, Eq, PartialEq)]
 pub enum PhyColdExternalBinding {
-    FilterDcap(PhyColdFilterDcapBinding),
+    I2cConfiguration(PhyColdI2cConfigurationBinding),
     I2c(PhyColdI2cBinding),
     Mmio(PhyColdMmioBinding),
     Observation(PhyColdObservationBinding),
@@ -1746,8 +1748,8 @@ pub enum PhyColdExternalBinding {
 
 impl PhyColdExternalBinding {
     pub fn lower(action: PhyRfInitPrefixAction) -> Result<Self, PhyColdLoweringError> {
-        if let PhyRfInitPrefixAction::FilterDcap(FilterDcapAction::Configure(parameters)) = action {
-            return Ok(Self::FilterDcap(PhyColdFilterDcapBinding::new(parameters)));
+        if let Ok(binding) = PhyColdI2cConfigurationBinding::new(action) {
+            return Ok(Self::I2cConfiguration(binding));
         }
         if let Ok(binding) = PhyColdI2cBinding::new(action) {
             return Ok(Self::I2c(binding));
@@ -2535,8 +2537,8 @@ impl PhyRfColdInit {
 #[cfg(test)]
 mod tests {
     use super::{
-        PhyColdExternalBinding, PhyColdFilterDcapAction, PhyColdFilterDcapBinding,
-        PhyColdI2cAction, PhyColdI2cBinding, PhyColdI2cObservation, PhyColdI2cOutcome,
+        PhyColdExternalBinding, PhyColdI2cAction, PhyColdI2cBinding,
+        PhyColdI2cConfigurationBinding, PhyColdI2cObservation, PhyColdI2cOutcome,
         PhyColdI2cRequest, PhyColdI2cTransaction, PhyColdLoweringError, PhyColdMmioBinding,
         PhyColdObservationBinding, PhyColdObservationRequest, PhyColdObservationResult,
         PhyColdPbusAction, PhyColdPbusBinding, PhyColdPbusHardwareResult, PhyColdPbusObservation,
@@ -2548,9 +2550,10 @@ mod tests {
     };
     use crate::phy_frequency::{PhyChannelFrequencyInitAction, PhyChannelFrequencyInitCompletion};
     use crate::phy_i2c::{
-        BiasRegAction, BiasRegCompletion, FilterDcapAction, FilterDcapParameters, OpenI2cXpdAction,
-        OpenI2cXpdCompletion, PhyI2cAddress, PhyI2cError, PhyRfInitPrefixAction,
-        PhyRfInitPrefixCompletion, RcCalibrationAction, RcCalibrationCompletion,
+        BiasRegAction, BiasRegCompletion, FilterDcapAction, FilterDcapParameters, I2cInit1Action,
+        OpenI2cXpdAction, OpenI2cXpdCompletion, PhyI2cAddress, PhyI2cError,
+        PhyRfInitParameterSnapshot, PhyRfInitPrefixAction, PhyRfInitPrefixCompletion,
+        RcCalibrationAction, RcCalibrationCompletion,
     };
     use crate::phy_pbus::{PhyPbusClearAction, PhyPbusClearCompletion, PhyPbusForceTest};
     use crate::phy_rfpll::{RfpllFrequencyAction, RfpllFrequencyCompletion};
@@ -3364,7 +3367,13 @@ mod tests {
             PhyColdExternalBinding::lower(PhyRfInitPrefixAction::FilterDcap(
                 FilterDcapAction::Configure(filter_parameters)
             )),
-            Ok(PhyColdExternalBinding::FilterDcap(_))
+            Ok(PhyColdExternalBinding::I2cConfiguration(_))
+        ));
+        assert!(matches!(
+            PhyColdExternalBinding::lower(PhyRfInitPrefixAction::I2cInit1(
+                I2cInit1Action::Configure(PhyRfInitParameterSnapshot::new(filter_parameters, 6))
+            )),
+            Ok(PhyColdExternalBinding::I2cConfiguration(_))
         ));
         let transaction = PhyPbusForceTest::new(4, 1, 0);
         assert!(matches!(
@@ -3386,10 +3395,16 @@ mod tests {
     }
 
     #[test]
-    fn filter_dcap_binding_requires_the_complete_pac_transaction() {
+    fn i2c_configuration_binding_requires_the_complete_pac_transaction() {
         let parameters = FilterDcapParameters::new(1, 2, 3, 4, 5);
-        let binding = PhyColdFilterDcapBinding::new(parameters);
-        assert_eq!(binding.action(), PhyColdFilterDcapAction::StartCommand);
+        let binding = PhyColdI2cConfigurationBinding::new(PhyRfInitPrefixAction::FilterDcap(
+            FilterDcapAction::Configure(parameters),
+        ))
+        .unwrap();
+        assert_eq!(
+            binding.action(),
+            open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cConfigurationAction::StartCommand
+        );
         assert_eq!(
             binding.into_completion(),
             Err(PhyColdLoweringError::IncompleteTransaction)

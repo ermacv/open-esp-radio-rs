@@ -17,8 +17,7 @@ use crate::{
     },
     phy_channel::{PhyChipChannelCompletion, PhyChipChannelI2cBinding},
     phy_cold::{
-        PhyColdFilterDcapAction, PhyColdFilterDcapBinding, PhyColdI2cAction, PhyColdI2cError,
-        PhyColdI2cObservation,
+        PhyColdI2cAction, PhyColdI2cConfigurationBinding, PhyColdI2cError, PhyColdI2cObservation,
     },
     phy_dcode::{PhyDcodeCompletion, PhyDcodeI2cBinding},
     phy_i2c::{MaskedI2cWriteBinding, MaskedI2cWriteCompletion},
@@ -275,18 +274,20 @@ pub async fn complete_bluetooth_i2c<D: PhyAsyncDelay>(
     Err(PhyTargetPortError::HardwareEdgeTimedOut)
 }
 
-pub async fn complete_filter_dcap_i2c<D: PhyAsyncDelay>(
-    mut binding: PhyColdFilterDcapBinding,
+pub async fn complete_i2c_configuration<D: PhyAsyncDelay>(
+    mut binding: PhyColdI2cConfigurationBinding,
     registers: &mut impl SharedPhyAccess,
-) -> Result<crate::phy_i2c::FilterDcapCompletion, PhyTargetPortError> {
+) -> Result<crate::phy_i2c::PhyRfInitPrefixCompletion, PhyTargetPortError> {
     for _ in 0..HARDWARE_EDGE_LIMIT {
         match binding.action() {
-            PhyColdFilterDcapAction::StartCommand => match binding.start_target(registers) {
-                Ok(()) => {}
-                Err(PhyColdI2cError::BusyAtStart) => D::after_micros(1).await,
-                Err(_) => return Err(PhyTargetPortError::HardwareInvariant),
-            },
-            PhyColdFilterDcapAction::AwaitCompletionEdge => {
+            open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cConfigurationAction::StartCommand => {
+                match binding.start_target(registers) {
+                    Ok(()) => {}
+                    Err(PhyColdI2cError::BusyAtStart) => D::after_micros(1).await,
+                    Err(_) => return Err(PhyTargetPortError::HardwareInvariant),
+                }
+            }
+            open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cConfigurationAction::AwaitCompletionEdge => {
                 D::after_micros(1).await;
                 match binding
                     .observe_target_edge(registers)
@@ -295,7 +296,7 @@ pub async fn complete_filter_dcap_i2c<D: PhyAsyncDelay>(
                     PhyColdI2cObservation::EdgeConsumed | PhyColdI2cObservation::StillPending => {}
                 }
             }
-            PhyColdFilterDcapAction::Complete => {
+            open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cConfigurationAction::Complete => {
                 return binding
                     .into_completion()
                     .map_err(|_| PhyTargetPortError::UnexpectedBinding);

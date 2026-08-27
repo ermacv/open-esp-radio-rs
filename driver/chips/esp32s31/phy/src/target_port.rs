@@ -109,7 +109,7 @@ use crate::{
     run_phy_calibration_tracking, run_phy_param_tracking, run_phy_register,
     target_executor::{
         PhyAsyncDelay, PhyTargetPortError, complete_bluetooth_i2c, complete_bluetooth_pbus,
-        complete_channel_i2c, complete_dcode_i2c, complete_filter_dcap_i2c, complete_final_i2c,
+        complete_channel_i2c, complete_dcode_i2c, complete_final_i2c, complete_i2c_configuration,
         complete_masked_i2c, complete_rfpll_i2c, complete_rx_dc_calibration_pbus,
         complete_rx_dco_pbus, complete_rx_gain_dc_pbus, complete_rx_gain_publish_pbus,
         complete_rx_saturation_pbus, complete_rxiq_adjusted_tx_i2c, complete_rxiq_gain_i2c,
@@ -1709,10 +1709,8 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         observer: &mut O,
     ) -> Result<PhyRfInitPrefixCompletion, PhyTargetPortError> {
         match binding {
-            PhyColdExternalBinding::FilterDcap(binding) => {
-                Ok(PhyRfInitPrefixCompletion::FilterDcap(
-                    complete_filter_dcap_i2c::<D>(binding, registers).await?,
-                ))
+            PhyColdExternalBinding::I2cConfiguration(binding) => {
+                complete_i2c_configuration::<D>(binding, registers).await
             }
             PhyColdExternalBinding::I2c(mut binding) => {
                 for _ in 0..HARDWARE_EDGE_LIMIT {

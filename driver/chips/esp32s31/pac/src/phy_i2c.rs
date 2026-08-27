@@ -142,6 +142,7 @@ const fn saturate_phy_i2c_value(value: i32, upper: u8, lower: u8) -> u8 {
 }
 
 const PHY_FILTER_DCAP_COMMAND_COUNT: u8 = 18;
+const PHY_I2C_INITIALIZATION_STAGE_ONE_COMMAND_COUNT: u8 = 26;
 
 /// Parameter facts consumed by the complete PAC-owned filter-DCAP operation.
 ///
@@ -174,147 +175,230 @@ impl PhyFilterDcapInputs {
         }
     }
 
-    const fn command(self, index: u8) -> Option<(u8, u8)> {
+    const fn command(self, index: u8) -> Option<(u8, u8, u8)> {
         let high_filter = saturate_phy_i2c_value(self.parameter_ed as i32 + 6, 0x3c, 2);
         let low_filter = saturate_phy_i2c_value(self.parameter_ed as i32 - 2, 0x3c, 2);
         match index {
-            0 => Some((0x14, high_filter)),
-            1 => Some((0x15, high_filter)),
-            2 => Some((0x16, low_filter)),
-            3 => Some((0x17, self.parameter_ed)),
-            4 => Some((0x18, self.parameter_ee)),
-            5 => Some((0x19, self.parameter_ee)),
-            6 => Some((0x1c, self.parameter_f0)),
-            7 => Some((0x1d, self.parameter_f0)),
-            8 => Some((0x1e, self.parameter_f0 | 0x40)),
-            9 => Some((0x1f, self.parameter_f0)),
-            10 => Some((0x04, self.parameter_e9)),
-            11 => Some((0x05, self.parameter_e9)),
-            12 => Some((0x06, self.parameter_ea)),
-            13 => Some((0x07, self.parameter_ea)),
-            14 => Some((0x0c, self.parameter_e9)),
-            15 => Some((0x0d, self.parameter_e9)),
-            16 => Some((0x0e, self.parameter_ea)),
-            17 => Some((0x0f, self.parameter_ea)),
+            0 => Some((0x67, 0x14, high_filter)),
+            1 => Some((0x67, 0x15, high_filter)),
+            2 => Some((0x67, 0x16, low_filter)),
+            3 => Some((0x67, 0x17, self.parameter_ed)),
+            4 => Some((0x67, 0x18, self.parameter_ee)),
+            5 => Some((0x67, 0x19, self.parameter_ee)),
+            6 => Some((0x67, 0x1c, self.parameter_f0)),
+            7 => Some((0x67, 0x1d, self.parameter_f0)),
+            8 => Some((0x67, 0x1e, self.parameter_f0 | 0x40)),
+            9 => Some((0x67, 0x1f, self.parameter_f0)),
+            10 => Some((0x67, 0x04, self.parameter_e9)),
+            11 => Some((0x67, 0x05, self.parameter_e9)),
+            12 => Some((0x67, 0x06, self.parameter_ea)),
+            13 => Some((0x67, 0x07, self.parameter_ea)),
+            14 => Some((0x67, 0x0c, self.parameter_e9)),
+            15 => Some((0x67, 0x0d, self.parameter_e9)),
+            16 => Some((0x67, 0x0e, self.parameter_ea)),
+            17 => Some((0x67, 0x0f, self.parameter_ea)),
             _ => None,
         }
     }
 }
 
-/// Current externally driven edge of a filter-DCAP transaction.
+/// Dynamic facts consumed by the first complete PHY-I²C initialization stage.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PhyFilterDcapAction {
+pub struct PhyI2cInitializationStageOneInputs {
+    parameter_18e: u8,
+    parameter_ee: u8,
+}
+
+impl PhyI2cInitializationStageOneInputs {
+    pub const fn new(parameter_18e: u8, parameter_ee: u8) -> Self {
+        Self {
+            parameter_18e,
+            parameter_ee,
+        }
+    }
+
+    const fn command(self, index: u8) -> Option<(u8, u8, u8)> {
+        let parameter_ee_plus_two = self.parameter_ee.wrapping_add(2);
+        match index {
+            0 => Some((0x6b, 0x01, 0x01)),
+            1 => Some((0x6b, 0x02, 0x73)),
+            2 => Some((0x6b, 0x03, 0xba)),
+            3 => Some((0x6b, 0x04, 0x88)),
+            4 => Some((0x6b, 0x0e, 0xf4)),
+            5 => Some((0x6b, 0x09, 0x02)),
+            6 => Some((0x6b, 0x07, 0xfd)),
+            7 => Some((0x6b, 0x08, 0xbb)),
+            8 => Some((0x6b, 0x05, 0x01)),
+            9 => Some((0x6b, 0x06, 0x11)),
+            10 => Some((0x6b, 0x0c, 0xa7)),
+            11 => Some((0x6b, 0x0d, 0x7a)),
+            12 => Some((0x6b, 0x0a, 0x08)),
+            13 => Some((0x6b, 0x0b, 0x04)),
+            14 => Some((0x6b, 0x0f, 0x81)),
+            15 => Some((0x62, 0x00, 0x68)),
+            16 => Some((0x62, 0x04, 0xa8)),
+            17 => Some((0x62, 0x0f, self.parameter_18e)),
+            18 => Some((0x62, 0x0b, 0x44)),
+            19 => Some((0x62, 0x15, 0x08)),
+            20 => Some((0x63, 0x06, 0x00)),
+            21 => Some((0x62, 0x0d, 0x0a)),
+            22 => Some((0x67, 0x02, 0x27)),
+            23 => Some((0x66, 0x02, 0x70)),
+            24 => Some((0x67, 0x18, parameter_ee_plus_two)),
+            25 => Some((0x67, 0x19, parameter_ee_plus_two)),
+            _ => None,
+        }
+    }
+}
+
+/// One complete PAC-owned PHY-I²C configuration operation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyI2cConfigurationOperation {
+    FilterDcap(PhyFilterDcapInputs),
+    InitializationStageOne(PhyI2cInitializationStageOneInputs),
+}
+
+impl PhyI2cConfigurationOperation {
+    const fn command(self, index: u8) -> Option<(u8, u8, u8)> {
+        match self {
+            Self::FilterDcap(inputs) => inputs.command(index),
+            Self::InitializationStageOne(inputs) => inputs.command(index),
+        }
+    }
+
+    const fn command_count(self) -> u8 {
+        match self {
+            Self::FilterDcap(_) => PHY_FILTER_DCAP_COMMAND_COUNT,
+            Self::InitializationStageOne(_) => PHY_I2C_INITIALIZATION_STAGE_ONE_COMMAND_COUNT,
+        }
+    }
+}
+
+/// Current externally driven edge of a PAC-owned PHY-I²C configuration.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyI2cConfigurationAction {
     StartCommand,
     AwaitCompletionEdge,
     Complete,
 }
 
-/// One independently delivered filter-DCAP completion edge was consumed.
+/// One independently delivered configuration-completion edge was consumed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PhyFilterDcapObservation {
+pub enum PhyI2cConfigurationObservation {
     StillPending,
     EdgeConsumed,
 }
 
-/// A PAC-owned filter-DCAP transaction could not advance.
+/// A PAC-owned PHY-I²C configuration transaction could not advance.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PhyFilterDcapError {
+pub enum PhyI2cConfigurationError {
     BusyAtStart,
     WrongAction,
     AlreadyComplete,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum PhyFilterDcapPhase {
+enum PhyI2cConfigurationPhase {
     Start,
     Await,
     Complete,
 }
 
-trait PhyFilterDcapI2cAccess {
-    fn start_write(&mut self, register: u8, value: u8) -> Result<(), ()>;
+trait PhyI2cConfigurationAccess {
+    fn start_write(&mut self, block: u8, register: u8, value: u8) -> Result<(), ()>;
     fn observe_write(&self) -> Result<(), ()>;
 }
 
-/// Non-cloneable owner of the complete recovered filter-DCAP write plan.
+/// Non-cloneable owner of one complete recovered PHY-I²C write plan.
 ///
-/// The analog block, all register identities, derived values and command
-/// count are private PAC implementation details. Callers can only drive the
-/// finite semantic transaction.
+/// Analog blocks, register identities, derived values and command counts are
+/// private PAC implementation details. Callers can only select and drive a
+/// finite semantic operation.
 #[derive(Debug, Eq, PartialEq)]
-pub struct PhyFilterDcapTransaction {
-    inputs: PhyFilterDcapInputs,
-    phase: PhyFilterDcapPhase,
+pub struct PhyI2cConfigurationTransaction {
+    operation: PhyI2cConfigurationOperation,
+    phase: PhyI2cConfigurationPhase,
     command_index: u8,
 }
 
-impl PhyFilterDcapTransaction {
-    pub const fn new(inputs: PhyFilterDcapInputs) -> Self {
+impl PhyI2cConfigurationTransaction {
+    pub const fn new(operation: PhyI2cConfigurationOperation) -> Self {
         Self {
-            inputs,
-            phase: PhyFilterDcapPhase::Start,
+            operation,
+            phase: PhyI2cConfigurationPhase::Start,
             command_index: 0,
         }
     }
 
-    pub const fn action(&self) -> PhyFilterDcapAction {
+    pub const fn action(&self) -> PhyI2cConfigurationAction {
         match self.phase {
-            PhyFilterDcapPhase::Start => PhyFilterDcapAction::StartCommand,
-            PhyFilterDcapPhase::Await => PhyFilterDcapAction::AwaitCompletionEdge,
-            PhyFilterDcapPhase::Complete => PhyFilterDcapAction::Complete,
+            PhyI2cConfigurationPhase::Start => PhyI2cConfigurationAction::StartCommand,
+            PhyI2cConfigurationPhase::Await => PhyI2cConfigurationAction::AwaitCompletionEdge,
+            PhyI2cConfigurationPhase::Complete => PhyI2cConfigurationAction::Complete,
         }
     }
 
-    pub fn start(&mut self, registers: &mut RadioPhyRegisters) -> Result<(), PhyFilterDcapError> {
+    pub fn start(
+        &mut self,
+        registers: &mut RadioPhyRegisters,
+    ) -> Result<(), PhyI2cConfigurationError> {
         self.start_with(registers)
     }
 
     pub fn observe_completion_edge(
         &mut self,
         registers: &mut RadioPhyRegisters,
-    ) -> Result<PhyFilterDcapObservation, PhyFilterDcapError> {
+    ) -> Result<PhyI2cConfigurationObservation, PhyI2cConfigurationError> {
         self.observe_with(registers)
     }
 
     fn start_with(
         &mut self,
-        access: &mut impl PhyFilterDcapI2cAccess,
-    ) -> Result<(), PhyFilterDcapError> {
+        access: &mut impl PhyI2cConfigurationAccess,
+    ) -> Result<(), PhyI2cConfigurationError> {
         match self.phase {
-            PhyFilterDcapPhase::Complete => return Err(PhyFilterDcapError::AlreadyComplete),
-            PhyFilterDcapPhase::Await => return Err(PhyFilterDcapError::WrongAction),
-            PhyFilterDcapPhase::Start => {}
+            PhyI2cConfigurationPhase::Complete => {
+                return Err(PhyI2cConfigurationError::AlreadyComplete);
+            }
+            PhyI2cConfigurationPhase::Await => {
+                return Err(PhyI2cConfigurationError::WrongAction);
+            }
+            PhyI2cConfigurationPhase::Start => {}
         }
-        let (register, value) = self
-            .inputs
+        let (block, register, value) = self
+            .operation
             .command(self.command_index)
-            .ok_or(PhyFilterDcapError::WrongAction)?;
+            .ok_or(PhyI2cConfigurationError::WrongAction)?;
         access
-            .start_write(register, value)
-            .map_err(|()| PhyFilterDcapError::BusyAtStart)?;
-        self.phase = PhyFilterDcapPhase::Await;
+            .start_write(block, register, value)
+            .map_err(|()| PhyI2cConfigurationError::BusyAtStart)?;
+        self.phase = PhyI2cConfigurationPhase::Await;
         Ok(())
     }
 
     fn observe_with(
         &mut self,
-        access: &impl PhyFilterDcapI2cAccess,
-    ) -> Result<PhyFilterDcapObservation, PhyFilterDcapError> {
+        access: &impl PhyI2cConfigurationAccess,
+    ) -> Result<PhyI2cConfigurationObservation, PhyI2cConfigurationError> {
         match self.phase {
-            PhyFilterDcapPhase::Complete => return Err(PhyFilterDcapError::AlreadyComplete),
-            PhyFilterDcapPhase::Start => return Err(PhyFilterDcapError::WrongAction),
-            PhyFilterDcapPhase::Await => {}
+            PhyI2cConfigurationPhase::Complete => {
+                return Err(PhyI2cConfigurationError::AlreadyComplete);
+            }
+            PhyI2cConfigurationPhase::Start => {
+                return Err(PhyI2cConfigurationError::WrongAction);
+            }
+            PhyI2cConfigurationPhase::Await => {}
         }
         if access.observe_write().is_err() {
-            return Ok(PhyFilterDcapObservation::StillPending);
+            return Ok(PhyI2cConfigurationObservation::StillPending);
         }
         self.command_index += 1;
-        self.phase = if self.command_index == PHY_FILTER_DCAP_COMMAND_COUNT {
-            PhyFilterDcapPhase::Complete
+        self.phase = if self.command_index == self.operation.command_count() {
+            PhyI2cConfigurationPhase::Complete
         } else {
-            PhyFilterDcapPhase::Start
+            PhyI2cConfigurationPhase::Start
         };
-        Ok(PhyFilterDcapObservation::EdgeConsumed)
+        Ok(PhyI2cConfigurationObservation::EdgeConsumed)
     }
 }
 
@@ -865,13 +949,13 @@ impl RadioPhyRegisters {
     }
 }
 
-impl PhyFilterDcapI2cAccess for RadioPhyRegisters {
-    fn start_write(&mut self, register: u8, value: u8) -> Result<(), ()> {
+impl PhyI2cConfigurationAccess for RadioPhyRegisters {
+    fn start_write(&mut self, block: u8, register: u8, value: u8) -> Result<(), ()> {
         self.configure_phy_i2c_host_map();
         if self.phy_i2c_master_is_busy(PhyI2cHost::Host1) {
             return Err(());
         }
-        self.publish_phy_i2c_command(PhyI2cHost::Host1, 0x67, register, value, true);
+        self.publish_phy_i2c_command(PhyI2cHost::Host1, block, register, value, true);
         Ok(())
     }
 
@@ -958,8 +1042,9 @@ mod tests {
         BluetoothTxPowerControlObservation, BluetoothTxPowerControlOperation,
         BluetoothTxPowerControlPrepareError, BluetoothTxPowerControlRegister,
         BluetoothTxPowerControlRestoreError, BluetoothTxPowerControlTransaction,
-        PhyFilterDcapAction, PhyFilterDcapError, PhyFilterDcapI2cAccess, PhyFilterDcapInputs,
-        PhyFilterDcapObservation, PhyFilterDcapTransaction,
+        PhyFilterDcapInputs, PhyI2cConfigurationAccess, PhyI2cConfigurationAction,
+        PhyI2cConfigurationError, PhyI2cConfigurationObservation, PhyI2cConfigurationOperation,
+        PhyI2cConfigurationTransaction, PhyI2cInitializationStageOneInputs,
     };
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1058,14 +1143,14 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct FakeFilterDcapI2c {
+    struct FakeConfigurationI2c {
         accepted_commands: u8,
         busy_starts: u8,
         pending_observations: u8,
     }
 
-    impl PhyFilterDcapI2cAccess for FakeFilterDcapI2c {
-        fn start_write(&mut self, _register: u8, _value: u8) -> Result<(), ()> {
+    impl PhyI2cConfigurationAccess for FakeConfigurationI2c {
+        fn start_write(&mut self, _block: u8, _register: u8, _value: u8) -> Result<(), ()> {
             if self.busy_starts != 0 {
                 self.busy_starts -= 1;
                 return Err(());
@@ -1083,42 +1168,63 @@ mod tests {
         }
     }
 
-    #[test]
-    fn filter_dcap_is_finite_and_retries_a_busy_start() {
-        let inputs = PhyFilterDcapInputs::new(0x12, 0x34, 0x3a, 0x56, 0x87);
-        let mut transaction = PhyFilterDcapTransaction::new(inputs);
-        let mut access = FakeFilterDcapI2c {
-            busy_starts: 1,
-            ..FakeFilterDcapI2c::default()
-        };
-
-        assert_eq!(
-            transaction.start_with(&mut access),
-            Err(PhyFilterDcapError::BusyAtStart)
-        );
-        assert_eq!(transaction.action(), PhyFilterDcapAction::StartCommand);
-
+    fn drive_configuration(
+        transaction: &mut PhyI2cConfigurationTransaction,
+        access: &mut FakeConfigurationI2c,
+    ) {
         for _ in 0..64 {
             match transaction.action() {
-                PhyFilterDcapAction::StartCommand => {
-                    transaction.start_with(&mut access).unwrap();
+                PhyI2cConfigurationAction::StartCommand => {
+                    transaction.start_with(access).unwrap();
                 }
-                PhyFilterDcapAction::AwaitCompletionEdge => {
+                PhyI2cConfigurationAction::AwaitCompletionEdge => {
                     assert_eq!(
-                        transaction.observe_with(&access).unwrap(),
-                        PhyFilterDcapObservation::EdgeConsumed
+                        transaction.observe_with(access).unwrap(),
+                        PhyI2cConfigurationObservation::EdgeConsumed
                     );
                 }
-                PhyFilterDcapAction::Complete => break,
+                PhyI2cConfigurationAction::Complete => return,
             }
         }
+        panic!("PHY-I2C configuration exceeded its finite plan")
+    }
 
-        assert_eq!(transaction.action(), PhyFilterDcapAction::Complete);
+    #[test]
+    fn configuration_operations_are_finite_and_retry_a_busy_start() {
+        let mut access = FakeConfigurationI2c {
+            busy_starts: 1,
+            ..FakeConfigurationI2c::default()
+        };
+        let mut filter_dcap =
+            PhyI2cConfigurationTransaction::new(PhyI2cConfigurationOperation::FilterDcap(
+                PhyFilterDcapInputs::new(0x12, 0x34, 0x3a, 0x56, 0x87),
+            ));
+
+        assert_eq!(
+            filter_dcap.start_with(&mut access),
+            Err(PhyI2cConfigurationError::BusyAtStart)
+        );
+        assert_eq!(
+            filter_dcap.action(),
+            PhyI2cConfigurationAction::StartCommand
+        );
+        drive_configuration(&mut filter_dcap, &mut access);
+        assert_eq!(filter_dcap.action(), PhyI2cConfigurationAction::Complete);
         assert_eq!(access.accepted_commands, 18);
         assert_eq!(
-            transaction.observe_with(&access),
-            Err(PhyFilterDcapError::AlreadyComplete)
+            filter_dcap.observe_with(&access),
+            Err(PhyI2cConfigurationError::AlreadyComplete)
         );
+
+        access.accepted_commands = 0;
+        let mut initialization = PhyI2cConfigurationTransaction::new(
+            PhyI2cConfigurationOperation::InitializationStageOne(
+                PhyI2cInitializationStageOneInputs::new(0x55, 0xfe),
+            ),
+        );
+        drive_configuration(&mut initialization, &mut access);
+        assert_eq!(initialization.action(), PhyI2cConfigurationAction::Complete);
+        assert_eq!(access.accepted_commands, 26);
     }
 
     fn drive(

@@ -116,6 +116,20 @@ pub enum RxDcoControlRestoreError {
     RestoreNotPending,
 }
 
+/// Preparing the Bluetooth TX-power analog-control restore was rejected.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothTxPowerControlPrepareError {
+    /// Another calibration still owns the shared restore slot.
+    RestorePending,
+}
+
+/// Using the Bluetooth TX-power analog-control restore was rejected.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothTxPowerControlRestoreError {
+    /// No prepared Bluetooth TX-power analog-control restore is pending.
+    RestoreNotPending,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
 enum RadioPhyRestoreKind {
@@ -124,6 +138,7 @@ enum RadioPhyRestoreKind {
     TxIqToneControl,
     RxDcoControlOne,
     RxDcoControlTwo,
+    BluetoothTxPowerControl,
 }
 
 /// One private restore authority shared by mutually exclusive PHY calibrations.
@@ -158,6 +173,10 @@ impl RadioPhyRestoreSlot {
             self.kind,
             RadioPhyRestoreKind::RxDcoControlOne | RadioPhyRestoreKind::RxDcoControlTwo
         )
+    }
+
+    pub(super) const fn bluetooth_tx_power_control_pending(&self) -> bool {
+        matches!(self.kind, RadioPhyRestoreKind::BluetoothTxPowerControl)
     }
 
     fn prepare_txdc_with<Captured, Capture, Prepare>(
@@ -266,6 +285,59 @@ impl RadioPhyRestoreSlot {
         Ok(())
     }
 
+    pub(super) fn prepare_bluetooth_tx_power_control(
+        &mut self,
+    ) -> Result<(), BluetoothTxPowerControlPrepareError> {
+        if !matches!(self.kind, RadioPhyRestoreKind::Empty) {
+            return Err(BluetoothTxPowerControlPrepareError::RestorePending);
+        }
+        self.payload = [0; 4];
+        self.kind = RadioPhyRestoreKind::BluetoothTxPowerControl;
+        Ok(())
+    }
+
+    pub(super) fn capture_bluetooth_tx_power_control_low(
+        &mut self,
+        value: u8,
+    ) -> Result<(), BluetoothTxPowerControlRestoreError> {
+        if !self.bluetooth_tx_power_control_pending() {
+            return Err(BluetoothTxPowerControlRestoreError::RestoreNotPending);
+        }
+        self.payload[0] = value;
+        Ok(())
+    }
+
+    pub(super) fn capture_bluetooth_tx_power_control_high(
+        &mut self,
+        value: u8,
+    ) -> Result<(), BluetoothTxPowerControlRestoreError> {
+        if !self.bluetooth_tx_power_control_pending() {
+            return Err(BluetoothTxPowerControlRestoreError::RestoreNotPending);
+        }
+        self.payload[1] = value;
+        Ok(())
+    }
+
+    pub(super) fn bluetooth_tx_power_control_values(
+        &self,
+    ) -> Result<(u8, u8), BluetoothTxPowerControlRestoreError> {
+        if !self.bluetooth_tx_power_control_pending() {
+            return Err(BluetoothTxPowerControlRestoreError::RestoreNotPending);
+        }
+        Ok((self.payload[0], self.payload[1]))
+    }
+
+    pub(super) fn finish_bluetooth_tx_power_control_restore(
+        &mut self,
+    ) -> Result<(), BluetoothTxPowerControlRestoreError> {
+        if !self.bluetooth_tx_power_control_pending() {
+            return Err(BluetoothTxPowerControlRestoreError::RestoreNotPending);
+        }
+        self.kind = RadioPhyRestoreKind::Empty;
+        self.payload = [0; 4];
+        Ok(())
+    }
+
     #[cfg(test)]
     pub(super) fn occupy_txdc_for_test(&mut self) {
         self.kind = RadioPhyRestoreKind::TxDcPwdet;
@@ -281,6 +353,12 @@ impl RadioPhyRestoreSlot {
     #[cfg(test)]
     pub(super) fn occupy_rx_dco_for_test(&mut self) {
         self.kind = RadioPhyRestoreKind::RxDcoControlOne;
+        self.payload = [0; 4];
+    }
+
+    #[cfg(test)]
+    pub(super) fn occupy_bluetooth_tx_power_control_for_test(&mut self) {
+        self.kind = RadioPhyRestoreKind::BluetoothTxPowerControl;
         self.payload = [0; 4];
     }
 }
@@ -358,6 +436,16 @@ impl RadioPhyRegisters {
     #[cfg(test)]
     pub(crate) fn occupy_rx_dco_control_restore_for_test(&mut self) {
         self.restore_slot.occupy_rx_dco_for_test();
+    }
+
+    pub(crate) const fn bluetooth_tx_power_control_restore_pending(&self) -> bool {
+        self.restore_slot.bluetooth_tx_power_control_pending()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn occupy_bluetooth_tx_power_control_restore_for_test(&mut self) {
+        self.restore_slot
+            .occupy_bluetooth_tx_power_control_for_test();
     }
 
     /// Enable both RX- and TX-IQ correction modes through two fresh RMWs.

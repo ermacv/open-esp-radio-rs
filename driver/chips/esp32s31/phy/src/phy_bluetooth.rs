@@ -196,7 +196,7 @@ pub enum PhyBluetoothTxPowerFailure {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyBluetoothTxPowerAction {
-    I2c(crate::phy_cold::PhyColdI2cRequest),
+    I2cControl(open_esp_radio_esp32s31_hal::phy_i2c::BluetoothTxPowerControlOperation),
     Prepare(crate::phy_tx_cal::PhyTxCalibrationEnvironmentAction),
     ForcePbus(crate::phy_pbus::PhyPbusForceTest),
     ReadPbus { selector: u8, path: u8 },
@@ -208,7 +208,7 @@ pub enum PhyBluetoothTxPowerAction {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyBluetoothTxPowerCompletion {
-    I2c(crate::phy_cold::PhyColdI2cOutcome),
+    I2cControl(open_esp_radio_esp32s31_hal::phy_i2c::BluetoothTxPowerControlCompletion),
     Prepare(crate::phy_tx_cal::PhyTxCalibrationEnvironmentCompletion),
     PbusCompleted(crate::phy_pbus::PhyPbusForceTest),
     PbusTimedOut(crate::phy_pbus::PhyPbusForceTest),
@@ -231,9 +231,8 @@ enum PhyBluetoothTxPowerTerminal {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PhyBluetoothTxPowerStep {
-    ReadSavedByte,
-    ReadSavedField,
-    ConfigureI2c(u8),
+    PrepareI2cControlRestore,
+    ConfigureI2cControl,
     Prepare(crate::phy_tx_cal::PhyTxCalibrationEnvironmentTransition),
     ForcePowerPath,
     ForceRxPath,
@@ -244,10 +243,7 @@ enum PhyBluetoothTxPowerStep {
     ForceTxPath,
     ProgramDco(u8),
     Calibration(crate::phy_tx_power::PhyTxPowerTransition),
-    RestoreI2c {
-        index: u8,
-        terminal: PhyBluetoothTxPowerTerminal,
-    },
+    RestoreI2cControl(PhyBluetoothTxPowerTerminal),
     Cleanup {
         terminal: PhyBluetoothTxPowerTerminal,
         transition: crate::phy_tx_cal::PhyTxCalibrationEnvironmentTransition,
@@ -274,8 +270,6 @@ const fn bluetooth_dco_transaction(dco: [u16; 4], index: u8) -> crate::phy_pbus:
 pub struct PhyBluetoothTxPowerTransition {
     parameters: PhyBluetoothTxPowerParameters,
     step: PhyBluetoothTxPowerStep,
-    saved_byte: u8,
-    saved_field: u8,
 }
 
 impl PhyBluetoothTxPowerTransition {
@@ -293,66 +287,26 @@ impl PhyBluetoothTxPowerTransition {
                 },
             })
         } else {
-            PhyBluetoothTxPowerStep::ReadSavedByte
+            PhyBluetoothTxPowerStep::PrepareI2cControlRestore
         };
-        Self {
-            parameters,
-            step,
-            saved_byte: 0,
-            saved_field: 0,
-        }
-    }
-
-    const fn i2c_request(&self, index: u8, restore: bool) -> crate::phy_cold::PhyColdI2cRequest {
-        use crate::phy_i2c::analog_registers as registers;
-        let byte = if restore { self.saved_byte } else { 2 };
-        let field = if restore { self.saved_field } else { 2 };
-        match index {
-            0 => crate::phy_cold::PhyColdI2cRequest::write_byte(
-                registers::BT_TX_POWER_CONTROL_LOW_0,
-                byte,
-            ),
-            1 => crate::phy_cold::PhyColdI2cRequest::write_byte(
-                registers::BT_TX_POWER_CONTROL_LOW_1,
-                byte,
-            ),
-            2 => crate::phy_cold::PhyColdI2cRequest::write_masked(
-                registers::BT_TX_POWER_CONTROL_HIGH_0.address,
-                registers::BT_TX_POWER_CONTROL_HIGH_0.high_bit,
-                registers::BT_TX_POWER_CONTROL_HIGH_0.low_bit,
-                field,
-            )
-            .expect("recovered six-bit field is valid"),
-            _ => crate::phy_cold::PhyColdI2cRequest::write_masked(
-                registers::BT_TX_POWER_CONTROL_HIGH_1.address,
-                registers::BT_TX_POWER_CONTROL_HIGH_1.high_bit,
-                registers::BT_TX_POWER_CONTROL_HIGH_1.low_bit,
-                field,
-            )
-            .expect("recovered six-bit field is valid"),
-        }
+        Self { parameters, step }
     }
 
     fn cleanup(&mut self, terminal: PhyBluetoothTxPowerTerminal) {
-        self.step = PhyBluetoothTxPowerStep::RestoreI2c { index: 0, terminal };
+        self.step = PhyBluetoothTxPowerStep::RestoreI2cControl(terminal);
     }
 
     pub const fn action(self) -> PhyBluetoothTxPowerAction {
-        use crate::phy_i2c::analog_registers as registers;
         match self.step {
-            PhyBluetoothTxPowerStep::ReadSavedByte => PhyBluetoothTxPowerAction::I2c(
-                crate::phy_cold::PhyColdI2cRequest::read_byte(registers::BT_TX_POWER_CONTROL_LOW_0),
-            ),
-            PhyBluetoothTxPowerStep::ReadSavedField => PhyBluetoothTxPowerAction::I2c(
-                crate::phy_cold::PhyColdI2cRequest::read_masked(
-                    registers::BT_TX_POWER_CONTROL_HIGH_0.address,
-                    registers::BT_TX_POWER_CONTROL_HIGH_0.high_bit,
-                    registers::BT_TX_POWER_CONTROL_HIGH_0.low_bit,
+            PhyBluetoothTxPowerStep::PrepareI2cControlRestore => {
+                PhyBluetoothTxPowerAction::I2cControl(
+                    open_esp_radio_esp32s31_hal::phy_i2c::BluetoothTxPowerControlOperation::PrepareRestore,
                 )
-                .expect("recovered six-bit field is valid"),
-            ),
-            PhyBluetoothTxPowerStep::ConfigureI2c(index) => {
-                PhyBluetoothTxPowerAction::I2c(self.i2c_request(index, false))
+            }
+            PhyBluetoothTxPowerStep::ConfigureI2cControl => {
+                PhyBluetoothTxPowerAction::I2cControl(
+                    open_esp_radio_esp32s31_hal::phy_i2c::BluetoothTxPowerControlOperation::ConfigureCalibration,
+                )
             }
             PhyBluetoothTxPowerStep::Prepare(transition) => {
                 PhyBluetoothTxPowerAction::Prepare(transition.action())
@@ -391,8 +345,10 @@ impl PhyBluetoothTxPowerTransition {
             PhyBluetoothTxPowerStep::Calibration(transition) => {
                 PhyBluetoothTxPowerAction::Calibration(transition.action())
             }
-            PhyBluetoothTxPowerStep::RestoreI2c { index, .. } => {
-                PhyBluetoothTxPowerAction::I2c(self.i2c_request(index, true))
+            PhyBluetoothTxPowerStep::RestoreI2cControl(_) => {
+                PhyBluetoothTxPowerAction::I2cControl(
+                    open_esp_radio_esp32s31_hal::phy_i2c::BluetoothTxPowerControlOperation::Restore,
+                )
             }
             PhyBluetoothTxPowerStep::Cleanup { transition, .. } => {
                 PhyBluetoothTxPowerAction::Cleanup(transition.action())
@@ -408,44 +364,23 @@ impl PhyBluetoothTxPowerTransition {
         &mut self,
         completion: PhyBluetoothTxPowerCompletion,
     ) -> Result<(), PhyBluetoothTxPowerTransitionError> {
-        use crate::phy_i2c::analog_registers as registers;
         self.step = match (self.step, completion) {
             (
-                PhyBluetoothTxPowerStep::ReadSavedByte,
-                PhyBluetoothTxPowerCompletion::I2c(crate::phy_cold::PhyColdI2cOutcome::Read {
-                    address,
-                    value,
-                }),
-            ) if address == registers::BT_TX_POWER_CONTROL_LOW_0 => {
-                self.saved_byte = value;
-                PhyBluetoothTxPowerStep::ReadSavedField
-            }
+                PhyBluetoothTxPowerStep::PrepareI2cControlRestore,
+                PhyBluetoothTxPowerCompletion::I2cControl(
+                    open_esp_radio_esp32s31_hal::phy_i2c::BluetoothTxPowerControlCompletion::RestorePrepared,
+                ),
+            ) => PhyBluetoothTxPowerStep::ConfigureI2cControl,
             (
-                PhyBluetoothTxPowerStep::ReadSavedField,
-                PhyBluetoothTxPowerCompletion::I2c(crate::phy_cold::PhyColdI2cOutcome::Read {
-                    address,
-                    value,
-                }),
-            ) if address == registers::BT_TX_POWER_CONTROL_HIGH_0.address => {
-                self.saved_field = value;
-                PhyBluetoothTxPowerStep::ConfigureI2c(0)
-            }
-            (
-                PhyBluetoothTxPowerStep::ConfigureI2c(index),
-                PhyBluetoothTxPowerCompletion::I2c(crate::phy_cold::PhyColdI2cOutcome::Written {
-                    address,
-                }),
-            ) if address == self.i2c_request(index, false).address() => {
-                if index == 3 {
-                    PhyBluetoothTxPowerStep::Prepare(
-                        crate::phy_tx_cal::PhyTxCalibrationEnvironmentTransition::enter(
-                            self.parameters.calibration.environment,
-                        ),
-                    )
-                } else {
-                    PhyBluetoothTxPowerStep::ConfigureI2c(index + 1)
-                }
-            }
+                PhyBluetoothTxPowerStep::ConfigureI2cControl,
+                PhyBluetoothTxPowerCompletion::I2cControl(
+                    open_esp_radio_esp32s31_hal::phy_i2c::BluetoothTxPowerControlCompletion::CalibrationConfigured,
+                ),
+            ) => PhyBluetoothTxPowerStep::Prepare(
+                crate::phy_tx_cal::PhyTxCalibrationEnvironmentTransition::enter(
+                    self.parameters.calibration.environment,
+                ),
+            ),
             (
                 PhyBluetoothTxPowerStep::Prepare(mut transition),
                 PhyBluetoothTxPowerCompletion::Prepare(completion),
@@ -458,9 +393,12 @@ impl PhyBluetoothTxPowerTransition {
                         crate::phy_tx_cal::PhyTxCalibrationEnvironment::Debug,
                     ) => PhyBluetoothTxPowerStep::ForcePowerPath,
                     crate::phy_tx_cal::PhyTxCalibrationEnvironmentAction::Failed(failure) => {
-                        PhyBluetoothTxPowerStep::Failed(PhyBluetoothTxPowerFailure::Calibration(
-                            crate::phy_tx_power::PhyTxPowerFailure::Environment(failure),
-                        ))
+                        self.cleanup(PhyBluetoothTxPowerTerminal::Failed(
+                            PhyBluetoothTxPowerFailure::Calibration(
+                                crate::phy_tx_power::PhyTxPowerFailure::Environment(failure),
+                            ),
+                        ));
+                        return Ok(());
                     }
                     _ => PhyBluetoothTxPowerStep::Prepare(transition),
                 }
@@ -537,25 +475,16 @@ impl PhyBluetoothTxPowerTransition {
                 }
             }
             (
-                PhyBluetoothTxPowerStep::RestoreI2c { index, terminal },
-                PhyBluetoothTxPowerCompletion::I2c(crate::phy_cold::PhyColdI2cOutcome::Written {
-                    address,
-                }),
-            ) if address == self.i2c_request(index, true).address() => {
-                if index == 3 {
-                    PhyBluetoothTxPowerStep::Cleanup {
-                        terminal,
-                        transition: crate::phy_tx_cal::PhyTxCalibrationEnvironmentTransition::exit(
-                            self.parameters.calibration.environment,
-                        ),
-                    }
-                } else {
-                    PhyBluetoothTxPowerStep::RestoreI2c {
-                        index: index + 1,
-                        terminal,
-                    }
-                }
-            }
+                PhyBluetoothTxPowerStep::RestoreI2cControl(terminal),
+                PhyBluetoothTxPowerCompletion::I2cControl(
+                    open_esp_radio_esp32s31_hal::phy_i2c::BluetoothTxPowerControlCompletion::Restored,
+                ),
+            ) => PhyBluetoothTxPowerStep::Cleanup {
+                terminal,
+                transition: crate::phy_tx_cal::PhyTxCalibrationEnvironmentTransition::exit(
+                    self.parameters.calibration.environment,
+                ),
+            },
             (
                 PhyBluetoothTxPowerStep::Cleanup {
                     terminal,
@@ -990,26 +919,45 @@ impl PhyBluetoothTxGainInitTransition {
 pub enum PhyBluetoothExternalBindingError {
     UnsupportedAction,
     IncompleteTransaction,
-    UnexpectedOutcome,
 }
 
-/// Non-cloneable owner of one Bluetooth-parent PHY-I2C request.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyBluetoothI2cAction {
+    StartCommand,
+    AwaitCompletionEdge,
+    Complete,
+}
+
+/// Non-cloneable owner of one PAC-owned Bluetooth TX-power I²C transaction.
 #[derive(Debug, Eq, PartialEq)]
 pub struct PhyBluetoothI2cBinding {
-    request: crate::phy_cold::PhyColdI2cRequest,
-    transaction: crate::phy_cold::PhyColdI2cTransaction,
+    transaction: open_esp_radio_esp32s31_hal::phy_i2c::BluetoothTxPowerControlTransaction,
 }
 
 impl PhyBluetoothI2cBinding {
-    pub const fn new(request: crate::phy_cold::PhyColdI2cRequest) -> Self {
+    pub const fn new(
+        operation: open_esp_radio_esp32s31_hal::phy_i2c::BluetoothTxPowerControlOperation,
+    ) -> Self {
         Self {
-            request,
-            transaction: crate::phy_cold::PhyColdI2cTransaction::new(request),
+            transaction:
+                open_esp_radio_esp32s31_hal::phy_i2c::BluetoothTxPowerControlTransaction::new(
+                    operation,
+                ),
         }
     }
 
-    pub const fn action(&self) -> crate::phy_cold::PhyColdI2cAction {
-        self.transaction.action()
+    pub const fn action(&self) -> PhyBluetoothI2cAction {
+        match self.transaction.action() {
+            open_esp_radio_esp32s31_hal::phy_i2c::BluetoothTxPowerControlAction::StartCommand => {
+                PhyBluetoothI2cAction::StartCommand
+            }
+            open_esp_radio_esp32s31_hal::phy_i2c::BluetoothTxPowerControlAction::AwaitCompletionEdge => {
+                PhyBluetoothI2cAction::AwaitCompletionEdge
+            }
+            open_esp_radio_esp32s31_hal::phy_i2c::BluetoothTxPowerControlAction::Complete(_) => {
+                PhyBluetoothI2cAction::Complete
+            }
+        }
     }
 
     #[cfg(target_arch = "riscv32")]
@@ -1017,7 +965,16 @@ impl PhyBluetoothI2cBinding {
         &mut self,
         platform: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> Result<(), crate::phy_cold::PhyColdI2cError> {
-        self.transaction.start_target(platform)
+        open_esp_radio_esp32s31_hal::phy_i2c::start_bluetooth_tx_power_control(
+            &mut self.transaction,
+            platform,
+        )
+        .map_err(|error| match error {
+            open_esp_radio_esp32s31_hal::phy_i2c::BluetoothTxPowerControlError::BusyAtStart => {
+                crate::phy_cold::PhyColdI2cError::BusyAtStart
+            }
+            _ => crate::phy_cold::PhyColdI2cError::WrongEdge,
+        })
     }
 
     #[cfg(target_arch = "riscv32")]
@@ -1025,34 +982,31 @@ impl PhyBluetoothI2cBinding {
         &mut self,
         platform: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     ) -> Result<crate::phy_cold::PhyColdI2cObservation, crate::phy_cold::PhyColdI2cError> {
-        self.transaction.observe_target_edge(platform)
+        open_esp_radio_esp32s31_hal::phy_i2c::observe_bluetooth_tx_power_control(
+            &mut self.transaction,
+            platform,
+        )
+        .map(|observation| match observation {
+            open_esp_radio_esp32s31_hal::phy_i2c::BluetoothTxPowerControlObservation::StillPending => {
+                crate::phy_cold::PhyColdI2cObservation::StillPending
+            }
+            open_esp_radio_esp32s31_hal::phy_i2c::BluetoothTxPowerControlObservation::EdgeConsumed => {
+                crate::phy_cold::PhyColdI2cObservation::EdgeConsumed
+            }
+        })
+        .map_err(|_| crate::phy_cold::PhyColdI2cError::WrongEdge)
     }
 
     pub fn into_completion(
         self,
     ) -> Result<PhyBluetoothTxPowerCompletion, PhyBluetoothExternalBindingError> {
-        let crate::phy_cold::PhyColdI2cAction::Complete(outcome) = self.transaction.action() else {
+        let open_esp_radio_esp32s31_hal::phy_i2c::BluetoothTxPowerControlAction::Complete(
+            completion,
+        ) = self.transaction.action()
+        else {
             return Err(PhyBluetoothExternalBindingError::IncompleteTransaction);
         };
-        if outcome
-            == match self.request {
-                crate::phy_cold::PhyColdI2cRequest::ReadByte { address }
-                | crate::phy_cold::PhyColdI2cRequest::ReadMasked { address, .. } => {
-                    let crate::phy_cold::PhyColdI2cOutcome::Read { value, .. } = outcome else {
-                        return Err(PhyBluetoothExternalBindingError::UnexpectedOutcome);
-                    };
-                    crate::phy_cold::PhyColdI2cOutcome::Read { address, value }
-                }
-                crate::phy_cold::PhyColdI2cRequest::WriteByte { address, .. }
-                | crate::phy_cold::PhyColdI2cRequest::WriteMasked { address, .. } => {
-                    crate::phy_cold::PhyColdI2cOutcome::Written { address }
-                }
-            }
-        {
-            Ok(PhyBluetoothTxPowerCompletion::I2c(outcome))
-        } else {
-            Err(PhyBluetoothExternalBindingError::UnexpectedOutcome)
-        }
+        Ok(PhyBluetoothTxPowerCompletion::I2cControl(completion))
     }
 }
 
@@ -1147,8 +1101,8 @@ impl PhyBluetoothTxPowerExternalBinding {
         action: PhyBluetoothTxPowerAction,
     ) -> Result<Self, PhyBluetoothExternalBindingError> {
         match action {
-            PhyBluetoothTxPowerAction::I2c(request) => {
-                Ok(Self::I2c(PhyBluetoothI2cBinding::new(request)))
+            PhyBluetoothTxPowerAction::I2cControl(operation) => {
+                Ok(Self::I2c(PhyBluetoothI2cBinding::new(operation)))
             }
             PhyBluetoothTxPowerAction::Prepare(action) => {
                 crate::phy_tx_cal::PhyTxCalibrationEnvironmentExternalBinding::lower(action)
@@ -1334,39 +1288,26 @@ mod tests {
         }
     }
 
-    fn complete_i2c_request(
-        action: PhyBluetoothTxPowerAction,
-        read_value: u8,
-    ) -> PhyBluetoothTxPowerCompletion {
-        let PhyBluetoothTxPowerAction::I2c(request) = action else {
+    fn complete_i2c_control(action: PhyBluetoothTxPowerAction) -> PhyBluetoothTxPowerCompletion {
+        let PhyBluetoothTxPowerAction::I2cControl(operation) = action else {
             panic!("expected I2C action, got {action:?}");
         };
-        match request {
-            crate::phy_cold::PhyColdI2cRequest::ReadByte { address }
-            | crate::phy_cold::PhyColdI2cRequest::ReadMasked { address, .. } => {
-                PhyBluetoothTxPowerCompletion::I2c(crate::phy_cold::PhyColdI2cOutcome::Read {
-                    address,
-                    value: read_value,
-                })
-            }
-            crate::phy_cold::PhyColdI2cRequest::WriteByte { address, .. }
-            | crate::phy_cold::PhyColdI2cRequest::WriteMasked { address, .. } => {
-                PhyBluetoothTxPowerCompletion::I2c(crate::phy_cold::PhyColdI2cOutcome::Written {
-                    address,
-                })
-            }
-        }
+        use open_esp_radio_esp32s31_hal::phy_i2c::{
+            BluetoothTxPowerControlCompletion as Completion,
+            BluetoothTxPowerControlOperation as Operation,
+        };
+        PhyBluetoothTxPowerCompletion::I2cControl(match operation {
+            Operation::PrepareRestore => Completion::RestorePrepared,
+            Operation::ConfigureCalibration => Completion::CalibrationConfigured,
+            Operation::Restore => Completion::Restored,
+        })
     }
 
     #[test]
     fn bluetooth_power_root_preserves_vendor_prefix_and_bt_child_mode() {
         let mut transition = PhyBluetoothTxPowerTransition::new(power_parameters());
-        for read in [0x2a, 0x15] {
-            let completion = complete_i2c_request(transition.action(), read);
-            transition.advance(completion).unwrap();
-        }
-        for _ in 0..4 {
-            let completion = complete_i2c_request(transition.action(), 0);
+        for _ in 0..2 {
+            let completion = complete_i2c_control(transition.action());
             transition.advance(completion).unwrap();
         }
         while let PhyBluetoothTxPowerAction::Prepare(action) = transition.action() {
@@ -1433,6 +1374,42 @@ mod tests {
             transition.action(),
             PhyBluetoothTxPowerAction::Calibration(
                 crate::phy_tx_power::PhyTxPowerAction::WriteI2c { value: 0xc3, .. }
+            )
+        ));
+    }
+
+    #[test]
+    fn bluetooth_prepare_failure_restores_pac_owned_i2c_control_before_terminal_failure() {
+        use crate::phy_tx_cal::{
+            PhyTxCalibrationEnvironmentAction as Action,
+            PhyTxCalibrationEnvironmentCompletion as Completion,
+        };
+
+        let mut transition = PhyBluetoothTxPowerTransition::new(power_parameters());
+        for _ in 0..2 {
+            let completion = complete_i2c_control(transition.action());
+            transition.advance(completion).unwrap();
+        }
+        transition
+            .advance(PhyBluetoothTxPowerCompletion::Prepare(
+                Completion::PbusDebugModeConfigured,
+            ))
+            .unwrap();
+        let PhyBluetoothTxPowerAction::Prepare(Action::ForcePbus(transaction)) =
+            transition.action()
+        else {
+            panic!("Bluetooth prepare did not enter its first PBus command");
+        };
+        transition
+            .advance(PhyBluetoothTxPowerCompletion::Prepare(
+                Completion::PbusTimedOut(transaction),
+            ))
+            .unwrap();
+
+        assert!(matches!(
+            transition.action(),
+            PhyBluetoothTxPowerAction::I2cControl(
+                open_esp_radio_esp32s31_hal::phy_i2c::BluetoothTxPowerControlOperation::Restore
             )
         ));
     }

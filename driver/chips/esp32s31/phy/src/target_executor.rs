@@ -12,7 +12,8 @@ use open_esp_radio_esp32s31_hal::SharedPhyAccess;
 use crate::{
     HARDWARE_EDGE_LIMIT,
     phy_bluetooth::{
-        PhyBluetoothI2cBinding, PhyBluetoothPbusBinding, PhyBluetoothTxPowerCompletion,
+        PhyBluetoothI2cAction, PhyBluetoothI2cBinding, PhyBluetoothPbusBinding,
+        PhyBluetoothTxPowerCompletion,
     },
     phy_channel::{PhyChipChannelCompletion, PhyChipChannelI2cBinding},
     phy_cold::{PhyColdI2cAction, PhyColdI2cError, PhyColdI2cObservation},
@@ -241,11 +242,35 @@ define_i2c_executor!(
     PhyTxPowerI2cBinding,
     PhyTxPowerCompletion
 );
-define_i2c_executor!(
-    complete_bluetooth_i2c,
-    PhyBluetoothI2cBinding,
-    PhyBluetoothTxPowerCompletion
-);
+pub async fn complete_bluetooth_i2c<D: PhyAsyncDelay>(
+    mut binding: PhyBluetoothI2cBinding,
+    registers: &mut impl SharedPhyAccess,
+) -> Result<PhyBluetoothTxPowerCompletion, PhyTargetPortError> {
+    for _ in 0..HARDWARE_EDGE_LIMIT {
+        match binding.action() {
+            PhyBluetoothI2cAction::StartCommand => match binding.start_target(registers) {
+                Ok(()) => {}
+                Err(PhyColdI2cError::BusyAtStart) => D::after_micros(1).await,
+                Err(_) => return Err(PhyTargetPortError::HardwareInvariant),
+            },
+            PhyBluetoothI2cAction::AwaitCompletionEdge => {
+                D::after_micros(1).await;
+                match binding
+                    .observe_target_edge(registers)
+                    .map_err(|_| PhyTargetPortError::HardwareInvariant)?
+                {
+                    PhyColdI2cObservation::EdgeConsumed | PhyColdI2cObservation::StillPending => {}
+                }
+            }
+            PhyBluetoothI2cAction::Complete => {
+                return binding
+                    .into_completion()
+                    .map_err(|_| PhyTargetPortError::UnexpectedBinding);
+            }
+        }
+    }
+    Err(PhyTargetPortError::HardwareEdgeTimedOut)
+}
 define_i2c_executor!(complete_dcode_i2c, PhyDcodeI2cBinding, PhyDcodeCompletion);
 define_i2c_executor!(
     complete_txiq_init_i2c,

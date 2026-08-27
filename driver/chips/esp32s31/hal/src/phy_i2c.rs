@@ -1,12 +1,33 @@
 //! Owned access to the ESP32-S31 PHY analog-register I2C master.
 
 use crate::{SharedPhyAccess, phy_pac, phy_pac_mut};
-pub use open_esp_radio_esp32s31_pac::PhyI2cHost;
+pub use open_esp_radio_esp32s31_pac::{
+    BluetoothTxPowerControlAction, BluetoothTxPowerControlCompletion, BluetoothTxPowerControlError,
+    BluetoothTxPowerControlObservation, BluetoothTxPowerControlOperation,
+    BluetoothTxPowerControlTransaction, PhyI2cHost,
+};
 
 /// A finite PHY-I2C operation could not be published or observed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyI2cError {
     CommandMemoryIndexOutOfRange,
+}
+
+/// Start the current command of one PAC-owned Bluetooth TX-power transaction.
+pub fn start_bluetooth_tx_power_control(
+    transaction: &mut BluetoothTxPowerControlTransaction,
+    registers: &mut impl SharedPhyAccess,
+) -> Result<(), BluetoothTxPowerControlError> {
+    transaction.start(phy_pac_mut(registers))
+}
+
+/// Consume one independently delivered completion edge without exposing the
+/// analog register, mask or retained values outside the PAC.
+pub fn observe_bluetooth_tx_power_control(
+    transaction: &mut BluetoothTxPowerControlTransaction,
+    registers: &mut impl SharedPhyAccess,
+) -> Result<BluetoothTxPowerControlObservation, BluetoothTxPowerControlError> {
+    transaction.observe_completion_edge(phy_pac_mut(registers))
 }
 
 /// Install the complete reviewed host map through the affine PHY owner.

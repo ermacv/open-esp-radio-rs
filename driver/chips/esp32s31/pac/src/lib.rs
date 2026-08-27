@@ -78,6 +78,7 @@ pub mod validation;
 mod validation_transactions;
 pub use agc_runtime::ForcedRxGain;
 pub use baseband::{
+    BluetoothTxPowerControlPrepareError, BluetoothTxPowerControlRestoreError,
     RxDcoControlPrepareError, RxDcoControlRestoreError, TxDcPwdetLifecycleError,
     TxDcPwdetPrepareError, TxDcPwdetRestoreError, TxIqToneControlPrepareError,
     TxIqToneControlRestoreError,
@@ -227,7 +228,11 @@ pub use modem_syscon::{
     ModemSysconIeee802154ResetObservation, ModemSysconPowerObservation, WifiBasebandAgcUpdate,
 };
 use open_esp_radio_esp32s31_pac_raw as svd;
-pub use phy_i2c::PhyI2cHost;
+pub use phy_i2c::{
+    BluetoothTxPowerControlAction, BluetoothTxPowerControlCompletion, BluetoothTxPowerControlError,
+    BluetoothTxPowerControlObservation, BluetoothTxPowerControlOperation,
+    BluetoothTxPowerControlTransaction, PhyI2cHost,
+};
 pub use platform_clock_power::PlatformClockPowerObservation;
 pub use table_memory::{PbusMemoryGroupBoundary, PhyGainMemoryEntry, PhyMemoryError};
 
@@ -286,6 +291,8 @@ pub enum RadioPhyReleaseError {
     TxIqToneControlRestorePending,
     /// RX-DCO still owns one or both nested control-field snapshots.
     RxDcoControlRestorePending,
+    /// Bluetooth TX-power calibration still owns analog-control snapshots.
+    BluetoothTxPowerControlRestorePending,
 }
 
 /// Failed neutral-root release retaining the cold route owner unchanged.
@@ -790,8 +797,8 @@ impl WifiColdRegisters {
     ///
     /// # Errors
     ///
-    /// Returns a failure retaining this owner while TX-DC PWDET, TX-IQ tone
-    /// control, or RX-DCO control still awaits restoration. Recover it with
+    /// Returns a failure retaining this owner while TX-DC PWDET, TX-IQ,
+    /// RX-DCO, or Bluetooth TX-power control still awaits restoration. Recover it with
     /// [`RadioPhyReleaseFailure::into_parts`] and complete the pending restore
     /// first.
     pub fn release(mut self) -> Result<RadioHardware, RadioPhyReleaseFailure<Self>> {
@@ -826,6 +833,17 @@ impl WifiColdRegisters {
             return Err(RadioPhyReleaseFailure {
                 owner: self,
                 error: RadioPhyReleaseError::RxDcoControlRestorePending,
+            });
+        }
+        if self
+            .registers
+            .peripherals
+            .radio_phy
+            .bluetooth_tx_power_control_restore_pending()
+        {
+            return Err(RadioPhyReleaseFailure {
+                owner: self,
+                error: RadioPhyReleaseError::BluetoothTxPowerControlRestorePending,
             });
         }
         self.registers.release_retained_shared_clocks();
@@ -1071,8 +1089,8 @@ impl Ieee802154ColdRegisters {
     ///
     /// # Errors
     ///
-    /// Returns a failure retaining this owner while TX-DC PWDET, TX-IQ tone
-    /// control, or RX-DCO control still awaits restoration. Recover it with
+    /// Returns a failure retaining this owner while TX-DC PWDET, TX-IQ,
+    /// RX-DCO, or Bluetooth TX-power control still awaits restoration. Recover it with
     /// [`RadioPhyReleaseFailure::into_parts`] and complete the pending restore
     /// first.
     pub fn release(self) -> Result<RadioHardware, RadioPhyReleaseFailure<Self>> {
@@ -1102,6 +1120,17 @@ impl Ieee802154ColdRegisters {
             return Err(RadioPhyReleaseFailure {
                 owner: self,
                 error: RadioPhyReleaseError::RxDcoControlRestorePending,
+            });
+        }
+        if self
+            .task
+            .peripherals
+            .radio_phy
+            .bluetooth_tx_power_control_restore_pending()
+        {
+            return Err(RadioPhyReleaseFailure {
+                owner: self,
+                error: RadioPhyReleaseError::BluetoothTxPowerControlRestorePending,
             });
         }
         Ok(self.task.into_hardware(self.interrupts))
@@ -1410,8 +1439,8 @@ impl BluetoothColdRegisters {
     ///
     /// # Errors
     ///
-    /// Returns a failure retaining this owner while TX-DC PWDET, TX-IQ tone
-    /// control, or RX-DCO control still awaits restoration. Recover it with
+    /// Returns a failure retaining this owner while TX-DC PWDET, TX-IQ,
+    /// RX-DCO, or Bluetooth TX-power control still awaits restoration. Recover it with
     /// [`RadioPhyReleaseFailure::into_parts`] and complete the pending restore
     /// first.
     pub fn release(self) -> Result<RadioHardware, RadioPhyReleaseFailure<Self>> {
@@ -1431,6 +1460,16 @@ impl BluetoothColdRegisters {
             return Err(RadioPhyReleaseFailure {
                 owner: self,
                 error: RadioPhyReleaseError::RxDcoControlRestorePending,
+            });
+        }
+        if self
+            .task
+            .radio_phy
+            .bluetooth_tx_power_control_restore_pending()
+        {
+            return Err(RadioPhyReleaseFailure {
+                owner: self,
+                error: RadioPhyReleaseError::BluetoothTxPowerControlRestorePending,
             });
         }
         let Self { task, interrupts } = self;
@@ -1836,6 +1875,31 @@ mod tests {
             .occupy_rx_dco_control_restore_for_test();
     }
 
+    fn occupy_wifi_bluetooth_tx_power_restore(registers: &mut super::WifiColdRegisters) {
+        registers
+            .registers
+            .peripherals
+            .radio_phy
+            .occupy_bluetooth_tx_power_control_restore_for_test();
+    }
+
+    fn occupy_ieee802154_bluetooth_tx_power_restore(
+        registers: &mut super::Ieee802154ColdRegisters,
+    ) {
+        registers
+            .task
+            .peripherals
+            .radio_phy
+            .occupy_bluetooth_tx_power_control_restore_for_test();
+    }
+
+    fn occupy_bluetooth_tx_power_restore(registers: &mut super::BluetoothColdRegisters) {
+        registers
+            .task
+            .radio_phy
+            .occupy_bluetooth_tx_power_control_restore_for_test();
+    }
+
     #[test]
     fn pending_txdc_restore_survives_same_route_transitions_and_blocks_release() {
         let mut wifi = RadioHardware::for_validation().into_wifi();
@@ -1956,6 +2020,47 @@ mod tests {
         assert_eq!(
             failure.error(),
             RadioPhyReleaseError::RxDcoControlRestorePending
+        );
+    }
+
+    #[test]
+    fn pending_bluetooth_tx_power_restore_survives_route_transitions_and_blocks_release() {
+        let mut wifi = RadioHardware::for_validation().into_wifi();
+        occupy_wifi_bluetooth_tx_power_restore(&mut wifi);
+        let (task, interrupts) = wifi.into_running();
+        let wifi = task.into_cold(interrupts);
+        let Err(failure) = wifi.release() else {
+            panic!("Wi-Fi released pending Bluetooth TX-power control state");
+        };
+        assert_eq!(
+            failure.error(),
+            RadioPhyReleaseError::BluetoothTxPowerControlRestorePending
+        );
+
+        let mut ieee802154 = RadioHardware::for_validation().into_ieee802154();
+        occupy_ieee802154_bluetooth_tx_power_restore(&mut ieee802154);
+        let (task, interrupts) = ieee802154.separate_interrupt_owner();
+        let ieee802154 = task.into_cold(interrupts);
+        let Err(failure) = ieee802154.release() else {
+            panic!("IEEE 802.15.4 released pending Bluetooth TX-power control state");
+        };
+        assert_eq!(
+            failure.error(),
+            RadioPhyReleaseError::BluetoothTxPowerControlRestorePending
+        );
+
+        let mut bluetooth = RadioHardware::for_validation().into_bluetooth();
+        occupy_bluetooth_tx_power_restore(&mut bluetooth);
+        let (task, interrupts) = bluetooth.separate_interrupt_owner();
+        let bluetooth = task
+            .into_cold(interrupts)
+            .expect("an idle Bluetooth task owner can be reunited");
+        let Err(failure) = bluetooth.release() else {
+            panic!("Bluetooth released pending TX-power control state");
+        };
+        assert_eq!(
+            failure.error(),
+            RadioPhyReleaseError::BluetoothTxPowerControlRestorePending
         );
     }
 

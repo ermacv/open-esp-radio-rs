@@ -4,14 +4,8 @@ use crate::{SharedPhyAccess, phy_pac, phy_pac_mut};
 pub use open_esp_radio_esp32s31_pac::{
     BluetoothTxPowerControlAction, BluetoothTxPowerControlCompletion, BluetoothTxPowerControlError,
     BluetoothTxPowerControlObservation, BluetoothTxPowerControlOperation,
-    BluetoothTxPowerControlTransaction, PhyI2cHost,
+    BluetoothTxPowerControlTransaction, PhyI2cCommandMemoryInputs, PhyI2cHost,
 };
-
-/// A finite PHY-I2C operation could not be published or observed.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PhyI2cError {
-    CommandMemoryIndexOutOfRange,
-}
 
 /// Start the current command of one PAC-owned Bluetooth TX-power transaction.
 pub fn start_bluetooth_tx_power_control(
@@ -100,23 +94,15 @@ pub fn configure_bbpll_calibration(registers: &mut impl SharedPhyAccess, enabled
     phy_pac_mut(registers).set_phy_i2c_bbpll_calibration(enabled);
 }
 
-/// Write one of the 45 recovered PHY-I2C command-RAM entries.
+/// Program the complete PAC-owned PHY-I²C command memory.
 ///
 /// Basis: complete S31
 /// `libphy.a[phy_i2c.o]::phy_i2c_master_cmd_mem_init`. The SVD `dim=45`
-/// array localizes every valid destination and the PAC owns the register-field
-/// encoding. The caller supplies only the instruction-recovered semantic
-/// block, byte-register, and data values.
-pub fn write_command_memory(
+/// array localizes every destination; its indices, internal analog addresses,
+/// fixed values and derived images remain private to the PAC.
+pub fn configure_command_memory(
     registers: &mut impl SharedPhyAccess,
-    index: usize,
-    block: u8,
-    register: u8,
-    value: u8,
-) -> Result<(), PhyI2cError> {
-    let registers = phy_pac_mut(registers);
-    registers
-        .write_phy_i2c_command_memory(index, block, register, value)
-        .then_some(())
-        .ok_or(PhyI2cError::CommandMemoryIndexOutOfRange)
+    inputs: PhyI2cCommandMemoryInputs,
+) {
+    phy_pac_mut(registers).configure_phy_i2c_command_memory(inputs);
 }

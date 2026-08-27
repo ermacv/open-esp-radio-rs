@@ -82,8 +82,6 @@ use open_esp_radio_esp32s31_hal::SharedPhyAccess;
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::{analog_i2c, phy_i2c as hal_phy_i2c};
 
-#[cfg(target_arch = "riscv32")]
-const PHY_I2C_MASTER_COMMAND_COUNT: usize = 45;
 const PHY_I2C_SDM_STABLE_VALUE: u8 = 0x5b;
 const PHY_I2C_SDM_DEADLINE_CYCLES: u32 = 9_999;
 
@@ -227,92 +225,6 @@ pub enum PhyI2cError {
     Busy,
 }
 
-// Complete command order recovered from
-// `libphy.a[phy_i2c.o]::phy_i2c_master_cmd_mem_init`. Values which depend on
-// the explicit PHY parameter image are supplied from the owned snapshot.
-#[cfg(target_arch = "riscv32")]
-const PHY_I2C_MASTER_TEMPLATE: [(u8, u8, u8); PHY_I2C_MASTER_COMMAND_COUNT] = [
-    (0x67, 0x02, 0x07),
-    (0x6b, 0x01, 0x01),
-    (0x6b, 0x02, 0x73),
-    (0x6b, 0x03, 0xba),
-    (0x6b, 0x04, 0x88),
-    (0x6b, 0x05, 0x01),
-    (0x6b, 0x06, 0x11),
-    (0x6b, 0x07, 0xfd),
-    (0x6b, 0x08, 0xbb),
-    (0x6b, 0x09, 0x02),
-    (0x6b, 0x0a, 0x08),
-    (0x6b, 0x0b, 0x04),
-    (0x6b, 0x0c, 0xa7),
-    (0x6b, 0x0d, 0x7a),
-    (0x6b, 0x0e, 0xf4),
-    (0x6b, 0x0f, 0x81),
-    (0x62, 0x00, 0x68),
-    (0x62, 0x04, 0xa8),
-    (0x62, 0x0b, 0x44),
-    (0x62, 0x0d, 0x0a),
-    (0x62, 0x0f, 0x00),
-    (0x62, 0x15, 0x08),
-    (0x66, 0x02, 0x70),
-    (0x67, 0x02, 0x27),
-    (0x67, 0x04, 0x00),
-    (0x67, 0x05, 0x00),
-    (0x67, 0x06, 0x00),
-    (0x67, 0x07, 0x00),
-    (0x67, 0x0c, 0x00),
-    (0x67, 0x0d, 0x00),
-    (0x67, 0x0e, 0x00),
-    (0x67, 0x0f, 0x00),
-    (0x67, 0x14, 0x00),
-    (0x67, 0x15, 0x00),
-    (0x67, 0x16, 0x00),
-    (0x67, 0x17, 0x00),
-    (0x67, 0x18, 0x00),
-    (0x67, 0x19, 0x00),
-    (0x67, 0x1c, 0x00),
-    (0x67, 0x1d, 0x00),
-    (0x67, 0x1e, 0x00),
-    (0x67, 0x1f, 0x00),
-    (0x63, 0x06, 0x00),
-    (0x6a, 0x00, 0xaf),
-    (0x6a, 0x01, 0x7f),
-];
-
-#[cfg(target_arch = "riscv32")]
-const PHY_I2C_MASTER_DYNAMIC_INDICES: [usize; 19] = [
-    20, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41,
-];
-
-#[cfg(target_arch = "riscv32")]
-fn master_dynamic_values_from_snapshot(parameter: PhyRfInitParameterSnapshot) -> [u8; 19] {
-    let filter = parameter.filter_dcap();
-    let high_filter = saturate_phy_value(filter.parameter_ed as i32 + 6, 0x3c, 2);
-    let low_filter = saturate_phy_value(filter.parameter_ed as i32 - 2, 0x3c, 2);
-    let auxiliary = filter.parameter_ee.wrapping_add(2);
-    [
-        parameter.parameter_18e(),
-        filter.parameter_e9,
-        filter.parameter_e9,
-        filter.parameter_ea,
-        filter.parameter_ea,
-        filter.parameter_e9,
-        filter.parameter_e9,
-        filter.parameter_ea,
-        filter.parameter_ea,
-        high_filter,
-        high_filter,
-        low_filter,
-        filter.parameter_ed,
-        auxiliary,
-        auxiliary,
-        filter.parameter_f0,
-        filter.parameter_f0,
-        filter.parameter_f0 | 0x40,
-        filter.parameter_f0,
-    ]
-}
-
 /// Program the complete PHY-I2C command RAM from Rust-owned cold state.
 ///
 /// The shared-PHY capability is borrowed from the active protocol lifecycle,
@@ -327,24 +239,18 @@ pub fn configure_i2c_master_command_memory(
     registers: &mut impl SharedPhyAccess,
     parameter: PhyRfInitParameterSnapshot,
 ) {
-    let dynamic_values = master_dynamic_values_from_snapshot(parameter);
-    let mut index = 0;
-    let mut dynamic_cursor = 0;
-    while index != PHY_I2C_MASTER_COMMAND_COUNT {
-        let (block, register, fixed_value) = PHY_I2C_MASTER_TEMPLATE[index];
-        let value = if dynamic_cursor != PHY_I2C_MASTER_DYNAMIC_INDICES.len()
-            && PHY_I2C_MASTER_DYNAMIC_INDICES[dynamic_cursor] == index
-        {
-            let value = dynamic_values[dynamic_cursor];
-            dynamic_cursor += 1;
-            value
-        } else {
-            fixed_value
-        };
-        hal_phy_i2c::write_command_memory(registers, index, block, register, value)
-            .unwrap_or_else(|_| unreachable!("bounded command-memory index"));
-        index += 1;
-    }
+    let filter = parameter.filter_dcap();
+    hal_phy_i2c::configure_command_memory(
+        registers,
+        hal_phy_i2c::PhyI2cCommandMemoryInputs::new(
+            parameter.parameter_18e(),
+            filter.parameter_e9,
+            filter.parameter_ea,
+            filter.parameter_ed,
+            filter.parameter_ee,
+            filter.parameter_f0,
+        ),
+    );
 }
 
 /// Publish one complete-register PHY-I2C read without waiting for completion.

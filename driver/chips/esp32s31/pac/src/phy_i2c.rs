@@ -13,6 +13,134 @@ pub enum PhyI2cHost {
     Host1,
 }
 
+const PHY_I2C_COMMAND_MEMORY_ENTRY_COUNT: usize = 45;
+
+// Complete command order recovered from
+// `libphy.a[phy_i2c.o]::phy_i2c_master_cmd_mem_init`. Values which depend on
+// the explicit PHY parameter snapshot are replaced by
+// `PhyI2cCommandMemoryInputs::dynamic_values` below.
+const PHY_I2C_COMMAND_MEMORY_TEMPLATE: [(u8, u8, u8); PHY_I2C_COMMAND_MEMORY_ENTRY_COUNT] = [
+    (0x67, 0x02, 0x07),
+    (0x6b, 0x01, 0x01),
+    (0x6b, 0x02, 0x73),
+    (0x6b, 0x03, 0xba),
+    (0x6b, 0x04, 0x88),
+    (0x6b, 0x05, 0x01),
+    (0x6b, 0x06, 0x11),
+    (0x6b, 0x07, 0xfd),
+    (0x6b, 0x08, 0xbb),
+    (0x6b, 0x09, 0x02),
+    (0x6b, 0x0a, 0x08),
+    (0x6b, 0x0b, 0x04),
+    (0x6b, 0x0c, 0xa7),
+    (0x6b, 0x0d, 0x7a),
+    (0x6b, 0x0e, 0xf4),
+    (0x6b, 0x0f, 0x81),
+    (0x62, 0x00, 0x68),
+    (0x62, 0x04, 0xa8),
+    (0x62, 0x0b, 0x44),
+    (0x62, 0x0d, 0x0a),
+    (0x62, 0x0f, 0x00),
+    (0x62, 0x15, 0x08),
+    (0x66, 0x02, 0x70),
+    (0x67, 0x02, 0x27),
+    (0x67, 0x04, 0x00),
+    (0x67, 0x05, 0x00),
+    (0x67, 0x06, 0x00),
+    (0x67, 0x07, 0x00),
+    (0x67, 0x0c, 0x00),
+    (0x67, 0x0d, 0x00),
+    (0x67, 0x0e, 0x00),
+    (0x67, 0x0f, 0x00),
+    (0x67, 0x14, 0x00),
+    (0x67, 0x15, 0x00),
+    (0x67, 0x16, 0x00),
+    (0x67, 0x17, 0x00),
+    (0x67, 0x18, 0x00),
+    (0x67, 0x19, 0x00),
+    (0x67, 0x1c, 0x00),
+    (0x67, 0x1d, 0x00),
+    (0x67, 0x1e, 0x00),
+    (0x67, 0x1f, 0x00),
+    (0x63, 0x06, 0x00),
+    (0x6a, 0x00, 0xaf),
+    (0x6a, 0x01, 0x7f),
+];
+
+const PHY_I2C_COMMAND_MEMORY_DYNAMIC_INDICES: [usize; 19] = [
+    20, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41,
+];
+
+/// Parameter facts needed to build the complete PAC-owned PHY-I²C command
+/// memory. Offset-based names remain explicit because their electrical
+/// meaning is not yet established.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyI2cCommandMemoryInputs {
+    parameter_18e: u8,
+    parameter_e9: u8,
+    parameter_ea: u8,
+    parameter_ed: u8,
+    parameter_ee: u8,
+    parameter_f0: u8,
+}
+
+impl PhyI2cCommandMemoryInputs {
+    pub const fn new(
+        parameter_18e: u8,
+        parameter_e9: u8,
+        parameter_ea: u8,
+        parameter_ed: u8,
+        parameter_ee: u8,
+        parameter_f0: u8,
+    ) -> Self {
+        Self {
+            parameter_18e,
+            parameter_e9,
+            parameter_ea,
+            parameter_ed,
+            parameter_ee,
+            parameter_f0,
+        }
+    }
+
+    const fn dynamic_values(self) -> [u8; 19] {
+        let high_filter = saturate_phy_i2c_value(self.parameter_ed as i32 + 6, 0x3c, 2);
+        let low_filter = saturate_phy_i2c_value(self.parameter_ed as i32 - 2, 0x3c, 2);
+        let auxiliary = self.parameter_ee.wrapping_add(2);
+        [
+            self.parameter_18e,
+            self.parameter_e9,
+            self.parameter_e9,
+            self.parameter_ea,
+            self.parameter_ea,
+            self.parameter_e9,
+            self.parameter_e9,
+            self.parameter_ea,
+            self.parameter_ea,
+            high_filter,
+            high_filter,
+            low_filter,
+            self.parameter_ed,
+            auxiliary,
+            auxiliary,
+            self.parameter_f0,
+            self.parameter_f0,
+            self.parameter_f0 | 0x40,
+            self.parameter_f0,
+        ]
+    }
+}
+
+const fn saturate_phy_i2c_value(value: i32, upper: u8, lower: u8) -> u8 {
+    if value < lower as i32 {
+        lower
+    } else if value > upper as i32 {
+        upper
+    } else {
+        value as u8
+    }
+}
+
 /// One complete PAC-owned Bluetooth TX-power analog-control operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothTxPowerControlOperation {
@@ -528,28 +656,35 @@ impl RadioPhyRegisters {
         });
     }
 
-    /// Publish one recovered command-RAM entry.
+    /// Program the complete reviewed 45-entry PHY-I²C command memory.
     ///
-    /// Returns false for an invalid index. The PAC owns the command-memory
-    /// field geometry and publishes zero to every unreviewed register bit.
-    pub fn write_phy_i2c_command_memory(
-        &mut self,
-        index: usize,
-        block: u8,
-        register: u8,
-        value: u8,
-    ) -> bool {
-        if index >= 45 {
-            return false;
+    /// The PAC owns every destination block, byte-register, command index and
+    /// fixed or derived register image. Callers provide only the six retained
+    /// vendor-parameter facts.
+    pub fn configure_phy_i2c_command_memory(&mut self, inputs: PhyI2cCommandMemoryInputs) {
+        let dynamic_values = inputs.dynamic_values();
+        let mut index = 0;
+        let mut dynamic_cursor = 0;
+        while index != PHY_I2C_COMMAND_MEMORY_ENTRY_COUNT {
+            let (block, register, fixed_value) = PHY_I2C_COMMAND_MEMORY_TEMPLATE[index];
+            let value = if dynamic_cursor != PHY_I2C_COMMAND_MEMORY_DYNAMIC_INDICES.len()
+                && PHY_I2C_COMMAND_MEMORY_DYNAMIC_INDICES[dynamic_cursor] == index
+            {
+                let value = dynamic_values[dynamic_cursor];
+                dynamic_cursor += 1;
+                value
+            } else {
+                fixed_value
+            };
+            super::svd::zero_based_field_write::phy_i2c_command_memory(
+                &self.peripherals.phy_i2c_command_ram,
+                index,
+                block,
+                register,
+                value,
+            );
+            index += 1;
         }
-        super::svd::zero_based_field_write::phy_i2c_command_memory(
-            &self.peripherals.phy_i2c_command_ram,
-            index,
-            block,
-            register,
-            value,
-        );
-        true
     }
 }
 

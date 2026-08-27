@@ -141,6 +141,183 @@ const fn saturate_phy_i2c_value(value: i32, upper: u8, lower: u8) -> u8 {
     }
 }
 
+const PHY_FILTER_DCAP_COMMAND_COUNT: u8 = 18;
+
+/// Parameter facts consumed by the complete PAC-owned filter-DCAP operation.
+///
+/// Offset-based names remain explicit because the electrical meaning of these
+/// retained vendor parameters is not yet established. Analog-register
+/// identities and value encodings remain private to the PAC.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyFilterDcapInputs {
+    parameter_e9: u8,
+    parameter_ea: u8,
+    parameter_ed: u8,
+    parameter_ee: u8,
+    parameter_f0: u8,
+}
+
+impl PhyFilterDcapInputs {
+    pub const fn new(
+        parameter_e9: u8,
+        parameter_ea: u8,
+        parameter_ed: u8,
+        parameter_ee: u8,
+        parameter_f0: u8,
+    ) -> Self {
+        Self {
+            parameter_e9,
+            parameter_ea,
+            parameter_ed,
+            parameter_ee,
+            parameter_f0,
+        }
+    }
+
+    const fn command(self, index: u8) -> Option<(u8, u8)> {
+        let high_filter = saturate_phy_i2c_value(self.parameter_ed as i32 + 6, 0x3c, 2);
+        let low_filter = saturate_phy_i2c_value(self.parameter_ed as i32 - 2, 0x3c, 2);
+        match index {
+            0 => Some((0x14, high_filter)),
+            1 => Some((0x15, high_filter)),
+            2 => Some((0x16, low_filter)),
+            3 => Some((0x17, self.parameter_ed)),
+            4 => Some((0x18, self.parameter_ee)),
+            5 => Some((0x19, self.parameter_ee)),
+            6 => Some((0x1c, self.parameter_f0)),
+            7 => Some((0x1d, self.parameter_f0)),
+            8 => Some((0x1e, self.parameter_f0 | 0x40)),
+            9 => Some((0x1f, self.parameter_f0)),
+            10 => Some((0x04, self.parameter_e9)),
+            11 => Some((0x05, self.parameter_e9)),
+            12 => Some((0x06, self.parameter_ea)),
+            13 => Some((0x07, self.parameter_ea)),
+            14 => Some((0x0c, self.parameter_e9)),
+            15 => Some((0x0d, self.parameter_e9)),
+            16 => Some((0x0e, self.parameter_ea)),
+            17 => Some((0x0f, self.parameter_ea)),
+            _ => None,
+        }
+    }
+}
+
+/// Current externally driven edge of a filter-DCAP transaction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyFilterDcapAction {
+    StartCommand,
+    AwaitCompletionEdge,
+    Complete,
+}
+
+/// One independently delivered filter-DCAP completion edge was consumed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyFilterDcapObservation {
+    StillPending,
+    EdgeConsumed,
+}
+
+/// A PAC-owned filter-DCAP transaction could not advance.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyFilterDcapError {
+    BusyAtStart,
+    WrongAction,
+    AlreadyComplete,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PhyFilterDcapPhase {
+    Start,
+    Await,
+    Complete,
+}
+
+trait PhyFilterDcapI2cAccess {
+    fn start_write(&mut self, register: u8, value: u8) -> Result<(), ()>;
+    fn observe_write(&self) -> Result<(), ()>;
+}
+
+/// Non-cloneable owner of the complete recovered filter-DCAP write plan.
+///
+/// The analog block, all register identities, derived values and command
+/// count are private PAC implementation details. Callers can only drive the
+/// finite semantic transaction.
+#[derive(Debug, Eq, PartialEq)]
+pub struct PhyFilterDcapTransaction {
+    inputs: PhyFilterDcapInputs,
+    phase: PhyFilterDcapPhase,
+    command_index: u8,
+}
+
+impl PhyFilterDcapTransaction {
+    pub const fn new(inputs: PhyFilterDcapInputs) -> Self {
+        Self {
+            inputs,
+            phase: PhyFilterDcapPhase::Start,
+            command_index: 0,
+        }
+    }
+
+    pub const fn action(&self) -> PhyFilterDcapAction {
+        match self.phase {
+            PhyFilterDcapPhase::Start => PhyFilterDcapAction::StartCommand,
+            PhyFilterDcapPhase::Await => PhyFilterDcapAction::AwaitCompletionEdge,
+            PhyFilterDcapPhase::Complete => PhyFilterDcapAction::Complete,
+        }
+    }
+
+    pub fn start(&mut self, registers: &mut RadioPhyRegisters) -> Result<(), PhyFilterDcapError> {
+        self.start_with(registers)
+    }
+
+    pub fn observe_completion_edge(
+        &mut self,
+        registers: &mut RadioPhyRegisters,
+    ) -> Result<PhyFilterDcapObservation, PhyFilterDcapError> {
+        self.observe_with(registers)
+    }
+
+    fn start_with(
+        &mut self,
+        access: &mut impl PhyFilterDcapI2cAccess,
+    ) -> Result<(), PhyFilterDcapError> {
+        match self.phase {
+            PhyFilterDcapPhase::Complete => return Err(PhyFilterDcapError::AlreadyComplete),
+            PhyFilterDcapPhase::Await => return Err(PhyFilterDcapError::WrongAction),
+            PhyFilterDcapPhase::Start => {}
+        }
+        let (register, value) = self
+            .inputs
+            .command(self.command_index)
+            .ok_or(PhyFilterDcapError::WrongAction)?;
+        access
+            .start_write(register, value)
+            .map_err(|()| PhyFilterDcapError::BusyAtStart)?;
+        self.phase = PhyFilterDcapPhase::Await;
+        Ok(())
+    }
+
+    fn observe_with(
+        &mut self,
+        access: &impl PhyFilterDcapI2cAccess,
+    ) -> Result<PhyFilterDcapObservation, PhyFilterDcapError> {
+        match self.phase {
+            PhyFilterDcapPhase::Complete => return Err(PhyFilterDcapError::AlreadyComplete),
+            PhyFilterDcapPhase::Start => return Err(PhyFilterDcapError::WrongAction),
+            PhyFilterDcapPhase::Await => {}
+        }
+        if access.observe_write().is_err() {
+            return Ok(PhyFilterDcapObservation::StillPending);
+        }
+        self.command_index += 1;
+        self.phase = if self.command_index == PHY_FILTER_DCAP_COMMAND_COUNT {
+            PhyFilterDcapPhase::Complete
+        } else {
+            PhyFilterDcapPhase::Start
+        };
+        Ok(PhyFilterDcapObservation::EdgeConsumed)
+    }
+}
+
 /// One complete PAC-owned Bluetooth TX-power analog-control operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothTxPowerControlOperation {
@@ -688,6 +865,25 @@ impl RadioPhyRegisters {
     }
 }
 
+impl PhyFilterDcapI2cAccess for RadioPhyRegisters {
+    fn start_write(&mut self, register: u8, value: u8) -> Result<(), ()> {
+        self.configure_phy_i2c_host_map();
+        if self.phy_i2c_master_is_busy(PhyI2cHost::Host1) {
+            return Err(());
+        }
+        self.publish_phy_i2c_command(PhyI2cHost::Host1, 0x67, register, value, true);
+        Ok(())
+    }
+
+    fn observe_write(&self) -> Result<(), ()> {
+        if self.phy_i2c_master_is_busy(PhyI2cHost::Host1) {
+            Err(())
+        } else {
+            Ok(())
+        }
+    }
+}
+
 impl BluetoothTxPowerControlI2cAccess for RadioPhyRegisters {
     fn reserve_restore(&mut self) -> Result<(), BluetoothTxPowerControlPrepareError> {
         self.restore_slot.prepare_bluetooth_tx_power_control()
@@ -762,6 +958,8 @@ mod tests {
         BluetoothTxPowerControlObservation, BluetoothTxPowerControlOperation,
         BluetoothTxPowerControlPrepareError, BluetoothTxPowerControlRegister,
         BluetoothTxPowerControlRestoreError, BluetoothTxPowerControlTransaction,
+        PhyFilterDcapAction, PhyFilterDcapError, PhyFilterDcapI2cAccess, PhyFilterDcapInputs,
+        PhyFilterDcapObservation, PhyFilterDcapTransaction,
     };
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -857,6 +1055,70 @@ mod tests {
         fn observe_write(&self) -> Result<(), ()> {
             Ok(())
         }
+    }
+
+    #[derive(Default)]
+    struct FakeFilterDcapI2c {
+        accepted_commands: u8,
+        busy_starts: u8,
+        pending_observations: u8,
+    }
+
+    impl PhyFilterDcapI2cAccess for FakeFilterDcapI2c {
+        fn start_write(&mut self, _register: u8, _value: u8) -> Result<(), ()> {
+            if self.busy_starts != 0 {
+                self.busy_starts -= 1;
+                return Err(());
+            }
+            self.accepted_commands += 1;
+            Ok(())
+        }
+
+        fn observe_write(&self) -> Result<(), ()> {
+            if self.pending_observations == 0 {
+                Ok(())
+            } else {
+                Err(())
+            }
+        }
+    }
+
+    #[test]
+    fn filter_dcap_is_finite_and_retries_a_busy_start() {
+        let inputs = PhyFilterDcapInputs::new(0x12, 0x34, 0x3a, 0x56, 0x87);
+        let mut transaction = PhyFilterDcapTransaction::new(inputs);
+        let mut access = FakeFilterDcapI2c {
+            busy_starts: 1,
+            ..FakeFilterDcapI2c::default()
+        };
+
+        assert_eq!(
+            transaction.start_with(&mut access),
+            Err(PhyFilterDcapError::BusyAtStart)
+        );
+        assert_eq!(transaction.action(), PhyFilterDcapAction::StartCommand);
+
+        for _ in 0..64 {
+            match transaction.action() {
+                PhyFilterDcapAction::StartCommand => {
+                    transaction.start_with(&mut access).unwrap();
+                }
+                PhyFilterDcapAction::AwaitCompletionEdge => {
+                    assert_eq!(
+                        transaction.observe_with(&access).unwrap(),
+                        PhyFilterDcapObservation::EdgeConsumed
+                    );
+                }
+                PhyFilterDcapAction::Complete => break,
+            }
+        }
+
+        assert_eq!(transaction.action(), PhyFilterDcapAction::Complete);
+        assert_eq!(access.accepted_commands, 18);
+        assert_eq!(
+            transaction.observe_with(&access),
+            Err(PhyFilterDcapError::AlreadyComplete)
+        );
     }
 
     fn drive(

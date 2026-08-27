@@ -4,8 +4,27 @@ use crate::{SharedPhyAccess, phy_pac, phy_pac_mut};
 pub use open_esp_radio_esp32s31_pac::{
     BluetoothTxPowerControlAction, BluetoothTxPowerControlCompletion, BluetoothTxPowerControlError,
     BluetoothTxPowerControlObservation, BluetoothTxPowerControlOperation,
-    BluetoothTxPowerControlTransaction, PhyI2cCommandMemoryInputs, PhyI2cHost,
+    BluetoothTxPowerControlTransaction, PhyFilterDcapAction, PhyFilterDcapError,
+    PhyFilterDcapInputs, PhyFilterDcapObservation, PhyFilterDcapTransaction,
+    PhyI2cCommandMemoryInputs, PhyI2cHost,
 };
+
+/// Start the current command of one PAC-owned filter-DCAP transaction.
+pub fn start_filter_dcap(
+    transaction: &mut PhyFilterDcapTransaction,
+    registers: &mut impl SharedPhyAccess,
+) -> Result<(), PhyFilterDcapError> {
+    transaction.start(phy_pac_mut(registers))
+}
+
+/// Consume one filter-DCAP completion edge without exposing analog-register
+/// identities or value encodings outside the PAC.
+pub fn observe_filter_dcap(
+    transaction: &mut PhyFilterDcapTransaction,
+    registers: &mut impl SharedPhyAccess,
+) -> Result<PhyFilterDcapObservation, PhyFilterDcapError> {
+    transaction.observe_completion_edge(phy_pac_mut(registers))
+}
 
 /// Start the current command of one PAC-owned Bluetooth TX-power transaction.
 pub fn start_bluetooth_tx_power_control(

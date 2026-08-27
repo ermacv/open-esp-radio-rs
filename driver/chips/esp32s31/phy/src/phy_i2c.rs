@@ -61,18 +61,6 @@ use crate::phy_pbus::{
     PhyPbusForceTest,
 };
 
-const fn saturate_phy_value(value: i32, upper: u8, lower: u8) -> u8 {
-    if value < lower as i32 {
-        lower
-    } else if value > upper as i32 {
-        upper
-    } else {
-        value as u8
-    }
-}
-
-#[cfg(test)]
-const LEGACY_PHY_PARAMETER_LEN: usize = 0x1fc;
 use crate::phy_xtal_duty::{
     XtalDutyCalibrationAction, XtalDutyCalibrationCompletion, XtalDutyCalibrationOutcome,
     XtalDutyCalibrationParameters, XtalDutyCalibrationTransition,
@@ -1173,54 +1161,55 @@ impl FilterDcapParameters {
         }
     }
 
-    #[cfg(test)]
-    pub fn from_legacy_parameter_image(parameter: &[u8; LEGACY_PHY_PARAMETER_LEN]) -> Self {
-        Self::new(
-            parameter[0xe9],
-            parameter[0xea],
-            parameter[0xed],
-            parameter[0xee],
-            parameter[0xf0],
-        )
-    }
-
     pub const fn parameter_ee(self) -> u8 {
         self.parameter_ee
+    }
+
+    pub(crate) const fn pac_inputs(
+        self,
+    ) -> open_esp_radio_esp32s31_hal::phy_i2c::PhyFilterDcapInputs {
+        open_esp_radio_esp32s31_hal::phy_i2c::PhyFilterDcapInputs::new(
+            self.parameter_e9,
+            self.parameter_ea,
+            self.parameter_ed,
+            self.parameter_ee,
+            self.parameter_f0,
+        )
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FilterDcapAction {
-    Write { address: PhyI2cAddress, value: u8 },
+    Configure(FilterDcapParameters),
     Complete,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FilterDcapCompletion {
-    WriteCompleted { address: PhyI2cAddress },
+    Configured,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FilterDcapTransitionError {
-    WrongCompletion,
     AlreadyComplete,
 }
 
-/// Exact finite 18-write plan recovered from ROM `phy_filter_dcap_set`.
+/// Semantic owner of the complete ROM `phy_filter_dcap_set` operation.
 ///
-/// Every write is completed by the outer non-blocking PHY-I2C owner. The
-/// transition stores only a five-byte snapshot and never reads `phy_param`.
+/// The finite analog-register transaction is owned by the PAC. This parent
+/// stores only a five-byte parameter snapshot and never exposes register
+/// geometry or reads a shared parameter image.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FilterDcapTransition {
     parameter: FilterDcapParameters,
-    index: u8,
+    complete: bool,
 }
 
 impl FilterDcapTransition {
     pub const fn new(parameter: FilterDcapParameters) -> Self {
         Self {
             parameter,
-            index: 0,
+            complete: false,
         }
     }
 
@@ -1228,56 +1217,23 @@ impl FilterDcapTransition {
         self.parameter
     }
 
-    const fn write(register: u8, value: u8) -> FilterDcapAction {
-        FilterDcapAction::Write {
-            address: PhyI2cAddress {
-                block: 0x67,
-                register,
-            },
-            value,
-        }
-    }
-
     pub const fn action(self) -> FilterDcapAction {
-        let high_filter = saturate_phy_value(self.parameter.parameter_ed as i32 + 6, 0x3c, 2);
-        let low_filter = saturate_phy_value(self.parameter.parameter_ed as i32 - 2, 0x3c, 2);
-        match self.index {
-            0 => Self::write(0x14, high_filter),
-            1 => Self::write(0x15, high_filter),
-            2 => Self::write(0x16, low_filter),
-            3 => Self::write(0x17, self.parameter.parameter_ed),
-            4 => Self::write(0x18, self.parameter.parameter_ee),
-            5 => Self::write(0x19, self.parameter.parameter_ee),
-            6 => Self::write(0x1c, self.parameter.parameter_f0),
-            7 => Self::write(0x1d, self.parameter.parameter_f0),
-            8 => Self::write(0x1e, self.parameter.parameter_f0 | 0x40),
-            9 => Self::write(0x1f, self.parameter.parameter_f0),
-            10 => Self::write(0x04, self.parameter.parameter_e9),
-            11 => Self::write(0x05, self.parameter.parameter_e9),
-            12 => Self::write(0x06, self.parameter.parameter_ea),
-            13 => Self::write(0x07, self.parameter.parameter_ea),
-            14 => Self::write(0x0c, self.parameter.parameter_e9),
-            15 => Self::write(0x0d, self.parameter.parameter_e9),
-            16 => Self::write(0x0e, self.parameter.parameter_ea),
-            17 => Self::write(0x0f, self.parameter.parameter_ea),
-            _ => FilterDcapAction::Complete,
+        if self.complete {
+            FilterDcapAction::Complete
+        } else {
+            FilterDcapAction::Configure(self.parameter)
         }
     }
 
     pub fn advance(
         &mut self,
-        completion: FilterDcapCompletion,
+        _completion: FilterDcapCompletion,
     ) -> Result<(), FilterDcapTransitionError> {
-        match (self.action(), completion) {
-            (
-                FilterDcapAction::Write { address, .. },
-                FilterDcapCompletion::WriteCompleted { address: completed },
-            ) if address == completed => {
-                self.index += 1;
-                Ok(())
-            }
-            (FilterDcapAction::Complete, _) => Err(FilterDcapTransitionError::AlreadyComplete),
-            _ => Err(FilterDcapTransitionError::WrongCompletion),
+        if self.complete {
+            Err(FilterDcapTransitionError::AlreadyComplete)
+        } else {
+            self.complete = true;
+            Ok(())
         }
     }
 }
@@ -2819,7 +2775,6 @@ mod tests {
         PhyChannelFrequencyInitControl, PhyFrequencyI2cAction, PhyFrequencyI2cCompletion,
     };
 
-    use super::LEGACY_PHY_PARAMETER_LEN;
     use crate::phy_pbus::{PhyPbusClearAction, PhyPbusClearCompletion, PhyPbusForceTest};
     use crate::phy_rfpll::{RfpllFrequencyAction, RfpllFrequencyCompletion};
     use crate::phy_rx_dco::{PhyRxDcoAction, PhyRxDcoCompletion};
@@ -3508,65 +3463,17 @@ mod tests {
     }
 
     #[test]
-    fn filter_dcap_owns_exact_rom_parameter_snapshot_and_write_order() {
+    fn filter_dcap_exposes_one_semantic_operation() {
         let parameter = FilterDcapParameters::new(0x12, 0x34, 0x3a, 0x56, 0x87);
         let mut transition = FilterDcapTransition::new(parameter);
-        let expected = [
-            (0x14, 0x3c),
-            (0x15, 0x3c),
-            (0x16, 0x38),
-            (0x17, 0x3a),
-            (0x18, 0x56),
-            (0x19, 0x56),
-            (0x1c, 0x87),
-            (0x1d, 0x87),
-            (0x1e, 0xc7),
-            (0x1f, 0x87),
-            (0x04, 0x12),
-            (0x05, 0x12),
-            (0x06, 0x34),
-            (0x07, 0x34),
-            (0x0c, 0x12),
-            (0x0d, 0x12),
-            (0x0e, 0x34),
-            (0x0f, 0x34),
-        ];
-
-        for (register, value) in expected {
-            let address = PhyI2cAddress::new(0x67, register).unwrap();
-            assert_eq!(
-                transition.action(),
-                FilterDcapAction::Write { address, value }
-            );
-            let wrong_address = PhyI2cAddress::new(0x67, register.wrapping_add(1)).unwrap();
-            assert_eq!(
-                transition.advance(FilterDcapCompletion::WriteCompleted {
-                    address: wrong_address,
-                }),
-                Err(FilterDcapTransitionError::WrongCompletion)
-            );
-            transition
-                .advance(FilterDcapCompletion::WriteCompleted { address })
-                .unwrap();
-        }
-
+        assert_eq!(transition.action(), FilterDcapAction::Configure(parameter));
+        transition
+            .advance(FilterDcapCompletion::Configured)
+            .unwrap();
         assert_eq!(transition.action(), FilterDcapAction::Complete);
         assert_eq!(
-            transition.advance(FilterDcapCompletion::WriteCompleted {
-                address: PhyI2cAddress::new(0x67, 0x0f).unwrap(),
-            }),
+            transition.advance(FilterDcapCompletion::Configured),
             Err(FilterDcapTransitionError::AlreadyComplete)
-        );
-
-        let mut image = [0_u8; LEGACY_PHY_PARAMETER_LEN];
-        image[0xe9] = 1;
-        image[0xea] = 2;
-        image[0xed] = 3;
-        image[0xee] = 4;
-        image[0xf0] = 5;
-        assert_eq!(
-            FilterDcapParameters::from_legacy_parameter_image(&image),
-            FilterDcapParameters::new(1, 2, 3, 4, 5)
         );
     }
 
@@ -4251,15 +4158,15 @@ mod tests {
                 FilterDcapParameters::new(0x12, 0x34, 0x3a, 0x56, 0x87),
             ))
             .unwrap();
-        while let PhyRfInitPrefixAction::FilterDcap(FilterDcapAction::Write { address, .. }) =
-            transition.action()
-        {
-            transition
-                .advance(PhyRfInitPrefixCompletion::FilterDcap(
-                    FilterDcapCompletion::WriteCompleted { address },
-                ))
-                .unwrap();
-        }
+        assert!(matches!(
+            transition.action(),
+            PhyRfInitPrefixAction::FilterDcap(FilterDcapAction::Configure(_))
+        ));
+        transition
+            .advance(PhyRfInitPrefixCompletion::FilterDcap(
+                FilterDcapCompletion::Configured,
+            ))
+            .unwrap();
         let parameter_18e_address = PhyI2cAddress::new(0x62, 0x0f).unwrap();
         assert_eq!(
             transition.action(),

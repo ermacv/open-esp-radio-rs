@@ -109,14 +109,14 @@ use crate::{
     run_phy_calibration_tracking, run_phy_param_tracking, run_phy_register,
     target_executor::{
         PhyAsyncDelay, PhyTargetPortError, complete_bluetooth_i2c, complete_bluetooth_pbus,
-        complete_channel_i2c, complete_dcode_i2c, complete_final_i2c, complete_masked_i2c,
-        complete_rfpll_i2c, complete_rx_dc_calibration_pbus, complete_rx_dco_pbus,
-        complete_rx_gain_dc_pbus, complete_rx_gain_publish_pbus, complete_rx_saturation_pbus,
-        complete_rxiq_adjusted_tx_i2c, complete_rxiq_gain_i2c, complete_rxiq_gain_pbus,
-        complete_rxiq_init_i2c, complete_rxiq_init_pbus, complete_temperature_i2c,
-        complete_tx_calibration_environment_pbus, complete_tx_dc_pwdet_pbus,
-        complete_tx_dc_pwdet_search_pbus, complete_tx_power_i2c, complete_txiq_init_i2c,
-        complete_txiq_pbus,
+        complete_channel_i2c, complete_dcode_i2c, complete_filter_dcap_i2c, complete_final_i2c,
+        complete_masked_i2c, complete_rfpll_i2c, complete_rx_dc_calibration_pbus,
+        complete_rx_dco_pbus, complete_rx_gain_dc_pbus, complete_rx_gain_publish_pbus,
+        complete_rx_saturation_pbus, complete_rxiq_adjusted_tx_i2c, complete_rxiq_gain_i2c,
+        complete_rxiq_gain_pbus, complete_rxiq_init_i2c, complete_rxiq_init_pbus,
+        complete_temperature_i2c, complete_tx_calibration_environment_pbus,
+        complete_tx_dc_pwdet_pbus, complete_tx_dc_pwdet_search_pbus, complete_tx_power_i2c,
+        complete_txiq_init_i2c, complete_txiq_pbus,
     },
 };
 
@@ -1709,6 +1709,11 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         observer: &mut O,
     ) -> Result<PhyRfInitPrefixCompletion, PhyTargetPortError> {
         match binding {
+            PhyColdExternalBinding::FilterDcap(binding) => {
+                Ok(PhyRfInitPrefixCompletion::FilterDcap(
+                    complete_filter_dcap_i2c::<D>(binding, registers).await?,
+                ))
+            }
             PhyColdExternalBinding::I2c(mut binding) => {
                 for _ in 0..HARDWARE_EDGE_LIMIT {
                     match binding.action() {

@@ -366,75 +366,6 @@ const fn hal_host(host: u8) -> hal_phy_i2c::PhyI2cHost {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BiasRegAction {
-    Write { address: PhyI2cAddress, value: u8 },
-    Complete,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BiasRegCompletion {
-    WriteCompleted { address: PhyI2cAddress },
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BiasRegTransitionError {
-    WrongCompletion,
-    AlreadyComplete,
-}
-
-/// Event-driven replacement plan for
-/// `libphy.a[phy_i2c.o]::phy_bias_reg_set`.
-///
-/// The complete 48-byte vendor body ignores its argument and performs two
-/// synchronous `phy_i2c_writeReg` calls. This transition retains the exact
-/// `(block, register, value)` order but requires a separate completion edge
-/// for each write. It owns no timer, waker, allocation, or hidden state.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BiasRegTransition {
-    step: u8,
-}
-
-impl BiasRegTransition {
-    pub const fn new(_requested_state: bool) -> Self {
-        Self { step: 0 }
-    }
-
-    pub const fn action(self) -> BiasRegAction {
-        match self.step {
-            0 => BiasRegAction::Write {
-                address: PhyI2cAddress {
-                    block: 0x6a,
-                    register: 0,
-                },
-                value: 0xaf,
-            },
-            1 => BiasRegAction::Write {
-                address: PhyI2cAddress {
-                    block: 0x6a,
-                    register: 1,
-                },
-                value: 0x7f,
-            },
-            _ => BiasRegAction::Complete,
-        }
-    }
-
-    pub fn advance(&mut self, completion: BiasRegCompletion) -> Result<(), BiasRegTransitionError> {
-        let BiasRegCompletion::WriteCompleted { address } = completion;
-        match self.action() {
-            BiasRegAction::Write {
-                address: expected, ..
-            } if address == expected => {
-                self.step += 1;
-                Ok(())
-            }
-            BiasRegAction::Write { .. } => Err(BiasRegTransitionError::WrongCompletion),
-            BiasRegAction::Complete => Err(BiasRegTransitionError::AlreadyComplete),
-        }
-    }
-}
-
 /// Execute the finite register prefix which precedes the vendor
 /// `ets_delay_us(100)` call in `phy_open_i2c_xpd_new(true)`.
 ///
@@ -1650,7 +1581,7 @@ pub enum PhyRfInitPrefixAction {
     ConfigureBbpllCalibration {
         enabled: bool,
     },
-    Bias(BiasRegAction),
+    ConfigureBiasRegisters,
     OpenI2cXpd(OpenI2cXpdAction),
     PbusClear(PhyPbusClearAction),
     ConfigureI2cClockSelection {
@@ -1695,7 +1626,7 @@ pub enum PhyRfInitPrefixAction {
 pub enum PhyRfInitPrefixCompletion {
     FeBbClockConfigured,
     BbpllCalibrationConfigured,
-    Bias(BiasRegCompletion),
+    BiasRegistersConfigured,
     OpenI2cXpd(OpenI2cXpdCompletion),
     PbusClear(PhyPbusClearCompletion),
     I2cClockSelectionConfigured,
@@ -1735,7 +1666,7 @@ pub enum PhyRfInitPrefixTransitionError {
 enum PhyRfInitPrefixStep {
     FeBbClock,
     BbpllCalibration,
-    Bias(BiasRegTransition),
+    BiasRegisters,
     OpenI2cXpd(OpenI2cXpdTransition),
     PostI2cDelay,
     PbusClear(PhyPbusClearTransition),
@@ -1852,8 +1783,8 @@ enum PhyRfInitPrefixStep {
 /// Event-driven composition of operations one through twenty-five in the complete
 /// pinned `libphy.a[phy_init.o]::phy_rf_init` body.
 ///
-/// The two MMIO leaves are finite actions. Both bias writes and every SDM
-/// sample require an external PHY-I2C completion. The 100- and 10-microsecond
+/// The finite MMIO and PAC-owned PHY-I2C plans are semantic actions. Every SDM
+/// sample requires an external PHY-I2C completion. The 100- and 10-microsecond
 /// intervals are separate executor timer edges. No transition is caused by
 /// polling this value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1874,12 +1805,7 @@ impl PhyRfInitPrefixTransition {
             PhyRfInitPrefixStep::BbpllCalibration => {
                 PhyRfInitPrefixAction::ConfigureBbpllCalibration { enabled: true }
             }
-            PhyRfInitPrefixStep::Bias(transition) => match transition.action() {
-                BiasRegAction::Complete => {
-                    PhyRfInitPrefixAction::OpenI2cXpd(OpenI2cXpdAction::ConfigurePreDelay)
-                }
-                action => PhyRfInitPrefixAction::Bias(action),
-            },
+            PhyRfInitPrefixStep::BiasRegisters => PhyRfInitPrefixAction::ConfigureBiasRegisters,
             PhyRfInitPrefixStep::OpenI2cXpd(transition) => match transition.action() {
                 OpenI2cXpdAction::Complete(OpenI2cXpdOutcome::Stable) => {
                     PhyRfInitPrefixAction::DelayMicros(10)
@@ -2038,20 +1964,11 @@ impl PhyRfInitPrefixTransition {
             (
                 PhyRfInitPrefixStep::BbpllCalibration,
                 PhyRfInitPrefixCompletion::BbpllCalibrationConfigured,
-            ) => PhyRfInitPrefixStep::Bias(BiasRegTransition::new(true)),
+            ) => PhyRfInitPrefixStep::BiasRegisters,
             (
-                PhyRfInitPrefixStep::Bias(mut transition),
-                PhyRfInitPrefixCompletion::Bias(completion),
-            ) => {
-                transition
-                    .advance(completion)
-                    .map_err(|_| PhyRfInitPrefixTransitionError::WrongCompletion)?;
-                if transition.action() == BiasRegAction::Complete {
-                    PhyRfInitPrefixStep::OpenI2cXpd(OpenI2cXpdTransition::new(true))
-                } else {
-                    PhyRfInitPrefixStep::Bias(transition)
-                }
-            }
+                PhyRfInitPrefixStep::BiasRegisters,
+                PhyRfInitPrefixCompletion::BiasRegistersConfigured,
+            ) => PhyRfInitPrefixStep::OpenI2cXpd(OpenI2cXpdTransition::new(true)),
             (
                 PhyRfInitPrefixStep::OpenI2cXpd(mut transition),
                 PhyRfInitPrefixCompletion::OpenI2cXpd(completion),
@@ -2715,9 +2632,8 @@ impl Default for RcCalibrationTransition {
 #[cfg(test)]
 mod tests {
     use super::{
-        AdcRateAction, AdcRateCompletion, AdcRateTransition, AdcRateTransitionError, BiasRegAction,
-        BiasRegCompletion, BiasRegTransition, BiasRegTransitionError, FilterDcapAction,
-        FilterDcapCompletion, FilterDcapParameters, FilterDcapTransition,
+        AdcRateAction, AdcRateCompletion, AdcRateTransition, AdcRateTransitionError,
+        FilterDcapAction, FilterDcapCompletion, FilterDcapParameters, FilterDcapTransition,
         FilterDcapTransitionError, I2cBbpllAction, I2cBbpllCompletion, I2cBbpllOutcome,
         I2cBbpllTransition, I2cBbpllTransitionError, I2cInit1Action, I2cInit1Completion,
         I2cInit1Transition, I2cInit1TransitionError, MaskedI2cWriteAction,
@@ -3272,48 +3188,6 @@ mod tests {
     }
 
     #[test]
-    fn bias_register_plan_requires_two_ordered_i2c_completions() {
-        let first = PhyI2cAddress::new(0x6a, 0).unwrap();
-        let second = PhyI2cAddress::new(0x6a, 1).unwrap();
-        let mut transition = BiasRegTransition::new(true);
-
-        assert_eq!(
-            transition.action(),
-            BiasRegAction::Write {
-                address: first,
-                value: 0xaf
-            }
-        );
-        assert_eq!(
-            transition.advance(BiasRegCompletion::WriteCompleted { address: second }),
-            Err(BiasRegTransitionError::WrongCompletion)
-        );
-        transition
-            .advance(BiasRegCompletion::WriteCompleted { address: first })
-            .unwrap();
-        assert_eq!(
-            transition.action(),
-            BiasRegAction::Write {
-                address: second,
-                value: 0x7f
-            }
-        );
-        transition
-            .advance(BiasRegCompletion::WriteCompleted { address: second })
-            .unwrap();
-        assert_eq!(transition.action(), BiasRegAction::Complete);
-        assert_eq!(
-            transition.advance(BiasRegCompletion::WriteCompleted { address: second }),
-            Err(BiasRegTransitionError::AlreadyComplete)
-        );
-    }
-
-    #[test]
-    fn bias_register_argument_is_instruction_proven_unused() {
-        assert_eq!(BiasRegTransition::new(false), BiasRegTransition::new(true));
-    }
-
-    #[test]
     fn adc_rate_owns_masked_i2c_read_write_and_mmio_edges() {
         let address = PhyI2cAddress::new(0x66, 4).unwrap();
         let mut high_rate = AdcRateTransition::new(true);
@@ -3688,8 +3562,6 @@ mod tests {
 
     #[test]
     fn rf_init_prefix_composes_mmio_i2c_and_timer_edges_in_vendor_order() {
-        let bias_zero = PhyI2cAddress::new(0x6a, 0).unwrap();
-        let bias_one = PhyI2cAddress::new(0x6a, 1).unwrap();
         let mut transition = PhyRfInitPrefixTransition::new();
 
         assert_eq!(
@@ -3713,20 +3585,10 @@ mod tests {
 
         assert_eq!(
             transition.action(),
-            PhyRfInitPrefixAction::Bias(BiasRegAction::Write {
-                address: bias_zero,
-                value: 0xaf
-            })
+            PhyRfInitPrefixAction::ConfigureBiasRegisters
         );
         transition
-            .advance(PhyRfInitPrefixCompletion::Bias(
-                BiasRegCompletion::WriteCompleted { address: bias_zero },
-            ))
-            .unwrap();
-        transition
-            .advance(PhyRfInitPrefixCompletion::Bias(
-                BiasRegCompletion::WriteCompleted { address: bias_one },
-            ))
+            .advance(PhyRfInitPrefixCompletion::BiasRegistersConfigured)
             .unwrap();
         assert_eq!(
             transition.action(),
@@ -4290,8 +4152,6 @@ mod tests {
 
     #[test]
     fn rf_init_prefix_propagates_sdm_timeout_without_running_post_delay() {
-        let bias_zero = PhyI2cAddress::new(0x6a, 0).unwrap();
-        let bias_one = PhyI2cAddress::new(0x6a, 1).unwrap();
         let mut transition = PhyRfInitPrefixTransition::new();
         transition
             .advance(PhyRfInitPrefixCompletion::FeBbClockConfigured)
@@ -4300,14 +4160,7 @@ mod tests {
             .advance(PhyRfInitPrefixCompletion::BbpllCalibrationConfigured)
             .unwrap();
         transition
-            .advance(PhyRfInitPrefixCompletion::Bias(
-                BiasRegCompletion::WriteCompleted { address: bias_zero },
-            ))
-            .unwrap();
-        transition
-            .advance(PhyRfInitPrefixCompletion::Bias(
-                BiasRegCompletion::WriteCompleted { address: bias_one },
-            ))
+            .advance(PhyRfInitPrefixCompletion::BiasRegistersConfigured)
             .unwrap();
         transition
             .advance(PhyRfInitPrefixCompletion::OpenI2cXpd(

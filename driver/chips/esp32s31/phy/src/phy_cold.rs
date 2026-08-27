@@ -28,14 +28,13 @@ use crate::{
         PhyFrequencyI2cCompletion, PhyFrequencyTableAction, PhyFrequencyTableCompletion,
     },
     phy_i2c::{
-        AdcRateAction, AdcRateCompletion, BiasRegAction, BiasRegCompletion, FilterDcapAction,
-        FilterDcapCompletion, I2cBbpllAction, I2cBbpllCompletion, I2cInit1Action,
-        I2cInit1Completion, MaskedI2cWriteAction, MaskedI2cWriteCompletion, OpenI2cXpdAction,
-        OpenI2cXpdCompletion, PhyI2cAddress, PhyI2cError, PhyRfInitPrefixAction,
-        PhyRfInitPrefixCompletion, PhyRfInitPrefixOutcome, PhyRfInitPrefixTransition,
-        PhyRfInitPrefixTransitionError, RcCalibrationAction, RcCalibrationCompletion,
-        RcCalibrationSetAction, RcCalibrationSetCompletion, RfpllChargePumpAction,
-        RfpllChargePumpCompletion, Sar2InitAction, Sar2InitCompletion,
+        AdcRateAction, AdcRateCompletion, FilterDcapAction, FilterDcapCompletion, I2cBbpllAction,
+        I2cBbpllCompletion, I2cInit1Action, I2cInit1Completion, MaskedI2cWriteAction,
+        MaskedI2cWriteCompletion, OpenI2cXpdAction, OpenI2cXpdCompletion, PhyI2cAddress,
+        PhyI2cError, PhyRfInitPrefixAction, PhyRfInitPrefixCompletion, PhyRfInitPrefixOutcome,
+        PhyRfInitPrefixTransition, PhyRfInitPrefixTransitionError, RcCalibrationAction,
+        RcCalibrationCompletion, RcCalibrationSetAction, RcCalibrationSetCompletion,
+        RfpllChargePumpAction, RfpllChargePumpCompletion, Sar2InitAction, Sar2InitCompletion,
     },
     phy_pbus::{PhyPbusClearAction, PhyPbusClearCompletion, PhyPbusForceTest},
     phy_rfpll::{RfpllFrequencyAction, RfpllFrequencyCompletion},
@@ -416,6 +415,9 @@ pub struct PhyColdI2cConfigurationBinding {
 impl PhyColdI2cConfigurationBinding {
     pub const fn new(outer_action: PhyRfInitPrefixAction) -> Result<Self, PhyColdLoweringError> {
         let operation = match outer_action {
+            PhyRfInitPrefixAction::ConfigureBiasRegisters => {
+                open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cConfigurationOperation::BiasRegisters
+            }
             PhyRfInitPrefixAction::FilterDcap(FilterDcapAction::Configure(parameters)) => {
                 open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cConfigurationOperation::FilterDcap(
                     parameters.pac_inputs(),
@@ -480,6 +482,9 @@ impl PhyColdI2cConfigurationBinding {
             return Err(PhyColdLoweringError::IncompleteTransaction);
         }
         match self.outer_action {
+            PhyRfInitPrefixAction::ConfigureBiasRegisters => {
+                Ok(PhyRfInitPrefixCompletion::BiasRegistersConfigured)
+            }
             PhyRfInitPrefixAction::FilterDcap(FilterDcapAction::Configure(_)) => Ok(
                 PhyRfInitPrefixCompletion::FilterDcap(FilterDcapCompletion::Configured),
             ),
@@ -510,8 +515,7 @@ fn checked_masked_write(
 
 fn lower_prefix_i2c_request(action: PhyRfInitPrefixAction) -> Option<PhyColdI2cRequest> {
     match action {
-        PhyRfInitPrefixAction::Bias(BiasRegAction::Write { address, value })
-        | PhyRfInitPrefixAction::Sar2Init(Sar2InitAction::WriteByte { address, value })
+        PhyRfInitPrefixAction::Sar2Init(Sar2InitAction::WriteByte { address, value })
         | PhyRfInitPrefixAction::I2cBbpll(I2cBbpllAction::WriteByte { address, value })
         | PhyRfInitPrefixAction::AdcRate(AdcRateAction::WriteI2c { address, value })
         | PhyRfInitPrefixAction::ChannelFrequency(PhyChannelFrequencyInitAction::WriteByte {
@@ -673,12 +677,6 @@ fn lower_prefix_i2c_completion(
     outcome: PhyColdI2cOutcome,
 ) -> Option<PhyRfInitPrefixCompletion> {
     match (action, outcome) {
-        (
-            PhyRfInitPrefixAction::Bias(BiasRegAction::Write { address, .. }),
-            PhyColdI2cOutcome::Written { address: completed },
-        ) if address == completed => Some(PhyRfInitPrefixCompletion::Bias(
-            BiasRegCompletion::WriteCompleted { address },
-        )),
         (
             PhyRfInitPrefixAction::OpenI2cXpd(OpenI2cXpdAction::ReadSdmSample { address }),
             PhyColdI2cOutcome::Read {
@@ -2550,10 +2548,10 @@ mod tests {
     };
     use crate::phy_frequency::{PhyChannelFrequencyInitAction, PhyChannelFrequencyInitCompletion};
     use crate::phy_i2c::{
-        BiasRegAction, BiasRegCompletion, FilterDcapAction, FilterDcapParameters, I2cInit1Action,
-        OpenI2cXpdAction, OpenI2cXpdCompletion, PhyI2cAddress, PhyI2cError,
-        PhyRfInitParameterSnapshot, PhyRfInitPrefixAction, PhyRfInitPrefixCompletion,
-        RcCalibrationAction, RcCalibrationCompletion,
+        FilterDcapAction, FilterDcapParameters, I2cInit1Action, OpenI2cXpdAction,
+        OpenI2cXpdCompletion, PhyI2cAddress, PhyI2cError, PhyRfInitParameterSnapshot,
+        PhyRfInitPrefixAction, PhyRfInitPrefixCompletion, RcCalibrationAction,
+        RcCalibrationCompletion,
     };
     use crate::phy_pbus::{PhyPbusClearAction, PhyPbusClearCompletion, PhyPbusForceTest};
     use crate::phy_rfpll::{RfpllFrequencyAction, RfpllFrequencyCompletion};
@@ -2644,36 +2642,6 @@ mod tests {
                 address,
                 value: 0x0b,
             })
-        );
-    }
-
-    #[test]
-    fn binding_retains_the_exact_outer_action_until_completion() {
-        let address = PhyI2cAddress::new(0x6a, 0).unwrap();
-        let outer_action = PhyRfInitPrefixAction::Bias(BiasRegAction::Write {
-            address,
-            value: 0xaf,
-        });
-        let mut binding = PhyColdI2cBinding::new(outer_action).unwrap();
-        assert_eq!(binding.outer_action(), outer_action);
-        assert_eq!(
-            binding.action(),
-            PhyColdI2cAction::StartWrite {
-                address,
-                value: 0xaf,
-            }
-        );
-
-        binding.write_started().unwrap();
-        assert_eq!(
-            binding.observe_write_result(Ok(())),
-            Ok(PhyColdI2cObservation::EdgeConsumed)
-        );
-        assert_eq!(
-            binding.into_completion(),
-            Ok(PhyRfInitPrefixCompletion::Bias(
-                BiasRegCompletion::WriteCompleted { address }
-            ))
         );
     }
 
@@ -3355,6 +3323,10 @@ mod tests {
         assert!(matches!(
             PhyColdExternalBinding::lower(PhyRfInitPrefixAction::ConfigureFrontEndRegisters),
             Ok(PhyColdExternalBinding::Mmio(_))
+        ));
+        assert!(matches!(
+            PhyColdExternalBinding::lower(PhyRfInitPrefixAction::ConfigureBiasRegisters),
+            Ok(PhyColdExternalBinding::I2cConfiguration(_))
         ));
 
         let address = PhyI2cAddress::new(0x62, 1).unwrap();

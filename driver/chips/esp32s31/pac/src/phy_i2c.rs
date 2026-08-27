@@ -143,6 +143,15 @@ const fn saturate_phy_i2c_value(value: i32, upper: u8, lower: u8) -> u8 {
 
 const PHY_FILTER_DCAP_COMMAND_COUNT: u8 = 18;
 const PHY_I2C_INITIALIZATION_STAGE_ONE_COMMAND_COUNT: u8 = 26;
+const PHY_BIAS_REGISTER_COMMAND_COUNT: u8 = 2;
+
+const fn bias_register_command(index: u8) -> Option<(u8, u8, u8)> {
+    match index {
+        0 => Some((0x6a, 0x00, 0xaf)),
+        1 => Some((0x6a, 0x01, 0x7f)),
+        _ => None,
+    }
+}
 
 /// Parameter facts consumed by the complete PAC-owned filter-DCAP operation.
 ///
@@ -254,6 +263,7 @@ impl PhyI2cInitializationStageOneInputs {
 /// One complete PAC-owned PHY-I²C configuration operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyI2cConfigurationOperation {
+    BiasRegisters,
     FilterDcap(PhyFilterDcapInputs),
     InitializationStageOne(PhyI2cInitializationStageOneInputs),
 }
@@ -261,6 +271,7 @@ pub enum PhyI2cConfigurationOperation {
 impl PhyI2cConfigurationOperation {
     const fn command(self, index: u8) -> Option<(u8, u8, u8)> {
         match self {
+            Self::BiasRegisters => bias_register_command(index),
             Self::FilterDcap(inputs) => inputs.command(index),
             Self::InitializationStageOne(inputs) => inputs.command(index),
         }
@@ -268,6 +279,7 @@ impl PhyI2cConfigurationOperation {
 
     const fn command_count(self) -> u8 {
         match self {
+            Self::BiasRegisters => PHY_BIAS_REGISTER_COMMAND_COUNT,
             Self::FilterDcap(_) => PHY_FILTER_DCAP_COMMAND_COUNT,
             Self::InitializationStageOne(_) => PHY_I2C_INITIALIZATION_STAGE_ONE_COMMAND_COUNT,
         }
@@ -1195,19 +1207,24 @@ mod tests {
             busy_starts: 1,
             ..FakeConfigurationI2c::default()
         };
+        let mut bias =
+            PhyI2cConfigurationTransaction::new(PhyI2cConfigurationOperation::BiasRegisters);
+
+        assert_eq!(
+            bias.start_with(&mut access),
+            Err(PhyI2cConfigurationError::BusyAtStart)
+        );
+        assert_eq!(bias.action(), PhyI2cConfigurationAction::StartCommand);
+        drive_configuration(&mut bias, &mut access);
+        assert_eq!(bias.action(), PhyI2cConfigurationAction::Complete);
+        assert_eq!(access.accepted_commands, 2);
+
+        access.accepted_commands = 0;
         let mut filter_dcap =
             PhyI2cConfigurationTransaction::new(PhyI2cConfigurationOperation::FilterDcap(
                 PhyFilterDcapInputs::new(0x12, 0x34, 0x3a, 0x56, 0x87),
             ));
 
-        assert_eq!(
-            filter_dcap.start_with(&mut access),
-            Err(PhyI2cConfigurationError::BusyAtStart)
-        );
-        assert_eq!(
-            filter_dcap.action(),
-            PhyI2cConfigurationAction::StartCommand
-        );
         drive_configuration(&mut filter_dcap, &mut access);
         assert_eq!(filter_dcap.action(), PhyI2cConfigurationAction::Complete);
         assert_eq!(access.accepted_commands, 18);

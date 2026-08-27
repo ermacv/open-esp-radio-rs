@@ -144,11 +144,16 @@ const fn saturate_phy_i2c_value(value: i32, upper: u8, lower: u8) -> u8 {
 const PHY_FILTER_DCAP_COMMAND_COUNT: u8 = 18;
 const PHY_I2C_INITIALIZATION_STAGE_ONE_COMMAND_COUNT: u8 = 26;
 const PHY_BIAS_REGISTER_COMMAND_COUNT: u8 = 2;
+const PHY_BBPLL_CALIBRATION_COMMAND_COUNT: u8 = 2;
 const PHY_RC_CALIBRATION_SETTINGS_COMMAND_COUNT: u8 = 3;
 const PHY_SAR2_INITIALIZATION_COMMAND_COUNT: u8 = 2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PhyI2cConfigurationCommand {
+    Read {
+        block: u8,
+        register: u8,
+    },
     Write {
         block: u8,
         register: u8,
@@ -165,7 +170,8 @@ enum PhyI2cConfigurationCommand {
 impl PhyI2cConfigurationCommand {
     const fn address(self) -> (u8, u8) {
         match self {
-            Self::Write {
+            Self::Read { block, register }
+            | Self::Write {
                 block, register, ..
             }
             | Self::Modify {
@@ -294,6 +300,9 @@ impl PhyI2cInitializationStageOneInputs {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyI2cConfigurationOperation {
     BiasRegisters,
+    /// Clear the reviewed BBPLL calibration field and consume the vendor's
+    /// final readback without exposing its register image.
+    EnableBbpllCalibration,
     FilterDcap(PhyFilterDcapInputs),
     InitializationStageOne(PhyI2cInitializationStageOneInputs),
     RcCalibrationSettings,
@@ -304,6 +313,21 @@ impl PhyI2cConfigurationOperation {
     const fn command(self, index: u8) -> Option<PhyI2cConfigurationCommand> {
         let write = match self {
             Self::BiasRegisters => bias_register_command(index),
+            Self::EnableBbpllCalibration => {
+                return match index {
+                    0 => Some(PhyI2cConfigurationCommand::Modify {
+                        block: 0x66,
+                        register: 0x04,
+                        mask: 0x0c,
+                        value: 0,
+                    }),
+                    1 => Some(PhyI2cConfigurationCommand::Read {
+                        block: 0x66,
+                        register: 0x04,
+                    }),
+                    _ => None,
+                };
+            }
             Self::FilterDcap(inputs) => inputs.command(index),
             Self::InitializationStageOne(inputs) => inputs.command(index),
             Self::RcCalibrationSettings => {
@@ -359,6 +383,7 @@ impl PhyI2cConfigurationOperation {
     const fn command_count(self) -> u8 {
         match self {
             Self::BiasRegisters => PHY_BIAS_REGISTER_COMMAND_COUNT,
+            Self::EnableBbpllCalibration => PHY_BBPLL_CALIBRATION_COMMAND_COUNT,
             Self::FilterDcap(_) => PHY_FILTER_DCAP_COMMAND_COUNT,
             Self::InitializationStageOne(_) => PHY_I2C_INITIALIZATION_STAGE_ONE_COMMAND_COUNT,
             Self::RcCalibrationSettings => PHY_RC_CALIBRATION_SETTINGS_COMMAND_COUNT,
@@ -471,7 +496,10 @@ impl PhyI2cConfigurationTransaction {
             .ok_or(PhyI2cConfigurationError::WrongAction)?;
         let (block, register) = command.address();
         match (command, self.pending_write) {
-            (PhyI2cConfigurationCommand::Modify { .. }, None) => {
+            (
+                PhyI2cConfigurationCommand::Read { .. } | PhyI2cConfigurationCommand::Modify { .. },
+                None,
+            ) => {
                 access
                     .start_read(block, register)
                     .map_err(|()| PhyI2cConfigurationError::BusyAtStart)?;
@@ -485,6 +513,9 @@ impl PhyI2cConfigurationTransaction {
                 self.phase = PhyI2cConfigurationPhase::AwaitWrite;
             }
             (PhyI2cConfigurationCommand::Write { .. }, Some(_)) => {
+                return Err(PhyI2cConfigurationError::WrongAction);
+            }
+            (PhyI2cConfigurationCommand::Read { .. }, Some(_)) => {
                 return Err(PhyI2cConfigurationError::WrongAction);
             }
         }
@@ -507,13 +538,21 @@ impl PhyI2cConfigurationTransaction {
                     Ok(value) => value,
                     Err(()) => return Ok(PhyI2cConfigurationObservation::StillPending),
                 };
-                let Some(PhyI2cConfigurationCommand::Modify { mask, value, .. }) =
-                    self.operation.command(self.command_index)
-                else {
-                    return Err(PhyI2cConfigurationError::WrongAction);
-                };
-                self.pending_write = Some((current & !mask) | (value & mask));
-                self.phase = PhyI2cConfigurationPhase::Start;
+                match self.operation.command(self.command_index) {
+                    Some(PhyI2cConfigurationCommand::Modify { mask, value, .. }) => {
+                        self.pending_write = Some((current & !mask) | (value & mask));
+                        self.phase = PhyI2cConfigurationPhase::Start;
+                    }
+                    Some(PhyI2cConfigurationCommand::Read { .. }) => {
+                        self.command_index += 1;
+                        self.phase = if self.command_index == self.operation.command_count() {
+                            PhyI2cConfigurationPhase::Complete
+                        } else {
+                            PhyI2cConfigurationPhase::Start
+                        };
+                    }
+                    _ => return Err(PhyI2cConfigurationError::WrongAction),
+                }
                 return Ok(PhyI2cConfigurationObservation::EdgeConsumed);
             }
             PhyI2cConfigurationPhase::AwaitWrite => {}
@@ -1370,6 +1409,12 @@ mod tests {
         drive_configuration(&mut bias, &mut access);
         assert_eq!(bias.action(), PhyI2cConfigurationAction::Complete);
         assert_eq!(access.accepted_commands, 2);
+
+        let mut bbpll = PhyI2cConfigurationTransaction::new(
+            PhyI2cConfigurationOperation::EnableBbpllCalibration,
+        );
+        drive_configuration(&mut bbpll, &mut access);
+        assert_eq!(bbpll.action(), PhyI2cConfigurationAction::Complete);
 
         access.accepted_commands = 0;
         let mut filter_dcap =

@@ -530,122 +530,6 @@ impl OpenI2cXpdTransition {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum I2cBbpllOutcome {
-    Enabled { register_snapshot: u8 },
-    Restored,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum I2cBbpllAction {
-    ReadMaskedByte { address: PhyI2cAddress },
-    WriteByte { address: PhyI2cAddress, value: u8 },
-    ReadSnapshot { address: PhyI2cAddress },
-    Complete(I2cBbpllOutcome),
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum I2cBbpllCompletion {
-    I2cReadCompleted { address: PhyI2cAddress, value: u8 },
-    I2cWriteCompleted { address: PhyI2cAddress },
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum I2cBbpllTransitionError {
-    WrongCompletion,
-    AlreadyComplete,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum I2cBbpllStep {
-    ReadMaskedByte,
-    WriteEnabledByte(u8),
-    ReadSnapshot,
-    WriteRestoredByte(u8),
-    Complete(I2cBbpllOutcome),
-}
-
-/// Owned replacement for complete rev0 ROM `phy_i2c_bbpll_set`.
-///
-/// Enabling performs a masked read/modify/write of bits 3:2 in PHY-I2C
-/// register `(0x66, 4)`, reads the resulting byte again, and returns that byte
-/// as explicit Rust-owned state. ROM stored it through the mutable
-/// `phy_param` indirection at offset `0x4a`. Restoring accepts that byte as an
-/// input instead of reading global C state. Every I2C edge is an external
-/// completion; the transition never polls or retries itself.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct I2cBbpllTransition {
-    step: I2cBbpllStep,
-}
-
-impl I2cBbpllTransition {
-    const ADDRESS: PhyI2cAddress = PhyI2cAddress {
-        block: 0x66,
-        register: 4,
-    };
-
-    pub const fn enable() -> Self {
-        Self {
-            step: I2cBbpllStep::ReadMaskedByte,
-        }
-    }
-
-    pub const fn restore(register_snapshot: u8) -> Self {
-        Self {
-            step: I2cBbpllStep::WriteRestoredByte(register_snapshot),
-        }
-    }
-
-    pub const fn action(self) -> I2cBbpllAction {
-        match self.step {
-            I2cBbpllStep::ReadMaskedByte => I2cBbpllAction::ReadMaskedByte {
-                address: Self::ADDRESS,
-            },
-            I2cBbpllStep::WriteEnabledByte(value) | I2cBbpllStep::WriteRestoredByte(value) => {
-                I2cBbpllAction::WriteByte {
-                    address: Self::ADDRESS,
-                    value,
-                }
-            }
-            I2cBbpllStep::ReadSnapshot => I2cBbpllAction::ReadSnapshot {
-                address: Self::ADDRESS,
-            },
-            I2cBbpllStep::Complete(outcome) => I2cBbpllAction::Complete(outcome),
-        }
-    }
-
-    pub fn advance(
-        &mut self,
-        completion: I2cBbpllCompletion,
-    ) -> Result<(), I2cBbpllTransitionError> {
-        self.step = match (self.step, completion) {
-            (
-                I2cBbpllStep::ReadMaskedByte,
-                I2cBbpllCompletion::I2cReadCompleted { address, value },
-            ) if address == Self::ADDRESS => I2cBbpllStep::WriteEnabledByte(value & !0x0c),
-            (
-                I2cBbpllStep::WriteEnabledByte(_),
-                I2cBbpllCompletion::I2cWriteCompleted { address },
-            ) if address == Self::ADDRESS => I2cBbpllStep::ReadSnapshot,
-            (
-                I2cBbpllStep::ReadSnapshot,
-                I2cBbpllCompletion::I2cReadCompleted { address, value },
-            ) if address == Self::ADDRESS => I2cBbpllStep::Complete(I2cBbpllOutcome::Enabled {
-                register_snapshot: value,
-            }),
-            (
-                I2cBbpllStep::WriteRestoredByte(_),
-                I2cBbpllCompletion::I2cWriteCompleted { address },
-            ) if address == Self::ADDRESS => I2cBbpllStep::Complete(I2cBbpllOutcome::Restored),
-            (I2cBbpllStep::Complete(_), _) => {
-                return Err(I2cBbpllTransitionError::AlreadyComplete);
-            }
-            _ => return Err(I2cBbpllTransitionError::WrongCompletion),
-        };
-        Ok(())
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AdcRateAction {
     ReadI2c { address: PhyI2cAddress },
     WriteI2c { address: PhyI2cAddress, value: u8 },
@@ -1361,7 +1245,6 @@ impl Default for RfpllChargePumpTransition {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyRfInitPrefixOutcome {
     ChannelFrequencyInitialized {
-        bbpll_register_snapshot: u8,
         parameter: PhyRfInitParameterSnapshot,
         rfpll_lock_observed: bool,
         sar2_reinitialized: bool,
@@ -1385,7 +1268,7 @@ pub enum PhyRfInitPrefixAction {
     ConfigureI2cClockSelection {
         selection: u32,
     },
-    I2cBbpll(I2cBbpllAction),
+    ConfigureI2cBbpll,
     AdcRate(AdcRateAction),
     ConfigureI2cMasterRegisters,
     ConfigurePowerDetectorRegisters,
@@ -1428,7 +1311,7 @@ pub enum PhyRfInitPrefixCompletion {
     OpenI2cXpd(OpenI2cXpdCompletion),
     PbusClear(PhyPbusClearCompletion),
     I2cClockSelectionConfigured,
-    I2cBbpll(I2cBbpllCompletion),
+    I2cBbpllConfigured,
     AdcRate(AdcRateCompletion),
     I2cMasterRegistersConfigured,
     PowerDetectorRegistersConfigured,
@@ -1469,74 +1352,42 @@ enum PhyRfInitPrefixStep {
     PostI2cDelay,
     PbusClear(PhyPbusClearTransition),
     I2cClockSelection,
-    I2cBbpll(I2cBbpllTransition),
-    AdcRate {
-        transition: AdcRateTransition,
-        bbpll_register_snapshot: u8,
-    },
-    I2cMasterRegisters {
-        bbpll_register_snapshot: u8,
-    },
-    PowerDetectorRegisters {
-        bbpll_register_snapshot: u8,
-    },
-    FrontEndRegisters {
-        bbpll_register_snapshot: u8,
-    },
-    TemperatureSensorRead {
-        bbpll_register_snapshot: u8,
-    },
-    TxPowerControlBackground {
-        bbpll_register_snapshot: u8,
-    },
-    RcCalibrationSettings {
-        bbpll_register_snapshot: u8,
-    },
-    RcCalibrationState {
-        bbpll_register_snapshot: u8,
-    },
-    RcCalibration {
-        transition: RcCalibrationTransition,
-        bbpll_register_snapshot: u8,
-    },
-    FilterDcapParameters {
-        bbpll_register_snapshot: u8,
-    },
-    FilterDcap {
-        transition: FilterDcapTransition,
-        bbpll_register_snapshot: u8,
-    },
+    I2cBbpll,
+    AdcRate(AdcRateTransition),
+    I2cMasterRegisters,
+    PowerDetectorRegisters,
+    FrontEndRegisters,
+    TemperatureSensorRead,
+    TxPowerControlBackground,
+    RcCalibrationSettings,
+    RcCalibrationState,
+    RcCalibration(RcCalibrationTransition),
+    FilterDcapParameters,
+    FilterDcap(FilterDcapTransition),
     Parameter18eRead {
-        bbpll_register_snapshot: u8,
         filter_dcap: FilterDcapParameters,
     },
     I2cInit1 {
         transition: I2cInit1Transition,
-        bbpll_register_snapshot: u8,
         parameter: PhyRfInitParameterSnapshot,
     },
     RfpllChargePump {
         transition: RfpllChargePumpTransition,
-        bbpll_register_snapshot: u8,
         parameter: PhyRfInitParameterSnapshot,
     },
     I2cMasterCommandMemory {
-        bbpll_register_snapshot: u8,
         parameter: PhyRfInitParameterSnapshot,
         rfpll_lock_observed: bool,
     },
     Masked69Read {
-        bbpll_register_snapshot: u8,
         parameter: PhyRfInitParameterSnapshot,
         rfpll_lock_observed: bool,
     },
     Sar2Configuration {
-        bbpll_register_snapshot: u8,
         parameter: PhyRfInitParameterSnapshot,
         rfpll_lock_observed: bool,
     },
     XtalDutyParameters {
-        bbpll_register_snapshot: u8,
         parameter: PhyRfInitParameterSnapshot,
         rfpll_lock_observed: bool,
         sar2_reinitialized: bool,
@@ -1544,14 +1395,12 @@ enum PhyRfInitPrefixStep {
     XtalDuty {
         transition: XtalDutyCalibrationTransition,
         xtal_parameters: XtalDutyCalibrationParameters,
-        bbpll_register_snapshot: u8,
         parameter: PhyRfInitParameterSnapshot,
         rfpll_lock_observed: bool,
         sar2_reinitialized: bool,
     },
     FrontEndRegisterUpdate {
         xtal_parameters: XtalDutyCalibrationParameters,
-        bbpll_register_snapshot: u8,
         parameter: PhyRfInitParameterSnapshot,
         rfpll_lock_observed: bool,
         sar2_reinitialized: bool,
@@ -1559,7 +1408,6 @@ enum PhyRfInitPrefixStep {
     },
     ChannelFrequencyControl {
         xtal_parameters: XtalDutyCalibrationParameters,
-        bbpll_register_snapshot: u8,
         parameter: PhyRfInitParameterSnapshot,
         rfpll_lock_observed: bool,
         sar2_reinitialized: bool,
@@ -1567,7 +1415,6 @@ enum PhyRfInitPrefixStep {
     },
     ChannelFrequency {
         transition: PhyChannelFrequencyInitTransition,
-        bbpll_register_snapshot: u8,
         parameter: PhyRfInitParameterSnapshot,
         rfpll_lock_observed: bool,
         sar2_reinitialized: bool,
@@ -1626,48 +1473,40 @@ impl PhyRfInitPrefixTransition {
             PhyRfInitPrefixStep::I2cClockSelection => {
                 PhyRfInitPrefixAction::ConfigureI2cClockSelection { selection: 8 }
             }
-            PhyRfInitPrefixStep::I2cBbpll(transition) => {
-                PhyRfInitPrefixAction::I2cBbpll(transition.action())
-            }
-            PhyRfInitPrefixStep::AdcRate { transition, .. } => match transition.action() {
+            PhyRfInitPrefixStep::I2cBbpll => PhyRfInitPrefixAction::ConfigureI2cBbpll,
+            PhyRfInitPrefixStep::AdcRate(transition) => match transition.action() {
                 AdcRateAction::Complete => PhyRfInitPrefixAction::ConfigureI2cMasterRegisters,
                 action => PhyRfInitPrefixAction::AdcRate(action),
             },
-            PhyRfInitPrefixStep::I2cMasterRegisters { .. } => {
+            PhyRfInitPrefixStep::I2cMasterRegisters => {
                 PhyRfInitPrefixAction::ConfigureI2cMasterRegisters
             }
-            PhyRfInitPrefixStep::PowerDetectorRegisters { .. } => {
+            PhyRfInitPrefixStep::PowerDetectorRegisters => {
                 PhyRfInitPrefixAction::ConfigurePowerDetectorRegisters
             }
-            PhyRfInitPrefixStep::FrontEndRegisters { .. } => {
+            PhyRfInitPrefixStep::FrontEndRegisters => {
                 PhyRfInitPrefixAction::ConfigureFrontEndRegisters
             }
-            PhyRfInitPrefixStep::TemperatureSensorRead { .. } => {
+            PhyRfInitPrefixStep::TemperatureSensorRead => {
                 PhyRfInitPrefixAction::ConfigureTemperatureSensorRead
             }
-            PhyRfInitPrefixStep::TxPowerControlBackground { .. } => {
+            PhyRfInitPrefixStep::TxPowerControlBackground => {
                 PhyRfInitPrefixAction::ConfigureTxPowerControlBackground
             }
-            PhyRfInitPrefixStep::RcCalibrationSettings { .. } => {
+            PhyRfInitPrefixStep::RcCalibrationSettings => {
                 PhyRfInitPrefixAction::ConfigureRcCalibrationSettings
             }
-            PhyRfInitPrefixStep::RcCalibrationState { .. } => {
+            PhyRfInitPrefixStep::RcCalibrationState => {
                 PhyRfInitPrefixAction::InspectRcCalibrationState
             }
-            PhyRfInitPrefixStep::RcCalibration {
-                transition,
-                bbpll_register_snapshot: _,
-            } => match transition.action() {
+            PhyRfInitPrefixStep::RcCalibration(transition) => match transition.action() {
                 RcCalibrationAction::Complete => PhyRfInitPrefixAction::CaptureFilterDcapParameters,
                 action => PhyRfInitPrefixAction::RcCalibration(action),
             },
-            PhyRfInitPrefixStep::FilterDcapParameters { .. } => {
+            PhyRfInitPrefixStep::FilterDcapParameters => {
                 PhyRfInitPrefixAction::CaptureFilterDcapParameters
             }
-            PhyRfInitPrefixStep::FilterDcap {
-                transition,
-                bbpll_register_snapshot: _,
-            } => match transition.action() {
+            PhyRfInitPrefixStep::FilterDcap(transition) => match transition.action() {
                 FilterDcapAction::Complete => PhyRfInitPrefixAction::ReadParameter18e {
                     address: PhyI2cAddress {
                         block: 0x62,
@@ -1686,7 +1525,6 @@ impl PhyRfInitPrefixTransition {
             }
             PhyRfInitPrefixStep::I2cInit1 {
                 transition,
-                bbpll_register_snapshot: _,
                 parameter: _,
             } => match transition.action() {
                 I2cInit1Action::Complete => PhyRfInitPrefixAction::RfpllChargePump(
@@ -1696,7 +1534,6 @@ impl PhyRfInitPrefixTransition {
             },
             PhyRfInitPrefixStep::RfpllChargePump {
                 transition,
-                bbpll_register_snapshot: _,
                 parameter,
             } => match transition.action() {
                 RfpllChargePumpAction::Complete(outcome) => {
@@ -1798,148 +1635,76 @@ impl PhyRfInitPrefixTransition {
             (
                 PhyRfInitPrefixStep::I2cClockSelection,
                 PhyRfInitPrefixCompletion::I2cClockSelectionConfigured,
-            ) => PhyRfInitPrefixStep::I2cBbpll(I2cBbpllTransition::enable()),
-            (
-                PhyRfInitPrefixStep::I2cBbpll(mut transition),
-                PhyRfInitPrefixCompletion::I2cBbpll(completion),
-            ) => {
-                transition
-                    .advance(completion)
-                    .map_err(|_| PhyRfInitPrefixTransitionError::WrongCompletion)?;
-                match transition.action() {
-                    I2cBbpllAction::Complete(I2cBbpllOutcome::Enabled { register_snapshot }) => {
-                        PhyRfInitPrefixStep::AdcRate {
-                            transition: AdcRateTransition::new(true),
-                            bbpll_register_snapshot: register_snapshot,
-                        }
-                    }
-                    I2cBbpllAction::Complete(I2cBbpllOutcome::Restored) => {
-                        return Err(PhyRfInitPrefixTransitionError::WrongCompletion);
-                    }
-                    _ => PhyRfInitPrefixStep::I2cBbpll(transition),
-                }
+            ) => PhyRfInitPrefixStep::I2cBbpll,
+            (PhyRfInitPrefixStep::I2cBbpll, PhyRfInitPrefixCompletion::I2cBbpllConfigured) => {
+                PhyRfInitPrefixStep::AdcRate(AdcRateTransition::new(true))
             }
             (
-                PhyRfInitPrefixStep::AdcRate {
-                    mut transition,
-                    bbpll_register_snapshot,
-                },
+                PhyRfInitPrefixStep::AdcRate(mut transition),
                 PhyRfInitPrefixCompletion::AdcRate(completion),
             ) => {
                 transition
                     .advance(completion)
                     .map_err(|_| PhyRfInitPrefixTransitionError::WrongCompletion)?;
                 if transition.action() == AdcRateAction::Complete {
-                    PhyRfInitPrefixStep::I2cMasterRegisters {
-                        bbpll_register_snapshot,
-                    }
+                    PhyRfInitPrefixStep::I2cMasterRegisters
                 } else {
-                    PhyRfInitPrefixStep::AdcRate {
-                        transition,
-                        bbpll_register_snapshot,
-                    }
+                    PhyRfInitPrefixStep::AdcRate(transition)
                 }
             }
             (
-                PhyRfInitPrefixStep::I2cMasterRegisters {
-                    bbpll_register_snapshot,
-                },
+                PhyRfInitPrefixStep::I2cMasterRegisters,
                 PhyRfInitPrefixCompletion::I2cMasterRegistersConfigured,
-            ) => PhyRfInitPrefixStep::PowerDetectorRegisters {
-                bbpll_register_snapshot,
-            },
+            ) => PhyRfInitPrefixStep::PowerDetectorRegisters,
             (
-                PhyRfInitPrefixStep::PowerDetectorRegisters {
-                    bbpll_register_snapshot,
-                },
+                PhyRfInitPrefixStep::PowerDetectorRegisters,
                 PhyRfInitPrefixCompletion::PowerDetectorRegistersConfigured,
-            ) => PhyRfInitPrefixStep::FrontEndRegisters {
-                bbpll_register_snapshot,
-            },
+            ) => PhyRfInitPrefixStep::FrontEndRegisters,
             (
-                PhyRfInitPrefixStep::FrontEndRegisters {
-                    bbpll_register_snapshot,
-                },
+                PhyRfInitPrefixStep::FrontEndRegisters,
                 PhyRfInitPrefixCompletion::FrontEndRegistersConfigured,
-            ) => PhyRfInitPrefixStep::TemperatureSensorRead {
-                bbpll_register_snapshot,
-            },
+            ) => PhyRfInitPrefixStep::TemperatureSensorRead,
             (
-                PhyRfInitPrefixStep::TemperatureSensorRead {
-                    bbpll_register_snapshot,
-                },
+                PhyRfInitPrefixStep::TemperatureSensorRead,
                 PhyRfInitPrefixCompletion::TemperatureSensorReadConfigured,
-            ) => PhyRfInitPrefixStep::TxPowerControlBackground {
-                bbpll_register_snapshot,
-            },
+            ) => PhyRfInitPrefixStep::TxPowerControlBackground,
             (
-                PhyRfInitPrefixStep::TxPowerControlBackground {
-                    bbpll_register_snapshot,
-                },
+                PhyRfInitPrefixStep::TxPowerControlBackground,
                 PhyRfInitPrefixCompletion::TxPowerControlBackgroundConfigured,
-            ) => PhyRfInitPrefixStep::RcCalibrationSettings {
-                bbpll_register_snapshot,
-            },
+            ) => PhyRfInitPrefixStep::RcCalibrationSettings,
             (
-                PhyRfInitPrefixStep::RcCalibrationSettings {
-                    bbpll_register_snapshot,
-                },
+                PhyRfInitPrefixStep::RcCalibrationSettings,
                 PhyRfInitPrefixCompletion::RcCalibrationSettingsConfigured,
-            ) => PhyRfInitPrefixStep::RcCalibrationState {
-                bbpll_register_snapshot,
-            },
+            ) => PhyRfInitPrefixStep::RcCalibrationState,
             (
-                PhyRfInitPrefixStep::RcCalibrationState {
-                    bbpll_register_snapshot,
-                },
+                PhyRfInitPrefixStep::RcCalibrationState,
                 PhyRfInitPrefixCompletion::RcCalibrationStateInspected { already_complete },
             ) => {
                 if already_complete {
-                    PhyRfInitPrefixStep::FilterDcapParameters {
-                        bbpll_register_snapshot,
-                    }
+                    PhyRfInitPrefixStep::FilterDcapParameters
                 } else {
-                    PhyRfInitPrefixStep::RcCalibration {
-                        transition: RcCalibrationTransition::new(),
-                        bbpll_register_snapshot,
-                    }
+                    PhyRfInitPrefixStep::RcCalibration(RcCalibrationTransition::new())
                 }
             }
             (
-                PhyRfInitPrefixStep::RcCalibration {
-                    mut transition,
-                    bbpll_register_snapshot,
-                },
+                PhyRfInitPrefixStep::RcCalibration(mut transition),
                 PhyRfInitPrefixCompletion::RcCalibration(completion),
             ) => {
                 transition
                     .advance(completion)
                     .map_err(|_| PhyRfInitPrefixTransitionError::WrongCompletion)?;
                 if transition.action() == RcCalibrationAction::Complete {
-                    PhyRfInitPrefixStep::FilterDcapParameters {
-                        bbpll_register_snapshot,
-                    }
+                    PhyRfInitPrefixStep::FilterDcapParameters
                 } else {
-                    PhyRfInitPrefixStep::RcCalibration {
-                        transition,
-                        bbpll_register_snapshot,
-                    }
+                    PhyRfInitPrefixStep::RcCalibration(transition)
                 }
             }
             (
-                PhyRfInitPrefixStep::FilterDcapParameters {
-                    bbpll_register_snapshot,
-                },
+                PhyRfInitPrefixStep::FilterDcapParameters,
                 PhyRfInitPrefixCompletion::FilterDcapParametersCaptured(parameter),
-            ) => PhyRfInitPrefixStep::FilterDcap {
-                transition: FilterDcapTransition::new(parameter),
-                bbpll_register_snapshot,
-            },
+            ) => PhyRfInitPrefixStep::FilterDcap(FilterDcapTransition::new(parameter)),
             (
-                PhyRfInitPrefixStep::FilterDcap {
-                    mut transition,
-                    bbpll_register_snapshot,
-                },
+                PhyRfInitPrefixStep::FilterDcap(mut transition),
                 PhyRfInitPrefixCompletion::FilterDcap(completion),
             ) => {
                 transition
@@ -1947,21 +1712,14 @@ impl PhyRfInitPrefixTransition {
                     .map_err(|_| PhyRfInitPrefixTransitionError::WrongCompletion)?;
                 if transition.action() == FilterDcapAction::Complete {
                     PhyRfInitPrefixStep::Parameter18eRead {
-                        bbpll_register_snapshot,
                         filter_dcap: transition.parameters(),
                     }
                 } else {
-                    PhyRfInitPrefixStep::FilterDcap {
-                        transition,
-                        bbpll_register_snapshot,
-                    }
+                    PhyRfInitPrefixStep::FilterDcap(transition)
                 }
             }
             (
-                PhyRfInitPrefixStep::Parameter18eRead {
-                    bbpll_register_snapshot,
-                    filter_dcap,
-                },
+                PhyRfInitPrefixStep::Parameter18eRead { filter_dcap },
                 PhyRfInitPrefixCompletion::Parameter18eRead {
                     address:
                         PhyI2cAddress {
@@ -1974,14 +1732,12 @@ impl PhyRfInitPrefixTransition {
                 let parameter = PhyRfInitParameterSnapshot::new(filter_dcap, value);
                 PhyRfInitPrefixStep::I2cInit1 {
                     transition: I2cInit1Transition::new(parameter),
-                    bbpll_register_snapshot,
                     parameter,
                 }
             }
             (
                 PhyRfInitPrefixStep::I2cInit1 {
                     mut transition,
-                    bbpll_register_snapshot,
                     parameter,
                 },
                 PhyRfInitPrefixCompletion::I2cInit1(completion),
@@ -1992,13 +1748,11 @@ impl PhyRfInitPrefixTransition {
                 if transition.action() == I2cInit1Action::Complete {
                     PhyRfInitPrefixStep::RfpllChargePump {
                         transition: RfpllChargePumpTransition::new(),
-                        bbpll_register_snapshot,
                         parameter,
                     }
                 } else {
                     PhyRfInitPrefixStep::I2cInit1 {
                         transition,
-                        bbpll_register_snapshot,
                         parameter,
                     }
                 }
@@ -2006,7 +1760,6 @@ impl PhyRfInitPrefixTransition {
             (
                 PhyRfInitPrefixStep::RfpllChargePump {
                     mut transition,
-                    bbpll_register_snapshot,
                     parameter,
                 },
                 PhyRfInitPrefixCompletion::RfpllChargePump(completion),
@@ -2017,33 +1770,28 @@ impl PhyRfInitPrefixTransition {
                 match transition.action() {
                     RfpllChargePumpAction::Complete(outcome) => {
                         PhyRfInitPrefixStep::I2cMasterCommandMemory {
-                            bbpll_register_snapshot,
                             parameter: parameter.with_parameter_18e(outcome.parameter_18e),
                             rfpll_lock_observed: outcome.lock_observed,
                         }
                     }
                     _ => PhyRfInitPrefixStep::RfpllChargePump {
                         transition,
-                        bbpll_register_snapshot,
                         parameter,
                     },
                 }
             }
             (
                 PhyRfInitPrefixStep::I2cMasterCommandMemory {
-                    bbpll_register_snapshot,
                     parameter,
                     rfpll_lock_observed,
                 },
                 PhyRfInitPrefixCompletion::I2cMasterCommandMemoryConfigured,
             ) => PhyRfInitPrefixStep::Masked69Read {
-                bbpll_register_snapshot,
                 parameter,
                 rfpll_lock_observed,
             },
             (
                 PhyRfInitPrefixStep::Masked69Read {
-                    bbpll_register_snapshot,
                     parameter,
                     rfpll_lock_observed,
                 },
@@ -2051,13 +1799,11 @@ impl PhyRfInitPrefixTransition {
             ) => {
                 if value == 0 {
                     PhyRfInitPrefixStep::Sar2Configuration {
-                        bbpll_register_snapshot,
                         parameter,
                         rfpll_lock_observed,
                     }
                 } else {
                     PhyRfInitPrefixStep::XtalDutyParameters {
-                        bbpll_register_snapshot,
                         parameter,
                         rfpll_lock_observed,
                         sar2_reinitialized: false,
@@ -2066,20 +1812,17 @@ impl PhyRfInitPrefixTransition {
             }
             (
                 PhyRfInitPrefixStep::Sar2Configuration {
-                    bbpll_register_snapshot,
                     parameter,
                     rfpll_lock_observed,
                 },
                 PhyRfInitPrefixCompletion::Sar2Configured,
             ) => PhyRfInitPrefixStep::XtalDutyParameters {
-                bbpll_register_snapshot,
                 parameter,
                 rfpll_lock_observed,
                 sar2_reinitialized: true,
             },
             (
                 PhyRfInitPrefixStep::XtalDutyParameters {
-                    bbpll_register_snapshot,
                     parameter,
                     rfpll_lock_observed,
                     sar2_reinitialized,
@@ -2088,7 +1831,6 @@ impl PhyRfInitPrefixTransition {
             ) => PhyRfInitPrefixStep::XtalDuty {
                 transition: XtalDutyCalibrationTransition::new(xtal_parameters),
                 xtal_parameters,
-                bbpll_register_snapshot,
                 parameter,
                 rfpll_lock_observed,
                 sar2_reinitialized,
@@ -2097,7 +1839,6 @@ impl PhyRfInitPrefixTransition {
                 PhyRfInitPrefixStep::XtalDuty {
                     mut transition,
                     xtal_parameters,
-                    bbpll_register_snapshot,
                     parameter,
                     rfpll_lock_observed,
                     sar2_reinitialized,
@@ -2111,7 +1852,6 @@ impl PhyRfInitPrefixTransition {
                     XtalDutyCalibrationAction::Complete(xtal_duty) => {
                         PhyRfInitPrefixStep::FrontEndRegisterUpdate {
                             xtal_parameters,
-                            bbpll_register_snapshot,
                             parameter,
                             rfpll_lock_observed,
                             sar2_reinitialized,
@@ -2121,7 +1861,6 @@ impl PhyRfInitPrefixTransition {
                     _ => PhyRfInitPrefixStep::XtalDuty {
                         transition,
                         xtal_parameters,
-                        bbpll_register_snapshot,
                         parameter,
                         rfpll_lock_observed,
                         sar2_reinitialized,
@@ -2131,7 +1870,6 @@ impl PhyRfInitPrefixTransition {
             (
                 PhyRfInitPrefixStep::FrontEndRegisterUpdate {
                     xtal_parameters,
-                    bbpll_register_snapshot,
                     parameter,
                     rfpll_lock_observed,
                     sar2_reinitialized,
@@ -2140,7 +1878,6 @@ impl PhyRfInitPrefixTransition {
                 PhyRfInitPrefixCompletion::FrontEndRegisterUpdateConfigured,
             ) => PhyRfInitPrefixStep::ChannelFrequencyControl {
                 xtal_parameters,
-                bbpll_register_snapshot,
                 parameter,
                 rfpll_lock_observed,
                 sar2_reinitialized,
@@ -2149,7 +1886,6 @@ impl PhyRfInitPrefixTransition {
             (
                 PhyRfInitPrefixStep::ChannelFrequencyControl {
                     xtal_parameters,
-                    bbpll_register_snapshot,
                     parameter,
                     rfpll_lock_observed,
                     sar2_reinitialized,
@@ -2168,7 +1904,6 @@ impl PhyRfInitPrefixTransition {
                         front_end_parameter_bit: control.front_end_parameter_bit,
                     },
                 ),
-                bbpll_register_snapshot,
                 parameter,
                 rfpll_lock_observed,
                 sar2_reinitialized,
@@ -2177,7 +1912,6 @@ impl PhyRfInitPrefixTransition {
             (
                 PhyRfInitPrefixStep::ChannelFrequency {
                     mut transition,
-                    bbpll_register_snapshot,
                     parameter,
                     rfpll_lock_observed,
                     sar2_reinitialized,
@@ -2192,7 +1926,6 @@ impl PhyRfInitPrefixTransition {
                     PhyChannelFrequencyInitAction::Complete(channel_frequency) => {
                         PhyRfInitPrefixStep::Complete(
                             PhyRfInitPrefixOutcome::ChannelFrequencyInitialized {
-                                bbpll_register_snapshot,
                                 parameter,
                                 rfpll_lock_observed,
                                 sar2_reinitialized,
@@ -2208,7 +1941,6 @@ impl PhyRfInitPrefixTransition {
                     }
                     _ => PhyRfInitPrefixStep::ChannelFrequency {
                         transition,
-                        bbpll_register_snapshot,
                         parameter,
                         rfpll_lock_observed,
                         sar2_reinitialized,
@@ -2391,17 +2123,16 @@ mod tests {
     use super::{
         AdcRateAction, AdcRateCompletion, AdcRateTransition, AdcRateTransitionError,
         FilterDcapAction, FilterDcapCompletion, FilterDcapParameters, FilterDcapTransition,
-        FilterDcapTransitionError, I2cBbpllAction, I2cBbpllCompletion, I2cBbpllOutcome,
-        I2cBbpllTransition, I2cBbpllTransitionError, I2cInit1Action, I2cInit1Completion,
-        I2cInit1Transition, I2cInit1TransitionError, MaskedI2cWriteAction,
-        MaskedI2cWriteCompletion, MaskedI2cWriteTransition, MaskedI2cWriteTransitionError,
-        OpenI2cXpdAction, OpenI2cXpdCompletion, OpenI2cXpdOutcome, OpenI2cXpdTransition,
-        OpenI2cXpdTransitionError, PhyI2cAddress, PhyRfInitParameterSnapshot,
-        PhyRfInitPrefixAction, PhyRfInitPrefixCompletion, PhyRfInitPrefixOutcome,
-        PhyRfInitPrefixStep, PhyRfInitPrefixTransition, PhyRfInitPrefixTransitionError,
-        RcCalibrationAction, RcCalibrationCompletion, RcCalibrationTransition,
-        RcCalibrationTransitionError, RfpllChargePumpAction, RfpllChargePumpCompletion,
-        RfpllChargePumpOutcome, RfpllChargePumpTransition,
+        FilterDcapTransitionError, I2cInit1Action, I2cInit1Completion, I2cInit1Transition,
+        I2cInit1TransitionError, MaskedI2cWriteAction, MaskedI2cWriteCompletion,
+        MaskedI2cWriteTransition, MaskedI2cWriteTransitionError, OpenI2cXpdAction,
+        OpenI2cXpdCompletion, OpenI2cXpdOutcome, OpenI2cXpdTransition, OpenI2cXpdTransitionError,
+        PhyI2cAddress, PhyRfInitParameterSnapshot, PhyRfInitPrefixAction,
+        PhyRfInitPrefixCompletion, PhyRfInitPrefixOutcome, PhyRfInitPrefixStep,
+        PhyRfInitPrefixTransition, PhyRfInitPrefixTransitionError, RcCalibrationAction,
+        RcCalibrationCompletion, RcCalibrationTransition, RcCalibrationTransitionError,
+        RfpllChargePumpAction, RfpllChargePumpCompletion, RfpllChargePumpOutcome,
+        RfpllChargePumpTransition,
     };
     use crate::phy_cold::PhyColdExternalBinding;
     use crate::phy_dc_iq::{
@@ -3197,62 +2928,6 @@ mod tests {
     }
 
     #[test]
-    fn i2c_bbpll_moves_rom_phy_param_snapshot_into_owned_state() {
-        let address = PhyI2cAddress::new(0x66, 4).unwrap();
-        let mut enable = I2cBbpllTransition::enable();
-        assert_eq!(enable.action(), I2cBbpllAction::ReadMaskedByte { address });
-        assert_eq!(
-            enable.advance(I2cBbpllCompletion::I2cWriteCompleted { address }),
-            Err(I2cBbpllTransitionError::WrongCompletion)
-        );
-        enable
-            .advance(I2cBbpllCompletion::I2cReadCompleted {
-                address,
-                value: 0xaf,
-            })
-            .unwrap();
-        assert_eq!(
-            enable.action(),
-            I2cBbpllAction::WriteByte {
-                address,
-                value: 0xa3,
-            }
-        );
-        enable
-            .advance(I2cBbpllCompletion::I2cWriteCompleted { address })
-            .unwrap();
-        assert_eq!(enable.action(), I2cBbpllAction::ReadSnapshot { address });
-        enable
-            .advance(I2cBbpllCompletion::I2cReadCompleted {
-                address,
-                value: 0xa3,
-            })
-            .unwrap();
-        assert_eq!(
-            enable.action(),
-            I2cBbpllAction::Complete(I2cBbpllOutcome::Enabled {
-                register_snapshot: 0xa3,
-            })
-        );
-
-        let mut restore = I2cBbpllTransition::restore(0xa3);
-        assert_eq!(
-            restore.action(),
-            I2cBbpllAction::WriteByte {
-                address,
-                value: 0xa3,
-            }
-        );
-        restore
-            .advance(I2cBbpllCompletion::I2cWriteCompleted { address })
-            .unwrap();
-        assert_eq!(
-            restore.action(),
-            I2cBbpllAction::Complete(I2cBbpllOutcome::Restored)
-        );
-    }
-
-    #[test]
     fn rf_init_prefix_composes_mmio_i2c_and_timer_edges_in_vendor_order() {
         let mut transition = PhyRfInitPrefixTransition::new();
 
@@ -3366,48 +3041,12 @@ mod tests {
         transition
             .advance(PhyRfInitPrefixCompletion::I2cClockSelectionConfigured)
             .unwrap();
-        let bbpll_address = PhyI2cAddress::new(0x66, 4).unwrap();
         assert_eq!(
             transition.action(),
-            PhyRfInitPrefixAction::I2cBbpll(I2cBbpllAction::ReadMaskedByte {
-                address: bbpll_address
-            })
+            PhyRfInitPrefixAction::ConfigureI2cBbpll
         );
         transition
-            .advance(PhyRfInitPrefixCompletion::I2cBbpll(
-                I2cBbpllCompletion::I2cReadCompleted {
-                    address: bbpll_address,
-                    value: 0xaf,
-                },
-            ))
-            .unwrap();
-        assert_eq!(
-            transition.action(),
-            PhyRfInitPrefixAction::I2cBbpll(I2cBbpllAction::WriteByte {
-                address: bbpll_address,
-                value: 0xa3,
-            })
-        );
-        transition
-            .advance(PhyRfInitPrefixCompletion::I2cBbpll(
-                I2cBbpllCompletion::I2cWriteCompleted {
-                    address: bbpll_address,
-                },
-            ))
-            .unwrap();
-        assert_eq!(
-            transition.action(),
-            PhyRfInitPrefixAction::I2cBbpll(I2cBbpllAction::ReadSnapshot {
-                address: bbpll_address
-            })
-        );
-        transition
-            .advance(PhyRfInitPrefixCompletion::I2cBbpll(
-                I2cBbpllCompletion::I2cReadCompleted {
-                    address: bbpll_address,
-                    value: 0xa3,
-                },
-            ))
+            .advance(PhyRfInitPrefixCompletion::I2cBbpllConfigured)
             .unwrap();
         let adc_address = PhyI2cAddress::new(0x66, 4).unwrap();
         assert_eq!(
@@ -3776,7 +3415,6 @@ mod tests {
             .unwrap();
         drive_warm_channel_frequency(&mut transition);
         let PhyRfInitPrefixAction::Complete(PhyRfInitPrefixOutcome::ChannelFrequencyInitialized {
-            bbpll_register_snapshot,
             parameter,
             rfpll_lock_observed,
             sar2_reinitialized,
@@ -3786,7 +3424,6 @@ mod tests {
         else {
             panic!("RF init did not complete channel-frequency initialization");
         };
-        assert_eq!(bbpll_register_snapshot, 0xa3);
         assert_eq!(parameter, final_parameter);
         assert!(rfpll_lock_observed);
         assert!(sar2_reinitialized);

@@ -145,7 +145,6 @@ struct CommonPhyState {
     filter_dcap: [u8; 5],
     rc_calibrated: bool,
     dcode: [u8; 8],
-    bbpll_register_snapshot: u8,
     i2c_frequency_parameter: u8,
     xtal_duty: [u8; 3],
     frequency_table_initialized: bool,
@@ -238,7 +237,7 @@ pub struct PhyCalibrationSnapshot {
     pub bluetooth: PhyBluetoothCalibration,
 }
 
-pub const PHY_CALIBRATION_SNAPSHOT_SCHEMA: u16 = 2;
+pub const PHY_CALIBRATION_SNAPSHOT_SCHEMA: u16 = 3;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyCommonCalibration {
@@ -249,7 +248,6 @@ pub struct PhyCommonCalibration {
     pub filter_dcap: [u8; 5],
     pub rc_calibrated: bool,
     pub dcode: [u8; 8],
-    pub bbpll_register_snapshot: u8,
     pub i2c_frequency_parameter: u8,
     pub xtal_duty: [u8; 3],
     pub clear_tone_after_ready: bool,
@@ -382,7 +380,6 @@ impl PhyState {
                 filter_dcap: [0; 5],
                 rc_calibrated: false,
                 dcode: [0; 8],
-                bbpll_register_snapshot: 0,
                 i2c_frequency_parameter: 0,
                 xtal_duty: [0; 3],
                 frequency_table_initialized: false,
@@ -1203,7 +1200,6 @@ impl PhyState {
                 filter_dcap: self.common.filter_dcap,
                 rc_calibrated: self.common.rc_calibrated,
                 dcode: self.common.dcode,
-                bbpll_register_snapshot: self.common.bbpll_register_snapshot,
                 i2c_frequency_parameter: self.common.i2c_frequency_parameter,
                 xtal_duty: self.common.xtal_duty,
                 clear_tone_after_ready: self.common.clear_tone_after_ready,
@@ -1370,7 +1366,6 @@ impl PhyState {
 
     pub(crate) fn synchronize_success(&mut self, outcome: PhyRfInitPrefixOutcome) {
         let PhyRfInitPrefixOutcome::ChannelFrequencyInitialized {
-            bbpll_register_snapshot,
             parameter,
             xtal_duty,
             channel_frequency,
@@ -1379,7 +1374,6 @@ impl PhyState {
         else {
             return;
         };
-        self.common.bbpll_register_snapshot = bbpll_register_snapshot;
         self.common.i2c_frequency_parameter = parameter.parameter_18e();
         self.common.xtal_duty = [
             xtal_duty.initial_duty,

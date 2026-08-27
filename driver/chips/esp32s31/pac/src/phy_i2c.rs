@@ -144,6 +144,35 @@ const fn saturate_phy_i2c_value(value: i32, upper: u8, lower: u8) -> u8 {
 const PHY_FILTER_DCAP_COMMAND_COUNT: u8 = 18;
 const PHY_I2C_INITIALIZATION_STAGE_ONE_COMMAND_COUNT: u8 = 26;
 const PHY_BIAS_REGISTER_COMMAND_COUNT: u8 = 2;
+const PHY_SAR2_INITIALIZATION_COMMAND_COUNT: u8 = 2;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PhyI2cConfigurationCommand {
+    Write {
+        block: u8,
+        register: u8,
+        value: u8,
+    },
+    Modify {
+        block: u8,
+        register: u8,
+        mask: u8,
+        value: u8,
+    },
+}
+
+impl PhyI2cConfigurationCommand {
+    const fn address(self) -> (u8, u8) {
+        match self {
+            Self::Write {
+                block, register, ..
+            }
+            | Self::Modify {
+                block, register, ..
+            } => (block, register),
+        }
+    }
+}
 
 const fn bias_register_command(index: u8) -> Option<(u8, u8, u8)> {
     match index {
@@ -266,14 +295,39 @@ pub enum PhyI2cConfigurationOperation {
     BiasRegisters,
     FilterDcap(PhyFilterDcapInputs),
     InitializationStageOne(PhyI2cInitializationStageOneInputs),
+    Sar2Initialization,
 }
 
 impl PhyI2cConfigurationOperation {
-    const fn command(self, index: u8) -> Option<(u8, u8, u8)> {
-        match self {
+    const fn command(self, index: u8) -> Option<PhyI2cConfigurationCommand> {
+        let write = match self {
             Self::BiasRegisters => bias_register_command(index),
             Self::FilterDcap(inputs) => inputs.command(index),
             Self::InitializationStageOne(inputs) => inputs.command(index),
+            Self::Sar2Initialization => {
+                return match index {
+                    0 => Some(PhyI2cConfigurationCommand::Modify {
+                        block: 0x69,
+                        register: 0x04,
+                        mask: 0x0f,
+                        value: 0x05,
+                    }),
+                    1 => Some(PhyI2cConfigurationCommand::Write {
+                        block: 0x69,
+                        register: 0x03,
+                        value: 0x78,
+                    }),
+                    _ => None,
+                };
+            }
+        };
+        match write {
+            Some((block, register, value)) => Some(PhyI2cConfigurationCommand::Write {
+                block,
+                register,
+                value,
+            }),
+            None => None,
         }
     }
 
@@ -282,6 +336,7 @@ impl PhyI2cConfigurationOperation {
             Self::BiasRegisters => PHY_BIAS_REGISTER_COMMAND_COUNT,
             Self::FilterDcap(_) => PHY_FILTER_DCAP_COMMAND_COUNT,
             Self::InitializationStageOne(_) => PHY_I2C_INITIALIZATION_STAGE_ONE_COMMAND_COUNT,
+            Self::Sar2Initialization => PHY_SAR2_INITIALIZATION_COMMAND_COUNT,
         }
     }
 }
@@ -312,12 +367,15 @@ pub enum PhyI2cConfigurationError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PhyI2cConfigurationPhase {
     Start,
-    Await,
+    AwaitRead,
+    AwaitWrite,
     Complete,
 }
 
 trait PhyI2cConfigurationAccess {
+    fn start_read(&mut self, block: u8, register: u8) -> Result<(), ()>;
     fn start_write(&mut self, block: u8, register: u8, value: u8) -> Result<(), ()>;
+    fn observe_read(&self) -> Result<u8, ()>;
     fn observe_write(&self) -> Result<(), ()>;
 }
 
@@ -331,6 +389,7 @@ pub struct PhyI2cConfigurationTransaction {
     operation: PhyI2cConfigurationOperation,
     phase: PhyI2cConfigurationPhase,
     command_index: u8,
+    pending_write: Option<u8>,
 }
 
 impl PhyI2cConfigurationTransaction {
@@ -339,13 +398,16 @@ impl PhyI2cConfigurationTransaction {
             operation,
             phase: PhyI2cConfigurationPhase::Start,
             command_index: 0,
+            pending_write: None,
         }
     }
 
     pub const fn action(&self) -> PhyI2cConfigurationAction {
         match self.phase {
             PhyI2cConfigurationPhase::Start => PhyI2cConfigurationAction::StartCommand,
-            PhyI2cConfigurationPhase::Await => PhyI2cConfigurationAction::AwaitCompletionEdge,
+            PhyI2cConfigurationPhase::AwaitRead | PhyI2cConfigurationPhase::AwaitWrite => {
+                PhyI2cConfigurationAction::AwaitCompletionEdge
+            }
             PhyI2cConfigurationPhase::Complete => PhyI2cConfigurationAction::Complete,
         }
     }
@@ -372,19 +434,34 @@ impl PhyI2cConfigurationTransaction {
             PhyI2cConfigurationPhase::Complete => {
                 return Err(PhyI2cConfigurationError::AlreadyComplete);
             }
-            PhyI2cConfigurationPhase::Await => {
+            PhyI2cConfigurationPhase::AwaitRead | PhyI2cConfigurationPhase::AwaitWrite => {
                 return Err(PhyI2cConfigurationError::WrongAction);
             }
             PhyI2cConfigurationPhase::Start => {}
         }
-        let (block, register, value) = self
+        let command = self
             .operation
             .command(self.command_index)
             .ok_or(PhyI2cConfigurationError::WrongAction)?;
-        access
-            .start_write(block, register, value)
-            .map_err(|()| PhyI2cConfigurationError::BusyAtStart)?;
-        self.phase = PhyI2cConfigurationPhase::Await;
+        let (block, register) = command.address();
+        match (command, self.pending_write) {
+            (PhyI2cConfigurationCommand::Modify { .. }, None) => {
+                access
+                    .start_read(block, register)
+                    .map_err(|()| PhyI2cConfigurationError::BusyAtStart)?;
+                self.phase = PhyI2cConfigurationPhase::AwaitRead;
+            }
+            (PhyI2cConfigurationCommand::Write { value, .. }, None)
+            | (PhyI2cConfigurationCommand::Modify { .. }, Some(value)) => {
+                access
+                    .start_write(block, register, value)
+                    .map_err(|()| PhyI2cConfigurationError::BusyAtStart)?;
+                self.phase = PhyI2cConfigurationPhase::AwaitWrite;
+            }
+            (PhyI2cConfigurationCommand::Write { .. }, Some(_)) => {
+                return Err(PhyI2cConfigurationError::WrongAction);
+            }
+        }
         Ok(())
     }
 
@@ -399,11 +476,26 @@ impl PhyI2cConfigurationTransaction {
             PhyI2cConfigurationPhase::Start => {
                 return Err(PhyI2cConfigurationError::WrongAction);
             }
-            PhyI2cConfigurationPhase::Await => {}
+            PhyI2cConfigurationPhase::AwaitRead => {
+                let current = match access.observe_read() {
+                    Ok(value) => value,
+                    Err(()) => return Ok(PhyI2cConfigurationObservation::StillPending),
+                };
+                let Some(PhyI2cConfigurationCommand::Modify { mask, value, .. }) =
+                    self.operation.command(self.command_index)
+                else {
+                    return Err(PhyI2cConfigurationError::WrongAction);
+                };
+                self.pending_write = Some((current & !mask) | (value & mask));
+                self.phase = PhyI2cConfigurationPhase::Start;
+                return Ok(PhyI2cConfigurationObservation::EdgeConsumed);
+            }
+            PhyI2cConfigurationPhase::AwaitWrite => {}
         }
         if access.observe_write().is_err() {
             return Ok(PhyI2cConfigurationObservation::StillPending);
         }
+        self.pending_write = None;
         self.command_index += 1;
         self.phase = if self.command_index == self.operation.command_count() {
             PhyI2cConfigurationPhase::Complete
@@ -962,6 +1054,15 @@ impl RadioPhyRegisters {
 }
 
 impl PhyI2cConfigurationAccess for RadioPhyRegisters {
+    fn start_read(&mut self, block: u8, register: u8) -> Result<(), ()> {
+        self.configure_phy_i2c_host_map();
+        if self.phy_i2c_master_is_busy(PhyI2cHost::Host1) {
+            return Err(());
+        }
+        self.publish_phy_i2c_command(PhyI2cHost::Host1, block, register, 0, false);
+        Ok(())
+    }
+
     fn start_write(&mut self, block: u8, register: u8, value: u8) -> Result<(), ()> {
         self.configure_phy_i2c_host_map();
         if self.phy_i2c_master_is_busy(PhyI2cHost::Host1) {
@@ -969,6 +1070,14 @@ impl PhyI2cConfigurationAccess for RadioPhyRegisters {
         }
         self.publish_phy_i2c_command(PhyI2cHost::Host1, block, register, value, true);
         Ok(())
+    }
+
+    fn observe_read(&self) -> Result<u8, ()> {
+        if self.phy_i2c_master_is_busy(PhyI2cHost::Host1) {
+            Err(())
+        } else {
+            Ok(self.sample_phy_i2c_result(PhyI2cHost::Host1))
+        }
     }
 
     fn observe_write(&self) -> Result<(), ()> {
@@ -1162,6 +1271,15 @@ mod tests {
     }
 
     impl PhyI2cConfigurationAccess for FakeConfigurationI2c {
+        fn start_read(&mut self, _block: u8, _register: u8) -> Result<(), ()> {
+            if self.busy_starts != 0 {
+                self.busy_starts -= 1;
+                return Err(());
+            }
+            self.accepted_commands += 1;
+            Ok(())
+        }
+
         fn start_write(&mut self, _block: u8, _register: u8, _value: u8) -> Result<(), ()> {
             if self.busy_starts != 0 {
                 self.busy_starts -= 1;
@@ -1169,6 +1287,14 @@ mod tests {
             }
             self.accepted_commands += 1;
             Ok(())
+        }
+
+        fn observe_read(&self) -> Result<u8, ()> {
+            if self.pending_observations == 0 {
+                Ok(0xa0)
+            } else {
+                Err(())
+            }
         }
 
         fn observe_write(&self) -> Result<(), ()> {
@@ -1242,6 +1368,29 @@ mod tests {
         drive_configuration(&mut initialization, &mut access);
         assert_eq!(initialization.action(), PhyI2cConfigurationAction::Complete);
         assert_eq!(access.accepted_commands, 26);
+
+        access.accepted_commands = 0;
+        let mut sar2 =
+            PhyI2cConfigurationTransaction::new(PhyI2cConfigurationOperation::Sar2Initialization);
+        access.busy_starts = 1;
+        assert_eq!(
+            sar2.start_with(&mut access),
+            Err(PhyI2cConfigurationError::BusyAtStart)
+        );
+        sar2.start_with(&mut access).unwrap();
+        access.pending_observations = 1;
+        assert_eq!(
+            sar2.observe_with(&access),
+            Ok(PhyI2cConfigurationObservation::StillPending)
+        );
+        assert_eq!(
+            sar2.action(),
+            PhyI2cConfigurationAction::AwaitCompletionEdge
+        );
+        access.pending_observations = 0;
+        drive_configuration(&mut sar2, &mut access);
+        assert_eq!(sar2.action(), PhyI2cConfigurationAction::Complete);
+        assert_eq!(access.accepted_commands, 3);
     }
 
     fn drive(

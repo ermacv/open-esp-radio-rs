@@ -34,7 +34,7 @@ use crate::{
         PhyI2cError, PhyRfInitPrefixAction, PhyRfInitPrefixCompletion, PhyRfInitPrefixOutcome,
         PhyRfInitPrefixTransition, PhyRfInitPrefixTransitionError, RcCalibrationAction,
         RcCalibrationCompletion, RcCalibrationSetAction, RcCalibrationSetCompletion,
-        RfpllChargePumpAction, RfpllChargePumpCompletion, Sar2InitAction, Sar2InitCompletion,
+        RfpllChargePumpAction, RfpllChargePumpCompletion,
     },
     phy_pbus::{PhyPbusClearAction, PhyPbusClearCompletion, PhyPbusForceTest},
     phy_rfpll::{RfpllFrequencyAction, RfpllFrequencyCompletion},
@@ -418,6 +418,9 @@ impl PhyColdI2cConfigurationBinding {
             PhyRfInitPrefixAction::ConfigureBiasRegisters => {
                 open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cConfigurationOperation::BiasRegisters
             }
+            PhyRfInitPrefixAction::ConfigureSar2 => {
+                open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cConfigurationOperation::Sar2Initialization
+            }
             PhyRfInitPrefixAction::FilterDcap(FilterDcapAction::Configure(parameters)) => {
                 open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cConfigurationOperation::FilterDcap(
                     parameters.pac_inputs(),
@@ -485,6 +488,7 @@ impl PhyColdI2cConfigurationBinding {
             PhyRfInitPrefixAction::ConfigureBiasRegisters => {
                 Ok(PhyRfInitPrefixCompletion::BiasRegistersConfigured)
             }
+            PhyRfInitPrefixAction::ConfigureSar2 => Ok(PhyRfInitPrefixCompletion::Sar2Configured),
             PhyRfInitPrefixAction::FilterDcap(FilterDcapAction::Configure(_)) => Ok(
                 PhyRfInitPrefixCompletion::FilterDcap(FilterDcapCompletion::Configured),
             ),
@@ -515,8 +519,7 @@ fn checked_masked_write(
 
 fn lower_prefix_i2c_request(action: PhyRfInitPrefixAction) -> Option<PhyColdI2cRequest> {
     match action {
-        PhyRfInitPrefixAction::Sar2Init(Sar2InitAction::WriteByte { address, value })
-        | PhyRfInitPrefixAction::I2cBbpll(I2cBbpllAction::WriteByte { address, value })
+        PhyRfInitPrefixAction::I2cBbpll(I2cBbpllAction::WriteByte { address, value })
         | PhyRfInitPrefixAction::AdcRate(AdcRateAction::WriteI2c { address, value })
         | PhyRfInitPrefixAction::ChannelFrequency(PhyChannelFrequencyInitAction::WriteByte {
             address,
@@ -571,12 +574,6 @@ fn lower_prefix_i2c_request(action: PhyRfInitPrefixAction) -> Option<PhyColdI2cR
             value,
         })
         | PhyRfInitPrefixAction::RfpllChargePump(RfpllChargePumpAction::WriteMasked {
-            address,
-            high_bit,
-            low_bit,
-            value,
-        })
-        | PhyRfInitPrefixAction::Sar2Init(Sar2InitAction::WriteMasked {
             address,
             high_bit,
             low_bit,
@@ -788,18 +785,6 @@ fn lower_prefix_i2c_completion(
         (PhyRfInitPrefixAction::ReadMasked69 { .. }, PhyColdI2cOutcome::Read { value, .. }) => {
             Some(PhyRfInitPrefixCompletion::Masked69Read(value))
         }
-        (
-            PhyRfInitPrefixAction::Sar2Init(Sar2InitAction::WriteMasked { .. }),
-            PhyColdI2cOutcome::Written { .. },
-        ) => Some(PhyRfInitPrefixCompletion::Sar2Init(
-            Sar2InitCompletion::MaskedWrite,
-        )),
-        (
-            PhyRfInitPrefixAction::Sar2Init(Sar2InitAction::WriteByte { address, .. }),
-            PhyColdI2cOutcome::Written { address: completed },
-        ) if address == completed => Some(PhyRfInitPrefixCompletion::Sar2Init(
-            Sar2InitCompletion::ByteWrite { address },
-        )),
         (
             PhyRfInitPrefixAction::ChannelFrequency(PhyChannelFrequencyInitAction::WriteMasked {
                 address,
@@ -3326,6 +3311,10 @@ mod tests {
         ));
         assert!(matches!(
             PhyColdExternalBinding::lower(PhyRfInitPrefixAction::ConfigureBiasRegisters),
+            Ok(PhyColdExternalBinding::I2cConfiguration(_))
+        ));
+        assert!(matches!(
+            PhyColdExternalBinding::lower(PhyRfInitPrefixAction::ConfigureSar2),
             Ok(PhyColdExternalBinding::I2cConfiguration(_))
         ));
 

@@ -1470,97 +1470,6 @@ impl Default for RfpllChargePumpTransition {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Sar2InitAction {
-    WriteMasked {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
-        value: u8,
-    },
-    WriteByte {
-        address: PhyI2cAddress,
-        value: u8,
-    },
-    Complete,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Sar2InitCompletion {
-    MaskedWrite,
-    ByteWrite { address: PhyI2cAddress },
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Sar2InitTransitionError {
-    WrongCompletion,
-    AlreadyComplete,
-}
-
-/// Exact two-write expansion of ROM `phy_i2c_sar2_init_code(0x578)`.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Sar2InitTransition {
-    step: u8,
-}
-
-impl Sar2InitTransition {
-    const CONTROL_ADDRESS: PhyI2cAddress = PhyI2cAddress {
-        block: 0x69,
-        register: 4,
-    };
-    const VALUE_ADDRESS: PhyI2cAddress = PhyI2cAddress {
-        block: 0x69,
-        register: 3,
-    };
-
-    pub const fn new() -> Self {
-        Self { step: 0 }
-    }
-
-    pub const fn action(self) -> Sar2InitAction {
-        match self.step {
-            0 => Sar2InitAction::WriteMasked {
-                address: Self::CONTROL_ADDRESS,
-                high_bit: 3,
-                low_bit: 0,
-                value: 5,
-            },
-            1 => Sar2InitAction::WriteByte {
-                address: Self::VALUE_ADDRESS,
-                value: 0x78,
-            },
-            _ => Sar2InitAction::Complete,
-        }
-    }
-
-    pub fn advance(
-        &mut self,
-        completion: Sar2InitCompletion,
-    ) -> Result<(), Sar2InitTransitionError> {
-        match (self.action(), completion) {
-            (Sar2InitAction::WriteMasked { .. }, Sar2InitCompletion::MaskedWrite) => {
-                self.step = 1;
-                Ok(())
-            }
-            (
-                Sar2InitAction::WriteByte { address, .. },
-                Sar2InitCompletion::ByteWrite { address: completed },
-            ) if address == completed => {
-                self.step = 2;
-                Ok(())
-            }
-            (Sar2InitAction::Complete, _) => Err(Sar2InitTransitionError::AlreadyComplete),
-            _ => Err(Sar2InitTransitionError::WrongCompletion),
-        }
-    }
-}
-
-impl Default for Sar2InitTransition {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyRfInitPrefixOutcome {
     ChannelFrequencyInitialized {
         bbpll_register_snapshot: u8,
@@ -1612,7 +1521,7 @@ pub enum PhyRfInitPrefixAction {
         high_bit: u8,
         low_bit: u8,
     },
-    Sar2Init(Sar2InitAction),
+    ConfigureSar2,
     CaptureXtalDutyParameters,
     XtalDuty(XtalDutyCalibrationAction),
     ConfigureFrontEndRegisterUpdate,
@@ -1647,7 +1556,7 @@ pub enum PhyRfInitPrefixCompletion {
     RfpllChargePump(RfpllChargePumpCompletion),
     I2cMasterCommandMemoryConfigured,
     Masked69Read(u8),
-    Sar2Init(Sar2InitCompletion),
+    Sar2Configured,
     XtalDutyParametersCaptured(XtalDutyCalibrationParameters),
     XtalDuty(XtalDutyCalibrationCompletion),
     FrontEndRegisterUpdateConfigured,
@@ -1733,8 +1642,7 @@ enum PhyRfInitPrefixStep {
         parameter: PhyRfInitParameterSnapshot,
         rfpll_lock_observed: bool,
     },
-    Sar2Init {
-        transition: Sar2InitTransition,
+    Sar2Configuration {
         bbpll_register_snapshot: u8,
         parameter: PhyRfInitParameterSnapshot,
         rfpll_lock_observed: bool,
@@ -1927,10 +1835,7 @@ impl PhyRfInitPrefixTransition {
                 high_bit: 3,
                 low_bit: 0,
             },
-            PhyRfInitPrefixStep::Sar2Init { transition, .. } => match transition.action() {
-                Sar2InitAction::Complete => PhyRfInitPrefixAction::CaptureXtalDutyParameters,
-                action => PhyRfInitPrefixAction::Sar2Init(action),
-            },
+            PhyRfInitPrefixStep::Sar2Configuration { .. } => PhyRfInitPrefixAction::ConfigureSar2,
             PhyRfInitPrefixStep::XtalDutyParameters { .. } => {
                 PhyRfInitPrefixAction::CaptureXtalDutyParameters
             }
@@ -2277,8 +2182,7 @@ impl PhyRfInitPrefixTransition {
                 PhyRfInitPrefixCompletion::Masked69Read(value),
             ) => {
                 if value == 0 {
-                    PhyRfInitPrefixStep::Sar2Init {
-                        transition: Sar2InitTransition::new(),
+                    PhyRfInitPrefixStep::Sar2Configuration {
                         bbpll_register_snapshot,
                         parameter,
                         rfpll_lock_observed,
@@ -2293,33 +2197,18 @@ impl PhyRfInitPrefixTransition {
                 }
             }
             (
-                PhyRfInitPrefixStep::Sar2Init {
-                    mut transition,
+                PhyRfInitPrefixStep::Sar2Configuration {
                     bbpll_register_snapshot,
                     parameter,
                     rfpll_lock_observed,
                 },
-                PhyRfInitPrefixCompletion::Sar2Init(completion),
-            ) => {
-                transition
-                    .advance(completion)
-                    .map_err(|_| PhyRfInitPrefixTransitionError::WrongCompletion)?;
-                if transition.action() == Sar2InitAction::Complete {
-                    PhyRfInitPrefixStep::XtalDutyParameters {
-                        bbpll_register_snapshot,
-                        parameter,
-                        rfpll_lock_observed,
-                        sar2_reinitialized: true,
-                    }
-                } else {
-                    PhyRfInitPrefixStep::Sar2Init {
-                        transition,
-                        bbpll_register_snapshot,
-                        parameter,
-                        rfpll_lock_observed,
-                    }
-                }
-            }
+                PhyRfInitPrefixCompletion::Sar2Configured,
+            ) => PhyRfInitPrefixStep::XtalDutyParameters {
+                bbpll_register_snapshot,
+                parameter,
+                rfpll_lock_observed,
+                sar2_reinitialized: true,
+            },
             (
                 PhyRfInitPrefixStep::XtalDutyParameters {
                     bbpll_register_snapshot,
@@ -2645,8 +2534,7 @@ mod tests {
         RcCalibrationAction, RcCalibrationCompletion, RcCalibrationSetAction,
         RcCalibrationSetCompletion, RcCalibrationSetTransition, RcCalibrationTransition,
         RcCalibrationTransitionError, RfpllChargePumpAction, RfpllChargePumpCompletion,
-        RfpllChargePumpOutcome, RfpllChargePumpTransition, Sar2InitAction, Sar2InitCompletion,
-        Sar2InitTransition,
+        RfpllChargePumpOutcome, RfpllChargePumpTransition,
     };
     use crate::phy_cold::PhyColdExternalBinding;
     use crate::phy_dc_iq::{
@@ -3476,35 +3364,6 @@ mod tests {
     }
 
     #[test]
-    fn sar2_zero_branch_expands_0x578_into_two_owned_writes() {
-        let mut transition = Sar2InitTransition::new();
-        assert_eq!(
-            transition.action(),
-            Sar2InitAction::WriteMasked {
-                address: PhyI2cAddress::new(0x69, 4).unwrap(),
-                high_bit: 3,
-                low_bit: 0,
-                value: 5,
-            }
-        );
-        transition.advance(Sar2InitCompletion::MaskedWrite).unwrap();
-        let value_address = PhyI2cAddress::new(0x69, 3).unwrap();
-        assert_eq!(
-            transition.action(),
-            Sar2InitAction::WriteByte {
-                address: value_address,
-                value: 0x78,
-            }
-        );
-        transition
-            .advance(Sar2InitCompletion::ByteWrite {
-                address: value_address,
-            })
-            .unwrap();
-        assert_eq!(transition.action(), Sar2InitAction::Complete);
-    }
-
-    #[test]
     fn i2c_bbpll_moves_rom_phy_param_snapshot_into_owned_state() {
         let address = PhyI2cAddress::new(0x66, 4).unwrap();
         let mut enable = I2cBbpllTransition::enable();
@@ -4057,27 +3916,9 @@ mod tests {
         transition
             .advance(PhyRfInitPrefixCompletion::Masked69Read(0))
             .unwrap();
-        assert_eq!(
-            transition.action(),
-            PhyRfInitPrefixAction::Sar2Init(Sar2InitAction::WriteMasked {
-                address: PhyI2cAddress::new(0x69, 4).unwrap(),
-                high_bit: 3,
-                low_bit: 0,
-                value: 5,
-            })
-        );
+        assert_eq!(transition.action(), PhyRfInitPrefixAction::ConfigureSar2);
         transition
-            .advance(PhyRfInitPrefixCompletion::Sar2Init(
-                Sar2InitCompletion::MaskedWrite,
-            ))
-            .unwrap();
-        let sar2_value_address = PhyI2cAddress::new(0x69, 3).unwrap();
-        transition
-            .advance(PhyRfInitPrefixCompletion::Sar2Init(
-                Sar2InitCompletion::ByteWrite {
-                    address: sar2_value_address,
-                },
-            ))
+            .advance(PhyRfInitPrefixCompletion::Sar2Configured)
             .unwrap();
         assert_eq!(
             transition.action(),

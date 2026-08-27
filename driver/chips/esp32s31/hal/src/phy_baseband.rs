@@ -97,7 +97,10 @@ pub fn configure_channel_dump(
 
 /// Apply complete rev0 ROM `phy_dac_rate_set`.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_dac_rate(registers: &mut impl SharedPhyAccess, rate: u32) {
+pub fn configure_dac_rate(
+    registers: &mut impl SharedPhyAccess,
+    rate: open_esp_radio_esp32s31_pac::PhyAdcRate,
+) {
     let registers = phy_pac_mut(registers);
     registers.configure_dac_rate(rate);
 }

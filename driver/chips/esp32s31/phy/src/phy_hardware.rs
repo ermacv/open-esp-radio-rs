@@ -292,7 +292,10 @@ pub(crate) fn configure_phy_rxiq_calibration_mode(registers: &mut impl SharedPhy
 /// This leaf preserves the following two fresh-read writes to the generated
 /// PAC `ADC_RATE_AND_FRONT_END_CONTROL` identity.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn configure_phy_adc_rate(registers: &mut impl SharedPhyAccess, rate: u32) {
+pub(crate) fn configure_phy_adc_rate(
+    registers: &mut impl SharedPhyAccess,
+    rate: open_esp_radio_esp32s31_hal::phy_i2c::PhyAdcRate,
+) {
     registers.configure_adc_rate(rate);
 }
 

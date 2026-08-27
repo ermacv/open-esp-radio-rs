@@ -231,7 +231,7 @@ use open_esp_radio_esp32s31_pac_raw as svd;
 pub use phy_i2c::{
     BluetoothTxPowerControlAction, BluetoothTxPowerControlCompletion, BluetoothTxPowerControlError,
     BluetoothTxPowerControlObservation, BluetoothTxPowerControlOperation,
-    BluetoothTxPowerControlTransaction, PhyFilterDcapInputs, PhyI2cCommandMemoryInputs,
+    BluetoothTxPowerControlTransaction, PhyAdcRate, PhyFilterDcapInputs, PhyI2cCommandMemoryInputs,
     PhyI2cConfigurationAction, PhyI2cConfigurationError, PhyI2cConfigurationObservation,
     PhyI2cConfigurationOperation, PhyI2cConfigurationTransaction, PhyI2cHost,
     PhyI2cInitializationStageOneInputs,

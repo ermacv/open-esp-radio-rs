@@ -419,6 +419,9 @@ impl PhyColdI2cConfigurationBinding {
             PhyRfInitPrefixAction::ConfigureI2cBbpll => {
                 open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cConfigurationOperation::EnableBbpllCalibration
             }
+            PhyRfInitPrefixAction::AdcRate(AdcRateAction::ConfigureI2c { rate }) => {
+                open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cConfigurationOperation::ConfigureAdcRate(rate)
+            }
             PhyRfInitPrefixAction::ConfigureRcCalibrationSettings => {
                 open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cConfigurationOperation::RcCalibrationSettings
             }
@@ -495,6 +498,9 @@ impl PhyColdI2cConfigurationBinding {
             PhyRfInitPrefixAction::ConfigureI2cBbpll => {
                 Ok(PhyRfInitPrefixCompletion::I2cBbpllConfigured)
             }
+            PhyRfInitPrefixAction::AdcRate(AdcRateAction::ConfigureI2c { .. }) => Ok(
+                PhyRfInitPrefixCompletion::AdcRate(AdcRateCompletion::I2cConfigured),
+            ),
             PhyRfInitPrefixAction::ConfigureRcCalibrationSettings => {
                 Ok(PhyRfInitPrefixCompletion::RcCalibrationSettingsConfigured)
             }
@@ -529,8 +535,7 @@ fn checked_masked_write(
 
 fn lower_prefix_i2c_request(action: PhyRfInitPrefixAction) -> Option<PhyColdI2cRequest> {
     match action {
-        PhyRfInitPrefixAction::AdcRate(AdcRateAction::WriteI2c { address, value })
-        | PhyRfInitPrefixAction::ChannelFrequency(PhyChannelFrequencyInitAction::WriteByte {
+        PhyRfInitPrefixAction::ChannelFrequency(PhyChannelFrequencyInitAction::WriteByte {
             address,
             value,
         })
@@ -551,7 +556,6 @@ fn lower_prefix_i2c_request(action: PhyRfInitPrefixAction) -> Option<PhyColdI2cR
         )) => Some(PhyColdI2cRequest::write_byte(address, candidate)),
         PhyRfInitPrefixAction::OpenI2cXpd(OpenI2cXpdAction::ReadSdmSample { address })
         | PhyRfInitPrefixAction::ReadParameter18e { address }
-        | PhyRfInitPrefixAction::AdcRate(AdcRateAction::ReadI2c { address })
         | PhyRfInitPrefixAction::RfpllChargePump(RfpllChargePumpAction::ReadByte { address })
         | PhyRfInitPrefixAction::ChannelFrequency(PhyChannelFrequencyInitAction::ReadByte {
             address,
@@ -683,21 +687,6 @@ fn lower_prefix_i2c_completion(
             },
         ) if address == completed => Some(PhyRfInitPrefixCompletion::OpenI2cXpd(
             OpenI2cXpdCompletion::SdmSample(value),
-        )),
-        (
-            PhyRfInitPrefixAction::AdcRate(AdcRateAction::ReadI2c { address }),
-            PhyColdI2cOutcome::Read {
-                address: completed,
-                value,
-            },
-        ) if address == completed => Some(PhyRfInitPrefixCompletion::AdcRate(
-            AdcRateCompletion::I2cReadCompleted { address, value },
-        )),
-        (
-            PhyRfInitPrefixAction::AdcRate(AdcRateAction::WriteI2c { address, .. }),
-            PhyColdI2cOutcome::Written { address: completed },
-        ) if address == completed => Some(PhyRfInitPrefixCompletion::AdcRate(
-            AdcRateCompletion::I2cWriteCompleted { address },
         )),
         (
             PhyRfInitPrefixAction::RcCalibration(RcCalibrationAction::WriteMasked { .. }),

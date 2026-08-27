@@ -566,7 +566,7 @@ impl RadioPhyRegisters {
     }
 
     /// Apply complete rev0 ROM `phy_dac_rate_set`.
-    pub fn configure_dac_rate(&mut self, rate: u32) {
+    pub fn configure_dac_rate(&mut self, rate: crate::PhyAdcRate) {
         self.configure_adc_rate(rate);
     }
 
@@ -1212,9 +1212,9 @@ impl RadioPhyRegisters {
     /// Publish the two-register suffix of complete ROM `phy_adc_rate_set`.
     ///
     /// The ROM body at `0x2f82_a6d2`, size `0x4a`, uses two fresh reads to
-    /// copy `rate` bit zero into physical bit one and then physical bit zero.
-    pub fn configure_adc_rate(&mut self, rate: u32) {
-        let enabled = rate & 1 != 0;
+    /// publish the selected semantic rate into the two recovered fields.
+    pub fn configure_adc_rate(&mut self, rate: crate::PhyAdcRate) {
+        let enabled = rate.is_high();
         let control = self
             .peripherals
             .phy_baseband_config_oracle

@@ -119,7 +119,7 @@ pub use open_esp_radio_esp32s31_pac::{
     Ieee802154OperationRxAbortEnableObservation, Ieee802154RxAbortReason,
     Ieee802154RxAbortReasonObservation, Ieee802154TimingPrerequisite, Ieee802154TimingReady,
     Ieee802154ValidationEdDurationState, Ieee802154ValidationEventEnableState, MacPowerWakeCause,
-    MacTsfTimerIndex, StaBeaconMissLimit, StaBeaconMissTimeoutRaw, StaModemSleepLimit,
+    MacTsfTimerIndex, PhyAdcRate, StaBeaconMissLimit, StaBeaconMissTimeoutRaw, StaModemSleepLimit,
     StaModemWakeConfig, StaModemWakePrepareError, StaModemWakeRestore, StaModemWakeRestoreError,
     StaModemWakeRestoreFailure, StaTbttAutoPeriod, StaTbttWakePrepareError, StaTbttWakeRestore,
     StaTbttWakeRestoreError, StaTbttWakeRestoreFailure, StaWakeProtectEarlyTimeRaw,
@@ -320,7 +320,7 @@ pub trait SharedPhyAccess: sealed::SharedPhyAccess {
         sealed::SharedPhyAccess::pac_mut(self).configure_rx_iq_calibration_mode();
     }
 
-    fn configure_adc_rate(&mut self, rate: u32) {
+    fn configure_adc_rate(&mut self, rate: PhyAdcRate) {
         sealed::SharedPhyAccess::pac_mut(self).configure_adc_rate(rate);
     }
 

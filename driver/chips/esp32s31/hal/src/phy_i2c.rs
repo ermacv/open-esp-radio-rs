@@ -4,7 +4,7 @@ use crate::{SharedPhyAccess, phy_pac, phy_pac_mut};
 pub use open_esp_radio_esp32s31_pac::{
     BluetoothTxPowerControlAction, BluetoothTxPowerControlCompletion, BluetoothTxPowerControlError,
     BluetoothTxPowerControlObservation, BluetoothTxPowerControlOperation,
-    BluetoothTxPowerControlTransaction, PhyFilterDcapInputs, PhyI2cCommandMemoryInputs,
+    BluetoothTxPowerControlTransaction, PhyAdcRate, PhyFilterDcapInputs, PhyI2cCommandMemoryInputs,
     PhyI2cConfigurationAction, PhyI2cConfigurationError, PhyI2cConfigurationObservation,
     PhyI2cConfigurationOperation, PhyI2cConfigurationTransaction, PhyI2cHost,
     PhyI2cInitializationStageOneInputs,

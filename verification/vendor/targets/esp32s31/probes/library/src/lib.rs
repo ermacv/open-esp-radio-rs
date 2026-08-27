@@ -1543,7 +1543,10 @@ pub extern "C" fn open_phy_trace_chan_dump_cfg(
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_dac_rate_set(rate: u32, registers: &mut RadioPhyRegisters) {
-    open_esp_radio_esp32s31_hal::phy_baseband::configure_dac_rate(registers, rate);
+    open_esp_radio_esp32s31_hal::phy_baseband::configure_dac_rate(
+        registers,
+        open_esp_radio_esp32s31_hal::PhyAdcRate::from_vendor_rate(rate),
+    );
 }
 
 #[unsafe(no_mangle)]

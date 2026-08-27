@@ -148,6 +148,31 @@ const PHY_BBPLL_CALIBRATION_COMMAND_COUNT: u8 = 2;
 const PHY_RC_CALIBRATION_SETTINGS_COMMAND_COUNT: u8 = 3;
 const PHY_SAR2_INITIALIZATION_COMMAND_COUNT: u8 = 2;
 
+/// One of the two complete-ROM ADC-rate selections.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyAdcRate {
+    Low,
+    High,
+}
+
+impl PhyAdcRate {
+    /// Decode the low selector bit accepted by the complete vendor leaf.
+    pub const fn from_vendor_rate(rate: u32) -> Self {
+        if rate & 1 == 0 { Self::Low } else { Self::High }
+    }
+
+    pub(crate) const fn is_high(self) -> bool {
+        matches!(self, Self::High)
+    }
+
+    const fn analog_configuration(self) -> u8 {
+        match self {
+            Self::Low => 0x08,
+            Self::High => 0,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PhyI2cConfigurationCommand {
     Read {
@@ -299,6 +324,7 @@ impl PhyI2cInitializationStageOneInputs {
 /// One complete PAC-owned PHY-I²C configuration operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyI2cConfigurationOperation {
+    ConfigureAdcRate(PhyAdcRate),
     BiasRegisters,
     /// Clear the reviewed BBPLL calibration field and consume the vendor's
     /// final readback without exposing its register image.
@@ -312,6 +338,17 @@ pub enum PhyI2cConfigurationOperation {
 impl PhyI2cConfigurationOperation {
     const fn command(self, index: u8) -> Option<PhyI2cConfigurationCommand> {
         let write = match self {
+            Self::ConfigureAdcRate(rate) => {
+                return match index {
+                    0 => Some(PhyI2cConfigurationCommand::Modify {
+                        block: 0x66,
+                        register: 0x04,
+                        mask: 0x0c,
+                        value: rate.analog_configuration(),
+                    }),
+                    _ => None,
+                };
+            }
             Self::BiasRegisters => bias_register_command(index),
             Self::EnableBbpllCalibration => {
                 return match index {
@@ -382,6 +419,7 @@ impl PhyI2cConfigurationOperation {
 
     const fn command_count(self) -> u8 {
         match self {
+            Self::ConfigureAdcRate(_) => 1,
             Self::BiasRegisters => PHY_BIAS_REGISTER_COMMAND_COUNT,
             Self::EnableBbpllCalibration => PHY_BBPLL_CALIBRATION_COMMAND_COUNT,
             Self::FilterDcap(_) => PHY_FILTER_DCAP_COMMAND_COUNT,
@@ -1227,7 +1265,7 @@ mod tests {
         BluetoothTxPowerControlError, BluetoothTxPowerControlI2cAccess,
         BluetoothTxPowerControlObservation, BluetoothTxPowerControlOperation,
         BluetoothTxPowerControlPrepareError, BluetoothTxPowerControlRegister,
-        BluetoothTxPowerControlRestoreError, BluetoothTxPowerControlTransaction,
+        BluetoothTxPowerControlRestoreError, BluetoothTxPowerControlTransaction, PhyAdcRate,
         PhyFilterDcapInputs, PhyI2cConfigurationAccess, PhyI2cConfigurationAction,
         PhyI2cConfigurationError, PhyI2cConfigurationObservation, PhyI2cConfigurationOperation,
         PhyI2cConfigurationTransaction, PhyI2cInitializationStageOneInputs,
@@ -1409,6 +1447,12 @@ mod tests {
         drive_configuration(&mut bias, &mut access);
         assert_eq!(bias.action(), PhyI2cConfigurationAction::Complete);
         assert_eq!(access.accepted_commands, 2);
+
+        let mut adc_rate = PhyI2cConfigurationTransaction::new(
+            PhyI2cConfigurationOperation::ConfigureAdcRate(PhyAdcRate::High),
+        );
+        drive_configuration(&mut adc_rate, &mut access);
+        assert_eq!(adc_rate.action(), PhyI2cConfigurationAction::Complete);
 
         let mut bbpll = PhyI2cConfigurationTransaction::new(
             PhyI2cConfigurationOperation::EnableBbpllCalibration,

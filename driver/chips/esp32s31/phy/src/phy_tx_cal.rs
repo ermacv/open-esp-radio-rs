@@ -2112,7 +2112,7 @@ mod tests {
 
     #[test]
     fn tx_cap_lowering_covers_every_nested_operation_class() {
-        let i2c = PhyI2cAddress::new_internal(0x62, 1);
+        let i2c = PhyI2cAddress::new(0x62, 1).unwrap();
         assert!(matches!(
             PhyTxCapExternalBinding::lower(PhyTxCapAction::Environment(
                 PhyTxCalibrationEnvironmentAction::ConfigurePbusDebugMode

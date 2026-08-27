@@ -9,7 +9,7 @@
 pub const PHY_REGISTER_I2C_RESET_SAMPLE_LIMIT: u16 = 1_000;
 
 const PHY_REGISTER_FINAL_I2C_ADDRESS: crate::phy_i2c::PhyI2cAddress =
-    crate::phy_i2c::PhyI2cAddress::new_internal(0x63, 0);
+    crate::phy_i2c::PhyI2cAddress::new(0x63, 0).unwrap();
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyRegisterDelayPhase {

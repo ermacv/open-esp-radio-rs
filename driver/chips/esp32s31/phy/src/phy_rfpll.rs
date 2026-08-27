@@ -33,15 +33,9 @@ use crate::{
     phy_i2c::{PhyI2cAddress, analog_registers},
 };
 
-const RFPLL_BLOCK: u8 = 0x62;
-const SDM_BLOCK: u8 = 0x63;
 const LOCK_ATTEMPTS: u8 = 100;
 const CAP_SEARCH_LIMIT: u8 = 10;
 const WIFI_CHANNEL_MAX: u16 = 14;
-
-const fn address(block: u8, register: u8) -> PhyI2cAddress {
-    PhyI2cAddress::new_internal(block, register)
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RfpllSdmImage {
@@ -326,7 +320,7 @@ impl RfpllFrequencyTransition {
             _ => (0x02, 5, 0, 0x3f),
         };
         RfpllFrequencyAction::WriteMasked {
-            address: address(RFPLL_BLOCK, register),
+            address: PhyI2cAddress::rfpll(register),
             high_bit,
             low_bit,
             value,
@@ -337,21 +331,21 @@ impl RfpllFrequencyTransition {
         let bytes = self.sdm.bytes;
         match index {
             0 => RfpllFrequencyAction::WriteMasked {
-                address: address(SDM_BLOCK, 0),
+                address: PhyI2cAddress::sdm(0),
                 high_bit: 3,
                 low_bit: 3,
                 value: 0,
             },
             1 => RfpllFrequencyAction::WriteByte {
-                address: address(SDM_BLOCK, 3),
+                address: PhyI2cAddress::sdm(3),
                 value: bytes[3],
             },
             2 => RfpllFrequencyAction::WriteByte {
-                address: address(SDM_BLOCK, 4),
+                address: PhyI2cAddress::sdm(4),
                 value: bytes[2],
             },
             3 => RfpllFrequencyAction::WriteByte {
-                address: address(SDM_BLOCK, 5),
+                address: PhyI2cAddress::sdm(5),
                 value: bytes[1],
             },
             4 => RfpllFrequencyAction::WriteMasked {
@@ -361,7 +355,7 @@ impl RfpllFrequencyTransition {
                 value: bytes[0],
             },
             _ => RfpllFrequencyAction::WriteMasked {
-                address: address(SDM_BLOCK, 0),
+                address: PhyI2cAddress::sdm(0),
                 high_bit: 3,
                 low_bit: 3,
                 value: 1,
@@ -377,7 +371,7 @@ impl RfpllFrequencyTransition {
             _ => (6, 1),
         };
         RfpllFrequencyAction::WriteMasked {
-            address: address(RFPLL_BLOCK, 0),
+            address: PhyI2cAddress::rfpll(0),
             high_bit,
             low_bit: high_bit,
             value,
@@ -404,20 +398,20 @@ impl RfpllFrequencyTransition {
             RfpllFrequencyStep::RestartWrite(index) => Self::restart_write(index),
             RfpllFrequencyStep::LockDelay { .. } => RfpllFrequencyAction::DelayMicros(20),
             RfpllFrequencyStep::LockRead { .. } => RfpllFrequencyAction::ReadMasked {
-                address: address(RFPLL_BLOCK, 7),
+                address: PhyI2cAddress::rfpll(7),
                 high_bit: 1,
                 low_bit: 1,
             },
             RfpllFrequencyStep::CapLowRead { .. } => RfpllFrequencyAction::ReadByte {
-                address: address(RFPLL_BLOCK, 5),
+                address: PhyI2cAddress::rfpll(5),
             },
             RfpllFrequencyStep::CapHighRead { .. } => RfpllFrequencyAction::ReadMasked {
-                address: address(RFPLL_BLOCK, 7),
+                address: PhyI2cAddress::rfpll(7),
                 high_bit: 2,
                 low_bit: 2,
             },
             RfpllFrequencyStep::EnableCapSearch { .. } => RfpllFrequencyAction::WriteMasked {
-                address: address(RFPLL_BLOCK, 0x0b),
+                address: PhyI2cAddress::rfpll(0x0b),
                 high_bit: 6,
                 low_bit: 6,
                 value: 1,
@@ -434,7 +428,7 @@ impl RfpllFrequencyTransition {
             },
             RfpllFrequencyStep::CapDelay(_) => RfpllFrequencyAction::DelayMicros(5),
             RfpllFrequencyStep::CapStatusRead(_) => RfpllFrequencyAction::ReadByte {
-                address: address(RFPLL_BLOCK, 0x0c),
+                address: PhyI2cAddress::rfpll(0x0c),
             },
             RfpllFrequencyStep::Complete(outcome) => RfpllFrequencyAction::Complete(outcome),
             RfpllFrequencyStep::Failed(failure) => RfpllFrequencyAction::Failed(failure),
@@ -584,7 +578,7 @@ impl RfpllFrequencyTransition {
                     low_bit: 1,
                     value,
                 },
-            ) if completed == address(RFPLL_BLOCK, 7) => {
+            ) if completed == PhyI2cAddress::rfpll(7) => {
                 if value != 0 {
                     RfpllFrequencyStep::CapLowRead {
                         lock_observed: true,
@@ -605,7 +599,7 @@ impl RfpllFrequencyTransition {
                     address: completed,
                     value,
                 },
-            ) if completed == address(RFPLL_BLOCK, 5) => RfpllFrequencyStep::CapHighRead {
+            ) if completed == PhyI2cAddress::rfpll(5) => RfpllFrequencyStep::CapHighRead {
                 low: value,
                 lock_observed,
             },
@@ -617,7 +611,7 @@ impl RfpllFrequencyTransition {
                     low_bit: 2,
                     value,
                 },
-            ) if completed == address(RFPLL_BLOCK, 7) => RfpllFrequencyStep::EnableCapSearch {
+            ) if completed == PhyI2cAddress::rfpll(7) => RfpllFrequencyStep::EnableCapSearch {
                 initial: u16::from(low) | (u16::from(value) << 8),
                 lock_observed,
             },
@@ -672,7 +666,7 @@ impl RfpllFrequencyTransition {
                     address: completed,
                     value,
                 },
-            ) if completed == address(RFPLL_BLOCK, 0x0c) => {
+            ) if completed == PhyI2cAddress::rfpll(0x0c) => {
                 let status = (value >> 2) & 0x3;
                 if status == 0 {
                     search.sum = search.sum.wrapping_add(search.candidate());
@@ -1698,7 +1692,7 @@ impl RfpllCapTrackingExternalBinding {
 #[cfg(test)]
 mod tests {
     use super::{
-        CAP_SEARCH_LIMIT, RFPLL_BLOCK, RfpllCapCorrectionAction, RfpllCapCorrectionBindingError,
+        CAP_SEARCH_LIMIT, RfpllCapCorrectionAction, RfpllCapCorrectionBindingError,
         RfpllCapCorrectionCompletion, RfpllCapCorrectionDirection,
         RfpllCapCorrectionExternalBinding, RfpllCapCorrectionRequest, RfpllCapCorrectionTransition,
         RfpllCapCorrectionTransitionError, RfpllCapTrackingAction, RfpllCapTrackingBindingError,
@@ -1706,8 +1700,9 @@ mod tests {
         RfpllCapTrackingTransition, RfpllCapTrackingTransitionError, RfpllFrequencyAction,
         RfpllFrequencyBindingError, RfpllFrequencyCompletion, RfpllFrequencyExternalBinding,
         RfpllFrequencyI2cBinding, RfpllFrequencyOutcome, RfpllFrequencyRequest,
-        RfpllFrequencyTransition, address, calculate_rfpll_sdm,
+        RfpllFrequencyTransition, calculate_rfpll_sdm,
     };
+    use crate::phy_i2c::PhyI2cAddress;
 
     fn cap_read_completion(
         action: RfpllCapCorrectionAction,
@@ -2279,7 +2274,7 @@ mod tests {
             }),
             Ok(RfpllFrequencyExternalBinding::Mmio(_))
         ));
-        let register = address(RFPLL_BLOCK, 7);
+        let register = PhyI2cAddress::rfpll(7);
         assert!(matches!(
             RfpllFrequencyExternalBinding::lower(RfpllFrequencyAction::ReadMasked {
                 address: register,
@@ -2321,7 +2316,7 @@ mod tests {
 
     #[test]
     fn rfpll_i2c_binding_preserves_the_masked_read_identity() {
-        let register = address(RFPLL_BLOCK, 7);
+        let register = PhyI2cAddress::rfpll(7);
         let mut binding = RfpllFrequencyI2cBinding::new(RfpllFrequencyAction::ReadMasked {
             address: register,
             high_bit: 2,

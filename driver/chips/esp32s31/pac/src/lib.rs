@@ -231,10 +231,10 @@ use open_esp_radio_esp32s31_pac_raw as svd;
 pub use phy_i2c::{
     BluetoothTxPowerControlAction, BluetoothTxPowerControlCompletion, BluetoothTxPowerControlError,
     BluetoothTxPowerControlObservation, BluetoothTxPowerControlOperation,
-    BluetoothTxPowerControlTransaction, PhyAdcRate, PhyFilterDcapInputs, PhyI2cCommandMemoryInputs,
-    PhyI2cConfigurationAction, PhyI2cConfigurationError, PhyI2cConfigurationObservation,
-    PhyI2cConfigurationOperation, PhyI2cConfigurationTransaction, PhyI2cHost,
-    PhyI2cInitializationStageOneInputs,
+    BluetoothTxPowerControlTransaction, PhyAdcRate, PhyFilterDcapInputs, PhyI2cAccessError,
+    PhyI2cAddress, PhyI2cCommandMemoryInputs, PhyI2cConfigurationAction, PhyI2cConfigurationError,
+    PhyI2cConfigurationObservation, PhyI2cConfigurationOperation, PhyI2cConfigurationTransaction,
+    PhyI2cHost, PhyI2cInitializationStageOneInputs, analog_registers,
 };
 pub use platform_clock_power::PlatformClockPowerObservation;
 pub use table_memory::{PbusMemoryGroupBoundary, PhyGainMemoryEntry, PhyMemoryError};

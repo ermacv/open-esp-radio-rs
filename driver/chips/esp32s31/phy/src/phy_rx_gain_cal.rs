@@ -516,7 +516,7 @@ const SHARED_CALIBRATION_GAIN: [u16; 11] = [
 ];
 const RX_ON_COUNT: u8 = 7;
 const RX_OFF_COUNT: u8 = 3;
-const RX_GAIN_I2C_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x67, 3);
+const RX_GAIN_I2C_ADDRESS: PhyI2cAddress = PhyI2cAddress::new(0x67, 3).unwrap();
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyRxGainDcBank {

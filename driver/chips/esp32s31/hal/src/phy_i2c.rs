@@ -4,10 +4,10 @@ use crate::{SharedPhyAccess, phy_pac, phy_pac_mut};
 pub use open_esp_radio_esp32s31_pac::{
     BluetoothTxPowerControlAction, BluetoothTxPowerControlCompletion, BluetoothTxPowerControlError,
     BluetoothTxPowerControlObservation, BluetoothTxPowerControlOperation,
-    BluetoothTxPowerControlTransaction, PhyAdcRate, PhyFilterDcapInputs, PhyI2cCommandMemoryInputs,
-    PhyI2cConfigurationAction, PhyI2cConfigurationError, PhyI2cConfigurationObservation,
-    PhyI2cConfigurationOperation, PhyI2cConfigurationTransaction, PhyI2cHost,
-    PhyI2cInitializationStageOneInputs,
+    BluetoothTxPowerControlTransaction, PhyAdcRate, PhyFilterDcapInputs, PhyI2cAccessError,
+    PhyI2cAddress, PhyI2cCommandMemoryInputs, PhyI2cConfigurationAction, PhyI2cConfigurationError,
+    PhyI2cConfigurationObservation, PhyI2cConfigurationOperation, PhyI2cConfigurationTransaction,
+    PhyI2cHost, PhyI2cInitializationStageOneInputs, analog_registers,
 };
 
 /// Start the current command of one PAC-owned PHY-I²C configuration.
@@ -44,31 +44,45 @@ pub fn observe_bluetooth_tx_power_control(
     transaction.observe_completion_edge(phy_pac_mut(registers))
 }
 
-/// Install the complete reviewed host map through the affine PHY owner.
-pub fn configure_host_map(registers: &mut impl SharedPhyAccess) {
-    phy_pac_mut(registers).configure_phy_i2c_host_map();
-}
-
-/// Publish the complete read-mask word through the affine PHY owner.
-pub fn publish_read_mask(registers: &mut impl SharedPhyAccess, read_mask: u16) {
-    phy_pac_mut(registers).publish_phy_i2c_read_mask(read_mask);
-}
-
-/// Publish one complete command through the selected affine host.
-pub fn publish_command(
+/// Configure the PAC-owned host map and return its typed selection.
+pub fn configure_and_select_host(
     registers: &mut impl SharedPhyAccess,
-    host: PhyI2cHost,
-    block: u8,
-    register: u8,
-    value: u8,
-    write: bool,
-) {
-    phy_pac_mut(registers).publish_phy_i2c_command(host, block, register, value, write);
+    address: PhyI2cAddress,
+) -> PhyI2cHost {
+    phy_pac_mut(registers).configure_and_select_phy_i2c_host(address)
 }
 
-/// Sample one completed host result through the affine PHY owner.
-pub fn sample_result(registers: &impl SharedPhyAccess, host: PhyI2cHost) -> u8 {
-    phy_pac(registers).sample_phy_i2c_result(host)
+/// Start one PAC-encoded analog-register read.
+pub fn try_start_read(
+    registers: &mut impl SharedPhyAccess,
+    address: PhyI2cAddress,
+) -> Result<(), PhyI2cAccessError> {
+    phy_pac_mut(registers).try_start_phy_i2c_read(address)
+}
+
+/// Consume one externally delivered completion edge for a PAC-encoded read.
+pub fn try_finish_read(
+    registers: &impl SharedPhyAccess,
+    address: PhyI2cAddress,
+) -> Result<u8, PhyI2cAccessError> {
+    phy_pac(registers).try_finish_phy_i2c_read(address)
+}
+
+/// Start one PAC-encoded analog-register write.
+pub fn try_start_write(
+    registers: &mut impl SharedPhyAccess,
+    address: PhyI2cAddress,
+    value: u8,
+) -> Result<(), PhyI2cAccessError> {
+    phy_pac_mut(registers).try_start_phy_i2c_write(address, value)
+}
+
+/// Consume one externally delivered completion edge for a PAC-encoded write.
+pub fn try_finish_write(
+    registers: &impl SharedPhyAccess,
+    address: PhyI2cAddress,
+) -> Result<(), PhyI2cAccessError> {
+    phy_pac(registers).try_finish_phy_i2c_write(address)
 }
 
 /// Publish one full-word PHY-I2C master reset command.

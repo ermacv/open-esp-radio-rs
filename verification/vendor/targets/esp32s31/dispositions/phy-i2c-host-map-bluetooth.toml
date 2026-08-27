@@ -4,14 +4,14 @@ default-protocol = "shared"
 
 # The probe constructs the standalone Bluetooth route, borrows its shared-PHY
 # owner, and projects the typed host at the ABI boundary. The selected host and
-# ANA_CONF2 transaction are produced by the exact private production function
-# and custom PAC.
+# ANA_CONF2 transaction are produced by the same PAC operation used by every
+# production PHY-I²C command path.
 [[functions]]
 source = "archive"
 symbol = "phy_get_i2c_hostid_new"
 disposition = "bounded-feature"
 protocol = "shared"
-rust-component = "open_esp_radio_esp32s31_phy::phy_i2c::configure_and_select_phy_i2c_host"
+rust-component = "open_esp_radio_esp32s31_pac::RadioPhyRegisters::configure_and_select_phy_i2c_host"
 binding = "v2"
 rust-binding = "reviewed-abi-projection"
 rust-probe = "open_phy_i2c_host_trace_phy_get_i2c_hostid_new"

@@ -17,7 +17,7 @@
 
 use crate::phy_i2c::PhyI2cAddress;
 
-const SENSOR_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x69, 0);
+const SENSOR_ADDRESS: PhyI2cAddress = PhyI2cAddress::new(0x69, 0).unwrap();
 const RESET_DAC: u8 = 0;
 const DEFAULT_DAC: u8 = 5;
 const DEFAULT_SENSOR_INDEX: u8 = 0;

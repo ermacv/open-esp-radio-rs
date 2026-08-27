@@ -37,11 +37,11 @@ use crate::{
 };
 
 const TX_CAP_ADDRESS: PhyI2cAddress = analog_registers::TX_CAPACITOR_BANKS;
-const D_CODE_0_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x62, 0x13);
-const D_CODE_1_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x62, 0x14);
-const INTERNAL_D_CODE_0_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x62, 0x11);
-const INTERNAL_D_CODE_1_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x62, 0x12);
-const LOOPBACK_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x67, 0);
+const D_CODE_0_ADDRESS: PhyI2cAddress = PhyI2cAddress::new(0x62, 0x13).unwrap();
+const D_CODE_1_ADDRESS: PhyI2cAddress = PhyI2cAddress::new(0x62, 0x14).unwrap();
+const INTERNAL_D_CODE_0_ADDRESS: PhyI2cAddress = PhyI2cAddress::new(0x62, 0x11).unwrap();
+const INTERNAL_D_CODE_1_ADDRESS: PhyI2cAddress = PhyI2cAddress::new(0x62, 0x12).unwrap();
+const LOOPBACK_ADDRESS: PhyI2cAddress = PhyI2cAddress::new(0x67, 0).unwrap();
 const TXIQ_COVER_ITERATIONS: u8 = 7;
 
 const fn txiq_coefficient(value: i16, kind: PhyTxIqCoefficientKind) -> i8 {
@@ -2696,7 +2696,7 @@ mod tests {
 
     #[test]
     fn external_lowering_covers_every_txiq_operation_layer() {
-        let i2c = PhyI2cAddress::new_internal(0x62, 1);
+        let i2c = PhyI2cAddress::new(0x62, 1).unwrap();
         assert!(matches!(
             PhyTxIqInitExternalBinding::lower(PhyTxIqInitAction::Rfpll(
                 RfpllFrequencyAction::DelayMicros(5)

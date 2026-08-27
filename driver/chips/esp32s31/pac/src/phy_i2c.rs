@@ -13,6 +13,117 @@ pub enum PhyI2cHost {
     Host1,
 }
 
+const PHY_I2C_READ_MASKS: [u16; 13] = [
+    0x0100, 0x0020, 0x0010, 0x0000, 0x0000, 0x0080, 0x0004, 0x0000, 0x0800, 0x0040, 0x0008, 0x0000,
+    0x8000,
+];
+const PHY_I2C_HOST_ONE_BLOCKS: u16 = 0x0647;
+
+/// Validated address of one internal analog PHY-I²C byte register.
+///
+/// The PAC owns the block-to-host mapping and read-mask encoding. Higher
+/// layers may retain this opaque identity while driving an asynchronous
+/// transaction, but cannot decompose it into command-register fields.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyI2cAddress {
+    block: u8,
+    register: u8,
+}
+
+/// One finite analog-register command is still owned by its hardware host.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyI2cAccessError {
+    Busy,
+}
+
+impl PhyI2cAddress {
+    /// Validate one recovered internal analog-register identity.
+    pub const fn new(block: u8, register: u8) -> Option<Self> {
+        if block >= 0x61 && block <= 0x6d {
+            Some(Self { block, register })
+        } else {
+            None
+        }
+    }
+
+    /// Address one recovered RFPLL byte register.
+    pub const fn rfpll(register: u8) -> Self {
+        Self::recovered(0x62, register)
+    }
+
+    /// Address one recovered sigma-delta-modulator byte register.
+    pub const fn sdm(register: u8) -> Self {
+        Self::recovered(0x63, register)
+    }
+
+    /// Address one recovered analog front-end byte register.
+    pub const fn front_end(register: u8) -> Self {
+        Self::recovered(0x67, register)
+    }
+
+    const fn recovered(block: u8, register: u8) -> Self {
+        assert!(block >= 0x61 && block <= 0x6d);
+        Self { block, register }
+    }
+
+    const fn host(self) -> PhyI2cHost {
+        let index = self.block.wrapping_sub(0x61);
+        if (PHY_I2C_HOST_ONE_BLOCKS >> index) & 1 == 0 {
+            PhyI2cHost::Host0
+        } else {
+            PhyI2cHost::Host1
+        }
+    }
+
+    const fn read_mask(self) -> u16 {
+        PHY_I2C_READ_MASKS[self.block.wrapping_sub(0x61) as usize]
+    }
+}
+
+/// Reviewed analog-register identities and fields.
+///
+/// These are not CPU addresses. Their command-bus geometry is private to the
+/// PAC; the names expose only semantics established by the recovered code.
+pub mod analog_registers {
+    use super::PhyI2cAddress;
+
+    /// One reviewed byte field in an internal analog register.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct Field {
+        pub address: PhyI2cAddress,
+        pub high_bit: u8,
+        pub low_bit: u8,
+    }
+
+    impl Field {
+        const fn new(address: PhyI2cAddress, high_bit: u8, low_bit: u8) -> Self {
+            Self {
+                address,
+                high_bit,
+                low_bit,
+            }
+        }
+    }
+
+    pub const XTAL_DUTY_SEED: PhyI2cAddress = PhyI2cAddress::recovered(0x61, 0x09);
+    pub const XTAL_DUTY_CANDIDATE: PhyI2cAddress = PhyI2cAddress::recovered(0x61, 0x0a);
+    pub const RFPLL_CAPACITOR_LOW: PhyI2cAddress = PhyI2cAddress::recovered(0x62, 0x01);
+    pub const RFPLL_CAPACITOR_HIGH: Field = Field::new(PhyI2cAddress::recovered(0x62, 0x02), 6, 6);
+    pub const RFPLL_CALIBRATED_CAPACITOR_LOW: PhyI2cAddress = PhyI2cAddress::recovered(0x62, 0x05);
+    pub const RFPLL_CALIBRATED_CAPACITOR_HIGH: Field =
+        Field::new(PhyI2cAddress::recovered(0x62, 0x07), 2, 2);
+    pub const RFPLL_CAPACITOR_CORRECTION_DIRECTION: Field =
+        Field::new(PhyI2cAddress::recovered(0x62, 0x0c), 3, 2);
+    pub const RFPLL_SDM_LOW: Field = Field::new(PhyI2cAddress::recovered(0x63, 0x06), 2, 0);
+    pub const TX_CAPACITOR_BANKS: PhyI2cAddress = PhyI2cAddress::recovered(0x6b, 0x02);
+    pub const TX_CAPACITOR_LOW: Field = Field::new(TX_CAPACITOR_BANKS, 3, 0);
+    pub const TX_CAPACITOR_HIGH: Field = Field::new(TX_CAPACITOR_BANKS, 7, 4);
+    pub const WIFI_TX_TEMPERATURE_TRACKING_0: Field =
+        Field::new(PhyI2cAddress::recovered(0x6b, 0x03), 3, 0);
+    pub const WIFI_TX_TEMPERATURE_TRACKING_1: Field =
+        Field::new(PhyI2cAddress::recovered(0x6b, 0x07), 3, 0);
+}
+
 const PHY_I2C_COMMAND_MEMORY_ENTRY_COUNT: usize = 45;
 
 // Complete command order recovered from
@@ -968,8 +1079,65 @@ const fn map_restore_error(
 }
 
 impl RadioPhyRegisters {
+    /// Configure the reviewed host map and select the typed host for one
+    /// opaque analog-register identity.
+    pub fn configure_and_select_phy_i2c_host(&mut self, address: PhyI2cAddress) -> PhyI2cHost {
+        self.configure_phy_i2c_host_map();
+        address.host()
+    }
+
+    /// Start one opaque analog-register read without exposing command fields.
+    pub fn try_start_phy_i2c_read(
+        &mut self,
+        address: PhyI2cAddress,
+    ) -> Result<(), PhyI2cAccessError> {
+        let host = self.configure_and_select_phy_i2c_host(address);
+        if self.phy_i2c_master_is_busy(host) {
+            return Err(PhyI2cAccessError::Busy);
+        }
+        self.publish_phy_i2c_read_mask(address.read_mask());
+        self.publish_phy_i2c_command(host, address.block, address.register, 0, false);
+        Ok(())
+    }
+
+    /// Consume one externally delivered completion edge for an opaque read.
+    pub fn try_finish_phy_i2c_read(&self, address: PhyI2cAddress) -> Result<u8, PhyI2cAccessError> {
+        let host = address.host();
+        if self.phy_i2c_master_is_busy(host) {
+            Err(PhyI2cAccessError::Busy)
+        } else {
+            Ok(self.sample_phy_i2c_result(host))
+        }
+    }
+
+    /// Start one opaque analog-register write without exposing command fields.
+    pub fn try_start_phy_i2c_write(
+        &mut self,
+        address: PhyI2cAddress,
+        value: u8,
+    ) -> Result<(), PhyI2cAccessError> {
+        let host = self.configure_and_select_phy_i2c_host(address);
+        if self.phy_i2c_master_is_busy(host) {
+            return Err(PhyI2cAccessError::Busy);
+        }
+        self.publish_phy_i2c_command(host, address.block, address.register, value, true);
+        Ok(())
+    }
+
+    /// Consume one externally delivered completion edge for an opaque write.
+    pub fn try_finish_phy_i2c_write(
+        &self,
+        address: PhyI2cAddress,
+    ) -> Result<(), PhyI2cAccessError> {
+        if self.phy_i2c_master_is_busy(address.host()) {
+            Err(PhyI2cAccessError::Busy)
+        } else {
+            Ok(())
+        }
+    }
+
     /// Install the complete reviewed PHY-I²C host map with one fresh RMW.
-    pub fn configure_phy_i2c_host_map(&mut self) {
+    fn configure_phy_i2c_host_map(&mut self) {
         self.peripherals
             .i2c_ana_mst
             .ana_conf2()
@@ -1013,7 +1181,7 @@ impl RadioPhyRegisters {
     }
 
     /// Publish the complete complemented read mask used by the vendor leaf.
-    pub fn publish_phy_i2c_read_mask(&mut self, read_mask: u16) {
+    fn publish_phy_i2c_read_mask(&mut self, read_mask: u16) {
         let complement = !u32::from(read_mask);
         self.peripherals.i2c_ana_mst.ana_conf1().write(|w| {
             w.read_mask_complement_low()
@@ -1024,7 +1192,7 @@ impl RadioPhyRegisters {
     }
 
     /// Publish one complete host command in the reviewed vendor order.
-    pub fn publish_phy_i2c_command(
+    fn publish_phy_i2c_command(
         &mut self,
         host: PhyI2cHost,
         block: u8,
@@ -1061,7 +1229,7 @@ impl RadioPhyRegisters {
     }
 
     /// Sample the completed data byte from one host.
-    pub fn sample_phy_i2c_result(&self, host: PhyI2cHost) -> u8 {
+    fn sample_phy_i2c_result(&self, host: PhyI2cHost) -> u8 {
         match host {
             PhyI2cHost::Host0 => self
                 .peripherals

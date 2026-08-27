@@ -525,10 +525,6 @@ impl PhyFrequencyCapMemoryExternalBinding {
     }
 }
 
-const fn i2c_address(block: u8, register: u8) -> PhyI2cAddress {
-    PhyI2cAddress::new_internal(block, register)
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyFrequencyI2cRequest {
     /// Explicit replacement for the single bit read from `phy_param[0x1af]`.
@@ -859,19 +855,19 @@ impl PhyFrequencyI2cTransition {
     pub const fn action(self) -> PhyFrequencyI2cAction {
         match self.step {
             PhyFrequencyI2cStep::EnableSnapshot => PhyFrequencyI2cAction::WriteMasked {
-                address: i2c_address(0x62, 0x0b),
+                address: PhyI2cAddress::rfpll(0x0b),
                 high_bit: 6,
                 low_bit: 6,
                 value: 1,
             },
             PhyFrequencyI2cStep::ReadRfpll => PhyFrequencyI2cAction::ReadByte {
-                address: i2c_address(0x62, 0x0b),
+                address: PhyI2cAddress::rfpll(0x0b),
             },
             PhyFrequencyI2cStep::ReadSdm { .. } => PhyFrequencyI2cAction::ReadByte {
-                address: i2c_address(0x63, 0),
+                address: PhyI2cAddress::sdm(0),
             },
             PhyFrequencyI2cStep::ReadFrontEnd { .. } => PhyFrequencyI2cAction::ReadByte {
-                address: i2c_address(0x67, 3),
+                address: PhyI2cAddress::front_end(3),
             },
             PhyFrequencyI2cStep::Memory {
                 rfpll_register_0b,
@@ -924,17 +920,17 @@ impl PhyFrequencyI2cTransition {
                     high_bit: 6,
                     low_bit: 6,
                 },
-            ) if address == i2c_address(0x62, 0x0b) => PhyFrequencyI2cStep::ReadRfpll,
+            ) if address == PhyI2cAddress::rfpll(0x0b) => PhyFrequencyI2cStep::ReadRfpll,
             (
                 PhyFrequencyI2cStep::ReadRfpll,
                 PhyFrequencyI2cCompletion::ByteRead { address, value },
-            ) if address == i2c_address(0x62, 0x0b) => PhyFrequencyI2cStep::ReadSdm {
+            ) if address == PhyI2cAddress::rfpll(0x0b) => PhyFrequencyI2cStep::ReadSdm {
                 rfpll_register_0b: value,
             },
             (
                 PhyFrequencyI2cStep::ReadSdm { rfpll_register_0b },
                 PhyFrequencyI2cCompletion::ByteRead { address, value },
-            ) if address == i2c_address(0x63, 0) => PhyFrequencyI2cStep::ReadFrontEnd {
+            ) if address == PhyI2cAddress::sdm(0) => PhyFrequencyI2cStep::ReadFrontEnd {
                 rfpll_register_0b,
                 sdm_register_0: value,
             },
@@ -944,7 +940,7 @@ impl PhyFrequencyI2cTransition {
                     sdm_register_0,
                 },
                 PhyFrequencyI2cCompletion::ByteRead { address, value },
-            ) if address == i2c_address(0x67, 3) => PhyFrequencyI2cStep::Memory {
+            ) if address == PhyI2cAddress::front_end(3) => PhyFrequencyI2cStep::Memory {
                 rfpll_register_0b,
                 sdm_register_0,
                 front_end_register_3: value,
@@ -1211,8 +1207,8 @@ pub struct PhyChannelFrequencyInitTransition {
 }
 
 impl PhyChannelFrequencyInitTransition {
-    const RFPLL_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x62, 2);
-    const SDM_REGISTER_SIX: PhyI2cAddress = PhyI2cAddress::new_internal(0x63, 6);
+    const RFPLL_ADDRESS: PhyI2cAddress = PhyI2cAddress::new(0x62, 2).unwrap();
+    const SDM_REGISTER_SIX: PhyI2cAddress = PhyI2cAddress::new(0x63, 6).unwrap();
 
     pub const fn new(request: PhyChannelFrequencyInitRequest) -> Self {
         Self {
@@ -1238,7 +1234,7 @@ impl PhyChannelFrequencyInitTransition {
             }
             PhyChannelFrequencyInitStep::InitialCapLow => {
                 PhyChannelFrequencyInitAction::WriteByte {
-                    address: i2c_address(0x62, 1),
+                    address: PhyI2cAddress::rfpll(1),
                     value: 0xc8,
                 }
             }
@@ -1356,7 +1352,7 @@ impl PhyChannelFrequencyInitTransition {
             (
                 PhyChannelFrequencyInitStep::InitialCapLow,
                 PhyChannelFrequencyInitCompletion::ByteWrite { address },
-            ) if address == i2c_address(0x62, 1) => PhyChannelFrequencyInitStep::InitialCapHigh,
+            ) if address == PhyI2cAddress::rfpll(1) => PhyChannelFrequencyInitStep::InitialCapHigh,
             (
                 PhyChannelFrequencyInitStep::InitialCapHigh,
                 PhyChannelFrequencyInitCompletion::MaskedWrite {
@@ -1571,10 +1567,11 @@ mod tests {
         PhyFrequencyI2cRequest, PhyFrequencyI2cTransition, PhyFrequencyI2cTransitionError,
         PhyFrequencyTableAction, PhyFrequencyTableCompletion, PhyFrequencyTableParameters,
         PhyFrequencyTableRequest, PhyFrequencyTableTransition, PhyFrequencyTableTransitionError,
-        i2c_address, phy_frequency_cap_adjusted_word, phy_frequency_channel_index,
+        phy_frequency_cap_adjusted_word, phy_frequency_channel_index,
         phy_frequency_i2c_number_address_image, phy_frequency_memory_record,
         phy_frequency_xtal_duty,
     };
+    use crate::phy_i2c::PhyI2cAddress;
     use crate::phy_rfpll::{RfpllFrequencyAction, RfpllFrequencyCompletion};
 
     const REQUEST: PhyFrequencyTableRequest = PhyFrequencyTableRequest {
@@ -1828,7 +1825,7 @@ mod tests {
         assert_eq!(
             transition.action(),
             PhyFrequencyI2cAction::WriteMasked {
-                address: i2c_address(0x62, 0x0b),
+                address: PhyI2cAddress::rfpll(0x0b),
                 high_bit: 6,
                 low_bit: 6,
                 value: 1,
@@ -1836,15 +1833,15 @@ mod tests {
         );
         transition
             .advance(PhyFrequencyI2cCompletion::MaskedWrite {
-                address: i2c_address(0x62, 0x0b),
+                address: PhyI2cAddress::rfpll(0x0b),
                 high_bit: 6,
                 low_bit: 6,
             })
             .unwrap();
         for (address, value) in [
-            (i2c_address(0x62, 0x0b), rfpll_register_0b),
-            (i2c_address(0x63, 0), sdm_register_0),
-            (i2c_address(0x67, 3), front_end_register_3),
+            (PhyI2cAddress::rfpll(0x0b), rfpll_register_0b),
+            (PhyI2cAddress::sdm(0), sdm_register_0),
+            (PhyI2cAddress::front_end(3), front_end_register_3),
         ] {
             assert_eq!(
                 transition.action(),
@@ -1948,7 +1945,7 @@ mod tests {
         });
         assert_eq!(
             transition.advance(PhyFrequencyI2cCompletion::MaskedWrite {
-                address: i2c_address(0x62, 0x0a),
+                address: PhyI2cAddress::rfpll(0x0a),
                 high_bit: 6,
                 low_bit: 6,
             }),
@@ -2002,7 +1999,7 @@ mod tests {
                 low_bit,
                 value: if high_bit == 1 { 1 } else { 0 },
             },
-            RfpllFrequencyAction::ReadByte { address } if address == i2c_address(0x62, 5) => {
+            RfpllFrequencyAction::ReadByte { address } if address == PhyI2cAddress::rfpll(5) => {
                 RfpllFrequencyCompletion::ByteRead {
                     address,
                     value: match point {
@@ -2041,9 +2038,9 @@ mod tests {
                 low_bit,
             },
             PhyFrequencyI2cAction::ReadByte { address } => {
-                let value = if address == i2c_address(0x62, 0x0b) {
+                let value = if address == PhyI2cAddress::rfpll(0x0b) {
                     0x5a
-                } else if address == i2c_address(0x63, 0) {
+                } else if address == PhyI2cAddress::sdm(0) {
                     0x8f
                 } else {
                     0x10
@@ -2098,7 +2095,7 @@ mod tests {
                     PhyChannelFrequencyInitCompletion::ByteWrite { address }
                 }
                 PhyChannelFrequencyInitAction::ReadByte { address } => {
-                    assert_eq!(address, i2c_address(0x63, 6));
+                    assert_eq!(address, PhyI2cAddress::sdm(6));
                     PhyChannelFrequencyInitCompletion::ByteRead {
                         address,
                         value: 0xab,

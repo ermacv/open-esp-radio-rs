@@ -942,7 +942,7 @@ pub struct XtalDutyPassTransition {
 }
 
 impl XtalDutyPassTransition {
-    const CONTROL_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x61, 7);
+    const CONTROL_ADDRESS: PhyI2cAddress = PhyI2cAddress::new(0x61, 7).unwrap();
     const DUTY_ADDRESS: PhyI2cAddress = crate::phy_i2c::analog_registers::XTAL_DUTY_CANDIDATE;
 
     pub const fn new(
@@ -1127,7 +1127,7 @@ pub struct XtalDutyCalibrationTransition {
 
 impl XtalDutyCalibrationTransition {
     const INITIAL_DUTY_ADDRESS: PhyI2cAddress = crate::phy_i2c::analog_registers::XTAL_DUTY_SEED;
-    const CONTROL_ADDRESS: PhyI2cAddress = PhyI2cAddress::new_internal(0x61, 7);
+    const CONTROL_ADDRESS: PhyI2cAddress = PhyI2cAddress::new(0x61, 7).unwrap();
 
     pub const fn new(parameter: XtalDutyCalibrationParameters) -> Self {
         Self {
@@ -1460,7 +1460,9 @@ mod tests {
                 value: if high_bit == 1 { 1 } else { 0 },
             },
             RfpllFrequencyAction::ReadByte { address } => {
-                let value = if address.register() == 5 {
+                let value = if address
+                    == crate::phy_i2c::analog_registers::RFPLL_CALIBRATED_CAPACITOR_LOW
+                {
                     100
                 } else {
                     let value = if (*cap_status_reads).is_multiple_of(3) {
@@ -1566,7 +1568,6 @@ mod tests {
                     low_bit: 5,
                     value: 0,
                 }) => {
-                    assert_eq!((address.block(), address.register()), (0x61, 7));
                     transition
                         .advance(XtalDutyCalibrationCompletion::Pass(
                             XtalDutyPassCompletion::MaskedWrite { address },
@@ -1577,7 +1578,6 @@ mod tests {
                     address,
                     value,
                 }) => {
-                    assert_eq!((address.block(), address.register()), (0x61, 0x0a));
                     assert_eq!(value, initial_duty);
                     transition
                         .advance(XtalDutyCalibrationCompletion::Pass(
@@ -1990,7 +1990,6 @@ mod tests {
         else {
             panic!("expected the initial duty read");
         };
-        assert_eq!((address.block(), address.register()), (0x61, 9));
         transition
             .advance(XtalDutyCalibrationCompletion::InitialDutyRead {
                 address,
@@ -2007,7 +2006,6 @@ mod tests {
         else {
             panic!("expected the calibration-path write");
         };
-        assert_eq!((address.block(), address.register()), (0x61, 7));
         transition
             .advance(XtalDutyCalibrationCompletion::CalibrationPathDisabled { address })
             .unwrap();

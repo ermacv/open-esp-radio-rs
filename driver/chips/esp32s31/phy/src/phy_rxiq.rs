@@ -26,10 +26,10 @@ use crate::{
     phy_txiq::{PhyTxIqLoopbackAction, PhyTxIqLoopbackCompletion, PhyTxIqLoopbackTransition},
 };
 
-const INTERNAL_DCODE_0: PhyI2cAddress = PhyI2cAddress::new_internal(0x62, 0x11);
-const INTERNAL_DCODE_1: PhyI2cAddress = PhyI2cAddress::new_internal(0x62, 0x12);
-const EXTERNAL_DCODE_0: PhyI2cAddress = PhyI2cAddress::new_internal(0x62, 0x13);
-const EXTERNAL_DCODE_1: PhyI2cAddress = PhyI2cAddress::new_internal(0x62, 0x14);
+const INTERNAL_DCODE_0: PhyI2cAddress = PhyI2cAddress::new(0x62, 0x11).unwrap();
+const INTERNAL_DCODE_1: PhyI2cAddress = PhyI2cAddress::new(0x62, 0x12).unwrap();
+const EXTERNAL_DCODE_0: PhyI2cAddress = PhyI2cAddress::new(0x62, 0x13).unwrap();
+const EXTERNAL_DCODE_1: PhyI2cAddress = PhyI2cAddress::new(0x62, 0x14).unwrap();
 
 const fn channel_to_frequency(channel: u16) -> u16 {
     if channel > 14 {
@@ -3180,9 +3180,9 @@ mod tests {
                 value: if high_bit == 1 { 1 } else { 0 },
             },
             RfpllFrequencyAction::ReadByte { address } => {
-                let value = if address == PhyI2cAddress::new_internal(0x62, 5) {
+                let value = if address == PhyI2cAddress::new(0x62, 5).unwrap() {
                     0xc8
-                } else if address == PhyI2cAddress::new_internal(0x62, 0x0c) {
+                } else if address == PhyI2cAddress::new(0x62, 0x0c).unwrap() {
                     // Accept one capacitor in each direction, then terminate
                     // that phase with the following non-match.
                     *cap_status_reads = cap_status_reads.wrapping_add(1);

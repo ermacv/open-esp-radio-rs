@@ -68,146 +68,12 @@ use crate::phy_xtal_duty::{
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::SharedPhyAccess;
 use open_esp_radio_esp32s31_hal::phy_i2c::PhyAdcRate;
+pub(crate) use open_esp_radio_esp32s31_hal::phy_i2c::{PhyI2cAddress, analog_registers};
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::{analog_i2c, phy_i2c as hal_phy_i2c};
 
 const PHY_I2C_SDM_STABLE_VALUE: u8 = 0x5b;
 const PHY_I2C_SDM_DEADLINE_CYCLES: u32 = 9_999;
-
-const PHY_I2C_READ_MASKS: [u16; 13] = [
-    0x0100, 0x0020, 0x0010, 0x0000, 0x0000, 0x0080, 0x0004, 0x0000, 0x0800, 0x0040, 0x0008, 0x0000,
-    0x8000,
-];
-#[cfg(any(target_arch = "riscv32", test))]
-const PHY_I2C_HOST_ONE_BLOCKS: u16 = 0x0647;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PhyI2cAddress {
-    block: u8,
-    register: u8,
-}
-
-impl PhyI2cAddress {
-    pub const fn new(block: u8, register: u8) -> Option<Self> {
-        if block >= 0x61 && block <= 0x6d {
-            Some(Self { block, register })
-        } else {
-            None
-        }
-    }
-
-    /// Constructs an address whose block was recovered from the pinned
-    /// ESP32-S31 implementation and is therefore known to be in range.
-    pub(crate) const fn new_internal(block: u8, register: u8) -> Self {
-        debug_assert!(block >= 0x61 && block <= 0x6d);
-        Self { block, register }
-    }
-
-    pub const fn block(self) -> u8 {
-        self.block
-    }
-
-    pub const fn register(self) -> u8 {
-        self.register
-    }
-
-    #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) const fn host(self) -> u8 {
-        let index = self.block.wrapping_sub(0x61);
-        ((PHY_I2C_HOST_ONE_BLOCKS >> index) & 1) as u8
-    }
-
-    pub const fn read_mask(self) -> u16 {
-        PHY_I2C_READ_MASKS[self.block.wrapping_sub(0x61) as usize]
-    }
-}
-
-/// Named analog PHY-I2C registers and fields recovered far enough to become
-/// candidates for a future SVD register cluster.
-///
-/// These are not memory-mapped CPU addresses. `block` selects the internal
-/// analog PHY-I2C peripheral and `register` selects its byte register. Names
-/// describe only behavior proved by the rev0 ROM/blob call graph and HIL;
-/// they deliberately avoid unevidenced electrical terminology.
-pub mod analog_registers {
-    use super::PhyI2cAddress;
-
-    /// One byte field within an internal analog PHY-I2C register.
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    pub struct Field {
-        pub address: PhyI2cAddress,
-        pub high_bit: u8,
-        pub low_bit: u8,
-    }
-
-    impl Field {
-        const fn new(address: PhyI2cAddress, high_bit: u8, low_bit: u8) -> Self {
-            Self {
-                address,
-                high_bit,
-                low_bit,
-            }
-        }
-    }
-
-    /// Block 0x61, register 9.
-    ///
-    /// `phy_xtal_duty_cal` reads this byte as the cold crystal-duty seed.
-    /// The former TX oracle wrote `0x22`, matching the live vendor seed.
-    pub const XTAL_DUTY_SEED: PhyI2cAddress = PhyI2cAddress::new_internal(0x61, 0x09);
-
-    /// Block 0x61, register 10.
-    ///
-    /// The crystal-duty search writes each candidate here and restores the
-    /// chosen candidate after power measurement.
-    pub const XTAL_DUTY_CANDIDATE: PhyI2cAddress = PhyI2cAddress::new_internal(0x61, 0x0a);
-
-    /// Block 0x62, register 1: low eight bits of the RFPLL capacitor code.
-    pub const RFPLL_CAPACITOR_LOW: PhyI2cAddress = PhyI2cAddress::new_internal(0x62, 0x01);
-
-    /// Block 0x62, register 2, bit 6: high bit of the nine-bit RFPLL
-    /// capacitor code. Other bits in this byte have separate RFPLL roles.
-    pub const RFPLL_CAPACITOR_HIGH: Field =
-        Field::new(PhyI2cAddress::new_internal(0x62, 0x02), 6, 6);
-
-    /// Block 0x62, register 5: low eight bits of the live calibrated RFPLL
-    /// capacitor code sampled by `phy_read_pll_cap`.
-    pub const RFPLL_CALIBRATED_CAPACITOR_LOW: PhyI2cAddress =
-        PhyI2cAddress::new_internal(0x62, 0x05);
-
-    /// Block 0x62, register 7, bit 2: high bit of the live calibrated RFPLL
-    /// capacitor code sampled by `phy_read_pll_cap`.
-    pub const RFPLL_CALIBRATED_CAPACITOR_HIGH: Field =
-        Field::new(PhyI2cAddress::new_internal(0x62, 0x07), 2, 2);
-
-    /// Block 0x62, register 12, bits 3:2: correction direction consumed by
-    /// complete rev0 ROM `phy_rfpll_cap_correct`.
-    pub const RFPLL_CAPACITOR_CORRECTION_DIRECTION: Field =
-        Field::new(PhyI2cAddress::new_internal(0x62, 0x0c), 3, 2);
-
-    /// Block 0x63, register 6, bits 2:0: low SDM frequency-programming bits.
-    /// Bits 7:3 are preserved by the ROM writer and participate in the
-    /// frequency-command-memory image.
-    pub const RFPLL_SDM_LOW: Field = Field::new(PhyI2cAddress::new_internal(0x63, 0x06), 2, 0);
-
-    /// Block 0x6b, register 2: two TX capacitor banks.
-    ///
-    /// TX-cap calibration searches bits 3:0 and 7:4 independently. Channel
-    /// programming later publishes the selected packed byte.
-    pub const TX_CAPACITOR_BANKS: PhyI2cAddress = PhyI2cAddress::new_internal(0x6b, 0x02);
-    pub const TX_CAPACITOR_LOW: Field = Field::new(TX_CAPACITOR_BANKS, 3, 0);
-    pub const TX_CAPACITOR_HIGH: Field = Field::new(TX_CAPACITOR_BANKS, 7, 4);
-
-    /// Block 0x6b, register 3, bits 3:0: first Wi-Fi TX-temperature tracking
-    /// field. Periodic tracking selects one of the reviewed values 10, 8 or 6.
-    pub const WIFI_TX_TEMPERATURE_TRACKING_0: Field =
-        Field::new(PhyI2cAddress::new_internal(0x6b, 0x03), 3, 0);
-
-    /// Block 0x6b, register 7, bits 3:0: second Wi-Fi TX-temperature tracking
-    /// field. Periodic tracking selects the reviewed value 15 or 13.
-    pub const WIFI_TX_TEMPERATURE_TRACKING_1: Field =
-        Field::new(PhyI2cAddress::new_internal(0x6b, 0x07), 3, 0);
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyI2cError {
@@ -255,20 +121,7 @@ pub(crate) fn try_start_read(
     registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     address: PhyI2cAddress,
 ) -> Result<(), PhyI2cError> {
-    let host = configure_and_select_phy_i2c_host(registers, address);
-    if hal_phy_i2c::sample_master_reset_busy(registers, host) {
-        return Err(PhyI2cError::Busy);
-    }
-    hal_phy_i2c::publish_read_mask(registers, address.read_mask());
-    hal_phy_i2c::publish_command(
-        registers,
-        host,
-        address.block(),
-        address.register(),
-        0,
-        false,
-    );
-    Ok(())
+    hal_phy_i2c::try_start_read(registers, address).map_err(|_| PhyI2cError::Busy)
 }
 
 /// Observe one previously published PHY-I2C read exactly once.
@@ -285,12 +138,7 @@ pub(crate) fn try_finish_read(
     registers: &impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     address: PhyI2cAddress,
 ) -> Result<u8, PhyI2cError> {
-    let host = hal_host(address.host());
-    if hal_phy_i2c::sample_master_reset_busy(registers, host) {
-        Err(PhyI2cError::Busy)
-    } else {
-        Ok(hal_phy_i2c::sample_result(registers, host))
-    }
+    hal_phy_i2c::try_finish_read(registers, address).map_err(|_| PhyI2cError::Busy)
 }
 
 /// Publish one complete-register PHY-I2C write after observing the
@@ -305,19 +153,7 @@ pub(crate) fn try_start_write(
     address: PhyI2cAddress,
     value: u8,
 ) -> Result<(), PhyI2cError> {
-    let host = configure_and_select_phy_i2c_host(registers, address);
-    if hal_phy_i2c::sample_master_reset_busy(registers, host) {
-        return Err(PhyI2cError::Busy);
-    }
-    hal_phy_i2c::publish_command(
-        registers,
-        host,
-        address.block(),
-        address.register(),
-        value,
-        true,
-    );
-    Ok(())
+    hal_phy_i2c::try_start_write(registers, address, value).map_err(|_| PhyI2cError::Busy)
 }
 
 /// Observe one previously published PHY-I2C write exactly once.
@@ -333,38 +169,7 @@ pub(crate) fn try_finish_write(
     registers: &impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     address: PhyI2cAddress,
 ) -> Result<(), PhyI2cError> {
-    if hal_phy_i2c::sample_master_reset_busy(registers, hal_host(address.host())) {
-        Err(PhyI2cError::Busy)
-    } else {
-        Ok(())
-    }
-}
-
-/// Execute the complete accredited-domain behavior of archive
-/// `phy_get_i2c_hostid_new`.
-///
-/// The address constructor limits callers to blocks `0x61..=0x6d`. This edge
-/// selects the typed command host from the reviewed `0x0647` bitmap and then
-/// performs exactly one platform-owned `ANA_CONF2` read-modify-write. Both
-/// read and write command paths use this same function; it is not a
-/// verification-only projection.
-#[cfg(target_arch = "riscv32")]
-pub(crate) fn configure_and_select_phy_i2c_host(
-    registers: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
-    address: PhyI2cAddress,
-) -> hal_phy_i2c::PhyI2cHost {
-    let host = hal_host(address.host());
-    hal_phy_i2c::configure_host_map(registers);
-    host
-}
-
-#[cfg(target_arch = "riscv32")]
-const fn hal_host(host: u8) -> hal_phy_i2c::PhyI2cHost {
-    if host == 0 {
-        hal_phy_i2c::PhyI2cHost::Host0
-    } else {
-        hal_phy_i2c::PhyI2cHost::Host1
-    }
+    hal_phy_i2c::try_finish_write(registers, address).map_err(|_| PhyI2cError::Busy)
 }
 
 /// Execute the finite register prefix which precedes the vendor
@@ -461,10 +266,7 @@ impl OpenI2cXpdTransition {
     }
 
     pub const fn action(self) -> OpenI2cXpdAction {
-        const SDM_SAMPLE: PhyI2cAddress = PhyI2cAddress {
-            block: 0x63,
-            register: 0,
-        };
+        const SDM_SAMPLE: PhyI2cAddress = PhyI2cAddress::new(0x63, 0).unwrap();
 
         match self.step {
             OpenI2cXpdStep::PreDelayConfiguration => OpenI2cXpdAction::ConfigurePreDelay,
@@ -1073,14 +875,8 @@ pub struct RfpllChargePumpTransition {
 }
 
 impl RfpllChargePumpTransition {
-    const REGISTER_F: PhyI2cAddress = PhyI2cAddress {
-        block: 0x62,
-        register: 0x0f,
-    };
-    const REGISTER_E: PhyI2cAddress = PhyI2cAddress {
-        block: 0x62,
-        register: 0x0e,
-    };
+    const REGISTER_F: PhyI2cAddress = PhyI2cAddress::new(0x62, 0x0f).unwrap();
+    const REGISTER_E: PhyI2cAddress = PhyI2cAddress::new(0x62, 0x0e).unwrap();
 
     pub const fn new() -> Self {
         Self {
@@ -1484,19 +1280,13 @@ impl PhyRfInitPrefixTransition {
             }
             PhyRfInitPrefixStep::FilterDcap(transition) => match transition.action() {
                 FilterDcapAction::Complete => PhyRfInitPrefixAction::ReadParameter18e {
-                    address: PhyI2cAddress {
-                        block: 0x62,
-                        register: 0x0f,
-                    },
+                    address: PhyI2cAddress::new(0x62, 0x0f).unwrap(),
                 },
                 action => PhyRfInitPrefixAction::FilterDcap(action),
             },
             PhyRfInitPrefixStep::Parameter18eRead { .. } => {
                 PhyRfInitPrefixAction::ReadParameter18e {
-                    address: PhyI2cAddress {
-                        block: 0x62,
-                        register: 0x0f,
-                    },
+                    address: PhyI2cAddress::new(0x62, 0x0f).unwrap(),
                 }
             }
             PhyRfInitPrefixStep::I2cInit1 {
@@ -1523,10 +1313,7 @@ impl PhyRfInitPrefixTransition {
                 PhyRfInitPrefixAction::ConfigureI2cMasterCommandMemory { parameter }
             }
             PhyRfInitPrefixStep::Masked69Read { .. } => PhyRfInitPrefixAction::ReadMasked69 {
-                address: PhyI2cAddress {
-                    block: 0x69,
-                    register: 4,
-                },
+                address: PhyI2cAddress::new(0x69, 4).unwrap(),
                 high_bit: 3,
                 low_bit: 0,
             },
@@ -1696,15 +1483,8 @@ impl PhyRfInitPrefixTransition {
             }
             (
                 PhyRfInitPrefixStep::Parameter18eRead { filter_dcap },
-                PhyRfInitPrefixCompletion::Parameter18eRead {
-                    address:
-                        PhyI2cAddress {
-                            block: 0x62,
-                            register: 0x0f,
-                        },
-                    value,
-                },
-            ) => {
+                PhyRfInitPrefixCompletion::Parameter18eRead { address, value },
+            ) if address == PhyI2cAddress::new(0x62, 0x0f).unwrap() => {
                 let parameter = PhyRfInitParameterSnapshot::new(filter_dcap, value);
                 PhyRfInitPrefixStep::I2cInit1 {
                     transition: I2cInit1Transition::new(parameter),
@@ -1988,18 +1768,9 @@ impl RcCalibrationTransition {
     }
 
     pub const fn action(self) -> RcCalibrationAction {
-        const BLOCK_61_REG_8: PhyI2cAddress = PhyI2cAddress {
-            block: 0x61,
-            register: 8,
-        };
-        const BLOCK_6B_REG_13: PhyI2cAddress = PhyI2cAddress {
-            block: 0x6b,
-            register: 0x13,
-        };
-        const BLOCK_6B_REG_14: PhyI2cAddress = PhyI2cAddress {
-            block: 0x6b,
-            register: 0x14,
-        };
+        const BLOCK_61_REG_8: PhyI2cAddress = PhyI2cAddress::new(0x61, 8).unwrap();
+        const BLOCK_6B_REG_13: PhyI2cAddress = PhyI2cAddress::new(0x6b, 0x13).unwrap();
+        const BLOCK_6B_REG_14: PhyI2cAddress = PhyI2cAddress::new(0x6b, 0x14).unwrap();
 
         match self.step {
             0 => RcCalibrationAction::WriteMasked {
@@ -2286,7 +2057,9 @@ mod tests {
                 value: if high_bit == 1 { 1 } else { 0 },
             },
             RfpllFrequencyAction::ReadByte { address } => {
-                let value = if address.register() == 5 {
+                let value = if address
+                    == crate::phy_i2c::analog_registers::RFPLL_CALIBRATED_CAPACITOR_LOW
+                {
                     100
                 } else {
                     let value = if (*cap_status_reads).is_multiple_of(3) {
@@ -2396,7 +2169,6 @@ mod tests {
                     address,
                     ..
                 }) => {
-                    assert_eq!((address.block(), address.register()), (0x61, 9));
                     transition
                         .advance(PhyRfInitPrefixCompletion::XtalDuty(
                             XtalDutyCalibrationCompletion::InitialDutyRead {
@@ -2409,7 +2181,6 @@ mod tests {
                 PhyRfInitPrefixAction::XtalDuty(
                     XtalDutyCalibrationAction::DisableCalibrationPath { address, .. },
                 ) => {
-                    assert_eq!((address.block(), address.register()), (0x61, 7));
                     transition
                         .advance(PhyRfInitPrefixCompletion::XtalDuty(
                             XtalDutyCalibrationCompletion::CalibrationPathDisabled { address },
@@ -2430,7 +2201,6 @@ mod tests {
                 PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
                     XtalDutyPassAction::WriteByte { address, value },
                 )) => {
-                    assert_eq!((address.block(), address.register()), (0x61, 0x0a));
                     assert_eq!(value, initial_duty);
                     transition
                         .advance(PhyRfInitPrefixCompletion::XtalDuty(
@@ -2581,32 +2351,6 @@ mod tests {
                 .advance(PhyRfInitPrefixCompletion::ChannelFrequency(completion))
                 .unwrap();
         }
-    }
-
-    #[test]
-    fn recovered_block_table_selects_exact_hosts_and_read_masks() {
-        let expected = [
-            (0x61, 1, 0x100),
-            (0x62, 1, 0x020),
-            (0x63, 1, 0x010),
-            (0x64, 0, 0x000),
-            (0x65, 0, 0x000),
-            (0x66, 0, 0x080),
-            (0x67, 1, 0x004),
-            (0x68, 0, 0x000),
-            (0x69, 0, 0x800),
-            (0x6a, 1, 0x040),
-            (0x6b, 1, 0x008),
-            (0x6c, 0, 0x000),
-            (0x6d, 0, 0x8000),
-        ];
-        for (block, host, mask) in expected {
-            let address = PhyI2cAddress::new(block, 0x12).unwrap();
-            assert_eq!(address.host(), host);
-            assert_eq!(address.read_mask(), mask);
-        }
-        assert!(PhyI2cAddress::new(0x60, 0).is_none());
-        assert!(PhyI2cAddress::new(0x6e, 0).is_none());
     }
 
     #[test]

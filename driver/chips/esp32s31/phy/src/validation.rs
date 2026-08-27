@@ -13,10 +13,11 @@ pub fn configure_and_select_phy_i2c_host(
     platform: &mut impl open_esp_radio_esp32s31_hal::SharedPhyAccess,
     block: u8,
 ) -> u32 {
-    let address = crate::phy_i2c::PhyI2cAddress::new(block, 0)
-        .unwrap_or_else(|| unreachable!("comparison profile owns the accredited block domain"));
+    let Some(address) = crate::phy_i2c::PhyI2cAddress::new(block, 0) else {
+        return u32::MAX;
+    };
 
-    match crate::phy_i2c::configure_and_select_phy_i2c_host(platform, address) {
+    match open_esp_radio_esp32s31_hal::phy_i2c::configure_and_select_host(platform, address) {
         open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cHost::Host0 => 0,
         open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cHost::Host1 => 1,
     }

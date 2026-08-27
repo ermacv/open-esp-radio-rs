@@ -18,7 +18,6 @@ use crate::phy_rfpll::{
 
 pub const PHY_DCODE_FREQUENCY_CODES: [u8; 4] = [115, 116, 117, 118];
 
-const RFPLL_BLOCK: u8 = 0x62;
 const CKGEN_WRITES: [(u8, u8, u8, u8); 4] = [
     (0x13, 6, 6, 0),
     (0x14, 6, 6, 0),
@@ -27,7 +26,7 @@ const CKGEN_WRITES: [(u8, u8, u8, u8); 4] = [
 ];
 
 const fn address(register: u8) -> PhyI2cAddress {
-    PhyI2cAddress::new_internal(RFPLL_BLOCK, register)
+    PhyI2cAddress::rfpll(register)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

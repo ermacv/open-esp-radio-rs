@@ -165,6 +165,13 @@ fn execute_workload_inner(
                     if let Some(floor) = selected.criteria.minimum_tx_bps {
                         push_option(&mut arguments, "--floor", floor);
                     }
+                    if let Some(maximum) = selected.criteria.maximum_idle_channel_utilization_255 {
+                        push_option(
+                            &mut arguments,
+                            "--max-idle-channel-utilization-255",
+                            maximum,
+                        );
+                    }
                     traffic::tx_traffic::run(
                         arguments,
                         output,

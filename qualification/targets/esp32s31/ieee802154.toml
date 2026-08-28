@@ -99,14 +99,14 @@ owners = [
   { path = "driver/chips/esp32s31/phy/src/phy_client.rs", token = "PhyClientState" },
   { path = "driver/chips/esp32s31/phy/src/phy_param_tracking.rs", token = "PhyParamTrackingTransition" },
   { path = "driver/chips/esp32s31/phy/src/phy_txdc_pwdet.rs", token = "PhyTxDcPwdetTransition" },
-  { path = "driver/chips/esp32s31/pac/src/baseband.rs", token = "TxDcPwdetRestoreSlot" },
+  { path = "driver/chips/esp32s31/pac/src/baseband.rs", token = "prepare_txdc_power_detector" },
 ]
 tests = [
   { path = "driver/chips/esp32s31/phy/src/registered_ieee802154.rs", token = "registered_full_chain_and_typed_recovery_surface_connects" },
   { path = "driver/chips/esp32s31/phy/src/phy_client.rs", token = "immediate_tracking_preserves_short_circuit_and_refresh_sample_order" },
   { path = "driver/chips/esp32s31/phy/src/phy_client.rs", token = "periodic_tracking_samples_each_active_class_once_without_due_samples" },
   { path = "driver/chips/esp32s31/phy/src/phy_client.rs", token = "pending_request_runs_outer_tracking_before_owner_recovery" },
-  { path = "driver/chips/esp32s31/phy/src/phy_client.rs", token = "periodic_outer_tracking_commits_power_and_temperature_children" },
+  { path = "driver/chips/esp32s31/phy/src/phy_client.rs", token = "periodic_outer_tracking_commits_power_i2c_and_temperature_children" },
   { path = "driver/chips/esp32s31/phy/src/phy_param_tracking.rs", token = "ieee802154_only_preserves_exact_child_order" },
   { path = "driver/chips/esp32s31/phy/src/phy_param_tracking.rs", token = "guard_exits_critical_section_without_running_children" },
   { path = "driver/chips/esp32s31/phy/src/phy_param_tracking.rs", token = "temperature_to_power_matches_all_signed_16_bit_deltas" },

@@ -1,6 +1,6 @@
 schema = 3
 id = "udp-tx-ht40-performance-ceiling"
-description = "Observer-free HT40 UDP station-to-host 100 Mbit/s production gate"
+description = "Observer-free HT40 UDP station-to-host 115 Mbit/s production gate"
 repetitions = 3
 image = "performance"
 isolation = "reset"
@@ -19,4 +19,5 @@ payload_bytes = 1472
 
 [criteria]
 exact_delivery = false
-minimum_tx_bps = 100000000
+minimum_tx_bps = 115000000
+maximum_idle_channel_utilization_255 = 64

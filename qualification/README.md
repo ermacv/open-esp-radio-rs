@@ -70,6 +70,9 @@ Qualification independently checks `integrity.json`, every indexed file hash,
 manifest/suite identity, clean repository provenance, commit equality,
 scenario outcome and repetition count. A Markdown narrative under
 `targets/esp32s31/records/` remains useful review history but is not proof.
+An unsealed bundle whose manifest is still `running` is mutable execution
+state and is ignored as evidence; completed and interrupted bundles must have
+a valid integrity seal and fail closed otherwise.
 
 Use a JSON report for CI and downstream presentation:
 

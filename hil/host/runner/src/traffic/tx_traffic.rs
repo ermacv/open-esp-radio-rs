@@ -18,13 +18,16 @@ use crate::{
     evidence::traffic_capture::{SerialCapture, await_udp_tx_ready},
     qualification::scenario::PhyExpectation,
     traffic::bidirectional::{
-        AmpduEvidence, MIN_QUALIFIED_AGGREGATES, TxQualification,
-        post_block_ack_delivery_loss_lower_bound,
+        AmpduEvidence, MIN_QUALIFIED_AGGREGATES, TaskPollSet, TxQualification,
+        post_block_ack_delivery_loss_lower_bound, task_poll_markdown, task_polls_from_log,
     },
     traffic::host_network::BenchmarkIpv4Route,
     transport::lab_config::{LabConfig, StationFixtureConfig},
     transport::local_linux_fixture::{LocalLinuxTxCapture, LocalLinuxTxEvidence},
-    transport::openwrt_fixture::{OpenWrtStationLinkEvidence, station_link},
+    transport::openwrt_fixture::{
+        ChannelUtilization, OpenWrtStationLinkEvidence, require_idle_channel_utilization,
+        station_link,
+    },
     transport::station_fixture::require_ht40_mcs7,
     transport::udp_socket::{configure_qualification_receive_buffer, open_reverse_flow},
 };
@@ -47,6 +50,7 @@ struct Options {
     serial: PathBuf,
     bandwidth_mhz: u16,
     minimum_rate_kbps: u64,
+    maximum_idle_channel_utilization_255: Option<u8>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -223,6 +227,25 @@ pub(crate) fn run(
         capture.finish_to(output)?;
         return Err(error.into());
     }
+    let pre_workload_channel_utilization = match (
+        options.maximum_idle_channel_utilization_255,
+        &lab.station_fixture,
+    ) {
+        (Some(maximum), StationFixtureConfig::OpenWrt(config)) => {
+            match require_idle_channel_utilization(config, maximum) {
+                Ok(utilization) => Some(utilization),
+                Err(error) => {
+                    capture.finish_to(output)?;
+                    return Err(error);
+                }
+            }
+        }
+        (Some(_), StationFixtureConfig::LocalLinux(_) | StationFixtureConfig::External(_)) => {
+            capture.finish_to(output)?;
+            return Err("TX idle-channel evidence requires a managed OpenWrt fixture".into());
+        }
+        (None, _) => None,
+    };
     let local_ingress_capture = match &lab.station_fixture {
         StationFixtureConfig::LocalLinux(config) => Some(LocalLinuxTxCapture::start(
             config,
@@ -285,7 +308,7 @@ pub(crate) fn run(
         write_local_ingress_evidence(output, evidence)?;
     }
     let beacon_loss = require_no_beacon_loss.then(|| capture.require_no_beacon_loss());
-    capture.finish_to(output)?;
+    let log = capture.finish_to(output)?;
     if let Some(result) = beacon_loss {
         result?;
     }
@@ -319,6 +342,12 @@ pub(crate) fn run(
         .map(|burst| burst.throughput_kbps())
         .min()
         .expect("at least one qualified burst");
+    let link_report = require_performance_link(
+        &lab.station_fixture,
+        options.bandwidth_mhz,
+        local_ingress.as_ref(),
+        openwrt_link.as_ref(),
+    )?;
     if !require_driver_observation {
         if structured.radio.is_some()
             || structured.tx_timing.is_some()
@@ -340,12 +369,6 @@ pub(crate) fn run(
             )
             .into());
         }
-        let link_report = require_performance_link(
-            &lab.station_fixture,
-            options.bandwidth_mhz,
-            local_ingress.as_ref(),
-            openwrt_link.as_ref(),
-        )?;
         let throughput_failure = if let Some(required) = options.throughput_floor_bps {
             let measured_host = host_floor.saturating_mul(1_000);
             let measured_target = device_floor_kbps.saturating_mul(1_000);
@@ -370,6 +393,9 @@ pub(crate) fn run(
                 structured,
                 host_receive_buffer_bytes,
                 link_report: &link_report,
+                pre_workload_channel_utilization,
+                task_polls: task_polls_from_log(&log),
+                core0_coarse: Core0CoarseEvidence::from_log(&log),
                 failure: throughput_failure.as_deref(),
             },
         )?;
@@ -520,6 +546,9 @@ pub(crate) fn run(
             structured,
             host_receive_buffer_bytes,
             require_exact_delivery,
+            link_report: &link_report,
+            pre_workload_channel_utilization,
+            task_polls: task_polls_from_log(&log),
         },
     )?;
     eprintln!(
@@ -606,6 +635,7 @@ fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
         serial: lab.device.serial.clone(),
         bandwidth_mhz: 20,
         minimum_rate_kbps: 114_700,
+        maximum_idle_channel_utilization_255: None,
     };
     let mut index = 0;
     while index < arguments.len() {
@@ -629,6 +659,13 @@ fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
             }
             "--rate" => options.offered_rate_bps = Some(parse_rate(value)?),
             "--floor" => options.throughput_floor_bps = Some(parse_rate(value)?),
+            "--max-idle-channel-utilization-255" => {
+                let maximum = value.parse::<u8>()?;
+                if maximum == 0 {
+                    return Err("--max-idle-channel-utilization-255 must be nonzero".into());
+                }
+                options.maximum_idle_channel_utilization_255 = Some(maximum);
+            }
             "--phy" => match value.as_str() {
                 "he20" => {
                     options.bandwidth_mhz = 20;
@@ -738,7 +775,56 @@ struct TxPerformanceReport<'a> {
     structured: crate::evidence::traffic_capture::SessionEvidence,
     host_receive_buffer_bytes: usize,
     link_report: &'a str,
+    pre_workload_channel_utilization: Option<ChannelUtilization>,
+    task_polls: TaskPollSet,
+    core0_coarse: Option<Core0CoarseEvidence>,
     failure: Option<&'a str>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Core0CoarseEvidence {
+    radio_polls: u64,
+    radio_cycles: u64,
+    radio_instructions: u64,
+}
+
+impl Core0CoarseEvidence {
+    fn from_log(log: &str) -> Option<Self> {
+        let line = log
+            .lines()
+            .find(|line| line.starts_with("ORC0C ") || line.contains(" ORC0C "))?;
+        Some(Self {
+            radio_polls: numeric_field(line, "radio_polls")?,
+            radio_cycles: numeric_field(line, "radio_cycles")?,
+            radio_instructions: numeric_field(line, "radio_instret")?,
+        })
+    }
+
+    fn markdown(self, elapsed_micros: u64, datagrams: u64) -> String {
+        const CPU_MHZ: f64 = 320.0;
+        let available_cycles = elapsed_micros as f64 * CPU_MHZ;
+        let occupancy = self.radio_cycles as f64 * 100.0 / available_cycles.max(1.0);
+        let ipc = self.radio_instructions as f64 / self.radio_cycles.max(1) as f64;
+        let cycles_per_datagram = self.radio_cycles as f64 / datagrams.max(1) as f64;
+        let instructions_per_datagram = self.radio_instructions as f64 / datagrams.max(1) as f64;
+        format!(
+            "## Core0 hardware counters\n\n\
+             The 320 MHz cycle and retired-instruction counters cover radio-task polls, including interrupt preemption, but exclude time while the task is pending.\n\n\
+             - Radio polls: `{}`\n\
+             - Cycles / retired instructions: `{}` / `{}`\n\
+             - Core0 cycle occupancy: `{occupancy:.2}%`\n\
+             - IPC: `{ipc:.3}`\n\
+             - Cycles / instructions per TX datagram: `{cycles_per_datagram:.2}` / `{instructions_per_datagram:.2}`\n\n",
+            self.radio_polls, self.radio_cycles, self.radio_instructions,
+        )
+    }
+}
+
+fn numeric_field(line: &str, key: &str) -> Option<u64> {
+    line.split_ascii_whitespace().find_map(|token| {
+        let (candidate, value) = token.split_once('=')?;
+        (candidate == key).then(|| value.parse().ok()).flatten()
+    })
 }
 
 fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> Result<()> {
@@ -751,6 +837,9 @@ fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> R
         structured,
         host_receive_buffer_bytes,
         link_report,
+        pre_workload_channel_utilization,
+        task_polls,
+        core0_coarse,
         failure,
     } = report;
     let datagrams = bursts.iter().map(|burst| burst.datagrams).sum::<u64>();
@@ -763,8 +852,19 @@ fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> R
         .map(|rate| format!("{:.3} Mbit/s", rate as f64 / 1_000_000.0))
         .unwrap_or_else(|| String::from("saturated"));
     let result = if failure.is_some() { "FAIL" } else { "PASS" };
+    let pre_workload_channel_utilization =
+        format_channel_utilization(pre_workload_channel_utilization);
     let failure_report = failure
         .map(|failure| format!("- Acceptance failure: `{failure}`\n"))
+        .unwrap_or_default();
+    let task_poll_report = task_poll_markdown(task_polls);
+    let core0_report = core0_coarse
+        .map(|evidence| {
+            evidence.markdown(
+                structured.transport.elapsed_micros,
+                structured.transport.tx_units,
+            )
+        })
         .unwrap_or_default();
     fs::write(
         output.join("report.md"),
@@ -774,6 +874,7 @@ fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> R
              {failure_report}\
              - Evidence boundary: `transport, external host sink, stack watermark; driver observation not collected`\n\
              - AP-side link vector: {link_report}\n\
+             - Pre-workload channel utilization: `{pre_workload_channel_utilization}`\n\
              - Device/host: `{}` / `{host_address}`\n\
              - Complete host bursts: `{}`; datagrams: `{datagrams}`; bytes: `{bytes}`\n\
              - Payload / target offered-rate bound: `{}` bytes / `{offered_rate}`\n\
@@ -783,6 +884,8 @@ fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> R
              - Target transport: `{}` bytes / `{}` datagrams / `{}` us\n\
              - Stack minimum free: CPU0 `{}/{}` bytes (required `{}`); CPU1 `{}/{}` bytes (required `{}`)\n\
              - Evidence CRC32C: `0x{:08x}`\n\n\
+             {task_poll_report}\
+             {core0_report}\
              UART evidence is in [`uart.log`](uart.log).\n",
             options.device,
             bursts.len(),
@@ -815,6 +918,20 @@ struct TxReport<'a> {
     structured: crate::evidence::traffic_capture::SessionEvidence,
     host_receive_buffer_bytes: usize,
     require_exact_delivery: bool,
+    link_report: &'a str,
+    pre_workload_channel_utilization: Option<ChannelUtilization>,
+    task_polls: TaskPollSet,
+}
+
+fn format_channel_utilization(utilization: Option<ChannelUtilization>) -> String {
+    utilization
+        .map(|utilization| {
+            format!(
+                "{}/255 (busy/active: {}/{} ms)",
+                utilization.scaled_255, utilization.busy_millis, utilization.active_millis,
+            )
+        })
+        .unwrap_or_else(|| String::from("not required"))
 }
 
 fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
@@ -857,12 +974,17 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
     let maximum_interarrival_us = maximum_interarrival.maximum_interarrival_us;
     let sequence_after_maximum_interarrival =
         maximum_interarrival.sequence_after_maximum_interarrival;
+    let pre_workload_channel_utilization =
+        format_channel_utilization(report.pre_workload_channel_utilization);
+    let task_poll_report = task_poll_markdown(report.task_polls);
     fs::write(
         output.join("report.md"),
         format!(
             "# Open-radio TX-only HIL\n\n\
              - Result: `PASS`\n\
              - Delivery contract: `{}`\n\
+             - AP-side link vector: {}\n\
+             - Pre-workload channel utilization: `{pre_workload_channel_utilization}`\n\
              - Device/host: `{}` / `{}`\n\
              - Complete host bursts: `{}`; datagrams: `{datagrams}`; bytes: `{bytes}`\n\
              - Payload / target offered-rate bound: `{}` bytes / `{offered_rate}`\n\
@@ -889,12 +1011,14 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
              - TX IRQ wake epochs/samples/clock-skew rejects: `{}` / `{}` / `{}`; IRQ-to-service average/max: `{:.2}` / `{}` us\n\
              - Sampled publication-to-IRQ flight average/max: `{:.2}` / `{}` us across `{}` samples\n\n\
              - Standby prepared/published/cancelled: `{}` / `{}` / `{}`\n\n\
+             {task_poll_report}\
              UART evidence is in [`uart.log`](uart.log).\n",
             if report.require_exact_delivery {
                 "exact"
             } else {
                 "performance-health"
             },
+            report.link_report,
             report.options.device,
             report.host_address,
             report.bursts.len(),
@@ -973,6 +1097,8 @@ mod tests {
                 "80M".into(),
                 "--phy".into(),
                 "ht40".into(),
+                "--max-idle-channel-utilization-255".into(),
+                "64".into(),
             ],
             &LabConfig::for_test(),
         )
@@ -982,6 +1108,33 @@ mod tests {
         assert_eq!(options.offered_rate_bps, Some(80_000_000));
         assert_eq!(options.bandwidth_mhz, 40);
         assert_eq!(options.minimum_rate_kbps, 135_000);
+        assert_eq!(options.maximum_idle_channel_utilization_255, Some(64));
+    }
+
+    #[test]
+    fn channel_utilization_report_preserves_the_measured_interval() {
+        assert_eq!(
+            format_channel_utilization(Some(ChannelUtilization {
+                scaled_255: 17,
+                active_millis: 12_003,
+                busy_millis: 783,
+            })),
+            "17/255 (busy/active: 783/12003 ms)"
+        );
+    }
+
+    #[test]
+    fn parses_core0_tx_cycles_and_instructions() {
+        let evidence = Core0CoarseEvidence::from_log(
+            "ORC0C rx_irq_posts=154 radio_polls=63030 radio_cycles=2950392831 radio_instret=593043026 poll_to_runner_cycles=21183800",
+        )
+        .unwrap();
+        assert_eq!(evidence.radio_polls, 63_030);
+        assert_eq!(evidence.radio_cycles, 2_950_392_831);
+        assert_eq!(evidence.radio_instructions, 593_043_026);
+        let markdown = evidence.markdown(12_001_617, 119_716);
+        assert!(markdown.contains("Core0 cycle occupancy: `76.82%`"));
+        assert!(markdown.contains("IPC: `0.201`"));
     }
 
     #[test]

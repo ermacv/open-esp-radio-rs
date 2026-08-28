@@ -2,6 +2,8 @@
 
 use embassy_net::{Ipv4Address, Stack, udp::UdpSocket};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+use open_esp_radio_esp32s31_embassy_wifi::CORE0_PERFORMANCE;
 use open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounters;
 use open_esp_radio_hil_protocol::{
     Completion as HilCompletion, Direction as HilDirection, Event as HilEvent, ServiceInfo,
@@ -22,6 +24,9 @@ use crate::{
         OPEN_RADIO_TASK_POLL_TELEMETRY, QualificationRequester, TASK_POLLS, qualification_sample,
     },
 };
+
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+use crate::product_hil::traffic::log_open_radio_core0_rx_coarse;
 
 const MAX_PACING_CATCH_UP_GROUPS: u32 = 4;
 
@@ -166,6 +171,8 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         ));
         let started = Instant::now();
         let task_poll_start = TASK_POLLS.snapshot();
+        #[cfg(feature = "core0-rx-coarse-telemetry")]
+        let core0_performance_start = CORE0_PERFORMANCE.snapshot();
         // TX owns A-MPDU evidence because its post-measurement drain proves
         // that the last publication reached a terminal BlockAck outcome.
         // The RX sibling can finish on the host terminal datagram while a
@@ -292,6 +299,8 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             &TASK_POLLS,
         )
         .await;
+        #[cfg(feature = "core0-rx-coarse-telemetry")]
+        log_open_radio_core0_rx_coarse(core0_performance_start).await;
         let evidence = TransportEvidence {
             rx_bytes: 0,
             tx_bytes: bytes,

@@ -472,6 +472,15 @@ fn require_pre_workload_channel_utilization(maximum: Option<u8>, observed: u8) -
     Ok(())
 }
 
+pub(crate) fn require_idle_channel_utilization(
+    config: &OpenWrtConfig,
+    maximum: u8,
+) -> Result<ChannelUtilization> {
+    let utilization = measure_channel_utilization(config)?;
+    require_pre_workload_channel_utilization(Some(maximum), utilization.scaled_255)?;
+    Ok(utilization)
+}
+
 fn measure_channel_utilization(config: &OpenWrtConfig) -> Result<ChannelUtilization> {
     let script = format!(
         "set -eu; \

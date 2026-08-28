@@ -919,6 +919,42 @@ impl TaskPollSet {
             && self.udp_tx.intervals != 0
             && self.tcp.intervals != 0
     }
+
+    fn merge_log_line(&mut self, line: &str) {
+        if !(line.starts_with("ORTP ") || line.contains(" ORTP ")) {
+            return;
+        }
+        let Some(sample) = (|| {
+            Some(TaskPollEvidence {
+                intervals: 1,
+                polls: field(line, "polls")?,
+                poll_us: field(line, "poll_us")?,
+                poll_boot_max_us: field(line, "poll_boot_max_us")?,
+                over_100us: field(line, "over_100us")?,
+                over_500us: field(line, "over_500us")?,
+                over_1000us: field(line, "over_1000us")?,
+                over_5000us: field(line, "over_5000us")?,
+            })
+        })() else {
+            return;
+        };
+        match text_field(line, "task") {
+            Some("network") => self.network.merge(sample),
+            Some("radio") => self.radio.merge(sample),
+            Some("udp_rx") => self.udp_rx.merge(sample),
+            Some("udp_tx") => self.udp_tx.merge(sample),
+            Some("tcp") => self.tcp.merge(sample),
+            Some(_) | None => {}
+        }
+    }
+}
+
+pub(crate) fn task_polls_from_log(log: &str) -> TaskPollSet {
+    let mut task_polls = TaskPollSet::default();
+    for line in log.lines() {
+        task_polls.merge_log_line(line);
+    }
+    task_polls
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -2190,27 +2226,8 @@ fn parse_device_report(log: &str) -> DeviceReport {
                 report.rx_order.push(sample);
             }
         } else if line.starts_with("ORTP ") || line.contains(" ORTP ") {
-            let sample = (|| {
-                Some(TaskPollEvidence {
-                    intervals: 1,
-                    polls: field(line, "polls")?,
-                    poll_us: field(line, "poll_us")?,
-                    poll_boot_max_us: field(line, "poll_boot_max_us")?,
-                    over_100us: field(line, "over_100us")?,
-                    over_500us: field(line, "over_500us")?,
-                    over_1000us: field(line, "over_1000us")?,
-                    over_5000us: field(line, "over_5000us")?,
-                })
-            })();
-            if include_rx_interval_evidence && let Some(sample) = sample {
-                match text_field(line, "task") {
-                    Some("network") => report.task_polls.network.merge(sample),
-                    Some("radio") => report.task_polls.radio.merge(sample),
-                    Some("udp_rx") => report.task_polls.udp_rx.merge(sample),
-                    Some("udp_tx") => report.task_polls.udp_tx.merge(sample),
-                    Some("tcp") => report.task_polls.tcp.merge(sample),
-                    Some(_) | None => {}
-                }
+            if include_rx_interval_evidence {
+                report.task_polls.merge_log_line(line);
             }
         } else if line.starts_with("ORXS ") || line.contains(" ORXS ") {
             let sample = (|| {
@@ -3933,6 +3950,22 @@ mod tests {
 
         assert_eq!(project_mac_units(&units).get(&(42, 0)), Some(&3));
         assert_eq!(project_mac_units(&units).get(&(43, 1)), Some(&4));
+    }
+
+    #[test]
+    fn extracts_tx_task_polls_without_an_rx_interval_marker() {
+        let task_polls = task_polls_from_log(
+            "ORTP task=network polls=5100 poll_us=210000 poll_boot_max_us=140 over_100us=2 over_500us=0 over_1000us=0 over_5000us=0\n\
+             ORTP task=radio polls=5000 poll_us=390000 poll_boot_max_us=310 over_100us=20 over_500us=0 over_1000us=0 over_5000us=0\n\
+             ORTP task=udp_rx polls=0 poll_us=0 poll_boot_max_us=90 over_100us=0 over_500us=0 over_1000us=0 over_5000us=0\n\
+             ORTP task=udp_tx polls=5000 poll_us=125000 poll_boot_max_us=95 over_100us=0 over_500us=0 over_1000us=0 over_5000us=0\n\
+             ORTP task=tcp polls=0 poll_us=0 poll_boot_max_us=80 over_100us=0 over_500us=0 over_1000us=0 over_5000us=0\n",
+        );
+
+        assert!(task_polls.is_complete());
+        assert_eq!(task_polls.network.polls, 5_100);
+        assert_eq!(task_polls.radio.poll_us, 390_000);
+        assert_eq!(task_polls.udp_tx.poll_us, 125_000);
     }
 
     #[test]

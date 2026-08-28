@@ -1021,12 +1021,12 @@ impl Scenario {
             if !matches!(
                 self.workload,
                 Workload::Udp {
-                    direction: Direction::Rx,
+                    direction: Direction::Rx | Direction::Tx,
                     ..
                 }
             ) {
                 return self.criteria_error(
-                    "maximum_idle_channel_utilization_255 requires a station UDP RX workload",
+                    "maximum_idle_channel_utilization_255 requires a station UDP RX or TX workload",
                 );
             }
         }
@@ -1218,6 +1218,18 @@ mod tests {
                 .unwrap()
                 .criteria
                 .maximum_idle_channel_utilization_255,
+            Some(64)
+        );
+        let tx_task_poll = catalog
+            .get("udp-tx-ht40-split-task-poll-diagnostic")
+            .unwrap();
+        assert_eq!(
+            tx_task_poll.data_plane,
+            WifiDataPlanePlacement::SplitRadioNetwork
+        );
+        assert_eq!(tx_task_poll.image, ImageClass::DiagnosticTaskPoll);
+        assert_eq!(
+            tx_task_poll.criteria.maximum_idle_channel_utilization_255,
             Some(64)
         );
         assert_eq!(

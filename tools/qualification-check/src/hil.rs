@@ -186,7 +186,6 @@ impl HilEvidenceIndex {
             }
             let run_directory = entry.path();
             summary.bundles += 1;
-            verify_integrity(&run_directory)?;
             let manifest: RunManifest = read_json(&run_directory.join("manifest.json"))?;
             if manifest.schema != HIL_RUN_SCHEMA {
                 return Err(format!(
@@ -209,6 +208,16 @@ impl HilEvidenceIndex {
                 )
                 .into());
             }
+            // A process may be killed before `RunSession::drop` can turn its
+            // live directory into a sealed interrupted bundle. Running
+            // directories are mutable execution state, never qualification
+            // evidence, so do not require an integrity inventory from them.
+            // Completed and interrupted bundles are immutable and must still
+            // fail closed if their seal is absent or inconsistent.
+            if manifest.state == RunState::Running {
+                continue;
+            }
+            verify_integrity(&run_directory)?;
             if manifest.state != RunState::Completed {
                 continue;
             }
@@ -772,6 +781,90 @@ mod tests {
         assert!(
             HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &repository,).is_err()
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn unsealed_running_run_is_mutable_state_not_evidence() {
+        let root = std::env::temp_dir().join(format!(
+            "open-radio-qualification-hil-running-{}",
+            std::process::id()
+        ));
+        if root.exists() {
+            fs::remove_dir_all(&root).unwrap();
+        }
+        let run = root.join("runs/run-1");
+        fs::create_dir_all(&run).unwrap();
+        fs::write(
+            run.join("manifest.json"),
+            serde_json::to_vec_pretty(&json!({
+                "schema": 2,
+                "run_id": "run-1",
+                "target": "esp32s31",
+                "state": "running",
+                "started_unix_millis": 100,
+                "finished_unix_millis": null,
+                "duration_millis": null,
+                "repository": {
+                    "commit": "abc123",
+                    "dirty": false,
+                    "workspace_sha256": "00".repeat(32),
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let repository = RepositoryState {
+            commit: "abc123".to_owned(),
+            dirty: false,
+        };
+        let index =
+            HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &repository).unwrap();
+        assert_eq!(index.summary().bundles, 1);
+        assert_eq!(index.summary().completed, 0);
+        assert_eq!(index.summary().qualifying, 0);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn unsealed_completed_run_still_fails_closed() {
+        let root = std::env::temp_dir().join(format!(
+            "open-radio-qualification-hil-unsealed-completed-{}",
+            std::process::id()
+        ));
+        if root.exists() {
+            fs::remove_dir_all(&root).unwrap();
+        }
+        let run = root.join("runs/run-1");
+        fs::create_dir_all(&run).unwrap();
+        fs::write(
+            run.join("manifest.json"),
+            serde_json::to_vec_pretty(&json!({
+                "schema": 2,
+                "run_id": "run-1",
+                "target": "esp32s31",
+                "state": "completed",
+                "started_unix_millis": 100,
+                "finished_unix_millis": 200,
+                "duration_millis": 100,
+                "repository": {
+                    "commit": "abc123",
+                    "dirty": false,
+                    "workspace_sha256": "00".repeat(32),
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let repository = RepositoryState {
+            commit: "abc123".to_owned(),
+            dirty: false,
+        };
+        let error =
+            HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &repository).unwrap_err();
+        assert!(error.to_string().contains("integrity.json"));
         fs::remove_dir_all(root).unwrap();
     }
 }

@@ -226,17 +226,13 @@ impl<
         &self,
         index: u8,
     ) -> PinnedDmaTxNetworkLease<'_, FRAME_CAPACITY, HEADROOM, TRAILER> {
-        if let Some((damaged_slot, (offset, byte))) = self
-            .slots
-            .iter()
-            .enumerate()
-            .find_map(|(slot, value)| value.dma_boundary_damage().map(|damage| (slot, damage)))
-        {
-            let prefix = self.slots[damaged_slot].dma_boundary_prefix();
-            panic!(
-                "pinned TX pool boundary changed before a network claim; requested={index} damaged_slot={damaged_slot} offset={offset} value={byte} guard_prefix={prefix:#018x}"
-            );
-        }
+        // The selected slot is checked by `claim` below, and a DMA-owned slot
+        // is checked again before RADIO -> FREE. Scanning every guard in the
+        // pool here made an unrelated O(QUEUE_DEPTH) diagnostic audit part of
+        // every network packet. In particular, the 66-slot Wi-Fi TX pool read
+        // 2,112 guard bytes before each Ethernet frame could be written.
+        // Keep the complete scan explicit for lifecycle/diagnostic use while
+        // retaining fail-closed checks at both real ownership boundaries.
         let slot = self
             .slots
             .get(usize::from(index))
@@ -251,6 +247,26 @@ impl<
             slot,
             index,
             live: true,
+        }
+    }
+
+    /// Validate every pool guard outside the per-packet ownership path.
+    ///
+    /// Normal reuse already validates the selected slot at network claim and
+    /// after DMA ownership ends. This whole-pool pass is intended for an
+    /// explicit lifecycle or diagnostic audit, including quarantined slots
+    /// which will deliberately never return to the free queue.
+    fn assert_dma_boundaries(&self) {
+        if let Some((damaged_slot, (offset, byte))) = self
+            .slots
+            .iter()
+            .enumerate()
+            .find_map(|(slot, value)| value.dma_boundary_damage().map(|damage| (slot, damage)))
+        {
+            let prefix = self.slots[damaged_slot].dma_boundary_prefix();
+            panic!(
+                "pinned TX pool boundary changed; damaged_slot={damaged_slot} offset={offset} value={byte} guard_prefix={prefix:#018x}"
+            );
         }
     }
 
@@ -281,6 +297,7 @@ impl<
     /// radio slot. A platform reset path needs a separate ownership proof
     /// before such a transition can be added.
     pub fn claimed_slots(&self) -> usize {
+        self.assert_dma_boundaries();
         self.slots
             .iter()
             .filter(|slot| slot.state.load(Ordering::Acquire) != SLOT_FREE)
@@ -656,5 +673,16 @@ mod tests {
         assert_eq!(returned.get(), None);
         assert_eq!(pool.claimed_slots(), 1);
         assert_eq!(pool.slots[0].state.load(Ordering::Acquire), SLOT_RADIO);
+    }
+
+    #[test]
+    #[should_panic(expected = "pinned TX pool boundary changed")]
+    fn explicit_pool_audit_checks_quarantined_slots() {
+        type TwoSlotPool = PinnedDmaTxPool<32, 8, 4, 2>;
+        let mut pool = TwoSlotPool::new();
+        // Tests own the unpinned allocation and may model a DMA overrun by
+        // changing the otherwise CPU-read-only guard.
+        pool.slots[1].dma_overrun_guard.get_mut()[7] = 0;
+        let _ = pool.claimed_slots();
     }
 }

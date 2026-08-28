@@ -56,7 +56,7 @@ owners = [
   { path = "driver/chips/esp32s31/phy/src/phy_cold.rs", token = "PhyRfColdInit" },
   { path = "driver/chips/esp32s31/phy/src/phy_bb.rs", token = "PhyBbInitTransition" },
   { path = "driver/chips/esp32s31/phy/src/phy_txdc_pwdet.rs", token = "PhyTxDcPwdetTransition" },
-  { path = "driver/chips/esp32s31/pac/src/baseband.rs", token = "TxDcPwdetRestoreSlot" },
+  { path = "driver/chips/esp32s31/pac/src/baseband.rs", token = "prepare_txdc_power_detector" },
 ]
 tests = [
   { path = "driver/chips/esp32s31/phy/src/phy_cold.rs", token = "open_i2c_deadline_keeps_one_epoch_and_the_inclusive_rom_bound" },
@@ -134,7 +134,7 @@ tests = [
   { path = "driver/chips/esp32s31/wifi/mac/tests/mac.rs", token = "normalized_ht_rx_metadata_uses_the_direct_ht_sig_aggregation_bit" },
   { path = "driver/chips/esp32s31/wifi/mac/tests/mac.rs", token = "normalized_rx_metadata_separates_format_validated_ampdu_from_ht_hardware_status" },
   { path = "driver/chips/esp32s31/wifi/mac/tests/mac.rs", token = "station_key_teardown_consumes_and_clears_both_hardware_slots" },
-  { path = "driver/chips/esp32s31/wifi/mac/tests/mac.rs", token = "tx_slot_reproduces_the_migration_timeout_abort_order" },
+  { path = "driver/chips/esp32s31/wifi/mac/tests/mac.rs", token = "tx_slot_preserves_the_semantic_timeout_abort_order" },
   { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/tx/tests.rs", token = "idle_aggregate_returns_ordinary_and_storage_for_station_teardown" },
   { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/teardown.rs", token = "teardown_orders_control_rx_tx_and_both_key_clears" },
   { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/rx/frontier/tests.rs", token = "consuming_connected_promotion_returns_live_ring_or_exact_owner" },
@@ -147,7 +147,7 @@ tests = [
   { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/connected/port/tests.rs", token = "compact_profile_rejects_rx_window_larger_than_reorder_storage" },
 ]
 async-contracts = [
-  { path = "driver/chips/esp32s31/wifi/mac/tests/mac.rs", token = "tx_slot_reproduces_the_migration_timeout_abort_order" },
+  { path = "driver/chips/esp32s31/wifi/mac/tests/mac.rs", token = "tx_slot_preserves_the_semantic_timeout_abort_order" },
   { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/rx/dma/tests.rs", token = "finite_service_discards_oversize_unit_and_keeps_the_ring_live" },
 ]
 vendor-anchors = [
@@ -297,11 +297,11 @@ owners = [
   { path = "driver/chips/esp32s31/hal/src/lib.rs", token = "PowerUpFailure" },
   { path = "driver/chips/esp32s31/hal/src/lib.rs", token = "power_up" },
   { path = "driver/chips/esp32s31/pac/src/mac_cold_start.rs", token = "sample_mac_cold_start_ready" },
-  { path = "driver/chips/esp32s31/hal/src/wifi_mac.rs", token = "execute_cold_mac_handshake" },
+  { path = "driver/chips/esp32s31/hal/src/wifi_mac.rs", token = "begin_handshake" },
 ]
 tests = [
   { path = "driver/chips/esp32s31/hal/src/power.rs", token = "exact_semantic_sequence_is_finite_and_ordered" },
-  { path = "driver/chips/esp32s31/hal/src/lib.rs", token = "failed_power_transition_returns_the_unique_owned_radio" },
+  { path = "driver/chips/esp32s31/hal/src/lib.rs", token = "failed_power_transition_can_only_retry_the_unique_owner" },
   { path = "driver/chips/esp32s31/hal/src/wifi_mac.rs", token = "cold_handshake_polls_then_masks_and_clears_interrupts" },
   { path = "driver/chips/esp32s31/hal/src/wifi_mac.rs", token = "cold_handshake_timeout_stops_before_interrupt_cleanup" },
 ]
@@ -355,9 +355,9 @@ owners = [
 ]
 tests = [
   { path = "driver/chips/esp32s31/phy/src/phy_channel.rs", token = "frequency_timeout_runs_full_radio_cleanup" },
-  { path = "driver/chips/esp32s31/wifi/mac/tests/mac.rs", token = "tx_slot_reproduces_the_migration_timeout_abort_order" },
+  { path = "driver/chips/esp32s31/wifi/mac/tests/mac.rs", token = "tx_slot_preserves_the_semantic_timeout_abort_order" },
   { path = "driver/chips/esp32s31/wifi/mac/tests/mac.rs", token = "station_key_teardown_consumes_and_clears_both_hardware_slots" },
-  { path = "driver/chips/esp32s31/hal/src/lib.rs", token = "failed_power_transition_returns_the_unique_owned_radio" },
+  { path = "driver/chips/esp32s31/hal/src/lib.rs", token = "failed_power_transition_can_only_retry_the_unique_owner" },
   { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/teardown.rs", token = "each_failed_stage_returns_its_exact_frontier" },
   { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/teardown.rs", token = "teardown_orders_control_rx_tx_and_both_key_clears" },
   { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/control_tests.rs", token = "shutdown_clears_rx_tx_block_ack_and_discards_late_control_events" },

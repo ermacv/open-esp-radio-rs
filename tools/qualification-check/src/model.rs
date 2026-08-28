@@ -756,6 +756,7 @@ fn contains_owner_declaration(contents: &str, token: &str) -> bool {
         "pub trait ",
         "pub fn ",
         "pub async fn ",
+        "pub const ",
         "pub const fn ",
     ]
     .iter()
@@ -1349,6 +1350,18 @@ hil-requirements = [{ scenario = "channel-switch", minimum-repetitions = 3 }]
     fn rejects_parent_paths() {
         assert!(validate_relative_path(Path::new("../driver/src/lib.rs")).is_err());
         assert!(validate_relative_path(Path::new("driver/src/lib.rs")).is_ok());
+    }
+
+    #[test]
+    fn public_constant_can_own_a_qualification_boundary() {
+        assert!(contains_owner_declaration(
+            "pub const WATCHDOG_MICROSECONDS: u32 = 200_000;",
+            "WATCHDOG_MICROSECONDS",
+        ));
+        assert!(!contains_owner_declaration(
+            "pub(crate) const PRIVATE_WATCHDOG: u32 = 200_000;",
+            "PRIVATE_WATCHDOG",
+        ));
     }
 
     #[test]

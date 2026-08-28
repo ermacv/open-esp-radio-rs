@@ -442,7 +442,36 @@ These checksum runs used a temporary path override of the exact pinned
 `xarxa` revision and are diagnostic rather than sealed qualification. The
 algorithm and its alignment/maximum-IPv4-length tests must land in a durable
 `xarxa` revision before the application dependency is updated. The current
-repository dependency remains unchanged until that integration exists.
+repository dependency remained unchanged until that integration existed.
+
+### Durable checksum integration
+
+The HIL-tested old-API checksum commit is now published as `xarxa`
+`054495de30e6b514ddeba01dcfbb2f9bf2206e94`. Embassy commit
+`147a30f6bc05464a27c26d5542eecc81bd064e3c` pins that immutable revision over
+SSH while preserving the cooperative scheduler implementation. All root,
+integration, and HIL manifests and lockfiles resolve through those two SHAs;
+there is no local path override in the production dependency graph.
+
+A final same-ELF pair on runtime CRC `7e74a69f` measured the durable graph:
+
+| Policy | Run | RX | Core1 network | Network time/datagram |
+| --- | --- | ---: | ---: | ---: |
+| full software validation | `1787929950501-0001f7d4` | 109.598 Mbit/s | 70.22% | 75.44 us |
+| diagnostic assume-valid | `1787930138394-0001fd42` | 110.111 Mbit/s | 61.04% | 65.28 us |
+
+The remaining full-validation cost is therefore 10.16 us/datagram and 9.17
+percentage points of Core1 in this pair. The original byte-load pair cost
+24.43 us/datagram, so the aligned/unrolled implementation removes about 58.4%
+of the normalized checksum cost. Core0 stayed at 40.29--40.45%; the checksum
+change did not move work onto the radio core.
+
+The lower 109.6--110.1 Mbit/s rates in this pair are not target CPU or DMA
+ceilings. The independent observer counted 149,474 and 150,202 unique
+BlockAck-acknowledged MPDUs; the target delivered 149,454 and 150,182, a
+20-frame difference in each run. The AP reported 8,429 and 4,958 pre-air TID-0
+AQM drops respectively, while target `BUFFER_FULL` and FIFO overflow remained
+zero.
 
 ### Next actions
 
@@ -453,12 +482,12 @@ irreducible. Further Core0 optimization should begin with normalized cycles
 per MPDU and DMA batch width, not throughput alone, and only after a measured
 regression or a workload which actually exhausts that headroom.
 
-The immediate production task is to integrate the reviewed `xarxa` checksum
-loop through a durable upstream or explicitly owned revision, repeat the
-full-software/assume-valid same-ELF pair, and then run RX, TX and bidirectional
-ceilings. Exceeding the current RX rate is a separate radio-rate-control task:
-the AP currently transmits at the 135 Mbit/s long-GI rate. A forced-SGI test
-reduced BA occupancy and is not a valid proof that SGI itself is slower.
+The immediate production task is now TX characterization: repeat task
+residence and driver-side A-MPDU/BlockAck timing on the split-core data plane,
+then correlate any speed gap with the AP's RX link vector. Exceeding the
+current RX rate is a separate radio-rate-control task: the AP currently
+transmits at the 135 Mbit/s long-GI rate. A forced-SGI test reduced BA occupancy
+and is not a valid proof that SGI itself is slower.
 
 The next qualification should cover the final integrated ELF across cold
 boot/reconnect, TX, full duplex, mixed small/large RX and latency-sensitive

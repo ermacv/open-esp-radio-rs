@@ -330,18 +330,15 @@ impl BluetoothBasebandV2Transaction<'_> {
         super::generated::initialize_bluetooth_receive_restart_e8_10_15(btagc);
 
         let baseband = &self.bluetooth.bt_v3_2_baseband;
-        baseband
-            .rx_correlator_control()
-            .modify(|_, w| w.rx_setup_enable().set_bit());
-        let restart = baseband.agc_restart_control();
-        restart.modify(|_, w| w.restart_bit_21_unknown().set_bit());
-        restart.modify(|_, w| w.restart_bit_20_unknown().set_bit());
-        restart.modify(|_, w| w.restart_bit_19_unknown().set_bit());
-        restart.modify(|_, w| w.restart_bit_10_unknown().set_bit());
-        restart.modify(|_, w| w.restart_bit_9_unknown().set_bit());
-        restart.modify(|_, w| w.restart_bit_8_unknown().set_bit());
-        restart.modify(|_, w| w.restart_bit_7_unknown().set_bit());
-        restart.modify(|_, w| w.restart_bit_6_unknown().set_bit());
+        super::generated::initialize_bluetooth_receive_restart_correlator(baseband);
+        super::generated::initialize_bluetooth_receive_restart_baseband_21(baseband);
+        super::generated::initialize_bluetooth_receive_restart_baseband_20(baseband);
+        super::generated::initialize_bluetooth_receive_restart_baseband_19(baseband);
+        super::generated::initialize_bluetooth_receive_restart_baseband_10(baseband);
+        super::generated::initialize_bluetooth_receive_restart_baseband_9(baseband);
+        super::generated::initialize_bluetooth_receive_restart_baseband_8(baseband);
+        super::generated::initialize_bluetooth_receive_restart_baseband_7(baseband);
+        super::generated::initialize_bluetooth_receive_restart_baseband_6(baseband);
 
         let bits = btagc.agc_restart_bits_00dc();
         bits.modify(|_, w| w.restart_bit_31().set_bit());

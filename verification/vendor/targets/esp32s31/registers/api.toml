@@ -4210,6 +4210,87 @@ value = 3
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_correlator"
+peripheral = "BT_V3_2_BASEBAND"
+register = "RX_CORRELATOR_CONTROL"
+fields = [{ field = "RX_SETUP_ENABLE", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_baseband_21"
+peripheral = "BT_V3_2_BASEBAND"
+register = "AGC_RESTART_CONTROL"
+fields = [{ field = "RESTART_BIT_21_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_baseband_20"
+peripheral = "BT_V3_2_BASEBAND"
+register = "AGC_RESTART_CONTROL"
+fields = [{ field = "RESTART_BIT_20_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_baseband_19"
+peripheral = "BT_V3_2_BASEBAND"
+register = "AGC_RESTART_CONTROL"
+fields = [{ field = "RESTART_BIT_19_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_baseband_10"
+peripheral = "BT_V3_2_BASEBAND"
+register = "AGC_RESTART_CONTROL"
+fields = [{ field = "RESTART_BIT_10_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_baseband_9"
+peripheral = "BT_V3_2_BASEBAND"
+register = "AGC_RESTART_CONTROL"
+fields = [{ field = "RESTART_BIT_9_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_baseband_8"
+peripheral = "BT_V3_2_BASEBAND"
+register = "AGC_RESTART_CONTROL"
+fields = [{ field = "RESTART_BIT_8_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_baseband_7"
+peripheral = "BT_V3_2_BASEBAND"
+register = "AGC_RESTART_CONTROL"
+fields = [{ field = "RESTART_BIT_7_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_baseband_6"
+peripheral = "BT_V3_2_BASEBAND"
+register = "AGC_RESTART_CONTROL"
+fields = [{ field = "RESTART_BIT_6_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

@@ -63335,6 +63335,121 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace BT_V3_2_BASEBAND.RX_CORRELATOR_CONTROL fields [RX_SETUP_ENABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_restart_correlator(registers: &crate::BtV3_2Baseband) {
+        registers.rx_correlator_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.rx_setup_enable().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.AGC_RESTART_CONTROL fields [RESTART_BIT_21_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_restart_baseband_21(registers: &crate::BtV3_2Baseband) {
+        registers.agc_restart_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .restart_bit_21_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.AGC_RESTART_CONTROL fields [RESTART_BIT_20_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_restart_baseband_20(registers: &crate::BtV3_2Baseband) {
+        registers.agc_restart_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .restart_bit_20_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.AGC_RESTART_CONTROL fields [RESTART_BIT_19_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_restart_baseband_19(registers: &crate::BtV3_2Baseband) {
+        registers.agc_restart_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .restart_bit_19_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.AGC_RESTART_CONTROL fields [RESTART_BIT_10_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_restart_baseband_10(registers: &crate::BtV3_2Baseband) {
+        registers.agc_restart_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .restart_bit_10_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.AGC_RESTART_CONTROL fields [RESTART_BIT_9_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_restart_baseband_9(registers: &crate::BtV3_2Baseband) {
+        registers.agc_restart_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .restart_bit_9_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.AGC_RESTART_CONTROL fields [RESTART_BIT_8_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_restart_baseband_8(registers: &crate::BtV3_2Baseband) {
+        registers.agc_restart_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .restart_bit_8_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.AGC_RESTART_CONTROL fields [RESTART_BIT_7_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_restart_baseband_7(registers: &crate::BtV3_2Baseband) {
+        registers.agc_restart_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .restart_bit_7_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.AGC_RESTART_CONTROL fields [RESTART_BIT_6_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_restart_baseband_6(registers: &crate::BtV3_2Baseband) {
+        registers.agc_restart_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .restart_bit_6_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
     /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields [LOCK_MODIFY_ARGUMENT] from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_scheduler_lock_modify_argument(

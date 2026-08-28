@@ -2364,6 +2364,18 @@ pub(crate) fn initialize_bluetooth_baseband_tx_low_byte(registers: &crate::svd::
     crate::svd::field_replace_modify::initialize_bluetooth_baseband_tx_low_byte(registers);
 }
 
+/// Typed bridge for the reviewed `initialize_bluetooth_baseband_coexistence_18` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_baseband_coexistence_18(registers: &crate::svd::BtV3_2Baseband) {
+    crate::svd::field_replace_modify::initialize_bluetooth_baseband_coexistence_18(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_baseband_coexistence_20` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_baseband_coexistence_20(registers: &crate::svd::BtV3_2Baseband) {
+    crate::svd::field_replace_modify::initialize_bluetooth_baseband_coexistence_20(registers);
+}
+
 /// Typed bridge for the reviewed `clear_bluetooth_scheduler_lock_modify_argument` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_bluetooth_scheduler_lock_modify_argument(

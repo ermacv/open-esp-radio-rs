@@ -62457,6 +62457,28 @@ pub mod field_replace_modify {
             });
     }
 
+    /// Replace BT_V3_2_BASEBAND.COEX_CONFIG fields [CONFIG_FORCE_ONE_18] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_baseband_coexistence_18(registers: &crate::BtV3_2Baseband) {
+        registers.coex_config().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.config_force_one_18().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.COEX_CONFIG fields [CONFIG_FORCE_ONE_20] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_baseband_coexistence_20(registers: &crate::BtV3_2Baseband) {
+        registers.coex_config().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.config_force_one_20().bit((input & 0x00000001) != 0)
+        });
+    }
+
     /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields [LOCK_MODIFY_ARGUMENT] from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_scheduler_lock_modify_argument(

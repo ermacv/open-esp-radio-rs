@@ -3583,6 +3583,24 @@ value = 0xf5
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_TX_SET"]
 
+[[field-replace-modifies]]
+name = "initialize_bluetooth_baseband_coexistence_18"
+peripheral = "BT_V3_2_BASEBAND"
+register = "COEX_CONFIG"
+fields = [{ field = "CONFIG_FORCE_ONE_18", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_baseband_coexistence_20"
+peripheral = "BT_V3_2_BASEBAND"
+register = "COEX_CONFIG"
+fields = [{ field = "CONFIG_FORCE_ONE_20", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

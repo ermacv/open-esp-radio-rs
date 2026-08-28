@@ -543,9 +543,12 @@ impl BluetoothBasebandV2Transaction<'_> {
     }
 
     fn initialize_baseband_coexistence_defaults(&self) {
-        let coex = self.bluetooth.bt_v3_2_baseband.coex_config();
-        coex.modify(|_, w| w.config_force_one_18().set_bit());
-        coex.modify(|_, w| w.config_force_one_20().set_bit());
+        super::generated::initialize_bluetooth_baseband_coexistence_18(
+            &self.bluetooth.bt_v3_2_baseband,
+        );
+        super::generated::initialize_bluetooth_baseband_coexistence_20(
+            &self.bluetooth.bt_v3_2_baseband,
+        );
     }
 
     fn initialize_baseband_cca_defaults(&self) {

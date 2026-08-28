@@ -160,6 +160,40 @@ impl PacApiPack {
             }
         }
 
+        for operation in &self.field_snapshot_reads {
+            let binding = readable_register(
+                &device,
+                &operation.name,
+                &operation.peripheral,
+                &operation.register,
+            )?;
+            if binding.info.read_action.is_some() {
+                return Err(Error::message(format!(
+                    "PAC API field-snapshot-read {:?} cannot target register read-side effects",
+                    operation.name
+                )));
+            }
+            for field_name in &operation.fields {
+                let selected = field(&operation.name, binding.info, field_name)?;
+                if !matches!(
+                    selected.access.or(binding.properties.access),
+                    Some(Access::ReadOnly | Access::ReadWrite)
+                ) || !(1..=32).contains(&selected.bit_width())
+                {
+                    return Err(Error::message(format!(
+                        "PAC API field-snapshot-read {:?} requires readable fields",
+                        operation.name
+                    )));
+                }
+                if selected.read_action.is_some() {
+                    return Err(Error::message(format!(
+                        "PAC API field-snapshot-read {:?} cannot target field read-side effects",
+                        operation.name
+                    )));
+                }
+            }
+        }
+
         for operation in &self.fixed_register_writes {
             let binding = writable_register(
                 &device,
@@ -1186,7 +1220,10 @@ mod tests {
           <addressOffset>0</addressOffset>
           <size>32</size>
           <access>read-write</access>
-          <fields><field><name>VALUE</name><description>value</description><bitOffset>4</bitOffset><bitWidth>1</bitWidth></field></fields>
+          <fields>
+            <field><name>VALUE</name><description>value</description><bitOffset>4</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>OTHER</name><description>other value</description><bitOffset>7</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
         </register>
         <register>
           <name>WIDE</name>
@@ -1282,6 +1319,21 @@ field = "VALUE"
 sources = ["PUBLIC_CONTROL"]
 "#
         ))
+        .unwrap()
+    }
+
+    fn field_snapshot_read_pack() -> PacApiPack {
+        toml_edit::de::from_str(
+            r#"schema = 5
+
+[[field-snapshot-reads]]
+name = "observe_control"
+peripheral = "RADIO"
+register = "GOOD"
+fields = ["VALUE", "OTHER"]
+sources = ["PUBLIC_CONTROL"]
+"#,
+        )
         .unwrap()
     }
 
@@ -1413,6 +1465,22 @@ peripherals = ["INTERRUPT"]
             .unwrap_err()
             .to_string();
         assert!(error.contains("one-bit field"));
+    }
+
+    #[test]
+    fn field_snapshot_read_requires_one_sample_with_distinct_fields() {
+        let mut pack = field_snapshot_read_pack();
+        assert!(
+            pack.validate_against_svd(SAMPLED_BIT_ZERO_WRITE_SVD)
+                .is_ok()
+        );
+
+        pack.field_snapshot_reads[0].fields.truncate(1);
+        let error = pack
+            .validate_against_svd(SAMPLED_BIT_ZERO_WRITE_SVD)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("at least two fields"));
     }
 
     #[test]

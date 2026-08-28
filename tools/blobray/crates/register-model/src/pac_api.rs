@@ -37,6 +37,8 @@ pub struct PacApiPack {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub field_reads: Vec<FieldRead>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub field_snapshot_reads: Vec<FieldSnapshotRead>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fixed_register_writes: Vec<FixedRegisterWrite>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fixed_register_images: Vec<FixedRegisterImage>,
@@ -264,6 +266,10 @@ common_operation!(FieldRead {
     register: String,
     field: String,
 });
+common_operation!(FieldSnapshotRead {
+    register: String,
+    fields: Vec<String>,
+});
 common_operation!(FixedRegisterWrite {
     register: String,
     field: String,
@@ -456,6 +462,7 @@ impl PacApiPack {
         validate_operations("full-register-write", &self.full_register_writes)?;
         validate_operations("full-register-read", &self.full_register_reads)?;
         validate_operations("field-read", &self.field_reads)?;
+        validate_operations("field-snapshot-read", &self.field_snapshot_reads)?;
         validate_operations("fixed-register-write", &self.fixed_register_writes)?;
         validate_operations("fixed-register-image", &self.fixed_register_images)?;
         validate_operations("w1c-register-snapshot", &self.w1c_register_snapshots)?;
@@ -573,6 +580,24 @@ impl PacApiPack {
         }
         for operation in &self.field_reads {
             validate_component("field", &operation.name, &operation.field)?;
+        }
+        for operation in &self.field_snapshot_reads {
+            if operation.fields.len() < 2 {
+                return Err(Error::message(format!(
+                    "PAC API field-snapshot-read {:?} requires at least two fields",
+                    operation.name
+                )));
+            }
+            let mut fields = BTreeSet::new();
+            for field in &operation.fields {
+                validate_component("field", &operation.name, field)?;
+                if !fields.insert(field) {
+                    return Err(Error::message(format!(
+                        "PAC API field-snapshot-read {:?} repeats field {field:?}",
+                        operation.name
+                    )));
+                }
+            }
         }
         for operation in &self.register_image_reads {
             self.validate_operation_domain(
@@ -850,6 +875,7 @@ impl PacApiPack {
             + self.full_register_writes.len()
             + self.full_register_reads.len()
             + self.field_reads.len()
+            + self.field_snapshot_reads.len()
             + self.fixed_register_writes.len()
             + self.fixed_register_images.len()
             + self.w1c_register_snapshots.len()
@@ -915,6 +941,7 @@ impl PacApiPack {
                     .chain(self.full_register_writes.iter().map(Operation::sources))
                     .chain(self.full_register_reads.iter().map(Operation::sources))
                     .chain(self.field_reads.iter().map(Operation::sources))
+                    .chain(self.field_snapshot_reads.iter().map(Operation::sources))
                     .chain(self.fixed_register_writes.iter().map(Operation::sources))
                     .chain(self.fixed_register_images.iter().map(Operation::sources))
                     .chain(self.w1c_register_snapshots.iter().map(Operation::sources))
@@ -1224,6 +1251,7 @@ impl Operation for InterruptSnapshot {
 impl_register_operation!(FullRegisterWrite);
 impl_register_operation!(FullRegisterRead);
 impl_register_operation!(FieldRead);
+impl_register_operation!(FieldSnapshotRead);
 impl_register_operation!(FixedRegisterWrite);
 impl_register_operation!(FixedRegisterImage);
 impl_register_operation!(W1cRegisterSnapshot);
@@ -1397,6 +1425,7 @@ mod tests {
             full_register_writes: Vec::new(),
             full_register_reads: Vec::new(),
             field_reads: Vec::new(),
+            field_snapshot_reads: Vec::new(),
             fixed_register_writes: Vec::new(),
             fixed_register_images: Vec::new(),
             w1c_register_snapshots: Vec::new(),

@@ -168,10 +168,13 @@ struct HardwareSchedulerInterruptControl<'a> {
 
 impl BluetoothSchedulerInterruptControl for HardwareSchedulerInterruptControl<'_> {
     fn read_scheduler_state(&mut self) -> SchedulerStateObservation {
-        let state = self.registers.scheduler_state().read();
+        let (busy, reference_path_state) =
+            super::svd::field_snapshot_read::observe_bluetooth_scheduler_interrupt_state(
+                self.registers,
+            );
         SchedulerStateObservation {
-            busy: state.busy().bit(),
-            reference_path_state: state.reference_path_state().bit(),
+            busy,
+            reference_path_state,
         }
     }
 
@@ -191,11 +194,7 @@ struct HardwareSchedulerFinishedListControl<'a> {
 
 impl BluetoothSchedulerFinishedListControl for HardwareSchedulerFinishedListControl<'_> {
     fn read_finished_list_status(&mut self) -> u16 {
-        self.registers
-            .scheduler_finished_list_status()
-            .read()
-            .finished_list_mask()
-            .bits()
+        super::svd::field_read::observe_bluetooth_scheduler_finished_lists(self.registers)
     }
 
     fn write_finished_list_report(&mut self, value: u16) {

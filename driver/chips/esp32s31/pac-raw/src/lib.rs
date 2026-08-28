@@ -58250,6 +58250,31 @@ pub mod field_read {
     ) -> u32 {
         registers.sleep_timer_latched_time_0().read().image().bits()
     }
+
+    /// Read `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_FINISHED_LIST_STATUS`.`FINISHED_LIST_MASK` without exposing its register block.
+    #[inline]
+    pub fn observe_bluetooth_scheduler_finished_lists(
+        registers: &crate::BluetoothControllerCore,
+    ) -> u16 {
+        registers
+            .scheduler_finished_list_status()
+            .read()
+            .finished_list_mask()
+            .bits()
+    }
+}
+
+/// Safe same-sample observations through reviewed SVD fields.
+pub mod field_snapshot_read {
+
+    /// Read `BUSY`, `REFERENCE_PATH_STATE` from one `BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME`.`SCHEDULER_STATE` sample.
+    #[inline]
+    pub fn observe_bluetooth_scheduler_interrupt_state(
+        registers: &crate::BluetoothSchedulerInterruptRuntime,
+    ) -> (bool, bool) {
+        let sample = registers.scheduler_state().read();
+        (sample.busy().bit(), sample.reference_path_state().bit())
+    }
 }
 
 /// Safe, SVD-declared complete-register writes of fixed enumerated values.

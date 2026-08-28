@@ -180,6 +180,12 @@ register/field read actions. The generated restricted-PAC leaf owns the
 register lookup and read, while handwritten code receives only the field
 value needed by its state machine.
 
+When several fields must come from the same volatile observation,
+`[[field-snapshot-reads]]` lists them in return order. Blobray validates every
+field with the same read rules and emits one register read followed by a tuple
+of field values. This prevents handwritten sequencing from accidentally
+turning one evidenced sample into several temporally different MMIO reads.
+
 ### Complete-word observations and raw-only leaves
 
 Schema-5 API packs may declare a reviewed 32-bit observation with

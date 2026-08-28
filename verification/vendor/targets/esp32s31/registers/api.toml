@@ -2949,6 +2949,20 @@ register = "SLEEP_TIMER_LATCHED_TIME_0"
 field = "IMAGE"
 sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "BLOB_LIBBTDM_SLEEP_TIMER_SNAPSHOT", "PUBLIC_ESP32S31_BT_TIME_ROLES"]
 
+[[field-snapshot-reads]]
+name = "observe_bluetooth_scheduler_interrupt_state"
+peripheral = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME"
+register = "SCHEDULER_STATE"
+fields = ["BUSY", "REFERENCE_PATH_STATE"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+
+[[field-reads]]
+name = "observe_bluetooth_scheduler_finished_lists"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SCHEDULER_FINISHED_LIST_STATUS"
+field = "FINISHED_LIST_MASK"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS", "PUBLIC_ESP32S31_BLE_COMPLETION_ROLES"]
+
 [[indexed-bit-set-modifies]]
 name = "request_rx_block_ack_entry_update"
 peripheral = "WIFI_MAC_RX_DMA"

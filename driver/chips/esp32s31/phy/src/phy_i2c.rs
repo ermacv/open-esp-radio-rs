@@ -2248,8 +2248,8 @@ mod tests {
                             copy_index,
                             address,
                         },
-                        PhyFrequencyI2cAction::ConfigureNumberAddresses(image) => {
-                            PhyFrequencyI2cCompletion::NumberAddressesConfigured(image)
+                        PhyFrequencyI2cAction::ConfigureNumberAddresses(addresses) => {
+                            PhyFrequencyI2cCompletion::NumberAddressesConfigured(addresses)
                         }
                         action => panic!("unexpected terminal frequency-I2C action: {action:?}"),
                     };

@@ -4,6 +4,32 @@
 
 use super::RadioPhyRegisters;
 
+/// Semantic PHY-I2C number-address sequence consumed by
+/// `phy_freq_i2c_num_addr`.
+///
+/// The register split and field placement remain private to the PAC. Callers
+/// provide only the eleven addresses recovered from the vendor descriptor
+/// graph.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyFrequencyI2cNumberAddresses {
+    values: [u8; 11],
+}
+
+impl PhyFrequencyI2cNumberAddresses {
+    /// Bind the complete recovered address sequence to its five-bit hardware
+    /// domain.
+    pub const fn new(values: [u8; 11]) -> Option<Self> {
+        let mut index = 0;
+        while index != values.len() {
+            if values[index] > 0x1f {
+                return None;
+            }
+            index += 1;
+        }
+        Some(Self { values })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ChannelCbwFields {
     tx_offset: u8,
@@ -178,34 +204,43 @@ impl RadioPhyRegisters {
             .modify(|_, w| w.channel_index().set(frequency_index));
     }
 
-    /// Publish the complete `phy_freq_i2c_num_addr` register image.
+    /// Publish the complete semantic `phy_freq_i2c_num_addr` sequence.
     pub fn configure_frequency_i2c_number_addresses(
         &mut self,
-        control_field: u32,
-        words: [u32; 3],
+        addresses: PhyFrequencyI2cNumberAddresses,
     ) {
         let frequency = &self.peripherals.phy_frequency_channel_oracle;
-        let address_0 = ((control_field >> 8) & 0x1f) as u8;
-        let address_1 = ((control_field >> 13) & 0x1f) as u8;
         frequency.i2c_number_control().modify(|_, w| {
             w.number_address_0_unknown()
-                .set(address_0)
+                .set(addresses.values[0])
                 .number_address_1_unknown()
-                .set(address_1)
+                .set(addresses.values[1])
         });
-        for (index, word) in words.into_iter().enumerate() {
-            super::svd::zero_based_field_write::frequency_i2c_number_word(
-                frequency,
-                index,
-                (word & 0x1f) as u8,
-                ((word >> 5) & 0x1f) as u8,
-                ((word >> 10) & 0x1f) as u8,
-                ((word >> 15) & 0x1f) as u8,
-                ((word >> 20) & 0x1f) as u8,
-                ((word >> 25) & 0x1f) as u8,
-                (word >> 30) as u8,
-            );
-        }
+        super::svd::zero_based_field_write::frequency_i2c_number_word(
+            frequency,
+            0,
+            addresses.values[2],
+            addresses.values[3],
+            addresses.values[4],
+            addresses.values[5],
+            addresses.values[6],
+            addresses.values[7],
+            0,
+        );
+        super::svd::zero_based_field_write::frequency_i2c_number_word(
+            frequency,
+            1,
+            addresses.values[8],
+            addresses.values[9],
+            addresses.values[10],
+            0,
+            0,
+            0,
+            0,
+        );
+        super::svd::zero_based_field_write::frequency_i2c_number_word(
+            frequency, 2, 0, 0, 0, 0, 0, 0, 0,
+        );
     }
 
     /// Publish the two pre-delay edges of `phy_freq_chan_en_sw`.

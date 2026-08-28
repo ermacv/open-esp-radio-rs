@@ -27,6 +27,7 @@ use crate::{
         calculate_rfpll_sdm,
     },
 };
+use open_esp_radio_esp32s31_hal::phy_frequency::PhyFrequencyI2cNumberAddresses;
 
 pub const PHY_FREQUENCY_TABLE_ENTRY_COUNT: u8 = 85;
 pub const PHY_FREQUENCY_TABLE_FIRST_CODE: u16 = 0x960;
@@ -532,17 +533,11 @@ pub struct PhyFrequencyI2cRequest {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PhyFrequencyI2cNumberAddressImage {
-    pub control_field: u32,
-    pub words: [u32; 3],
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyFrequencyI2cOutcome {
     pub rfpll_register_0b: u8,
     pub sdm_register_0: u8,
     pub front_end_register_3: u8,
-    pub number_addresses: PhyFrequencyI2cNumberAddressImage,
+    pub number_addresses: PhyFrequencyI2cNumberAddresses,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -561,7 +556,7 @@ pub enum PhyFrequencyI2cAction {
         value: u32,
         mode: u8,
     },
-    ConfigureNumberAddresses(PhyFrequencyI2cNumberAddressImage),
+    ConfigureNumberAddresses(PhyFrequencyI2cNumberAddresses),
     Complete(PhyFrequencyI2cOutcome),
 }
 
@@ -579,7 +574,7 @@ pub enum PhyFrequencyI2cCompletion {
         copy_index: u8,
         address: u16,
     },
-    NumberAddressesConfigured(PhyFrequencyI2cNumberAddressImage),
+    NumberAddressesConfigured(PhyFrequencyI2cNumberAddresses),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -735,74 +730,28 @@ const fn frequency_i2c_descriptor(
     }
 }
 
-const fn pack_six_number_addresses(
-    start: u8,
+const fn phy_frequency_i2c_number_addresses(
     rfpll_register_0b: u8,
     sdm_register_0: u8,
     front_end_register_3: u8,
     front_end_parameter_bit: bool,
-) -> u32 {
-    let mut value = 0_u32;
-    let mut slot = 0_u8;
-    while slot != 6 {
-        let index = start.wrapping_add(slot);
-        if index < 11 {
-            value |= (frequency_i2c_descriptor(
-                index,
-                rfpll_register_0b,
-                sdm_register_0,
-                front_end_register_3,
-                front_end_parameter_bit,
-            )
-            .number_address() as u32)
-                << (slot * 5);
-        }
-        slot += 1;
+) -> PhyFrequencyI2cNumberAddresses {
+    let mut values = [0_u8; 11];
+    let mut index = 0;
+    while index != values.len() {
+        values[index] = frequency_i2c_descriptor(
+            index as u8,
+            rfpll_register_0b,
+            sdm_register_0,
+            front_end_register_3,
+            front_end_parameter_bit,
+        )
+        .number_address();
+        index += 1;
     }
-    value
-}
-
-pub const fn phy_frequency_i2c_number_address_image(
-    rfpll_register_0b: u8,
-    sdm_register_0: u8,
-    front_end_register_3: u8,
-    front_end_parameter_bit: bool,
-) -> PhyFrequencyI2cNumberAddressImage {
-    let first = frequency_i2c_descriptor(
-        0,
-        rfpll_register_0b,
-        sdm_register_0,
-        front_end_register_3,
-        front_end_parameter_bit,
-    )
-    .number_address();
-    let second = frequency_i2c_descriptor(
-        1,
-        rfpll_register_0b,
-        sdm_register_0,
-        front_end_register_3,
-        front_end_parameter_bit,
-    )
-    .number_address();
-    PhyFrequencyI2cNumberAddressImage {
-        control_field: (((second as u32) << 5) | first as u32) << 8,
-        words: [
-            pack_six_number_addresses(
-                2,
-                rfpll_register_0b,
-                sdm_register_0,
-                front_end_register_3,
-                front_end_parameter_bit,
-            ),
-            pack_six_number_addresses(
-                8,
-                rfpll_register_0b,
-                sdm_register_0,
-                front_end_register_3,
-                front_end_parameter_bit,
-            ),
-            0,
-        ],
+    match PhyFrequencyI2cNumberAddresses::new(values) {
+        Some(addresses) => addresses,
+        None => panic!("recovered PHY-I2C number address exceeds its PAC domain"),
     }
 }
 
@@ -890,14 +839,14 @@ impl PhyFrequencyI2cTransition {
                 rfpll_register_0b,
                 sdm_register_0,
                 front_end_register_3,
-            } => PhyFrequencyI2cAction::ConfigureNumberAddresses(
-                phy_frequency_i2c_number_address_image(
+            } => {
+                PhyFrequencyI2cAction::ConfigureNumberAddresses(phy_frequency_i2c_number_addresses(
                     rfpll_register_0b,
                     sdm_register_0,
                     front_end_register_3,
                     self.request.front_end_parameter_bit,
-                ),
-            ),
+                ))
+            }
             PhyFrequencyI2cStep::Complete(outcome) => PhyFrequencyI2cAction::Complete(outcome),
         }
     }
@@ -1005,7 +954,7 @@ impl PhyFrequencyI2cTransition {
                 },
                 PhyFrequencyI2cCompletion::NumberAddressesConfigured(completed),
             ) => {
-                let expected = phy_frequency_i2c_number_address_image(
+                let expected = phy_frequency_i2c_number_addresses(
                     rfpll_register_0b,
                     sdm_register_0,
                     front_end_register_3,
@@ -1535,8 +1484,7 @@ mod tests {
         PhyFrequencyI2cRequest, PhyFrequencyI2cTransition, PhyFrequencyI2cTransitionError,
         PhyFrequencyTableAction, PhyFrequencyTableCompletion, PhyFrequencyTableParameters,
         PhyFrequencyTableRequest, PhyFrequencyTableTransition, PhyFrequencyTableTransitionError,
-        phy_frequency_cap_adjusted_word, phy_frequency_channel_index,
-        phy_frequency_i2c_number_address_image, phy_frequency_memory_record,
+        phy_frequency_cap_adjusted_word, phy_frequency_channel_index, phy_frequency_memory_record,
         phy_frequency_xtal_duty,
     };
     use crate::phy_rfpll::{RfpllFrequencyAction, RfpllFrequencyCompletion};
@@ -1765,24 +1713,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn i2c_number_address_image_matches_the_pinned_rom_packing() {
-        assert_eq!(
-            phy_frequency_i2c_number_address_image(0x5a, 0x8f, 0x10, false),
-            super::PhyFrequencyI2cNumberAddressImage {
-                control_field: 0x0000_a400,
-                words: [0x0494_1cc1, 0x0000_0143, 0],
-            }
-        );
-        assert_eq!(
-            phy_frequency_i2c_number_address_image(0x5a, 0x8f, 0x10, true),
-            super::PhyFrequencyI2cNumberAddressImage {
-                control_field: 0x0000_a400,
-                words: [0x0494_1cc1, 0x0000_0143, 0],
-            }
-        );
-    }
-
     fn complete_i2c_snapshot(
         transition: &mut PhyFrequencyI2cTransition,
         rfpll_register_0b: u8,
@@ -1870,13 +1800,13 @@ mod tests {
             ]
         );
 
-        let image = phy_frequency_i2c_number_address_image(0x5a, 0x8f, 0x10, false);
-        assert_eq!(
-            transition.action(),
-            PhyFrequencyI2cAction::ConfigureNumberAddresses(image)
-        );
+        let PhyFrequencyI2cAction::ConfigureNumberAddresses(addresses) = transition.action() else {
+            panic!("transition did not publish the number-address operation");
+        };
         transition
-            .advance(PhyFrequencyI2cCompletion::NumberAddressesConfigured(image))
+            .advance(PhyFrequencyI2cCompletion::NumberAddressesConfigured(
+                addresses,
+            ))
             .unwrap();
         let PhyFrequencyI2cAction::Complete(outcome) = transition.action() else {
             panic!("transition did not complete");
@@ -1884,9 +1814,11 @@ mod tests {
         assert_eq!(outcome.rfpll_register_0b, 0x5a);
         assert_eq!(outcome.sdm_register_0, 0x8f);
         assert_eq!(outcome.front_end_register_3, 0x10);
-        assert_eq!(outcome.number_addresses, image);
+        assert_eq!(outcome.number_addresses, addresses);
         assert_eq!(
-            transition.advance(PhyFrequencyI2cCompletion::NumberAddressesConfigured(image)),
+            transition.advance(PhyFrequencyI2cCompletion::NumberAddressesConfigured(
+                addresses
+            )),
             Err(PhyFrequencyI2cTransitionError::AlreadyComplete)
         );
     }
@@ -2013,8 +1945,8 @@ mod tests {
                 copy_index,
                 address,
             },
-            PhyFrequencyI2cAction::ConfigureNumberAddresses(image) => {
-                PhyFrequencyI2cCompletion::NumberAddressesConfigured(image)
+            PhyFrequencyI2cAction::ConfigureNumberAddresses(addresses) => {
+                PhyFrequencyI2cCompletion::NumberAddressesConfigured(addresses)
             }
             action => panic!("unexpected terminal I2C action: {action:?}"),
         }

@@ -8,6 +8,8 @@
 #[cfg(target_arch = "riscv32")]
 use crate::{PhyInitializationAccess, SharedPhyAccess, phy_pac_mut};
 
+pub use open_esp_radio_esp32s31_pac::PhyFrequencyI2cNumberAddresses;
+
 /// Clear the shared Wi-Fi control state at the start of common PHY init.
 ///
 /// Pinned `libphy.a[phy_init.o]::register_chipv7_phy`, size `0x1e6`, performs
@@ -70,11 +72,10 @@ pub fn restore_channel_index(registers: &mut impl SharedPhyAccess, frequency_ind
 #[cfg(target_arch = "riscv32")]
 pub fn configure_i2c_number_addresses(
     registers: &mut impl SharedPhyAccess,
-    control_field: u32,
-    words: [u32; 3],
+    addresses: PhyFrequencyI2cNumberAddresses,
 ) {
     let registers = phy_pac_mut(registers);
-    registers.configure_frequency_i2c_number_addresses(control_field, words);
+    registers.configure_frequency_i2c_number_addresses(addresses);
 }
 
 /// Publish the pre-delay half of complete rev0 ROM `phy_freq_chan_en_sw`.

@@ -125,6 +125,7 @@ pub use bluetooth_scheduler_stop::{
 };
 pub use cfr::CfrValue;
 pub use coex::{COEX_TIMER_COUNT, CoexTimerRegister};
+pub use frequency::PhyFrequencyI2cNumberAddresses;
 /// Reviewed writable MAC interrupt mask.
 ///
 /// The generated domain deliberately has no public integer constructor:

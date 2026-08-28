@@ -951,11 +951,9 @@ impl PhyColdMmioBinding {
                 registers, address, value, mode,
             ),
             PhyRfInitPrefixAction::ChannelFrequency(PhyChannelFrequencyInitAction::I2c(
-                PhyFrequencyI2cAction::ConfigureNumberAddresses(image),
+                PhyFrequencyI2cAction::ConfigureNumberAddresses(addresses),
             )) => open_esp_radio_esp32s31_hal::phy_frequency::configure_i2c_number_addresses(
-                registers,
-                image.control_field,
-                image.words,
+                registers, addresses,
             ),
             PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
                 XtalDutyPassAction::Prepare(XtalDutyPrepareAction::ConfigureCalibrationTone {
@@ -1135,10 +1133,10 @@ fn lower_prefix_mmio_completion(
             }),
         )),
         PhyRfInitPrefixAction::ChannelFrequency(PhyChannelFrequencyInitAction::I2c(
-            PhyFrequencyI2cAction::ConfigureNumberAddresses(image),
+            PhyFrequencyI2cAction::ConfigureNumberAddresses(addresses),
         )) => Some(PhyRfInitPrefixCompletion::ChannelFrequency(
             PhyChannelFrequencyInitCompletion::I2c(
-                PhyFrequencyI2cCompletion::NumberAddressesConfigured(image),
+                PhyFrequencyI2cCompletion::NumberAddressesConfigured(addresses),
             ),
         )),
         PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(

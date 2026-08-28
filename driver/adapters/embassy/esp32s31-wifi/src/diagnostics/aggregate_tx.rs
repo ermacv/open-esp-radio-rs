@@ -42,23 +42,6 @@ pub enum PreparedTxSchedulerPhase {
     PreparedEntry,
 }
 
-/// One complete diagnostic trace through the prepared-TX scheduler boundary.
-///
-/// Absolute timestamps keep policy out of the production adapter. The HIL
-/// observer decides which adjacent intervals to aggregate and report.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PreparedTxSchedulerTrace {
-    pub active_service_returned_micros: u64,
-    pub scheduler_loop_resumed_micros: u64,
-    pub stop_poll_completed_micros: u64,
-    pub control_readiness_checked_micros: u64,
-    pub prepared_entry_micros: u64,
-    /// Number of outer scheduler iterations between completion and entry.
-    pub scheduler_passes: u8,
-    /// Number of those iterations that found control work ready.
-    pub control_ready_passes: u8,
-}
-
 /// Value-only observations emitted by the production aggregate TX owner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AggregateTxObservation {
@@ -98,14 +81,18 @@ pub enum AggregateTxObservation {
     StandbyPrepared,
     StandbyPublished,
     StandbyCancelled,
+    /// One timestamped phase of an already-prepared DATAPATH publication.
+    ///
+    /// The observer owns trace assembly and storage. The driver never retains
+    /// diagnostic state outside its ordinary role owner graph.
+    PreparedSchedulerPhase {
+        phase: PreparedTxSchedulerPhase,
+        at_micros: u64,
+    },
     Published {
         /// Clock image captured immediately before queue programming began.
         at_micros: u64,
         program_micros: u64,
-        /// Phase trace for an already-prepared DATAPATH publication. `None`
-        /// identifies an initial publication, hardware retry, or a path which
-        /// did not cross every required diagnostic boundary.
-        prepared_scheduler: Option<PreparedTxSchedulerTrace>,
     },
     /// One detached hardware A-MPDU completion after BlockAck classification.
     BlockAckProcessed {

@@ -8,7 +8,7 @@ use std::{
 
 use open_esp_radio_hil_protocol::{
     WifiDataPlanePlacement, WifiRxAdmissionPolicy, WifiRxChecksumPolicy, WifiRxContinuationPolicy,
-    WifiRxDispatchPolicy,
+    WifiRxDispatchPolicy, WifiTxUdpChecksumPolicy,
 };
 use serde::{Deserialize, Serialize};
 
@@ -380,6 +380,8 @@ pub struct Scenario {
     #[serde(default)]
     pub rx_checksum: WifiRxChecksumPolicy,
     #[serde(default)]
+    pub tx_udp_checksum: WifiTxUdpChecksumPolicy,
+    #[serde(default)]
     pub rx_admission: WifiRxAdmissionPolicy,
     #[serde(default)]
     pub rx_dispatch: WifiRxDispatchPolicy,
@@ -469,6 +471,24 @@ impl Scenario {
         {
             return Err(format!(
                 "{}: assume-valid-diagnostic RX checksum policy is restricted to the UDP RX task-poll diagnostic",
+                self.source.display()
+            )
+            .into());
+        }
+        if self.tx_udp_checksum == WifiTxUdpChecksumPolicy::OmitIpv4Diagnostic
+            && (!matches!(
+                self.image,
+                ImageClass::DiagnosticTaskPoll | ImageClass::DiagnosticCore0RxCoarse
+            ) || !matches!(
+                self.workload,
+                Workload::Udp {
+                    direction: Direction::Tx,
+                    ..
+                }
+            ))
+        {
+            return Err(format!(
+                "{}: omit-ipv4-diagnostic TX UDP checksum policy is restricted to a UDP TX task-poll or coarse-cycle diagnostic",
                 self.source.display()
             )
             .into());
@@ -1590,6 +1610,46 @@ mod tests {
         assert_eq!(software.criteria, assume_valid.criteria);
         assert_eq!(software.evidence, assume_valid.evidence);
         assert_eq!(software.fixture_mutation, assume_valid.fixture_mutation);
+    }
+
+    #[test]
+    fn tx_checksum_control_changes_only_the_runtime_checksum_policy() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+        let catalog = Catalog::load(&root).unwrap();
+        let software = catalog.get("udp-tx-ht40-core0-coarse-diagnostic").unwrap();
+        let omit = catalog
+            .get("udp-tx-ht40-no-udp-checksum-diagnostic")
+            .unwrap();
+
+        assert_eq!(software.tx_udp_checksum, WifiTxUdpChecksumPolicy::Software);
+        assert_eq!(
+            omit.tx_udp_checksum,
+            WifiTxUdpChecksumPolicy::OmitIpv4Diagnostic
+        );
+        assert_eq!(software.image, omit.image);
+        assert_eq!(software.isolation, omit.isolation);
+        assert_eq!(software.data_plane, omit.data_plane);
+        assert_eq!(software.rx_checksum, omit.rx_checksum);
+        assert_eq!(software.rx_admission, omit.rx_admission);
+        assert_eq!(software.rx_dispatch, omit.rx_dispatch);
+        assert_eq!(software.rx_continuation, omit.rx_continuation);
+        assert_eq!(software.l1_cache_counters, omit.l1_cache_counters);
+        assert_eq!(software.workload, omit.workload);
+        assert_eq!(software.link, omit.link);
+        assert_eq!(software.criteria, omit.criteria);
+        assert_eq!(software.evidence, omit.evidence);
+        assert_eq!(software.fixture_mutation, omit.fixture_mutation);
+
+        let mut wrong_direction = omit.clone();
+        let Workload::Udp { direction, .. } = &mut wrong_direction.workload else {
+            panic!("TX checksum control must remain UDP")
+        };
+        *direction = Direction::Rx;
+        assert!(wrong_direction.validate().is_err());
+
+        let mut wrong_image = omit.clone();
+        wrong_image.image = ImageClass::Performance;
+        assert!(wrong_image.validate().is_err());
     }
 
     #[test]

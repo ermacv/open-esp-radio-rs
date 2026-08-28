@@ -10,6 +10,7 @@ use std::{
 use open_esp_radio_hil_protocol::{
     NetworkCredentials, NetworkIpv4Configuration, WifiChannelWidth, WifiDataPlanePlacement,
     WifiRxAdmissionPolicy, WifiRxChecksumPolicy, WifiRxContinuationPolicy, WifiRxDispatchPolicy,
+    WifiTxUdpChecksumPolicy,
 };
 use serde::Deserialize;
 use zeroize::{Zeroize, Zeroizing};
@@ -25,6 +26,7 @@ pub(crate) struct LabConfig {
     pub(crate) station_fixture: StationFixtureConfig,
     data_plane: Cell<WifiDataPlanePlacement>,
     rx_checksum: Cell<WifiRxChecksumPolicy>,
+    tx_udp_checksum: Cell<WifiTxUdpChecksumPolicy>,
     rx_admission: Cell<WifiRxAdmissionPolicy>,
     rx_dispatch: Cell<WifiRxDispatchPolicy>,
     rx_continuation: Cell<WifiRxContinuationPolicy>,
@@ -336,6 +338,7 @@ impl LabConfig {
             },
             data_plane: Cell::new(WifiDataPlanePlacement::SingleCore),
             rx_checksum: Cell::new(WifiRxChecksumPolicy::Software),
+            tx_udp_checksum: Cell::new(WifiTxUdpChecksumPolicy::Software),
             rx_admission: Cell::new(WifiRxAdmissionPolicy::SynchronousShared),
             rx_dispatch: Cell::new(WifiRxDispatchPolicy::Asynchronous),
             rx_continuation: Cell::new(WifiRxContinuationPolicy::ImmediateSoftwareProbe),
@@ -387,6 +390,7 @@ impl LabConfig {
             }),
             data_plane: Cell::new(WifiDataPlanePlacement::SingleCore),
             rx_checksum: Cell::new(WifiRxChecksumPolicy::Software),
+            tx_udp_checksum: Cell::new(WifiTxUdpChecksumPolicy::Software),
             rx_admission: Cell::new(WifiRxAdmissionPolicy::SynchronousShared),
             rx_dispatch: Cell::new(WifiRxDispatchPolicy::Asynchronous),
             rx_continuation: Cell::new(WifiRxContinuationPolicy::ImmediateSoftwareProbe),
@@ -408,6 +412,14 @@ impl LabConfig {
 
     pub(crate) fn rx_checksum(&self) -> WifiRxChecksumPolicy {
         self.rx_checksum.get()
+    }
+
+    pub(crate) fn set_tx_udp_checksum(&self, policy: WifiTxUdpChecksumPolicy) {
+        self.tx_udp_checksum.set(policy);
+    }
+
+    pub(crate) fn tx_udp_checksum(&self) -> WifiTxUdpChecksumPolicy {
+        self.tx_udp_checksum.get()
     }
 
     pub(crate) fn set_rx_admission(&self, policy: WifiRxAdmissionPolicy) {

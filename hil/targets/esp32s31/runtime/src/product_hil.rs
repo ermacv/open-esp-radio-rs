@@ -2290,6 +2290,7 @@ pub async fn run(
         ipv4: startup_ipv4,
         data_plane,
         rx_checksum,
+        tx_udp_checksum,
         rx_admission,
         rx_dispatch,
         rx_continuation,
@@ -2493,11 +2494,17 @@ pub async fn run(
         rx_checksum,
         open_esp_radio_hil_protocol::WifiRxChecksumPolicy::Software
     );
+    let generate_ipv4_udp_tx_checksums = matches!(
+        tx_udp_checksum,
+        open_esp_radio_hil_protocol::WifiTxUdpChecksumPolicy::Software
+    );
     let network_start = AppNetworkStart {
         station_device: station_device
-            .with_software_ipv4_udp_rx_checksum_validation(validate_ipv4_udp_rx_checksums),
+            .with_software_ipv4_udp_rx_checksum_validation(validate_ipv4_udp_rx_checksums)
+            .with_software_ipv4_udp_tx_checksum_generation(generate_ipv4_udp_tx_checksums),
         access_point_device: access_point_device
-            .with_software_ipv4_udp_rx_checksum_validation(validate_ipv4_udp_rx_checksums),
+            .with_software_ipv4_udp_rx_checksum_validation(validate_ipv4_udp_rx_checksums)
+            .with_software_ipv4_udp_tx_checksum_generation(generate_ipv4_udp_tx_checksums),
         station_ipv4: startup_ipv4,
         seed,
         l1_cache,
@@ -2570,6 +2577,7 @@ pub async fn run(
     runtime_log(format_args!(
         "OPEN_RADIO_HIL data_plane={data_plane:?} radio_core=0 \
          protocol_core=0 network_core={data_plane_core} rx_checksum={rx_checksum:?} \
+         tx_udp_checksum={tx_udp_checksum:?} \
          rx_admission={rx_admission:?} rx_dispatch={effective_rx_dispatch} \
          rx_continuation={effective_rx_continuation} \
          l1_cache_counters={l1_cache_counters}",

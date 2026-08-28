@@ -1,5 +1,10 @@
 use super::*;
 
+#[cfg(feature = "tx-phase-telemetry")]
+use crate::diagnostics::core0_rx_performance::{
+    CORE0_PERFORMANCE, Core0PerformanceSample, Core0TxPhase,
+};
+
 #[cfg(feature = "task-poll-telemetry")]
 use crate::diagnostics::core0_rx_cycles::{
     CORE0_RX_CYCLES, Core0ControlOutcome, Core0RxSchedulerCycleProfile, Core0RxSchedulerPath,
@@ -322,7 +327,15 @@ where
                         {
                             assert_eq!(self.tx_interface_for(&frame), interface);
                             let network_tx = self.tx_consumer_for(interface);
+                            #[cfg(feature = "tx-phase-telemetry")]
+                            let tx_phase_started = Core0PerformanceSample::read();
                             self.services.prepare_tx(frame, &network_tx).await?;
+                            #[cfg(feature = "tx-phase-telemetry")]
+                            CORE0_PERFORMANCE.record_tx_phase(
+                                Core0TxPhase::Prepare,
+                                tx_phase_started,
+                                Core0PerformanceSample::read(),
+                            );
                         }
                         let admitted = self.services.prepared_tx_frame_count().max(1);
                         self.start_prepared_network_tx(interface, admitted, &mut tx_batch_states)
@@ -335,7 +348,15 @@ where
                     };
                     let interface = self.tx_interface_for(&frame);
                     let network_tx = self.tx_consumer_for(interface);
+                    #[cfg(feature = "tx-phase-telemetry")]
+                    let tx_phase_started = Core0PerformanceSample::read();
                     let progress = self.services.start_tx(frame, &network_tx).await?;
+                    #[cfg(feature = "tx-phase-telemetry")]
+                    CORE0_PERFORMANCE.record_tx_phase(
+                        Core0TxPhase::Start,
+                        tx_phase_started,
+                        Core0PerformanceSample::read(),
+                    );
                     let admitted = self.services.last_started_tx_frame_count().max(1);
                     self.account_tx_frames(admitted);
                     self.account_pair_tx_frames(interface, admitted);

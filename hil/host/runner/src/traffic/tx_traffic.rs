@@ -396,6 +396,7 @@ pub(crate) fn run(
                 pre_workload_channel_utilization,
                 task_polls: task_polls_from_log(&log),
                 core0_coarse: Core0CoarseEvidence::from_log(&log),
+                tx_phases: TxPhaseEvidence::from_log(&log),
                 failure: throughput_failure.as_deref(),
             },
         )?;
@@ -778,6 +779,7 @@ struct TxPerformanceReport<'a> {
     pre_workload_channel_utilization: Option<ChannelUtilization>,
     task_polls: TaskPollSet,
     core0_coarse: Option<Core0CoarseEvidence>,
+    tx_phases: Option<TxPhaseEvidence>,
     failure: Option<&'a str>,
 }
 
@@ -820,6 +822,152 @@ impl Core0CoarseEvidence {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct TxPhaseEvidence {
+    core0_start_calls: u64,
+    core0_start_cycles: u64,
+    core0_start_instructions: u64,
+    core0_prepare_calls: u64,
+    core0_prepare_cycles: u64,
+    core0_prepare_instructions: u64,
+    core0_publish_calls: u64,
+    core0_publish_cycles: u64,
+    core0_publish_instructions: u64,
+    core0_service_calls: u64,
+    core0_service_cycles: u64,
+    core0_service_instructions: u64,
+    core0_encode_calls: u64,
+    core0_encode_cycles: u64,
+    core0_encode_instructions: u64,
+    core0_commit_calls: u64,
+    core0_commit_cycles: u64,
+    core0_commit_instructions: u64,
+    core1_admission_attempts: u64,
+    core1_admission_successes: u64,
+    core1_admission_cycles: u64,
+    core1_admission_instructions: u64,
+    core1_consume_calls: u64,
+    core1_consume_bytes: u64,
+    core1_consume_cycles: u64,
+    core1_consume_instructions: u64,
+    core1_emit_cycles: u64,
+    core1_emit_instructions: u64,
+    core1_publication_cycles: u64,
+    core1_publication_instructions: u64,
+}
+
+impl TxPhaseEvidence {
+    fn from_log(log: &str) -> Option<Self> {
+        let core0 = log
+            .lines()
+            .find(|line| line.starts_with("ORC0TX ") || line.contains(" ORC0TX "))?;
+        let core1 = log
+            .lines()
+            .find(|line| line.starts_with("ONTX ") || line.contains(" ONTX "))?;
+        let core0_nested = log
+            .lines()
+            .find(|line| line.starts_with("ORC0TXN ") || line.contains(" ORC0TXN "))?;
+        Some(Self {
+            core0_start_calls: numeric_field(core0, "start_calls")?,
+            core0_start_cycles: numeric_field(core0, "start_cycles")?,
+            core0_start_instructions: numeric_field(core0, "start_instret")?,
+            core0_prepare_calls: numeric_field(core0, "prepare_calls")?,
+            core0_prepare_cycles: numeric_field(core0, "prepare_cycles")?,
+            core0_prepare_instructions: numeric_field(core0, "prepare_instret")?,
+            core0_publish_calls: numeric_field(core0, "publish_calls")?,
+            core0_publish_cycles: numeric_field(core0, "publish_cycles")?,
+            core0_publish_instructions: numeric_field(core0, "publish_instret")?,
+            core0_service_calls: numeric_field(core0, "service_calls")?,
+            core0_service_cycles: numeric_field(core0, "service_cycles")?,
+            core0_service_instructions: numeric_field(core0, "service_instret")?,
+            core0_encode_calls: numeric_field(core0_nested, "encode_calls")?,
+            core0_encode_cycles: numeric_field(core0_nested, "encode_cycles")?,
+            core0_encode_instructions: numeric_field(core0_nested, "encode_instret")?,
+            core0_commit_calls: numeric_field(core0_nested, "commit_calls")?,
+            core0_commit_cycles: numeric_field(core0_nested, "commit_cycles")?,
+            core0_commit_instructions: numeric_field(core0_nested, "commit_instret")?,
+            core1_admission_attempts: numeric_field(core1, "admission_attempts")?,
+            core1_admission_successes: numeric_field(core1, "admission_successes")?,
+            core1_admission_cycles: numeric_field(core1, "admission_cycles")?,
+            core1_admission_instructions: numeric_field(core1, "admission_instret")?,
+            core1_consume_calls: numeric_field(core1, "consume_calls")?,
+            core1_consume_bytes: numeric_field(core1, "consume_bytes")?,
+            core1_consume_cycles: numeric_field(core1, "consume_cycles")?,
+            core1_consume_instructions: numeric_field(core1, "consume_instret")?,
+            core1_emit_cycles: numeric_field(core1, "emit_cycles")?,
+            core1_emit_instructions: numeric_field(core1, "emit_instret")?,
+            core1_publication_cycles: numeric_field(core1, "publication_cycles")?,
+            core1_publication_instructions: numeric_field(core1, "publication_instret")?,
+        })
+    }
+
+    fn markdown(self, datagrams: u64, core0: Option<Core0CoarseEvidence>) -> String {
+        let datagrams = datagrams.max(1) as f64;
+        let core0_phase_cycles = self
+            .core0_start_cycles
+            .saturating_add(self.core0_prepare_cycles)
+            .saturating_add(self.core0_publish_cycles)
+            .saturating_add(self.core0_service_cycles);
+        let core0_residual =
+            core0.map(|total| total.radio_cycles.saturating_sub(core0_phase_cycles));
+        let admission_failures = self
+            .core1_admission_attempts
+            .saturating_sub(self.core1_admission_successes);
+        format!(
+            "## TX phase hardware counters\n\n\
+             These diagnostic per-transaction samples are intrusive. The first four Core0 bins are non-overlapping driver calls; encode and commit are nested per-frame samples and are not added to their sum. The Core0 residual is all radio-task work outside the first four calls. Core1 emission is the network stack callback, while publication is the surrounding pinned-slot/channel/wake work.\n\n\
+             | Owner / phase | Calls | Cycles / datagram | Instructions / datagram |\n\
+             |---|---:|---:|---:|\n\
+             | Core0 fresh start | {} | {:.2} | {:.2} |\n\
+             | Core0 standby prepare | {} | {:.2} | {:.2} |\n\
+             | Core0 prepared publish | {} | {:.2} | {:.2} |\n\
+             | Core0 terminal service | {} | {:.2} | {:.2} |\n\
+             | Core0 measured phase sum | - | {:.2} | - |\n\
+             | Core0 residual | - | {} | - |\n\
+             | Core0 802.11/CCMP encode (nested) | {} | {:.2} | {:.2} |\n\
+             | Core0 A-MPDU descriptor commit (nested) | {} | {:.2} | {:.2} |\n\
+             | Core1 TX admission | {} attempts / {} successes / {} failures | {:.2} | {:.2} |\n\
+             | Core1 packet emission | {} | {:.2} | {:.2} |\n\
+             | Core1 driver publication | {} | {:.2} | {:.2} |\n\n\
+             - Core1 emitted bytes: `{}`\n\n",
+            self.core0_start_calls,
+            self.core0_start_cycles as f64 / datagrams,
+            self.core0_start_instructions as f64 / datagrams,
+            self.core0_prepare_calls,
+            self.core0_prepare_cycles as f64 / datagrams,
+            self.core0_prepare_instructions as f64 / datagrams,
+            self.core0_publish_calls,
+            self.core0_publish_cycles as f64 / datagrams,
+            self.core0_publish_instructions as f64 / datagrams,
+            self.core0_service_calls,
+            self.core0_service_cycles as f64 / datagrams,
+            self.core0_service_instructions as f64 / datagrams,
+            core0_phase_cycles as f64 / datagrams,
+            core0_residual
+                .map(|cycles| format!("{:.2}", cycles as f64 / datagrams))
+                .unwrap_or_else(|| String::from("not available")),
+            self.core0_encode_calls,
+            self.core0_encode_cycles as f64 / datagrams,
+            self.core0_encode_instructions as f64 / datagrams,
+            self.core0_commit_calls,
+            self.core0_commit_cycles as f64 / datagrams,
+            self.core0_commit_instructions as f64 / datagrams,
+            self.core1_admission_attempts,
+            self.core1_admission_successes,
+            admission_failures,
+            self.core1_admission_cycles as f64 / datagrams,
+            self.core1_admission_instructions as f64 / datagrams,
+            self.core1_consume_calls,
+            self.core1_emit_cycles as f64 / datagrams,
+            self.core1_emit_instructions as f64 / datagrams,
+            self.core1_consume_calls,
+            self.core1_publication_cycles as f64 / datagrams,
+            self.core1_publication_instructions as f64 / datagrams,
+            self.core1_consume_bytes,
+        )
+    }
+}
+
 fn numeric_field(line: &str, key: &str) -> Option<u64> {
     line.split_ascii_whitespace().find_map(|token| {
         let (candidate, value) = token.split_once('=')?;
@@ -840,6 +988,7 @@ fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> R
         pre_workload_channel_utilization,
         task_polls,
         core0_coarse,
+        tx_phases,
         failure,
     } = report;
     let datagrams = bursts.iter().map(|burst| burst.datagrams).sum::<u64>();
@@ -866,6 +1015,9 @@ fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> R
             )
         })
         .unwrap_or_default();
+    let tx_phase_report = tx_phases
+        .map(|evidence| evidence.markdown(structured.transport.tx_units, core0_coarse))
+        .unwrap_or_default();
     fs::write(
         output.join("report.md"),
         format!(
@@ -886,6 +1038,7 @@ fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> R
              - Evidence CRC32C: `0x{:08x}`\n\n\
              {task_poll_report}\
              {core0_report}\
+             {tx_phase_report}\
              UART evidence is in [`uart.log`](uart.log).\n",
             options.device,
             bursts.len(),
@@ -1135,6 +1288,33 @@ mod tests {
         let markdown = evidence.markdown(12_001_617, 119_716);
         assert!(markdown.contains("Core0 cycle occupancy: `76.82%`"));
         assert!(markdown.contains("IPC: `0.201`"));
+    }
+
+    #[test]
+    fn parses_non_overlapping_tx_phase_counters() {
+        let evidence = TxPhaseEvidence::from_log(
+            "ORC0TX start_calls=2 start_cycles=20 start_instret=10 prepare_calls=3 prepare_cycles=30 prepare_instret=15 publish_calls=4 publish_cycles=40 publish_instret=20 service_calls=5 service_cycles=50 service_instret=25\n\
+             ORC0TXN encode_calls=10 encode_cycles=70 encode_instret=35 commit_calls=10 commit_cycles=80 commit_instret=40\n\
+             ONTX admission_attempts=12 admission_successes=10 admission_cycles=120 admission_instret=60 consume_calls=10 consume_bytes=14720 consume_cycles=500 consume_instret=250 emit_cycles=300 emit_instret=150 publication_cycles=200 publication_instret=100",
+        )
+        .unwrap();
+        assert_eq!(evidence.core0_prepare_cycles, 30);
+        assert_eq!(evidence.core0_encode_cycles, 70);
+        assert_eq!(evidence.core1_admission_attempts, 12);
+        assert_eq!(evidence.core1_admission_successes, 10);
+        assert_eq!(evidence.core1_publication_cycles, 200);
+        let markdown = evidence.markdown(
+            10,
+            Some(Core0CoarseEvidence {
+                radio_polls: 7,
+                radio_cycles: 200,
+                radio_instructions: 100,
+            }),
+        );
+        assert!(markdown.contains("Core0 measured phase sum | - | 14.00"));
+        assert!(markdown.contains("Core0 residual | - | 6.00"));
+        assert!(markdown.contains("12 attempts / 10 successes / 2 failures"));
+        assert!(markdown.contains("Core1 driver publication | 10 | 20.00"));
     }
 
     #[test]

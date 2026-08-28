@@ -41,6 +41,6 @@ pub use message::{
     WifiRoleFailureEvidence, WifiRoleFailureReason, WifiRoleOperation, WifiRoleTransitionEvidence,
     WifiRxAdmissionPolicy, WifiRxChecksumPolicy, WifiRxContinuationPolicy, WifiRxDispatchPolicy,
     WifiScanEvidence, WifiScanRequest, WifiStationAccessPointRequest,
-    WifiStationAccessPointStopEvidence, WireBody, WireKind,
+    WifiStationAccessPointStopEvidence, WifiTxUdpChecksumPolicy, WireBody, WireKind,
 };
 pub use stream_pattern::{fill_stream_pattern, stream_pattern_byte, stream_pattern_matches};

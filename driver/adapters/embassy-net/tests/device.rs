@@ -740,3 +740,29 @@ fn pinned_device_reports_explicit_checksum_capabilities() {
     assert!(matches!(checksum.udp, Checksum::Tx));
     assert!(matches!(checksum.tcp, Checksum::Both));
 }
+
+#[test]
+fn shared_device_can_omit_only_the_ipv4_udp_tx_checksum() {
+    type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    let resources = Box::leak(Box::new(TestResources::new()));
+    let tx_pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let shared_pool = Box::leak(Box::new(RxHandoffPool::<FRAME_CAPACITY, 1>::new()));
+    let shared_queue = Box::leak(Box::new(SharedPinnedRxQueue::<NoopRawMutex, 1>::new()));
+    let (_publisher, consumer) = shared_queue.split(shared_pool, observe_shared_rx_release);
+    let (device, _radio) = split_pinned!(
+        resources,
+        tx_pool,
+        NetworkInterfaceId::new(0),
+        [2, 0, 0, 0, 0, 1]
+    );
+    let device = device
+        .with_ingress_tx_reserve()
+        .with_shared_rx(consumer)
+        .with_software_ipv4_udp_tx_checksum_generation(false);
+
+    let checksum = device.capabilities().checksum;
+    assert!(matches!(checksum.ipv4, Checksum::Both));
+    assert!(matches!(checksum.udp, Checksum::Rx));
+    assert!(matches!(checksum.tcp, Checksum::Both));
+}

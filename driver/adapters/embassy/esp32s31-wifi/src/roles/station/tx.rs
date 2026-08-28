@@ -61,7 +61,9 @@ use open_esp_radio_wifi_softmac::{
 };
 
 #[cfg(any(feature = "diagnostics", test))]
-use crate::diagnostics::aggregate_tx::{AggregateTxObservation, AggregateTxObserver};
+use crate::diagnostics::aggregate_tx::{
+    AggregateTxObservation, AggregateTxObserver, PreparedTxSchedulerPhase,
+};
 use crate::{
     datapath::services::DatapathNetworkTxService,
     datapath::tx::resources::{AggregateTxArenaPair, AggregateTxResources},

@@ -11,15 +11,21 @@ description = "Bounded, owned Ethernet frame boundary between open ESP radio tas
 default = []
 # Exposes the exact pre-publication edge only to diagnostic compositions.
 diagnostics = []
+# Intrusive per-datagram Core1 cycle/instruction accounting. Diagnostic HIL
+# images enable this explicitly; production adapters do not.
+tx-phase-telemetry = ["dep:riscv"]
 
 [dependencies]
-embassy-net-driver = { git = "ssh://git@github.com/ermacv/embassy.git", rev = "147a30f6bc05464a27c26d5542eecc81bd064e3c" }
+embassy-net-driver = { git = "https://github.com/ermacv/embassy.git", rev = "51c3eb0b7e64921246007af1357f3d9f44bfe466" }
 embassy-sync = "0.8.0"
 open-esp-radio-dma = { path = "../../common/dma" }
 
+[target.'cfg(target_arch = "riscv32")'.dependencies]
+riscv = { version = "0.15", optional = true }
+
 [dev-dependencies]
 embassy-executor = { version = "0.10.0", features = ["executor-thread", "platform-std"] }
-embassy-net = { git = "ssh://git@github.com/ermacv/embassy.git", rev = "147a30f6bc05464a27c26d5542eecc81bd064e3c", features = ["icmp", "medium-ethernet", "proto-ipv4", "std"] }
+embassy-net = { git = "https://github.com/ermacv/embassy.git", rev = "51c3eb0b7e64921246007af1357f3d9f44bfe466", features = ["icmp", "medium-ethernet", "proto-ipv4", "std"] }
 embassy-time = { version = "0.5.0", features = ["std"] }
 
 [lints]

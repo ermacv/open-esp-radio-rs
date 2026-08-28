@@ -24,14 +24,18 @@ use open_esp_radio_esp32s31_wifi_embassy::{
 };
 use open_esp_radio_esp32s31_wifi_mac::tx_ampdu::{
     HtAmpduTxError, HtAmpduTxResources, HtAmpduTxStorage, RetainedAmpduDmaStorage,
+    TX_AMPDU_METADATA_SIZE,
 };
 use open_esp_radio_wifi_embassy::station_network::{
     RunningStationNetwork, StationNetworkResources,
 };
 use static_cell::{ConstStaticCell, StaticCell};
 
-pub(super) const NETWORK_TX_HEADROOM: usize =
-    8 + open_esp_radio_ieee80211::station::STA_PROTECTED_QOS_ETHERNET_HEADROOM;
+pub(super) const NETWORK_TX_HEADROOM: usize = TX_AMPDU_METADATA_SIZE
+    + open_esp_radio_ieee80211::station::STA_PROTECTED_QOS_ETHERNET_HEADROOM;
+// The protected MPDU starts immediately after the aggregate metadata and must
+// remain naturally aligned for the hardware TX path.
+const _: () = assert!(TX_AMPDU_METADATA_SIZE.is_multiple_of(core::mem::align_of::<u32>()));
 pub(super) const TX_AMPDU_BUFFER_SIZE: usize = 0;
 
 type NetworkResources = PinnedEndpointResources<

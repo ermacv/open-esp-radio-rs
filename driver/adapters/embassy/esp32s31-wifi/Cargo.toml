@@ -54,6 +54,12 @@ task-poll-telemetry = [
 # runner/DMA/protocol batches, so the result remains close to the production
 # owner graph while still pairing elapsed cycles with retired instructions.
 core0-rx-coarse-telemetry = ["dep:riscv"]
+# Per-transaction TX phase samples used only by the coarse diagnostic image.
+# Core1 packet emission is measured at the paired embassy-net boundary.
+tx-phase-telemetry = [
+    "dep:riscv",
+    "open-esp-radio-embassy-net/tx-phase-telemetry",
+]
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
 riscv = { version = "0.15", optional = true }

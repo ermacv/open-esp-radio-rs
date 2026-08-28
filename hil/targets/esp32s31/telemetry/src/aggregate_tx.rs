@@ -8,7 +8,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use open_esp_radio_esp32s31_wifi_embassy::diagnostics::aggregate_tx::{
     AggregateBuildStop, AggregateTxObservation, AggregateTxObserver, NetworkSingleMpduReason,
-    PreparedTxSchedulerTrace,
+    PreparedTxSchedulerPhase,
 };
 
 /// Number of histogram entries required for all currently legal A-MPDU sizes.
@@ -45,6 +45,109 @@ impl PhaseTimingCounters {
             micros: self.micros.load(Ordering::Relaxed),
             lifetime_max_micros: self.lifetime_max_micros.load(Ordering::Relaxed),
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PreparedTxSchedulerTrace {
+    active_service_returned_micros: u64,
+    scheduler_loop_resumed_micros: u64,
+    stop_poll_completed_micros: u64,
+    control_readiness_checked_micros: u64,
+    prepared_entry_micros: u64,
+    scheduler_passes: u8,
+    control_ready_passes: u8,
+}
+
+/// Observer-owned assembly state for one prepared-publication trace.
+///
+/// The HIL observer already lives in internal SRAM. Keeping this state here
+/// leaves the safe production adapter value-only and avoids growing its
+/// affine TX owner or async frame.
+struct PreparedTxSchedulerTraceRecorder {
+    active_service_returned_micros: AtomicU32,
+    scheduler_loop_resumed_micros: AtomicU32,
+    stop_poll_completed_micros: AtomicU32,
+    control_readiness_checked_micros: AtomicU32,
+    prepared_entry_micros: AtomicU32,
+    scheduler_passes: AtomicU32,
+    control_ready_passes: AtomicU32,
+}
+
+impl PreparedTxSchedulerTraceRecorder {
+    const VALID: u32 = 1 << 31;
+    const TIME_MASK: u32 = Self::VALID - 1;
+
+    const fn new() -> Self {
+        Self {
+            active_service_returned_micros: AtomicU32::new(0),
+            scheduler_loop_resumed_micros: AtomicU32::new(0),
+            stop_poll_completed_micros: AtomicU32::new(0),
+            control_readiness_checked_micros: AtomicU32::new(0),
+            prepared_entry_micros: AtomicU32::new(0),
+            scheduler_passes: AtomicU32::new(0),
+            control_ready_passes: AtomicU32::new(0),
+        }
+    }
+
+    fn record(&self, phase: PreparedTxSchedulerPhase, at_micros: u64) {
+        let timestamp = Self::VALID | at_micros as u32 & Self::TIME_MASK;
+        match phase {
+            PreparedTxSchedulerPhase::ActiveServiceReturned => {
+                self.scheduler_loop_resumed_micros
+                    .store(0, Ordering::Relaxed);
+                self.stop_poll_completed_micros.store(0, Ordering::Relaxed);
+                self.control_readiness_checked_micros
+                    .store(0, Ordering::Relaxed);
+                self.prepared_entry_micros.store(0, Ordering::Relaxed);
+                self.scheduler_passes.store(0, Ordering::Relaxed);
+                self.control_ready_passes.store(0, Ordering::Relaxed);
+                self.active_service_returned_micros
+                    .store(timestamp, Ordering::Relaxed);
+            }
+            PreparedTxSchedulerPhase::SchedulerLoopResumed => {
+                self.scheduler_loop_resumed_micros
+                    .store(timestamp, Ordering::Relaxed);
+                self.scheduler_passes.fetch_add(1, Ordering::Relaxed);
+            }
+            PreparedTxSchedulerPhase::StopPollCompleted => {
+                self.stop_poll_completed_micros
+                    .store(timestamp, Ordering::Relaxed);
+            }
+            PreparedTxSchedulerPhase::ControlReadinessChecked { ready } => {
+                self.control_readiness_checked_micros
+                    .store(timestamp, Ordering::Relaxed);
+                self.control_ready_passes
+                    .fetch_add(u32::from(ready), Ordering::Relaxed);
+            }
+            PreparedTxSchedulerPhase::PreparedEntry => {
+                self.prepared_entry_micros
+                    .store(timestamp, Ordering::Relaxed);
+            }
+        }
+    }
+
+    fn take(&self) -> Option<PreparedTxSchedulerTrace> {
+        let take_time = |value: &AtomicU32| {
+            let timestamp = value.swap(0, Ordering::Relaxed);
+            (timestamp & Self::VALID != 0).then_some(u64::from(timestamp & Self::TIME_MASK))
+        };
+        let active_service_returned_micros = take_time(&self.active_service_returned_micros);
+        let scheduler_loop_resumed_micros = take_time(&self.scheduler_loop_resumed_micros);
+        let stop_poll_completed_micros = take_time(&self.stop_poll_completed_micros);
+        let control_readiness_checked_micros = take_time(&self.control_readiness_checked_micros);
+        let prepared_entry_micros = take_time(&self.prepared_entry_micros);
+        let scheduler_passes = self.scheduler_passes.swap(0, Ordering::Relaxed);
+        let control_ready_passes = self.control_ready_passes.swap(0, Ordering::Relaxed);
+        Some(PreparedTxSchedulerTrace {
+            active_service_returned_micros: active_service_returned_micros?,
+            scheduler_loop_resumed_micros: scheduler_loop_resumed_micros?,
+            stop_poll_completed_micros: stop_poll_completed_micros?,
+            control_readiness_checked_micros: control_readiness_checked_micros?,
+            prepared_entry_micros: prepared_entry_micros?,
+            scheduler_passes: u8::try_from(scheduler_passes).unwrap_or(u8::MAX),
+            control_ready_passes: u8::try_from(control_ready_passes).unwrap_or(u8::MAX),
+        })
     }
 }
 
@@ -201,6 +304,7 @@ pub struct AggregateTxCounters {
     prepared_entry_to_publication_samples: AtomicU32,
     prepared_entry_to_publication_micros: AtomicU32,
     prepared_entry_to_publication_lifetime_max_micros: AtomicU32,
+    prepared_scheduler_trace: PreparedTxSchedulerTraceRecorder,
     prepared_scheduler_timing: PreparedTxSchedulerTimingCounters,
     completion_core_micros: AtomicU32,
     completion_core_lifetime_max_micros: AtomicU32,
@@ -296,6 +400,7 @@ impl AggregateTxCounters {
             prepared_entry_to_publication_samples: AtomicU32::new(0),
             prepared_entry_to_publication_micros: AtomicU32::new(0),
             prepared_entry_to_publication_lifetime_max_micros: AtomicU32::new(0),
+            prepared_scheduler_trace: PreparedTxSchedulerTraceRecorder::new(),
             prepared_scheduler_timing: PreparedTxSchedulerTimingCounters::new(),
             completion_core_micros: AtomicU32::new(0),
             completion_core_lifetime_max_micros: AtomicU32::new(0),
@@ -563,8 +668,8 @@ impl AggregateTxCounters {
         &self,
         at_micros: u64,
         program_micros: u64,
-        prepared_scheduler: Option<PreparedTxSchedulerTrace>,
     ) {
+        let prepared_scheduler = self.prepared_scheduler_trace.take();
         let at_modulo = at_micros as u32 & Self::IRQ_TIME_MASK;
         let completion = self.last_completion_micros.swap(0, Ordering::AcqRel);
         if completion != 0 {
@@ -793,12 +898,14 @@ impl AggregateTxObserver for AggregateTxCounters {
             AggregateTxObservation::StandbyCancelled => {
                 self.standby_cancelled.fetch_add(1, Ordering::Relaxed);
             }
+            AggregateTxObservation::PreparedSchedulerPhase { phase, at_micros } => {
+                self.prepared_scheduler_trace.record(phase, at_micros);
+            }
             AggregateTxObservation::Published {
                 at_micros,
                 program_micros,
-                prepared_scheduler,
             } => {
-                self.record_publication(at_micros, program_micros, prepared_scheduler);
+                self.record_publication(at_micros, program_micros);
             }
             AggregateTxObservation::BlockAckProcessed {
                 tx_status,
@@ -1378,12 +1485,10 @@ mod tests {
         counters.observe(AggregateTxObservation::Published {
             at_micros: 80,
             program_micros: 3,
-            prepared_scheduler: None,
         });
         counters.observe(AggregateTxObservation::Published {
             at_micros: 95,
             program_micros: 5,
-            prepared_scheduler: None,
         });
         counters.observe(AggregateTxObservation::Completed {
             acknowledged: 31,
@@ -1495,18 +1600,29 @@ mod tests {
             acknowledged: 16,
             individual_retry: false,
         });
+        counters.observe(AggregateTxObservation::PreparedSchedulerPhase {
+            phase: PreparedTxSchedulerPhase::ActiveServiceReturned,
+            at_micros: 110,
+        });
+        counters.observe(AggregateTxObservation::PreparedSchedulerPhase {
+            phase: PreparedTxSchedulerPhase::SchedulerLoopResumed,
+            at_micros: 125,
+        });
+        counters.observe(AggregateTxObservation::PreparedSchedulerPhase {
+            phase: PreparedTxSchedulerPhase::StopPollCompleted,
+            at_micros: 130,
+        });
+        counters.observe(AggregateTxObservation::PreparedSchedulerPhase {
+            phase: PreparedTxSchedulerPhase::ControlReadinessChecked { ready: false },
+            at_micros: 145,
+        });
+        counters.observe(AggregateTxObservation::PreparedSchedulerPhase {
+            phase: PreparedTxSchedulerPhase::PreparedEntry,
+            at_micros: 160,
+        });
         counters.observe(AggregateTxObservation::Published {
             at_micros: 175,
             program_micros: 4,
-            prepared_scheduler: Some(PreparedTxSchedulerTrace {
-                active_service_returned_micros: 110,
-                scheduler_loop_resumed_micros: 125,
-                stop_poll_completed_micros: 130,
-                control_readiness_checked_micros: 145,
-                prepared_entry_micros: 160,
-                scheduler_passes: 1,
-                control_ready_passes: 0,
-            }),
         });
 
         let delta = counters.snapshot().wrapping_delta_since(before);
@@ -1546,5 +1662,47 @@ mod tests {
                 .micros,
             15
         );
+    }
+
+    #[test]
+    fn scheduler_trace_recorder_preserves_detours_and_resets_at_terminal_service() {
+        let trace = PreparedTxSchedulerTraceRecorder::new();
+        trace.record(PreparedTxSchedulerPhase::ActiveServiceReturned, 10);
+        trace.record(PreparedTxSchedulerPhase::SchedulerLoopResumed, 20);
+        trace.record(
+            PreparedTxSchedulerPhase::ControlReadinessChecked { ready: true },
+            25,
+        );
+        trace.record(PreparedTxSchedulerPhase::ActiveServiceReturned, 30);
+        trace.record(PreparedTxSchedulerPhase::SchedulerLoopResumed, 40);
+        trace.record(PreparedTxSchedulerPhase::StopPollCompleted, 45);
+        trace.record(
+            PreparedTxSchedulerPhase::ControlReadinessChecked { ready: false },
+            50,
+        );
+        trace.record(PreparedTxSchedulerPhase::PreparedEntry, 55);
+
+        assert_eq!(
+            trace.take(),
+            Some(PreparedTxSchedulerTrace {
+                active_service_returned_micros: 30,
+                scheduler_loop_resumed_micros: 40,
+                stop_poll_completed_micros: 45,
+                control_readiness_checked_micros: 50,
+                prepared_entry_micros: 55,
+                scheduler_passes: 1,
+                control_ready_passes: 0,
+            })
+        );
+        assert_eq!(trace.take(), None);
+    }
+
+    #[test]
+    fn incomplete_scheduler_trace_cannot_become_a_timing_sample() {
+        let trace = PreparedTxSchedulerTraceRecorder::new();
+        trace.record(PreparedTxSchedulerPhase::ActiveServiceReturned, 10);
+        trace.record(PreparedTxSchedulerPhase::PreparedEntry, 45);
+
+        assert_eq!(trace.take(), None);
     }
 }

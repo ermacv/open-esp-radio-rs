@@ -104,7 +104,78 @@ Mbit/s). Every repetition had zero missing/reordered/duplicate host datagrams,
 AP RX stayed at HT40 MCS7 SGI, and pre-workload utilization was 13--16/255.
 The production ceiling gate is consequently raised from 100 to 115 Mbit/s.
 
-## Current blocker and next work
+## TX-credit geometry
+
+The remaining alternating 31/32-frame aggregate pattern was a separate
+software-credit defect. A 66-slot pool contained two permanent STA/AP ingress
+reserves. While `embassy-net` formatted the next Ethernet frame it also owned
+one application TX token that was not yet visible to the radio consumer. An
+instantaneous radio drain could therefore observe only 63 application leases,
+not two complete 32-frame arenas.
+
+The pool depth is now derived as two 32-frame A-MPDU arenas, two permanent
+endpoint reserves and one unpublished network-stack pipeline credit: 67 slots
+in total. Run `1787944658440-0004d70e` then produced an exact 32-frame A-MPDU
+frontier in all three repetitions, with 119.36--120.02 Mbit/s and no delivery
+or hardware error. This removed a software bubble but did not materially move
+the radio ceiling.
+
+## UDP checksum cost
+
+Runs `1787945932795-000516e2` and `1787945735736-000513f0` used the same ELF
+(runtime CRC `2d19b03a`) and changed only the runtime IPv4 UDP TX checksum
+policy. Omitting the optional IPv4 UDP checksum did not omit the mandatory
+IPv4 header checksum or RX validation.
+
+| TX emission measurement | Software checksum | UDP checksum omitted | Change |
+|---|---:|---:|---:|
+| cycles/datagram | 12,447.61 | 8,641.34 | -30.58% |
+| instructions/datagram | 3,677.01 | 1,284.02 | -65.08% |
+| saturated host TX | 120.49--121.77 Mbit/s | 120.73--121.61 Mbit/s | no ceiling change |
+
+The controlled payload sweep in run `1787946328941-00052253` further separated
+fixed and byte-proportional work. For 256, 736 and 1,472-byte payloads, the
+no-checksum emission path retired approximately `354 + 0.632 * payload_bytes`
+instructions. Software checksum added approximately
+`368 + 1.379 * payload_bytes` instructions. Checksum was therefore a measured
+CPU cost, but not the saturated-throughput blocker.
+
+Combining payload copy and checksum into one Xarxa loop was rejected. Three
+alignment/code-generation variants increased emission to 13.1--16.8 thousand
+cycles/datagram; one attempted headroom change also violated the radio TX DMA
+alignment contract and was reverted. The retained optimization instead adds
+native u32 words with end-around carry. RV32 code generation changed the
+per-word arithmetic from four to three instructions without changing buffer
+layout or performing a second copy.
+
+The code A/B in run `1787948819013-0005c256` produced 120.65--121.24 Mbit/s and
+reduced the measured emission phase from 12,447.61 to 11,811.82
+cycles/datagram (-5.11%) and from 3,677.01 to 3,326.02 instructions/datagram
+(-9.55%). Exhaustive short-length/alignment tests and 65,535-byte datagrams
+matched the byte-wise reference checksum. The HIL regression produced 112.807
+Mbit/s RX in run `1787949104069-0005c74f`; all five full-duplex repetitions in
+run `1787949285293-0005ca74` passed at approximately 40 Mbit/s in each
+direction.
+
+The dependency chain was then published as Xarxa commit `77b37163`, Embassy
+commit `51c3eb0b`, and pinned by this repository over HTTPS. After moving
+diagnostic scheduler-trace assembly out of the safe driver and into its HIL
+observer, the final locked run `1787951752066-0006f9a2` produced 120.637,
+120.538 and 119.376 Mbit/s on the host with zero delivery loss, reordering or
+duplication. Packet emission retired a stable 3,326.01--3,326.02
+instructions/datagram. Its 12,704--12,713 cycles/datagram did not reproduce
+the absolute cycle count of the earlier local-source ELF, reinforcing that
+only same-ELF/runtime-policy comparisons establish small cycle effects; it
+does not change the measured instruction reduction or radio ceiling.
+
+Core0 radio cycles also fell from a three-run mean of 2.644 billion to 2.436
+billion over the same 12-second TX interval, while Core0 retired instructions
+fell only from 526.2 to 515.0 million. The checksum executes on Core1, so these
+Core0 numbers establish a repeatable system-level effect but do not establish
+its mechanism. Shared-memory/cache contention and changed producer cadence
+remain hypotheses, not conclusions.
+
+## Current ceiling and next work
 
 At the after-fix coarse point, Core1 network plus UDP task residence is about
 74.4% and Core0 radio cycle occupancy is 69.4%. Neither core is the current
@@ -115,19 +186,24 @@ production mean is about 97% of that bound. The remaining few Mbit/s are
 therefore primarily the aggregate-to-aggregate air/publication gap at the
 current HT40 MCS7 SGI geometry, not evidence of a CPU wall.
 
+With the 67-credit pool, a full 32-frame aggregate carries 376,832 useful bits.
+The measured exchange time is approximately 3.03 ms, an exchange-only payload
+rate near 124.4 Mbit/s. Adding the observed approximately 113 us software/air
+gap gives the approximately 120 Mbit/s end-to-end ceiling. A 125 Mbit/s target
+is therefore not attainable by reducing checksum or queue CPU cost alone; it
+requires changing the measured exchange or inter-aggregate timing.
+
 Further CPU reduction is still useful for duplex and concurrent roles, but it
 must be measured independently from the ceiling:
 
-1. add TX-specific Core0 cycle/instruction bins around frame preparation,
-   CCMP/header encode, descriptor publication, terminal IRQ service and
-   scheduler tail;
-2. measure Core1 `embassy-net` egress phases separately (socket traversal,
-   IPv4/UDP checksum, TX-token claim/publication) before changing checksum or
-   copy policy;
+1. retain TX phase telemetry for controlled payload-size A/B and next separate
+   the remaining payload copy from fixed socket/header work;
+2. measure the full-A-MPDU terminal-completion to next-publication interval
+   directly before changing IRQ, scheduler or radio timing;
 3. retain per-slot DMA guard checks and keep whole-pool audits outside packet
    admission;
-4. use same-policy HIL A/B and require lower cycles/datagram in addition to
-   throughput, BA health and the idle-channel/link gates.
+4. require lower cycles/datagram in addition to throughput, BA health and the
+   idle-channel/link gates for every further CPU optimization.
 
 No SRAM relocation, manual cache coloring, replacement-buffer architecture or
 IRQ polling change is justified by this TX result.

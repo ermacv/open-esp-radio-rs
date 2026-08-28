@@ -416,6 +416,11 @@ where
         self.prepared_network_frame_count()
     }
 
+    #[cfg(any(feature = "diagnostics", test))]
+    fn mark_prepared_scheduler_phase(&mut self, phase: PreparedTxSchedulerPhase, at_micros: u64) {
+        Esp32s31ConnectedTx::mark_prepared_scheduler_phase(self, phase, at_micros);
+    }
+
     fn start_prepared(
         &mut self,
         hardware: &mut H,

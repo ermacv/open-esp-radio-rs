@@ -32,6 +32,17 @@ impl Core0PerformanceSample {
     }
 }
 
+#[cfg(feature = "tx-phase-telemetry")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Core0TxPhase {
+    Start,
+    Prepare,
+    Publish,
+    Service,
+    Encode,
+    Commit,
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Core0PerformanceSnapshot {
     pub rx_interrupt_posts: u32,
@@ -62,6 +73,24 @@ pub struct Core0PerformanceSnapshot {
     pub protocol_frames: u32,
     pub protocol_frame_cycles: u32,
     pub protocol_frame_instructions: u32,
+    pub tx_start_calls: u32,
+    pub tx_start_cycles: u32,
+    pub tx_start_instructions: u32,
+    pub tx_prepare_calls: u32,
+    pub tx_prepare_cycles: u32,
+    pub tx_prepare_instructions: u32,
+    pub tx_publish_calls: u32,
+    pub tx_publish_cycles: u32,
+    pub tx_publish_instructions: u32,
+    pub tx_service_calls: u32,
+    pub tx_service_cycles: u32,
+    pub tx_service_instructions: u32,
+    pub tx_encode_calls: u32,
+    pub tx_encode_cycles: u32,
+    pub tx_encode_instructions: u32,
+    pub tx_commit_calls: u32,
+    pub tx_commit_cycles: u32,
+    pub tx_commit_instructions: u32,
     pub rx_progress_drained: u32,
     pub rx_progress_probe_pending: u32,
     pub rx_progress_recycled_append_pending: u32,
@@ -158,6 +187,42 @@ impl Core0PerformanceSnapshot {
             protocol_frame_instructions: self
                 .protocol_frame_instructions
                 .wrapping_sub(earlier.protocol_frame_instructions),
+            tx_start_calls: self.tx_start_calls.wrapping_sub(earlier.tx_start_calls),
+            tx_start_cycles: self.tx_start_cycles.wrapping_sub(earlier.tx_start_cycles),
+            tx_start_instructions: self
+                .tx_start_instructions
+                .wrapping_sub(earlier.tx_start_instructions),
+            tx_prepare_calls: self.tx_prepare_calls.wrapping_sub(earlier.tx_prepare_calls),
+            tx_prepare_cycles: self
+                .tx_prepare_cycles
+                .wrapping_sub(earlier.tx_prepare_cycles),
+            tx_prepare_instructions: self
+                .tx_prepare_instructions
+                .wrapping_sub(earlier.tx_prepare_instructions),
+            tx_publish_calls: self.tx_publish_calls.wrapping_sub(earlier.tx_publish_calls),
+            tx_publish_cycles: self
+                .tx_publish_cycles
+                .wrapping_sub(earlier.tx_publish_cycles),
+            tx_publish_instructions: self
+                .tx_publish_instructions
+                .wrapping_sub(earlier.tx_publish_instructions),
+            tx_service_calls: self.tx_service_calls.wrapping_sub(earlier.tx_service_calls),
+            tx_service_cycles: self
+                .tx_service_cycles
+                .wrapping_sub(earlier.tx_service_cycles),
+            tx_service_instructions: self
+                .tx_service_instructions
+                .wrapping_sub(earlier.tx_service_instructions),
+            tx_encode_calls: self.tx_encode_calls.wrapping_sub(earlier.tx_encode_calls),
+            tx_encode_cycles: self.tx_encode_cycles.wrapping_sub(earlier.tx_encode_cycles),
+            tx_encode_instructions: self
+                .tx_encode_instructions
+                .wrapping_sub(earlier.tx_encode_instructions),
+            tx_commit_calls: self.tx_commit_calls.wrapping_sub(earlier.tx_commit_calls),
+            tx_commit_cycles: self.tx_commit_cycles.wrapping_sub(earlier.tx_commit_cycles),
+            tx_commit_instructions: self
+                .tx_commit_instructions
+                .wrapping_sub(earlier.tx_commit_instructions),
             rx_progress_drained: self
                 .rx_progress_drained
                 .wrapping_sub(earlier.rx_progress_drained),
@@ -284,6 +349,24 @@ pub struct Core0PerformanceCounters {
     protocol_frames: AtomicU32,
     protocol_frame_cycles: AtomicU32,
     protocol_frame_instructions: AtomicU32,
+    tx_start_calls: AtomicU32,
+    tx_start_cycles: AtomicU32,
+    tx_start_instructions: AtomicU32,
+    tx_prepare_calls: AtomicU32,
+    tx_prepare_cycles: AtomicU32,
+    tx_prepare_instructions: AtomicU32,
+    tx_publish_calls: AtomicU32,
+    tx_publish_cycles: AtomicU32,
+    tx_publish_instructions: AtomicU32,
+    tx_service_calls: AtomicU32,
+    tx_service_cycles: AtomicU32,
+    tx_service_instructions: AtomicU32,
+    tx_encode_calls: AtomicU32,
+    tx_encode_cycles: AtomicU32,
+    tx_encode_instructions: AtomicU32,
+    tx_commit_calls: AtomicU32,
+    tx_commit_cycles: AtomicU32,
+    tx_commit_instructions: AtomicU32,
     active_radio_cycles: AtomicU32,
     active_radio_instructions: AtomicU32,
     active_radio_saw_runner: AtomicU32,
@@ -359,6 +442,24 @@ impl Core0PerformanceCounters {
             protocol_frames: AtomicU32::new(0),
             protocol_frame_cycles: AtomicU32::new(0),
             protocol_frame_instructions: AtomicU32::new(0),
+            tx_start_calls: AtomicU32::new(0),
+            tx_start_cycles: AtomicU32::new(0),
+            tx_start_instructions: AtomicU32::new(0),
+            tx_prepare_calls: AtomicU32::new(0),
+            tx_prepare_cycles: AtomicU32::new(0),
+            tx_prepare_instructions: AtomicU32::new(0),
+            tx_publish_calls: AtomicU32::new(0),
+            tx_publish_cycles: AtomicU32::new(0),
+            tx_publish_instructions: AtomicU32::new(0),
+            tx_service_calls: AtomicU32::new(0),
+            tx_service_cycles: AtomicU32::new(0),
+            tx_service_instructions: AtomicU32::new(0),
+            tx_encode_calls: AtomicU32::new(0),
+            tx_encode_cycles: AtomicU32::new(0),
+            tx_encode_instructions: AtomicU32::new(0),
+            tx_commit_calls: AtomicU32::new(0),
+            tx_commit_cycles: AtomicU32::new(0),
+            tx_commit_instructions: AtomicU32::new(0),
             active_radio_cycles: AtomicU32::new(0),
             active_radio_instructions: AtomicU32::new(0),
             active_radio_saw_runner: AtomicU32::new(0),
@@ -666,6 +767,52 @@ impl Core0PerformanceCounters {
             .fetch_add(delta.instructions, Ordering::Relaxed);
     }
 
+    #[inline(always)]
+    #[cfg(feature = "tx-phase-telemetry")]
+    pub(crate) fn record_tx_phase(
+        &self,
+        phase: Core0TxPhase,
+        started: Core0PerformanceSample,
+        ended: Core0PerformanceSample,
+    ) {
+        let delta = ended.wrapping_delta_since(started);
+        let (calls, cycles, instructions) = match phase {
+            Core0TxPhase::Start => (
+                &self.tx_start_calls,
+                &self.tx_start_cycles,
+                &self.tx_start_instructions,
+            ),
+            Core0TxPhase::Prepare => (
+                &self.tx_prepare_calls,
+                &self.tx_prepare_cycles,
+                &self.tx_prepare_instructions,
+            ),
+            Core0TxPhase::Publish => (
+                &self.tx_publish_calls,
+                &self.tx_publish_cycles,
+                &self.tx_publish_instructions,
+            ),
+            Core0TxPhase::Service => (
+                &self.tx_service_calls,
+                &self.tx_service_cycles,
+                &self.tx_service_instructions,
+            ),
+            Core0TxPhase::Encode => (
+                &self.tx_encode_calls,
+                &self.tx_encode_cycles,
+                &self.tx_encode_instructions,
+            ),
+            Core0TxPhase::Commit => (
+                &self.tx_commit_calls,
+                &self.tx_commit_cycles,
+                &self.tx_commit_instructions,
+            ),
+        };
+        calls.fetch_add(1, Ordering::Relaxed);
+        cycles.fetch_add(delta.cycles, Ordering::Relaxed);
+        instructions.fetch_add(delta.instructions, Ordering::Relaxed);
+    }
+
     pub fn snapshot(&self) -> Core0PerformanceSnapshot {
         Core0PerformanceSnapshot {
             rx_interrupt_posts: self.rx_interrupt_posts.load(Ordering::Relaxed),
@@ -700,6 +847,24 @@ impl Core0PerformanceCounters {
             protocol_frames: self.protocol_frames.load(Ordering::Relaxed),
             protocol_frame_cycles: self.protocol_frame_cycles.load(Ordering::Relaxed),
             protocol_frame_instructions: self.protocol_frame_instructions.load(Ordering::Relaxed),
+            tx_start_calls: self.tx_start_calls.load(Ordering::Relaxed),
+            tx_start_cycles: self.tx_start_cycles.load(Ordering::Relaxed),
+            tx_start_instructions: self.tx_start_instructions.load(Ordering::Relaxed),
+            tx_prepare_calls: self.tx_prepare_calls.load(Ordering::Relaxed),
+            tx_prepare_cycles: self.tx_prepare_cycles.load(Ordering::Relaxed),
+            tx_prepare_instructions: self.tx_prepare_instructions.load(Ordering::Relaxed),
+            tx_publish_calls: self.tx_publish_calls.load(Ordering::Relaxed),
+            tx_publish_cycles: self.tx_publish_cycles.load(Ordering::Relaxed),
+            tx_publish_instructions: self.tx_publish_instructions.load(Ordering::Relaxed),
+            tx_service_calls: self.tx_service_calls.load(Ordering::Relaxed),
+            tx_service_cycles: self.tx_service_cycles.load(Ordering::Relaxed),
+            tx_service_instructions: self.tx_service_instructions.load(Ordering::Relaxed),
+            tx_encode_calls: self.tx_encode_calls.load(Ordering::Relaxed),
+            tx_encode_cycles: self.tx_encode_cycles.load(Ordering::Relaxed),
+            tx_encode_instructions: self.tx_encode_instructions.load(Ordering::Relaxed),
+            tx_commit_calls: self.tx_commit_calls.load(Ordering::Relaxed),
+            tx_commit_cycles: self.tx_commit_cycles.load(Ordering::Relaxed),
+            tx_commit_instructions: self.tx_commit_instructions.load(Ordering::Relaxed),
             rx_progress_drained: self.rx_progress_drained.load(Ordering::Relaxed),
             rx_progress_probe_pending: self.rx_progress_probe_pending.load(Ordering::Relaxed),
             rx_progress_recycled_append_pending: self

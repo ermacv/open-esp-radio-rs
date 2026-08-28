@@ -817,17 +817,16 @@ impl SerialCapture {
         let first_event = self.protocol_event_count();
         let response = self.send_command(
             0,
-            Command::Initialize(
-                open_esp_radio_hil_protocol::InitializationConfiguration::new(
-                    lab.station.ipv4(),
-                    lab.data_plane(),
-                    lab.rx_checksum(),
-                    lab.rx_admission(),
-                    lab.rx_dispatch(),
-                    lab.rx_continuation(),
-                    lab.l1_cache_counters(),
-                ),
-            ),
+            Command::Initialize(open_esp_radio_hil_protocol::InitializationConfiguration {
+                ipv4: lab.station.ipv4(),
+                data_plane: lab.data_plane(),
+                rx_checksum: lab.rx_checksum(),
+                tx_udp_checksum: lab.tx_udp_checksum(),
+                rx_admission: lab.rx_admission(),
+                rx_dispatch: lab.rx_dispatch(),
+                rx_continuation: lab.rx_continuation(),
+                l1_cache_counters: lab.l1_cache_counters(),
+            }),
             timeout,
         )?;
         let request_id = response.request_id;

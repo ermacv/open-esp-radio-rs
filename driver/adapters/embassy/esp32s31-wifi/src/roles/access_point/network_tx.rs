@@ -181,56 +181,6 @@ struct PreparedStandby {
     preparation_micros: u64,
 }
 
-#[cfg(any(feature = "diagnostics", test))]
-#[derive(Default)]
-struct PreparedSchedulerTraceBuilder {
-    active_service_returned_micros: Option<u64>,
-    scheduler_loop_resumed_micros: Option<u64>,
-    stop_poll_completed_micros: Option<u64>,
-    control_readiness_checked_micros: Option<u64>,
-    prepared_entry_micros: Option<u64>,
-    scheduler_passes: u8,
-    control_ready_passes: u8,
-}
-
-#[cfg(any(feature = "diagnostics", test))]
-impl PreparedSchedulerTraceBuilder {
-    fn mark(&mut self, phase: PreparedTxSchedulerPhase, at_micros: u64) {
-        match phase {
-            PreparedTxSchedulerPhase::ActiveServiceReturned => {
-                self.active_service_returned_micros.get_or_insert(at_micros);
-            }
-            PreparedTxSchedulerPhase::SchedulerLoopResumed => {
-                self.scheduler_loop_resumed_micros = Some(at_micros);
-                self.scheduler_passes = self.scheduler_passes.saturating_add(1);
-            }
-            PreparedTxSchedulerPhase::StopPollCompleted => {
-                self.stop_poll_completed_micros = Some(at_micros);
-            }
-            PreparedTxSchedulerPhase::ControlReadinessChecked { ready } => {
-                self.control_readiness_checked_micros = Some(at_micros);
-                self.control_ready_passes =
-                    self.control_ready_passes.saturating_add(u8::from(ready));
-            }
-            PreparedTxSchedulerPhase::PreparedEntry => {
-                self.prepared_entry_micros = Some(at_micros);
-            }
-        }
-    }
-
-    fn complete(self) -> Option<PreparedTxSchedulerTrace> {
-        Some(PreparedTxSchedulerTrace {
-            active_service_returned_micros: self.active_service_returned_micros?,
-            scheduler_loop_resumed_micros: self.scheduler_loop_resumed_micros?,
-            stop_poll_completed_micros: self.stop_poll_completed_micros?,
-            control_readiness_checked_micros: self.control_readiness_checked_micros?,
-            prepared_entry_micros: self.prepared_entry_micros?,
-            scheduler_passes: self.scheduler_passes,
-            control_ready_passes: self.control_ready_passes,
-        })
-    }
-}
-
 pub struct Esp32s31AccessPointNetworkTx<'observer, B> {
     #[cfg(any(feature = "diagnostics", test))]
     observer: Option<&'observer dyn AggregateTxObserver>,
@@ -241,8 +191,6 @@ pub struct Esp32s31AccessPointNetworkTx<'observer, B> {
     exchange_started_micros: Option<u64>,
     #[cfg(any(feature = "diagnostics", test))]
     terminal_acknowledged: Option<u8>,
-    #[cfg(any(feature = "diagnostics", test))]
-    prepared_scheduler_trace: Option<PreparedSchedulerTraceBuilder>,
     prepared_first: Option<B>,
     prepared_second: Option<B>,
     prepared_standby: Option<PreparedStandby>,
@@ -277,8 +225,6 @@ where
             exchange_started_micros: None,
             #[cfg(any(feature = "diagnostics", test))]
             terminal_acknowledged: None,
-            #[cfg(any(feature = "diagnostics", test))]
-            prepared_scheduler_trace: None,
             prepared_first: None,
             prepared_second: None,
             prepared_standby: None,
@@ -335,9 +281,6 @@ where
                 acknowledged,
                 individual_retry: false,
             });
-            self.prepared_scheduler_trace = self
-                .has_prepared()
-                .then(PreparedSchedulerTraceBuilder::default);
         }
     }
 
@@ -347,10 +290,12 @@ where
         phase: PreparedTxSchedulerPhase,
         at_micros: u64,
     ) {
-        let Some(trace) = self.prepared_scheduler_trace.as_mut() else {
+        if !self.has_prepared() {
             return;
-        };
-        trace.mark(phase, at_micros);
+        }
+        if let Some(observer) = self.observer {
+            observer.observe(AggregateTxObservation::PreparedSchedulerPhase { phase, at_micros });
+        }
     }
 
     pub(super) fn can_prepare<const SLOTS: usize, const BUFFER_SIZE: usize>(
@@ -1269,7 +1214,6 @@ where
                 observer.observe(AggregateTxObservation::Published {
                     at_micros: started,
                     program_micros: finished.saturating_sub(started),
-                    prepared_scheduler: None,
                 });
                 self.exchange_started_micros = Some(started);
             }
@@ -1538,11 +1482,6 @@ where
             + RxBlockAckHardware
             + open_esp_radio_esp32s31_wifi_mac::tx_ampdu::HtAmpduHardware,
     {
-        #[cfg(any(feature = "diagnostics", test))]
-        let prepared_scheduler = self
-            .prepared_scheduler_trace
-            .take()
-            .and_then(PreparedSchedulerTraceBuilder::complete);
         let _ = self.stage_dtim_group_release(control)?;
         if self.prepared_group_release.is_some() {
             return self.start_prepared_group_release(control, hardware);
@@ -1603,7 +1542,6 @@ where
             observer.observe(AggregateTxObservation::Published {
                 at_micros: started,
                 program_micros: finished.saturating_sub(started),
-                prepared_scheduler,
             });
             observer.observe(AggregateTxObservation::StandbyPublished);
             control.observe_ht_aggregate(_batch.policy.rate());
@@ -1858,7 +1796,6 @@ where
                         observer.observe(AggregateTxObservation::Published {
                             at_micros: started,
                             program_micros: finished.saturating_sub(started),
-                            prepared_scheduler: None,
                         });
                     }
                     Esp32s31ApAmpduProgress::CompletionReady(_) => {
@@ -2057,50 +1994,5 @@ where
         >,
     ) -> Result<(), Esp32s31AccessPointDatapathError> {
         self.discard_group_buffer(control)
-    }
-}
-
-#[cfg(test)]
-mod scheduler_trace_tests {
-    use super::*;
-
-    #[test]
-    fn trace_preserves_adjacent_scheduler_boundaries_and_detour_counts() {
-        let mut trace = PreparedSchedulerTraceBuilder::default();
-        trace.mark(PreparedTxSchedulerPhase::ActiveServiceReturned, 10);
-        trace.mark(PreparedTxSchedulerPhase::SchedulerLoopResumed, 20);
-        trace.mark(
-            PreparedTxSchedulerPhase::ControlReadinessChecked { ready: true },
-            25,
-        );
-        trace.mark(PreparedTxSchedulerPhase::SchedulerLoopResumed, 30);
-        trace.mark(PreparedTxSchedulerPhase::StopPollCompleted, 35);
-        trace.mark(
-            PreparedTxSchedulerPhase::ControlReadinessChecked { ready: false },
-            40,
-        );
-        trace.mark(PreparedTxSchedulerPhase::PreparedEntry, 45);
-
-        assert_eq!(
-            trace.complete(),
-            Some(PreparedTxSchedulerTrace {
-                active_service_returned_micros: 10,
-                scheduler_loop_resumed_micros: 30,
-                stop_poll_completed_micros: 35,
-                control_readiness_checked_micros: 40,
-                prepared_entry_micros: 45,
-                scheduler_passes: 2,
-                control_ready_passes: 1,
-            })
-        );
-    }
-
-    #[test]
-    fn incomplete_trace_cannot_be_reported_as_a_scheduler_measurement() {
-        let mut trace = PreparedSchedulerTraceBuilder::default();
-        trace.mark(PreparedTxSchedulerPhase::ActiveServiceReturned, 10);
-        trace.mark(PreparedTxSchedulerPhase::PreparedEntry, 45);
-
-        assert_eq!(trace.complete(), None);
     }
 }

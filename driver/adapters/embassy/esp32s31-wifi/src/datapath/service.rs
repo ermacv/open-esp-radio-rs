@@ -1,5 +1,10 @@
 use super::*;
 
+#[cfg(feature = "tx-phase-telemetry")]
+use crate::diagnostics::core0_rx_performance::{
+    CORE0_PERFORMANCE, Core0PerformanceSample, Core0TxPhase,
+};
+
 #[cfg(feature = "task-poll-telemetry")]
 use crate::diagnostics::core0_rx_cycles::Core0RxRunnerCycleProfile;
 #[cfg(all(
@@ -245,7 +250,15 @@ where
         self.account_tx_frames(admitted);
         self.account_pair_tx_frames(interface, admitted);
         let network_tx = self.tx_consumer_for(interface);
+        #[cfg(feature = "tx-phase-telemetry")]
+        let tx_phase_started = Core0PerformanceSample::read();
         let progress = self.services.start_prepared_tx(&network_tx)?;
+        #[cfg(feature = "tx-phase-telemetry")]
+        CORE0_PERFORMANCE.record_tx_phase(
+            Core0TxPhase::Publish,
+            tx_phase_started,
+            Core0PerformanceSample::read(),
+        );
         let slot = self.tx_batch_state_slot(interface);
         tx_batch_states[slot].note_started(admitted);
         self.prepared_tx_interface = self.services.has_prepared_tx().then_some(interface);
@@ -287,7 +300,15 @@ where
             return Ok(());
         };
         let network = self.tx_consumer_for(interface);
+        #[cfg(feature = "tx-phase-telemetry")]
+        let tx_phase_started = Core0PerformanceSample::read();
         self.services.prepare_tx(frame, &network).await?;
+        #[cfg(feature = "tx-phase-telemetry")]
+        CORE0_PERFORMANCE.record_tx_phase(
+            Core0TxPhase::Prepare,
+            tx_phase_started,
+            Core0PerformanceSample::read(),
+        );
         if self.services.has_prepared_tx() {
             self.prepared_tx_interface = Some(interface);
         }
@@ -295,7 +316,15 @@ where
     }
 
     async fn service_active_tx(&mut self, wake: WifiTxWake) -> Result<WifiTxProgress, B::Error> {
+        #[cfg(feature = "tx-phase-telemetry")]
+        let tx_phase_started = Core0PerformanceSample::read();
         let progress = self.services.service_tx(wake).await?;
+        #[cfg(feature = "tx-phase-telemetry")]
+        CORE0_PERFORMANCE.record_tx_phase(
+            Core0TxPhase::Service,
+            tx_phase_started,
+            Core0PerformanceSample::read(),
+        );
         if progress == WifiTxProgress::Complete
             && self.finish_active_tx() == DatapathTxOrigin::Control
         {
@@ -409,7 +438,15 @@ where
                         .expect("active TX preparation requires one VIF owner");
                     assert_eq!(interface, active, "prepared TX cannot cross VIFs");
                     let network = self.tx_consumer_for(interface);
+                    #[cfg(feature = "tx-phase-telemetry")]
+                    let tx_phase_started = Core0PerformanceSample::read();
                     self.services.prepare_tx(frame, &network).await?;
+                    #[cfg(feature = "tx-phase-telemetry")]
+                    CORE0_PERFORMANCE.record_tx_phase(
+                        Core0TxPhase::Prepare,
+                        tx_phase_started,
+                        Core0PerformanceSample::read(),
+                    );
                     if self.services.has_prepared_tx() {
                         self.prepared_tx_interface = Some(interface);
                     }

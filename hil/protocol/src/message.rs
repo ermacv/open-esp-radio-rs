@@ -780,6 +780,21 @@ pub enum WifiRxChecksumPolicy {
     AssumeValidDiagnostic,
 }
 
+/// IPv4 UDP transmit checksum policy selected before the network stack starts.
+///
+/// IPv4 permits a zero UDP checksum. The diagnostic variant uses that wire
+/// representation to isolate software checksum cost without claiming hardware
+/// offload or disabling the mandatory IPv4 header checksum.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum WifiTxUdpChecksumPolicy {
+    /// Generate the IPv4 UDP checksum in the software IP stack.
+    #[default]
+    Software,
+    /// Emit a zero IPv4 UDP checksum for a same-image HIL cost experiment.
+    OmitIpv4Diagnostic,
+}
+
 /// Ordinary shared-RX admission selected before the radio stack starts.
 ///
 /// Both variants live in one diagnostic ELF. The deferred variant preserves
@@ -839,6 +854,7 @@ pub struct InitializationConfiguration {
     pub ipv4: NetworkIpv4Configuration,
     pub data_plane: WifiDataPlanePlacement,
     pub rx_checksum: WifiRxChecksumPolicy,
+    pub tx_udp_checksum: WifiTxUdpChecksumPolicy,
     pub rx_admission: WifiRxAdmissionPolicy,
     pub rx_dispatch: WifiRxDispatchPolicy,
     pub rx_continuation: WifiRxContinuationPolicy,
@@ -846,26 +862,6 @@ pub struct InitializationConfiguration {
 }
 
 impl InitializationConfiguration {
-    pub const fn new(
-        ipv4: NetworkIpv4Configuration,
-        data_plane: WifiDataPlanePlacement,
-        rx_checksum: WifiRxChecksumPolicy,
-        rx_admission: WifiRxAdmissionPolicy,
-        rx_dispatch: WifiRxDispatchPolicy,
-        rx_continuation: WifiRxContinuationPolicy,
-        l1_cache_counters: bool,
-    ) -> Self {
-        Self {
-            ipv4,
-            data_plane,
-            rx_checksum,
-            rx_admission,
-            rx_dispatch,
-            rx_continuation,
-            l1_cache_counters,
-        }
-    }
-
     pub fn validate(self) -> bool {
         self.ipv4.validate()
     }

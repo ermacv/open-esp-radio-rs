@@ -38,6 +38,8 @@ use embassy_sync::{
 };
 
 mod pinned;
+#[cfg(feature = "tx-phase-telemetry")]
+mod tx_performance;
 
 pub use pinned::{
     DualPinnedNetworkRunner, NetworkInterfaceId, PinnedEndpointResources, PinnedNetworkRunner,
@@ -45,6 +47,10 @@ pub use pinned::{
     PinnedTxInterfaceConsumer, PinnedTxPool, PinnedTxProvider, PinnedTxResources,
     SharedPinnedReceiveToken, SharedPinnedRxConsumer, SharedPinnedRxPublisher, SharedPinnedRxQueue,
     SharedPoolReceiveToken, SharedRxSplitPinnedDevice, SplitPinnedDevice, SplitPinnedRxRunner,
+};
+#[cfg(feature = "tx-phase-telemetry")]
+pub use tx_performance::{
+    TX_PERFORMANCE, TxPerformanceCounters, TxPerformanceSample, TxPerformanceSnapshot,
 };
 
 /// Ethernet header length, excluding an FCS.

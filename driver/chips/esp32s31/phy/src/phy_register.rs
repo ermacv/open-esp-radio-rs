@@ -90,8 +90,8 @@ pub enum PhyRegisterFailure {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyCalibrationIdentity {
     pub rf_cal_version: u32,
-    pub mac_sys0: u32,
-    pub mac_sys1: u32,
+    pub base_mac_address: [u8; 6],
+    pub mac_extension: u16,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2059,8 +2059,8 @@ mod tests {
 
     const CALIBRATION_IDENTITY: PhyCalibrationIdentity = PhyCalibrationIdentity {
         rf_cal_version: 0x1234_5678,
-        mac_sys0: 0xa1b2_c3d4,
-        mac_sys1: 0xe5f6_0718,
+        base_mac_address: [0xa1, 0xb2, 0xc3, 0xd4, 0xe5, 0xf6],
+        mac_extension: 0x0718,
     };
 
     fn retained_cache(identity: PhyCalibrationIdentity) -> crate::phy_state::PhyCalibrationCache {

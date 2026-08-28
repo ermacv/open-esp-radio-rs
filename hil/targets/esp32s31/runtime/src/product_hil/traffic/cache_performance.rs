@@ -21,20 +21,24 @@ impl L1CacheBusSnapshot {
             hit: self.hit.wrapping_sub(earlier.hit),
             miss: self.miss.wrapping_sub(earlier.miss),
             conflict: self.conflict.wrapping_sub(earlier.conflict),
-            next_level_read: self
-                .next_level_read
-                .wrapping_sub(earlier.next_level_read),
-            next_level_write: self
-                .next_level_write
-                .wrapping_sub(earlier.next_level_write),
+            next_level_read: self.next_level_read.wrapping_sub(earlier.next_level_read),
+            next_level_write: self.next_level_write.wrapping_sub(earlier.next_level_write),
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(in crate::product_hil) struct L1CacheCounterEnable {
+    pub ibus0: bool,
+    pub ibus1: bool,
+    pub dbus0: bool,
+    pub dbus1: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(in crate::product_hil) struct L1CachePerformanceSnapshot {
     pub trace_enabled: bool,
-    pub counter_enable: u8,
+    pub counter_enable: L1CacheCounterEnable,
     pub ibus0: L1CacheBusSnapshot,
     pub ibus1: L1CacheBusSnapshot,
     pub dbus0: L1CacheBusSnapshot,
@@ -44,36 +48,114 @@ pub(in crate::product_hil) struct L1CachePerformanceSnapshot {
 impl L1CachePerformanceSnapshot {
     pub(in crate::product_hil) fn read() -> Self {
         let cache = CACHE::regs();
+        let counter_control = cache.l1_cache_acs_cnt_ctrl().read();
         Self {
             trace_enabled: cache.trace_ena().read().l1_cache_trace_ena().bit_is_set(),
-            counter_enable: cache.l1_cache_acs_cnt_ctrl().read().bits() as u8,
+            counter_enable: L1CacheCounterEnable {
+                ibus0: counter_control.l1_ibus0_cnt_ena().bit_is_set(),
+                ibus1: counter_control.l1_ibus1_cnt_ena().bit_is_set(),
+                dbus0: counter_control.l1_dbus0_cnt_ena().bit_is_set(),
+                dbus1: counter_control.l1_dbus1_cnt_ena().bit_is_set(),
+            },
             ibus0: L1CacheBusSnapshot {
-                hit: cache.l1_ibus0_acs_hit_cnt().read().bits(),
-                miss: cache.l1_ibus0_acs_miss_cnt().read().bits(),
-                conflict: cache.l1_ibus0_acs_conflict_cnt().read().bits(),
-                next_level_read: cache.l1_ibus0_acs_nxtlvl_rd_cnt().read().bits(),
+                hit: cache
+                    .l1_ibus0_acs_hit_cnt()
+                    .read()
+                    .l1_ibus0_hit_cnt()
+                    .bits(),
+                miss: cache
+                    .l1_ibus0_acs_miss_cnt()
+                    .read()
+                    .l1_ibus0_miss_cnt()
+                    .bits(),
+                conflict: cache
+                    .l1_ibus0_acs_conflict_cnt()
+                    .read()
+                    .l1_ibus0_conflict_cnt()
+                    .bits(),
+                next_level_read: cache
+                    .l1_ibus0_acs_nxtlvl_rd_cnt()
+                    .read()
+                    .l1_ibus0_nxtlvl_rd_cnt()
+                    .bits(),
                 next_level_write: 0,
             },
             ibus1: L1CacheBusSnapshot {
-                hit: cache.l1_ibus1_acs_hit_cnt().read().bits(),
-                miss: cache.l1_ibus1_acs_miss_cnt().read().bits(),
-                conflict: cache.l1_ibus1_acs_conflict_cnt().read().bits(),
-                next_level_read: cache.l1_ibus1_acs_nxtlvl_rd_cnt().read().bits(),
+                hit: cache
+                    .l1_ibus1_acs_hit_cnt()
+                    .read()
+                    .l1_ibus1_hit_cnt()
+                    .bits(),
+                miss: cache
+                    .l1_ibus1_acs_miss_cnt()
+                    .read()
+                    .l1_ibus1_miss_cnt()
+                    .bits(),
+                conflict: cache
+                    .l1_ibus1_acs_conflict_cnt()
+                    .read()
+                    .l1_ibus1_conflict_cnt()
+                    .bits(),
+                next_level_read: cache
+                    .l1_ibus1_acs_nxtlvl_rd_cnt()
+                    .read()
+                    .l1_ibus1_nxtlvl_rd_cnt()
+                    .bits(),
                 next_level_write: 0,
             },
             dbus0: L1CacheBusSnapshot {
-                hit: cache.l1_dbus0_acs_hit_cnt().read().bits(),
-                miss: cache.l1_dbus0_acs_miss_cnt().read().bits(),
-                conflict: cache.l1_dbus0_acs_conflict_cnt().read().bits(),
-                next_level_read: cache.l1_dbus0_acs_nxtlvl_rd_cnt().read().bits(),
-                next_level_write: cache.l1_dbus0_acs_nxtlvl_wr_cnt().read().bits(),
+                hit: cache
+                    .l1_dbus0_acs_hit_cnt()
+                    .read()
+                    .l1_dbus0_hit_cnt()
+                    .bits(),
+                miss: cache
+                    .l1_dbus0_acs_miss_cnt()
+                    .read()
+                    .l1_dbus0_miss_cnt()
+                    .bits(),
+                conflict: cache
+                    .l1_dbus0_acs_conflict_cnt()
+                    .read()
+                    .l1_dbus0_conflict_cnt()
+                    .bits(),
+                next_level_read: cache
+                    .l1_dbus0_acs_nxtlvl_rd_cnt()
+                    .read()
+                    .l1_dbus0_nxtlvl_rd_cnt()
+                    .bits(),
+                next_level_write: cache
+                    .l1_dbus0_acs_nxtlvl_wr_cnt()
+                    .read()
+                    .l1_dbus0_nxtlvl_wr_cnt()
+                    .bits(),
             },
             dbus1: L1CacheBusSnapshot {
-                hit: cache.l1_dbus1_acs_hit_cnt().read().bits(),
-                miss: cache.l1_dbus1_acs_miss_cnt().read().bits(),
-                conflict: cache.l1_dbus1_acs_conflict_cnt().read().bits(),
-                next_level_read: cache.l1_dbus1_acs_nxtlvl_rd_cnt().read().bits(),
-                next_level_write: cache.l1_dbus1_acs_nxtlvl_wr_cnt().read().bits(),
+                hit: cache
+                    .l1_dbus1_acs_hit_cnt()
+                    .read()
+                    .l1_dbus1_hit_cnt()
+                    .bits(),
+                miss: cache
+                    .l1_dbus1_acs_miss_cnt()
+                    .read()
+                    .l1_dbus1_miss_cnt()
+                    .bits(),
+                conflict: cache
+                    .l1_dbus1_acs_conflict_cnt()
+                    .read()
+                    .l1_dbus1_conflict_cnt()
+                    .bits(),
+                next_level_read: cache
+                    .l1_dbus1_acs_nxtlvl_rd_cnt()
+                    .read()
+                    .l1_dbus1_nxtlvl_rd_cnt()
+                    .bits(),
+                next_level_write: cache
+                    .l1_dbus1_acs_nxtlvl_wr_cnt()
+                    .read()
+                    .l1_dbus1_nxtlvl_wr_cnt()
+                    .bits(),
             },
         }
     }
@@ -121,7 +203,7 @@ pub(in crate::product_hil) fn enable_l1_cache_counters() {
 
 #[cfg(test)]
 mod tests {
-    use super::{L1CacheBusSnapshot, L1CachePerformanceSnapshot};
+    use super::{L1CacheBusSnapshot, L1CacheCounterEnable, L1CachePerformanceSnapshot};
 
     #[test]
     fn interval_snapshot_keeps_status_and_wraps_events() {
@@ -135,7 +217,12 @@ mod tests {
         };
         let current = L1CachePerformanceSnapshot {
             trace_enabled: true,
-            counter_enable: 0x33,
+            counter_enable: L1CacheCounterEnable {
+                ibus0: true,
+                ibus1: true,
+                dbus0: true,
+                dbus1: true,
+            },
             ibus0: L1CacheBusSnapshot {
                 hit: 2,
                 miss: 15,
@@ -145,7 +232,7 @@ mod tests {
         };
         let delta = current.wrapping_delta_since(earlier);
         assert!(delta.trace_enabled);
-        assert_eq!(delta.counter_enable, 0x33);
+        assert_eq!(delta.counter_enable, current.counter_enable);
         assert_eq!(delta.ibus0.hit, 3);
         assert_eq!(delta.ibus0.miss, 5);
     }

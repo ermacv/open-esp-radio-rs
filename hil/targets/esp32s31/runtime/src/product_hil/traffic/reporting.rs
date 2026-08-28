@@ -733,9 +733,10 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_cycles(
     .await;
     yield_now().await;
     runtime_log_reliably(format_args!(
-        "OCACHEI trace={} enable=0x{:02x} bus0_hit={} bus0_miss={} bus0_conflict={} bus0_next={} bus1_hit={} bus1_miss={} bus1_conflict={} bus1_next={}",
+        "OCACHEI trace={} bus0_enabled={} bus1_enabled={} bus0_hit={} bus0_miss={} bus0_conflict={} bus0_next={} bus1_hit={} bus1_miss={} bus1_conflict={} bus1_next={}",
         u8::from(cache.trace_enabled),
-        cache.counter_enable,
+        u8::from(cache.counter_enable.ibus0),
+        u8::from(cache.counter_enable.ibus1),
         cache.ibus0.hit,
         cache.ibus0.miss,
         cache.ibus0.conflict,
@@ -748,7 +749,9 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_cycles(
     .await;
     yield_now().await;
     runtime_log_reliably(format_args!(
-        "OCACHED bus0_hit={} bus0_miss={} bus0_conflict={} bus0_next_read={} bus0_next_write={} bus1_hit={} bus1_miss={} bus1_conflict={} bus1_next_read={} bus1_next_write={}",
+        "OCACHED bus0_enabled={} bus1_enabled={} bus0_hit={} bus0_miss={} bus0_conflict={} bus0_next_read={} bus0_next_write={} bus1_hit={} bus1_miss={} bus1_conflict={} bus1_next_read={} bus1_next_write={}",
+        u8::from(cache.counter_enable.dbus0),
+        u8::from(cache.counter_enable.dbus1),
         cache.dbus0.hit,
         cache.dbus0.miss,
         cache.dbus0.conflict,

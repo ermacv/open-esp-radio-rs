@@ -10,7 +10,7 @@ use open_esp_radio_esp32s31_phy::{
 use serde::{Deserialize, Serialize};
 
 pub const MAX_ENCODED_LEN: usize = 512;
-const MAGIC: [u8; 8] = *b"ORCAL003";
+const MAGIC: [u8; 8] = *b"ORCAL004";
 
 #[derive(Serialize, Deserialize)]
 struct Artifact {
@@ -23,8 +23,8 @@ struct Artifact {
 #[serde(remote = "PhyCalibrationIdentity")]
 struct Identity {
     rf_cal_version: u32,
-    mac_sys0: u32,
-    mac_sys1: u32,
+    base_mac_address: [u8; 6],
+    mac_extension: u16,
 }
 
 #[derive(Serialize, Deserialize)]

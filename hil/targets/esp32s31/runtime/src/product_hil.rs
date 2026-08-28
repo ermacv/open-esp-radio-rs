@@ -2326,7 +2326,6 @@ pub async fn run(
             | open_esp_radio_hil_protocol::WifiRxContinuationPolicy::AdaptiveProbeDiagnostic => 0,
         },
     );
-    let efuse_registers = esp_hal::peripherals::EFUSE::regs();
     let mut station_address = [0; 6];
     station_address
         .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::Station).as_bytes());
@@ -2337,6 +2336,8 @@ pub async fn run(
         .expect("ESP32-S31 station eFuse address must be unicast");
     let access_point_mac = WifiMacAddress::new(access_point_address)
         .expect("ESP32-S31 AP eFuse address must be unicast");
+    let mut calibration_base_mac_address = [0; 6];
+    calibration_base_mac_address.copy_from_slice(efuse::base_mac_address().as_bytes());
     #[cfg(feature = "driver-observation")]
     let connected_rx_observer = CONNECTED_RX_OBSERVER.take();
     let config = Esp32s31RadioConfig::new(
@@ -2344,8 +2345,8 @@ pub async fn run(
         access_point_mac,
         PhyCalibrationIdentity {
             rf_cal_version: phy_get_rf_cal_version(),
-            mac_sys0: efuse_registers.rd_mac_sys0().read().bits(),
-            mac_sys1: efuse_registers.rd_mac_sys1().read().bits(),
+            base_mac_address: calibration_base_mac_address,
+            mac_extension: efuse::read_field_le::<u16>(efuse::MAC_EXT),
         },
         WifiChannel::mhz20(1).expect("initial channel is valid"),
     )

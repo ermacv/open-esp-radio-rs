@@ -237,7 +237,7 @@ pub struct PhyCalibrationSnapshot {
     pub bluetooth: PhyBluetoothCalibration,
 }
 
-pub const PHY_CALIBRATION_SNAPSHOT_SCHEMA: u16 = 3;
+pub const PHY_CALIBRATION_SNAPSHOT_SCHEMA: u16 = 4;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyCommonCalibration {
@@ -323,11 +323,9 @@ impl PhyCalibrationCache {
         self.snapshot.identity
     }
 
-    pub const fn matches(&self, identity: crate::phy_register::PhyCalibrationIdentity) -> bool {
+    pub fn matches(&self, identity: crate::phy_register::PhyCalibrationIdentity) -> bool {
         self.snapshot.schema == PHY_CALIBRATION_SNAPSHOT_SCHEMA
-            && self.snapshot.identity.rf_cal_version == identity.rf_cal_version
-            && self.snapshot.identity.mac_sys0 == identity.mac_sys0
-            && self.snapshot.identity.mac_sys1 == identity.mac_sys1
+            && self.snapshot.identity == identity
     }
 }
 
@@ -1397,8 +1395,8 @@ mod tests {
     const IDENTITY: crate::phy_register::PhyCalibrationIdentity =
         crate::phy_register::PhyCalibrationIdentity {
             rf_cal_version: 7,
-            mac_sys0: 11,
-            mac_sys1: 13,
+            base_mac_address: [2, 3, 5, 7, 11, 13],
+            mac_extension: 17,
         };
 
     #[test]

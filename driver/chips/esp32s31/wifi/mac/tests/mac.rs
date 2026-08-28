@@ -135,24 +135,6 @@ mod mac {
     }
 }
 
-mod mac_init {
-    use super::{TestRegister, indexed};
-
-    pub const INTERFACE_ADDRESS_HIGH: [TestRegister; 4] = group("INTERFACE_ADDRESS_HIGH");
-    pub const RX_FILTER: [TestRegister; 4] = group("RX_FILTER");
-    pub const BSSID_LOW: [TestRegister; 4] = group("BSSID_LOW");
-    pub const BSSID_HIGH: [TestRegister; 4] = group("BSSID_HIGH");
-
-    const fn group(name: &'static str) -> [TestRegister; 4] {
-        [
-            indexed(name, 0),
-            indexed(name, 1),
-            indexed(name, 2),
-            indexed(name, 3),
-        ]
-    }
-}
-
 trait Mmio {
     fn read32(&mut self, register: TestRegister) -> u32;
     fn write32(&mut self, register: TestRegister, value: u32);
@@ -185,6 +167,7 @@ enum Operation {
     DisablePhyLowRate,
     EnableMacInterrupts(MacInterruptMask),
     ProgramInterfaceAddress(MacInterface, [u8; 6]),
+    ApplyStaLinkPolicy([u8; 6]),
     InitializeHePrefix,
     InitializeTxPower(MacTxPowerTable),
     InitializeHeSuffix,
@@ -511,41 +494,8 @@ impl CcmpKeyHardware for MockMmio {
 
 impl StaLinkRxPolicyHardware for MockMmio {
     fn apply_sta_link_policy(&mut self, bssid_address: [u8; 6]) {
-        let filter = mac_init::RX_FILTER[0];
-        let bssid_low = mac_init::BSSID_LOW[0];
-        let bssid = mac_init::BSSID_HIGH[0];
-        let interface = mac_init::INTERFACE_ADDRESS_HIGH[0];
-        let current = self.read32(bssid);
-        self.write32(bssid, current & !(1 << 31));
-        self.write32(
-            bssid_low,
-            u32::from_le_bytes([
-                bssid_address[0],
-                bssid_address[1],
-                bssid_address[2],
-                bssid_address[3],
-            ]),
-        );
-        let current = self.read32(bssid);
-        self.write32(
-            bssid,
-            (current & !0xffff)
-                | u32::from(u16::from_le_bytes([bssid_address[4], bssid_address[5]])),
-        );
-        let current = self.read32(bssid);
-        self.write32(bssid, current | (1 << 31));
-        let mut modify = |register: TestRegister, mask: u32, value: u32| {
-            let current = self.read32(register);
-            self.write32(register, (current & !mask) | (value & mask));
-        };
-        modify(filter, (1 << 10) | (1 << 4), 0);
-        modify(bssid, 1 << 30, 0);
-        modify(filter, 1 << 6, 0);
-        modify(bssid, 1 << 31, 1 << 31);
-        modify(interface, 1 << 16, 1 << 16);
-        modify(filter, 1 << 8, 1 << 8);
-        modify(filter, 1 << 1, 1 << 1);
-        Mmio::fence(self);
+        self.operations
+            .push(Operation::ApplyStaLinkPolicy(bssid_address));
     }
 }
 
@@ -1017,32 +967,13 @@ fn cold_mac_handshake_timeout_stops_mac_initialization() {
 }
 
 #[test]
-fn sta_link_rx_policy_matches_live_vendor_policy_six() {
+fn sta_link_rx_policy_forwards_one_bssid_transaction() {
     let bssid = [0xdc, 0x15, 0xc8, 0x54, 0xbc, 0x1e];
     let mut mmio = MockMmio::default();
-    mmio.set(mac_init::RX_FILTER[0], u32::MAX);
-    mmio.set(mac_init::BSSID_HIGH[0], u32::MAX);
-    mmio.set(mac_init::INTERFACE_ADDRESS_HIGH[0], 0x0000_5544);
 
     configure_sta_link_receive_policy(&mut mmio, bssid);
 
-    assert_eq!(
-        mmio.words.get(&mac_init::RX_FILTER[0]),
-        Some(&!((1 << 10) | (1 << 6) | (1 << 4)))
-    );
-    assert_eq!(mmio.words.get(&mac_init::BSSID_LOW[0]), Some(&0x54c8_15dc));
-    assert_eq!(mmio.words.get(&mac_init::BSSID_HIGH[0]), Some(&0xbfff_1ebc));
-    assert_eq!(
-        mmio.words.get(&mac_init::INTERFACE_ADDRESS_HIGH[0]),
-        Some(&0x0001_5544)
-    );
-    assert_eq!(
-        mmio.operations()
-            .iter()
-            .filter(|operation| **operation == Operation::Fence)
-            .count(),
-        1
-    );
+    assert_eq!(mmio.operations(), &[Operation::ApplyStaLinkPolicy(bssid)]);
 }
 
 #[test]

@@ -95,6 +95,7 @@ pub use bluetooth_controller_time::{
 pub use bluetooth_interrupt::{
     BluetoothInterruptOutputPrepared, BluetoothNrtInterruptAcknowledged,
     BluetoothPrimaryFaultSources, BluetoothPrimaryInterruptEpoch,
+    BluetoothSchedulerRunInterruptsPrepared,
 };
 pub use bluetooth_memory_lists::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
@@ -110,8 +111,8 @@ pub use bluetooth_modem_lp_timer::{
 };
 pub use bluetooth_scheduler::{
     BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadError,
-    BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerInsertionCommand,
-    BluetoothSchedulerInsertionCommandStartCleared, BluetoothSchedulerRunPublished,
+    BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHardwareRunCommandPublished,
+    BluetoothSchedulerInsertionCommand, BluetoothSchedulerInsertionCommandStartCleared,
 };
 pub use bluetooth_scheduler_lock_modify::{
     BluetoothSchedulerLockModifyInterruptObservation, BluetoothSchedulerLockModifyObservation,

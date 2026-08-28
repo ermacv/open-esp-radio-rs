@@ -17319,14 +17319,14 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
       <registers>
         <register>
           <name>SCHEDULER_CONTROL</name>
-          <description>Scheduler run command. The complete current leaf writes finite complete image 1 when its reviewed predicate succeeds; the same-chip named predecessor identifies the leaf as r_btdm_sched_run.</description>
+          <description>Final hardware command of scheduler run. The complete current run prologue always returns zero after dynamic IRQ preparation and synchronous broker publication, so the following complete leaf writes finite image 1; the same-chip named predecessor identifies the composed operation as r_btdm_sched_run.</description>
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
               <name>COMMAND</name>
-              <description>Complete scheduler run command image.</description>
+              <description>Complete final scheduler hardware-run command image.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
               <writeConstraint>

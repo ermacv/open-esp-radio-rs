@@ -36,11 +36,12 @@ pub use open_esp_radio_esp32s31_pac::{
     BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
     BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadError,
     BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHardwareListIndex,
-    BluetoothSchedulerInsertionCommand, BluetoothSchedulerInsertionCommandStartCleared,
+    BluetoothSchedulerHardwareRunCommandPublished, BluetoothSchedulerInsertionCommand,
+    BluetoothSchedulerInsertionCommandStartCleared,
     BluetoothSchedulerLockModifyInterruptObservation, BluetoothSchedulerLockModifyObservation,
     BluetoothSchedulerLockModifyPublished, BluetoothSchedulerLockModifyRequest,
     BluetoothSchedulerLockModifyTaskObservation, BluetoothSchedulerReferenceCleared,
-    BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerRunPublished,
+    BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerRunInterruptsPrepared,
     BluetoothSchedulerWorkObservation,
 };
 
@@ -610,6 +611,12 @@ pub struct BluetoothInterruptRegistersOwner {
 }
 
 impl BluetoothInterruptRegistersOwner {
+    /// Prepare the dynamic interrupt groups required immediately before a
+    /// scheduler run publication.
+    pub fn prepare_scheduler_run_interrupts(&mut self) -> BluetoothSchedulerRunInterruptsPrepared {
+        self.registers.prepare_scheduler_run_interrupts()
+    }
+
     /// Capture and acknowledge one complete opaque NRT source-133 epoch.
     ///
     /// This preserves the PAC sample/sample/acknowledge/acknowledge order. It
@@ -890,19 +897,22 @@ impl BluetoothControllerHal<'_> {
         }
     }
 
-    /// Publish the finite scheduler RUN command through the restricted PAC.
+    /// Publish the finite scheduler hardware RUN command through the
+    /// restricted PAC.
     ///
     /// # Safety
     ///
-    /// The caller must establish the current run predicate after the required
-    /// hardware-list publication.
+    /// The caller must retain the required hardware-list publication, dynamic
+    /// interrupt preparation and software broker publication.
     #[doc(hidden)]
     #[allow(
         unsafe_code,
-        reason = "the caller retains the scheduler-run predicate and insertion ownership"
+        reason = "the caller retains the complete scheduler-run prefix and insertion ownership"
     )]
-    pub unsafe fn publish_scheduler_run(&mut self) -> BluetoothSchedulerRunPublished {
-        unsafe { self.registers.publish_scheduler_run() }
+    pub unsafe fn publish_scheduler_hardware_run_command(
+        &mut self,
+    ) -> BluetoothSchedulerHardwareRunCommandPublished {
+        unsafe { self.registers.publish_scheduler_hardware_run_command() }
     }
 
     /// Capture task-owned START and RESULT fields for one scheduler

@@ -4,8 +4,51 @@
 
 use super::{
     BluetoothInterruptRegisters, BluetoothInterruptSetup, device_fence,
-    svd::{fixed_register_image, interrupt_snapshot},
+    svd::{field_or_modify, fixed_register_image, interrupt_snapshot},
 };
+
+trait BluetoothSchedulerRunInterruptControl {
+    fn clear_scheduler_run_bank_0(&mut self);
+    fn clear_scheduler_run_bank_1(&mut self);
+    fn enable_scheduler_run_bank_0(&mut self);
+    fn enable_scheduler_run_bank_1(&mut self);
+}
+
+impl BluetoothSchedulerRunInterruptControl for HardwareInterruptControl<'_> {
+    fn clear_scheduler_run_bank_0(&mut self) {
+        fixed_register_image::clear_bluetooth_scheduler_run_interrupts_bank_0(self.bank);
+    }
+
+    fn clear_scheduler_run_bank_1(&mut self) {
+        fixed_register_image::clear_bluetooth_scheduler_run_interrupts_bank_1(self.bank);
+    }
+
+    fn enable_scheduler_run_bank_0(&mut self) {
+        field_or_modify::enable_bluetooth_scheduler_run_interrupts_bank_0(self.bank);
+    }
+
+    fn enable_scheduler_run_bank_1(&mut self) {
+        field_or_modify::enable_bluetooth_scheduler_run_interrupts_bank_1(self.bank);
+    }
+}
+
+fn execute_scheduler_run_interrupt_prepare(
+    control: &mut impl BluetoothSchedulerRunInterruptControl,
+) {
+    control.clear_scheduler_run_bank_0();
+    control.clear_scheduler_run_bank_1();
+    control.enable_scheduler_run_bank_0();
+    control.enable_scheduler_run_bank_1();
+}
+
+/// Affine evidence that stale scheduler-run sources were acknowledged, both
+/// dynamic enable groups were published and the trailing device fence
+/// completed.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "prepared scheduler-run interrupts must feed broker and hardware command publication"]
+pub struct BluetoothSchedulerRunInterruptsPrepared {
+    _private: (),
+}
 
 trait BluetoothInterruptControl {
     fn clear_primary_baseline_bank_0(&mut self);
@@ -505,6 +548,22 @@ fn execute_primary_interrupt_epoch(
 }
 
 impl BluetoothInterruptRegisters {
+    /// Clear stale scheduler-run sources and enable their dynamic groups.
+    ///
+    /// SOURCE: complete current `r_sym_bt_DOVkQWJHjeuid8jcS9Bq` followed by
+    /// `r_sym_bt_6lAYUFKOuBLyOZ6Kvsv5`; same-chip named
+    /// `r_btdm_hal_link_basic_irq_clear` and
+    /// `r_btdm_hal_link_basic_irq_enable`. The exact order is W1C bank zero,
+    /// W1C bank one, enable bank zero, enable bank one.
+    pub fn prepare_scheduler_run_interrupts(&mut self) -> BluetoothSchedulerRunInterruptsPrepared {
+        let mut control = HardwareInterruptControl {
+            bank: &self.peripherals.bluetooth_interrupt_bank,
+        };
+        execute_scheduler_run_interrupt_prepare(&mut control);
+        device_fence();
+        BluetoothSchedulerRunInterruptsPrepared { _private: () }
+    }
+
     /// Capture and acknowledge one complete primary BT MAC interrupt image.
     ///
     /// This is the exact prefix of the source-124 handler: read masked status
@@ -559,8 +618,9 @@ mod tests {
 
     use super::{
         BluetoothInterruptControl, BluetoothPrimaryBank0Status, BluetoothPrimaryBank1Status,
-        BluetoothPrimaryInterruptControl, execute_primary_interrupt_epoch, execute_primary_prepare,
-        execute_primary_release,
+        BluetoothPrimaryInterruptControl, BluetoothSchedulerRunInterruptControl,
+        execute_primary_interrupt_epoch, execute_primary_prepare, execute_primary_release,
+        execute_scheduler_run_interrupt_prepare,
     };
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -616,6 +676,24 @@ mod tests {
 
         fn mask_primary_baseline_bank_1(&mut self) {
             self.operations.push(Operation::MaskBank1);
+        }
+    }
+
+    impl BluetoothSchedulerRunInterruptControl for SetupRecorder {
+        fn clear_scheduler_run_bank_0(&mut self) {
+            self.operations.push(Operation::ClearBank0);
+        }
+
+        fn clear_scheduler_run_bank_1(&mut self) {
+            self.operations.push(Operation::ClearBank1);
+        }
+
+        fn enable_scheduler_run_bank_0(&mut self) {
+            self.operations.push(Operation::EnableBank0);
+        }
+
+        fn enable_scheduler_run_bank_1(&mut self) {
+            self.operations.push(Operation::EnableBank1);
         }
     }
 
@@ -758,6 +836,21 @@ mod tests {
             ]
         );
         assert!(!epoch.fault_sources().is_fault());
+    }
+
+    #[test]
+    fn scheduler_run_interrupts_clear_stale_sources_before_enabling_them() {
+        let mut recorder = SetupRecorder::default();
+        execute_scheduler_run_interrupt_prepare(&mut recorder);
+        assert_eq!(
+            recorder.operations,
+            [
+                Operation::ClearBank0,
+                Operation::ClearBank1,
+                Operation::EnableBank0,
+                Operation::EnableBank1,
+            ]
+        );
     }
 
     #[test]

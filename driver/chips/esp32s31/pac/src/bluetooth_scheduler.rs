@@ -108,11 +108,15 @@ impl BluetoothSchedulerInsertionCommandStartCleared {
     }
 }
 
-/// Affine evidence that the reviewed scheduler RUN command and trailing
-/// device fence completed.
+/// Affine evidence that the hardware RUN command and trailing device fence
+/// completed.
+///
+/// This is deliberately not evidence of the complete vendor scheduler-run
+/// operation. Dynamic interrupt preparation and software broker publication
+/// precede this final MMIO command and remain separately owned.
 #[derive(Debug, Eq, PartialEq)]
-#[must_use = "the scheduler run publication must feed controller ownership"]
-pub struct BluetoothSchedulerRunPublished {
+#[must_use = "the hardware run command must feed controller ownership"]
+pub struct BluetoothSchedulerHardwareRunCommandPublished {
     _private: (),
 }
 
@@ -217,24 +221,26 @@ impl BluetoothTaskRegisters {
         BluetoothSchedulerInsertionCommandStartCleared { command }
     }
 
-    /// Publish the finite scheduler RUN command.
+    /// Publish the finite scheduler hardware RUN command.
     ///
     /// # Safety
     ///
-    /// The caller must have completed the required head publication and must
-    /// establish the current scheduler-run predicate before issuing this
-    /// command. This method does not evaluate the vendor predicate itself.
+    /// The caller must have completed the required head publication, dynamic
+    /// interrupt preparation and software broker publication before issuing
+    /// this final command.
     #[doc(hidden)]
     #[allow(
         unsafe_code,
-        reason = "the caller retains the scheduler-run predicate and insertion ownership"
+        reason = "the caller retains the complete scheduler-run prefix and insertion ownership"
     )]
-    pub unsafe fn publish_scheduler_run(&mut self) -> BluetoothSchedulerRunPublished {
-        super::svd::fixed_register_write::run_bluetooth_scheduler(
+    pub unsafe fn publish_scheduler_hardware_run_command(
+        &mut self,
+    ) -> BluetoothSchedulerHardwareRunCommandPublished {
+        super::svd::fixed_register_write::publish_bluetooth_scheduler_hardware_run_command(
             &self.bluetooth.bluetooth_controller_core,
         );
         device_fence();
-        BluetoothSchedulerRunPublished { _private: () }
+        BluetoothSchedulerHardwareRunCommandPublished { _private: () }
     }
 }
 

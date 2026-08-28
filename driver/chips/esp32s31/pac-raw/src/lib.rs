@@ -40853,7 +40853,7 @@ pub mod bluetooth_controller_core {
         operational_word_036c: OperationalWord036c,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - Scheduler run command. The complete current leaf writes finite complete image 1 when its reviewed predicate succeeds; the same-chip named predecessor identifies the leaf as r_btdm_sched_run."]
+        #[doc = "0x00 - Final hardware command of scheduler run. The complete current run prologue always returns zero after dynamic IRQ preparation and synchronous broker publication, so the following complete leaf writes finite image 1; the same-chip named predecessor identifies the composed operation as r_btdm_sched_run."]
         #[inline(always)]
         pub const fn scheduler_control(&self) -> &SchedulerControl {
             &self.scheduler_control
@@ -41130,14 +41130,14 @@ pub mod bluetooth_controller_core {
             &self.operational_word_036c
         }
     }
-    #[doc = "SCHEDULER_CONTROL (w) register accessor: Scheduler run command. The complete current leaf writes finite complete image 1 when its reviewed predicate succeeds; the same-chip named predecessor identifies the leaf as r_btdm_sched_run.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_control::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_control`] module"]
+    #[doc = "SCHEDULER_CONTROL (w) register accessor: Final hardware command of scheduler run. The complete current run prologue always returns zero after dynamic IRQ preparation and synchronous broker publication, so the following complete leaf writes finite image 1; the same-chip named predecessor identifies the composed operation as r_btdm_sched_run.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_control::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_control`] module"]
     #[doc(alias = "SCHEDULER_CONTROL")]
     pub type SchedulerControl = crate::Reg<scheduler_control::SchedulerControlSpec>;
-    #[doc = "Scheduler run command. The complete current leaf writes finite complete image 1 when its reviewed predicate succeeds; the same-chip named predecessor identifies the leaf as r_btdm_sched_run."]
+    #[doc = "Final hardware command of scheduler run. The complete current run prologue always returns zero after dynamic IRQ preparation and synchronous broker publication, so the following complete leaf writes finite image 1; the same-chip named predecessor identifies the composed operation as r_btdm_sched_run."]
     pub mod scheduler_control {
         #[doc = "Register `SCHEDULER_CONTROL` writer"]
         pub type W = crate::W<SchedulerControlSpec>;
-        #[doc = "Complete scheduler run command image."]
+        #[doc = "Complete final scheduler hardware-run command image."]
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         #[repr(u32)]
         pub enum Command {
@@ -41154,7 +41154,7 @@ pub mod bluetooth_controller_core {
             type Ux = u32;
         }
         impl crate::IsEnum for Command {}
-        #[doc = "Field `COMMAND` writer - Complete scheduler run command image."]
+        #[doc = "Field `COMMAND` writer - Complete final scheduler hardware-run command image."]
         pub type CommandW<'a, REG> = crate::FieldWriter<'a, REG, 32, Command>;
         impl<'a, REG> CommandW<'a, REG>
         where
@@ -41168,13 +41168,13 @@ pub mod bluetooth_controller_core {
             }
         }
         impl W {
-            #[doc = "Bits 0:31 - Complete scheduler run command image."]
+            #[doc = "Bits 0:31 - Complete final scheduler hardware-run command image."]
             #[inline(always)]
             pub fn command(&mut self) -> CommandW<'_, SchedulerControlSpec> {
                 CommandW::new(self, 0)
             }
         }
-        #[doc = "Scheduler run command. The complete current leaf writes finite complete image 1 when its reviewed predicate succeeds; the same-chip named predecessor identifies the leaf as r_btdm_sched_run.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_control::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Final hardware command of scheduler run. The complete current run prologue always returns zero after dynamic IRQ preparation and synchronous broker publication, so the following complete leaf writes finite image 1; the same-chip named predecessor identifies the composed operation as r_btdm_sched_run.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_control::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct SchedulerControlSpec;
         impl crate::RegisterSpec for SchedulerControlSpec {
             type Ux = u32;
@@ -58183,7 +58183,9 @@ pub mod fixed_register_write {
 
     /// Write the `RUN` variant to every bit of `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_CONTROL`.
     #[inline]
-    pub fn run_bluetooth_scheduler(registers: &crate::BluetoothControllerCore) {
+    pub fn publish_bluetooth_scheduler_hardware_run_command(
+        registers: &crate::BluetoothControllerCore,
+    ) {
         // SAFETY: generator validation proves that the sole field covers
         // all 32 bits and the named writable variant exists in the SVD.
         unsafe {
@@ -58233,6 +58235,36 @@ pub mod fixed_register_image {
             registers
                 .irq_clear_1()
                 .write_with_zero(|writer| writer.bits(0x00001300));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x18200000` to `BLUETOOTH_INTERRUPT_BANK`.`IRQ_CLEAR_0`.
+    #[inline]
+    pub fn clear_bluetooth_scheduler_run_interrupts_bank_0(
+        registers: &crate::BluetoothInterruptBank,
+    ) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .irq_clear_0()
+                .write_with_zero(|writer| writer.bits(0x18200000));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000008` to `BLUETOOTH_INTERRUPT_BANK`.`IRQ_CLEAR_1`.
+    #[inline]
+    pub fn clear_bluetooth_scheduler_run_interrupts_bank_1(
+        registers: &crate::BluetoothInterruptBank,
+    ) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .irq_clear_1()
+                .write_with_zero(|writer| writer.bits(0x00000008));
         }
     }
 
@@ -60420,6 +60452,40 @@ pub mod field_or_modify {
                     .compressed_sram_pointer()
                     .bits(reader.compressed_sram_pointer().bits() | input & 0x000fffff)
             }
+        });
+    }
+
+    /// OR one reviewed logical image into BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_0 fields [SOURCE_21, SOURCES_27_28] while preserving the fresh register observation.
+    #[inline]
+    pub fn enable_bluetooth_scheduler_run_interrupts_bank_0(
+        registers: &crate::BluetoothInterruptBank,
+    ) {
+        registers.irq_enable_0().modify(|reader, writer| {
+            let input = 0x18200000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .source_21()
+                    .bit(reader.source_21().bit() || ((input >> 21) & 0x00000001) != 0)
+                    .sources_27_28()
+                    .bits(reader.sources_27_28().bits() | ((input >> 27) & 0x00000003) as u8)
+            }
+        });
+    }
+
+    /// OR one reviewed logical image into BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_1 fields [SOURCE_3] while preserving the fresh register observation.
+    #[inline]
+    pub fn enable_bluetooth_scheduler_run_interrupts_bank_1(
+        registers: &crate::BluetoothInterruptBank,
+    ) {
+        registers.irq_enable_1().modify(|reader, writer| {
+            let input = 0x00000008_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .source_3()
+                .bit(reader.source_3().bit() || ((input >> 3) & 0x00000001) != 0)
         });
     }
 

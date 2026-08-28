@@ -1368,13 +1368,33 @@ variant = "CLOSED"
 sources = ["BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK"]
 
 [[fixed-register-writes]]
-name = "run_bluetooth_scheduler"
+name = "publish_bluetooth_scheduler_hardware_run_command"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "SCHEDULER_CONTROL"
 field = "COMMAND"
 variant = "RUN"
 sources = [
     "BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION",
+    "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES",
+]
+
+[[fixed-register-images]]
+name = "clear_bluetooth_scheduler_run_interrupts_bank_0"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+register = "IRQ_CLEAR_0"
+value = 0x18200000
+sources = [
+    "BLOB_LIBBTDM_CONTROLLER_IRQ",
+    "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES",
+]
+
+[[fixed-register-images]]
+name = "clear_bluetooth_scheduler_run_interrupts_bank_1"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+register = "IRQ_CLEAR_1"
+value = 0x00000008
+sources = [
+    "BLOB_LIBBTDM_CONTROLLER_IRQ",
     "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES",
 ]
 
@@ -2222,6 +2242,33 @@ fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
 domain = "BluetoothMemoryListPointerBits"
 exposure = "facade"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+
+[[field-or-modifies]]
+name = "enable_bluetooth_scheduler_run_interrupts_bank_0"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+register = "IRQ_ENABLE_0"
+fields = [
+    { field = "SOURCE_21", source-bit-offset = 21 },
+    { field = "SOURCES_27_28", source-bit-offset = 27 },
+]
+value = 0x18200000
+exposure = "facade"
+sources = [
+    "BLOB_LIBBTDM_CONTROLLER_IRQ",
+    "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES",
+]
+
+[[field-or-modifies]]
+name = "enable_bluetooth_scheduler_run_interrupts_bank_1"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+register = "IRQ_ENABLE_1"
+fields = [{ field = "SOURCE_3", source-bit-offset = 3 }]
+value = 0x00000008
+exposure = "facade"
+sources = [
+    "BLOB_LIBBTDM_CONTROLLER_IRQ",
+    "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES",
+]
 
 [[field-or-modifies]]
 name = "or_bluetooth_memory_list_1_pointer_b"

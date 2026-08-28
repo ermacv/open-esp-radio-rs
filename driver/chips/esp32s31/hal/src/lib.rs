@@ -67,12 +67,12 @@ pub use bluetooth::{
     BluetoothNrtInterruptAcknowledged, BluetoothSchedulerFinishedListObservation,
     BluetoothSchedulerFinishedListPop, BluetoothSchedulerHardwareListHead,
     BluetoothSchedulerHardwareListHeadError, BluetoothSchedulerHardwareListHeadPublished,
-    BluetoothSchedulerHardwareListIndex, BluetoothSchedulerInsertionCommand,
-    BluetoothSchedulerInsertionCommandStartCleared,
+    BluetoothSchedulerHardwareListIndex, BluetoothSchedulerHardwareRunCommandPublished,
+    BluetoothSchedulerInsertionCommand, BluetoothSchedulerInsertionCommandStartCleared,
     BluetoothSchedulerLockModifyInterruptObservation, BluetoothSchedulerLockModifyObservation,
     BluetoothSchedulerLockModifyPublished, BluetoothSchedulerLockModifyRequest,
     BluetoothSchedulerLockModifyTaskObservation, BluetoothSchedulerReferenceGateObservation,
-    BluetoothSchedulerRunPublished, BluetoothSchedulerWorkObservation, BluetoothTaskOwner,
+    BluetoothSchedulerRunInterruptsPrepared, BluetoothSchedulerWorkObservation, BluetoothTaskOwner,
     BluetoothTaskOwnerReuniteError, BluetoothTaskOwnerReuniteFailure,
 };
 #[cfg(feature = "validation-probes")]

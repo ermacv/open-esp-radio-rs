@@ -1542,6 +1542,22 @@ pub(crate) fn or_bluetooth_memory_list_1_pointer_a(
     crate::svd::field_or_modify::or_bluetooth_memory_list_1_pointer_a(registers, value.get());
 }
 
+/// Typed bridge for the reviewed `enable_bluetooth_scheduler_run_interrupts_bank_0` fixed field-OR transaction.
+#[inline]
+pub(crate) fn enable_bluetooth_scheduler_run_interrupts_bank_0(
+    registers: &crate::svd::BluetoothInterruptBank,
+) {
+    crate::svd::field_or_modify::enable_bluetooth_scheduler_run_interrupts_bank_0(registers);
+}
+
+/// Typed bridge for the reviewed `enable_bluetooth_scheduler_run_interrupts_bank_1` fixed field-OR transaction.
+#[inline]
+pub(crate) fn enable_bluetooth_scheduler_run_interrupts_bank_1(
+    registers: &crate::svd::BluetoothInterruptBank,
+) {
+    crate::svd::field_or_modify::enable_bluetooth_scheduler_run_interrupts_bank_1(registers);
+}
+
 /// Typed bridge for the reviewed `or_bluetooth_memory_list_1_pointer_b` field-OR transaction.
 #[inline]
 pub(crate) fn or_bluetooth_memory_list_1_pointer_b(

@@ -93,7 +93,6 @@ impl TestField {
 mod mac {
     use super::{TestField, TestRegister, indexed, named};
 
-    pub const RX_CONTROL: TestRegister = named("RX_CONTROL");
     pub const CRYPTO_KEY_VALID_BITMAP: TestRegister = named("CRYPTO_KEY_VALID_BITMAP");
     pub const CRYPTO_POLICY_CONTROL: TestRegister = named("CRYPTO_POLICY_CONTROL");
     pub const CRYPTO_INTERFACE_CONTROL: [TestRegister; 3] = [
@@ -137,65 +136,12 @@ mod mac {
 }
 
 mod mac_init {
-    use super::{TestRegister, indexed, named};
+    use super::{TestRegister, indexed};
 
-    pub const R_4C00: TestRegister = named("R_4C00");
-    pub const R_4098: TestRegister = named("R_4098");
-    pub const R_4114: TestRegister = named("R_4114");
-    pub const R_4118: TestRegister = named("R_4118");
-    pub const R_4120: TestRegister = named("R_4120");
-    pub const R_4308: TestRegister = named("R_4308");
-    pub const R_444C: TestRegister = named("R_444C");
-    pub const R_4450: TestRegister = named("R_4450");
-    pub const R_4458: TestRegister = named("R_4458");
-    pub const R_445C: TestRegister = named("R_445C");
-    pub const R_4C1C: TestRegister = named("R_4C1C");
-    pub const R_4C20: TestRegister = named("R_4C20");
-    pub const R_4C24: TestRegister = named("R_4C24");
-    pub const R_4C54: TestRegister = named("R_4C54");
-    pub const R_4C58: TestRegister = named("R_4C58");
-    pub const R_4C60: TestRegister = named("R_4C60");
-    pub const R_4C8C: TestRegister = named("R_4C8C");
-    pub const R_4C98: TestRegister = named("R_4C98");
-    pub const R_4CA0: TestRegister = named("R_4CA0");
-    pub const R_4CA8: TestRegister = named("R_4CA8");
-    pub const R_4E04: TestRegister = named("R_4E04");
-    pub const R_8060: TestRegister = named("R_8060");
-    pub const R_807C: TestRegister = named("R_807C");
-
-    pub const INTERFACE_ADDRESS_LOW: [TestRegister; 4] = group("INTERFACE_ADDRESS_LOW");
     pub const INTERFACE_ADDRESS_HIGH: [TestRegister; 4] = group("INTERFACE_ADDRESS_HIGH");
     pub const RX_FILTER: [TestRegister; 4] = group("RX_FILTER");
     pub const BSSID_LOW: [TestRegister; 4] = group("BSSID_LOW");
     pub const BSSID_HIGH: [TestRegister; 4] = group("BSSID_HIGH");
-    pub const RX_QUEUE_DEFAULT: [TestRegister; 4] = group("RX_QUEUE_DEFAULT");
-    pub const CRYPTO_BYPASS: [TestRegister; 5] = [
-        indexed("CRYPTO_BYPASS", 0),
-        indexed("CRYPTO_BYPASS", 1),
-        indexed("CRYPTO_BYPASS", 2),
-        indexed("CRYPTO_BYPASS", 3),
-        indexed("CRYPTO_BYPASS", 4),
-    ];
-    pub const LAST_RX_BUFFER: [TestRegister; 18] = [
-        indexed("LAST_RX_BUFFER", 0),
-        indexed("LAST_RX_BUFFER", 1),
-        indexed("LAST_RX_BUFFER", 2),
-        indexed("LAST_RX_BUFFER", 3),
-        indexed("LAST_RX_BUFFER", 4),
-        indexed("LAST_RX_BUFFER", 5),
-        indexed("LAST_RX_BUFFER", 6),
-        indexed("LAST_RX_BUFFER", 7),
-        indexed("LAST_RX_BUFFER", 8),
-        indexed("LAST_RX_BUFFER", 9),
-        indexed("LAST_RX_BUFFER", 10),
-        indexed("LAST_RX_BUFFER", 11),
-        indexed("LAST_RX_BUFFER", 12),
-        indexed("LAST_RX_BUFFER", 13),
-        indexed("LAST_RX_BUFFER", 14),
-        indexed("LAST_RX_BUFFER", 15),
-        indexed("LAST_RX_BUFFER", 16),
-        indexed("LAST_RX_BUFFER", 17),
-    ];
 
     const fn group(name: &'static str) -> [TestRegister; 4] {
         [
@@ -228,8 +174,17 @@ enum Operation {
     Write(TestRegister, u32),
     BeginColdHandshake(u32),
     InitializeMacAntenna,
-    InitializeHalTail(u32, MacSlowClockCalibration),
+    InitializeHalTail(MacInterruptMask, MacSlowClockCalibration),
     InitializeColdCoex(MacColdCoexPti),
+    InitializeCryptoBypass,
+    InitializeLastRxBufferTable,
+    InitializeTxRxPrefix,
+    InitializeTxRxCallbacks(MacDelaySlot),
+    InitializeTxRxSuffix,
+    InitializeColdReceivePolicy,
+    DisablePhyLowRate,
+    EnableMacInterrupts(MacInterruptMask),
+    ProgramInterfaceAddress(MacInterface, [u8; 6]),
     InitializeHePrefix,
     InitializeTxPower(MacTxPowerTable),
     InitializeHeSuffix,
@@ -249,7 +204,6 @@ enum Operation {
     StopRxWalker,
     ConfigureOpenPromiscuousReceive,
     ReadInterruptStatus,
-    WriteInterruptEnable(u32),
     AcknowledgeInterrupt,
     Fence,
 }
@@ -269,7 +223,6 @@ struct MockMmio {
     words: BTreeMap<TestRegister, u32>,
     operations: Vec<Operation>,
     interrupt_status: MacInterruptObservation,
-    interrupt_enable: u32,
     cold_handshake_result: Option<Result<MacColdStartOutcome, MacColdStartError>>,
     cold_start_clock_trace: Option<ColdStartClockTrace>,
     tx_completions: [Option<MacTxCompletionObservation>; 4],
@@ -598,16 +551,8 @@ impl StaLinkRxPolicyHardware for MockMmio {
 
 impl MacInterfaceAddressHardware for MockMmio {
     fn program_interface_address(&mut self, interface: MacInterface, address: [u8; 6]) {
-        let interface = interface.bits() as usize;
-        let low = mac_init::INTERFACE_ADDRESS_LOW[interface];
-        let high = mac_init::INTERFACE_ADDRESS_HIGH[interface];
-        self.write32(
-            low,
-            u32::from_le_bytes([address[0], address[1], address[2], address[3]]),
-        );
-        self.write32(high, u32::from(address[4]) | (u32::from(address[5]) << 8));
-        let value = self.read32(high);
-        self.write32(high, value | (1 << 16));
+        self.operations
+            .push(Operation::ProgramInterfaceAddress(interface, address));
     }
 }
 
@@ -635,13 +580,7 @@ impl MacSnifferHardware for MockMmio {
 
 impl MacColdCryptoHardware for MockMmio {
     fn initialize_crypto_bypass(&mut self) {
-        for (register, value) in
-            mac_init::CRYPTO_BYPASS
-                .into_iter()
-                .zip([0x0003_0000, 0x0003_0000, 0, 0, 0])
-        {
-            self.write32(register, value);
-        }
+        self.operations.push(Operation::InitializeCryptoBypass);
     }
 }
 
@@ -658,7 +597,7 @@ impl MacColdHalTailHardware for MockMmio {
         slow_clock_calibration: MacSlowClockCalibration,
     ) {
         self.operations.push(Operation::InitializeHalTail(
-            event_mask.bits(),
+            event_mask,
             slow_clock_calibration,
         ));
     }
@@ -673,7 +612,6 @@ impl MacColdCoexHardware for MockMmio {
 impl MacColdHeHardware for MockMmio {
     fn initialize_he_prefix(&mut self) {
         self.operations.push(Operation::InitializeHePrefix);
-        self.words.insert(mac_init::R_4E04, 0);
     }
 
     fn initialize_tx_power(&mut self, table: &MacTxPowerTable) {
@@ -687,158 +625,41 @@ impl MacColdHeHardware for MockMmio {
 
 impl MacColdEnableHardware for MockMmio {
     fn enable_mac_interrupts(&mut self, event_mask: MacInterruptMask) {
-        let current = self.read32(mac_init::R_4C00);
-        self.write32(mac_init::R_4C00, current & !0x0000_00f0);
-        self.interrupt_enable = event_mask.bits();
         self.operations
-            .push(Operation::WriteInterruptEnable(event_mask.bits()));
+            .push(Operation::EnableMacInterrupts(event_mask));
     }
 }
 
 impl MacColdLastRxBufferHardware for MockMmio {
     fn initialize_last_rx_buffer_table(&mut self) {
-        for (register, value) in mac_init::LAST_RX_BUFFER.into_iter().zip([
-            0x0002_3006,
-            0x0000_0608,
-            0x0000_ffff,
-            0x0002_3006,
-            0x0000_0808,
-            0x0000_ffff,
-            0x0002_3006,
-            0x0000_8e88,
-            0x0000_ffff,
-            0x0002_301c,
-            0x4400_4300,
-            0xffff_ffff,
-            0x0002_301c,
-            0x4300_4400,
-            0xffff_ffff,
-            0x0002_3011,
-            0x0000_0001,
-            0x0000_00ff,
-        ]) {
-            self.write32(register, value);
-        }
-        for (register, mask) in [
-            (mac_init::R_4120, 0x0000_3f00),
-            (mac_init::R_4120, 0x0000_007e),
-            (mac_init::R_4098, 0x0800_0000),
-        ] {
-            let current = self.read32(register);
-            self.write32(register, current | mask);
-        }
+        self.operations.push(Operation::InitializeLastRxBufferTable);
     }
 }
 
 impl MacColdTxRxHardware for MockMmio {
     fn initialize_txrx_prefix(&mut self) {
-        let mut modify = |register: TestRegister, mask: u32, value: u32| {
-            let current = self.read32(register);
-            self.write32(register, (current & !mask) | (value & mask));
-        };
-        modify(mac_init::R_4C8C, 0x8080_a000, 0x8080_a000);
-        modify(mac_init::R_4C8C, 1 << 12, 1 << 12);
-        modify(mac_init::R_4C8C, 1 << 28, 1 << 28);
-        modify(mac_init::R_4C98, 1 << 3, 0);
-        for register in mac_init::RX_QUEUE_DEFAULT {
-            modify(register, 0xffff_0000, 0);
-        }
-        modify(mac_init::RX_QUEUE_DEFAULT[0], 1 << 24, 1 << 24);
-        modify(mac_init::RX_QUEUE_DEFAULT[1], 1 << 24, 1 << 24);
-        modify(mac_init::RX_QUEUE_DEFAULT[0], 1 << 26, 1 << 26);
-        modify(mac_init::RX_QUEUE_DEFAULT[1], 1 << 26, 1 << 26);
-        modify(mac_init::R_4C8C, 1 << 9, 1 << 9);
-        modify(mac_init::R_4114, 1 << 0, 1 << 0);
-        modify(mac_init::R_4114, 1 << 4, 1 << 4);
-        modify(mac_init::R_4118, 1 << 31, 1 << 31);
-        modify(mac_init::R_4118, 0x0ff0_0000, 0x01b0_0000);
-        modify(mac_init::R_4CA0, 0x3, 0x3);
+        self.operations.push(Operation::InitializeTxRxPrefix);
     }
 
     fn initialize_txrx_callbacks(&mut self, delay_slot: MacDelaySlot) {
-        let slot = u32::from(delay_slot.value());
-        {
-            let mut modify = |register: TestRegister, mask: u32, value: u32| {
-                let current = self.read32(register);
-                self.write32(register, (current & !mask) | (value & mask));
-            };
-            modify(mac_init::R_4C58, 0x001f_fc00, 0x000e_e400);
-            modify(mac_init::R_4C58, 0x0000_03ff, 0x0000_00f5 + slot);
-            modify(mac_init::R_4C58, 0x7fe0_0000, 0x0bc0_0000);
-            modify(mac_init::R_4C54, 0x7fe0_0000, (0x0000_00fa + slot) << 21);
-            modify(mac_init::R_4C54, 0x001f_fc00, 0x0009_d800);
-        }
-        self.write32(mac_init::R_444C, 0x0009_0a0b);
-        self.write32(mac_init::R_4458, 0x0009_0a0b);
-        self.write32(mac_init::R_4450, 0x0005_0100);
-        self.write32(mac_init::R_445C, 0x0005_0100);
-        let current = self.read32(mac_init::R_4C1C);
-        self.write32(mac_init::R_4C1C, (current & !0x0000_0fff) | 0x0000_000f);
+        self.operations
+            .push(Operation::InitializeTxRxCallbacks(delay_slot));
     }
 
     fn initialize_txrx_suffix(&mut self) {
-        let mut modify = |register: TestRegister, mask: u32, value: u32| {
-            let current = self.read32(register);
-            self.write32(register, (current & !mask) | (value & mask));
-        };
-        modify(mac_init::R_4C1C, 1 << 31, 1 << 31);
-        modify(mac_init::R_4C1C, 1 << 30, 1 << 30);
-        modify(mac_init::R_4C20, 0x0000_0fff, 0x0000_00f0);
-        modify(mac_init::R_4C24, 0x0000_0fff, 0x0000_00f0);
-        modify(mac_init::R_4CA8, 0x0000_00f0, 0x0000_0040);
-        modify(mac_init::R_4C60, 0x7fff_0000, 0x7fff_0000);
-        modify(mac_init::R_4C60, 1 << 31, 1 << 31);
-        modify(mac_init::R_4308, 1 << 1, 1 << 1);
-        modify(mac::RX_CONTROL, 1 << 31, 0);
+        self.operations.push(Operation::InitializeTxRxSuffix);
     }
 }
 
 impl MacColdRxPolicyHardware for MockMmio {
     fn initialize_cold_receive_policy(&mut self) {
-        fn modify(mmio: &mut MockMmio, register: TestRegister, mask: u32, value: u32) {
-            let current = mmio.read32(register);
-            mmio.write32(register, (current & !mask) | (value & mask));
-        }
-
-        for queue in 0..4 {
-            let filter = mac_init::RX_FILTER[queue];
-            modify(self, filter, 0x0000_0280, 0x0000_0280);
-            modify(self, filter, 0x0000_0400, 0);
-            modify(self, filter, 0x0000_0005, 0x0000_0005);
-            modify(self, filter, 0x0000_2040, 0);
-
-            if queue < 3 {
-                let bssid = mac_init::BSSID_HIGH[queue];
-                modify(self, filter, 0x0000_0410, 0);
-                modify(
-                    self,
-                    bssid,
-                    if queue == 1 { 0x4000_0000 } else { 0xc000_0000 },
-                    if queue == 1 { 0x4000_0000 } else { 0 },
-                );
-                modify(self, filter, 0x0000_0040, 0);
-                modify(self, bssid, 0x8000_0000, 0);
-                modify(
-                    self,
-                    mac_init::INTERFACE_ADDRESS_HIGH[queue],
-                    0x0000_ffff,
-                    0,
-                );
-            }
-        }
+        self.operations.push(Operation::InitializeColdReceivePolicy);
     }
 }
 
 impl MacLowRateHardware for MockMmio {
     fn disable_phy_low_rate(&mut self) {
-        for (register, mask) in [
-            (mac_init::R_8060, 1 << 10),
-            (mac_init::R_8060, 1 << 11),
-            (mac_init::R_807C, 1 << 11),
-        ] {
-            let current = self.read32(register);
-            self.write32(register, current & !mask);
-        }
+        self.operations.push(Operation::DisablePhyLowRate);
     }
 }
 
@@ -1034,7 +855,7 @@ fn mac_delay_slot_reproduces_vendor_modulo_eleven() {
 }
 
 #[test]
-fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
+fn cold_mac_init_orders_semantic_hardware_transactions() {
     let clock_trace = Rc::new(RefCell::new(Vec::new()));
     let mut platform = MockPlatform::default();
     let mut mmio = MockMmio {
@@ -1088,241 +909,47 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
         ]
     );
     assert_eq!(
-        mmio.words.get(&mac_init::INTERFACE_ADDRESS_LOW[0]),
-        Some(&0x3322_1102)
+        &mmio.operations()[6..12],
+        [
+            Operation::InitializeTxRxPrefix,
+            Operation::InitializeTxRxCallbacks(MacDelaySlot::from_random(7)),
+            Operation::InitializeTxRxSuffix,
+            Operation::InitializeColdReceivePolicy,
+            Operation::InitializeRxBufferPrefix,
+            Operation::InitializeHePrefix,
+        ]
     );
+    assert!(matches!(
+        mmio.operations()[12],
+        Operation::InitializeTxPower(_)
+    ));
     assert_eq!(
-        mmio.words.get(&mac_init::INTERFACE_ADDRESS_HIGH[0]),
-        Some(&0x0001_5544)
+        &mmio.operations()[13..19],
+        [
+            Operation::InitializeHeSuffix,
+            Operation::InitializeLastRxBufferTable,
+            Operation::DisablePhyLowRate,
+            Operation::InitializeCryptoBypass,
+            Operation::InitializeMacAntenna,
+            Operation::InitializeHalTail(
+                MacInterruptMask::COLD_RX,
+                MacSlowClockCalibration::Unavailable,
+            ),
+        ]
     );
+    assert!(matches!(
+        mmio.operations()[19],
+        Operation::InitializeColdCoex(_)
+    ));
     assert_eq!(
-        mmio.words.get(&mac_init::INTERFACE_ADDRESS_LOW[1]),
-        Some(&0xccbb_aa02)
+        &mmio.operations()[20..],
+        [
+            Operation::EnableMacInterrupts(MacInterruptMask::COLD_RX),
+            Operation::ProgramInterfaceAddress(MacInterface::Station, station),
+            Operation::ProgramInterfaceAddress(MacInterface::AccessPoint, access_point),
+            Operation::ConfigureOpenPromiscuousReceive,
+        ]
     );
-    assert_eq!(
-        mmio.words.get(&mac_init::INTERFACE_ADDRESS_HIGH[1]),
-        Some(&0x0001_eedd)
-    );
-    assert!(mmio.operations().windows(8).any(|operations| {
-        operations
-            == [
-                Operation::Write(mac_init::INTERFACE_ADDRESS_LOW[0], 0x3322_1102),
-                Operation::Write(mac_init::INTERFACE_ADDRESS_HIGH[0], 0x0000_5544),
-                Operation::Read(mac_init::INTERFACE_ADDRESS_HIGH[0]),
-                Operation::Write(mac_init::INTERFACE_ADDRESS_HIGH[0], 0x0001_5544),
-                Operation::Write(mac_init::INTERFACE_ADDRESS_LOW[1], 0xccbb_aa02),
-                Operation::Write(mac_init::INTERFACE_ADDRESS_HIGH[1], 0x0000_eedd),
-                Operation::Read(mac_init::INTERFACE_ADDRESS_HIGH[1]),
-                Operation::Write(mac_init::INTERFACE_ADDRESS_HIGH[1], 0x0001_eedd),
-            ]
-    }));
-    let last_rx_values = [
-        0x0002_3006,
-        0x0000_0608,
-        0x0000_ffff,
-        0x0002_3006,
-        0x0000_0808,
-        0x0000_ffff,
-        0x0002_3006,
-        0x0000_8e88,
-        0x0000_ffff,
-        0x0002_301c,
-        0x4400_4300,
-        0xffff_ffff,
-        0x0002_301c,
-        0x4300_4400,
-        0xffff_ffff,
-        0x0002_3011,
-        0x0000_0001,
-        0x0000_00ff,
-    ];
-    assert!(mmio.operations().windows(24).any(|operations| {
-        operations[..18].iter().copied().eq(mac_init::LAST_RX_BUFFER
-            .into_iter()
-            .zip(last_rx_values)
-            .map(|(register, value)| Operation::Write(register, value)))
-            && operations[18..]
-                == [
-                    Operation::Read(mac_init::R_4120),
-                    Operation::Write(mac_init::R_4120, 0x0000_3f00),
-                    Operation::Read(mac_init::R_4120),
-                    Operation::Write(mac_init::R_4120, 0x0000_3f7e),
-                    Operation::Read(mac_init::R_4098),
-                    Operation::Write(mac_init::R_4098, 0x0800_0000),
-                ]
-    }));
-    assert!(
-        mmio.operations()
-            .contains(&Operation::ConfigureOpenPromiscuousReceive)
-    );
-    assert_eq!(mmio.interrupt_enable, 0x19a8_79e0);
-    assert!(mmio.operations().windows(3).any(|operations| {
-        operations
-            == [
-                Operation::Read(mac_init::R_4C00),
-                Operation::Write(mac_init::R_4C00, 0),
-                Operation::WriteInterruptEnable(0x19a8_79e0),
-            ]
-    }));
-    assert_eq!(mmio.words.get(&mac_init::R_4C60), Some(&0xffff_0000));
-    let expected_txrx_prefix = [
-        (mac_init::R_4C8C, 0x8080_a000),
-        (mac_init::R_4C8C, 0x8080_b000),
-        (mac_init::R_4C8C, 0x9080_b000),
-        (mac_init::R_4C98, 0),
-        (mac_init::RX_QUEUE_DEFAULT[0], 0),
-        (mac_init::RX_QUEUE_DEFAULT[1], 0),
-        (mac_init::RX_QUEUE_DEFAULT[2], 0),
-        (mac_init::RX_QUEUE_DEFAULT[3], 0),
-        (mac_init::RX_QUEUE_DEFAULT[0], 0x0100_0000),
-        (mac_init::RX_QUEUE_DEFAULT[1], 0x0100_0000),
-        (mac_init::RX_QUEUE_DEFAULT[0], 0x0500_0000),
-        (mac_init::RX_QUEUE_DEFAULT[1], 0x0500_0000),
-        (mac_init::R_4C8C, 0x9080_b200),
-        (mac_init::R_4114, 0x0000_0001),
-        (mac_init::R_4114, 0x0000_0011),
-        (mac_init::R_4118, 0x8000_0000),
-        (mac_init::R_4118, 0x81b0_0000),
-        (mac_init::R_4CA0, 0x0000_0003),
-    ];
-    assert!(mmio.operations().windows(36).any(|operations| {
-        operations.chunks_exact(2).zip(expected_txrx_prefix).all(
-            |(operation, (register, value))| {
-                operation == [Operation::Read(register), Operation::Write(register, value)]
-            },
-        )
-    }));
-    assert!(mmio.operations().windows(16).any(|operations| {
-        operations
-            == [
-                Operation::Read(mac_init::R_4C58),
-                Operation::Write(mac_init::R_4C58, 0x000e_e400),
-                Operation::Read(mac_init::R_4C58),
-                Operation::Write(mac_init::R_4C58, 0x000e_e4fc),
-                Operation::Read(mac_init::R_4C58),
-                Operation::Write(mac_init::R_4C58, 0x0bce_e4fc),
-                Operation::Read(mac_init::R_4C54),
-                Operation::Write(mac_init::R_4C54, 0x2020_0000),
-                Operation::Read(mac_init::R_4C54),
-                Operation::Write(mac_init::R_4C54, 0x2029_d800),
-                Operation::Write(mac_init::R_444C, 0x0009_0a0b),
-                Operation::Write(mac_init::R_4458, 0x0009_0a0b),
-                Operation::Write(mac_init::R_4450, 0x0005_0100),
-                Operation::Write(mac_init::R_445C, 0x0005_0100),
-                Operation::Read(mac_init::R_4C1C),
-                Operation::Write(mac_init::R_4C1C, 0x0000_000f),
-            ]
-    }));
-    let expected_txrx_suffix = [
-        (mac_init::R_4C1C, 0x8000_000f),
-        (mac_init::R_4C1C, 0xc000_000f),
-        (mac_init::R_4C20, 0x0000_00f0),
-        (mac_init::R_4C24, 0x0000_00f0),
-        (mac_init::R_4CA8, 0x0000_0040),
-        (mac_init::R_4C60, 0x7fff_0000),
-        (mac_init::R_4C60, 0xffff_0000),
-        (mac_init::R_4308, 0x0000_0002),
-        (mac::RX_CONTROL, 0),
-    ];
-    assert!(mmio.operations().windows(18).any(|operations| {
-        operations.chunks_exact(2).zip(expected_txrx_suffix).all(
-            |(operation, (register, value))| {
-                operation == [Operation::Read(register), Operation::Write(register, value)]
-            },
-        )
-    }));
-    let mut expected_cold_rx_policy = Vec::new();
-    for queue in 0..4 {
-        let filter = mac_init::RX_FILTER[queue];
-        expected_cold_rx_policy.extend([
-            Operation::Read(filter),
-            Operation::Write(filter, 0x0000_0280),
-            Operation::Read(filter),
-            Operation::Write(filter, 0x0000_0280),
-            Operation::Read(filter),
-            Operation::Write(filter, 0x0000_0285),
-            Operation::Read(filter),
-            Operation::Write(filter, 0x0000_0285),
-        ]);
-        if queue < 3 {
-            let bssid = mac_init::BSSID_HIGH[queue];
-            let bssid_after_first_edge = if queue == 1 { 0x4000_0000 } else { 0 };
-            expected_cold_rx_policy.extend([
-                Operation::Read(filter),
-                Operation::Write(filter, 0x0000_0285),
-                Operation::Read(bssid),
-                Operation::Write(bssid, bssid_after_first_edge),
-                Operation::Read(filter),
-                Operation::Write(filter, 0x0000_0285),
-                Operation::Read(bssid),
-                Operation::Write(bssid, bssid_after_first_edge),
-                Operation::Read(mac_init::INTERFACE_ADDRESS_HIGH[queue]),
-                Operation::Write(mac_init::INTERFACE_ADDRESS_HIGH[queue], 0),
-            ]);
-        }
-    }
-    assert_eq!(expected_cold_rx_policy.len(), 62);
-    assert!(
-        mmio.operations()
-            .windows(expected_cold_rx_policy.len())
-            .any(|operations| operations == expected_cold_rx_policy)
-    );
-    assert_eq!(mmio.words.get(&mac_init::R_4E04), Some(&0));
-    assert!(
-        mmio.operations()
-            .contains(&Operation::InitializeRxBufferPrefix)
-    );
-    assert!(mmio.operations().windows(5).any(|operations| {
-        operations
-            == [
-                Operation::Write(mac_init::CRYPTO_BYPASS[0], 0x0003_0000),
-                Operation::Write(mac_init::CRYPTO_BYPASS[1], 0x0003_0000),
-                Operation::Write(mac_init::CRYPTO_BYPASS[2], 0),
-                Operation::Write(mac_init::CRYPTO_BYPASS[3], 0),
-                Operation::Write(mac_init::CRYPTO_BYPASS[4], 0),
-            ]
-    }));
-    assert!(mmio.operations().windows(6).any(|operations| {
-        operations
-            == [
-                Operation::Read(mac_init::R_8060),
-                Operation::Write(mac_init::R_8060, 0),
-                Operation::Read(mac_init::R_8060),
-                Operation::Write(mac_init::R_8060, 0),
-                Operation::Read(mac_init::R_807C),
-                Operation::Write(mac_init::R_807C, 0),
-            ]
-    }));
-    assert!(mmio.operations().contains(&Operation::InitializeMacAntenna));
-    assert!(
-        mmio.operations()
-            .contains(&Operation::RetainCoexistenceClock)
-    );
-    assert!(mmio.operations().contains(&Operation::EnableWifiMacClocks));
-    assert!(
-        mmio.operations()
-            .contains(&Operation::SetWifiMacReset(true))
-    );
-    assert!(
-        mmio.operations()
-            .contains(&Operation::SetWifiMacReset(false))
-    );
-    assert!(mmio.operations().contains(&Operation::InitializeHalTail(
-        0x19a8_79e0,
-        MacSlowClockCalibration::Unavailable,
-    )));
-    assert!(
-        mmio.operations()
-            .iter()
-            .any(|operation| matches!(operation, Operation::InitializeColdCoex(_)))
-    );
-    assert!(mmio.operations().contains(&Operation::InitializeHePrefix));
-    assert!(
-        mmio.operations()
-            .iter()
-            .any(|operation| matches!(operation, Operation::InitializeTxPower(_)))
-    );
-    assert!(mmio.operations().contains(&Operation::InitializeHeSuffix));
     let mut expected_platform = vec![PlatformOperation::MacDelayRandom];
     expected_platform.extend((0..43).map(PlatformOperation::TxPower));
     expected_platform.extend(
@@ -1348,10 +975,6 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
         PlatformOperation::CoexPti(MacCoexEvent::Event10),
     ]);
     assert_eq!(platform.operations, expected_platform);
-    assert_eq!(
-        mmio.operations().last(),
-        Some(&Operation::ConfigureOpenPromiscuousReceive)
-    );
 }
 
 #[test]
@@ -3031,7 +2654,6 @@ fn ccmp_data_rx_rejects_missing_extiv_and_hardware_mic_failure() {
 #[test]
 fn irq_state_coalesces_named_work_and_records_unhandled_causes() {
     let mut mmio = MockMmio {
-        interrupt_enable: u32::MAX,
         interrupt_status: MacInterruptObservation::from_semantic_events(
             MacInterruptEvents::TX_COMPLETE.union(MacInterruptEvents::RX_SUCCESS),
             true,
@@ -3055,7 +2677,6 @@ fn irq_state_coalesces_named_work_and_records_unhandled_causes() {
 #[test]
 fn irq_acknowledges_auxiliary_status_without_posting_independent_work() {
     let mut mmio = MockMmio {
-        interrupt_enable: u32::MAX,
         interrupt_status: MacInterruptObservation::from_semantic_events(
             MacInterruptEvents::empty(),
             true,
@@ -3078,7 +2699,6 @@ fn irq_acknowledges_auxiliary_status_without_posting_independent_work() {
 #[test]
 fn irq_state_exposes_vendor_run_to_completion_order() {
     let mut mmio = MockMmio {
-        interrupt_enable: u32::MAX,
         interrupt_status: MacInterruptObservation::from_semantic_events(
             MacInterruptEvents::COLLISION
                 .union(MacInterruptEvents::TX_TIMEOUT)

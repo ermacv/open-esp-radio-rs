@@ -194,6 +194,27 @@ impl Ieee802154RxOnDelay {
     }
 }
 
+/// Low-three-bit shift selected by the reviewed BTDM HAL scale and period domains.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum BluetoothHalSleepTimerShift {
+    /// Shift selected by scale eight and period image 2000.
+    Two = 0x00000002,
+    /// Shift selected by scale eight with period 1000 or scale sixteen with period 2000.
+    Three = 0x00000003,
+    /// Shift selected by scale eight with period 500 or scale sixteen with period 1000.
+    Four = 0x00000004,
+    /// Shift selected by scale sixteen and period image 500.
+    Five = 0x00000005,
+}
+
+impl BluetoothHalSleepTimerShift {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
 /// Reviewed receive-beacon clear requests. The type cannot select an unknown request bit.
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -404,6 +425,29 @@ impl BluetoothSchedulerListHeadBits {
     /// Construct a value only when it lies in the reviewed inclusive range.
     pub const fn new(value: u32) -> Option<Self> {
         if value <= 0x000fffff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// One complete runtime-derived byte accepted by the reviewed BTDM HAL initialization transaction.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct BluetoothHalInitByte(u32);
+
+impl BluetoothHalInitByte {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x000000ff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x000000ff {
             Some(Self(value))
         } else {
             None
@@ -2030,6 +2074,276 @@ pub(crate) fn publish_ble_phy_init_high_half_0458(registers: &crate::svd::BtmacB
 #[inline]
 pub(crate) fn publish_ble_phy_init_low_5_054c(registers: &crate::svd::BtmacBlePhyInit) {
     crate::svd::field_replace_modify::publish_ble_phy_init_low_5_054c(registers);
+}
+
+/// Typed bridge for the reviewed `publish_bluetooth_hal_sleep_timer_shift` field-replacement transaction.
+#[inline]
+pub(crate) fn publish_bluetooth_hal_sleep_timer_shift(
+    registers: &crate::svd::BluetoothControllerCore,
+    value: BluetoothHalSleepTimerShift,
+) {
+    crate::svd::field_replace_modify::publish_bluetooth_hal_sleep_timer_shift(
+        registers,
+        value.bits(),
+    );
+}
+
+/// Typed bridge for the reviewed `publish_bluetooth_hal_value_0` field-replacement transaction.
+#[inline]
+pub(crate) fn publish_bluetooth_hal_value_0(
+    registers: &crate::svd::BluetoothControllerCore,
+    value: BluetoothHalInitByte,
+) {
+    crate::svd::field_replace_modify::publish_bluetooth_hal_value_0(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_bluetooth_hal_value_1` field-replacement transaction.
+#[inline]
+pub(crate) fn publish_bluetooth_hal_value_1(
+    registers: &crate::svd::BluetoothControllerCore,
+    value: BluetoothHalInitByte,
+) {
+    crate::svd::field_replace_modify::publish_bluetooth_hal_value_1(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `enable_bluetooth_hal_latch` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_bluetooth_hal_latch(registers: &crate::svd::BluetoothControllerCore) {
+    crate::svd::field_replace_modify::enable_bluetooth_hal_latch(registers);
+}
+
+/// Typed bridge for the reviewed `configure_bluetooth_hal_control_1_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_bluetooth_hal_control_1_high(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_replace_modify::configure_bluetooth_hal_control_1_high(registers);
+}
+
+/// Typed bridge for the reviewed `configure_bluetooth_hal_control_1_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_bluetooth_hal_control_1_low(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_replace_modify::configure_bluetooth_hal_control_1_low(registers);
+}
+
+/// Typed bridge for the reviewed `enable_bluetooth_hal_control_0` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_bluetooth_hal_control_0(registers: &crate::svd::BluetoothControllerCore) {
+    crate::svd::field_replace_modify::enable_bluetooth_hal_control_0(registers);
+}
+
+/// Typed bridge for the reviewed `reset_bluetooth_hal_sleep_timer_high_for_scale_8` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn reset_bluetooth_hal_sleep_timer_high_for_scale_8(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_replace_modify::reset_bluetooth_hal_sleep_timer_high_for_scale_8(registers);
+}
+
+/// Typed bridge for the reviewed `reset_bluetooth_hal_sleep_timer_high_for_scale_16` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn reset_bluetooth_hal_sleep_timer_high_for_scale_16(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_replace_modify::reset_bluetooth_hal_sleep_timer_high_for_scale_16(registers);
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_hal_scheduler_config_16_20` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_hal_scheduler_config_16_20(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_hal_scheduler_config_16_20(registers);
+}
+
+/// Typed bridge for the reviewed `publish_bluetooth_hal_scheduler_config_16_20` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_bluetooth_hal_scheduler_config_16_20(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_replace_modify::publish_bluetooth_hal_scheduler_config_16_20(registers);
+}
+
+/// Typed bridge for the reviewed `enable_bluetooth_hal_scheduler_control` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_bluetooth_hal_scheduler_control(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_replace_modify::enable_bluetooth_hal_scheduler_control(registers);
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_hal_low_half` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_hal_low_half(registers: &crate::svd::BluetoothControllerCore) {
+    crate::svd::field_replace_modify::clear_bluetooth_hal_low_half(registers);
+}
+
+/// Typed bridge for the reviewed `fill_bluetooth_hal_low_half` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn fill_bluetooth_hal_low_half(registers: &crate::svd::BluetoothControllerCore) {
+    crate::svd::field_replace_modify::fill_bluetooth_hal_low_half(registers);
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_hal_scheduler_byte_1` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_hal_scheduler_byte_1(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_hal_scheduler_byte_1(registers);
+}
+
+/// Typed bridge for the reviewed `publish_bluetooth_hal_scheduler_byte_1` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_bluetooth_hal_scheduler_byte_1(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_replace_modify::publish_bluetooth_hal_scheduler_byte_1(registers);
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_hal_slot_lane_0_upper` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_hal_slot_lane_0_upper(
+    registers: &crate::svd::BluetoothControllerCore,
+    index: usize,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_hal_slot_lane_0_upper(registers, index);
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_hal_slot_lane_1_upper` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_hal_slot_lane_1_upper(
+    registers: &crate::svd::BluetoothControllerCore,
+    index: usize,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_hal_slot_lane_1_upper(registers, index);
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_hal_slot_lane_2_upper` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_hal_slot_lane_2_upper(
+    registers: &crate::svd::BluetoothControllerCore,
+    index: usize,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_hal_slot_lane_2_upper(registers, index);
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_hal_slot_lane_3_upper` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_hal_slot_lane_3_upper(
+    registers: &crate::svd::BluetoothControllerCore,
+    index: usize,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_hal_slot_lane_3_upper(registers, index);
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_hal_slot_lane_4_upper` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_hal_slot_lane_4_upper(
+    registers: &crate::svd::BluetoothControllerCore,
+    index: usize,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_hal_slot_lane_4_upper(registers, index);
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_hal_slot_lane_5_upper` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_hal_slot_lane_5_upper(
+    registers: &crate::svd::BluetoothControllerCore,
+    index: usize,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_hal_slot_lane_5_upper(registers, index);
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_hal_slot_lane_6_upper` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_hal_slot_lane_6_upper(
+    registers: &crate::svd::BluetoothControllerCore,
+    index: usize,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_hal_slot_lane_6_upper(registers, index);
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_hal_slot_lane_7_upper` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_hal_slot_lane_7_upper(
+    registers: &crate::svd::BluetoothControllerCore,
+    index: usize,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_hal_slot_lane_7_upper(registers, index);
+}
+
+/// Typed bridge for the reviewed `publish_bluetooth_hal_slot_lane_0` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_bluetooth_hal_slot_lane_0(
+    registers: &crate::svd::BluetoothControllerCore,
+    index: usize,
+) {
+    crate::svd::field_replace_modify::publish_bluetooth_hal_slot_lane_0(registers, index);
+}
+
+/// Typed bridge for the reviewed `publish_bluetooth_hal_slot_lane_1` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_bluetooth_hal_slot_lane_1(
+    registers: &crate::svd::BluetoothControllerCore,
+    index: usize,
+) {
+    crate::svd::field_replace_modify::publish_bluetooth_hal_slot_lane_1(registers, index);
+}
+
+/// Typed bridge for the reviewed `publish_bluetooth_hal_slot_lane_2` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_bluetooth_hal_slot_lane_2(
+    registers: &crate::svd::BluetoothControllerCore,
+    index: usize,
+) {
+    crate::svd::field_replace_modify::publish_bluetooth_hal_slot_lane_2(registers, index);
+}
+
+/// Typed bridge for the reviewed `publish_bluetooth_hal_slot_lane_3` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_bluetooth_hal_slot_lane_3(
+    registers: &crate::svd::BluetoothControllerCore,
+    index: usize,
+) {
+    crate::svd::field_replace_modify::publish_bluetooth_hal_slot_lane_3(registers, index);
+}
+
+/// Typed bridge for the reviewed `publish_bluetooth_hal_slot_lane_4` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_bluetooth_hal_slot_lane_4(
+    registers: &crate::svd::BluetoothControllerCore,
+    index: usize,
+) {
+    crate::svd::field_replace_modify::publish_bluetooth_hal_slot_lane_4(registers, index);
+}
+
+/// Typed bridge for the reviewed `publish_bluetooth_hal_slot_lane_5` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_bluetooth_hal_slot_lane_5(
+    registers: &crate::svd::BluetoothControllerCore,
+    index: usize,
+) {
+    crate::svd::field_replace_modify::publish_bluetooth_hal_slot_lane_5(registers, index);
+}
+
+/// Typed bridge for the reviewed `publish_bluetooth_hal_slot_lane_6` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_bluetooth_hal_slot_lane_6(
+    registers: &crate::svd::BluetoothControllerCore,
+    index: usize,
+) {
+    crate::svd::field_replace_modify::publish_bluetooth_hal_slot_lane_6(registers, index);
+}
+
+/// Typed bridge for the reviewed `publish_bluetooth_hal_slot_lane_7` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_bluetooth_hal_slot_lane_7(
+    registers: &crate::svd::BluetoothControllerCore,
+    index: usize,
+) {
+    crate::svd::field_replace_modify::publish_bluetooth_hal_slot_lane_7(registers, index);
 }
 
 /// Typed bridge for the reviewed `clear_bluetooth_scheduler_lock_modify_argument` fixed field-replacement transaction.

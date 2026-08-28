@@ -59285,6 +59285,19 @@ pub mod fixed_register_image {
                 .write_with_zero(|writer| writer.bits(0x00ff0f64));
         }
     }
+
+    /// Publish the SVD-qualified image `0x2f000000` to `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_SRAM_POINTER_PREFIX`.
+    #[inline]
+    pub fn publish_bluetooth_hal_scheduler_sram_prefix(registers: &crate::BluetoothControllerCore) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .scheduler_sram_pointer_prefix()
+                .write_with_zero(|writer| writer.bits(0x2f000000));
+        }
+    }
 }
 
 /// Affine sample-and-acknowledge transactions for same-register W1C fields.
@@ -59646,22 +59659,6 @@ pub mod zero_based_field_write {
                         .start()
                         .bit(start_value)
                 });
-        }
-    }
-
-    /// Write `ADDRESS_PREFIX` in `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_SRAM_POINTER_PREFIX` while publishing zero to every other register bit.
-    #[inline]
-    pub fn publish_bluetooth_hal_scheduler_sram_prefix(
-        registers: &crate::BluetoothControllerCore,
-        value: u16,
-    ) {
-        // SAFETY: the SVD extension explicitly qualifies the zero-based
-        // transaction, and generator validation proves every selected field
-        // accepts every value representable by its public argument type.
-        unsafe {
-            registers
-                .scheduler_sram_pointer_prefix()
-                .write_with_zero(|writer| writer.address_prefix().set(value));
         }
     }
 
@@ -61908,6 +61905,520 @@ pub mod field_replace_modify {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe { writer.init_low_5().bits((input & 0x0000001f) as u8) }
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL fields [CONFIG_LOW_3] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_bluetooth_hal_sleep_timer_shift(
+        registers: &crate::BluetoothControllerCore,
+        input: u32,
+    ) {
+        registers.sleep_timer_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.config_low_3().bits((input & 0x00000007) as u8) }
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_BYTES fields [VALUE_0] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_bluetooth_hal_value_0(registers: &crate::BluetoothControllerCore, input: u32) {
+        registers.hal_init_bytes().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.value_0().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_BYTES fields [VALUE_1] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_bluetooth_hal_value_1(registers: &crate::BluetoothControllerCore, input: u32) {
+        registers.hal_init_bytes().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.value_1().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LATCH fields [ENABLE_31] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_bluetooth_hal_latch(registers: &crate::BluetoothControllerCore) {
+        registers.hal_init_latch().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.enable_31().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_1 fields [CONFIG_15, CONFIG_18_19] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_bluetooth_hal_control_1_high(registers: &crate::BluetoothControllerCore) {
+        registers.hal_init_control_1().modify(|_, writer| {
+            let input = 0x00000007_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .config_15()
+                    .bit((input & 0x00000001) != 0)
+                    .config_18_19()
+                    .bits(((input >> 1) & 0x00000003) as u8)
+            }
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_1 fields [CONFIG_3, CONFIG_6_7] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_bluetooth_hal_control_1_low(registers: &crate::BluetoothControllerCore) {
+        registers.hal_init_control_1().modify(|_, writer| {
+            let input = 0x00000007_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .config_3()
+                    .bit((input & 0x00000001) != 0)
+                    .config_6_7()
+                    .bits(((input >> 1) & 0x00000003) as u8)
+            }
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_CONTROL_0 fields [ENABLE_31] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_bluetooth_hal_control_0(registers: &crate::BluetoothControllerCore) {
+        registers.hal_init_control_0().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.enable_31().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL fields [CONFIG_24, INIT_CLEAR_25_UNKNOWN, LATCH_REQUEST, INIT_CLEAR_27_30_UNKNOWN, TIMER_ARM] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn reset_bluetooth_hal_sleep_timer_high_for_scale_8(
+        registers: &crate::BluetoothControllerCore,
+    ) {
+        registers.sleep_timer_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .config_24()
+                    .bit((input & 0x00000001) != 0)
+                    .init_clear_25_unknown()
+                    .bit(((input >> 1) & 0x00000001) != 0)
+                    .latch_request()
+                    .bit(((input >> 2) & 0x00000001) != 0)
+                    .init_clear_27_30_unknown()
+                    .bits(((input >> 3) & 0x0000000f) as u8)
+                    .timer_arm()
+                    .bit(((input >> 7) & 0x00000001) != 0)
+            }
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL fields [CONFIG_24, INIT_CLEAR_25_UNKNOWN, LATCH_REQUEST, INIT_CLEAR_27_30_UNKNOWN, TIMER_ARM] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn reset_bluetooth_hal_sleep_timer_high_for_scale_16(
+        registers: &crate::BluetoothControllerCore,
+    ) {
+        registers.sleep_timer_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .config_24()
+                    .bit((input & 0x00000001) != 0)
+                    .init_clear_25_unknown()
+                    .bit(((input >> 1) & 0x00000001) != 0)
+                    .latch_request()
+                    .bit(((input >> 2) & 0x00000001) != 0)
+                    .init_clear_27_30_unknown()
+                    .bits(((input >> 3) & 0x0000000f) as u8)
+                    .timer_arm()
+                    .bit(((input >> 7) & 0x00000001) != 0)
+            }
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SCHEDULER_CONTROL fields [CONFIG_16_20] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_hal_scheduler_config_16_20(registers: &crate::BluetoothControllerCore) {
+        registers.hal_init_scheduler_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.config_16_20().bits((input & 0x0000001f) as u8) }
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SCHEDULER_CONTROL fields [CONFIG_16_20] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_bluetooth_hal_scheduler_config_16_20(
+        registers: &crate::BluetoothControllerCore,
+    ) {
+        registers.hal_init_scheduler_control().modify(|_, writer| {
+            let input = 0x00000010_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.config_16_20().bits((input & 0x0000001f) as u8) }
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SCHEDULER_CONTROL fields [ENABLE_31] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_bluetooth_hal_scheduler_control(registers: &crate::BluetoothControllerCore) {
+        registers.hal_init_scheduler_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.enable_31().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LOW_HALF fields [CONFIG_LOW_16] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_hal_low_half(registers: &crate::BluetoothControllerCore) {
+        registers.hal_init_low_half().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.config_low_16().bits((input & 0x0000ffff) as u16) }
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LOW_HALF fields [CONFIG_LOW_16] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn fill_bluetooth_hal_low_half(registers: &crate::BluetoothControllerCore) {
+        registers.hal_init_low_half().modify(|_, writer| {
+            let input = 0x0000ffff_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.config_low_16().bits((input & 0x0000ffff) as u16) }
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SCHEDULER_CONTROL fields [CONFIG_BYTE_1] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_hal_scheduler_byte_1(registers: &crate::BluetoothControllerCore) {
+        registers.hal_init_scheduler_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.config_byte_1().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SCHEDULER_CONTROL fields [CONFIG_BYTE_1] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_bluetooth_hal_scheduler_byte_1(registers: &crate::BluetoothControllerCore) {
+        registers.hal_init_scheduler_control().modify(|_, writer| {
+            let input = 0x00000020_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.config_byte_1().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_0_INDEX_HIGH, LANE_0_CLEAR_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_hal_slot_lane_0_upper(
+        registers: &crate::BluetoothControllerCore,
+        index: usize,
+    ) {
+        registers.hal_init_slot_map(index).modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .lane_0_index_high()
+                .bit((input & 0x00000001) != 0)
+                .lane_0_clear_high_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_1_INDEX_HIGH, LANE_1_CLEAR_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_hal_slot_lane_1_upper(
+        registers: &crate::BluetoothControllerCore,
+        index: usize,
+    ) {
+        registers.hal_init_slot_map(index).modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .lane_1_index_high()
+                .bit((input & 0x00000001) != 0)
+                .lane_1_clear_high_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_2_INDEX_HIGH, LANE_2_CLEAR_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_hal_slot_lane_2_upper(
+        registers: &crate::BluetoothControllerCore,
+        index: usize,
+    ) {
+        registers.hal_init_slot_map(index).modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .lane_2_index_high()
+                .bit((input & 0x00000001) != 0)
+                .lane_2_clear_high_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_3_INDEX_HIGH, LANE_3_CLEAR_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_hal_slot_lane_3_upper(
+        registers: &crate::BluetoothControllerCore,
+        index: usize,
+    ) {
+        registers.hal_init_slot_map(index).modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .lane_3_index_high()
+                .bit((input & 0x00000001) != 0)
+                .lane_3_clear_high_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_4_INDEX_HIGH, LANE_4_CLEAR_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_hal_slot_lane_4_upper(
+        registers: &crate::BluetoothControllerCore,
+        index: usize,
+    ) {
+        registers.hal_init_slot_map(index).modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .lane_4_index_high()
+                .bit((input & 0x00000001) != 0)
+                .lane_4_clear_high_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_5_INDEX_HIGH, LANE_5_CLEAR_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_hal_slot_lane_5_upper(
+        registers: &crate::BluetoothControllerCore,
+        index: usize,
+    ) {
+        registers.hal_init_slot_map(index).modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .lane_5_index_high()
+                .bit((input & 0x00000001) != 0)
+                .lane_5_clear_high_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_6_INDEX_HIGH, LANE_6_CLEAR_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_hal_slot_lane_6_upper(
+        registers: &crate::BluetoothControllerCore,
+        index: usize,
+    ) {
+        registers.hal_init_slot_map(index).modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .lane_6_index_high()
+                .bit((input & 0x00000001) != 0)
+                .lane_6_clear_high_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_7_INDEX_HIGH, LANE_7_CLEAR_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_hal_slot_lane_7_upper(
+        registers: &crate::BluetoothControllerCore,
+        index: usize,
+    ) {
+        registers.hal_init_slot_map(index).modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .lane_7_index_high()
+                .bit((input & 0x00000001) != 0)
+                .lane_7_clear_high_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_0_ENABLE, LANE_0_INDEX_HIGH] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_bluetooth_hal_slot_lane_0(
+        registers: &crate::BluetoothControllerCore,
+        index: usize,
+    ) {
+        registers.hal_init_slot_map(index).modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .lane_0_enable()
+                .bit((input & 0x00000001) != 0)
+                .lane_0_index_high()
+                .bit(((input >> 2) & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_1_ENABLE, LANE_1_RETAINED_INDEX_LOW, LANE_1_INDEX_HIGH] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_bluetooth_hal_slot_lane_1(
+        registers: &crate::BluetoothControllerCore,
+        index: usize,
+    ) {
+        registers.hal_init_slot_map(index).modify(|_, writer| {
+            let input = 0x00000003_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .lane_1_enable()
+                .bit((input & 0x00000001) != 0)
+                .lane_1_retained_index_low()
+                .bit(((input >> 1) & 0x00000001) != 0)
+                .lane_1_index_high()
+                .bit(((input >> 2) & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_2_ENABLE, LANE_2_INDEX_HIGH] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_bluetooth_hal_slot_lane_2(
+        registers: &crate::BluetoothControllerCore,
+        index: usize,
+    ) {
+        registers.hal_init_slot_map(index).modify(|_, writer| {
+            let input = 0x00000005_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .lane_2_enable()
+                .bit((input & 0x00000001) != 0)
+                .lane_2_index_high()
+                .bit(((input >> 2) & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_3_ENABLE, LANE_3_RETAINED_INDEX_LOW, LANE_3_INDEX_HIGH] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_bluetooth_hal_slot_lane_3(
+        registers: &crate::BluetoothControllerCore,
+        index: usize,
+    ) {
+        registers.hal_init_slot_map(index).modify(|_, writer| {
+            let input = 0x00000007_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .lane_3_enable()
+                .bit((input & 0x00000001) != 0)
+                .lane_3_retained_index_low()
+                .bit(((input >> 1) & 0x00000001) != 0)
+                .lane_3_index_high()
+                .bit(((input >> 2) & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_4_ENABLE, LANE_4_INDEX_HIGH] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_bluetooth_hal_slot_lane_4(
+        registers: &crate::BluetoothControllerCore,
+        index: usize,
+    ) {
+        registers.hal_init_slot_map(index).modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .lane_4_enable()
+                .bit((input & 0x00000001) != 0)
+                .lane_4_index_high()
+                .bit(((input >> 2) & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_5_ENABLE, LANE_5_RETAINED_INDEX_LOW, LANE_5_INDEX_HIGH] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_bluetooth_hal_slot_lane_5(
+        registers: &crate::BluetoothControllerCore,
+        index: usize,
+    ) {
+        registers.hal_init_slot_map(index).modify(|_, writer| {
+            let input = 0x00000003_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .lane_5_enable()
+                .bit((input & 0x00000001) != 0)
+                .lane_5_retained_index_low()
+                .bit(((input >> 1) & 0x00000001) != 0)
+                .lane_5_index_high()
+                .bit(((input >> 2) & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_6_ENABLE, LANE_6_INDEX_HIGH] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_bluetooth_hal_slot_lane_6(
+        registers: &crate::BluetoothControllerCore,
+        index: usize,
+    ) {
+        registers.hal_init_slot_map(index).modify(|_, writer| {
+            let input = 0x00000005_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .lane_6_enable()
+                .bit((input & 0x00000001) != 0)
+                .lane_6_index_high()
+                .bit(((input >> 2) & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s fields [LANE_7_ENABLE, LANE_7_RETAINED_INDEX_LOW, LANE_7_INDEX_HIGH] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_bluetooth_hal_slot_lane_7(
+        registers: &crate::BluetoothControllerCore,
+        index: usize,
+    ) {
+        registers.hal_init_slot_map(index).modify(|_, writer| {
+            let input = 0x00000007_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .lane_7_enable()
+                .bit((input & 0x00000001) != 0)
+                .lane_7_retained_index_low()
+                .bit(((input >> 1) & 0x00000001) != 0)
+                .lane_7_index_high()
+                .bit(((input >> 2) & 0x00000001) != 0)
         });
     }
 

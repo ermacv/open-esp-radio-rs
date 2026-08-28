@@ -434,8 +434,14 @@ impl PacApiPack {
                 self.bounded_domains
                     .iter()
                     .find(|candidate| candidate.name == domain_name)
-                    .expect("pack validation requires a bounded field-or-modify domain")
-                    .max
+                    .map(|domain| domain.max)
+                    .or_else(|| {
+                        self.enum_domains
+                            .iter()
+                            .find(|candidate| candidate.name == domain_name)
+                            .and_then(|domain| domain.values.iter().map(|value| value.value).max())
+                    })
+                    .expect("pack validation requires a bounded or enum field-or-modify domain")
             });
             if maximum_input & !source_mask != 0 {
                 return Err(Error::message(format!(
@@ -486,8 +492,16 @@ impl PacApiPack {
                 self.bounded_domains
                     .iter()
                     .find(|candidate| candidate.name == domain_name)
-                    .expect("pack validation requires a bounded field-replace-modify domain")
-                    .max
+                    .map(|domain| domain.max)
+                    .or_else(|| {
+                        self.enum_domains
+                            .iter()
+                            .find(|candidate| candidate.name == domain_name)
+                            .and_then(|domain| domain.values.iter().map(|value| value.value).max())
+                    })
+                    .expect(
+                        "pack validation requires a bounded or enum field-replace-modify domain",
+                    )
             });
             if maximum_input & !source_mask != 0 {
                 return Err(Error::message(format!(

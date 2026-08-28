@@ -377,6 +377,23 @@ min = 0
 max = 0x000f_ffff
 sources = ["BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 
+[[enum-domains]]
+name = "BluetoothHalSleepTimerShift"
+description = "Low-three-bit shift selected by the reviewed BTDM HAL scale and period domains."
+values = [
+    { name = "Two", value = 2, description = "Shift selected by scale eight and period image 2000.", sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"] },
+    { name = "Three", value = 3, description = "Shift selected by scale eight with period 1000 or scale sixteen with period 2000.", sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"] },
+    { name = "Four", value = 4, description = "Shift selected by scale eight with period 500 or scale sixteen with period 1000.", sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"] },
+    { name = "Five", value = 5, description = "Shift selected by scale sixteen and period image 500.", sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"] },
+]
+
+[[bounded-domains]]
+name = "BluetoothHalInitByte"
+description = "One complete runtime-derived byte accepted by the reviewed BTDM HAL initialization transaction."
+min = 0
+max = 0xff
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
 [[bounded-domains]]
 name = "BluetoothPhyInitTimingByte"
 description = "Runtime-derived byte ORed into both BLE link-controller transmit-delay fields by one fresh-read transaction."
@@ -1986,13 +2003,6 @@ fields = ["COMPRESSED_SRAM_POINTER", "START"]
 sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 
 [[zero-based-field-writes]]
-name = "publish_bluetooth_hal_scheduler_sram_prefix"
-peripheral = "BLUETOOTH_CONTROLLER_CORE"
-register = "SCHEDULER_SRAM_POINTER_PREFIX"
-fields = ["ADDRESS_PREFIX"]
-sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
-
-[[zero-based-field-writes]]
 name = "initialize_bluetooth_hal_latch"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "HAL_INIT_LATCH"
@@ -3180,6 +3190,371 @@ peripheral = "BTDM_RUNTIME_CONTROL"
 register = "STATUS_0048"
 field = "IMAGE"
 sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
+
+[[fixed-register-images]]
+name = "publish_bluetooth_hal_scheduler_sram_prefix"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SCHEDULER_SRAM_POINTER_PREFIX"
+value = 0x2f000000
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "publish_bluetooth_hal_sleep_timer_shift"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SLEEP_TIMER_CONTROL"
+fields = [{ field = "CONFIG_LOW_3", source-bit-offset = 0 }]
+domain = "BluetoothHalSleepTimerShift"
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "publish_bluetooth_hal_value_0"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_BYTES"
+fields = [{ field = "VALUE_0", source-bit-offset = 0 }]
+domain = "BluetoothHalInitByte"
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "publish_bluetooth_hal_value_1"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_BYTES"
+fields = [{ field = "VALUE_1", source-bit-offset = 0 }]
+domain = "BluetoothHalInitByte"
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "enable_bluetooth_hal_latch"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_LATCH"
+fields = [{ field = "ENABLE_31", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "configure_bluetooth_hal_control_1_high"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_CONTROL_1"
+fields = [
+    { field = "CONFIG_15", source-bit-offset = 0 },
+    { field = "CONFIG_18_19", source-bit-offset = 1 },
+]
+value = 7
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "configure_bluetooth_hal_control_1_low"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_CONTROL_1"
+fields = [
+    { field = "CONFIG_3", source-bit-offset = 0 },
+    { field = "CONFIG_6_7", source-bit-offset = 1 },
+]
+value = 7
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "enable_bluetooth_hal_control_0"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_CONTROL_0"
+fields = [{ field = "ENABLE_31", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "reset_bluetooth_hal_sleep_timer_high_for_scale_8"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SLEEP_TIMER_CONTROL"
+fields = [
+    { field = "CONFIG_24", source-bit-offset = 0 },
+    { field = "INIT_CLEAR_25_UNKNOWN", source-bit-offset = 1 },
+    { field = "LATCH_REQUEST", source-bit-offset = 2 },
+    { field = "INIT_CLEAR_27_30_UNKNOWN", source-bit-offset = 3 },
+    { field = "TIMER_ARM", source-bit-offset = 7 },
+]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "reset_bluetooth_hal_sleep_timer_high_for_scale_16"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SLEEP_TIMER_CONTROL"
+fields = [
+    { field = "CONFIG_24", source-bit-offset = 0 },
+    { field = "INIT_CLEAR_25_UNKNOWN", source-bit-offset = 1 },
+    { field = "LATCH_REQUEST", source-bit-offset = 2 },
+    { field = "INIT_CLEAR_27_30_UNKNOWN", source-bit-offset = 3 },
+    { field = "TIMER_ARM", source-bit-offset = 7 },
+]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "clear_bluetooth_hal_scheduler_config_16_20"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_SCHEDULER_CONTROL"
+fields = [{ field = "CONFIG_16_20", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "publish_bluetooth_hal_scheduler_config_16_20"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_SCHEDULER_CONTROL"
+fields = [{ field = "CONFIG_16_20", source-bit-offset = 0 }]
+value = 0x10
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "enable_bluetooth_hal_scheduler_control"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_SCHEDULER_CONTROL"
+fields = [{ field = "ENABLE_31", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "clear_bluetooth_hal_low_half"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_LOW_HALF"
+fields = [{ field = "CONFIG_LOW_16", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "fill_bluetooth_hal_low_half"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_LOW_HALF"
+fields = [{ field = "CONFIG_LOW_16", source-bit-offset = 0 }]
+value = 0xffff
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "clear_bluetooth_hal_scheduler_byte_1"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_SCHEDULER_CONTROL"
+fields = [{ field = "CONFIG_BYTE_1", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "publish_bluetooth_hal_scheduler_byte_1"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_SCHEDULER_CONTROL"
+fields = [{ field = "CONFIG_BYTE_1", source-bit-offset = 0 }]
+value = 0x20
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "clear_bluetooth_hal_slot_lane_0_upper"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_SLOT_MAP%s"
+fields = [
+    { field = "LANE_0_INDEX_HIGH", source-bit-offset = 0 },
+    { field = "LANE_0_CLEAR_HIGH_UNKNOWN", source-bit-offset = 0 },
+]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "clear_bluetooth_hal_slot_lane_1_upper"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_SLOT_MAP%s"
+fields = [
+    { field = "LANE_1_INDEX_HIGH", source-bit-offset = 0 },
+    { field = "LANE_1_CLEAR_HIGH_UNKNOWN", source-bit-offset = 0 },
+]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "clear_bluetooth_hal_slot_lane_2_upper"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_SLOT_MAP%s"
+fields = [
+    { field = "LANE_2_INDEX_HIGH", source-bit-offset = 0 },
+    { field = "LANE_2_CLEAR_HIGH_UNKNOWN", source-bit-offset = 0 },
+]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "clear_bluetooth_hal_slot_lane_3_upper"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_SLOT_MAP%s"
+fields = [
+    { field = "LANE_3_INDEX_HIGH", source-bit-offset = 0 },
+    { field = "LANE_3_CLEAR_HIGH_UNKNOWN", source-bit-offset = 0 },
+]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "clear_bluetooth_hal_slot_lane_4_upper"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_SLOT_MAP%s"
+fields = [
+    { field = "LANE_4_INDEX_HIGH", source-bit-offset = 0 },
+    { field = "LANE_4_CLEAR_HIGH_UNKNOWN", source-bit-offset = 0 },
+]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "clear_bluetooth_hal_slot_lane_5_upper"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_SLOT_MAP%s"
+fields = [
+    { field = "LANE_5_INDEX_HIGH", source-bit-offset = 0 },
+    { field = "LANE_5_CLEAR_HIGH_UNKNOWN", source-bit-offset = 0 },
+]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "clear_bluetooth_hal_slot_lane_6_upper"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_SLOT_MAP%s"
+fields = [
+    { field = "LANE_6_INDEX_HIGH", source-bit-offset = 0 },
+    { field = "LANE_6_CLEAR_HIGH_UNKNOWN", source-bit-offset = 0 },
+]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "clear_bluetooth_hal_slot_lane_7_upper"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_SLOT_MAP%s"
+fields = [
+    { field = "LANE_7_INDEX_HIGH", source-bit-offset = 0 },
+    { field = "LANE_7_CLEAR_HIGH_UNKNOWN", source-bit-offset = 0 },
+]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "publish_bluetooth_hal_slot_lane_0"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_SLOT_MAP%s"
+fields = [
+    { field = "LANE_0_ENABLE", source-bit-offset = 0 },
+    { field = "LANE_0_INDEX_HIGH", source-bit-offset = 2 },
+]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "publish_bluetooth_hal_slot_lane_1"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_SLOT_MAP%s"
+fields = [
+    { field = "LANE_1_ENABLE", source-bit-offset = 0 },
+    { field = "LANE_1_RETAINED_INDEX_LOW", source-bit-offset = 1 },
+    { field = "LANE_1_INDEX_HIGH", source-bit-offset = 2 },
+]
+value = 3
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "publish_bluetooth_hal_slot_lane_2"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_SLOT_MAP%s"
+fields = [
+    { field = "LANE_2_ENABLE", source-bit-offset = 0 },
+    { field = "LANE_2_INDEX_HIGH", source-bit-offset = 2 },
+]
+value = 5
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "publish_bluetooth_hal_slot_lane_3"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_SLOT_MAP%s"
+fields = [
+    { field = "LANE_3_ENABLE", source-bit-offset = 0 },
+    { field = "LANE_3_RETAINED_INDEX_LOW", source-bit-offset = 1 },
+    { field = "LANE_3_INDEX_HIGH", source-bit-offset = 2 },
+]
+value = 7
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "publish_bluetooth_hal_slot_lane_4"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_SLOT_MAP%s"
+fields = [
+    { field = "LANE_4_ENABLE", source-bit-offset = 0 },
+    { field = "LANE_4_INDEX_HIGH", source-bit-offset = 2 },
+]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "publish_bluetooth_hal_slot_lane_5"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_SLOT_MAP%s"
+fields = [
+    { field = "LANE_5_ENABLE", source-bit-offset = 0 },
+    { field = "LANE_5_RETAINED_INDEX_LOW", source-bit-offset = 1 },
+    { field = "LANE_5_INDEX_HIGH", source-bit-offset = 2 },
+]
+value = 3
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "publish_bluetooth_hal_slot_lane_6"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_SLOT_MAP%s"
+fields = [
+    { field = "LANE_6_ENABLE", source-bit-offset = 0 },
+    { field = "LANE_6_INDEX_HIGH", source-bit-offset = 2 },
+]
+value = 5
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[field-replace-modifies]]
+name = "publish_bluetooth_hal_slot_lane_7"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_SLOT_MAP%s"
+fields = [
+    { field = "LANE_7_ENABLE", source-bit-offset = 0 },
+    { field = "LANE_7_RETAINED_INDEX_LOW", source-bit-offset = 1 },
+    { field = "LANE_7_INDEX_HIGH", source-bit-offset = 2 },
+]
+value = 7
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"

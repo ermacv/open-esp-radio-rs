@@ -228,8 +228,9 @@ impl PacApiPack {
                 ("", "")
             };
             if let Some(domain) = &operation.domain {
+                let value = domain_value_expression(domain, &flag_or_enum_domains);
                 output.push_str(&format!(
-                    "/// Typed bridge for the reviewed `{}` field-OR transaction.\n#[inline]\npub(crate) fn {}(registers: &crate::svd::{}, {index_parameter}value: {}) {{\n    crate::svd::field_or_modify::{}(registers, {index_argument}value.get());\n}}\n\n",
+                    "/// Typed bridge for the reviewed `{}` field-OR transaction.\n#[inline]\npub(crate) fn {}(registers: &crate::svd::{}, {index_parameter}value: {}) {{\n    crate::svd::field_or_modify::{}(registers, {index_argument}{value});\n}}\n\n",
                     operation.name,
                     operation.name,
                     type_binding_name(&operation.peripheral),
@@ -256,8 +257,9 @@ impl PacApiPack {
                 ("", "")
             };
             if let Some(domain) = &operation.domain {
+                let value = domain_value_expression(domain, &flag_or_enum_domains);
                 output.push_str(&format!(
-                    "/// Typed bridge for the reviewed `{}` field-replacement transaction.\n#[inline]\npub(crate) fn {}(registers: &crate::svd::{}, {index_parameter}value: {}) {{\n    crate::svd::field_replace_modify::{}(registers, {index_argument}value.get());\n}}\n\n",
+                    "/// Typed bridge for the reviewed `{}` field-replacement transaction.\n#[inline]\npub(crate) fn {}(registers: &crate::svd::{}, {index_parameter}value: {}) {{\n    crate::svd::field_replace_modify::{}(registers, {index_argument}{value});\n}}\n\n",
                     operation.name,
                     operation.name,
                     type_binding_name(&operation.peripheral),

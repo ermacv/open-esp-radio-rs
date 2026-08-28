@@ -651,19 +651,24 @@ impl PacApiPack {
                     domain_name,
                     &domain_names,
                 )?;
-                let Some(domain) = self
+                if let Some(domain) = self
                     .bounded_domains
                     .iter()
                     .find(|candidate| candidate.name == *domain_name)
-                else {
+                {
+                    if domain.min != 0 {
+                        return Err(Error::message(format!(
+                            "PAC API field-or-modify {:?} bounded domain must start at zero",
+                            operation.name
+                        )));
+                    }
+                } else if !self
+                    .enum_domains
+                    .iter()
+                    .any(|candidate| candidate.name == *domain_name)
+                {
                     return Err(Error::message(format!(
-                        "PAC API field-or-modify {:?} requires a bounded domain",
-                        operation.name
-                    )));
-                };
-                if domain.min != 0 {
-                    return Err(Error::message(format!(
-                        "PAC API field-or-modify {:?} domain must start at zero",
+                        "PAC API field-or-modify {:?} requires a bounded or enum domain",
                         operation.name
                     )));
                 }
@@ -679,19 +684,24 @@ impl PacApiPack {
                     domain_name,
                     &domain_names,
                 )?;
-                let Some(domain) = self
+                if let Some(domain) = self
                     .bounded_domains
                     .iter()
                     .find(|candidate| candidate.name == *domain_name)
-                else {
+                {
+                    if domain.min != 0 {
+                        return Err(Error::message(format!(
+                            "PAC API field-replace-modify {:?} bounded domain must start at zero",
+                            operation.name
+                        )));
+                    }
+                } else if !self
+                    .enum_domains
+                    .iter()
+                    .any(|candidate| candidate.name == *domain_name)
+                {
                     return Err(Error::message(format!(
-                        "PAC API field-replace-modify {:?} requires a bounded domain",
-                        operation.name
-                    )));
-                };
-                if domain.min != 0 {
-                    return Err(Error::message(format!(
-                        "PAC API field-replace-modify {:?} domain must start at zero",
+                        "PAC API field-replace-modify {:?} requires a bounded or enum domain",
                         operation.name
                     )));
                 }
@@ -1622,6 +1632,44 @@ mod tests {
         pack.field_replace_modifies[0].value = None;
         pack.bounded_domains[0].min = 1;
         assert!(pack.validate().is_err());
+    }
+
+    #[test]
+    fn field_replace_modify_accepts_a_closed_enum_domain() {
+        let mut pack = empty_pack();
+        pack.enum_domains.push(EnumDomain {
+            name: "ReviewedMode".to_owned(),
+            description: "Only instruction-proven hardware modes.".to_owned(),
+            values: vec![
+                EnumValue {
+                    name: "ModeTwo".to_owned(),
+                    value: 2,
+                    description: "First reviewed mode.".to_owned(),
+                    sources: vec!["REVIEW".to_owned()],
+                },
+                EnumValue {
+                    name: "ModeFive".to_owned(),
+                    value: 5,
+                    description: "Second reviewed mode.".to_owned(),
+                    sources: vec!["REVIEW".to_owned()],
+                },
+            ],
+        });
+        pack.field_replace_modifies.push(FieldReplaceModify {
+            name: "publish_mode".to_owned(),
+            peripheral: "RADIO".to_owned(),
+            register: "CONTROL".to_owned(),
+            fields: vec![FieldOrProjection {
+                field: "MODE".to_owned(),
+                source_bit_offset: 0,
+            }],
+            domain: Some("ReviewedMode".to_owned()),
+            value: None,
+            exposure: PacApiExposure::Facade,
+            sources: vec!["REVIEW".to_owned()],
+        });
+
+        assert!(pack.validate().is_ok());
     }
 
     #[test]

@@ -5,7 +5,7 @@
 //! deliberately models the vendor input ABI as typed hardware inputs instead
 //! of copying its private structure layout or task/runtime machinery.
 
-use super::{BluetoothControllerSramAddress, BluetoothTaskRegisters, device_fence};
+use super::{BluetoothTaskRegisters, device_fence};
 
 /// First positional scaling input accepted by the complete HAL-config setter.
 ///
@@ -78,7 +78,6 @@ pub struct BluetoothControllerHalInitConfig {
     value_0: u8,
     value_1: u8,
     period: BluetoothHalInitPeriod,
-    scheduler_sram: BluetoothControllerSramAddress,
 }
 
 /// Exact integer scale between a raw latched controller-time delta and the
@@ -136,36 +135,29 @@ impl BluetoothControllerTimeScale {
 
 impl BluetoothControllerHalInitConfig {
     /// Construct one configuration from the complete setter's accepted input
-    /// domains and a validated controller-SRAM address.
+    /// domains.
     pub const fn new(
         scale: BluetoothHalInitScale,
         value_0: u8,
         value_1: u8,
         period: BluetoothHalInitPeriod,
-        scheduler_sram: BluetoothControllerSramAddress,
     ) -> Self {
         Self {
             scale,
             value_0,
             value_1,
             period,
-            scheduler_sram,
         }
     }
 
     /// Exact input profile constructed by the pinned ESP32-S31 controller
-    /// task: bytes 16, 11 and 33, image 2000 and SRAM base `0x2f00_0000`.
+    /// task: bytes 16, 11 and 33 plus period image 2000.
     pub const fn reviewed_standalone() -> Self {
-        let scheduler_sram = match BluetoothControllerSramAddress::new(0x2f00_0000) {
-            Ok(address) => address,
-            Err(_) => panic!("reviewed controller SRAM base must be representable"),
-        };
         Self::new(
             BluetoothHalInitScale::Sixteen,
             11,
             33,
             BluetoothHalInitPeriod::Image2000,
-            scheduler_sram,
         )
     }
 
@@ -199,11 +191,6 @@ impl BluetoothControllerHalInitConfig {
         self.period.transform_byte(self.value_1)
     }
 
-    /// Ten-bit scheduler-prefix field published by the HAL body.
-    pub const fn scheduler_sram_prefix(self) -> u16 {
-        (self.scheduler_sram.address() >> 22) as u16
-    }
-
     /// Original finite scale image, useful for evidence and diagnostics.
     pub const fn scale_image(self) -> u8 {
         self.scale.image()
@@ -223,7 +210,7 @@ enum HalInitRegister {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum HalInitOperation {
-    PublishSchedulerSramPrefix(u16),
+    PublishSchedulerSramPrefix,
     PublishSleepTimerShift(u8),
     PublishValue0(u8),
     PublishValue1(u8),
@@ -237,12 +224,12 @@ enum HalInitOperation {
         config_24: bool,
     },
     ClearSchedulerConfig16To20,
-    PublishSchedulerConfig16To20(u8),
+    PublishSchedulerConfig16To20,
     EnableSchedulerControl,
     ClearLowHalf,
     FillLowHalf,
     ClearSchedulerByte1,
-    PublishSchedulerByte1(u8),
+    PublishSchedulerByte1,
     ClearSlotLaneUpper {
         register: HalInitRegister,
         lane: u8,
@@ -263,9 +250,7 @@ fn execute_hal_init(
     transaction: &mut impl HalInitTransaction,
     config: BluetoothControllerHalInitConfig,
 ) {
-    transaction.apply(HalInitOperation::PublishSchedulerSramPrefix(
-        config.scheduler_sram_prefix(),
-    ));
+    transaction.apply(HalInitOperation::PublishSchedulerSramPrefix);
     transaction.apply(HalInitOperation::PublishSleepTimerShift(
         config.sleep_timer_shift(),
     ));
@@ -285,12 +270,12 @@ fn execute_hal_init(
         config_24: matches!(config.scale, BluetoothHalInitScale::Eight),
     });
     transaction.apply(HalInitOperation::ClearSchedulerConfig16To20);
-    transaction.apply(HalInitOperation::PublishSchedulerConfig16To20(0x10));
+    transaction.apply(HalInitOperation::PublishSchedulerConfig16To20);
     transaction.apply(HalInitOperation::EnableSchedulerControl);
     transaction.apply(HalInitOperation::ClearLowHalf);
     transaction.apply(HalInitOperation::FillLowHalf);
     transaction.apply(HalInitOperation::ClearSchedulerByte1);
-    transaction.apply(HalInitOperation::PublishSchedulerByte1(0x20));
+    transaction.apply(HalInitOperation::PublishSchedulerByte1);
 
     for global_index in 0..16_u8 {
         let register = if global_index < 8 {
@@ -317,26 +302,30 @@ struct MmioHalInit<'a> {
 impl HalInitTransaction for MmioHalInit<'_> {
     fn apply(&mut self, operation: HalInitOperation) {
         match operation {
-            HalInitOperation::PublishSchedulerSramPrefix(prefix) => {
-                super::svd::zero_based_field_write::publish_bluetooth_hal_scheduler_sram_prefix(
+            HalInitOperation::PublishSchedulerSramPrefix => {
+                super::svd::fixed_register_image::publish_bluetooth_hal_scheduler_sram_prefix(
                     self.registers,
-                    prefix,
                 );
             }
             HalInitOperation::PublishSleepTimerShift(shift) => {
-                self.registers
-                    .sleep_timer_control()
-                    .modify(|_, writer| writer.config_low_3().set(shift));
+                let shift = match shift {
+                    2 => super::generated::BluetoothHalSleepTimerShift::Two,
+                    3 => super::generated::BluetoothHalSleepTimerShift::Three,
+                    4 => super::generated::BluetoothHalSleepTimerShift::Four,
+                    5 => super::generated::BluetoothHalSleepTimerShift::Five,
+                    _ => unreachable!("HAL input domains produce only reviewed timer shifts"),
+                };
+                super::generated::publish_bluetooth_hal_sleep_timer_shift(self.registers, shift);
             }
             HalInitOperation::PublishValue0(value) => {
-                self.registers
-                    .hal_init_bytes()
-                    .modify(|_, writer| writer.value_0().set(value));
+                let value = super::generated::BluetoothHalInitByte::new(u32::from(value))
+                    .expect("one byte always fits the generated HAL-init domain");
+                super::generated::publish_bluetooth_hal_value_0(self.registers, value);
             }
             HalInitOperation::PublishValue1(value) => {
-                self.registers
-                    .hal_init_bytes()
-                    .modify(|_, writer| writer.value_1().set(value));
+                let value = super::generated::BluetoothHalInitByte::new(u32::from(value))
+                    .expect("one byte always fits the generated HAL-init domain");
+                super::generated::publish_bluetooth_hal_value_1(self.registers, value);
             }
             HalInitOperation::InitializeLatch => {
                 super::svd::zero_based_field_write::initialize_bluetooth_hal_latch(
@@ -351,99 +340,101 @@ impl HalInitTransaction for MmioHalInit<'_> {
                 );
             }
             HalInitOperation::EnableLatch => {
-                self.registers
-                    .hal_init_latch()
-                    .modify(|_, writer| writer.enable_31().set_bit());
+                super::svd::field_replace_modify::enable_bluetooth_hal_latch(self.registers);
             }
             HalInitOperation::ConfigureControl1High => {
-                self.registers
-                    .hal_init_control_1()
-                    .modify(|_, writer| writer.config_15().set_bit().config_18_19().set(3));
+                super::svd::field_replace_modify::configure_bluetooth_hal_control_1_high(
+                    self.registers,
+                );
             }
             HalInitOperation::ConfigureControl1Low => {
-                self.registers
-                    .hal_init_control_1()
-                    .modify(|_, writer| writer.config_3().set_bit().config_6_7().set(3));
+                super::svd::field_replace_modify::configure_bluetooth_hal_control_1_low(
+                    self.registers,
+                );
             }
             HalInitOperation::EnableControl0 => {
-                self.registers
-                    .hal_init_control_0()
-                    .modify(|_, writer| writer.enable_31().set_bit());
+                super::svd::field_replace_modify::enable_bluetooth_hal_control_0(self.registers);
             }
             HalInitOperation::ResetSleepTimerHigh { config_24 } => {
-                self.registers.sleep_timer_control().modify(|_, writer| {
-                    let writer = writer
-                        .init_clear_25_unknown()
-                        .clear_bit()
-                        .latch_request()
-                        .clear_bit()
-                        .init_clear_27_30_unknown()
-                        .set(0)
-                        .timer_arm()
-                        .clear_bit();
-                    if config_24 {
-                        writer.config_24().set_bit()
-                    } else {
-                        writer.config_24().clear_bit()
-                    }
-                });
+                if config_24 {
+                    super::svd::field_replace_modify::reset_bluetooth_hal_sleep_timer_high_for_scale_8(
+                        self.registers,
+                    );
+                } else {
+                    super::svd::field_replace_modify::reset_bluetooth_hal_sleep_timer_high_for_scale_16(
+                        self.registers,
+                    );
+                }
             }
             HalInitOperation::ClearSchedulerConfig16To20 => {
-                self.registers
-                    .hal_init_scheduler_control()
-                    .modify(|_, writer| writer.config_16_20().set(0));
+                super::svd::field_replace_modify::clear_bluetooth_hal_scheduler_config_16_20(
+                    self.registers,
+                );
             }
-            HalInitOperation::PublishSchedulerConfig16To20(value) => {
-                self.registers
-                    .hal_init_scheduler_control()
-                    .modify(|_, writer| writer.config_16_20().set(value));
+            HalInitOperation::PublishSchedulerConfig16To20 => {
+                super::svd::field_replace_modify::publish_bluetooth_hal_scheduler_config_16_20(
+                    self.registers,
+                );
             }
             HalInitOperation::EnableSchedulerControl => {
-                self.registers
-                    .hal_init_scheduler_control()
-                    .modify(|_, writer| writer.enable_31().set_bit());
+                super::svd::field_replace_modify::enable_bluetooth_hal_scheduler_control(
+                    self.registers,
+                );
             }
             HalInitOperation::ClearLowHalf => {
-                self.registers
-                    .hal_init_low_half()
-                    .modify(|_, writer| writer.config_low_16().set(0));
+                super::svd::field_replace_modify::clear_bluetooth_hal_low_half(self.registers);
             }
             HalInitOperation::FillLowHalf => {
-                self.registers
-                    .hal_init_low_half()
-                    .modify(|_, writer| writer.config_low_16().set(u16::MAX));
+                super::svd::field_replace_modify::fill_bluetooth_hal_low_half(self.registers);
             }
             HalInitOperation::ClearSchedulerByte1 => {
-                self.registers
-                    .hal_init_scheduler_control()
-                    .modify(|_, writer| writer.config_byte_1().set(0));
+                super::svd::field_replace_modify::clear_bluetooth_hal_scheduler_byte_1(
+                    self.registers,
+                );
             }
-            HalInitOperation::PublishSchedulerByte1(value) => {
-                self.registers
-                    .hal_init_scheduler_control()
-                    .modify(|_, writer| writer.config_byte_1().set(value));
+            HalInitOperation::PublishSchedulerByte1 => {
+                super::svd::field_replace_modify::publish_bluetooth_hal_scheduler_byte_1(
+                    self.registers,
+                );
             }
             HalInitOperation::ClearSlotLaneUpper { register, lane } => {
-                let slots = self.registers.hal_init_slot_map(match register {
+                let register_index = match register {
                     HalInitRegister::SlotMap0 => 0,
                     HalInitRegister::SlotMap1 => 1,
-                });
-                macro_rules! clear_lane_upper {
-                    ($index_high:ident, $clear_high:ident) => {{
-                        slots.modify(|_, writer| {
-                            writer.$index_high().clear_bit().$clear_high().clear_bit()
-                        });
-                    }};
-                }
+                };
                 match lane {
-                    0 => clear_lane_upper!(lane_0_index_high, lane_0_clear_high_unknown),
-                    1 => clear_lane_upper!(lane_1_index_high, lane_1_clear_high_unknown),
-                    2 => clear_lane_upper!(lane_2_index_high, lane_2_clear_high_unknown),
-                    3 => clear_lane_upper!(lane_3_index_high, lane_3_clear_high_unknown),
-                    4 => clear_lane_upper!(lane_4_index_high, lane_4_clear_high_unknown),
-                    5 => clear_lane_upper!(lane_5_index_high, lane_5_clear_high_unknown),
-                    6 => clear_lane_upper!(lane_6_index_high, lane_6_clear_high_unknown),
-                    7 => clear_lane_upper!(lane_7_index_high, lane_7_clear_high_unknown),
+                    0 => super::svd::field_replace_modify::clear_bluetooth_hal_slot_lane_0_upper(
+                        self.registers,
+                        register_index,
+                    ),
+                    1 => super::svd::field_replace_modify::clear_bluetooth_hal_slot_lane_1_upper(
+                        self.registers,
+                        register_index,
+                    ),
+                    2 => super::svd::field_replace_modify::clear_bluetooth_hal_slot_lane_2_upper(
+                        self.registers,
+                        register_index,
+                    ),
+                    3 => super::svd::field_replace_modify::clear_bluetooth_hal_slot_lane_3_upper(
+                        self.registers,
+                        register_index,
+                    ),
+                    4 => super::svd::field_replace_modify::clear_bluetooth_hal_slot_lane_4_upper(
+                        self.registers,
+                        register_index,
+                    ),
+                    5 => super::svd::field_replace_modify::clear_bluetooth_hal_slot_lane_5_upper(
+                        self.registers,
+                        register_index,
+                    ),
+                    6 => super::svd::field_replace_modify::clear_bluetooth_hal_slot_lane_6_upper(
+                        self.registers,
+                        register_index,
+                    ),
+                    7 => super::svd::field_replace_modify::clear_bluetooth_hal_slot_lane_7_upper(
+                        self.registers,
+                        register_index,
+                    ),
                     _ => unreachable!("HAL-init slot lane is bounded to eight entries"),
                 };
             }
@@ -453,36 +444,59 @@ impl HalInitTransaction for MmioHalInit<'_> {
                 set_retained_index_low,
                 index_high,
             } => {
-                let slots = self.registers.hal_init_slot_map(match register {
+                let register_index = match register {
                     HalInitRegister::SlotMap0 => 0,
                     HalInitRegister::SlotMap1 => 1,
-                });
-                macro_rules! publish_lane {
-                    ($enable:ident, $index_low:ident, $index_high:ident) => {{
-                        slots.modify(|_, writer| {
-                            let writer = writer.$enable().set_bit();
-                            let writer = if set_retained_index_low {
-                                writer.$index_low().set_bit()
-                            } else {
-                                writer
-                            };
-                            if index_high == 0 {
-                                writer.$index_high().clear_bit()
-                            } else {
-                                writer.$index_high().set_bit()
-                            }
-                        });
-                    }};
-                }
-                match lane {
-                    0 => publish_lane!(lane_0_enable, lane_0_retained_index_low, lane_0_index_high),
-                    1 => publish_lane!(lane_1_enable, lane_1_retained_index_low, lane_1_index_high),
-                    2 => publish_lane!(lane_2_enable, lane_2_retained_index_low, lane_2_index_high),
-                    3 => publish_lane!(lane_3_enable, lane_3_retained_index_low, lane_3_index_high),
-                    4 => publish_lane!(lane_4_enable, lane_4_retained_index_low, lane_4_index_high),
-                    5 => publish_lane!(lane_5_enable, lane_5_retained_index_low, lane_5_index_high),
-                    6 => publish_lane!(lane_6_enable, lane_6_retained_index_low, lane_6_index_high),
-                    7 => publish_lane!(lane_7_enable, lane_7_retained_index_low, lane_7_index_high),
+                };
+                match (lane, set_retained_index_low, index_high) {
+                    (0, false, 0) => {
+                        super::svd::field_replace_modify::publish_bluetooth_hal_slot_lane_0(
+                            self.registers,
+                            register_index,
+                        )
+                    }
+                    (1, true, 0) => {
+                        super::svd::field_replace_modify::publish_bluetooth_hal_slot_lane_1(
+                            self.registers,
+                            register_index,
+                        )
+                    }
+                    (2, false, 1) => {
+                        super::svd::field_replace_modify::publish_bluetooth_hal_slot_lane_2(
+                            self.registers,
+                            register_index,
+                        )
+                    }
+                    (3, true, 1) => {
+                        super::svd::field_replace_modify::publish_bluetooth_hal_slot_lane_3(
+                            self.registers,
+                            register_index,
+                        )
+                    }
+                    (4, false, 0) => {
+                        super::svd::field_replace_modify::publish_bluetooth_hal_slot_lane_4(
+                            self.registers,
+                            register_index,
+                        )
+                    }
+                    (5, true, 0) => {
+                        super::svd::field_replace_modify::publish_bluetooth_hal_slot_lane_5(
+                            self.registers,
+                            register_index,
+                        )
+                    }
+                    (6, false, 1) => {
+                        super::svd::field_replace_modify::publish_bluetooth_hal_slot_lane_6(
+                            self.registers,
+                            register_index,
+                        )
+                    }
+                    (7, true, 1) => {
+                        super::svd::field_replace_modify::publish_bluetooth_hal_slot_lane_7(
+                            self.registers,
+                            register_index,
+                        )
+                    }
                     _ => unreachable!("HAL-init slot lane is bounded to eight entries"),
                 };
             }
@@ -556,7 +570,6 @@ mod tests {
 
     #[test]
     fn every_accepted_time_scale_retains_inverse_remainder() {
-        let address = BluetoothControllerHalInitConfig::reviewed_standalone().scheduler_sram;
         let cases = [
             (
                 BluetoothHalInitScale::Eight,
@@ -581,7 +594,7 @@ mod tests {
         ];
 
         for (scale, period, shift_image) in cases {
-            let time_scale = BluetoothControllerHalInitConfig::new(scale, 11, 33, period, address)
+            let time_scale = BluetoothControllerHalInitConfig::new(scale, 11, 33, period)
                 .controller_time_scale();
             let scheduler_delta = 0x1234_567b;
             let projection = time_scale.raw_delta_from_scheduler(scheduler_delta);
@@ -608,7 +621,7 @@ mod tests {
         assert_eq!(
             recorder.operations[..18],
             [
-                HalInitOperation::PublishSchedulerSramPrefix(0xbc),
+                HalInitOperation::PublishSchedulerSramPrefix,
                 HalInitOperation::PublishSleepTimerShift(3),
                 HalInitOperation::PublishValue0(22),
                 HalInitOperation::PublishValue1(66),
@@ -620,12 +633,12 @@ mod tests {
                 HalInitOperation::EnableControl0,
                 HalInitOperation::ResetSleepTimerHigh { config_24: false },
                 HalInitOperation::ClearSchedulerConfig16To20,
-                HalInitOperation::PublishSchedulerConfig16To20(0x10),
+                HalInitOperation::PublishSchedulerConfig16To20,
                 HalInitOperation::EnableSchedulerControl,
                 HalInitOperation::ClearLowHalf,
                 HalInitOperation::FillLowHalf,
                 HalInitOperation::ClearSchedulerByte1,
-                HalInitOperation::PublishSchedulerByte1(0x20),
+                HalInitOperation::PublishSchedulerByte1,
             ]
         );
 

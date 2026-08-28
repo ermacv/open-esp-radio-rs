@@ -61,19 +61,20 @@ async fn monitor_task(
     platform: EspHalRadioPeripheral,
     trng: Trng,
 ) {
-    let efuse_registers = esp_hal::peripherals::EFUSE::regs();
     let mut station = [0; 6];
     station.copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::Station).as_bytes());
     let mut access_point = [0; 6];
     access_point
         .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::AccessPoint).as_bytes());
+    let mut calibration_base_mac_address = [0; 6];
+    calibration_base_mac_address.copy_from_slice(efuse::base_mac_address().as_bytes());
     let config = Esp32s31RadioConfig::new(
         WifiMacAddress::new(station).expect("station MAC must be unicast"),
         WifiMacAddress::new(access_point).expect("AP MAC must be unicast"),
         PhyCalibrationIdentity {
             rf_cal_version: phy_get_rf_cal_version(),
-            mac_sys0: efuse_registers.rd_mac_sys0().read().bits(),
-            mac_sys1: efuse_registers.rd_mac_sys1().read().bits(),
+            base_mac_address: calibration_base_mac_address,
+            mac_extension: efuse::read_field_le::<u16>(efuse::MAC_EXT),
         },
         WifiChannel::mhz20(1).expect("initial channel is valid"),
     );

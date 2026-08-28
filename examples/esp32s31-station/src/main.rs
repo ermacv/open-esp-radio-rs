@@ -81,7 +81,6 @@ fn main() -> ! {
 
 #[embassy_executor::task]
 async fn station_task(_spawner: Spawner, radio: EspHalRadioPeripheral, trng: Trng) {
-    let efuse_registers = esp_hal::peripherals::EFUSE::regs();
     let mut station_address = [0; 6];
     station_address
         .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::Station).as_bytes());
@@ -92,6 +91,8 @@ async fn station_task(_spawner: Spawner, radio: EspHalRadioPeripheral, trng: Trn
         .expect("ESP32-S31 eFuse must contain a unicast station address");
     let access_point_mac = WifiMacAddress::new(access_point_address)
         .expect("ESP32-S31 eFuse must contain a unicast access-point address");
+    let mut calibration_base_mac_address = [0; 6];
+    calibration_base_mac_address.copy_from_slice(efuse::base_mac_address().as_bytes());
     let ssid = WifiSsid::new(STA_SSID.as_bytes()).expect("station SSID must be valid");
     let pmk = Pmk::derive(STA_PASSPHRASE.as_bytes(), ssid.as_bytes())
         .expect("station credentials must be valid");
@@ -111,8 +112,8 @@ async fn station_task(_spawner: Spawner, radio: EspHalRadioPeripheral, trng: Trn
         access_point_mac,
         PhyCalibrationIdentity {
             rf_cal_version: phy_get_rf_cal_version(),
-            mac_sys0: efuse_registers.rd_mac_sys0().read().bits(),
-            mac_sys1: efuse_registers.rd_mac_sys1().read().bits(),
+            base_mac_address: calibration_base_mac_address,
+            mac_extension: efuse::read_field_le::<u16>(efuse::MAC_EXT),
         },
         WifiChannel::mhz20(1).expect("initial channel is valid"),
     );

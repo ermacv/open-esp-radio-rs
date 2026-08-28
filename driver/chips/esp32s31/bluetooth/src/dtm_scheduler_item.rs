@@ -9,13 +9,17 @@
 
 pub use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmSchedulerItemReviewedWords;
 
+use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmLinkStateReviewedWords;
+
 use crate::{
     BluetoothControllerSchedulerEpoch, BluetoothDtmChannel, BluetoothDtmPhy, BluetoothDtmRole,
     BluetoothDtmTxEventWindow,
 };
 
 const FREQUENCY_MASK: u32 = 0x0000_7f00;
+const LINK_STATE_ROUNDED_POWER_MASK: u32 = 0x0f80_0000;
 const RATE_LANES_MASK: u32 = 0xf000_0000;
+const SCHEDULER_ITEM_ROUNDED_POWER_REGION_MASK: u32 = 0x0ff0_0000;
 
 /// Why one DTM scheduler-item event cannot be represented exactly.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -111,18 +115,36 @@ impl BluetoothDtmSchedulerItemEvent {
     }
 }
 
+/// Apply the common scheduler overlap-insertion power projection.
+///
+/// Complete current `r_sym_ble_iHRqSCIgChmgSHj5W8W3` and named same-chip
+/// `r_sched_txn_rmOverlapInsert` copy the link-state five-bit rounded-power
+/// image into scheduler-item bits 24:20 and clear the adjacent bits 27:25.
+/// Both arguments remain CPU-owned controller-SRAM descriptor images; this
+/// transform performs no MMIO and grants no publication ownership.
+pub(crate) const fn apply_overlap_insertion_power(
+    mut scheduler_item: BluetoothDtmSchedulerItemReviewedWords,
+    link_state: BluetoothDtmLinkStateReviewedWords,
+) -> BluetoothDtmSchedulerItemReviewedWords {
+    let rounded_power = (link_state.word_04 & LINK_STATE_ROUNDED_POWER_MASK) >> 23;
+    scheduler_item.word_14 = (scheduler_item.word_14 & !SCHEDULER_ITEM_ROUNDED_POWER_REGION_MASK)
+        | (rounded_power << 20);
+    scheduler_item
+}
+
 #[cfg(test)]
 mod tests {
     use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
 
     use super::{
         BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerItemEventError,
-        BluetoothDtmSchedulerItemReviewedWords,
+        BluetoothDtmSchedulerItemReviewedWords, apply_overlap_insertion_power,
     };
     use crate::{
         BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample, BluetoothDtmChannel,
         BluetoothDtmPhy, BluetoothDtmRole,
     };
+    use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmLinkStateReviewedWords;
 
     const CURRENT: BluetoothDtmSchedulerItemReviewedWords =
         BluetoothDtmSchedulerItemReviewedWords {
@@ -200,6 +222,24 @@ mod tests {
             ),
             Err(BluetoothDtmSchedulerItemEventError::LeCodedS2RequiresTransmitter)
         );
+    }
+
+    #[test]
+    fn overlap_insertion_projects_link_state_power_into_scheduler_item() {
+        let link_state = BluetoothDtmLinkStateReviewedWords {
+            word_00: 0,
+            word_04: 0x0a80_0000,
+            word_08: 0,
+            word_14: 0,
+            word_2c: 0,
+            word_34: 0,
+            word_38: 0,
+            word_50: 0,
+        };
+        let projected = apply_overlap_insertion_power(CURRENT, link_state);
+
+        assert_eq!(projected.word_14, 0x0153_4567);
+        assert_eq!(projected.word_18, CURRENT.word_18);
     }
 
     #[test]

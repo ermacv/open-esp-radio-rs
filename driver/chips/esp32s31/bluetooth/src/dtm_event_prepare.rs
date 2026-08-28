@@ -20,7 +20,7 @@ use open_esp_radio_esp32s31_hal::{
 
 use crate::{
     BluetoothControllerSchedulerEpoch, BluetoothDtmLinkStateReset, BluetoothDtmRole,
-    BluetoothDtmSchedulerItemEvent,
+    BluetoothDtmSchedulerItemEvent, dtm_scheduler_item::apply_overlap_insertion_power,
 };
 
 /// Why two validated DTM transforms cannot describe one event plan.
@@ -90,6 +90,7 @@ impl BluetoothDtmReviewedEventWordsPlan {
             let scheduler_item = self
                 .scheduler_item
                 .apply(current.scheduler_item(), self.epoch);
+            let scheduler_item = apply_overlap_insertion_power(scheduler_item, link_state);
             Ok::<_, Infallible>(BluetoothDtmPositionalEventWords::new(
                 link_state,
                 scheduler_item,
@@ -296,6 +297,7 @@ mod tests {
         assert_eq!(words.link_state().word_08, 0x0ff1_c04b);
         assert_eq!(words.scheduler_item().word_08 & 0x000f_ffff, 0x1c000);
         assert_eq!(words.scheduler_item().word_00 & 0x0050_0000, 0x0010_0000);
+        assert_eq!(words.scheduler_item().word_14, 0x5150_0000);
         assert_eq!(words.scheduler_item().word_2c, 0);
 
         let mut owner = prepared.cancel();
@@ -327,6 +329,7 @@ mod tests {
         assert_eq!(words.link_state().word_08 & 0x000f_ffff, 0x08b);
         assert_eq!(words.scheduler_item().word_08 & 0x000f_ffff, 0x040);
         assert_eq!(words.scheduler_item().word_00 & 0x0050_0000, 0x0040_0000);
+        assert_eq!(words.scheduler_item().word_14, 0xf000_0000);
         assert_eq!(words.scheduler_item().word_2c, 0x000f_0001);
         assert_eq!(words.scheduler_item().word_44, 103);
         assert_eq!(words.scheduler_item().word_48, 105);

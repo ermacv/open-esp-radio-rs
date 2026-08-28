@@ -88,7 +88,12 @@ It reproduces the role byte at `+0x02`, bit-31 publication prerequisite at
 `+0x04`, four-bit clear at `+0x08`, repeated two-bit rate image at `+0x14`,
 seven-bit frequency plus low-nibble image at `+0x18`, RX-only complete
 `0x000f0001` at `+0x2c`, two epoch-projected raw-time words at `+0x44/+0x48`
-and the low-byte clear at `+0x4c`. The timebase model now retains both exact
+and the low-byte clear at `+0x4c`. Before common scheduler bookkeeping,
+complete current `r_sym_ble_iHRqSCIgChmgSHj5W8W3` and named same-chip
+`r_sched_txn_rmOverlapInsert` copy the link-state five-bit rounded-power image
+into scheduler-item bits 24:20 while clearing bits 27:25; the composed Rust
+plan now applies this cross-object transform to the same bound CPU-owned graph.
+The timebase model now retains both exact
 wrapping conversion directions; the inverse truncates discarded scheduler
 bits toward its anchor, as the complete helper does.
 

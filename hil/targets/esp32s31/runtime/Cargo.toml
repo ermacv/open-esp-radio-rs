@@ -61,6 +61,12 @@ core0-rx-cycle-telemetry = [
     "task-poll-telemetry",
     "open-esp-radio-esp32s31-embassy-wifi/task-poll-telemetry",
 ]
+# Production-like Core0 accounting: no driver observers and no per-frame
+# instrumentation, only radio/runner/DMA/protocol batch samples.
+core0-rx-coarse-telemetry = [
+    "task-residence-telemetry",
+    "open-esp-radio-esp32s31-embassy-wifi/core0-rx-coarse-telemetry",
+]
 # Diagnostic overlay proving each UDP RX delivery frontier from software
 # reorder output through network admission and application consumption.
 rx-delivery-telemetry = ["driver-observation"]

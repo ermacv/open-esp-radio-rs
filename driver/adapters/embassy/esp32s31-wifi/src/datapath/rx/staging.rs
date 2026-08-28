@@ -74,6 +74,20 @@ impl<'queue, 'pool, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, cons
     pub fn free_capacity(&self) -> usize {
         DEPTH.saturating_sub(self.len())
     }
+
+    /// Reacquire the only protocol consumer after a drained lifecycle epoch.
+    ///
+    /// Physical DMA deliberately retains this sender across station
+    /// reconnect. Reconnect must therefore resume the paired consumer instead
+    /// of splitting the static queue again and manufacturing a second sender.
+    pub fn resume_receiver(
+        &self,
+    ) -> Esp32s31StagedRxReceiver<'queue, 'pool, M, DEPTH, CAPACITY, SLOTS> {
+        Esp32s31StagedRxReceiver {
+            inner: self.inner.resume_consumer(),
+            mutex: PhantomData,
+        }
+    }
 }
 
 /// Single protocol consumer endpoint paired with [`Esp32s31StagedRxSender`].

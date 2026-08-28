@@ -1754,3 +1754,241 @@ in mean DMA batch, unchanged RX-before-TX/stop/control ordering, zero credit or
 hardware exhaustion, and no throughput regression. If a runtime-selectable
 small IRAM copy of that fast path lowers CPI after the semantic win is proven,
 cache placement becomes causal evidence rather than layout speculation.
+
+## 2026-08-28: bounded scheduler continuation rejected
+
+The candidate above was implemented only as a runtime selector in the existing
+`diagnostic-core0-rx-cycles` ELF and measured in suite
+`1787888709835-0033b872` (runtime CRC32 `08d1d344`). Both scenarios used the
+same image, split radio/network placement, software checksums, synchronous RX
+admission, enabled L1 counters and the same HT40/MCS7 workload. The selector
+was the only behavioral input difference.
+
+The continuation variant passed at 105.359 Mbit/s and the complete-scheduler
+control passed at 104.849 Mbit/s. Both are at the known air ceiling, so that
+0.510 Mbit/s difference is not treated as proof of a performance gain. Both
+retained BA16, had no buffered/missing/stale reorder traffic, no pool or queue
+capacity blocks, no hardware `BUFFER_FULL`/`FIFO_OVERFLOW`, and no AP retries
+or failures.
+
+The reduced branch was exercised 14,473 times. It did remove generic
+scheduler work: poll-to-runner cost fell from 21,916 cycles / 2,358 retired
+instructions to 20,294 cycles / 2,188 instructions per runner call, and TX
+checks fell from 2,152 to 475 cycles per service. However, it re-entered RX
+before the next physical frontier had coalesced as widely. Mean DMA batch fell
+from 6.072 to 5.904 MPDUs per service, and service calls increased from 17,711
+to 18,329 for comparable traffic.
+
+After normalization, total radio work was effectively identical: 33,704.2
+cycles per admitted frame in the control and 33,702.2 in the continuation.
+Runner work slightly increased from 27,963.8 to 28,133.3 cycles per frame;
+DMA work increased from 7,289.5 to 7,345.2 cycles per frame. Measured Core0
+radio-poll residence was 93.93% and 94.38% respectively. Thus the local branch
+saving was exchanged for smaller batches and more runner entries; it did not
+reduce total Core0 work.
+
+The experiment fails its predeclared acceptance condition (no decrease in mean
+DMA batch) and is not a production architecture change. The mandatory yield
+is serving a useful coalescing function, not merely scheduler fairness. The
+next analysis must separate production Core0 residence from the substantial
+intrusive observer cost, then optimize per-frame or fixed-per-batch work using
+that lower-overhead baseline. Making RX re-entry earlier is now a measured
+non-solution.
+
+## 2026-08-28: observer-free Core0 load and air-delivery closure
+
+The production-like residence sweep was repeated on the exact current source
+with only the top-level task timer enabled. Runs at 30, 60, 90 and saturated
+140 Mbit/s offered load delivered 30.004, 60.003, 90.004 and 106.806 Mbit/s.
+The corresponding radio-task residence was 50.070%, 75.423%, 91.675% and
+93.205%. Thus Core0 is not approximately 50% occupied at the RX ceiling; it is
+above 90%. The non-linearity is real: normalized radio work falls from about
+62.9 thousand cycles per frame at 30 Mbit/s to 32.9 thousand at saturation as
+poll and batch costs amortize. A single fixed cycles/frame extrapolation from
+light load is invalid.
+
+Independent air capture also closes the apparent receive-loss question. In
+run `1787890236502-0033fa69` (runtime CRC32 `03ab814c`, 106.217 Mbit/s), the
+laptop monitor decoded 9,080 full and five partial BlockAck responses covering
+144,875 unique acknowledged MPDUs. The target recorded approximately 144,873
+post-reorder frames and 144,856 UDP datagrams. Later coarse runs repeat the
+same relationship. The target therefore loses essentially none of the MPDUs
+which the station successfully acknowledges. The host-to-target datagram gap
+is upstream of the radio: OpenWrt AQM/queueing and packets not transmitted by
+the end of the measurement interval. Zero target DMA error counters are
+consistent with this evidence, but are not the basis of the conclusion.
+
+The air observer reports almost exclusively full BA16 responses. BA16 is the
+current negotiated production window. Raising it mechanically to BA32 is not
+a valid next experiment: ring64 with retained capacity 32 deliberately keeps
+at least 32 physical descriptor credits, while BA32 would allow one aggregate
+to consume that complete reserve. Earlier BA32 evidence exposed executor
+latency as `BUFFER_FULL`. The current BA16 setting is therefore an ownership
+invariant, not an accidental rate-control limitation.
+
+## 2026-08-28: coarse production-path cycle profile
+
+A new `diagnostic-core0-rx-coarse` image was added to remove driver observers,
+per-frame phase counters and L1 event collection from the profile. It samples
+only the radio future poll, one runner call, one DMA batch and one protocol
+batch, pairing `mcycle` with `minstret`. The shipping feature graph remains
+unchanged.
+
+Run `1787891588059-00344fe3`, runtime CRC32 `9f949382`, delivered 106.340
+Mbit/s. The independent observer saw 6,808 full and four partial BlockAcks
+covering 108,982 unique MPDUs; the target delivered 108,961 UDP datagrams. The
+radio task occupied 11,123,451 of 12,066,184 microseconds (92.185%). Coarse
+counter totals were:
+
+| Region | Cycles | Retired instructions | Per DMA MPDU |
+| --- | ---: | ---: | ---: |
+| complete radio poll | 3,530,356,010 | 721,577,140 | 32,350 cycles |
+| DMA batches | 1,069,718,654 | 259,418,123 | 9,802 cycles |
+| protocol batches | 1,027,875,024 | 281,026,393 | 9,419 cycles |
+| poll entry to runner | 807,464,001 | 105,900,150 | 7,399 cycles |
+| runner completion to poll exit | 390,905,346 | 37,755,912 | 3,582 cycles |
+
+There were 52,763 DMA calls for 109,127 completed units: 2.068 MPDUs per DMA
+call. The AP simultaneously supplied near-full 16-MPDU aggregates. This
+establishes a scheduling granularity mismatch, but does not by itself prove
+that fewer calls reduce total work. At the measured 32.35 thousand cycles per
+MPDU, 115 Mbit/s would consume approximately 99% of one 320 MHz Core0 if
+batching and per-frame costs stayed unchanged. This is an extrapolation, not a
+measured 115 Mbit/s operating point.
+
+## 2026-08-28: same-turn frontier chaining rejected
+
+The granularity hypothesis was tested rather than promoted to an architecture
+change. A runtime-only selector in one coarse diagnostic ELF re-probed DMA
+after each productive protocol frontier while retaining the existing total
+32-frame limit and the same outer cooperative yield. Suite
+`1787892105095-00345f32`, runtime CRC32 `a1d01186`, compared this with the
+single-frontier control. Both paths delivered virtually every independently
+BlockAcked MPDU: 108,908 of 108,930 in the chained run and 110,662 of 110,688
+in the control. Throughput was 106.380 and 108.048 Mbit/s respectively; the AP
+put different amounts of traffic on air, so that difference is not attributed
+to the target implementation.
+
+Normalized Core0 evidence is decisive:
+
+| Metric | Single frontier | Chained | Change |
+| --- | ---: | ---: | ---: |
+| DMA calls / MPDUs | 53,446 / 110,843 | 129,218 / 109,084 | +145.7% calls per MPDU |
+| MPDUs per DMA call | 2.074 | 0.844 | -59.3% |
+| complete radio cycles/MPDU | 32,535.96 | 32,527.85 | -0.025% |
+| DMA cycles/MPDU | 8,954.80 | 10,882.32 | +21.52% |
+| protocol cycles/MPDU | 9,759.63 | 10,351.57 | +6.07% |
+| exclusive runner cycles/MPDU | 1,970.13 | 2,161.50 | +9.71% |
+| outer entry+exit cycles/MPDU | 11,703.05 | 8,512.74 | -27.26% |
+
+Chaining did reduce the outer scheduler boundary, but the terminal probes were
+usually empty and transferred more cost into DMA and protocol execution. The
+total changed by only -0.025%, far below a meaningful architectural gain. The
+experimental selector and scenario were removed. Along with the earlier
+post-yield continuation result, this proves that both earlier and immediate
+re-entry exchange scheduler cost for worse DMA batching; neither is a current
+solution.
+
+The current architecture remains justified: Core0 owns DMA/MAC/CCMP/BA,
+Core1 owns IP/UDP/sockets, ring64 and retained32 bound cross-core backpressure,
+and the affine SPSC removes a measured queue abstraction cost. The next useful
+question is why a full BA16 air aggregate becomes only about two completed
+units at each frozen DMA frontier. That requires identifying the exact MAC/DMA
+interrupt or completion edge which wakes the owner. Software spin/re-probe,
+larger BA, SRAM placement and another ownership rewrite are not justified by
+the present evidence.
+
+## 2026-08-28: missing STA RX source moderation
+
+The next audit found a concrete lifecycle asymmetry. The interrupt runtime is
+constructed with an RX-delivery mask/unmask capability and the bottom half
+calls `unmask_rx_after_drain()`, but only the AP epoch enabled source
+moderation. The connected STA epoch left it disabled. Existing intrusive runs
+had already shown approximately one `RX_SUCCESS` publication per received
+MPDU; the zero hardware error counters did not measure this interrupt load.
+
+The behavior was tested twice with a runtime-only selector in one coarse ELF,
+runtime CRC32 `51bacda3`. The second suite, `1787893012066-0034b6f7`, had
+nearly identical air supply: 110,607 unique BlockAcked MPDUs in the control and
+110,700 with moderation, with 110,575 and 110,677 target UDP datagrams. The
+first suite was `1787892772189-00349f6f`; it produced the same normalized CPU
+result.
+
+| Metric | Unmoderated | Moderated | Change |
+| --- | ---: | ---: | ---: |
+| real RX IRQ posts/MPDU | 1.0000 | 0.0168 | -98.32% |
+| retired instructions/MPDU | 6,605.89 | 6,282.30 | -4.90% |
+| radio cycles/MPDU | 32,453.89 | 32,528.46 | +0.23% |
+| MPDUs/DMA call | 2.073 | 1.987 | -4.15% |
+| delivered throughput | 107.913 Mbit/s | 108.070 Mbit/s | air-limited tie |
+
+The first suite measured -98.35% IRQ posts, -4.78% instructions and +0.48%
+cycles per MPDU. Thus the direction is reproducible: source moderation removes
+almost all hard-ISR publications and about 320 retired instructions per MPDU,
+but does not lower the current radio cycles/MPDU or raise throughput. It fixes
+a real STA lifecycle/CPU-instruction defect; it is not the RX ceiling fix.
+
+The moderated owner still made 55,791 DMA calls for 110,844 MPDUs while only
+1,863 hardware RX publications occurred. Therefore the approximately
+two-MPDU service frontier is not driven by an interrupt storm. Almost all
+subsequent runner calls are the durable software `ProbePending` handoff after
+the initial source-masked interrupt. This is the new localization: the ring
+owner polls hardware completion across cooperative yields while a PPDU is
+still arriving. Immediate same-turn polling was already measured as too early;
+source masking alone does not change the physical completion cadence.
+
+STA source moderation is promoted to the normal connected-epoch lifecycle,
+matching the existing AP rule: enable before route activation, unwind it on an
+activation failure, and disable it only after successful route quiescence. The
+same-image selector is removed. The remaining ceiling work must address the
+cost of DMA/protocol processing or use a qualified later hardware/coalescing
+edge; it must not claim that removing interrupts has already freed Core0
+cycles.
+
+## 2026-08-28: reconnect exposed retained-producer SPSC lifecycle defect
+
+The first reconnect qualification after the SPSC conversion failed before its
+second connected epoch. Run `1787893614483-0034d064`, runtime CRC32
+`8a5b64f4`, panicked in `AffineSpscQueue::split()` with one endpoint still
+active. UART evidence showed that the first connected epoch had stopped and
+quiesced normally. The failure was therefore not an interrupt-moderation
+failure and not a radio-performance result.
+
+The owner graph audit identified the exact mismatch. Connected RX deliberately
+retains its physical DMA producer inside `Esp32s31StoppedRx` across station
+reassociation. The old protocol consumer is drained and dropped. The
+supervisor nevertheless called `STAGED_RX_QUEUE.split()` again, which requests
+a new producer and consumer while the retained producer is still the unique
+active publisher. The earlier endpoint count could reject this but could not
+express the valid state "producer active, consumer absent."
+
+The queue now tracks producer and consumer capabilities with distinct bits.
+`split()` still succeeds only from the fully unowned state. A retained sender
+may reacquire exactly one consumer only when the queue is empty and the active
+state is exactly producer-only. The typed receiver capability is exposed
+through the standalone RX publisher; reconnect never resets cursors and never
+manufactures a second producer. The paired STA+AP cutover explicitly drops the
+standalone consumer before replacing the drained standalone publisher with the
+paired publisher.
+
+Host tests cover duplicate split rejection, cursor/FIFO behavior, one consumer
+resume beside a persistent producer, duplicate-resume rejection, and complete
+queue reuse after both endpoints end. The adapter suite passed 242 tests.
+
+The first complete hardware confirmation was run `1787894212719-0034e500`,
+runtime CRC32 `cba9331b`: all 10 cold boots and all 30 reconnect cycles passed.
+After rebasing over the next seven PAC/TX mainline commits, the final tree was
+qualified again rather than reusing evidence from the earlier ELF. Run
+`1787895070553-003564f1`, runtime CRC32 `1d5c313b`, again passed all 10 cold
+boots and all 30 reconnect cycles. CPU0 and CPU1 free stack remained 25,216 and
+12,012 bytes respectively at both the initial-connected and every
+reconnect-complete boundary.
+
+The final rebased observer-free performance gate is run
+`1787895345267-00359a58`, runtime CRC32 `0b041fe7`. It passed at 108.499 Mbit/s
+with placement, stack, source-graph and serialized-log audits all passing. The
+pre-rebase control `1787894496776-0034f3fd` had passed at 108.291 Mbit/s. This
+establishes that neither the lifecycle correction nor its mainline rebase
+introduced a production-layout throughput regression. The small difference is
+not claimed as a throughput improvement: both values remain inside the already
+observed air-supply variation around the HT40 LGI ceiling.

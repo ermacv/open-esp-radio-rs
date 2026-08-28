@@ -12,6 +12,10 @@ use core::{
     sync::atomic::{AtomicU8, AtomicUsize, Ordering},
 };
 
+const PRODUCER_ACTIVE: u8 = 1 << 0;
+const CONSUMER_ACTIVE: u8 = 1 << 1;
+const BOTH_ENDPOINTS_ACTIVE: u8 = PRODUCER_ACTIVE | CONSUMER_ACTIVE;
+
 #[repr(align(64))]
 struct CacheLine<T>(T);
 
@@ -69,8 +73,12 @@ impl<T, const DEPTH: usize> AffineSpscQueue<T, DEPTH> {
             "affine SPSC queue must be drained before a new owner epoch"
         );
         assert_eq!(
-            self.active_endpoints
-                .compare_exchange(0, 2, Ordering::AcqRel, Ordering::Acquire),
+            self.active_endpoints.compare_exchange(
+                0,
+                BOTH_ENDPOINTS_ACTIVE,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ),
             Ok(0),
             "affine SPSC queue already has an active producer or consumer"
         );
@@ -86,10 +94,39 @@ impl<T, const DEPTH: usize> AffineSpscQueue<T, DEPTH> {
         )
     }
 
-    fn release_endpoint(&self) {
-        let previous = self.active_endpoints.fetch_sub(1, Ordering::AcqRel);
+    /// Reacquire the sole consumer beside a producer retained across a
+    /// lifecycle boundary.
+    ///
+    /// The queue must be empty because the old consumer is the only owner
+    /// allowed to drain its epoch before it releases the endpoint. Keeping the
+    /// producer alive preserves the physical DMA owner's affine publication
+    /// capability without manufacturing a second producer.
+    fn resume_consumer(&self) -> AffineSpscReceiver<'_, T, DEPTH> {
+        assert_eq!(
+            self.len(),
+            0,
+            "affine SPSC queue must be drained before resuming its consumer"
+        );
+        assert_eq!(
+            self.active_endpoints.compare_exchange(
+                PRODUCER_ACTIVE,
+                BOTH_ENDPOINTS_ACTIVE,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ),
+            Ok(PRODUCER_ACTIVE),
+            "affine SPSC consumer can only resume beside its retained producer"
+        );
+        AffineSpscReceiver {
+            queue: self,
+            _not_sync: PhantomData,
+        }
+    }
+
+    fn release_endpoint(&self, endpoint: u8) {
+        let previous = self.active_endpoints.fetch_and(!endpoint, Ordering::AcqRel);
         assert!(
-            previous != 0,
+            previous & endpoint != 0,
             "affine SPSC endpoint released more than once"
         );
     }
@@ -193,7 +230,7 @@ pub struct AffineSpscSender<'queue, T, const DEPTH: usize> {
     _not_sync: PhantomData<Cell<()>>,
 }
 
-impl<T, const DEPTH: usize> AffineSpscSender<'_, T, DEPTH> {
+impl<'queue, T, const DEPTH: usize> AffineSpscSender<'queue, T, DEPTH> {
     #[inline]
     pub fn try_send(&self, value: T) -> Result<(), AffineSpscTrySendError<T>> {
         self.queue.try_send(value)
@@ -210,11 +247,17 @@ impl<T, const DEPTH: usize> AffineSpscSender<'_, T, DEPTH> {
     pub fn free_capacity(&self) -> usize {
         DEPTH.saturating_sub(self.len())
     }
+
+    /// Reacquire the sole consumer after the preceding consumer drained and
+    /// ended its lifecycle epoch while this producer remained active.
+    pub fn resume_consumer(&self) -> AffineSpscReceiver<'queue, T, DEPTH> {
+        self.queue.resume_consumer()
+    }
 }
 
 impl<T, const DEPTH: usize> Drop for AffineSpscSender<'_, T, DEPTH> {
     fn drop(&mut self) {
-        self.queue.release_endpoint();
+        self.queue.release_endpoint(PRODUCER_ACTIVE);
     }
 }
 
@@ -243,7 +286,7 @@ impl<T, const DEPTH: usize> AffineSpscReceiver<'_, T, DEPTH> {
 
 impl<T, const DEPTH: usize> Drop for AffineSpscReceiver<'_, T, DEPTH> {
     fn drop(&mut self) {
-        self.queue.release_endpoint();
+        self.queue.release_endpoint(CONSUMER_ACTIVE);
     }
 }
 
@@ -286,5 +329,26 @@ mod tests {
             consumer.try_receive(),
             Err(AffineSpscTryReceiveError::Empty)
         );
+    }
+
+    #[test]
+    fn persistent_producer_resumes_one_consumer_after_an_empty_epoch() {
+        let queue = Queue::new();
+        let (producer, consumer) = queue.split();
+        producer.try_send(1).unwrap();
+        assert_eq!(consumer.try_receive(), Ok(1));
+        drop(consumer);
+
+        let resumed = producer.resume_consumer();
+        producer.try_send(2).unwrap();
+        assert_eq!(resumed.try_receive(), Ok(2));
+        let duplicate =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| producer.resume_consumer()));
+        assert!(duplicate.is_err());
+        drop(resumed);
+        drop(producer);
+
+        let reused = queue.split();
+        drop(reused);
     }
 }

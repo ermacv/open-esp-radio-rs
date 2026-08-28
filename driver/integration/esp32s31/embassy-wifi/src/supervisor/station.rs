@@ -1341,9 +1341,9 @@ pub(crate) async fn run_connected<'state, 'security>(
     let (dma, tx_storage, scan_table, frame, ethernet) = runtime.storage.into_parts();
     let mut board = runtime.board;
 
-    let (staged_sender, staged_receiver) = STAGED_RX_QUEUE.split();
-    let start = match epoch {
+    let (start, staged_receiver) = match epoch {
         ConnectedStationEpoch::Initial { hardware, receive } => {
+            let (staged_sender, staged_receiver) = STAGED_RX_QUEUE.split();
             let initial = match board.initial_connected.take() {
                 Some(initial) => initial,
                 None => {
@@ -1377,11 +1377,15 @@ pub(crate) async fn run_connected<'state, 'security>(
                 staged_sender,
                 EmbassyEsp32s31RxDmaObservationDelay,
             );
-            start_esp32s31_initial_connected_epoch(hardware, receive, initial.with_rx(rx)).await
+            (
+                start_esp32s31_initial_connected_epoch(hardware, receive, initial.with_rx(rx)).await,
+                Some(staged_receiver),
+            )
         }
-        ConnectedStationEpoch::Reconnected(epoch) => {
-            start_esp32s31_reconnected_connected_epoch(epoch).await
-        }
+        ConnectedStationEpoch::Reconnected(epoch) => (
+            start_esp32s31_reconnected_connected_epoch(epoch).await,
+            None,
+        ),
     };
     let started = match start {
         Ok(started) => started,
@@ -1462,6 +1466,10 @@ pub(crate) async fn run_connected<'state, 'security>(
         aggregate_tx: aggregate,
         control: control_resources,
     } = started;
+    let staged_receiver = staged_receiver.unwrap_or_else(|| {
+        rx.try_resume_standalone_receiver()
+            .expect("reconnected station RX retains its standalone producer")
+    });
     let material_is_open = matches!(&material, Esp32s31StaAttemptSecurityMaterial::Open);
     let material_has_connected_wpa2 = matches!(
         &material,

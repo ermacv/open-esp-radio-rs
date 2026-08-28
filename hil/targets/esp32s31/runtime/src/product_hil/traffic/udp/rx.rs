@@ -10,8 +10,13 @@ use embassy_net::{Stack, udp::UdpSocket};
 use embassy_time::{Duration, Instant, with_timeout};
 #[cfg(feature = "core0-rx-cycle-telemetry")]
 use open_esp_radio_esp32s31_embassy_wifi::{
-    CORE0_PERFORMANCE, CORE0_REORDER_CYCLES, CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM,
+    CORE0_REORDER_CYCLES, CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM,
 };
+#[cfg(any(
+    feature = "core0-rx-cycle-telemetry",
+    feature = "core0-rx-coarse-telemetry"
+))]
+use open_esp_radio_esp32s31_embassy_wifi::CORE0_PERFORMANCE;
 use open_esp_radio_hil_esp32s31_telemetry::{
     rx_evidence::{RX_HE_MCS_BUCKETS, RX_HT_MCS_BUCKETS},
     rx_pipeline::RxPipelineCounters,
@@ -42,6 +47,8 @@ use crate::product_hil::traffic::{
     L1CachePerformanceSnapshot, enable_l1_cache_counters, log_open_radio_core0_rx_cycles,
     log_open_radio_core0_rx_service_histogram,
 };
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+use crate::product_hil::traffic::log_open_radio_core0_rx_coarse;
 
 #[derive(Clone, Copy)]
 pub(in crate::product_hil) struct UdpRxSessionSource {
@@ -160,7 +167,10 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         let task_poll_start = telemetry.task_polls.snapshot();
         #[cfg(feature = "core0-rx-cycle-telemetry")]
         let core0_rx_cycle_start = CORE0_RX_CYCLES.snapshot();
-        #[cfg(feature = "core0-rx-cycle-telemetry")]
+        #[cfg(any(
+            feature = "core0-rx-cycle-telemetry",
+            feature = "core0-rx-coarse-telemetry"
+        ))]
         let core0_performance_start = CORE0_PERFORMANCE.snapshot();
         #[cfg(feature = "core0-rx-cycle-telemetry")]
         let core0_reorder_start = CORE0_REORDER_CYCLES.snapshot();
@@ -549,6 +559,8 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         .await;
         #[cfg(feature = "core0-rx-cycle-telemetry")]
         log_open_radio_core0_rx_service_histogram(&core0_rx_service_start).await;
+        #[cfg(feature = "core0-rx-coarse-telemetry")]
+        log_open_radio_core0_rx_coarse(core0_performance_start).await;
         let evidence = TransportEvidence {
             rx_bytes: bytes,
             tx_bytes: 0,

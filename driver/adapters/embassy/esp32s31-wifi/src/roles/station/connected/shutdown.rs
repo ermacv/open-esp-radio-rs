@@ -228,6 +228,7 @@ where
             });
         }
     };
+    interrupt.mac_runtime().end_rx_moderation();
     let (network, services) = runner.into_connected_epoch_parts();
     Ok(Esp32s31ConnectedEpochQuiesced {
         interrupt,

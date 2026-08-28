@@ -117,7 +117,10 @@ pub use monitor::{
 pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_rx_cycles::{
     CORE0_RX_CYCLES, Core0RxCycleSnapshot, cycle_count,
 };
-#[cfg(feature = "task-poll-telemetry")]
+#[cfg(any(
+    feature = "task-poll-telemetry",
+    feature = "core0-rx-coarse-telemetry"
+))]
 pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_rx_performance::{
     CORE0_PERFORMANCE, Core0PerformanceSample, Core0PerformanceSnapshot,
 };

@@ -4,6 +4,11 @@ use super::*;
 
 #[cfg(feature = "task-poll-telemetry")]
 use crate::diagnostics::core0_rx_cycles::{Core0RxCyclePhase, Core0RxCycleProfile};
+#[cfg(all(
+    feature = "core0-rx-coarse-telemetry",
+    not(feature = "task-poll-telemetry")
+))]
+use crate::diagnostics::core0_rx_performance::Core0PerformanceDmaProfile as Core0RxCycleProfile;
 
 /// Maximum completed units transferred in one masked RX poll epoch.
 ///
@@ -55,6 +60,11 @@ where
         ready((|| {
             #[cfg(feature = "task-poll-telemetry")]
             let mut core0_cycles = Core0RxCycleProfile::begin();
+            #[cfg(all(
+                feature = "core0-rx-coarse-telemetry",
+                not(feature = "task-poll-telemetry")
+            ))]
+            let core0_cycles = Core0RxCycleProfile::begin();
             #[cfg(any(feature = "diagnostics", test))]
             let service_started = self
                 .pipeline_observer
@@ -475,7 +485,7 @@ where
                 ));
             }
 
-            #[cfg(feature = "task-poll-telemetry")]
+            #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
             core0_cycles.finish(admitted);
 
             Ok(if stage_capacity_blocked || critical_admission_blocked {

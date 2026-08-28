@@ -49,6 +49,9 @@ task-poll-telemetry = [
     "diagnostics",
     "open-esp-radio-esp32s31-wifi-embassy/task-poll-telemetry",
 ]
+core0-rx-coarse-telemetry = [
+    "open-esp-radio-esp32s31-wifi-embassy/core0-rx-coarse-telemetry",
+]
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

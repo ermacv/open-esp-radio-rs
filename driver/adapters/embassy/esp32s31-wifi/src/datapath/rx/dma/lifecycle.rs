@@ -605,6 +605,15 @@ impl<
         self.frames.len()
     }
 
+    /// Reacquire the sole standalone protocol consumer retained by neither
+    /// the stopped nor live DMA owner across a station reconnect boundary.
+    pub fn try_resume_standalone_receiver(
+        &self,
+    ) -> Option<Esp32s31StagedRxReceiver<'queue, 'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>>
+    {
+        self.frames.try_resume_standalone_receiver()
+    }
+
     /// Monotonic descriptor progress used only to prove that a bounded drain
     /// iteration advanced the hardware ownership frontier.
     pub const fn serviced_descriptors(&self) -> u64 {

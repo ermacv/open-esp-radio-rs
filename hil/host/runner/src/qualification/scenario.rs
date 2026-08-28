@@ -27,6 +27,7 @@ pub enum ImageClass {
     DiagnosticMacIrq,
     DiagnosticTaskResidence,
     DiagnosticTaskPoll,
+    DiagnosticCore0RxCoarse,
     DiagnosticCore0RxCycles,
     DiagnosticRxDelivery,
     DiagnosticIeee802154EventStatus,
@@ -34,13 +35,14 @@ pub enum ImageClass {
 }
 
 impl ImageClass {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::BootSmoke,
         Self::Performance,
         Self::Correctness,
         Self::DiagnosticMacIrq,
         Self::DiagnosticTaskResidence,
         Self::DiagnosticTaskPoll,
+        Self::DiagnosticCore0RxCoarse,
         Self::DiagnosticCore0RxCycles,
         Self::DiagnosticRxDelivery,
         Self::DiagnosticIeee802154EventStatus,
@@ -55,6 +57,7 @@ impl ImageClass {
             Self::DiagnosticMacIrq => "diagnostic-mac-irq",
             Self::DiagnosticTaskResidence => "diagnostic-task-residence",
             Self::DiagnosticTaskPoll => "diagnostic-task-poll",
+            Self::DiagnosticCore0RxCoarse => "diagnostic-core0-rx-coarse",
             Self::DiagnosticCore0RxCycles => "diagnostic-core0-rx-cycles",
             Self::DiagnosticRxDelivery => "diagnostic-rx-delivery",
             Self::DiagnosticIeee802154EventStatus => "diagnostic-ieee802154-event-status",
@@ -77,6 +80,9 @@ impl ImageClass {
             }
             Self::DiagnosticTaskPoll => {
                 "open-radio-hil,psram-task-stack,task-poll-telemetry,code-psram,profile-psram-data"
+            }
+            Self::DiagnosticCore0RxCoarse => {
+                "open-radio-hil,psram-task-stack,core0-rx-coarse-telemetry,code-psram,profile-psram-data"
             }
             Self::DiagnosticCore0RxCycles => {
                 "open-radio-hil,psram-task-stack,core0-rx-cycle-telemetry,code-psram,profile-psram-data"
@@ -101,6 +107,7 @@ impl ImageClass {
             | Self::DiagnosticMacIrq
             | Self::DiagnosticTaskResidence
             | Self::DiagnosticTaskPoll
+            | Self::DiagnosticCore0RxCoarse
             | Self::DiagnosticCore0RxCycles
             | Self::DiagnosticRxDelivery
             | Self::DiagnosticIeee802154EventStatus
@@ -120,7 +127,10 @@ impl ImageClass {
     pub const fn requires_driver_observation(self) -> bool {
         !matches!(
             self,
-            Self::BootSmoke | Self::Performance | Self::DiagnosticTaskResidence
+            Self::BootSmoke
+                | Self::Performance
+                | Self::DiagnosticTaskResidence
+                | Self::DiagnosticCore0RxCoarse
         )
     }
 }
@@ -512,6 +522,7 @@ impl Scenario {
                 self.image,
                 ImageClass::DiagnosticTaskResidence
                     | ImageClass::DiagnosticRxDelivery
+                    | ImageClass::DiagnosticCore0RxCoarse
                     | ImageClass::DiagnosticCore0RxCycles
             ) || !matches!(
                 self.workload,
@@ -701,8 +712,10 @@ impl Scenario {
                 ..
             } => {
                 bounded(*duration_seconds, 5, 300, self, "duration_seconds")?;
-                if self.image == ImageClass::DiagnosticCore0RxCycles
-                    && *duration_seconds > CORE0_RX_CYCLE_MAX_DURATION_SECONDS
+                if matches!(
+                    self.image,
+                    ImageClass::DiagnosticCore0RxCoarse | ImageClass::DiagnosticCore0RxCycles
+                ) && *duration_seconds > CORE0_RX_CYCLE_MAX_DURATION_SECONDS
                 {
                     return Err(format!(
                         "{}: Core0 cycle diagnostic duration {} exceeds the u32-safe {} second interval",

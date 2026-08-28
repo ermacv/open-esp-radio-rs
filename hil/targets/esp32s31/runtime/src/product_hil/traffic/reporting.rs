@@ -4,11 +4,17 @@ use core::future::Future;
 
 use embassy_futures::yield_now;
 use embassy_time::Instant;
+#[cfg(any(
+    feature = "core0-rx-cycle-telemetry",
+    feature = "core0-rx-coarse-telemetry"
+))]
+use open_esp_radio_esp32s31_embassy_wifi::{
+    CORE0_PERFORMANCE, Core0PerformanceSample, Core0PerformanceSnapshot,
+};
 #[cfg(feature = "core0-rx-cycle-telemetry")]
 use open_esp_radio_esp32s31_embassy_wifi::{
-    CORE0_PERFORMANCE, CORE0_REORDER_CYCLES, CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM,
-    Core0PerformanceSample, Core0PerformanceSnapshot, Core0ReorderSnapshot, Core0RxCycleSnapshot,
-    Core0RxServiceHistogramSnapshot,
+    CORE0_REORDER_CYCLES, CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM, Core0ReorderSnapshot,
+    Core0RxCycleSnapshot, Core0RxServiceHistogramSnapshot,
 };
 use open_esp_radio_hil_esp32s31_telemetry::{
     aggregate_tx::{AggregateTxCounterSnapshot, AggregateTxCounters},
@@ -725,6 +731,46 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_cycles(
     yield_now().await;
 }
 
+/// Emit only batch-level Core0 cost evidence.
+///
+/// This is intentionally distinct from `log_open_radio_core0_rx_cycles`: the
+/// coarse image never links its per-frame phase counters or driver observers.
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+pub(in crate::product_hil) async fn log_open_radio_core0_rx_coarse(
+    earlier: Core0PerformanceSnapshot,
+) {
+    let performance = CORE0_PERFORMANCE
+        .snapshot()
+        .wrapping_delta_since(earlier);
+    runtime_log_reliably(format_args!(
+        "ORC0C rx_irq_posts={} radio_polls={} radio_cycles={} radio_instret={} poll_to_runner_cycles={} poll_to_runner_instret={} runner_to_exit_cycles={} runner_to_exit_instret={} runner_calls={} runner_cycles={} runner_instret={}",
+        performance.rx_interrupt_posts,
+        performance.radio_polls,
+        performance.radio_cycles,
+        performance.radio_instructions,
+        performance.poll_to_runner_cycles,
+        performance.poll_to_runner_instructions,
+        performance.runner_to_poll_exit_cycles,
+        performance.runner_to_poll_exit_instructions,
+        performance.runner_calls,
+        performance.runner_cycles,
+        performance.runner_instructions,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ORC0B protocol_polls={} protocol_cycles={} protocol_instret={} dma_calls={} dma_units={} dma_cycles={} dma_instret={}",
+        performance.protocol_polls,
+        performance.protocol_cycles,
+        performance.protocol_instructions,
+        performance.dma_calls,
+        performance.dma_units,
+        performance.dma_cycles,
+        performance.dma_instructions,
+    ))
+    .await;
+}
+
 #[cfg(feature = "core0-rx-cycle-telemetry")]
 pub(in crate::product_hil) async fn log_open_radio_core0_rx_service_histogram(
     earlier: &Core0RxServiceHistogramSnapshot,
@@ -813,7 +859,10 @@ pub(in crate::product_hil) async fn observe_open_radio_task_polls<F: Future>(
     .await
 }
 
-#[cfg(feature = "core0-rx-cycle-telemetry")]
+#[cfg(any(
+    feature = "core0-rx-cycle-telemetry",
+    feature = "core0-rx-coarse-telemetry"
+))]
 #[allow(
     large_assignments,
     reason = "the diagnostic wrapper pins the existing radio future directly inside its reviewed static task arena"
@@ -827,9 +876,11 @@ pub(in crate::product_hil) async fn observe_open_radio_core0_task_polls<F: Futur
         let started = Instant::now();
         let performance_started = Core0PerformanceSample::read();
         CORE0_PERFORMANCE.begin_radio_poll(performance_started);
+        #[cfg(feature = "core0-rx-cycle-telemetry")]
         CORE0_RX_CYCLES.begin_radio_poll(performance_started.cycles);
         let result = future.as_mut().poll(context);
         let performance_ended = Core0PerformanceSample::read();
+        #[cfg(feature = "core0-rx-cycle-telemetry")]
         CORE0_RX_CYCLES.end_radio_poll(performance_ended.cycles);
         CORE0_PERFORMANCE.record_radio_poll(performance_started, performance_ended);
         counters.record(started.elapsed().as_micros());

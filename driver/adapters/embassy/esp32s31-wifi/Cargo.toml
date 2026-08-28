@@ -49,6 +49,11 @@ task-poll-telemetry = [
     "open-esp-radio-esp32s31-wifi/task-poll-telemetry",
     "open-esp-radio-esp32s31-wifi-sta/task-poll-telemetry",
 ]
+# Coarse Core0 accounting deliberately excludes `diagnostics` and every
+# per-frame phase observer. It samples only radio polls and finite
+# runner/DMA/protocol batches, so the result remains close to the production
+# owner graph while still pairing elapsed cycles with retired instructions.
+core0-rx-coarse-telemetry = ["dep:riscv"]
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
 riscv = { version = "0.15", optional = true }

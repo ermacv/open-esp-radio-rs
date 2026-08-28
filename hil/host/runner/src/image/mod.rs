@@ -85,6 +85,16 @@ fn classify_image_signature(
             psram_task_stack: true,
         } => Some(ImageClass::DiagnosticTaskPoll),
         ImageCapabilitySignature {
+            driver_observation: false,
+            task_poll: true,
+            core0_rx_cycles: true,
+            rx_delivery: false,
+            mac_irq: false,
+            ieee802154_event_status: false,
+            ieee802154_ed_event: false,
+            psram_task_stack: true,
+        } => Some(ImageClass::DiagnosticCore0RxCoarse),
+        ImageCapabilitySignature {
             driver_observation: true,
             task_poll: true,
             core0_rx_cycles: true,
@@ -850,7 +860,7 @@ mod tests {
 
     #[test]
     fn image_classes_are_stable_and_do_not_use_workload_environment() {
-        assert_eq!(qualification::scenario::ImageClass::ALL.len(), 10);
+        assert_eq!(qualification::scenario::ImageClass::ALL.len(), 11);
         assert!(
             qualification::scenario::ImageClass::ALL
                 .into_iter()
@@ -879,6 +889,10 @@ mod tests {
         assert_eq!(
             qualification::scenario::ImageClass::DiagnosticTaskPoll.runtime_features(),
             "open-radio-hil,psram-task-stack,task-poll-telemetry,code-psram,profile-psram-data"
+        );
+        assert_eq!(
+            qualification::scenario::ImageClass::DiagnosticCore0RxCoarse.runtime_features(),
+            "open-radio-hil,psram-task-stack,core0-rx-coarse-telemetry,code-psram,profile-psram-data"
         );
         assert_eq!(
             qualification::scenario::ImageClass::DiagnosticCore0RxCycles.runtime_features(),
@@ -943,6 +957,12 @@ mod tests {
         assert_eq!(
             classify_image_signature(core0_rx_cycles),
             Some(ImageClass::DiagnosticCore0RxCycles),
+        );
+        let mut core0_rx_coarse = image_signature(false, true, false, false, false, false);
+        core0_rx_coarse.core0_rx_cycles = true;
+        assert_eq!(
+            classify_image_signature(core0_rx_coarse),
+            Some(ImageClass::DiagnosticCore0RxCoarse),
         );
     }
 

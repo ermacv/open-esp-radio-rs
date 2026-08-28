@@ -396,9 +396,9 @@ impl ProductionWifiEpochRunner {
         let (dma, tx_storage, scan_table, frame, ethernet) = runtime.storage.into_parts();
         let mut board = runtime.board;
 
-        let (standalone_sender, _standalone_receiver) = STAGED_RX_QUEUE.split();
-        let start = match epoch {
+        let (start, standalone_receiver) = match epoch {
             ConnectedStationEpoch::Initial { hardware, receive } => {
+                let (standalone_sender, standalone_receiver) = STAGED_RX_QUEUE.split();
                 let initial = board
                     .initial_connected
                     .take()
@@ -409,11 +409,20 @@ impl ProductionWifiEpochRunner {
                     standalone_sender,
                     EmbassyEsp32s31RxDmaObservationDelay,
                 );
-                start_esp32s31_initial_connected_epoch(hardware, receive, initial.with_rx(rx)).await
+                (
+                    start_esp32s31_initial_connected_epoch(
+                        hardware,
+                        receive,
+                        initial.with_rx(rx),
+                    )
+                    .await,
+                    Some(standalone_receiver),
+                )
             }
-            ConnectedStationEpoch::Reconnected(epoch) => {
-                start_esp32s31_reconnected_connected_epoch(epoch).await
-            }
+            ConnectedStationEpoch::Reconnected(epoch) => (
+                start_esp32s31_reconnected_connected_epoch(epoch).await,
+                None,
+            ),
         };
         let Esp32s31ConnectedEpochStarted {
             mut hardware,
@@ -456,6 +465,10 @@ impl ProductionWifiEpochRunner {
                 );
             }
         };
+        let standalone_receiver = standalone_receiver.unwrap_or_else(|| {
+            rx.try_resume_standalone_receiver()
+                .expect("reconnected paired cutover retains its standalone producer")
+        });
         let control_tx = tx_storage
             .take_control()
             .unwrap_or_else(|_| unreachable!("paired cutover starts with idle ordinary TX"));
@@ -594,6 +607,7 @@ impl ProductionWifiEpochRunner {
                 }
             }
         };
+        drop(standalone_receiver);
         let (paired_sender, paired_consumer) = STA_AP_STAGED_RX_QUEUE.split();
         let receive_identities = StaApReceiveIdentities {
             station_address: plan.link().station_address,

@@ -34,7 +34,10 @@ use crate::diagnostics::rx_pipeline::{
 use crate::{
     datapath::DatapathRxProgress,
     datapath::rx::hardware::RxDmaObservationDelay,
-    datapath::rx::staging::{Esp32s31StagedRxFrame, Esp32s31StagedRxSender, StagedRxTrySendError},
+    datapath::rx::staging::{
+        Esp32s31StagedRxFrame, Esp32s31StagedRxReceiver, Esp32s31StagedRxSender,
+        StagedRxTrySendError,
+    },
     datapath::services::DatapathRxService,
     diagnostics::rx_pipeline::RxStageDiscard,
     roles::concurrent::Esp32s31StaApStagedRxFrame,
@@ -278,6 +281,16 @@ impl<
         match self {
             Self::Standalone(frames) => frames.len(),
             Self::StaAp { frames, .. } => frames.len(),
+        }
+    }
+
+    fn try_resume_standalone_receiver(
+        &self,
+    ) -> Option<Esp32s31StagedRxReceiver<'queue, 'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>>
+    {
+        match self {
+            Self::Standalone(frames) => Some(frames.resume_receiver()),
+            Self::StaAp { .. } => None,
         }
     }
 

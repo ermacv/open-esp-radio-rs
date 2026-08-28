@@ -144,7 +144,10 @@ mod rx_qualification;
 mod traffic;
 
 use traffic::{observe_open_radio_task_polls, start_connected_traffic, start_traffic_dispatcher};
-#[cfg(feature = "core0-rx-cycle-telemetry")]
+#[cfg(any(
+    feature = "core0-rx-cycle-telemetry",
+    feature = "core0-rx-coarse-telemetry"
+))]
 use traffic::observe_open_radio_core0_task_polls;
 
 const NETWORK_SOCKET_COUNT: usize = 5;
@@ -1206,7 +1209,10 @@ pub const fn hil_capabilities() -> Capabilities {
             driver_observation_evidence: OPEN_RADIO_DRIVER_OBSERVATION,
             rx_delivery_evidence: OPEN_RADIO_RX_DELIVERY_TELEMETRY,
             task_poll_evidence: OPEN_RADIO_TASK_POLL_TELEMETRY,
-            core0_rx_cycle_evidence: cfg!(feature = "core0-rx-cycle-telemetry"),
+            core0_rx_cycle_evidence: cfg!(any(
+                feature = "core0-rx-cycle-telemetry",
+                feature = "core0-rx-coarse-telemetry"
+            )),
             mac_irq_evidence: OPEN_RADIO_MAC_IRQ_TELEMETRY,
             psram_task_stack: cfg!(feature = "psram-task-stack"),
             network_scheduler_evidence: false,
@@ -1226,9 +1232,15 @@ pub const fn hil_capabilities() -> Capabilities {
     reason = "the unique production radio runner is moved once into its static Embassy task arena; the linked-image stack audit remains authoritative"
 )]
 async fn radio_runner_task(runner: Esp32s31RadioRunner) {
-    #[cfg(feature = "core0-rx-cycle-telemetry")]
+    #[cfg(any(
+        feature = "core0-rx-cycle-telemetry",
+        feature = "core0-rx-coarse-telemetry"
+    ))]
     observe_open_radio_core0_task_polls(runner.run(), TASK_POLLS.radio()).await;
-    #[cfg(not(feature = "core0-rx-cycle-telemetry"))]
+    #[cfg(not(any(
+        feature = "core0-rx-cycle-telemetry",
+        feature = "core0-rx-coarse-telemetry"
+    )))]
     observe_open_radio_task_polls(
         runner.run(),
         TASK_POLLS.radio(),

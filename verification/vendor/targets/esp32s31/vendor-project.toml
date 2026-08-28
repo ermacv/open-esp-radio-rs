@@ -761,6 +761,29 @@ roots = [
 include-reachable = true
 
 [[review.scopes]]
+id = "ble-direct-test-mode"
+protocols = ["ble"]
+profiles = ["ble-controller-all"]
+roots = [
+    # Complete transmitter and receiver command bodies reach allocation,
+    # packet construction, event preparation and common scheduler insertion.
+    "ble-controller:r_sym_ble_odiPxxFv9QenApESv5qy",
+    "ble-controller:r_sym_ble_ssKOV2juzhIVJk3r8x6R",
+    # Test End owns synchronous stop and teardown. The recycle callback is an
+    # explicit root because the scheduler invokes it through a stored pointer,
+    # so an ordinary direct-call traversal cannot prove that edge.
+    "ble-controller:r_sym_ble_9DFKLYZzjaztWMiPU4NR",
+    "ble-controller:r_sym_ble_kdHGLPeGDJlAvxmbjQ6e",
+    # The common worker publishes the finished-list mask through the broker,
+    # and the BLE scheduler consumes it through another stored callback. Both
+    # asynchronous ingress edges must be explicit or the scope loses the
+    # hardware-completion half of the DTM lifecycle.
+    "ble-controller:r_sym_bt_WHYoiw8ufY0AEM2KSRK1",
+    "ble-controller:r_sym_ble_rmNuzAO8kQQQXQIpTzGZ",
+]
+include-reachable = true
+
+[[review.scopes]]
 id = "ieee802154-baseband-leaves"
 protocols = ["ieee802154"]
 profiles = ["ieee802154-btbb", "ieee802154-zb"]

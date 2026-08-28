@@ -47,9 +47,7 @@ pub use model::{
     basic_ht_ampdu_completion,
 };
 #[cfg(test)]
-pub(crate) use model::{
-    TX_BUFFER_END_BIT, TX_DESCRIPTOR_HE_BIT, basic_ht_ampdu_protection_spacing,
-};
+pub(crate) use model::{TX_BUFFER_END_BIT, TX_DESCRIPTOR_HE_BIT};
 pub use open_esp_radio_esp32s31_wifi_dma::tx_ampdu_storage::RetainedAmpduDmaStorage;
 pub use owner::{HtAmpduTxResources, RetainedDmaAmpduTx};
 pub use request::{
@@ -94,7 +92,7 @@ pub enum HtAmpduTxError {
         slots: usize,
         buffer_size: usize,
     },
-    TxImageUnavailable {
+    TxProgramUnavailable {
         format: HtAmpduTxFormat,
     },
     InvalidTriggerReservation {
@@ -105,7 +103,7 @@ pub enum HtAmpduTxError {
     TooFewFrames,
     AggregateFull,
     Length(HtAmpduLengthError),
-    RegisterImageMismatch,
+    AggregateConfigurationMismatch,
     QueueActive,
     TriggerMsduLengthUnavailable,
     TriggerBased(MacHeTbProgramError),

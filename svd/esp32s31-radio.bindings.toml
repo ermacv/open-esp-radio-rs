@@ -21877,10 +21877,17 @@ register-method = "plcp1"
 register-index = 0
 
 [[registers.fields]]
-svd-name = "LOW_MODE_DEPENDENT"
-method = "low_mode_dependent"
+svd-name = "LEGACY_SIGNAL"
+method = "legacy_signal"
 bit-offset = 0
-bit-width = 17
+bit-width = 12
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RATE"
+method = "rate"
+bit-offset = 12
+bit-width = 5
 access = "read-write"
 
 [[registers.fields]]
@@ -21898,10 +21905,31 @@ bit-width = 2
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "HIGH_MODE_DEPENDENT"
-method = "high_mode_dependent"
+svd-name = "VECTOR_FORMAT"
+method = "vector_format"
 bit-offset = 25
-bit-width = 7
+bit-width = 3
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HIGH_CONTROL_28"
+method = "high_control_28"
+bit-offset = 28
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CBW40"
+method = "cbw40"
+bit-offset = 29
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HIGH_CONTROL_31_30"
+method = "high_control_31_30"
+bit-offset = 30
+bit-width = 2
 access = "read-write"
 
 [[registers]]
@@ -22016,17 +22044,17 @@ register-method = "ht_signal"
 register-index = 0
 
 [[registers.fields]]
-svd-name = "MCS_LOW_NIBBLE"
-method = "mcs_low_nibble"
+svd-name = "MCS"
+method = "mcs"
 bit-offset = 0
-bit-width = 4
+bit-width = 7
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LOW_CONTROL_UNKNOWN"
-method = "low_control_unknown"
-bit-offset = 4
-bit-width = 4
+svd-name = "CBW40"
+method = "cbw40"
+bit-offset = 7
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
@@ -22037,10 +22065,52 @@ bit-width = 16
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "HIGH_CONTROL_UNKNOWN"
-method = "high_control_unknown"
+svd-name = "SMOOTHING"
+method = "smoothing"
 bit-offset = 24
-bit-width = 8
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "NOT_SOUNDING"
+method = "not_sounding"
+bit-offset = 25
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "REQUIRED_ONE"
+method = "required_one"
+bit-offset = 26
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "AGGREGATION"
+method = "aggregation"
+bit-offset = 27
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "STBC"
+method = "stbc"
+bit-offset = 28
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "FEC_CODING"
+method = "fec_coding"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SHORT_GI"
+method = "short_gi"
+bit-offset = 31
+bit-width = 1
 access = "read-write"
 
 [[registers]]
@@ -22333,10 +22403,31 @@ register-method = "power"
 register-index = 0
 
 [[registers.fields]]
-svd-name = "VALUE"
-method = "value"
+svd-name = "DATA_PRIMARY"
+method = "data_primary"
 bit-offset = 0
-bit-width = 32
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "DATA_ALTERNATE"
+method = "data_alternate"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RTS_PRIMARY"
+method = "rts_primary"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RTS_ALTERNATE"
+method = "rts_alternate"
+bit-offset = 24
+bit-width = 8
 access = "read-write"
 
 [[registers]]
@@ -22771,10 +22862,17 @@ register-method = "plcp1"
 register-index = 1
 
 [[registers.fields]]
-svd-name = "LOW_MODE_DEPENDENT"
-method = "low_mode_dependent"
+svd-name = "LEGACY_SIGNAL"
+method = "legacy_signal"
 bit-offset = 0
-bit-width = 17
+bit-width = 12
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RATE"
+method = "rate"
+bit-offset = 12
+bit-width = 5
 access = "read-write"
 
 [[registers.fields]]
@@ -22792,10 +22890,31 @@ bit-width = 2
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "HIGH_MODE_DEPENDENT"
-method = "high_mode_dependent"
+svd-name = "VECTOR_FORMAT"
+method = "vector_format"
 bit-offset = 25
-bit-width = 7
+bit-width = 3
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HIGH_CONTROL_28"
+method = "high_control_28"
+bit-offset = 28
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CBW40"
+method = "cbw40"
+bit-offset = 29
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HIGH_CONTROL_31_30"
+method = "high_control_31_30"
+bit-offset = 30
+bit-width = 2
 access = "read-write"
 
 [[registers]]
@@ -22910,17 +23029,17 @@ register-method = "ht_signal"
 register-index = 1
 
 [[registers.fields]]
-svd-name = "MCS_LOW_NIBBLE"
-method = "mcs_low_nibble"
+svd-name = "MCS"
+method = "mcs"
 bit-offset = 0
-bit-width = 4
+bit-width = 7
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LOW_CONTROL_UNKNOWN"
-method = "low_control_unknown"
-bit-offset = 4
-bit-width = 4
+svd-name = "CBW40"
+method = "cbw40"
+bit-offset = 7
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
@@ -22931,10 +23050,52 @@ bit-width = 16
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "HIGH_CONTROL_UNKNOWN"
-method = "high_control_unknown"
+svd-name = "SMOOTHING"
+method = "smoothing"
 bit-offset = 24
-bit-width = 8
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "NOT_SOUNDING"
+method = "not_sounding"
+bit-offset = 25
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "REQUIRED_ONE"
+method = "required_one"
+bit-offset = 26
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "AGGREGATION"
+method = "aggregation"
+bit-offset = 27
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "STBC"
+method = "stbc"
+bit-offset = 28
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "FEC_CODING"
+method = "fec_coding"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SHORT_GI"
+method = "short_gi"
+bit-offset = 31
+bit-width = 1
 access = "read-write"
 
 [[registers]]
@@ -23227,10 +23388,31 @@ register-method = "power"
 register-index = 1
 
 [[registers.fields]]
-svd-name = "VALUE"
-method = "value"
+svd-name = "DATA_PRIMARY"
+method = "data_primary"
 bit-offset = 0
-bit-width = 32
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "DATA_ALTERNATE"
+method = "data_alternate"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RTS_PRIMARY"
+method = "rts_primary"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RTS_ALTERNATE"
+method = "rts_alternate"
+bit-offset = 24
+bit-width = 8
 access = "read-write"
 
 [[registers]]
@@ -23665,10 +23847,17 @@ register-method = "plcp1"
 register-index = 2
 
 [[registers.fields]]
-svd-name = "LOW_MODE_DEPENDENT"
-method = "low_mode_dependent"
+svd-name = "LEGACY_SIGNAL"
+method = "legacy_signal"
 bit-offset = 0
-bit-width = 17
+bit-width = 12
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RATE"
+method = "rate"
+bit-offset = 12
+bit-width = 5
 access = "read-write"
 
 [[registers.fields]]
@@ -23686,10 +23875,31 @@ bit-width = 2
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "HIGH_MODE_DEPENDENT"
-method = "high_mode_dependent"
+svd-name = "VECTOR_FORMAT"
+method = "vector_format"
 bit-offset = 25
-bit-width = 7
+bit-width = 3
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HIGH_CONTROL_28"
+method = "high_control_28"
+bit-offset = 28
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CBW40"
+method = "cbw40"
+bit-offset = 29
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HIGH_CONTROL_31_30"
+method = "high_control_31_30"
+bit-offset = 30
+bit-width = 2
 access = "read-write"
 
 [[registers]]
@@ -23804,17 +24014,17 @@ register-method = "ht_signal"
 register-index = 2
 
 [[registers.fields]]
-svd-name = "MCS_LOW_NIBBLE"
-method = "mcs_low_nibble"
+svd-name = "MCS"
+method = "mcs"
 bit-offset = 0
-bit-width = 4
+bit-width = 7
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LOW_CONTROL_UNKNOWN"
-method = "low_control_unknown"
-bit-offset = 4
-bit-width = 4
+svd-name = "CBW40"
+method = "cbw40"
+bit-offset = 7
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
@@ -23825,10 +24035,52 @@ bit-width = 16
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "HIGH_CONTROL_UNKNOWN"
-method = "high_control_unknown"
+svd-name = "SMOOTHING"
+method = "smoothing"
 bit-offset = 24
-bit-width = 8
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "NOT_SOUNDING"
+method = "not_sounding"
+bit-offset = 25
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "REQUIRED_ONE"
+method = "required_one"
+bit-offset = 26
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "AGGREGATION"
+method = "aggregation"
+bit-offset = 27
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "STBC"
+method = "stbc"
+bit-offset = 28
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "FEC_CODING"
+method = "fec_coding"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SHORT_GI"
+method = "short_gi"
+bit-offset = 31
+bit-width = 1
 access = "read-write"
 
 [[registers]]
@@ -24121,10 +24373,31 @@ register-method = "power"
 register-index = 2
 
 [[registers.fields]]
-svd-name = "VALUE"
-method = "value"
+svd-name = "DATA_PRIMARY"
+method = "data_primary"
 bit-offset = 0
-bit-width = 32
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "DATA_ALTERNATE"
+method = "data_alternate"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RTS_PRIMARY"
+method = "rts_primary"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RTS_ALTERNATE"
+method = "rts_alternate"
+bit-offset = 24
+bit-width = 8
 access = "read-write"
 
 [[registers]]
@@ -24559,10 +24832,17 @@ register-method = "plcp1"
 register-index = 3
 
 [[registers.fields]]
-svd-name = "LOW_MODE_DEPENDENT"
-method = "low_mode_dependent"
+svd-name = "LEGACY_SIGNAL"
+method = "legacy_signal"
 bit-offset = 0
-bit-width = 17
+bit-width = 12
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RATE"
+method = "rate"
+bit-offset = 12
+bit-width = 5
 access = "read-write"
 
 [[registers.fields]]
@@ -24580,10 +24860,31 @@ bit-width = 2
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "HIGH_MODE_DEPENDENT"
-method = "high_mode_dependent"
+svd-name = "VECTOR_FORMAT"
+method = "vector_format"
 bit-offset = 25
-bit-width = 7
+bit-width = 3
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HIGH_CONTROL_28"
+method = "high_control_28"
+bit-offset = 28
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CBW40"
+method = "cbw40"
+bit-offset = 29
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HIGH_CONTROL_31_30"
+method = "high_control_31_30"
+bit-offset = 30
+bit-width = 2
 access = "read-write"
 
 [[registers]]
@@ -24698,17 +24999,17 @@ register-method = "ht_signal"
 register-index = 3
 
 [[registers.fields]]
-svd-name = "MCS_LOW_NIBBLE"
-method = "mcs_low_nibble"
+svd-name = "MCS"
+method = "mcs"
 bit-offset = 0
-bit-width = 4
+bit-width = 7
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LOW_CONTROL_UNKNOWN"
-method = "low_control_unknown"
-bit-offset = 4
-bit-width = 4
+svd-name = "CBW40"
+method = "cbw40"
+bit-offset = 7
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
@@ -24719,10 +25020,52 @@ bit-width = 16
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "HIGH_CONTROL_UNKNOWN"
-method = "high_control_unknown"
+svd-name = "SMOOTHING"
+method = "smoothing"
 bit-offset = 24
-bit-width = 8
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "NOT_SOUNDING"
+method = "not_sounding"
+bit-offset = 25
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "REQUIRED_ONE"
+method = "required_one"
+bit-offset = 26
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "AGGREGATION"
+method = "aggregation"
+bit-offset = 27
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "STBC"
+method = "stbc"
+bit-offset = 28
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "FEC_CODING"
+method = "fec_coding"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SHORT_GI"
+method = "short_gi"
+bit-offset = 31
+bit-width = 1
 access = "read-write"
 
 [[registers]]
@@ -25015,10 +25358,31 @@ register-method = "power"
 register-index = 3
 
 [[registers.fields]]
-svd-name = "VALUE"
-method = "value"
+svd-name = "DATA_PRIMARY"
+method = "data_primary"
 bit-offset = 0
-bit-width = 32
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "DATA_ALTERNATE"
+method = "data_alternate"
+bit-offset = 8
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RTS_PRIMARY"
+method = "rts_primary"
+bit-offset = 16
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RTS_ALTERNATE"
+method = "rts_alternate"
+bit-offset = 24
+bit-width = 8
 access = "read-write"
 
 [[registers]]

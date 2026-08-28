@@ -1008,6 +1008,7 @@ dependencies = [
  "embassy-futures",
  "embassy-sync 0.8.0",
  "esp-hal",
+ "open-esp-radio-dma",
  "open-esp-radio-esp32s31-coex",
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-pac",

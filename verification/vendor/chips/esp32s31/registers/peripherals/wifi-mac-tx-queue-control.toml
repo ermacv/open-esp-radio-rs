@@ -135,11 +135,19 @@ description = "Low twenty bits of the owned TX descriptor address; the DMA windo
 bitOffset = 0
 bitWidth = 20
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFFFFF
+
 [[peripherals.registers.register.fields]]
 name = "CONTROL_21_20_UNKNOWN"
 description = "Recovered PLCP0 control image; mac_tx_set_plcp0 initializes these two bits to binary 10 for the ordinary direct legacy path."
 bitOffset = 20
 bitWidth = 2
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x3
 
 [[peripherals.registers.register.fields]]
 name = "TXOP_DESCRIPTOR_CLASS_UNKNOWN"
@@ -159,11 +167,19 @@ description = "Three-bit format selector derived by complete mac_tx_set_plcp0 fr
 bitOffset = 24
 bitWidth = 3
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x7
+
 [[peripherals.registers.register.fields]]
 name = "CONTROL_29_27_UNKNOWN"
 description = "Remaining low control bits before ownership publication."
 bitOffset = 27
 bitWidth = 3
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x7
 
 [[peripherals.registers.register.fields]]
 name = "VALID"

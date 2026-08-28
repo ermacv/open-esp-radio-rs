@@ -18,24 +18,72 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_MODE_DEPENDENT"
+name = "LEGACY_SIGNAL"
+description = "Twelve-bit legacy PLCP SIGNAL/length value. Non-legacy formatters leave this field zero."
 bitOffset = 0
-bitWidth = 17
+bitWidth = 12
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFFF
+
+[[peripherals.registers.register.fields]]
+name = "RATE"
+description = "Five-bit MAC rate selector published by complete mac_tx_set_plcp1."
+bitOffset = 12
+bitWidth = 5
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x1F
 
 [[peripherals.registers.register.fields]]
 name = "KEY_ENTRY_INDEX"
 bitOffset = 17
 bitWidth = 6
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x3F
+
 [[peripherals.registers.register.fields]]
 name = "BSSID_SELECT"
 bitOffset = 23
 bitWidth = 2
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x3
+
 [[peripherals.registers.register.fields]]
-name = "HIGH_MODE_DEPENDENT"
+name = "VECTOR_FORMAT"
+description = "Three-bit vector family: zero for legacy, one for HT and two for HE in the reviewed paths."
 bitOffset = 25
-bitWidth = 7
+bitWidth = 3
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x7
+
+[[peripherals.registers.register.fields]]
+name = "HIGH_CONTROL_28"
+bitOffset = 28
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "CBW40"
+description = "Complete mac_tx_set_plcp1 sets this bit for the guarded non-HE HT40 branch."
+bitOffset = 29
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "HIGH_CONTROL_31_30"
+bitOffset = 30
+bitWidth = 2
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x3
 
 [[peripherals.registers]]
 
@@ -154,15 +202,20 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "MCS_LOW_NIBBLE"
-description = "Low four bits printed as MCS by complete dbg_read_tx_sig. The open 1T1R path currently uses MCS0 through MCS7."
+name = "MCS"
+description = "Seven-bit standard HT-SIG1 MCS selector. The reviewed open 1T1R path uses MCS0 through MCS7."
 bitOffset = 0
-bitWidth = 4
+bitWidth = 7
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x7F
 
 [[peripherals.registers.register.fields]]
-name = "LOW_CONTROL_UNKNOWN"
-bitOffset = 4
-bitWidth = 4
+name = "CBW40"
+description = "Standard HT-SIG1 channel-width bit: zero selects 20 MHz and one selects 40 MHz."
+bitOffset = 7
+bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "LENGTH"
@@ -170,10 +223,53 @@ description = "Sixteen-bit HT length printed by complete dbg_read_tx_sig."
 bitOffset = 8
 bitWidth = 16
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFFFF
+
 [[peripherals.registers.register.fields]]
-name = "HIGH_CONTROL_UNKNOWN"
+name = "SMOOTHING"
+description = "Standard HT-SIG2 smoothing bit; the reviewed formatter publishes one."
 bitOffset = 24
-bitWidth = 8
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "NOT_SOUNDING"
+description = "Standard HT-SIG2 not-sounding bit; the reviewed formatter publishes one."
+bitOffset = 25
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "REQUIRED_ONE"
+description = "Required one bit retained by every reviewed HT queue vector."
+bitOffset = 26
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "AGGREGATION"
+description = "Standard HT-SIG2 aggregation bit: clear for a direct MPDU and set for A-MPDU."
+bitOffset = 27
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "STBC"
+bitOffset = 28
+bitWidth = 2
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x3
+
+[[peripherals.registers.register.fields]]
+name = "FEC_CODING"
+bitOffset = 30
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "SHORT_GI"
+description = "Standard HT-SIG2 short guard-interval bit."
+bitOffset = 31
+bitWidth = 1
 
 [[peripherals.registers]]
 
@@ -415,9 +511,44 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "VALUE"
+name = "DATA_PRIMARY"
+description = "Primary calibrated data-power gain-table index."
 bitOffset = 0
-bitWidth = 32
+bitWidth = 8
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFF
+
+[[peripherals.registers.register.fields]]
+name = "DATA_ALTERNATE"
+description = "Alternate calibrated data-power gain-table index."
+bitOffset = 8
+bitWidth = 8
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFF
+
+[[peripherals.registers.register.fields]]
+name = "RTS_PRIMARY"
+description = "Primary calibrated RTS-power gain-table index."
+bitOffset = 16
+bitWidth = 8
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFF
+
+[[peripherals.registers.register.fields]]
+name = "RTS_ALTERNATE"
+description = "Alternate calibrated RTS-power gain-table index."
+bitOffset = 24
+bitWidth = 8
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFF
 
 [[peripherals.registers]]
 
@@ -483,25 +614,45 @@ name = "HT40_LENGTH"
 bitOffset = 0
 bitWidth = 19
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x7FFFF
+
 [[peripherals.registers.register.fields]]
 name = "UNKNOWN_19_21"
 bitOffset = 19
 bitWidth = 3
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x7
 
 [[peripherals.registers.register.fields]]
 name = "HT40_EOF_COUNT"
 bitOffset = 22
 bitWidth = 2
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x3
+
 [[peripherals.registers.register.fields]]
 name = "HT40_TXOP_COUNT"
 bitOffset = 24
 bitWidth = 4
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xF
+
 [[peripherals.registers.register.fields]]
 name = "HT40_MCS"
 bitOffset = 28
 bitWidth = 4
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xF
 
 [[peripherals.registers]]
 
@@ -550,25 +701,48 @@ name = "RTS_RATE"
 bitOffset = 6
 bitWidth = 8
 
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFF
+
 [[peripherals.registers.register.fields]]
 name = "UNKNOWN_14_21"
 bitOffset = 14
 bitWidth = 8
+
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
 name = "HT20_EOF_COUNT"
 bitOffset = 22
 bitWidth = 2
 
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x3
+
 [[peripherals.registers.register.fields]]
 name = "HT20_TXOP_COUNT"
 bitOffset = 24
 bitWidth = 4
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xF
+
 [[peripherals.registers.register.fields]]
 name = "HIGH_UNKNOWN"
 bitOffset = 28
 bitWidth = 4
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xF
 
 [[peripherals.registers]]
 

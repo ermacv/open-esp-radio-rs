@@ -1,5 +1,3 @@
-use crate::tx::{HtChannelWidth, HtGuardInterval, HtRate};
-
 /// Build the queue PLCP0 word for the guarded non-HE submission branch.
 pub const fn basic_plcp0_word(metadata_address: usize, flags: u32) -> u32 {
     let mut word = (metadata_address as u32 & 0x000f_ffff) | 0x0060_0000;
@@ -84,47 +82,10 @@ pub const fn basic_non_he_plcp1_word(
     word
 }
 
-/// Build the ordinary HT PLCP1 word from one typed MCS0..MCS7 rate.
-///
-/// The raw descriptor rate and CBW metadata stay behind this boundary so a
-/// caller cannot feed a guessed MCS32 selector into the reviewed ordinary
-/// formatter or publish contradictory rate/width inputs.
-pub const fn ht_plcp1_word(rate: HtRate, flags: u32, queue_word_low: u8) -> u32 {
-    let descriptor_word1 = match rate.channel_width {
-        HtChannelWidth::Mhz20 => 0,
-        HtChannelWidth::Mhz40 => 0x0000_8000,
-    };
-    basic_non_he_plcp1_word(rate.code(), flags, queue_word_low, descriptor_word1, 0)
-}
-
-/// Build the packed HT-SIG word for one S31 non-HE queue vector.
-///
-/// The typed rate's channel width becomes HT-SIG1 bit 7. Complete
-/// `libpp.a[hal_mac_tx.o]::mac_tx_set_htsig` copies descriptor word1
-/// bit 15 to this exact bit; its standard 802.11n meaning is CBW (zero for
-/// 20 MHz, one for 40 MHz).
-pub const fn ht_htsig_word(rate: HtRate, length: u32, aggregate: bool) -> u32 {
-    let low = rate.mcs.index() | ((matches!(rate.channel_width, HtChannelWidth::Mhz40) as u8) << 7);
-    let high = 0x07
-        | ((aggregate as u8) << 3)
-        | ((matches!(rate.guard_interval, HtGuardInterval::Short400Ns) as u8) << 7);
-    u32::from_le_bytes([low, length as u8, (length >> 8) as u8, high])
-}
-
-pub const fn basic_htsig_word(rate: HtRate, length: u32) -> u32 {
-    ht_htsig_word(rate, length, false)
-}
-
 pub const fn basic_length_control_word(rts_rate: u8, entry_flags: u8, queue_word: u32) -> u32 {
     let one_symbol = ((queue_word & 0x0000_f000) == 0x0000_1000) as u32;
     (((entry_flags & 0x03) as u32) << 22)
         | (one_symbol << 1)
         | (((rts_rate as u32) << 6) & 0x0000_3fc0)
         | 0x04
-}
-
-pub const fn basic_data_length_word(rate: HtRate, length: u32, entry_flags: u8) -> u32 {
-    (((entry_flags & 0x03) as u32) << 22)
-        | (length & 0x003f_ffff)
-        | ((rate.mcs.index() as u32) << 28)
 }

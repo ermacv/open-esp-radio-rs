@@ -7137,12 +7137,24 @@
               <description>Low twenty bits of the owned TX descriptor address; the DMA window supplies the high address bits.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>20</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>1048575</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>CONTROL_21_20_UNKNOWN</name>
               <description>Recovered PLCP0 control image; mac_tx_set_plcp0 initializes these two bits to binary 10 for the ordinary direct legacy path.</description>
               <bitOffset>20</bitOffset>
               <bitWidth>2</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>3</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>TXOP_DESCRIPTOR_CLASS_UNKNOWN</name>
@@ -7161,12 +7173,24 @@
               <description>Three-bit format selector derived by complete mac_tx_set_plcp0 from vendor descriptor flags. For the bounded plain legacy roots, ppTxProtoProc maps the address-one I/G bit to descriptor flag 0x2: group traffic retains format zero, while an ordinary individual-address descriptor with zero flags selects format one. Exact vendor callback images select format one for both non-A-MPDU HT20 MCS0 and HE20 MCS0 DCM S-MPDU frames; the owned open paths receive ACK at the same format. Independently captured HT and HE A-MPDU images select aggregate format two or five respectively. Format three has an instruction-exact descriptor branch but its higher-level meaning remains open. A legacy-only single-variable A/B temporarily correlated format one with status five and format zero with one authentication response, but format-zero repetitions failed; that experiment is retained as evidence that completion status alone is not a protocol-success oracle, not as an override of the complete blob mapping.</description>
               <bitOffset>24</bitOffset>
               <bitWidth>3</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>7</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>CONTROL_29_27_UNKNOWN</name>
               <description>Remaining low control bits before ownership publication.</description>
               <bitOffset>27</bitOffset>
               <bitWidth>3</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>7</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>VALID</name>
@@ -7198,24 +7222,84 @@
           <access>read-write</access>
           <fields>
             <field>
-              <name>LOW_MODE_DEPENDENT</name>
+              <name>LEGACY_SIGNAL</name>
+              <description>Twelve-bit legacy PLCP SIGNAL/length value. Non-legacy formatters leave this field zero.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>17</bitWidth>
+              <bitWidth>12</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>4095</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>RATE</name>
+              <description>Five-bit MAC rate selector published by complete mac_tx_set_plcp1.</description>
+              <bitOffset>12</bitOffset>
+              <bitWidth>5</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>31</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>KEY_ENTRY_INDEX</name>
               <bitOffset>17</bitOffset>
               <bitWidth>6</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>63</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>BSSID_SELECT</name>
               <bitOffset>23</bitOffset>
               <bitWidth>2</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>3</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
-              <name>HIGH_MODE_DEPENDENT</name>
+              <name>VECTOR_FORMAT</name>
+              <description>Three-bit vector family: zero for legacy, one for HT and two for HE in the reviewed paths.</description>
               <bitOffset>25</bitOffset>
-              <bitWidth>7</bitWidth>
+              <bitWidth>3</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>7</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>HIGH_CONTROL_28</name>
+              <bitOffset>28</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CBW40</name>
+              <description>Complete mac_tx_set_plcp1 sets this bit for the guarded non-HE HT40 branch.</description>
+              <bitOffset>29</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>HIGH_CONTROL_31_30</name>
+              <bitOffset>30</bitOffset>
+              <bitWidth>2</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>3</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -7344,26 +7428,80 @@
           <access>read-write</access>
           <fields>
             <field>
-              <name>MCS_LOW_NIBBLE</name>
-              <description>Low four bits printed as MCS by complete dbg_read_tx_sig. The open 1T1R path currently uses MCS0 through MCS7.</description>
+              <name>MCS</name>
+              <description>Seven-bit standard HT-SIG1 MCS selector. The reviewed open 1T1R path uses MCS0 through MCS7.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>4</bitWidth>
+              <bitWidth>7</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>127</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
-              <name>LOW_CONTROL_UNKNOWN</name>
-              <bitOffset>4</bitOffset>
-              <bitWidth>4</bitWidth>
+              <name>CBW40</name>
+              <description>Standard HT-SIG1 channel-width bit: zero selects 20 MHz and one selects 40 MHz.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>LENGTH</name>
               <description>Sixteen-bit HT length printed by complete dbg_read_tx_sig.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>16</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>65535</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
-              <name>HIGH_CONTROL_UNKNOWN</name>
+              <name>SMOOTHING</name>
+              <description>Standard HT-SIG2 smoothing bit; the reviewed formatter publishes one.</description>
               <bitOffset>24</bitOffset>
-              <bitWidth>8</bitWidth>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>NOT_SOUNDING</name>
+              <description>Standard HT-SIG2 not-sounding bit; the reviewed formatter publishes one.</description>
+              <bitOffset>25</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>REQUIRED_ONE</name>
+              <description>Required one bit retained by every reviewed HT queue vector.</description>
+              <bitOffset>26</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>AGGREGATION</name>
+              <description>Standard HT-SIG2 aggregation bit: clear for a direct MPDU and set for A-MPDU.</description>
+              <bitOffset>27</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>STBC</name>
+              <bitOffset>28</bitOffset>
+              <bitWidth>2</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>3</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>FEC_CODING</name>
+              <bitOffset>30</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>SHORT_GI</name>
+              <description>Standard HT-SIG2 short guard-interval bit.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>
@@ -7607,9 +7745,52 @@
           <access>read-write</access>
           <fields>
             <field>
-              <name>VALUE</name>
+              <name>DATA_PRIMARY</name>
+              <description>Primary calibrated data-power gain-table index.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
+              <bitWidth>8</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>255</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>DATA_ALTERNATE</name>
+              <description>Alternate calibrated data-power gain-table index.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>8</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>255</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>RTS_PRIMARY</name>
+              <description>Primary calibrated RTS-power gain-table index.</description>
+              <bitOffset>16</bitOffset>
+              <bitWidth>8</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>255</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>RTS_ALTERNATE</name>
+              <description>Alternate calibrated RTS-power gain-table index.</description>
+              <bitOffset>24</bitOffset>
+              <bitWidth>8</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>255</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -7680,26 +7861,56 @@
               <name>HT40_LENGTH</name>
               <bitOffset>0</bitOffset>
               <bitWidth>19</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>524287</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>UNKNOWN_19_21</name>
               <bitOffset>19</bitOffset>
               <bitWidth>3</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>7</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>HT40_EOF_COUNT</name>
               <bitOffset>22</bitOffset>
               <bitWidth>2</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>3</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>HT40_TXOP_COUNT</name>
               <bitOffset>24</bitOffset>
               <bitWidth>4</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>15</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>HT40_MCS</name>
               <bitOffset>28</bitOffset>
               <bitWidth>4</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>15</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -7747,26 +7958,56 @@
               <name>RTS_RATE</name>
               <bitOffset>6</bitOffset>
               <bitWidth>8</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>255</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>UNKNOWN_14_21</name>
               <bitOffset>14</bitOffset>
               <bitWidth>8</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>255</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>HT20_EOF_COUNT</name>
               <bitOffset>22</bitOffset>
               <bitWidth>2</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>3</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>HT20_TXOP_COUNT</name>
               <bitOffset>24</bitOffset>
               <bitWidth>4</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>15</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>HIGH_UNKNOWN</name>
               <bitOffset>28</bitOffset>
               <bitWidth>4</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>15</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>

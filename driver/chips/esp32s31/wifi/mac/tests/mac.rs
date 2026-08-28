@@ -106,17 +106,7 @@ mod mac {
     ];
     pub const CRYPTO_KEY_ENTRY_WORDS: u8 = 10;
 
-    pub const TX_Q_CONFIG: [TestRegister; 4] = queue("TX_Q_CONFIG");
     pub const TX_Q_CONTROL: [TestRegister; 4] = queue("TX_Q_CONTROL");
-    pub const TX_Q_PPDU_CONTROL: [TestRegister; 4] = queue("TX_Q_PPDU_CONTROL");
-    pub const TX_Q_PROTECTION: [TestRegister; 4] = queue("TX_Q_PROTECTION");
-    pub const TX_Q_PLCP1: [TestRegister; 4] = queue("TX_Q_PLCP1");
-    pub const TX_Q_PTI: [TestRegister; 4] = queue("TX_Q_PTI");
-    pub const TX_Q_HT_SIGNAL: [TestRegister; 4] = queue("TX_Q_HT_SIGNAL");
-    pub const TX_Q_POWER: [TestRegister; 4] = queue("TX_Q_POWER");
-    pub const TX_Q_HT_DESCRIPTOR_COUNTS: [TestRegister; 4] = queue("TX_Q_HT_DESCRIPTOR_COUNTS");
-    pub const TX_Q_DATA_LENGTH: [TestRegister; 4] = queue("TX_Q_DATA_LENGTH");
-    pub const TX_Q_LENGTH_CONTROL: [TestRegister; 4] = queue("TX_Q_LENGTH_CONTROL");
     pub const TX_Q0_CONTROL: TestRegister = TX_Q_CONTROL[0];
     pub const TX_STATE_CLEAR: TestRegister = named("TX_STATE_CLEAR");
     pub const TX_STATE: TestRegister = named("TX_STATE");
@@ -841,94 +831,10 @@ impl TxHardware for MockMmio {
 
     fn prepare_bound_ht_tx(
         &mut self,
-        dma: &dyn PreparedTxDma,
-        queue: u8,
-        program: MacHtTxProgram,
+        _dma: &dyn PreparedTxDma,
+        _queue: u8,
+        _program: MacHtTxProgram,
     ) -> bool {
-        assert_eq!(
-            dma.descriptor_head() & 0x000f_ffff,
-            program.plcp0 & 0x000f_ffff
-        );
-        let index = usize::from(queue);
-        if self.read32(mac::TX_Q_CONTROL[index]) & TX_Q_ENABLE_VALID != 0 {
-            return false;
-        }
-        let mut config = self.read32(mac::TX_Q_CONFIG[index]);
-        self.write32(
-            mac::TX_Q_CONFIG[index],
-            (config & 0xffff_f000) | u32::from(program.timeout),
-        );
-        self.write32(mac::TX_Q_CONTROL[index], program.plcp0);
-        self.write32(mac::TX_Q_PLCP1[index], program.plcp1);
-        let ppdu = self.read32(mac::TX_Q_PPDU_CONTROL[index]);
-        self.write32(mac::TX_Q_PPDU_CONTROL[index], ppdu & !0x08);
-        let protection = self.read32(mac::TX_Q_PROTECTION[index]);
-        self.write32(mac::TX_Q_PROTECTION[index], protection & 0x7fff_ffff);
-        self.write32(mac::TX_Q_HT_SIGNAL[index], program.ht_signal);
-        let descriptor_counts = self.read32(mac::TX_Q_HT_DESCRIPTOR_COUNTS[index]);
-        self.write32(
-            mac::TX_Q_HT_DESCRIPTOR_COUNTS[index],
-            (descriptor_counts & !0x7f) | u32::from(program.descriptor_count_a),
-        );
-        let descriptor_counts = self.read32(mac::TX_Q_HT_DESCRIPTOR_COUNTS[index]);
-        self.write32(
-            mac::TX_Q_HT_DESCRIPTOR_COUNTS[index],
-            (descriptor_counts & !(0x7f << 7)) | (u32::from(program.descriptor_count_b) << 7),
-        );
-        let descriptor_counts = self.read32(mac::TX_Q_HT_DESCRIPTOR_COUNTS[index]);
-        self.write32(
-            mac::TX_Q_HT_DESCRIPTOR_COUNTS[index],
-            (descriptor_counts & !(0x7f << 14)) | (u32::from(program.descriptor_count_a) << 14),
-        );
-        for shift in [0, 10, 20] {
-            let protection = self.read32(mac::TX_Q_PROTECTION[index]);
-            self.write32(
-                mac::TX_Q_PROTECTION[index],
-                (protection & !(0x3ff << shift)) | (u32::from(program.protection_spacing) << shift),
-            );
-        }
-        self.write32(mac::TX_Q_LENGTH_CONTROL[index], program.length_control);
-        self.write32(mac::TX_Q_DATA_LENGTH[index], program.data_length);
-        self.write32(mac::TX_Q_POWER[index], program.power);
-
-        config = self.read32(mac::TX_Q_CONFIG[index]);
-        self.write32(
-            mac::TX_Q_CONFIG[index],
-            (config & 0x0fff_ffff) | (u32::from(program.scheduler_priority) << 28),
-        );
-        for (mask, shift) in [
-            (0xffff_0fff, 12),
-            (0xffff_f0ff, 8),
-            (0xffff_ff0f, 4),
-            (0xfff0_ffff, 16),
-        ] {
-            let pti = self.read32(mac::TX_Q_PTI[index]);
-            self.write32(
-                mac::TX_Q_PTI[index],
-                (pti & mask) | (u32::from(program.packet_priority) << shift),
-            );
-        }
-        let pti = self.read32(mac::TX_Q_PTI[index]);
-        self.write32(
-            mac::TX_Q_PTI[index],
-            (pti & 0x000f_ffff) | (u32::from(program.priority_count) << 20),
-        );
-
-        config = self.read32(mac::TX_Q_CONFIG[index]);
-        self.write32(
-            mac::TX_Q_CONFIG[index],
-            (config & 0xf0ff_ffff) | (u32::from(program.aifsn) << 24),
-        );
-        config = self.read32(mac::TX_Q_CONFIG[index]);
-        self.write32(
-            mac::TX_Q_CONFIG[index],
-            (config & 0xffc0_0fff) | (u32::from(program.contention_window) << 12),
-        );
-        config = self.read32(mac::TX_Q_CONFIG[index]);
-        self.write32(
-            mac::TX_Q_CONFIG[index],
-            (config & 0xff3f_ffff) | (program.interface.bits() << 22),
-        );
         true
     }
 
@@ -937,13 +843,8 @@ impl TxHardware for MockMmio {
         Mmio::fence(self);
     }
 
-    fn start_bound_ht_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
-        assert_eq!(dma.descriptor_head() & 0x000f_ffff, plcp0 & 0x000f_ffff);
+    fn start_bound_ht_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8) {
         Mmio::fence(self);
-        self.write32(
-            mac::TX_Q_CONTROL[usize::from(queue)],
-            plcp0 | TX_Q_ENABLE_VALID,
-        );
         Mmio::fence(self);
     }
 
@@ -4125,21 +4026,6 @@ fn zero_edca_txop_selects_the_rom_apep_table_for_every_he_rate() {
             );
         }
     }
-}
-
-#[test]
-fn ht_peer_ampdu_density_maps_to_the_complete_blob_spacing_values() {
-    let expected = [20, 20, 20, 20, 20, 40, 76, 148];
-    for (density, expected) in expected.into_iter().enumerate() {
-        assert_eq!(
-            HtProtectionSpacing::from_ampdu_parameters((density as u8) << 2).hardware_value(),
-            expected,
-        );
-    }
-    assert_eq!(
-        HtProtectionSpacing::from_ampdu_parameters(0xf7),
-        HtProtectionSpacing::Density5,
-    );
 }
 
 #[test]

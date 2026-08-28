@@ -2,7 +2,7 @@
 
 use open_esp_radio_esp32s31_hal::types::{
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid, MacHeTxProgram,
-    MacHtTxProgram,
+    MacHtTxParameters,
 };
 
 use super::{HtAmpduLength, HtAmpduTxError, HtAmpduTxFormat, HtAmpduTxStorage};
@@ -18,8 +18,7 @@ pub(super) struct PreparedHeTrigger {
 
 pub(super) struct PreparedHtSubmission {
     pub(super) aggregate: HtAmpduLength,
-    pub(super) program: MacHtTxProgram,
-    pub(super) plcp0: u32,
+    pub(super) parameters: MacHtTxParameters,
 }
 
 pub(super) struct PreparedHeSubmission {
@@ -32,7 +31,6 @@ pub(super) struct PreparedHeSubmission {
 impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFER_SIZE> {
     pub(super) fn prepared_ht_submission(
         &self,
-        descriptor_head: u32,
         cookie: TxCookie,
         config: HtAmpduTxConfig,
     ) -> Result<PreparedHtSubmission, HtAmpduTxError> {
@@ -44,35 +42,11 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         }
         let aggregate = self.calculate_aggregate()?;
         if config.aggregate_length != aggregate.bytes || config.subframes != aggregate.subframes {
-            return Err(HtAmpduTxError::RegisterImageMismatch);
+            return Err(HtAmpduTxError::AggregateConfigurationMismatch);
         }
-        let image = crate::tx::ht_ampdu_q0_image(descriptor_head, config).ok_or(
-            HtAmpduTxError::TxImageUnavailable {
-                format: HtAmpduTxFormat::HtAmpdu,
-            },
-        )?;
         Ok(PreparedHtSubmission {
             aggregate,
-            program: MacHtTxProgram {
-                plcp0: image.plcp0,
-                plcp1: image.plcp1,
-                ht_signal: image.ht_signal,
-                data_length: image.data_length,
-                power: image.power,
-                length_control: image.length_control,
-                descriptor_count_a: image.descriptor_count_a,
-                descriptor_count_b: image.descriptor_count_b,
-                protection_spacing: image.protection_spacing,
-                timeout: config.timeout,
-                scheduler_priority: config.scheduler_priority,
-                packet_priority: config.pti,
-                priority_count: config.pti_count,
-                aifsn: config.aifsn,
-                contention_window: config.contention_window,
-                interface: config.interface,
-                txop: false,
-            },
-            plcp0: image.plcp0,
+            parameters: config.pac_parameters(),
         })
     }
 
@@ -91,11 +65,11 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         }
         let aggregate = self.calculate_aggregate()?;
         if config.aggregate_length != aggregate.bytes || config.subframes != aggregate.subframes {
-            return Err(HtAmpduTxError::RegisterImageMismatch);
+            return Err(HtAmpduTxError::AggregateConfigurationMismatch);
         }
         let trigger = self.prepared_he_trigger(queue, config)?;
         let image = crate::tx::he_ampdu_q0_image(descriptor_head, config).ok_or(
-            HtAmpduTxError::TxImageUnavailable {
+            HtAmpduTxError::TxProgramUnavailable {
                 format: HtAmpduTxFormat::HeAmpdu,
             },
         )?;

@@ -4,9 +4,6 @@
 //! driver. They preserve finite descriptor transformations for native oracle
 //! tests without exposing pointer-shaped vendor structures to the live path.
 
-#[cfg(test)]
-use crate::tx::HtProtectionSpacing;
-
 const BASIC_HT_RATE_MIN: u8 = 16;
 const BASIC_HT_RATE_MAX: u8 = 35;
 pub(crate) const TX_DESCRIPTOR_HE_BIT: u32 = 0x8000_0000;
@@ -89,16 +86,6 @@ pub const fn basic_ht_ampdu_completion(
             frame_control: input.frame_control | 0x0800,
         }
     }
-}
-
-/// Reproduce the `ni + 0x82` protection-spacing value written by the pinned
-/// `rcUpdateAMPDUParam` body from the peer's HT A-MPDU Parameters byte.
-///
-/// Bits 2..=4 encode the IEEE 802.11 minimum MPDU start spacing. The hardware
-/// consumes the recovered finite value in all three 10-bit protection fields.
-#[cfg(test)]
-pub(crate) const fn basic_ht_ampdu_protection_spacing(parameters: u8) -> u16 {
-    HtProtectionSpacing::from_ampdu_parameters(parameters).hardware_value()
 }
 
 /// Reproduce the mutation made by the pinned non-HE `ppAssembleAMPDU` body.

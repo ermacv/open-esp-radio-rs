@@ -17804,11 +17804,11 @@ pub mod wifi_mac_tx_queue_control {
         #[doc = "Field `DESCRIPTOR_ADDRESS_LOW` reader - Low twenty bits of the owned TX descriptor address; the DMA window supplies the high address bits."]
         pub type DescriptorAddressLowR = crate::FieldReader<u32>;
         #[doc = "Field `DESCRIPTOR_ADDRESS_LOW` writer - Low twenty bits of the owned TX descriptor address; the DMA window supplies the high address bits."]
-        pub type DescriptorAddressLowW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        pub type DescriptorAddressLowW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32, crate::Safe>;
         #[doc = "Field `CONTROL_21_20_UNKNOWN` reader - Recovered PLCP0 control image; mac_tx_set_plcp0 initializes these two bits to binary 10 for the ordinary direct legacy path."]
         pub type Control21_20UnknownR = crate::FieldReader;
         #[doc = "Field `CONTROL_21_20_UNKNOWN` writer - Recovered PLCP0 control image; mac_tx_set_plcp0 initializes these two bits to binary 10 for the ordinary direct legacy path."]
-        pub type Control21_20UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type Control21_20UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `TXOP_DESCRIPTOR_CLASS_UNKNOWN` reader - Complete pp.o ppTxFragmentProc reaches its common legacy setup at offsets 0x8e..0xa8 from the CCMP selector-three branch at 0x22a and sets descriptor bit seven. Complete hal_mac_tx.o mac_tx_set_txop_q offsets 0x86..0xaa then sets this queue-control bit exactly when descriptor flag bits 7:6 equal binary 10 and clears it otherwise. Thus the bounded ordinary individual/group CCMP path sets this bit after mac_tx_set_plcp0. A 2026-07-29 open HIL A/B clearing the bit increased raw ACK timeouts from the prior roughly 28 percent to 1395/2325 attempts (60 percent), so the exact set mapping is retained while the electrical meaning remains unknown."]
         pub type TxopDescriptorClassUnknownR = crate::BitReader;
         #[doc = "Field `TXOP_DESCRIPTOR_CLASS_UNKNOWN` writer - Complete pp.o ppTxFragmentProc reaches its common legacy setup at offsets 0x8e..0xa8 from the CCMP selector-three branch at 0x22a and sets descriptor bit seven. Complete hal_mac_tx.o mac_tx_set_txop_q offsets 0x86..0xaa then sets this queue-control bit exactly when descriptor flag bits 7:6 equal binary 10 and clears it otherwise. Thus the bounded ordinary individual/group CCMP path sets this bit after mac_tx_set_plcp0. A 2026-07-29 open HIL A/B clearing the bit increased raw ACK timeouts from the prior roughly 28 percent to 1395/2325 attempts (60 percent), so the exact set mapping is retained while the electrical meaning remains unknown."]
@@ -17820,11 +17820,11 @@ pub mod wifi_mac_tx_queue_control {
         #[doc = "Field `PLCP_FORMAT` reader - Three-bit format selector derived by complete mac_tx_set_plcp0 from vendor descriptor flags. For the bounded plain legacy roots, ppTxProtoProc maps the address-one I/G bit to descriptor flag 0x2: group traffic retains format zero, while an ordinary individual-address descriptor with zero flags selects format one. Exact vendor callback images select format one for both non-A-MPDU HT20 MCS0 and HE20 MCS0 DCM S-MPDU frames; the owned open paths receive ACK at the same format. Independently captured HT and HE A-MPDU images select aggregate format two or five respectively. Format three has an instruction-exact descriptor branch but its higher-level meaning remains open. A legacy-only single-variable A/B temporarily correlated format one with status five and format zero with one authentication response, but format-zero repetitions failed; that experiment is retained as evidence that completion status alone is not a protocol-success oracle, not as an override of the complete blob mapping."]
         pub type PlcpFormatR = crate::FieldReader;
         #[doc = "Field `PLCP_FORMAT` writer - Three-bit format selector derived by complete mac_tx_set_plcp0 from vendor descriptor flags. For the bounded plain legacy roots, ppTxProtoProc maps the address-one I/G bit to descriptor flag 0x2: group traffic retains format zero, while an ordinary individual-address descriptor with zero flags selects format one. Exact vendor callback images select format one for both non-A-MPDU HT20 MCS0 and HE20 MCS0 DCM S-MPDU frames; the owned open paths receive ACK at the same format. Independently captured HT and HE A-MPDU images select aggregate format two or five respectively. Format three has an instruction-exact descriptor branch but its higher-level meaning remains open. A legacy-only single-variable A/B temporarily correlated format one with status five and format zero with one authentication response, but format-zero repetitions failed; that experiment is retained as evidence that completion status alone is not a protocol-success oracle, not as an override of the complete blob mapping."]
-        pub type PlcpFormatW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        pub type PlcpFormatW<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
         #[doc = "Field `CONTROL_29_27_UNKNOWN` reader - Remaining low control bits before ownership publication."]
         pub type Control29_27UnknownR = crate::FieldReader;
         #[doc = "Field `CONTROL_29_27_UNKNOWN` writer - Remaining low control bits before ownership publication."]
-        pub type Control29_27UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        pub type Control29_27UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
         #[doc = "Field `VALID` reader - "]
         pub type ValidR = crate::BitReader;
         #[doc = "Field `VALID` writer - "]
@@ -18350,27 +18350,48 @@ pub mod wifi_mac_tx_queue_vector {
         pub type R = crate::R<Plcp1Spec>;
         #[doc = "Register `PLCP1%s` writer"]
         pub type W = crate::W<Plcp1Spec>;
-        #[doc = "Field `LOW_MODE_DEPENDENT` reader - "]
-        pub type LowModeDependentR = crate::FieldReader<u32>;
-        #[doc = "Field `LOW_MODE_DEPENDENT` writer - "]
-        pub type LowModeDependentW<'a, REG> = crate::FieldWriter<'a, REG, 17, u32>;
+        #[doc = "Field `LEGACY_SIGNAL` reader - Twelve-bit legacy PLCP SIGNAL/length value. Non-legacy formatters leave this field zero."]
+        pub type LegacySignalR = crate::FieldReader<u16>;
+        #[doc = "Field `LEGACY_SIGNAL` writer - Twelve-bit legacy PLCP SIGNAL/length value. Non-legacy formatters leave this field zero."]
+        pub type LegacySignalW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16, crate::Safe>;
+        #[doc = "Field `RATE` reader - Five-bit MAC rate selector published by complete mac_tx_set_plcp1."]
+        pub type RateR = crate::FieldReader;
+        #[doc = "Field `RATE` writer - Five-bit MAC rate selector published by complete mac_tx_set_plcp1."]
+        pub type RateW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
         #[doc = "Field `KEY_ENTRY_INDEX` reader - "]
         pub type KeyEntryIndexR = crate::FieldReader;
         #[doc = "Field `KEY_ENTRY_INDEX` writer - "]
-        pub type KeyEntryIndexW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type KeyEntryIndexW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         #[doc = "Field `BSSID_SELECT` reader - "]
         pub type BssidSelectR = crate::FieldReader;
         #[doc = "Field `BSSID_SELECT` writer - "]
-        pub type BssidSelectW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
-        #[doc = "Field `HIGH_MODE_DEPENDENT` reader - "]
-        pub type HighModeDependentR = crate::FieldReader;
-        #[doc = "Field `HIGH_MODE_DEPENDENT` writer - "]
-        pub type HighModeDependentW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        pub type BssidSelectW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
+        #[doc = "Field `VECTOR_FORMAT` reader - Three-bit vector family: zero for legacy, one for HT and two for HE in the reviewed paths."]
+        pub type VectorFormatR = crate::FieldReader;
+        #[doc = "Field `VECTOR_FORMAT` writer - Three-bit vector family: zero for legacy, one for HT and two for HE in the reviewed paths."]
+        pub type VectorFormatW<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
+        #[doc = "Field `HIGH_CONTROL_28` reader - "]
+        pub type HighControl28R = crate::BitReader;
+        #[doc = "Field `HIGH_CONTROL_28` writer - "]
+        pub type HighControl28W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CBW40` reader - Complete mac_tx_set_plcp1 sets this bit for the guarded non-HE HT40 branch."]
+        pub type Cbw40R = crate::BitReader;
+        #[doc = "Field `CBW40` writer - Complete mac_tx_set_plcp1 sets this bit for the guarded non-HE HT40 branch."]
+        pub type Cbw40W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `HIGH_CONTROL_31_30` reader - "]
+        pub type HighControl31_30R = crate::FieldReader;
+        #[doc = "Field `HIGH_CONTROL_31_30` writer - "]
+        pub type HighControl31_30W<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:16"]
+            #[doc = "Bits 0:11 - Twelve-bit legacy PLCP SIGNAL/length value. Non-legacy formatters leave this field zero."]
             #[inline(always)]
-            pub fn low_mode_dependent(&self) -> LowModeDependentR {
-                LowModeDependentR::new(self.bits & 0x0001_ffff)
+            pub fn legacy_signal(&self) -> LegacySignalR {
+                LegacySignalR::new((self.bits & 0x0fff) as u16)
+            }
+            #[doc = "Bits 12:16 - Five-bit MAC rate selector published by complete mac_tx_set_plcp1."]
+            #[inline(always)]
+            pub fn rate(&self) -> RateR {
+                RateR::new(((self.bits >> 12) & 0x1f) as u8)
             }
             #[doc = "Bits 17:22"]
             #[inline(always)]
@@ -18382,17 +18403,37 @@ pub mod wifi_mac_tx_queue_vector {
             pub fn bssid_select(&self) -> BssidSelectR {
                 BssidSelectR::new(((self.bits >> 23) & 3) as u8)
             }
-            #[doc = "Bits 25:31"]
+            #[doc = "Bits 25:27 - Three-bit vector family: zero for legacy, one for HT and two for HE in the reviewed paths."]
             #[inline(always)]
-            pub fn high_mode_dependent(&self) -> HighModeDependentR {
-                HighModeDependentR::new(((self.bits >> 25) & 0x7f) as u8)
+            pub fn vector_format(&self) -> VectorFormatR {
+                VectorFormatR::new(((self.bits >> 25) & 7) as u8)
+            }
+            #[doc = "Bit 28"]
+            #[inline(always)]
+            pub fn high_control_28(&self) -> HighControl28R {
+                HighControl28R::new(((self.bits >> 28) & 1) != 0)
+            }
+            #[doc = "Bit 29 - Complete mac_tx_set_plcp1 sets this bit for the guarded non-HE HT40 branch."]
+            #[inline(always)]
+            pub fn cbw40(&self) -> Cbw40R {
+                Cbw40R::new(((self.bits >> 29) & 1) != 0)
+            }
+            #[doc = "Bits 30:31"]
+            #[inline(always)]
+            pub fn high_control_31_30(&self) -> HighControl31_30R {
+                HighControl31_30R::new(((self.bits >> 30) & 3) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 0:16"]
+            #[doc = "Bits 0:11 - Twelve-bit legacy PLCP SIGNAL/length value. Non-legacy formatters leave this field zero."]
             #[inline(always)]
-            pub fn low_mode_dependent(&mut self) -> LowModeDependentW<'_, Plcp1Spec> {
-                LowModeDependentW::new(self, 0)
+            pub fn legacy_signal(&mut self) -> LegacySignalW<'_, Plcp1Spec> {
+                LegacySignalW::new(self, 0)
+            }
+            #[doc = "Bits 12:16 - Five-bit MAC rate selector published by complete mac_tx_set_plcp1."]
+            #[inline(always)]
+            pub fn rate(&mut self) -> RateW<'_, Plcp1Spec> {
+                RateW::new(self, 12)
             }
             #[doc = "Bits 17:22"]
             #[inline(always)]
@@ -18404,10 +18445,25 @@ pub mod wifi_mac_tx_queue_vector {
             pub fn bssid_select(&mut self) -> BssidSelectW<'_, Plcp1Spec> {
                 BssidSelectW::new(self, 23)
             }
-            #[doc = "Bits 25:31"]
+            #[doc = "Bits 25:27 - Three-bit vector family: zero for legacy, one for HT and two for HE in the reviewed paths."]
             #[inline(always)]
-            pub fn high_mode_dependent(&mut self) -> HighModeDependentW<'_, Plcp1Spec> {
-                HighModeDependentW::new(self, 25)
+            pub fn vector_format(&mut self) -> VectorFormatW<'_, Plcp1Spec> {
+                VectorFormatW::new(self, 25)
+            }
+            #[doc = "Bit 28"]
+            #[inline(always)]
+            pub fn high_control_28(&mut self) -> HighControl28W<'_, Plcp1Spec> {
+                HighControl28W::new(self, 28)
+            }
+            #[doc = "Bit 29 - Complete mac_tx_set_plcp1 sets this bit for the guarded non-HE HT40 branch."]
+            #[inline(always)]
+            pub fn cbw40(&mut self) -> Cbw40W<'_, Plcp1Spec> {
+                Cbw40W::new(self, 29)
+            }
+            #[doc = "Bits 30:31"]
+            #[inline(always)]
+            pub fn high_control_31_30(&mut self) -> HighControl31_30W<'_, Plcp1Spec> {
+                HighControl31_30W::new(self, 30)
             }
         }
         #[doc = "Per-queue second PLCP/vector word. Complete dbg_read_key_entry independently names bits 22:17 as KEY_ENTRY_INDEX and bits 24:23 as BSSID_SELECT. Complete mac_tx_set_plcp1 sets bit 29 for the guarded HT branch when descriptor word1 bit 15 selects 40-MHz channel width; the same selector is copied into HT-SIG1 CBW. A synchronous vendor raw HE20 MCS0 DCM capture used descriptor rate 0x1a and published 0x0401a000, proving that explicit DCM retains the ordinary 0x1a+MCS HE descriptor-code domain.\n\nYou can [`read`](crate::Reg::read) this register and get [`plcp1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`plcp1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -18632,64 +18688,148 @@ pub mod wifi_mac_tx_queue_vector {
         pub type R = crate::R<HtSignalSpec>;
         #[doc = "Register `HT_SIGNAL%s` writer"]
         pub type W = crate::W<HtSignalSpec>;
-        #[doc = "Field `MCS_LOW_NIBBLE` reader - Low four bits printed as MCS by complete dbg_read_tx_sig. The open 1T1R path currently uses MCS0 through MCS7."]
-        pub type McsLowNibbleR = crate::FieldReader;
-        #[doc = "Field `MCS_LOW_NIBBLE` writer - Low four bits printed as MCS by complete dbg_read_tx_sig. The open 1T1R path currently uses MCS0 through MCS7."]
-        pub type McsLowNibbleW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
-        #[doc = "Field `LOW_CONTROL_UNKNOWN` reader - "]
-        pub type LowControlUnknownR = crate::FieldReader;
-        #[doc = "Field `LOW_CONTROL_UNKNOWN` writer - "]
-        pub type LowControlUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `MCS` reader - Seven-bit standard HT-SIG1 MCS selector. The reviewed open 1T1R path uses MCS0 through MCS7."]
+        pub type McsR = crate::FieldReader;
+        #[doc = "Field `MCS` writer - Seven-bit standard HT-SIG1 MCS selector. The reviewed open 1T1R path uses MCS0 through MCS7."]
+        pub type McsW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
+        #[doc = "Field `CBW40` reader - Standard HT-SIG1 channel-width bit: zero selects 20 MHz and one selects 40 MHz."]
+        pub type Cbw40R = crate::BitReader;
+        #[doc = "Field `CBW40` writer - Standard HT-SIG1 channel-width bit: zero selects 20 MHz and one selects 40 MHz."]
+        pub type Cbw40W<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `LENGTH` reader - Sixteen-bit HT length printed by complete dbg_read_tx_sig."]
         pub type LengthR = crate::FieldReader<u16>;
         #[doc = "Field `LENGTH` writer - Sixteen-bit HT length printed by complete dbg_read_tx_sig."]
-        pub type LengthW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
-        #[doc = "Field `HIGH_CONTROL_UNKNOWN` reader - "]
-        pub type HighControlUnknownR = crate::FieldReader;
-        #[doc = "Field `HIGH_CONTROL_UNKNOWN` writer - "]
-        pub type HighControlUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type LengthW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
+        #[doc = "Field `SMOOTHING` reader - Standard HT-SIG2 smoothing bit; the reviewed formatter publishes one."]
+        pub type SmoothingR = crate::BitReader;
+        #[doc = "Field `SMOOTHING` writer - Standard HT-SIG2 smoothing bit; the reviewed formatter publishes one."]
+        pub type SmoothingW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `NOT_SOUNDING` reader - Standard HT-SIG2 not-sounding bit; the reviewed formatter publishes one."]
+        pub type NotSoundingR = crate::BitReader;
+        #[doc = "Field `NOT_SOUNDING` writer - Standard HT-SIG2 not-sounding bit; the reviewed formatter publishes one."]
+        pub type NotSoundingW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `REQUIRED_ONE` reader - Required one bit retained by every reviewed HT queue vector."]
+        pub type RequiredOneR = crate::BitReader;
+        #[doc = "Field `REQUIRED_ONE` writer - Required one bit retained by every reviewed HT queue vector."]
+        pub type RequiredOneW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `AGGREGATION` reader - Standard HT-SIG2 aggregation bit: clear for a direct MPDU and set for A-MPDU."]
+        pub type AggregationR = crate::BitReader;
+        #[doc = "Field `AGGREGATION` writer - Standard HT-SIG2 aggregation bit: clear for a direct MPDU and set for A-MPDU."]
+        pub type AggregationW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `STBC` reader - "]
+        pub type StbcR = crate::FieldReader;
+        #[doc = "Field `STBC` writer - "]
+        pub type StbcW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
+        #[doc = "Field `FEC_CODING` reader - "]
+        pub type FecCodingR = crate::BitReader;
+        #[doc = "Field `FEC_CODING` writer - "]
+        pub type FecCodingW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `SHORT_GI` reader - Standard HT-SIG2 short guard-interval bit."]
+        pub type ShortGiR = crate::BitReader;
+        #[doc = "Field `SHORT_GI` writer - Standard HT-SIG2 short guard-interval bit."]
+        pub type ShortGiW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bits 0:3 - Low four bits printed as MCS by complete dbg_read_tx_sig. The open 1T1R path currently uses MCS0 through MCS7."]
+            #[doc = "Bits 0:6 - Seven-bit standard HT-SIG1 MCS selector. The reviewed open 1T1R path uses MCS0 through MCS7."]
             #[inline(always)]
-            pub fn mcs_low_nibble(&self) -> McsLowNibbleR {
-                McsLowNibbleR::new((self.bits & 0x0f) as u8)
+            pub fn mcs(&self) -> McsR {
+                McsR::new((self.bits & 0x7f) as u8)
             }
-            #[doc = "Bits 4:7"]
+            #[doc = "Bit 7 - Standard HT-SIG1 channel-width bit: zero selects 20 MHz and one selects 40 MHz."]
             #[inline(always)]
-            pub fn low_control_unknown(&self) -> LowControlUnknownR {
-                LowControlUnknownR::new(((self.bits >> 4) & 0x0f) as u8)
+            pub fn cbw40(&self) -> Cbw40R {
+                Cbw40R::new(((self.bits >> 7) & 1) != 0)
             }
             #[doc = "Bits 8:23 - Sixteen-bit HT length printed by complete dbg_read_tx_sig."]
             #[inline(always)]
             pub fn length(&self) -> LengthR {
                 LengthR::new(((self.bits >> 8) & 0xffff) as u16)
             }
-            #[doc = "Bits 24:31"]
+            #[doc = "Bit 24 - Standard HT-SIG2 smoothing bit; the reviewed formatter publishes one."]
             #[inline(always)]
-            pub fn high_control_unknown(&self) -> HighControlUnknownR {
-                HighControlUnknownR::new(((self.bits >> 24) & 0xff) as u8)
+            pub fn smoothing(&self) -> SmoothingR {
+                SmoothingR::new(((self.bits >> 24) & 1) != 0)
+            }
+            #[doc = "Bit 25 - Standard HT-SIG2 not-sounding bit; the reviewed formatter publishes one."]
+            #[inline(always)]
+            pub fn not_sounding(&self) -> NotSoundingR {
+                NotSoundingR::new(((self.bits >> 25) & 1) != 0)
+            }
+            #[doc = "Bit 26 - Required one bit retained by every reviewed HT queue vector."]
+            #[inline(always)]
+            pub fn required_one(&self) -> RequiredOneR {
+                RequiredOneR::new(((self.bits >> 26) & 1) != 0)
+            }
+            #[doc = "Bit 27 - Standard HT-SIG2 aggregation bit: clear for a direct MPDU and set for A-MPDU."]
+            #[inline(always)]
+            pub fn aggregation(&self) -> AggregationR {
+                AggregationR::new(((self.bits >> 27) & 1) != 0)
+            }
+            #[doc = "Bits 28:29"]
+            #[inline(always)]
+            pub fn stbc(&self) -> StbcR {
+                StbcR::new(((self.bits >> 28) & 3) as u8)
+            }
+            #[doc = "Bit 30"]
+            #[inline(always)]
+            pub fn fec_coding(&self) -> FecCodingR {
+                FecCodingR::new(((self.bits >> 30) & 1) != 0)
+            }
+            #[doc = "Bit 31 - Standard HT-SIG2 short guard-interval bit."]
+            #[inline(always)]
+            pub fn short_gi(&self) -> ShortGiR {
+                ShortGiR::new(((self.bits >> 31) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bits 0:3 - Low four bits printed as MCS by complete dbg_read_tx_sig. The open 1T1R path currently uses MCS0 through MCS7."]
+            #[doc = "Bits 0:6 - Seven-bit standard HT-SIG1 MCS selector. The reviewed open 1T1R path uses MCS0 through MCS7."]
             #[inline(always)]
-            pub fn mcs_low_nibble(&mut self) -> McsLowNibbleW<'_, HtSignalSpec> {
-                McsLowNibbleW::new(self, 0)
+            pub fn mcs(&mut self) -> McsW<'_, HtSignalSpec> {
+                McsW::new(self, 0)
             }
-            #[doc = "Bits 4:7"]
+            #[doc = "Bit 7 - Standard HT-SIG1 channel-width bit: zero selects 20 MHz and one selects 40 MHz."]
             #[inline(always)]
-            pub fn low_control_unknown(&mut self) -> LowControlUnknownW<'_, HtSignalSpec> {
-                LowControlUnknownW::new(self, 4)
+            pub fn cbw40(&mut self) -> Cbw40W<'_, HtSignalSpec> {
+                Cbw40W::new(self, 7)
             }
             #[doc = "Bits 8:23 - Sixteen-bit HT length printed by complete dbg_read_tx_sig."]
             #[inline(always)]
             pub fn length(&mut self) -> LengthW<'_, HtSignalSpec> {
                 LengthW::new(self, 8)
             }
-            #[doc = "Bits 24:31"]
+            #[doc = "Bit 24 - Standard HT-SIG2 smoothing bit; the reviewed formatter publishes one."]
             #[inline(always)]
-            pub fn high_control_unknown(&mut self) -> HighControlUnknownW<'_, HtSignalSpec> {
-                HighControlUnknownW::new(self, 24)
+            pub fn smoothing(&mut self) -> SmoothingW<'_, HtSignalSpec> {
+                SmoothingW::new(self, 24)
+            }
+            #[doc = "Bit 25 - Standard HT-SIG2 not-sounding bit; the reviewed formatter publishes one."]
+            #[inline(always)]
+            pub fn not_sounding(&mut self) -> NotSoundingW<'_, HtSignalSpec> {
+                NotSoundingW::new(self, 25)
+            }
+            #[doc = "Bit 26 - Required one bit retained by every reviewed HT queue vector."]
+            #[inline(always)]
+            pub fn required_one(&mut self) -> RequiredOneW<'_, HtSignalSpec> {
+                RequiredOneW::new(self, 26)
+            }
+            #[doc = "Bit 27 - Standard HT-SIG2 aggregation bit: clear for a direct MPDU and set for A-MPDU."]
+            #[inline(always)]
+            pub fn aggregation(&mut self) -> AggregationW<'_, HtSignalSpec> {
+                AggregationW::new(self, 27)
+            }
+            #[doc = "Bits 28:29"]
+            #[inline(always)]
+            pub fn stbc(&mut self) -> StbcW<'_, HtSignalSpec> {
+                StbcW::new(self, 28)
+            }
+            #[doc = "Bit 30"]
+            #[inline(always)]
+            pub fn fec_coding(&mut self) -> FecCodingW<'_, HtSignalSpec> {
+                FecCodingW::new(self, 30)
+            }
+            #[doc = "Bit 31 - Standard HT-SIG2 short guard-interval bit."]
+            #[inline(always)]
+            pub fn short_gi(&mut self) -> ShortGiW<'_, HtSignalSpec> {
+                ShortGiW::new(self, 31)
             }
         }
         #[doc = "Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. Complete dbg_read_tx_sig independently prints the low MCS nibble and sixteen-bit length. The formatter copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions.\n\nYou can [`read`](crate::Reg::read) this register and get [`ht_signal::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ht_signal::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -19282,22 +19422,64 @@ pub mod wifi_mac_tx_queue_vector {
         pub type R = crate::R<PowerSpec>;
         #[doc = "Register `POWER%s` writer"]
         pub type W = crate::W<PowerSpec>;
-        #[doc = "Field `VALUE` reader - "]
-        pub type ValueR = crate::FieldReader<u32>;
-        #[doc = "Field `VALUE` writer - "]
-        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `DATA_PRIMARY` reader - Primary calibrated data-power gain-table index."]
+        pub type DataPrimaryR = crate::FieldReader;
+        #[doc = "Field `DATA_PRIMARY` writer - Primary calibrated data-power gain-table index."]
+        pub type DataPrimaryW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `DATA_ALTERNATE` reader - Alternate calibrated data-power gain-table index."]
+        pub type DataAlternateR = crate::FieldReader;
+        #[doc = "Field `DATA_ALTERNATE` writer - Alternate calibrated data-power gain-table index."]
+        pub type DataAlternateW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `RTS_PRIMARY` reader - Primary calibrated RTS-power gain-table index."]
+        pub type RtsPrimaryR = crate::FieldReader;
+        #[doc = "Field `RTS_PRIMARY` writer - Primary calibrated RTS-power gain-table index."]
+        pub type RtsPrimaryW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `RTS_ALTERNATE` reader - Alternate calibrated RTS-power gain-table index."]
+        pub type RtsAlternateR = crate::FieldReader;
+        #[doc = "Field `RTS_ALTERNATE` writer - Alternate calibrated RTS-power gain-table index."]
+        pub type RtsAlternateW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:7 - Primary calibrated data-power gain-table index."]
             #[inline(always)]
-            pub fn value(&self) -> ValueR {
-                ValueR::new(self.bits)
+            pub fn data_primary(&self) -> DataPrimaryR {
+                DataPrimaryR::new((self.bits & 0xff) as u8)
+            }
+            #[doc = "Bits 8:15 - Alternate calibrated data-power gain-table index."]
+            #[inline(always)]
+            pub fn data_alternate(&self) -> DataAlternateR {
+                DataAlternateR::new(((self.bits >> 8) & 0xff) as u8)
+            }
+            #[doc = "Bits 16:23 - Primary calibrated RTS-power gain-table index."]
+            #[inline(always)]
+            pub fn rts_primary(&self) -> RtsPrimaryR {
+                RtsPrimaryR::new(((self.bits >> 16) & 0xff) as u8)
+            }
+            #[doc = "Bits 24:31 - Alternate calibrated RTS-power gain-table index."]
+            #[inline(always)]
+            pub fn rts_alternate(&self) -> RtsAlternateR {
+                RtsAlternateR::new(((self.bits >> 24) & 0xff) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:7 - Primary calibrated data-power gain-table index."]
             #[inline(always)]
-            pub fn value(&mut self) -> ValueW<'_, PowerSpec> {
-                ValueW::new(self, 0)
+            pub fn data_primary(&mut self) -> DataPrimaryW<'_, PowerSpec> {
+                DataPrimaryW::new(self, 0)
+            }
+            #[doc = "Bits 8:15 - Alternate calibrated data-power gain-table index."]
+            #[inline(always)]
+            pub fn data_alternate(&mut self) -> DataAlternateW<'_, PowerSpec> {
+                DataAlternateW::new(self, 8)
+            }
+            #[doc = "Bits 16:23 - Primary calibrated RTS-power gain-table index."]
+            #[inline(always)]
+            pub fn rts_primary(&mut self) -> RtsPrimaryW<'_, PowerSpec> {
+                RtsPrimaryW::new(self, 16)
+            }
+            #[doc = "Bits 24:31 - Alternate calibrated RTS-power gain-table index."]
+            #[inline(always)]
+            pub fn rts_alternate(&mut self) -> RtsAlternateW<'_, PowerSpec> {
+                RtsAlternateW::new(self, 24)
             }
         }
         #[doc = "Packed data/RTS PHY gain-table indices, not dBm.\n\nYou can [`read`](crate::Reg::read) this register and get [`power::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`power::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -19407,23 +19589,23 @@ pub mod wifi_mac_tx_queue_vector {
         #[doc = "Field `HT40_LENGTH` reader - "]
         pub type Ht40LengthR = crate::FieldReader<u32>;
         #[doc = "Field `HT40_LENGTH` writer - "]
-        pub type Ht40LengthW<'a, REG> = crate::FieldWriter<'a, REG, 19, u32>;
+        pub type Ht40LengthW<'a, REG> = crate::FieldWriter<'a, REG, 19, u32, crate::Safe>;
         #[doc = "Field `UNKNOWN_19_21` reader - "]
         pub type Unknown19_21R = crate::FieldReader;
         #[doc = "Field `UNKNOWN_19_21` writer - "]
-        pub type Unknown19_21W<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        pub type Unknown19_21W<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
         #[doc = "Field `HT40_EOF_COUNT` reader - "]
         pub type Ht40EofCountR = crate::FieldReader;
         #[doc = "Field `HT40_EOF_COUNT` writer - "]
-        pub type Ht40EofCountW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type Ht40EofCountW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `HT40_TXOP_COUNT` reader - "]
         pub type Ht40TxopCountR = crate::FieldReader;
         #[doc = "Field `HT40_TXOP_COUNT` writer - "]
-        pub type Ht40TxopCountW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type Ht40TxopCountW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `HT40_MCS` reader - "]
         pub type Ht40McsR = crate::FieldReader;
         #[doc = "Field `HT40_MCS` writer - "]
-        pub type Ht40McsW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type Ht40McsW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:18"]
             #[inline(always)]
@@ -19526,23 +19708,23 @@ pub mod wifi_mac_tx_queue_vector {
         #[doc = "Field `RTS_RATE` reader - "]
         pub type RtsRateR = crate::FieldReader;
         #[doc = "Field `RTS_RATE` writer - "]
-        pub type RtsRateW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type RtsRateW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `UNKNOWN_14_21` reader - "]
         pub type Unknown14_21R = crate::FieldReader;
         #[doc = "Field `UNKNOWN_14_21` writer - "]
-        pub type Unknown14_21W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type Unknown14_21W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `HT20_EOF_COUNT` reader - "]
         pub type Ht20EofCountR = crate::FieldReader;
         #[doc = "Field `HT20_EOF_COUNT` writer - "]
-        pub type Ht20EofCountW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type Ht20EofCountW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `HT20_TXOP_COUNT` reader - "]
         pub type Ht20TxopCountR = crate::FieldReader;
         #[doc = "Field `HT20_TXOP_COUNT` writer - "]
-        pub type Ht20TxopCountW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type Ht20TxopCountW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `HIGH_UNKNOWN` reader - "]
         pub type HighUnknownR = crate::FieldReader;
         #[doc = "Field `HIGH_UNKNOWN` writer - "]
-        pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         impl R {
             #[doc = "Bit 0"]
             #[inline(always)]
@@ -55019,6 +55201,34 @@ pub mod zero_based_field_write {
         }
     }
 
+    /// Write `DESCRIPTOR_ADDRESS_LOW`, `CONTROL_21_20_UNKNOWN`, `TXOP_DESCRIPTOR_CLASS_UNKNOWN`, `PLCP_FORMAT` in `WIFI_MAC_TX_QUEUE_CONTROL`.`CONTROL%s` while publishing zero to every other register bit.
+    #[inline]
+    pub fn publish_mac_tx_prepared_control(
+        registers: &crate::WifiMacTxQueueControl,
+        index: usize,
+        descriptor_address_low_value: u32,
+        control_21_20_unknown_value: u8,
+        txop_descriptor_class_unknown_value: bool,
+        plcp_format_value: u8,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.control(index).write_with_zero(|writer| {
+                writer
+                    .descriptor_address_low()
+                    .set(descriptor_address_low_value)
+                    .control_21_20_unknown()
+                    .set(control_21_20_unknown_value)
+                    .txop_descriptor_class_unknown()
+                    .bit(txop_descriptor_class_unknown_value)
+                    .plcp_format()
+                    .set(plcp_format_value)
+            });
+        }
+    }
+
     /// Write `COMPRESSED_SRAM_POINTER`, `START` in `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_LOCK_MODIFY_REQUEST` while publishing zero to every other register bit.
     #[inline]
     pub fn publish_bluetooth_scheduler_lock_modify_request(
@@ -55039,6 +55249,166 @@ pub mod zero_based_field_write {
                         .start()
                         .bit(start_value)
                 });
+        }
+    }
+
+    /// Write `LEGACY_SIGNAL`, `RATE`, `KEY_ENTRY_INDEX`, `BSSID_SELECT`, `VECTOR_FORMAT`, `CBW40` in `WIFI_MAC_TX_QUEUE_VECTOR`.`PLCP1%s` while publishing zero to every other register bit.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "reviewed hardware transaction exposes one typed argument per field"
+    )]
+    #[inline]
+    pub fn publish_mac_tx_plcp1_fields(
+        registers: &crate::WifiMacTxQueueVector,
+        index: usize,
+        legacy_signal_value: u16,
+        rate_value: u8,
+        key_entry_index_value: u8,
+        bssid_select_value: u8,
+        vector_format_value: u8,
+        cbw40_value: bool,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.plcp1(index).write_with_zero(|writer| {
+                writer
+                    .legacy_signal()
+                    .set(legacy_signal_value)
+                    .rate()
+                    .set(rate_value)
+                    .key_entry_index()
+                    .set(key_entry_index_value)
+                    .bssid_select()
+                    .set(bssid_select_value)
+                    .vector_format()
+                    .set(vector_format_value)
+                    .cbw40()
+                    .bit(cbw40_value)
+            });
+        }
+    }
+
+    /// Write `MCS`, `CBW40`, `LENGTH`, `SMOOTHING`, `NOT_SOUNDING`, `REQUIRED_ONE`, `AGGREGATION`, `SHORT_GI` in `WIFI_MAC_TX_QUEUE_VECTOR`.`HT_SIGNAL%s` while publishing zero to every other register bit.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "reviewed hardware transaction exposes one typed argument per field"
+    )]
+    #[inline]
+    pub fn publish_mac_tx_ht_signal_fields(
+        registers: &crate::WifiMacTxQueueVector,
+        index: usize,
+        mcs_value: u8,
+        cbw40_value: bool,
+        length_value: u16,
+        smoothing_value: bool,
+        not_sounding_value: bool,
+        required_one_value: bool,
+        aggregation_value: bool,
+        short_gi_value: bool,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.ht_signal(index).write_with_zero(|writer| {
+                writer
+                    .mcs()
+                    .set(mcs_value)
+                    .cbw40()
+                    .bit(cbw40_value)
+                    .length()
+                    .set(length_value)
+                    .smoothing()
+                    .bit(smoothing_value)
+                    .not_sounding()
+                    .bit(not_sounding_value)
+                    .required_one()
+                    .bit(required_one_value)
+                    .aggregation()
+                    .bit(aggregation_value)
+                    .short_gi()
+                    .bit(short_gi_value)
+            });
+        }
+    }
+
+    /// Write `DATA_PRIMARY`, `DATA_ALTERNATE`, `RTS_PRIMARY`, `RTS_ALTERNATE` in `WIFI_MAC_TX_QUEUE_VECTOR`.`POWER%s` while publishing zero to every other register bit.
+    #[inline]
+    pub fn publish_mac_tx_power_fields(
+        registers: &crate::WifiMacTxQueueVector,
+        index: usize,
+        data_primary_value: u8,
+        data_alternate_value: u8,
+        rts_primary_value: u8,
+        rts_alternate_value: u8,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.power(index).write_with_zero(|writer| {
+                writer
+                    .data_primary()
+                    .set(data_primary_value)
+                    .data_alternate()
+                    .set(data_alternate_value)
+                    .rts_primary()
+                    .set(rts_primary_value)
+                    .rts_alternate()
+                    .set(rts_alternate_value)
+            });
+        }
+    }
+
+    /// Write `HT40_LENGTH`, `HT40_EOF_COUNT`, `HT40_MCS` in `WIFI_MAC_TX_QUEUE_VECTOR`.`DATA_LENGTH%s` while publishing zero to every other register bit.
+    #[inline]
+    pub fn publish_mac_tx_data_length_fields(
+        registers: &crate::WifiMacTxQueueVector,
+        index: usize,
+        ht40_length_value: u32,
+        ht40_eof_count_value: u8,
+        ht40_mcs_value: u8,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.data_length(index).write_with_zero(|writer| {
+                writer
+                    .ht40_length()
+                    .set(ht40_length_value)
+                    .ht40_eof_count()
+                    .set(ht40_eof_count_value)
+                    .ht40_mcs()
+                    .set(ht40_mcs_value)
+            });
+        }
+    }
+
+    /// Write `TXRX_QUEUE_ANTENNA_ENABLE`, `RTS_RATE`, `HT20_EOF_COUNT` in `WIFI_MAC_TX_QUEUE_VECTOR`.`LENGTH_CONTROL%s` while publishing zero to every other register bit.
+    #[inline]
+    pub fn publish_mac_tx_length_control_fields(
+        registers: &crate::WifiMacTxQueueVector,
+        index: usize,
+        txrx_queue_antenna_enable_value: bool,
+        rts_rate_value: u8,
+        ht20_eof_count_value: u8,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.length_control(index).write_with_zero(|writer| {
+                writer
+                    .txrx_queue_antenna_enable()
+                    .bit(txrx_queue_antenna_enable_value)
+                    .rts_rate()
+                    .set(rts_rate_value)
+                    .ht20_eof_count()
+                    .set(ht20_eof_count_value)
+            });
         }
     }
 

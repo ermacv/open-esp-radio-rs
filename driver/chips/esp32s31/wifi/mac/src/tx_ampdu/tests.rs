@@ -34,7 +34,7 @@ impl TxHardware for CompletionHardware {
         true
     }
 
-    fn start_bound_ht_tx(&mut self, _: &dyn HardwareOwnedTxDma, _: u8, _: u32) {}
+    fn start_bound_ht_tx(&mut self, _: &dyn HardwareOwnedTxDma, _: u8) {}
 
     fn he_tx_vector_snapshot(&self, _: u8) -> Option<MacHeTxVectorSnapshot> {
         None
@@ -126,7 +126,7 @@ impl TxHardware for DetachingCompletionHardware {
         true
     }
 
-    fn start_bound_ht_tx(&mut self, _: &dyn HardwareOwnedTxDma, _: u8, _: u32) {}
+    fn start_bound_ht_tx(&mut self, _: &dyn HardwareOwnedTxDma, _: u8) {}
 
     fn he_tx_vector_snapshot(&self, _: u8) -> Option<MacHeTxVectorSnapshot> {
         None
@@ -1212,20 +1212,6 @@ fn basic_ht_assembly_rejects_he_bar_ampdu_and_bad_lengths_before_mutation() {
             0xe186_8612
         ))
     );
-}
-
-#[test]
-fn protection_spacing_matches_every_recovered_density_branch() {
-    let expected = [20, 20, 20, 20, 20, 40, 76, 148];
-    for (density, expected) in expected.into_iter().enumerate() {
-        assert_eq!(
-            basic_ht_ampdu_protection_spacing((density as u8) << 2),
-            expected
-        );
-    }
-    // Maximum A-MPDU length exponent and reserved high bits do not alter
-    // the minimum-spacing field.
-    assert_eq!(basic_ht_ampdu_protection_spacing(0xf7), 40);
 }
 
 #[test]

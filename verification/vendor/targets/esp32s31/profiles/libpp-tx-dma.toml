@@ -199,7 +199,8 @@ value = 0x87654321
 # Bounded HT40 MCS7/SGI A-MPDU projection of the complete vendor
 # hal_mac_tx_set_ppdu transaction against the exact compiled production HT
 # queue publisher. The two sides intentionally own different RAM layouts:
-# vendor PP objects below and CanonicalHtTxProgram on the Rust side.
+# vendor PP objects below and semantic CanonicalHtTxParameters on the Rust
+# side. Only the PAC derives queue-vector words from the latter.
 [[profiles]]
 name = "libpp-set-ht40-ampdu-ppdu"
 claim = "reviewed-domain-equivalence"
@@ -306,22 +307,27 @@ vendor-ram-symbols = [
 
 rust-ram = [
     { address = 0x3fff1000, value = 0 },
-    { address = 0x3fff1004, value = 0x026f1200 },
-    { address = 0x3fff1008, value = 0x22001000 },
-    { address = 0x3fff100c, value = 0x8f0c2e87 },
-    { address = 0x3fff1010, value = 0x70400c2e },
-    { address = 0x3fff1014, value = 0x02020101 },
-    { address = 0x3fff1018, value = 0x00400244 },
-    { address = 0x3fff101c, value = 0x00000202 },
-    { address = 0x3fff1020, value = 40 },
-    { address = 0x3fff1024, value = 0 },
-    { address = 0x3fff1028, value = 1 },
-    { address = 0x3fff102c, value = 1 },
+    { address = 0x3fff1004, value = 0x3fff1200 },
+    { address = 0x3fff1008, value = 7 },
+    { address = 0x3fff100c, value = 1 },
+    { address = 0x3fff1010, value = 1 },
+    { address = 0x3fff1014, value = 1 },
+    { address = 0x3fff1018, value = 0x00000c2e },
+    { address = 0x3fff101c, value = 2 },
+    { address = 0x3fff1020, value = 1 },
+    { address = 0x3fff1024, value = 1 },
+    { address = 0x3fff1028, value = 2 },
+    { address = 0x3fff102c, value = 2 },
     { address = 0x3fff1030, value = 1 },
     { address = 0x3fff1034, value = 0 },
-    { address = 0x3fff1038, value = 0 },
-    { address = 0x3fff103c, value = 0 },
-    { address = 0x3fff1040, value = 0 },
+    { address = 0x3fff1038, value = 1 },
+    { address = 0x3fff103c, value = 1 },
+    { address = 0x3fff1040, value = 1 },
+    { address = 0x3fff1044, value = 0 },
+    { address = 0x3fff1048, value = 0 },
+    { address = 0x3fff104c, value = 0 },
+    { address = 0x3fff1050, value = 0 },
+    { address = 0x3fff1054, value = 0 },
 ]
 
 mmio-initial = [

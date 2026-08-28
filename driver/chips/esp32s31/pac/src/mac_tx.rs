@@ -12,7 +12,6 @@ use super::{
 };
 
 const ORDINARY_QUEUE_COUNT: u8 = 4;
-const ENABLE_VALID_MASK: u32 = 0xc000_0000;
 const DESCRIPTOR_ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
 
 /// Closed argument projection of complete `hal_set_tx_pti`.
@@ -30,11 +29,11 @@ pub struct MacTxPtiProgram {
     pub count: MacTxPtiCount,
 }
 
-fn assert_tx_descriptor_head(authority_head: u32, control_word: u32) {
+fn assert_tx_descriptor_head(authority_head: u32, descriptor_address_low: u32) {
     assert_eq!(
-        control_word & DESCRIPTOR_ADDRESS_LOW_MASK,
+        descriptor_address_low,
         authority_head & DESCRIPTOR_ADDRESS_LOW_MASK,
-        "TX control word does not reference the retained DMA chain",
+        "TX control register does not reference the retained DMA chain",
     );
 }
 
@@ -110,17 +109,8 @@ pub struct MacLegacyTxParameters {
 /// geometry.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacLegacyTxProgram {
-    plcp0: u32,
-    plcp1: u32,
-    power: u32,
-    length_control: u32,
-    timeout: u16,
-    scheduler_priority: u8,
-    packet_priority: u8,
-    priority_count: u16,
-    aifsn: u8,
-    contention_window: u16,
-    interface: MacInterface,
+    descriptor_head: u32,
+    parameters: MacLegacyTxParameters,
 }
 
 impl MacLegacyTxProgram {
@@ -138,68 +128,147 @@ impl MacLegacyTxProgram {
             return None;
         }
 
-        let descriptor_address = dma.descriptor_head() & DESCRIPTOR_ADDRESS_LOW_MASK;
-        let format = if parameters.group_receiver { 0 } else { 1 };
-        let descriptor_control =
-            u32::from(parameters.hardware_key_selector) | (parameters.interface.bits() << 6);
         Some(Self {
-            // Complete mac_tx_set_plcp0 followed by mac_tx_set_txop_q for the
-            // bounded descriptor class selected by this constructor.
-            plcp0: descriptor_address | 0x0060_0000 | 0x0040_0000 | (format << 24),
-            plcp1: (descriptor_control << 17)
-                | (u32::from(parameters.rate.register_value()) << 12)
-                | u32::from(parameters.signal),
-            power: u32::from(parameters.data_power)
-                | (u32::from(parameters.rts_power_low) << 16)
-                | (u32::from(parameters.rts_power_high) << 24),
-            length_control: (1 << 22)
-                | (u32::from(parameters.rts_rate.register_value()) << 6)
-                | 0x04,
-            timeout: parameters.timeout,
-            scheduler_priority: parameters.scheduler_priority,
-            packet_priority: parameters.packet_priority,
-            priority_count: parameters.priority_count,
-            aifsn: parameters.aifsn,
-            contention_window: parameters.contention_window,
-            interface: parameters.interface,
+            descriptor_head: dma.descriptor_head(),
+            parameters,
         })
     }
 
     pub const fn interface(self) -> MacInterface {
-        self.interface
+        self.parameters.interface
     }
 
     pub const fn scheduler_priority(self) -> u8 {
-        self.scheduler_priority
+        self.parameters.scheduler_priority
     }
 
     pub const fn packet_priority(self) -> u8 {
-        self.packet_priority
+        self.parameters.packet_priority
     }
 
     pub const fn signal(self) -> u16 {
-        (self.plcp1 & 0x0fff) as u16
+        self.parameters.signal
     }
 }
 
-/// Complete queue-vector image for one HT PPDU.
-///
-/// The MAC layer owns the meaning and construction of these whole words. This
-/// PAC layer only publishes them in the instruction-exact order recovered
-/// from `libpp.a[hal_mac_tx.o]::{hal_mac_tx_set_ppdu,
-/// mac_tx_set_htsig,mac_tx_set_len}`. Single MPDUs and A-MPDUs use distinct
-/// MAC-layer formatters, but publish the same finite register set here.
+/// Reviewed MCS selector for one non-HE HT PPDU.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MacHtTxProgram {
-    pub plcp0: u32,
-    pub plcp1: u32,
-    pub ht_signal: u32,
-    pub data_length: u32,
-    pub power: u32,
-    pub length_control: u32,
-    pub descriptor_count_a: u8,
-    pub descriptor_count_b: u8,
-    pub protection_spacing: u16,
+pub enum MacHtMcs {
+    Mcs0,
+    Mcs1,
+    Mcs2,
+    Mcs3,
+    Mcs4,
+    Mcs5,
+    Mcs6,
+    Mcs7,
+}
+
+impl MacHtMcs {
+    const fn index(self) -> u8 {
+        match self {
+            Self::Mcs0 => 0,
+            Self::Mcs1 => 1,
+            Self::Mcs2 => 2,
+            Self::Mcs3 => 3,
+            Self::Mcs4 => 4,
+            Self::Mcs5 => 5,
+            Self::Mcs6 => 6,
+            Self::Mcs7 => 7,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacHtGuardInterval {
+    Long800Ns,
+    Short400Ns,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacHtChannelWidth {
+    Mhz20,
+    Mhz40,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacHtProtectionSpacing {
+    Density0To4,
+    Density5,
+    Density6,
+    Density7,
+}
+
+impl MacHtProtectionSpacing {
+    const fn register_value(self) -> u16 {
+        match self {
+            Self::Density0To4 => 20,
+            Self::Density5 => 40,
+            Self::Density6 => 76,
+            Self::Density7 => 148,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacHtTxFormat {
+    SingleMpdu,
+    Ampdu,
+}
+
+/// Protocol-semantic rate selected for one non-HE HT PPDU.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacHtRate {
+    pub mcs: MacHtMcs,
+    pub guard_interval: MacHtGuardInterval,
+    pub channel_width: MacHtChannelWidth,
+}
+
+impl MacHtRate {
+    const fn register_value(self) -> u8 {
+        match (self.guard_interval, self.mcs) {
+            (MacHtGuardInterval::Long800Ns, MacHtMcs::Mcs0) => 16,
+            (MacHtGuardInterval::Long800Ns, MacHtMcs::Mcs1) => 17,
+            (MacHtGuardInterval::Long800Ns, MacHtMcs::Mcs2) => 18,
+            (MacHtGuardInterval::Long800Ns, MacHtMcs::Mcs3) => 19,
+            (MacHtGuardInterval::Long800Ns, MacHtMcs::Mcs4) => 20,
+            (MacHtGuardInterval::Long800Ns, MacHtMcs::Mcs5) => 21,
+            (MacHtGuardInterval::Long800Ns, MacHtMcs::Mcs6) => 22,
+            (MacHtGuardInterval::Long800Ns, MacHtMcs::Mcs7) => 23,
+            (MacHtGuardInterval::Short400Ns, MacHtMcs::Mcs0) => 26,
+            (MacHtGuardInterval::Short400Ns, MacHtMcs::Mcs1) => 27,
+            (MacHtGuardInterval::Short400Ns, MacHtMcs::Mcs2) => 28,
+            (MacHtGuardInterval::Short400Ns, MacHtMcs::Mcs3) => 29,
+            (MacHtGuardInterval::Short400Ns, MacHtMcs::Mcs4) => 30,
+            (MacHtGuardInterval::Short400Ns, MacHtMcs::Mcs5) => 31,
+            (MacHtGuardInterval::Short400Ns, MacHtMcs::Mcs6) => 0,
+            (MacHtGuardInterval::Short400Ns, MacHtMcs::Mcs7) => 1,
+        }
+    }
+
+    const fn rts_register_value(self) -> u8 {
+        match self.mcs {
+            MacHtMcs::Mcs0 => 0x0b,
+            MacHtMcs::Mcs1 | MacHtMcs::Mcs2 => 0x0a,
+            MacHtMcs::Mcs3 | MacHtMcs::Mcs4 | MacHtMcs::Mcs5 | MacHtMcs::Mcs6 | MacHtMcs::Mcs7 => {
+                0x09
+            }
+        }
+    }
+}
+
+/// Semantic inputs for one bounded HT queue publication.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacHtTxParameters {
+    pub rate: MacHtRate,
+    pub format: MacHtTxFormat,
+    pub length: u16,
+    pub descriptor_count: u8,
+    pub data_power_primary: u8,
+    pub data_power_alternate: u8,
+    pub rts_power_primary: u8,
+    pub rts_power_alternate: u8,
+    pub protection_spacing: MacHtProtectionSpacing,
     pub timeout: u16,
     pub scheduler_priority: u8,
     pub packet_priority: u8,
@@ -207,13 +276,45 @@ pub struct MacHtTxProgram {
     pub aifsn: u8,
     pub contention_window: u16,
     pub interface: MacInterface,
-    /// Value published into the independent TXOP bit in the low PTI nibble.
-    ///
-    /// SOURCE: complete `hal_mac_tx_set_ppdu` tests descriptor word-zero bit
-    /// 29 and then sets or clears PTI bit zero before `mac_tx_set_pti`
-    /// updates the four coexistence lanes. This edge must not inherit a stale
-    /// bit from the preceding queue transaction.
+    pub hardware_key_selector: u8,
     pub txop: bool,
+}
+
+/// PAC-owned register program for one bounded HT PPDU.
+///
+/// Whole queue-vector words and their field geometry remain private. Higher
+/// layers select only protocol-semantic values and bind them to a prepared DMA
+/// authority.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacHtTxProgram {
+    descriptor_head: u32,
+    parameters: MacHtTxParameters,
+}
+
+impl MacHtTxProgram {
+    /// Bind one semantic HT publication to its prepared DMA authority.
+    pub fn new(dma: &dyn PreparedTxDma, parameters: MacHtTxParameters) -> Option<Self> {
+        if parameters.length == 0
+            || parameters.descriptor_count == 0
+            || parameters.descriptor_count > 0x7f
+            || (matches!(parameters.format, MacHtTxFormat::SingleMpdu)
+                && parameters.descriptor_count != 1)
+            || parameters.timeout > 0x0fff
+            || parameters.scheduler_priority > 0x0f
+            || parameters.packet_priority > 0x0f
+            || parameters.priority_count > 0x0fff
+            || parameters.aifsn > 0x0f
+            || parameters.contention_window > 0x03ff
+            || parameters.hardware_key_selector > 0x3f
+        {
+            return None;
+        }
+
+        Some(Self {
+            descriptor_head: dma.descriptor_head(),
+            parameters,
+        })
+    }
 }
 
 /// Complete bounded queue-vector image for one HE SU A-MPDU.
@@ -523,7 +624,7 @@ impl WifiRadioRegisters {
         queue: u8,
         program: MacLegacyTxProgram,
     ) -> bool {
-        assert_tx_descriptor_head(dma.descriptor_head(), program.plcp0);
+        assert_eq!(dma.descriptor_head(), program.descriptor_head);
         self.prepare_legacy_mac_tx(queue, program)
     }
 
@@ -534,7 +635,7 @@ impl WifiRadioRegisters {
         queue: u8,
         program: MacHtTxProgram,
     ) -> bool {
-        assert_tx_descriptor_head(dma.descriptor_head(), program.plcp0);
+        assert_eq!(dma.descriptor_head(), program.descriptor_head);
         self.prepare_ht_mac_tx(queue, program)
     }
 
@@ -552,15 +653,17 @@ impl WifiRadioRegisters {
     /// Publish the final ENABLE|VALID edge for a hardware-owned TX chain.
     pub fn start_bound_mac_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8) {
         assert!(queue < ORDINARY_QUEUE_COUNT);
-        let control_word = self
+        let control = self
             .peripherals
             .wifi_mac
             .wifi_mac_tx_queue_control
             .control(physical_bank(queue))
-            .read()
-            .bits();
-        assert_tx_descriptor_head(dma.descriptor_head(), control_word);
-        self.start_prepared_mac_tx(queue, control_word);
+            .read();
+        assert_tx_descriptor_head(
+            dma.descriptor_head(),
+            control.descriptor_address_low().bits(),
+        );
+        self.start_prepared_mac_tx(queue);
     }
 
     /// Apply complete rev0 ROM `phy_enable_cca` or `phy_disable_cca` to the
@@ -646,18 +749,20 @@ impl WifiRadioRegisters {
     /// Keeping the final edge separate lets the MAC publish its software
     /// ownership state before hardware can complete the queue.
     fn prepare_legacy_mac_tx(&mut self, queue: u8, program: MacLegacyTxProgram) -> bool {
+        let parameters = program.parameters;
         assert!(queue < ORDINARY_QUEUE_COUNT);
-        assert!(program.timeout <= 0x0fff);
-        assert!(program.scheduler_priority <= 0x0f);
-        assert!(program.packet_priority <= 0x0f);
-        assert!(program.priority_count <= 0x0fff);
-        assert!(program.aifsn <= 0x0f);
-        assert!(program.contention_window <= 0x03ff);
+        assert!(parameters.timeout <= 0x0fff);
+        assert!(parameters.scheduler_priority <= 0x0f);
+        assert!(parameters.packet_priority <= 0x0f);
+        assert!(parameters.priority_count <= 0x0fff);
+        assert!(parameters.aifsn <= 0x0f);
+        assert!(parameters.contention_window <= 0x03ff);
 
         let bank = physical_bank(queue);
         let control_bank = &self.peripherals.wifi_mac.wifi_mac_tx_queue_control;
         let control = control_bank.control(bank);
-        if control.read().bits() & ENABLE_VALID_MASK != 0 {
+        let control_state = control.read();
+        if control_state.enable().bit_is_set() || control_state.valid().bit_is_set() {
             return false;
         }
 
@@ -665,17 +770,26 @@ impl WifiRadioRegisters {
         // vector write in the recovered lmacSetTxFrame parent.
         control_bank
             .config(bank)
-            .modify(|_, w| w.timeout().set(program.timeout));
+            .modify(|_, w| w.timeout().set(parameters.timeout));
 
-        super::generated::publish_mac_tx_control(
+        super::svd::zero_based_field_write::publish_mac_tx_prepared_control(
             control_bank,
             bank,
-            super::generated::MacTxControlImage::new(program.plcp0),
+            program.descriptor_head,
+            2,
+            true,
+            u8::from(!parameters.group_receiver),
         );
-        super::generated::publish_mac_tx_plcp1(
-            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
+        let vectors = &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector;
+        super::svd::zero_based_field_write::publish_mac_tx_plcp1_fields(
+            vectors,
             bank,
-            super::generated::MacTxPlcp1Image::new(program.plcp1),
+            parameters.signal,
+            parameters.rate.register_value(),
+            parameters.hardware_key_selector,
+            parameters.interface.bits() as u8,
+            0,
+            false,
         );
         self.peripherals
             .wifi_mac
@@ -685,15 +799,20 @@ impl WifiRadioRegisters {
         control_bank
             .protection(bank)
             .modify(|_, w| w.software_cts().clear_bit());
-        super::generated::publish_mac_tx_length_control(
-            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
+        super::svd::zero_based_field_write::publish_mac_tx_length_control_fields(
+            vectors,
             bank,
-            super::generated::MacTxLengthControlImage::new(program.length_control),
+            true,
+            parameters.rts_rate.register_value(),
+            1,
         );
-        super::generated::publish_mac_tx_power(
-            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
+        super::svd::zero_based_field_write::publish_mac_tx_power_fields(
+            vectors,
             bank,
-            super::generated::MacTxPowerImage::new(program.power),
+            parameters.data_power,
+            0,
+            parameters.rts_power_low,
+            parameters.rts_power_high,
         );
 
         // SOURCE: complete
@@ -706,20 +825,20 @@ impl WifiRadioRegisters {
         // be coalesced.
         control_bank
             .config(bank)
-            .modify(|_, w| w.scheduler_priority().set(program.scheduler_priority));
-        let pti = self.peripherals.wifi_mac.wifi_mac_tx_queue_vector.pti(bank);
-        pti.modify(|_, w| w.pti_2().set(program.packet_priority));
-        pti.modify(|_, w| w.pti_1().set(program.packet_priority));
-        pti.modify(|_, w| w.pti_0().set(program.packet_priority));
-        pti.modify(|_, w| w.pti_3().set(program.packet_priority));
-        pti.modify(|_, w| w.count().set(program.priority_count));
+            .modify(|_, w| w.scheduler_priority().set(parameters.scheduler_priority));
+        let pti = vectors.pti(bank);
+        pti.modify(|_, w| w.pti_2().set(parameters.packet_priority));
+        pti.modify(|_, w| w.pti_1().set(parameters.packet_priority));
+        pti.modify(|_, w| w.pti_0().set(parameters.packet_priority));
+        pti.modify(|_, w| w.pti_3().set(parameters.packet_priority));
+        pti.modify(|_, w| w.count().set(parameters.priority_count));
 
         mac_tx_queue::configure_edca(
             control_bank,
             u32::from(queue),
-            program.aifsn,
-            program.contention_window,
-            program.interface,
+            parameters.aifsn,
+            parameters.contention_window,
+            parameters.interface,
         );
         true
     }
@@ -730,16 +849,18 @@ impl WifiRadioRegisters {
     /// two additional vector words and three descriptor-count RMW edges which
     /// must not be silently omitted by a shared "mostly legacy" formatter.
     pub(crate) fn prepare_ht_mac_tx(&mut self, queue: u8, program: MacHtTxProgram) -> bool {
-        assert!(program.timeout <= 0x0fff);
-        assert!(program.aifsn <= 0x0f);
-        assert!(program.contention_window <= 0x03ff);
+        let parameters = program.parameters;
+        assert!(parameters.timeout <= 0x0fff);
+        assert!(parameters.aifsn <= 0x0f);
+        assert!(parameters.contention_window <= 0x03ff);
 
         assert!(queue < ORDINARY_QUEUE_COUNT);
         let bank = physical_bank(queue);
         {
             let control_bank = &self.peripherals.wifi_mac.wifi_mac_tx_queue_control;
             let control = control_bank.control(bank);
-            if control.read().bits() & ENABLE_VALID_MASK != 0 {
+            let control_state = control.read();
+            if control_state.enable().bit_is_set() || control_state.valid().bit_is_set() {
                 return false;
             }
 
@@ -747,7 +868,7 @@ impl WifiRadioRegisters {
             // hal_mac_tx_set_ppdu non-HE HT branch.
             control_bank
                 .config(bank)
-                .modify(|_, w| w.timeout().set(program.timeout));
+                .modify(|_, w| w.timeout().set(parameters.timeout));
         }
 
         self.program_ht_mac_tx_ppdu(queue, program);
@@ -755,9 +876,9 @@ impl WifiRadioRegisters {
         mac_tx_queue::configure_edca(
             &self.peripherals.wifi_mac.wifi_mac_tx_queue_control,
             u32::from(queue),
-            program.aifsn,
-            program.contention_window,
-            program.interface,
+            parameters.aifsn,
+            parameters.contention_window,
+            parameters.interface,
         );
         true
     }
@@ -770,30 +891,42 @@ impl WifiRadioRegisters {
     /// slice explicit lets the compiled production implementation be compared
     /// to the same vendor responsibility without a shadow register model.
     pub(crate) fn program_ht_mac_tx_ppdu(&mut self, queue: u8, program: MacHtTxProgram) {
+        let parameters = program.parameters;
         assert!(queue < ORDINARY_QUEUE_COUNT);
-        assert!(program.descriptor_count_a <= 0x7f);
-        assert!(program.descriptor_count_b <= 0x7f);
-        assert!(program.protection_spacing <= 0x03ff);
-        assert!(program.scheduler_priority <= 0x0f);
-        assert!(program.packet_priority <= 0x0f);
-        assert!(program.priority_count <= 0x0fff);
+        assert!(parameters.descriptor_count <= 0x7f);
+        assert!(parameters.protection_spacing.register_value() <= 0x03ff);
+        assert!(parameters.scheduler_priority <= 0x0f);
+        assert!(parameters.packet_priority <= 0x0f);
+        assert!(parameters.priority_count <= 0x0fff);
 
         let bank = physical_bank(queue);
         let control_bank = &self.peripherals.wifi_mac.wifi_mac_tx_queue_control;
-        super::generated::publish_mac_tx_control(
+        super::svd::zero_based_field_write::publish_mac_tx_prepared_control(
             control_bank,
             bank,
-            super::generated::MacTxControlImage::new(program.plcp0),
+            program.descriptor_head,
+            2,
+            true,
+            match parameters.format {
+                MacHtTxFormat::SingleMpdu => 1,
+                MacHtTxFormat::Ampdu => 2,
+            },
         );
         // `mac_tx_set_plcp0` publishes the control image and immediately
         // clears software CTS through one fresh-read protection update.
         control_bank
             .protection(bank)
             .modify(|_, w| w.software_cts().clear_bit());
-        super::generated::publish_mac_tx_plcp1(
-            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
+        let vectors = &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector;
+        super::svd::zero_based_field_write::publish_mac_tx_plcp1_fields(
+            vectors,
             bank,
-            super::generated::MacTxPlcp1Image::new(program.plcp1),
+            0,
+            parameters.rate.register_value(),
+            parameters.hardware_key_selector,
+            parameters.interface.bits() as u8,
+            1,
+            matches!(parameters.rate.channel_width, MacHtChannelWidth::Mhz40),
         );
         self.peripherals
             .wifi_mac
@@ -804,64 +937,81 @@ impl WifiRadioRegisters {
         // The parent owns this independent PTI-low edge. `mac_tx_set_pti`
         // follows later and intentionally preserves it while updating the
         // four PTI lanes and the count.
-        let pti = self.peripherals.wifi_mac.wifi_mac_tx_queue_vector.pti(bank);
-        pti.modify(|_, writer| writer.txop().bit(program.txop));
+        let pti = vectors.pti(bank);
+        pti.modify(|_, writer| writer.txop().bit(parameters.txop));
 
         // The bounded HT branch enters `mac_tx_set_htsig` here. It publishes
         // HT-SIG, the three descriptor-count edges, the three negotiated
         // minimum-MPDU spacing edges and the two length words.
-        super::generated::publish_mac_tx_ht_signal(
-            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
+        super::svd::zero_based_field_write::publish_mac_tx_ht_signal_fields(
+            vectors,
             bank,
-            super::generated::MacTxHtSignalImage::new(program.ht_signal),
+            parameters.rate.mcs.index(),
+            matches!(parameters.rate.channel_width, MacHtChannelWidth::Mhz40),
+            parameters.length,
+            true,
+            true,
+            true,
+            matches!(parameters.format, MacHtTxFormat::Ampdu),
+            matches!(
+                parameters.rate.guard_interval,
+                MacHtGuardInterval::Short400Ns
+            ),
         );
-        let descriptor_counts = self
-            .peripherals
-            .wifi_mac
-            .wifi_mac_tx_queue_vector
-            .ht_descriptor_counts(bank);
-        descriptor_counts.modify(|_, w| w.descriptor_count_a().set(program.descriptor_count_a));
-        descriptor_counts.modify(|_, w| w.descriptor_count_b().set(program.descriptor_count_b));
+        let descriptor_counts = vectors.ht_descriptor_counts(bank);
+        descriptor_counts.modify(|_, w| w.descriptor_count_a().set(parameters.descriptor_count));
+        descriptor_counts.modify(|_, w| w.descriptor_count_b().set(parameters.descriptor_count));
         descriptor_counts
-            .modify(|_, w| w.descriptor_count_a_copy().set(program.descriptor_count_a));
+            .modify(|_, w| w.descriptor_count_a_copy().set(parameters.descriptor_count));
 
         let protection = control_bank.protection(bank);
         protection.modify(|_, w| {
             w.minimum_mpdu_length_cbw20()
-                .set(program.protection_spacing)
+                .set(parameters.protection_spacing.register_value())
         });
         protection.modify(|_, w| {
             w.minimum_mpdu_length_cbw40()
-                .set(program.protection_spacing)
+                .set(parameters.protection_spacing.register_value())
         });
         protection.modify(|_, w| {
             w.minimum_mpdu_length_cbw80()
-                .set(program.protection_spacing)
+                .set(parameters.protection_spacing.register_value())
         });
 
-        super::generated::publish_mac_tx_length_control(
-            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
+        let entry_class = match parameters.format {
+            MacHtTxFormat::SingleMpdu => 0,
+            MacHtTxFormat::Ampdu => 1,
+        };
+        super::svd::zero_based_field_write::publish_mac_tx_length_control_fields(
+            vectors,
             bank,
-            super::generated::MacTxLengthControlImage::new(program.length_control),
+            true,
+            parameters.rate.rts_register_value(),
+            entry_class,
         );
-        super::generated::publish_mac_tx_data_length(
-            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
+        super::svd::zero_based_field_write::publish_mac_tx_data_length_fields(
+            vectors,
             bank,
-            super::generated::MacTxDataLengthImage::new(program.data_length),
+            u32::from(parameters.length),
+            entry_class,
+            parameters.rate.mcs.index(),
         );
-        super::generated::publish_mac_tx_power(
-            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
+        super::svd::zero_based_field_write::publish_mac_tx_power_fields(
+            vectors,
             bank,
-            super::generated::MacTxPowerImage::new(program.power),
+            parameters.data_power_primary,
+            parameters.data_power_alternate,
+            parameters.rts_power_primary,
+            parameters.rts_power_alternate,
         );
         control_bank
             .config(bank)
-            .modify(|_, w| w.scheduler_priority().set(program.scheduler_priority));
-        pti.modify(|_, w| w.pti_2().set(program.packet_priority));
-        pti.modify(|_, w| w.pti_1().set(program.packet_priority));
-        pti.modify(|_, w| w.pti_0().set(program.packet_priority));
-        pti.modify(|_, w| w.pti_3().set(program.packet_priority));
-        pti.modify(|_, w| w.count().set(program.priority_count));
+            .modify(|_, w| w.scheduler_priority().set(parameters.scheduler_priority));
+        pti.modify(|_, w| w.pti_2().set(parameters.packet_priority));
+        pti.modify(|_, w| w.pti_1().set(parameters.packet_priority));
+        pti.modify(|_, w| w.pti_0().set(parameters.packet_priority));
+        pti.modify(|_, w| w.pti_3().set(parameters.packet_priority));
+        pti.modify(|_, w| w.count().set(parameters.priority_count));
     }
 
     /// Program one HE SU A-MPDU up to its final ENABLE|VALID edge.
@@ -883,7 +1033,8 @@ impl WifiRadioRegisters {
         let bank = physical_bank(queue);
         let control_bank = &self.peripherals.wifi_mac.wifi_mac_tx_queue_control;
         let control = control_bank.control(bank);
-        if control.read().bits() & ENABLE_VALID_MASK != 0 {
+        let control_state = control.read();
+        if control_state.enable().bit_is_set() || control_state.valid().bit_is_set() {
             return false;
         }
 
@@ -1004,7 +1155,7 @@ impl WifiRadioRegisters {
         true
     }
 
-    fn start_prepared_mac_tx(&mut self, queue: u8, _plcp0: u32) {
+    fn start_prepared_mac_tx(&mut self, queue: u8) {
         assert!(queue < ORDINARY_QUEUE_COUNT);
         device_fence();
         // SOURCE: complete `libpp.a[hal_mac_tx.o]::

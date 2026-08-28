@@ -423,15 +423,19 @@ pub extern "C" fn open_libpp_tx_trace_hal_mac_tx_config_edca(
 }
 
 #[repr(C)]
-struct CanonicalHtTxProgram {
+struct CanonicalHtTxParameters {
     queue: u32,
-    plcp0: u32,
-    plcp1: u32,
-    ht_signal: u32,
-    data_length: u32,
-    power: u32,
-    length_control: u32,
-    descriptor_counts: u32,
+    descriptor_head: u32,
+    mcs: u32,
+    guard_interval: u32,
+    channel_width: u32,
+    format: u32,
+    length: u32,
+    descriptor_count: u32,
+    data_power_primary: u32,
+    data_power_alternate: u32,
+    rts_power_primary: u32,
+    rts_power_alternate: u32,
     protection_spacing: u32,
     timeout: u32,
     scheduler_priority: u32,
@@ -440,53 +444,112 @@ struct CanonicalHtTxProgram {
     aifsn: u32,
     contention_window: u32,
     interface: u32,
+    hardware_key_selector: u32,
     txop: u32,
+}
+
+struct ValidationPreparedTxDma(u32);
+
+// SAFETY: this verification-only authority is instantiated solely from the
+// profile-owned stable descriptor memory used by the isolated instruction
+// trace. It is never exposed to production code or real hardware.
+unsafe impl open_esp_radio_dma::PreparedTxDma for ValidationPreparedTxDma {
+    fn descriptor_head(&self) -> u32 {
+        self.0
+    }
 }
 
 /// Reviewed ABI projection around the exact compiled production HT queue
 /// transaction. The vendor side receives its pointer-rich PP context at `a0`;
-/// the Rust side receives this canonical register/program image at the same
-/// address. The profile owns both layouts independently.
+/// the Rust side receives semantic HT parameters at the same address. The
+/// PAC constructs every register word from those reviewed values.
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_libpp_tx_trace_hal_mac_tx_set_ppdu(
     program_address: u32,
     _vendor_auxiliary: u32,
 ) -> u32 {
-    use open_esp_radio_esp32s31_hal::types::{MacHtTxProgram, MacInterface};
+    use open_esp_radio_esp32s31_hal::types::{
+        MacHtChannelWidth, MacHtGuardInterval, MacHtMcs, MacHtProtectionSpacing, MacHtRate,
+        MacHtTxFormat, MacHtTxParameters, MacHtTxProgram, MacInterface,
+    };
 
-    let program = program_address as *const CanonicalHtTxProgram;
+    let parameters = program_address as *const CanonicalHtTxParameters;
     // SAFETY: the verification profile supplies one initialized, aligned and
-    // immutable CanonicalHtTxProgram for the duration of this call.
-    let program = unsafe { &*program };
-    let interface = match program.interface {
+    // immutable CanonicalHtTxParameters for the duration of this call.
+    let parameters = unsafe { &*parameters };
+    let interface = match parameters.interface {
         0 => MacInterface::Station,
         1 => MacInterface::AccessPoint,
         2 => MacInterface::Context2,
         3 => MacInterface::Context3,
         _ => panic!("verification MAC interface is out of range"),
     };
-    open_esp_radio_esp32s31_hal::validation::hal_mac_tx_set_ppdu(
-        program.queue as u8,
-        MacHtTxProgram {
-            plcp0: program.plcp0,
-            plcp1: program.plcp1,
-            ht_signal: program.ht_signal,
-            data_length: program.data_length,
-            power: program.power,
-            length_control: program.length_control,
-            descriptor_count_a: program.descriptor_counts as u8,
-            descriptor_count_b: (program.descriptor_counts >> 8) as u8,
-            protection_spacing: program.protection_spacing as u16,
-            timeout: program.timeout as u16,
-            scheduler_priority: program.scheduler_priority as u8,
-            packet_priority: program.packet_priority as u8,
-            priority_count: program.priority_count as u16,
-            aifsn: program.aifsn as u8,
-            contention_window: program.contention_window as u16,
+    let mcs = match parameters.mcs {
+        0 => MacHtMcs::Mcs0,
+        1 => MacHtMcs::Mcs1,
+        2 => MacHtMcs::Mcs2,
+        3 => MacHtMcs::Mcs3,
+        4 => MacHtMcs::Mcs4,
+        5 => MacHtMcs::Mcs5,
+        6 => MacHtMcs::Mcs6,
+        7 => MacHtMcs::Mcs7,
+        _ => panic!("verification HT MCS is out of range"),
+    };
+    let guard_interval = match parameters.guard_interval {
+        0 => MacHtGuardInterval::Long800Ns,
+        1 => MacHtGuardInterval::Short400Ns,
+        _ => panic!("verification HT guard interval is out of range"),
+    };
+    let channel_width = match parameters.channel_width {
+        0 => MacHtChannelWidth::Mhz20,
+        1 => MacHtChannelWidth::Mhz40,
+        _ => panic!("verification HT channel width is out of range"),
+    };
+    let format = match parameters.format {
+        0 => MacHtTxFormat::SingleMpdu,
+        1 => MacHtTxFormat::Ampdu,
+        _ => panic!("verification HT format is out of range"),
+    };
+    let protection_spacing = match parameters.protection_spacing {
+        0 => MacHtProtectionSpacing::Density0To4,
+        1 => MacHtProtectionSpacing::Density5,
+        2 => MacHtProtectionSpacing::Density6,
+        3 => MacHtProtectionSpacing::Density7,
+        _ => panic!("verification HT protection spacing is out of range"),
+    };
+    let dma = ValidationPreparedTxDma(parameters.descriptor_head);
+    let program = MacHtTxProgram::new(
+        &dma,
+        MacHtTxParameters {
+            rate: MacHtRate {
+                mcs,
+                guard_interval,
+                channel_width,
+            },
+            format,
+            length: parameters.length as u16,
+            descriptor_count: parameters.descriptor_count as u8,
+            data_power_primary: parameters.data_power_primary as u8,
+            data_power_alternate: parameters.data_power_alternate as u8,
+            rts_power_primary: parameters.rts_power_primary as u8,
+            rts_power_alternate: parameters.rts_power_alternate as u8,
+            protection_spacing,
+            timeout: parameters.timeout as u16,
+            scheduler_priority: parameters.scheduler_priority as u8,
+            packet_priority: parameters.packet_priority as u8,
+            priority_count: parameters.priority_count as u16,
+            aifsn: parameters.aifsn as u8,
+            contention_window: parameters.contention_window as u16,
             interface,
-            txop: program.txop != 0,
+            hardware_key_selector: parameters.hardware_key_selector as u8,
+            txop: parameters.txop != 0,
         },
+    )
+    .expect("verification HT parameters are in the reviewed PAC domain");
+    open_esp_radio_esp32s31_hal::validation::hal_mac_tx_set_ppdu(
+        parameters.queue as u8,
+        program,
     )
 }
 

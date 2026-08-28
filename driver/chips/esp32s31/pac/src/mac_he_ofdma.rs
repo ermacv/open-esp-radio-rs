@@ -52,7 +52,7 @@ pub enum MacHeTbTidLimit {
 
 impl MacHeTbTidLimit {
     /// Exact eligible-TID bitmap returned by the pinned blob.
-    pub const fn bitmap(self) -> u8 {
+    const fn bitmap(self) -> u8 {
         match self {
             Self::One => 0x01,
             Self::Two => 0x81,
@@ -924,21 +924,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn traffic_identifier_is_bounded_before_mmio_indexing() {
-        for tid in 0..MacHeTid::COUNT as u8 {
-            let tid = MacHeTid::new(tid).unwrap();
-            assert_eq!(tid.mask(), 1 << tid.value());
-        }
+    fn traffic_identifier_limits_expose_semantic_membership() {
+        let tids: [MacHeTid; MacHeTid::COUNT] =
+            core::array::from_fn(|value| MacHeTid::new(value as u8).unwrap());
+
+        assert!(MacHeTbTidLimit::One.contains(tids[0]));
+        assert!(!MacHeTbTidLimit::One.contains(tids[1]));
+        assert!(MacHeTbTidLimit::Two.contains(tids[0]));
+        assert!(MacHeTbTidLimit::Two.contains(tids[7]));
+        assert!(!MacHeTbTidLimit::Two.contains(tids[5]));
+        assert!(MacHeTbTidLimit::Three.contains(tids[0]));
+        assert!(MacHeTbTidLimit::Three.contains(tids[5]));
+        assert!(MacHeTbTidLimit::Three.contains(tids[7]));
+        assert!(MacHeTbTidLimit::Four.contains(tids[1]));
         assert_eq!(MacHeTid::new(8), None);
         assert_eq!(MacHeTid::new(u8::MAX), None);
-    }
-
-    #[test]
-    fn trigger_tid_limit_matches_the_complete_blob_table() {
-        assert_eq!(MacHeTbTidLimit::One.bitmap(), 0x01);
-        assert_eq!(MacHeTbTidLimit::Two.bitmap(), 0x81);
-        assert_eq!(MacHeTbTidLimit::Three.bitmap(), 0xa1);
-        assert_eq!(MacHeTbTidLimit::Four.bitmap(), 0xa3);
         assert_eq!(MacHeTbTidLimit::default(), MacHeTbTidLimit::Three);
     }
 

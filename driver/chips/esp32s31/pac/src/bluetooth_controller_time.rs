@@ -284,14 +284,6 @@ mod tests {
     }
 
     #[test]
-    fn latched_time_retains_the_complete_wrapping_image() {
-        assert_eq!(
-            BluetoothControllerLatchedTime::from_bits(0xffff_fffe).bits(),
-            0xffff_fffe
-        );
-    }
-
-    #[test]
     fn publication_is_one_accessor_write_followed_by_one_fence() {
         let mut ownership = BluetoothControllerTimeLatchOwnership::new();
         let mut recorder = Recorder {

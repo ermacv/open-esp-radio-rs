@@ -18,6 +18,18 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
+name = "DETAIL"
+description = "Low completion detail byte passed by complete lmacProcessTxComplete to the status-one/status-four secondary dispatchers when PRIMARY is selected."
+bitOffset = 0
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "STATUS"
+description = "Four-bit top-level completion status selected by complete hal_mac_get_txq_complete and dispatched by complete lmacProcessTxComplete."
+bitOffset = 12
+bitWidth = 4
+
+[[peripherals.registers.register.fields]]
 name = "ACK_SNR_ENCODED"
 description = "Complete hal_mac_get_txq_complete copies PRIMARY bits 23:16 to result byte two. Complete lmacProcessTxSuccess passes that byte into the descriptor ACK-SNR slot. Complete rcUpdateTxDone adds the pinned wDevCtrl byte 0x60 and narrows to a signed byte before rcUpdateAckSnr. This field is meaningful only for a successful completion."
 bitOffset = 16
@@ -36,9 +48,16 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "VALUE"
+name = "DETAIL"
+description = "Low completion detail byte used by the status-one/status-four secondary dispatchers when the auxiliary selector chooses ALTERNATE."
 bitOffset = 0
-bitWidth = 32
+bitWidth = 8
+
+[[peripherals.registers.register.fields]]
+name = "STATUS"
+description = "Four-bit top-level completion status used when the auxiliary selector chooses ALTERNATE."
+bitOffset = 12
+bitWidth = 4
 
 [[peripherals.registers]]
 
@@ -53,9 +72,10 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "VALUE"
-bitOffset = 0
-bitWidth = 32
+name = "SECONDARY_TRIGGER_BASED_PACKET_COUNT"
+description = "Complete hal_mac_get_txq_complete contributes AUX_C bits 13:7 to reconstructed extension word one; complete lmacProcessTxComplete shifts that image right by two before storing the seven-bit secondary Trigger-based packet count."
+bitOffset = 7
+bitWidth = 7
 
 [[review]]
 entity = "WIFI_MAC_TX_COMPLETION"
@@ -89,6 +109,26 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
+entity = "WIFI_MAC_TX_COMPLETION.PRIMARY%s.DETAIL"
+sources = [
+    "BLOB_LIBPP_HAL_MAC_TX",
+    "PROMOTED_LMAC_TX",
+]
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_TX_COMPLETION.PRIMARY%s.STATUS"
+sources = [
+    "BLOB_LIBPP_HAL_MAC_TX",
+    "PROMOTED_LMAC_TX",
+]
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
 entity = "WIFI_MAC_TX_COMPLETION.ALTERNATE%s"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
@@ -99,6 +139,26 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
+entity = "WIFI_MAC_TX_COMPLETION.ALTERNATE%s.DETAIL"
+sources = [
+    "BLOB_LIBPP_HAL_MAC_TX",
+    "PROMOTED_LMAC_TX",
+]
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_TX_COMPLETION.ALTERNATE%s.STATUS"
+sources = [
+    "BLOB_LIBPP_HAL_MAC_TX",
+    "PROMOTED_LMAC_TX",
+]
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
 entity = "WIFI_MAC_TX_COMPLETION.AUX_C%s"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
@@ -107,3 +167,13 @@ sources = [
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
+
+[[review]]
+entity = "WIFI_MAC_TX_COMPLETION.AUX_C%s.SECONDARY_TRIGGER_BASED_PACKET_COUNT"
+sources = [
+    "BLOB_LIBPP_HAL_MAC_TX",
+    "PROMOTED_LMAC_TX",
+]
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"

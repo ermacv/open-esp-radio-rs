@@ -288,7 +288,7 @@ pub struct TxAmpduMpdu {
     pub sequence: u16,
 }
 
-/// BlockAck information read from the MAC completion registers.
+/// Semantic BlockAck information decoded by the PAC completion owner.
 ///
 /// Bit zero acknowledges `starting_sequence`, bit one the following sequence,
 /// and so on. The S31 completion block exposes 64 bits even though strict mode
@@ -300,25 +300,17 @@ pub struct TxBlockAckBitmap {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct HtBlockAckRegisters {
+pub struct HtBlockAckObservation {
     pub control: u8,
     pub block_ack: TxBlockAckBitmap,
 }
 
-/// Decode the fixed three-register result used by
-/// `hal_mac_tx_get_blockack` on S31.
-#[inline(always)]
-pub const fn decode_ht_block_ack_registers(
-    control_and_sequence: u32,
-    bitmap_low: u32,
-    bitmap_high: u32,
-) -> HtBlockAckRegisters {
-    HtBlockAckRegisters {
-        control: ((control_and_sequence >> 16) & 0x0f) as u8,
-        block_ack: TxBlockAckBitmap::new(
-            ((control_and_sequence >> 4) & 0x0fff) as u16,
-            (bitmap_low as u64) | ((bitmap_high as u64) << 32),
-        ),
+impl HtBlockAckObservation {
+    pub const fn new(control: u8, starting_sequence: u16, bitmap: u64) -> Self {
+        Self {
+            control,
+            block_ack: TxBlockAckBitmap::new(starting_sequence, bitmap),
+        }
     }
 }
 

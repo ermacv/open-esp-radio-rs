@@ -19878,9 +19878,23 @@ pub mod wifi_mac_tx_completion {
     pub mod primary {
         #[doc = "Register `PRIMARY%s` reader"]
         pub type R = crate::R<PrimarySpec>;
+        #[doc = "Field `DETAIL` reader - Low completion detail byte passed by complete lmacProcessTxComplete to the status-one/status-four secondary dispatchers when PRIMARY is selected."]
+        pub type DetailR = crate::FieldReader;
+        #[doc = "Field `STATUS` reader - Four-bit top-level completion status selected by complete hal_mac_get_txq_complete and dispatched by complete lmacProcessTxComplete."]
+        pub type StatusR = crate::FieldReader;
         #[doc = "Field `ACK_SNR_ENCODED` reader - Complete hal_mac_get_txq_complete copies PRIMARY bits 23:16 to result byte two. Complete lmacProcessTxSuccess passes that byte into the descriptor ACK-SNR slot. Complete rcUpdateTxDone adds the pinned wDevCtrl byte 0x60 and narrows to a signed byte before rcUpdateAckSnr. This field is meaningful only for a successful completion."]
         pub type AckSnrEncodedR = crate::FieldReader;
         impl R {
+            #[doc = "Bits 0:7 - Low completion detail byte passed by complete lmacProcessTxComplete to the status-one/status-four secondary dispatchers when PRIMARY is selected."]
+            #[inline(always)]
+            pub fn detail(&self) -> DetailR {
+                DetailR::new((self.bits & 0xff) as u8)
+            }
+            #[doc = "Bits 12:15 - Four-bit top-level completion status selected by complete hal_mac_get_txq_complete and dispatched by complete lmacProcessTxComplete."]
+            #[inline(always)]
+            pub fn status(&self) -> StatusR {
+                StatusR::new(((self.bits >> 12) & 0x0f) as u8)
+            }
             #[doc = "Bits 16:23 - Complete hal_mac_get_txq_complete copies PRIMARY bits 23:16 to result byte two. Complete lmacProcessTxSuccess passes that byte into the descriptor ACK-SNR slot. Complete rcUpdateTxDone adds the pinned wDevCtrl byte 0x60 and narrows to a signed byte before rcUpdateAckSnr. This field is meaningful only for a successful completion."]
             #[inline(always)]
             pub fn ack_snr_encoded(&self) -> AckSnrEncodedR {
@@ -19902,13 +19916,20 @@ pub mod wifi_mac_tx_completion {
     pub mod alternate {
         #[doc = "Register `ALTERNATE%s` reader"]
         pub type R = crate::R<AlternateSpec>;
-        #[doc = "Field `VALUE` reader - "]
-        pub type ValueR = crate::FieldReader<u32>;
+        #[doc = "Field `DETAIL` reader - Low completion detail byte used by the status-one/status-four secondary dispatchers when the auxiliary selector chooses ALTERNATE."]
+        pub type DetailR = crate::FieldReader;
+        #[doc = "Field `STATUS` reader - Four-bit top-level completion status used when the auxiliary selector chooses ALTERNATE."]
+        pub type StatusR = crate::FieldReader;
         impl R {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:7 - Low completion detail byte used by the status-one/status-four secondary dispatchers when the auxiliary selector chooses ALTERNATE."]
             #[inline(always)]
-            pub fn value(&self) -> ValueR {
-                ValueR::new(self.bits)
+            pub fn detail(&self) -> DetailR {
+                DetailR::new((self.bits & 0xff) as u8)
+            }
+            #[doc = "Bits 12:15 - Four-bit top-level completion status used when the auxiliary selector chooses ALTERNATE."]
+            #[inline(always)]
+            pub fn status(&self) -> StatusR {
+                StatusR::new(((self.bits >> 12) & 0x0f) as u8)
             }
         }
         #[doc = "Alternate completion/status word selected by the recovered auxiliary bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`alternate::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -19926,13 +19947,15 @@ pub mod wifi_mac_tx_completion {
     pub mod aux_c {
         #[doc = "Register `AUX_C%s` reader"]
         pub type R = crate::R<AuxCSpec>;
-        #[doc = "Field `VALUE` reader - "]
-        pub type ValueR = crate::FieldReader<u32>;
+        #[doc = "Field `SECONDARY_TRIGGER_BASED_PACKET_COUNT` reader - Complete hal_mac_get_txq_complete contributes AUX_C bits 13:7 to reconstructed extension word one; complete lmacProcessTxComplete shifts that image right by two before storing the seven-bit secondary Trigger-based packet count."]
+        pub type SecondaryTriggerBasedPacketCountR = crate::FieldReader;
         impl R {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 7:13 - Complete hal_mac_get_txq_complete contributes AUX_C bits 13:7 to reconstructed extension word one; complete lmacProcessTxComplete shifts that image right by two before storing the seven-bit secondary Trigger-based packet count."]
             #[inline(always)]
-            pub fn value(&self) -> ValueR {
-                ValueR::new(self.bits)
+            pub fn secondary_trigger_based_packet_count(
+                &self,
+            ) -> SecondaryTriggerBasedPacketCountR {
+                SecondaryTriggerBasedPacketCountR::new(((self.bits >> 7) & 0x7f) as u8)
             }
         }
         #[doc = "Third auxiliary completion word contributing to the second decoded extension image.\n\nYou can [`read`](crate::Reg::read) this register and get [`aux_c::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]

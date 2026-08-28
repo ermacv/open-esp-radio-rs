@@ -862,7 +862,7 @@ mod tests {
     use super::*;
     use crate::{
         tx::{HtGuardInterval, HtMcs, HtRate, LegacyRate, TxCompletion, TxCookie},
-        tx_ampdu::{HtAmpduTxCompletion, HtBlockAckRegisters, TxBlockAckBitmap},
+        tx_ampdu::{HtAmpduTxCompletion, HtBlockAckObservation},
     };
     use open_esp_radio_ieee80211::wmm::parse_wmm_parameter_element;
 
@@ -1189,27 +1189,14 @@ mod tests {
     ) -> HtAmpduTxCompletion {
         HtAmpduTxCompletion {
             tx,
-            block_ack: HtBlockAckRegisters {
-                control: 0,
-                block_ack: TxBlockAckBitmap::new(starting_sequence, bitmap),
-            },
+            block_ack: HtBlockAckObservation::new(0, starting_sequence, bitmap),
             block_ack_received: true,
         }
     }
 
     fn completion(status: u8, starting_sequence: u16, bitmap: u64) -> HtAmpduTxCompletion {
         completion_with_tx(
-            TxCompletion {
-                cookie: TxCookie(1),
-                status,
-                trigger_flow: false,
-                used_alternate: false,
-                auxiliary_a_word: 0,
-                auxiliary_b_word: 0,
-                auxiliary_c_word: 0,
-                primary_word: 0,
-                alternate_word: 0,
-            },
+            TxCompletion::new_model(TxCookie(1), status, 0),
             starting_sequence,
             bitmap,
         )
@@ -1345,17 +1332,8 @@ mod tests {
     fn vendor_trigger_timeout_finishes_without_fabricating_block_ack() {
         let mut state = AmpduRetryState::<4>::new(20, 2, HT_POLICY).unwrap();
         let trigger_timeout = completion_with_tx(
-            TxCompletion {
-                cookie: TxCookie(1),
-                status: TxCompletion::ACK_TIMEOUT_STATUS,
-                trigger_flow: true,
-                used_alternate: false,
-                auxiliary_a_word: 0,
-                auxiliary_b_word: 0,
-                auxiliary_c_word: 0,
-                primary_word: 0,
-                alternate_word: 0,
-            },
+            TxCompletion::new_model(TxCookie(1), TxCompletion::ACK_TIMEOUT_STATUS, 0)
+                .with_trigger_flow_model(true),
             20,
             u64::MAX,
         );
@@ -1372,24 +1350,18 @@ mod tests {
 
     #[test]
     fn trigger_timeout_with_reported_packets_stays_on_retry_path() {
-        for (auxiliary_b_word, auxiliary_c_word) in [
-            (1 << 13, 0),
-            ((1 << 20), 1 << 7),
-            ((1 << 20) | (1 << 13), 0),
-        ] {
+        for (primary, last_tx_was_trigger_based, secondary) in
+            [(1, false, 0), (0, true, 1), (1, true, 0)]
+        {
             let mut state = AmpduRetryState::<4>::new(20, 2, HT_POLICY).unwrap();
             let completion = completion_with_tx(
-                TxCompletion {
-                    cookie: TxCookie(1),
-                    status: TxCompletion::ACK_TIMEOUT_STATUS,
-                    trigger_flow: true,
-                    used_alternate: false,
-                    auxiliary_a_word: 0,
-                    auxiliary_b_word,
-                    auxiliary_c_word,
-                    primary_word: 0,
-                    alternate_word: 0,
-                },
+                TxCompletion::new_model(TxCookie(1), TxCompletion::ACK_TIMEOUT_STATUS, 0)
+                    .with_trigger_flow_model(true)
+                    .with_trigger_packet_counts_model(
+                        primary,
+                        last_tx_was_trigger_based,
+                        secondary,
+                    ),
                 20,
                 u64::MAX,
             );
@@ -1407,17 +1379,8 @@ mod tests {
         for (status, trigger_flow) in [(0, true), (4, true), (5, false)] {
             let mut state = AmpduRetryState::<4>::new(20, 2, HT_POLICY).unwrap();
             let completion = completion_with_tx(
-                TxCompletion {
-                    cookie: TxCookie(1),
-                    status,
-                    trigger_flow,
-                    used_alternate: false,
-                    auxiliary_a_word: 0,
-                    auxiliary_b_word: 0,
-                    auxiliary_c_word: 0,
-                    primary_word: 0,
-                    alternate_word: 0,
-                },
+                TxCompletion::new_model(TxCookie(1), status, 0)
+                    .with_trigger_flow_model(trigger_flow),
                 20,
                 0,
             );

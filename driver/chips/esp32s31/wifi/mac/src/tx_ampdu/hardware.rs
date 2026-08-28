@@ -2,7 +2,7 @@
 
 use open_esp_radio_esp32s31_hal::types::{
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
-    MacHeTriggerTxQueueSnapshot, MacHtAmpduCompletionRegisters,
+    MacHeTriggerTxQueueSnapshot, MacHtAmpduCompletionObservation,
 };
 use open_esp_radio_esp32s31_hal::{RadioRuntimeOwner, wifi_mac::WifiMacHal};
 
@@ -15,7 +15,7 @@ use crate::tx::TxHardware;
 /// is a separate trait operation and cannot accidentally be replaced with
 /// the single-MPDU completion method.
 pub trait HtAmpduHardware: TxHardware {
-    fn take_ht_ampdu_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionRegisters>;
+    fn take_ht_ampdu_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionObservation>;
 
     /// Prepare one queue for a future AP Trigger before publishing TX enable.
     ///
@@ -44,7 +44,7 @@ pub trait HtAmpduHardware: TxHardware {
 }
 
 impl HtAmpduHardware for WifiMacHal<'_> {
-    fn take_ht_ampdu_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionRegisters> {
+    fn take_ht_ampdu_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionObservation> {
         WifiMacHal::take_ht_ampdu_completion(self, queue)
     }
 
@@ -82,7 +82,7 @@ impl HtAmpduHardware for WifiMacHal<'_> {
 }
 
 impl HtAmpduHardware for RadioRuntimeOwner {
-    fn take_ht_ampdu_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionRegisters> {
+    fn take_ht_ampdu_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionObservation> {
         HtAmpduHardware::take_ht_ampdu_completion(&mut self.wifi_mac_hal(), queue)
     }
 

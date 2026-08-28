@@ -28,17 +28,7 @@ const HE20_MCS9_CAPABILITY: [u8; 24] = [
 ];
 
 const fn completion() -> TxCompletion {
-    TxCompletion {
-        cookie: TxCookie(1),
-        status: 0,
-        trigger_flow: false,
-        used_alternate: false,
-        auxiliary_a_word: 0,
-        auxiliary_b_word: 0,
-        auxiliary_c_word: 0,
-        primary_word: 0,
-        alternate_word: 0,
-    }
+    TxCompletion::new_model(TxCookie(1), 0, 0)
 }
 
 #[derive(Clone, Copy)]

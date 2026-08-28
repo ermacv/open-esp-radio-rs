@@ -19,9 +19,9 @@ use crate::types::{
     MacHeBeamformingReportProfile, MacHeErSuAckRateProfile, MacHeTbLinkReservation,
     MacHeTbProgramError, MacHeTbTidLimit, MacHeTid, MacHeTriggerRxDiagnostics,
     MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHeTxVectorSnapshot,
-    MacHtAmpduCompletionRegisters, MacHtTxProgram, MacKeyEntryIndex, MacLegacyTxProgram,
+    MacHtAmpduCompletionObservation, MacHtTxProgram, MacKeyEntryIndex, MacLegacyTxProgram,
     MacRxBlockAckEntryIndex, MacRxBlockAckStartingSequence, MacRxBlockAckTid, MacRxBlockAckWindow,
-    MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
+    MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
 };
 use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma, StableDmaRange};
 use open_esp_radio_esp32s31_coex::{
@@ -634,7 +634,7 @@ impl<'registers> WifiMacHal<'registers> {
         self.pac().he_mac_tx_vector_snapshot(queue)
     }
 
-    pub fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters> {
+    pub fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation> {
         self.pac_mut().take_mac_tx_completion(queue)
     }
 
@@ -653,7 +653,10 @@ impl<'registers> WifiMacHal<'registers> {
             .with_detached_mac_tx(queue, reason, detached)
     }
 
-    pub fn take_ht_ampdu_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionRegisters> {
+    pub fn take_ht_ampdu_completion(
+        &mut self,
+        queue: u8,
+    ) -> Option<MacHtAmpduCompletionObservation> {
         self.pac_mut().take_mac_ht_ampdu_completion(queue)
     }
 

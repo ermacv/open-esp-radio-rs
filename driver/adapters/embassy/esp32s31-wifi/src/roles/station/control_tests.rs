@@ -6,7 +6,7 @@ use core::{
 use open_esp_radio_embassy_net::NoopRawMutex;
 use open_esp_radio_esp32s31_hal::types::{
     MacKeyInstallOutcome, MacLegacyTxProgram, MacStaReceivePolicySnapshot,
-    MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
+    MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
 };
 use open_esp_radio_esp32s31_wifi_mac::{
     MacInterface,
@@ -17,7 +17,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
     },
     rx_ampdu::{RxBlockAckRequest, RxBlockAckSnapshot},
     rx_ampdu_hw::{RxBlockAckHardware, S31RxBlockAckAgreement, S31RxBlockAckAgreementError},
-    tx::{HardwareOwnedTxDma, LegacyRate, PreparedTxDma, TxCompletion, TxHardware, TxSlot},
+    tx::{HardwareOwnedTxDma, LegacyRate, PreparedTxDma, TxHardware, TxSlot},
     tx_ampdu::{BlockAckAction, STA_TX_BLOCK_ACK_TIDS, StaTxBlockAckSessions},
     tx_runtime::WifiTxRuntimePolicy,
 };
@@ -143,7 +143,7 @@ fn group_message1(
 struct Hardware {
     station_tsf: u64,
     prepare: bool,
-    completion: Option<MacTxCompletionRegisters>,
+    completion: Option<MacTxCompletionObservation>,
     programmed: Option<S31RxBlockAckAgreement>,
     cleared: [Option<u8>; 4],
     clear_count: usize,
@@ -184,7 +184,7 @@ impl TxHardware for Hardware {
 
     fn start_bound_legacy_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8, _plcp0: u32) {}
 
-    fn take_tx_completion(&mut self, _queue: u8) -> Option<MacTxCompletionRegisters> {
+    fn take_tx_completion(&mut self, _queue: u8) -> Option<MacTxCompletionObservation> {
         self.completion.take()
     }
 
@@ -390,15 +390,8 @@ impl WifiTxTimer for Timer {
     }
 }
 
-fn completion(status: u8) -> MacTxCompletionRegisters {
-    MacTxCompletionRegisters {
-        aux_a: 0,
-        aux_b: 0,
-        aux_c: 0,
-        primary: u32::from(status) << 12,
-        alternate: 0,
-        trigger_flow: false,
-    }
+fn completion(status: u8) -> MacTxCompletionObservation {
+    MacTxCompletionObservation::new_model(status, 0)
 }
 
 fn make_tx<'a>(
@@ -1036,7 +1029,9 @@ fn failed_rx_addba_response_rolls_back_hardware_and_software() {
             kind: ConnectedControlTxKind::RxAddbaResponse { tid: 3 },
             outcome: SingleMpduTxOutcome::HardwareFailure(report),
         })
-        if matches!(report.completion, Some(TxCompletion { status: 1, .. }))
+        if report
+            .completion
+            .is_some_and(|completion| completion.status() == 1)
     ));
 }
 

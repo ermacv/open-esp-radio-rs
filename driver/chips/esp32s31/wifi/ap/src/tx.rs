@@ -568,7 +568,7 @@ mod tests {
     };
 
     use open_esp_radio_esp32s31_hal::types::{
-        MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason,
+        MacLegacyTxProgram, MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason,
         MacTxQueueDetached,
     };
     use open_esp_radio_esp32s31_wifi::ordinary_tx::WifiTxPowerPair;
@@ -596,7 +596,7 @@ mod tests {
         prepare: bool,
         publications: u8,
         legacy_program: Option<MacLegacyTxProgram>,
-        completion: Option<MacTxCompletionRegisters>,
+        completion: Option<MacTxCompletionObservation>,
     }
 
     impl TxHardware for Hardware {
@@ -619,7 +619,7 @@ mod tests {
             self.publications += 1;
         }
 
-        fn take_tx_completion(&mut self, _queue: u8) -> Option<MacTxCompletionRegisters> {
+        fn take_tx_completion(&mut self, _queue: u8) -> Option<MacTxCompletionObservation> {
             self.completion.take()
         }
 
@@ -880,14 +880,7 @@ mod tests {
         );
         let mut hardware = Hardware {
             prepare: true,
-            completion: Some(MacTxCompletionRegisters {
-                aux_a: 0,
-                aux_b: 0,
-                aux_c: 0,
-                primary: 0,
-                alternate: 0,
-                trigger_flow: false,
-            }),
+            completion: Some(MacTxCompletionObservation::new_model(0, 0)),
             ..Hardware::default()
         };
         let mut beacon = [0; 24];

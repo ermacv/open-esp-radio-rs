@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
 use open_esp_radio_esp32s31_hal::types::{
     MacHtTxProgram, MacInterface, MacInterruptMask, MacKeyInstallOutcome, MacLegacyTxProgram,
-    MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
+    MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
 };
 use open_esp_radio_esp32s31_wifi_dma::descriptor::{
     BIT_30, BIT_31, DESCRIPTOR_BYTES, Descriptor, LENGTH_SHIFT, descriptor_address_valid,
@@ -122,18 +122,6 @@ mod mac {
     pub const TX_STATE_CLEAR: TestRegister = named("TX_STATE_CLEAR");
     pub const TX_STATE: TestRegister = named("TX_STATE");
     pub const TX_CCA_CONTROL: TestRegister = named("TX_CCA_CONTROL");
-    pub const TX_COMPLETE_CLEAR: TestRegister = named("TX_COMPLETE_CLEAR");
-    pub const TX_COMPLETE_STATE: TestRegister = named("TX_COMPLETE_STATE");
-    pub const TX_COMPLETE_PRIMARY: [TestRegister; 4] = queue("TX_COMPLETE_PRIMARY");
-    pub const TX_COMPLETE_ALTERNATE: [TestRegister; 4] = queue("TX_COMPLETE_ALTERNATE");
-    pub const TX_COMPLETE_AUX_A: [TestRegister; 4] = queue("TX_COMPLETE_AUX_A");
-    pub const TX_COMPLETE_AUX_B: [TestRegister; 4] = queue("TX_COMPLETE_AUX_B");
-    pub const TX_COMPLETE_AUX_C: [TestRegister; 4] = queue("TX_COMPLETE_AUX_C");
-    pub const TX_COMPLETE_PRIMARY_Q0: TestRegister = TX_COMPLETE_PRIMARY[0];
-    pub const TX_COMPLETE_ALTERNATE_Q0: TestRegister = TX_COMPLETE_ALTERNATE[0];
-    pub const TX_COMPLETE_AUX_A_Q0: TestRegister = TX_COMPLETE_AUX_A[0];
-    pub const TX_COMPLETE_AUX_B_Q0: TestRegister = TX_COMPLETE_AUX_B[0];
-    pub const TX_COMPLETE_AUX_C_Q0: TestRegister = TX_COMPLETE_AUX_C[0];
 
     const fn queue(name: &'static str) -> [TestRegister; 4] {
         [
@@ -254,13 +242,6 @@ const RX_LAST_DESCRIPTOR: TestRegister = mac::RX_LAST_DESCRIPTOR;
 const RX_LAST_DESCRIPTOR_HIGH: TestRegister = mac::RX_LAST_DESCRIPTOR_HIGH;
 const RX_NEXT_DESCRIPTOR: TestRegister = mac::RX_NEXT_DESCRIPTOR;
 const TX_CCA_CONTROL: TestRegister = mac::TX_CCA_CONTROL;
-const TX_COMPLETE_ALTERNATE_Q0: TestRegister = mac::TX_COMPLETE_ALTERNATE_Q0;
-const TX_COMPLETE_AUX_A_Q0: TestRegister = mac::TX_COMPLETE_AUX_A_Q0;
-const TX_COMPLETE_AUX_B_Q0: TestRegister = mac::TX_COMPLETE_AUX_B_Q0;
-const TX_COMPLETE_AUX_C_Q0: TestRegister = mac::TX_COMPLETE_AUX_C_Q0;
-const TX_COMPLETE_CLEAR: TestRegister = mac::TX_COMPLETE_CLEAR;
-const TX_COMPLETE_PRIMARY_Q0: TestRegister = mac::TX_COMPLETE_PRIMARY_Q0;
-const TX_COMPLETE_STATE: TestRegister = mac::TX_COMPLETE_STATE;
 const TX_Q0_CONTROL: TestRegister = mac::TX_Q0_CONTROL;
 const TX_STATE: TestRegister = mac::TX_STATE;
 const TX_STATE_CLEAR: TestRegister = mac::TX_STATE_CLEAR;
@@ -270,7 +251,6 @@ const RX_RELOAD: u32 = mac::rx_control::APPEND_DESCRIPTOR_RELOAD.mask();
 const TX_Q_ENABLE_VALID: u32 = 0xc000_0000;
 const TX_CCA_FORCE_MASK: u32 = mac::tx_cca_control::FORCE.mask();
 const TX_TIMEOUT_SHIFT: u32 = mac::tx_state::TIMEOUT_SHIFT;
-const TX_COMPLETE_Q0: u32 = 1;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Operation {
@@ -312,6 +292,7 @@ struct MockMmio {
     interrupt_enable: u32,
     cold_handshake_result: Option<Result<MacColdStartOutcome, MacColdStartError>>,
     cold_start_clock_trace: Option<ColdStartClockTrace>,
+    tx_completions: [Option<MacTxCompletionObservation>; 4],
 }
 
 impl MockMmio {
@@ -321,6 +302,10 @@ impl MockMmio {
 
     fn operations(&self) -> &[Operation] {
         &self.operations
+    }
+
+    fn set_tx_completion(&mut self, queue: u8, completion: MacTxCompletionObservation) {
+        self.tx_completions[usize::from(queue)] = Some(completion);
     }
 
     fn record_clock_edge(&self, edge: ColdStartClockEdge) {
@@ -1028,29 +1013,8 @@ impl TxHardware for MockMmio {
         Mmio::fence(self);
     }
 
-    fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters> {
-        let index = usize::from(queue);
-        let mask = 1_u32 << queue;
-        if self.read32(TX_COMPLETE_STATE) & mask == 0 {
-            return None;
-        }
-        let aux_a = self.read32(mac::TX_COMPLETE_AUX_A[index]);
-        let aux_b = self.read32(mac::TX_COMPLETE_AUX_B[index]);
-        let aux_c = self.read32(mac::TX_COMPLETE_AUX_C[index]);
-        let primary = self.read32(mac::TX_COMPLETE_PRIMARY[index]);
-        let alternate = self.read32(mac::TX_COMPLETE_ALTERNATE[index]);
-        let trigger_flow = self.read32(TX_STATE) & (1_u32 << (24 + queue)) != 0;
-        let clear = self.read32(TX_COMPLETE_CLEAR);
-        self.write32(TX_COMPLETE_CLEAR, clear | mask);
-        Mmio::fence(self);
-        Some(MacTxCompletionRegisters {
-            aux_a,
-            aux_b,
-            aux_c,
-            primary,
-            alternate,
-            trigger_flow,
-        })
+    fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation> {
+        self.tx_completions[usize::from(queue)].take()
     }
 
     fn begin_tx_timeout_abort(&mut self, queue: u8) -> bool {
@@ -3424,24 +3388,20 @@ fn tx_slot_rejects_stale_cookie_and_completes_one_generation() {
     );
 
     let mut mmio = MockMmio::default();
-    mmio.set(TX_COMPLETE_STATE, TX_COMPLETE_Q0);
-    mmio.set(TX_COMPLETE_AUX_A_Q0, 0);
-    mmio.set(TX_COMPLETE_AUX_B_Q0, 0);
-    mmio.set(TX_COMPLETE_AUX_C_Q0, 0);
-    mmio.set(TX_COMPLETE_PRIMARY_Q0, 3 << 12);
-    mmio.set(TX_COMPLETE_ALTERNATE_Q0, 7 << 12);
-    mmio.set(TX_STATE, 1 << 24);
-    mmio.set(TX_COMPLETE_CLEAR, 0x100);
+    mmio.set_tx_completion(
+        0,
+        MacTxCompletionObservation::new_model(3, 0).with_trigger_flow_model(true),
+    );
 
     let completion = slot
         .as_mut()
         .acknowledge_q0_completion(&mut mmio)
         .unwrap()
         .unwrap();
-    assert_eq!(completion.cookie, cookie);
-    assert_eq!(completion.status, 3);
-    assert!(completion.trigger_flow);
-    assert!(!completion.used_alternate);
+    assert_eq!(completion.cookie(), cookie);
+    assert_eq!(completion.status(), 3);
+    assert!(completion.is_trigger_flow());
+    assert!(!completion.used_alternate_record());
     assert_eq!(slot.state(), TxSlotState::Completed);
 
     mmio.set(TX_Q0_CONTROL, TX_Q_ENABLE_VALID | 0x100);
@@ -3484,27 +3444,21 @@ fn tx_completion_decodes_the_blob_ack_snr_byte() {
     slot.as_mut().mark_hardware_owned(cookie).unwrap();
 
     let mut mmio = MockMmio::default();
-    mmio.set(TX_COMPLETE_STATE, TX_COMPLETE_Q0);
-    mmio.set(TX_COMPLETE_AUX_A_Q0, 0);
-    mmio.set(TX_COMPLETE_AUX_B_Q0, 0);
-    mmio.set(TX_COMPLETE_AUX_C_Q0, 0);
     // Encoded 0x8b plus the pinned 0x60 offset narrows to signed -21.
-    mmio.set(TX_COMPLETE_PRIMARY_Q0, 0x8b << 16);
-    mmio.set(TX_COMPLETE_ALTERNATE_Q0, 0);
-    mmio.set(TX_COMPLETE_CLEAR, 0);
+    mmio.set_tx_completion(
+        0,
+        MacTxCompletionObservation::new_model(0, 0).with_ack_snr_encoded_model(0x8b),
+    );
 
     let completion = slot
         .as_mut()
         .acknowledge_q0_completion(&mut mmio)
         .unwrap()
         .unwrap();
-    assert_eq!(completion.status, 0);
+    assert_eq!(completion.status(), 0);
     assert_eq!(completion.ack_snr_sample(), Some(-21));
 
-    let failed = TxCompletion {
-        status: 5,
-        ..completion
-    };
+    let failed = TxCompletion::new_model(cookie, 5, 0).with_ack_snr_encoded_model(0x8b);
     assert_eq!(failed.ack_snr_sample(), None);
 
     mmio.set(TX_Q0_CONTROL, TX_Q_ENABLE_VALID);

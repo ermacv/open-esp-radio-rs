@@ -398,7 +398,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         let current_first_sequence = observed.first_sequence;
         let decision = observed.decision;
         let observation = Esp32s31ApAmpduCompletion {
-            tx_status: completion.tx.status,
+            tx_status: completion.tx.status(),
             block_ack_received: completion.block_ack_received,
             block_ack_control: completion.block_ack.control,
             first_sequence: current_first_sequence,

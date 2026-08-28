@@ -14,8 +14,8 @@ use open_esp_radio_esp32s31_hal::types::{
     MacHe20PeerConfig, MacHe20PeerError, MacHeBeamformingReportProfile, MacHeErSuAckRateProfile,
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
     MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHeTxVectorSnapshot,
-    MacHtAmpduCompletionRegisters, MacHtTxProgram, MacKeyInstallOutcome, MacLegacyTxProgram,
-    MacRxDmaSnapshot, MacStaReceivePolicySnapshot, MacTxCompletionRegisters, MacTxDetachOutcome,
+    MacHtAmpduCompletionObservation, MacHtTxProgram, MacKeyInstallOutcome, MacLegacyTxProgram,
+    MacRxDmaSnapshot, MacStaReceivePolicySnapshot, MacTxCompletionObservation, MacTxDetachOutcome,
     MacTxDetachReason, MacTxQueueDetached,
 };
 use open_esp_radio_esp32s31_hal::wifi_mac::WifiMacHal;
@@ -315,7 +315,7 @@ impl TxHardware for CooperativeRadioHardware<'_> {
         TxHardware::he_tx_vector_snapshot(&self.wifi_mac_hal(), queue)
     }
 
-    fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters> {
+    fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation> {
         TxHardware::take_tx_completion(&mut self.wifi_mac_hal(), queue)
     }
 
@@ -341,7 +341,7 @@ impl TxHardware for CooperativeRadioHardware<'_> {
 }
 
 impl HtAmpduHardware for CooperativeRadioHardware<'_> {
-    fn take_ht_ampdu_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionRegisters> {
+    fn take_ht_ampdu_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionObservation> {
         HtAmpduHardware::take_ht_ampdu_completion(&mut self.wifi_mac_hal(), queue)
     }
 

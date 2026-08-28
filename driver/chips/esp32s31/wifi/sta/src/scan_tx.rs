@@ -81,7 +81,7 @@ impl Esp32s31ScanTxState {
         match result {
             Ok(completion) => {
                 self.summary.completions = self.summary.completions.saturating_add(1);
-                if completion.status == 0 {
+                if completion.status() == 0 {
                     Ok(Esp32s31ScanProbeReport::Transmitted(completion))
                 } else {
                     self.summary.failures = self.summary.failures.saturating_add(1);
@@ -211,7 +211,7 @@ mod tests {
     };
 
     use open_esp_radio_esp32s31_hal::types::{
-        MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason,
+        MacLegacyTxProgram, MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason,
         MacTxQueueDetached,
     };
     use open_esp_radio_esp32s31_wifi_mac::{
@@ -226,7 +226,7 @@ mod tests {
     #[derive(Default)]
     struct ScanTxHardware {
         publications: u8,
-        completion: Option<MacTxCompletionRegisters>,
+        completion: Option<MacTxCompletionObservation>,
     }
 
     impl TxHardware for ScanTxHardware {
@@ -248,7 +248,7 @@ mod tests {
             self.publications = self.publications.saturating_add(1);
         }
 
-        fn take_tx_completion(&mut self, _queue: u8) -> Option<MacTxCompletionRegisters> {
+        fn take_tx_completion(&mut self, _queue: u8) -> Option<MacTxCompletionObservation> {
             self.completion.take()
         }
 
@@ -307,15 +307,8 @@ mod tests {
         }
     }
 
-    fn scan_tx_completion(status: u8) -> MacTxCompletionRegisters {
-        MacTxCompletionRegisters {
-            aux_a: 0,
-            aux_b: 0,
-            aux_c: 0,
-            primary: u32::from(status) << 12,
-            alternate: 0,
-            trigger_flow: false,
-        }
+    fn scan_tx_completion(status: u8) -> MacTxCompletionObservation {
+        MacTxCompletionObservation::new_model(status, 0)
     }
 
     fn running_scan_tx<'a>(

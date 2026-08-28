@@ -169,7 +169,7 @@ pub use ieee802154::{Ieee802154PolledRegisterLease, Ieee802154RegisterLease};
 pub use ieee802154_timing::{Ieee802154TimingPrerequisite, Ieee802154TimingReady};
 pub use mac_block_ack::{
     ExtraSoftApRxBlockAckEntrySnapshot, InternalTxBlockAckSnapshot, RxBlockAckEntrySnapshot,
-    TxBlockAckDiagnosticSnapshot, TxBlockAckPayload, TxBlockAckRegisterImage,
+    TxBlockAckDiagnosticSnapshot, TxBlockAckPayload,
 };
 pub use mac_crypto::MacKeyInstallOutcome;
 pub use mac_he_beamforming::{
@@ -209,8 +209,8 @@ pub use mac_tsf::{
     StaTbttWakePrepareError, StaTbttWakeRestore, StaTbttWakeRestoreError, StaTbttWakeRestoreFailure,
 };
 pub use mac_tx::{
-    MacHeTxProgram, MacHeTxVectorSnapshot, MacHtAmpduCompletionRegisters, MacHtTxProgram,
-    MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason,
+    MacHeTxProgram, MacHeTxVectorSnapshot, MacHtAmpduCompletionObservation, MacHtTxProgram,
+    MacLegacyTxProgram, MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason,
     MacTxPtiProgram, MacTxQueueDetached,
 };
 pub use mac_tx_power_init::{

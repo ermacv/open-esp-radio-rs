@@ -460,10 +460,10 @@ where
         }
         .map_err(Esp32s31Wpa2KeyPortError::Transmit)?;
         self.completion = Some(completion);
-        if completion.status == 0 {
+        if completion.status() == 0 {
             Ok(())
         } else {
-            Err(Esp32s31Wpa2KeyPortError::TxStatus(completion.status))
+            Err(Esp32s31Wpa2KeyPortError::TxStatus(completion.status()))
         }
     }
 }

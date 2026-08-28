@@ -129,7 +129,7 @@ where
             #[cfg(any(feature = "diagnostics", test))]
             if let Some(observer) = self.observer {
                 observer.observe(AggregateTxObservation::BlockAckProcessed {
-                    tx_status: completion.tx.status,
+                    tx_status: completion.tx.status(),
                     block_ack_received: completion.block_ack_received,
                     control: completion.block_ack.control,
                     first_sequence: current_first_sequence,

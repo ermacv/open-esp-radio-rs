@@ -792,7 +792,7 @@ where
                         .saturating_add(1);
                     self.observer.observation.tx_failures.last_hardware_status = report
                         .completion
-                        .map(|completion| completion.status)
+                        .map(|completion| completion.status())
                         .unwrap_or(0);
                 }
                 OrdinaryTxOutcome::HardwareTimeout(_) => {
@@ -1060,7 +1060,7 @@ mod tests {
     };
 
     use open_esp_radio_esp32s31_hal::types::{
-        MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome,
+        MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionObservation, MacTxDetachOutcome,
         MacTxDetachReason, MacTxQueueDetached,
     };
     use open_esp_radio_esp32s31_wifi::ordinary_tx::{OrdinaryTxError, WifiTxPowerPair};
@@ -1096,7 +1096,7 @@ mod tests {
 
     #[derive(Default)]
     struct Hardware {
-        completion: Option<MacTxCompletionRegisters>,
+        completion: Option<MacTxCompletionObservation>,
         publications: u8,
     }
 
@@ -1141,7 +1141,7 @@ mod tests {
             self.publications = self.publications.saturating_add(1);
         }
 
-        fn take_tx_completion(&mut self, _queue: u8) -> Option<MacTxCompletionRegisters> {
+        fn take_tx_completion(&mut self, _queue: u8) -> Option<MacTxCompletionObservation> {
             self.completion.take()
         }
 
@@ -1235,14 +1235,7 @@ mod tests {
 
         mac.publish_beacon(&mut hardware, 102_400).unwrap();
         assert_eq!(mac.observation().beacons_transmitted, 0);
-        hardware.completion = Some(MacTxCompletionRegisters {
-            aux_a: 0,
-            aux_b: 0,
-            aux_c: 0,
-            primary: 0,
-            alternate: 0,
-            trigger_flow: false,
-        });
+        hardware.completion = Some(MacTxCompletionObservation::new_model(0, 0));
         let (progress, action) = block_on(mac.service_tx(
             &mut hardware,
             WifiTxWake::Interrupt {

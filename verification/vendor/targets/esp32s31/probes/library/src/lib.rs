@@ -511,10 +511,10 @@ pub extern "C" fn open_libpp_tx_trace_hal_mac_tx_get_blockack(
     // SAFETY: the verification profile supplies one initialized, writable
     // twelve-byte output object for the duration of this call.
     unsafe {
-        (*output).control = ((payload.control_and_sequence >> 16) & 0x0f) as u8;
-        (*output).starting_sequence = ((payload.control_and_sequence >> 4) & 0x0fff) as u16;
-        (*output).bitmap_low = payload.bitmap_low;
-        (*output).bitmap_high = payload.bitmap_high;
+        (*output).control = payload.control();
+        (*output).starting_sequence = payload.starting_sequence();
+        (*output).bitmap_low = payload.bitmap_low();
+        (*output).bitmap_high = payload.bitmap_high();
     }
     0
 }
@@ -605,17 +605,7 @@ pub extern "C" fn open_libpp_tx_retry_trace_lmac_process_tx_error(
 ) {
     use open_esp_radio_esp32s31_wifi_mac::tx::{TxCompletion, TxCompletionDisposition, TxCookie};
 
-    let completion = TxCompletion {
-        cookie: TxCookie(0),
-        status: 4,
-        trigger_flow: false,
-        used_alternate: false,
-        auxiliary_a_word: 0,
-        auxiliary_b_word: 0,
-        auxiliary_c_word: 0,
-        primary_word: detail,
-        alternate_word: 0,
-    };
+    let completion = TxCompletion::new_validation(TxCookie(0), 4, detail as u8);
     match completion.disposition() {
         TxCompletionDisposition::AckTimeout => open_libpp_tx_retry_ack_timeout(queue),
         TxCompletionDisposition::CtsTimeout => open_libpp_tx_retry_cts_timeout(queue),
@@ -710,17 +700,8 @@ impl open_esp_radio_esp32s31_wifi_mac::tx::TxHardware for OrdinaryTxProbeHardwar
     fn take_tx_completion(
         &mut self,
         _queue: u8,
-    ) -> Option<open_esp_radio_esp32s31_hal::types::MacTxCompletionRegisters> {
-        Some(
-            open_esp_radio_esp32s31_hal::types::MacTxCompletionRegisters {
-                aux_a: 0,
-                aux_b: 0,
-                aux_c: 0,
-                primary: 5 << 12,
-                alternate: 0,
-                trigger_flow: false,
-            },
-        )
+    ) -> Option<open_esp_radio_esp32s31_hal::types::MacTxCompletionObservation> {
+        Some(open_esp_radio_esp32s31_hal::types::MacTxCompletionObservation::new_validation(5, 0))
     }
 
     fn begin_tx_timeout_abort(&mut self, _queue: u8) -> bool {

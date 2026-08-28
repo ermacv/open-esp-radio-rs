@@ -30,13 +30,13 @@ mod submission;
 
 pub use block_ack::{
     ADDBA_ACTION_BODY_LEN, ADDBA_REQUEST_ACTION, ADDBA_RESPONSE_ACTION, AddbaRequest,
-    BLOCK_ACK_CATEGORY, BlockAckAction, DELBA_ACTION, HtBlockAckRegisters, OperationalTxBlockAck,
+    BLOCK_ACK_CATEGORY, BlockAckAction, DELBA_ACTION, HtBlockAckObservation, OperationalTxBlockAck,
     STA_TX_BLOCK_ACK_TIDS, StaTxBlockAckResponse, StaTxBlockAckResponseDisposition,
     StaTxBlockAckSessions, StaTxBlockAckSessionsError, TX_AMPDU_SLOT_CAPACITY,
     TX_BLOCK_ACK_MAX_WINDOW, TxAmpduBatch, TxAmpduBatchError, TxAmpduCompletion,
     TxAmpduDisposition, TxAmpduMpdu, TxAmpduSlot, TxBlockAckAlarm, TxBlockAckBitmap,
     TxBlockAckConfig, TxBlockAckDialogToken, TxBlockAckDialogTokenSequence, TxBlockAckError,
-    TxBlockAckResponse, TxBlockAckSession, decode_ht_block_ack_registers, parse_block_ack_action,
+    TxBlockAckResponse, TxBlockAckSession, parse_block_ack_action,
 };
 pub use hardware::HtAmpduHardware;
 pub use length::{HtAmpduLength, HtAmpduLengthAccumulator, HtAmpduLengthError};
@@ -131,7 +131,7 @@ pub enum HtAmpduTxFormat {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct HtAmpduTxCompletion {
     pub tx: TxCompletion,
-    pub block_ack: HtBlockAckRegisters,
+    pub block_ack: HtBlockAckObservation,
     pub block_ack_received: bool,
 }
 
@@ -188,7 +188,7 @@ impl HtAmpduTxCompletion {
     /// status-five A-MPDU branch calls `hal_mac_tx_get_blockack`, publishes the
     /// result through `ppTxqUpdateBitmap`, and then enters `ppResortTxAMPDU`.
     pub const fn acknowledges(self, sequence: u16) -> bool {
-        (!self.tx.trigger_flow || self.tx.status == 0)
+        (!self.tx.is_trigger_flow() || self.tx.status() == 0)
             && self.block_ack_received
             && self.block_ack.block_ack.acknowledges(sequence)
     }

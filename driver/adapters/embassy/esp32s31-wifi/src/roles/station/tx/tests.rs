@@ -11,8 +11,8 @@ use open_esp_radio_embassy_net::{
 };
 use open_esp_radio_esp32s31_hal::types::{
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
-    MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHtAmpduCompletionRegisters, MacHtTxProgram,
-    MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome,
+    MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHtAmpduCompletionObservation, MacHtTxProgram,
+    MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionObservation, MacTxDetachOutcome,
     MacTxDetachReason, MacTxQueueDetached,
 };
 use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxPowerPair, WifiTxResources};
@@ -121,8 +121,8 @@ struct Hardware {
     last_legacy_queue: Option<u8>,
     last_ht_queue: Option<u8>,
     last_he_queue: Option<u8>,
-    ordinary_completion: Option<MacTxCompletionRegisters>,
-    aggregate_completion: Option<MacHtAmpduCompletionRegisters>,
+    ordinary_completion: Option<MacTxCompletionObservation>,
+    aggregate_completion: Option<MacHtAmpduCompletionObservation>,
 }
 
 impl CcmpKeyHardware for Hardware {
@@ -173,7 +173,7 @@ impl open_esp_radio_esp32s31_wifi_mac::tx::TxHardware for Hardware {
 
     fn start_bound_he_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8, _plcp0: u32) {}
 
-    fn take_tx_completion(&mut self, _queue: u8) -> Option<MacTxCompletionRegisters> {
+    fn take_tx_completion(&mut self, _queue: u8) -> Option<MacTxCompletionObservation> {
         self.ordinary_completion.take()
     }
 
@@ -200,7 +200,7 @@ impl open_esp_radio_esp32s31_wifi_mac::tx::TxHardware for Hardware {
 }
 
 impl HtAmpduHardware for Hardware {
-    fn take_ht_ampdu_completion(&mut self, _queue: u8) -> Option<MacHtAmpduCompletionRegisters> {
+    fn take_ht_ampdu_completion(&mut self, _queue: u8) -> Option<MacHtAmpduCompletionObservation> {
         self.aggregate_completion.take()
     }
 
@@ -287,21 +287,14 @@ fn send_short_frame(device: &mut Device) {
         .consume(8, |frame| frame.fill(0));
 }
 
-fn aggregate_completion(starting_sequence: u16, bitmap: u64) -> MacHtAmpduCompletionRegisters {
-    MacHtAmpduCompletionRegisters {
-        tx: MacTxCompletionRegisters {
-            aux_a: 0,
-            aux_b: 0,
-            aux_c: 0,
-            primary: 0,
-            alternate: 0,
-            trigger_flow: false,
-        },
-        block_ack_control_and_sequence: u32::from(starting_sequence & 0x0fff) << 4,
-        block_ack_bitmap_low: bitmap as u32,
-        block_ack_bitmap_high: (bitmap >> 32) as u32,
-        block_ack_received: true,
-    }
+fn aggregate_completion(starting_sequence: u16, bitmap: u64) -> MacHtAmpduCompletionObservation {
+    MacHtAmpduCompletionObservation::new_model(
+        MacTxCompletionObservation::new_model(0, 0),
+        0,
+        starting_sequence,
+        bitmap,
+        true,
+    )
 }
 
 fn make_ordinary<'a, const BUFFER_SIZE: usize>(
@@ -461,7 +454,7 @@ fn idle_station_tx_lends_physical_owners_without_losing_role_state() {
         ),
         Ok(DatapathControlProgress::TxPending),
     );
-    hardware.ordinary_completion = Some(aggregate_completion(0, 0).tx);
+    hardware.ordinary_completion = Some(aggregate_completion(0, 0).tx());
     assert_eq!(
         embassy_futures::block_on(tx.service(
             &mut hardware,
@@ -558,7 +551,7 @@ fn first_frame_outside_fresh_aggregate_txop_falls_back_to_ordinary_tx() {
             ethernet_length: 17,
         })
     );
-    hardware.ordinary_completion = Some(aggregate_completion(0, 0).tx);
+    hardware.ordinary_completion = Some(aggregate_completion(0, 0).tx());
     assert_eq!(
         embassy_futures::block_on(tx.service(
             &mut hardware,
@@ -755,7 +748,7 @@ fn aggregate_uses_exact_ba_tid_and_defers_a_different_wmm_successor() {
     assert!(!tx.has_prepared_network_tx());
     assert_eq!(network.tx_queue_len(), 1);
 
-    hardware.ordinary_completion = Some(aggregate_completion(0, 0).tx);
+    hardware.ordinary_completion = Some(aggregate_completion(0, 0).tx());
     assert_eq!(
         embassy_futures::block_on(tx.service(
             &mut hardware,
@@ -979,7 +972,7 @@ fn peer_advertised_tiny_he_txop_cannot_wrap_into_aggregate_capacity() {
             ethernet_length: 18,
         })
     );
-    hardware.ordinary_completion = Some(aggregate_completion(0, 0).tx);
+    hardware.ordinary_completion = Some(aggregate_completion(0, 0).tx());
     assert_eq!(
         embassy_futures::block_on(tx.service(
             &mut hardware,
@@ -1704,14 +1697,7 @@ fn one_missing_wmm_ht_mpdu_keeps_tid_queue_sequence_and_pn_in_ordinary_retry() {
     send_frame(&mut device, 5);
     assert_eq!(network.tx_queue_len(), TEST_QUEUE_DEPTH);
 
-    hardware.ordinary_completion = Some(MacTxCompletionRegisters {
-        aux_a: 0,
-        aux_b: 0,
-        aux_c: 0,
-        primary: 0,
-        alternate: 0,
-        trigger_flow: false,
-    });
+    hardware.ordinary_completion = Some(MacTxCompletionObservation::new_model(0, 0));
     assert_eq!(
         embassy_futures::block_on(tx.service(
             &mut hardware,

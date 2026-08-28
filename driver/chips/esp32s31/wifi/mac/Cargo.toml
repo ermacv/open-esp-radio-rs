@@ -12,6 +12,7 @@ default = []
 large-rx-pool-48 = []
 rx-ba-window-8 = []
 validation-raw-dma = ["open-esp-radio-esp32s31-wifi-dma/validation-raw-dma"]
+validation-probes = ["open-esp-radio-esp32s31-hal/validation-probes"]
 
 [dependencies]
 open-esp-radio-dma = { path = "../../../../common/dma" }

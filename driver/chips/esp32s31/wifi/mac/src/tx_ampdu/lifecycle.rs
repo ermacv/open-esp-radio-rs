@@ -5,8 +5,7 @@ use core::pin::Pin;
 use open_esp_radio_esp32s31_hal::types::MacHeTriggerTxQueueSnapshot;
 
 use super::{
-    HtAmpduHardware, HtAmpduTxCompletion, HtAmpduTxError, HtAmpduTxStorage,
-    decode_ht_block_ack_registers,
+    HtAmpduHardware, HtAmpduTxCompletion, HtAmpduTxError, HtAmpduTxStorage, HtBlockAckObservation,
 };
 use crate::tx::{TxCompletion, TxCookie, TxHardware, TxSlotState, decode_tx_completion};
 
@@ -39,13 +38,13 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         }
         *storage.state = TxSlotState::Completed;
         Ok(Some(HtAmpduTxCompletion {
-            tx: decode_tx_completion(*storage.active, registers.tx),
-            block_ack: decode_ht_block_ack_registers(
-                registers.block_ack_control_and_sequence,
-                registers.block_ack_bitmap_low,
-                registers.block_ack_bitmap_high,
+            tx: decode_tx_completion(*storage.active, registers.tx()),
+            block_ack: HtBlockAckObservation::new(
+                registers.block_ack_control(),
+                registers.block_ack_starting_sequence(),
+                registers.block_ack_bitmap(),
             ),
-            block_ack_received: registers.block_ack_received,
+            block_ack_received: registers.block_ack_received(),
         }))
     }
 

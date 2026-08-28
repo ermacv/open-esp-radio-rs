@@ -15,7 +15,7 @@ use alloc::boxed::Box;
 pub use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
 use open_esp_radio_esp32s31_hal::types::{
     MacHeTbTidLimit, MacHeTid, MacHeTxProgram, MacHeTxVectorSnapshot, MacHtTxProgram, MacInterface,
-    MacLegacyTxProgram, MacPartialRuPowerSelector, MacTxCompletionRegisters, MacTxDetachOutcome,
+    MacLegacyTxProgram, MacPartialRuPowerSelector, MacTxCompletionObservation, MacTxDetachOutcome,
     MacTxDetachReason, MacTxQueueDetached,
 };
 use open_esp_radio_esp32s31_hal::{RadioRuntimeOwner, wifi_mac::WifiMacHal};
@@ -45,7 +45,6 @@ use crate::{
     },
 };
 
-const EXT_ALT_SELECT: u32 = 0x0010_0000;
 const LEGACY_FCS_LENGTH: u16 = 4;
 // SOURCE: HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29. Interposing the
 // pp_wdev_funcs PPDU callback immediately after the complete vendor formatter
@@ -236,7 +235,7 @@ pub trait TxHardware {
     fn he_tx_vector_snapshot(&self, _queue: u8) -> Option<MacHeTxVectorSnapshot> {
         None
     }
-    fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters>;
+    fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation>;
     fn begin_tx_timeout_abort(&mut self, queue: u8) -> bool;
     fn with_tx_queue_detached<R>(
         &mut self,
@@ -301,7 +300,7 @@ impl TxHardware for WifiMacHal<'_> {
         Some(WifiMacHal::he_tx_vector_snapshot(self, queue))
     }
 
-    fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters> {
+    fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation> {
         WifiMacHal::take_tx_completion(self, queue)
     }
 
@@ -370,7 +369,7 @@ impl TxHardware for RadioRuntimeOwner {
         Some(RadioRuntimeOwner::he_tx_vector_snapshot(self, queue))
     }
 
-    fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters> {
+    fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation> {
         TxHardware::take_tx_completion(&mut self.wifi_mac_hal(), queue)
     }
 
@@ -400,31 +399,8 @@ pub struct TxCookie(pub u32);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TxCompletion {
-    pub cookie: TxCookie,
-    pub status: u8,
-    /// Whether hardware associated this completion with a Trigger-based flow.
-    ///
-    /// This is the queue-selected bit from the complete
-    /// `hal_mac_get_txq_in_trig_flow_state`/`lmacProcessTxComplete` blob path.
-    /// It is not itself an ACK result: vendor success still follows the normal
-    /// success path, while a zero-retry-count failure terminates through the
-    /// separate `lmacProcessTBSuccess` path instead of an ordinary retry.
-    pub trigger_flow: bool,
-    pub used_alternate: bool,
-    /// Raw completion-extension word A.
-    ///
-    /// SOURCE: `libpp.a[hal_mac_tx.o]` completion reader and
-    /// SOURCE[PROMOTED_LMAC_TX].
-    /// Bits 19:16 contribute to the reconstructed extension word that selects
-    /// the primary or alternate status record. Retaining the raw word lets HIL
-    /// distinguish a real ACK-timeout result from a selector-decoding error.
-    pub auxiliary_a_word: u32,
-    /// Raw completion-extension word B; see [`Self::auxiliary_a_word`].
-    pub auxiliary_b_word: u32,
-    /// Raw completion-extension word C; see [`Self::auxiliary_a_word`].
-    pub auxiliary_c_word: u32,
-    pub primary_word: u32,
-    pub alternate_word: u32,
+    cookie: TxCookie,
+    observation: MacTxCompletionObservation,
 }
 
 /// Vendor LMAC disposition of one decoded ordinary-queue completion.
@@ -453,19 +429,26 @@ impl TxCompletion {
     /// `lmacProcessAckTimeout` (status zero maps to ordinary TX success).
     pub const ACK_TIMEOUT_STATUS: u8 = 5;
 
-    /// Word selected by the completion-extension alternate-record bit.
-    pub const fn selected_word(&self) -> u32 {
-        if self.used_alternate {
-            self.alternate_word
-        } else {
-            self.primary_word
-        }
+    pub const fn cookie(&self) -> TxCookie {
+        self.cookie
     }
 
-    /// Low completion detail byte passed by `lmacProcessTxComplete` to the
-    /// status-one/status-four secondary dispatchers.
+    pub const fn status(&self) -> u8 {
+        self.observation.status()
+    }
+
+    /// Whether hardware associated this completion with a Trigger-based flow.
+    pub const fn is_trigger_flow(&self) -> bool {
+        self.observation.trigger_flow()
+    }
+
+    pub const fn used_alternate_record(&self) -> bool {
+        self.observation.used_alternate()
+    }
+
+    /// Low completion detail byte selected and decoded by the PAC owner.
     pub const fn detail(&self) -> u8 {
-        self.selected_word() as u8
+        self.observation.detail()
     }
 
     /// Reproduce the complete top-level LMAC completion dispatch and the
@@ -476,7 +459,7 @@ impl TxCompletion {
     /// one and three through five become collision, detail `0xc0` becomes a
     /// security-key failure, and every remaining detail becomes ACK timeout.
     pub const fn disposition(&self) -> TxCompletionDisposition {
-        match self.status {
+        match self.status() {
             0 => TxCompletionDisposition::Success,
             1 if matches!(self.detail(), 3..=5) => TxCompletionDisposition::Collision,
             1 => TxCompletionDisposition::Terminal(TxCompletionFailure::RtsError {
@@ -501,7 +484,7 @@ impl TxCompletion {
 
     /// Return whether this completion belongs to a Trigger-based transmit flow.
     pub const fn is_trigger_based(&self) -> bool {
-        self.trigger_flow
+        self.is_trigger_flow()
     }
 
     /// Count the ordinary Trigger-based packets reported by hardware.
@@ -511,7 +494,7 @@ impl TxCompletion {
     /// byte `+0x30`. Complete `lmacProcess{Short,Long}RetryFail` consumes that
     /// byte before deciding whether to enter `lmacProcessTBSuccess`.
     pub const fn trigger_based_packet_count(&self) -> u8 {
-        ((self.auxiliary_b_word >> 13) & 0x7f) as u8
+        self.observation.trigger_based_packet_count()
     }
 
     /// Return whether the completion selects the additional TB packet count.
@@ -520,7 +503,7 @@ impl TxCompletion {
     /// copies completion extension word zero bit 20 to per-queue state byte
     /// `+0x2e`. The retry leaves add byte `+0x2f` only when this flag is set.
     pub const fn last_tx_was_trigger_based(&self) -> bool {
-        self.auxiliary_b_word & (1 << 20) != 0
+        self.observation.last_tx_was_trigger_based()
     }
 
     /// Decode the conditional secondary TB packet count.
@@ -530,7 +513,7 @@ impl TxCompletion {
     /// right by two before storing byte `+0x2f`, so the consumed seven-bit
     /// count is exactly raw completion word C bits 13:7.
     pub const fn secondary_trigger_based_packet_count(&self) -> u8 {
-        ((self.auxiliary_c_word >> 7) & 0x7f) as u8
+        self.observation.secondary_trigger_based_packet_count()
     }
 
     /// Reproduce the vendor's narrow ACK-timeout-to-TB-success predicate.
@@ -542,7 +525,7 @@ impl TxCompletion {
     /// only when the queue is in Trigger flow and the sum of its applicable
     /// hardware packet counts is zero.
     pub const fn completes_vendor_trigger_flow(&self) -> bool {
-        if self.status != Self::ACK_TIMEOUT_STATUS || !self.trigger_flow {
+        if self.status() != Self::ACK_TIMEOUT_STATUS || !self.is_trigger_flow() {
             return false;
         }
         let mut packets = self.trigger_based_packet_count() as u16;
@@ -565,36 +548,66 @@ impl TxCompletion {
     /// hal_mac_get_txq_complete`, `libpp.a[lmac.o]::
     /// lmacProcessTxSuccess`, and `libpp.a[trc.o]::rcUpdateTxDone`.
     pub const fn ack_snr_sample(&self) -> Option<i8> {
-        if self.status != 0 {
+        if self.status() != 0 {
             return None;
         }
-        let encoded = (self.primary_word >> 16) as u8;
+        let encoded = self.observation.ack_snr_encoded();
         Some(encoded.wrapping_add(0x60) as i8)
+    }
+
+    /// Construct a semantic completion for a native protocol model.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub const fn new_model(cookie: TxCookie, status: u8, detail: u8) -> Self {
+        Self {
+            cookie,
+            observation: MacTxCompletionObservation::new_model(status, detail),
+        }
+    }
+
+    #[cfg(not(target_pointer_width = "32"))]
+    pub const fn with_trigger_flow_model(mut self, trigger_flow: bool) -> Self {
+        self.observation = self.observation.with_trigger_flow_model(trigger_flow);
+        self
+    }
+
+    #[cfg(not(target_pointer_width = "32"))]
+    pub const fn with_trigger_packet_counts_model(
+        mut self,
+        primary: u8,
+        last_tx_was_trigger_based: bool,
+        secondary: u8,
+    ) -> Self {
+        self.observation = self.observation.with_trigger_packet_counts_model(
+            primary,
+            last_tx_was_trigger_based,
+            secondary,
+        );
+        self
+    }
+
+    #[cfg(not(target_pointer_width = "32"))]
+    pub const fn with_ack_snr_encoded_model(mut self, encoded: u8) -> Self {
+        self.observation = self.observation.with_ack_snr_encoded_model(encoded);
+        self
+    }
+
+    /// Construct a semantic completion in a compiled validation image.
+    #[cfg(feature = "validation-probes")]
+    pub const fn new_validation(cookie: TxCookie, status: u8, detail: u8) -> Self {
+        Self {
+            cookie,
+            observation: MacTxCompletionObservation::new_validation(status, detail),
+        }
     }
 }
 
 pub(crate) fn decode_tx_completion(
     cookie: TxCookie,
-    registers: MacTxCompletionRegisters,
+    observation: MacTxCompletionObservation,
 ) -> TxCompletion {
-    let ext_word0 = ((registers.aux_a & 0x000f_0000) << 12)
-        | (registers.aux_b & 0x001f_e000)
-        | (((registers.aux_b >> 25) & 0x7f) << 21);
-    let _ext_word1 = ((registers.aux_a >> 20) & 0x03) | ((registers.aux_c >> 5) & 0x1fc);
-    let primary = registers.primary;
-    let alternate = registers.alternate;
-    let used_alternate = ext_word0 & EXT_ALT_SELECT != 0;
-    let selected = if used_alternate { alternate } else { primary };
     TxCompletion {
         cookie,
-        status: ((selected >> 12) & 0x0f) as u8,
-        trigger_flow: registers.trigger_flow,
-        used_alternate,
-        auxiliary_a_word: registers.aux_a,
-        auxiliary_b_word: registers.aux_b,
-        auxiliary_c_word: registers.aux_c,
-        primary_word: primary,
-        alternate_word: alternate,
+        observation,
     }
 }
 
@@ -3763,17 +3776,7 @@ mod completion_disposition_tests {
     use crate::rx::HeGuardIntervalAndLtf;
 
     fn completion(status: u8, detail: u8) -> TxCompletion {
-        TxCompletion {
-            cookie: TxCookie(1),
-            status,
-            trigger_flow: false,
-            used_alternate: false,
-            auxiliary_a_word: 0,
-            auxiliary_b_word: 0,
-            auxiliary_c_word: 0,
-            primary_word: u32::from(detail),
-            alternate_word: 0,
-        }
+        TxCompletion::new_model(TxCookie(1), status, detail)
     }
 
     #[test]
@@ -3818,15 +3821,6 @@ mod completion_disposition_tests {
             completion(6, 0).disposition(),
             TxCompletionDisposition::Terminal(TxCompletionFailure::InvalidStatus { status: 6 })
         );
-    }
-
-    #[test]
-    fn decoded_completion_detail_uses_the_selected_record() {
-        let mut completion = completion(4, 2);
-        completion.alternate_word = 3;
-        completion.used_alternate = true;
-        assert_eq!(completion.detail(), 3);
-        assert_eq!(completion.disposition(), TxCompletionDisposition::Collision);
     }
 
     #[test]

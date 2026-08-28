@@ -7,13 +7,13 @@ use crate::tx::{
 use crate::tx_runtime::{AmpduRetryDecision, AmpduRetryPolicy, AmpduRetryState};
 use open_esp_radio_dma::{HardwareOwnedTxDma, PinnedDmaTxPool, PreparedTxDma};
 use open_esp_radio_esp32s31_hal::types::{
-    MacHeTbTidLimit, MacHeTid, MacHeTxVectorSnapshot, MacHtAmpduCompletionRegisters,
-    MacHtTxProgram, MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome,
+    MacHeTbTidLimit, MacHeTid, MacHeTxVectorSnapshot, MacHtAmpduCompletionObservation,
+    MacHtTxProgram, MacLegacyTxProgram, MacTxCompletionObservation, MacTxDetachOutcome,
     MacTxDetachReason, MacTxQueueDetached,
 };
 
 struct CompletionHardware {
-    completion: Option<MacHtAmpduCompletionRegisters>,
+    completion: Option<MacHtAmpduCompletionObservation>,
     cleared: Option<MacHeTbLinkReservation>,
     trigger_snapshot: Option<MacHeTriggerTxQueueSnapshot>,
 }
@@ -40,7 +40,7 @@ impl TxHardware for CompletionHardware {
         None
     }
 
-    fn take_tx_completion(&mut self, _: u8) -> Option<MacTxCompletionRegisters> {
+    fn take_tx_completion(&mut self, _: u8) -> Option<MacTxCompletionObservation> {
         None
     }
 
@@ -60,7 +60,7 @@ impl TxHardware for CompletionHardware {
 }
 
 impl HtAmpduHardware for CompletionHardware {
-    fn take_ht_ampdu_completion(&mut self, _: u8) -> Option<MacHtAmpduCompletionRegisters> {
+    fn take_ht_ampdu_completion(&mut self, _: u8) -> Option<MacHtAmpduCompletionObservation> {
         self.completion.take()
     }
 
@@ -89,7 +89,7 @@ impl HtAmpduHardware for CompletionHardware {
 }
 
 struct DetachingCompletionHardware {
-    completion: Option<MacHtAmpduCompletionRegisters>,
+    completion: Option<MacHtAmpduCompletionObservation>,
 }
 
 impl DetachingCompletionHardware {
@@ -99,20 +99,13 @@ impl DetachingCompletionHardware {
 
     fn with_bitmap(bitmap: u64) -> Self {
         Self {
-            completion: Some(MacHtAmpduCompletionRegisters {
-                tx: MacTxCompletionRegisters {
-                    aux_a: 0,
-                    aux_b: 0,
-                    aux_c: 0,
-                    primary: 0,
-                    alternate: 0,
-                    trigger_flow: false,
-                },
-                block_ack_control_and_sequence: 0,
-                block_ack_bitmap_low: bitmap as u32,
-                block_ack_bitmap_high: (bitmap >> 32) as u32,
-                block_ack_received: true,
-            }),
+            completion: Some(MacHtAmpduCompletionObservation::new_model(
+                MacTxCompletionObservation::new_model(0, 0),
+                0,
+                0,
+                bitmap,
+                true,
+            )),
         }
     }
 }
@@ -139,7 +132,7 @@ impl TxHardware for DetachingCompletionHardware {
         None
     }
 
-    fn take_tx_completion(&mut self, _: u8) -> Option<MacTxCompletionRegisters> {
+    fn take_tx_completion(&mut self, _: u8) -> Option<MacTxCompletionObservation> {
         None
     }
 
@@ -159,7 +152,7 @@ impl TxHardware for DetachingCompletionHardware {
 }
 
 impl HtAmpduHardware for DetachingCompletionHardware {
-    fn take_ht_ampdu_completion(&mut self, _: u8) -> Option<MacHtAmpduCompletionRegisters> {
+    fn take_ht_ampdu_completion(&mut self, _: u8) -> Option<MacHtAmpduCompletionObservation> {
         self.completion.take()
     }
 
@@ -826,20 +819,13 @@ fn completion_exposes_publication_snapshot_then_clears_tb_enable() {
         *storage.trigger_publication_snapshot = Some(snapshot);
     }
     let mut hardware = CompletionHardware {
-        completion: Some(MacHtAmpduCompletionRegisters {
-            tx: MacTxCompletionRegisters {
-                aux_a: 0,
-                aux_b: 0,
-                aux_c: 0,
-                primary: 0,
-                alternate: 0,
-                trigger_flow: false,
-            },
-            block_ack_control_and_sequence: 0,
-            block_ack_bitmap_low: 0,
-            block_ack_bitmap_high: 0,
-            block_ack_received: true,
-        }),
+        completion: Some(MacHtAmpduCompletionObservation::new_model(
+            MacTxCompletionObservation::new_model(0, 0),
+            0,
+            0,
+            0,
+            true,
+        )),
         cleared: None,
         trigger_snapshot: Some(snapshot),
     };
@@ -1127,14 +1113,6 @@ fn ht_ampdu_length_is_bounded_and_removes_only_the_tail_trailer() {
         HtAmpduLengthAccumulator::new(0, 1),
         Err(HtAmpduLengthError::InvalidLimits)
     ));
-}
-
-#[test]
-fn block_ack_register_decode_matches_the_pinned_leaf_layout() {
-    let decoded = decode_ht_block_ack_registers(0x000a_bc50, 0x89ab_cdef, 0x0123_4567);
-    assert_eq!(decoded.control, 0x0a);
-    assert_eq!(decoded.block_ack.starting_sequence, 0x0bc5);
-    assert_eq!(decoded.block_ack.bitmap, 0x0123_4567_89ab_cdef);
 }
 
 #[test]

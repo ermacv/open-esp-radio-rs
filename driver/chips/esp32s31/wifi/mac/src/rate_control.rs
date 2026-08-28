@@ -1937,17 +1937,9 @@ mod tests {
             association.ampdu_tx_rate(HE20_POLICY),
             HE20_POLICY.rate_for_schedule(association.current_ampdu_schedule().unwrap())
         );
-        association.observe_tx_completion(TxCompletion {
-            cookie: crate::tx::TxCookie(1),
-            status: 0,
-            trigger_flow: false,
-            used_alternate: false,
-            auxiliary_a_word: 0,
-            auxiliary_b_word: 0,
-            auxiliary_c_word: 0,
-            primary_word: 0xeb << 16,
-            alternate_word: 0,
-        });
+        association.observe_tx_completion(
+            TxCompletion::new_model(crate::tx::TxCookie(1), 0, 0).with_ack_snr_encoded_model(0xeb),
+        );
         assert_eq!(association.latest_ack_snr(), Some(75));
     }
 

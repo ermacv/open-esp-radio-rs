@@ -22693,6 +22693,20 @@ register-method = "primary"
 register-index = 0
 
 [[registers.fields]]
+svd-name = "DETAIL"
+method = "detail"
+bit-offset = 0
+bit-width = 8
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "STATUS"
+method = "status"
+bit-offset = 12
+bit-width = 4
+access = "read-only"
+
+[[registers.fields]]
 svd-name = "ACK_SNR_ENCODED"
 method = "ack_snr_encoded"
 bit-offset = 16
@@ -22712,10 +22726,17 @@ register-method = "alternate"
 register-index = 0
 
 [[registers.fields]]
-svd-name = "VALUE"
-method = "value"
+svd-name = "DETAIL"
+method = "detail"
 bit-offset = 0
-bit-width = 32
+bit-width = 8
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "STATUS"
+method = "status"
+bit-offset = 12
+bit-width = 4
 access = "read-only"
 
 [[registers]]
@@ -22731,10 +22752,10 @@ register-method = "aux_c"
 register-index = 0
 
 [[registers.fields]]
-svd-name = "VALUE"
-method = "value"
-bit-offset = 0
-bit-width = 32
+svd-name = "SECONDARY_TRIGGER_BASED_PACKET_COUNT"
+method = "secondary_trigger_based_packet_count"
+bit-offset = 7
+bit-width = 7
 access = "read-only"
 
 [[registers]]
@@ -23566,6 +23587,20 @@ register-method = "primary"
 register-index = 1
 
 [[registers.fields]]
+svd-name = "DETAIL"
+method = "detail"
+bit-offset = 0
+bit-width = 8
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "STATUS"
+method = "status"
+bit-offset = 12
+bit-width = 4
+access = "read-only"
+
+[[registers.fields]]
 svd-name = "ACK_SNR_ENCODED"
 method = "ack_snr_encoded"
 bit-offset = 16
@@ -23585,10 +23620,17 @@ register-method = "alternate"
 register-index = 1
 
 [[registers.fields]]
-svd-name = "VALUE"
-method = "value"
+svd-name = "DETAIL"
+method = "detail"
 bit-offset = 0
-bit-width = 32
+bit-width = 8
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "STATUS"
+method = "status"
+bit-offset = 12
+bit-width = 4
 access = "read-only"
 
 [[registers]]
@@ -23604,10 +23646,10 @@ register-method = "aux_c"
 register-index = 1
 
 [[registers.fields]]
-svd-name = "VALUE"
-method = "value"
-bit-offset = 0
-bit-width = 32
+svd-name = "SECONDARY_TRIGGER_BASED_PACKET_COUNT"
+method = "secondary_trigger_based_packet_count"
+bit-offset = 7
+bit-width = 7
 access = "read-only"
 
 [[registers]]
@@ -24439,6 +24481,20 @@ register-method = "primary"
 register-index = 2
 
 [[registers.fields]]
+svd-name = "DETAIL"
+method = "detail"
+bit-offset = 0
+bit-width = 8
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "STATUS"
+method = "status"
+bit-offset = 12
+bit-width = 4
+access = "read-only"
+
+[[registers.fields]]
 svd-name = "ACK_SNR_ENCODED"
 method = "ack_snr_encoded"
 bit-offset = 16
@@ -24458,10 +24514,17 @@ register-method = "alternate"
 register-index = 2
 
 [[registers.fields]]
-svd-name = "VALUE"
-method = "value"
+svd-name = "DETAIL"
+method = "detail"
 bit-offset = 0
-bit-width = 32
+bit-width = 8
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "STATUS"
+method = "status"
+bit-offset = 12
+bit-width = 4
 access = "read-only"
 
 [[registers]]
@@ -24477,10 +24540,10 @@ register-method = "aux_c"
 register-index = 2
 
 [[registers.fields]]
-svd-name = "VALUE"
-method = "value"
-bit-offset = 0
-bit-width = 32
+svd-name = "SECONDARY_TRIGGER_BASED_PACKET_COUNT"
+method = "secondary_trigger_based_packet_count"
+bit-offset = 7
+bit-width = 7
 access = "read-only"
 
 [[registers]]
@@ -25312,6 +25375,20 @@ register-method = "primary"
 register-index = 3
 
 [[registers.fields]]
+svd-name = "DETAIL"
+method = "detail"
+bit-offset = 0
+bit-width = 8
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "STATUS"
+method = "status"
+bit-offset = 12
+bit-width = 4
+access = "read-only"
+
+[[registers.fields]]
 svd-name = "ACK_SNR_ENCODED"
 method = "ack_snr_encoded"
 bit-offset = 16
@@ -25331,10 +25408,17 @@ register-method = "alternate"
 register-index = 3
 
 [[registers.fields]]
-svd-name = "VALUE"
-method = "value"
+svd-name = "DETAIL"
+method = "detail"
 bit-offset = 0
-bit-width = 32
+bit-width = 8
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "STATUS"
+method = "status"
+bit-offset = 12
+bit-width = 4
 access = "read-only"
 
 [[registers]]
@@ -25350,10 +25434,10 @@ register-method = "aux_c"
 register-index = 3
 
 [[registers.fields]]
-svd-name = "VALUE"
-method = "value"
-bit-offset = 0
-bit-width = 32
+svd-name = "SECONDARY_TRIGGER_BASED_PACKET_COUNT"
+method = "secondary_trigger_based_packet_count"
+bit-offset = 7
+bit-width = 7
 access = "read-only"
 
 [[registers]]

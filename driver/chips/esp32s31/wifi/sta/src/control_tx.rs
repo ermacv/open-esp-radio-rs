@@ -644,7 +644,7 @@ mod tests {
     };
 
     use open_esp_radio_esp32s31_hal::types::{
-        MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome,
+        MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionObservation, MacTxDetachOutcome,
         MacTxDetachReason, MacTxQueueDetached,
     };
     use open_esp_radio_esp32s31_wifi_mac::{
@@ -666,7 +666,7 @@ mod tests {
     struct Hardware {
         prepare: bool,
         publications: u8,
-        completions: [Option<MacTxCompletionRegisters>; 2],
+        completions: [Option<MacTxCompletionObservation>; 2],
         completion_index: usize,
         timeout: bool,
         legacy: Option<(u8, MacLegacyTxProgram)>,
@@ -692,7 +692,7 @@ mod tests {
             self.publications += 1;
         }
 
-        fn take_tx_completion(&mut self, _queue: u8) -> Option<MacTxCompletionRegisters> {
+        fn take_tx_completion(&mut self, _queue: u8) -> Option<MacTxCompletionObservation> {
             let completion = self.completions.get_mut(self.completion_index)?.take();
             if completion.is_some() {
                 self.completion_index += 1;
@@ -774,15 +774,8 @@ mod tests {
         }
     }
 
-    fn completion(status: u8) -> MacTxCompletionRegisters {
-        MacTxCompletionRegisters {
-            aux_a: 0,
-            aux_b: 0,
-            aux_c: 0,
-            primary: u32::from(status) << 12,
-            alternate: 0,
-            trigger_flow: false,
-        }
+    fn completion(status: u8) -> MacTxCompletionObservation {
+        MacTxCompletionObservation::new_model(status, 0)
     }
 
     fn make_tx<'a>(
@@ -826,7 +819,7 @@ mod tests {
             },
         ));
 
-        assert!(matches!(result, Ok(TxCompletion { status: 0, .. })));
+        assert!(matches!(result, Ok(completion) if completion.status() == 0));
         assert_eq!(hardware.publications, 1);
         let (_, program) = hardware.legacy.expect("management publication");
         assert_eq!(program.interface, MacInterface::Station);

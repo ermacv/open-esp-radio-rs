@@ -15,21 +15,45 @@ use super::{
 /// when the transmitter address and queues four through seven are needed for
 /// diagnostics.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct TxBlockAckRegisterImage {
-    pub control_and_sequence: u32,
-    pub bitmap_low: u32,
-    pub bitmap_high: u32,
-    pub block_ack_received: bool,
+pub(crate) struct TxBlockAckObservation {
+    pub(crate) control: u8,
+    pub(crate) starting_sequence: u16,
+    pub(crate) bitmap: u64,
+    pub(crate) block_ack_received: bool,
 }
 
-/// Three-word TX BlockAck payload sampled without adjacent validity state.
+/// Semantic TX BlockAck payload sampled without adjacent validity state.
 ///
 /// SOURCE: complete `libpp.a[hal_mac_tx.o]::hal_mac_tx_get_blockack`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TxBlockAckPayload {
-    pub control_and_sequence: u32,
-    pub bitmap_low: u32,
-    pub bitmap_high: u32,
+    control: u8,
+    starting_sequence: u16,
+    bitmap: u64,
+}
+
+impl TxBlockAckPayload {
+    pub const fn control(self) -> u8 {
+        self.control
+    }
+
+    pub const fn starting_sequence(self) -> u16 {
+        self.starting_sequence
+    }
+
+    pub const fn bitmap(self) -> u64 {
+        self.bitmap
+    }
+
+    /// Low word of the protocol bitmap for the vendor-shaped validation ABI.
+    pub const fn bitmap_low(self) -> u32 {
+        self.bitmap as u32
+    }
+
+    /// High word of the protocol bitmap for the vendor-shaped validation ABI.
+    pub const fn bitmap_high(self) -> u32 {
+        (self.bitmap >> 32) as u32
+    }
 }
 
 /// Complete five-word `WDEVTXQBA` result plus adjacent TX queue information.
@@ -128,33 +152,49 @@ impl WifiRadioRegisters {
     /// Sample the three words copied by `hal_mac_tx_get_blockack`.
     pub fn read_tx_block_ack_payload(&self, hardware_queue: u8) -> Option<TxBlockAckPayload> {
         let block = &self.peripherals.wifi_mac.wifi_mac_rx_dma;
-        let (control_and_sequence, bitmap_low, bitmap_high) = match hardware_queue {
-            0 => (
-                block.tx_block_ack_control_sequence_q0().read().bits(),
-                block.tx_block_ack_bitmap_low_q0().read().bits(),
-                block.tx_block_ack_bitmap_high_q0().read().bits(),
-            ),
-            1 => (
-                block.tx_block_ack_control_sequence_q1().read().bits(),
-                block.tx_block_ack_bitmap_low_q1().read().bits(),
-                block.tx_block_ack_bitmap_high_q1().read().bits(),
-            ),
-            2 => (
-                block.tx_block_ack_control_sequence_q2().read().bits(),
-                block.tx_block_ack_bitmap_low_q2().read().bits(),
-                block.tx_block_ack_bitmap_high_q2().read().bits(),
-            ),
-            3 => (
-                block.tx_block_ack_control_sequence_q3().read().bits(),
-                block.tx_block_ack_bitmap_low_q3().read().bits(),
-                block.tx_block_ack_bitmap_high_q3().read().bits(),
-            ),
+        let (control, starting_sequence, bitmap_low, bitmap_high) = match hardware_queue {
+            0 => {
+                let control = block.tx_block_ack_control_sequence_q0().read();
+                (
+                    control.tid_or_control().bits(),
+                    control.starting_sequence().bits(),
+                    block.tx_block_ack_bitmap_low_q0().read().bits(),
+                    block.tx_block_ack_bitmap_high_q0().read().bits(),
+                )
+            }
+            1 => {
+                let control = block.tx_block_ack_control_sequence_q1().read();
+                (
+                    control.tid_or_control().bits(),
+                    control.starting_sequence().bits(),
+                    block.tx_block_ack_bitmap_low_q1().read().bits(),
+                    block.tx_block_ack_bitmap_high_q1().read().bits(),
+                )
+            }
+            2 => {
+                let control = block.tx_block_ack_control_sequence_q2().read();
+                (
+                    control.tid_or_control().bits(),
+                    control.starting_sequence().bits(),
+                    block.tx_block_ack_bitmap_low_q2().read().bits(),
+                    block.tx_block_ack_bitmap_high_q2().read().bits(),
+                )
+            }
+            3 => {
+                let control = block.tx_block_ack_control_sequence_q3().read();
+                (
+                    control.tid_or_control().bits(),
+                    control.starting_sequence().bits(),
+                    block.tx_block_ack_bitmap_low_q3().read().bits(),
+                    block.tx_block_ack_bitmap_high_q3().read().bits(),
+                )
+            }
             _ => return None,
         };
         Some(TxBlockAckPayload {
-            control_and_sequence,
-            bitmap_low,
-            bitmap_high,
+            control,
+            starting_sequence,
+            bitmap: u64::from(bitmap_low) | (u64::from(bitmap_high) << 32),
         })
     }
 
@@ -586,36 +626,40 @@ impl WifiRadioRegisters {
     }
 
     /// Sample the TX BlockAck payload and its independent validity result.
-    pub fn read_tx_block_ack_registers(
+    pub(crate) fn read_tx_block_ack_observation(
         &self,
         hardware_queue: u8,
-    ) -> Option<TxBlockAckRegisterImage> {
+    ) -> Option<TxBlockAckObservation> {
         let block = &self.peripherals.wifi_mac.wifi_mac_rx_dma;
         let payload = self.read_tx_block_ack_payload(hardware_queue)?;
-        let address_high = match hardware_queue {
+        let block_ack_received = match hardware_queue {
             0 => block
                 .tx_block_ack_transmitter_address_high_q0()
                 .read()
-                .bits(),
+                .block_ack_received()
+                .bit(),
             1 => block
                 .tx_block_ack_transmitter_address_high_q1()
                 .read()
-                .bits(),
+                .block_ack_received()
+                .bit(),
             2 => block
                 .tx_block_ack_transmitter_address_high_q2()
                 .read()
-                .bits(),
+                .block_ack_received()
+                .bit(),
             3 => block
                 .tx_block_ack_transmitter_address_high_q3()
                 .read()
-                .bits(),
+                .block_ack_received()
+                .bit(),
             _ => return None,
         };
-        Some(TxBlockAckRegisterImage {
-            control_and_sequence: payload.control_and_sequence,
-            bitmap_low: payload.bitmap_low,
-            bitmap_high: payload.bitmap_high,
-            block_ack_received: address_high & (1 << 21) != 0,
+        Some(TxBlockAckObservation {
+            control: payload.control(),
+            starting_sequence: payload.starting_sequence(),
+            bitmap: payload.bitmap(),
+            block_ack_received,
         })
     }
 

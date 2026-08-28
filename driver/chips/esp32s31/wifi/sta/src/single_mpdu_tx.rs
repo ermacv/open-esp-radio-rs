@@ -1063,13 +1063,13 @@ mod tests {
     };
 
     use open_esp_radio_esp32s31_hal::types::{
-        MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome,
+        MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionObservation, MacTxDetachOutcome,
         MacTxDetachReason, MacTxQueueDetached,
     };
     use open_esp_radio_esp32s31_wifi_mac::{
         MacInterface,
         crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
-        tx::{HardwareOwnedTxDma, LegacyRate, PreparedTxDma, TxCompletion, TxSlot, TxSlotState},
+        tx::{HardwareOwnedTxDma, LegacyRate, PreparedTxDma, TxSlot, TxSlotState},
         tx_protection::{
             ErpProtectionMode, HtProtectionMode, TxProtectionAdmissionError, TxProtectionMechanism,
             TxProtectionReason, TxProtectionRequest, WifiTxProtectionPolicy,
@@ -1093,7 +1093,7 @@ mod tests {
     struct Hardware {
         prepare: bool,
         publications: u8,
-        completion: Option<MacTxCompletionRegisters>,
+        completion: Option<MacTxCompletionObservation>,
         timeout: bool,
         collision: bool,
         legacy: Option<(u8, MacLegacyTxProgram)>,
@@ -1134,7 +1134,7 @@ mod tests {
             self.publications += 1;
         }
 
-        fn take_tx_completion(&mut self, _queue: u8) -> Option<MacTxCompletionRegisters> {
+        fn take_tx_completion(&mut self, _queue: u8) -> Option<MacTxCompletionObservation> {
             self.completion.take()
         }
 
@@ -1206,15 +1206,8 @@ mod tests {
         }
     }
 
-    fn completion(status: u8) -> MacTxCompletionRegisters {
-        MacTxCompletionRegisters {
-            aux_a: 0,
-            aux_b: 0,
-            aux_c: 0,
-            primary: u32::from(status) << 12,
-            alternate: 0,
-            trigger_flow: false,
-        }
+    fn completion(status: u8) -> MacTxCompletionObservation {
+        MacTxCompletionObservation::new_model(status, 0)
     }
 
     fn ethernet() -> [u8; 18] {
@@ -1318,7 +1311,9 @@ mod tests {
         assert!(matches!(
             tx.take_last_outcome(),
             Some(SingleMpduTxOutcome::Success(report))
-                if matches!(report.completion, Some(TxCompletion { status: 0, .. }))
+                if report
+                    .completion
+                    .is_some_and(|completion| completion.status() == 0)
                     && report.status.attempts == 1
         ));
         assert_eq!(tx.ordinary.slot.state(), TxSlotState::Free);

@@ -139,12 +139,9 @@ pub struct MacHeTxVectorSnapshot {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MacTxCompletionRegisters {
-    pub aux_a: u32,
-    pub aux_b: u32,
-    pub aux_c: u32,
-    pub primary: u32,
-    pub alternate: u32,
+pub struct MacTxCompletionObservation {
+    status: u8,
+    detail: u8,
     /// This queue completed as part of a hardware Trigger-based transmit flow.
     ///
     /// SOURCE: complete `libpp.a[hal_mac_tx.o]::
@@ -152,23 +149,153 @@ pub struct MacTxCompletionRegisters {
     /// `libpp.a[lmac.o]::lmacProcessTxComplete`. The HAL returns
     /// `QUEUE_STATE[31:24]` as one bitmap; the completion dispatcher selects
     /// the completed queue's bit.
-    pub trigger_flow: bool,
+    trigger_flow: bool,
+    trigger_based_packet_count: u8,
+    last_tx_was_trigger_based: bool,
+    secondary_trigger_based_packet_count: u8,
+    ack_snr_encoded: u8,
+}
+
+impl MacTxCompletionObservation {
+    pub const fn status(self) -> u8 {
+        self.status
+    }
+
+    pub const fn detail(self) -> u8 {
+        self.detail
+    }
+
+    pub const fn trigger_flow(self) -> bool {
+        self.trigger_flow
+    }
+
+    pub const fn used_alternate(self) -> bool {
+        self.last_tx_was_trigger_based
+    }
+
+    pub const fn trigger_based_packet_count(self) -> u8 {
+        self.trigger_based_packet_count
+    }
+
+    pub const fn last_tx_was_trigger_based(self) -> bool {
+        self.last_tx_was_trigger_based
+    }
+
+    pub const fn secondary_trigger_based_packet_count(self) -> u8 {
+        self.secondary_trigger_based_packet_count
+    }
+
+    pub const fn ack_snr_encoded(self) -> u8 {
+        self.ack_snr_encoded
+    }
+
+    /// Construct a semantic completion supplied by a native hardware model.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub const fn new_model(status: u8, detail: u8) -> Self {
+        Self {
+            status,
+            detail,
+            trigger_flow: false,
+            trigger_based_packet_count: 0,
+            last_tx_was_trigger_based: false,
+            secondary_trigger_based_packet_count: 0,
+            ack_snr_encoded: 0,
+        }
+    }
+
+    #[cfg(not(target_pointer_width = "32"))]
+    pub const fn with_trigger_flow_model(mut self, trigger_flow: bool) -> Self {
+        self.trigger_flow = trigger_flow;
+        self
+    }
+
+    #[cfg(not(target_pointer_width = "32"))]
+    pub const fn with_trigger_packet_counts_model(
+        mut self,
+        primary: u8,
+        last_tx_was_trigger_based: bool,
+        secondary: u8,
+    ) -> Self {
+        self.trigger_based_packet_count = primary;
+        self.last_tx_was_trigger_based = last_tx_was_trigger_based;
+        self.secondary_trigger_based_packet_count = secondary;
+        self
+    }
+
+    #[cfg(not(target_pointer_width = "32"))]
+    pub const fn with_ack_snr_encoded_model(mut self, encoded: u8) -> Self {
+        self.ack_snr_encoded = encoded;
+        self
+    }
+
+    /// Construct a semantic completion in a compiled validation image.
+    #[cfg(feature = "validation-probes")]
+    pub const fn new_validation(status: u8, detail: u8) -> Self {
+        Self {
+            status,
+            detail,
+            trigger_flow: false,
+            trigger_based_packet_count: 0,
+            last_tx_was_trigger_based: false,
+            secondary_trigger_based_packet_count: 0,
+            ack_snr_encoded: 0,
+        }
+    }
 }
 
 /// TX completion and BlockAck sampled before acknowledging the completion
 /// edge for one A-MPDU.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MacHtAmpduCompletionRegisters {
-    pub tx: MacTxCompletionRegisters,
-    pub block_ack_control_and_sequence: u32,
-    pub block_ack_bitmap_low: u32,
-    pub block_ack_bitmap_high: u32,
+pub struct MacHtAmpduCompletionObservation {
+    tx: MacTxCompletionObservation,
+    block_ack_control: u8,
+    block_ack_starting_sequence: u16,
+    block_ack_bitmap: u64,
     /// Hardware says the completed PPDU received a BlockAck response.
     ///
     /// This is independent of the ordinary TX status. The bitmap registers
     /// are not cleared at every completion and therefore must not be trusted
     /// when this result bit is clear.
-    pub block_ack_received: bool,
+    block_ack_received: bool,
+}
+
+impl MacHtAmpduCompletionObservation {
+    pub const fn tx(self) -> MacTxCompletionObservation {
+        self.tx
+    }
+
+    pub const fn block_ack_control(self) -> u8 {
+        self.block_ack_control
+    }
+
+    pub const fn block_ack_starting_sequence(self) -> u16 {
+        self.block_ack_starting_sequence
+    }
+
+    pub const fn block_ack_bitmap(self) -> u64 {
+        self.block_ack_bitmap
+    }
+
+    pub const fn block_ack_received(self) -> bool {
+        self.block_ack_received
+    }
+
+    #[cfg(not(target_pointer_width = "32"))]
+    pub const fn new_model(
+        tx: MacTxCompletionObservation,
+        block_ack_control: u8,
+        block_ack_starting_sequence: u16,
+        block_ack_bitmap: u64,
+        block_ack_received: bool,
+    ) -> Self {
+        Self {
+            tx,
+            block_ack_control,
+            block_ack_starting_sequence,
+            block_ack_bitmap,
+            block_ack_received,
+        }
+    }
 }
 
 /// Hardware edge which must precede reuse of one TX descriptor chain.
@@ -765,7 +892,7 @@ impl WifiRadioRegisters {
         device_fence();
     }
 
-    pub fn take_mac_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters> {
+    pub fn take_mac_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation> {
         assert!(queue < ORDINARY_QUEUE_COUNT);
         let completion_mask = 1_u32 << queue;
         let common = &self.peripherals.wifi_mac.wifi_mac_tx_common;
@@ -776,40 +903,49 @@ impl WifiRadioRegisters {
         let bank = physical_bank(queue);
         let completion = &self.peripherals.wifi_mac.wifi_mac_tx_completion;
         let tx_results = &self.peripherals.wifi_mac.wifi_mac_rx_dma;
-        let (aux_a, aux_b) = match queue {
-            0 => (
-                tx_results
-                    .tx_block_ack_transmitter_address_high_q0()
-                    .read()
-                    .bits(),
-                tx_results.tx_queue_information_q0().read().bits(),
-            ),
-            1 => (
-                tx_results
-                    .tx_block_ack_transmitter_address_high_q1()
-                    .read()
-                    .bits(),
-                tx_results.tx_queue_information_q1().read().bits(),
-            ),
-            2 => (
-                tx_results
-                    .tx_block_ack_transmitter_address_high_q2()
-                    .read()
-                    .bits(),
-                tx_results.tx_queue_information_q2().read().bits(),
-            ),
-            3 => (
-                tx_results
-                    .tx_block_ack_transmitter_address_high_q3()
-                    .read()
-                    .bits(),
-                tx_results.tx_queue_information_q3().read().bits(),
-            ),
+        let (trigger_based_packet_count, last_tx_was_trigger_based) = match queue {
+            0 => {
+                let information = tx_results.tx_queue_information_q0().read();
+                (
+                    information.trigger_based_packet_count().bits(),
+                    information.last_tx_was_trigger_based().bit(),
+                )
+            }
+            1 => {
+                let information = tx_results.tx_queue_information_q1().read();
+                (
+                    information.trigger_based_packet_count().bits(),
+                    information.last_tx_was_trigger_based().bit(),
+                )
+            }
+            2 => {
+                let information = tx_results.tx_queue_information_q2().read();
+                (
+                    information.trigger_based_packet_count().bits(),
+                    information.last_tx_was_trigger_based().bit(),
+                )
+            }
+            3 => {
+                let information = tx_results.tx_queue_information_q3().read();
+                (
+                    information.trigger_based_packet_count().bits(),
+                    information.last_tx_was_trigger_based().bit(),
+                )
+            }
             _ => unreachable!(),
         };
-        let aux_c = completion.aux_c(bank).read().bits();
-        let primary = completion.primary(bank).read().bits();
-        let alternate = completion.alternate(bank).read().bits();
+        let secondary_trigger_based_packet_count = completion
+            .aux_c(bank)
+            .read()
+            .secondary_trigger_based_packet_count()
+            .bits();
+        let primary = completion.primary(bank).read();
+        let alternate = completion.alternate(bank).read();
+        let (status, detail) = if last_tx_was_trigger_based {
+            (alternate.status().bits(), alternate.detail().bits())
+        } else {
+            (primary.status().bits(), primary.detail().bits())
+        };
         let trigger_flow = mac_tx_queue::trigger_flow_state(common) & (1_u32 << queue) != 0;
         let clear = common.complete_clear().read().bits();
         super::generated::mac_tx_complete_clear_image(
@@ -817,13 +953,14 @@ impl WifiRadioRegisters {
             super::generated::MacTxCompleteClearImage::new(clear | completion_mask),
         );
         device_fence();
-        Some(MacTxCompletionRegisters {
-            aux_a,
-            aux_b,
-            aux_c,
-            primary,
-            alternate,
+        Some(MacTxCompletionObservation {
+            status,
+            detail,
             trigger_flow,
+            trigger_based_packet_count,
+            last_tx_was_trigger_based,
+            secondary_trigger_based_packet_count,
+            ack_snr_encoded: primary.ack_snr_encoded().bits(),
         })
     }
 
@@ -836,7 +973,7 @@ impl WifiRadioRegisters {
     pub fn take_mac_ht_ampdu_completion(
         &mut self,
         queue: u8,
-    ) -> Option<MacHtAmpduCompletionRegisters> {
+    ) -> Option<MacHtAmpduCompletionObservation> {
         assert!(queue < ORDINARY_QUEUE_COUNT);
         let completion_mask = 1_u32 << queue;
         if self
@@ -851,13 +988,13 @@ impl WifiRadioRegisters {
         {
             return None;
         }
-        let block_ack = self.read_tx_block_ack_registers(queue)?;
+        let block_ack = self.read_tx_block_ack_observation(queue)?;
         let tx = self.take_mac_tx_completion(queue)?;
-        Some(MacHtAmpduCompletionRegisters {
+        Some(MacHtAmpduCompletionObservation {
             tx,
-            block_ack_control_and_sequence: block_ack.control_and_sequence,
-            block_ack_bitmap_low: block_ack.bitmap_low,
-            block_ack_bitmap_high: block_ack.bitmap_high,
+            block_ack_control: block_ack.control,
+            block_ack_starting_sequence: block_ack.starting_sequence,
+            block_ack_bitmap: block_ack.bitmap,
             block_ack_received: block_ack.block_ack_received,
         })
     }

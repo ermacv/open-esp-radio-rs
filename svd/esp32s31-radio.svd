@@ -7833,6 +7833,18 @@
           <access>read-only</access>
           <fields>
             <field>
+              <name>DETAIL</name>
+              <description>Low completion detail byte passed by complete lmacProcessTxComplete to the status-one/status-four secondary dispatchers when PRIMARY is selected.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>8</bitWidth>
+            </field>
+            <field>
+              <name>STATUS</name>
+              <description>Four-bit top-level completion status selected by complete hal_mac_get_txq_complete and dispatched by complete lmacProcessTxComplete.</description>
+              <bitOffset>12</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+            <field>
               <name>ACK_SNR_ENCODED</name>
               <description>Complete hal_mac_get_txq_complete copies PRIMARY bits 23:16 to result byte two. Complete lmacProcessTxSuccess passes that byte into the descriptor ACK-SNR slot. Complete rcUpdateTxDone adds the pinned wDevCtrl byte 0x60 and narrows to a signed byte before rcUpdateAckSnr. This field is meaningful only for a successful completion.</description>
               <bitOffset>16</bitOffset>
@@ -7851,9 +7863,16 @@
           <access>read-only</access>
           <fields>
             <field>
-              <name>VALUE</name>
+              <name>DETAIL</name>
+              <description>Low completion detail byte used by the status-one/status-four secondary dispatchers when the auxiliary selector chooses ALTERNATE.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
+              <bitWidth>8</bitWidth>
+            </field>
+            <field>
+              <name>STATUS</name>
+              <description>Four-bit top-level completion status used when the auxiliary selector chooses ALTERNATE.</description>
+              <bitOffset>12</bitOffset>
+              <bitWidth>4</bitWidth>
             </field>
           </fields>
         </register>
@@ -7868,9 +7887,10 @@
           <access>read-only</access>
           <fields>
             <field>
-              <name>VALUE</name>
-              <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
+              <name>SECONDARY_TRIGGER_BASED_PACKET_COUNT</name>
+              <description>Complete hal_mac_get_txq_complete contributes AUX_C bits 13:7 to reconstructed extension word one; complete lmacProcessTxComplete shifts that image right by two before storing the seven-bit secondary Trigger-based packet count.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>7</bitWidth>
             </field>
           </fields>
         </register>

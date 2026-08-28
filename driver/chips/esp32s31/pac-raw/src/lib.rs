@@ -58356,6 +58356,18 @@ pub mod field_read {
         registers.ctrl().read().out().bits()
     }
 
+    /// Read `MODEM_LPCON_SHARED_CLOCK`.`COEX_LP_CLK_CONF`.`CLK_COEX_LP_DIV_NUM` without exposing its register block.
+    #[inline]
+    pub fn observe_coexistence_low_power_clock_divider(
+        registers: &crate::ModemLpconSharedClock,
+    ) -> u16 {
+        registers
+            .coex_lp_clk_conf()
+            .read()
+            .clk_coex_lp_div_num()
+            .bits()
+    }
+
     /// Read `BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME`.`SCHEDULER_STATE`.`BUSY` without exposing its register block.
     #[inline]
     pub fn observe_bluetooth_scheduler_lock_modify_busy(
@@ -58402,6 +58414,66 @@ pub mod field_snapshot_read {
             sample.unclassified_6_7().bits(),
             sample.pass_level().bits(),
             sample.unclassified_10_31().bits(),
+        )
+    }
+
+    /// Read `CLK_COEX_EN`, `CLK_I2C_MST_EN`, `CLK_LP_TIMER_EN` from one `MODEM_LPCON_SHARED_CLOCK`.`CLK_CONF` sample.
+    #[inline]
+    pub fn observe_shared_modem_clock_gates(
+        registers: &crate::ModemLpconSharedClock,
+    ) -> (bool, bool, bool) {
+        let sample = registers.clk_conf().read();
+        (
+            sample.clk_coex_en().bit(),
+            sample.clk_i2c_mst_en().bit(),
+            sample.clk_lp_timer_en().bit(),
+        )
+    }
+
+    /// Read `CLK_WIFIPWR_ST_MAP_BIT_ONE`, `CLK_WIFIPWR_ST_MAP_BIT_TWO`, `CLK_COEX_ST_MAP_BIT_ONE`, `CLK_COEX_ST_MAP_BIT_TWO`, `CLK_I2C_MST_ST_MAP_BIT_ONE`, `CLK_I2C_MST_ST_MAP_BIT_TWO`, `CLK_LP_APB_ST_MAP_BIT_ONE`, `CLK_LP_APB_ST_MAP_BIT_TWO` from one `MODEM_LPCON_SHARED_CLOCK`.`CLK_CONF_POWER_ST` sample.
+    #[inline]
+    pub fn observe_shared_modem_power_state_map(
+        registers: &crate::ModemLpconSharedClock,
+    ) -> (bool, bool, bool, bool, bool, bool, bool, bool) {
+        let sample = registers.clk_conf_power_st().read();
+        (
+            sample.clk_wifipwr_st_map_bit_one().bit(),
+            sample.clk_wifipwr_st_map_bit_two().bit(),
+            sample.clk_coex_st_map_bit_one().bit(),
+            sample.clk_coex_st_map_bit_two().bit(),
+            sample.clk_i2c_mst_st_map_bit_one().bit(),
+            sample.clk_i2c_mst_st_map_bit_two().bit(),
+            sample.clk_lp_apb_st_map_bit_one().bit(),
+            sample.clk_lp_apb_st_map_bit_two().bit(),
+        )
+    }
+
+    /// Read `CLK_COEX_LP_SEL_OSC_SLOW`, `CLK_COEX_LP_SEL_OSC_FAST`, `CLK_COEX_LP_SEL_XTAL`, `CLK_COEX_LP_SEL_XTAL32K` from one `MODEM_LPCON_SHARED_CLOCK`.`COEX_LP_CLK_CONF` sample.
+    #[inline]
+    pub fn observe_coexistence_low_power_clock_source(
+        registers: &crate::ModemLpconSharedClock,
+    ) -> (bool, bool, bool, bool) {
+        let sample = registers.coex_lp_clk_conf().read();
+        (
+            sample.clk_coex_lp_sel_osc_slow().bit(),
+            sample.clk_coex_lp_sel_osc_fast().bit(),
+            sample.clk_coex_lp_sel_xtal().bit(),
+            sample.clk_coex_lp_sel_xtal32k().bit(),
+        )
+    }
+
+    /// Read `CLK_LP_TIMER_SEL_OSC_SLOW`, `CLK_LP_TIMER_SEL_OSC_FAST`, `CLK_LP_TIMER_SEL_XTAL`, `CLK_LP_TIMER_SEL_XTAL32K`, `CLK_LP_TIMER_DIV_NUM` from one `MODEM_LPCON_SHARED_CLOCK`.`LP_TIMER_CONF` sample.
+    #[inline]
+    pub fn observe_bluetooth_low_power_timer_configuration(
+        registers: &crate::ModemLpconSharedClock,
+    ) -> (bool, bool, bool, bool, u16) {
+        let sample = registers.lp_timer_conf().read();
+        (
+            sample.clk_lp_timer_sel_osc_slow().bit(),
+            sample.clk_lp_timer_sel_osc_fast().bit(),
+            sample.clk_lp_timer_sel_xtal().bit(),
+            sample.clk_lp_timer_sel_xtal32k().bit(),
+            sample.clk_lp_timer_div_num().bits(),
         )
     }
 
@@ -64658,6 +64730,99 @@ pub mod field_replace_modify {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             writer.rx_policy_enable().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF_POWER_ST fields [CLK_WIFIPWR_ST_MAP_BIT_ONE, CLK_WIFIPWR_ST_MAP_BIT_TWO, CLK_COEX_ST_MAP_BIT_ONE, CLK_COEX_ST_MAP_BIT_TWO, CLK_I2C_MST_ST_MAP_BIT_ONE, CLK_I2C_MST_ST_MAP_BIT_TWO, CLK_LP_APB_ST_MAP_BIT_ONE, CLK_LP_APB_ST_MAP_BIT_TWO] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_shared_modem_power_state_map(registers: &crate::ModemLpconSharedClock) {
+        registers.clk_conf_power_st().modify(|_, writer| {
+            let input = 0x000000ff_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .clk_wifipwr_st_map_bit_one()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifipwr_st_map_bit_two()
+                .bit(((input >> 1) & 0x00000001) != 0)
+                .clk_coex_st_map_bit_one()
+                .bit(((input >> 2) & 0x00000001) != 0)
+                .clk_coex_st_map_bit_two()
+                .bit(((input >> 3) & 0x00000001) != 0)
+                .clk_i2c_mst_st_map_bit_one()
+                .bit(((input >> 4) & 0x00000001) != 0)
+                .clk_i2c_mst_st_map_bit_two()
+                .bit(((input >> 5) & 0x00000001) != 0)
+                .clk_lp_apb_st_map_bit_one()
+                .bit(((input >> 6) & 0x00000001) != 0)
+                .clk_lp_apb_st_map_bit_two()
+                .bit(((input >> 7) & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields [CLK_COEX_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_shared_modem_coexistence_clock(registers: &crate::ModemLpconSharedClock) {
+        registers.clk_conf().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_coex_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields [CLK_COEX_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn disable_shared_modem_coexistence_clock(registers: &crate::ModemLpconSharedClock) {
+        registers.clk_conf().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_coex_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields [CLK_I2C_MST_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_shared_modem_phy_i2c_master_clock(registers: &crate::ModemLpconSharedClock) {
+        registers.clk_conf().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_i2c_mst_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields [CLK_I2C_MST_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn disable_shared_modem_phy_i2c_master_clock(registers: &crate::ModemLpconSharedClock) {
+        registers.clk_conf().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_i2c_mst_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields [CLK_LP_TIMER_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_shared_modem_low_power_timer_clock(registers: &crate::ModemLpconSharedClock) {
+        registers.clk_conf().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_lp_timer_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_LPCON_SHARED_CLOCK.CLK_CONF fields [CLK_LP_TIMER_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn disable_shared_modem_low_power_timer_clock(registers: &crate::ModemLpconSharedClock) {
+        registers.clk_conf().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_lp_timer_en().bit((input & 0x00000001) != 0)
         });
     }
 

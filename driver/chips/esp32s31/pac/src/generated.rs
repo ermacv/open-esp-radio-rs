@@ -3720,6 +3720,60 @@ pub(crate) fn enable_mac_interface_receive_policy(
     crate::svd::field_replace_modify::enable_mac_interface_receive_policy(registers, index);
 }
 
+/// Typed bridge for the reviewed `initialize_shared_modem_power_state_map` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_shared_modem_power_state_map(
+    registers: &crate::svd::ModemLpconSharedClock,
+) {
+    crate::svd::field_replace_modify::initialize_shared_modem_power_state_map(registers);
+}
+
+/// Typed bridge for the reviewed `enable_shared_modem_coexistence_clock` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_shared_modem_coexistence_clock(registers: &crate::svd::ModemLpconSharedClock) {
+    crate::svd::field_replace_modify::enable_shared_modem_coexistence_clock(registers);
+}
+
+/// Typed bridge for the reviewed `disable_shared_modem_coexistence_clock` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn disable_shared_modem_coexistence_clock(
+    registers: &crate::svd::ModemLpconSharedClock,
+) {
+    crate::svd::field_replace_modify::disable_shared_modem_coexistence_clock(registers);
+}
+
+/// Typed bridge for the reviewed `enable_shared_modem_phy_i2c_master_clock` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_shared_modem_phy_i2c_master_clock(
+    registers: &crate::svd::ModemLpconSharedClock,
+) {
+    crate::svd::field_replace_modify::enable_shared_modem_phy_i2c_master_clock(registers);
+}
+
+/// Typed bridge for the reviewed `disable_shared_modem_phy_i2c_master_clock` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn disable_shared_modem_phy_i2c_master_clock(
+    registers: &crate::svd::ModemLpconSharedClock,
+) {
+    crate::svd::field_replace_modify::disable_shared_modem_phy_i2c_master_clock(registers);
+}
+
+/// Typed bridge for the reviewed `enable_shared_modem_low_power_timer_clock` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_shared_modem_low_power_timer_clock(
+    registers: &crate::svd::ModemLpconSharedClock,
+) {
+    crate::svd::field_replace_modify::enable_shared_modem_low_power_timer_clock(registers);
+}
+
+/// Typed bridge for the reviewed `disable_shared_modem_low_power_timer_clock` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn disable_shared_modem_low_power_timer_clock(
+    registers: &crate::svd::ModemLpconSharedClock,
+) {
+    crate::svd::field_replace_modify::disable_shared_modem_low_power_timer_clock(registers);
+}
+
 /// Typed bridge for the reviewed `clear_bluetooth_scheduler_lock_modify_argument` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_bluetooth_scheduler_lock_modify_argument(

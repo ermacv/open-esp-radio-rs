@@ -5152,6 +5152,133 @@ register = "CORE1_ROUTE"
 fields = ["MAP", "UNCLASSIFIED_6_7", "PASS_LEVEL", "UNCLASSIFIED_10_31"]
 sources = ["ESP_PACS_AAA5C2EA_S31_INTERRUPT_MATRIX"]
 
+[[field-replace-modifies]]
+name = "initialize_shared_modem_power_state_map"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "CLK_CONF_POWER_ST"
+fields = [
+    { field = "CLK_WIFIPWR_ST_MAP_BIT_ONE", source-bit-offset = 0 },
+    { field = "CLK_WIFIPWR_ST_MAP_BIT_TWO", source-bit-offset = 1 },
+    { field = "CLK_COEX_ST_MAP_BIT_ONE", source-bit-offset = 2 },
+    { field = "CLK_COEX_ST_MAP_BIT_TWO", source-bit-offset = 3 },
+    { field = "CLK_I2C_MST_ST_MAP_BIT_ONE", source-bit-offset = 4 },
+    { field = "CLK_I2C_MST_ST_MAP_BIT_TWO", source-bit-offset = 5 },
+    { field = "CLK_LP_APB_ST_MAP_BIT_ONE", source-bit-offset = 6 },
+    { field = "CLK_LP_APB_ST_MAP_BIT_TWO", source-bit-offset = 7 },
+]
+value = 0xff
+exposure = "facade"
+sources = ["S31_MODEM_LPCON_STRUCT", "ESP_HAL_63E97BE_S31_MODEM_CLOCK_MAP"]
+
+[[field-snapshot-reads]]
+name = "observe_shared_modem_clock_gates"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "CLK_CONF"
+fields = ["CLK_COEX_EN", "CLK_I2C_MST_EN", "CLK_LP_TIMER_EN"]
+sources = ["S31_MODEM_LPCON_STRUCT"]
+
+[[field-snapshot-reads]]
+name = "observe_shared_modem_power_state_map"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "CLK_CONF_POWER_ST"
+fields = [
+    "CLK_WIFIPWR_ST_MAP_BIT_ONE",
+    "CLK_WIFIPWR_ST_MAP_BIT_TWO",
+    "CLK_COEX_ST_MAP_BIT_ONE",
+    "CLK_COEX_ST_MAP_BIT_TWO",
+    "CLK_I2C_MST_ST_MAP_BIT_ONE",
+    "CLK_I2C_MST_ST_MAP_BIT_TWO",
+    "CLK_LP_APB_ST_MAP_BIT_ONE",
+    "CLK_LP_APB_ST_MAP_BIT_TWO",
+]
+sources = ["S31_MODEM_LPCON_STRUCT", "ESP_HAL_63E97BE_S31_MODEM_CLOCK_MAP"]
+
+[[field-snapshot-reads]]
+name = "observe_coexistence_low_power_clock_source"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "COEX_LP_CLK_CONF"
+fields = [
+    "CLK_COEX_LP_SEL_OSC_SLOW",
+    "CLK_COEX_LP_SEL_OSC_FAST",
+    "CLK_COEX_LP_SEL_XTAL",
+    "CLK_COEX_LP_SEL_XTAL32K",
+]
+sources = ["S31_MODEM_LPCON_STRUCT"]
+
+[[field-reads]]
+name = "observe_coexistence_low_power_clock_divider"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "COEX_LP_CLK_CONF"
+field = "CLK_COEX_LP_DIV_NUM"
+sources = ["S31_MODEM_LPCON_STRUCT"]
+
+[[field-snapshot-reads]]
+name = "observe_bluetooth_low_power_timer_configuration"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "LP_TIMER_CONF"
+fields = [
+    "CLK_LP_TIMER_SEL_OSC_SLOW",
+    "CLK_LP_TIMER_SEL_OSC_FAST",
+    "CLK_LP_TIMER_SEL_XTAL",
+    "CLK_LP_TIMER_SEL_XTAL32K",
+    "CLK_LP_TIMER_DIV_NUM",
+]
+sources = ["S31_MODEM_LPCON_STRUCT"]
+
+[[field-replace-modifies]]
+name = "enable_shared_modem_coexistence_clock"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "CLK_CONF"
+fields = [{ field = "CLK_COEX_EN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["S31_MODEM_LPCON_STRUCT"]
+
+[[field-replace-modifies]]
+name = "disable_shared_modem_coexistence_clock"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "CLK_CONF"
+fields = [{ field = "CLK_COEX_EN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["S31_MODEM_LPCON_STRUCT"]
+
+[[field-replace-modifies]]
+name = "enable_shared_modem_phy_i2c_master_clock"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "CLK_CONF"
+fields = [{ field = "CLK_I2C_MST_EN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["S31_MODEM_LPCON_STRUCT"]
+
+[[field-replace-modifies]]
+name = "disable_shared_modem_phy_i2c_master_clock"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "CLK_CONF"
+fields = [{ field = "CLK_I2C_MST_EN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["S31_MODEM_LPCON_STRUCT"]
+
+[[field-replace-modifies]]
+name = "enable_shared_modem_low_power_timer_clock"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "CLK_CONF"
+fields = [{ field = "CLK_LP_TIMER_EN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["S31_MODEM_LPCON_STRUCT"]
+
+[[field-replace-modifies]]
+name = "disable_shared_modem_low_power_timer_clock"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "CLK_CONF"
+fields = [{ field = "CLK_LP_TIMER_EN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["S31_MODEM_LPCON_STRUCT"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

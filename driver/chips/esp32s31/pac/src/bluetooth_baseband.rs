@@ -301,15 +301,9 @@ impl BluetoothBasebandV2Transaction<'_> {
 
     fn initialize_receive_restart(&self) {
         let btagc = &self.radio_phy.phy_btagc_recovered;
-        btagc
-            .rx_config_0088()
-            .modify(|_, w| w.config_force_zero_30().clear_bit());
-        btagc
-            .agc_recorrect_and_restart_00bc()
-            .modify(|_, w| w.restart_bit_31().set_bit());
-        btagc
-            .agc_restart_config_0084()
-            .modify(|_, w| w.finite_bits_24_31().set(0xf4));
+        super::generated::initialize_bluetooth_receive_restart_config_0088(btagc);
+        super::generated::initialize_bluetooth_receive_restart_control_00bc(btagc);
+        super::generated::initialize_bluetooth_receive_restart_config_0084(btagc);
 
         let e0 = btagc.agc_restart_image_00e0();
         e0.modify(|_, w| w.bits_24_31().set(0x14));

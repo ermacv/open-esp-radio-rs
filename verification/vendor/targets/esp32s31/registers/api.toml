@@ -3985,6 +3985,33 @@ value = 0x1ce
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_config_0088"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "RX_CONFIG_0088"
+fields = [{ field = "CONFIG_FORCE_ZERO_30", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_control_00bc"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RECORRECT_AND_RESTART_00BC"
+fields = [{ field = "RESTART_BIT_31", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_config_0084"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RESTART_CONFIG_0084"
+fields = [{ field = "FINITE_BITS_24_31", source-bit-offset = 0 }]
+value = 0xf4
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

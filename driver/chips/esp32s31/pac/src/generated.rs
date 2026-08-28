@@ -2711,6 +2711,30 @@ pub(crate) fn initialize_bluetooth_receive_target_00b4(registers: &crate::svd::P
     crate::svd::field_replace_modify::initialize_bluetooth_receive_target_00b4(registers);
 }
 
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_restart_config_0088` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_restart_config_0088(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_restart_config_0088(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_restart_control_00bc` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_restart_control_00bc(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_restart_control_00bc(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_restart_config_0084` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_restart_config_0084(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_restart_config_0084(registers);
+}
+
 /// Typed bridge for the reviewed `clear_bluetooth_scheduler_lock_modify_argument` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_bluetooth_scheduler_lock_modify_argument(

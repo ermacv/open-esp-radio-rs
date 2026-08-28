@@ -124,9 +124,7 @@ struct HardwareControllerTimeLatchControl<'registers> {
 
 impl BluetoothControllerTimeLatchControl for HardwareControllerTimeLatchControl<'_> {
     fn publish_latch_request(&mut self, _request: BluetoothControllerTimeLatchRequest) {
-        self.registers
-            .sleep_timer_control()
-            .modify(|_, writer| writer.latch_request().set_bit());
+        super::generated::request_bluetooth_controller_time_latch(self.registers);
     }
 
     fn order_after_publication(&mut self) {
@@ -134,11 +132,7 @@ impl BluetoothControllerTimeLatchControl for HardwareControllerTimeLatchControl<
     }
 
     fn latch_request_pending(&mut self) -> bool {
-        self.registers
-            .sleep_timer_control()
-            .read()
-            .latch_request()
-            .bit()
+        super::svd::field_read::observe_bluetooth_controller_time_latch_request(self.registers)
     }
 
     fn order_after_clear_observation(&mut self) {
@@ -146,11 +140,7 @@ impl BluetoothControllerTimeLatchControl for HardwareControllerTimeLatchControl<
     }
 
     fn read_latched_time_0(&mut self) -> u32 {
-        self.registers
-            .sleep_timer_latched_time_0()
-            .read()
-            .image()
-            .bits()
+        super::svd::field_read::observe_bluetooth_controller_latched_time(self.registers)
     }
 }
 

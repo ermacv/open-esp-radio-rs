@@ -395,6 +395,7 @@ impl PacApiPack {
         }
         output.push_str(&self.render_full_register_writes());
         output.push_str(&self.render_full_register_reads());
+        output.push_str(&self.render_field_reads(&device)?);
         output.push_str(&self.render_fixed_register_writes());
         output.push_str(&self.render_fixed_register_images(&device)?);
         output.push_str(&self.render_w1c_register_snapshots(&device)?);
@@ -695,6 +696,51 @@ impl PacApiPack {
         }
         output.push_str("}\n");
         output
+    }
+
+    fn render_field_reads(&self, device: &Device) -> Result<String> {
+        if self.field_reads.is_empty() {
+            return Ok(String::new());
+        }
+        let mut output = String::from(
+            "\n/// Safe observations through reviewed SVD fields.\n\
+             pub mod field_read {\n",
+        );
+        for binding in &self.field_reads {
+            let peripheral_type = type_binding_name(&binding.peripheral);
+            let register = member_binding_name(&binding.register);
+            let field_name = member_binding_name(&binding.field);
+            let register_binding = pac_api_svd::register(
+                device,
+                &binding.name,
+                &binding.peripheral,
+                &binding.register,
+            )?;
+            let (index_parameter, index_argument) = if register_binding.is_array {
+                (", index: usize", "index")
+            } else {
+                ("", "")
+            };
+            let selected =
+                pac_api_svd::field(&binding.name, register_binding.info, &binding.field)?;
+            let (value_type, reader) = match selected.bit_width() {
+                1 => ("bool", "bit"),
+                2..=8 => ("u8", "bits"),
+                9..=16 => ("u16", "bits"),
+                17..=32 => ("u32", "bits"),
+                _ => unreachable!("SVD validation rejects invalid field widths"),
+            };
+            output.push_str(&format!(
+                "\n    /// Read `{}`.`{}`.`{}` without exposing its register block.\n\
+                 #[inline]\n\
+                 pub fn {}(registers: &crate::{peripheral_type}{index_parameter}) -> {value_type} {{\n\
+                     registers.{register}({index_argument}).read().{field_name}().{reader}()\n\
+                 }}\n",
+                binding.peripheral, binding.register, binding.field, binding.name,
+            ));
+        }
+        output.push_str("}\n");
+        Ok(output)
     }
 
     fn render_fixed_register_writes(&self) -> String {

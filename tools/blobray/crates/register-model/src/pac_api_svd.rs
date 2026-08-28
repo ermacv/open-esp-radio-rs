@@ -134,6 +134,32 @@ impl PacApiPack {
             }
         }
 
+        for operation in &self.field_reads {
+            let binding = readable_register(
+                &device,
+                &operation.name,
+                &operation.peripheral,
+                &operation.register,
+            )?;
+            let selected = field(&operation.name, binding.info, &operation.field)?;
+            if !matches!(
+                selected.access.or(binding.properties.access),
+                Some(Access::ReadOnly | Access::ReadWrite)
+            ) || !(1..=32).contains(&selected.bit_width())
+            {
+                return Err(Error::message(format!(
+                    "PAC API field-read {:?} requires one readable field",
+                    operation.name
+                )));
+            }
+            if binding.info.read_action.is_some() || selected.read_action.is_some() {
+                return Err(Error::message(format!(
+                    "PAC API field-read {:?} cannot target read-side-effect semantics",
+                    operation.name
+                )));
+            }
+        }
+
         for operation in &self.fixed_register_writes {
             let binding = writable_register(
                 &device,
@@ -1229,6 +1255,21 @@ sources = ["PUBLIC_READ"]
         .unwrap()
     }
 
+    fn field_read_pack(register: &str) -> PacApiPack {
+        toml_edit::de::from_str(&format!(
+            r#"schema = 5
+
+[[field-reads]]
+name = "observe_word"
+peripheral = "RADIO"
+register = "{register}"
+field = "WORD"
+sources = ["PUBLIC_READ"]
+"#
+        ))
+        .unwrap()
+    }
+
     fn sampled_bit_zero_write_pack(register: &str) -> PacApiPack {
         toml_edit::de::from_str(&format!(
             r#"schema = 5
@@ -1335,6 +1376,26 @@ peripherals = ["INTERRUPT"]
                 error.contains("readable")
                     || error.contains("read-side-effect")
                     || error.contains("non-array"),
+                "unexpected rejection for {register}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn field_read_rejects_write_only_and_side_effecting_observations() {
+        assert!(
+            field_read_pack("GOOD")
+                .validate_against_svd(FULL_REGISTER_READ_SVD)
+                .is_ok()
+        );
+
+        for register in ["FIELD_WRITE_ONLY", "READ_SIDE_EFFECT"] {
+            let error = field_read_pack(register)
+                .validate_against_svd(FULL_REGISTER_READ_SVD)
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains("readable") || error.contains("read-side-effect"),
                 "unexpected rejection for {register}: {error}"
             );
         }

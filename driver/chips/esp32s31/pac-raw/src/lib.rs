@@ -58232,6 +58232,26 @@ pub mod full_register_read {
     }
 }
 
+/// Safe observations through reviewed SVD fields.
+pub mod field_read {
+
+    /// Read `BLUETOOTH_CONTROLLER_CORE`.`SLEEP_TIMER_CONTROL`.`LATCH_REQUEST` without exposing its register block.
+    #[inline]
+    pub fn observe_bluetooth_controller_time_latch_request(
+        registers: &crate::BluetoothControllerCore,
+    ) -> bool {
+        registers.sleep_timer_control().read().latch_request().bit()
+    }
+
+    /// Read `BLUETOOTH_CONTROLLER_CORE`.`SLEEP_TIMER_LATCHED_TIME_0`.`IMAGE` without exposing its register block.
+    #[inline]
+    pub fn observe_bluetooth_controller_latched_time(
+        registers: &crate::BluetoothControllerCore,
+    ) -> u32 {
+        registers.sleep_timer_latched_time_0().read().image().bits()
+    }
+}
+
 /// Safe, SVD-declared complete-register writes of fixed enumerated values.
 pub mod fixed_register_write {
 
@@ -61316,6 +61336,19 @@ pub mod field_or_modify {
             writer
                 .init_enable_9()
                 .bit(reader.init_enable_9().bit() || (input & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL fields [LATCH_REQUEST] while preserving the fresh register observation.
+    #[inline]
+    pub fn request_bluetooth_controller_time_latch(registers: &crate::BluetoothControllerCore) {
+        registers.sleep_timer_control().modify(|reader, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .latch_request()
+                .bit(reader.latch_request().bit() || (input & 0x00000001) != 0)
         });
     }
 }

@@ -2926,6 +2926,29 @@ domain = "BluetoothPhyControllerEnvironmentTailImage"
 exposure = "raw-only"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
+[[field-or-modifies]]
+name = "request_bluetooth_controller_time_latch"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SLEEP_TIMER_CONTROL"
+fields = [{ field = "LATCH_REQUEST", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "PUBLIC_ESP32S31_BT_TIME_ROLES"]
+
+[[field-reads]]
+name = "observe_bluetooth_controller_time_latch_request"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SLEEP_TIMER_CONTROL"
+field = "LATCH_REQUEST"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "PUBLIC_ESP32S31_BT_TIME_ROLES"]
+
+[[field-reads]]
+name = "observe_bluetooth_controller_latched_time"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SLEEP_TIMER_LATCHED_TIME_0"
+field = "IMAGE"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "BLOB_LIBBTDM_SLEEP_TIMER_SNAPSHOT", "PUBLIC_ESP32S31_BT_TIME_ROLES"]
+
 [[indexed-bit-set-modifies]]
 name = "request_rx_block_ack_entry_update"
 peripheral = "WIFI_MAC_RX_DMA"

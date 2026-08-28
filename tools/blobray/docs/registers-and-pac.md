@@ -171,6 +171,15 @@ side effects. The generated leaf owns both volatile accesses, so handwritten
 PAC and HAL code cannot accidentally turn the transaction into an RMW or reach
 for a raw writer.
 
+### Field observations
+
+`[[field-reads]]` declares one side-effect-free SVD field observation. Blobray
+derives the smallest ordinary Rust return type from the reviewed field width,
+supports explicitly indexed register arrays, and rejects write-only fields or
+register/field read actions. The generated restricted-PAC leaf owns the
+register lookup and read, while handwritten code receives only the field
+value needed by its state machine.
+
 ### Complete-word observations and raw-only leaves
 
 Schema-5 API packs may declare a reviewed 32-bit observation with

@@ -1724,6 +1724,14 @@ pub(crate) fn enable_ble_phy_init_control_00c4(registers: &crate::svd::BtmacBleP
     crate::svd::field_or_modify::enable_ble_phy_init_control_00c4(registers);
 }
 
+/// Typed bridge for the reviewed `request_bluetooth_controller_time_latch` fixed field-OR transaction.
+#[inline]
+pub(crate) fn request_bluetooth_controller_time_latch(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_or_modify::request_bluetooth_controller_time_latch(registers);
+}
+
 /// Typed bridge for the reviewed `clear_ble_phy_lc_tx_on_delay_fields` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_ble_phy_lc_tx_on_delay_fields(registers: &crate::svd::BtmacBlePhyInit) {

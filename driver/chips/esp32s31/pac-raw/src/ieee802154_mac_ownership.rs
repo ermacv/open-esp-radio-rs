@@ -906,14 +906,6 @@ impl TaskRegisters {
         }
     }
 
-    /// Read both fixed source-132 route words without exposing either pointer.
-    #[doc(hidden)]
-    pub fn interrupt_route_readback(
-        &self,
-    ) -> crate::ieee802154_route_observation::Ieee802154RouteRawReadback {
-        crate::ieee802154_route_observation::read_route_words(&self.registers)
-    }
-
     /// Apply the sole source-confirmed RXON delay image used by IEEE timing.
     #[doc(hidden)]
     pub fn set_rx_on_delay_50(&mut self) {

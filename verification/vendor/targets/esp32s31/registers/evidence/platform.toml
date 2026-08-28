@@ -70,6 +70,10 @@ id = "ESP_PACS_AAA5C2EA_S31_IEEE802154_RXON_DELAY"
 description = "Official esp-rs/esp-pacs commit aaa5c2ea8a82f0aa202422d69682e3179d7b2365, https://github.com/esp-rs/esp-pacs/blob/aaa5c2ea8a82f0aa202422d69682e3179d7b2365/esp32s31/src/ieee802154.rs sha256 e102b36158d5d1000108d04bf51d86be3fbeec3f8abd25c56f41f2f559db9825 and https://github.com/esp-rs/esp-pacs/blob/aaa5c2ea8a82f0aa202422d69682e3179d7b2365/esp32s31/src/ieee802154/rxon_delay.rs sha256 b36584fd316421b0e640f44264329727a72994f51bc817b9bb8c7651a59dfbd9. The generated public PAC independently places RXON_DELAY at offset 0x110 and exposes its preserving read-write field as bits 0:10. No reset-value claim is imported."
 
 [[sources]]
+id = "ESP_PACS_AAA5C2EA_S31_INTERRUPT_MATRIX"
+description = "Official esp-rs/esp-pacs commit aaa5c2ea8a82f0aa202422d69682e3179d7b2365. esp32s31/src/lib.rs publishes INTERRUPT_CORE0 at 0x20585000 and INTERRUPT_CORE1 at 0x20585800; the generated core register blocks place source-indexed route words at four-byte stride, and source 132 therefore resolves to offset 0x210 on each core. esp32s31/src/interrupt_core0.rs sha256 d949dd47ae1c59b3029bc8d6e2e29cc66e0f0d30165bee771e311cd6dc1f3243, interrupt_core0/core_0_intr_map.rs sha256 9bcb132b7ce49d93b98126d253dec00f03adabf03e0530b7dfaf416aeda48d89, interrupt_core1.rs sha256 9ccdbaef1abe65fff733cef87a6e7838e5f9f263aff89c9d9fe5d1e885d17ed0, and interrupt_core1/core_1_intr_map.rs sha256 2dd5ecc1033f088baaf7dee22b7f715e40eaa911b2b90b0d937c43a0c2af51ba. Both route words reset to zero and expose MAP at bits 0:5 and PASS_LEVEL at bits 8:9."
+
+[[sources]]
 id = "ESP_IDF_25FE69F_S31_PHY_RETENTION"
 description = "Official ESP-IDF commit 25fe69f946311abdaf9ad56591f25fedbc20ac98. components/esp_phy/esp32s31/phy_init_data.c sha256 03176e75102562df905e7ec342860ddd120443c2bff043f06d66faef4285b217 defines the FECOEX, FEDATA, FECTRL, FEDATA_WIFI, AGC, NRX, BB and BRX retention bases and register counts. components/esp_phy/esp32s31/include/btbb_retention_reg.h sha256 8acdbdff2393e3d4dc15f1a6aedd240afeb95010e50446c9d596a878fc8af7f3 defines the BTAGC/BB_PART_1 base and count."
 

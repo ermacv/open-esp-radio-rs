@@ -246,7 +246,7 @@ pub use table_memory::{PbusMemoryGroupBoundary, PhyGainMemoryEntry, PhyMemoryErr
 /// Private Wi-Fi and shared-radio owners used by one exclusive Wi-Fi route.
 struct WifiRadioPeripheralOwners {
     wifi_mac: svd::peripheral_ownership::WifiMacPeripherals,
-    ieee802154_mac: svd::Ieee802154Mac,
+    ieee802154: svd::peripheral_ownership::Ieee802154Peripherals,
     radio_phy: RadioPhyRegisters,
     coexistence: svd::peripheral_ownership::CoexistencePeripherals,
     shared_radio: svd::peripheral_ownership::SharedRadioPeripherals,
@@ -261,6 +261,7 @@ struct WifiRadioPeripheralOwners {
 /// lets reviewed BTBB transactions be added without exposing BLE/EDR methods.
 struct Ieee802154TaskPeripheralOwners {
     ieee802154_mac: svd::ieee802154_mac_ownership::TaskRegisters,
+    ieee802154_interrupt_route: svd::Ieee802154InterruptRoute,
     radio_phy: RadioPhyRegisters,
     coexistence: svd::peripheral_ownership::CoexistencePeripherals,
     btbb: Ieee802154BtbbPeripheralOwners,
@@ -434,7 +435,7 @@ impl RadioHardware {
             registers: WifiRadioRegisters {
                 peripherals: WifiRadioPeripheralOwners {
                     wifi_mac,
-                    ieee802154_mac: ieee802154.ieee802154_mac,
+                    ieee802154,
                     radio_phy,
                     coexistence,
                     shared_radio,
@@ -513,12 +514,16 @@ impl RadioHardware {
             shared_radio,
             ieee802154,
         } = self;
-        let (task_mac, interrupt_mac) =
-            svd::ieee802154_mac_ownership::split(ieee802154.ieee802154_mac);
+        let svd::peripheral_ownership::Ieee802154Peripherals {
+            ieee802154_mac,
+            ieee802154_interrupt_route,
+        } = ieee802154;
+        let (task_mac, interrupt_mac) = svd::ieee802154_mac_ownership::split(ieee802154_mac);
         Ieee802154ColdRegisters {
             task: Ieee802154TaskRegisters {
                 peripherals: Ieee802154TaskPeripheralOwners {
                     ieee802154_mac: task_mac,
+                    ieee802154_interrupt_route,
                     radio_phy,
                     coexistence,
                     btbb: Ieee802154BtbbPeripheralOwners {
@@ -1027,7 +1032,7 @@ impl WifiColdRegisters {
                     peripherals:
                         WifiRadioPeripheralOwners {
                             wifi_mac,
-                            ieee802154_mac,
+                            ieee802154,
                             radio_phy,
                             coexistence,
                             shared_radio,
@@ -1052,7 +1057,7 @@ impl WifiColdRegisters {
             bluetooth,
             bluetooth_interrupts,
             shared_radio,
-            ieee802154: svd::peripheral_ownership::Ieee802154Peripherals { ieee802154_mac },
+            ieee802154,
         })
     }
 
@@ -1341,6 +1346,7 @@ impl Ieee802154TaskRegisters {
             peripherals:
                 Ieee802154TaskPeripheralOwners {
                     ieee802154_mac: task_mac,
+                    ieee802154_interrupt_route,
                     radio_phy,
                     coexistence,
                     btbb:
@@ -1367,7 +1373,10 @@ impl Ieee802154TaskRegisters {
             bluetooth,
             bluetooth_interrupts,
             shared_radio,
-            ieee802154: svd::peripheral_ownership::Ieee802154Peripherals { ieee802154_mac },
+            ieee802154: svd::peripheral_ownership::Ieee802154Peripherals {
+                ieee802154_mac,
+                ieee802154_interrupt_route,
+            },
         }
     }
 

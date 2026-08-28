@@ -55826,6 +55826,146 @@ pub mod ieee802154_mac {
         }
     }
 }
+#[doc = "The two CPU interrupt-matrix words for ESP32-S31 modem source 132 (MODEM_ZB_MAC). This source-specific view is retained with the IEEE 802.15.4 owner and publishes only the generated field readers needed to prove that a polled or validation transaction starts with both CPU routes detached."]
+pub type Ieee802154InterruptRoute =
+    crate::Periph<ieee802154_interrupt_route::RegisterBlock, 0x2058_5210>;
+impl core::fmt::Debug for Ieee802154InterruptRoute {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("Ieee802154InterruptRoute").finish()
+    }
+}
+#[doc = "The two CPU interrupt-matrix words for ESP32-S31 modem source 132 (MODEM_ZB_MAC). This source-specific view is retained with the IEEE 802.15.4 owner and publishes only the generated field readers needed to prove that a polled or validation transaction starts with both CPU routes detached."]
+pub mod ieee802154_interrupt_route {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        core0_route: Core0Route,
+        _reserved1: [u8; 0x07fc],
+        core1_route: Core1Route,
+    }
+    impl RegisterBlock {
+        #[doc = "0x00 - Core-zero destination and privilege routing for MODEM_ZB_MAC."]
+        #[inline(always)]
+        pub const fn core0_route(&self) -> &Core0Route {
+            &self.core0_route
+        }
+        #[doc = "0x800 - Core-one destination and privilege routing for MODEM_ZB_MAC."]
+        #[inline(always)]
+        pub const fn core1_route(&self) -> &Core1Route {
+            &self.core1_route
+        }
+    }
+    #[doc = "CORE0_ROUTE (rw) register accessor: Core-zero destination and privilege routing for MODEM_ZB_MAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`core0_route::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`core0_route::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@core0_route`] module"]
+    #[doc(alias = "CORE0_ROUTE")]
+    pub type Core0Route = crate::Reg<core0_route::Core0RouteSpec>;
+    #[doc = "Core-zero destination and privilege routing for MODEM_ZB_MAC."]
+    pub mod core0_route {
+        #[doc = "Register `CORE0_ROUTE` reader"]
+        pub type R = crate::R<Core0RouteSpec>;
+        #[doc = "Register `CORE0_ROUTE` writer"]
+        pub type W = crate::W<Core0RouteSpec>;
+        #[doc = "Field `MAP` reader - CPU-interrupt destination selected for the peripheral source."]
+        pub type MapR = crate::FieldReader;
+        #[doc = "Field `MAP` writer - CPU-interrupt destination selected for the peripheral source."]
+        pub type MapW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `PASS_LEVEL` reader - Privilege pass/remap level selected for the peripheral source."]
+        pub type PassLevelR = crate::FieldReader;
+        #[doc = "Field `PASS_LEVEL` writer - Privilege pass/remap level selected for the peripheral source."]
+        pub type PassLevelW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        impl R {
+            #[doc = "Bits 0:5 - CPU-interrupt destination selected for the peripheral source."]
+            #[inline(always)]
+            pub fn map(&self) -> MapR {
+                MapR::new((self.bits & 0x3f) as u8)
+            }
+            #[doc = "Bits 8:9 - Privilege pass/remap level selected for the peripheral source."]
+            #[inline(always)]
+            pub fn pass_level(&self) -> PassLevelR {
+                PassLevelR::new(((self.bits >> 8) & 3) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:5 - CPU-interrupt destination selected for the peripheral source."]
+            #[inline(always)]
+            pub fn map(&mut self) -> MapW<'_, Core0RouteSpec> {
+                MapW::new(self, 0)
+            }
+            #[doc = "Bits 8:9 - Privilege pass/remap level selected for the peripheral source."]
+            #[inline(always)]
+            pub fn pass_level(&mut self) -> PassLevelW<'_, Core0RouteSpec> {
+                PassLevelW::new(self, 8)
+            }
+        }
+        #[doc = "Core-zero destination and privilege routing for MODEM_ZB_MAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`core0_route::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`core0_route::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Core0RouteSpec;
+        impl crate::RegisterSpec for Core0RouteSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`core0_route::R`](R) reader structure"]
+        impl crate::Readable for Core0RouteSpec {}
+        #[doc = "`write(|w| ..)` method takes [`core0_route::W`](W) writer structure"]
+        impl crate::Writable for Core0RouteSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets CORE0_ROUTE to value 0"]
+        impl crate::Resettable for Core0RouteSpec {}
+    }
+    #[doc = "CORE1_ROUTE (rw) register accessor: Core-one destination and privilege routing for MODEM_ZB_MAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`core1_route::R`]. You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`core1_route::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@core1_route`] module"]
+    #[doc(alias = "CORE1_ROUTE")]
+    pub type Core1Route = crate::Reg<core1_route::Core1RouteSpec>;
+    #[doc = "Core-one destination and privilege routing for MODEM_ZB_MAC."]
+    pub mod core1_route {
+        #[doc = "Register `CORE1_ROUTE` reader"]
+        pub type R = crate::R<Core1RouteSpec>;
+        #[doc = "Register `CORE1_ROUTE` writer"]
+        pub type W = crate::W<Core1RouteSpec>;
+        #[doc = "Field `MAP` reader - CPU-interrupt destination selected for the peripheral source."]
+        pub type MapR = crate::FieldReader;
+        #[doc = "Field `MAP` writer - CPU-interrupt destination selected for the peripheral source."]
+        pub type MapW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `PASS_LEVEL` reader - Privilege pass/remap level selected for the peripheral source."]
+        pub type PassLevelR = crate::FieldReader;
+        #[doc = "Field `PASS_LEVEL` writer - Privilege pass/remap level selected for the peripheral source."]
+        pub type PassLevelW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        impl R {
+            #[doc = "Bits 0:5 - CPU-interrupt destination selected for the peripheral source."]
+            #[inline(always)]
+            pub fn map(&self) -> MapR {
+                MapR::new((self.bits & 0x3f) as u8)
+            }
+            #[doc = "Bits 8:9 - Privilege pass/remap level selected for the peripheral source."]
+            #[inline(always)]
+            pub fn pass_level(&self) -> PassLevelR {
+                PassLevelR::new(((self.bits >> 8) & 3) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:5 - CPU-interrupt destination selected for the peripheral source."]
+            #[inline(always)]
+            pub fn map(&mut self) -> MapW<'_, Core1RouteSpec> {
+                MapW::new(self, 0)
+            }
+            #[doc = "Bits 8:9 - Privilege pass/remap level selected for the peripheral source."]
+            #[inline(always)]
+            pub fn pass_level(&mut self) -> PassLevelW<'_, Core1RouteSpec> {
+                PassLevelW::new(self, 8)
+            }
+        }
+        #[doc = "Core-one destination and privilege routing for MODEM_ZB_MAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`core1_route::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`core1_route::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct Core1RouteSpec;
+        impl crate::RegisterSpec for Core1RouteSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`core1_route::R`](R) reader structure"]
+        impl crate::Readable for Core1RouteSpec {}
+        #[doc = "`write(|w| ..)` method takes [`core1_route::W`](W) writer structure"]
+        impl crate::Writable for Core1RouteSpec {
+            type Safety = crate::Unsafe;
+        }
+        #[doc = "`reset()` method sets CORE1_ROUTE to value 0"]
+        impl crate::Resettable for Core1RouteSpec {}
+    }
+}
 #[unsafe(no_mangle)]
 static mut DEVICE_PERIPHERALS: bool = false;
 #[doc = r" All the peripherals."]
@@ -56049,6 +56189,8 @@ pub struct Peripherals {
     pub phy_brx_recovered_gaps: PhyBrxRecoveredGaps,
     #[doc = "IEEE802154_MAC"]
     pub ieee802154_mac: Ieee802154Mac,
+    #[doc = "IEEE802154_INTERRUPT_ROUTE"]
+    pub ieee802154_interrupt_route: Ieee802154InterruptRoute,
 }
 impl Peripherals {
     #[doc = r" Returns all the peripherals *once*."]
@@ -56182,6 +56324,7 @@ impl Peripherals {
             phy_bb_recovered_gaps: unsafe { PhyBbRecoveredGaps::steal() },
             phy_brx_recovered_gaps: unsafe { PhyBrxRecoveredGaps::steal() },
             ieee802154_mac: unsafe { Ieee802154Mac::steal() },
+            ieee802154_interrupt_route: unsafe { Ieee802154InterruptRoute::steal() },
         }
     }
 }
@@ -56193,9 +56336,6 @@ pub mod ieee802154_event_status_validation;
 #[cfg(feature = "validation-probes")]
 #[doc(hidden)]
 pub mod ieee802154_ed_event_validation;
-
-#[doc(hidden)]
-pub mod ieee802154_route_observation;
 
 #[doc(hidden)]
 pub mod ieee802154_mac_ownership;
@@ -56671,9 +56811,10 @@ pub mod peripheral_ownership {
         pub zbbb_radio_control: crate::ZbbbRadioControl,
     }
 
-    /// IEEE 802.15.4 MAC registers owned by the IEEE 802.15.4 hardware lifecycle.
+    /// IEEE 802.15.4 MAC and source-specific interrupt-route registers owned by the IEEE 802.15.4 hardware lifecycle.
     pub struct Ieee802154Peripherals {
         pub ieee802154_mac: crate::Ieee802154Mac,
+        pub ieee802154_interrupt_route: crate::Ieee802154InterruptRoute,
     }
 
     /// Complete target-reviewed ownership decomposition.
@@ -56692,7 +56833,7 @@ pub mod peripheral_ownership {
         pub bluetooth_interrupts: BluetoothInterruptPeripherals,
         /// Protocol-neutral physical register words touched by more than one radio lifecycle and serialized before either protocol receives a narrow capability.
         pub shared_radio: SharedRadioPeripherals,
-        /// IEEE 802.15.4 MAC registers owned by the IEEE 802.15.4 hardware lifecycle.
+        /// IEEE 802.15.4 MAC and source-specific interrupt-route registers owned by the IEEE 802.15.4 hardware lifecycle.
         pub ieee802154: Ieee802154Peripherals,
     }
 
@@ -56809,6 +56950,7 @@ pub mod peripheral_ownership {
             phy_bb_recovered_gaps,
             phy_brx_recovered_gaps,
             ieee802154_mac,
+            ieee802154_interrupt_route,
         } = peripherals;
         PeripheralPartitions {
             wifi_mac: WifiMacPeripherals {
@@ -56933,7 +57075,10 @@ pub mod peripheral_ownership {
                 shared_baseband_tx_timing,
                 zbbb_radio_control,
             },
-            ieee802154: Ieee802154Peripherals { ieee802154_mac },
+            ieee802154: Ieee802154Peripherals {
+                ieee802154_mac,
+                ieee802154_interrupt_route,
+            },
         }
     }
 

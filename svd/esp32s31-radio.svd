@@ -23472,5 +23472,59 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
       </registers>
     </peripheral>
+    <peripheral>
+      <name>IEEE802154_INTERRUPT_ROUTE</name>
+      <description>The two CPU interrupt-matrix words for ESP32-S31 modem source 132
+(MODEM_ZB_MAC). This source-specific view is retained with the IEEE 802.15.4
+owner and publishes only the generated field readers needed to prove that a
+polled or validation transaction starts with both CPU routes detached.</description>
+      <baseAddress>0x20585210</baseAddress>
+      <registers>
+        <register>
+          <name>CORE0_ROUTE</name>
+          <description>Core-zero destination and privilege routing for MODEM_ZB_MAC.</description>
+          <addressOffset>0x0</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000000</resetValue>
+          <fields>
+            <field>
+              <name>MAP</name>
+              <description>CPU-interrupt destination selected for the peripheral source.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>6</bitWidth>
+            </field>
+            <field>
+              <name>PASS_LEVEL</name>
+              <description>Privilege pass/remap level selected for the peripheral source.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>2</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>CORE1_ROUTE</name>
+          <description>Core-one destination and privilege routing for MODEM_ZB_MAC.</description>
+          <addressOffset>0x800</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <resetValue>0x00000000</resetValue>
+          <fields>
+            <field>
+              <name>MAP</name>
+              <description>CPU-interrupt destination selected for the peripheral source.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>6</bitWidth>
+            </field>
+            <field>
+              <name>PASS_LEVEL</name>
+              <description>Privilege pass/remap level selected for the peripheral source.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>2</bitWidth>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
   </peripherals>
 </device>

@@ -259,6 +259,8 @@ owned-ranges = [
     "lp-aon-phy-aux",
     "lp-periclkrst-tsens-phy-aux",
     "lp-tsens-phy-aux",
+    "ieee802154-core0-route",
+    "ieee802154-core1-route",
     "hp-sys-clkrst-radio-modem-control",
     "hp-sys-clkrst-radio-ref160",
     "hp-sys-clkrst-radio-modem-configuration",

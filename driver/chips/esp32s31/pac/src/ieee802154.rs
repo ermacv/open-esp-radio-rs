@@ -304,17 +304,16 @@ pub enum Ieee802154RouteState {
 }
 
 impl Ieee802154RouteState {
-    const MAP_MASK: u32 = 0x3f;
-    const PASS_LEVEL_SHIFT: u32 = 8;
-    const PASS_LEVEL_MASK: u32 = 0x03 << Self::PASS_LEVEL_SHIFT;
-
-    const fn from_register_words(core0: u32, core1: u32) -> Self {
-        let combined = core0 | core1;
-        if combined == 0 {
+    const fn from_observation(
+        both_reset: bool,
+        destination_assigned: bool,
+        pass_level_configured: bool,
+    ) -> Self {
+        if both_reset {
             Self::ResetDetached
-        } else if combined & Self::MAP_MASK != 0 {
+        } else if destination_assigned {
             Self::DestinationAssigned
-        } else if combined & Self::PASS_LEVEL_MASK != 0 {
+        } else if pass_level_configured {
             Self::PassLevelConfigured
         } else {
             Self::UnclassifiedNonReset
@@ -1643,6 +1642,7 @@ impl Ieee802154StateSnapshot {
 #[doc(hidden)]
 pub struct Ieee802154RegisterLease<'registers> {
     registers: &'registers mut crate::svd::ieee802154_mac_ownership::TaskRegisters,
+    interrupt_route: &'registers crate::svd::Ieee802154InterruptRoute,
 }
 
 /// Exclusive task-side lease for the two reviewed MAC timers.
@@ -2186,8 +2186,13 @@ impl Ieee802154PolledRegisterLease<'_> {
     /// Classify both source-132 routes without exposing register images.
     #[doc(hidden)]
     pub fn interrupt_route_state(&self) -> Ieee802154RouteState {
-        let readback = self.task.registers.interrupt_route_readback();
-        Ieee802154RouteState::from_register_words(readback.core0_bits(), readback.core1_bits())
+        let core0 = self.task.interrupt_route.core0_route().read();
+        let core1 = self.task.interrupt_route.core1_route().read();
+        Ieee802154RouteState::from_observation(
+            core0.bits() == 0 && core1.bits() == 0,
+            core0.map().bits() != 0 || core1.map().bits() != 0,
+            core0.pass_level().bits() != 0 || core1.pass_level().bits() != 0,
+        )
     }
 
     #[cfg(feature = "validation-probes")]
@@ -2621,6 +2626,7 @@ impl Ieee802154TaskRegisters {
     pub fn ieee802154_register_lease(&mut self) -> Ieee802154RegisterLease<'_> {
         Ieee802154RegisterLease {
             registers: &mut self.peripherals.ieee802154_mac,
+            interrupt_route: &self.peripherals.ieee802154_interrupt_route,
         }
     }
 }

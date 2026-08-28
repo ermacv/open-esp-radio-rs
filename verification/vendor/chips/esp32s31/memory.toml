@@ -151,10 +151,42 @@ end-exclusive = 0x20200000
 permissions = "rw"
 
 [[regions]]
-name = "hp-system-before-radio-modem-control"
+name = "hp-system-before-ieee802154-core0-route"
 address-space = "cpu"
 kind = "mmio"
 start = 0x20500000
+end-exclusive = 0x20585210
+permissions = "rw"
+
+[[regions]]
+name = "ieee802154-core0-route"
+address-space = "cpu"
+kind = "mmio"
+start = 0x20585210
+end-exclusive = 0x20585214
+permissions = "rw"
+
+[[regions]]
+name = "hp-system-between-ieee802154-routes"
+address-space = "cpu"
+kind = "mmio"
+start = 0x20585214
+end-exclusive = 0x20585A10
+permissions = "rw"
+
+[[regions]]
+name = "ieee802154-core1-route"
+address-space = "cpu"
+kind = "mmio"
+start = 0x20585A10
+end-exclusive = 0x20585A14
+permissions = "rw"
+
+[[regions]]
+name = "hp-system-between-ieee802154-core1-route-and-radio-modem-control"
+address-space = "cpu"
+kind = "mmio"
+start = 0x20585A14
 end-exclusive = 0x20587040
 permissions = "rw"
 

@@ -3,20 +3,20 @@
 use super::{ProjectContext, executable_step, executable_steps, model};
 use crate::application::{
     ProjectContextRequirement,
-    revision::{self, RevisionLedgerHealth},
+    revision::{self, RevisionStateHealth},
 };
 
 pub(super) fn collect(context: &ProjectContext<'_>) -> model::Phase {
-    let inspection = revision::inspect_ledger(context.project_path, &context.project.id, false);
+    let inspection = revision::inspect_state(context.project_path, &context.project.id, false);
     let status = match inspection.health {
-        RevisionLedgerHealth::Ready => model::Readiness::Ready,
-        RevisionLedgerHealth::Missing
-        | RevisionLedgerHealth::BaselineMissing
-        | RevisionLedgerHealth::RevisionReviewPending => model::Readiness::Incomplete,
-        RevisionLedgerHealth::Invalid => model::Readiness::Invalid,
+        RevisionStateHealth::Ready => model::Readiness::Ready,
+        RevisionStateHealth::Missing
+        | RevisionStateHealth::BaselineMissing
+        | RevisionStateHealth::RevisionReviewPending => model::Readiness::Incomplete,
+        RevisionStateHealth::Invalid => model::Readiness::Invalid,
     };
     let mut component = model::Component::new("durable-revision-baseline", status)
-        .detail("ledger", inspection.path)
+        .detail("state", inspection.path)
         .detail("revisions", inspection.revisions)
         .detail(
             "baseline",
@@ -29,15 +29,15 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> model::Phase {
         .detail("update-prepared", inspection.update_prepared);
     if let Some(diagnostic) = inspection.diagnostic {
         let next_step = match inspection.health {
-            RevisionLedgerHealth::RevisionReviewPending => executable_step(
+            RevisionStateHealth::RevisionReviewPending => executable_step(
                 context,
                 "review the revision diff/rebase, then accept the current revision",
                 ["project", "revision", "prepare-update", "--accept-current"],
                 ProjectContextRequirement::RunSpec,
             ),
-            RevisionLedgerHealth::Invalid => executable_step(
+            RevisionStateHealth::Invalid => executable_step(
                 context,
-                "replace the invalid revision ledger with a current snapshot",
+                "replace the invalid revision state with a current snapshot",
                 ["project", "revision", "snapshot", "CURRENT"],
                 ProjectContextRequirement::RunSpec,
             ),

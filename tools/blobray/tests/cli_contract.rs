@@ -655,7 +655,7 @@ fn project_doctor_json_is_one_complete_typed_report() {
 }
 
 #[test]
-fn obsolete_revision_state_is_a_hard_cutover_in_cli_status_and_doctor() {
+fn non_dsl_revision_state_is_a_hard_cutover_in_cli_status_and_doctor() {
     let help = run(&["project", "revision", "prepare-update", "--help"]);
     assert!(help.status.success());
     assert!(!String::from_utf8_lossy(&help.stdout).contains("migrate-legacy-scope"));
@@ -671,9 +671,9 @@ fn obsolete_revision_state_is_a_hard_cutover_in_cli_status_and_doctor() {
     assert!(String::from_utf8_lossy(&removed.stderr).contains("unexpected argument"));
 
     let (directory, manifest) = init_temporary_project("revision-cutover");
-    let ledger = directory.join("revisions/ledger.toml");
-    std::fs::create_dir_all(ledger.parent().unwrap()).unwrap();
-    std::fs::write(&ledger, "schema = 1\nproject = \"revision-cutover\"\n").unwrap();
+    let state = directory.join("revisions/state.blobray");
+    std::fs::create_dir_all(state.parent().unwrap()).unwrap();
+    std::fs::write(&state, "schema = 1\nproject = \"revision-cutover\"\n").unwrap();
 
     let status = run_project_command(&manifest, &["project", "status"]);
     assert!(!status.status.success());
@@ -2895,9 +2895,9 @@ fn revision_diff_is_a_typed_project_workflow() {
 }
 
 #[test]
-fn revision_snapshot_creates_a_durable_immutable_ledger() {
+fn revision_snapshot_creates_a_durable_immutable_state() {
     let directory = std::env::temp_dir().join(format!(
-        "blobray-cli-contract-revision-ledger-{}",
+        "blobray-cli-contract-revision-state-{}",
         std::process::id()
     ));
     if directory.exists() {
@@ -2909,7 +2909,7 @@ fn revision_snapshot_creates_a_durable_immutable_ledger() {
     std::fs::write(
         &manifest,
         format!(
-            "schema = 4\nid = \"revision-ledger\"\ntarget-spec = {:?}\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir\"\n",
+            "schema = 4\nid = \"revision-state\"\ntarget-spec = {:?}\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir\"\n",
             target.display().to_string()
         ),
     )
@@ -2967,18 +2967,19 @@ fn revision_snapshot_creates_a_durable_immutable_ledger() {
     assert_eq!(document["command"], "revision snapshot");
     assert_eq!(document["status"], "written");
     assert_eq!(document["artifact_bindings_verified"], 1);
-    assert!(directory.join("revisions/ledger.toml").is_file());
+    assert!(directory.join("revisions/state.blobray").is_file());
     assert!(
         directory
             .join("revisions/snapshots/vendor-1.json.gz")
             .is_file()
     );
-    let ledger = std::fs::read_to_string(directory.join("revisions/ledger.toml")).unwrap();
-    assert!(ledger.contains("schema = 4"));
-    assert!(ledger.contains("baseline = \"vendor-1\""));
-    assert!(ledger.contains("current = \"vendor-1\""));
-    assert!(ledger.contains("snapshot-sha256"));
-    assert!(!ledger.contains("disassembly"));
+    let state = std::fs::read_to_string(directory.join("revisions/state.blobray")).unwrap();
+    assert!(state.starts_with("blobray-revision-state 1\n"));
+    assert!(state.contains("project [\"revision-state\"]\n"));
+    assert!(state.contains("baseline [\"vendor-1\"]\n"));
+    assert!(state.contains("current [\"vendor-1\"]\n"));
+    assert!(state.contains("revision [\"vendor-1\",\"snapshots/vendor-1.json.gz\","));
+    assert!(!state.contains("disassembly"));
 
     let checked = run_project_command(
         &manifest,
@@ -2989,7 +2990,7 @@ fn revision_snapshot_creates_a_durable_immutable_ledger() {
         "stderr: {}",
         String::from_utf8_lossy(&checked.stderr)
     );
-    let ledger_before_live_diff = std::fs::read(directory.join("revisions/ledger.toml")).unwrap();
+    let state_before_live_diff = std::fs::read(directory.join("revisions/state.blobray")).unwrap();
     let live_diff = run_project_command(
         &manifest,
         &["project", "revision", "diff", "vendor-1", "@live"],
@@ -3006,9 +3007,9 @@ fn revision_snapshot_creates_a_durable_immutable_ledger() {
     assert_eq!(live_diff["artifacts_changed"], false);
     assert!(live_diff["changes"].as_array().unwrap().is_empty());
     assert_eq!(
-        std::fs::read(directory.join("revisions/ledger.toml")).unwrap(),
-        ledger_before_live_diff,
-        "a live diff must not advance or rewrite the revision ledger"
+        std::fs::read(directory.join("revisions/state.blobray")).unwrap(),
+        state_before_live_diff,
+        "a live diff must not advance or rewrite the revision state"
     );
     let prepared = run_project_command(&manifest, &["project", "revision", "prepare-update"]);
     assert!(

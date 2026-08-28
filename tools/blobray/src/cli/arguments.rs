@@ -147,7 +147,7 @@ pub(crate) struct ProjectCheckArgs {
 
 #[derive(Clone, Debug, Args)]
 pub(crate) struct RevisionSnapshotArgs {
-    /// Stable revision name used by the durable snapshot ledger.
+    /// Stable revision name used by the durable snapshot state.
     #[arg(value_name = "NAME")]
     pub(crate) name: String,
     /// Snapshot path below revisions/; defaults to revisions/snapshots/NAME.json.gz.
@@ -196,7 +196,7 @@ pub(crate) struct RevisionPrepareUpdateArgs {
     /// baseline for the next vendor update.
     #[arg(long)]
     pub(crate) accept_current: bool,
-    /// Verify an existing preflight marker without changing the ledger.
+    /// Verify an existing preflight marker without changing the state.
     #[arg(long)]
     pub(crate) check: bool,
 }

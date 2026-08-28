@@ -132,14 +132,15 @@ provenance, never executable semantics.
   vendor-derived features, never vendor payloads, disassembly, or local Rust
   verification ELF identities. They also bind every reviewed record to the
   full authenticated ecosystem/chip/revision/lineage/artifact context;
-- `revisions/ledger.toml` is the tracked schema-4 index for those snapshots.
-  It stores only project/revision names, relative snapshot locations, SHA-256
-  identities, `baseline`/`current` pointers and an optional update-preflight
-  marker. `snapshot-sha256` identifies normalized logical snapshot content,
-  not the encoded `.json.gz` bytes; gzip is a replaceable storage codec.
+- `revisions/state.blobray` is the tracked custom revision-state DSL. Its first
+  line is `blobray-revision-state 1`; the remaining typed directives store only
+  project/revision names, relative snapshot locations, SHA-256 identities,
+  `baseline`/`current` pointers and an optional update-preflight marker.
+  `snapshot-sha256` identifies normalized logical snapshot content, not the
+  encoded `.json.gz` bytes; gzip is a replaceable storage codec.
 
 Snapshots are tool-written correspondence maps rather than manually reviewed
-facts. Unlike ordinary generated output, they and their ledger must survive a
+facts. Unlike ordinary generated output, they and their state must survive a
 vendor update; commit them or place them in equivalent durable,
 access-controlled storage. Snapshot names are immutable.
 
@@ -148,9 +149,9 @@ companions that affected each generated bundle. Revision capture compares all
 three dependency classes with the current typed run-spec and rejects stale
 generated evidence.
 
-Only schema-4 snapshots and ledgers are accepted. Older state and migration
-maps are not parsed or upgraded. Archive or remove an older ledger and capture
-a fresh schema-4 baseline from the live typed vendor bindings.
+Only schema-4 snapshots and revision-state DSL version 1 are accepted. TOML,
+older state and migration maps are not parsed or upgraded. Remove invalid
+state and capture a fresh baseline from the live typed vendor bindings.
 
 ## Generated outputs
 

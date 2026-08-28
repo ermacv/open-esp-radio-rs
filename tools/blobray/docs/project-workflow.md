@@ -293,7 +293,7 @@ Capture an immutable snapshot and run the preflight **before** replacing
 caller-owned artifacts. The preflight hashes the live bindings, verifies them
 against the current immutable snapshot and records that the old baseline is
 safe. After replacement, run normal analysis, capture the new revision and
-compare the ledger's adjacent `baseline` and `current` entries:
+compare the state's adjacent `baseline` and `current` entries:
 
 ```console
 cargo blobray project revision snapshot vendor-2026-05 --project path/to/vendor-project.toml
@@ -310,17 +310,19 @@ cargo blobray project revision snapshot vendor-2026-08 --project path/to/vendor-
 
 `@live` is a read-only revision operand. It builds and validates the same
 projection as `revision snapshot`, including current artifact identities and
-generated evidence, but does not write a snapshot or advance the ledger. This
+generated evidence, but does not write a snapshot or advance the state. This
 lets a named, durable baseline be compared with newly analyzed bindings before
 they are published. The diff has an explicit function delta and typed research
 invalidation areas (including affected reviewed records); the rebase plan says
 which reviewed facts remain exact, remap uniquely, or require review.
 
 Snapshots default to deterministic `revisions/snapshots/NAME.json.gz`; the small
-`revisions/ledger.toml` is updated atomically with the snapshot location,
-logical-content SHA-256, artifact-set SHA-256 and explicit `baseline`/`current`
-pointers. The logical digest is independent of the replaceable gzip storage
-codec. Both paths are outside disposable `generated/` state and should be
+`revisions/state.blobray` is a tool-written custom DSL whose
+`blobray-revision-state 1` header is followed by typed directives. It is
+updated atomically with the snapshot location, logical-content SHA-256,
+artifact-set SHA-256 and explicit `baseline`/`current` pointers. The logical
+digest is independent of the replaceable gzip storage codec. Both paths are
+outside disposable `generated/` state and should be
 committed or backed by equivalent durable, access-controlled storage. `project
 status` and `project doctor` warn when no baseline exists; deep doctor also
 checks immutable snapshot digests and reports current binding drift.
@@ -345,9 +347,10 @@ unless its predecessor has a matching marker, so cleanup or an accidental
 binding edit cannot silently erase the old correspondence map.
 While `baseline` and `current` differ, `project status` and deep doctor report
 `revision-review-pending` instead of `ready`; a captured snapshot is not an
-accepted review decision. Blobray accepts only schema-4 snapshots and ledgers.
-Older state is not migrated or interpreted: archive or remove it, then capture
-a fresh current snapshot from the live typed vendor bindings.
+accepted review decision. Blobray accepts only schema-4 snapshots and
+revision-state DSL version 1. TOML and older state are not migrated or
+interpreted: remove invalid state, then capture a fresh current snapshot from
+the live typed vendor bindings.
 
 `source-artifact:*` may identify a locally linked analysis container around
 vendor objects. It is still part of exact analysis provenance: rebuilding or

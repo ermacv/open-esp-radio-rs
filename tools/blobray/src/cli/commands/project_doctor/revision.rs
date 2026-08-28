@@ -1,12 +1,12 @@
-//! Durable revision ledger integrity and current-binding diagnostics.
+//! Durable revision state integrity and current-binding diagnostics.
 
 use crate::application::{ProjectContext, revision};
 
 use super::model::{CapabilityReport, DoctorReport};
 
 pub(super) fn collect(context: &ProjectContext<'_>, report: &mut DoctorReport) {
-    let inspection = revision::inspect_ledger(context.project_path, &context.project.id, true);
-    use revision::RevisionLedgerHealth as Health;
+    let inspection = revision::inspect_state(context.project_path, &context.project.id, true);
+    use revision::RevisionStateHealth as Health;
     match inspection.health {
         Health::Missing | Health::BaselineMissing => {
             report.warning(
@@ -17,7 +17,7 @@ pub(super) fn collect(context: &ProjectContext<'_>, report: &mut DoctorReport) {
             );
             report.capability(
                 CapabilityReport::new("revision-workflow", "baseline-missing")
-                    .field("ledger", inspection.path)
+                    .field("state", inspection.path)
                     .field("revisions", inspection.revisions)
                     .field(
                         "baseline",
@@ -38,7 +38,7 @@ pub(super) fn collect(context: &ProjectContext<'_>, report: &mut DoctorReport) {
             );
             report.capability(
                 CapabilityReport::new("revision-workflow", "revision-review-pending")
-                    .field("ledger", inspection.path)
+                    .field("state", inspection.path)
                     .field("revisions", inspection.revisions)
                     .field(
                         "baseline",
@@ -54,22 +54,22 @@ pub(super) fn collect(context: &ProjectContext<'_>, report: &mut DoctorReport) {
             report.error();
             report.capability(
                 CapabilityReport::new("revision-workflow", "invalid")
-                    .field("ledger", inspection.path)
+                    .field("state", inspection.path)
                     .field(
                         "error",
                         inspection
                             .diagnostic
-                            .unwrap_or_else(|| "invalid revision ledger".to_owned()),
+                            .unwrap_or_else(|| "invalid revision state".to_owned()),
                     ),
             );
         }
         Health::Ready => {
             let binding_status = if context.run_spec.is_some() {
-                match revision::verify_ledger_bindings_from_context(context) {
+                match revision::verify_state_bindings_from_context(context) {
                     Ok(verified) => ("available", verified, None),
                     Err(error) => {
                         report.warning(format!(
-                            "current artifact bindings differ from the revision ledger: {error}"
+                            "current artifact bindings differ from the revision state: {error}"
                         ));
                         ("binding-drift", 0, Some(error.to_string()))
                     }
@@ -78,7 +78,7 @@ pub(super) fn collect(context: &ProjectContext<'_>, report: &mut DoctorReport) {
                 ("available", 0, None)
             };
             let mut capability = CapabilityReport::new("revision-workflow", binding_status.0)
-                .field("ledger", inspection.path)
+                .field("state", inspection.path)
                 .field("revisions", inspection.revisions)
                 .field(
                     "baseline",

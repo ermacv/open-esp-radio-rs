@@ -26,16 +26,16 @@ use crate::{
 };
 
 pub(crate) const REVISION_SCHEMA: u32 = 4;
-pub(crate) const REVISION_LEDGER_SCHEMA: u32 = 4;
 pub(crate) const REVISION_DIFF_REPORT_SCHEMA: u32 = 2;
 pub(crate) const REVISION_REBASE_REPORT_SCHEMA: u32 = 2;
 pub(crate) const REVISION_PREPARE_UPDATE_REPORT_SCHEMA: u32 = 2;
 pub(crate) const REVISION_SNAPSHOT_REPORT_SCHEMA: u32 = 2;
 pub(crate) const LIVE_REVISION_SELECTOR: &str = "@live";
 
-const REVISION_CUTOVER_INSTRUCTION: &str = "archive or remove revisions/ledger.toml and create a new current state with `project revision snapshot CURRENT`";
+const REVISION_STATE_HEADER: &str = "blobray-revision-state 1";
+const REVISION_CUTOVER_INSTRUCTION: &str = "remove revisions/state.blobray and create a new current state with `project revision snapshot CURRENT`";
 
-static LEDGER_STAGE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+static STATE_STAGE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -280,40 +280,27 @@ pub(crate) struct RevisionRebaseReport {
 
 /// Small, reviewable index for immutable revision snapshots.
 ///
-/// The ledger contains content identities and relative locations only. Vendor
+/// The state contains content identities and relative locations only. Vendor
 /// bytes, decoded instructions and analysis payloads remain in the snapshot or
 /// in caller-owned artifact storage.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields, rename_all = "kebab-case")]
-pub(crate) struct RevisionLedger {
-    pub(crate) schema: u32,
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct RevisionState {
     pub(crate) project: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) baseline: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) current: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) prepared_update: Option<PreparedRevisionUpdate>,
-    #[serde(default, rename = "revisions")]
-    pub(crate) entries: Vec<RevisionLedgerEntry>,
+    pub(crate) entries: Vec<RevisionStateEntry>,
 }
 
-#[derive(Deserialize)]
-struct RevisionLedgerEnvelope {
-    schema: u32,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields, rename_all = "kebab-case")]
-pub(crate) struct RevisionLedgerEntry {
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct RevisionStateEntry {
     pub(crate) name: String,
     pub(crate) snapshot: String,
     pub(crate) snapshot_sha256: String,
     pub(crate) artifacts_sha256: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreparedRevisionUpdate {
     pub(crate) from: String,
     pub(crate) snapshot_sha256: String,
@@ -322,7 +309,7 @@ pub(crate) struct PreparedRevisionUpdate {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum RevisionLedgerHealth {
+pub(crate) enum RevisionStateHealth {
     Missing,
     BaselineMissing,
     RevisionReviewPending,
@@ -332,9 +319,9 @@ pub(crate) enum RevisionLedgerHealth {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct RevisionLedgerInspection {
+pub(crate) struct RevisionStateInspection {
     pub(crate) path: String,
-    pub(crate) health: RevisionLedgerHealth,
+    pub(crate) health: RevisionStateHealth,
     pub(crate) baseline: Option<String>,
     pub(crate) current: Option<String>,
     pub(crate) revisions: usize,
@@ -348,7 +335,7 @@ pub(crate) struct RevisionPrepareUpdateReport {
     pub(crate) schema_version: u32,
     pub(crate) command: String,
     pub(crate) status: String,
-    pub(crate) ledger: String,
+    pub(crate) state: String,
     pub(crate) baseline: String,
     pub(crate) current: String,
     pub(crate) snapshot_sha256: String,
@@ -365,11 +352,11 @@ pub(crate) fn default_path(manifest: &Path, name: &str) -> Result<PathBuf> {
         .join(format!("{name}.json.gz")))
 }
 
-pub(crate) fn ledger_path(manifest: &Path) -> PathBuf {
+pub(crate) fn state_path(manifest: &Path) -> PathBuf {
     manifest
         .parent()
         .unwrap_or_else(|| Path::new("."))
-        .join("revisions/ledger.toml")
+        .join("revisions/state.blobray")
 }
 
 pub(crate) fn resolve_path(manifest: &Path, value: &str) -> Result<PathBuf> {
@@ -387,8 +374,8 @@ pub(crate) fn resolve_path(manifest: &Path, value: &str) -> Result<PathBuf> {
                 .join(candidate)
         });
     }
-    if let Some(ledger) = load_ledger_optional(manifest, None)?
-        && let Some(entry) = ledger.entries.iter().find(|entry| entry.name == value)
+    if let Some(state) = load_state_optional(manifest, None)?
+        && let Some(entry) = state.entries.iter().find(|entry| entry.name == value)
     {
         return snapshot_path(manifest, &entry.snapshot);
     }
@@ -397,7 +384,7 @@ pub(crate) fn resolve_path(manifest: &Path, value: &str) -> Result<PathBuf> {
 
 /// Load an immutable named snapshot or build a read-only snapshot from the
 /// currently analyzed vendor bindings. The live projection is never persisted
-/// and therefore cannot advance the durable ledger before review.
+/// and therefore cannot advance the durable state before review.
 pub(crate) fn load_operand(session: &ProjectSession, value: &str) -> Result<RevisionSnapshot> {
     if value == LIVE_REVISION_SELECTOR {
         let mut snapshot = snapshot(session, "live-analysis")?;
@@ -451,9 +438,9 @@ pub(crate) fn load(path: &Path) -> Result<RevisionSnapshot> {
 
 /// Persist one immutable snapshot and advance the durable revision pointers.
 ///
-/// The snapshot is atomically published before the ledger. On Unix both file
+/// The snapshot is atomically published before the state. On Unix both file
 /// and parent-directory metadata are synced in that order, so a crash can
-/// leave an unreferenced immutable snapshot but not a durable ledger entry for
+/// leave an unreferenced immutable snapshot but not a durable state entry for
 /// missing or partially written bytes. Other platforms retain atomic rename
 /// and file-sync guarantees where `std` cannot open a directory for syncing.
 pub(crate) fn persist_snapshot(
@@ -470,48 +457,45 @@ pub(crate) fn persist_snapshot(
     // leaving every reviewed fact unchanged.
     let snapshot_sha256 = logical_snapshot_sha256(snapshot)?;
     let artifacts_sha256 = artifacts_sha256(&snapshot.artifacts)?;
-    let entry = RevisionLedgerEntry {
+    let entry = RevisionStateEntry {
         name: snapshot.name.clone(),
         snapshot: location,
         snapshot_sha256,
         artifacts_sha256,
     };
 
-    let mut ledger =
-        load_ledger_optional(manifest, Some(&snapshot.project))?.unwrap_or_else(|| {
-            RevisionLedger {
-                schema: REVISION_LEDGER_SCHEMA,
-                project: snapshot.project.clone(),
-                baseline: None,
-                current: None,
-                prepared_update: None,
-                entries: Vec::new(),
-            }
+    let mut state =
+        load_state_optional(manifest, Some(&snapshot.project))?.unwrap_or_else(|| RevisionState {
+            project: snapshot.project.clone(),
+            baseline: None,
+            current: None,
+            prepared_update: None,
+            entries: Vec::new(),
         });
     if check {
-        let stored = ledger
+        let stored = state
             .entries
             .iter()
             .find(|stored| stored.name == entry.name)
             .ok_or_else(|| {
                 crate::Error::invalid(format!(
-                    "revision ledger {} has no immutable entry {:?}",
-                    ledger_path(manifest).display(),
+                    "revision state {} has no immutable entry {:?}",
+                    state_path(manifest).display(),
                     entry.name
                 ))
             })?;
         if stored != &entry {
             return Err(crate::Error::invalid(format!(
-                "revision ledger entry {:?} differs from the requested snapshot; revision names are immutable",
+                "revision state entry {:?} differs from the requested snapshot; revision names are immutable",
                 entry.name
             )));
         }
         write_snapshot_or_check(&path, snapshot, true)?;
-        verify_ledger_entry(manifest, &ledger, stored)?;
+        verify_state_entry(manifest, &state, stored)?;
         return Ok(());
     }
 
-    if let Some(stored) = ledger
+    if let Some(stored) = state
         .entries
         .iter()
         .find(|stored| stored.name == entry.name)
@@ -523,15 +507,15 @@ pub(crate) fn persist_snapshot(
             )));
         }
         write_snapshot_or_check(&path, snapshot, false)?;
-        verify_ledger_entry(manifest, &ledger, stored)?;
+        verify_state_entry(manifest, &state, stored)?;
         return Ok(());
     }
 
-    if let Some(current) = ledger.current.as_deref() {
-        let previous = ledger_entry(&ledger, current)?;
-        verify_ledger_entry(manifest, &ledger, previous)?;
+    if let Some(current) = state.current.as_deref() {
+        let previous = state_entry(&state, current)?;
+        verify_state_entry(manifest, &state, previous)?;
         if previous.artifacts_sha256 != entry.artifacts_sha256 {
-            let prepared = ledger.prepared_update.as_ref().ok_or_else(|| {
+            let prepared = state.prepared_update.as_ref().ok_or_else(|| {
                 crate::Error::invalid(format!(
                     "artifact bindings changed since revision {current:?} without a recorded preflight; restore the old bindings and run `project revision prepare-update` before replacing them"
                 ))
@@ -545,20 +529,20 @@ pub(crate) fn persist_snapshot(
                 ));
             }
         }
-        ledger.baseline = Some(current.to_owned());
+        state.baseline = Some(current.to_owned());
     } else {
-        ledger.baseline = Some(entry.name.clone());
+        state.baseline = Some(entry.name.clone());
     }
-    ledger.current = Some(entry.name.clone());
-    ledger.prepared_update = None;
-    ledger.entries.push(entry);
-    ledger
+    state.current = Some(entry.name.clone());
+    state.prepared_update = None;
+    state.entries.push(entry);
+    state
         .entries
         .sort_by(|left, right| left.name.cmp(&right.name));
-    validate_ledger(&ledger, Some(&snapshot.project))?;
+    validate_state(&state, Some(&snapshot.project))?;
 
     write_snapshot_or_check(&path, snapshot, false)?;
-    write_ledger_atomic(manifest, &ledger)?;
+    write_state_atomic(manifest, &state)?;
     Ok(())
 }
 
@@ -598,30 +582,30 @@ fn prepare_update_with_bindings(
     accept_current: bool,
     check: bool,
 ) -> Result<RevisionPrepareUpdateReport> {
-    let mut ledger = load_ledger_optional(manifest, Some(project))?
+    let mut state = load_state_optional(manifest, Some(project))?
         .ok_or_else(|| {
             crate::Error::invalid(format!(
-                "durable revision ledger is missing at {}; run `project revision snapshot BASELINE` before replacing artifact bindings",
-                ledger_path(manifest).display()
+                "durable revision state is missing at {}; run `project revision snapshot BASELINE` before replacing artifact bindings",
+                state_path(manifest).display()
             ))
         })?;
-    validate_ledger_files(manifest, &ledger)?;
-    let current = ledger.current.clone().ok_or_else(|| {
+    validate_state_files(manifest, &state)?;
+    let current = state.current.clone().ok_or_else(|| {
         crate::Error::invalid(
-            "revision ledger has no current revision; snapshot the current vendor inputs first",
+            "revision state has no current revision; snapshot the current vendor inputs first",
         )
     })?;
-    let baseline = ledger.baseline.clone().ok_or_else(|| {
+    let baseline = state.baseline.clone().ok_or_else(|| {
         crate::Error::invalid(
-            "revision ledger has no baseline; snapshot the current vendor inputs first",
+            "revision state has no baseline; snapshot the current vendor inputs first",
         )
     })?;
     if baseline != current && !accept_current {
         return Err(crate::Error::invalid(format!(
-            "revision {current:?} has not been accepted as the next baseline (ledger baseline is {baseline:?}); finish diff/rebase review, then rerun with --accept-current"
+            "revision {current:?} has not been accepted as the next baseline (state baseline is {baseline:?}); finish diff/rebase review, then rerun with --accept-current"
         )));
     }
-    let entry = ledger_entry(&ledger, &current)?.clone();
+    let entry = state_entry(&state, &current)?.clone();
     let snapshot = load(&snapshot_path(manifest, &entry.snapshot)?)?;
     let verified = verify_current_artifact_bindings(run_spec, &snapshot)?;
     let prepared = PreparedRevisionUpdate {
@@ -630,33 +614,33 @@ fn prepare_update_with_bindings(
         artifacts_sha256: entry.artifacts_sha256.clone(),
     };
     if check {
-        if accept_current && ledger.baseline.as_deref() != Some(current.as_str()) {
+        if accept_current && state.baseline.as_deref() != Some(current.as_str()) {
             return Err(crate::Error::invalid(format!(
                 "revision {current:?} has not been accepted in {}; rerun without --check",
-                ledger_path(manifest).display()
+                state_path(manifest).display()
             )));
         }
-        if ledger.prepared_update.as_ref() != Some(&prepared)
-            || ledger.baseline.as_deref() != Some(current.as_str())
+        if state.prepared_update.as_ref() != Some(&prepared)
+            || state.baseline.as_deref() != Some(current.as_str())
         {
             return Err(crate::Error::invalid(format!(
                 "revision update is not prepared in {}; rerun without --check after completing review",
-                ledger_path(manifest).display()
+                state_path(manifest).display()
             )));
         }
     } else {
         if accept_current {
-            ledger.baseline = Some(current.clone());
+            state.baseline = Some(current.clone());
         }
-        ledger.prepared_update = Some(prepared);
-        write_ledger_atomic(manifest, &ledger)?;
+        state.prepared_update = Some(prepared);
+        write_state_atomic(manifest, &state)?;
     }
     Ok(RevisionPrepareUpdateReport {
         schema_version: REVISION_PREPARE_UPDATE_REPORT_SCHEMA,
         command: "revision prepare-update".to_owned(),
         status: if check { "verified" } else { "prepared" }.to_owned(),
-        ledger: ledger_path(manifest).display().to_string(),
-        baseline: ledger
+        state: state_path(manifest).display().to_string(),
+        baseline: state
             .baseline
             .clone()
             .expect("baseline established before report"),
@@ -667,17 +651,13 @@ fn prepare_update_with_bindings(
     })
 }
 
-pub(crate) fn inspect_ledger(
-    manifest: &Path,
-    project: &str,
-    deep: bool,
-) -> RevisionLedgerInspection {
-    let path = ledger_path(manifest);
-    let result = (|| -> Result<RevisionLedgerInspection> {
-        let Some(ledger) = load_ledger_optional(manifest, Some(project))? else {
-            return Ok(RevisionLedgerInspection {
+pub(crate) fn inspect_state(manifest: &Path, project: &str, deep: bool) -> RevisionStateInspection {
+    let path = state_path(manifest);
+    let result = (|| -> Result<RevisionStateInspection> {
+        let Some(state) = load_state_optional(manifest, Some(project))? else {
+            return Ok(RevisionStateInspection {
                 path: path.display().to_string(),
-                health: RevisionLedgerHealth::Missing,
+                health: RevisionStateHealth::Missing,
                 baseline: None,
                 current: None,
                 revisions: 0,
@@ -688,48 +668,48 @@ pub(crate) fn inspect_ledger(
                 ),
             });
         };
-        let health = if ledger.baseline.is_none() || ledger.current.is_none() {
-            RevisionLedgerHealth::BaselineMissing
+        let health = if state.baseline.is_none() || state.current.is_none() {
+            RevisionStateHealth::BaselineMissing
         } else {
             if deep {
-                validate_ledger_files(manifest, &ledger)?;
+                validate_state_files(manifest, &state)?;
             }
-            let current = ledger
+            let current = state
                 .current
                 .as_deref()
                 .expect("current checked before snapshot scope inspection");
-            let entry = ledger_entry(&ledger, current)?;
+            let entry = state_entry(&state, current)?;
             load(&snapshot_path(manifest, &entry.snapshot)?)?;
-            if ledger.baseline.as_deref() != Some(current) {
-                RevisionLedgerHealth::RevisionReviewPending
+            if state.baseline.as_deref() != Some(current) {
+                RevisionStateHealth::RevisionReviewPending
             } else {
-                RevisionLedgerHealth::Ready
+                RevisionStateHealth::Ready
             }
         };
         let diagnostic = match health {
-            RevisionLedgerHealth::BaselineMissing => Some(
-                "revision ledger has no baseline/current snapshot; run `project revision snapshot BASELINE` before replacing artifact bindings"
+            RevisionStateHealth::BaselineMissing => Some(
+                "revision state has no baseline/current snapshot; run `project revision snapshot BASELINE` before replacing artifact bindings"
                     .to_owned(),
             ),
-            RevisionLedgerHealth::RevisionReviewPending => Some(
+            RevisionStateHealth::RevisionReviewPending => Some(
                 "current revision has not been accepted as the new baseline; review the baseline/current diff and rebase, then run `project revision prepare-update --accept-current`"
                     .to_owned(),
             ),
             _ => None,
         };
-        Ok(RevisionLedgerInspection {
+        Ok(RevisionStateInspection {
             path: path.display().to_string(),
             health,
-            baseline: ledger.baseline.clone(),
-            current: ledger.current.clone(),
-            revisions: ledger.entries.len(),
-            update_prepared: ledger.prepared_update.is_some(),
+            baseline: state.baseline.clone(),
+            current: state.current.clone(),
+            revisions: state.entries.len(),
+            update_prepared: state.prepared_update.is_some(),
             diagnostic,
         })
     })();
-    result.unwrap_or_else(|error| RevisionLedgerInspection {
+    result.unwrap_or_else(|error| RevisionStateInspection {
         path: path.display().to_string(),
-        health: RevisionLedgerHealth::Invalid,
+        health: RevisionStateHealth::Invalid,
         baseline: None,
         current: None,
         revisions: 0,
@@ -738,14 +718,14 @@ pub(crate) fn inspect_ledger(
     })
 }
 
-pub(crate) fn verify_ledger_bindings_from_context(context: &ProjectContext<'_>) -> Result<usize> {
-    let ledger = load_ledger_optional(context.project_path, Some(&context.project.id))?
-        .ok_or_else(|| crate::Error::invalid("durable revision ledger is missing"))?;
-    let current = ledger
+pub(crate) fn verify_state_bindings_from_context(context: &ProjectContext<'_>) -> Result<usize> {
+    let state = load_state_optional(context.project_path, Some(&context.project.id))?
+        .ok_or_else(|| crate::Error::invalid("durable revision state is missing"))?;
+    let current = state
         .current
         .as_deref()
-        .ok_or_else(|| crate::Error::invalid("revision ledger has no current snapshot"))?;
-    let entry = ledger_entry(&ledger, current)?;
+        .ok_or_else(|| crate::Error::invalid("revision state has no current snapshot"))?;
+    let entry = state_entry(&state, current)?;
     let snapshot = load(&snapshot_path(context.project_path, &entry.snapshot)?)?;
     let run_spec = context
         .run_spec
@@ -753,57 +733,186 @@ pub(crate) fn verify_ledger_bindings_from_context(context: &ProjectContext<'_>) 
     verify_current_artifact_bindings(run_spec, &snapshot)
 }
 
-fn load_ledger_optional(
+fn load_state_optional(
     manifest: &Path,
     expected_project: Option<&str>,
-) -> Result<Option<RevisionLedger>> {
-    let path = ledger_path(manifest);
+) -> Result<Option<RevisionState>> {
+    let path = state_path(manifest);
     if !path.is_file() {
         return Ok(None);
     }
     let input = fs::read_to_string(&path)
-        .map_err(|error| crate::Error::read("revision ledger", &path, error))?;
-    let envelope: RevisionLedgerEnvelope = toml_edit::de::from_str(&input).map_err(|error| {
-        crate::Error::manifest_source("revision ledger", &path, &input, error, None)
-    })?;
-    if envelope.schema != REVISION_LEDGER_SCHEMA {
-        return Err(crate::Error::invalid(format!(
-            "revision ledger {} uses unsupported schema {}; {REVISION_CUTOVER_INSTRUCTION}",
-            path.display(),
-            envelope.schema
-        )));
-    }
-    let ledger: RevisionLedger = toml_edit::de::from_str(&input).map_err(|error| {
-        crate::Error::manifest_source("revision ledger", &path, &input, error, None)
-    })?;
-    validate_ledger(&ledger, expected_project)?;
-    Ok(Some(ledger))
+        .map_err(|error| crate::Error::read("revision state", &path, error))?;
+    let state = decode_revision_state(&path, &input)?;
+    validate_state(&state, expected_project)?;
+    Ok(Some(state))
 }
 
-fn validate_ledger(ledger: &RevisionLedger, expected_project: Option<&str>) -> Result<()> {
-    if ledger.schema != REVISION_LEDGER_SCHEMA {
+fn decode_revision_state(path: &Path, input: &str) -> Result<RevisionState> {
+    let mut lines = input.lines().enumerate();
+    let Some((_, header)) = lines.next() else {
         return Err(crate::Error::invalid(format!(
-            "revision ledger requires schema = {REVISION_LEDGER_SCHEMA}; {REVISION_CUTOVER_INSTRUCTION}"
+            "revision state {} is empty; {REVISION_CUTOVER_INSTRUCTION}",
+            path.display()
+        )));
+    };
+    if header != REVISION_STATE_HEADER {
+        return Err(crate::Error::invalid(format!(
+            "revision state {} must start with {REVISION_STATE_HEADER:?}; {REVISION_CUTOVER_INSTRUCTION}",
+            path.display()
         )));
     }
-    if ledger.project.is_empty() {
-        return Err(crate::Error::invalid(
-            "revision ledger requires a non-empty project identity",
+
+    let mut project = None;
+    let mut baseline = None;
+    let mut current = None;
+    let mut prepared_update = None;
+    let mut entries = Vec::new();
+    for (line_index, line) in lines {
+        if line.is_empty() {
+            continue;
+        }
+        let Some((directive, arguments)) = line.split_once(char::is_whitespace) else {
+            return Err(revision_state_line_error(
+                path,
+                line_index,
+                "a directive followed by a JSON string array",
+            ));
+        };
+        let arguments = arguments.trim_start();
+        let values: Vec<String> = serde_json::from_str(arguments).map_err(|error| {
+            revision_state_line_error(
+                path,
+                line_index,
+                &format!("a JSON string array after {directive:?}: {error}"),
+            )
+        })?;
+        match directive {
+            "project" => {
+                require_revision_state_arity(path, line_index, directive, &values, 1)?;
+                if project.replace(values[0].clone()).is_some() {
+                    return Err(revision_state_line_error(
+                        path,
+                        line_index,
+                        "exactly one project directive",
+                    ));
+                }
+            }
+            "baseline" => {
+                require_revision_state_arity(path, line_index, directive, &values, 1)?;
+                if baseline.replace(values[0].clone()).is_some() {
+                    return Err(revision_state_line_error(
+                        path,
+                        line_index,
+                        "at most one baseline directive",
+                    ));
+                }
+            }
+            "current" => {
+                require_revision_state_arity(path, line_index, directive, &values, 1)?;
+                if current.replace(values[0].clone()).is_some() {
+                    return Err(revision_state_line_error(
+                        path,
+                        line_index,
+                        "at most one current directive",
+                    ));
+                }
+            }
+            "revision" => {
+                require_revision_state_arity(path, line_index, directive, &values, 4)?;
+                entries.push(RevisionStateEntry {
+                    name: values[0].clone(),
+                    snapshot: values[1].clone(),
+                    snapshot_sha256: values[2].clone(),
+                    artifacts_sha256: values[3].clone(),
+                });
+            }
+            "prepared-update" => {
+                require_revision_state_arity(path, line_index, directive, &values, 3)?;
+                let prepared = PreparedRevisionUpdate {
+                    from: values[0].clone(),
+                    snapshot_sha256: values[1].clone(),
+                    artifacts_sha256: values[2].clone(),
+                };
+                if prepared_update.replace(prepared).is_some() {
+                    return Err(revision_state_line_error(
+                        path,
+                        line_index,
+                        "at most one prepared-update directive",
+                    ));
+                }
+            }
+            _ => {
+                return Err(revision_state_line_error(
+                    path,
+                    line_index,
+                    &format!("a known revision-state directive, not {directive:?}"),
+                ));
+            }
+        }
+    }
+    let project = project.ok_or_else(|| {
+        crate::Error::invalid(format!(
+            "revision state {} has no project directive",
+            path.display()
+        ))
+    })?;
+    Ok(RevisionState {
+        project,
+        baseline,
+        current,
+        prepared_update,
+        entries,
+    })
+}
+
+fn require_revision_state_arity(
+    path: &Path,
+    line_index: usize,
+    directive: &str,
+    values: &[String],
+    expected: usize,
+) -> Result<()> {
+    if values.len() != expected {
+        return Err(revision_state_line_error(
+            path,
+            line_index,
+            &format!(
+                "{directive:?} with {expected} string arguments, got {}",
+                values.len()
+            ),
         ));
     }
-    if expected_project.is_some_and(|project| project != ledger.project) {
+    Ok(())
+}
+
+fn revision_state_line_error(path: &Path, line_index: usize, expected: &str) -> crate::Error {
+    crate::Error::invalid(format!(
+        "revision state {} line {} requires {expected}",
+        path.display(),
+        line_index + 1
+    ))
+}
+
+fn validate_state(state: &RevisionState, expected_project: Option<&str>) -> Result<()> {
+    if state.project.is_empty() {
+        return Err(crate::Error::invalid(
+            "revision state requires a non-empty project identity",
+        ));
+    }
+    if expected_project.is_some_and(|project| project != state.project) {
         return Err(crate::Error::invalid(format!(
-            "revision ledger project {:?} does not match project {:?}",
-            ledger.project,
+            "revision state project {:?} does not match project {:?}",
+            state.project,
             expected_project.unwrap_or_default()
         )));
     }
     let mut names = BTreeSet::new();
-    for entry in &ledger.entries {
+    for entry in &state.entries {
         validate_revision_name(&entry.name)?;
         if !names.insert(entry.name.as_str()) {
             return Err(crate::Error::invalid(format!(
-                "revision ledger contains duplicate revision {:?}",
+                "revision state contains duplicate revision {:?}",
                 entry.name
             )));
         }
@@ -811,77 +920,86 @@ fn validate_ledger(ledger: &RevisionLedger, expected_project: Option<&str>) -> R
         validate_sha256("snapshot-sha256", &entry.snapshot_sha256)?;
         validate_sha256("artifacts-sha256", &entry.artifacts_sha256)?;
     }
+    if !state
+        .entries
+        .windows(2)
+        .all(|pair| pair[0].name < pair[1].name)
+    {
+        return Err(crate::Error::invalid(
+            "revision state entries must be sorted by unique revision name",
+        ));
+    }
     for (label, name) in [
-        ("baseline", ledger.baseline.as_deref()),
-        ("current", ledger.current.as_deref()),
+        ("baseline", state.baseline.as_deref()),
+        ("current", state.current.as_deref()),
     ] {
         if let Some(name) = name
             && !names.contains(name)
         {
             return Err(crate::Error::invalid(format!(
-                "revision ledger {label} {name:?} does not name an immutable revision entry"
+                "revision state {label} {name:?} does not name an immutable revision entry"
             )));
         }
     }
-    if ledger.baseline.is_some() != ledger.current.is_some() {
+    if state.baseline.is_some() != state.current.is_some() {
         return Err(crate::Error::invalid(
-            "revision ledger baseline and current must either both be set or both be absent",
+            "revision state baseline and current must either both be set or both be absent",
         ));
     }
-    if let Some(prepared) = &ledger.prepared_update {
+    if let Some(prepared) = &state.prepared_update {
         validate_sha256("prepared-update.snapshot-sha256", &prepared.snapshot_sha256)?;
         validate_sha256(
             "prepared-update.artifacts-sha256",
             &prepared.artifacts_sha256,
         )?;
-        if ledger.current.as_deref() != Some(prepared.from.as_str()) {
+        if state.current.as_deref() != Some(prepared.from.as_str()) {
             return Err(crate::Error::invalid(
-                "revision ledger prepared-update must identify the current revision",
+                "revision state prepared-update must identify the current revision",
             ));
         }
-        let entry = ledger_entry(ledger, &prepared.from)?;
+        let entry = state_entry(state, &prepared.from)?;
         if prepared.snapshot_sha256 != entry.snapshot_sha256
             || prepared.artifacts_sha256 != entry.artifacts_sha256
         {
             return Err(crate::Error::invalid(
-                "revision ledger prepared-update digests do not match the current immutable revision",
+                "revision state prepared-update digests do not match the current immutable revision",
             ));
         }
     }
     Ok(())
 }
 
-fn validate_ledger_files(manifest: &Path, ledger: &RevisionLedger) -> Result<()> {
-    for entry in &ledger.entries {
-        verify_ledger_entry(manifest, ledger, entry)?;
+fn validate_state_files(manifest: &Path, state: &RevisionState) -> Result<()> {
+    for entry in &state.entries {
+        verify_state_entry(manifest, state, entry)?;
     }
     Ok(())
 }
 
-fn verify_ledger_entry(
+fn verify_state_entry(
     manifest: &Path,
-    ledger: &RevisionLedger,
-    entry: &RevisionLedgerEntry,
+    state: &RevisionState,
+    entry: &RevisionStateEntry,
 ) -> Result<()> {
     let path = snapshot_path(manifest, &entry.snapshot)?;
     let snapshot = load(&path)?;
     let actual = logical_snapshot_sha256(&snapshot)?;
     if actual != entry.snapshot_sha256 {
         return Err(crate::Error::invalid(format!(
-            "immutable revision snapshot {} logical digest differs from ledger entry {:?}",
+            "immutable revision snapshot {} logical digest differs from state entry {:?}",
             path.display(),
             entry.name
         )));
     }
-    if snapshot.name != entry.name || snapshot.project != ledger.project {
+    if snapshot.name != entry.name || snapshot.project != state.project {
         return Err(crate::Error::invalid(format!(
-            "immutable revision snapshot {} identity does not match its ledger entry",
+            "immutable revision snapshot {} identity does not match its state entry",
             path.display()
         )));
     }
     if artifacts_sha256(&snapshot.artifacts)? != entry.artifacts_sha256 {
         return Err(crate::Error::invalid(format!(
-            "immutable revision snapshot {} artifact-set digest differs from its ledger entry",
+            "immutable revision snapshot {} artifact-set digest differs from its state entry",
             path.display()
         )));
     }
@@ -1207,13 +1325,13 @@ fn validate_linked_ir_companions(
     Ok(())
 }
 
-fn ledger_entry<'a>(ledger: &'a RevisionLedger, name: &str) -> Result<&'a RevisionLedgerEntry> {
-    ledger
+fn state_entry<'a>(state: &'a RevisionState, name: &str) -> Result<&'a RevisionStateEntry> {
+    state
         .entries
         .iter()
         .find(|entry| entry.name == name)
         .ok_or_else(|| {
-            crate::Error::invalid(format!("revision ledger has no immutable entry {name:?}"))
+            crate::Error::invalid(format!("revision state has no immutable entry {name:?}"))
         })
 }
 
@@ -1241,9 +1359,9 @@ fn durable_snapshot_location(manifest: &Path, path: &Path) -> Result<String> {
         ))
     })?;
     validate_relative_components(relative, "revision snapshot path")?;
-    if relative == Path::new("ledger.toml") {
+    if relative == Path::new("state.blobray") {
         return Err(crate::Error::invalid(
-            "revision snapshot path cannot overwrite revisions/ledger.toml",
+            "revision snapshot path cannot overwrite revisions/state.blobray",
         ));
     }
     Ok(relative.to_string_lossy().into_owned())
@@ -1251,9 +1369,9 @@ fn durable_snapshot_location(manifest: &Path, path: &Path) -> Result<String> {
 
 fn snapshot_path(manifest: &Path, location: &str) -> Result<PathBuf> {
     validate_snapshot_location(location)?;
-    Ok(ledger_path(manifest)
+    Ok(state_path(manifest)
         .parent()
-        .expect("ledger path always has a parent")
+        .expect("state path always has a parent")
         .join(location))
 }
 
@@ -1286,7 +1404,7 @@ fn validate_sha256(label: &str, value: &str) -> Result<()> {
             .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
     {
         return Err(crate::Error::invalid(format!(
-            "revision ledger {label} must be a lowercase SHA-256 digest"
+            "revision state {label} must be a lowercase SHA-256 digest"
         )));
     }
     Ok(())
@@ -1338,14 +1456,14 @@ fn sha256_file(path: &Path) -> std::io::Result<String> {
     Ok(format!("{:x}", digest.finalize()))
 }
 
-fn write_ledger_atomic(manifest: &Path, ledger: &RevisionLedger) -> Result<()> {
-    validate_ledger(ledger, Some(&ledger.project))?;
-    let path = ledger_path(manifest);
-    let parent = path.parent().expect("ledger path always has a parent");
+fn write_state_atomic(manifest: &Path, state: &RevisionState) -> Result<()> {
+    validate_state(state, Some(&state.project))?;
+    let path = state_path(manifest);
+    let parent = path.parent().expect("state path always has a parent");
     fs::create_dir_all(parent)?;
-    let sequence = LEDGER_STAGE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let sequence = STATE_STAGE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     let stage = parent.join(format!(
-        ".ledger.toml.stage-{}-{sequence}",
+        ".state.blobray.stage-{}-{sequence}",
         std::process::id()
     ));
     let result = (|| -> Result<()> {
@@ -1353,10 +1471,7 @@ fn write_ledger_atomic(manifest: &Path, ledger: &RevisionLedger) -> Result<()> {
             .create_new(true)
             .write(true)
             .open(&stage)?;
-        let mut encoded = toml_edit::ser::to_string_pretty(ledger)?;
-        if !encoded.ends_with('\n') {
-            encoded.push('\n');
-        }
+        let encoded = encode_revision_state(state)?;
         output.write_all(encoded.as_bytes())?;
         output.sync_all()?;
         fs::rename(&stage, &path)?;
@@ -1367,6 +1482,55 @@ fn write_ledger_atomic(manifest: &Path, ledger: &RevisionLedger) -> Result<()> {
         let _ = fs::remove_file(stage);
     }
     result
+}
+
+fn encode_revision_state(state: &RevisionState) -> Result<String> {
+    validate_state(state, Some(&state.project))?;
+    let mut encoded = String::from(REVISION_STATE_HEADER);
+    encoded.push('\n');
+    push_revision_state_directive(&mut encoded, "project", &[&state.project])?;
+    if let Some(baseline) = state.baseline.as_deref() {
+        push_revision_state_directive(&mut encoded, "baseline", &[baseline])?;
+    }
+    if let Some(current) = state.current.as_deref() {
+        push_revision_state_directive(&mut encoded, "current", &[current])?;
+    }
+    for entry in &state.entries {
+        push_revision_state_directive(
+            &mut encoded,
+            "revision",
+            &[
+                &entry.name,
+                &entry.snapshot,
+                &entry.snapshot_sha256,
+                &entry.artifacts_sha256,
+            ],
+        )?;
+    }
+    if let Some(prepared) = &state.prepared_update {
+        push_revision_state_directive(
+            &mut encoded,
+            "prepared-update",
+            &[
+                &prepared.from,
+                &prepared.snapshot_sha256,
+                &prepared.artifacts_sha256,
+            ],
+        )?;
+    }
+    Ok(encoded)
+}
+
+fn push_revision_state_directive(
+    output: &mut String,
+    directive: &str,
+    values: &[&str],
+) -> Result<()> {
+    output.push_str(directive);
+    output.push(' ');
+    output.push_str(&serde_json::to_string(values)?);
+    output.push('\n');
+    Ok(())
 }
 
 fn write_snapshot_or_check(path: &Path, snapshot: &RevisionSnapshot, check: bool) -> Result<()> {
@@ -1388,9 +1552,9 @@ fn write_snapshot_or_check(path: &Path, snapshot: &RevisionSnapshot, check: bool
         "revision snapshot",
     )?;
     // The shared binary writer publishes by atomic rename. Sync the renamed
-    // file and then its directory before publishing the ledger pointer. That
+    // file and then its directory before publishing the state pointer. That
     // ordering permits an orphan snapshot after a crash, never a durable
-    // ledger entry whose snapshot was not durably published first.
+    // state entry whose snapshot was not durably published first.
     fs::File::open(path)?.sync_all()?;
     sync_parent_directory(path.parent().unwrap_or_else(|| Path::new(".")))?;
     Ok(())
@@ -3693,23 +3857,23 @@ mod tests {
     }
 
     #[test]
-    fn durable_snapshot_initializes_content_addressed_ledger() {
-        let (directory, manifest) = temporary_manifest("ledger-init");
+    fn durable_snapshot_initializes_content_addressed_state() {
+        let (directory, manifest) = temporary_manifest("state-init");
         let snapshot = snapshot("vendor-1", vec![function("stable", "a")]);
         let output = default_path(&manifest, &snapshot.name).unwrap();
 
         persist_snapshot(&manifest, &snapshot, &output, false).unwrap();
         persist_snapshot(&manifest, &snapshot, &output, true).unwrap();
 
-        let ledger = load_ledger_optional(&manifest, Some("fixture"))
+        let state = load_state_optional(&manifest, Some("fixture"))
             .unwrap()
             .unwrap();
-        assert_eq!(ledger.baseline.as_deref(), Some("vendor-1"));
-        assert_eq!(ledger.current.as_deref(), Some("vendor-1"));
-        assert_eq!(ledger.entries.len(), 1);
-        assert_eq!(ledger.entries[0].snapshot, "snapshots/vendor-1.json.gz");
-        assert_eq!(ledger.entries[0].snapshot_sha256.len(), 64);
-        assert_eq!(ledger.entries[0].artifacts_sha256.len(), 64);
+        assert_eq!(state.baseline.as_deref(), Some("vendor-1"));
+        assert_eq!(state.current.as_deref(), Some("vendor-1"));
+        assert_eq!(state.entries.len(), 1);
+        assert_eq!(state.entries[0].snapshot, "snapshots/vendor-1.json.gz");
+        assert_eq!(state.entries[0].snapshot_sha256.len(), 64);
+        assert_eq!(state.entries[0].artifacts_sha256.len(), 64);
         for path in [
             manifest.parent().unwrap().join("revisions"),
             manifest.parent().unwrap().join("revisions/snapshots"),
@@ -3723,15 +3887,15 @@ mod tests {
             }));
         }
         assert_eq!(
-            inspect_ledger(&manifest, "fixture", true).health,
-            RevisionLedgerHealth::Ready
+            inspect_state(&manifest, "fixture", true).health,
+            RevisionStateHealth::Ready
         );
         std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
     fn unaccepted_ordinary_revision_is_reported_as_review_pending() {
-        let (directory, manifest) = temporary_manifest("ledger-review-pending");
+        let (directory, manifest) = temporary_manifest("state-review-pending");
         let baseline = snapshot("vendor-1", vec![function("stable", "a")]);
         persist_snapshot(
             &manifest,
@@ -3750,10 +3914,10 @@ mod tests {
         .unwrap();
 
         for deep in [false, true] {
-            let inspection = inspect_ledger(&manifest, "fixture", deep);
+            let inspection = inspect_state(&manifest, "fixture", deep);
             assert_eq!(
                 inspection.health,
-                RevisionLedgerHealth::RevisionReviewPending
+                RevisionStateHealth::RevisionReviewPending
             );
             assert_eq!(inspection.baseline.as_deref(), Some("vendor-1"));
             assert_eq!(inspection.current.as_deref(), Some("vendor-2"));
@@ -3783,7 +3947,7 @@ mod tests {
         assert_eq!(load(&path).unwrap(), snapshot);
 
         // A different legal gzip representation must not change the durable
-        // identity or make `--check` fail: the ledger owns logical content,
+        // identity or make `--check` fail: the state owns logical content,
         // while gzip is only its replaceable storage codec.
         let mut json = serde_json::to_vec_pretty(&snapshot).unwrap();
         json.push(b'\n');
@@ -3812,7 +3976,7 @@ mod tests {
 
     #[test]
     fn immutable_revision_name_cannot_be_reused_for_different_content() {
-        let (directory, manifest) = temporary_manifest("ledger-immutable");
+        let (directory, manifest) = temporary_manifest("state-immutable");
         let output = default_path(&manifest, "vendor-1").unwrap();
         persist_snapshot(
             &manifest,
@@ -3834,7 +3998,7 @@ mod tests {
 
     #[test]
     fn artifact_revision_change_requires_matching_preflight_marker() {
-        let (directory, manifest) = temporary_manifest("ledger-preflight");
+        let (directory, manifest) = temporary_manifest("state-preflight");
         let mut old = snapshot("vendor-1", vec![function("stable", "a")]);
         old.artifacts.push(RevisionArtifact {
             role: Some("vendor-artifact".to_owned()),
@@ -3861,29 +4025,29 @@ mod tests {
         assert!(error.to_string().contains("prepare-update"));
         assert!(!output.exists());
 
-        let mut ledger = load_ledger_optional(&manifest, Some("fixture"))
+        let mut state = load_state_optional(&manifest, Some("fixture"))
             .unwrap()
             .unwrap();
-        let current = ledger.entries[0].clone();
-        ledger.prepared_update = Some(PreparedRevisionUpdate {
+        let current = state.entries[0].clone();
+        state.prepared_update = Some(PreparedRevisionUpdate {
             from: current.name.clone(),
             snapshot_sha256: current.snapshot_sha256,
             artifacts_sha256: current.artifacts_sha256,
         });
-        write_ledger_atomic(&manifest, &ledger).unwrap();
+        write_state_atomic(&manifest, &state).unwrap();
         persist_snapshot(&manifest, &new, &output, false).unwrap();
-        let ledger = load_ledger_optional(&manifest, Some("fixture"))
+        let state = load_state_optional(&manifest, Some("fixture"))
             .unwrap()
             .unwrap();
-        assert_eq!(ledger.baseline.as_deref(), Some("vendor-1"));
-        assert_eq!(ledger.current.as_deref(), Some("vendor-2"));
-        assert!(ledger.prepared_update.is_none());
+        assert_eq!(state.baseline.as_deref(), Some("vendor-1"));
+        assert_eq!(state.current.as_deref(), Some("vendor-2"));
+        assert!(state.prepared_update.is_none());
         std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
     fn generated_directory_cannot_hold_a_durable_baseline() {
-        let (directory, manifest) = temporary_manifest("ledger-generated");
+        let (directory, manifest) = temporary_manifest("state-generated");
         let error = persist_snapshot(
             &manifest,
             &snapshot("vendor-1", Vec::new()),
@@ -3987,7 +4151,7 @@ mod tests {
     }
 
     #[test]
-    fn obsolete_snapshot_and_ledger_require_a_new_current_state() {
+    fn obsolete_snapshot_and_non_dsl_state_require_a_new_current_state() {
         let (directory, manifest) = temporary_manifest("revision-cutover");
         let obsolete_snapshot_path = directory.join("obsolete.json");
         let mut obsolete_snapshot = serde_json::to_value(snapshot("obsolete", Vec::new())).unwrap();
@@ -4007,13 +4171,13 @@ mod tests {
         assert!(snapshot_error.contains("create a new current state"));
         assert!(snapshot_error.contains("project revision snapshot CURRENT"));
 
-        let ledger = ledger_path(&manifest);
-        std::fs::create_dir_all(ledger.parent().unwrap()).unwrap();
-        std::fs::write(&ledger, "schema = 1\nproject = \"fixture\"\n").unwrap();
-        let inspection = inspect_ledger(&manifest, "fixture", true);
-        assert_eq!(inspection.health, RevisionLedgerHealth::Invalid);
+        let state = state_path(&manifest);
+        std::fs::create_dir_all(state.parent().unwrap()).unwrap();
+        std::fs::write(&state, "schema = 1\nproject = \"fixture\"\n").unwrap();
+        let inspection = inspect_state(&manifest, "fixture", true);
+        assert_eq!(inspection.health, RevisionStateHealth::Invalid);
         let diagnostic = inspection.diagnostic.unwrap();
-        assert!(diagnostic.contains("unsupported schema 1"));
+        assert!(diagnostic.contains("must start with \"blobray-revision-state 1\""));
         assert!(diagnostic.contains("create a new current state"));
         assert!(diagnostic.contains("project revision snapshot CURRENT"));
 

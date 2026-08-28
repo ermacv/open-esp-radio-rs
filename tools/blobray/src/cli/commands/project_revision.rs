@@ -109,11 +109,11 @@ fn prepare_update(
                 report.artifact_bindings_verified
             ))
         );
-        outputln!("Ledger:   {}", report.ledger);
+        outputln!("State:   {}", report.state);
         outputln!("Baseline: {}", report.baseline);
         outputln!("Current:  {}", report.current);
         outputln!(
-            "\nThe current blob may now be replaced. Keep the ledger and its snapshot, refresh analysis, then create a new named revision snapshot."
+            "\nThe current blob may now be replaced. Keep the state and its snapshot, refresh analysis, then create a new named revision snapshot."
         );
     });
     Ok(true)

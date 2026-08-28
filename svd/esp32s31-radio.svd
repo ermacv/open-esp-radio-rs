@@ -6908,17 +6908,57 @@
           <addressOffset>0x54</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
+          <modifiedWriteValues>oneToClear</modifiedWriteValues>
           <fields>
             <field>
-              <name>EVENTS</name>
+              <name>COLLISION_QUEUE_0</name>
               <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
-              <writeConstraint>
-                <range>
-                  <minimum>0</minimum>
-                  <maximum>4294967295</maximum>
-                </range>
-              </writeConstraint>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLLISION_QUEUE_1</name>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLLISION_QUEUE_2</name>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLLISION_QUEUE_3</name>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LOW_STATE_UNKNOWN</name>
+              <bitOffset>4</bitOffset>
+              <bitWidth>12</bitWidth>
+            </field>
+            <field>
+              <name>TIMEOUT_QUEUE_0</name>
+              <bitOffset>16</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TIMEOUT_QUEUE_1</name>
+              <bitOffset>17</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TIMEOUT_QUEUE_2</name>
+              <bitOffset>18</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TIMEOUT_QUEUE_3</name>
+              <bitOffset>19</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>HIGH_STATE_UNKNOWN</name>
+              <bitOffset>20</bitOffset>
+              <bitWidth>12</bitWidth>
             </field>
           </fields>
         </register>
@@ -6930,15 +6970,49 @@
           <access>read-only</access>
           <fields>
             <field>
-              <name>LOW_STATE_UNKNOWN</name>
+              <name>COLLISION_QUEUE_0</name>
               <bitOffset>0</bitOffset>
-              <bitWidth>16</bitWidth>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>TIMEOUT</name>
-              <description>Bits 16..19 correspond to ordinary queues 0..3.</description>
+              <name>COLLISION_QUEUE_1</name>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLLISION_QUEUE_2</name>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLLISION_QUEUE_3</name>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LOW_STATE_UNKNOWN</name>
+              <bitOffset>4</bitOffset>
+              <bitWidth>12</bitWidth>
+            </field>
+            <field>
+              <name>TIMEOUT_QUEUE_0</name>
               <bitOffset>16</bitOffset>
-              <bitWidth>4</bitWidth>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TIMEOUT_QUEUE_1</name>
+              <bitOffset>17</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TIMEOUT_QUEUE_2</name>
+              <bitOffset>18</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TIMEOUT_QUEUE_3</name>
+              <bitOffset>19</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>MIDDLE_STATE_UNKNOWN</name>
@@ -6946,10 +7020,31 @@
               <bitWidth>4</bitWidth>
             </field>
             <field>
-              <name>TRIGGER_FLOW</name>
-              <description>Complete hal_mac_get_txq_in_trig_flow_state returns bits 31:24 as an eight-bit queue bitmap. Complete lmacProcessTxComplete shifts that bitmap by the completed queue index and tests bit zero; its bounded dispatcher proves queue bits zero through four. The meaning of the remaining physically returned bits is not narrowed beyond queue-state bitmap.</description>
+              <name>TRIGGER_FLOW_QUEUE_0</name>
+              <description>Queue zero is participating in the hardware Trigger-based transmit flow.</description>
               <bitOffset>24</bitOffset>
-              <bitWidth>8</bitWidth>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TRIGGER_FLOW_QUEUE_1</name>
+              <bitOffset>25</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TRIGGER_FLOW_QUEUE_2</name>
+              <bitOffset>26</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TRIGGER_FLOW_QUEUE_3</name>
+              <bitOffset>27</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TRIGGER_FLOW_HIGH_UNKNOWN</name>
+              <description>The complete HAL returns four additional high bitmap bits whose bounded ordinary-queue meaning remains unresolved.</description>
+              <bitOffset>28</bitOffset>
+              <bitWidth>4</bitWidth>
             </field>
           </fields>
         </register>
@@ -6959,15 +7054,36 @@
           <addressOffset>0x5C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
+          <modifiedWriteValues>oneToClear</modifiedWriteValues>
           <fields>
             <field>
-              <name>STATE</name>
+              <name>QUEUE_0</name>
               <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>QUEUE_1</name>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>QUEUE_2</name>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>QUEUE_3</name>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>HIGH_STATE_UNKNOWN</name>
+              <bitOffset>4</bitOffset>
+              <bitWidth>28</bitWidth>
               <writeConstraint>
                 <range>
                   <minimum>0</minimum>
-                  <maximum>4294967295</maximum>
+                  <maximum>268435455</maximum>
                 </range>
               </writeConstraint>
             </field>
@@ -6981,9 +7097,24 @@
           <access>read-only</access>
           <fields>
             <field>
-              <name>ORDINARY_QUEUES</name>
+              <name>QUEUE_0</name>
               <bitOffset>0</bitOffset>
-              <bitWidth>4</bitWidth>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>QUEUE_1</name>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>QUEUE_2</name>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>QUEUE_3</name>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>

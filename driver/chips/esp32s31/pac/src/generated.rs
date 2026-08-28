@@ -888,38 +888,6 @@ impl AgcSaturationGainHigh {
     }
 }
 
-/// Register-specific completion-state image acknowledged by the TX capability.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct MacTxCompleteClearImage(u32);
-
-impl MacTxCompleteClearImage {
-    /// Wrap one register-specific opaque value.
-    pub const fn new(value: u32) -> Self {
-        Self(value)
-    }
-
-    /// Return the opaque numeric image.
-    pub const fn get(self) -> u32 {
-        self.0
-    }
-}
-
-/// Register-specific queue event mask acknowledged by the TX capability.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct MacTxQueueStateClearMask(u32);
-
-impl MacTxQueueStateClearMask {
-    /// Wrap one register-specific opaque value.
-    pub const fn new(value: u32) -> Self {
-        Self(value)
-    }
-
-    /// Return the opaque numeric image.
-    pub const fn get(self) -> u32 {
-        self.0
-    }
-}
-
 /// Complete queue-specific MAC TX control image assembled by a reviewed TX program.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MacTxControlImage(u32);
@@ -1337,24 +1305,6 @@ pub(crate) fn agc_saturation_gain_high(
     value: AgcSaturationGainHigh,
 ) {
     crate::svd::full_register_write::agc_saturation_gain_high(registers, value.get());
-}
-
-/// Typed bridge for the reviewed `mac_tx_complete_clear_image` complete-register transaction.
-#[inline]
-pub(crate) fn mac_tx_complete_clear_image(
-    registers: &crate::svd::WifiMacTxCommon,
-    value: MacTxCompleteClearImage,
-) {
-    crate::svd::full_register_write::mac_tx_complete_clear_image(registers, value.get());
-}
-
-/// Typed bridge for the reviewed `mac_tx_queue_state_clear` complete-register transaction.
-#[inline]
-pub(crate) fn mac_tx_queue_state_clear(
-    registers: &crate::svd::WifiMacTxCommon,
-    value: MacTxQueueStateClearMask,
-) {
-    crate::svd::full_register_write::mac_tx_queue_state_clear(registers, value.get());
 }
 
 /// Typed bridge for the reviewed `publish_ieee802154_tx_dma_address` complete-register transaction.

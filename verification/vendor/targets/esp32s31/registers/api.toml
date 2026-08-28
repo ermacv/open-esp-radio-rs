@@ -589,20 +589,6 @@ register = "SATURATION_GAIN_HIGH"
 sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
 
 [[opaque-domains]]
-name = "MacTxCompleteClearImage"
-description = "Register-specific completion-state image acknowledged by the TX capability."
-peripheral = "WIFI_MAC_TX_COMMON"
-register = "COMPLETE_CLEAR"
-sources = ["BLOB_LIBPP_HAL_MAC_TX", "PROMOTED_LMAC_TX"]
-
-[[opaque-domains]]
-name = "MacTxQueueStateClearMask"
-description = "Register-specific queue event mask acknowledged by the TX capability."
-peripheral = "WIFI_MAC_TX_COMMON"
-register = "QUEUE_STATE_CLEAR"
-sources = ["BLOB_LIBPP_HAL_MAC_TX"]
-
-[[opaque-domains]]
 name = "MacTxControlImage"
 description = "Complete queue-specific MAC TX control image assembled by a reviewed TX program."
 peripheral = "WIFI_MAC_TX_QUEUE_CONTROL"
@@ -922,24 +908,6 @@ exposure = "facade"
 sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
 
 [[full-register-writes]]
-name = "mac_tx_complete_clear_image"
-peripheral = "WIFI_MAC_TX_COMMON"
-register = "COMPLETE_CLEAR"
-field = "STATE"
-domain = "MacTxCompleteClearImage"
-exposure = "facade"
-sources = ["BLOB_LIBPP_HAL_MAC_TX", "PROMOTED_LMAC_TX"]
-
-[[full-register-writes]]
-name = "mac_tx_queue_state_clear"
-peripheral = "WIFI_MAC_TX_COMMON"
-register = "QUEUE_STATE_CLEAR"
-field = "EVENTS"
-domain = "MacTxQueueStateClearMask"
-exposure = "facade"
-sources = ["BLOB_LIBPP_HAL_MAC_TX"]
-
-[[full-register-writes]]
 name = "publish_ieee802154_tx_dma_address"
 peripheral = "IEEE802154_MAC"
 register = "TX_DMA_ADDRESS"
@@ -1249,6 +1217,27 @@ name = "publish_mac_tx_prepared_control"
 peripheral = "WIFI_MAC_TX_QUEUE_CONTROL"
 register = "CONTROL%s"
 fields = ["DESCRIPTOR_ADDRESS_LOW", "CONTROL_21_20_UNKNOWN", "TXOP_DESCRIPTOR_CLASS_UNKNOWN", "PLCP_FORMAT"]
+sources = ["BLOB_LIBPP_HAL_MAC_TX", "PROMOTED_LMAC_TX"]
+
+[[zero-based-field-writes]]
+name = "clear_mac_tx_collision_state"
+peripheral = "WIFI_MAC_TX_COMMON"
+register = "QUEUE_STATE_CLEAR"
+fields = ["COLLISION_QUEUE_0", "COLLISION_QUEUE_1", "COLLISION_QUEUE_2", "COLLISION_QUEUE_3"]
+sources = ["BLOB_LIBPP_HAL_MAC_TX"]
+
+[[zero-based-field-writes]]
+name = "clear_mac_tx_timeout_state"
+peripheral = "WIFI_MAC_TX_COMMON"
+register = "QUEUE_STATE_CLEAR"
+fields = ["TIMEOUT_QUEUE_0", "TIMEOUT_QUEUE_1", "TIMEOUT_QUEUE_2", "TIMEOUT_QUEUE_3"]
+sources = ["BLOB_LIBPP_HAL_MAC_TX"]
+
+[[zero-based-field-writes]]
+name = "acknowledge_mac_tx_completion"
+peripheral = "WIFI_MAC_TX_COMMON"
+register = "COMPLETE_CLEAR"
+fields = ["QUEUE_0", "QUEUE_1", "QUEUE_2", "QUEUE_3", "HIGH_STATE_UNKNOWN"]
 sources = ["BLOB_LIBPP_HAL_MAC_TX", "PROMOTED_LMAC_TX"]
 
 [[register-image-writes]]

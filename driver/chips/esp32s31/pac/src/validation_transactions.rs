@@ -37,7 +37,9 @@ impl WifiRadioRegisters {
     }
 
     pub fn validation_mac_tx_trigger_flow_state(&self) -> u32 {
-        crate::mac_tx_queue::trigger_flow_state(&self.peripherals.wifi_mac.wifi_mac_tx_common)
+        crate::mac_tx_queue::validation_trigger_flow_state(
+            &self.peripherals.wifi_mac.wifi_mac_tx_common,
+        )
     }
 
     pub fn validation_mac_tx_queue_enabled(&self, queue: u32) -> bool {

@@ -47,15 +47,57 @@ description = "Queue collision/timeout state acknowledgement."
 addressOffset = 0x54
 size = 32
 access = "write-only"
+modifiedWriteValues = "oneToClear"
 
 [[peripherals.registers.register.fields]]
-name = "EVENTS"
+name = "COLLISION_QUEUE_0"
 bitOffset = 0
-bitWidth = 32
+bitWidth = 1
 
-[peripherals.registers.register.fields.writeConstraint.range]
-minimum = 0x0
-maximum = 0xFFFFFFFF
+[[peripherals.registers.register.fields]]
+name = "COLLISION_QUEUE_1"
+bitOffset = 1
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "COLLISION_QUEUE_2"
+bitOffset = 2
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "COLLISION_QUEUE_3"
+bitOffset = 3
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "LOW_STATE_UNKNOWN"
+bitOffset = 4
+bitWidth = 12
+
+[[peripherals.registers.register.fields]]
+name = "TIMEOUT_QUEUE_0"
+bitOffset = 16
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TIMEOUT_QUEUE_1"
+bitOffset = 17
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TIMEOUT_QUEUE_2"
+bitOffset = 18
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TIMEOUT_QUEUE_3"
+bitOffset = 19
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "HIGH_STATE_UNKNOWN"
+bitOffset = 20
+bitWidth = 12
 
 [[peripherals.registers]]
 
@@ -67,15 +109,49 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "LOW_STATE_UNKNOWN"
+name = "COLLISION_QUEUE_0"
 bitOffset = 0
-bitWidth = 16
+bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "TIMEOUT"
-description = "Bits 16..19 correspond to ordinary queues 0..3."
+name = "COLLISION_QUEUE_1"
+bitOffset = 1
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "COLLISION_QUEUE_2"
+bitOffset = 2
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "COLLISION_QUEUE_3"
+bitOffset = 3
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "LOW_STATE_UNKNOWN"
+bitOffset = 4
+bitWidth = 12
+
+[[peripherals.registers.register.fields]]
+name = "TIMEOUT_QUEUE_0"
 bitOffset = 16
-bitWidth = 4
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TIMEOUT_QUEUE_1"
+bitOffset = 17
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TIMEOUT_QUEUE_2"
+bitOffset = 18
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TIMEOUT_QUEUE_3"
+bitOffset = 19
+bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "MIDDLE_STATE_UNKNOWN"
@@ -83,10 +159,31 @@ bitOffset = 20
 bitWidth = 4
 
 [[peripherals.registers.register.fields]]
-name = "TRIGGER_FLOW"
-description = "Complete hal_mac_get_txq_in_trig_flow_state returns bits 31:24 as an eight-bit queue bitmap. Complete lmacProcessTxComplete shifts that bitmap by the completed queue index and tests bit zero; its bounded dispatcher proves queue bits zero through four. The meaning of the remaining physically returned bits is not narrowed beyond queue-state bitmap."
+name = "TRIGGER_FLOW_QUEUE_0"
+description = "Queue zero is participating in the hardware Trigger-based transmit flow."
 bitOffset = 24
-bitWidth = 8
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TRIGGER_FLOW_QUEUE_1"
+bitOffset = 25
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TRIGGER_FLOW_QUEUE_2"
+bitOffset = 26
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TRIGGER_FLOW_QUEUE_3"
+bitOffset = 27
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TRIGGER_FLOW_HIGH_UNKNOWN"
+description = "The complete HAL returns four additional high bitmap bits whose bounded ordinary-queue meaning remains unresolved."
+bitOffset = 28
+bitWidth = 4
 
 [[peripherals.registers]]
 
@@ -96,15 +193,36 @@ description = "Preserved-image acknowledgement for ordinary queue completion bit
 addressOffset = 0x5C
 size = 32
 access = "read-write"
+modifiedWriteValues = "oneToClear"
 
 [[peripherals.registers.register.fields]]
-name = "STATE"
+name = "QUEUE_0"
 bitOffset = 0
-bitWidth = 32
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "QUEUE_1"
+bitOffset = 1
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "QUEUE_2"
+bitOffset = 2
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "QUEUE_3"
+bitOffset = 3
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "HIGH_STATE_UNKNOWN"
+bitOffset = 4
+bitWidth = 28
 
 [peripherals.registers.register.fields.writeConstraint.range]
 minimum = 0x0
-maximum = 0xFFFFFFFF
+maximum = 0x0FFFFFFF
 
 [[peripherals.registers]]
 
@@ -116,9 +234,24 @@ size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "ORDINARY_QUEUES"
+name = "QUEUE_0"
 bitOffset = 0
-bitWidth = 4
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "QUEUE_1"
+bitOffset = 1
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "QUEUE_2"
+bitOffset = 2
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "QUEUE_3"
+bitOffset = 3
+bitWidth = 1
 
 [[review]]
 entity = "WIFI_MAC_TX_COMMON"
@@ -177,23 +310,6 @@ sources = [
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
-
-[[review]]
-entity = "WIFI_MAC_TX_COMMON.QUEUE_STATE.TIMEOUT"
-sources = ["BLOB_LIBPP_HAL_MAC_TX"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-
-[[review]]
-entity = "WIFI_MAC_TX_COMMON.QUEUE_STATE.TRIGGER_FLOW"
-sources = [
-    "BLOB_LIBPP_HAL_TX_TRIGGER_FLOW",
-    "PROMOTED_LMAC_TX",
-]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_COMMON.COMPLETE_CLEAR"

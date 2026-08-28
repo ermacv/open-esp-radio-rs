@@ -17379,13 +17379,76 @@ pub mod wifi_mac_tx_common {
     pub mod queue_state_clear {
         #[doc = "Register `QUEUE_STATE_CLEAR` writer"]
         pub type W = crate::W<QueueStateClearSpec>;
-        #[doc = "Field `EVENTS` writer - "]
-        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
+        #[doc = "Field `COLLISION_QUEUE_0` writer - "]
+        pub type CollisionQueue0W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `COLLISION_QUEUE_1` writer - "]
+        pub type CollisionQueue1W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `COLLISION_QUEUE_2` writer - "]
+        pub type CollisionQueue2W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `COLLISION_QUEUE_3` writer - "]
+        pub type CollisionQueue3W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `LOW_STATE_UNKNOWN` writer - "]
+        pub type LowStateUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        #[doc = "Field `TIMEOUT_QUEUE_0` writer - "]
+        pub type TimeoutQueue0W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `TIMEOUT_QUEUE_1` writer - "]
+        pub type TimeoutQueue1W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `TIMEOUT_QUEUE_2` writer - "]
+        pub type TimeoutQueue2W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `TIMEOUT_QUEUE_3` writer - "]
+        pub type TimeoutQueue3W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `HIGH_STATE_UNKNOWN` writer - "]
+        pub type HighStateUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
         impl W {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bit 0"]
             #[inline(always)]
-            pub fn events(&mut self) -> EventsW<'_, QueueStateClearSpec> {
-                EventsW::new(self, 0)
+            pub fn collision_queue_0(&mut self) -> CollisionQueue0W<'_, QueueStateClearSpec> {
+                CollisionQueue0W::new(self, 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn collision_queue_1(&mut self) -> CollisionQueue1W<'_, QueueStateClearSpec> {
+                CollisionQueue1W::new(self, 1)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn collision_queue_2(&mut self) -> CollisionQueue2W<'_, QueueStateClearSpec> {
+                CollisionQueue2W::new(self, 2)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn collision_queue_3(&mut self) -> CollisionQueue3W<'_, QueueStateClearSpec> {
+                CollisionQueue3W::new(self, 3)
+            }
+            #[doc = "Bits 4:15"]
+            #[inline(always)]
+            pub fn low_state_unknown(&mut self) -> LowStateUnknownW<'_, QueueStateClearSpec> {
+                LowStateUnknownW::new(self, 4)
+            }
+            #[doc = "Bit 16"]
+            #[inline(always)]
+            pub fn timeout_queue_0(&mut self) -> TimeoutQueue0W<'_, QueueStateClearSpec> {
+                TimeoutQueue0W::new(self, 16)
+            }
+            #[doc = "Bit 17"]
+            #[inline(always)]
+            pub fn timeout_queue_1(&mut self) -> TimeoutQueue1W<'_, QueueStateClearSpec> {
+                TimeoutQueue1W::new(self, 17)
+            }
+            #[doc = "Bit 18"]
+            #[inline(always)]
+            pub fn timeout_queue_2(&mut self) -> TimeoutQueue2W<'_, QueueStateClearSpec> {
+                TimeoutQueue2W::new(self, 18)
+            }
+            #[doc = "Bit 19"]
+            #[inline(always)]
+            pub fn timeout_queue_3(&mut self) -> TimeoutQueue3W<'_, QueueStateClearSpec> {
+                TimeoutQueue3W::new(self, 19)
+            }
+            #[doc = "Bits 20:31"]
+            #[inline(always)]
+            pub fn high_state_unknown(&mut self) -> HighStateUnknownW<'_, QueueStateClearSpec> {
+                HighStateUnknownW::new(self, 20)
             }
         }
         #[doc = "Queue collision/timeout state acknowledgement.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`queue_state_clear::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -17395,7 +17458,8 @@ pub mod wifi_mac_tx_common {
         }
         #[doc = "`write(|w| ..)` method takes [`queue_state_clear::W`](W) writer structure"]
         impl crate::Writable for QueueStateClearSpec {
-            type Safety = crate::Safe;
+            type Safety = crate::Unsafe;
+            const ONE_TO_MODIFY_FIELDS_BITMAP: u32 = 0xffff_ffff;
         }
     }
     #[doc = "QUEUE_STATE (r) register accessor: Per-queue timeout and trigger-flow state. The complete trigger-flow HAL getter returns the entire high byte; the complete completion dispatcher then right-shifts it by the completed queue number and tests bit zero.\n\nYou can [`read`](crate::Reg::read) this register and get [`queue_state::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@queue_state`] module"]
@@ -17405,34 +17469,111 @@ pub mod wifi_mac_tx_common {
     pub mod queue_state {
         #[doc = "Register `QUEUE_STATE` reader"]
         pub type R = crate::R<QueueStateSpec>;
+        #[doc = "Field `COLLISION_QUEUE_0` reader - "]
+        pub type CollisionQueue0R = crate::BitReader;
+        #[doc = "Field `COLLISION_QUEUE_1` reader - "]
+        pub type CollisionQueue1R = crate::BitReader;
+        #[doc = "Field `COLLISION_QUEUE_2` reader - "]
+        pub type CollisionQueue2R = crate::BitReader;
+        #[doc = "Field `COLLISION_QUEUE_3` reader - "]
+        pub type CollisionQueue3R = crate::BitReader;
         #[doc = "Field `LOW_STATE_UNKNOWN` reader - "]
         pub type LowStateUnknownR = crate::FieldReader<u16>;
-        #[doc = "Field `TIMEOUT` reader - Bits 16..19 correspond to ordinary queues 0..3."]
-        pub type TimeoutR = crate::FieldReader;
+        #[doc = "Field `TIMEOUT_QUEUE_0` reader - "]
+        pub type TimeoutQueue0R = crate::BitReader;
+        #[doc = "Field `TIMEOUT_QUEUE_1` reader - "]
+        pub type TimeoutQueue1R = crate::BitReader;
+        #[doc = "Field `TIMEOUT_QUEUE_2` reader - "]
+        pub type TimeoutQueue2R = crate::BitReader;
+        #[doc = "Field `TIMEOUT_QUEUE_3` reader - "]
+        pub type TimeoutQueue3R = crate::BitReader;
         #[doc = "Field `MIDDLE_STATE_UNKNOWN` reader - "]
         pub type MiddleStateUnknownR = crate::FieldReader;
-        #[doc = "Field `TRIGGER_FLOW` reader - Complete hal_mac_get_txq_in_trig_flow_state returns bits 31:24 as an eight-bit queue bitmap. Complete lmacProcessTxComplete shifts that bitmap by the completed queue index and tests bit zero; its bounded dispatcher proves queue bits zero through four. The meaning of the remaining physically returned bits is not narrowed beyond queue-state bitmap."]
-        pub type TriggerFlowR = crate::FieldReader;
+        #[doc = "Field `TRIGGER_FLOW_QUEUE_0` reader - Queue zero is participating in the hardware Trigger-based transmit flow."]
+        pub type TriggerFlowQueue0R = crate::BitReader;
+        #[doc = "Field `TRIGGER_FLOW_QUEUE_1` reader - "]
+        pub type TriggerFlowQueue1R = crate::BitReader;
+        #[doc = "Field `TRIGGER_FLOW_QUEUE_2` reader - "]
+        pub type TriggerFlowQueue2R = crate::BitReader;
+        #[doc = "Field `TRIGGER_FLOW_QUEUE_3` reader - "]
+        pub type TriggerFlowQueue3R = crate::BitReader;
+        #[doc = "Field `TRIGGER_FLOW_HIGH_UNKNOWN` reader - The complete HAL returns four additional high bitmap bits whose bounded ordinary-queue meaning remains unresolved."]
+        pub type TriggerFlowHighUnknownR = crate::FieldReader;
         impl R {
-            #[doc = "Bits 0:15"]
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn collision_queue_0(&self) -> CollisionQueue0R {
+                CollisionQueue0R::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn collision_queue_1(&self) -> CollisionQueue1R {
+                CollisionQueue1R::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn collision_queue_2(&self) -> CollisionQueue2R {
+                CollisionQueue2R::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn collision_queue_3(&self) -> CollisionQueue3R {
+                CollisionQueue3R::new(((self.bits >> 3) & 1) != 0)
+            }
+            #[doc = "Bits 4:15"]
             #[inline(always)]
             pub fn low_state_unknown(&self) -> LowStateUnknownR {
-                LowStateUnknownR::new((self.bits & 0xffff) as u16)
+                LowStateUnknownR::new(((self.bits >> 4) & 0x0fff) as u16)
             }
-            #[doc = "Bits 16:19 - Bits 16..19 correspond to ordinary queues 0..3."]
+            #[doc = "Bit 16"]
             #[inline(always)]
-            pub fn timeout(&self) -> TimeoutR {
-                TimeoutR::new(((self.bits >> 16) & 0x0f) as u8)
+            pub fn timeout_queue_0(&self) -> TimeoutQueue0R {
+                TimeoutQueue0R::new(((self.bits >> 16) & 1) != 0)
+            }
+            #[doc = "Bit 17"]
+            #[inline(always)]
+            pub fn timeout_queue_1(&self) -> TimeoutQueue1R {
+                TimeoutQueue1R::new(((self.bits >> 17) & 1) != 0)
+            }
+            #[doc = "Bit 18"]
+            #[inline(always)]
+            pub fn timeout_queue_2(&self) -> TimeoutQueue2R {
+                TimeoutQueue2R::new(((self.bits >> 18) & 1) != 0)
+            }
+            #[doc = "Bit 19"]
+            #[inline(always)]
+            pub fn timeout_queue_3(&self) -> TimeoutQueue3R {
+                TimeoutQueue3R::new(((self.bits >> 19) & 1) != 0)
             }
             #[doc = "Bits 20:23"]
             #[inline(always)]
             pub fn middle_state_unknown(&self) -> MiddleStateUnknownR {
                 MiddleStateUnknownR::new(((self.bits >> 20) & 0x0f) as u8)
             }
-            #[doc = "Bits 24:31 - Complete hal_mac_get_txq_in_trig_flow_state returns bits 31:24 as an eight-bit queue bitmap. Complete lmacProcessTxComplete shifts that bitmap by the completed queue index and tests bit zero; its bounded dispatcher proves queue bits zero through four. The meaning of the remaining physically returned bits is not narrowed beyond queue-state bitmap."]
+            #[doc = "Bit 24 - Queue zero is participating in the hardware Trigger-based transmit flow."]
             #[inline(always)]
-            pub fn trigger_flow(&self) -> TriggerFlowR {
-                TriggerFlowR::new(((self.bits >> 24) & 0xff) as u8)
+            pub fn trigger_flow_queue_0(&self) -> TriggerFlowQueue0R {
+                TriggerFlowQueue0R::new(((self.bits >> 24) & 1) != 0)
+            }
+            #[doc = "Bit 25"]
+            #[inline(always)]
+            pub fn trigger_flow_queue_1(&self) -> TriggerFlowQueue1R {
+                TriggerFlowQueue1R::new(((self.bits >> 25) & 1) != 0)
+            }
+            #[doc = "Bit 26"]
+            #[inline(always)]
+            pub fn trigger_flow_queue_2(&self) -> TriggerFlowQueue2R {
+                TriggerFlowQueue2R::new(((self.bits >> 26) & 1) != 0)
+            }
+            #[doc = "Bit 27"]
+            #[inline(always)]
+            pub fn trigger_flow_queue_3(&self) -> TriggerFlowQueue3R {
+                TriggerFlowQueue3R::new(((self.bits >> 27) & 1) != 0)
+            }
+            #[doc = "Bits 28:31 - The complete HAL returns four additional high bitmap bits whose bounded ordinary-queue meaning remains unresolved."]
+            #[inline(always)]
+            pub fn trigger_flow_high_unknown(&self) -> TriggerFlowHighUnknownR {
+                TriggerFlowHighUnknownR::new(((self.bits >> 28) & 0x0f) as u8)
             }
         }
         #[doc = "Per-queue timeout and trigger-flow state. The complete trigger-flow HAL getter returns the entire high byte; the complete completion dispatcher then right-shifts it by the completed queue number and tests bit zero.\n\nYou can [`read`](crate::Reg::read) this register and get [`queue_state::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -17452,22 +17593,78 @@ pub mod wifi_mac_tx_common {
         pub type R = crate::R<CompleteClearSpec>;
         #[doc = "Register `COMPLETE_CLEAR` writer"]
         pub type W = crate::W<CompleteClearSpec>;
-        #[doc = "Field `STATE` reader - "]
-        pub type StateR = crate::FieldReader<u32>;
-        #[doc = "Field `STATE` writer - "]
-        pub type StateW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
+        #[doc = "Field `QUEUE_0` reader - "]
+        pub type Queue0R = crate::BitReader;
+        #[doc = "Field `QUEUE_0` writer - "]
+        pub type Queue0W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `QUEUE_1` reader - "]
+        pub type Queue1R = crate::BitReader;
+        #[doc = "Field `QUEUE_1` writer - "]
+        pub type Queue1W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `QUEUE_2` reader - "]
+        pub type Queue2R = crate::BitReader;
+        #[doc = "Field `QUEUE_2` writer - "]
+        pub type Queue2W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `QUEUE_3` reader - "]
+        pub type Queue3R = crate::BitReader;
+        #[doc = "Field `QUEUE_3` writer - "]
+        pub type Queue3W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `HIGH_STATE_UNKNOWN` reader - "]
+        pub type HighStateUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `HIGH_STATE_UNKNOWN` writer - "]
+        pub type HighStateUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 28, u32, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bit 0"]
             #[inline(always)]
-            pub fn state(&self) -> StateR {
-                StateR::new(self.bits)
+            pub fn queue_0(&self) -> Queue0R {
+                Queue0R::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn queue_1(&self) -> Queue1R {
+                Queue1R::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn queue_2(&self) -> Queue2R {
+                Queue2R::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn queue_3(&self) -> Queue3R {
+                Queue3R::new(((self.bits >> 3) & 1) != 0)
+            }
+            #[doc = "Bits 4:31"]
+            #[inline(always)]
+            pub fn high_state_unknown(&self) -> HighStateUnknownR {
+                HighStateUnknownR::new((self.bits >> 4) & 0x0fff_ffff)
             }
         }
         impl W {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bit 0"]
             #[inline(always)]
-            pub fn state(&mut self) -> StateW<'_, CompleteClearSpec> {
-                StateW::new(self, 0)
+            pub fn queue_0(&mut self) -> Queue0W<'_, CompleteClearSpec> {
+                Queue0W::new(self, 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn queue_1(&mut self) -> Queue1W<'_, CompleteClearSpec> {
+                Queue1W::new(self, 1)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn queue_2(&mut self) -> Queue2W<'_, CompleteClearSpec> {
+                Queue2W::new(self, 2)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn queue_3(&mut self) -> Queue3W<'_, CompleteClearSpec> {
+                Queue3W::new(self, 3)
+            }
+            #[doc = "Bits 4:31"]
+            #[inline(always)]
+            pub fn high_state_unknown(&mut self) -> HighStateUnknownW<'_, CompleteClearSpec> {
+                HighStateUnknownW::new(self, 4)
             }
         }
         #[doc = "Preserved-image acknowledgement for ordinary queue completion bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`complete_clear::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`complete_clear::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -17479,7 +17676,8 @@ pub mod wifi_mac_tx_common {
         impl crate::Readable for CompleteClearSpec {}
         #[doc = "`write(|w| ..)` method takes [`complete_clear::W`](W) writer structure"]
         impl crate::Writable for CompleteClearSpec {
-            type Safety = crate::Safe;
+            type Safety = crate::Unsafe;
+            const ONE_TO_MODIFY_FIELDS_BITMAP: u32 = 0xffff_ffff;
         }
     }
     #[doc = "COMPLETE_STATE (r) register accessor: Low four bits report completed ordinary queues 0..3.\n\nYou can [`read`](crate::Reg::read) this register and get [`complete_state::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@complete_state`] module"]
@@ -17489,13 +17687,34 @@ pub mod wifi_mac_tx_common {
     pub mod complete_state {
         #[doc = "Register `COMPLETE_STATE` reader"]
         pub type R = crate::R<CompleteStateSpec>;
-        #[doc = "Field `ORDINARY_QUEUES` reader - "]
-        pub type OrdinaryQueuesR = crate::FieldReader;
+        #[doc = "Field `QUEUE_0` reader - "]
+        pub type Queue0R = crate::BitReader;
+        #[doc = "Field `QUEUE_1` reader - "]
+        pub type Queue1R = crate::BitReader;
+        #[doc = "Field `QUEUE_2` reader - "]
+        pub type Queue2R = crate::BitReader;
+        #[doc = "Field `QUEUE_3` reader - "]
+        pub type Queue3R = crate::BitReader;
         impl R {
-            #[doc = "Bits 0:3"]
+            #[doc = "Bit 0"]
             #[inline(always)]
-            pub fn ordinary_queues(&self) -> OrdinaryQueuesR {
-                OrdinaryQueuesR::new((self.bits & 0x0f) as u8)
+            pub fn queue_0(&self) -> Queue0R {
+                Queue0R::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn queue_1(&self) -> Queue1R {
+                Queue1R::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn queue_2(&self) -> Queue2R {
+                Queue2R::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn queue_3(&self) -> Queue3R {
+                Queue3R::new(((self.bits >> 3) & 1) != 0)
             }
         }
         #[doc = "Low four bits report completed ordinary queues 0..3.\n\nYou can [`read`](crate::Reg::read) this register and get [`complete_state::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -54354,32 +54573,6 @@ pub mod full_register_write {
         }
     }
 
-    /// Write every bit of `WIFI_MAC_TX_COMMON`.`COMPLETE_CLEAR` through its full-width field.
-    #[inline]
-    pub fn mac_tx_complete_clear_image(registers: &crate::WifiMacTxCommon, value: u32) {
-        // SAFETY: generator validation proves that this is the only field,
-        // it covers all 32 bits and accepts every `u32`; no zero-filled
-        // reserved or partially described bits remain.
-        unsafe {
-            registers
-                .complete_clear()
-                .write_with_zero(|writer| writer.state().set(value));
-        }
-    }
-
-    /// Write every bit of `WIFI_MAC_TX_COMMON`.`QUEUE_STATE_CLEAR` through its full-width field.
-    #[inline]
-    pub fn mac_tx_queue_state_clear(registers: &crate::WifiMacTxCommon, value: u32) {
-        // SAFETY: generator validation proves that this is the only field,
-        // it covers all 32 bits and accepts every `u32`; no zero-filled
-        // reserved or partially described bits remain.
-        unsafe {
-            registers
-                .queue_state_clear()
-                .write_with_zero(|writer| writer.events().set(value));
-        }
-    }
-
     /// Write every bit of `IEEE802154_MAC`.`TX_DMA_ADDRESS` through its full-width field.
     #[inline]
     pub fn publish_ieee802154_tx_dma_address(registers: &crate::Ieee802154Mac, value: u32) {
@@ -55225,6 +55418,90 @@ pub mod zero_based_field_write {
                     .bit(txop_descriptor_class_unknown_value)
                     .plcp_format()
                     .set(plcp_format_value)
+            });
+        }
+    }
+
+    /// Write `COLLISION_QUEUE_0`, `COLLISION_QUEUE_1`, `COLLISION_QUEUE_2`, `COLLISION_QUEUE_3` in `WIFI_MAC_TX_COMMON`.`QUEUE_STATE_CLEAR` while publishing zero to every other register bit.
+    #[inline]
+    pub fn clear_mac_tx_collision_state(
+        registers: &crate::WifiMacTxCommon,
+        collision_queue_0_value: bool,
+        collision_queue_1_value: bool,
+        collision_queue_2_value: bool,
+        collision_queue_3_value: bool,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.queue_state_clear().write_with_zero(|writer| {
+                writer
+                    .collision_queue_0()
+                    .bit(collision_queue_0_value)
+                    .collision_queue_1()
+                    .bit(collision_queue_1_value)
+                    .collision_queue_2()
+                    .bit(collision_queue_2_value)
+                    .collision_queue_3()
+                    .bit(collision_queue_3_value)
+            });
+        }
+    }
+
+    /// Write `TIMEOUT_QUEUE_0`, `TIMEOUT_QUEUE_1`, `TIMEOUT_QUEUE_2`, `TIMEOUT_QUEUE_3` in `WIFI_MAC_TX_COMMON`.`QUEUE_STATE_CLEAR` while publishing zero to every other register bit.
+    #[inline]
+    pub fn clear_mac_tx_timeout_state(
+        registers: &crate::WifiMacTxCommon,
+        timeout_queue_0_value: bool,
+        timeout_queue_1_value: bool,
+        timeout_queue_2_value: bool,
+        timeout_queue_3_value: bool,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.queue_state_clear().write_with_zero(|writer| {
+                writer
+                    .timeout_queue_0()
+                    .bit(timeout_queue_0_value)
+                    .timeout_queue_1()
+                    .bit(timeout_queue_1_value)
+                    .timeout_queue_2()
+                    .bit(timeout_queue_2_value)
+                    .timeout_queue_3()
+                    .bit(timeout_queue_3_value)
+            });
+        }
+    }
+
+    /// Write `QUEUE_0`, `QUEUE_1`, `QUEUE_2`, `QUEUE_3`, `HIGH_STATE_UNKNOWN` in `WIFI_MAC_TX_COMMON`.`COMPLETE_CLEAR` while publishing zero to every other register bit.
+    #[inline]
+    pub fn acknowledge_mac_tx_completion(
+        registers: &crate::WifiMacTxCommon,
+        queue_0_value: bool,
+        queue_1_value: bool,
+        queue_2_value: bool,
+        queue_3_value: bool,
+        high_state_unknown_value: u32,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.complete_clear().write_with_zero(|writer| {
+                writer
+                    .queue_0()
+                    .bit(queue_0_value)
+                    .queue_1()
+                    .bit(queue_1_value)
+                    .queue_2()
+                    .bit(queue_2_value)
+                    .queue_3()
+                    .bit(queue_3_value)
+                    .high_state_unknown()
+                    .set(high_state_unknown_value)
             });
         }
     }

@@ -560,9 +560,9 @@ pub struct MacTxQueueDetached<'registers> {
 }
 
 impl MacTxQueueDetached<'_> {
-    fn from_control_word(control_word: u32) -> Self {
+    fn from_descriptor_address_low(descriptor_address_low: u32) -> Self {
         Self {
-            descriptor_address_low: control_word & DESCRIPTOR_ADDRESS_LOW_MASK,
+            descriptor_address_low,
             _registers: PhantomData,
         }
     }
@@ -1174,9 +1174,8 @@ impl WifiRadioRegisters {
 
     pub fn take_mac_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation> {
         assert!(queue < ORDINARY_QUEUE_COUNT);
-        let completion_mask = 1_u32 << queue;
         let common = &self.peripherals.wifi_mac.wifi_mac_tx_common;
-        if common.complete_state().read().bits() & completion_mask == 0 {
+        if !mac_tx_queue::completion_pending(common, queue) {
             return None;
         }
 
@@ -1226,12 +1225,8 @@ impl WifiRadioRegisters {
         } else {
             (primary.status().bits(), primary.detail().bits())
         };
-        let trigger_flow = mac_tx_queue::trigger_flow_state(common) & (1_u32 << queue) != 0;
-        let clear = common.complete_clear().read().bits();
-        super::generated::mac_tx_complete_clear_image(
-            common,
-            super::generated::MacTxCompleteClearImage::new(clear | completion_mask),
-        );
+        let trigger_flow = mac_tx_queue::queue_in_trigger_flow(common, queue);
+        mac_tx_queue::acknowledge_completion(common, queue);
         device_fence();
         Some(MacTxCompletionObservation {
             status,
@@ -1255,17 +1250,7 @@ impl WifiRadioRegisters {
         queue: u8,
     ) -> Option<MacHtAmpduCompletionObservation> {
         assert!(queue < ORDINARY_QUEUE_COUNT);
-        let completion_mask = 1_u32 << queue;
-        if self
-            .peripherals
-            .wifi_mac
-            .wifi_mac_tx_common
-            .complete_state()
-            .read()
-            .bits()
-            & completion_mask
-            == 0
-        {
+        if !mac_tx_queue::completion_pending(&self.peripherals.wifi_mac.wifi_mac_tx_common, queue) {
             return None;
         }
         let block_ack = self.read_tx_block_ack_observation(queue)?;
@@ -1281,9 +1266,8 @@ impl WifiRadioRegisters {
 
     pub fn begin_mac_tx_timeout_abort(&mut self, queue: u8) -> bool {
         assert!(queue < ORDINARY_QUEUE_COUNT);
-        let timeout_mask = 1_u32 << (16 + queue);
         let common = &self.peripherals.wifi_mac.wifi_mac_tx_common;
-        if common.queue_state().read().bits() & timeout_mask == 0 {
+        if !mac_tx_queue::timeout_pending(common, queue) {
             return false;
         }
         let _ = mac_tx_queue::set_cca_force(common, 3);
@@ -1303,26 +1287,25 @@ impl WifiRadioRegisters {
         let common = &self.peripherals.wifi_mac.wifi_mac_tx_common;
         let queue_control = &self.peripherals.wifi_mac.wifi_mac_tx_queue_control;
         let bank = physical_bank(queue);
-        let control_word = queue_control.control(bank).read().bits();
+        let descriptor_address_low = queue_control
+            .control(bank)
+            .read()
+            .descriptor_address_low()
+            .bits();
         let queue_index = u32::from(queue);
         match reason {
             MacTxDetachReason::Collision => {
-                let collision_mask = 1_u32 << queue;
-                if common.queue_state().read().bits() & collision_mask == 0 {
+                if !mac_tx_queue::collision_pending(common, queue) {
                     return MacTxDetachOutcome::NoEvent;
                 }
                 // SOURCE: complete `libpp.a[lmac.o]::lmacProcessCollisions`
                 // reaches disable before clearing the collision edge.
                 let _ = mac_tx_queue::disable_queue(queue_control, queue_index);
                 device_fence();
-                super::generated::mac_tx_queue_state_clear(
-                    common,
-                    super::generated::MacTxQueueStateClearMask::new(collision_mask),
-                );
+                mac_tx_queue::acknowledge_collision(common, queue);
             }
             MacTxDetachReason::Timeout => {
-                let timeout_mask = 1_u32 << (16 + queue);
-                if common.queue_state().read().bits() & timeout_mask == 0 {
+                if !mac_tx_queue::timeout_pending(common, queue) {
                     return MacTxDetachOutcome::NoEvent;
                 }
                 let was_valid = mac_tx_queue::queue_valid(queue_control, queue_index);
@@ -1331,10 +1314,7 @@ impl WifiRadioRegisters {
                 if was_valid {
                     let _ = mac_tx_queue::disable_queue(queue_control, queue_index);
                 }
-                super::generated::mac_tx_queue_state_clear(
-                    common,
-                    super::generated::MacTxQueueStateClearMask::new(timeout_mask),
-                );
+                mac_tx_queue::acknowledge_timeout(common, queue);
             }
             MacTxDetachReason::Completed => {
                 // A completion edge was consumed separately before this
@@ -1349,8 +1329,8 @@ impl WifiRadioRegisters {
         {
             return MacTxDetachOutcome::Failed;
         }
-        MacTxDetachOutcome::Detached(detached(MacTxQueueDetached::from_control_word(
-            control_word,
+        MacTxDetachOutcome::Detached(detached(MacTxQueueDetached::from_descriptor_address_low(
+            descriptor_address_low,
         )))
     }
 }

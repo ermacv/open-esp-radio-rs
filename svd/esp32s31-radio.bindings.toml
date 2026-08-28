@@ -18281,10 +18281,73 @@ scope = []
 register-method = "queue_state_clear"
 
 [[registers.fields]]
-svd-name = "EVENTS"
-method = "events"
+svd-name = "COLLISION_QUEUE_0"
+method = "collision_queue_0"
 bit-offset = 0
-bit-width = 32
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "COLLISION_QUEUE_1"
+method = "collision_queue_1"
+bit-offset = 1
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "COLLISION_QUEUE_2"
+method = "collision_queue_2"
+bit-offset = 2
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "COLLISION_QUEUE_3"
+method = "collision_queue_3"
+bit-offset = 3
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "LOW_STATE_UNKNOWN"
+method = "low_state_unknown"
+bit-offset = 4
+bit-width = 12
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "TIMEOUT_QUEUE_0"
+method = "timeout_queue_0"
+bit-offset = 16
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "TIMEOUT_QUEUE_1"
+method = "timeout_queue_1"
+bit-offset = 17
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "TIMEOUT_QUEUE_2"
+method = "timeout_queue_2"
+bit-offset = 18
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "TIMEOUT_QUEUE_3"
+method = "timeout_queue_3"
+bit-offset = 19
+bit-width = 1
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "HIGH_STATE_UNKNOWN"
+method = "high_state_unknown"
+bit-offset = 20
+bit-width = 12
 access = "write-only"
 
 [[registers]]
@@ -18299,17 +18362,66 @@ scope = []
 register-method = "queue_state"
 
 [[registers.fields]]
-svd-name = "LOW_STATE_UNKNOWN"
-method = "low_state_unknown"
+svd-name = "COLLISION_QUEUE_0"
+method = "collision_queue_0"
 bit-offset = 0
-bit-width = 16
+bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "TIMEOUT"
-method = "timeout"
+svd-name = "COLLISION_QUEUE_1"
+method = "collision_queue_1"
+bit-offset = 1
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "COLLISION_QUEUE_2"
+method = "collision_queue_2"
+bit-offset = 2
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "COLLISION_QUEUE_3"
+method = "collision_queue_3"
+bit-offset = 3
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "LOW_STATE_UNKNOWN"
+method = "low_state_unknown"
+bit-offset = 4
+bit-width = 12
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TIMEOUT_QUEUE_0"
+method = "timeout_queue_0"
 bit-offset = 16
-bit-width = 4
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TIMEOUT_QUEUE_1"
+method = "timeout_queue_1"
+bit-offset = 17
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TIMEOUT_QUEUE_2"
+method = "timeout_queue_2"
+bit-offset = 18
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TIMEOUT_QUEUE_3"
+method = "timeout_queue_3"
+bit-offset = 19
+bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
@@ -18320,10 +18432,38 @@ bit-width = 4
 access = "read-only"
 
 [[registers.fields]]
-svd-name = "TRIGGER_FLOW"
-method = "trigger_flow"
+svd-name = "TRIGGER_FLOW_QUEUE_0"
+method = "trigger_flow_queue_0"
 bit-offset = 24
-bit-width = 8
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TRIGGER_FLOW_QUEUE_1"
+method = "trigger_flow_queue_1"
+bit-offset = 25
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TRIGGER_FLOW_QUEUE_2"
+method = "trigger_flow_queue_2"
+bit-offset = 26
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TRIGGER_FLOW_QUEUE_3"
+method = "trigger_flow_queue_3"
+bit-offset = 27
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TRIGGER_FLOW_HIGH_UNKNOWN"
+method = "trigger_flow_high_unknown"
+bit-offset = 28
+bit-width = 4
 access = "read-only"
 
 [[registers]]
@@ -18338,10 +18478,38 @@ scope = []
 register-method = "complete_clear"
 
 [[registers.fields]]
-svd-name = "STATE"
-method = "state"
+svd-name = "QUEUE_0"
+method = "queue_0"
 bit-offset = 0
-bit-width = 32
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "QUEUE_1"
+method = "queue_1"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "QUEUE_2"
+method = "queue_2"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "QUEUE_3"
+method = "queue_3"
+bit-offset = 3
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HIGH_STATE_UNKNOWN"
+method = "high_state_unknown"
+bit-offset = 4
+bit-width = 28
 access = "read-write"
 
 [[registers]]
@@ -18356,10 +18524,31 @@ scope = []
 register-method = "complete_state"
 
 [[registers.fields]]
-svd-name = "ORDINARY_QUEUES"
-method = "ordinary_queues"
+svd-name = "QUEUE_0"
+method = "queue_0"
 bit-offset = 0
-bit-width = 4
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "QUEUE_1"
+method = "queue_1"
+bit-offset = 1
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "QUEUE_2"
+method = "queue_2"
+bit-offset = 2
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "QUEUE_3"
+method = "queue_3"
+bit-offset = 3
+bit-width = 1
 access = "read-only"
 
 [[registers]]

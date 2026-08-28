@@ -22636,6 +22636,39 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
                   <maximum>16383</maximum>
                 </range>
               </writeConstraint>
+              <enumeratedValues>
+                <usage>write</usage>
+                <enumeratedValue>
+                  <name>NONE</name>
+                  <description>Mask every MAC event.</description>
+                  <value>0</value>
+                </enumeratedValue>
+                <enumeratedValue>
+                  <name>TIMER_PAIR_VALIDATION</name>
+                  <description>Enable only TIMER0 and TIMER1 for the reset-isolated timer discriminator.</description>
+                  <value>768</value>
+                </enumeratedValue>
+                <enumeratedValue>
+                  <name>ED_TIMER_ABORT_VALIDATION</name>
+                  <description>Enable RX-ABORT, ED-DONE, and TIMER0 for the reset-isolated ED discriminator.</description>
+                  <value>336</value>
+                </enumeratedValue>
+                <enumeratedValue>
+                  <name>ED_OPERATION</name>
+                  <description>Enable only RX-ABORT and ED-DONE for one finite polled ED or CCA operation.</description>
+                  <value>80</value>
+                </enumeratedValue>
+                <enumeratedValue>
+                  <name>RUNTIME_WITHOUT_TIMER0</name>
+                  <description>Reviewed runtime event baseline before the TIMER0 acknowledgement watchdog is armed.</description>
+                  <value>6783</value>
+                </enumeratedValue>
+                <enumeratedValue>
+                  <name>RUNTIME_WITH_TIMER0</name>
+                  <description>Reviewed runtime event baseline while TIMER0 owns the acknowledgement watchdog.</description>
+                  <value>7039</value>
+                </enumeratedValue>
+              </enumeratedValues>
             </field>
           </fields>
         </register>
@@ -22651,6 +22684,24 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
               <name>EVENTS</name>
               <bitOffset>0</bitOffset>
               <bitWidth>14</bitWidth>
+              <enumeratedValues>
+                <usage>write</usage>
+                <enumeratedValue>
+                  <name>ED_DONE_ONLY</name>
+                  <description>Select only the ED-DONE W1C event in a reset-isolated discriminator.</description>
+                  <value>64</value>
+                </enumeratedValue>
+                <enumeratedValue>
+                  <name>TIMER0_ONLY</name>
+                  <description>Select only the TIMER0 W1C event in a reset-isolated discriminator.</description>
+                  <value>256</value>
+                </enumeratedValue>
+                <enumeratedValue>
+                  <name>TIMER1_ONLY</name>
+                  <description>Select only the TIMER1 W1C event in a reset-isolated discriminator.</description>
+                  <value>512</value>
+                </enumeratedValue>
+              </enumeratedValues>
             </field>
           </fields>
         </register>
@@ -22671,6 +22722,24 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
                   <maximum>2147483647</maximum>
                 </range>
               </writeConstraint>
+              <enumeratedValues>
+                <usage>write</usage>
+                <enumeratedValue>
+                  <name>NONE</name>
+                  <description>Mask every receive-abort reason.</description>
+                  <value>0</value>
+                </enumeratedValue>
+                <enumeratedValue>
+                  <name>RUNTIME_BASELINE</name>
+                  <description>Reviewed receive-abort baseline used by the runtime ISR.</description>
+                  <value>163840</value>
+                </enumeratedValue>
+                <enumeratedValue>
+                  <name>ED_OPERATION_REASONS</name>
+                  <description>Enable ED abort, ED stop, and ED coexistence rejection for one finite ED or CCA operation.</description>
+                  <value>58720256</value>
+                </enumeratedValue>
+              </enumeratedValues>
             </field>
           </fields>
         </register>
@@ -22736,6 +22805,19 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
                   <maximum>2147483647</maximum>
                 </range>
               </writeConstraint>
+              <enumeratedValues>
+                <usage>write</usage>
+                <enumeratedValue>
+                  <name>NONE</name>
+                  <description>Mask every transmit-abort reason.</description>
+                  <value>0</value>
+                </enumeratedValue>
+                <enumeratedValue>
+                  <name>RUNTIME_BASELINE</name>
+                  <description>Reviewed transmit-abort baseline used by the runtime ISR.</description>
+                  <value>25591808</value>
+                </enumeratedValue>
+              </enumeratedValues>
             </field>
           </fields>
         </register>

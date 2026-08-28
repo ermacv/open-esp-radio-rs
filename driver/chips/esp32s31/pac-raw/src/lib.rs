@@ -54297,10 +54297,118 @@ pub mod ieee802154_mac {
         pub type R = crate::R<EventEnableSpec>;
         #[doc = "Register `EVENT_ENABLE` writer"]
         pub type W = crate::W<EventEnableSpec>;
+        #[doc = ""]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u16)]
+        pub enum Events {
+            #[doc = "0: Mask every MAC event."]
+            None = 0,
+            #[doc = "768: Enable only TIMER0 and TIMER1 for the reset-isolated timer discriminator."]
+            TimerPairValidation = 768,
+            #[doc = "336: Enable RX-ABORT, ED-DONE, and TIMER0 for the reset-isolated ED discriminator."]
+            EdTimerAbortValidation = 336,
+            #[doc = "80: Enable only RX-ABORT and ED-DONE for one finite polled ED or CCA operation."]
+            EdOperation = 80,
+            #[doc = "6783: Reviewed runtime event baseline before the TIMER0 acknowledgement watchdog is armed."]
+            RuntimeWithoutTimer0 = 6783,
+            #[doc = "7039: Reviewed runtime event baseline while TIMER0 owns the acknowledgement watchdog."]
+            RuntimeWithTimer0 = 7039,
+        }
+        impl From<Events> for u16 {
+            #[inline(always)]
+            fn from(variant: Events) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for Events {
+            type Ux = u16;
+        }
+        impl crate::IsEnum for Events {}
         #[doc = "Field `EVENTS` reader - "]
-        pub type EventsR = crate::FieldReader<u16>;
+        pub type EventsR = crate::FieldReader<Events>;
+        impl EventsR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<Events> {
+                match self.bits {
+                    0 => Some(Events::None),
+                    768 => Some(Events::TimerPairValidation),
+                    336 => Some(Events::EdTimerAbortValidation),
+                    80 => Some(Events::EdOperation),
+                    6783 => Some(Events::RuntimeWithoutTimer0),
+                    7039 => Some(Events::RuntimeWithTimer0),
+                    _ => None,
+                }
+            }
+            #[doc = "Mask every MAC event."]
+            #[inline(always)]
+            pub fn is_none(&self) -> bool {
+                *self == Events::None
+            }
+            #[doc = "Enable only TIMER0 and TIMER1 for the reset-isolated timer discriminator."]
+            #[inline(always)]
+            pub fn is_timer_pair_validation(&self) -> bool {
+                *self == Events::TimerPairValidation
+            }
+            #[doc = "Enable RX-ABORT, ED-DONE, and TIMER0 for the reset-isolated ED discriminator."]
+            #[inline(always)]
+            pub fn is_ed_timer_abort_validation(&self) -> bool {
+                *self == Events::EdTimerAbortValidation
+            }
+            #[doc = "Enable only RX-ABORT and ED-DONE for one finite polled ED or CCA operation."]
+            #[inline(always)]
+            pub fn is_ed_operation(&self) -> bool {
+                *self == Events::EdOperation
+            }
+            #[doc = "Reviewed runtime event baseline before the TIMER0 acknowledgement watchdog is armed."]
+            #[inline(always)]
+            pub fn is_runtime_without_timer0(&self) -> bool {
+                *self == Events::RuntimeWithoutTimer0
+            }
+            #[doc = "Reviewed runtime event baseline while TIMER0 owns the acknowledgement watchdog."]
+            #[inline(always)]
+            pub fn is_runtime_with_timer0(&self) -> bool {
+                *self == Events::RuntimeWithTimer0
+            }
+        }
         #[doc = "Field `EVENTS` writer - "]
-        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 14, u16, crate::Safe>;
+        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 14, Events, crate::Safe>;
+        impl<'a, REG> EventsW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u16>,
+        {
+            #[doc = "Mask every MAC event."]
+            #[inline(always)]
+            pub fn none(self) -> &'a mut crate::W<REG> {
+                self.variant(Events::None)
+            }
+            #[doc = "Enable only TIMER0 and TIMER1 for the reset-isolated timer discriminator."]
+            #[inline(always)]
+            pub fn timer_pair_validation(self) -> &'a mut crate::W<REG> {
+                self.variant(Events::TimerPairValidation)
+            }
+            #[doc = "Enable RX-ABORT, ED-DONE, and TIMER0 for the reset-isolated ED discriminator."]
+            #[inline(always)]
+            pub fn ed_timer_abort_validation(self) -> &'a mut crate::W<REG> {
+                self.variant(Events::EdTimerAbortValidation)
+            }
+            #[doc = "Enable only RX-ABORT and ED-DONE for one finite polled ED or CCA operation."]
+            #[inline(always)]
+            pub fn ed_operation(self) -> &'a mut crate::W<REG> {
+                self.variant(Events::EdOperation)
+            }
+            #[doc = "Reviewed runtime event baseline before the TIMER0 acknowledgement watchdog is armed."]
+            #[inline(always)]
+            pub fn runtime_without_timer0(self) -> &'a mut crate::W<REG> {
+                self.variant(Events::RuntimeWithoutTimer0)
+            }
+            #[doc = "Reviewed runtime event baseline while TIMER0 owns the acknowledgement watchdog."]
+            #[inline(always)]
+            pub fn runtime_with_timer0(self) -> &'a mut crate::W<REG> {
+                self.variant(Events::RuntimeWithTimer0)
+            }
+        }
         impl R {
             #[doc = "Bits 0:13"]
             #[inline(always)]
@@ -54336,10 +54444,79 @@ pub mod ieee802154_mac {
         pub type R = crate::R<EventStatusSpec>;
         #[doc = "Register `EVENT_STATUS` writer"]
         pub type W = crate::W<EventStatusSpec>;
+        #[doc = ""]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u16)]
+        pub enum Events {
+            #[doc = "64: Select only the ED-DONE W1C event in a reset-isolated discriminator."]
+            EdDoneOnly = 64,
+            #[doc = "256: Select only the TIMER0 W1C event in a reset-isolated discriminator."]
+            Timer0Only = 256,
+            #[doc = "512: Select only the TIMER1 W1C event in a reset-isolated discriminator."]
+            Timer1Only = 512,
+        }
+        impl From<Events> for u16 {
+            #[inline(always)]
+            fn from(variant: Events) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for Events {
+            type Ux = u16;
+        }
+        impl crate::IsEnum for Events {}
         #[doc = "Field `EVENTS` reader - "]
-        pub type EventsR = crate::FieldReader<u16>;
+        pub type EventsR = crate::FieldReader<Events>;
+        impl EventsR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<Events> {
+                match self.bits {
+                    64 => Some(Events::EdDoneOnly),
+                    256 => Some(Events::Timer0Only),
+                    512 => Some(Events::Timer1Only),
+                    _ => None,
+                }
+            }
+            #[doc = "Select only the ED-DONE W1C event in a reset-isolated discriminator."]
+            #[inline(always)]
+            pub fn is_ed_done_only(&self) -> bool {
+                *self == Events::EdDoneOnly
+            }
+            #[doc = "Select only the TIMER0 W1C event in a reset-isolated discriminator."]
+            #[inline(always)]
+            pub fn is_timer0_only(&self) -> bool {
+                *self == Events::Timer0Only
+            }
+            #[doc = "Select only the TIMER1 W1C event in a reset-isolated discriminator."]
+            #[inline(always)]
+            pub fn is_timer1_only(&self) -> bool {
+                *self == Events::Timer1Only
+            }
+        }
         #[doc = "Field `EVENTS` writer - "]
-        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 14, u16>;
+        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 14, Events>;
+        impl<'a, REG> EventsW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u16>,
+        {
+            #[doc = "Select only the ED-DONE W1C event in a reset-isolated discriminator."]
+            #[inline(always)]
+            pub fn ed_done_only(self) -> &'a mut crate::W<REG> {
+                self.variant(Events::EdDoneOnly)
+            }
+            #[doc = "Select only the TIMER0 W1C event in a reset-isolated discriminator."]
+            #[inline(always)]
+            pub fn timer0_only(self) -> &'a mut crate::W<REG> {
+                self.variant(Events::Timer0Only)
+            }
+            #[doc = "Select only the TIMER1 W1C event in a reset-isolated discriminator."]
+            #[inline(always)]
+            pub fn timer1_only(self) -> &'a mut crate::W<REG> {
+                self.variant(Events::Timer1Only)
+            }
+        }
         impl R {
             #[doc = "Bits 0:13"]
             #[inline(always)]
@@ -54376,10 +54553,79 @@ pub mod ieee802154_mac {
         pub type R = crate::R<RxAbortEnableSpec>;
         #[doc = "Register `RX_ABORT_ENABLE` writer"]
         pub type W = crate::W<RxAbortEnableSpec>;
+        #[doc = ""]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u32)]
+        pub enum Events {
+            #[doc = "0: Mask every receive-abort reason."]
+            None = 0,
+            #[doc = "163840: Reviewed receive-abort baseline used by the runtime ISR."]
+            RuntimeBaseline = 163840,
+            #[doc = "58720256: Enable ED abort, ED stop, and ED coexistence rejection for one finite ED or CCA operation."]
+            EdOperationReasons = 58720256,
+        }
+        impl From<Events> for u32 {
+            #[inline(always)]
+            fn from(variant: Events) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for Events {
+            type Ux = u32;
+        }
+        impl crate::IsEnum for Events {}
         #[doc = "Field `EVENTS` reader - "]
-        pub type EventsR = crate::FieldReader<u32>;
+        pub type EventsR = crate::FieldReader<Events>;
+        impl EventsR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<Events> {
+                match self.bits {
+                    0 => Some(Events::None),
+                    163840 => Some(Events::RuntimeBaseline),
+                    58720256 => Some(Events::EdOperationReasons),
+                    _ => None,
+                }
+            }
+            #[doc = "Mask every receive-abort reason."]
+            #[inline(always)]
+            pub fn is_none(&self) -> bool {
+                *self == Events::None
+            }
+            #[doc = "Reviewed receive-abort baseline used by the runtime ISR."]
+            #[inline(always)]
+            pub fn is_runtime_baseline(&self) -> bool {
+                *self == Events::RuntimeBaseline
+            }
+            #[doc = "Enable ED abort, ED stop, and ED coexistence rejection for one finite ED or CCA operation."]
+            #[inline(always)]
+            pub fn is_ed_operation_reasons(&self) -> bool {
+                *self == Events::EdOperationReasons
+            }
+        }
         #[doc = "Field `EVENTS` writer - "]
-        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 31, u32, crate::Safe>;
+        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 31, Events, crate::Safe>;
+        impl<'a, REG> EventsW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u32>,
+        {
+            #[doc = "Mask every receive-abort reason."]
+            #[inline(always)]
+            pub fn none(self) -> &'a mut crate::W<REG> {
+                self.variant(Events::None)
+            }
+            #[doc = "Reviewed receive-abort baseline used by the runtime ISR."]
+            #[inline(always)]
+            pub fn runtime_baseline(self) -> &'a mut crate::W<REG> {
+                self.variant(Events::RuntimeBaseline)
+            }
+            #[doc = "Enable ED abort, ED stop, and ED coexistence rejection for one finite ED or CCA operation."]
+            #[inline(always)]
+            pub fn ed_operation_reasons(self) -> &'a mut crate::W<REG> {
+                self.variant(Events::EdOperationReasons)
+            }
+        }
         impl R {
             #[doc = "Bits 0:30"]
             #[inline(always)]
@@ -54507,10 +54753,66 @@ pub mod ieee802154_mac {
         pub type R = crate::R<TxAbortEnableSpec>;
         #[doc = "Register `TX_ABORT_ENABLE` writer"]
         pub type W = crate::W<TxAbortEnableSpec>;
+        #[doc = ""]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u32)]
+        pub enum Events {
+            #[doc = "0: Mask every transmit-abort reason."]
+            None = 0,
+            #[doc = "25591808: Reviewed transmit-abort baseline used by the runtime ISR."]
+            RuntimeBaseline = 25591808,
+        }
+        impl From<Events> for u32 {
+            #[inline(always)]
+            fn from(variant: Events) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for Events {
+            type Ux = u32;
+        }
+        impl crate::IsEnum for Events {}
         #[doc = "Field `EVENTS` reader - "]
-        pub type EventsR = crate::FieldReader<u32>;
+        pub type EventsR = crate::FieldReader<Events>;
+        impl EventsR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<Events> {
+                match self.bits {
+                    0 => Some(Events::None),
+                    25591808 => Some(Events::RuntimeBaseline),
+                    _ => None,
+                }
+            }
+            #[doc = "Mask every transmit-abort reason."]
+            #[inline(always)]
+            pub fn is_none(&self) -> bool {
+                *self == Events::None
+            }
+            #[doc = "Reviewed transmit-abort baseline used by the runtime ISR."]
+            #[inline(always)]
+            pub fn is_runtime_baseline(&self) -> bool {
+                *self == Events::RuntimeBaseline
+            }
+        }
         #[doc = "Field `EVENTS` writer - "]
-        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 31, u32, crate::Safe>;
+        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 31, Events, crate::Safe>;
+        impl<'a, REG> EventsW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u32>,
+        {
+            #[doc = "Mask every transmit-abort reason."]
+            #[inline(always)]
+            pub fn none(self) -> &'a mut crate::W<REG> {
+                self.variant(Events::None)
+            }
+            #[doc = "Reviewed transmit-abort baseline used by the runtime ISR."]
+            #[inline(always)]
+            pub fn runtime_baseline(self) -> &'a mut crate::W<REG> {
+                self.variant(Events::RuntimeBaseline)
+            }
+        }
         impl R {
             #[doc = "Bits 0:30"]
             #[inline(always)]

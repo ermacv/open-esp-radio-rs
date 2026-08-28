@@ -1,18 +1,9 @@
 //! Closed IEEE 802.15.4 `EVENT_STATUS` validation transaction.
 //!
 //! This module is compiled only into validation images. Production code uses
-//! the generated affine W1C snapshot. The literal timer-zero and timer-one
-//! writes remain isolated here solely to preserve the historical selective
+//! the generated affine W1C snapshot. The named timer-zero and timer-one
+//! accessors remain isolated here solely to preserve the historical selective
 //! clearing discriminator; neither accepts a caller-provided image.
-
-const TIMER0_EVENT: u32 = 1 << 8;
-const TIMER1_EVENT: u32 = 1 << 9;
-const TIMER_EVENTS: u16 = (TIMER0_EVENT | TIMER1_EVENT) as u16;
-const EVENT_FIELD_MASK: u32 = 0x3fff;
-
-const fn replace_event_field(current: u32, events: u16) -> u32 {
-    (current & !EVENT_FIELD_MASK) | ((events as u32) & EVENT_FIELD_MASK)
-}
 
 #[inline]
 fn order_device_accesses() {
@@ -29,23 +20,18 @@ pub fn event_enable_events(registers: &crate::Ieee802154Mac) -> u16 {
 /// Replace only the event-enable field with the two validation timers.
 #[inline]
 pub fn enable_timer_events(registers: &crate::Ieee802154Mac) {
-    // SAFETY: the raw replacement changes only the reviewed fourteen-bit RW
-    // field and preserves every unowned upper bit from the fresh register
-    // read. The closed transaction selects exactly the two timer events.
-    registers.event_enable().modify(|reader, writer| unsafe {
-        writer.bits(replace_event_field(reader.bits(), TIMER_EVENTS))
-    });
+    registers
+        .event_enable()
+        .modify(|_, writer| writer.events().timer_pair_validation());
     order_device_accesses();
 }
 
 /// Replace only the event-enable field with zero during cleanup.
 #[inline]
 pub fn disable_all_events(registers: &crate::Ieee802154Mac) {
-    // SAFETY: see [`enable_timer_events`]. The reviewed field becomes the
-    // complete masked image while every unowned upper bit is retained.
     registers
         .event_enable()
-        .modify(|reader, writer| unsafe { writer.bits(replace_event_field(reader.bits(), 0)) });
+        .modify(|_, writer| writer.events().none());
     order_device_accesses();
 }
 
@@ -136,29 +122,28 @@ pub fn stop_timer1(registers: &crate::Ieee802154Mac) {
     order_device_accesses();
 }
 
-/// Perform the experiment's raw write of only timer-zero's event bit.
+/// Select only timer zero through its generated W1C field variant.
 #[inline]
 pub fn write_timer0_event(registers: &crate::Ieee802154Mac) {
-    // SAFETY: the feature-only experiment writes exactly one fixed event bit.
-    // The unique PAC lease prevents a concurrent task-side register owner and
-    // the isolated caller keeps the external CPU route unconfigured.
+    // SAFETY: the generated write-only variant selects only TIMER0 in this
+    // reset-isolated validation transaction; no integer image is accepted.
     unsafe {
         registers
             .event_status()
-            .write_with_zero(|writer| writer.bits(TIMER0_EVENT));
+            .write_with_zero(|writer| writer.events().timer0_only());
     }
     order_device_accesses();
 }
 
-/// Perform the experiment's raw write of only timer-one's event bit.
+/// Select only timer one through its generated W1C field variant.
 #[inline]
 pub fn write_timer1_event(registers: &crate::Ieee802154Mac) {
-    // SAFETY: see [`write_timer0_event`].  The only difference is the
-    // independently stimulated timer-one bit.
+    // SAFETY: the generated write-only variant selects only TIMER1 in this
+    // reset-isolated validation transaction; no integer image is accepted.
     unsafe {
         registers
             .event_status()
-            .write_with_zero(|writer| writer.bits(TIMER1_EVENT));
+            .write_with_zero(|writer| writer.events().timer1_only());
     }
     order_device_accesses();
 }

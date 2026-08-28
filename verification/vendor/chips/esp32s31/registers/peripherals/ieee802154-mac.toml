@@ -417,6 +417,39 @@ bitWidth = 14
 minimum = 0
 maximum = 0x3fff
 
+[[peripherals.registers.register.fields.enumeratedValues]]
+usage = "write"
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "NONE"
+description = "Mask every MAC event."
+value = 0x0000
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "TIMER_PAIR_VALIDATION"
+description = "Enable only TIMER0 and TIMER1 for the reset-isolated timer discriminator."
+value = 0x0300
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "ED_TIMER_ABORT_VALIDATION"
+description = "Enable RX-ABORT, ED-DONE, and TIMER0 for the reset-isolated ED discriminator."
+value = 0x0150
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "ED_OPERATION"
+description = "Enable only RX-ABORT and ED-DONE for one finite polled ED or CCA operation."
+value = 0x0050
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "RUNTIME_WITHOUT_TIMER0"
+description = "Reviewed runtime event baseline before the TIMER0 acknowledgement watchdog is armed."
+value = 0x1a7f
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "RUNTIME_WITH_TIMER0"
+description = "Reviewed runtime event baseline while TIMER0 owns the acknowledgement watchdog."
+value = 0x1b7f
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -432,6 +465,24 @@ access = "read-only"
 name = "EVENTS"
 bitOffset = 0
 bitWidth = 14
+
+[[peripherals.registers.register.fields.enumeratedValues]]
+usage = "write"
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "ED_DONE_ONLY"
+description = "Select only the ED-DONE W1C event in a reset-isolated discriminator."
+value = 0x0040
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "TIMER0_ONLY"
+description = "Select only the TIMER0 W1C event in a reset-isolated discriminator."
+value = 0x0100
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "TIMER1_ONLY"
+description = "Select only the TIMER1 W1C event in a reset-isolated discriminator."
+value = 0x0200
 
 [[peripherals.registers]]
 
@@ -450,6 +501,24 @@ bitWidth = 31
 [peripherals.registers.register.fields.writeConstraint.range]
 minimum = 0
 maximum = 0x7fffffff
+
+[[peripherals.registers.register.fields.enumeratedValues]]
+usage = "write"
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "NONE"
+description = "Mask every receive-abort reason."
+value = 0x00000000
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "RUNTIME_BASELINE"
+description = "Reviewed receive-abort baseline used by the runtime ISR."
+value = 0x00028000
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "ED_OPERATION_REASONS"
+description = "Enable ED abort, ED stop, and ED coexistence rejection for one finite ED or CCA operation."
+value = 0x03800000
 
 [[peripherals.registers]]
 
@@ -509,6 +578,19 @@ bitWidth = 31
 [peripherals.registers.register.fields.writeConstraint.range]
 minimum = 0
 maximum = 0x7fffffff
+
+[[peripherals.registers.register.fields.enumeratedValues]]
+usage = "write"
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "NONE"
+description = "Mask every transmit-abort reason."
+value = 0x00000000
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "RUNTIME_BASELINE"
+description = "Reviewed transmit-abort baseline used by the runtime ISR."
+value = 0x01868000
 
 [[peripherals.registers]]
 

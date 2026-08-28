@@ -1,28 +1,12 @@
 //! Closed ED-DONE/TIMER0 `EVENT_STATUS` validation transaction vocabulary.
 //!
 //! This module is intended only for a reset-isolated validation image. The
-//! production API uses the generated affine W1C snapshot; these two literal
+//! production API uses the generated affine W1C snapshot; these two named
 //! writes remain feature-gated so the historical discriminator can compare
 //! ED-DONE and TIMER0 independently without exposing a general raw image.
 
-const RX_ABORT_EVENT: u32 = 1 << 4;
-const ED_DONE_EVENT: u32 = 1 << 6;
-const TIMER0_EVENT: u32 = 1 << 8;
-const VALIDATION_EVENTS: u16 = (RX_ABORT_EVENT | ED_DONE_EVENT | TIMER0_EVENT) as u16;
-const ED_ABORT_REASONS: u32 = (1 << 23) | (1 << 24) | (1 << 25);
-const EVENT_FIELD_MASK: u32 = 0x3fff;
-const RX_ABORT_FIELD_MASK: u32 = 0x7fff_ffff;
-
 /// Fixed public-LL energy-detection duration used by the discriminator.
 pub const VALIDATION_ED_DURATION: u32 = 8;
-
-const fn replace_event_field(current: u32, events: u16) -> u32 {
-    (current & !EVENT_FIELD_MASK) | ((events as u32) & EVENT_FIELD_MASK)
-}
-
-const fn replace_rx_abort_field(current: u32, reasons: u32) -> u32 {
-    (current & !RX_ABORT_FIELD_MASK) | (reasons & RX_ABORT_FIELD_MASK)
-}
 
 #[inline]
 fn order_device_accesses() {
@@ -41,25 +25,18 @@ pub fn event_enable_events(registers: &crate::Ieee802154Mac) -> u16 {
 /// Replace only the event-enable field with RX-ABORT, ED-DONE and TIMER0.
 #[inline]
 pub fn enable_ed_timer_abort_events(registers: &mut crate::Ieee802154Mac) {
-    // SAFETY: the raw replacement changes only the reviewed fourteen-bit RW
-    // field and retains every unowned upper bit from the fresh register read.
-    // RX-ABORT is enabled so missing RF/BTBB readiness cannot turn a terminal
-    // ED abort into a silent timeout. The selective-write pair remains only
-    // ED-DONE and TIMER0.
-    registers.event_enable().modify(|reader, writer| unsafe {
-        writer.bits(replace_event_field(reader.bits(), VALIDATION_EVENTS))
-    });
+    registers
+        .event_enable()
+        .modify(|_, writer| writer.events().ed_timer_abort_validation());
     order_device_accesses();
 }
 
 /// Replace only the event-enable field with zero during cleanup.
 #[inline]
 pub fn disable_all_events(registers: &mut crate::Ieee802154Mac) {
-    // SAFETY: see [`enable_ed_timer_abort_events`]. The owned field becomes
-    // zero and every unowned upper bit is retained from the fresh read.
     registers
         .event_enable()
-        .modify(|reader, writer| unsafe { writer.bits(replace_event_field(reader.bits(), 0)) });
+        .modify(|_, writer| writer.events().none());
     order_device_accesses();
 }
 
@@ -93,23 +70,18 @@ pub fn rx_abort_enable_events(registers: &crate::Ieee802154Mac) -> u32 {
 /// Select exactly ED_ABORT, ED_STOP and ED_COEX_REJECT abort reasons.
 #[inline]
 pub fn enable_ed_abort_reasons(registers: &mut crate::Ieee802154Mac) {
-    // SAFETY: the raw replacement changes only the reviewed low thirty-one RW
-    // bits, preserves the unowned high bit, and publishes exactly the three
-    // source-confirmed ED terminal reasons.
-    registers.rx_abort_enable().modify(|reader, writer| unsafe {
-        writer.bits(replace_rx_abort_field(reader.bits(), ED_ABORT_REASONS))
-    });
+    registers
+        .rx_abort_enable()
+        .modify(|_, writer| writer.events().ed_operation_reasons());
     order_device_accesses();
 }
 
 /// Mask every RX-abort reason during terminal cleanup.
 #[inline]
 pub fn disable_all_rx_abort_reasons(registers: &mut crate::Ieee802154Mac) {
-    // SAFETY: see [`enable_ed_abort_reasons`]. The owned field becomes zero;
-    // no arbitrary caller-provided register image crosses this raw boundary.
     registers
         .rx_abort_enable()
-        .modify(|reader, writer| unsafe { writer.bits(replace_rx_abort_field(reader.bits(), 0)) });
+        .modify(|_, writer| writer.events().none());
     order_device_accesses();
 }
 
@@ -209,29 +181,28 @@ pub fn stop_operation(registers: &mut crate::Ieee802154Mac) {
     order_device_accesses();
 }
 
-/// Perform the discriminator's raw write of only ED-DONE.
+/// Select only ED-DONE through its generated W1C field variant.
 #[inline]
 pub fn write_ed_done_event(registers: &mut crate::Ieee802154Mac) {
-    // SAFETY: this reset-isolated validation experiment publishes one fixed
-    // source-confirmed event bit. Production acknowledgement goes through the
-    // generated affine W1C snapshot and cannot call this feature-only leaf.
+    // SAFETY: the generated write-only variant selects only ED-DONE in this
+    // reset-isolated validation transaction; no integer image is accepted.
     unsafe {
         registers
             .event_status()
-            .write_with_zero(|writer| writer.bits(ED_DONE_EVENT));
+            .write_with_zero(|writer| writer.events().ed_done_only());
     }
     order_device_accesses();
 }
 
-/// Perform the discriminator's raw write of only TIMER0.
+/// Select only TIMER0 through its generated W1C field variant.
 #[inline]
 pub fn write_timer0_event(registers: &mut crate::Ieee802154Mac) {
-    // SAFETY: as above, the validation image publishes one fixed event bit and
-    // retains a unique PAC lease with the CPU route detached.
+    // SAFETY: the generated write-only variant selects only TIMER0 in this
+    // reset-isolated validation transaction; no integer image is accepted.
     unsafe {
         registers
             .event_status()
-            .write_with_zero(|writer| writer.bits(TIMER0_EVENT));
+            .write_with_zero(|writer| writer.events().timer0_only());
     }
     order_device_accesses();
 }

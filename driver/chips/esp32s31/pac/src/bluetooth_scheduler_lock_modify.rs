@@ -39,22 +39,6 @@ impl BluetoothSchedulerLockModifyRequest {
         Ok(Self { address, argument })
     }
 
-    /// Return the first fresh-read RMW image for `OPERATIONAL_WORD_036C`.
-    const fn argument_clear_image(self, first_fresh_read: u32) -> u32 {
-        first_fresh_read & !0x0f
-    }
-
-    /// Return the second fresh-read RMW image for `OPERATIONAL_WORD_036C`.
-    ///
-    /// The reviewed path clears the low nibble, then independently ORs the
-    /// request argument into a second fresh read. The caller must therefore
-    /// supply the second read, not reuse the image observed before the clear.
-    /// Hardware changes in the low nibble between the two writes are retained,
-    /// matching the observed OR rather than inventing a full field assignment.
-    const fn argument_image(self, second_fresh_read: u32) -> u32 {
-        second_fresh_read | self.argument as u32
-    }
-
     /// Return the validated CPU address without granting dereference access.
     pub const fn address(self) -> BluetoothControllerSramAddress {
         self.address
@@ -192,8 +176,8 @@ impl BluetoothSchedulerLockModifyPublished {
 }
 
 trait BluetoothSchedulerLockModifyControl {
-    fn read_operational_word(&mut self) -> u32;
-    fn write_operational_word(&mut self, image: u32);
+    fn clear_operational_argument(&mut self);
+    fn publish_operational_argument(&mut self, argument: u8);
     fn publish_request(&mut self, address: BluetoothControllerSramAddress);
     fn order_after_publication(&mut self);
 }
@@ -203,15 +187,16 @@ struct HardwareBluetoothSchedulerLockModifyControl<'registers> {
 }
 
 impl BluetoothSchedulerLockModifyControl for HardwareBluetoothSchedulerLockModifyControl<'_> {
-    fn read_operational_word(&mut self) -> u32 {
-        self.registers.operational_word_036c().read().bits()
+    fn clear_operational_argument(&mut self) {
+        self.registers
+            .operational_word_036c()
+            .modify(|_, writer| writer.lock_modify_argument().set(0));
     }
 
-    fn write_operational_word(&mut self, image: u32) {
-        super::generated::publish_bluetooth_scheduler_operational_word(
-            self.registers,
-            super::generated::BluetoothSchedulerOperationalWordImage::new(image),
-        );
+    fn publish_operational_argument(&mut self, argument: u8) {
+        self.registers
+            .operational_word_036c()
+            .modify(|_, writer| writer.lock_modify_argument().set(argument));
     }
 
     fn publish_request(&mut self, address: BluetoothControllerSramAddress) {
@@ -231,11 +216,8 @@ fn execute_scheduler_lock_modify_publication(
     control: &mut impl BluetoothSchedulerLockModifyControl,
     request: BluetoothSchedulerLockModifyRequest,
 ) -> BluetoothSchedulerLockModifyPublished {
-    let first = control.read_operational_word();
-    control.write_operational_word(request.argument_clear_image(first));
-
-    let second = control.read_operational_word();
-    control.write_operational_word(request.argument_image(second));
+    control.clear_operational_argument();
+    control.publish_operational_argument(request.argument());
 
     control.publish_request(request.address());
     control.order_after_publication();
@@ -350,28 +332,24 @@ mod tests {
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum Operation {
-        ReadOperationalWord,
-        WriteOperationalWord,
+        ClearOperationalArgument,
+        PublishOperationalArgument(u8),
         PublishRequest(BluetoothControllerSramAddress),
         DeviceFence,
     }
 
     struct Recorder {
-        reads: [u32; 2],
-        next_read: usize,
         operations: Vec<Operation>,
     }
 
     impl BluetoothSchedulerLockModifyControl for Recorder {
-        fn read_operational_word(&mut self) -> u32 {
-            let value = self.reads[self.next_read];
-            self.next_read += 1;
-            self.operations.push(Operation::ReadOperationalWord);
-            value
+        fn clear_operational_argument(&mut self) {
+            self.operations.push(Operation::ClearOperationalArgument);
         }
 
-        fn write_operational_word(&mut self, _image: u32) {
-            self.operations.push(Operation::WriteOperationalWord);
+        fn publish_operational_argument(&mut self, argument: u8) {
+            self.operations
+                .push(Operation::PublishOperationalArgument(argument));
         }
 
         fn publish_request(&mut self, address: BluetoothControllerSramAddress) {
@@ -390,21 +368,16 @@ mod tests {
         let request = BluetoothSchedulerLockModifyRequest::new(address, 6)
             .expect("test argument is representable");
         let mut recorder = Recorder {
-            reads: [u32::MAX, 0],
-            next_read: 0,
             operations: Vec::new(),
         };
 
         let _published = execute_scheduler_lock_modify_publication(&mut recorder, request);
 
-        assert_eq!(recorder.next_read, 2);
         assert_eq!(
             recorder.operations,
             [
-                Operation::ReadOperationalWord,
-                Operation::WriteOperationalWord,
-                Operation::ReadOperationalWord,
-                Operation::WriteOperationalWord,
+                Operation::ClearOperationalArgument,
+                Operation::PublishOperationalArgument(6),
                 Operation::PublishRequest(address),
                 Operation::DeviceFence,
             ]

@@ -801,10 +801,18 @@ bitWidth = 32
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "OPERATIONAL_WORD_036C"
-description = "Complete operational functions read and publish dynamic complete images. The scheduler insert-with-lock-modify path replaces the low nibble with its four-bit argument before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Independent paths also clear bits 3:0 or 7:4; overlapping whole-word authority remains a register-level fact rather than overlapping SVD fields."
+description = "Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the low four-bit argument through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Other fields remain unassigned."
 addressOffset = 0x36C
 size = 32
 access = "read-write"
+[[peripherals.registers.register.fields]]
+name = "LOCK_MODIFY_ARGUMENT"
+description = "Four-bit positional argument cleared and then published by scheduler insert-with-lock-modify."
+bitOffset = 0
+bitWidth = 4
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0x0F
 
 [[review]]
 entity = "BLUETOOTH_CONTROLLER_CORE"
@@ -1762,6 +1770,13 @@ completeness = "complete"
 
 [[review]]
 entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C"
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C.LOCK_MODIFY_ARGUMENT"
 sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 provenance = "observed"
 accuracy = "exact"

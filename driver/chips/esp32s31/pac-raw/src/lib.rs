@@ -39921,7 +39921,7 @@ pub mod bluetooth_controller_core {
         pub fn hal_init_slot_map_iter(&self) -> impl Iterator<Item = &HalInitSlotMap> {
             self.hal_init_slot_map.iter()
         }
-        #[doc = "0x36c - Complete operational functions read and publish dynamic complete images. The scheduler insert-with-lock-modify path replaces the low nibble with its four-bit argument before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Independent paths also clear bits 3:0 or 7:4; overlapping whole-word authority remains a register-level fact rather than overlapping SVD fields."]
+        #[doc = "0x36c - Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the low four-bit argument through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Other fields remain unassigned."]
         #[inline(always)]
         pub const fn operational_word_036c(&self) -> &OperationalWord036c {
             &self.operational_word_036c
@@ -42429,22 +42429,36 @@ pub mod bluetooth_controller_core {
         #[doc = "`read()` method returns [`operational_status_0324::R`](R) reader structure"]
         impl crate::Readable for OperationalStatus0324Spec {}
     }
-    #[doc = "OPERATIONAL_WORD_036C (rw) register accessor: Complete operational functions read and publish dynamic complete images. The scheduler insert-with-lock-modify path replaces the low nibble with its four-bit argument before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Independent paths also clear bits 3:0 or 7:4; overlapping whole-word authority remains a register-level fact rather than overlapping SVD fields.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_word_036c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_word_036c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@operational_word_036c`] module"]
+    #[doc = "OPERATIONAL_WORD_036C (rw) register accessor: Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the low four-bit argument through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Other fields remain unassigned.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_word_036c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_word_036c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@operational_word_036c`] module"]
     #[doc(alias = "OPERATIONAL_WORD_036C")]
     pub type OperationalWord036c = crate::Reg<operational_word_036c::OperationalWord036cSpec>;
-    #[doc = "Complete operational functions read and publish dynamic complete images. The scheduler insert-with-lock-modify path replaces the low nibble with its four-bit argument before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Independent paths also clear bits 3:0 or 7:4; overlapping whole-word authority remains a register-level fact rather than overlapping SVD fields."]
+    #[doc = "Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the low four-bit argument through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Other fields remain unassigned."]
     pub mod operational_word_036c {
         #[doc = "Register `OPERATIONAL_WORD_036C` reader"]
         pub type R = crate::R<OperationalWord036cSpec>;
         #[doc = "Register `OPERATIONAL_WORD_036C` writer"]
         pub type W = crate::W<OperationalWord036cSpec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `LOCK_MODIFY_ARGUMENT` reader - Four-bit positional argument cleared and then published by scheduler insert-with-lock-modify."]
+        pub type LockModifyArgumentR = crate::FieldReader;
+        #[doc = "Field `LOCK_MODIFY_ARGUMENT` writer - Four-bit positional argument cleared and then published by scheduler insert-with-lock-modify."]
+        pub type LockModifyArgumentW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        impl R {
+            #[doc = "Bits 0:3 - Four-bit positional argument cleared and then published by scheduler insert-with-lock-modify."]
+            #[inline(always)]
+            pub fn lock_modify_argument(&self) -> LockModifyArgumentR {
+                LockModifyArgumentR::new((self.bits & 0x0f) as u8)
             }
         }
-        impl W {}
-        #[doc = "Complete operational functions read and publish dynamic complete images. The scheduler insert-with-lock-modify path replaces the low nibble with its four-bit argument before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Independent paths also clear bits 3:0 or 7:4; overlapping whole-word authority remains a register-level fact rather than overlapping SVD fields.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_word_036c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_word_036c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        impl W {
+            #[doc = "Bits 0:3 - Four-bit positional argument cleared and then published by scheduler insert-with-lock-modify."]
+            #[inline(always)]
+            pub fn lock_modify_argument(
+                &mut self,
+            ) -> LockModifyArgumentW<'_, OperationalWord036cSpec> {
+                LockModifyArgumentW::new(self, 0)
+            }
+        }
+        #[doc = "Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the low four-bit argument through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Other fields remain unassigned.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_word_036c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_word_036c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct OperationalWord036cSpec;
         impl crate::RegisterSpec for OperationalWord036cSpec {
             type Ux = u32;
@@ -55824,22 +55838,6 @@ pub mod w1c_register_snapshot {
 
 /// Safe, SVD-declared writes of dynamic complete-register images.
 pub mod register_image_write {
-
-    /// Publish a caller-built complete image to `BLUETOOTH_CONTROLLER_CORE`.`OPERATIONAL_WORD_036C`.
-    #[inline]
-    pub fn publish_bluetooth_scheduler_operational_word(
-        registers: &crate::BluetoothControllerCore,
-        image: u32,
-    ) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register. The SVD extension and
-        // its provenance qualify this semantic whole-image operation.
-        unsafe {
-            registers
-                .operational_word_036c()
-                .write_with_zero(|writer| writer.bits(image));
-        }
-    }
 
     /// Publish a caller-built complete image to `PHY_BASEBAND_CONFIG_ORACLE`.`POWER_DETECTOR_TABLE_1`.
     #[inline]

@@ -4122,7 +4122,13 @@ peripheral-type = "BluetoothControllerCore"
 peripheral-module = "bluetooth_controller_core"
 scope = []
 register-method = "operational_word_036c"
-fields = []
+
+[[registers.fields]]
+svd-name = "LOCK_MODIFY_ARGUMENT"
+method = "lock_modify_argument"
+bit-offset = 0
+bit-width = 4
+access = "read-write"
 
 [[registers]]
 address = 537924644

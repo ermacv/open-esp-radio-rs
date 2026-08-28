@@ -210,8 +210,8 @@ pub use mac_tsf::{
 };
 pub use mac_tx::{
     MacHeTxProgram, MacHeTxVectorSnapshot, MacHtAmpduCompletionObservation, MacHtTxProgram,
-    MacLegacyTxProgram, MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason,
-    MacTxPtiProgram, MacTxQueueDetached,
+    MacLegacyRate, MacLegacyTxParameters, MacLegacyTxProgram, MacTxCompletionObservation,
+    MacTxDetachOutcome, MacTxDetachReason, MacTxPtiProgram, MacTxQueueDetached,
 };
 pub use mac_tx_power_init::{
     MAC_TX_POWER_RATE_COUNT, MacPartialRuPowerSelector, MacTxPowerIndex, MacTxPowerPair,

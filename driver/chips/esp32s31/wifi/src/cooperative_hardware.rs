@@ -281,8 +281,8 @@ impl TxHardware for CooperativeRadioHardware<'_> {
         TxHardware::prepare_bound_legacy_tx(&mut self.wifi_mac_hal(), dma, queue, program)
     }
 
-    fn start_bound_legacy_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
-        TxHardware::start_bound_legacy_tx(&mut self.wifi_mac_hal(), dma, queue, plcp0);
+    fn start_bound_legacy_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8) {
+        TxHardware::start_bound_legacy_tx(&mut self.wifi_mac_hal(), dma, queue);
     }
 
     fn prepare_bound_ht_tx(

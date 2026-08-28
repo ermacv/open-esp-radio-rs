@@ -15,8 +15,8 @@ use alloc::boxed::Box;
 pub use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
 use open_esp_radio_esp32s31_hal::types::{
     MacHeTbTidLimit, MacHeTid, MacHeTxProgram, MacHeTxVectorSnapshot, MacHtTxProgram, MacInterface,
-    MacLegacyTxProgram, MacPartialRuPowerSelector, MacTxCompletionObservation, MacTxDetachOutcome,
-    MacTxDetachReason, MacTxQueueDetached,
+    MacLegacyRate, MacLegacyTxParameters, MacLegacyTxProgram, MacPartialRuPowerSelector,
+    MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
 };
 use open_esp_radio_esp32s31_hal::{RadioRuntimeOwner, wifi_mac::WifiMacHal};
 use open_esp_radio_esp32s31_wifi_dma::descriptor::descriptor_address_valid;
@@ -39,9 +39,8 @@ use crate::{
         RateScheduleKind, RateScheduleRef, schedule_publication_limit, schedule_rate_after_failures,
     },
     tx_plcp::{
-        apply_basic_txop_control_word, basic_data_length_word, basic_htsig_word,
-        basic_length_control_word, basic_non_he_plcp1_word, basic_plcp0_word, he_ampdu_plcp0_word,
-        he_plcp1_word, ht_htsig_word, ht_plcp1_word,
+        basic_data_length_word, basic_htsig_word, basic_length_control_word, basic_plcp0_word,
+        he_ampdu_plcp0_word, he_plcp1_word, ht_htsig_word, ht_plcp1_word,
     },
 };
 
@@ -200,7 +199,7 @@ pub trait TxHardware {
         program: MacLegacyTxProgram,
     ) -> bool;
 
-    fn start_bound_legacy_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32);
+    fn start_bound_legacy_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8);
 
     fn prepare_bound_ht_tx(
         &mut self,
@@ -266,7 +265,7 @@ impl TxHardware for WifiMacHal<'_> {
         WifiMacHal::prepare_bound_legacy_tx(self, dma, queue, program)
     }
 
-    fn start_bound_legacy_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, _plcp0: u32) {
+    fn start_bound_legacy_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8) {
         WifiMacHal::start_bound_tx(self, dma, queue);
     }
 
@@ -335,8 +334,8 @@ impl TxHardware for RadioRuntimeOwner {
         TxHardware::prepare_bound_legacy_tx(&mut self.wifi_mac_hal(), dma, queue, program)
     }
 
-    fn start_bound_legacy_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
-        TxHardware::start_bound_legacy_tx(&mut self.wifi_mac_hal(), dma, queue, plcp0);
+    fn start_bound_legacy_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8) {
+        TxHardware::start_bound_legacy_tx(&mut self.wifi_mac_hal(), dma, queue);
     }
 
     fn prepare_bound_ht_tx(
@@ -654,6 +653,26 @@ pub enum LegacyRate {
 }
 
 impl LegacyRate {
+    const fn pac_rate(self) -> MacLegacyRate {
+        match self {
+            Self::Dsss1MLong => MacLegacyRate::Dsss1MLong,
+            Self::Dsss2MLong => MacLegacyRate::Dsss2MLong,
+            Self::Cck5M5Long => MacLegacyRate::Cck5M5Long,
+            Self::Cck11MLong => MacLegacyRate::Cck11MLong,
+            Self::Dsss2MShort => MacLegacyRate::Dsss2MShort,
+            Self::Cck5M5Short => MacLegacyRate::Cck5M5Short,
+            Self::Cck11MShort => MacLegacyRate::Cck11MShort,
+            Self::Ofdm48M => MacLegacyRate::Ofdm48M,
+            Self::Ofdm24M => MacLegacyRate::Ofdm24M,
+            Self::Ofdm12M => MacLegacyRate::Ofdm12M,
+            Self::Ofdm6M => MacLegacyRate::Ofdm6M,
+            Self::Ofdm54M => MacLegacyRate::Ofdm54M,
+            Self::Ofdm36M => MacLegacyRate::Ofdm36M,
+            Self::Ofdm18M => MacLegacyRate::Ofdm18M,
+            Self::Ofdm9M => MacLegacyRate::Ofdm9M,
+        }
+    }
+
     pub const fn code(self) -> u8 {
         self as u8
     }
@@ -3031,26 +3050,6 @@ impl LegacyTxConfig {
         }
         Some(Self::management_1m(signal))
     }
-
-    const fn valid(self) -> bool {
-        self.signal <= 0x0fff
-            && self.aifsn <= 0x0f
-            && self.contention_window <= 0x03ff
-            && self.timeout <= 0x0fff
-            && self.hardware_key_selector <= 0x3f
-            && self.scheduler_priority <= 0x0f
-            && self.pti <= 0x0f
-            && self.pti_count <= 0x0fff
-    }
-}
-
-/// Pure register image for one q0 legacy attempt.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct LegacyQ0Image {
-    pub plcp0: u32,
-    pub plcp1: u32,
-    pub power: u32,
-    pub length_control: u32,
 }
 
 /// Pure register image for one HT PPDU.
@@ -3275,53 +3274,6 @@ pub const fn he_ampdu_q0_image(
     })
 }
 
-pub const fn legacy_q0_image(
-    descriptor_address: u32,
-    config: LegacyTxConfig,
-) -> Option<LegacyQ0Image> {
-    if !descriptor_address_valid(descriptor_address) || !config.valid() {
-        return None;
-    }
-    // Complete `libpp.a[pp.o]::ppTxFragmentProc` reaches its common
-    // legacy setup at offsets 0x8e..0xa8 for the CCMP selector-three branch
-    // at 0x22a and sets descriptor bit seven before the LMAC formatter. The
-    // receiver-class bit is added independently by ppTxProtoProc.
-    let descriptor_flags = 0x0000_0080
-        | if config.group_receiver {
-            0x0000_0002
-        } else {
-            0
-        };
-    Some(LegacyQ0Image {
-        // The complete recovered formatter consumes many descriptor states.
-        // This direct profile admits only its two plain legacy roots: zero for
-        // an individual receiver and bit one for a group receiver.
-        //
-        // Complete mac_tx_set_txop_q runs after mac_tx_set_plcp0. The ordinary
-        // descriptor class above retains control bit 22; keeping the second
-        // edge explicit prevents the upper path from guessing its value.
-        plcp0: apply_basic_txop_control_word(
-            basic_plcp0_word(descriptor_address as usize, descriptor_flags),
-            descriptor_flags,
-        ),
-        plcp1: basic_non_he_plcp1_word(
-            config.rate.code(),
-            0,
-            plcp1_descriptor_control(config.hardware_key_selector, config.interface),
-            0,
-            config.signal as u32,
-        ),
-        power: config.data_power as u32
-            | ((config.rts_power_low as u32) << 16)
-            | ((config.rts_power_high as u32) << 24),
-        length_control: basic_length_control_word(
-            config.rts_rate.code(),
-            1,
-            config.hardware_key_selector as u32,
-        ),
-    })
-}
-
 /// MAC policy owner for one lower, permanently located TX DMA allocation.
 ///
 /// Descriptor and buffer storage live in the audited chip-DMA leaf. This
@@ -3454,30 +3406,36 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         if slot.dma.state() != TxSlotState::Reserved || cookie != slot.active {
             return Err(TxError::Stale);
         }
-        let image = legacy_q0_image(slot.dma.binding().descriptor_address(), config)
-            .ok_or(TxError::Invalid)?;
         let index = queue.index();
-        let program = MacLegacyTxProgram {
-            plcp0: image.plcp0,
-            plcp1: image.plcp1,
-            power: image.power,
-            length_control: image.length_control,
-            timeout: config.timeout,
-            scheduler_priority: config.scheduler_priority,
-            packet_priority: config.pti,
-            priority_count: config.pti_count,
-            aifsn: config.aifsn,
-            contention_window: config.contention_window,
-            interface: config.interface,
-        };
         let publication = slot.dma.publication().map_err(map_dma_storage_error)?;
+        let program = MacLegacyTxProgram::new(
+            &publication,
+            MacLegacyTxParameters {
+                rate: config.rate.pac_rate(),
+                rts_rate: config.rts_rate.pac_rate(),
+                signal: config.signal,
+                data_power: config.data_power,
+                rts_power_low: config.rts_power_low,
+                rts_power_high: config.rts_power_high,
+                group_receiver: config.group_receiver,
+                hardware_key_selector: config.hardware_key_selector,
+                interface: config.interface,
+                aifsn: config.aifsn,
+                contention_window: config.contention_window,
+                timeout: config.timeout,
+                scheduler_priority: config.scheduler_priority,
+                packet_priority: config.pti,
+                priority_count: config.pti_count,
+            },
+        )
+        .ok_or(TxError::Invalid)?;
         if !hardware.prepare_bound_legacy_tx(&publication, index, program) {
             return Err(TxError::QueueActive);
         }
 
         slot.queue = queue;
         publication.commit(|start| {
-            hardware.start_bound_legacy_tx(start, index, image.plcp0);
+            hardware.start_bound_legacy_tx(start, index);
         });
         Ok(())
     }

@@ -832,70 +832,10 @@ impl MacColdRxBufferHardware for MockMmio {
 impl TxHardware for MockMmio {
     fn prepare_bound_legacy_tx(
         &mut self,
-        dma: &dyn PreparedTxDma,
-        queue: u8,
-        program: MacLegacyTxProgram,
+        _dma: &dyn PreparedTxDma,
+        _queue: u8,
+        _program: MacLegacyTxProgram,
     ) -> bool {
-        assert_eq!(
-            dma.descriptor_head() & 0x000f_ffff,
-            program.plcp0 & 0x000f_ffff
-        );
-        let index = usize::from(queue);
-        if self.read32(mac::TX_Q_CONTROL[index]) & TX_Q_ENABLE_VALID != 0 {
-            return false;
-        }
-        let mut config = self.read32(mac::TX_Q_CONFIG[index]);
-        self.write32(
-            mac::TX_Q_CONFIG[index],
-            (config & 0xffff_f000) | u32::from(program.timeout),
-        );
-        self.write32(mac::TX_Q_CONTROL[index], program.plcp0);
-        self.write32(mac::TX_Q_PLCP1[index], program.plcp1);
-        let ppdu = self.read32(mac::TX_Q_PPDU_CONTROL[index]);
-        self.write32(mac::TX_Q_PPDU_CONTROL[index], ppdu & !0x08);
-        let protection = self.read32(mac::TX_Q_PROTECTION[index]);
-        self.write32(mac::TX_Q_PROTECTION[index], protection & 0x7fff_ffff);
-        self.write32(mac::TX_Q_LENGTH_CONTROL[index], program.length_control);
-        self.write32(mac::TX_Q_POWER[index], program.power);
-
-        config = self.read32(mac::TX_Q_CONFIG[index]);
-        self.write32(
-            mac::TX_Q_CONFIG[index],
-            (config & 0x0fff_ffff) | (u32::from(program.scheduler_priority) << 28),
-        );
-        for (mask, shift) in [
-            (0xffff_0fff, 12),
-            (0xffff_f0ff, 8),
-            (0xffff_ff0f, 4),
-            (0xfff0_ffff, 16),
-        ] {
-            let pti = self.read32(mac::TX_Q_PTI[index]);
-            self.write32(
-                mac::TX_Q_PTI[index],
-                (pti & mask) | (u32::from(program.packet_priority) << shift),
-            );
-        }
-        let pti = self.read32(mac::TX_Q_PTI[index]);
-        self.write32(
-            mac::TX_Q_PTI[index],
-            (pti & 0x000f_ffff) | (u32::from(program.priority_count) << 20),
-        );
-
-        config = self.read32(mac::TX_Q_CONFIG[index]);
-        self.write32(
-            mac::TX_Q_CONFIG[index],
-            (config & 0xf0ff_ffff) | (u32::from(program.aifsn) << 24),
-        );
-        config = self.read32(mac::TX_Q_CONFIG[index]);
-        self.write32(
-            mac::TX_Q_CONFIG[index],
-            (config & 0xffc0_0fff) | (u32::from(program.contention_window) << 12),
-        );
-        config = self.read32(mac::TX_Q_CONFIG[index]);
-        self.write32(
-            mac::TX_Q_CONFIG[index],
-            (config & 0xff3f_ffff) | (program.interface.bits() << 22),
-        );
         true
     }
 
@@ -992,13 +932,8 @@ impl TxHardware for MockMmio {
         true
     }
 
-    fn start_bound_legacy_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
-        assert_eq!(dma.descriptor_head() & 0x000f_ffff, plcp0 & 0x000f_ffff);
+    fn start_bound_legacy_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8) {
         Mmio::fence(self);
-        self.write32(
-            mac::TX_Q_CONTROL[usize::from(queue)],
-            plcp0 | TX_Q_ENABLE_VALID,
-        );
         Mmio::fence(self);
     }
 

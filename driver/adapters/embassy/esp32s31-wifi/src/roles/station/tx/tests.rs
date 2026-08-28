@@ -145,7 +145,7 @@ impl open_esp_radio_esp32s31_wifi_mac::tx::TxHardware for Hardware {
         true
     }
 
-    fn start_bound_legacy_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8, _plcp0: u32) {}
+    fn start_bound_legacy_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8) {}
 
     fn prepare_bound_ht_tx(
         &mut self,

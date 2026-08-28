@@ -182,7 +182,7 @@ impl TxHardware for Hardware {
         self.prepare
     }
 
-    fn start_bound_legacy_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8, _plcp0: u32) {}
+    fn start_bound_legacy_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8) {}
 
     fn take_tx_completion(&mut self, _queue: u8) -> Option<MacTxCompletionObservation> {
         self.completion.take()

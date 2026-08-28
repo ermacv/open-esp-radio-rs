@@ -239,12 +239,7 @@ mod tests {
             true
         }
 
-        fn start_bound_legacy_tx(
-            &mut self,
-            _dma: &dyn HardwareOwnedTxDma,
-            _queue: u8,
-            _plcp0: u32,
-        ) {
+        fn start_bound_legacy_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8) {
             self.publications = self.publications.saturating_add(1);
         }
 

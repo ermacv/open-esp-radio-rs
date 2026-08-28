@@ -683,12 +683,7 @@ mod tests {
             self.prepare
         }
 
-        fn start_bound_legacy_tx(
-            &mut self,
-            _dma: &dyn HardwareOwnedTxDma,
-            _queue: u8,
-            _plcp0: u32,
-        ) {
+        fn start_bound_legacy_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8) {
             self.publications += 1;
         }
 
@@ -822,9 +817,9 @@ mod tests {
         assert!(matches!(result, Ok(completion) if completion.status() == 0));
         assert_eq!(hardware.publications, 1);
         let (_, program) = hardware.legacy.expect("management publication");
-        assert_eq!(program.interface, MacInterface::Station);
-        assert_eq!(program.scheduler_priority, 1);
-        assert_eq!(program.packet_priority, 1);
+        assert_eq!(program.interface(), MacInterface::Station);
+        assert_eq!(program.scheduler_priority(), 1);
+        assert_eq!(program.packet_priority(), 1);
         assert_eq!(tx.ordinary.slot.state(), TxSlotState::Free);
         let bytes = tx.ordinary.slot.as_mut().buffer_mut().unwrap();
         assert_eq!(&bytes[TX_METADATA_SIZE..TX_METADATA_SIZE + 2], &[0xb0, 0]);
@@ -941,8 +936,8 @@ mod tests {
 
         assert!(result.is_ok());
         let (_, program) = hardware.legacy.expect("EAPOL publication");
-        assert_eq!(program.scheduler_priority, 3);
-        assert_eq!(program.packet_priority, 3);
+        assert_eq!(program.scheduler_priority(), 3);
+        assert_eq!(program.packet_priority(), 3);
     }
 
     #[test]

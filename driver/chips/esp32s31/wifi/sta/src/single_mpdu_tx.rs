@@ -1125,12 +1125,7 @@ mod tests {
             self.prepare
         }
 
-        fn start_bound_legacy_tx(
-            &mut self,
-            _dma: &dyn HardwareOwnedTxDma,
-            _queue: u8,
-            _plcp0: u32,
-        ) {
+        fn start_bound_legacy_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8) {
             self.publications += 1;
         }
 
@@ -1425,11 +1420,11 @@ mod tests {
         let (queue, program) = hardware.legacy.expect("classified legacy queue image");
         assert_eq!(queue, LegacyTxQueue::Voice.hardware_index());
         assert_eq!(
-            program.scheduler_priority,
+            program.scheduler_priority(),
             LegacyTxQueue::Voice.vendor_data_scheduler_priority()
         );
         assert_eq!(
-            program.packet_priority,
+            program.packet_priority(),
             LegacyTxQueue::Voice.vendor_data_packet_priority()
         );
         assert_eq!(tx.sequences.peek_qos(6), Some(8));
@@ -1541,10 +1536,10 @@ mod tests {
         );
         let (queue, program) = hardware.legacy.expect("legacy queue image");
         assert_eq!(queue, 0);
-        assert_eq!(program.interface, MacInterface::Station);
-        assert_eq!(program.scheduler_priority, 0);
-        assert_eq!(program.packet_priority, 0);
-        assert_eq!(program.plcp1 & 0xfff, 34);
+        assert_eq!(program.interface(), MacInterface::Station);
+        assert_eq!(program.scheduler_priority(), 0);
+        assert_eq!(program.packet_priority(), 0);
+        assert_eq!(program.signal(), 34);
 
         hardware.completion = Some(completion(0));
         assert_eq!(
@@ -1582,10 +1577,10 @@ mod tests {
         );
         let (queue, program) = hardware.legacy.expect("legacy queue image");
         assert_eq!(queue, 0);
-        assert_eq!(program.scheduler_priority, 1);
-        assert_eq!(program.packet_priority, 1);
+        assert_eq!(program.scheduler_priority(), 1);
+        assert_eq!(program.packet_priority(), 1);
         // PLCP length includes the four-byte hardware FCS.
-        assert_eq!(program.plcp1 & 0xfff, 28);
+        assert_eq!(program.signal(), 28);
 
         hardware.completion = Some(completion(0));
         assert_eq!(

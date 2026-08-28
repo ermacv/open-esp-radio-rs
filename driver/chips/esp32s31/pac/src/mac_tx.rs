@@ -38,12 +38,60 @@ fn assert_tx_descriptor_head(authority_head: u32, control_word: u32) {
     );
 }
 
+/// Reviewed ESP32-S31 selector for one non-HT transmit rate.
+///
+/// The numeric encoding is private to this PAC module. Protocol code selects
+/// a named rate and cannot compose the corresponding PLCP field itself.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MacLegacyTxProgram {
-    pub plcp0: u32,
-    pub plcp1: u32,
-    pub power: u32,
-    pub length_control: u32,
+pub enum MacLegacyRate {
+    Dsss1MLong,
+    Dsss2MLong,
+    Cck5M5Long,
+    Cck11MLong,
+    Dsss2MShort,
+    Cck5M5Short,
+    Cck11MShort,
+    Ofdm48M,
+    Ofdm24M,
+    Ofdm12M,
+    Ofdm6M,
+    Ofdm54M,
+    Ofdm36M,
+    Ofdm18M,
+    Ofdm9M,
+}
+
+impl MacLegacyRate {
+    const fn register_value(self) -> u8 {
+        match self {
+            Self::Dsss1MLong => 0x00,
+            Self::Dsss2MLong => 0x01,
+            Self::Cck5M5Long => 0x02,
+            Self::Cck11MLong => 0x03,
+            Self::Dsss2MShort => 0x05,
+            Self::Cck5M5Short => 0x06,
+            Self::Cck11MShort => 0x07,
+            Self::Ofdm48M => 0x08,
+            Self::Ofdm24M => 0x09,
+            Self::Ofdm12M => 0x0a,
+            Self::Ofdm6M => 0x0b,
+            Self::Ofdm54M => 0x0c,
+            Self::Ofdm36M => 0x0d,
+            Self::Ofdm18M => 0x0e,
+            Self::Ofdm9M => 0x0f,
+        }
+    }
+}
+
+/// Semantic inputs for one bounded legacy queue publication.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacLegacyTxParameters {
+    pub rate: MacLegacyRate,
+    pub rts_rate: MacLegacyRate,
+    pub signal: u16,
+    pub data_power: u8,
+    pub rts_power_low: u8,
+    pub rts_power_high: u8,
     pub timeout: u16,
     pub scheduler_priority: u8,
     pub packet_priority: u8,
@@ -51,6 +99,87 @@ pub struct MacLegacyTxProgram {
     pub aifsn: u8,
     pub contention_window: u16,
     pub interface: MacInterface,
+    pub group_receiver: bool,
+    pub hardware_key_selector: u8,
+}
+
+/// PAC-owned register program for one bounded legacy PPDU.
+///
+/// All register images are private. Higher layers can retain and inspect the
+/// semantic values through accessors, but cannot publish or test raw PLCP
+/// geometry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacLegacyTxProgram {
+    plcp0: u32,
+    plcp1: u32,
+    power: u32,
+    length_control: u32,
+    timeout: u16,
+    scheduler_priority: u8,
+    packet_priority: u8,
+    priority_count: u16,
+    aifsn: u8,
+    contention_window: u16,
+    interface: MacInterface,
+}
+
+impl MacLegacyTxProgram {
+    /// Bind one semantic legacy publication to its prepared DMA authority.
+    pub fn new(dma: &dyn PreparedTxDma, parameters: MacLegacyTxParameters) -> Option<Self> {
+        if parameters.signal > 0x0fff
+            || parameters.timeout > 0x0fff
+            || parameters.scheduler_priority > 0x0f
+            || parameters.packet_priority > 0x0f
+            || parameters.priority_count > 0x0fff
+            || parameters.aifsn > 0x0f
+            || parameters.contention_window > 0x03ff
+            || parameters.hardware_key_selector > 0x3f
+        {
+            return None;
+        }
+
+        let descriptor_address = dma.descriptor_head() & DESCRIPTOR_ADDRESS_LOW_MASK;
+        let format = if parameters.group_receiver { 0 } else { 1 };
+        let descriptor_control =
+            u32::from(parameters.hardware_key_selector) | (parameters.interface.bits() << 6);
+        Some(Self {
+            // Complete mac_tx_set_plcp0 followed by mac_tx_set_txop_q for the
+            // bounded descriptor class selected by this constructor.
+            plcp0: descriptor_address | 0x0060_0000 | 0x0040_0000 | (format << 24),
+            plcp1: (descriptor_control << 17)
+                | (u32::from(parameters.rate.register_value()) << 12)
+                | u32::from(parameters.signal),
+            power: u32::from(parameters.data_power)
+                | (u32::from(parameters.rts_power_low) << 16)
+                | (u32::from(parameters.rts_power_high) << 24),
+            length_control: (1 << 22)
+                | (u32::from(parameters.rts_rate.register_value()) << 6)
+                | 0x04,
+            timeout: parameters.timeout,
+            scheduler_priority: parameters.scheduler_priority,
+            packet_priority: parameters.packet_priority,
+            priority_count: parameters.priority_count,
+            aifsn: parameters.aifsn,
+            contention_window: parameters.contention_window,
+            interface: parameters.interface,
+        })
+    }
+
+    pub const fn interface(self) -> MacInterface {
+        self.interface
+    }
+
+    pub const fn scheduler_priority(self) -> u8 {
+        self.scheduler_priority
+    }
+
+    pub const fn packet_priority(self) -> u8 {
+        self.packet_priority
+    }
+
+    pub const fn signal(self) -> u16 {
+        (self.plcp1 & 0x0fff) as u16
+    }
 }
 
 /// Complete queue-vector image for one HT PPDU.

@@ -610,12 +610,7 @@ mod tests {
             self.prepare
         }
 
-        fn start_bound_legacy_tx(
-            &mut self,
-            _dma: &dyn HardwareOwnedTxDma,
-            _queue: u8,
-            _plcp0: u32,
-        ) {
+        fn start_bound_legacy_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8) {
             self.publications += 1;
         }
 
@@ -892,7 +887,7 @@ mod tests {
         assert_eq!(tx.queue_state(), MacTxQueueState::Backpressured);
         assert_eq!(hardware.publications, 1);
         assert_eq!(
-            hardware.legacy_program.unwrap().interface,
+            hardware.legacy_program.unwrap().interface(),
             MacInterface::AccessPoint
         );
 

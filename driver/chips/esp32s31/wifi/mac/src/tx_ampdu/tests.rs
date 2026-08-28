@@ -28,7 +28,7 @@ impl TxHardware for CompletionHardware {
         false
     }
 
-    fn start_bound_legacy_tx(&mut self, _: &dyn HardwareOwnedTxDma, _: u8, _: u32) {}
+    fn start_bound_legacy_tx(&mut self, _: &dyn HardwareOwnedTxDma, _: u8) {}
 
     fn prepare_bound_ht_tx(&mut self, _: &dyn PreparedTxDma, _: u8, _: MacHtTxProgram) -> bool {
         true
@@ -120,7 +120,7 @@ impl TxHardware for DetachingCompletionHardware {
         false
     }
 
-    fn start_bound_legacy_tx(&mut self, _: &dyn HardwareOwnedTxDma, _: u8, _: u32) {}
+    fn start_bound_legacy_tx(&mut self, _: &dyn HardwareOwnedTxDma, _: u8) {}
 
     fn prepare_bound_ht_tx(&mut self, _: &dyn PreparedTxDma, _: u8, _: MacHtTxProgram) -> bool {
         true

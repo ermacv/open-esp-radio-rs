@@ -689,7 +689,6 @@ impl open_esp_radio_esp32s31_wifi_mac::tx::TxHardware for OrdinaryTxProbeHardwar
         &mut self,
         _dma: &dyn open_esp_radio_esp32s31_wifi_mac::tx::HardwareOwnedTxDma,
         queue: u8,
-        _plcp0: u32,
     ) {
         self.publications = self.publications.saturating_add(1);
         if self.publications > 1 {

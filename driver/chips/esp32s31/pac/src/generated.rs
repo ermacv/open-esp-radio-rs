@@ -874,6 +874,29 @@ impl Ieee802154TxPowerCode {
     }
 }
 
+/// Two-bit RX-DCO calibration control field retained and restored by complete calibration bodies.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyRxDcoCalibrationControl(u32);
+
+impl PhyRxDcoCalibrationControl {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x00000003;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x00000003 {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Four-bit positional argument accepted by the reviewed scheduler lock/modify publication.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct BluetoothSchedulerLockModifyArgument(u32);
@@ -3772,6 +3795,24 @@ pub(crate) fn disable_shared_modem_low_power_timer_clock(
     registers: &crate::svd::ModemLpconSharedClock,
 ) {
     crate::svd::field_replace_modify::disable_shared_modem_low_power_timer_clock(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_rx_dco_calibration_control` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_rx_dco_calibration_control(registers: &crate::svd::PhyRxDcoOracle) {
+    crate::svd::field_replace_modify::clear_phy_rx_dco_calibration_control(registers);
+}
+
+/// Typed bridge for the reviewed `restore_phy_rx_dco_calibration_control` field-replacement transaction.
+#[inline]
+pub(crate) fn restore_phy_rx_dco_calibration_control(
+    registers: &crate::svd::PhyRxDcoOracle,
+    value: PhyRxDcoCalibrationControl,
+) {
+    crate::svd::field_replace_modify::restore_phy_rx_dco_calibration_control(
+        registers,
+        value.get(),
+    );
 }
 
 /// Typed bridge for the reviewed `clear_bluetooth_scheduler_lock_modify_argument` fixed field-replacement transaction.

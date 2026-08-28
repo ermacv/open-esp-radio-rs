@@ -11,19 +11,21 @@ impl RadioPhyRegisters {
     /// duty operation masks this field around a nested RX-DCO calibration
     /// which independently performs the same save/clear/restore sequence.
     pub fn prepare_rx_dco_control_restore(&mut self) -> Result<(), RxDcoControlPrepareError> {
-        let control = self.peripherals.phy_rx_dco_oracle.control();
+        let registers = &self.peripherals.phy_rx_dco_oracle;
         self.restore_slot.prepare_rx_dco_with(|| {
-            let saved = control.read().calibration_control_unknown().bits();
-            control.modify(|_, w| w.calibration_control_unknown().set(0));
+            let saved = crate::svd::field_read::capture_phy_rx_dco_calibration_control(registers);
+            crate::generated::clear_phy_rx_dco_calibration_control(registers);
             saved
         })
     }
 
     /// Restore the most recently retained RX-DCO control field.
     pub fn restore_rx_dco_control(&mut self) -> Result<(), RxDcoControlRestoreError> {
-        let control = self.peripherals.phy_rx_dco_oracle.control();
+        let registers = &self.peripherals.phy_rx_dco_oracle;
         self.restore_slot.restore_rx_dco_with(|saved| {
-            control.modify(|_, w| w.calibration_control_unknown().set(saved));
+            let saved = crate::generated::PhyRxDcoCalibrationControl::new(u32::from(saved))
+                .expect("generated two-bit RX-DCO readback must fit its restore domain");
+            crate::generated::restore_phy_rx_dco_calibration_control(registers, saved);
         })
     }
 
@@ -32,11 +34,8 @@ impl RadioPhyRegisters {
     /// Complete rev0 ROM `phy_wait_i2c_sdm_stable` at `0x2f823e76` proves the
     /// address and wrapping-difference consumer, but not the clock source.
     pub fn sample_sdm_deadline_counter(&mut self) -> u32 {
-        self.peripherals
-            .phy_cold_deadline_oracle
-            .deadline_counter_unknown()
-            .read()
-            .value()
-            .bits()
+        crate::svd::field_read::sample_phy_sdm_deadline_counter(
+            &self.peripherals.phy_cold_deadline_oracle,
+        )
     }
 }

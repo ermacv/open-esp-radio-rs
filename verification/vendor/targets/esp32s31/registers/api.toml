@@ -5294,6 +5294,45 @@ exposure = "facade"
 sources = ["S31_MODEM_LPCON_STRUCT"]
 
 [[bounded-domains]]
+name = "PhyRxDcoCalibrationControl"
+description = "Two-bit RX-DCO calibration control field retained and restored by complete calibration bodies."
+min = 0
+max = 3
+sources = ["BLOB_LIBPHY_PHY_XTAL_DUTY_CAL", "ROM_REV0_PHY_RX_DCO_CAL"]
+
+[[field-reads]]
+name = "capture_phy_rx_dco_calibration_control"
+peripheral = "PHY_RX_DCO_ORACLE"
+register = "CONTROL"
+field = "CALIBRATION_CONTROL_UNKNOWN"
+sources = ["BLOB_LIBPHY_PHY_XTAL_DUTY_CAL", "ROM_REV0_PHY_RX_DCO_CAL"]
+
+[[field-replace-modifies]]
+name = "clear_phy_rx_dco_calibration_control"
+peripheral = "PHY_RX_DCO_ORACLE"
+register = "CONTROL"
+fields = [{ field = "CALIBRATION_CONTROL_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_XTAL_DUTY_CAL", "ROM_REV0_PHY_RX_DCO_CAL"]
+
+[[field-replace-modifies]]
+name = "restore_phy_rx_dco_calibration_control"
+peripheral = "PHY_RX_DCO_ORACLE"
+register = "CONTROL"
+fields = [{ field = "CALIBRATION_CONTROL_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyRxDcoCalibrationControl"
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_XTAL_DUTY_CAL", "ROM_REV0_PHY_RX_DCO_CAL"]
+
+[[field-reads]]
+name = "sample_phy_sdm_deadline_counter"
+peripheral = "PHY_COLD_DEADLINE_ORACLE"
+register = "DEADLINE_COUNTER_UNKNOWN"
+field = "VALUE"
+sources = ["ROM_REV0_PHY_WAIT_I2C_SDM_STABLE"]
+
+[[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."
 min = 0

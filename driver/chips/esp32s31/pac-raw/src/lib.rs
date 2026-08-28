@@ -58368,6 +58368,22 @@ pub mod field_read {
             .bits()
     }
 
+    /// Read `PHY_RX_DCO_ORACLE`.`CONTROL`.`CALIBRATION_CONTROL_UNKNOWN` without exposing its register block.
+    #[inline]
+    pub fn capture_phy_rx_dco_calibration_control(registers: &crate::PhyRxDcoOracle) -> u8 {
+        registers
+            .control()
+            .read()
+            .calibration_control_unknown()
+            .bits()
+    }
+
+    /// Read `PHY_COLD_DEADLINE_ORACLE`.`DEADLINE_COUNTER_UNKNOWN`.`VALUE` without exposing its register block.
+    #[inline]
+    pub fn sample_phy_sdm_deadline_counter(registers: &crate::PhyColdDeadlineOracle) -> u32 {
+        registers.deadline_counter_unknown().read().value().bits()
+    }
+
     /// Read `BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME`.`SCHEDULER_STATE`.`BUSY` without exposing its register block.
     #[inline]
     pub fn observe_bluetooth_scheduler_lock_modify_busy(
@@ -64823,6 +64839,35 @@ pub mod field_replace_modify {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             writer.clk_lp_timer_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_RX_DCO_ORACLE.CONTROL fields [CALIBRATION_CONTROL_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_phy_rx_dco_calibration_control(registers: &crate::PhyRxDcoOracle) {
+        registers.control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .calibration_control_unknown()
+                    .bits((input & 0x00000003) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_RX_DCO_ORACLE.CONTROL fields [CALIBRATION_CONTROL_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn restore_phy_rx_dco_calibration_control(registers: &crate::PhyRxDcoOracle, input: u32) {
+        registers.control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .calibration_control_unknown()
+                    .bits((input & 0x00000003) as u8)
+            }
         });
     }
 

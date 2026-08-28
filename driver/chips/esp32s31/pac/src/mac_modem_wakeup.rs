@@ -198,18 +198,16 @@ pub struct StaModemWakeRestoreFailure {
     pub restore: StaModemWakeRestore,
 }
 
-pub(crate) fn set_beacon_miss_timeout(registers: &svd::WifiMacRtcTimerUpdate, value: u16) -> u32 {
+pub(crate) fn set_beacon_miss_timeout(registers: &svd::WifiMacRtcTimerUpdate, value: u16) {
     registers
         .rx_beacon_time_low()
         .modify(|_, writer| writer.value().set(value));
-    u32::from(value)
 }
 
-pub(crate) fn set_beacon_miss_limit(registers: &svd::WifiMacRtcTimerUpdate, value: u8) -> u32 {
+pub(crate) fn set_beacon_miss_limit(registers: &svd::WifiMacRtcTimerUpdate, value: u8) {
     registers
         .modem_sleep_limit_control()
         .modify(|_, writer| writer.beacon_miss_limit().set(value));
-    u32::from(value)
 }
 
 pub(crate) fn enable_beacon_miss_limit_wakeup(registers: &svd::WifiMacRtcTimerUpdate) {
@@ -224,18 +222,10 @@ pub(crate) fn set_beacon_miss_limit_wakeup(registers: &svd::WifiMacRtcTimerUpdat
         .modify(|_, writer| writer.beacon_miss_limit_wakeup_enable().bit(enabled));
 }
 
-pub(crate) fn set_modem_state_sleep_limit(
-    registers: &svd::WifiMacRtcTimerUpdate,
-    value: u16,
-) -> u32 {
-    let mut published = 0;
+pub(crate) fn set_modem_state_sleep_limit(registers: &svd::WifiMacRtcTimerUpdate, value: u16) {
     registers
         .modem_sleep_limit_control()
-        .modify(|reader, writer| {
-            published = (reader.bits() & !0x0000_7fe0) | (u32::from(value) << 5);
-            writer.modem_state_sleep_limit().set(value)
-        });
-    published
+        .modify(|_, writer| writer.modem_state_sleep_limit().set(value));
 }
 
 pub(crate) fn enable_modem_state_sleep_limit_wakeup(registers: &svd::WifiMacRtcTimerUpdate) {
@@ -268,14 +258,10 @@ pub(crate) fn set_modem_state_wakeup_protect(
         .modify(|_, writer| writer.modem_state_wakeup_protect_enable().bit(enabled));
 }
 
-pub(crate) fn set_wakeup_protect_early_time(
-    registers: &svd::WifiMacRegdmaControl,
-    value: u16,
-) -> u32 {
+pub(crate) fn set_wakeup_protect_early_time(registers: &svd::WifiMacRegdmaControl, value: u16) {
     registers
         .control()
         .modify(|_, writer| writer.modem_wakeup_protect_early_time().set(value));
-    u32::from(value)
 }
 
 pub(crate) fn enable_tbtt_auto_period(registers: &svd::WifiMacRegdmaControl) {
@@ -290,13 +276,10 @@ pub(crate) fn disable_tbtt_auto_period(registers: &svd::WifiMacRegdmaControl) {
         .modify(|_, writer| writer.modem_tbtt_auto_period_enable().clear_bit());
 }
 
-pub(crate) fn set_tbtt_auto_period(registers: &svd::WifiMacRegdmaControl, value: u16) -> u32 {
-    let mut published = 0;
-    registers.control().modify(|reader, writer| {
-        published = (reader.bits() & !0x7fe0_0000) | (u32::from(value) << 21);
-        writer.modem_tbtt_auto_period_interval().set(value)
-    });
-    published
+pub(crate) fn set_tbtt_auto_period(registers: &svd::WifiMacRegdmaControl, value: u16) {
+    registers
+        .control()
+        .modify(|_, writer| writer.modem_tbtt_auto_period_interval().set(value));
 }
 
 /// Shared transaction shape used by production MMIO and the host register
@@ -559,77 +542,78 @@ mod tests {
 
     #[derive(Clone, Debug, Eq, PartialEq)]
     struct RegisterModel {
-        beacon_time: u32,
-        sleep_limits: u32,
-        sta_tsf_control: u32,
-        regdma_control: u32,
+        beacon_miss_timeout: u16,
+        beacon_miss_limit: u8,
+        beacon_miss_limit_wakeup_enabled: bool,
+        modem_sleep_limit: u16,
+        modem_sleep_limit_wakeup_enabled: bool,
+        wakeup_protect_enabled: bool,
+        wakeup_protect_early_time: u16,
+        tbtt_auto_period: u16,
+        tbtt_auto_period_enabled: bool,
         operations: Vec<Operation>,
     }
 
     impl RegisterModel {
         fn snapshot(&self) -> StaModemWakeSnapshot {
             StaModemWakeSnapshot {
-                beacon_miss_timeout: self.beacon_time as u16,
-                beacon_miss_limit: (self.sleep_limits & 0x0f) as u8,
-                beacon_miss_limit_wakeup_enabled: self.sleep_limits & (1 << 4) != 0,
-                modem_sleep_limit: ((self.sleep_limits >> 5) & 0x03ff) as u16,
-                modem_sleep_limit_wakeup_enabled: self.sleep_limits & (1 << 15) != 0,
-                wakeup_protect_enabled: self.sta_tsf_control & (1 << 24) != 0,
-                wakeup_protect_early_time: self.regdma_control as u16,
-                tbtt_auto_period: ((self.regdma_control >> 21) & 0x03ff) as u16,
-                tbtt_auto_period_enabled: self.regdma_control & (1 << 31) != 0,
+                beacon_miss_timeout: self.beacon_miss_timeout,
+                beacon_miss_limit: self.beacon_miss_limit,
+                beacon_miss_limit_wakeup_enabled: self.beacon_miss_limit_wakeup_enabled,
+                modem_sleep_limit: self.modem_sleep_limit,
+                modem_sleep_limit_wakeup_enabled: self.modem_sleep_limit_wakeup_enabled,
+                wakeup_protect_enabled: self.wakeup_protect_enabled,
+                wakeup_protect_early_time: self.wakeup_protect_early_time,
+                tbtt_auto_period: self.tbtt_auto_period,
+                tbtt_auto_period_enabled: self.tbtt_auto_period_enabled,
             }
-        }
-
-        fn insert(image: &mut u32, mask: u32, shift: u32, value: u32) {
-            *image = (*image & !mask) | ((value << shift) & mask);
         }
     }
 
     impl StaModemWakeTransaction for RegisterModel {
         fn set_beacon_miss_timeout(&mut self, value: u16) {
             self.operations.push(Operation::BeaconMissTimeout(value));
-            Self::insert(&mut self.beacon_time, 0x0000_ffff, 0, u32::from(value));
+            self.beacon_miss_timeout = value;
         }
 
         fn set_beacon_miss_limit(&mut self, value: u8) {
             self.operations.push(Operation::BeaconMissLimit(value));
-            Self::insert(&mut self.sleep_limits, 0x0000_000f, 0, u32::from(value));
+            self.beacon_miss_limit = value;
         }
 
         fn set_beacon_miss_wakeup(&mut self, enabled: bool) {
             self.operations.push(Operation::BeaconMissWake(enabled));
-            Self::insert(&mut self.sleep_limits, 1 << 4, 4, enabled as u32);
+            self.beacon_miss_limit_wakeup_enabled = enabled;
         }
 
         fn set_modem_sleep_limit(&mut self, value: u16) {
             self.operations.push(Operation::ModemSleepLimit(value));
-            Self::insert(&mut self.sleep_limits, 0x0000_7fe0, 5, u32::from(value));
+            self.modem_sleep_limit = value;
         }
 
         fn set_modem_sleep_wakeup(&mut self, enabled: bool) {
             self.operations.push(Operation::ModemSleepWake(enabled));
-            Self::insert(&mut self.sleep_limits, 1 << 15, 15, enabled as u32);
+            self.modem_sleep_limit_wakeup_enabled = enabled;
         }
 
         fn set_wakeup_protect(&mut self, enabled: bool) {
             self.operations.push(Operation::WakeupProtect(enabled));
-            Self::insert(&mut self.sta_tsf_control, 1 << 24, 24, enabled as u32);
+            self.wakeup_protect_enabled = enabled;
         }
 
         fn set_wakeup_protect_early_time(&mut self, value: u16) {
             self.operations.push(Operation::WakeupProtectEarly(value));
-            Self::insert(&mut self.regdma_control, 0x0000_ffff, 0, u32::from(value));
+            self.wakeup_protect_early_time = value;
         }
 
         fn set_tbtt_auto_period_enabled(&mut self, enabled: bool) {
             self.operations.push(Operation::TbttAutoEnabled(enabled));
-            Self::insert(&mut self.regdma_control, 1 << 31, 31, enabled as u32);
+            self.tbtt_auto_period_enabled = enabled;
         }
 
         fn set_tbtt_auto_period(&mut self, value: u16) {
             self.operations.push(Operation::TbttAutoPeriod(value));
-            Self::insert(&mut self.regdma_control, 0x7fe0_0000, 21, u32::from(value));
+            self.tbtt_auto_period = value;
         }
     }
 
@@ -672,31 +656,30 @@ mod tests {
     #[test]
     fn configure_restore_is_field_exact_and_gate_ordered() {
         let initial = RegisterModel {
-            beacon_time: 0xa5a5_1357,
-            sleep_limits: 0xcafe_8000 | (0x155 << 5) | (1 << 4) | 0x0b,
-            sta_tsf_control: 0x5b5a_a5a5 | (1 << 24),
-            // Bits 20:16 include shared REGDMA/channel ownership and must be
-            // byte-for-byte stable across both directions.
-            regdma_control: (1 << 31) | (0x155 << 21) | 0x0015_0000 | 0x2468,
+            beacon_miss_timeout: 0x1357,
+            beacon_miss_limit: 0x0b,
+            beacon_miss_limit_wakeup_enabled: true,
+            modem_sleep_limit: 0x155,
+            modem_sleep_limit_wakeup_enabled: true,
+            wakeup_protect_enabled: true,
+            wakeup_protect_early_time: 0x2468,
+            tbtt_auto_period: 0x155,
+            tbtt_auto_period_enabled: true,
             operations: Vec::new(),
         };
         let previous = initial.snapshot();
         let mut model = initial.clone();
         apply_station_modem_wakeup_config(&mut model, config());
 
-        assert_eq!(
-            model.beacon_time & 0xffff_0000,
-            initial.beacon_time & 0xffff_0000
-        );
-        assert_eq!(
-            model.sleep_limits & 0xffff_0000,
-            initial.sleep_limits & 0xffff_0000
-        );
-        assert_eq!(
-            model.sta_tsf_control & !(1 << 24),
-            initial.sta_tsf_control & !(1 << 24)
-        );
-        assert_eq!(model.regdma_control & 0x001f_0000, 0x0015_0000);
+        assert_eq!(model.beacon_miss_timeout, 0x1234);
+        assert_eq!(model.beacon_miss_limit, 10);
+        assert!(model.beacon_miss_limit_wakeup_enabled);
+        assert_eq!(model.modem_sleep_limit, 511);
+        assert!(model.modem_sleep_limit_wakeup_enabled);
+        assert!(model.wakeup_protect_enabled);
+        assert_eq!(model.wakeup_protect_early_time, 0x5678);
+        assert_eq!(model.tbtt_auto_period, 100);
+        assert!(model.tbtt_auto_period_enabled);
         assert_eq!(
             model.operations,
             [

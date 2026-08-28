@@ -13,6 +13,9 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphPositionalEventPrepared,
     BluetoothDtmMemoryGraphPrepareFailure, BluetoothDtmPositionalEventWords,
 };
+use open_esp_radio_esp32s31_hal::{
+    BluetoothControllerSramAddress, BluetoothSchedulerLockModifyRequest,
+};
 
 use crate::{
     BluetoothControllerSchedulerEpoch, BluetoothDtmLinkStateReset, BluetoothDtmRole,
@@ -115,6 +118,26 @@ impl BluetoothDtmReviewedEventWordsPrepared {
         self.role
     }
 
+    /// Return the typed controller-SRAM identity of the prepared item.
+    ///
+    /// This identity is derived from the retained non-forgeable graph binding;
+    /// it does not grant publication or hardware ownership.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.memory.scheduler_item_address()
+    }
+
+    /// Form the reviewed DTM insertion request for this exact prepared item.
+    ///
+    /// Complete DTM call-path evidence supplies positional argument zero to
+    /// the common forced-insertion path. Forming the request performs no MMIO
+    /// and leaves this graph CPU-owned.
+    pub const fn scheduler_lock_modify_request(&self) -> BluetoothSchedulerLockModifyRequest {
+        match BluetoothSchedulerLockModifyRequest::new(self.scheduler_item_address(), 0) {
+            Ok(request) => request,
+            Err(_) => unreachable!(),
+        }
+    }
+
     /// Read back the exact seventeen CPU-owned positional words.
     pub fn words(&self) -> BluetoothDtmPositionalEventWords {
         self.memory.words()
@@ -204,6 +227,9 @@ mod tests {
             .prepare(owner)
             .expect("fresh private links replace both stale plan links");
         assert_eq!(prepared.role(), BluetoothDtmRole::Transmitter);
+        let request = prepared.scheduler_lock_modify_request();
+        assert_eq!(request.address(), prepared.scheduler_item_address());
+        assert_eq!(request.argument(), 0);
         let words = prepared.words();
         assert_eq!(words.link_state().word_00, 0x8ff1_c057);
         assert_eq!(words.link_state().word_00 & 0x000f_ffff, 0x1c057);

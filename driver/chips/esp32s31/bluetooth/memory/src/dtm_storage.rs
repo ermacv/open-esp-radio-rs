@@ -851,6 +851,15 @@ pub struct BluetoothDtmMemoryGraphPositionalEventPrepared {
 }
 
 impl BluetoothDtmMemoryGraphPositionalEventPrepared {
+    /// Return the typed identity of this graph's prepared scheduler item.
+    ///
+    /// The returned address does not publish the item or change graph
+    /// ownership. The upper scheduler must retain this consumed graph while a
+    /// request carrying the identity is admitted.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.binding.scheduler_item_address().controller_address()
+    }
+
     /// Read back exactly the positional subset while it remains CPU-owned.
     pub fn words(&self) -> BluetoothDtmPositionalEventWords {
         let storage = self.storage.as_ref().get_ref();

@@ -44,6 +44,14 @@ impl BluetoothDtmBoundSramLinkAddress {
         self.0.compressed_image()
     }
 
+    /// Return the validated controller-SRAM identity behind this bound link.
+    ///
+    /// The value remains address geometry only. It grants neither CPU access
+    /// to the backing allocation nor scheduler publication authority.
+    pub const fn controller_address(self) -> BluetoothControllerSramAddress {
+        self.0
+    }
+
     pub(crate) const fn from_nonzero_compressed_image(image: u32) -> Option<Self> {
         if image == 0 || image > 0x000f_ffff {
             return None;

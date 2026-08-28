@@ -552,15 +552,15 @@ fn verify_mac_policy_readback(
 ) -> Result<(), Ieee802154ReadbackError<Ieee802154MacPolicyCheckpoint>> {
     verify(
         Ieee802154MacPolicyCheckpoint::EventsMasked,
-        readback.foundation.enabled_events() == 0,
+        readback.foundation.events_masked(),
     )?;
     verify(
         Ieee802154MacPolicyCheckpoint::RxAbortsMasked,
-        readback.foundation.enabled_rx_aborts() == 0,
+        readback.foundation.rx_aborts_masked(),
     )?;
     verify(
         Ieee802154MacPolicyCheckpoint::TxAbortsMasked,
-        readback.foundation.enabled_tx_aborts() == 0,
+        readback.foundation.tx_aborts_masked(),
     )?;
     verify(
         Ieee802154MacPolicyCheckpoint::EdSampleAverage,
@@ -739,9 +739,9 @@ mod tests {
 
     fn valid_foundation() -> Ieee802154FoundationSnapshot {
         Ieee802154FoundationSnapshot::new(
-            0,
-            0,
-            0,
+            true,
+            true,
+            true,
             true,
             Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
             Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
@@ -879,34 +879,34 @@ mod tests {
             let mut snapshot = valid;
             let foundation = match checkpoint {
                 Ieee802154MacPolicyCheckpoint::EventsMasked => Ieee802154FoundationSnapshot::new(
-                    1,
-                    0,
-                    0,
+                    false,
+                    true,
+                    true,
                     true,
                     Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
                     Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
                 ),
                 Ieee802154MacPolicyCheckpoint::RxAbortsMasked => Ieee802154FoundationSnapshot::new(
-                    0,
-                    1,
-                    0,
+                    true,
+                    false,
+                    true,
                     true,
                     Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
                     Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
                 ),
                 Ieee802154MacPolicyCheckpoint::TxAbortsMasked => Ieee802154FoundationSnapshot::new(
-                    0,
-                    0,
-                    1,
+                    true,
+                    true,
+                    false,
                     true,
                     Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
                     Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
                 ),
                 Ieee802154MacPolicyCheckpoint::EdSampleAverage => {
                     Ieee802154FoundationSnapshot::new(
-                        0,
-                        0,
-                        0,
+                        true,
+                        true,
+                        true,
                         false,
                         Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
                         Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
@@ -914,18 +914,18 @@ mod tests {
                 }
                 Ieee802154MacPolicyCheckpoint::TxrxPtiDisabled => {
                     Ieee802154FoundationSnapshot::new(
-                        0,
-                        0,
-                        0,
+                        true,
+                        true,
+                        true,
                         true,
                         Ieee802154Pti::new(COEX_DISABLED_PTI - 1).expect("five-bit PTI"),
                         Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
                     )
                 }
                 Ieee802154MacPolicyCheckpoint::AckPtiDisabled => Ieee802154FoundationSnapshot::new(
-                    0,
-                    0,
-                    0,
+                    true,
+                    true,
+                    true,
                     true,
                     Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
                     Ieee802154Pti::new(COEX_DISABLED_PTI - 1).expect("five-bit PTI"),

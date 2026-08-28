@@ -17,11 +17,11 @@ use core::convert::Infallible;
 use open_esp_radio_esp32s31_pac::{
     Ieee802154AckTimeoutUnits as PacAckTimeoutUnits, Ieee802154CcaMode as PacCcaMode,
     Ieee802154EdDurationUnits as PacEdDurationUnits,
-    Ieee802154EventEnableMask as PacEventEnableMask, Ieee802154MacControl as PacMacControl,
+    Ieee802154EventEnableState as PacEventEnableState, Ieee802154MacControl as PacMacControl,
     Ieee802154MacPolicySnapshot as PacMacPolicySnapshot,
     Ieee802154OperationEventEnableObservation as PacOperationEventEnableObservation,
     Ieee802154OperationRxAbortEnableObservation as PacOperationRxAbortEnableObservation,
-    Ieee802154PanIdentity as PacPanIdentity, Ieee802154RxAbortEnableMask as PacRxAbortEnableMask,
+    Ieee802154PanIdentity as PacPanIdentity, Ieee802154RxAbortEnableState as PacRxAbortEnableState,
     Ieee802154RxAbortReasonObservation,
 };
 pub(crate) use open_esp_radio_esp32s31_pac::{
@@ -416,23 +416,25 @@ impl Ieee802154PolledOperationBackend for Ieee802154PacHal<'_> {
 
     fn enable_ed_done_and_rx_abort(&mut self) -> Result<(), Self::Error> {
         self.backend
-            .set_event_enable(PacEventEnableMask::ED_DONE_AND_RX_ABORT);
+            .set_event_enable(PacEventEnableState::EdOperation);
         Ok(())
     }
 
     fn enable_ed_operation_rx_abort_reasons(&mut self) -> Result<(), Self::Error> {
         self.backend
-            .set_rx_abort_enable(PacRxAbortEnableMask::ED_OPERATION_REASONS);
+            .set_rx_abort_enable(PacRxAbortEnableState::EdOperationReasons);
         Ok(())
     }
 
     fn mask_ed_done_and_rx_abort(&mut self) -> Result<(), Self::Error> {
-        self.backend.set_event_enable(PacEventEnableMask::NONE);
+        self.backend
+            .set_event_enable(PacEventEnableState::AllMasked);
         Ok(())
     }
 
     fn mask_ed_operation_rx_abort_reasons(&mut self) -> Result<(), Self::Error> {
-        self.backend.set_rx_abort_enable(PacRxAbortEnableMask::NONE);
+        self.backend
+            .set_rx_abort_enable(PacRxAbortEnableState::AllMasked);
         Ok(())
     }
 
@@ -621,9 +623,9 @@ mod tests {
                     Ieee802154TxStateCode::for_validation(tx).expect("four-bit TX state"),
                 ),
                 foundation: Ieee802154FoundationSnapshot::new(
-                    0,
-                    0,
-                    0,
+                    true,
+                    true,
+                    true,
                     true,
                     Ieee802154Pti::new(3).expect("five-bit PTI"),
                     Ieee802154Pti::new(3).expect("five-bit PTI"),
@@ -796,9 +798,9 @@ mod tests {
         let mut hal = Ieee802154Hal::from_register_backend(FakeRegisters::with_codes(0, 0));
         let snapshot = hal.foundation_snapshot();
 
-        assert_eq!(snapshot.enabled_events(), 0);
-        assert_eq!(snapshot.enabled_rx_aborts(), 0);
-        assert_eq!(snapshot.enabled_tx_aborts(), 0);
+        assert!(snapshot.events_masked());
+        assert!(snapshot.rx_aborts_masked());
+        assert!(snapshot.tx_aborts_masked());
         assert!(snapshot.ed_uses_average());
         assert_eq!(snapshot.txrx_pti().value(), 3);
         assert_eq!(snapshot.ack_pti().value(), 3);

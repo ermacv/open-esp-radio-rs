@@ -149,14 +149,14 @@ const BLUETOOTH_MAIN_XTAL_LOW_POWER_DIVIDER: ModemLowPowerClockDivider =
     };
 pub use ieee802154::{
     Ieee802154AckTimeoutUnits, Ieee802154CcaMode, Ieee802154EdCcaSnapshot, Ieee802154EdCommand,
-    Ieee802154EdDurationUnits, Ieee802154EdSampleRate, Ieee802154Event, Ieee802154EventEnableMask,
+    Ieee802154EdDurationUnits, Ieee802154EdSampleRate, Ieee802154Event, Ieee802154EventEnableState,
     Ieee802154EventMask, Ieee802154EventObservation, Ieee802154EventObservationError,
     Ieee802154FoundationSnapshot, Ieee802154FrequencyCode, Ieee802154InterruptSnapshot,
     Ieee802154MacCommand, Ieee802154MacConfigurationReadback, Ieee802154MacControl,
     Ieee802154MacPolicySnapshot, Ieee802154MultipanEnableState, Ieee802154MultipanIndex,
     Ieee802154ObservedEventState, Ieee802154OperationEventEnableObservation,
     Ieee802154OperationRxAbortEnableObservation, Ieee802154PanIdentity, Ieee802154Pti,
-    Ieee802154RouteState, Ieee802154RxAbortEnableMask, Ieee802154RxAbortReason,
+    Ieee802154RouteState, Ieee802154RxAbortEnableState, Ieee802154RxAbortReason,
     Ieee802154RxAbortReasonObservation, Ieee802154RxStateCode, Ieee802154SecurityPayloadOffset,
     Ieee802154StateSnapshot, Ieee802154Timer0ThresholdWord, Ieee802154Timer0ValueWord,
     Ieee802154Timer1ThresholdWord, Ieee802154Timer1ValueWord, Ieee802154TimerLease,

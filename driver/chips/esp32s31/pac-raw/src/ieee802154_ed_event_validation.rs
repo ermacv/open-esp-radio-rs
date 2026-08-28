@@ -13,15 +13,6 @@ fn order_device_accesses() {
     crate::device_access::fence();
 }
 
-/// Return the complete fourteen-bit event-delivery mask without changing it.
-#[inline]
-pub fn event_enable_events(registers: &crate::Ieee802154Mac) -> u16 {
-    order_device_accesses();
-    let events = registers.event_enable().read().events().bits();
-    order_device_accesses();
-    events
-}
-
 /// Replace only the event-enable field with RX-ABORT, ED-DONE and TIMER0.
 #[inline]
 pub fn enable_ed_timer_abort_events(registers: &mut crate::Ieee802154Mac) {
@@ -56,15 +47,6 @@ pub fn rx_status_raw(registers: &crate::Ieee802154Mac) -> u32 {
     let status = registers.rx_status().read().bits();
     order_device_accesses();
     status
-}
-
-/// Return the complete thirty-one-bit RX-abort delivery mask.
-#[inline]
-pub fn rx_abort_enable_events(registers: &crate::Ieee802154Mac) -> u32 {
-    order_device_accesses();
-    let events = registers.rx_abort_enable().read().events().bits();
-    order_device_accesses();
-    events
 }
 
 /// Select exactly ED_ABORT, ED_STOP and ED_COEX_REJECT abort reasons.

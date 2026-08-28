@@ -440,15 +440,15 @@ fn verify_foundation_snapshot(
 ) -> Result<(), Ieee802154ReadbackError<Ieee802154FoundationCheckpoint>> {
     verify(
         Ieee802154FoundationCheckpoint::EventsMasked,
-        snapshot.enabled_events() == 0,
+        snapshot.events_masked(),
     )?;
     verify(
         Ieee802154FoundationCheckpoint::RxAbortsMasked,
-        snapshot.enabled_rx_aborts() == 0,
+        snapshot.rx_aborts_masked(),
     )?;
     verify(
         Ieee802154FoundationCheckpoint::TxAbortsMasked,
-        snapshot.enabled_tx_aborts() == 0,
+        snapshot.tx_aborts_masked(),
     )?;
     verify(
         Ieee802154FoundationCheckpoint::EdSampleAverage,
@@ -543,9 +543,9 @@ mod tests {
                     apb_reset_released: true,
                 },
                 foundation_snapshot: Ieee802154FoundationSnapshot::new(
-                    0,
-                    0,
-                    0,
+                    true,
+                    true,
+                    true,
                     true,
                     Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
                     Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),
@@ -743,9 +743,9 @@ mod tests {
     fn foundation_failure_remains_reset_with_events_masked_first() {
         let mut backend = FakeBackend::ready();
         backend.foundation_snapshot = Ieee802154FoundationSnapshot::new(
-            0,
-            0,
-            0,
+            true,
+            true,
+            true,
             true,
             Ieee802154Pti::new(COEX_DISABLED_PTI + 1).expect("five-bit PTI"),
             Ieee802154Pti::new(COEX_DISABLED_PTI).expect("five-bit PTI"),

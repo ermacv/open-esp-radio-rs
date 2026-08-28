@@ -393,7 +393,7 @@ pub struct Ieee802154EventObservationError;
 
 /// A semantic set containing only source-confirmed MAC events.
 ///
-/// Unlike [`Ieee802154EventEnableMask`], this value is not accepted by any PAC
+/// Unlike [`Ieee802154EventEnableState`], this value is not accepted by any PAC
 /// writer. It is suitable for executor-side classification without granting
 /// event-enable authority.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -628,19 +628,22 @@ pub enum Ieee802154ValidationEventEnableState {
 
 impl Ieee802154ValidationEventEnableState {
     #[cfg(feature = "validation-probes")]
-    const fn from_field(bits: u16) -> Self {
-        let timers = Ieee802154EventEnableMask::TIMER0_OVERFLOW
-            .union(Ieee802154EventEnableMask::TIMER1_OVERFLOW)
-            .bits();
-        let ed_validation = Ieee802154EventEnableMask::RX_ABORT
-            .union(Ieee802154EventEnableMask::ED_DONE)
-            .union(Ieee802154EventEnableMask::TIMER0_OVERFLOW)
-            .bits();
-        match bits {
-            0 => Self::AllMasked,
-            bits if bits == timers => Self::TimerPairOnly,
-            bits if bits == ed_validation => Self::EdDoneTimer0RxAbortOnly,
-            _ => Self::Unexpected,
+    const fn from_raw(
+        readback: crate::svd::ieee802154_mac_ownership::ValidationEventEnableReadback,
+    ) -> Self {
+        match readback {
+            crate::svd::ieee802154_mac_ownership::ValidationEventEnableReadback::AllMasked => {
+                Self::AllMasked
+            }
+            crate::svd::ieee802154_mac_ownership::ValidationEventEnableReadback::TimerPair => {
+                Self::TimerPairOnly
+            }
+            crate::svd::ieee802154_mac_ownership::ValidationEventEnableReadback::EdTimerAbort => {
+                Self::EdDoneTimer0RxAbortOnly
+            }
+            crate::svd::ieee802154_mac_ownership::ValidationEventEnableReadback::Unexpected => {
+                Self::Unexpected
+            }
         }
     }
 }
@@ -831,170 +834,37 @@ impl From<Ieee802154TxAbortReason> for Ieee802154TxAbortReasonObservation {
     }
 }
 
-/// Named `EVENT_ENABLE` bits accepted by the typed PAC API.
+/// Closed semantic `EVENT_ENABLE` states accepted by finite polled operations.
 ///
-/// Physical bits seven and thirteen are intentionally absent because the
-/// pinned public LL assigns them no meaning. The private image prevents those
-/// bits or bits outside the fourteen-bit field from reaching production
-/// `EVENT_ENABLE` writes.
+/// Register geometry and physical images remain exclusively in generated PAC
+/// accessors. No integer conversion exists in either direction.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Ieee802154EventEnableMask(u16);
-
-impl Ieee802154EventEnableMask {
-    const NAMED_BITS: u16 = 0x1f7f;
-
-    /// Empty event-enable set.
-    pub const NONE: Self = Self(0);
-    /// Transmission completed, bit zero.
-    pub const TX_DONE: Self = Self(1 << 0);
-    /// Reception completed, bit one.
-    pub const RX_DONE: Self = Self(1 << 1);
-    /// Automatic ACK transmission completed, bit two.
-    pub const ACK_TX_DONE: Self = Self(1 << 2);
-    /// ACK reception completed, bit three.
-    pub const ACK_RX_DONE: Self = Self(1 << 3);
-    /// Receive processing aborted, bit four.
-    pub const RX_ABORT: Self = Self(1 << 4);
-    /// Transmit processing aborted, bit five.
-    pub const TX_ABORT: Self = Self(1 << 5);
-    /// Energy detection completed, bit six.
-    pub const ED_DONE: Self = Self(1 << 6);
-    /// The complete event window owned by one finite polled ED/CCA operation.
-    pub const ED_DONE_AND_RX_ABORT: Self = Self(Self::ED_DONE.0 | Self::RX_ABORT.0);
-    /// Timer zero overflowed, bit eight.
-    pub const TIMER0_OVERFLOW: Self = Self(1 << 8);
-    /// Timer one overflowed, bit nine.
-    pub const TIMER1_OVERFLOW: Self = Self(1 << 9);
-    /// MAC clock count matched, bit ten.
-    pub const CLOCK_COUNT_MATCH: Self = Self(1 << 10);
-    /// Transmission SFD processing completed, bit eleven.
-    pub const TX_SFD_DONE: Self = Self(1 << 11);
-    /// Reception SFD processing completed, bit twelve.
-    pub const RX_SFD_DONE: Self = Self(1 << 12);
-    /// Every source-confirmed named event.
-    pub const ALL_NAMED: Self = Self(Self::NAMED_BITS);
-    /// Events handled by the reviewed runtime ISR before TIMER0 is armed.
-    ///
-    /// This is the exact fail-closed intersection of the public vendor
-    /// initialization image with the events currently classified by the
-    /// source-owned ISR. It excludes unnamed bits seven and thirteen,
-    /// TIMER0, and the named-but-unhandled clock-count event.
-    pub const HANDLED_BASELINE_WITHOUT_TIMER0: Self = Self(
-        Self::TX_DONE.0
-            | Self::RX_DONE.0
-            | Self::ACK_TX_DONE.0
-            | Self::ACK_RX_DONE.0
-            | Self::RX_ABORT.0
-            | Self::TX_ABORT.0
-            | Self::ED_DONE.0
-            | Self::TIMER1_OVERFLOW.0
-            | Self::TX_SFD_DONE.0
-            | Self::RX_SFD_DONE.0,
-    );
-    /// The reviewed runtime baseline while TIMER0 owns the ACK watchdog.
-    pub const HANDLED_BASELINE_WITH_TIMER0: Self =
-        Self(Self::HANDLED_BASELINE_WITHOUT_TIMER0.0 | Self::TIMER0_OVERFLOW.0);
-
-    const fn bits(self) -> u16 {
-        self.0
-    }
-
-    /// Combine two already validated named-event sets.
-    pub const fn union(self, other: Self) -> Self {
-        Self(self.0 | other.0)
-    }
-
-    /// Return whether every event selected by `required` is enabled.
-    pub const fn contains(self, required: Self) -> bool {
-        self.0 & required.0 == required.0
-    }
+pub enum Ieee802154EventEnableState {
+    #[default]
+    AllMasked,
+    EdOperation,
 }
 
-/// Closed receive-abort image for the production interrupt baseline.
+/// Closed semantic `RX_ABORT_ENABLE` states accepted by finite ED/CCA work.
 ///
-/// The image is source-confirmed by the pinned public initialization path.
-/// It has no integer constructor and is writable only as part of the complete
-/// inactive-route activation transaction below.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Ieee802154InterruptRxAbortEnableMask(u32);
-
-impl Ieee802154InterruptRxAbortEnableMask {
-    const NONE: Self = Self(0);
-    const SOURCE_CONFIRMED_BASELINE: Self = Self(0x0002_8000);
-
-    const fn bits(self) -> u32 {
-        self.0
-    }
-}
-
-/// Closed transmit-abort image for the production interrupt baseline.
-///
-/// The image is source-confirmed by the pinned public initialization path.
-/// It has no integer constructor and is writable only as part of the complete
-/// inactive-route activation transaction below.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Ieee802154InterruptTxAbortEnableMask(u32);
-
-impl Ieee802154InterruptTxAbortEnableMask {
-    const NONE: Self = Self(0);
-    const SOURCE_CONFIRMED_BASELINE: Self = Self(0x0186_8000);
-
-    const fn bits(self) -> u32 {
-        self.0
-    }
+/// The runtime interrupt baseline is owned by the complete activation
+/// transaction and is intentionally not constructible through this API.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Ieee802154RxAbortEnableState {
+    #[default]
+    AllMasked,
+    EdOperationReasons,
 }
 
 /// One closed production plan for activating the IEEE 802.15.4 IRQ owner.
 ///
-/// No raw-mask constructor exists. Keeping all three images in one value
-/// prevents a caller from combining an event vocabulary with unrelated abort
-/// reasons or publishing only part of the reviewed baseline.
+/// Register images are selected only by generated accessors inside the raw PAC
+/// owner; this marker grants no field or integer authority.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Ieee802154InterruptActivationPlan {
-    events: Ieee802154EventEnableMask,
-    rx_aborts: Ieee802154InterruptRxAbortEnableMask,
-    tx_aborts: Ieee802154InterruptTxAbortEnableMask,
-}
+struct Ieee802154InterruptActivationPlan;
 
 impl Ieee802154InterruptActivationPlan {
-    const SOURCE_CONFIRMED_BASELINE: Self = Self {
-        events: Ieee802154EventEnableMask::HANDLED_BASELINE_WITHOUT_TIMER0,
-        rx_aborts: Ieee802154InterruptRxAbortEnableMask::SOURCE_CONFIRMED_BASELINE,
-        tx_aborts: Ieee802154InterruptTxAbortEnableMask::SOURCE_CONFIRMED_BASELINE,
-    };
-
-    const fn events(self) -> Ieee802154EventEnableMask {
-        self.events
-    }
-
-    const fn rx_aborts(self) -> Ieee802154InterruptRxAbortEnableMask {
-        self.rx_aborts
-    }
-
-    const fn tx_aborts(self) -> Ieee802154InterruptTxAbortEnableMask {
-        self.tx_aborts
-    }
-}
-
-/// Closed `RX_ABORT_ENABLE` field image for one finite ED/CCA operation.
-///
-/// The public LL identifies receive-abort reasons 24, 25, and 26 as ED abort,
-/// ED stop, and ED coexistence rejection. Their enable positions are bits
-/// 23, 24, and 25. No constructor accepts a caller-provided image, so this
-/// type can represent only a fully masked field or that exact three-reason
-/// operation set.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Ieee802154RxAbortEnableMask(u32);
-
-impl Ieee802154RxAbortEnableMask {
-    /// Every receive-abort reason masked.
-    pub const NONE: Self = Self(0);
-    /// Exactly ED abort, ED stop, and ED coexistence rejection.
-    pub const ED_OPERATION_REASONS: Self = Self(0x0380_0000);
-
-    const fn bits(self) -> u32 {
-        self.0
-    }
+    const SOURCE_CONFIRMED_BASELINE: Self = Self;
 }
 
 /// Semantic readback of the event-enable field owned by a polled ED/CCA
@@ -1013,13 +883,19 @@ pub enum Ieee802154OperationEventEnableObservation {
 }
 
 impl Ieee802154OperationEventEnableObservation {
-    const fn from_field(bits: u16) -> Self {
-        match bits {
-            0 => Self::AllMasked,
-            bits if bits == Ieee802154EventEnableMask::ED_DONE_AND_RX_ABORT.bits() => {
+    const fn from_raw(
+        readback: crate::svd::ieee802154_mac_ownership::OperationEventEnableReadback,
+    ) -> Self {
+        match readback {
+            crate::svd::ieee802154_mac_ownership::OperationEventEnableReadback::AllMasked => {
+                Self::AllMasked
+            }
+            crate::svd::ieee802154_mac_ownership::OperationEventEnableReadback::EdOperation => {
                 Self::EdDoneAndRxAbortOnly
             }
-            _ => Self::Unexpected,
+            crate::svd::ieee802154_mac_ownership::OperationEventEnableReadback::Unexpected => {
+                Self::Unexpected
+            }
         }
     }
 }
@@ -1027,7 +903,7 @@ impl Ieee802154OperationEventEnableObservation {
 /// Semantic readback of the receive-abort-enable field owned by a polled
 /// ED/CCA operation.
 ///
-/// The observation has no conversion to [`Ieee802154RxAbortEnableMask`], so
+/// The observation has no conversion to [`Ieee802154RxAbortEnableState`], so
 /// unexpected hardware state cannot accidentally become a writable image.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Ieee802154OperationRxAbortEnableObservation {
@@ -1040,20 +916,26 @@ pub enum Ieee802154OperationRxAbortEnableObservation {
 }
 
 impl Ieee802154OperationRxAbortEnableObservation {
-    const fn from_field(bits: u32) -> Self {
-        match bits {
-            0 => Self::AllMasked,
-            bits if bits == Ieee802154RxAbortEnableMask::ED_OPERATION_REASONS.bits() => {
+    const fn from_raw(
+        readback: crate::svd::ieee802154_mac_ownership::OperationRxAbortEnableReadback,
+    ) -> Self {
+        match readback {
+            crate::svd::ieee802154_mac_ownership::OperationRxAbortEnableReadback::AllMasked => {
+                Self::AllMasked
+            }
+            crate::svd::ieee802154_mac_ownership::OperationRxAbortEnableReadback::EdOperationReasons => {
                 Self::EdOperationReasonsOnly
             }
-            _ => Self::Unexpected,
+            crate::svd::ieee802154_mac_ownership::OperationRxAbortEnableReadback::Unexpected => {
+                Self::Unexpected
+            }
         }
     }
 }
 
 /// Copyable fourteen-bit `EVENT_ENABLE` or `EVENT_STATUS` observation.
 ///
-/// Unlike [`Ieee802154EventEnableMask`], this type preserves unnamed physical
+/// Unlike [`Ieee802154EventEnableState`], this type preserves unnamed physical
 /// bits because observations must not erase unexpected hardware state. It has
 /// no public constructor and cannot be passed to a write. W1C acknowledgement
 /// consumes a separate affine snapshot.
@@ -1073,8 +955,8 @@ impl Ieee802154EventObservation {
     }
 
     /// Return whether every named event in `required` was observed.
-    pub const fn contains(self, required: Ieee802154EventEnableMask) -> bool {
-        self.0 & required.bits() == required.bits()
+    pub const fn contains(self, required: Ieee802154Event) -> bool {
+        self.0 & required.field_bit() != 0
     }
 
     /// Classify the complete observation as a semantic event set.
@@ -1385,9 +1267,9 @@ pub struct Ieee802154StateSnapshot {
 /// hard-IRQ paths use the generated affine W1C snapshot transaction.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Ieee802154FoundationSnapshot {
-    enabled_events: u16,
-    enabled_rx_aborts: u32,
-    enabled_tx_aborts: u32,
+    events_masked: bool,
+    rx_aborts_masked: bool,
+    tx_aborts_masked: bool,
     ed_uses_average: bool,
     txrx_pti: Ieee802154Pti,
     ack_pti: Ieee802154Pti,
@@ -1533,41 +1415,40 @@ impl Ieee802154MacConfigurationReadback {
 }
 
 impl Ieee802154FoundationSnapshot {
-    /// Construct a field-level image for a platform-independent read-back.
+    /// Construct a semantic platform-independent readback.
     ///
-    /// The arguments are bounded semantic fields, never shifted or complete
-    /// register images. Production snapshots are sampled by the PAC lease;
-    /// this constructor also lets the HAL verify its transition against a
-    /// host backend without duplicating the register model.
+    /// Production snapshots are sampled by the PAC lease; this constructor
+    /// also lets the HAL verify its transition against a host backend without
+    /// duplicating the register model.
     #[doc(hidden)]
     pub const fn new(
-        enabled_events: u16,
-        enabled_rx_aborts: u32,
-        enabled_tx_aborts: u32,
+        events_masked: bool,
+        rx_aborts_masked: bool,
+        tx_aborts_masked: bool,
         ed_uses_average: bool,
         txrx_pti: Ieee802154Pti,
         ack_pti: Ieee802154Pti,
     ) -> Self {
         Self {
-            enabled_events,
-            enabled_rx_aborts,
-            enabled_tx_aborts,
+            events_masked,
+            rx_aborts_masked,
+            tx_aborts_masked,
             ed_uses_average,
             txrx_pti,
             ack_pti,
         }
     }
 
-    pub const fn enabled_events(self) -> u16 {
-        self.enabled_events
+    pub const fn events_masked(self) -> bool {
+        self.events_masked
     }
 
-    pub const fn enabled_rx_aborts(self) -> u32 {
-        self.enabled_rx_aborts
+    pub const fn rx_aborts_masked(self) -> bool {
+        self.rx_aborts_masked
     }
 
-    pub const fn enabled_tx_aborts(self) -> u32 {
-        self.enabled_tx_aborts
+    pub const fn tx_aborts_masked(self) -> bool {
+        self.tx_aborts_masked
     }
 
     pub const fn ed_uses_average(self) -> bool {
@@ -1680,8 +1561,7 @@ impl Ieee802154TimerLease<'_> {
     /// sampling begins.
     #[doc(hidden)]
     pub fn enable_acknowledgement_watchdog_event(&mut self) {
-        self.registers
-            .replace_event_enable(Ieee802154EventEnableMask::HANDLED_BASELINE_WITH_TIMER0.bits());
+        self.registers.enable_runtime_events_with_timer0();
     }
 
     /// Publish the already-derived TIMER0 threshold and fixed start image.
@@ -1700,9 +1580,7 @@ impl Ieee802154TimerLease<'_> {
     #[doc(hidden)]
     pub fn disarm_acknowledgement_watchdog(&mut self) {
         self.stop_timer0();
-        self.registers.replace_event_enable(
-            Ieee802154EventEnableMask::HANDLED_BASELINE_WITHOUT_TIMER0.bits(),
-        );
+        self.registers.enable_runtime_events_without_timer0();
         crate::device_fence();
     }
 
@@ -2070,17 +1948,17 @@ impl DerefMut for Ieee802154PolledRegisterLease<'_> {
 impl Ieee802154PolledRegisterLease<'_> {
     /// Mask every MAC event while the inactive interrupt owner is borrowed.
     pub fn mask_all_events(&mut self) {
-        self.task.registers.replace_event_enable(0);
+        self.task.registers.mask_all_events();
     }
 
     /// Mask every receive-abort source before a receive dataplane exists.
     pub fn mask_all_rx_aborts(&mut self) {
-        self.task.registers.replace_rx_abort_enable(0);
+        self.task.registers.mask_all_rx_aborts();
     }
 
     /// Mask every transmit-abort source before a transmit dataplane exists.
     pub fn mask_all_tx_aborts(&mut self) {
-        self.task.registers.replace_tx_abort_enable(0);
+        self.task.registers.mask_all_tx_aborts();
     }
 
     /// Select the vendor foundation's average energy-detection sampler.
@@ -2088,20 +1966,32 @@ impl Ieee802154PolledRegisterLease<'_> {
         self.task.registers.select_average_ed_sampling();
     }
 
-    /// Replace the complete named `EVENT_ENABLE` set exactly.
-    pub fn set_event_enable(&mut self, events: Ieee802154EventEnableMask) {
-        self.task.registers.replace_event_enable(events.bits());
+    /// Select one closed finite-operation `EVENT_ENABLE` state.
+    pub fn set_event_enable(&mut self, state: Ieee802154EventEnableState) {
+        match state {
+            Ieee802154EventEnableState::AllMasked => self.task.registers.mask_all_events(),
+            Ieee802154EventEnableState::EdOperation => {
+                self.task.registers.enable_ed_operation_events()
+            }
+        }
     }
 
-    /// Replace the complete receive-abort field with one closed image.
-    pub fn set_rx_abort_enable(&mut self, reasons: Ieee802154RxAbortEnableMask) {
-        self.task.registers.replace_rx_abort_enable(reasons.bits());
+    /// Select one closed finite-operation `RX_ABORT_ENABLE` state.
+    pub fn set_rx_abort_enable(&mut self, state: Ieee802154RxAbortEnableState) {
+        match state {
+            Ieee802154RxAbortEnableState::AllMasked => self.task.registers.mask_all_rx_aborts(),
+            Ieee802154RxAbortEnableState::EdOperationReasons => {
+                self.task.registers.enable_ed_operation_rx_abort_reasons()
+            }
+        }
     }
 
     /// Classify the complete event-delivery field for a finite polled ED/CCA
     /// operation without sampling `EVENT_STATUS`.
     pub fn operation_event_enable_observation(&self) -> Ieee802154OperationEventEnableObservation {
-        Ieee802154OperationEventEnableObservation::from_field(self.task.registers.event_enable())
+        Ieee802154OperationEventEnableObservation::from_raw(
+            self.task.registers.operation_event_enable_readback(),
+        )
     }
 
     /// Classify the complete RX-abort delivery field for a finite polled
@@ -2109,8 +1999,8 @@ impl Ieee802154PolledRegisterLease<'_> {
     pub fn operation_rx_abort_enable_observation(
         &self,
     ) -> Ieee802154OperationRxAbortEnableObservation {
-        Ieee802154OperationRxAbortEnableObservation::from_field(
-            self.task.registers.rx_abort_enable(),
+        Ieee802154OperationRxAbortEnableObservation::from_raw(
+            self.task.registers.operation_rx_abort_enable_readback(),
         )
     }
 
@@ -2132,9 +2022,9 @@ impl Ieee802154PolledRegisterLease<'_> {
     pub fn foundation_snapshot(&self) -> Ieee802154FoundationSnapshot {
         let readback = self.task.registers.foundation_readback();
         Ieee802154FoundationSnapshot {
-            enabled_events: readback.event_enable(),
-            enabled_rx_aborts: readback.rx_abort_enable(),
-            enabled_tx_aborts: readback.tx_abort_enable(),
+            events_masked: readback.events_masked(),
+            rx_aborts_masked: readback.rx_aborts_masked(),
+            tx_aborts_masked: readback.tx_aborts_masked(),
             ed_uses_average: readback.ed_uses_average(),
             txrx_pti: Ieee802154Pti(readback.txrx_pti()),
             ack_pti: Ieee802154Pti(readback.ack_pti()),
@@ -2198,7 +2088,9 @@ impl Ieee802154PolledRegisterLease<'_> {
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_event_enable_state(&self) -> Ieee802154ValidationEventEnableState {
-        Ieee802154ValidationEventEnableState::from_field(self.task.registers.event_enable())
+        Ieee802154ValidationEventEnableState::from_raw(
+            self.task.registers.validation_event_enable_readback(),
+        )
     }
 
     #[cfg(feature = "validation-probes")]
@@ -2279,7 +2171,9 @@ impl Ieee802154PolledRegisterLease<'_> {
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_ed_event_enable_state(&self) -> Ieee802154ValidationEventEnableState {
-        Ieee802154ValidationEventEnableState::from_field(self.task.registers.event_enable())
+        Ieee802154ValidationEventEnableState::from_raw(
+            self.task.registers.validation_event_enable_readback(),
+        )
     }
 
     #[cfg(feature = "validation-probes")]
@@ -2301,8 +2195,8 @@ impl Ieee802154PolledRegisterLease<'_> {
     pub fn validation_ed_rx_abort_enable_state(
         &self,
     ) -> Ieee802154OperationRxAbortEnableObservation {
-        Ieee802154OperationRxAbortEnableObservation::from_field(
-            self.task.registers.validation_ed_rx_abort_enable(),
+        Ieee802154OperationRxAbortEnableObservation::from_raw(
+            self.task.registers.operation_rx_abort_enable_readback(),
         )
     }
 
@@ -2408,9 +2302,12 @@ trait Ieee802154InterruptTransitionPort {
     fn stop_operation(&mut self);
     fn stop_timer0(&mut self);
     fn stop_timer1(&mut self);
-    fn replace_event_enable(&mut self, events: Ieee802154EventEnableMask);
-    fn replace_tx_abort_enable(&mut self, aborts: Ieee802154InterruptTxAbortEnableMask);
-    fn replace_rx_abort_enable(&mut self, aborts: Ieee802154InterruptRxAbortEnableMask);
+    fn mask_all_events(&mut self);
+    fn enable_runtime_events(&mut self);
+    fn mask_all_tx_aborts(&mut self);
+    fn enable_runtime_tx_aborts(&mut self);
+    fn mask_all_rx_aborts(&mut self);
+    fn enable_runtime_rx_aborts(&mut self);
     fn order_device_accesses(&mut self);
     fn sample_events(&mut self) -> Self::EventSnapshot;
     fn acknowledge_events(&mut self, snapshot: Self::EventSnapshot);
@@ -2422,18 +2319,18 @@ trait Ieee802154InterruptTransitionPort {
 /// W1C transaction are updated. The reviewed event baseline is published only
 /// after the exact sampled status has been consumed, and the final fence
 /// precedes transfer of the hard-IRQ owner.
-fn execute_interrupt_activation<Port>(port: &mut Port, plan: Ieee802154InterruptActivationPlan)
+fn execute_interrupt_activation<Port>(port: &mut Port, _plan: Ieee802154InterruptActivationPlan)
 where
     Port: Ieee802154InterruptTransitionPort,
 {
-    port.replace_event_enable(Ieee802154EventEnableMask::NONE);
-    port.replace_tx_abort_enable(plan.tx_aborts());
-    port.replace_rx_abort_enable(plan.rx_aborts());
+    port.mask_all_events();
+    port.enable_runtime_tx_aborts();
+    port.enable_runtime_rx_aborts();
     port.order_device_accesses();
 
     let stale = port.sample_events();
     port.acknowledge_events(stale);
-    port.replace_event_enable(plan.events());
+    port.enable_runtime_events();
     port.order_device_accesses();
 }
 
@@ -2450,9 +2347,9 @@ where
     port.stop_operation();
     port.stop_timer0();
     port.stop_timer1();
-    port.replace_event_enable(Ieee802154EventEnableMask::NONE);
-    port.replace_tx_abort_enable(Ieee802154InterruptTxAbortEnableMask::NONE);
-    port.replace_rx_abort_enable(Ieee802154InterruptRxAbortEnableMask::NONE);
+    port.mask_all_events();
+    port.mask_all_tx_aborts();
+    port.mask_all_rx_aborts();
     port.order_device_accesses();
 
     let pending = port.sample_events();
@@ -2482,25 +2379,37 @@ impl Ieee802154InterruptTransitionPort for Ieee802154PacInterruptTransitionPort<
         self.task.peripherals.ieee802154_mac.issue_timer1_stop();
     }
 
-    fn replace_event_enable(&mut self, events: Ieee802154EventEnableMask) {
-        self.task
-            .peripherals
-            .ieee802154_mac
-            .replace_event_enable(events.bits());
+    fn mask_all_events(&mut self) {
+        self.task.peripherals.ieee802154_mac.mask_all_events();
     }
 
-    fn replace_tx_abort_enable(&mut self, aborts: Ieee802154InterruptTxAbortEnableMask) {
+    fn enable_runtime_events(&mut self) {
         self.task
             .peripherals
             .ieee802154_mac
-            .replace_tx_abort_enable(aborts.bits());
+            .enable_runtime_events_without_timer0();
     }
 
-    fn replace_rx_abort_enable(&mut self, aborts: Ieee802154InterruptRxAbortEnableMask) {
+    fn mask_all_tx_aborts(&mut self) {
+        self.task.peripherals.ieee802154_mac.mask_all_tx_aborts();
+    }
+
+    fn enable_runtime_tx_aborts(&mut self) {
         self.task
             .peripherals
             .ieee802154_mac
-            .replace_rx_abort_enable(aborts.bits());
+            .enable_runtime_tx_aborts();
+    }
+
+    fn mask_all_rx_aborts(&mut self) {
+        self.task.peripherals.ieee802154_mac.mask_all_rx_aborts();
+    }
+
+    fn enable_runtime_rx_aborts(&mut self) {
+        self.task
+            .peripherals
+            .ieee802154_mac
+            .enable_runtime_rx_aborts();
     }
 
     fn order_device_accesses(&mut self) {
@@ -2537,13 +2446,11 @@ impl Ieee802154InterruptSetup {
     /// hard-IRQ owner.
     ///
     /// The platform CPU route must remain disabled until the returned value is
-    /// installed in its final storage. This single consuming transition writes
-    /// exact field images for `EVENT_ENABLE = 0x1a7f`,
-    /// `RX_ABORT_ENABLE = 0x0002_8000`, and
-    /// `TX_ABORT_ENABLE = 0x0186_8000`. It keeps event delivery masked while
-    /// replacing both abort fields, consumes one complete stale affine W1C
-    /// snapshot, publishes the event image last, and orders those writes
-    /// before returning.
+    /// installed in its final storage. This single consuming transition uses
+    /// only the generated runtime-baseline accessors. It keeps event delivery
+    /// masked while configuring both abort fields, consumes one complete stale
+    /// affine W1C snapshot, publishes runtime events last, and orders those
+    /// writes before returning.
     ///
     /// There is no caller-selected mask argument: runtime code cannot activate
     /// an incomplete abort vocabulary or an event absent from the reviewed ISR.
@@ -2571,9 +2478,9 @@ impl Ieee802154InterruptRegisters {
     pub fn sample_interrupt(&self) -> Ieee802154InterruptSnapshot {
         let acknowledgement = self.registers.sample_event_status();
         let events = Ieee802154EventObservation::from_field(acknowledgement.bits() as u16);
-        let rx_abort = events.contains(Ieee802154EventEnableMask::RX_ABORT);
-        let tx_abort = events.contains(Ieee802154EventEnableMask::TX_ABORT);
-        let ed_done = events.contains(Ieee802154EventEnableMask::ED_DONE);
+        let rx_abort = events.contains(Ieee802154Event::RxAbort);
+        let tx_abort = events.contains(Ieee802154Event::TxAbort);
+        let ed_done = events.contains(Ieee802154Event::EdDone);
         let rx_status = rx_abort.then(|| self.registers.rx_status_readback());
         let tx_status = tx_abort.then(|| self.registers.tx_status_readback());
 
@@ -2634,11 +2541,9 @@ impl Ieee802154TaskRegisters {
 #[cfg(test)]
 mod tests {
     use super::{
-        Ieee802154EventEnableMask, Ieee802154InterruptActivationPlan,
-        Ieee802154InterruptRxAbortEnableMask, Ieee802154InterruptTransitionPort,
-        Ieee802154InterruptTxAbortEnableMask, Ieee802154ObservedEventState, Ieee802154RxStateCode,
-        Ieee802154StateSnapshot, Ieee802154TxStateCode, execute_interrupt_activation,
-        execute_interrupt_deactivation,
+        Ieee802154InterruptActivationPlan, Ieee802154InterruptTransitionPort,
+        Ieee802154ObservedEventState, Ieee802154RxStateCode, Ieee802154StateSnapshot,
+        Ieee802154TxStateCode, execute_interrupt_activation, execute_interrupt_deactivation,
     };
     use crate::RadioHardware;
     use std::vec::Vec;
@@ -2709,9 +2614,12 @@ mod tests {
         StopOperation,
         StopTimer0,
         StopTimer1,
-        ReplaceEvents,
-        ReplaceTxAborts,
-        ReplaceRxAborts,
+        MaskEvents,
+        EnableRuntimeEvents,
+        MaskTxAborts,
+        EnableRuntimeTxAborts,
+        MaskRxAborts,
+        EnableRuntimeRxAborts,
         OrderDeviceAccesses,
         SampleStaleEvents(u8),
         AcknowledgeStaleEvents(u8),
@@ -2743,19 +2651,34 @@ mod tests {
                 .push(InterruptTransitionOperation::StopTimer1);
         }
 
-        fn replace_event_enable(&mut self, _events: Ieee802154EventEnableMask) {
+        fn mask_all_events(&mut self) {
             self.operations
-                .push(InterruptTransitionOperation::ReplaceEvents);
+                .push(InterruptTransitionOperation::MaskEvents);
         }
 
-        fn replace_tx_abort_enable(&mut self, _aborts: Ieee802154InterruptTxAbortEnableMask) {
+        fn enable_runtime_events(&mut self) {
             self.operations
-                .push(InterruptTransitionOperation::ReplaceTxAborts);
+                .push(InterruptTransitionOperation::EnableRuntimeEvents);
         }
 
-        fn replace_rx_abort_enable(&mut self, _aborts: Ieee802154InterruptRxAbortEnableMask) {
+        fn mask_all_tx_aborts(&mut self) {
             self.operations
-                .push(InterruptTransitionOperation::ReplaceRxAborts);
+                .push(InterruptTransitionOperation::MaskTxAborts);
+        }
+
+        fn enable_runtime_tx_aborts(&mut self) {
+            self.operations
+                .push(InterruptTransitionOperation::EnableRuntimeTxAborts);
+        }
+
+        fn mask_all_rx_aborts(&mut self) {
+            self.operations
+                .push(InterruptTransitionOperation::MaskRxAborts);
+        }
+
+        fn enable_runtime_rx_aborts(&mut self) {
+            self.operations
+                .push(InterruptTransitionOperation::EnableRuntimeRxAborts);
         }
 
         fn order_device_accesses(&mut self) {
@@ -2793,13 +2716,13 @@ mod tests {
         assert_eq!(
             port.operations,
             [
-                InterruptTransitionOperation::ReplaceEvents,
-                InterruptTransitionOperation::ReplaceTxAborts,
-                InterruptTransitionOperation::ReplaceRxAborts,
+                InterruptTransitionOperation::MaskEvents,
+                InterruptTransitionOperation::EnableRuntimeTxAborts,
+                InterruptTransitionOperation::EnableRuntimeRxAborts,
                 InterruptTransitionOperation::OrderDeviceAccesses,
                 InterruptTransitionOperation::SampleStaleEvents(0xa5),
                 InterruptTransitionOperation::AcknowledgeStaleEvents(0xa5),
-                InterruptTransitionOperation::ReplaceEvents,
+                InterruptTransitionOperation::EnableRuntimeEvents,
                 InterruptTransitionOperation::OrderDeviceAccesses,
             ]
         );
@@ -2819,9 +2742,9 @@ mod tests {
                 InterruptTransitionOperation::StopOperation,
                 InterruptTransitionOperation::StopTimer0,
                 InterruptTransitionOperation::StopTimer1,
-                InterruptTransitionOperation::ReplaceEvents,
-                InterruptTransitionOperation::ReplaceTxAborts,
-                InterruptTransitionOperation::ReplaceRxAborts,
+                InterruptTransitionOperation::MaskEvents,
+                InterruptTransitionOperation::MaskTxAborts,
+                InterruptTransitionOperation::MaskRxAborts,
                 InterruptTransitionOperation::OrderDeviceAccesses,
                 InterruptTransitionOperation::SampleStaleEvents(0x3c),
                 InterruptTransitionOperation::AcknowledgeStaleEvents(0x3c),

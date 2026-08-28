@@ -10,13 +10,6 @@ fn order_device_accesses() {
     crate::device_access::fence();
 }
 
-/// Return the interrupt-delivery mask without changing it.
-#[inline]
-pub fn event_enable_events(registers: &crate::Ieee802154Mac) -> u16 {
-    order_device_accesses();
-    registers.event_enable().read().events().bits()
-}
-
 /// Replace only the event-enable field with the two validation timers.
 #[inline]
 pub fn enable_timer_events(registers: &crate::Ieee802154Mac) {

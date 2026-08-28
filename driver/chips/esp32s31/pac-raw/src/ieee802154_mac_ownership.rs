@@ -397,25 +397,25 @@ impl MacConfigurationReadback {
 #[doc(hidden)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FoundationReadback {
-    event_enable: u16,
-    rx_abort_enable: u32,
-    tx_abort_enable: u32,
+    events_masked: bool,
+    rx_aborts_masked: bool,
+    tx_aborts_masked: bool,
     ed_uses_average: bool,
     txrx_pti: u8,
     ack_pti: u8,
 }
 
 impl FoundationReadback {
-    pub const fn event_enable(self) -> u16 {
-        self.event_enable
+    pub const fn events_masked(self) -> bool {
+        self.events_masked
     }
 
-    pub const fn rx_abort_enable(self) -> u32 {
-        self.rx_abort_enable
+    pub const fn rx_aborts_masked(self) -> bool {
+        self.rx_aborts_masked
     }
 
-    pub const fn tx_abort_enable(self) -> u32 {
-        self.tx_abort_enable
+    pub const fn tx_aborts_masked(self) -> bool {
+        self.tx_aborts_masked
     }
 
     pub const fn ed_uses_average(self) -> bool {
@@ -429,6 +429,34 @@ impl FoundationReadback {
     pub const fn ack_pti(self) -> u8 {
         self.ack_pti
     }
+}
+
+/// Closed classification of `EVENT_ENABLE` for one finite ED/CCA operation.
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OperationEventEnableReadback {
+    AllMasked,
+    EdOperation,
+    Unexpected,
+}
+
+/// Closed classification of `RX_ABORT_ENABLE` for one finite ED/CCA operation.
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OperationRxAbortEnableReadback {
+    AllMasked,
+    EdOperationReasons,
+    Unexpected,
+}
+
+/// Closed validation-only classification of `EVENT_ENABLE`.
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ValidationEventEnableReadback {
+    AllMasked,
+    TimerPair,
+    EdTimerAbort,
+    Unexpected,
 }
 
 /// Non-secret readable transmit-security control fields.
@@ -450,37 +478,76 @@ impl TransmitSecurityControlReadback {
 }
 
 impl TaskRegisters {
-    /// Replace the complete fourteen-bit event-delivery field.
+    /// Mask every MAC event through the generated closed field variant.
     #[doc(hidden)]
-    pub fn replace_event_enable(&mut self, events: u16) {
-        assert!(events <= 0x3fff, "event-enable image exceeds fourteen bits");
+    pub fn mask_all_events(&mut self) {
         self.registers
             .event_enable()
-            .modify(|_, writer| writer.events().set(events));
+            .modify(|_, writer| writer.events().none());
     }
 
-    /// Replace the complete low thirty-one-bit RX-abort delivery field.
+    /// Enable the finite ED/CCA operation event set.
     #[doc(hidden)]
-    pub fn replace_rx_abort_enable(&mut self, events: u32) {
-        assert!(
-            events <= 0x7fff_ffff,
-            "RX-abort image exceeds thirty-one bits"
-        );
+    pub fn enable_ed_operation_events(&mut self) {
+        self.registers
+            .event_enable()
+            .modify(|_, writer| writer.events().ed_operation());
+    }
+
+    /// Enable the reviewed runtime event baseline without TIMER0.
+    #[doc(hidden)]
+    pub fn enable_runtime_events_without_timer0(&mut self) {
+        self.registers
+            .event_enable()
+            .modify(|_, writer| writer.events().runtime_without_timer0());
+    }
+
+    /// Enable the reviewed runtime event baseline with TIMER0.
+    #[doc(hidden)]
+    pub fn enable_runtime_events_with_timer0(&mut self) {
+        self.registers
+            .event_enable()
+            .modify(|_, writer| writer.events().runtime_with_timer0());
+    }
+
+    /// Mask every receive-abort reason through the generated field variant.
+    #[doc(hidden)]
+    pub fn mask_all_rx_aborts(&mut self) {
         self.registers
             .rx_abort_enable()
-            .modify(|_, writer| writer.events().set(events));
+            .modify(|_, writer| writer.events().none());
     }
 
-    /// Replace the complete low thirty-one-bit TX-abort delivery field.
+    /// Enable exactly the receive-abort reasons owned by finite ED/CCA.
     #[doc(hidden)]
-    pub fn replace_tx_abort_enable(&mut self, events: u32) {
-        assert!(
-            events <= 0x7fff_ffff,
-            "TX-abort image exceeds thirty-one bits"
-        );
+    pub fn enable_ed_operation_rx_abort_reasons(&mut self) {
+        self.registers
+            .rx_abort_enable()
+            .modify(|_, writer| writer.events().ed_operation_reasons());
+    }
+
+    /// Enable the reviewed runtime receive-abort baseline.
+    #[doc(hidden)]
+    pub fn enable_runtime_rx_aborts(&mut self) {
+        self.registers
+            .rx_abort_enable()
+            .modify(|_, writer| writer.events().runtime_baseline());
+    }
+
+    /// Mask every transmit-abort reason through the generated field variant.
+    #[doc(hidden)]
+    pub fn mask_all_tx_aborts(&mut self) {
         self.registers
             .tx_abort_enable()
-            .modify(|_, writer| writer.events().set(events));
+            .modify(|_, writer| writer.events().none());
+    }
+
+    /// Enable the reviewed runtime transmit-abort baseline.
+    #[doc(hidden)]
+    pub fn enable_runtime_tx_aborts(&mut self) {
+        self.registers
+            .tx_abort_enable()
+            .modify(|_, writer| writer.events().runtime_baseline());
     }
 
     /// Select the source-confirmed average ED sample mode.
@@ -497,10 +564,45 @@ impl TaskRegisters {
         self.registers.event_enable().read().events().bits()
     }
 
-    /// Read the complete low thirty-one-bit RX-abort delivery field.
+    /// Classify `EVENT_ENABLE` without exporting its physical field image.
     #[doc(hidden)]
-    pub fn rx_abort_enable(&self) -> u32 {
-        self.registers.rx_abort_enable().read().events().bits()
+    pub fn operation_event_enable_readback(&self) -> OperationEventEnableReadback {
+        let events = self.registers.event_enable().read().events();
+        if events.is_none() {
+            OperationEventEnableReadback::AllMasked
+        } else if events.is_ed_operation() {
+            OperationEventEnableReadback::EdOperation
+        } else {
+            OperationEventEnableReadback::Unexpected
+        }
+    }
+
+    /// Classify `RX_ABORT_ENABLE` without exporting its physical field image.
+    #[doc(hidden)]
+    pub fn operation_rx_abort_enable_readback(&self) -> OperationRxAbortEnableReadback {
+        let events = self.registers.rx_abort_enable().read().events();
+        if events.is_none() {
+            OperationRxAbortEnableReadback::AllMasked
+        } else if events.is_ed_operation_reasons() {
+            OperationRxAbortEnableReadback::EdOperationReasons
+        } else {
+            OperationRxAbortEnableReadback::Unexpected
+        }
+    }
+
+    /// Classify the two reset-isolated validation event selections.
+    #[doc(hidden)]
+    pub fn validation_event_enable_readback(&self) -> ValidationEventEnableReadback {
+        let events = self.registers.event_enable().read().events();
+        if events.is_none() {
+            ValidationEventEnableReadback::AllMasked
+        } else if events.is_timer_pair_validation() {
+            ValidationEventEnableReadback::TimerPair
+        } else if events.is_ed_timer_abort_validation() {
+            ValidationEventEnableReadback::EdTimerAbort
+        } else {
+            ValidationEventEnableReadback::Unexpected
+        }
     }
 
     /// Program the public LL's sixteen-bit subset of the wider ED-duration
@@ -849,9 +951,9 @@ impl TaskRegisters {
         let ed_config = self.registers.ed_config().read();
         let coex_pti = self.registers.coex_pti().read();
         FoundationReadback {
-            event_enable: event_enable.events().bits(),
-            rx_abort_enable: rx_abort_enable.events().bits(),
-            tx_abort_enable: tx_abort_enable.events().bits(),
+            events_masked: event_enable.events().is_none(),
+            rx_aborts_masked: rx_abort_enable.events().is_none(),
+            tx_aborts_masked: tx_abort_enable.events().is_none(),
             ed_uses_average: ed_config.ed_sample_mode().is_average(),
             txrx_pti: coex_pti.txrx_pti().bits(),
             ack_pti: coex_pti.ack_pti().bits(),
@@ -995,12 +1097,6 @@ impl TaskRegisters {
     #[doc(hidden)]
     pub fn validation_disable_ed_events(&mut self) {
         crate::ieee802154_ed_event_validation::disable_all_events(&mut self.registers);
-    }
-
-    #[cfg(feature = "validation-probes")]
-    #[doc(hidden)]
-    pub fn validation_ed_rx_abort_enable(&self) -> u32 {
-        crate::ieee802154_ed_event_validation::rx_abort_enable_events(&self.registers)
     }
 
     #[cfg(feature = "validation-probes")]

@@ -84,8 +84,8 @@ pub use ieee802154_event_status_probe::{
 };
 pub use ieee802154_lifecycle::{
     IEEE802154_MAX_CHANNEL, IEEE802154_MIN_CHANNEL, Ieee802154Channel, Ieee802154ChannelError,
-    Ieee802154ClockCheckpoint, Ieee802154ClockImages, Ieee802154FoundationCheckpoint,
-    Ieee802154ReadbackError, Ieee802154ResetCheckpoint, Ieee802154ResetImages,
+    Ieee802154ClockCheckpoint, Ieee802154ClockReadback, Ieee802154FoundationCheckpoint,
+    Ieee802154ReadbackError, Ieee802154ResetCheckpoint, Ieee802154ResetReadback,
 };
 pub use ieee802154_operation::{
     Ieee802154OperationEventMaskState, Ieee802154OperationEventObservation,
@@ -124,7 +124,7 @@ pub use open_esp_radio_esp32s31_pac::{
     StaModemWakeRestoreFailure, StaTbttAutoPeriod, StaTbttWakePrepareError, StaTbttWakeRestore,
     StaTbttWakeRestoreError, StaTbttWakeRestoreFailure, StaWakeProtectEarlyTimeRaw,
 };
-pub use power::{PowerCheckpoint, PowerClockImages, PowerError};
+pub use power::{PowerCheckpoint, PowerClockReadback, PowerError};
 pub use types::{
     CfrValue, ForcedRxGain, MacInterruptEnableState, MacInterruptEvents, MacInterruptMask,
     MacInterruptObservation, MacInterruptSnapshot, MacPowerInterruptObservation,

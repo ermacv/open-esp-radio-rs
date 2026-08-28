@@ -88,12 +88,12 @@ pub(crate) trait Ieee802154LifecycleBackend {
     fn enable_ieee802154_mac_clocks(&mut self);
     fn set_ieee802154_mac_reset(&mut self, asserted: bool);
     fn set_ieee802154_apb_reset(&mut self, asserted: bool);
-    fn ieee802154_reset_images(&self) -> Ieee802154ResetImages;
+    fn ieee802154_reset_readback(&self) -> Ieee802154ResetReadback;
     /// Retain the route-owned MODEM_LPCON coexistence clock.
     fn enable_coexistence_clock(&mut self);
 
     /// Join platform and route-owned clock observations.
-    fn ieee802154_clock_images(&self) -> Ieee802154ClockImages;
+    fn ieee802154_clock_readback(&self) -> Ieee802154ClockReadback;
 
     /// Prevent every peripheral event from reaching the future MAC IRQ route.
     fn mask_all_events(&mut self);
@@ -117,7 +117,7 @@ pub(crate) trait Ieee802154LifecycleBackend {
 
 /// Semantic readback of the complete IEEE 802.15.4 module dependency set.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Ieee802154ClockImages {
+pub struct Ieee802154ClockReadback {
     pub modem_clock_maps_configured: bool,
     pub pll_160m_clock_enabled: bool,
     pub modem_source_clock_configured: bool,
@@ -133,7 +133,7 @@ pub struct Ieee802154ClockImages {
 
 /// Semantic readback after the two private reset pulses.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Ieee802154ResetImages {
+pub struct Ieee802154ResetReadback {
     pub mac_reset_released: bool,
     pub apb_reset_released: bool,
 }
@@ -295,7 +295,7 @@ where
     backend.enable_bt_ieee802154_common_baseband_clock();
     backend.enable_ieee802154_mac_clocks();
 
-    if let Err(error) = verify_clock_images(backend.ieee802154_clock_images()) {
+    if let Err(error) = verify_clock_readback(backend.ieee802154_clock_readback()) {
         return Err(Ieee802154ClockFailure { backend, error });
     }
 
@@ -318,7 +318,7 @@ where
         self.backend.set_ieee802154_apb_reset(true);
         self.backend.set_ieee802154_apb_reset(false);
 
-        if let Err(error) = verify_reset_images(self.backend.ieee802154_reset_images()) {
+        if let Err(error) = verify_reset_readback(self.backend.ieee802154_reset_readback()) {
             return Err(Ieee802154ResetFailure {
                 lifecycle: self,
                 error,
@@ -373,65 +373,65 @@ where
     }
 }
 
-fn verify_clock_images(
-    images: Ieee802154ClockImages,
+fn verify_clock_readback(
+    readback: Ieee802154ClockReadback,
 ) -> Result<(), Ieee802154ReadbackError<Ieee802154ClockCheckpoint>> {
     verify(
         Ieee802154ClockCheckpoint::ModemClockMaps,
-        images.modem_clock_maps_configured,
+        readback.modem_clock_maps_configured,
     )?;
     verify(
         Ieee802154ClockCheckpoint::Pll160mClock,
-        images.pll_160m_clock_enabled,
+        readback.pll_160m_clock_enabled,
     )?;
     verify(
         Ieee802154ClockCheckpoint::ModemSourceClock,
-        images.modem_source_clock_configured,
+        readback.modem_source_clock_configured,
     )?;
     verify(
         Ieee802154ClockCheckpoint::CoexistenceClock,
-        images.coexistence_clock_enabled,
+        readback.coexistence_clock_enabled,
     )?;
     verify(
         Ieee802154ClockCheckpoint::WifiBb80x1Clock,
-        images.wifi_bb_80x1_clock_enabled,
+        readback.wifi_bb_80x1_clock_enabled,
     )?;
     verify(
         Ieee802154ClockCheckpoint::EtmClock,
-        images.etm_clock_enabled,
+        readback.etm_clock_enabled,
     )?;
     verify(
         Ieee802154ClockCheckpoint::BtApbClock,
-        images.bt_apb_clock_enabled,
+        readback.bt_apb_clock_enabled,
     )?;
     verify(
         Ieee802154ClockCheckpoint::ModemSecurityApbClock,
-        images.modem_security_apb_clock_enabled,
+        readback.modem_security_apb_clock_enabled,
     )?;
     verify(
         Ieee802154ClockCheckpoint::BtIeee802154CommonBasebandClock,
-        images.bt_ieee802154_common_baseband_clock_enabled,
+        readback.bt_ieee802154_common_baseband_clock_enabled,
     )?;
     verify(
         Ieee802154ClockCheckpoint::Ieee802154ApbClock,
-        images.ieee802154_apb_clock_enabled,
+        readback.ieee802154_apb_clock_enabled,
     )?;
     verify(
         Ieee802154ClockCheckpoint::Ieee802154MacClock,
-        images.ieee802154_mac_clock_enabled,
+        readback.ieee802154_mac_clock_enabled,
     )
 }
 
-fn verify_reset_images(
-    images: Ieee802154ResetImages,
+fn verify_reset_readback(
+    readback: Ieee802154ResetReadback,
 ) -> Result<(), Ieee802154ReadbackError<Ieee802154ResetCheckpoint>> {
     verify(
         Ieee802154ResetCheckpoint::MacResetReleased,
-        images.mac_reset_released,
+        readback.mac_reset_released,
     )?;
     verify(
         Ieee802154ResetCheckpoint::ApbResetReleased,
-        images.apb_reset_released,
+        readback.apb_reset_released,
     )
 }
 
@@ -487,9 +487,9 @@ mod tests {
 
     use super::{
         COEX_DISABLED_PTI, IEEE802154_MAX_CHANNEL, IEEE802154_MIN_CHANNEL, Ieee802154Channel,
-        Ieee802154ChannelError, Ieee802154ClockCheckpoint, Ieee802154ClockImages,
+        Ieee802154ChannelError, Ieee802154ClockCheckpoint, Ieee802154ClockReadback,
         Ieee802154FoundationCheckpoint, Ieee802154LifecycleBackend, Ieee802154ReadbackError,
-        Ieee802154ResetCheckpoint, Ieee802154ResetImages, establish_ieee802154_clocks,
+        Ieee802154ResetCheckpoint, Ieee802154ResetReadback, establish_ieee802154_clocks,
     };
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -516,8 +516,8 @@ mod tests {
     #[derive(Debug)]
     struct FakeBackend {
         operations: Vec<Operation>,
-        clock_images: Ieee802154ClockImages,
-        reset_images: Ieee802154ResetImages,
+        clock_readback: Ieee802154ClockReadback,
+        reset_readback: Ieee802154ResetReadback,
         foundation_snapshot: Ieee802154FoundationSnapshot,
     }
 
@@ -525,7 +525,7 @@ mod tests {
         fn ready() -> Self {
             Self {
                 operations: Vec::new(),
-                clock_images: Ieee802154ClockImages {
+                clock_readback: Ieee802154ClockReadback {
                     modem_clock_maps_configured: true,
                     pll_160m_clock_enabled: true,
                     modem_source_clock_configured: true,
@@ -538,7 +538,7 @@ mod tests {
                     ieee802154_apb_clock_enabled: true,
                     ieee802154_mac_clock_enabled: true,
                 },
-                reset_images: Ieee802154ResetImages {
+                reset_readback: Ieee802154ResetReadback {
                     mac_reset_released: true,
                     apb_reset_released: true,
                 },
@@ -590,16 +590,16 @@ mod tests {
             self.operations.push(Operation::SetApbReset(asserted));
         }
 
-        fn ieee802154_reset_images(&self) -> Ieee802154ResetImages {
-            self.reset_images
+        fn ieee802154_reset_readback(&self) -> Ieee802154ResetReadback {
+            self.reset_readback
         }
 
         fn enable_coexistence_clock(&mut self) {
             self.operations.push(Operation::EnableCoex);
         }
 
-        fn ieee802154_clock_images(&self) -> Ieee802154ClockImages {
-            self.clock_images
+        fn ieee802154_clock_readback(&self) -> Ieee802154ClockReadback {
+            self.clock_readback
         }
 
         fn mask_all_events(&mut self) {
@@ -671,8 +671,8 @@ mod tests {
     #[test]
     fn clock_readback_fails_at_the_first_unproved_dependency_and_returns_owner() {
         let mut backend = FakeBackend::ready();
-        backend.clock_images.etm_clock_enabled = false;
-        backend.clock_images.bt_apb_clock_enabled = false;
+        backend.clock_readback.etm_clock_enabled = false;
+        backend.clock_readback.bt_apb_clock_enabled = false;
 
         let failure = match establish_ieee802154_clocks(backend) {
             Ok(_) => panic!("unproved clocks must fail closed"),
@@ -692,7 +692,7 @@ mod tests {
     #[test]
     fn clock_readback_requires_the_shared_upstream_pll_gate() {
         let mut backend = FakeBackend::ready();
-        backend.clock_images.pll_160m_clock_enabled = false;
+        backend.clock_readback.pll_160m_clock_enabled = false;
 
         let failure = match establish_ieee802154_clocks(backend) {
             Ok(_) => panic!("an unavailable upstream PLL must fail closed"),
@@ -712,7 +712,7 @@ mod tests {
     #[test]
     fn reset_failure_remains_clocked_and_returns_owner() {
         let mut backend = FakeBackend::ready();
-        backend.reset_images.apb_reset_released = false;
+        backend.reset_readback.apb_reset_released = false;
         let clocked = establish_ieee802154_clocks(backend).expect("clock readback");
 
         let failure = match clocked.reset_mac() {

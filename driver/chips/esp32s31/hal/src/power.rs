@@ -147,7 +147,7 @@ impl PowerSequenceBackend for open_esp_radio_esp32s31_pac::Ieee802154TaskRegiste
 /// decoding stays behind the integration capability. Neither register handles,
 /// addresses nor system-register masks cross into this layer.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct PowerClockImages {
+pub struct PowerClockReadback {
     pub reset_released: bool,
     pub hp_active_icg_selected: bool,
     pub modem_bus_clock_enabled: bool,
@@ -212,46 +212,49 @@ pub(crate) fn execute_owned(registers: &mut impl PowerSequenceBackend) -> Result
     registers.select_phy_i2c_160mhz_source();
     registers.retain_phy_i2c_master_clock();
 
-    let platform_images = registers.platform_clock_power_observation();
+    let platform = registers.platform_clock_power_observation();
     let modem = registers.modem_syscon_power_observation();
     let shared = registers.shared_modem_clock_observation();
-    let images = PowerClockImages {
+    let readback = PowerClockReadback {
         reset_released: modem.wifi_reset_released,
-        hp_active_icg_selected: platform_images.hp_active_icg_selected,
-        modem_bus_clock_enabled: platform_images.modem_register_bus_clock_enabled,
+        hp_active_icg_selected: platform.hp_active_icg_selected,
+        modem_bus_clock_enabled: platform.modem_register_bus_clock_enabled,
         hp_active_clock_map_configured: modem.active_clock_map_configured,
         shared_clock_map_configured: shared.power_state_map_configured,
-        modem_source_clocks_configured: platform_images.modem_source_clocks_configured,
+        modem_source_clocks_configured: platform.modem_source_clocks_configured,
         phy_calibration_clocks_enabled: modem.phy_calibration_clocks_enabled,
         phy_i2c_160mhz_selected: modem.phy_i2c_160mhz_selected,
         phy_i2c_master_clock_enabled: shared.phy_i2c_master_clock_enabled,
     };
-    verify_state(PowerCheckpoint::ResetReleased, images.reset_released)?;
-    verify_state(PowerCheckpoint::HpActiveIcg, images.hp_active_icg_selected)?;
+    verify_state(PowerCheckpoint::ResetReleased, readback.reset_released)?;
+    verify_state(
+        PowerCheckpoint::HpActiveIcg,
+        readback.hp_active_icg_selected,
+    )?;
     verify_state(
         PowerCheckpoint::ModemBusClock,
-        images.modem_bus_clock_enabled,
+        readback.modem_bus_clock_enabled,
     )?;
     verify_state(
         PowerCheckpoint::HpActiveClockMap,
-        images.hp_active_clock_map_configured,
+        readback.hp_active_clock_map_configured,
     )?;
     verify_state(
         PowerCheckpoint::SharedClockMap,
-        images.shared_clock_map_configured,
+        readback.shared_clock_map_configured,
     )?;
     verify_state(
         PowerCheckpoint::ModemClockSource,
-        images.modem_source_clocks_configured,
+        readback.modem_source_clocks_configured,
     )?;
     verify_state(
         PowerCheckpoint::PhyClocks,
-        images.phy_calibration_clocks_enabled,
+        readback.phy_calibration_clocks_enabled,
     )?;
-    verify_state(PowerCheckpoint::I2cSource, images.phy_i2c_160mhz_selected)?;
+    verify_state(PowerCheckpoint::I2cSource, readback.phy_i2c_160mhz_selected)?;
     verify_state(
         PowerCheckpoint::I2cClock,
-        images.phy_i2c_master_clock_enabled,
+        readback.phy_i2c_master_clock_enabled,
     )
 }
 

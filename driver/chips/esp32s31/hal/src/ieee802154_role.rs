@@ -32,10 +32,10 @@ use crate::{
     ieee802154::Ieee802154PacHal,
     ieee802154_lifecycle::{
         Ieee802154ClockCheckpoint, Ieee802154ClockFailure as EngineClockFailure,
-        Ieee802154ClockImages, Ieee802154FoundationCheckpoint,
+        Ieee802154ClockReadback, Ieee802154FoundationCheckpoint,
         Ieee802154FoundationFailure as EngineFoundationFailure, Ieee802154Lifecycle,
         Ieee802154LifecycleBackend, Ieee802154ReadbackError, Ieee802154ResetCheckpoint,
-        Ieee802154ResetFailure as EngineResetFailure, Ieee802154ResetImages,
+        Ieee802154ResetFailure as EngineResetFailure, Ieee802154ResetReadback,
         establish_ieee802154_clocks, state as lifecycle_state,
     },
     ieee802154_operation::{
@@ -128,9 +128,9 @@ impl<P> Ieee802154LifecycleBackend for OwnedIeee802154Backend<P> {
         self.task.set_ieee802154_apb_reset(asserted);
     }
 
-    fn ieee802154_reset_images(&self) -> Ieee802154ResetImages {
+    fn ieee802154_reset_readback(&self) -> Ieee802154ResetReadback {
         let reset = self.task.modem_syscon_ieee802154_reset_observation();
-        Ieee802154ResetImages {
+        Ieee802154ResetReadback {
             mac_reset_released: reset.mac_reset_released,
             apb_reset_released: reset.apb_reset_released,
         }
@@ -139,11 +139,11 @@ impl<P> Ieee802154LifecycleBackend for OwnedIeee802154Backend<P> {
         self.task.retain_coexistence_clock();
     }
 
-    fn ieee802154_clock_images(&self) -> Ieee802154ClockImages {
+    fn ieee802154_clock_readback(&self) -> Ieee802154ClockReadback {
         let platform = self.task.platform_clock_power_observation();
         let shared = self.task.shared_modem_clock_observation();
         let modem = self.task.modem_syscon_ieee802154_clock_observation();
-        Ieee802154ClockImages {
+        Ieee802154ClockReadback {
             modem_clock_maps_configured: modem.active_clock_map_configured
                 && shared.power_state_map_configured,
             pll_160m_clock_enabled: platform.ref_160m_clock_enabled,

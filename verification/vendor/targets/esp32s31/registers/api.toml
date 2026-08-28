@@ -4012,6 +4012,150 @@ value = 0xf4
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_e0_24_31"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RESTART_IMAGE_00E0"
+fields = [{ field = "BITS_24_31", source-bit-offset = 0 }]
+value = 0x14
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_e0_16_23"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RESTART_IMAGE_00E0"
+fields = [{ field = "BITS_16_23", source-bit-offset = 0 }]
+value = 0x0e
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_e0_8_15"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RESTART_IMAGE_00E0"
+fields = [{ field = "BITS_8_15", source-bit-offset = 0 }]
+value = 0x0e
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_e4_16_23"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RESTART_IMAGE_00E4"
+fields = [{ field = "BITS_16_23", source-bit-offset = 0 }]
+value = 0xec
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_e4_8_15"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RESTART_IMAGE_00E4"
+fields = [{ field = "BITS_8_15", source-bit-offset = 0 }]
+value = 0xf2
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_e4_0_7"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RESTART_IMAGE_00E4"
+fields = [{ field = "BITS_0_7", source-bit-offset = 0 }]
+value = 0xf2
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_e0_0_7"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RESTART_IMAGE_00E0"
+fields = [{ field = "BITS_0_7", source-bit-offset = 0 }]
+value = 0x0f
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_e8_24_31"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RESTART_IMAGE_00E8"
+fields = [{ field = "BITS_24_31", source-bit-offset = 0 }]
+value = 0xf1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_ec_24_31"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RESTART_IMAGE_00EC"
+fields = [{ field = "BITS_24_31", source-bit-offset = 0 }]
+value = 0x2d
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_ec_8_15"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RESTART_IMAGE_00EC"
+fields = [{ field = "BITS_8_15", source-bit-offset = 0 }]
+value = 0xd3
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_f0_24_31"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RESTART_IMAGE_00F0"
+fields = [{ field = "BITS_24_31", source-bit-offset = 0 }]
+value = 0xa6
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_e4_24_31"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RESTART_IMAGE_00E4"
+fields = [{ field = "BITS_24_31", source-bit-offset = 0 }]
+value = 0x1e
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_e8_16_23"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RESTART_IMAGE_00E8"
+fields = [{ field = "BITS_16_23", source-bit-offset = 0 }]
+value = 0xe2
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_ec_16_23"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RESTART_IMAGE_00EC"
+fields = [{ field = "BITS_16_23", source-bit-offset = 0 }]
+value = 0x28
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_ec_0_7"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RESTART_IMAGE_00EC"
+fields = [{ field = "BITS_0_7", source-bit-offset = 0 }]
+value = 0xd8
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_f0_16_23"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RESTART_IMAGE_00F0"
+fields = [{ field = "BITS_16_23", source-bit-offset = 0 }]
+value = 0xa6
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

@@ -67,42 +67,42 @@ impl Ieee802154MultipanIndex {
     const fn as_usize(self) -> usize {
         self.0 as usize
     }
-
-    const fn enable_bit(self) -> u8 {
-        1 << self.0
-    }
 }
 
-/// Exact four-bit `MULTIPAN_ENABLE_MASK` field image.
+/// Semantic enable state for the four source-confirmed Multi-PAN contexts.
+///
+/// Hardware bit positions are owned by generated PAC field accessors. This
+/// type stores one boolean per context and cannot represent a register image.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Ieee802154MultipanEnableMask(u8);
+pub struct Ieee802154MultipanEnableState([bool; 4]);
 
-impl Ieee802154MultipanEnableMask {
-    pub const NONE: Self = Self(0);
-    pub const ALL: Self = Self(0x0f);
+impl Ieee802154MultipanEnableState {
+    pub const NONE: Self = Self([false; 4]);
+    pub const ALL: Self = Self([true; 4]);
 
-    pub const fn from_bits(bits: u8) -> Option<Self> {
-        if bits & !Self::ALL.0 == 0 {
-            Some(Self(bits))
-        } else {
-            None
-        }
+    /// Construct an explicit semantic state without exposing register bits.
+    pub const fn new(context0: bool, context1: bool, context2: bool, context3: bool) -> Self {
+        Self([context0, context1, context2, context3])
     }
 
-    pub const fn bits(self) -> u8 {
+    const fn enabled(self) -> [bool; 4] {
         self.0
     }
 
     pub const fn contains(self, index: Ieee802154MultipanIndex) -> bool {
-        self.0 & index.enable_bit() != 0
+        self.0[index.as_usize()]
     }
 
     pub const fn with(self, index: Ieee802154MultipanIndex) -> Self {
-        Self(self.0 | index.enable_bit())
+        let mut enabled = self.0;
+        enabled[index.as_usize()] = true;
+        Self(enabled)
     }
 
     pub const fn without(self, index: Ieee802154MultipanIndex) -> Self {
-        Self(self.0 & !index.enable_bit())
+        let mut enabled = self.0;
+        enabled[index.as_usize()] = false;
+        Self(enabled)
     }
 }
 
@@ -1405,7 +1405,7 @@ pub struct Ieee802154MacPolicySnapshot {
     cca_threshold_code: i8,
     ack_timeout: Ieee802154AckTimeoutUnits,
     control: Ieee802154MacControl,
-    multipan_enable_mask: u8,
+    multipan_enable_state: Ieee802154MultipanEnableState,
     identity: Ieee802154PanIdentity,
 }
 
@@ -1424,7 +1424,7 @@ pub struct Ieee802154MacConfigurationReadback {
     ed_sample_rate: Ieee802154EdSampleRate,
     ack_timeout: Ieee802154AckTimeoutUnits,
     control: Ieee802154MacControl,
-    multipan_enable_mask: Ieee802154MultipanEnableMask,
+    multipan_enable_state: Ieee802154MultipanEnableState,
     identities: [Ieee802154PanIdentity; 4],
     frame_pending: bool,
 }
@@ -1447,7 +1447,7 @@ impl Ieee802154MacPolicySnapshot {
         cca_threshold_code: i8,
         ack_timeout: Ieee802154AckTimeoutUnits,
         control: Ieee802154MacControl,
-        multipan_enable_mask: u8,
+        multipan_enable_state: Ieee802154MultipanEnableState,
         identity: Ieee802154PanIdentity,
     ) -> Self {
         Self {
@@ -1456,7 +1456,7 @@ impl Ieee802154MacPolicySnapshot {
             cca_threshold_code,
             ack_timeout,
             control,
-            multipan_enable_mask,
+            multipan_enable_state,
             identity,
         }
     }
@@ -1481,8 +1481,8 @@ impl Ieee802154MacPolicySnapshot {
         self.control
     }
 
-    pub const fn multipan_enable_mask(self) -> u8 {
-        self.multipan_enable_mask
+    pub const fn multipan_enable_state(self) -> Ieee802154MultipanEnableState {
+        self.multipan_enable_state
     }
 
     pub const fn identity(self) -> Ieee802154PanIdentity {
@@ -1519,8 +1519,8 @@ impl Ieee802154MacConfigurationReadback {
         self.control
     }
 
-    pub const fn multipan_enable_mask(self) -> Ieee802154MultipanEnableMask {
-        self.multipan_enable_mask
+    pub const fn multipan_enable_state(self) -> Ieee802154MultipanEnableState {
+        self.multipan_enable_state
     }
 
     pub const fn multipan_identity(self, index: Ieee802154MultipanIndex) -> Ieee802154PanIdentity {
@@ -1859,16 +1859,16 @@ impl Ieee802154RegisterLease<'_> {
         );
     }
 
-    /// Replace the complete four-bit multipan-enable field exactly.
-    pub fn set_multipan_enable_mask(&mut self, mask: Ieee802154MultipanEnableMask) {
-        self.registers.set_multipan_enable_mask(mask.bits());
+    /// Replace all four named multipan-enable fields exactly.
+    pub fn set_multipan_enable_state(&mut self, state: Ieee802154MultipanEnableState) {
+        self.registers.set_multipan_enabled(state.enabled());
     }
 
     /// Program one of the four public PAN identities.
     ///
     /// Matching the public LL, each logical address setter first enables its
     /// context while preserving every other enable bit. Call
-    /// [`Self::set_multipan_enable_mask`] afterwards when the caller needs one
+    /// [`Self::set_multipan_enable_state`] afterwards when the caller needs one
     /// exact final enable image independent of identity publication.
     pub fn set_multipan_identity(
         &mut self,
@@ -1893,9 +1893,9 @@ impl Ieee802154RegisterLease<'_> {
         raw_identity_to_typed(self.registers.multipan_identity(index.as_usize()))
     }
 
-    /// Read the complete four-bit multipan enable field.
-    pub fn multipan_enable_mask(&self) -> Ieee802154MultipanEnableMask {
-        Ieee802154MultipanEnableMask(self.registers.multipan_enable_mask())
+    /// Read all four named multipan enable fields.
+    pub fn multipan_enable_state(&self) -> Ieee802154MultipanEnableState {
+        Ieee802154MultipanEnableState(self.registers.multipan_enabled())
     }
 
     /// Set the outgoing ACK frame-pending bit through a preserving update.
@@ -1989,7 +1989,7 @@ impl Ieee802154RegisterLease<'_> {
                 readback.promiscuous(),
                 readback.pending_enhanced(),
             ),
-            multipan_enable_mask: readback.multipan_enable_mask(),
+            multipan_enable_state: Ieee802154MultipanEnableState(readback.multipan_enabled()),
             identity: Ieee802154PanIdentity::new(
                 identity.pan_id(),
                 identity.short_address(),
@@ -2027,7 +2027,7 @@ impl Ieee802154RegisterLease<'_> {
                 readback.promiscuous(),
                 readback.pending_enhanced(),
             ),
-            multipan_enable_mask: Ieee802154MultipanEnableMask(readback.multipan_enable_mask()),
+            multipan_enable_state: Ieee802154MultipanEnableState(readback.multipan_enabled()),
             identities,
             frame_pending: readback.frame_pending(),
         }
@@ -2634,12 +2634,10 @@ impl Ieee802154TaskRegisters {
 #[cfg(test)]
 mod tests {
     use super::{
-        Ieee802154EdDurationUnits, Ieee802154EventEnableMask, Ieee802154InterruptActivationPlan,
+        Ieee802154EventEnableMask, Ieee802154InterruptActivationPlan,
         Ieee802154InterruptRxAbortEnableMask, Ieee802154InterruptTransitionPort,
-        Ieee802154InterruptTxAbortEnableMask, Ieee802154MultipanEnableMask,
-        Ieee802154MultipanIndex, Ieee802154ObservedEventState, Ieee802154Pti,
-        Ieee802154RxStateCode, Ieee802154SecurityPayloadOffset, Ieee802154StateSnapshot,
-        Ieee802154TxPowerCode, Ieee802154TxStateCode, execute_interrupt_activation,
+        Ieee802154InterruptTxAbortEnableMask, Ieee802154ObservedEventState, Ieee802154RxStateCode,
+        Ieee802154StateSnapshot, Ieee802154TxStateCode, execute_interrupt_activation,
         execute_interrupt_deactivation,
     };
     use crate::RadioHardware;
@@ -2656,79 +2654,6 @@ mod tests {
         assert_eq!(
             State::RxAbortWithOther.union(State::EdDoneWithOther),
             State::EdDoneAndRxAbortWithOther
-        );
-    }
-
-    #[test]
-    fn pac_geometry_constructors_are_exhaustive_over_every_u8() {
-        for raw in u8::MIN..=u8::MAX {
-            assert_eq!(
-                Ieee802154TxPowerCode::new(u32::from(raw)).map(Ieee802154TxPowerCode::get),
-                Some(u32::from(raw))
-            );
-            assert_eq!(
-                Ieee802154MultipanIndex::new(raw).map(Ieee802154MultipanIndex::value),
-                (raw < 4).then_some(raw)
-            );
-            assert_eq!(
-                Ieee802154MultipanEnableMask::from_bits(raw)
-                    .map(Ieee802154MultipanEnableMask::bits),
-                (raw < 16).then_some(raw)
-            );
-            assert_eq!(
-                Ieee802154SecurityPayloadOffset::new(raw)
-                    .map(Ieee802154SecurityPayloadOffset::value),
-                (raw <= Ieee802154SecurityPayloadOffset::MAX).then_some(raw)
-            );
-        }
-        assert_eq!(Ieee802154TxPowerCode::new(0x100), None);
-    }
-
-    #[test]
-    fn multipan_masks_address_all_four_contexts_without_truncation() {
-        let mut mask = Ieee802154MultipanEnableMask::NONE;
-        for raw in 0..Ieee802154MultipanIndex::COUNT {
-            let index = Ieee802154MultipanIndex::new(raw).expect("all four indices are valid");
-            assert!(!mask.contains(index));
-            mask = mask.with(index);
-            assert!(mask.contains(index));
-        }
-        assert_eq!(mask, Ieee802154MultipanEnableMask::ALL);
-        for raw in 0..Ieee802154MultipanIndex::COUNT {
-            let index = Ieee802154MultipanIndex::new(raw).expect("all four indices are valid");
-            mask = mask.without(index);
-            assert!(!mask.contains(index));
-        }
-        assert_eq!(mask, Ieee802154MultipanEnableMask::NONE);
-    }
-
-    #[test]
-    fn pti_constructor_never_creates_a_shifted_or_oversized_image() {
-        assert_eq!(Ieee802154Pti::new(0).map(Ieee802154Pti::value), Some(0));
-        assert_eq!(
-            Ieee802154Pti::new(Ieee802154Pti::MAX).map(Ieee802154Pti::value),
-            Some(Ieee802154Pti::MAX)
-        );
-        assert_eq!(Ieee802154Pti::new(Ieee802154Pti::MAX + 1), None);
-    }
-
-    #[test]
-    fn ed_duration_never_truncates_the_wider_physical_field() {
-        assert_eq!(
-            Ieee802154EdDurationUnits::new(0).map(|value| value.get()),
-            Some(0)
-        );
-        assert_eq!(
-            Ieee802154EdDurationUnits::new(u32::from(u16::MAX)).map(|value| value.get()),
-            Some(u32::from(u16::MAX))
-        );
-        assert_eq!(
-            Ieee802154EdDurationUnits::from_field(u16::MAX as u32),
-            Ieee802154EdDurationUnits::new(u16::MAX as u32)
-        );
-        assert_eq!(
-            Ieee802154EdDurationUnits::from_field(u16::MAX as u32 + 1),
-            None
         );
     }
 

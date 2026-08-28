@@ -22324,16 +22324,28 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>MULTIPAN_ENABLE_MASK</name>
-              <description>One enable bit for each of the four public multipan contexts.</description>
+              <name>MULTIPAN0_ENABLED</name>
+              <description>Enable public multipan context zero.</description>
               <bitOffset>28</bitOffset>
-              <bitWidth>4</bitWidth>
-              <writeConstraint>
-                <range>
-                  <minimum>0</minimum>
-                  <maximum>15</maximum>
-                </range>
-              </writeConstraint>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>MULTIPAN1_ENABLED</name>
+              <description>Enable public multipan context one.</description>
+              <bitOffset>29</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>MULTIPAN2_ENABLED</name>
+              <description>Enable public multipan context two.</description>
+              <bitOffset>30</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>MULTIPAN3_ENABLED</name>
+              <description>Enable public multipan context three.</description>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>

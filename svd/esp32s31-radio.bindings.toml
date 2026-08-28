@@ -9261,10 +9261,31 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "MULTIPAN_ENABLE_MASK"
-method = "multipan_enable_mask"
+svd-name = "MULTIPAN0_ENABLED"
+method = "multipan0_enabled"
 bit-offset = 28
-bit-width = 4
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "MULTIPAN1_ENABLED"
+method = "multipan1_enabled"
+bit-offset = 29
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "MULTIPAN2_ENABLED"
+method = "multipan2_enabled"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "MULTIPAN3_ENABLED"
+method = "multipan3_enabled"
+bit-offset = 31
+bit-width = 1
 access = "read-write"
 
 [[registers]]

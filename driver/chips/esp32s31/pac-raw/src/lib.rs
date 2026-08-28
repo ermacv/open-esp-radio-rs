@@ -53534,10 +53534,22 @@ pub mod ieee802154_mac {
         pub type PendingEnhancedR = crate::BitReader;
         #[doc = "Field `PENDING_ENHANCED` writer - Boolean pending-mode selector used by the current public LL. The wider public pending-mode enum is not encoded in this one-bit field."]
         pub type PendingEnhancedW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `MULTIPAN_ENABLE_MASK` reader - One enable bit for each of the four public multipan contexts."]
-        pub type MultipanEnableMaskR = crate::FieldReader;
-        #[doc = "Field `MULTIPAN_ENABLE_MASK` writer - One enable bit for each of the four public multipan contexts."]
-        pub type MultipanEnableMaskW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        #[doc = "Field `MULTIPAN0_ENABLED` reader - Enable public multipan context zero."]
+        pub type Multipan0EnabledR = crate::BitReader;
+        #[doc = "Field `MULTIPAN0_ENABLED` writer - Enable public multipan context zero."]
+        pub type Multipan0EnabledW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `MULTIPAN1_ENABLED` reader - Enable public multipan context one."]
+        pub type Multipan1EnabledR = crate::BitReader;
+        #[doc = "Field `MULTIPAN1_ENABLED` writer - Enable public multipan context one."]
+        pub type Multipan1EnabledW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `MULTIPAN2_ENABLED` reader - Enable public multipan context two."]
+        pub type Multipan2EnabledR = crate::BitReader;
+        #[doc = "Field `MULTIPAN2_ENABLED` writer - Enable public multipan context two."]
+        pub type Multipan2EnabledW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `MULTIPAN3_ENABLED` reader - Enable public multipan context three."]
+        pub type Multipan3EnabledR = crate::BitReader;
+        #[doc = "Field `MULTIPAN3_ENABLED` writer - Enable public multipan context three."]
+        pub type Multipan3EnabledW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bit 0"]
             #[inline(always)]
@@ -53569,10 +53581,25 @@ pub mod ieee802154_mac {
             pub fn pending_enhanced(&self) -> PendingEnhancedR {
                 PendingEnhancedR::new(((self.bits >> 12) & 1) != 0)
             }
-            #[doc = "Bits 28:31 - One enable bit for each of the four public multipan contexts."]
+            #[doc = "Bit 28 - Enable public multipan context zero."]
             #[inline(always)]
-            pub fn multipan_enable_mask(&self) -> MultipanEnableMaskR {
-                MultipanEnableMaskR::new(((self.bits >> 28) & 0x0f) as u8)
+            pub fn multipan0_enabled(&self) -> Multipan0EnabledR {
+                Multipan0EnabledR::new(((self.bits >> 28) & 1) != 0)
+            }
+            #[doc = "Bit 29 - Enable public multipan context one."]
+            #[inline(always)]
+            pub fn multipan1_enabled(&self) -> Multipan1EnabledR {
+                Multipan1EnabledR::new(((self.bits >> 29) & 1) != 0)
+            }
+            #[doc = "Bit 30 - Enable public multipan context two."]
+            #[inline(always)]
+            pub fn multipan2_enabled(&self) -> Multipan2EnabledR {
+                Multipan2EnabledR::new(((self.bits >> 30) & 1) != 0)
+            }
+            #[doc = "Bit 31 - Enable public multipan context three."]
+            #[inline(always)]
+            pub fn multipan3_enabled(&self) -> Multipan3EnabledR {
+                Multipan3EnabledR::new(((self.bits >> 31) & 1) != 0)
             }
         }
         impl W {
@@ -53606,10 +53633,25 @@ pub mod ieee802154_mac {
             pub fn pending_enhanced(&mut self) -> PendingEnhancedW<'_, ControlSpec> {
                 PendingEnhancedW::new(self, 12)
             }
-            #[doc = "Bits 28:31 - One enable bit for each of the four public multipan contexts."]
+            #[doc = "Bit 28 - Enable public multipan context zero."]
             #[inline(always)]
-            pub fn multipan_enable_mask(&mut self) -> MultipanEnableMaskW<'_, ControlSpec> {
-                MultipanEnableMaskW::new(self, 28)
+            pub fn multipan0_enabled(&mut self) -> Multipan0EnabledW<'_, ControlSpec> {
+                Multipan0EnabledW::new(self, 28)
+            }
+            #[doc = "Bit 29 - Enable public multipan context one."]
+            #[inline(always)]
+            pub fn multipan1_enabled(&mut self) -> Multipan1EnabledW<'_, ControlSpec> {
+                Multipan1EnabledW::new(self, 29)
+            }
+            #[doc = "Bit 30 - Enable public multipan context two."]
+            #[inline(always)]
+            pub fn multipan2_enabled(&mut self) -> Multipan2EnabledW<'_, ControlSpec> {
+                Multipan2EnabledW::new(self, 30)
+            }
+            #[doc = "Bit 31 - Enable public multipan context three."]
+            #[inline(always)]
+            pub fn multipan3_enabled(&mut self) -> Multipan3EnabledW<'_, ControlSpec> {
+                Multipan3EnabledW::new(self, 31)
             }
         }
         #[doc = "Selected MAC policy bits mutated by public common LL accessors. Unused control bits remain absent.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]

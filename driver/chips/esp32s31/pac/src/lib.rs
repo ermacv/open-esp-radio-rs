@@ -153,7 +153,7 @@ pub use ieee802154::{
     Ieee802154EventMask, Ieee802154EventObservation, Ieee802154EventObservationError,
     Ieee802154FoundationSnapshot, Ieee802154FrequencyCode, Ieee802154InterruptSnapshot,
     Ieee802154MacCommand, Ieee802154MacConfigurationReadback, Ieee802154MacControl,
-    Ieee802154MacPolicySnapshot, Ieee802154MultipanEnableMask, Ieee802154MultipanIndex,
+    Ieee802154MacPolicySnapshot, Ieee802154MultipanEnableState, Ieee802154MultipanIndex,
     Ieee802154ObservedEventState, Ieee802154OperationEventEnableObservation,
     Ieee802154OperationRxAbortEnableObservation, Ieee802154PanIdentity, Ieee802154Pti,
     Ieee802154RouteState, Ieee802154RxAbortEnableMask, Ieee802154RxAbortReason,

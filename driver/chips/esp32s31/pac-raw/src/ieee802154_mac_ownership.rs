@@ -152,12 +152,12 @@ impl TransmitSecurityProgrammingPort for crate::Ieee802154Mac {
 
 impl MultipanIdentityProgrammingPort for crate::Ieee802154Mac {
     fn enable_context(&mut self, index: usize) {
-        assert!(index < 4, "multipan index exceeds four contexts");
-        let enable_bit = 1_u8 << index;
-        self.control().modify(|reader, writer| {
-            writer
-                .multipan_enable_mask()
-                .set(reader.multipan_enable_mask().bits() | enable_bit)
+        self.control().modify(|_, writer| match index {
+            0 => writer.multipan0_enabled().set_bit(),
+            1 => writer.multipan1_enabled().set_bit(),
+            2 => writer.multipan2_enabled().set_bit(),
+            3 => writer.multipan3_enabled().set_bit(),
+            _ => panic!("multipan index exceeds four contexts"),
         });
     }
 
@@ -251,7 +251,7 @@ pub struct StaticMacPolicyReadback {
     coordinator: bool,
     promiscuous: bool,
     pending_enhanced: bool,
-    multipan_enable_mask: u8,
+    multipan_enabled: [bool; 4],
     identity: MultipanIdentityReadback,
 }
 
@@ -296,8 +296,8 @@ impl StaticMacPolicyReadback {
         self.pending_enhanced
     }
 
-    pub const fn multipan_enable_mask(self) -> u8 {
-        self.multipan_enable_mask
+    pub const fn multipan_enabled(self) -> [bool; 4] {
+        self.multipan_enabled
     }
 
     pub const fn identity(self) -> MultipanIdentityReadback {
@@ -322,7 +322,7 @@ pub struct MacConfigurationReadback {
     coordinator: bool,
     promiscuous: bool,
     pending_enhanced: bool,
-    multipan_enable_mask: u8,
+    multipan_enabled: [bool; 4],
     identities: [MultipanIdentityReadback; 4],
     frame_pending: bool,
 }
@@ -376,8 +376,8 @@ impl MacConfigurationReadback {
         self.pending_enhanced
     }
 
-    pub const fn multipan_enable_mask(self) -> u8 {
-        self.multipan_enable_mask
+    pub const fn multipan_enabled(self) -> [bool; 4] {
+        self.multipan_enabled
     }
 
     pub const fn identity(self, index: usize) -> MultipanIdentityReadback {
@@ -707,13 +707,20 @@ impl TaskRegisters {
         register.modify(|_, writer| writer.pending_enhanced().bit(pending_enhanced));
     }
 
-    /// Replace the exact four-bit multipan enable field.
+    /// Replace all four named multipan enable fields.
     #[doc(hidden)]
-    pub fn set_multipan_enable_mask(&mut self, mask: u8) {
-        assert!(mask <= 0x0f, "multipan enable mask exceeds four bits");
-        self.registers
-            .control()
-            .modify(|_, writer| writer.multipan_enable_mask().set(mask));
+    pub fn set_multipan_enabled(&mut self, enabled: [bool; 4]) {
+        self.registers.control().modify(|_, writer| {
+            writer
+                .multipan0_enabled()
+                .bit(enabled[0])
+                .multipan1_enabled()
+                .bit(enabled[1])
+                .multipan2_enabled()
+                .bit(enabled[2])
+                .multipan3_enabled()
+                .bit(enabled[3])
+        });
     }
 
     /// Program one complete source-confirmed multipan identity transaction.
@@ -752,14 +759,16 @@ impl TaskRegisters {
         }
     }
 
-    /// Read the complete four-bit multipan enable field.
+    /// Read all four named multipan enable fields.
     #[doc(hidden)]
-    pub fn multipan_enable_mask(&self) -> u8 {
-        self.registers
-            .control()
-            .read()
-            .multipan_enable_mask()
-            .bits()
+    pub fn multipan_enabled(&self) -> [bool; 4] {
+        let control = self.registers.control().read();
+        [
+            control.multipan0_enabled().bit_is_set(),
+            control.multipan1_enabled().bit_is_set(),
+            control.multipan2_enabled().bit_is_set(),
+            control.multipan3_enabled().bit_is_set(),
+        ]
     }
 
     /// Set the outgoing ACK frame-pending bit through a preserving update.
@@ -867,7 +876,12 @@ impl TaskRegisters {
             coordinator: control.coordinator().bit_is_set(),
             promiscuous: control.promiscuous().bit_is_set(),
             pending_enhanced: control.pending_enhanced().bit_is_set(),
-            multipan_enable_mask: control.multipan_enable_mask().bits(),
+            multipan_enabled: [
+                control.multipan0_enabled().bit_is_set(),
+                control.multipan1_enabled().bit_is_set(),
+                control.multipan2_enabled().bit_is_set(),
+                control.multipan3_enabled().bit_is_set(),
+            ],
             identity: self.multipan_identity(0),
         }
     }
@@ -895,7 +909,12 @@ impl TaskRegisters {
             coordinator: control.coordinator().bit_is_set(),
             promiscuous: control.promiscuous().bit_is_set(),
             pending_enhanced: control.pending_enhanced().bit_is_set(),
-            multipan_enable_mask: control.multipan_enable_mask().bits(),
+            multipan_enabled: [
+                control.multipan0_enabled().bit_is_set(),
+                control.multipan1_enabled().bit_is_set(),
+                control.multipan2_enabled().bit_is_set(),
+                control.multipan3_enabled().bit_is_set(),
+            ],
             identities: [
                 self.multipan_identity(0),
                 self.multipan_identity(1),

@@ -572,6 +572,7 @@ mod tests {
     use open_esp_radio_esp32s31_pac::{
         Ieee802154AckTimeoutUnits as PacAckTimeoutUnits, Ieee802154CcaMode as PacCcaMode,
         Ieee802154MacControl as PacMacControl, Ieee802154MacPolicySnapshot as PacMacPolicySnapshot,
+        Ieee802154MultipanEnableState as PacMultipanEnableState,
         Ieee802154PanIdentity as PacPanIdentity, Ieee802154RxStateCode, Ieee802154TxStateCode,
         RadioHardware,
     };
@@ -633,7 +634,7 @@ mod tests {
                     -67,
                     PacAckTimeoutUnits::new(109),
                     PacMacControl::new(true, false, true, false, true, false),
-                    1,
+                    PacMultipanEnableState::new(true, false, false, false),
                     PacPanIdentity::new(
                         0x1234,
                         0x5678,
@@ -779,7 +780,10 @@ mod tests {
             snapshot.control(),
             Ieee802154MacControl::new(true, false, true, false, true, false)
         );
-        assert_eq!(snapshot.multipan_enable_mask(), 1);
+        assert_eq!(
+            snapshot.multipan_enable_state(),
+            PacMultipanEnableState::new(true, false, false, false)
+        );
         assert_eq!(snapshot.identity().pan_id(), 0x1234);
         assert_eq!(
             hal.into_register_backend().operations,

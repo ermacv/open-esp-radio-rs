@@ -14,6 +14,8 @@ use open_esp_radio_esp32s31_ieee802154_dma::{RxDmaAddress, TxDmaAddress};
 use open_esp_radio_esp32s31_ieee802154_mac::{
     MacActivePhase, MacCommandIntent, MacTransmitAcknowledgement,
 };
+#[cfg(test)]
+use open_esp_radio_esp32s31_pac::Ieee802154MultipanEnableState;
 use open_esp_radio_esp32s31_pac::{
     Ieee802154AckTimeoutUnits, Ieee802154CcaMode, Ieee802154EdDurationUnits,
     Ieee802154FrequencyCode, Ieee802154MacCommand, Ieee802154MacControl,
@@ -727,7 +729,7 @@ mod tests {
             -72,
             Ieee802154AckTimeoutUnits::new(864),
             Ieee802154MacControl::new(true, true, false, false, false, true),
-            0b0101,
+            Ieee802154MultipanEnableState::new(true, false, true, false),
             Ieee802154PanIdentity::new(
                 0x1234,
                 0x5678,
@@ -752,7 +754,7 @@ mod tests {
             base.cca_threshold_code(),
             base.ack_timeout(),
             control,
-            base.multipan_enable_mask(),
+            base.multipan_enable_state(),
             base.identity(),
         )
     }
@@ -885,7 +887,7 @@ mod tests {
             expected.cca_threshold_code(),
             expected.ack_timeout(),
             expected.control(),
-            expected.multipan_enable_mask(),
+            expected.multipan_enable_state(),
             expected.identity(),
         );
         let mut core = TaskCommandExecutorCore::new(FakeBackend::new(observed), expected);

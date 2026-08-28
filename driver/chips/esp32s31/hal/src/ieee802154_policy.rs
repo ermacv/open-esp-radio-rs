@@ -15,7 +15,9 @@
 use open_esp_radio_esp32s31_pac::{
     Ieee802154AckTimeoutUnits as PacAckTimeoutUnits, Ieee802154CcaMode as PacCcaMode,
     Ieee802154FoundationSnapshot, Ieee802154MacControl as PacMacControl,
-    Ieee802154MacPolicySnapshot as PacMacPolicySnapshot, Ieee802154PanIdentity as PacPanIdentity,
+    Ieee802154MacPolicySnapshot as PacMacPolicySnapshot,
+    Ieee802154MultipanEnableState as PacMultipanEnableState,
+    Ieee802154MultipanIndex as PacMultipanIndex, Ieee802154PanIdentity as PacPanIdentity,
 };
 
 use crate::ieee802154_lifecycle::{COEX_DISABLED_PTI, Ieee802154Channel, Ieee802154ReadbackError};
@@ -400,7 +402,7 @@ pub(crate) struct Ieee802154MacPolicySnapshot {
     cca_threshold_code: i8,
     ack_timeout: Ieee802154AckTimeout,
     control: Ieee802154MacControl,
-    multipan_enable_mask: u8,
+    multipan_enable_state: PacMultipanEnableState,
     identity: Ieee802154PanIdentity,
 }
 
@@ -412,7 +414,7 @@ impl Ieee802154MacPolicySnapshot {
             cca_threshold_code: snapshot.cca_threshold_code(),
             ack_timeout: Ieee802154AckTimeout::from_units(snapshot.ack_timeout().value()),
             control: Ieee802154MacControl::from_pac(snapshot.control()),
-            multipan_enable_mask: snapshot.multipan_enable_mask(),
+            multipan_enable_state: snapshot.multipan_enable_state(),
             identity: Ieee802154PanIdentity::from_pac(snapshot.identity()),
         }
     }
@@ -427,7 +429,7 @@ impl Ieee802154MacPolicySnapshot {
             control: policy.control,
             // Context zero must be enabled; unrelated enabled contexts are
             // deliberately retained and accepted by policy verification.
-            multipan_enable_mask: 0b0101,
+            multipan_enable_state: PacMultipanEnableState::new(true, false, true, false),
             identity: policy.identity,
         }
     }
@@ -455,8 +457,8 @@ impl Ieee802154MacPolicySnapshot {
         self.control
     }
 
-    pub(crate) const fn multipan_enable_mask(self) -> u8 {
-        self.multipan_enable_mask
+    pub(crate) const fn multipan_enable_state(self) -> PacMultipanEnableState {
+        self.multipan_enable_state
     }
 
     pub(crate) const fn identity(self) -> Ieee802154PanIdentity {
@@ -616,7 +618,9 @@ fn verify_mac_policy_readback(
     )?;
     verify(
         Ieee802154MacPolicyCheckpoint::PrimaryPanEnabled,
-        snapshot.multipan_enable_mask & 1 == 1,
+        snapshot
+            .multipan_enable_state
+            .contains(PacMultipanIndex::CONTEXT0),
     )?;
     verify(
         Ieee802154MacPolicyCheckpoint::PanId,
@@ -651,7 +655,10 @@ fn verify<Checkpoint: Copy>(
 mod tests {
     use std::vec::Vec;
 
-    use open_esp_radio_esp32s31_pac::{Ieee802154FoundationSnapshot, Ieee802154Pti};
+    use open_esp_radio_esp32s31_pac::{
+        Ieee802154FoundationSnapshot, Ieee802154MultipanEnableState as PacMultipanEnableState,
+        Ieee802154Pti,
+    };
 
     use super::{
         COEX_DISABLED_PTI, IEEE802154_MAX_ACK_TIMEOUT_MICROSECONDS, Ieee802154AckTimeout,
@@ -951,7 +958,7 @@ mod tests {
                     snapshot.ack_timeout = Ieee802154AckTimeout::from_units(0)
                 }
                 Ieee802154MacPolicyCheckpoint::PrimaryPanEnabled => {
-                    snapshot.multipan_enable_mask = 0
+                    snapshot.multipan_enable_state = PacMultipanEnableState::NONE
                 }
                 Ieee802154MacPolicyCheckpoint::PanId => snapshot.identity.pan_id ^= 1,
                 Ieee802154MacPolicyCheckpoint::ShortAddress => snapshot.identity.short_address ^= 1,

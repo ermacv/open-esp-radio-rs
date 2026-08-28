@@ -135,39 +135,18 @@ impl BluetoothBasebandV2Transaction<'_> {
         self.initialize_receive_detection();
 
         let baseband = &self.bluetooth.bt_v3_2_baseband;
-        baseband
-            .rx_correlator_control()
-            .modify(|_, w| w.config_value().set(8));
-        baseband
-            .rx_dpo_control()
-            .modify(|_, w| w.config_force_zero_19().clear_bit());
-        baseband
-            .rx_dpo_control()
-            .modify(|_, w| w.config_value().set(2));
-        baseband
-            .rx_filter_select()
-            .modify(|_, w| w.select_1().set(2));
-        baseband
-            .rx_filter_select()
-            .modify(|_, w| w.select_5().set(1));
-        baseband
-            .rx_filter_select()
-            .modify(|_, w| w.select_4().set(2));
-        baseband
-            .rx_filter_select()
-            .modify(|_, w| w.select_3().set(0));
-        baseband
-            .rx_filter_select()
-            .modify(|_, w| w.select_2().set(0));
-        baseband
-            .rx_filter_select()
-            .modify(|_, w| w.select_0().set(2));
+        super::generated::initialize_bluetooth_receive_correlator(baseband);
+        super::generated::initialize_bluetooth_receive_dpo_bit_19(baseband);
+        super::generated::initialize_bluetooth_receive_dpo_value(baseband);
+        super::generated::initialize_bluetooth_receive_filter_1(baseband);
+        super::generated::initialize_bluetooth_receive_filter_5(baseband);
+        super::generated::initialize_bluetooth_receive_filter_4(baseband);
+        super::generated::initialize_bluetooth_receive_filter_3(baseband);
+        super::generated::initialize_bluetooth_receive_filter_2(baseband);
+        super::generated::initialize_bluetooth_receive_filter_0(baseband);
 
         self.initialize_shared_receive_prefix();
-        self.bluetooth
-            .bt_v3_2_baseband
-            .rx_correlator_control()
-            .modify(|_, w| w.final_force_zero_13().clear_bit());
+        super::generated::initialize_bluetooth_receive_correlator_final(baseband);
     }
 
     fn initialize_baseband_rx_setup(&self) {

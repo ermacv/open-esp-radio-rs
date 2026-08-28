@@ -64163,6 +64163,116 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace BT_V3_2_BASEBAND.RX_CORRELATOR_CONTROL fields [CONFIG_VALUE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_correlator(registers: &crate::BtV3_2Baseband) {
+        registers.rx_correlator_control().modify(|_, writer| {
+            let input = 0x00000008_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.config_value().bits((input & 0x0000003f) as u8) }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.RX_DPO_CONTROL fields [CONFIG_FORCE_ZERO_19] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_dpo_bit_19(registers: &crate::BtV3_2Baseband) {
+        registers.rx_dpo_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.config_force_zero_19().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.RX_DPO_CONTROL fields [CONFIG_VALUE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_dpo_value(registers: &crate::BtV3_2Baseband) {
+        registers.rx_dpo_control().modify(|_, writer| {
+            let input = 0x00000002_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.config_value().bits((input & 0x0000003f) as u8) }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.RX_FILTER_SELECT fields [SELECT_1] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_filter_1(registers: &crate::BtV3_2Baseband) {
+        registers.rx_filter_select().modify(|_, writer| {
+            let input = 0x00000002_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.select_1().bits((input & 0x00000003) as u8) }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.RX_FILTER_SELECT fields [SELECT_5] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_filter_5(registers: &crate::BtV3_2Baseband) {
+        registers.rx_filter_select().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.select_5().bits((input & 0x00000003) as u8) }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.RX_FILTER_SELECT fields [SELECT_4] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_filter_4(registers: &crate::BtV3_2Baseband) {
+        registers.rx_filter_select().modify(|_, writer| {
+            let input = 0x00000002_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.select_4().bits((input & 0x00000003) as u8) }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.RX_FILTER_SELECT fields [SELECT_3] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_filter_3(registers: &crate::BtV3_2Baseband) {
+        registers.rx_filter_select().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.select_3().bits((input & 0x00000003) as u8) }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.RX_FILTER_SELECT fields [SELECT_2] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_filter_2(registers: &crate::BtV3_2Baseband) {
+        registers.rx_filter_select().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.select_2().bits((input & 0x00000003) as u8) }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.RX_FILTER_SELECT fields [SELECT_0] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_filter_0(registers: &crate::BtV3_2Baseband) {
+        registers.rx_filter_select().modify(|_, writer| {
+            let input = 0x00000002_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.select_0().bits((input & 0x00000003) as u8) }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.RX_CORRELATOR_CONTROL fields [FINAL_FORCE_ZERO_13] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_correlator_final(registers: &crate::BtV3_2Baseband) {
+        registers.rx_correlator_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.final_force_zero_13().bit((input & 0x00000001) != 0)
+        });
+    }
+
     /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields [LOCK_MODIFY_ARGUMENT] from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_scheduler_lock_modify_argument(

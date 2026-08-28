@@ -4774,6 +4774,96 @@ value = 0x78f
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
 
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_correlator"
+peripheral = "BT_V3_2_BASEBAND"
+register = "RX_CORRELATOR_CONTROL"
+fields = [{ field = "CONFIG_VALUE", source-bit-offset = 0 }]
+value = 8
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_dpo_bit_19"
+peripheral = "BT_V3_2_BASEBAND"
+register = "RX_DPO_CONTROL"
+fields = [{ field = "CONFIG_FORCE_ZERO_19", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_dpo_value"
+peripheral = "BT_V3_2_BASEBAND"
+register = "RX_DPO_CONTROL"
+fields = [{ field = "CONFIG_VALUE", source-bit-offset = 0 }]
+value = 2
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_filter_1"
+peripheral = "BT_V3_2_BASEBAND"
+register = "RX_FILTER_SELECT"
+fields = [{ field = "SELECT_1", source-bit-offset = 0 }]
+value = 2
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_filter_5"
+peripheral = "BT_V3_2_BASEBAND"
+register = "RX_FILTER_SELECT"
+fields = [{ field = "SELECT_5", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_filter_4"
+peripheral = "BT_V3_2_BASEBAND"
+register = "RX_FILTER_SELECT"
+fields = [{ field = "SELECT_4", source-bit-offset = 0 }]
+value = 2
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_filter_3"
+peripheral = "BT_V3_2_BASEBAND"
+register = "RX_FILTER_SELECT"
+fields = [{ field = "SELECT_3", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_filter_2"
+peripheral = "BT_V3_2_BASEBAND"
+register = "RX_FILTER_SELECT"
+fields = [{ field = "SELECT_2", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_filter_0"
+peripheral = "BT_V3_2_BASEBAND"
+register = "RX_FILTER_SELECT"
+fields = [{ field = "SELECT_0", source-bit-offset = 0 }]
+value = 2
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_correlator_final"
+peripheral = "BT_V3_2_BASEBAND"
+register = "RX_CORRELATOR_CONTROL"
+fields = [{ field = "FINAL_FORCE_ZERO_13", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

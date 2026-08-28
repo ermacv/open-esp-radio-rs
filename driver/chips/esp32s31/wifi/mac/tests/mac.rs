@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
 use open_esp_radio_esp32s31_hal::types::{
@@ -60,82 +60,8 @@ use open_esp_radio_ieee80211::trigger::{
 };
 use open_esp_radio_wifi_softmac::{MacRxEvidence, MacRxMetadata};
 
-/// Logical register identities used by the protocol-layer test double.
-///
-/// These values deliberately carry no address, width, reset value or access
-/// authority. Register addresses and access policy are tested by the PAC and
-/// HAL owners; this test observes only which logical hardware operation the
-/// MAC requested.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-enum TestRegister {
-    Named(&'static str),
-    Indexed(&'static str, u8),
-}
-
-const fn named(name: &'static str) -> TestRegister {
-    TestRegister::Named(name)
-}
-
-const fn indexed(name: &'static str, index: u8) -> TestRegister {
-    TestRegister::Indexed(name, index)
-}
-
-#[derive(Clone, Copy)]
-struct TestField(u32);
-
-impl TestField {
-    const fn mask(self) -> u32 {
-        self.0
-    }
-}
-
-mod mac {
-    use super::{TestField, TestRegister, indexed, named};
-
-    pub const TX_Q_CONTROL: [TestRegister; 4] = queue("TX_Q_CONTROL");
-    pub const TX_Q0_CONTROL: TestRegister = TX_Q_CONTROL[0];
-    pub const TX_STATE_CLEAR: TestRegister = named("TX_STATE_CLEAR");
-    pub const TX_STATE: TestRegister = named("TX_STATE");
-    pub const TX_CCA_CONTROL: TestRegister = named("TX_CCA_CONTROL");
-
-    const fn queue(name: &'static str) -> [TestRegister; 4] {
-        [
-            indexed(name, 0),
-            indexed(name, 1),
-            indexed(name, 2),
-            indexed(name, 3),
-        ]
-    }
-
-    pub mod tx_state {
-        pub const TIMEOUT_SHIFT: u32 = 16;
-    }
-
-    pub mod tx_cca_control {
-        use super::TestField;
-        pub const FORCE: TestField = TestField(3 << 30);
-    }
-}
-
-trait Mmio {
-    fn read32(&mut self, register: TestRegister) -> u32;
-    fn write32(&mut self, register: TestRegister, value: u32);
-    fn fence(&mut self);
-}
-
-const TX_CCA_CONTROL: TestRegister = mac::TX_CCA_CONTROL;
-const TX_Q0_CONTROL: TestRegister = mac::TX_Q0_CONTROL;
-const TX_STATE: TestRegister = mac::TX_STATE;
-const TX_STATE_CLEAR: TestRegister = mac::TX_STATE_CLEAR;
-
-const TX_Q_ENABLE_VALID: u32 = 0xc000_0000;
-const TX_CCA_FORCE_MASK: u32 = mac::tx_cca_control::FORCE.mask();
-const TX_TIMEOUT_SHIFT: u32 = mac::tx_state::TIMEOUT_SHIFT;
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Operation {
-    Read(TestRegister),
-    Write(TestRegister, u32),
     BeginColdHandshake(u32),
     InitializeMacAntenna,
     InitializeHalTail(MacInterruptMask, MacSlowClockCalibration),
@@ -172,6 +98,10 @@ enum Operation {
     ConfigureOpenPromiscuousReceive,
     ReadInterruptStatus,
     AcknowledgeInterrupt,
+    ForceTxCca,
+    DisableTxQueue(u8),
+    ReleaseTxCca,
+    AcknowledgeTxEvent(u8, MacTxDetachReason),
     Fence,
 }
 
@@ -187,12 +117,15 @@ type ColdStartClockTrace = Rc<RefCell<Vec<ColdStartClockEdge>>>;
 
 #[derive(Default)]
 struct MockMmio {
-    words: BTreeMap<TestRegister, u32>,
     operations: Vec<Operation>,
     interrupt_status: MacInterruptObservation,
     cold_handshake_result: Option<Result<MacColdStartOutcome, MacColdStartError>>,
     cold_start_clock_trace: Option<ColdStartClockTrace>,
     tx_completions: [Option<MacTxCompletionObservation>; 4],
+    tx_timeout_pending: [bool; 4],
+    tx_collision_pending: [bool; 4],
+    tx_queue_attached: [bool; 4],
+    tx_detach_fails: [bool; 4],
     rx_last_descriptor_low: u32,
     rx_next_descriptor_low: u32,
     rx_walker_enabled: bool,
@@ -202,12 +135,24 @@ struct MockMmio {
 }
 
 impl MockMmio {
-    fn set(&mut self, register: TestRegister, value: u32) {
-        self.words.insert(register, value);
-    }
-
     fn operations(&self) -> &[Operation] {
         &self.operations
+    }
+
+    fn record_fence(&mut self) {
+        self.operations.push(Operation::Fence);
+    }
+
+    fn set_tx_timeout_pending(&mut self, queue: u8, pending: bool) {
+        self.tx_timeout_pending[usize::from(queue)] = pending;
+    }
+
+    fn set_tx_collision_pending(&mut self, queue: u8, pending: bool) {
+        self.tx_collision_pending[usize::from(queue)] = pending;
+    }
+
+    fn set_tx_queue_attached(&mut self, queue: u8, attached: bool) {
+        self.tx_queue_attached[usize::from(queue)] = attached;
     }
 
     fn set_rx_last_descriptor_address(&mut self, address: u32) {
@@ -246,22 +191,6 @@ impl MockMmio {
         if let Some(trace) = &self.cold_start_clock_trace {
             trace.borrow_mut().push(edge);
         }
-    }
-}
-
-impl Mmio for MockMmio {
-    fn read32(&mut self, register: TestRegister) -> u32 {
-        self.operations.push(Operation::Read(register));
-        self.words.get(&register).copied().unwrap_or(0)
-    }
-
-    fn write32(&mut self, register: TestRegister, value: u32) {
-        self.operations.push(Operation::Write(register, value));
-        self.words.insert(register, value);
-    }
-
-    fn fence(&mut self) {
-        self.operations.push(Operation::Fence);
     }
 }
 
@@ -310,9 +239,9 @@ impl RxDma for MockMmio {
         observed: impl for<'confirmation> FnOnce(RxDmaCursorObservation<'confirmation>) -> R,
     ) -> R {
         let last = self.last_descriptor_low();
-        Mmio::fence(self);
+        self.record_fence();
         let next = self.next_descriptor_low();
-        Mmio::fence(self);
+        self.record_fence();
         observed(RxDmaCursorObservation::validation(last, next))
     }
 
@@ -370,7 +299,7 @@ impl RxDma for MockMmio {
         }
         self.rx_walker_enabled = true;
         self.operations.push(Operation::PublishRxWalkerEnable);
-        Mmio::fence(self);
+        self.record_fence();
         self.operations.push(Operation::ObserveRxWalkerEnabled);
         self.rx_walker_enabled.then(|| {
             enabled(open_esp_radio_esp32s31_wifi_mac::rx::RxDmaWalkerEnabled::validation())
@@ -383,13 +312,13 @@ impl RxDma for MockMmio {
     ) -> Option<R> {
         self.rx_walker_enabled = false;
         self.operations.push(Operation::StopRxWalker);
-        Mmio::fence(self);
+        self.record_fence();
         self.operations.push(Operation::ObserveRxWalkerEnabled);
         (!self.rx_walker_enabled).then(|| stopped(RxDmaWalkerStopped::validation()))
     }
 
     fn fence(&mut self) {
-        Mmio::fence(self);
+        self.record_fence();
     }
 }
 
@@ -433,7 +362,7 @@ impl MacInterrupt for MockMmio {
         let _snapshot = snapshot;
         self.operations.push(Operation::AcknowledgeInterrupt);
         self.interrupt_status = MacInterruptObservation::default();
-        Mmio::fence(self);
+        self.record_fence();
     }
 }
 
@@ -639,13 +568,13 @@ impl TxHardware for MockMmio {
     }
 
     fn start_bound_legacy_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8) {
-        Mmio::fence(self);
-        Mmio::fence(self);
+        self.record_fence();
+        self.record_fence();
     }
 
     fn start_bound_ht_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8) {
-        Mmio::fence(self);
-        Mmio::fence(self);
+        self.record_fence();
+        self.record_fence();
     }
 
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation> {
@@ -653,16 +582,11 @@ impl TxHardware for MockMmio {
     }
 
     fn begin_tx_timeout_abort(&mut self, queue: u8) -> bool {
-        let timeout_mask = 1_u32 << (TX_TIMEOUT_SHIFT + u32::from(queue));
-        if self.read32(TX_STATE) & timeout_mask == 0 {
+        if !self.tx_timeout_pending[usize::from(queue)] {
             return false;
         }
-        let cca = self.read32(TX_CCA_CONTROL);
-        self.write32(
-            TX_CCA_CONTROL,
-            (cca & !TX_CCA_FORCE_MASK) | TX_CCA_FORCE_MASK,
-        );
-        Mmio::fence(self);
+        self.operations.push(Operation::ForceTxCca);
+        self.record_fence();
         true
     }
 
@@ -674,38 +598,37 @@ impl TxHardware for MockMmio {
         detached: impl for<'detached> FnOnce(MacTxQueueDetached<'detached>) -> R,
     ) -> MacTxDetachOutcome<R> {
         let index = usize::from(queue);
-        let control = self.read32(mac::TX_Q_CONTROL[index]);
         match reason {
             MacTxDetachReason::Collision => {
-                let collision_mask = 1_u32 << queue;
-                if self.read32(TX_STATE) & collision_mask == 0 {
+                if !self.tx_collision_pending[index] {
                     return MacTxDetachOutcome::NoEvent;
                 }
-                self.write32(mac::TX_Q_CONTROL[index], control & !TX_Q_ENABLE_VALID);
-                Mmio::fence(self);
-                self.write32(TX_STATE_CLEAR, collision_mask);
+                self.operations.push(Operation::DisableTxQueue(queue));
+                self.tx_queue_attached[index] = false;
+                self.record_fence();
+                self.operations
+                    .push(Operation::AcknowledgeTxEvent(queue, reason));
+                self.tx_collision_pending[index] = false;
             }
             MacTxDetachReason::Timeout => {
-                let timeout_mask = 1_u32 << (TX_TIMEOUT_SHIFT + u32::from(queue));
-                if self.read32(TX_STATE) & timeout_mask == 0 {
+                if !self.tx_timeout_pending[index] {
                     return MacTxDetachOutcome::NoEvent;
                 }
-                let was_valid = control & (1 << 30) != 0;
-                self.write32(mac::TX_Q_CONTROL[index], control & !(1 << 30));
-                let cca = self.read32(TX_CCA_CONTROL);
-                self.write32(TX_CCA_CONTROL, cca & !TX_CCA_FORCE_MASK);
-                if was_valid {
-                    let invalid = self.read32(mac::TX_Q_CONTROL[index]);
-                    self.write32(mac::TX_Q_CONTROL[index], invalid & !(1 << 31));
-                }
-                self.write32(TX_STATE_CLEAR, timeout_mask);
+                self.operations.push(Operation::DisableTxQueue(queue));
+                self.tx_queue_attached[index] = false;
+                self.operations.push(Operation::ReleaseTxCca);
+                self.operations
+                    .push(Operation::AcknowledgeTxEvent(queue, reason));
+                self.tx_timeout_pending[index] = false;
             }
             MacTxDetachReason::Completed => {
-                self.write32(mac::TX_Q_CONTROL[index], control & !TX_Q_ENABLE_VALID);
+                self.operations.push(Operation::DisableTxQueue(queue));
+                self.tx_queue_attached[index] = false;
             }
         }
-        Mmio::fence(self);
-        if self.read32(mac::TX_Q_CONTROL[index]) & TX_Q_ENABLE_VALID != 0 {
+        self.record_fence();
+        if self.tx_detach_fails[index] {
+            self.tx_queue_attached[index] = true;
             MacTxDetachOutcome::Failed
         } else {
             MacTxDetachOutcome::Detached(detached(MacTxQueueDetached::new_model(
@@ -2629,7 +2552,7 @@ fn tx_slot_rejects_stale_cookie_and_completes_one_generation() {
     assert!(!completion.used_alternate_record());
     assert_eq!(slot.state(), TxSlotState::Completed);
 
-    mmio.set(TX_Q0_CONTROL, TX_Q_ENABLE_VALID | 0x100);
+    mmio.set_tx_queue_attached(0, true);
     slot.as_mut().detach_completed(&mut mmio, cookie).unwrap();
     assert_eq!(slot.state(), TxSlotState::Free);
 }
@@ -2686,68 +2609,48 @@ fn tx_completion_decodes_the_blob_ack_snr_byte() {
     let failed = TxCompletion::new_model(cookie, 5, 0).with_ack_snr_encoded_model(0x8b);
     assert_eq!(failed.ack_snr_sample(), None);
 
-    mmio.set(TX_Q0_CONTROL, TX_Q_ENABLE_VALID);
+    mmio.set_tx_queue_attached(0, true);
     slot.as_mut().detach_completed(&mut mmio, cookie).unwrap();
 }
 
 #[test]
-fn tx_slot_reproduces_the_migration_timeout_abort_order() {
+fn tx_slot_preserves_the_semantic_timeout_abort_order() {
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let cookie = slot.as_mut().reserve(512, 100).unwrap();
     slot.as_mut().mark_hardware_owned(cookie).unwrap();
 
-    let timeout_mask = 1 << TX_TIMEOUT_SHIFT;
     let mut mmio = MockMmio::default();
-    mmio.set(TX_STATE, timeout_mask);
-    mmio.set(TX_CCA_CONTROL, 0x1234_5678);
-    mmio.set(TX_Q0_CONTROL, TX_Q_ENABLE_VALID | 0x100);
+    mmio.set_tx_timeout_pending(0, true);
+    mmio.set_tx_queue_attached(0, true);
 
     assert_eq!(
         slot.as_mut().begin_timeout_abort(&mut mmio, cookie),
         Ok(true)
-    );
-    assert_eq!(
-        mmio.words.get(&TX_CCA_CONTROL).copied().unwrap() & TX_CCA_FORCE_MASK,
-        TX_CCA_FORCE_MASK,
     );
     slot.as_mut()
         .finish_timeout_abort(&mut mmio, cookie)
         .unwrap();
 
     assert_eq!(slot.state(), TxSlotState::Free);
-    assert_eq!(
-        mmio.words.get(&TX_Q0_CONTROL).copied().unwrap() & TX_Q_ENABLE_VALID,
-        0,
-    );
-    assert_eq!(
-        mmio.words.get(&TX_CCA_CONTROL).copied().unwrap() & TX_CCA_FORCE_MASK,
-        0,
-    );
-    assert!(
-        mmio.operations()
-            .contains(&Operation::Write(TX_STATE_CLEAR, timeout_mask))
-    );
+    assert!(!mmio.tx_queue_attached[0]);
+    assert!(!mmio.tx_timeout_pending[0]);
 
     let invalidation = mmio
         .operations()
         .iter()
-        .position(|operation| {
-            matches!(operation, Operation::Write(register, value)
-                if *register == TX_Q0_CONTROL && value & (1 << 30) == 0)
-        })
+        .position(|operation| *operation == Operation::DisableTxQueue(0))
         .unwrap();
     let cca_release = mmio
         .operations()
         .iter()
-        .position(|operation| {
-            matches!(operation, Operation::Write(register, value)
-                if *register == TX_CCA_CONTROL && value & TX_CCA_FORCE_MASK == 0)
-        })
+        .position(|operation| *operation == Operation::ReleaseTxCca)
         .unwrap();
     let timeout_clear = mmio
         .operations()
         .iter()
-        .position(|operation| *operation == Operation::Write(TX_STATE_CLEAR, timeout_mask))
+        .position(|operation| {
+            *operation == Operation::AcknowledgeTxEvent(0, MacTxDetachReason::Timeout)
+        })
         .unwrap();
     assert!(invalidation < cca_release);
     assert!(cca_release < timeout_clear);
@@ -2760,26 +2663,24 @@ fn tx_slot_disables_before_acknowledging_one_collision_queue() {
     slot.as_mut().mark_hardware_owned(cookie).unwrap();
 
     let mut mmio = MockMmio::default();
-    mmio.set(TX_STATE, 1);
-    mmio.set(TX_Q0_CONTROL, TX_Q_ENABLE_VALID | 0x100);
+    mmio.set_tx_collision_pending(0, true);
+    mmio.set_tx_queue_attached(0, true);
 
     assert_eq!(slot.as_mut().abort_collision(&mut mmio, cookie), Ok(true));
     assert_eq!(slot.state(), TxSlotState::Free);
+    assert!(!mmio.tx_queue_attached[0]);
+    assert!(!mmio.tx_collision_pending[0]);
 
     let disable = mmio
         .operations()
         .iter()
-        .position(|operation| {
-            matches!(operation, Operation::Write(register, value)
-                if *register == TX_Q0_CONTROL && value & TX_Q_ENABLE_VALID == 0)
-        })
+        .position(|operation| *operation == Operation::DisableTxQueue(0))
         .unwrap();
     let acknowledge = mmio
         .operations()
         .iter()
         .position(|operation| {
-            matches!(operation, Operation::Write(register, value)
-                if *register == TX_STATE_CLEAR && *value == 1)
+            *operation == Operation::AcknowledgeTxEvent(0, MacTxDetachReason::Collision)
         })
         .unwrap();
     assert!(disable < acknowledge);

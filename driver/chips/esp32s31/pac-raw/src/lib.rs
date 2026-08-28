@@ -63450,6 +63450,116 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC fields [RESTART_BIT_31] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_restart_btagc_31(registers: &crate::PhyBtagcRecovered) {
+        registers.agc_restart_bits_00dc().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.restart_bit_31().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC fields [RESTART_BIT_30] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_restart_btagc_30(registers: &crate::PhyBtagcRecovered) {
+        registers.agc_restart_bits_00dc().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.restart_bit_30().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC fields [RESTART_BIT_29] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_restart_btagc_29(registers: &crate::PhyBtagcRecovered) {
+        registers.agc_restart_bits_00dc().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.restart_bit_29().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC fields [RESTART_BIT_27] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_restart_btagc_27(registers: &crate::PhyBtagcRecovered) {
+        registers.agc_restart_bits_00dc().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.restart_bit_27().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_BITS_00DC fields [RESTART_BIT_28] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_restart_btagc_28(registers: &crate::PhyBtagcRecovered) {
+        registers.agc_restart_bits_00dc().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.restart_bit_28().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8 fields [BITS_2_7] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_restart_f8_2_7(registers: &crate::PhyBtagcRecovered) {
+        registers.agc_restart_image_00f8().modify(|_, writer| {
+            let input = 0x0000000c_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_2_7().bits((input & 0x0000003f) as u8) }
+        });
+    }
+
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8 fields [BITS_8_13] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_restart_f8_8_13(registers: &crate::PhyBtagcRecovered) {
+        registers.agc_restart_image_00f8().modify(|_, writer| {
+            let input = 0x0000000c_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_8_13().bits((input & 0x0000003f) as u8) }
+        });
+    }
+
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8 fields [BITS_14_19] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_restart_f8_14_19(registers: &crate::PhyBtagcRecovered) {
+        registers.agc_restart_image_00f8().modify(|_, writer| {
+            let input = 0x00000020_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_14_19().bits((input & 0x0000003f) as u8) }
+        });
+    }
+
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8 fields [BITS_26_31] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_restart_f8_26_31(registers: &crate::PhyBtagcRecovered) {
+        registers.agc_restart_image_00f8().modify(|_, writer| {
+            let input = 0x0000000c_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_26_31().bits((input & 0x0000003f) as u8) }
+        });
+    }
+
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00F8 fields [BITS_20_25] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_restart_f8_20_25(registers: &crate::PhyBtagcRecovered) {
+        registers.agc_restart_image_00f8().modify(|_, writer| {
+            let input = 0x00000005_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_20_25().bits((input & 0x0000003f) as u8) }
+        });
+    }
+
     /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields [LOCK_MODIFY_ARGUMENT] from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_scheduler_lock_modify_argument(

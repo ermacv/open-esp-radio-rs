@@ -340,19 +340,17 @@ impl BluetoothBasebandV2Transaction<'_> {
         super::generated::initialize_bluetooth_receive_restart_baseband_7(baseband);
         super::generated::initialize_bluetooth_receive_restart_baseband_6(baseband);
 
-        let bits = btagc.agc_restart_bits_00dc();
-        bits.modify(|_, w| w.restart_bit_31().set_bit());
-        bits.modify(|_, w| w.restart_bit_30().set_bit());
-        bits.modify(|_, w| w.restart_bit_29().set_bit());
-        bits.modify(|_, w| w.restart_bit_27().set_bit());
-        bits.modify(|_, w| w.restart_bit_28().set_bit());
+        super::generated::initialize_bluetooth_receive_restart_btagc_31(btagc);
+        super::generated::initialize_bluetooth_receive_restart_btagc_30(btagc);
+        super::generated::initialize_bluetooth_receive_restart_btagc_29(btagc);
+        super::generated::initialize_bluetooth_receive_restart_btagc_27(btagc);
+        super::generated::initialize_bluetooth_receive_restart_btagc_28(btagc);
 
-        let f8 = btagc.agc_restart_image_00f8();
-        f8.modify(|_, w| w.bits_2_7().set(0x0c));
-        f8.modify(|_, w| w.bits_8_13().set(0x0c));
-        f8.modify(|_, w| w.bits_14_19().set(0x20));
-        f8.modify(|_, w| w.bits_26_31().set(0x0c));
-        f8.modify(|_, w| w.bits_20_25().set(5));
+        super::generated::initialize_bluetooth_receive_restart_f8_2_7(btagc);
+        super::generated::initialize_bluetooth_receive_restart_f8_8_13(btagc);
+        super::generated::initialize_bluetooth_receive_restart_f8_14_19(btagc);
+        super::generated::initialize_bluetooth_receive_restart_f8_26_31(btagc);
+        super::generated::initialize_bluetooth_receive_restart_f8_20_25(btagc);
     }
 
     fn initialize_receive_recorrection(&self) {

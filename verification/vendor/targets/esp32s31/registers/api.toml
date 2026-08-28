@@ -1202,6 +1202,24 @@ register = "STATE_002C"
 sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
 
 [[zero-register-writes]]
+name = "begin_ble_phy_register_initialization"
+peripheral = "BLE_PHY_INIT_TOGGLE"
+register = "INIT_TOGGLE"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[zero-register-writes]]
+name = "clear_ble_phy_init_zero_0074"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_ZERO_0074"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[zero-register-writes]]
+name = "clear_ble_phy_controller_value_0244"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "PHY_INIT_ZERO_0244"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[zero-register-writes]]
 name = "disable_mac_interrupt_1_raw"
 peripheral = "WIFI_MAC_HE_INIT_PREFIX"
 register = "INTERRUPT_1_RAW"
@@ -1495,6 +1513,125 @@ peripheral = "BTDM_RUNTIME_CONTROL"
 register = "COMMAND_0010"
 value = 0x00040000
 sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
+
+[[fixed-register-images]]
+name = "latch_ble_phy_register_initialization_entry"
+peripheral = "BLE_PHY_INIT_TOGGLE"
+register = "INIT_TOGGLE"
+value = 0x00000001
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[fixed-register-images]]
+name = "fill_ble_phy_init_ones_00b8"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_ONES_00B8"
+value = 0xffffffff
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[fixed-register-images]]
+name = "publish_ble_phy_init_value_0138"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_VALUE_0138"
+value = 0x0000065b
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[fixed-register-images]]
+name = "publish_ble_phy_init_bytes_04a4"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_BYTES_04A4"
+value = 0x02020202
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[fixed-register-images]]
+name = "publish_ble_phy_init_bytes_04a8"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_BYTES_04A8"
+value = 0x02020202
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[fixed-register-images]]
+name = "publish_ble_phy_init_value_04ac"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_VALUE_04AC"
+value = 0x00ff0002
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[fixed-register-images]]
+name = "publish_ble_phy_init_value_045c"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_VALUE_045C"
+value = 0x00000008
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[fixed-register-images]]
+name = "publish_ble_phy_init_phase_20"
+peripheral = "BLE_PHY_INIT_PHASE"
+register = "INIT_PHASE"
+value = 0x00000020
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[fixed-register-images]]
+name = "publish_ble_phy_accelerator_config"
+peripheral = "BLE_HW_ACCELERATOR"
+register = "INIT_CONFIG"
+value = 0x000002f0
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[fixed-register-images]]
+name = "publish_ble_phy_accelerator_sram_region_0"
+peripheral = "BLE_HW_ACCELERATOR"
+register = "INIT_SRAM_REGION_0"
+value = 0x2f080000
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[fixed-register-images]]
+name = "publish_ble_phy_accelerator_sram_region_1"
+peripheral = "BLE_HW_ACCELERATOR"
+register = "INIT_SRAM_REGION_1"
+value = 0x2f000000
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[fixed-register-images]]
+name = "publish_ble_phy_init_control_0400"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_CONTROL_0400"
+value = 0x80000000
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[fixed-register-images]]
+name = "publish_ble_phy_init_value_0540"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_VALUE_0540"
+value = 0x000007d0
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[fixed-register-images]]
+name = "publish_ble_phy_init_phase_40"
+peripheral = "BLE_PHY_INIT_PHASE"
+register = "INIT_PHASE"
+value = 0x00000040
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[fixed-register-images]]
+name = "latch_ble_phy_runtime_configuration"
+peripheral = "BLE_HW_RUNTIME_CONTROL"
+register = "PHY_INIT_CONFIGURATION_LATCH"
+value = 0x00000001
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[fixed-register-images]]
+name = "publish_ble_phy_controller_value_01f0"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "PHY_INIT_VALUE_01F0"
+value = 0x00000055
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[fixed-register-images]]
+name = "publish_ble_phy_controller_value_0248"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "PHY_INIT_VALUE_0248"
+value = 0x00000fff
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[full-register-writes]]
 name = "publish_bluetooth_modem_lp_timer_compare"

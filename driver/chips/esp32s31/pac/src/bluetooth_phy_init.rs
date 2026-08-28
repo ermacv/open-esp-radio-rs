@@ -148,20 +148,16 @@ impl BluetoothTaskRegisters {
             let btmac = &bluetooth.btmac_ble_phy_init;
 
             // Entry toggle and BTMAC prefix.
-            bluetooth
-                .ble_phy_init_toggle
-                .init_toggle()
-                .write_with_zero(|writer| writer.image().bits(0));
-            bluetooth
-                .ble_phy_init_toggle
-                .init_toggle()
-                .write_with_zero(|writer| writer.image().bits(1));
+            super::svd::zero_register_write::begin_ble_phy_register_initialization(
+                &bluetooth.ble_phy_init_toggle,
+            );
+            super::svd::fixed_register_image::latch_ble_phy_register_initialization_entry(
+                &bluetooth.ble_phy_init_toggle,
+            );
             let init_control = btmac.init_control_00b4();
             let preserved_bit_17 = init_control.read().init_preserve_17().bit();
             init_control.write_with_zero(|writer| writer.init_preserve_17().bit(preserved_bit_17));
-            btmac
-                .init_ones_00b8()
-                .write_with_zero(|writer| writer.init_image().bits(u32::MAX));
+            super::svd::fixed_register_image::fill_ble_phy_init_ones_00b8(btmac);
             btmac.lc_tx_on_delay_config().modify(|_, writer| {
                 writer
                     .lc_tx_on_delay()
@@ -189,42 +185,16 @@ impl BluetoothTaskRegisters {
                         .bits(timing_byte.wrapping_sub(10))
                 });
 
-            btmac
-                .init_value_0138()
-                .write_with_zero(|writer| writer.init_image().bits(0x0000_065b));
-            btmac.init_bytes_04a4().write_with_zero(|writer| {
-                writer
-                    .init_byte_0()
-                    .bits(2)
-                    .init_byte_1()
-                    .bits(2)
-                    .init_byte_2()
-                    .bits(2)
-                    .init_byte_3()
-                    .bits(2)
-            });
-            btmac.init_bytes_04a8().write_with_zero(|writer| {
-                writer
-                    .init_byte_0()
-                    .bits(2)
-                    .init_byte_1()
-                    .bits(2)
-                    .init_byte_2()
-                    .bits(2)
-                    .init_byte_3()
-                    .bits(2)
-            });
+            super::svd::fixed_register_image::publish_ble_phy_init_value_0138(btmac);
+            super::svd::fixed_register_image::publish_ble_phy_init_bytes_04a4(btmac);
+            super::svd::fixed_register_image::publish_ble_phy_init_bytes_04a8(btmac);
             btmac.init_dynamic_image_04a0().write_with_zero(|writer| {
                 writer
                     .init_image()
                     .bits(inputs.environment.compressed_member(0x2c))
             });
-            btmac
-                .init_value_04ac()
-                .write_with_zero(|writer| writer.init_image().bits(0x00ff_0002));
-            btmac
-                .init_value_045c()
-                .write_with_zero(|writer| writer.init_image().bits(8));
+            super::svd::fixed_register_image::publish_ble_phy_init_value_04ac(btmac);
+            super::svd::fixed_register_image::publish_ble_phy_init_value_045c(btmac);
 
             // Four independent fresh-read updates at 0x20101654.
             let init_bytes = btmac.init_bytes_0254();
@@ -233,39 +203,29 @@ impl BluetoothTaskRegisters {
             init_bytes.modify(|_, writer| writer.init_byte_2_low_7().bits(0));
             super::generated::or_ble_phy_init_byte_2(btmac);
 
-            btmac
-                .init_zero_0074()
-                .write_with_zero(|writer| writer.init_image().bits(0));
-            bluetooth
-                .ble_phy_init_phase
-                .init_phase()
-                .write_with_zero(|writer| writer.image().bits(0x20));
-            bluetooth
-                .ble_hw_accelerator
-                .init_config()
-                .write_with_zero(|writer| writer.image().bits(0x0000_02f0));
-            bluetooth
-                .ble_hw_accelerator
-                .init_sram_region_0()
-                .write_with_zero(|writer| writer.image().bits(0x2f08_0000));
-            bluetooth
-                .ble_hw_accelerator
-                .init_sram_region_1()
-                .write_with_zero(|writer| writer.image().bits(0x2f00_0000));
+            super::svd::zero_register_write::clear_ble_phy_init_zero_0074(btmac);
+            super::svd::fixed_register_image::publish_ble_phy_init_phase_20(
+                &bluetooth.ble_phy_init_phase,
+            );
+            super::svd::fixed_register_image::publish_ble_phy_accelerator_config(
+                &bluetooth.ble_hw_accelerator,
+            );
+            super::svd::fixed_register_image::publish_ble_phy_accelerator_sram_region_0(
+                &bluetooth.ble_hw_accelerator,
+            );
+            super::svd::fixed_register_image::publish_ble_phy_accelerator_sram_region_1(
+                &bluetooth.ble_hw_accelerator,
+            );
             bluetooth
                 .ble_hw_resolving_list
                 .base_pointer()
                 .write_with_zero(|writer| writer.compressed_sram_pointer().bits(resolving_list));
 
-            btmac
-                .init_control_0400()
-                .write_with_zero(|writer| writer.init_enable_31().set_bit());
+            super::svd::fixed_register_image::publish_ble_phy_init_control_0400(btmac);
             btmac
                 .init_control_0400()
                 .modify(|_, writer| writer.init_enable_22().set_bit());
-            btmac
-                .init_value_0540()
-                .write_with_zero(|writer| writer.init_image().bits(0x0000_07d0));
+            super::svd::fixed_register_image::publish_ble_phy_init_value_0540(btmac);
 
             // Each byte replacement is a distinct fresh-read RMW in vendor order.
             let bytes_0550 = btmac.init_bytes_0550();
@@ -297,10 +257,9 @@ impl BluetoothTaskRegisters {
             btmac
                 .init_low_5_054c()
                 .modify(|_, writer| writer.init_low_5().bits(0x12));
-            bluetooth
-                .ble_phy_init_phase
-                .init_phase()
-                .write_with_zero(|writer| writer.image().bits(0x40));
+            super::svd::fixed_register_image::publish_ble_phy_init_phase_40(
+                &bluetooth.ble_phy_init_phase,
+            );
 
             if inputs.option_byte_0x55_nonzero {
                 btmac
@@ -318,10 +277,9 @@ impl BluetoothTaskRegisters {
                         .config_8()
                         .set_bit()
                 });
-            bluetooth
-                .ble_hw_runtime_control
-                .phy_init_configuration_latch()
-                .write_with_zero(|writer| writer.image().bits(1));
+            super::svd::fixed_register_image::latch_ble_phy_runtime_configuration(
+                &bluetooth.ble_hw_runtime_control,
+            );
             btmac.init_control_00b4().modify(|_, writer| {
                 writer
                     .init_set_11()
@@ -338,15 +296,9 @@ impl BluetoothTaskRegisters {
                 .modify(|_, writer| writer.init_enable_9().set_bit());
 
             let controller = &bluetooth.bluetooth_controller_core;
-            controller
-                .phy_init_zero_0244()
-                .write_with_zero(|writer| writer.image().bits(0));
-            controller
-                .phy_init_value_01f0()
-                .write_with_zero(|writer| writer.image().bits(0x55));
-            controller
-                .phy_init_value_0248()
-                .write_with_zero(|writer| writer.image().bits(0x0000_0fff));
+            super::svd::zero_register_write::clear_ble_phy_controller_value_0244(controller);
+            super::svd::fixed_register_image::publish_ble_phy_controller_value_01f0(controller);
+            super::svd::fixed_register_image::publish_ble_phy_controller_value_0248(controller);
             controller
                 .phy_init_dynamic_image_024c()
                 .write_with_zero(|writer| {

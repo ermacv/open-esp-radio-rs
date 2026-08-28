@@ -58469,6 +58469,227 @@ pub mod fixed_register_image {
         }
     }
 
+    /// Publish the SVD-qualified image `0x00000001` to `BLE_PHY_INIT_TOGGLE`.`INIT_TOGGLE`.
+    #[inline]
+    pub fn latch_ble_phy_register_initialization_entry(registers: &crate::BlePhyInitToggle) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .init_toggle()
+                .write_with_zero(|writer| writer.bits(0x00000001));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0xffffffff` to `BTMAC_BLE_PHY_INIT`.`INIT_ONES_00B8`.
+    #[inline]
+    pub fn fill_ble_phy_init_ones_00b8(registers: &crate::BtmacBlePhyInit) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .init_ones_00b8()
+                .write_with_zero(|writer| writer.bits(0xffffffff));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x0000065b` to `BTMAC_BLE_PHY_INIT`.`INIT_VALUE_0138`.
+    #[inline]
+    pub fn publish_ble_phy_init_value_0138(registers: &crate::BtmacBlePhyInit) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .init_value_0138()
+                .write_with_zero(|writer| writer.bits(0x0000065b));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x02020202` to `BTMAC_BLE_PHY_INIT`.`INIT_BYTES_04A4`.
+    #[inline]
+    pub fn publish_ble_phy_init_bytes_04a4(registers: &crate::BtmacBlePhyInit) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .init_bytes_04a4()
+                .write_with_zero(|writer| writer.bits(0x02020202));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x02020202` to `BTMAC_BLE_PHY_INIT`.`INIT_BYTES_04A8`.
+    #[inline]
+    pub fn publish_ble_phy_init_bytes_04a8(registers: &crate::BtmacBlePhyInit) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .init_bytes_04a8()
+                .write_with_zero(|writer| writer.bits(0x02020202));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00ff0002` to `BTMAC_BLE_PHY_INIT`.`INIT_VALUE_04AC`.
+    #[inline]
+    pub fn publish_ble_phy_init_value_04ac(registers: &crate::BtmacBlePhyInit) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .init_value_04ac()
+                .write_with_zero(|writer| writer.bits(0x00ff0002));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000008` to `BTMAC_BLE_PHY_INIT`.`INIT_VALUE_045C`.
+    #[inline]
+    pub fn publish_ble_phy_init_value_045c(registers: &crate::BtmacBlePhyInit) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .init_value_045c()
+                .write_with_zero(|writer| writer.bits(0x00000008));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000020` to `BLE_PHY_INIT_PHASE`.`INIT_PHASE`.
+    #[inline]
+    pub fn publish_ble_phy_init_phase_20(registers: &crate::BlePhyInitPhase) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .init_phase()
+                .write_with_zero(|writer| writer.bits(0x00000020));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x000002f0` to `BLE_HW_ACCELERATOR`.`INIT_CONFIG`.
+    #[inline]
+    pub fn publish_ble_phy_accelerator_config(registers: &crate::BleHwAccelerator) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .init_config()
+                .write_with_zero(|writer| writer.bits(0x000002f0));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x2f080000` to `BLE_HW_ACCELERATOR`.`INIT_SRAM_REGION_0`.
+    #[inline]
+    pub fn publish_ble_phy_accelerator_sram_region_0(registers: &crate::BleHwAccelerator) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .init_sram_region_0()
+                .write_with_zero(|writer| writer.bits(0x2f080000));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x2f000000` to `BLE_HW_ACCELERATOR`.`INIT_SRAM_REGION_1`.
+    #[inline]
+    pub fn publish_ble_phy_accelerator_sram_region_1(registers: &crate::BleHwAccelerator) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .init_sram_region_1()
+                .write_with_zero(|writer| writer.bits(0x2f000000));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x80000000` to `BTMAC_BLE_PHY_INIT`.`INIT_CONTROL_0400`.
+    #[inline]
+    pub fn publish_ble_phy_init_control_0400(registers: &crate::BtmacBlePhyInit) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .init_control_0400()
+                .write_with_zero(|writer| writer.bits(0x80000000));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x000007d0` to `BTMAC_BLE_PHY_INIT`.`INIT_VALUE_0540`.
+    #[inline]
+    pub fn publish_ble_phy_init_value_0540(registers: &crate::BtmacBlePhyInit) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .init_value_0540()
+                .write_with_zero(|writer| writer.bits(0x000007d0));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000040` to `BLE_PHY_INIT_PHASE`.`INIT_PHASE`.
+    #[inline]
+    pub fn publish_ble_phy_init_phase_40(registers: &crate::BlePhyInitPhase) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .init_phase()
+                .write_with_zero(|writer| writer.bits(0x00000040));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000001` to `BLE_HW_RUNTIME_CONTROL`.`PHY_INIT_CONFIGURATION_LATCH`.
+    #[inline]
+    pub fn latch_ble_phy_runtime_configuration(registers: &crate::BleHwRuntimeControl) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .phy_init_configuration_latch()
+                .write_with_zero(|writer| writer.bits(0x00000001));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000055` to `BLUETOOTH_CONTROLLER_CORE`.`PHY_INIT_VALUE_01F0`.
+    #[inline]
+    pub fn publish_ble_phy_controller_value_01f0(registers: &crate::BluetoothControllerCore) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .phy_init_value_01f0()
+                .write_with_zero(|writer| writer.bits(0x00000055));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000fff` to `BLUETOOTH_CONTROLLER_CORE`.`PHY_INIT_VALUE_0248`.
+    #[inline]
+    pub fn publish_ble_phy_controller_value_0248(registers: &crate::BluetoothControllerCore) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .phy_init_value_0248()
+                .write_with_zero(|writer| writer.bits(0x00000fff));
+        }
+    }
+
     /// Publish the SVD-qualified image `0x18200000` to `BLUETOOTH_INTERRUPT_BANK`.`IRQ_CLEAR_0`.
     #[inline]
     pub fn clear_bluetooth_scheduler_run_interrupts_bank_0(
@@ -60359,6 +60580,38 @@ pub mod zero_register_write {
         // qualify a complete zero write to this ordinary register.
         unsafe {
             registers.state_002c().write_with_zero(|writer| writer);
+        }
+    }
+
+    /// Publish zero to every bit of `BLE_PHY_INIT_TOGGLE`.`INIT_TOGGLE`.
+    #[inline]
+    pub fn begin_ble_phy_register_initialization(registers: &crate::BlePhyInitToggle) {
+        // SAFETY: the SVD extension and its provenance explicitly
+        // qualify a complete zero write to this ordinary register.
+        unsafe {
+            registers.init_toggle().write_with_zero(|writer| writer);
+        }
+    }
+
+    /// Publish zero to every bit of `BTMAC_BLE_PHY_INIT`.`INIT_ZERO_0074`.
+    #[inline]
+    pub fn clear_ble_phy_init_zero_0074(registers: &crate::BtmacBlePhyInit) {
+        // SAFETY: the SVD extension and its provenance explicitly
+        // qualify a complete zero write to this ordinary register.
+        unsafe {
+            registers.init_zero_0074().write_with_zero(|writer| writer);
+        }
+    }
+
+    /// Publish zero to every bit of `BLUETOOTH_CONTROLLER_CORE`.`PHY_INIT_ZERO_0244`.
+    #[inline]
+    pub fn clear_ble_phy_controller_value_0244(registers: &crate::BluetoothControllerCore) {
+        // SAFETY: the SVD extension and its provenance explicitly
+        // qualify a complete zero write to this ordinary register.
+        unsafe {
+            registers
+                .phy_init_zero_0244()
+                .write_with_zero(|writer| writer);
         }
     }
 

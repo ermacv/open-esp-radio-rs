@@ -60,15 +60,29 @@ done
 tools/audit-driver-safety.sh
 tools/audit-driver-architecture.sh
 
-# Verify the complete generated publication from its canonical input. This
-# includes the SVD, raw PAC, semantic PAC API and bindings, so adding a new
-# output cannot silently bypass the source-only gate.
+# Validate the checked-in register sources without requiring disposable vendor
+# analysis output. The review-scope report is produced by `project analyze`, is
+# gitignored, and may depend on authenticated local inputs; a clean source-only
+# checkout must therefore not require it.
 cargo blobray project configure \
     --project verification/vendor/targets/esp32s31/vendor-project.toml \
     --check
-cargo blobray project publish \
+cargo blobray registers validate \
     --project verification/vendor/targets/esp32s31/vendor-project.toml \
-    --check
+    --deny-unreviewed
+
+# When the optional analysis report is already available, also prove that the
+# complete generated SVD/PAC/binding publication is reproducible. Its absence
+# only disables this deeper local check; it does not weaken register-source
+# validation above.
+review_scope_report="verification/vendor/targets/esp32s31/generated/findings/review-scopes.json"
+if [[ -f "$review_scope_report" ]]; then
+    cargo blobray project publish \
+        --project verification/vendor/targets/esp32s31/vendor-project.toml \
+        --check
+else
+    echo "source-only audit: optional review-scope report absent; skipping publication reproducibility check"
+fi
 
 build_messages="$audit_dir/phy-build.jsonl"
 cargo build \

@@ -81,7 +81,7 @@ use open_esp_radio_esp32s31_wifi_esp_hal::mac_interrupt_epoch::{
 };
 #[cfg(feature = "mac-irq-diagnostics")]
 use open_esp_radio_esp32s31_wifi_mac::irq::{
-    IrqSink, MAC_INT_COLLISION, MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT,
+    IrqSink, EVENT_COLLISION, EVENT_RX_SUCCESS, EVENT_TX_COMPLETE, EVENT_TX_TIMEOUT,
 };
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::{StaGroupCcmpKeyMaterial, StaGroupCcmpSlot, StaPairwiseCcmpSlot},
@@ -649,9 +649,10 @@ pub enum Esp32s31MacIrqObservation {
     RxEpoch,
     TxEpoch,
     Entry {
-        first_status: u32,
-        observed_status: u32,
-        nonzero_snapshots: u8,
+        had_status: bool,
+        posted_events: u32,
+        had_auxiliary_event: bool,
+        had_unhandled_event: bool,
     },
 }
 
@@ -677,10 +678,10 @@ struct DiagnosticMacIrqSink;
 impl IrqSink for DiagnosticMacIrqSink {
     #[inline]
     fn post(&self, pending: u32) {
-        if pending & MAC_INT_RX_SUCCESS != 0 && !IRQ_RUNTIME.rx_signaled() {
+        if pending & EVENT_RX_SUCCESS != 0 && !IRQ_RUNTIME.rx_signaled() {
             observe_mac_irq(Esp32s31MacIrqObservation::RxEpoch);
         }
-        const TX_EVENTS: u32 = MAC_INT_TX_COMPLETE | MAC_INT_TX_TIMEOUT | MAC_INT_COLLISION;
+        const TX_EVENTS: u32 = EVENT_TX_COMPLETE | EVENT_TX_TIMEOUT | EVENT_COLLISION;
         if pending & TX_EVENTS != 0 && !IRQ_RUNTIME.tx_signaled() {
             observe_mac_irq(Esp32s31MacIrqObservation::TxEpoch);
         }
@@ -688,8 +689,8 @@ impl IrqSink for DiagnosticMacIrqSink {
     }
 
     #[inline]
-    fn record_unhandled(&self, bits: u32) {
-        IRQ_RUNTIME.record_unhandled(bits);
+    fn record_unhandled_event(&self) {
+        IRQ_RUNTIME.record_unhandled_event();
     }
 
     #[inline]
@@ -849,8 +850,8 @@ impl Esp32s31DiagnosticSnapshot {
         IRQ_RUNTIME.rx_post_count()
     }
 
-    /// OR-image of MAC interrupt bits not owned by the qualified dispatcher.
-    pub fn unhandled_interrupt_bits(self) -> u32 {
+    /// Whether the PAC observed a MAC cause not owned by the dispatcher.
+    pub fn had_unhandled_interrupt(self) -> bool {
         IRQ_RUNTIME.observed_unhandled()
     }
 
@@ -1183,9 +1184,10 @@ fn mac_interrupt() {
     let _report = service_mac_interrupt(&IRQ_RUNTIME);
     #[cfg(feature = "mac-irq-diagnostics")]
     observe_mac_irq(Esp32s31MacIrqObservation::Entry {
-        first_status: report.first_status,
-        observed_status: report.observed_status,
-        nonzero_snapshots: report.nonzero_snapshots,
+        had_status: report.had_status,
+        posted_events: report.posted_events,
+        had_auxiliary_event: report.had_auxiliary_event,
+        had_unhandled_event: report.had_unhandled_event,
     });
     #[cfg(feature = "task-poll-telemetry")]
     {

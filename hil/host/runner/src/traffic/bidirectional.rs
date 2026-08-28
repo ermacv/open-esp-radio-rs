@@ -931,8 +931,8 @@ pub(crate) struct MacIrqEvidence {
     pub(crate) other_only_entries: u64,
     pub(crate) extra_nonzero_snapshots: u64,
     pub(crate) saturated_entries: u64,
-    pub(crate) auxiliary_status_or: u64,
-    pub(crate) unknown_status_or: u64,
+    pub(crate) auxiliary_entries: u64,
+    pub(crate) unhandled_entries: u64,
 }
 
 impl MacIrqEvidence {
@@ -957,8 +957,12 @@ impl MacIrqEvidence {
         self.saturated_entries = self
             .saturated_entries
             .saturating_add(sample.saturated_entries);
-        self.auxiliary_status_or |= sample.auxiliary_status_or;
-        self.unknown_status_or |= sample.unknown_status_or;
+        self.auxiliary_entries = self
+            .auxiliary_entries
+            .saturating_add(sample.auxiliary_entries);
+        self.unhandled_entries = self
+            .unhandled_entries
+            .saturating_add(sample.unhandled_entries);
     }
 
     pub(crate) fn classified_entries(self) -> u64 {
@@ -2377,8 +2381,8 @@ fn parse_device_report(log: &str) -> DeviceReport {
                     other_only_entries: field(line, "other_only")?,
                     extra_nonzero_snapshots: field(line, "extra")?,
                     saturated_entries: field(line, "saturated")?,
-                    auxiliary_status_or: field(line, "aux_or")?,
-                    unknown_status_or: field(line, "unknown_or")?,
+                    auxiliary_entries: field(line, "aux_entries")?,
+                    unhandled_entries: field(line, "unhandled_entries")?,
                 })
             })();
             if include_rx_interval_evidence && let Some(sample) = sample {
@@ -3047,10 +3051,10 @@ fn rx_policy_failure(report: &DeviceReport, rx: &RxQualification) -> Option<Stri
             rx.irq.saturated_entries,
         ));
     }
-    if rx.irq.unknown_status_or != 0 {
+    if rx.irq.unhandled_entries != 0 {
         return Some(format!(
-            "MAC interrupt STATUS contains unqualified bits 0x{:08x}",
-            rx.irq.unknown_status_or,
+            "MAC interrupt dispatcher observed {} entries with an unhandled cause",
+            rx.irq.unhandled_entries,
         ));
     }
     None
@@ -3796,8 +3800,8 @@ fn write_report(
             irq.classified_entries(),
             irq.extra_nonzero_snapshots,
             irq.saturated_entries,
-            irq.auxiliary_status_or,
-            irq.unknown_status_or,
+            irq.auxiliary_entries,
+            irq.unhandled_entries,
             pipeline.staged_bytes,
             pipeline.stage_empty_discards,
             pipeline.stage_too_long_discards,
@@ -4204,7 +4208,7 @@ mod tests {
              ORXD frames=5000 data=5000 waits=5000 wait_us=1000 wait_boot_max_us=2 dispatch_us=150000 dispatch_boot_max_us=35 publications=5000 bytes=7570000 publish_us=60000 publish_boot_max_us=15\n\
              ORXR starts=0 stops=0 start_tid=0 start_seq=6 window=8 first_samples=1 first_tid=0 first_start=6 first_seq=6 first_distance=0 buffered=3 released=5000 missing=0 stale=0 expiries=0 occupied=0 occupied_max=7\n\
              ORXF zero=0 one=5000 two_three=0 four_seven=0 eight_fifteen=0 sixteen_thirty_one=0 thirty_two_plus=0 irq_posts=5000 irq_epochs=5000 irq_entries=5000 irq_coalesced=0 irq_samples=5000 irq_skew=0 irq_service_us=25000 irq_service_boot_max_us=8\n\
-             ORXI spurious=0 rx_only=5000 rx_mixed=0 tx_only=0 tx_mixed=0 other_only=0 extra=0 saturated=0 aux_or=16777248 unknown_or=0\n\
+             ORXI spurious=0 rx_only=5000 rx_mixed=0 tx_only=0 tx_mixed=0 other_only=0 extra=0 saturated=0 aux_entries=5000 unhandled_entries=0\n\
              ORTP task=network polls=5100 poll_us=210000 poll_boot_max_us=140 over_100us=2 over_500us=0 over_1000us=0 over_5000us=0\n\
              ORTP task=protocol polls=5000 poll_us=180000 poll_boot_max_us=120 over_100us=1 over_500us=0 over_1000us=0 over_5000us=0\n\
              ORTP task=radio polls=5000 poll_us=390000 poll_boot_max_us=310 over_100us=20 over_500us=0 over_1000us=0 over_5000us=0\n\
@@ -4261,7 +4265,7 @@ mod tests {
              ORXD frames=5000 data=5000 waits=5000 wait_us=1000 wait_boot_max_us=2 dispatch_us=150000 dispatch_boot_max_us=35 publications=5000 bytes=7570000 publish_us=60000 publish_boot_max_us=15\n\
              ORXR starts=0 stops=0 start_tid=0 start_seq=6 window=8 first_samples=1 first_tid=0 first_start=6 first_seq=6 first_distance=0 buffered=3 released=5000 missing=0 stale=0 expiries=0 occupied=0 occupied_max=7\n\
              ORXF zero=0 one=5000 two_three=0 four_seven=0 eight_fifteen=0 sixteen_thirty_one=0 thirty_two_plus=0 irq_posts=5000 irq_epochs=5000 irq_entries=5000 irq_coalesced=0 irq_samples=5000 irq_skew=0 irq_service_us=25000 irq_service_boot_max_us=8\n\
-             ORXI spurious=0 rx_only=5000 rx_mixed=0 tx_only=0 tx_mixed=0 other_only=0 extra=0 saturated=0 aux_or=16777248 unknown_or=0\n\
+             ORXI spurious=0 rx_only=5000 rx_mixed=0 tx_only=0 tx_mixed=0 other_only=0 extra=0 saturated=0 aux_entries=5000 unhandled_entries=0\n\
              ORTP task=network polls=5100 poll_us=210000 poll_boot_max_us=140 over_100us=2 over_500us=0 over_1000us=0 over_5000us=0\n\
              ORTP task=protocol polls=5000 poll_us=180000 poll_boot_max_us=120 over_100us=1 over_500us=0 over_1000us=0 over_5000us=0\n\
              ORTP task=radio polls=5000 poll_us=390000 poll_boot_max_us=310 over_100us=20 over_500us=0 over_1000us=0 over_5000us=0\n\
@@ -4314,8 +4318,8 @@ mod tests {
         assert_eq!(rx.pipeline.rx_irq_to_service_us, 25_000);
         assert_eq!(rx.irq.rx_only_entries, 5_000);
         assert_eq!(rx.irq.classified_entries(), 5_000);
-        assert_eq!(rx.irq.auxiliary_status_or, 0x0100_0020);
-        assert_eq!(rx.irq.unknown_status_or, 0);
+        assert_eq!(rx.irq.auxiliary_entries, 5_000);
+        assert_eq!(rx.irq.unhandled_entries, 0);
         assert_eq!(rx.task_polls.network.polls, 5_100);
         assert_eq!(rx.task_polls.radio.poll_us, 390_000);
         assert_eq!(rx.task_polls.radio.over_100us, 20);

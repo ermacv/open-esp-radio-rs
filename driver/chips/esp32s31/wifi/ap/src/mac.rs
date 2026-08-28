@@ -1234,7 +1234,7 @@ mod tests {
         let (progress, action) = block_on(mac.service_tx(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_TX_COMPLETE,
+                events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
             },
             1,
         ))

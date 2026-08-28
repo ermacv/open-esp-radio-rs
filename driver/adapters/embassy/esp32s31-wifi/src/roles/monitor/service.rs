@@ -104,7 +104,10 @@ impl Esp32s31MonitorRunReport {
         self.interrupt_drain.mac.rx |= epoch.interrupt_drain.mac.rx;
         self.interrupt_drain.mac.rx_capacity |= epoch.interrupt_drain.mac.rx_capacity;
         self.interrupt_drain.mac.tx_events |= epoch.interrupt_drain.mac.tx_events;
-        self.interrupt_drain.power_events |= epoch.interrupt_drain.power_events;
+        self.interrupt_drain.power_events = self
+            .interrupt_drain
+            .power_events
+            .union(epoch.interrupt_drain.power_events);
     }
 
     #[cfg(any(feature = "diagnostics", test))]

@@ -8,8 +8,8 @@ use crate::EspHalRadioPeripheral;
 use critical_section::Mutex;
 use esp_hal::interrupt::InterruptHandler;
 use open_esp_radio_esp32s31_hal::{
-    MacInterruptMask, MacInterruptRegisters, MacInterruptSetup, MacPowerInterruptRegisters,
-    MacPowerWakeCause,
+    MacInterruptMask, MacInterruptRegisters, MacInterruptSetup, MacPowerInterruptObservation,
+    MacPowerInterruptRegisters, MacPowerWakeCause,
 };
 use open_esp_radio_esp32s31_wifi_mac::irq::{
     IrqSink, MacInterruptRoute, PowerIrqSink, handle_mac_irq, handle_power_irq,
@@ -37,16 +37,16 @@ pub enum EspHalActivePowerInterruptError {
 /// Summary of one bounded hard-MAC handler run.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct EspHalMacInterruptServiceReport {
-    pub first_status: u32,
-    pub observed_status: u32,
-    pub nonzero_snapshots: u8,
+    pub had_status: bool,
+    pub posted_events: u32,
+    pub had_auxiliary_event: bool,
+    pub had_unhandled_event: bool,
 }
 
 /// Summary of one bounded hard-power handler run.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct EspHalPowerInterruptServiceReport {
-    pub observed_status: u32,
-    pub nonzero_snapshots: u8,
+    pub observation: MacPowerInterruptObservation,
 }
 
 /// Concrete ESP-HAL CPU route for the unique S31 Wi-Fi interrupt owner.
@@ -165,9 +165,9 @@ impl MacInterruptRoute for EspHalMacInterruptRoute {
     }
 }
 
-/// Service one complete MAC status image in recovered vendor priority.
+/// Service one complete MAC snapshot in recovered vendor priority.
 ///
-/// ESP-HAL configures the CPU route as a level interrupt. The complete image
+/// ESP-HAL configures the CPU route as a level interrupt. The complete snapshot
 /// is acknowledged before return; status which remains or arrives afterwards
 /// therefore retriggers the route. Reading until an empty image added one
 /// redundant MMIO read to every RX interrupt, while HIL observed no second
@@ -181,9 +181,10 @@ pub fn service_mac_interrupt<S: IrqSink>(sink: &S) -> EspHalMacInterruptServiceR
         };
         let (_, snapshot) = handle_mac_irq(interrupt, sink);
         EspHalMacInterruptServiceReport {
-            first_status: snapshot.status,
-            observed_status: snapshot.status,
-            nonzero_snapshots: u8::from(snapshot.status != 0),
+            had_status: snapshot.had_status,
+            posted_events: snapshot.posted_events,
+            had_auxiliary_event: snapshot.had_auxiliary_event,
+            had_unhandled_event: snapshot.had_unhandled_event,
         }
     })
 }
@@ -198,8 +199,7 @@ pub fn service_power_interrupt<S: PowerIrqSink>(sink: &S) -> EspHalPowerInterrup
         };
         let (_, snapshot) = handle_power_irq(interrupt, sink);
         EspHalPowerInterruptServiceReport {
-            observed_status: snapshot.status,
-            nonzero_snapshots: u8::from(snapshot.status != 0),
+            observation: snapshot.observation,
         }
     })
 }

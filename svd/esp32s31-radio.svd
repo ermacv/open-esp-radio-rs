@@ -12724,15 +12724,27 @@
         </register>
         <register>
           <name>STATUS</name>
-          <description>Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf.</description>
+          <description>Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf. Its bit geometry matches the complete ENABLE event bank; only independently recovered event identities are named semantically.</description>
           <addressOffset>0x8</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
+              <name>UNKNOWN_0_4</name>
+              <description>Masked event bits whose identities remain unknown.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>5</bitWidth>
+            </field>
+            <field>
               <name>RX_ASSOCIATED_AUXILIARY_5</name>
               <description>Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity.</description>
               <bitOffset>5</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_6_UNKNOWN</name>
+              <description>Masked event bit enabled by the complete cold receive mask; its event identity remains unknown.</description>
+              <bitOffset>6</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
@@ -12748,9 +12760,27 @@
               <bitWidth>1</bitWidth>
             </field>
             <field>
+              <name>UNKNOWN_9_10</name>
+              <description>Masked event bits whose identities remain unknown.</description>
+              <bitOffset>9</bitOffset>
+              <bitWidth>2</bitWidth>
+            </field>
+            <field>
               <name>WATCHDOG</name>
               <description>MAC watchdog event cleared by the complete dedicated leaf.</description>
               <bitOffset>11</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_12_UNKNOWN</name>
+              <description>Masked event bit enabled by the complete cold receive mask; its event identity remains unknown.</description>
+              <bitOffset>12</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_13_UNKNOWN</name>
+              <description>Masked event bit enabled by the complete cold receive mask; its event identity remains unknown.</description>
+              <bitOffset>13</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
@@ -12760,9 +12790,45 @@
               <bitWidth>1</bitWidth>
             </field>
             <field>
+              <name>STA_BEACON_FILTER</name>
+              <description>Masked station beacon-filter event. The paired ENABLE field identity is recovered from the complete disable leaf; no task-side dispatch is claimed here.</description>
+              <bitOffset>15</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_16_18</name>
+              <description>Masked event bits whose identities remain unknown.</description>
+              <bitOffset>16</bitOffset>
+              <bitWidth>3</bitWidth>
+            </field>
+            <field>
               <name>TX_TIMEOUT</name>
               <description>Hardware TX queue timeout/abort event.</description>
               <bitOffset>19</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_20</name>
+              <description>Masked event bit whose identity remains unknown.</description>
+              <bitOffset>20</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_21_UNKNOWN</name>
+              <description>Masked event bit enabled by the complete cold receive mask; its event identity remains unknown.</description>
+              <bitOffset>21</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_22</name>
+              <description>Masked event bit whose identity remains unknown.</description>
+              <bitOffset>22</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_23_UNKNOWN</name>
+              <description>Masked event bit enabled by the complete cold receive mask; its event identity remains unknown.</description>
+              <bitOffset>23</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
@@ -12770,6 +12836,30 @@
               <description>Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity.</description>
               <bitOffset>24</bitOffset>
               <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_25_26</name>
+              <description>Masked event bits whose identities remain unknown.</description>
+              <bitOffset>25</bitOffset>
+              <bitWidth>2</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_27_UNKNOWN</name>
+              <description>Masked event bit enabled by the complete cold receive mask; its event identity remains unknown.</description>
+              <bitOffset>27</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_28_UNKNOWN</name>
+              <description>Masked event bit enabled by the complete cold receive mask; its event identity remains unknown.</description>
+              <bitOffset>28</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_29_31</name>
+              <description>Masked event bits whose identities remain unknown.</description>
+              <bitOffset>29</bitOffset>
+              <bitWidth>3</bitWidth>
             </field>
           </fields>
         </register>

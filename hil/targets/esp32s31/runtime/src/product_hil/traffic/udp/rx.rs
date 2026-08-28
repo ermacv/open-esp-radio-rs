@@ -161,8 +161,8 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         let hardware_start = qualification_start.rx_primary;
         let irq_start = qualification_start.rx_interrupt_posts;
         let irq_classification_start = crate::product_hil::MAC_IRQ.snapshot();
-        let _ = crate::product_hil::MAC_IRQ.take_auxiliary_status_or();
-        let _ = crate::product_hil::MAC_IRQ.take_unknown_status_or();
+        let _ = crate::product_hil::MAC_IRQ.take_auxiliary_entries();
+        let _ = crate::product_hil::MAC_IRQ.take_unhandled_entries();
         let pipeline_start = telemetry.pipeline.snapshot();
         let task_poll_start = telemetry.task_polls.snapshot();
         #[cfg(feature = "core0-rx-cycle-telemetry")]
@@ -287,8 +287,8 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             .saturating_add(irq_classification.tx_only_entries)
             .saturating_add(irq_classification.tx_mixed_entries)
             .saturating_add(irq_classification.other_only_entries);
-        let irq_auxiliary_status_or = crate::product_hil::MAC_IRQ.take_auxiliary_status_or();
-        let irq_unknown_status_or = crate::product_hil::MAC_IRQ.take_unknown_status_or();
+        let irq_auxiliary_entries = crate::product_hil::MAC_IRQ.take_auxiliary_entries();
+        let irq_unhandled_entries = crate::product_hil::MAC_IRQ.take_unhandled_entries();
         let pipeline_end = telemetry.pipeline.snapshot();
         let pipeline_interval = pipeline_end.wrapping_delta_since(pipeline_start);
         #[cfg(feature = "rx-delivery-telemetry")]
@@ -538,8 +538,8 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             rx_irq_posts,
             mac_irq_entries,
             irq_classification,
-            irq_auxiliary_status_or,
-            irq_unknown_status_or,
+            irq_auxiliary_entries,
+            irq_unhandled_entries,
             telemetry.pipeline,
         )
         .await;
@@ -582,7 +582,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
                 dma_fifo_overflow: u32::from(hardware.fifo_overflow),
                 network_dropped: queue_dropped,
                 irq_drain_saturated: irq_classification.saturated_entries,
-                unknown_irq_status: irq_unknown_status_or,
+                unhandled_irq_entries: irq_unhandled_entries,
                 sequence_first: sequence.first,
                 sequence_highest: sequence.first.map(|_| sequence.highest),
                 sequence_gap_events: sequence.gap_events,

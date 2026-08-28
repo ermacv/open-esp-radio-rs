@@ -1,8 +1,6 @@
 //! Role-neutral aggregate-TX scheduler and transaction facts.
 
-use open_esp_radio_esp32s31_wifi_mac::irq::{
-    MAC_INT_COLLISION, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT,
-};
+use open_esp_radio_esp32s31_wifi_mac::irq::{EVENT_COLLISION, EVENT_TX_COMPLETE, EVENT_TX_TIMEOUT};
 
 use crate::datapath::WifiTxWake;
 
@@ -25,14 +23,14 @@ impl AggregateTxServiceEvent {
         let WifiTxWake::Interrupt { events } = wake else {
             return Ok(Self::ExecutorDeadline);
         };
-        let tx_events = events & (MAC_INT_TX_COMPLETE | MAC_INT_TX_TIMEOUT | MAC_INT_COLLISION);
+        let tx_events = events & (EVENT_TX_COMPLETE | EVENT_TX_TIMEOUT | EVENT_COLLISION);
         if tx_events.count_ones() > 1 {
             return Err(AggregateTxServiceEventError { events: tx_events });
         }
         Ok(match tx_events {
-            MAC_INT_TX_COMPLETE => Self::Completion,
-            MAC_INT_TX_TIMEOUT => Self::HardwareTimeout,
-            MAC_INT_COLLISION => Self::Collision,
+            EVENT_TX_COMPLETE => Self::Completion,
+            EVENT_TX_TIMEOUT => Self::HardwareTimeout,
+            EVENT_COLLISION => Self::Collision,
             _ => Self::Pending,
         })
     }
@@ -41,7 +39,7 @@ impl AggregateTxServiceEvent {
 #[cfg(test)]
 mod tests {
     use open_esp_radio_esp32s31_wifi_mac::irq::{
-        MAC_INT_COLLISION, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT,
+        EVENT_COLLISION, EVENT_TX_COMPLETE, EVENT_TX_TIMEOUT,
     };
 
     use super::*;
@@ -64,19 +62,19 @@ mod tests {
         );
         assert_eq!(
             AggregateTxServiceEvent::classify(WifiTxWake::Interrupt {
-                events: MAC_INT_TX_COMPLETE,
+                events: EVENT_TX_COMPLETE,
             }),
             Ok(AggregateTxServiceEvent::Completion)
         );
         assert_eq!(
             AggregateTxServiceEvent::classify(WifiTxWake::Interrupt {
-                events: MAC_INT_TX_TIMEOUT,
+                events: EVENT_TX_TIMEOUT,
             }),
             Ok(AggregateTxServiceEvent::HardwareTimeout)
         );
         assert_eq!(
             AggregateTxServiceEvent::classify(WifiTxWake::Interrupt {
-                events: MAC_INT_COLLISION,
+                events: EVENT_COLLISION,
             }),
             Ok(AggregateTxServiceEvent::Collision)
         );
@@ -84,7 +82,7 @@ mod tests {
 
     #[test]
     fn conflicting_terminal_events_fail_closed() {
-        let events = MAC_INT_TX_COMPLETE | MAC_INT_COLLISION;
+        let events = EVENT_TX_COMPLETE | EVENT_COLLISION;
         assert_eq!(
             AggregateTxServiceEvent::classify(WifiTxWake::Interrupt { events }),
             Err(AggregateTxServiceEventError { events })

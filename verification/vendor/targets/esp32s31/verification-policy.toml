@@ -38,7 +38,7 @@ id = "ordinary-tx-ack-timeout-state"
 vendor = { source = "libpp", symbol = "lmacProcessAckTimeout", fingerprint = "sha256:1bbb8110af3f63a812a4892d810bfab2fcdf49a49be5a98df8ac8c29466b57df" }
 disposition = "verified"
 requirement = "ordinary-tx-ack-timeout-state-reviewed-domain"
-rationale = "The reviewed state-and-call contract routes MAC_INT_TX_COMPLETE through EmbassyMacIrqRuntime, then drives completion, detach, classification and re-publication through OrdinaryTxOwner. It projects the three vendor retry counters and frame Retry bit and pairs lmacRetryTxFrame with the exact production publication edge; vendor-only platform transactions remain recorded but are not claimed equivalent."
+rationale = "The reviewed state-and-call contract routes the driver-local TX-complete event through EmbassyMacIrqRuntime, then drives completion, detach, classification and re-publication through OrdinaryTxOwner. It projects the three vendor retry counters and frame Retry bit and pairs lmacRetryTxFrame with the exact production publication edge; vendor-only platform transactions remain recorded but are not claimed equivalent."
 
 [[surfaces]]
 id = "wifi-ordinary-tx-completion-dispatch"

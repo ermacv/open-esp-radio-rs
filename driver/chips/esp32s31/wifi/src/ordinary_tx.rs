@@ -600,9 +600,9 @@ where
             WifiTxWake::Deadline => 0,
         };
         let tx_events = interrupt_events
-            & (open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_TX_COMPLETE
-                | open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_TX_TIMEOUT
-                | open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_COLLISION);
+            & (open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE
+                | open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_TIMEOUT
+                | open_esp_radio_esp32s31_wifi_mac::irq::EVENT_COLLISION);
         if tx_events.count_ones() > 1 {
             return self
                 .reset_required(active, TxResetReason::ConflictingInterruptEvents(tx_events));
@@ -616,12 +616,12 @@ where
         }
 
         use open_esp_radio_esp32s31_wifi_mac::irq::{
-            MAC_INT_COLLISION, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT,
+            EVENT_COLLISION, EVENT_TX_COMPLETE, EVENT_TX_TIMEOUT,
         };
-        if tx_events == MAC_INT_TX_COMPLETE {
+        if tx_events == EVENT_TX_COMPLETE {
             return self.reset_required(active, TxResetReason::CompletionInterruptWithoutState);
         }
-        if tx_events == MAC_INT_TX_TIMEOUT || matches!(wake, WifiTxWake::Deadline) {
+        if tx_events == EVENT_TX_TIMEOUT || matches!(wake, WifiTxWake::Deadline) {
             if !self
                 .slot
                 .as_mut()
@@ -640,7 +640,7 @@ where
                 .finish_timeout_abort(hardware, active.cookie)?;
             return self.finish_aborted_attempt(hardware, active, true);
         }
-        if tx_events == MAC_INT_COLLISION {
+        if tx_events == EVENT_COLLISION {
             if !self
                 .slot
                 .as_mut()

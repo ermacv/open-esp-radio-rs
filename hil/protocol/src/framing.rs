@@ -1202,7 +1202,7 @@ mod tests {
                     dma_fifo_overflow: u32::MAX,
                     network_dropped: u32::MAX,
                     irq_drain_saturated: u32::MAX,
-                    unknown_irq_status: u32::MAX,
+                    unhandled_irq_entries: u32::MAX,
                     sequence_first: Some(u32::MAX),
                     sequence_highest: Some(u32::MAX),
                     sequence_gap_events: u32::MAX,

@@ -101,14 +101,14 @@ impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
     /// The executor signals are emitted only after the executor-neutral state
     /// has selected each work item in recovered vendor priority order.
     #[inline]
-    pub fn publish(&self, mac_pending: u32) {
+    pub fn publish(&self, events: u32) {
         // `publish` runs synchronously inside the sole MAC ISR. Do not move the
-        // already-local status image through IrqState's atomic producer and
+        // already-local task event set through IrqState's atomic producer and
         // immediately consume it again in the same call. The Embassy signals
-        // and TX bit image are the durable cross-context handoff.
-        let mut pending = mac_pending;
+        // and TX event set are the durable cross-context handoff.
+        let mut pending = events;
         while let Some(work) = next_irq_work(pending) {
-            pending &= !work.mac_bit();
+            pending &= !work.event_bit();
             match work {
                 IrqWork::RxSuccess => {
                     #[cfg(feature = "core0-rx-coarse-telemetry")]
@@ -121,7 +121,8 @@ impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
                     }
                 }
                 IrqWork::TxComplete | IrqWork::TxTimeout | IrqWork::Collision => {
-                    self.tx_pending.fetch_or(work.mac_bit(), Ordering::Release);
+                    self.tx_pending
+                        .fetch_or(work.event_bit(), Ordering::Release);
                     if !self.tx.signaled() {
                         self.tx.signal(());
                     }
@@ -215,22 +216,22 @@ impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
         self.rx_post_count.load(Ordering::Relaxed)
     }
 
-    /// Unsupported MAC bits observed by the shared hard-ISR handler.
+    /// Whether the shared hard ISR observed an unhandled MAC cause.
     #[inline]
-    pub fn observed_unhandled(&self) -> u32 {
+    pub fn observed_unhandled(&self) -> bool {
         self.state.observed_unhandled()
     }
 }
 
 impl<M: RawMutex> IrqSink for EmbassyMacIrqRuntime<M> {
     #[inline]
-    fn post(&self, mac_pending: u32) {
-        self.publish(mac_pending);
+    fn post(&self, events: u32) {
+        self.publish(events);
     }
 
     #[inline]
-    fn record_unhandled(&self, bits: u32) {
-        self.state.record_unhandled(bits);
+    fn record_unhandled_event(&self) {
+        self.state.record_unhandled_event();
     }
 
     #[inline]

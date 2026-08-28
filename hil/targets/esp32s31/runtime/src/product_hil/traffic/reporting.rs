@@ -279,8 +279,8 @@ pub(in crate::product_hil) async fn log_open_radio_rx_pipeline_interval(
     rx_irq_posts: u32,
     mac_irq_entries: u32,
     irq_classification: MacIrqClassificationSnapshot,
-    irq_auxiliary_status_or: u32,
-    irq_unknown_status_or: u32,
+    irq_auxiliary_entries: u32,
+    irq_unhandled_entries: u32,
     counters: &RxPipelineCounters,
 ) {
     let pipeline = counters.snapshot().wrapping_delta_since(earlier);
@@ -446,7 +446,7 @@ pub(in crate::product_hil) async fn log_open_radio_rx_pipeline_interval(
     yield_now().await;
     runtime_log_reliably(format_args!(
         "ORXI spurious={} rx_only={} rx_mixed={} tx_only={} tx_mixed={} other_only={} \
-         extra={} saturated={} aux_or={} unknown_or={}",
+         extra={} saturated={} aux_entries={} unhandled_entries={}",
         irq_classification.spurious_entries,
         irq_classification.rx_only_entries,
         irq_classification.rx_mixed_entries,
@@ -455,8 +455,8 @@ pub(in crate::product_hil) async fn log_open_radio_rx_pipeline_interval(
         irq_classification.other_only_entries,
         irq_classification.extra_nonzero_snapshots,
         irq_classification.saturated_entries,
-        irq_auxiliary_status_or,
-        irq_unknown_status_or,
+        irq_auxiliary_entries,
+        irq_unhandled_entries,
     ))
     .await;
     yield_now().await;

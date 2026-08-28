@@ -27,7 +27,7 @@ use open_esp_radio_esp32s31_wifi::ampdu_tx::{
 };
 use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 #[cfg(test)]
-use open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_TX_COMPLETE;
+use open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE;
 use open_esp_radio_esp32s31_wifi_mac::{
     rate_control::{AmpduRateObservationError, StaRateControlAssociation, StaTxRatePolicy},
     tx::{

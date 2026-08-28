@@ -459,7 +459,7 @@ fn idle_station_tx_lends_physical_owners_without_losing_role_state() {
         embassy_futures::block_on(tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: MAC_INT_TX_COMPLETE,
+                events: EVENT_TX_COMPLETE,
             },
         )),
         Ok(WifiTxProgress::Complete),
@@ -556,7 +556,7 @@ fn first_frame_outside_fresh_aggregate_txop_falls_back_to_ordinary_tx() {
         embassy_futures::block_on(tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: MAC_INT_TX_COMPLETE,
+                events: EVENT_TX_COMPLETE,
             },
         )),
         Ok(WifiTxProgress::Complete)
@@ -669,7 +669,7 @@ fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
         embassy_futures::block_on(tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: MAC_INT_TX_COMPLETE,
+                events: EVENT_TX_COMPLETE,
             },
         )),
         Ok(WifiTxProgress::Complete)
@@ -731,7 +731,7 @@ fn aggregate_uses_exact_ba_tid_and_defers_a_different_wmm_successor() {
         embassy_futures::block_on(tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: MAC_INT_TX_COMPLETE,
+                events: EVENT_TX_COMPLETE,
             },
         )),
         Ok(WifiTxProgress::Complete)
@@ -753,7 +753,7 @@ fn aggregate_uses_exact_ba_tid_and_defers_a_different_wmm_successor() {
         embassy_futures::block_on(tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: MAC_INT_TX_COMPLETE,
+                events: EVENT_TX_COMPLETE,
             },
         )),
         Ok(WifiTxProgress::Complete)
@@ -822,7 +822,7 @@ fn negotiated_video_txop_bounds_he_aggregate_and_selects_video_queue() {
         embassy_futures::block_on(tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: MAC_INT_TX_COMPLETE,
+                events: EVENT_TX_COMPLETE,
             },
         )),
         Ok(WifiTxProgress::Pending)
@@ -846,7 +846,7 @@ fn negotiated_video_txop_bounds_he_aggregate_and_selects_video_queue() {
         embassy_futures::block_on(tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: MAC_INT_TX_COMPLETE,
+                events: EVENT_TX_COMPLETE,
             },
         )),
         Ok(WifiTxProgress::Complete)
@@ -977,7 +977,7 @@ fn peer_advertised_tiny_he_txop_cannot_wrap_into_aggregate_capacity() {
         embassy_futures::block_on(tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: MAC_INT_TX_COMPLETE,
+                events: EVENT_TX_COMPLETE,
             },
         )),
         Ok(WifiTxProgress::Complete)
@@ -1055,7 +1055,7 @@ fn negotiated_amsdu_pairs_network_frames_inside_the_block_ack_window() {
         embassy_futures::block_on(tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: MAC_INT_TX_COMPLETE,
+                events: EVENT_TX_COMPLETE,
             },
         )),
         Ok(WifiTxProgress::Complete)
@@ -1109,7 +1109,7 @@ fn aggregate_never_exceeds_the_peer_negotiated_block_ack_window() {
         embassy_futures::block_on(tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: MAC_INT_TX_COMPLETE,
+                events: EVENT_TX_COMPLETE,
             },
         )),
         Ok(WifiTxProgress::Complete),
@@ -1226,7 +1226,7 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
         embassy_futures::block_on(tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: MAC_INT_TX_COMPLETE,
+                events: EVENT_TX_COMPLETE,
             },
         )),
         Ok(WifiTxProgress::Pending)
@@ -1239,7 +1239,7 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
         embassy_futures::block_on(tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: MAC_INT_TX_COMPLETE,
+                events: EVENT_TX_COMPLETE,
             },
         )),
         Ok(WifiTxProgress::Complete)
@@ -1265,7 +1265,7 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
         embassy_futures::block_on(tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: MAC_INT_TX_COMPLETE,
+                events: EVENT_TX_COMPLETE,
             },
         )),
         Ok(WifiTxProgress::Complete)
@@ -1331,7 +1331,7 @@ fn exhausted_ba_generation_invalidates_a_software_prepared_aggregate_before_publ
         embassy_futures::block_on(tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: MAC_INT_TX_COMPLETE,
+                events: EVENT_TX_COMPLETE,
             },
         )),
         Ok(WifiTxProgress::Complete)
@@ -1476,7 +1476,7 @@ fn rejected_standby_preparation_preserves_the_hardware_owned_primary() {
         embassy_futures::block_on(tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: MAC_INT_TX_COMPLETE,
+                events: EVENT_TX_COMPLETE,
             },
         )),
         Ok(WifiTxProgress::Complete)
@@ -1532,7 +1532,7 @@ fn block_ack_completion_releases_all_referenced_network_leases() {
         embassy_futures::block_on(tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: MAC_INT_TX_COMPLETE,
+                events: EVENT_TX_COMPLETE,
             },
         )),
         Ok(WifiTxProgress::Complete)
@@ -1594,7 +1594,7 @@ fn partial_block_ack_retains_missing_frames_across_one_republication() {
         embassy_futures::block_on(tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: MAC_INT_TX_COMPLETE,
+                events: EVENT_TX_COMPLETE,
             },
         )),
         Ok(WifiTxProgress::Pending)
@@ -1607,7 +1607,7 @@ fn partial_block_ack_retains_missing_frames_across_one_republication() {
         embassy_futures::block_on(tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: MAC_INT_TX_COMPLETE,
+                events: EVENT_TX_COMPLETE,
             },
         )),
         Ok(WifiTxProgress::Complete)
@@ -1675,7 +1675,7 @@ fn one_missing_wmm_ht_mpdu_keeps_tid_queue_sequence_and_pn_in_ordinary_retry() {
         embassy_futures::block_on(tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: MAC_INT_TX_COMPLETE,
+                events: EVENT_TX_COMPLETE,
             },
         )),
         Ok(WifiTxProgress::Pending)
@@ -1702,7 +1702,7 @@ fn one_missing_wmm_ht_mpdu_keeps_tid_queue_sequence_and_pn_in_ordinary_retry() {
         embassy_futures::block_on(tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: MAC_INT_TX_COMPLETE,
+                events: EVENT_TX_COMPLETE,
             },
         )),
         Ok(WifiTxProgress::Complete)

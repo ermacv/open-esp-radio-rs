@@ -894,7 +894,7 @@ mod tests {
         let progress = block_on(tx.service(
             &mut hardware,
             WifiTxWake::Interrupt {
-                events: open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_TX_COMPLETE,
+                events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
             },
         ));
         assert_eq!(progress, Ok(WifiTxProgress::Complete));

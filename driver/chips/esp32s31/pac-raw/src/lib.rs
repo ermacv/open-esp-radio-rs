@@ -29729,7 +29729,7 @@ pub mod wifi_mac_interrupt {
         pub const fn raw(&self) -> &Raw {
             &self.raw
         }
-        #[doc = "0x08 - Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf."]
+        #[doc = "0x08 - Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf. Its bit geometry matches the complete ENABLE event bank; only independently recovered event identities are named semantically."]
         #[inline(always)]
         pub const fn status(&self) -> &Status {
             &self.status
@@ -30114,32 +30114,72 @@ pub mod wifi_mac_interrupt {
             type Safety = crate::Safe;
         }
     }
-    #[doc = "STATUS (r) register accessor: Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf.\n\nYou can [`read`](crate::Reg::read) this register and get [`status::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@status`] module"]
+    #[doc = "STATUS (r) register accessor: Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf. Its bit geometry matches the complete ENABLE event bank; only independently recovered event identities are named semantically.\n\nYou can [`read`](crate::Reg::read) this register and get [`status::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@status`] module"]
     #[doc(alias = "STATUS")]
     pub type Status = crate::Reg<status::StatusSpec>;
-    #[doc = "Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf."]
+    #[doc = "Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf. Its bit geometry matches the complete ENABLE event bank; only independently recovered event identities are named semantically."]
     pub mod status {
         #[doc = "Register `STATUS` reader"]
         pub type R = crate::R<StatusSpec>;
+        #[doc = "Field `UNKNOWN_0_4` reader - Masked event bits whose identities remain unknown."]
+        pub type Unknown0_4R = crate::FieldReader;
         #[doc = "Field `RX_ASSOCIATED_AUXILIARY_5` reader - Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
         pub type RxAssociatedAuxiliary5R = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_6_UNKNOWN` reader - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+        pub type ColdRxEnable6UnknownR = crate::BitReader;
         #[doc = "Field `TX_COMPLETE` reader - At least one hardware TX queue completed."]
         pub type TxCompleteR = crate::BitReader;
         #[doc = "Field `BSS_COLOR_COLLISION` reader - HE BSS-color collision event."]
         pub type BssColorCollisionR = crate::BitReader;
+        #[doc = "Field `UNKNOWN_9_10` reader - Masked event bits whose identities remain unknown."]
+        pub type Unknown9_10R = crate::FieldReader;
         #[doc = "Field `WATCHDOG` reader - MAC watchdog event cleared by the complete dedicated leaf."]
         pub type WatchdogR = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_12_UNKNOWN` reader - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+        pub type ColdRxEnable12UnknownR = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_13_UNKNOWN` reader - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+        pub type ColdRxEnable13UnknownR = crate::BitReader;
         #[doc = "Field `RX_SUCCESS` reader - Successfully received frame is ready for the RX completion path."]
         pub type RxSuccessR = crate::BitReader;
+        #[doc = "Field `STA_BEACON_FILTER` reader - Masked station beacon-filter event. The paired ENABLE field identity is recovered from the complete disable leaf; no task-side dispatch is claimed here."]
+        pub type StaBeaconFilterR = crate::BitReader;
+        #[doc = "Field `UNKNOWN_16_18` reader - Masked event bits whose identities remain unknown."]
+        pub type Unknown16_18R = crate::FieldReader;
         #[doc = "Field `TX_TIMEOUT` reader - Hardware TX queue timeout/abort event."]
         pub type TxTimeoutR = crate::BitReader;
+        #[doc = "Field `UNKNOWN_20` reader - Masked event bit whose identity remains unknown."]
+        pub type Unknown20R = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_21_UNKNOWN` reader - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+        pub type ColdRxEnable21UnknownR = crate::BitReader;
+        #[doc = "Field `UNKNOWN_22` reader - Masked event bit whose identity remains unknown."]
+        pub type Unknown22R = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_23_UNKNOWN` reader - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+        pub type ColdRxEnable23UnknownR = crate::BitReader;
         #[doc = "Field `RX_ASSOCIATED_AUXILIARY_24` reader - Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
         pub type RxAssociatedAuxiliary24R = crate::BitReader;
+        #[doc = "Field `UNKNOWN_25_26` reader - Masked event bits whose identities remain unknown."]
+        pub type Unknown25_26R = crate::FieldReader;
+        #[doc = "Field `COLD_RX_ENABLE_27_UNKNOWN` reader - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+        pub type ColdRxEnable27UnknownR = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_28_UNKNOWN` reader - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+        pub type ColdRxEnable28UnknownR = crate::BitReader;
+        #[doc = "Field `UNKNOWN_29_31` reader - Masked event bits whose identities remain unknown."]
+        pub type Unknown29_31R = crate::FieldReader;
         impl R {
+            #[doc = "Bits 0:4 - Masked event bits whose identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_0_4(&self) -> Unknown0_4R {
+                Unknown0_4R::new((self.bits & 0x1f) as u8)
+            }
             #[doc = "Bit 5 - Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
             #[inline(always)]
             pub fn rx_associated_auxiliary_5(&self) -> RxAssociatedAuxiliary5R {
                 RxAssociatedAuxiliary5R::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bit 6 - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+            #[inline(always)]
+            pub fn cold_rx_enable_6_unknown(&self) -> ColdRxEnable6UnknownR {
+                ColdRxEnable6UnknownR::new(((self.bits >> 6) & 1) != 0)
             }
             #[doc = "Bit 7 - At least one hardware TX queue completed."]
             #[inline(always)]
@@ -30151,28 +30191,93 @@ pub mod wifi_mac_interrupt {
             pub fn bss_color_collision(&self) -> BssColorCollisionR {
                 BssColorCollisionR::new(((self.bits >> 8) & 1) != 0)
             }
+            #[doc = "Bits 9:10 - Masked event bits whose identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_9_10(&self) -> Unknown9_10R {
+                Unknown9_10R::new(((self.bits >> 9) & 3) as u8)
+            }
             #[doc = "Bit 11 - MAC watchdog event cleared by the complete dedicated leaf."]
             #[inline(always)]
             pub fn watchdog(&self) -> WatchdogR {
                 WatchdogR::new(((self.bits >> 11) & 1) != 0)
+            }
+            #[doc = "Bit 12 - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+            #[inline(always)]
+            pub fn cold_rx_enable_12_unknown(&self) -> ColdRxEnable12UnknownR {
+                ColdRxEnable12UnknownR::new(((self.bits >> 12) & 1) != 0)
+            }
+            #[doc = "Bit 13 - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+            #[inline(always)]
+            pub fn cold_rx_enable_13_unknown(&self) -> ColdRxEnable13UnknownR {
+                ColdRxEnable13UnknownR::new(((self.bits >> 13) & 1) != 0)
             }
             #[doc = "Bit 14 - Successfully received frame is ready for the RX completion path."]
             #[inline(always)]
             pub fn rx_success(&self) -> RxSuccessR {
                 RxSuccessR::new(((self.bits >> 14) & 1) != 0)
             }
+            #[doc = "Bit 15 - Masked station beacon-filter event. The paired ENABLE field identity is recovered from the complete disable leaf; no task-side dispatch is claimed here."]
+            #[inline(always)]
+            pub fn sta_beacon_filter(&self) -> StaBeaconFilterR {
+                StaBeaconFilterR::new(((self.bits >> 15) & 1) != 0)
+            }
+            #[doc = "Bits 16:18 - Masked event bits whose identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_16_18(&self) -> Unknown16_18R {
+                Unknown16_18R::new(((self.bits >> 16) & 7) as u8)
+            }
             #[doc = "Bit 19 - Hardware TX queue timeout/abort event."]
             #[inline(always)]
             pub fn tx_timeout(&self) -> TxTimeoutR {
                 TxTimeoutR::new(((self.bits >> 19) & 1) != 0)
+            }
+            #[doc = "Bit 20 - Masked event bit whose identity remains unknown."]
+            #[inline(always)]
+            pub fn unknown_20(&self) -> Unknown20R {
+                Unknown20R::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bit 21 - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+            #[inline(always)]
+            pub fn cold_rx_enable_21_unknown(&self) -> ColdRxEnable21UnknownR {
+                ColdRxEnable21UnknownR::new(((self.bits >> 21) & 1) != 0)
+            }
+            #[doc = "Bit 22 - Masked event bit whose identity remains unknown."]
+            #[inline(always)]
+            pub fn unknown_22(&self) -> Unknown22R {
+                Unknown22R::new(((self.bits >> 22) & 1) != 0)
+            }
+            #[doc = "Bit 23 - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+            #[inline(always)]
+            pub fn cold_rx_enable_23_unknown(&self) -> ColdRxEnable23UnknownR {
+                ColdRxEnable23UnknownR::new(((self.bits >> 23) & 1) != 0)
             }
             #[doc = "Bit 24 - Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."]
             #[inline(always)]
             pub fn rx_associated_auxiliary_24(&self) -> RxAssociatedAuxiliary24R {
                 RxAssociatedAuxiliary24R::new(((self.bits >> 24) & 1) != 0)
             }
+            #[doc = "Bits 25:26 - Masked event bits whose identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_25_26(&self) -> Unknown25_26R {
+                Unknown25_26R::new(((self.bits >> 25) & 3) as u8)
+            }
+            #[doc = "Bit 27 - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+            #[inline(always)]
+            pub fn cold_rx_enable_27_unknown(&self) -> ColdRxEnable27UnknownR {
+                ColdRxEnable27UnknownR::new(((self.bits >> 27) & 1) != 0)
+            }
+            #[doc = "Bit 28 - Masked event bit enabled by the complete cold receive mask; its event identity remains unknown."]
+            #[inline(always)]
+            pub fn cold_rx_enable_28_unknown(&self) -> ColdRxEnable28UnknownR {
+                ColdRxEnable28UnknownR::new(((self.bits >> 28) & 1) != 0)
+            }
+            #[doc = "Bits 29:31 - Masked event bits whose identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_29_31(&self) -> Unknown29_31R {
+                Unknown29_31R::new(((self.bits >> 29) & 7) as u8)
+            }
         }
-        #[doc = "Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf.\n\nYou can [`read`](crate::Reg::read) this register and get [`status::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf. Its bit geometry matches the complete ENABLE event bank; only independently recovered event identities are named semantically.\n\nYou can [`read`](crate::Reg::read) this register and get [`status::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct StatusSpec;
         impl crate::RegisterSpec for StatusSpec {
             type Ux = u32;
@@ -55473,6 +55578,121 @@ pub mod interrupt_snapshot {
         pub const fn bits(&self) -> u32 {
             self.0
         }
+        /// Whether the sampled register contained no asserted event.
+        #[inline]
+        pub const fn is_empty(&self) -> bool {
+            self.0 == 0
+        }
+        /// Sampled value of SVD field `UNKNOWN_0_4`.
+        #[inline]
+        pub const fn unknown_0_4(&self) -> u8 {
+            (self.0 & 0x1f) as u8
+        }
+        /// Sampled value of SVD field `RX_ASSOCIATED_AUXILIARY_5`.
+        #[inline]
+        pub const fn rx_associated_auxiliary_5(&self) -> bool {
+            self.0 & 0x00000020 != 0
+        }
+        /// Sampled value of SVD field `COLD_RX_ENABLE_6_UNKNOWN`.
+        #[inline]
+        pub const fn cold_rx_enable_6_unknown(&self) -> bool {
+            self.0 & 0x00000040 != 0
+        }
+        /// Sampled value of SVD field `TX_COMPLETE`.
+        #[inline]
+        pub const fn tx_complete(&self) -> bool {
+            self.0 & 0x00000080 != 0
+        }
+        /// Sampled value of SVD field `BSS_COLOR_COLLISION`.
+        #[inline]
+        pub const fn bss_color_collision(&self) -> bool {
+            self.0 & 0x00000100 != 0
+        }
+        /// Sampled value of SVD field `UNKNOWN_9_10`.
+        #[inline]
+        pub const fn unknown_9_10(&self) -> u8 {
+            (self.0 >> 9 & 0x3) as u8
+        }
+        /// Sampled value of SVD field `WATCHDOG`.
+        #[inline]
+        pub const fn watchdog(&self) -> bool {
+            self.0 & 0x00000800 != 0
+        }
+        /// Sampled value of SVD field `COLD_RX_ENABLE_12_UNKNOWN`.
+        #[inline]
+        pub const fn cold_rx_enable_12_unknown(&self) -> bool {
+            self.0 & 0x00001000 != 0
+        }
+        /// Sampled value of SVD field `COLD_RX_ENABLE_13_UNKNOWN`.
+        #[inline]
+        pub const fn cold_rx_enable_13_unknown(&self) -> bool {
+            self.0 & 0x00002000 != 0
+        }
+        /// Sampled value of SVD field `RX_SUCCESS`.
+        #[inline]
+        pub const fn rx_success(&self) -> bool {
+            self.0 & 0x00004000 != 0
+        }
+        /// Sampled value of SVD field `STA_BEACON_FILTER`.
+        #[inline]
+        pub const fn sta_beacon_filter(&self) -> bool {
+            self.0 & 0x00008000 != 0
+        }
+        /// Sampled value of SVD field `UNKNOWN_16_18`.
+        #[inline]
+        pub const fn unknown_16_18(&self) -> u8 {
+            (self.0 >> 16 & 0x7) as u8
+        }
+        /// Sampled value of SVD field `TX_TIMEOUT`.
+        #[inline]
+        pub const fn tx_timeout(&self) -> bool {
+            self.0 & 0x00080000 != 0
+        }
+        /// Sampled value of SVD field `UNKNOWN_20`.
+        #[inline]
+        pub const fn unknown_20(&self) -> bool {
+            self.0 & 0x00100000 != 0
+        }
+        /// Sampled value of SVD field `COLD_RX_ENABLE_21_UNKNOWN`.
+        #[inline]
+        pub const fn cold_rx_enable_21_unknown(&self) -> bool {
+            self.0 & 0x00200000 != 0
+        }
+        /// Sampled value of SVD field `UNKNOWN_22`.
+        #[inline]
+        pub const fn unknown_22(&self) -> bool {
+            self.0 & 0x00400000 != 0
+        }
+        /// Sampled value of SVD field `COLD_RX_ENABLE_23_UNKNOWN`.
+        #[inline]
+        pub const fn cold_rx_enable_23_unknown(&self) -> bool {
+            self.0 & 0x00800000 != 0
+        }
+        /// Sampled value of SVD field `RX_ASSOCIATED_AUXILIARY_24`.
+        #[inline]
+        pub const fn rx_associated_auxiliary_24(&self) -> bool {
+            self.0 & 0x01000000 != 0
+        }
+        /// Sampled value of SVD field `UNKNOWN_25_26`.
+        #[inline]
+        pub const fn unknown_25_26(&self) -> u8 {
+            (self.0 >> 25 & 0x3) as u8
+        }
+        /// Sampled value of SVD field `COLD_RX_ENABLE_27_UNKNOWN`.
+        #[inline]
+        pub const fn cold_rx_enable_27_unknown(&self) -> bool {
+            self.0 & 0x08000000 != 0
+        }
+        /// Sampled value of SVD field `COLD_RX_ENABLE_28_UNKNOWN`.
+        #[inline]
+        pub const fn cold_rx_enable_28_unknown(&self) -> bool {
+            self.0 & 0x10000000 != 0
+        }
+        /// Sampled value of SVD field `UNKNOWN_29_31`.
+        #[inline]
+        pub const fn unknown_29_31(&self) -> u8 {
+            (self.0 >> 29 & 0x7) as u8
+        }
     }
     /// Sample the complete masked event image.
     #[inline]
@@ -55509,6 +55729,41 @@ pub mod interrupt_snapshot {
         #[inline]
         pub const fn bits(&self) -> u32 {
             self.0
+        }
+        /// Whether the sampled register contained no asserted event.
+        #[inline]
+        pub const fn is_empty(&self) -> bool {
+            self.0 == 0
+        }
+        /// Sampled value of SVD field `UNKNOWN_0_3`.
+        #[inline]
+        pub const fn unknown_0_3(&self) -> u8 {
+            (self.0 & 0xf) as u8
+        }
+        /// Sampled value of SVD field `TSF_TIMER_3`.
+        #[inline]
+        pub const fn tsf_timer_3(&self) -> bool {
+            self.0 & 0x00000010 != 0
+        }
+        /// Sampled value of SVD field `TSF_TIMER_2`.
+        #[inline]
+        pub const fn tsf_timer_2(&self) -> bool {
+            self.0 & 0x00000020 != 0
+        }
+        /// Sampled value of SVD field `TSF_TIMER_1`.
+        #[inline]
+        pub const fn tsf_timer_1(&self) -> bool {
+            self.0 & 0x00000040 != 0
+        }
+        /// Sampled value of SVD field `TSF_TIMER_0`.
+        #[inline]
+        pub const fn tsf_timer_0(&self) -> bool {
+            self.0 & 0x00000080 != 0
+        }
+        /// Sampled value of SVD field `UNKNOWN_8_31`.
+        #[inline]
+        pub const fn unknown_8_31(&self) -> u32 {
+            self.0 >> 8 & 0xffffff
         }
     }
     /// Sample the complete masked event image.
@@ -55547,6 +55802,16 @@ pub mod interrupt_snapshot {
         /// Complete masked event image observed by the status read.
         #[inline]
         pub const fn bits(&self) -> u32 {
+            self.0
+        }
+        /// Whether the sampled register contained no asserted event.
+        #[inline]
+        pub const fn is_empty(&self) -> bool {
+            self.0 == 0
+        }
+        /// Sampled value of SVD field `PENDING_BITS`.
+        #[inline]
+        pub const fn pending_bits(&self) -> u32 {
             self.0
         }
     }
@@ -55588,6 +55853,16 @@ pub mod interrupt_snapshot {
         /// Complete masked event image observed by the status read.
         #[inline]
         pub const fn bits(&self) -> u32 {
+            self.0
+        }
+        /// Whether the sampled register contained no asserted event.
+        #[inline]
+        pub const fn is_empty(&self) -> bool {
+            self.0 == 0
+        }
+        /// Sampled value of SVD field `PENDING_BITS`.
+        #[inline]
+        pub const fn pending_bits(&self) -> u32 {
             self.0
         }
     }

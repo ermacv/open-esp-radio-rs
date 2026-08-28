@@ -892,7 +892,7 @@ fn ordinary_tx_ack_timeout_state(output_address: u32) -> u32 {
     let irq = open_esp_radio_esp32s31_wifi_embassy::datapath::irq::EmbassyMacIrqRuntime::<
         embassy_sync::blocking_mutex::raw::NoopRawMutex,
     >::new();
-    irq.publish(open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_TX_COMPLETE);
+    irq.publish(open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE);
     let Some(events) = irq.try_take_tx() else {
         return 8;
     };

@@ -12,7 +12,7 @@ use open_esp_radio_esp32s31_wifi_dma::{
     rx_ring::RxDmaArenaState,
 };
 use open_esp_radio_esp32s31_wifi_mac::{
-    irq::{MAC_INT_RX_SUCCESS, MacInterruptRoute},
+    irq::{EVENT_RX_SUCCESS, MacInterruptRoute},
     rx::{RxDma, RxDmaBinding, RxDmaWalkerStopped, RxPhyInfo},
 };
 use open_esp_radio_wifi_softmac::{
@@ -368,7 +368,7 @@ fn one_irq_epoch_services_durable_rx_then_returns_every_owner() {
         if poll == 0 {
             stop_polls.set(1);
             complete_beacon(&storage, 0);
-            runtime.irq.publish(MAC_INT_RX_SUCCESS);
+            runtime.irq.publish(EVENT_RX_SUCCESS);
             context.waker().wake_by_ref();
             Poll::Pending
         } else if poll == 1 {
@@ -424,7 +424,7 @@ fn saturation_is_counted_without_preventing_dma_recycle() {
         if first_poll.replace(false) {
             complete_beacon(&storage, 0);
             complete_beacon(&storage, 1);
-            runtime.irq.publish(MAC_INT_RX_SUCCESS);
+            runtime.irq.publish(EVENT_RX_SUCCESS);
             context.waker().wake_by_ref();
             Poll::Pending
         } else {
@@ -472,7 +472,7 @@ fn bounded_filter_runs_before_the_sink_and_stop_recovers_current_last() {
         if poll == 0 {
             stop_polls.set(1);
             complete_beacon(&storage, 0);
-            runtime.irq.publish(MAC_INT_RX_SUCCESS);
+            runtime.irq.publish(EVENT_RX_SUCCESS);
             context.waker().wake_by_ref();
             Poll::Pending
         } else if poll == 1 {

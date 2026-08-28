@@ -541,50 +541,76 @@ impl RadioHardware {
     }
 }
 
-/// Known MAC interrupt bits recovered from reviewed vendor transactions.
+/// Semantic MAC work causes recovered from reviewed vendor transactions.
 ///
-/// Construction from a raw integer is deliberately crate-private. Public
-/// code may combine known constants, but cannot invent a writable bit.
+/// This type is deliberately not a register image. The generated PAC owns
+/// STATUS field geometry; higher layers can only combine named causes.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct MacInterruptEvents(u32);
+pub struct MacInterruptEvents {
+    tx_complete: bool,
+    collision: bool,
+    rx_success: bool,
+    tx_timeout: bool,
+}
 
 impl MacInterruptEvents {
-    pub const TX_COMPLETE: Self = Self(0x0000_0080);
-    pub const COLLISION: Self = Self(0x0000_0100);
-    pub const WATCHDOG: Self = Self(0x0000_0800);
-    pub const RX_SUCCESS: Self = Self(0x0000_4000);
-    pub const TX_TIMEOUT: Self = Self(0x0008_0000);
-    pub const RX_ASSOCIATED_AUXILIARY_5: Self = Self(1 << 5);
-    pub const RX_ASSOCIATED_AUXILIARY_24: Self = Self(1 << 24);
-
-    const WORK: Self = Self::TX_COMPLETE
-        .union(Self::COLLISION)
-        .union(Self::RX_SUCCESS)
-        .union(Self::TX_TIMEOUT);
-    const RX_ASSOCIATED_AUXILIARY: Self =
-        Self::RX_ASSOCIATED_AUXILIARY_5.union(Self::RX_ASSOCIATED_AUXILIARY_24);
+    pub const TX_COMPLETE: Self = Self::from_causes(true, false, false, false);
+    pub const COLLISION: Self = Self::from_causes(false, true, false, false);
+    pub const RX_SUCCESS: Self = Self::from_causes(false, false, true, false);
+    pub const TX_TIMEOUT: Self = Self::from_causes(false, false, false, true);
 
     pub const fn empty() -> Self {
-        Self(0)
+        Self::from_causes(false, false, false, false)
+    }
+
+    pub const fn from_causes(
+        tx_complete: bool,
+        collision: bool,
+        rx_success: bool,
+        tx_timeout: bool,
+    ) -> Self {
+        Self {
+            tx_complete,
+            collision,
+            rx_success,
+            tx_timeout,
+        }
     }
 
     pub const fn union(self, other: Self) -> Self {
-        Self(self.0 | other.0)
+        Self::from_causes(
+            self.tx_complete || other.tx_complete,
+            self.collision || other.collision,
+            self.rx_success || other.rx_success,
+            self.tx_timeout || other.tx_timeout,
+        )
     }
 
     pub const fn contains(self, other: Self) -> bool {
-        self.0 & other.0 == other.0
+        (!other.tx_complete || self.tx_complete)
+            && (!other.collision || self.collision)
+            && (!other.rx_success || self.rx_success)
+            && (!other.tx_timeout || self.tx_timeout)
     }
 
-    /// Numeric observation for protocol dispatch and diagnostics.
-    ///
-    /// This is read-only evidence: there is no public inverse constructor.
-    pub const fn bits(self) -> u32 {
-        self.0
+    pub const fn is_empty(self) -> bool {
+        !self.tx_complete && !self.collision && !self.rx_success && !self.tx_timeout
     }
 
-    const fn from_observation(bits: u32) -> Self {
-        Self(bits)
+    pub const fn tx_complete(self) -> bool {
+        self.tx_complete
+    }
+
+    pub const fn collision(self) -> bool {
+        self.collision
+    }
+
+    pub const fn rx_success(self) -> bool {
+        self.rx_success
+    }
+
+    pub const fn tx_timeout(self) -> bool {
+        self.tx_timeout
     }
 }
 
@@ -603,48 +629,42 @@ impl core::ops::BitOr for MacInterruptEvents {
 /// without applying masks to the sampled register themselves.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct MacInterruptObservation {
-    raw_evidence: u32,
     work_events: MacInterruptEvents,
-    auxiliary_events: MacInterruptEvents,
-    unknown_bits: u32,
+    auxiliary_event: bool,
+    unhandled_event: bool,
 }
 
 impl MacInterruptObservation {
-    /// Classify a read-only status image supplied by a platform test double.
+    /// Construct semantic evidence for a host-side interrupt implementation.
     ///
-    /// This does not create a writable register image or MMIO authority. It
-    /// exists so host ports exercise the same PAC-owned classification as the
-    /// generated peripheral owner.
-    pub const fn classify_evidence(raw_evidence: u32) -> Self {
-        let work_events = raw_evidence & MacInterruptEvents::WORK.0;
-        let auxiliary_events = raw_evidence & MacInterruptEvents::RX_ASSOCIATED_AUXILIARY.0;
-        let classified = MacInterruptEvents::WORK.0 | MacInterruptEvents::RX_ASSOCIATED_AUXILIARY.0;
+    /// No register image enters this API: test doubles name the causes they
+    /// simulate in the same vocabulary consumed by the MAC driver.
+    pub const fn from_semantic_events(
+        work_events: MacInterruptEvents,
+        auxiliary_event: bool,
+        unhandled_event: bool,
+    ) -> Self {
         Self {
-            raw_evidence,
-            work_events: MacInterruptEvents::from_observation(work_events),
-            auxiliary_events: MacInterruptEvents::from_observation(auxiliary_events),
-            unknown_bits: raw_evidence & !classified,
+            work_events,
+            auxiliary_event,
+            unhandled_event,
         }
     }
 
     pub const fn is_empty(self) -> bool {
-        self.raw_evidence == 0
-    }
-
-    pub const fn raw_evidence(self) -> u32 {
-        self.raw_evidence
+        self.work_events.is_empty() && !self.auxiliary_event && !self.unhandled_event
     }
 
     pub const fn work_events(self) -> MacInterruptEvents {
         self.work_events
     }
 
-    pub const fn auxiliary_events(self) -> MacInterruptEvents {
-        self.auxiliary_events
+    pub const fn has_auxiliary_event(self) -> bool {
+        self.auxiliary_event
     }
 
-    pub const fn unknown_bits(self) -> u32 {
-        self.unknown_bits
+    pub const fn has_unhandled_event(self) -> bool {
+        self.unhandled_event
     }
 }
 
@@ -653,7 +673,37 @@ pub struct MacInterruptSnapshot(svd::interrupt_snapshot::MacInterruptSnapshot);
 
 impl MacInterruptSnapshot {
     pub fn observation(&self) -> MacInterruptObservation {
-        MacInterruptObservation::classify_evidence(self.0.bits())
+        let work_events = MacInterruptEvents::from_causes(
+            self.0.tx_complete(),
+            self.0.bss_color_collision(),
+            self.0.rx_success(),
+            self.0.tx_timeout(),
+        );
+        let auxiliary_event =
+            self.0.rx_associated_auxiliary_5() || self.0.rx_associated_auxiliary_24();
+        let unhandled_event = self.0.unknown_0_4() != 0
+            || self.0.cold_rx_enable_6_unknown()
+            || self.0.unknown_9_10() != 0
+            || self.0.watchdog()
+            || self.0.cold_rx_enable_12_unknown()
+            || self.0.cold_rx_enable_13_unknown()
+            || self.0.sta_beacon_filter()
+            || self.0.unknown_16_18() != 0
+            || self.0.unknown_20()
+            || self.0.cold_rx_enable_21_unknown()
+            || self.0.unknown_22()
+            || self.0.cold_rx_enable_23_unknown()
+            || self.0.unknown_25_26() != 0
+            || self.0.cold_rx_enable_27_unknown()
+            || self.0.cold_rx_enable_28_unknown()
+            || self.0.unknown_29_31() != 0;
+        MacInterruptObservation::from_semantic_events(work_events, auxiliary_event, unhandled_event)
+    }
+
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn validation_bits(&self) -> u32 {
+        self.0.bits()
     }
 
     #[cfg(feature = "validation-probes")]
@@ -667,7 +717,19 @@ impl MacInterruptSnapshot {
 pub struct MacPowerInterruptSnapshot(svd::interrupt_snapshot::MacPowerInterruptSnapshot);
 
 impl MacPowerInterruptSnapshot {
-    pub fn bits(&self) -> u32 {
+    pub fn observation(&self) -> MacPowerInterruptObservation {
+        MacPowerInterruptObservation::from_semantic_events(
+            self.0.tsf_timer_0(),
+            self.0.tsf_timer_1(),
+            self.0.tsf_timer_2(),
+            self.0.tsf_timer_3(),
+            self.0.unknown_0_3() != 0 || self.0.unknown_8_31() != 0,
+        )
+    }
+
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn validation_bits(&self) -> u32 {
         self.0.bits()
     }
 
@@ -677,6 +739,68 @@ impl MacPowerInterruptSnapshot {
         Self(svd::interrupt_snapshot::mac_power_interrupt_for_validation(
             bits,
         ))
+    }
+}
+
+/// Semantic WDEVPWR causes sampled through generated PAC field accessors.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct MacPowerInterruptObservation(u8);
+
+impl MacPowerInterruptObservation {
+    // Driver-local semantic flags. Their positions intentionally do not match
+    // WDEVPWR register geometry, which remains behind generated accessors.
+    const TSF_TIMER_0: u8 = 0x01;
+    const TSF_TIMER_1: u8 = 0x02;
+    const TSF_TIMER_2: u8 = 0x04;
+    const TSF_TIMER_3: u8 = 0x08;
+    const UNHANDLED_EVENT: u8 = 0x10;
+
+    pub const fn from_semantic_events(
+        tsf_timer_0: bool,
+        tsf_timer_1: bool,
+        tsf_timer_2: bool,
+        tsf_timer_3: bool,
+        unhandled_event: bool,
+    ) -> Self {
+        Self(
+            (if tsf_timer_0 { Self::TSF_TIMER_0 } else { 0 })
+                | (if tsf_timer_1 { Self::TSF_TIMER_1 } else { 0 })
+                | (if tsf_timer_2 { Self::TSF_TIMER_2 } else { 0 })
+                | (if tsf_timer_3 { Self::TSF_TIMER_3 } else { 0 })
+                | (if unhandled_event {
+                    Self::UNHANDLED_EVENT
+                } else {
+                    0
+                }),
+        )
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
+    pub const fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+
+    pub const fn tsf_timer_0(self) -> bool {
+        self.0 & Self::TSF_TIMER_0 != 0
+    }
+
+    pub const fn tsf_timer_1(self) -> bool {
+        self.0 & Self::TSF_TIMER_1 != 0
+    }
+
+    pub const fn tsf_timer_2(self) -> bool {
+        self.0 & Self::TSF_TIMER_2 != 0
+    }
+
+    pub const fn tsf_timer_3(self) -> bool {
+        self.0 & Self::TSF_TIMER_3 != 0
+    }
+
+    pub const fn has_unhandled_event(self) -> bool {
+        self.0 & Self::UNHANDLED_EVENT != 0
     }
 }
 

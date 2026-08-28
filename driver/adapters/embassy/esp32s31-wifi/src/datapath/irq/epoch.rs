@@ -4,7 +4,7 @@
 )]
 
 use open_esp_radio_embassy_net::RawMutex;
-use open_esp_radio_esp32s31_hal::types::MacInterruptMask;
+use open_esp_radio_esp32s31_hal::types::{MacInterruptMask, MacPowerInterruptObservation};
 use open_esp_radio_esp32s31_wifi_mac::irq::MacInterruptRoute;
 
 use super::{EmbassyMacIrqDrain, EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime};
@@ -32,7 +32,7 @@ pub enum Esp32s31MacInterruptEpochQuiesceError<E> {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Esp32s31MacInterruptEpochDrain {
     pub mac: EmbassyMacIrqDrain,
-    pub power_events: u32,
+    pub power_events: MacPowerInterruptObservation,
 }
 
 /// Persistent setup owner for repeated connected MAC interrupt epochs.

@@ -1177,10 +1177,16 @@ fn observe_mac_irq(observation: Esp32s31MacIrqObservation) {
         Esp32s31MacIrqObservation::RxEpoch => RX_PIPELINE.record_rx_irq_epoch(),
         Esp32s31MacIrqObservation::TxEpoch => AGGREGATE_TX.record_tx_irq_epoch(now_micros),
         Esp32s31MacIrqObservation::Entry {
-            first_status,
-            observed_status,
-            nonzero_snapshots,
-        } => MAC_IRQ.record(first_status, observed_status, u32::from(nonzero_snapshots)),
+            had_status,
+            posted_events,
+            had_auxiliary_event,
+            had_unhandled_event,
+        } => MAC_IRQ.record(
+            had_status,
+            posted_events,
+            had_auxiliary_event,
+            had_unhandled_event,
+        ),
     }
 }
 

@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use svd_rs::Device;
+use svd_rs::{Device, MaybeArray};
 
 use crate::{Error, PacApiPack, Result, pac_api_svd};
 
@@ -223,7 +223,7 @@ impl PacApiPack {
         let mut output = String::new();
         output.push_str(&self.render_feature_modules());
         output.push_str(&self.render_sidecar_modules());
-        output.push_str(&self.render_interrupt_snapshots());
+        output.push_str(&self.render_interrupt_snapshots(&device)?);
         if !self.ownership_partitions.is_empty() {
             output.push_str(&self.render_peripheral_ownership(&device)?);
         }
@@ -262,9 +262,9 @@ impl PacApiPack {
         output
     }
 
-    fn render_interrupt_snapshots(&self) -> String {
+    fn render_interrupt_snapshots(&self, device: &Device) -> Result<String> {
         if self.interrupt_snapshots.is_empty() {
-            return String::new();
+            return Ok(String::new());
         }
         let mut output = String::from(
             "\n/// Safe, SVD-declared read-and-acknowledge interrupt transactions.\n\
@@ -275,6 +275,55 @@ impl PacApiPack {
             let peripheral_type = type_binding_name(&binding.peripheral);
             let status = member_binding_name(&binding.status_register);
             let clear = member_binding_name(&binding.clear_register);
+            let status_binding = pac_api_svd::register(
+                device,
+                &binding.name,
+                &binding.peripheral,
+                &binding.status_register,
+            )?;
+            let fields = status_binding.info.fields.as_deref().ok_or_else(|| {
+                Error::message(format!(
+                    "PAC API interrupt snapshot {:?} status register has no fields",
+                    binding.name
+                ))
+            })?;
+            let mut field_accessors = String::new();
+            for field in fields {
+                let MaybeArray::Single(field) = field else {
+                    return Err(Error::message(format!(
+                        "PAC API interrupt snapshot {:?} does not support array field {:?}",
+                        binding.name, field.name
+                    )));
+                };
+                let width = field.bit_width();
+                let offset = field.bit_offset();
+                let method = member_binding_name(&field.name);
+                let shifted = if offset == 0 {
+                    "self.0".to_owned()
+                } else {
+                    format!("self.0 >> {offset}")
+                };
+                let (value_type, expression) = match width {
+                    1 => ("bool", format!("self.0 & 0x{:08x} != 0", 1_u32 << offset)),
+                    2..=8 => (
+                        "u8",
+                        format!("({shifted} & 0x{:x}) as u8", (1_u64 << width) - 1),
+                    ),
+                    9..=16 => (
+                        "u16",
+                        format!("({shifted} & 0x{:x}) as u16", (1_u64 << width) - 1),
+                    ),
+                    17..=31 => ("u32", format!("{shifted} & 0x{:x}", (1_u64 << width) - 1)),
+                    32 => ("u32", "self.0".to_owned()),
+                    _ => unreachable!("SVD validation rejects invalid field widths"),
+                };
+                field_accessors.push_str(&format!(
+                    "        /// Sampled value of SVD field `{}`.\n\
+                     #[inline]\n\
+                     pub const fn {method}(&self) -> {value_type} {{ {expression} }}\n",
+                    field.name,
+                ));
+            }
             output.push_str(&format!(
                 "\n    /// Opaque event image sampled from `{}`.`{}`.\n\
                  #[must_use = \"an interrupt snapshot must be inspected and acknowledged\"]\n\
@@ -284,6 +333,10 @@ impl PacApiPack {
                      /// Complete masked event image observed by the status read.\n\
                      #[inline]\n\
                      pub const fn bits(&self) -> u32 {{ self.0 }}\n\
+                     /// Whether the sampled register contained no asserted event.\n\
+                     #[inline]\n\
+                     pub const fn is_empty(&self) -> bool {{ self.0 == 0 }}\n\
+{field_accessors}\
                  }}\n\
                  /// Sample the complete masked event image.\n\
                  #[inline]\n\
@@ -316,7 +369,7 @@ impl PacApiPack {
             ));
         }
         output.push_str("}\n");
-        output
+        Ok(output)
     }
 
     fn render_peripheral_ownership(&self, device: &Device) -> Result<String> {
@@ -1064,6 +1117,48 @@ name = "interrupt_route_observation"
             pack.render_sidecar_modules(),
             "\n#[doc(hidden)]\npub mod interrupt_route_observation;\n"
         );
+    }
+
+    #[test]
+    fn interrupt_snapshot_exposes_status_fields_without_public_construction() {
+        let pack: PacApiPack = toml_edit::de::from_str(
+            r#"schema = 4
+
+[[interrupt-snapshots]]
+name = "radio_interrupt"
+peripheral = "RADIO"
+status-register = "STATUS"
+clear-register = "CLEAR"
+sources = ["PUBLIC_IRQ"]
+"#,
+        )
+        .unwrap();
+        let svd = r#"<?xml version="1.0" encoding="UTF-8"?>
+<device schemaVersion="1.3" xmlns:xs="http://www.w3.org/2001/XMLSchema-instance">
+  <name>FIXTURE</name><version>1</version><description>interrupt snapshot fixture</description>
+  <addressUnitBits>8</addressUnitBits><width>32</width>
+  <peripherals><peripheral>
+    <name>RADIO</name><description>radio</description><baseAddress>0x40000000</baseAddress>
+    <registers>
+      <register><name>STATUS</name><description>status</description><addressOffset>0</addressOffset><size>32</size><access>read-only</access>
+        <fields>
+          <field><name>READY</name><description>ready</description><bitOffset>3</bitOffset><bitWidth>1</bitWidth></field>
+          <field><name>OPAQUE_CAUSES</name><description>opaque causes</description><bitOffset>8</bitOffset><bitWidth>6</bitWidth></field>
+        </fields>
+      </register>
+      <register><name>CLEAR</name><description>clear</description><addressOffset>4</addressOffset><size>32</size><access>write-only</access><modifiedWriteValues>oneToClear</modifiedWriteValues>
+        <fields><field><name>EVENTS</name><description>events</description><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+      </register>
+    </registers>
+  </peripheral></peripherals>
+</device>
+"#;
+
+        let source = pack.render_rust(svd).unwrap();
+        assert!(source.contains("pub const fn ready(&self) -> bool"));
+        assert!(source.contains("pub const fn opaque_causes(&self) -> u8"));
+        assert!(source.contains("pub const fn is_empty(&self) -> bool"));
+        assert!(!source.contains("pub const fn from_bits"));
     }
 
     #[test]

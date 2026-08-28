@@ -1298,7 +1298,7 @@ mod tests {
             crate::test_support::block_on(tx.service(
                 &mut hardware,
                 WifiTxWake::Interrupt {
-                    events: open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_TX_COMPLETE,
+                    events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
                 },
             )),
             Ok(WifiTxProgress::Complete)
@@ -1435,7 +1435,7 @@ mod tests {
             crate::test_support::block_on(tx.service(
                 &mut hardware,
                 WifiTxWake::Interrupt {
-                    events: open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_TX_COMPLETE,
+                    events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
                 },
             )),
             Ok(WifiTxProgress::Pending)
@@ -1451,7 +1451,7 @@ mod tests {
             crate::test_support::block_on(tx.service(
                 &mut hardware,
                 WifiTxWake::Interrupt {
-                    events: open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_TX_COMPLETE,
+                    events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
                 },
             )),
             Ok(WifiTxProgress::Complete)
@@ -1512,7 +1512,7 @@ mod tests {
             crate::test_support::block_on(tx.service(
                 &mut hardware,
                 WifiTxWake::Interrupt {
-                    events: open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_TX_COMPLETE,
+                    events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
                 },
             )),
             Ok(WifiTxProgress::Complete)
@@ -1546,7 +1546,7 @@ mod tests {
             crate::test_support::block_on(tx.service(
                 &mut hardware,
                 WifiTxWake::Interrupt {
-                    events: open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_TX_COMPLETE,
+                    events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
                 },
             )),
             Ok(WifiTxProgress::Complete)
@@ -1587,7 +1587,7 @@ mod tests {
             crate::test_support::block_on(tx.service(
                 &mut hardware,
                 WifiTxWake::Interrupt {
-                    events: open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_TX_COMPLETE,
+                    events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
                 },
             )),
             Ok(WifiTxProgress::Complete)
@@ -1627,7 +1627,7 @@ mod tests {
             crate::test_support::block_on(tx.service(
                 &mut hardware,
                 WifiTxWake::Interrupt {
-                    events: open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_TX_COMPLETE,
+                    events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
                 },
             )),
             Ok(WifiTxProgress::Pending)
@@ -1650,7 +1650,7 @@ mod tests {
             crate::test_support::block_on(tx.service(
                 &mut hardware,
                 WifiTxWake::Interrupt {
-                    events: open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_TX_COMPLETE,
+                    events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_COMPLETE,
                 },
             )),
             Ok(WifiTxProgress::Complete)
@@ -1683,7 +1683,7 @@ mod tests {
         tx.start(&mut hardware, &ethernet()).unwrap();
         hardware.timeout = true;
         let timeout = WifiTxWake::Interrupt {
-            events: open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_TX_TIMEOUT,
+            events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_TX_TIMEOUT,
         };
 
         assert_eq!(
@@ -1713,7 +1713,7 @@ mod tests {
         tx.start(&mut hardware, &ethernet()).unwrap();
         hardware.collision = true;
         let collision = WifiTxWake::Interrupt {
-            events: open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_COLLISION,
+            events: open_esp_radio_esp32s31_wifi_mac::irq::EVENT_COLLISION,
         };
 
         for collision_number in 1..=VENDOR_SHORT_RETRY_LIMIT {

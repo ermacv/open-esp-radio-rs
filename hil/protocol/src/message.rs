@@ -1578,7 +1578,7 @@ pub struct RxRadioEvidence {
     pub dma_fifo_overflow: u32,
     pub network_dropped: u32,
     pub irq_drain_saturated: u32,
-    pub unknown_irq_status: u32,
+    pub unhandled_irq_entries: u32,
     pub sequence_first: Option<u32>,
     pub sequence_highest: Option<u32>,
     pub sequence_gap_events: u32,

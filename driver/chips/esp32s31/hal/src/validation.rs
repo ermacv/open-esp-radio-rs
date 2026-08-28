@@ -29,8 +29,7 @@ pub fn hal_get_sta_tsf(low: Option<&mut u32>, high: Option<&mut u32>) {
 pub fn hal_mac_interrupt_get_event() -> u32 {
     validation_mac_interrupt_registers()
         .mac_interrupt_status()
-        .observation()
-        .raw_evidence()
+        .validation_bits()
 }
 
 #[inline(always)]
@@ -51,7 +50,7 @@ pub fn hal_disable_sta_beacon_filter() {
 pub fn hal_pwr_interrupt_get_event() -> u32 {
     validation_mac_power_interrupt_registers()
         .power_interrupt_status()
-        .bits()
+        .validation_bits()
 }
 
 #[inline(always)]

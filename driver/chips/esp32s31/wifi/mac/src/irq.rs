@@ -1,10 +1,11 @@
 //! Allocation-free MAC ISR to Embassy-task event handoff.
 
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use open_esp_radio_esp32s31_hal::{
     MacInterruptEvents, MacInterruptMask, MacInterruptObservation, MacInterruptRegisters,
-    MacInterruptSnapshot, MacPowerInterruptRegisters, MacPowerInterruptSnapshot,
+    MacInterruptSnapshot, MacPowerInterruptObservation, MacPowerInterruptRegisters,
+    MacPowerInterruptSnapshot,
 };
 
 /// Platform route which lends both interrupt-register capabilities to hard
@@ -31,57 +32,45 @@ pub trait MacInterruptRoute {
     fn quiesce(&mut self, platform: &Self::Platform) -> Result<Self::Setup, Self::Error>;
 }
 
-pub const MAC_INT_TX_COMPLETE: u32 = MacInterruptEvents::TX_COMPLETE.bits();
-pub const MAC_INT_COLLISION: u32 = MacInterruptEvents::COLLISION.bits();
-pub const MAC_INT_RX_SUCCESS: u32 = MacInterruptEvents::RX_SUCCESS.bits();
-pub const MAC_INT_TX_TIMEOUT: u32 = MacInterruptEvents::TX_TIMEOUT.bits();
-
-/// Status bits observed alongside [`MAC_INT_RX_SUCCESS`] during sustained
-/// HE20 receive traffic. The vendor FIQ acknowledges both in its full-image
-/// W1C but does not dispatch either as an independent work item. Their
-/// hardware semantics remain unknown, so they intentionally stay outside
-/// the PAC's qualified work-event set.
-pub const MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK: u32 = MacInterruptEvents::RX_ASSOCIATED_AUXILIARY_5
-    .union(MacInterruptEvents::RX_ASSOCIATED_AUXILIARY_24)
-    .bits();
-
 /// Finite MAC interrupt capability used by the hard ISR.
 ///
 /// Production delegates both operations to generated PAC registers. Its
 /// associated snapshot is opaque and can only be acknowledged once. Tests
-/// can model the same ordering with a plain value and no MMIO identity.
-pub trait InterruptStatusSnapshot {
-    fn bits(&self) -> u32;
-
-    fn observation(&self) -> MacInterruptObservation {
-        MacInterruptObservation::classify_evidence(self.bits())
-    }
+/// model the same ordering with semantic observations and no MMIO identity.
+pub trait MacInterruptStatusSnapshot {
+    fn observation(&self) -> MacInterruptObservation;
 }
 
-impl InterruptStatusSnapshot for u32 {
-    fn bits(&self) -> u32 {
-        *self
-    }
-}
-
-impl InterruptStatusSnapshot for MacInterruptSnapshot {
-    fn bits(&self) -> u32 {
-        self.observation().raw_evidence()
-    }
-
+impl MacInterruptStatusSnapshot for MacInterruptSnapshot {
     fn observation(&self) -> MacInterruptObservation {
         MacInterruptSnapshot::observation(self)
     }
 }
 
-impl InterruptStatusSnapshot for MacPowerInterruptSnapshot {
-    fn bits(&self) -> u32 {
-        MacPowerInterruptSnapshot::bits(self)
+impl MacInterruptStatusSnapshot for MacInterruptObservation {
+    fn observation(&self) -> MacInterruptObservation {
+        *self
+    }
+}
+
+pub trait MacPowerInterruptStatusSnapshot {
+    fn observation(&self) -> MacPowerInterruptObservation;
+}
+
+impl MacPowerInterruptStatusSnapshot for MacPowerInterruptSnapshot {
+    fn observation(&self) -> MacPowerInterruptObservation {
+        MacPowerInterruptSnapshot::observation(self)
+    }
+}
+
+impl MacPowerInterruptStatusSnapshot for MacPowerInterruptObservation {
+    fn observation(&self) -> MacPowerInterruptObservation {
+        *self
     }
 }
 
 pub trait MacInterrupt {
-    type Snapshot: InterruptStatusSnapshot;
+    type Snapshot: MacInterruptStatusSnapshot;
 
     fn status(&mut self) -> Self::Snapshot;
     fn mask_rx_delivery(&mut self) {}
@@ -104,14 +93,13 @@ impl MacInterrupt for MacInterruptRegisters {
     }
 }
 
-/// Finite opaque WDEVPWR interrupt capability used by the hard ISR.
+/// Finite WDEVPWR interrupt capability used by the hard ISR.
 ///
-/// Cause meanings deliberately do not appear in this trait. The current
-/// qualification proves only the complete masked STATUS image and exact W1C
-/// acknowledgement; policy code must not infer sleep semantics from an
-/// unqualified bit number.
+/// The PAC snapshot exposes the reviewed TSF-timer causes as named fields and
+/// groups every still-unknown cause as unhandled. Policy code never receives a
+/// register image or an unqualified hardware bit number.
 pub trait MacPowerInterrupt {
-    type Snapshot: InterruptStatusSnapshot;
+    type Snapshot: MacPowerInterruptStatusSnapshot;
 
     fn status(&mut self) -> Self::Snapshot;
     fn acknowledge(&mut self, snapshot: Self::Snapshot);
@@ -153,15 +141,6 @@ pub enum IrqWork {
 }
 
 impl IrqWork {
-    pub const fn mac_bit(self) -> u32 {
-        match self {
-            Self::RxSuccess => MAC_INT_RX_SUCCESS,
-            Self::TxComplete => MAC_INT_TX_COMPLETE,
-            Self::TxTimeout => MAC_INT_TX_TIMEOUT,
-            Self::Collision => MAC_INT_COLLISION,
-        }
-    }
-
     pub const fn event_bit(self) -> u32 {
         match self {
             Self::RxSuccess => EVENT_RX_SUCCESS,
@@ -174,20 +153,20 @@ impl IrqWork {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct IrqEvent {
-    pub mac_pending: u32,
-    pub event_mask: u32,
+    /// Driver-local task event mask, never a hardware register image.
+    pub events: u32,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct IrqSnapshot {
-    pub status: u32,
-    pub pending: u32,
-    pub handled: u32,
-    /// Known W1C status which does not create an independent work item.
-    pub auxiliary: u32,
-    /// Bits which have neither a qualified work mapping nor an observed
-    /// acknowledgement-only classification.
-    pub unhandled: u32,
+    /// Whether the generated PAC observed at least one asserted STATUS field.
+    pub had_status: bool,
+    /// Driver-local task event mask posted by this handler invocation.
+    pub posted_events: u32,
+    /// Known STATUS fields acknowledged without an independent work item.
+    pub had_auxiliary_event: bool,
+    /// At least one non-dispatched STATUS field was asserted.
+    pub had_unhandled_event: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -198,10 +177,10 @@ pub enum IrqDisposition {
     AcknowledgedOnly,
 }
 
-/// Duplicate interrupts coalesce by raw MAC bit, matching the C worker latch.
+/// Duplicate interrupts coalesce by driver-local event kind, matching the C worker latch.
 pub trait IrqSink {
-    fn post(&self, mac_pending: u32);
-    fn record_unhandled(&self, bits: u32);
+    fn post(&self, events: u32);
+    fn record_unhandled_event(&self);
 
     /// Whether this connected epoch owns task-side RX source moderation.
     fn moderate_rx_success(&self) -> bool {
@@ -209,14 +188,14 @@ pub trait IrqSink {
     }
 }
 
-/// Sink for an acknowledged but otherwise opaque WDEVPWR event image.
+/// Sink for acknowledged WDEVPWR causes classified by the PAC.
 pub trait PowerIrqSink {
-    fn post_power(&self, pending: u32);
+    fn post_power(&self, observation: MacPowerInterruptObservation);
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PowerIrqSnapshot {
-    pub status: u32,
+    pub observation: MacPowerInterruptObservation,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -231,45 +210,45 @@ pub enum PowerIrqDisposition {
 /// keeps the MAC crate independent of Embassy while retaining the exact
 /// interrupt/event mapping.
 pub struct IrqState {
-    pending_mac: AtomicU32,
-    observed_unhandled: AtomicU32,
+    pending_events: AtomicU32,
+    observed_unhandled: AtomicBool,
 }
 
 impl IrqState {
     pub const fn new() -> Self {
         Self {
-            pending_mac: AtomicU32::new(0),
-            observed_unhandled: AtomicU32::new(0),
+            pending_events: AtomicU32::new(0),
+            observed_unhandled: AtomicBool::new(false),
         }
     }
 
     #[inline]
-    pub fn post(&self, mac_pending: u32) {
-        self.pending_mac.fetch_or(mac_pending, Ordering::Release);
+    pub fn post(&self, events: u32) {
+        self.pending_events.fetch_or(events, Ordering::Release);
     }
 
     #[inline]
-    pub fn record_unhandled(&self, bits: u32) {
-        self.observed_unhandled.fetch_or(bits, Ordering::Relaxed);
+    pub fn record_unhandled_event(&self) {
+        self.observed_unhandled.store(true, Ordering::Relaxed);
     }
 
-    pub fn observed_unhandled(&self) -> u32 {
+    pub fn observed_unhandled(&self) -> bool {
         self.observed_unhandled.load(Ordering::Relaxed)
     }
 
     /// Take one pending action in the instruction-exact vendor ISR order.
     ///
-    /// Duplicate edges still coalesce by raw MAC bit, matching `pp_post` for
+    /// Duplicate edges still coalesce by task event kind, matching `pp_post` for
     /// these event kinds. Unlike [`try_take`](Self::try_take), this method
     /// preserves the ordering between different kinds and is suitable for a
     /// run-to-completion Embassy dispatcher.
     pub fn try_take_next(&self) -> Option<IrqWork> {
-        let mut pending = self.pending_mac.load(Ordering::Acquire);
+        let mut pending = self.pending_events.load(Ordering::Acquire);
         loop {
             let work = next_irq_work(pending)?;
-            match self.pending_mac.compare_exchange_weak(
+            match self.pending_events.compare_exchange_weak(
                 pending,
-                pending & !work.mac_bit(),
+                pending & !work.event_bit(),
                 Ordering::AcqRel,
                 Ordering::Acquire,
             ) {
@@ -280,26 +259,23 @@ impl IrqState {
     }
 
     pub fn try_take(&self) -> Option<IrqEvent> {
-        let mac_pending = self.pending_mac.swap(0, Ordering::AcqRel);
-        (mac_pending != 0).then(|| IrqEvent {
-            mac_pending,
-            event_mask: event_mask(mac_pending),
-        })
+        let events = self.pending_events.swap(0, Ordering::AcqRel);
+        (events != 0).then_some(IrqEvent { events })
     }
 }
 
-/// Select one action from a raw pending image in recovered vendor order.
+/// Select one action from a driver-local task event set in recovered vendor order.
 ///
 /// Keeping selection pure lets validation probes exercise the same production
 /// decision without depending on the executor's atomic-instruction model.
 pub const fn next_irq_work(pending: u32) -> Option<IrqWork> {
-    if pending & MAC_INT_RX_SUCCESS != 0 {
+    if pending & EVENT_RX_SUCCESS != 0 {
         Some(IrqWork::RxSuccess)
-    } else if pending & MAC_INT_TX_COMPLETE != 0 {
+    } else if pending & EVENT_TX_COMPLETE != 0 {
         Some(IrqWork::TxComplete)
-    } else if pending & MAC_INT_TX_TIMEOUT != 0 {
+    } else if pending & EVENT_TX_TIMEOUT != 0 {
         Some(IrqWork::TxTimeout)
-    } else if pending & MAC_INT_COLLISION != 0 {
+    } else if pending & EVENT_COLLISION != 0 {
         Some(IrqWork::Collision)
     } else {
         None
@@ -307,12 +283,12 @@ pub const fn next_irq_work(pending: u32) -> Option<IrqWork> {
 }
 
 impl IrqSink for IrqState {
-    fn post(&self, mac_pending: u32) {
-        self.post(mac_pending);
+    fn post(&self, events: u32) {
+        IrqState::post(self, events);
     }
 
-    fn record_unhandled(&self, bits: u32) {
-        self.record_unhandled(bits);
+    fn record_unhandled_event(&self) {
+        IrqState::record_unhandled_event(self);
     }
 }
 
@@ -322,21 +298,21 @@ impl Default for IrqState {
     }
 }
 
-pub const fn event_mask(mac_pending: u32) -> u32 {
-    let mut events = 0;
-    if mac_pending & MAC_INT_TX_COMPLETE != 0 {
-        events |= EVENT_TX_COMPLETE;
+pub const fn event_mask(causes: MacInterruptEvents) -> u32 {
+    let mut mask = 0;
+    if causes.tx_complete() {
+        mask |= EVENT_TX_COMPLETE;
     }
-    if mac_pending & MAC_INT_TX_TIMEOUT != 0 {
-        events |= EVENT_TX_TIMEOUT;
+    if causes.tx_timeout() {
+        mask |= EVENT_TX_TIMEOUT;
     }
-    if mac_pending & MAC_INT_COLLISION != 0 {
-        events |= EVENT_COLLISION;
+    if causes.collision() {
+        mask |= EVENT_COLLISION;
     }
-    if mac_pending & MAC_INT_RX_SUCCESS != 0 {
-        events |= EVENT_RX_SUCCESS;
+    if causes.rx_success() {
+        mask |= EVENT_RX_SUCCESS;
     }
-    events
+    mask
 }
 
 /// Handles exactly one MAC status snapshot and posts only the four recovered
@@ -348,17 +324,13 @@ pub fn handle_mac_irq<M: MacInterrupt, S: IrqSink>(
 ) -> (IrqDisposition, IrqSnapshot) {
     let status_snapshot = interrupt.status();
     let observation = status_snapshot.observation();
-    let status = observation.raw_evidence();
     let work_events = observation.work_events();
-    let handled = work_events.bits();
-    let auxiliary = observation.auxiliary_events().bits();
-    let unhandled = observation.unknown_bits();
+    let posted_events = event_mask(work_events);
     let snapshot = IrqSnapshot {
-        status,
-        pending: status,
-        handled,
-        auxiliary,
-        unhandled,
+        had_status: !observation.is_empty(),
+        posted_events,
+        had_auxiliary_event: observation.has_auxiliary_event(),
+        had_unhandled_event: observation.has_unhandled_event(),
     };
 
     if observation.is_empty() {
@@ -374,34 +346,34 @@ pub fn handle_mac_irq<M: MacInterrupt, S: IrqSink>(
     // Avoid an atomic RMW on every qualified RX interrupt. The two observed
     // auxiliary bits are acknowledged above but neither they nor a wholly
     // known work image need to mutate unknown-event telemetry.
-    if unhandled != 0 {
-        sink.record_unhandled(unhandled);
+    if observation.has_unhandled_event() {
+        sink.record_unhandled_event();
     }
-    if handled == 0 {
+    if work_events.is_empty() {
         (IrqDisposition::AcknowledgedOnly, snapshot)
     } else {
-        sink.post(handled);
+        sink.post(posted_events);
         (IrqDisposition::Posted, snapshot)
     }
 }
 
-/// Acknowledge one complete masked WDEVPWR snapshot before publishing it.
+/// Acknowledge one complete masked WDEVPWR snapshot before publishing its causes.
 ///
 /// This intentionally stops at the ISR/executor boundary. Decoding beacon
 /// miss, sleep-limit, TSF or other causes requires separate vendor evidence
-/// and is not implied by a nonzero raw bit.
+/// and is not implied by an otherwise unhandled cause.
 pub fn handle_power_irq<P: MacPowerInterrupt, S: PowerIrqSink>(
     interrupt: &mut P,
     sink: &S,
 ) -> (PowerIrqDisposition, PowerIrqSnapshot) {
     let status_snapshot = interrupt.status();
-    let status = status_snapshot.bits();
-    let snapshot = PowerIrqSnapshot { status };
-    if status == 0 {
+    let observation = status_snapshot.observation();
+    let snapshot = PowerIrqSnapshot { observation };
+    if observation.is_empty() {
         return (PowerIrqDisposition::Spurious, snapshot);
     }
 
     interrupt.acknowledge(status_snapshot);
-    sink.post_power(status);
+    sink.post_power(observation);
     (PowerIrqDisposition::Posted, snapshot)
 }

@@ -223,7 +223,7 @@ impl SessionEvidence {
             || rx.dma_fifo_overflow != 0
             || rx.network_dropped != 0
             || rx.irq_drain_saturated != 0
-            || rx.unknown_irq_status != 0
+            || rx.unhandled_irq_entries != 0
         {
             return Err(format!("typed RX radio health failed: {rx:?}").into());
         }

@@ -3,9 +3,12 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use open_esp_radio_embassy_net::NoopRawMutex;
+use open_esp_radio_esp32s31_hal::types::{
+    MacInterruptEvents, MacInterruptObservation, MacPowerInterruptObservation,
+};
 use open_esp_radio_esp32s31_wifi_mac::irq::{
-    IrqDisposition, IrqSink, MAC_INT_COLLISION, MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE,
-    MAC_INT_TX_TIMEOUT, MacInterrupt, MacInterruptRoute, MacPowerInterrupt, PowerIrqDisposition,
+    EVENT_COLLISION, EVENT_RX_SUCCESS, EVENT_TX_COMPLETE, EVENT_TX_TIMEOUT, IrqDisposition,
+    IrqSink, MacInterrupt, MacInterruptRoute, MacPowerInterrupt, PowerIrqDisposition,
     handle_mac_irq, handle_power_irq,
 };
 
@@ -90,14 +93,13 @@ impl MacInterruptRoute for DropObservedRoute {
 fn maps_one_combined_snapshot_to_bounded_rx_and_tx_wakes() {
     let runtime = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
 
-    runtime
-        .publish(MAC_INT_TX_TIMEOUT | MAC_INT_COLLISION | MAC_INT_TX_COMPLETE | MAC_INT_RX_SUCCESS);
+    runtime.publish(EVENT_TX_TIMEOUT | EVENT_COLLISION | EVENT_TX_COMPLETE | EVENT_RX_SUCCESS);
 
     assert_eq!(runtime.rx_post_count(), 1);
     assert!(runtime.rx_signaled());
     assert_eq!(
         runtime.try_take_tx(),
-        Some(MAC_INT_TX_TIMEOUT | MAC_INT_COLLISION | MAC_INT_TX_COMPLETE)
+        Some(EVENT_TX_TIMEOUT | EVENT_COLLISION | EVENT_TX_COMPLETE)
     );
     // Three TX causes coalesce into one wake without losing their bits.
     assert_eq!(runtime.try_take_tx(), None);
@@ -107,8 +109,8 @@ fn maps_one_combined_snapshot_to_bounded_rx_and_tx_wakes() {
 fn repeated_rx_images_coalesce_the_wake_without_losing_irq_evidence() {
     let runtime = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
 
-    runtime.publish(MAC_INT_RX_SUCCESS);
-    runtime.publish(MAC_INT_RX_SUCCESS);
+    runtime.publish(EVENT_RX_SUCCESS);
+    runtime.publish(EVENT_RX_SUCCESS);
 
     assert_eq!(runtime.rx_post_count(), 2);
     assert!(runtime.rx_signaled());
@@ -143,7 +145,7 @@ fn live_ring_handoff_probe_does_not_forge_interrupt_evidence() {
 fn quiesced_epoch_drain_removes_every_coalesced_wake() {
     let runtime = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
 
-    runtime.publish(MAC_INT_RX_SUCCESS | MAC_INT_TX_COMPLETE | MAC_INT_TX_TIMEOUT);
+    runtime.publish(EVENT_RX_SUCCESS | EVENT_TX_COMPLETE | EVENT_TX_TIMEOUT);
     runtime.notify_rx_capacity();
 
     assert_eq!(
@@ -151,7 +153,7 @@ fn quiesced_epoch_drain_removes_every_coalesced_wake() {
         super::EmbassyMacIrqDrain {
             rx: true,
             rx_capacity: true,
-            tx_events: MAC_INT_TX_COMPLETE | MAC_INT_TX_TIMEOUT,
+            tx_events: EVENT_TX_COMPLETE | EVENT_TX_TIMEOUT,
         }
     );
     assert_eq!(runtime.drain_pending(), Default::default());
@@ -178,19 +180,24 @@ fn irq_epoch_recovers_setup_before_draining_every_executor_wake() {
         epoch.setup(),
         Err(Esp32s31MacInterruptEpochStateError::Active)
     );
-    mac.publish(MAC_INT_RX_SUCCESS | MAC_INT_TX_COMPLETE);
+    mac.publish(EVENT_RX_SUCCESS | EVENT_TX_COMPLETE);
     mac.notify_rx_capacity();
-    power.publish(0x55);
+    let power_observation =
+        MacPowerInterruptObservation::from_semantic_events(true, false, true, false, true);
+    power.publish(power_observation);
 
     let drained = epoch.quiesce(&platform).unwrap();
     assert_eq!(platform.get(), 2);
     assert!(drained.mac.rx);
     assert!(drained.mac.rx_capacity);
-    assert_eq!(drained.mac.tx_events, MAC_INT_TX_COMPLETE);
-    assert_eq!(drained.power_events, 0x55);
+    assert_eq!(drained.mac.tx_events, EVENT_TX_COMPLETE);
+    assert_eq!(drained.power_events, power_observation);
     assert_eq!(epoch.setup(), Ok(&7));
     assert_eq!(mac.drain_pending(), Default::default());
-    assert_eq!(power.drain_pending(), 0);
+    assert_eq!(
+        power.drain_pending(),
+        MacPowerInterruptObservation::default()
+    );
 }
 
 #[test]
@@ -308,19 +315,19 @@ fn active_irq_epoch_drop_retains_the_installed_route_without_panicking() {
 #[test]
 fn retains_unhandled_evidence_through_the_irq_sink_contract() {
     let runtime = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
-    IrqSink::record_unhandled(&runtime, 0x8000_0000);
-    assert_eq!(runtime.observed_unhandled(), 0x8000_0000);
+    IrqSink::record_unhandled_event(&runtime);
+    assert!(runtime.observed_unhandled());
 }
 
 struct Interrupt {
-    status: u32,
+    status: MacInterruptObservation,
     rx_masked: Cell<bool>,
     rx_was_masked_before_ack: Cell<bool>,
-    acknowledged: Cell<Option<u32>>,
+    acknowledged: Cell<bool>,
 }
 
 impl MacInterrupt for Interrupt {
-    type Snapshot = u32;
+    type Snapshot = MacInterruptObservation;
 
     fn status(&mut self) -> Self::Snapshot {
         self.status
@@ -331,39 +338,45 @@ impl MacInterrupt for Interrupt {
     }
 
     fn acknowledge(&mut self, snapshot: Self::Snapshot) {
+        let _snapshot = snapshot;
         self.rx_was_masked_before_ack.set(self.rx_masked.get());
-        self.acknowledged.set(Some(snapshot));
+        self.acknowledged.set(true);
     }
 }
 
 #[test]
 fn production_handler_acknowledges_before_publishing_embassy_work() {
-    let status = MAC_INT_RX_SUCCESS | MAC_INT_TX_COMPLETE;
+    let status = MacInterruptObservation::from_semantic_events(
+        MacInterruptEvents::RX_SUCCESS.union(MacInterruptEvents::TX_COMPLETE),
+        false,
+        false,
+    );
     let mut interrupt = Interrupt {
         status,
         rx_masked: Cell::new(false),
         rx_was_masked_before_ack: Cell::new(false),
-        acknowledged: Cell::new(None),
+        acknowledged: Cell::new(false),
     };
     let runtime = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
 
     let (disposition, snapshot) = handle_mac_irq(&mut interrupt, &runtime);
 
     assert_eq!(disposition, IrqDisposition::Posted);
-    assert_eq!(snapshot.status, status);
-    assert_eq!(interrupt.acknowledged.get(), Some(status));
+    assert!(snapshot.had_status);
+    assert_eq!(snapshot.posted_events, EVENT_RX_SUCCESS | EVENT_TX_COMPLETE);
+    assert!(interrupt.acknowledged.get());
     assert!(!interrupt.rx_masked.get());
     assert!(runtime.rx_signaled());
-    assert_eq!(runtime.try_take_tx(), Some(MAC_INT_TX_COMPLETE));
+    assert_eq!(runtime.try_take_tx(), Some(EVENT_TX_COMPLETE));
 }
 
 #[test]
 fn spurious_status_neither_acknowledges_nor_wakes_embassy() {
     let mut interrupt = Interrupt {
-        status: 0,
+        status: MacInterruptObservation::default(),
         rx_masked: Cell::new(false),
         rx_was_masked_before_ack: Cell::new(false),
-        acknowledged: Cell::new(None),
+        acknowledged: Cell::new(false),
     };
     let runtime = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
 
@@ -371,7 +384,7 @@ fn spurious_status_neither_acknowledges_nor_wakes_embassy() {
         handle_mac_irq(&mut interrupt, &runtime).0,
         IrqDisposition::Spurious
     );
-    assert_eq!(interrupt.acknowledged.get(), None);
+    assert!(!interrupt.acknowledged.get());
     assert!(!runtime.rx_signaled());
     assert_eq!(runtime.try_take_tx(), None);
 }
@@ -385,12 +398,16 @@ fn record_rx_unmask() {
 #[test]
 fn moderated_rx_masks_before_ack_and_restores_only_on_bottom_half_drain() {
     RX_UNMASK_CALLS.store(0, Ordering::Relaxed);
-    let status = MAC_INT_RX_SUCCESS | MAC_INT_TX_COMPLETE;
+    let status = MacInterruptObservation::from_semantic_events(
+        MacInterruptEvents::RX_SUCCESS.union(MacInterruptEvents::TX_COMPLETE),
+        false,
+        false,
+    );
     let mut interrupt = Interrupt {
         status,
         rx_masked: Cell::new(false),
         rx_was_masked_before_ack: Cell::new(false),
-        acknowledged: Cell::new(None),
+        acknowledged: Cell::new(false),
     };
     let runtime = EmbassyMacIrqRuntime::<NoopRawMutex>::new_with_rx_moderation(record_rx_unmask);
     runtime.begin_rx_moderation();
@@ -398,11 +415,12 @@ fn moderated_rx_masks_before_ack_and_restores_only_on_bottom_half_drain() {
     let (disposition, snapshot) = handle_mac_irq(&mut interrupt, &runtime);
 
     assert_eq!(disposition, IrqDisposition::Posted);
-    assert_eq!(snapshot.status, status);
+    assert!(snapshot.had_status);
+    assert_eq!(snapshot.posted_events, EVENT_RX_SUCCESS | EVENT_TX_COMPLETE);
     assert!(interrupt.rx_masked.get());
     assert!(interrupt.rx_was_masked_before_ack.get());
-    assert_eq!(interrupt.acknowledged.get(), Some(status));
-    assert_eq!(runtime.try_take_tx(), Some(MAC_INT_TX_COMPLETE));
+    assert!(interrupt.acknowledged.get());
+    assert_eq!(runtime.try_take_tx(), Some(EVENT_TX_COMPLETE));
     assert_eq!(RX_UNMASK_CALLS.load(Ordering::Relaxed), 0);
 
     assert!(runtime.unmask_rx_after_drain());
@@ -413,36 +431,37 @@ fn moderated_rx_masks_before_ack_and_restores_only_on_bottom_half_drain() {
 }
 
 struct PowerInterrupt {
-    status: u32,
-    acknowledged: Cell<Option<u32>>,
+    status: MacPowerInterruptObservation,
+    acknowledged: Cell<bool>,
 }
 
 impl MacPowerInterrupt for PowerInterrupt {
-    type Snapshot = u32;
+    type Snapshot = MacPowerInterruptObservation;
 
     fn status(&mut self) -> Self::Snapshot {
         self.status
     }
 
     fn acknowledge(&mut self, snapshot: Self::Snapshot) {
-        self.acknowledged.set(Some(snapshot));
+        let _snapshot = snapshot;
+        self.acknowledged.set(true);
     }
 }
 
 #[test]
-fn power_irq_retains_the_complete_acknowledged_image_without_decoding_it() {
-    let status = 0x8040_0010;
+fn power_irq_retains_semantic_causes_without_register_images() {
+    let status = MacPowerInterruptObservation::from_semantic_events(false, true, false, true, true);
     let mut interrupt = PowerInterrupt {
         status,
-        acknowledged: Cell::new(None),
+        acknowledged: Cell::new(false),
     };
     let runtime = EmbassyPowerIrqRuntime::<NoopRawMutex>::new();
 
     let (disposition, snapshot) = handle_power_irq(&mut interrupt, &runtime);
 
     assert_eq!(disposition, PowerIrqDisposition::Posted);
-    assert_eq!(snapshot.status, status);
-    assert_eq!(interrupt.acknowledged.get(), Some(status));
+    assert_eq!(snapshot.observation, status);
+    assert!(interrupt.acknowledged.get());
     assert_eq!(runtime.try_take(), Some(status));
     assert_eq!(runtime.try_take(), None);
 }
@@ -450,8 +469,8 @@ fn power_irq_retains_the_complete_acknowledged_image_without_decoding_it() {
 #[test]
 fn spurious_power_irq_neither_acknowledges_nor_wakes_embassy() {
     let mut interrupt = PowerInterrupt {
-        status: 0,
-        acknowledged: Cell::new(None),
+        status: MacPowerInterruptObservation::default(),
+        acknowledged: Cell::new(false),
     };
     let runtime = EmbassyPowerIrqRuntime::<NoopRawMutex>::new();
 
@@ -459,6 +478,6 @@ fn spurious_power_irq_neither_acknowledges_nor_wakes_embassy() {
         handle_power_irq(&mut interrupt, &runtime).0,
         PowerIrqDisposition::Spurious
     );
-    assert_eq!(interrupt.acknowledged.get(), None);
+    assert!(!interrupt.acknowledged.get());
     assert_eq!(runtime.try_take(), None);
 }

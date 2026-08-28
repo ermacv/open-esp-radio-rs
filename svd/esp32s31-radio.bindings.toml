@@ -18121,9 +18121,23 @@ scope = []
 register-method = "status"
 
 [[registers.fields]]
+svd-name = "UNKNOWN_0_4"
+method = "unknown_0_4"
+bit-offset = 0
+bit-width = 5
+access = "read-only"
+
+[[registers.fields]]
 svd-name = "RX_ASSOCIATED_AUXILIARY_5"
 method = "rx_associated_auxiliary_5"
 bit-offset = 5
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "COLD_RX_ENABLE_6_UNKNOWN"
+method = "cold_rx_enable_6_unknown"
+bit-offset = 6
 bit-width = 1
 access = "read-only"
 
@@ -18142,9 +18156,30 @@ bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
+svd-name = "UNKNOWN_9_10"
+method = "unknown_9_10"
+bit-offset = 9
+bit-width = 2
+access = "read-only"
+
+[[registers.fields]]
 svd-name = "WATCHDOG"
 method = "watchdog"
 bit-offset = 11
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "COLD_RX_ENABLE_12_UNKNOWN"
+method = "cold_rx_enable_12_unknown"
+bit-offset = 12
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "COLD_RX_ENABLE_13_UNKNOWN"
+method = "cold_rx_enable_13_unknown"
+bit-offset = 13
 bit-width = 1
 access = "read-only"
 
@@ -18156,9 +18191,51 @@ bit-width = 1
 access = "read-only"
 
 [[registers.fields]]
+svd-name = "STA_BEACON_FILTER"
+method = "sta_beacon_filter"
+bit-offset = 15
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_16_18"
+method = "unknown_16_18"
+bit-offset = 16
+bit-width = 3
+access = "read-only"
+
+[[registers.fields]]
 svd-name = "TX_TIMEOUT"
 method = "tx_timeout"
 bit-offset = 19
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_20"
+method = "unknown_20"
+bit-offset = 20
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "COLD_RX_ENABLE_21_UNKNOWN"
+method = "cold_rx_enable_21_unknown"
+bit-offset = 21
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_22"
+method = "unknown_22"
+bit-offset = 22
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "COLD_RX_ENABLE_23_UNKNOWN"
+method = "cold_rx_enable_23_unknown"
+bit-offset = 23
 bit-width = 1
 access = "read-only"
 
@@ -18167,6 +18244,34 @@ svd-name = "RX_ASSOCIATED_AUXILIARY_24"
 method = "rx_associated_auxiliary_24"
 bit-offset = 24
 bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_25_26"
+method = "unknown_25_26"
+bit-offset = 25
+bit-width = 2
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "COLD_RX_ENABLE_27_UNKNOWN"
+method = "cold_rx_enable_27_unknown"
+bit-offset = 27
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "COLD_RX_ENABLE_28_UNKNOWN"
+method = "cold_rx_enable_28_unknown"
+bit-offset = 28
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_29_31"
+method = "unknown_29_31"
+bit-offset = 29
+bit-width = 3
 access = "read-only"
 
 [[registers]]

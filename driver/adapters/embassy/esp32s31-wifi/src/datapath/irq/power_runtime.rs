@@ -1,58 +1,83 @@
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use open_esp_radio_embassy_net::{RawMutex, Signal};
+use open_esp_radio_esp32s31_hal::MacPowerInterruptObservation;
 use open_esp_radio_esp32s31_wifi_mac::irq::PowerIrqSink;
 
 /// Embassy handoff for acknowledged DATAPATHPWR snapshots.
 ///
-/// The event remains an opaque bit image here. A later power-policy slice may
-/// decode only causes whose hardware meaning and lifecycle have their own
-/// qualification evidence.
+/// The PAC decodes the reviewed TSF-timer fields before this boundary. Unknown
+/// fields remain one semantic flag and never escape as a register image.
 pub struct EmbassyPowerIrqRuntime<M: RawMutex> {
     signal: Signal<M, ()>,
-    pending: AtomicU32,
+    tsf_timer_0: AtomicBool,
+    tsf_timer_1: AtomicBool,
+    tsf_timer_2: AtomicBool,
+    tsf_timer_3: AtomicBool,
+    unhandled_event: AtomicBool,
 }
 
 impl<M: RawMutex> EmbassyPowerIrqRuntime<M> {
     pub const fn new() -> Self {
         Self {
             signal: Signal::new(),
-            pending: AtomicU32::new(0),
+            tsf_timer_0: AtomicBool::new(false),
+            tsf_timer_1: AtomicBool::new(false),
+            tsf_timer_2: AtomicBool::new(false),
+            tsf_timer_3: AtomicBool::new(false),
+            unhandled_event: AtomicBool::new(false),
         }
     }
 
     #[inline]
-    pub fn publish(&self, pending: u32) {
-        if pending != 0 {
-            self.pending.fetch_or(pending, Ordering::Release);
-            self.signal.signal(());
-        }
+    pub fn publish(&self, observation: MacPowerInterruptObservation) {
+        self.tsf_timer_0
+            .fetch_or(observation.tsf_timer_0(), Ordering::Release);
+        self.tsf_timer_1
+            .fetch_or(observation.tsf_timer_1(), Ordering::Release);
+        self.tsf_timer_2
+            .fetch_or(observation.tsf_timer_2(), Ordering::Release);
+        self.tsf_timer_3
+            .fetch_or(observation.tsf_timer_3(), Ordering::Release);
+        self.unhandled_event
+            .fetch_or(observation.has_unhandled_event(), Ordering::Release);
+        self.signal.signal(());
     }
 
-    /// Wait for and consume the complete coalesced DATAPATHPWR image.
-    pub async fn wait(&self) -> u32 {
+    fn take_observation(&self) -> MacPowerInterruptObservation {
+        MacPowerInterruptObservation::from_semantic_events(
+            self.tsf_timer_0.swap(false, Ordering::Acquire),
+            self.tsf_timer_1.swap(false, Ordering::Acquire),
+            self.tsf_timer_2.swap(false, Ordering::Acquire),
+            self.tsf_timer_3.swap(false, Ordering::Acquire),
+            self.unhandled_event.swap(false, Ordering::Acquire),
+        )
+    }
+
+    /// Wait for and consume the coalesced semantic WDEVPWR causes.
+    pub async fn wait(&self) -> MacPowerInterruptObservation {
         self.signal.wait().await;
-        self.pending.swap(0, Ordering::Acquire)
+        self.take_observation()
     }
 
-    /// Consume a pending image without blocking the executor.
-    pub fn try_take(&self) -> Option<u32> {
+    /// Consume pending semantic causes without blocking the executor.
+    pub fn try_take(&self) -> Option<MacPowerInterruptObservation> {
         self.signal.try_take()?;
-        Some(self.pending.swap(0, Ordering::Acquire))
+        Some(self.take_observation())
     }
 
-    /// Remove one stale power wake and its complete coalesced event image
+    /// Remove one stale power wake and its coalesced semantic causes
     /// after the platform interrupt route has been quiesced.
-    pub fn drain_pending(&self) -> u32 {
+    pub fn drain_pending(&self) -> MacPowerInterruptObservation {
         let _wake = self.signal.try_take();
-        self.pending.swap(0, Ordering::Acquire)
+        self.take_observation()
     }
 }
 
 impl<M: RawMutex> PowerIrqSink for EmbassyPowerIrqRuntime<M> {
     #[inline]
-    fn post_power(&self, pending: u32) {
-        self.publish(pending);
+    fn post_power(&self, observation: MacPowerInterruptObservation) {
+        self.publish(observation);
     }
 }
 

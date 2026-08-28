@@ -14,7 +14,7 @@ use open_esp_radio_embassy_net::{
     PinnedEndpointResources, PinnedNetworkRunner, PinnedTxPool, PinnedTxResources, RxEnqueueError,
     SplitPinnedDevice, TxToken as _,
 };
-use open_esp_radio_esp32s31_wifi_mac::irq::{MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE};
+use open_esp_radio_esp32s31_wifi_mac::irq::{EVENT_RX_SUCCESS, EVENT_TX_COMPLETE};
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
 use std::boxed::Box;
 
@@ -145,7 +145,7 @@ fn runner_returns_both_addressed_rx_owners_after_combined_service() {
     let pool = Pool::pin_static(Box::leak(Box::new(Pool::new())));
     let (_device, network) = split_network!(resources, pool);
     let irq = Box::leak(Box::new(EmbassyMacIrqRuntime::new()));
-    irq.publish(MAC_INT_RX_SUCCESS);
+    irq.publish(EVENT_RX_SUCCESS);
     let endpoints = DatapathNetworkRxEndpoints::new(
         crate::roles::concurrent::STA_NETWORK_INTERFACE_ID,
         EndpointRx::default(),
@@ -286,7 +286,7 @@ fn paired_rx_generated_tx_is_driven_for_the_reported_ap_role() {
         consumer,
     );
     let irq = Box::leak(Box::new(EmbassyMacIrqRuntime::new()));
-    irq.publish(MAC_INT_RX_SUCCESS);
+    irq.publish(EVENT_RX_SUCCESS);
     let order = Box::leak(Box::new(std::sync::Mutex::new(std::vec::Vec::new())));
     let services = crate::datapath::paired::ConcurrentRoleServices::new(
         crate::roles::concurrent::STA_NETWORK_INTERFACE_ID,
@@ -369,7 +369,7 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
     {
         self.control_calls += 1;
         let progress = if self.control_tx_on_first && self.control_calls == 1 {
-            self.irq.publish(MAC_INT_TX_COMPLETE);
+            self.irq.publish(EVENT_TX_COMPLETE);
             Ok(DatapathControlProgress::TxPending)
         } else if self.finish_on_second && self.control_calls == 2 {
             Err(TestError::Finished)
@@ -402,7 +402,7 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
             QUEUE_DEPTH,
         >,
     ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
-        self.irq.publish(MAC_INT_TX_COMPLETE);
+        self.irq.publish(EVENT_TX_COMPLETE);
         ready(Ok(WifiTxProgress::Pending))
     }
 
@@ -442,7 +442,7 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
             if self.backpressure_once {
                 self.backpressure_once = false;
                 if self.repost_rx_when_backpressured {
-                    self.irq.publish(MAC_INT_RX_SUCCESS);
+                    self.irq.publish(EVENT_RX_SUCCESS);
                 }
                 return Ok(DatapathRxProgress::StageCapacityBlocked);
             }
@@ -500,7 +500,7 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
     ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
         async move {
             if self.publish_irq {
-                self.irq.publish(MAC_INT_TX_COMPLETE | MAC_INT_RX_SUCCESS);
+                self.irq.publish(EVENT_TX_COMPLETE | EVENT_RX_SUCCESS);
             }
             Ok(WifiTxProgress::Pending)
         }
@@ -1333,7 +1333,7 @@ fn ordinary_rx_completion_does_not_repoll_idle_control() {
     let irq = std::boxed::Box::leak(std::boxed::Box::new(
         EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
     ));
-    irq.publish(MAC_INT_RX_SUCCESS);
+    irq.publish(EVENT_RX_SUCCESS);
     let services = NonPollingControlBackend {
         irq,
         control_calls: 0,
@@ -1555,7 +1555,7 @@ fn exhausted_rx_republication_is_serviced_again_without_a_new_hardware_irq() {
     let irq = std::boxed::Box::leak(std::boxed::Box::new(
         EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
     ));
-    irq.publish(MAC_INT_RX_SUCCESS);
+    irq.publish(EVENT_RX_SUCCESS);
     let services = RxProbeBackend { service_calls: 0 };
     let mut runner = DatapathRunner::new(irq, network, NetworkInterfaceId::new(0), services);
 
@@ -1574,7 +1574,7 @@ fn network_backpressure_waits_for_the_network_rx_capacity_owner() {
     let irq = std::boxed::Box::leak(std::boxed::Box::new(
         EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
     ));
-    irq.publish(MAC_INT_RX_SUCCESS);
+    irq.publish(EVENT_RX_SUCCESS);
     let services = NetworkBackpressureBackend { service_calls: 0 };
     let mut runner = DatapathRunner::new(irq, network, NetworkInterfaceId::new(0), services);
     let mut run = std::boxed::Box::pin(runner.run());
@@ -1599,7 +1599,7 @@ fn network_backpressure_still_services_a_new_dma_frontier() {
     let irq = std::boxed::Box::leak(std::boxed::Box::new(
         EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
     ));
-    irq.publish(MAC_INT_RX_SUCCESS);
+    irq.publish(EVENT_RX_SUCCESS);
     let services = NetworkBackpressureBackend { service_calls: 0 };
     let mut runner = DatapathRunner::new(irq, network, NetworkInterfaceId::new(0), services);
     let mut run = std::boxed::Box::pin(runner.run());
@@ -1608,7 +1608,7 @@ fn network_backpressure_still_services_a_new_dma_frontier() {
     assert_eq!(run.as_mut().poll(&mut context), Poll::Pending);
     // The final network queue is still occupied, but a later DMA completion
     // must re-enter the role service instead of waiting for network capacity.
-    irq.publish(MAC_INT_RX_SUCCESS);
+    irq.publish(EVENT_RX_SUCCESS);
     assert_eq!(
         embassy_futures::block_on(run.as_mut()),
         Err(TestError::Finished)
@@ -1638,7 +1638,7 @@ fn ready_network_frame_extends_standby_before_active_tx_completion() {
     // its completion interrupt ready in the same scheduler epoch.
     assert_eq!(run.as_mut().poll(&mut context), Poll::Pending);
     enqueue_frame(&mut device);
-    irq.publish(MAC_INT_TX_COMPLETE);
+    irq.publish(EVENT_TX_COMPLETE);
     assert_eq!(
         embassy_futures::block_on(run.as_mut()),
         Err(TestError::Finished)
@@ -1683,7 +1683,7 @@ fn rx_is_serviced_before_tx_when_both_irqs_are_ready() {
     assert_eq!(
         runner.services().tx_wake,
         Some(WifiTxWake::Interrupt {
-            events: MAC_INT_TX_COMPLETE,
+            events: EVENT_TX_COMPLETE,
         })
     );
 }
@@ -1724,7 +1724,7 @@ fn critical_admission_block_gates_new_rx_edges_but_not_tx_completion() {
     assert_eq!(
         runner.services().tx_wake,
         Some(WifiTxWake::Interrupt {
-            events: MAC_INT_TX_COMPLETE,
+            events: EVENT_TX_COMPLETE,
         })
     );
     assert!(irq.rx_signaled());
@@ -1888,7 +1888,7 @@ fn caller_stop_waits_for_active_tx_to_release_hardware() {
     assert_eq!(
         runner.services().tx_wake,
         Some(WifiTxWake::Interrupt {
-            events: MAC_INT_TX_COMPLETE,
+            events: EVENT_TX_COMPLETE,
         })
     );
     let mut context = Context::from_waker(core::task::Waker::noop());

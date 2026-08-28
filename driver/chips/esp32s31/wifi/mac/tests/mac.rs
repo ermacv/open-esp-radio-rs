@@ -2,8 +2,9 @@ use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 
 use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
 use open_esp_radio_esp32s31_hal::types::{
-    MacHtTxProgram, MacInterface, MacInterruptMask, MacKeyInstallOutcome, MacLegacyTxProgram,
-    MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
+    MacHtTxProgram, MacInterface, MacInterruptEvents, MacInterruptMask, MacInterruptObservation,
+    MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionObservation, MacTxDetachOutcome,
+    MacTxDetachReason, MacTxQueueDetached,
 };
 use open_esp_radio_esp32s31_wifi_dma::descriptor::{
     BIT_30, BIT_31, DESCRIPTOR_BYTES, Descriptor, LENGTH_SHIFT, descriptor_address_valid,
@@ -26,8 +27,8 @@ use open_esp_radio_esp32s31_wifi_mac::{
         configure_sta_link_receive_policy, initialize_wifi_mac,
     },
     irq::{
-        IrqDisposition, IrqState, IrqWork, MAC_INT_COLLISION, MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK,
-        MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT, MacInterrupt, handle_mac_irq,
+        EVENT_RX_SUCCESS, EVENT_TX_COMPLETE, IrqDisposition, IrqState, IrqWork, MacInterrupt,
+        handle_mac_irq,
     },
     rate_schedule::{RateScheduleKind, RateScheduleRef},
     rx::{
@@ -259,7 +260,7 @@ enum Operation {
     ConfigureOpenPromiscuousReceive,
     ReadInterruptStatus,
     WriteInterruptEnable(u32),
-    ClearInterrupt(u32),
+    AcknowledgeInterrupt,
     Fence,
 }
 
@@ -277,7 +278,7 @@ type ColdStartClockTrace = Rc<RefCell<Vec<ColdStartClockEdge>>>;
 struct MockMmio {
     words: BTreeMap<TestRegister, u32>,
     operations: Vec<Operation>,
-    interrupt_status: u32,
+    interrupt_status: MacInterruptObservation,
     interrupt_enable: u32,
     cold_handshake_result: Option<Result<MacColdStartOutcome, MacColdStartError>>,
     cold_start_clock_trace: Option<ColdStartClockTrace>,
@@ -469,7 +470,7 @@ fn confirm_completed_unit_link_release<const COUNT: usize>(
 }
 
 impl MacInterrupt for MockMmio {
-    type Snapshot = u32;
+    type Snapshot = MacInterruptObservation;
 
     fn status(&mut self) -> Self::Snapshot {
         self.operations.push(Operation::ReadInterruptStatus);
@@ -477,8 +478,9 @@ impl MacInterrupt for MockMmio {
     }
 
     fn acknowledge(&mut self, snapshot: Self::Snapshot) {
-        self.operations.push(Operation::ClearInterrupt(snapshot));
-        self.interrupt_status &= !snapshot;
+        let _snapshot = snapshot;
+        self.operations.push(Operation::AcknowledgeInterrupt);
+        self.interrupt_status = MacInterruptObservation::default();
         Mmio::fence(self);
     }
 }
@@ -3014,61 +3016,64 @@ fn ccmp_data_rx_rejects_missing_extiv_and_hardware_mic_failure() {
 }
 
 #[test]
-fn irq_state_coalesces_known_bits_and_records_unknown_bits() {
+fn irq_state_coalesces_named_work_and_records_unhandled_causes() {
     let mut mmio = MockMmio {
         interrupt_enable: u32::MAX,
-        interrupt_status: MAC_INT_TX_COMPLETE
-            | MAC_INT_RX_SUCCESS
-            | MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK
-            | 0x8000_0000,
+        interrupt_status: MacInterruptObservation::from_semantic_events(
+            MacInterruptEvents::TX_COMPLETE.union(MacInterruptEvents::RX_SUCCESS),
+            true,
+            true,
+        ),
         ..MockMmio::default()
     };
     let state = IrqState::new();
     let (disposition, snapshot) = handle_mac_irq(&mut mmio, &state);
 
     assert_eq!(disposition, IrqDisposition::Posted);
-    assert_eq!(snapshot.auxiliary, MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK);
-    assert_eq!(snapshot.unhandled, 0x8000_0000);
-    assert_eq!(state.observed_unhandled(), 0x8000_0000);
+    assert!(snapshot.had_auxiliary_event);
+    assert!(snapshot.had_unhandled_event);
+    assert!(state.observed_unhandled());
     let event = state.try_take().unwrap();
-    assert_eq!(event.mac_pending, MAC_INT_TX_COMPLETE | MAC_INT_RX_SUCCESS);
+    assert_eq!(event.events, EVENT_TX_COMPLETE | EVENT_RX_SUCCESS);
     assert_eq!(mmio.operations().last(), Some(&Operation::Fence));
-    assert!(
-        mmio.operations()
-            .contains(&Operation::ClearInterrupt(snapshot.status))
-    );
+    assert!(mmio.operations().contains(&Operation::AcknowledgeInterrupt));
 }
 
 #[test]
 fn irq_acknowledges_auxiliary_status_without_posting_independent_work() {
     let mut mmio = MockMmio {
         interrupt_enable: u32::MAX,
-        interrupt_status: MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK,
+        interrupt_status: MacInterruptObservation::from_semantic_events(
+            MacInterruptEvents::empty(),
+            true,
+            false,
+        ),
         ..MockMmio::default()
     };
     let state = IrqState::new();
     let (disposition, snapshot) = handle_mac_irq(&mut mmio, &state);
 
     assert_eq!(disposition, IrqDisposition::AcknowledgedOnly);
-    assert_eq!(snapshot.handled, 0);
-    assert_eq!(snapshot.auxiliary, MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK);
-    assert_eq!(snapshot.unhandled, 0);
+    assert_eq!(snapshot.posted_events, 0);
+    assert!(snapshot.had_auxiliary_event);
+    assert!(!snapshot.had_unhandled_event);
     assert_eq!(state.try_take(), None);
-    assert_eq!(state.observed_unhandled(), 0);
-    assert!(
-        mmio.operations()
-            .contains(&Operation::ClearInterrupt(snapshot.status))
-    );
+    assert!(!state.observed_unhandled());
+    assert!(mmio.operations().contains(&Operation::AcknowledgeInterrupt));
 }
 
 #[test]
 fn irq_state_exposes_vendor_run_to_completion_order() {
     let mut mmio = MockMmio {
         interrupt_enable: u32::MAX,
-        interrupt_status: MAC_INT_COLLISION
-            | MAC_INT_TX_TIMEOUT
-            | MAC_INT_TX_COMPLETE
-            | MAC_INT_RX_SUCCESS,
+        interrupt_status: MacInterruptObservation::from_semantic_events(
+            MacInterruptEvents::COLLISION
+                .union(MacInterruptEvents::TX_TIMEOUT)
+                .union(MacInterruptEvents::TX_COMPLETE)
+                .union(MacInterruptEvents::RX_SUCCESS),
+            false,
+            false,
+        ),
         ..MockMmio::default()
     };
     let state = IrqState::new();

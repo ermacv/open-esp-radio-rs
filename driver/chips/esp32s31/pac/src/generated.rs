@@ -3665,6 +3665,38 @@ pub(crate) fn initialize_bluetooth_receive_setup_zbbb_low(
     crate::svd::field_replace_modify::initialize_bluetooth_receive_setup_zbbb_low(registers);
 }
 
+/// Typed bridge for the reviewed `initialize_bluetooth_tx_pa_delay` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_tx_pa_delay(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::initialize_bluetooth_tx_pa_delay(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_le_tx_delay` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_le_tx_delay(registers: &crate::svd::BtV3_2Baseband) {
+    crate::svd::field_replace_modify::initialize_bluetooth_le_tx_delay(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_tx_cca_period_difference` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_tx_cca_period_difference(
+    registers: &crate::svd::BtV3_2Baseband,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_tx_cca_period_difference(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_tx_cca_period_argument` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_tx_cca_period_argument(registers: &crate::svd::BtV3_2Baseband) {
+    crate::svd::field_replace_modify::initialize_bluetooth_tx_cca_period_argument(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_shared_tx_delay` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_shared_tx_delay(registers: &crate::svd::SharedBasebandTxTiming) {
+    crate::svd::field_replace_modify::initialize_bluetooth_shared_tx_delay(registers);
+}
+
 /// Typed bridge for the reviewed `clear_bluetooth_scheduler_lock_modify_argument` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_bluetooth_scheduler_lock_modify_argument(

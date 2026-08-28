@@ -349,31 +349,16 @@ impl BluetoothBasebandV2Transaction<'_> {
     }
 
     fn initialize_baseband_tx_timing(&self) {
-        self.radio_phy
-            .phy_baseband_config_oracle
-            .tx_pa_control_1()
-            .modify(|_, w| w.pa_on_bt_delay().set(0x96));
-        self.bluetooth
-            .bt_v3_2_baseband
-            .le_tx_on_delay()
-            .modify(|_, w| {
-                w.force_zero_bits_16_18()
-                    .set(0)
-                    .encoded_value_minus_10()
-                    .set(50)
-            });
-        let cca = self.bluetooth.bt_v3_2_baseband.tx_cca_control_0();
-        cca.modify(|_, w| {
-            w.period_force_zero_20_22()
-                .set(0)
-                .period_argument_0_minus_argument_1_image()
-                .set(0x2c)
-        });
-        cca.modify(|_, w| w.period_argument_0_image().set(0x1ff));
-        self.shared_radio
-            .shared_baseband_tx_timing
-            .auxiliary_tx_on_delay()
-            .modify(|_, w| w.encoded_image().set(0x190));
+        super::generated::initialize_bluetooth_tx_pa_delay(
+            &self.radio_phy.phy_baseband_config_oracle,
+        );
+        let baseband = &self.bluetooth.bt_v3_2_baseband;
+        super::generated::initialize_bluetooth_le_tx_delay(baseband);
+        super::generated::initialize_bluetooth_tx_cca_period_difference(baseband);
+        super::generated::initialize_bluetooth_tx_cca_period_argument(baseband);
+        super::generated::initialize_bluetooth_shared_tx_delay(
+            &self.shared_radio.shared_baseband_tx_timing,
+        );
     }
 
     fn initialize_baseband_coexistence_defaults(&self) {

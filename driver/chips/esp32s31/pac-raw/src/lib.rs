@@ -64516,6 +64516,77 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_PA_CONTROL_1 fields [PA_ON_BT_DELAY] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_tx_pa_delay(registers: &crate::PhyBasebandConfigOracle) {
+        registers.tx_pa_control_1().modify(|_, writer| {
+            let input = 0x00000096_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.pa_on_bt_delay().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.LE_TX_ON_DELAY fields [FORCE_ZERO_BITS_16_18, ENCODED_VALUE_MINUS_10] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_le_tx_delay(registers: &crate::BtV3_2Baseband) {
+        registers.le_tx_on_delay().modify(|_, writer| {
+            let input = 0x00000190_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .force_zero_bits_16_18()
+                    .bits((input & 0x00000007) as u8)
+                    .encoded_value_minus_10()
+                    .bits(((input >> 3) & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.TX_CCA_CONTROL_0 fields [PERIOD_FORCE_ZERO_20_22, PERIOD_ARGUMENT_0_MINUS_ARGUMENT_1_IMAGE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_tx_cca_period_difference(registers: &crate::BtV3_2Baseband) {
+        registers.tx_cca_control_0().modify(|_, writer| {
+            let input = 0x00000160_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .period_force_zero_20_22()
+                    .bits((input & 0x00000007) as u8)
+                    .period_argument_0_minus_argument_1_image()
+                    .bits(((input >> 3) & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.TX_CCA_CONTROL_0 fields [PERIOD_ARGUMENT_0_IMAGE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_tx_cca_period_argument(registers: &crate::BtV3_2Baseband) {
+        registers.tx_cca_control_0().modify(|_, writer| {
+            let input = 0x000001ff_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .period_argument_0_image()
+                    .bits((input & 0x000007ff) as u16)
+            }
+        });
+    }
+
+    /// Replace SHARED_BASEBAND_TX_TIMING.AUXILIARY_TX_ON_DELAY fields [ENCODED_IMAGE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_shared_tx_delay(registers: &crate::SharedBasebandTxTiming) {
+        registers.auxiliary_tx_on_delay().modify(|_, writer| {
+            let input = 0x00000190_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.encoded_image().bits((input & 0x000007ff) as u16) }
+        });
+    }
+
     /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields [LOCK_MODIFY_ARGUMENT] from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_scheduler_lock_modify_argument(

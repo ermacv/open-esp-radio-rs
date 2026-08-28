@@ -5053,6 +5053,57 @@ value = 0
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
 
+[[field-replace-modifies]]
+name = "initialize_bluetooth_tx_pa_delay"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_PA_CONTROL_1"
+fields = [{ field = "PA_ON_BT_DELAY", source-bit-offset = 0 }]
+value = 0x96
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_INIT", "BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_le_tx_delay"
+peripheral = "BT_V3_2_BASEBAND"
+register = "LE_TX_ON_DELAY"
+fields = [
+    { field = "FORCE_ZERO_BITS_16_18", source-bit-offset = 0 },
+    { field = "ENCODED_VALUE_MINUS_10", source-bit-offset = 3 },
+]
+value = 0x190
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_INIT", "BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_tx_cca_period_difference"
+peripheral = "BT_V3_2_BASEBAND"
+register = "TX_CCA_CONTROL_0"
+fields = [
+    { field = "PERIOD_FORCE_ZERO_20_22", source-bit-offset = 0 },
+    { field = "PERIOD_ARGUMENT_0_MINUS_ARGUMENT_1_IMAGE", source-bit-offset = 3 },
+]
+value = 0x160
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_INIT", "BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_tx_cca_period_argument"
+peripheral = "BT_V3_2_BASEBAND"
+register = "TX_CCA_CONTROL_0"
+fields = [{ field = "PERIOD_ARGUMENT_0_IMAGE", source-bit-offset = 0 }]
+value = 0x1ff
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_INIT", "BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_shared_tx_delay"
+peripheral = "SHARED_BASEBAND_TX_TIMING"
+register = "AUXILIARY_TX_ON_DELAY"
+fields = [{ field = "ENCODED_IMAGE", source-bit-offset = 0 }]
+value = 0x190
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_SHARED_TX_TIMING_INIT"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

@@ -199,9 +199,9 @@ impl BluetoothControllerHalInitConfig {
         self.period.transform_byte(self.value_1)
     }
 
-    /// Complete scheduler-prefix image published by the HAL body.
-    pub const fn scheduler_sram_prefix(self) -> u32 {
-        self.scheduler_sram.address() & 0xffc0_0000
+    /// Ten-bit scheduler-prefix field published by the HAL body.
+    pub const fn scheduler_sram_prefix(self) -> u16 {
+        (self.scheduler_sram.address() >> 22) as u16
     }
 
     /// Original finite scale image, useful for evidence and diagnostics.
@@ -217,94 +217,96 @@ impl BluetoothControllerHalInitConfig {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum HalInitRegister {
-    SchedulerSramPointerPrefix,
-    HalInitBytes,
-    SleepTimerControl,
-    HalInitControl0,
-    HalInitControl1,
-    HalInitLatch,
-    HalInitLow20,
-    HalInitSchedulerControl,
-    HalInitLowHalf,
-    HalInitSlotMap0,
-    HalInitSlotMap1,
+    SlotMap0,
+    SlotMap1,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum HalInitOperation {
+    PublishSchedulerSramPrefix(u16),
+    PublishSleepTimerShift(u8),
+    PublishValue0(u8),
+    PublishValue1(u8),
+    InitializeLatch,
+    InitializeLow20,
+    EnableLatch,
+    ConfigureControl1High,
+    ConfigureControl1Low,
+    EnableControl0,
+    ResetSleepTimerHigh {
+        config_24: bool,
+    },
+    ClearSchedulerConfig16To20,
+    PublishSchedulerConfig16To20(u8),
+    EnableSchedulerControl,
+    ClearLowHalf,
+    FillLowHalf,
+    ClearSchedulerByte1,
+    PublishSchedulerByte1(u8),
+    ClearSlotLaneUpper {
+        register: HalInitRegister,
+        lane: u8,
+    },
+    PublishSlotLane {
+        register: HalInitRegister,
+        lane: u8,
+        set_retained_index_low: bool,
+        index_high: u8,
+    },
 }
 
 trait HalInitTransaction {
-    fn write(&mut self, register: HalInitRegister, image: u32);
-    fn modify(&mut self, register: HalInitRegister, preserve_mask: u32, set_mask: u32);
+    fn apply(&mut self, operation: HalInitOperation);
 }
 
 fn execute_hal_init(
     transaction: &mut impl HalInitTransaction,
     config: BluetoothControllerHalInitConfig,
 ) {
-    transaction.write(
-        HalInitRegister::SchedulerSramPointerPrefix,
+    transaction.apply(HalInitOperation::PublishSchedulerSramPrefix(
         config.scheduler_sram_prefix(),
-    );
-    transaction.modify(
-        HalInitRegister::SleepTimerControl,
-        0xffff_fff8,
-        u32::from(config.sleep_timer_shift()),
-    );
-    transaction.modify(
-        HalInitRegister::HalInitBytes,
-        0xffff_ff00,
-        u32::from(config.transformed_value_0()),
-    );
-    transaction.modify(
-        HalInitRegister::HalInitBytes,
-        0xffff_00ff,
-        u32::from(config.transformed_value_1()) << 8,
-    );
+    ));
+    transaction.apply(HalInitOperation::PublishSleepTimerShift(
+        config.sleep_timer_shift(),
+    ));
+    transaction.apply(HalInitOperation::PublishValue0(
+        config.transformed_value_0(),
+    ));
+    transaction.apply(HalInitOperation::PublishValue1(
+        config.transformed_value_1(),
+    ));
+    transaction.apply(HalInitOperation::InitializeLatch);
+    transaction.apply(HalInitOperation::InitializeLow20);
+    transaction.apply(HalInitOperation::EnableLatch);
+    transaction.apply(HalInitOperation::ConfigureControl1High);
+    transaction.apply(HalInitOperation::ConfigureControl1Low);
+    transaction.apply(HalInitOperation::EnableControl0);
+    transaction.apply(HalInitOperation::ResetSleepTimerHigh {
+        config_24: matches!(config.scale, BluetoothHalInitScale::Eight),
+    });
+    transaction.apply(HalInitOperation::ClearSchedulerConfig16To20);
+    transaction.apply(HalInitOperation::PublishSchedulerConfig16To20(0x10));
+    transaction.apply(HalInitOperation::EnableSchedulerControl);
+    transaction.apply(HalInitOperation::ClearLowHalf);
+    transaction.apply(HalInitOperation::FillLowHalf);
+    transaction.apply(HalInitOperation::ClearSchedulerByte1);
+    transaction.apply(HalInitOperation::PublishSchedulerByte1(0x20));
 
-    transaction.write(HalInitRegister::HalInitLatch, 0x0000_0040);
-    transaction.write(HalInitRegister::HalInitLow20, 0x000f_ffff);
-    transaction.modify(HalInitRegister::HalInitLatch, u32::MAX, 0x8000_0000);
-    transaction.modify(HalInitRegister::HalInitControl1, u32::MAX, 0x000c_8000);
-    transaction.modify(HalInitRegister::HalInitControl1, u32::MAX, 0x0000_00c8);
-    transaction.modify(HalInitRegister::HalInitControl0, u32::MAX, 0x8000_0000);
-
-    let config_24 = match config.scale {
-        BluetoothHalInitScale::Eight => 0x0100_0000,
-        BluetoothHalInitScale::Sixteen => 0,
-    };
-    transaction.modify(HalInitRegister::SleepTimerControl, 0x00ff_ffff, config_24);
-
-    transaction.modify(HalInitRegister::HalInitSchedulerControl, 0xffe0_ffff, 0);
-    transaction.modify(
-        HalInitRegister::HalInitSchedulerControl,
-        u32::MAX,
-        0x0010_0000,
-    );
-    transaction.modify(
-        HalInitRegister::HalInitSchedulerControl,
-        u32::MAX,
-        0x8000_0000,
-    );
-    transaction.modify(HalInitRegister::HalInitLowHalf, 0xffff_0000, 0);
-    transaction.modify(HalInitRegister::HalInitLowHalf, u32::MAX, 0x0000_ffff);
-    transaction.modify(HalInitRegister::HalInitSchedulerControl, 0xffff_00ff, 0);
-    transaction.modify(
-        HalInitRegister::HalInitSchedulerControl,
-        u32::MAX,
-        0x0000_2000,
-    );
-
-    for global_index in 0..16_u32 {
+    for global_index in 0..16_u8 {
         let register = if global_index < 8 {
-            HalInitRegister::HalInitSlotMap0
+            HalInitRegister::SlotMap0
         } else {
-            HalInitRegister::HalInitSlotMap1
+            HalInitRegister::SlotMap1
         };
-        let lane_shift = (global_index & 7) * 4;
-        transaction.modify(register, !(0x0c_u32 << lane_shift), 0);
-        transaction.modify(
+        let lane = global_index % 8;
+        let index_in_group = global_index % 4;
+        transaction.apply(HalInitOperation::ClearSlotLaneUpper { register, lane });
+        transaction.apply(HalInitOperation::PublishSlotLane {
             register,
-            u32::MAX,
-            (1_u32 << lane_shift) | ((global_index & 3) << (lane_shift + 1)),
-        );
+            lane,
+            set_retained_index_low: index_in_group % 2 == 1,
+            index_high: u8::from(index_in_group >= 2),
+        });
     }
 }
 
@@ -313,70 +315,177 @@ struct MmioHalInit<'a> {
 }
 
 impl HalInitTransaction for MmioHalInit<'_> {
-    #[allow(
-        unsafe_code,
-        reason = "this finite adapter emits reviewed complete images through svd2rust"
-    )]
-    fn write(&mut self, register: HalInitRegister, image: u32) {
-        macro_rules! write_complete {
-            ($register:expr) => {{
-                // SAFETY: `execute_hal_init` supplies only the finite complete
-                // images recovered for this exact ordinary register.
-                unsafe { $register.write_with_zero(|writer| writer.bits(image)) };
-            }};
-        }
-
-        match register {
-            HalInitRegister::SchedulerSramPointerPrefix => {
-                write_complete!(self.registers.scheduler_sram_pointer_prefix())
+    fn apply(&mut self, operation: HalInitOperation) {
+        match operation {
+            HalInitOperation::PublishSchedulerSramPrefix(prefix) => {
+                super::svd::zero_based_field_write::publish_bluetooth_hal_scheduler_sram_prefix(
+                    self.registers,
+                    prefix,
+                );
             }
-            HalInitRegister::HalInitLatch => write_complete!(self.registers.hal_init_latch()),
-            HalInitRegister::HalInitLow20 => write_complete!(self.registers.hal_init_low_20()),
-            _ => unreachable!("HAL-init plan attempted an unreviewed complete write"),
-        }
-    }
-
-    #[allow(
-        unsafe_code,
-        reason = "this finite adapter emits reviewed complete RMW images through svd2rust"
-    )]
-    fn modify(&mut self, register: HalInitRegister, preserve_mask: u32, set_mask: u32) {
-        macro_rules! modify_complete {
-            ($register:expr) => {{
-                $register.modify(|reader, writer| {
-                    let image = (reader.bits() & preserve_mask) | set_mask;
-                    // SAFETY: masks and set images are closed inside the
-                    // reviewed transaction and are regression-tested in order.
-                    unsafe { writer.bits(image) }
+            HalInitOperation::PublishSleepTimerShift(shift) => {
+                self.registers
+                    .sleep_timer_control()
+                    .modify(|_, writer| writer.config_low_3().set(shift));
+            }
+            HalInitOperation::PublishValue0(value) => {
+                self.registers
+                    .hal_init_bytes()
+                    .modify(|_, writer| writer.value_0().set(value));
+            }
+            HalInitOperation::PublishValue1(value) => {
+                self.registers
+                    .hal_init_bytes()
+                    .modify(|_, writer| writer.value_1().set(value));
+            }
+            HalInitOperation::InitializeLatch => {
+                super::svd::zero_based_field_write::initialize_bluetooth_hal_latch(
+                    self.registers,
+                    true,
+                );
+            }
+            HalInitOperation::InitializeLow20 => {
+                super::svd::zero_based_field_write::initialize_bluetooth_hal_low_20(
+                    self.registers,
+                    0x000f_ffff,
+                );
+            }
+            HalInitOperation::EnableLatch => {
+                self.registers
+                    .hal_init_latch()
+                    .modify(|_, writer| writer.enable_31().set_bit());
+            }
+            HalInitOperation::ConfigureControl1High => {
+                self.registers
+                    .hal_init_control_1()
+                    .modify(|_, writer| writer.config_15().set_bit().config_18_19().set(3));
+            }
+            HalInitOperation::ConfigureControl1Low => {
+                self.registers
+                    .hal_init_control_1()
+                    .modify(|_, writer| writer.config_3().set_bit().config_6_7().set(3));
+            }
+            HalInitOperation::EnableControl0 => {
+                self.registers
+                    .hal_init_control_0()
+                    .modify(|_, writer| writer.enable_31().set_bit());
+            }
+            HalInitOperation::ResetSleepTimerHigh { config_24 } => {
+                self.registers.sleep_timer_control().modify(|_, writer| {
+                    let writer = writer
+                        .init_clear_25_unknown()
+                        .clear_bit()
+                        .latch_request()
+                        .clear_bit()
+                        .init_clear_27_30_unknown()
+                        .set(0)
+                        .timer_arm()
+                        .clear_bit();
+                    if config_24 {
+                        writer.config_24().set_bit()
+                    } else {
+                        writer.config_24().clear_bit()
+                    }
                 });
-            }};
-        }
-
-        match register {
-            HalInitRegister::HalInitBytes => modify_complete!(self.registers.hal_init_bytes()),
-            HalInitRegister::SleepTimerControl => {
-                modify_complete!(self.registers.sleep_timer_control())
             }
-            HalInitRegister::HalInitControl0 => {
-                modify_complete!(self.registers.hal_init_control_0())
+            HalInitOperation::ClearSchedulerConfig16To20 => {
+                self.registers
+                    .hal_init_scheduler_control()
+                    .modify(|_, writer| writer.config_16_20().set(0));
             }
-            HalInitRegister::HalInitControl1 => {
-                modify_complete!(self.registers.hal_init_control_1())
+            HalInitOperation::PublishSchedulerConfig16To20(value) => {
+                self.registers
+                    .hal_init_scheduler_control()
+                    .modify(|_, writer| writer.config_16_20().set(value));
             }
-            HalInitRegister::HalInitLatch => modify_complete!(self.registers.hal_init_latch()),
-            HalInitRegister::HalInitSchedulerControl => {
-                modify_complete!(self.registers.hal_init_scheduler_control())
+            HalInitOperation::EnableSchedulerControl => {
+                self.registers
+                    .hal_init_scheduler_control()
+                    .modify(|_, writer| writer.enable_31().set_bit());
             }
-            HalInitRegister::HalInitLowHalf => {
-                modify_complete!(self.registers.hal_init_low_half())
+            HalInitOperation::ClearLowHalf => {
+                self.registers
+                    .hal_init_low_half()
+                    .modify(|_, writer| writer.config_low_16().set(0));
             }
-            HalInitRegister::HalInitSlotMap0 => {
-                modify_complete!(self.registers.hal_init_slot_map(0))
+            HalInitOperation::FillLowHalf => {
+                self.registers
+                    .hal_init_low_half()
+                    .modify(|_, writer| writer.config_low_16().set(u16::MAX));
             }
-            HalInitRegister::HalInitSlotMap1 => {
-                modify_complete!(self.registers.hal_init_slot_map(1))
+            HalInitOperation::ClearSchedulerByte1 => {
+                self.registers
+                    .hal_init_scheduler_control()
+                    .modify(|_, writer| writer.config_byte_1().set(0));
             }
-            _ => unreachable!("HAL-init plan attempted an unreviewed RMW"),
+            HalInitOperation::PublishSchedulerByte1(value) => {
+                self.registers
+                    .hal_init_scheduler_control()
+                    .modify(|_, writer| writer.config_byte_1().set(value));
+            }
+            HalInitOperation::ClearSlotLaneUpper { register, lane } => {
+                let slots = self.registers.hal_init_slot_map(match register {
+                    HalInitRegister::SlotMap0 => 0,
+                    HalInitRegister::SlotMap1 => 1,
+                });
+                macro_rules! clear_lane_upper {
+                    ($index_high:ident, $clear_high:ident) => {{
+                        slots.modify(|_, writer| {
+                            writer.$index_high().clear_bit().$clear_high().clear_bit()
+                        });
+                    }};
+                }
+                match lane {
+                    0 => clear_lane_upper!(lane_0_index_high, lane_0_clear_high_unknown),
+                    1 => clear_lane_upper!(lane_1_index_high, lane_1_clear_high_unknown),
+                    2 => clear_lane_upper!(lane_2_index_high, lane_2_clear_high_unknown),
+                    3 => clear_lane_upper!(lane_3_index_high, lane_3_clear_high_unknown),
+                    4 => clear_lane_upper!(lane_4_index_high, lane_4_clear_high_unknown),
+                    5 => clear_lane_upper!(lane_5_index_high, lane_5_clear_high_unknown),
+                    6 => clear_lane_upper!(lane_6_index_high, lane_6_clear_high_unknown),
+                    7 => clear_lane_upper!(lane_7_index_high, lane_7_clear_high_unknown),
+                    _ => unreachable!("HAL-init slot lane is bounded to eight entries"),
+                };
+            }
+            HalInitOperation::PublishSlotLane {
+                register,
+                lane,
+                set_retained_index_low,
+                index_high,
+            } => {
+                let slots = self.registers.hal_init_slot_map(match register {
+                    HalInitRegister::SlotMap0 => 0,
+                    HalInitRegister::SlotMap1 => 1,
+                });
+                macro_rules! publish_lane {
+                    ($enable:ident, $index_low:ident, $index_high:ident) => {{
+                        slots.modify(|_, writer| {
+                            let writer = writer.$enable().set_bit();
+                            let writer = if set_retained_index_low {
+                                writer.$index_low().set_bit()
+                            } else {
+                                writer
+                            };
+                            if index_high == 0 {
+                                writer.$index_high().clear_bit()
+                            } else {
+                                writer.$index_high().set_bit()
+                            }
+                        });
+                    }};
+                }
+                match lane {
+                    0 => publish_lane!(lane_0_enable, lane_0_retained_index_low, lane_0_index_high),
+                    1 => publish_lane!(lane_1_enable, lane_1_retained_index_low, lane_1_index_high),
+                    2 => publish_lane!(lane_2_enable, lane_2_retained_index_low, lane_2_index_high),
+                    3 => publish_lane!(lane_3_enable, lane_3_retained_index_low, lane_3_index_high),
+                    4 => publish_lane!(lane_4_enable, lane_4_retained_index_low, lane_4_index_high),
+                    5 => publish_lane!(lane_5_enable, lane_5_retained_index_low, lane_5_index_high),
+                    6 => publish_lane!(lane_6_enable, lane_6_retained_index_low, lane_6_index_high),
+                    7 => publish_lane!(lane_7_enable, lane_7_retained_index_low, lane_7_index_high),
+                    _ => unreachable!("HAL-init slot lane is bounded to eight entries"),
+                };
+            }
         }
     }
 }
@@ -413,27 +522,17 @@ mod tests {
 
     use super::{
         BluetoothControllerHalInitConfig, BluetoothHalInitPeriod, BluetoothHalInitScale,
-        HalInitRegister, HalInitTransaction, execute_hal_init,
+        HalInitOperation, HalInitRegister, HalInitTransaction, execute_hal_init,
     };
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    enum Operation {
-        Write(HalInitRegister, u32),
-        Modify(HalInitRegister, u32, u32),
-    }
 
     #[derive(Default)]
     struct Recorder {
-        operations: Vec<Operation>,
+        operations: Vec<HalInitOperation>,
     }
 
     impl HalInitTransaction for Recorder {
-        fn write(&mut self, register: HalInitRegister, image: u32) {
-            self.operations.push(Operation::Write(register, image));
-        }
-
-        fn modify(&mut self, register: HalInitRegister, preserve_mask: u32, set_mask: u32) {
-            self.operations
-                .push(Operation::Modify(register, preserve_mask, set_mask));
+        fn apply(&mut self, operation: HalInitOperation) {
+            self.operations.push(operation);
         }
     }
 
@@ -497,7 +596,7 @@ mod tests {
     }
 
     #[test]
-    fn complete_transaction_has_exact_prefix_and_thirty_two_lane_edges() {
+    fn complete_transaction_has_semantic_prefix_and_thirty_two_lane_edges() {
         let mut recorder = Recorder::default();
         execute_hal_init(
             &mut recorder,
@@ -508,55 +607,45 @@ mod tests {
         assert_eq!(
             recorder.operations[..18],
             [
-                Operation::Write(HalInitRegister::SchedulerSramPointerPrefix, 0x2f00_0000),
-                Operation::Modify(HalInitRegister::SleepTimerControl, 0xffff_fff8, 3),
-                Operation::Modify(HalInitRegister::HalInitBytes, 0xffff_ff00, 22),
-                Operation::Modify(HalInitRegister::HalInitBytes, 0xffff_00ff, 66 << 8),
-                Operation::Write(HalInitRegister::HalInitLatch, 0x40),
-                Operation::Write(HalInitRegister::HalInitLow20, 0x000f_ffff),
-                Operation::Modify(HalInitRegister::HalInitLatch, u32::MAX, 0x8000_0000),
-                Operation::Modify(HalInitRegister::HalInitControl1, u32::MAX, 0x000c_8000),
-                Operation::Modify(HalInitRegister::HalInitControl1, u32::MAX, 0x0000_00c8),
-                Operation::Modify(HalInitRegister::HalInitControl0, u32::MAX, 0x8000_0000),
-                Operation::Modify(HalInitRegister::SleepTimerControl, 0x00ff_ffff, 0),
-                Operation::Modify(HalInitRegister::HalInitSchedulerControl, 0xffe0_ffff, 0,),
-                Operation::Modify(
-                    HalInitRegister::HalInitSchedulerControl,
-                    u32::MAX,
-                    0x0010_0000,
-                ),
-                Operation::Modify(
-                    HalInitRegister::HalInitSchedulerControl,
-                    u32::MAX,
-                    0x8000_0000,
-                ),
-                Operation::Modify(HalInitRegister::HalInitLowHalf, 0xffff_0000, 0),
-                Operation::Modify(HalInitRegister::HalInitLowHalf, u32::MAX, 0x0000_ffff),
-                Operation::Modify(HalInitRegister::HalInitSchedulerControl, 0xffff_00ff, 0,),
-                Operation::Modify(
-                    HalInitRegister::HalInitSchedulerControl,
-                    u32::MAX,
-                    0x0000_2000,
-                ),
+                HalInitOperation::PublishSchedulerSramPrefix(0xbc),
+                HalInitOperation::PublishSleepTimerShift(3),
+                HalInitOperation::PublishValue0(22),
+                HalInitOperation::PublishValue1(66),
+                HalInitOperation::InitializeLatch,
+                HalInitOperation::InitializeLow20,
+                HalInitOperation::EnableLatch,
+                HalInitOperation::ConfigureControl1High,
+                HalInitOperation::ConfigureControl1Low,
+                HalInitOperation::EnableControl0,
+                HalInitOperation::ResetSleepTimerHigh { config_24: false },
+                HalInitOperation::ClearSchedulerConfig16To20,
+                HalInitOperation::PublishSchedulerConfig16To20(0x10),
+                HalInitOperation::EnableSchedulerControl,
+                HalInitOperation::ClearLowHalf,
+                HalInitOperation::FillLowHalf,
+                HalInitOperation::ClearSchedulerByte1,
+                HalInitOperation::PublishSchedulerByte1(0x20),
             ]
         );
 
         for (global_index, pair) in recorder.operations[18..].chunks_exact(2).enumerate() {
             let register = if global_index < 8 {
-                HalInitRegister::HalInitSlotMap0
+                HalInitRegister::SlotMap0
             } else {
-                HalInitRegister::HalInitSlotMap1
+                HalInitRegister::SlotMap1
             };
-            let shift = (global_index & 7) * 4;
+            let lane = (global_index % 8) as u8;
+            let index_in_group = global_index % 4;
             assert_eq!(
                 pair,
                 [
-                    Operation::Modify(register, !(0x0c_u32 << shift), 0),
-                    Operation::Modify(
+                    HalInitOperation::ClearSlotLaneUpper { register, lane },
+                    HalInitOperation::PublishSlotLane {
                         register,
-                        u32::MAX,
-                        (1_u32 << shift) | (((global_index as u32) & 3) << (shift + 1)),
-                    ),
+                        lane,
+                        set_retained_index_low: index_in_group % 2 == 1,
+                        index_high: u8::from(index_in_group >= 2),
+                    },
                 ]
             );
         }

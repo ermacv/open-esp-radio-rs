@@ -2679,6 +2679,13 @@ scope = []
 register-method = "scheduler_sram_pointer_prefix"
 
 [[registers.fields]]
+svd-name = "ZERO_LOW_22_UNKNOWN"
+method = "zero_low_22_unknown"
+bit-offset = 0
+bit-width = 22
+access = "read-write"
+
+[[registers.fields]]
 svd-name = "ADDRESS_PREFIX"
 method = "address_prefix"
 bit-offset = 22
@@ -2843,10 +2850,24 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
+svd-name = "INIT_CLEAR_25_UNKNOWN"
+method = "init_clear_25_unknown"
+bit-offset = 25
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
 svd-name = "LATCH_REQUEST"
 method = "latch_request"
 bit-offset = 26
 bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_CLEAR_27_30_UNKNOWN"
+method = "init_clear_27_30_unknown"
+bit-offset = 27
+bit-width = 4
 access = "read-write"
 
 [[registers.fields]]
@@ -3204,10 +3225,24 @@ scope = []
 register-method = "hal_init_latch"
 
 [[registers.fields]]
+svd-name = "ZERO_LOW_6_UNKNOWN"
+method = "zero_low_6_unknown"
+bit-offset = 0
+bit-width = 6
+access = "read-write"
+
+[[registers.fields]]
 svd-name = "CONFIG_6"
 method = "config_6"
 bit-offset = 6
 bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ZERO_MIDDLE_24_UNKNOWN"
+method = "zero_middle_24_unknown"
+bit-offset = 7
+bit-width = 24
 access = "read-write"
 
 [[registers.fields]]
@@ -3233,6 +3268,13 @@ svd-name = "CONFIG_LOW_20"
 method = "config_low_20"
 bit-offset = 0
 bit-width = 20
+access = "write-only"
+
+[[registers.fields]]
+svd-name = "ZERO_HIGH_12_UNKNOWN"
+method = "zero_high_12_unknown"
+bit-offset = 20
+bit-width = 12
 access = "write-only"
 
 [[registers]]
@@ -3989,59 +4031,227 @@ register-method = "hal_init_slot_map"
 register-index = 0
 
 [[registers.fields]]
-svd-name = "LANE_0"
-method = "lane_0"
+svd-name = "LANE_0_ENABLE"
+method = "lane_0_enable"
 bit-offset = 0
-bit-width = 4
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_1"
-method = "lane_1"
+svd-name = "LANE_0_RETAINED_INDEX_LOW"
+method = "lane_0_retained_index_low"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_0_INDEX_HIGH"
+method = "lane_0_index_high"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_0_CLEAR_HIGH_UNKNOWN"
+method = "lane_0_clear_high_unknown"
+bit-offset = 3
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_1_ENABLE"
+method = "lane_1_enable"
 bit-offset = 4
-bit-width = 4
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_2"
-method = "lane_2"
+svd-name = "LANE_1_RETAINED_INDEX_LOW"
+method = "lane_1_retained_index_low"
+bit-offset = 5
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_1_INDEX_HIGH"
+method = "lane_1_index_high"
+bit-offset = 6
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_1_CLEAR_HIGH_UNKNOWN"
+method = "lane_1_clear_high_unknown"
+bit-offset = 7
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_2_ENABLE"
+method = "lane_2_enable"
 bit-offset = 8
-bit-width = 4
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_3"
-method = "lane_3"
+svd-name = "LANE_2_RETAINED_INDEX_LOW"
+method = "lane_2_retained_index_low"
+bit-offset = 9
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_2_INDEX_HIGH"
+method = "lane_2_index_high"
+bit-offset = 10
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_2_CLEAR_HIGH_UNKNOWN"
+method = "lane_2_clear_high_unknown"
+bit-offset = 11
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_3_ENABLE"
+method = "lane_3_enable"
 bit-offset = 12
-bit-width = 4
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_4"
-method = "lane_4"
+svd-name = "LANE_3_RETAINED_INDEX_LOW"
+method = "lane_3_retained_index_low"
+bit-offset = 13
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_3_INDEX_HIGH"
+method = "lane_3_index_high"
+bit-offset = 14
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_3_CLEAR_HIGH_UNKNOWN"
+method = "lane_3_clear_high_unknown"
+bit-offset = 15
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_4_ENABLE"
+method = "lane_4_enable"
 bit-offset = 16
-bit-width = 4
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_5"
-method = "lane_5"
+svd-name = "LANE_4_RETAINED_INDEX_LOW"
+method = "lane_4_retained_index_low"
+bit-offset = 17
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_4_INDEX_HIGH"
+method = "lane_4_index_high"
+bit-offset = 18
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_4_CLEAR_HIGH_UNKNOWN"
+method = "lane_4_clear_high_unknown"
+bit-offset = 19
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_5_ENABLE"
+method = "lane_5_enable"
 bit-offset = 20
-bit-width = 4
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_6"
-method = "lane_6"
+svd-name = "LANE_5_RETAINED_INDEX_LOW"
+method = "lane_5_retained_index_low"
+bit-offset = 21
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_5_INDEX_HIGH"
+method = "lane_5_index_high"
+bit-offset = 22
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_5_CLEAR_HIGH_UNKNOWN"
+method = "lane_5_clear_high_unknown"
+bit-offset = 23
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_6_ENABLE"
+method = "lane_6_enable"
 bit-offset = 24
-bit-width = 4
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_7"
-method = "lane_7"
+svd-name = "LANE_6_RETAINED_INDEX_LOW"
+method = "lane_6_retained_index_low"
+bit-offset = 25
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_6_INDEX_HIGH"
+method = "lane_6_index_high"
+bit-offset = 26
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_6_CLEAR_HIGH_UNKNOWN"
+method = "lane_6_clear_high_unknown"
+bit-offset = 27
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_7_ENABLE"
+method = "lane_7_enable"
 bit-offset = 28
-bit-width = 4
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_7_RETAINED_INDEX_LOW"
+method = "lane_7_retained_index_low"
+bit-offset = 29
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_7_INDEX_HIGH"
+method = "lane_7_index_high"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_7_CLEAR_HIGH_UNKNOWN"
+method = "lane_7_clear_high_unknown"
+bit-offset = 31
+bit-width = 1
 access = "read-write"
 
 [[registers]]
@@ -4057,59 +4267,227 @@ register-method = "hal_init_slot_map"
 register-index = 1
 
 [[registers.fields]]
-svd-name = "LANE_0"
-method = "lane_0"
+svd-name = "LANE_0_ENABLE"
+method = "lane_0_enable"
 bit-offset = 0
-bit-width = 4
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_1"
-method = "lane_1"
+svd-name = "LANE_0_RETAINED_INDEX_LOW"
+method = "lane_0_retained_index_low"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_0_INDEX_HIGH"
+method = "lane_0_index_high"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_0_CLEAR_HIGH_UNKNOWN"
+method = "lane_0_clear_high_unknown"
+bit-offset = 3
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_1_ENABLE"
+method = "lane_1_enable"
 bit-offset = 4
-bit-width = 4
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_2"
-method = "lane_2"
+svd-name = "LANE_1_RETAINED_INDEX_LOW"
+method = "lane_1_retained_index_low"
+bit-offset = 5
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_1_INDEX_HIGH"
+method = "lane_1_index_high"
+bit-offset = 6
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_1_CLEAR_HIGH_UNKNOWN"
+method = "lane_1_clear_high_unknown"
+bit-offset = 7
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_2_ENABLE"
+method = "lane_2_enable"
 bit-offset = 8
-bit-width = 4
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_3"
-method = "lane_3"
+svd-name = "LANE_2_RETAINED_INDEX_LOW"
+method = "lane_2_retained_index_low"
+bit-offset = 9
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_2_INDEX_HIGH"
+method = "lane_2_index_high"
+bit-offset = 10
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_2_CLEAR_HIGH_UNKNOWN"
+method = "lane_2_clear_high_unknown"
+bit-offset = 11
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_3_ENABLE"
+method = "lane_3_enable"
 bit-offset = 12
-bit-width = 4
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_4"
-method = "lane_4"
+svd-name = "LANE_3_RETAINED_INDEX_LOW"
+method = "lane_3_retained_index_low"
+bit-offset = 13
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_3_INDEX_HIGH"
+method = "lane_3_index_high"
+bit-offset = 14
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_3_CLEAR_HIGH_UNKNOWN"
+method = "lane_3_clear_high_unknown"
+bit-offset = 15
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_4_ENABLE"
+method = "lane_4_enable"
 bit-offset = 16
-bit-width = 4
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_5"
-method = "lane_5"
+svd-name = "LANE_4_RETAINED_INDEX_LOW"
+method = "lane_4_retained_index_low"
+bit-offset = 17
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_4_INDEX_HIGH"
+method = "lane_4_index_high"
+bit-offset = 18
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_4_CLEAR_HIGH_UNKNOWN"
+method = "lane_4_clear_high_unknown"
+bit-offset = 19
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_5_ENABLE"
+method = "lane_5_enable"
 bit-offset = 20
-bit-width = 4
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_6"
-method = "lane_6"
+svd-name = "LANE_5_RETAINED_INDEX_LOW"
+method = "lane_5_retained_index_low"
+bit-offset = 21
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_5_INDEX_HIGH"
+method = "lane_5_index_high"
+bit-offset = 22
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_5_CLEAR_HIGH_UNKNOWN"
+method = "lane_5_clear_high_unknown"
+bit-offset = 23
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_6_ENABLE"
+method = "lane_6_enable"
 bit-offset = 24
-bit-width = 4
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "LANE_7"
-method = "lane_7"
+svd-name = "LANE_6_RETAINED_INDEX_LOW"
+method = "lane_6_retained_index_low"
+bit-offset = 25
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_6_INDEX_HIGH"
+method = "lane_6_index_high"
+bit-offset = 26
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_6_CLEAR_HIGH_UNKNOWN"
+method = "lane_6_clear_high_unknown"
+bit-offset = 27
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_7_ENABLE"
+method = "lane_7_enable"
 bit-offset = 28
-bit-width = 4
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_7_RETAINED_INDEX_LOW"
+method = "lane_7_retained_index_low"
+bit-offset = 29
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_7_INDEX_HIGH"
+method = "lane_7_index_high"
+bit-offset = 30
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LANE_7_CLEAR_HIGH_UNKNOWN"
+method = "lane_7_clear_high_unknown"
+bit-offset = 31
+bit-width = 1
 access = "read-write"
 
 [[registers]]

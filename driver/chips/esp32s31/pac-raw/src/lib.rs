@@ -39910,13 +39910,13 @@ pub mod bluetooth_controller_core {
         pub const fn operational_status_0324(&self) -> &OperationalStatus0324 {
             &self.operational_status_0324
         }
-        #[doc = "0x34c..0x354 - The adjacent words at 0x2010134c and 0x20101350 each hold eight independently initialized four-bit lanes. For every lane, the complete BTDM HAL loop clears nibble mask 0xc, then ORs 1 | ((global index & 3) << 1) through a fresh read. Bit one can therefore retain a pre-existing one. The hardware meaning of the words and values remains unknown."]
+        #[doc = "0x34c..0x354 - The adjacent words at 0x2010134c and 0x20101350 each hold eight independently initialized four-bit lanes. For every lane, the complete BTDM HAL loop first clears bits 3:2, then sets bit 0, conditionally sets but never clears bit 1, and publishes the global-index high bit into bit 2. The hardware meaning of the words and values remains unknown."]
         #[inline(always)]
         pub const fn hal_init_slot_map(&self, n: usize) -> &HalInitSlotMap {
             &self.hal_init_slot_map[n]
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x34c..0x354 - The adjacent words at 0x2010134c and 0x20101350 each hold eight independently initialized four-bit lanes. For every lane, the complete BTDM HAL loop clears nibble mask 0xc, then ORs 1 | ((global index & 3) << 1) through a fresh read. Bit one can therefore retain a pre-existing one. The hardware meaning of the words and values remains unknown."]
+        #[doc = "0x34c..0x354 - The adjacent words at 0x2010134c and 0x20101350 each hold eight independently initialized four-bit lanes. For every lane, the complete BTDM HAL loop first clears bits 3:2, then sets bit 0, conditionally sets but never clears bit 1, and publishes the global-index high bit into bit 2. The hardware meaning of the words and values remains unknown."]
         #[inline(always)]
         pub fn hal_init_slot_map_iter(&self) -> impl Iterator<Item = &HalInitSlotMap> {
             self.hal_init_slot_map.iter()
@@ -39990,11 +39990,20 @@ pub mod bluetooth_controller_core {
         pub type R = crate::R<SchedulerSramPointerPrefixSpec>;
         #[doc = "Register `SCHEDULER_SRAM_POINTER_PREFIX` writer"]
         pub type W = crate::W<SchedulerSramPointerPrefixSpec>;
+        #[doc = "Field `ZERO_LOW_22_UNKNOWN` reader - Full HAL initialization writes zero to the low 22 unassigned positions."]
+        pub type ZeroLow22UnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `ZERO_LOW_22_UNKNOWN` writer - Full HAL initialization writes zero to the low 22 unassigned positions."]
+        pub type ZeroLow22UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 22, u32, crate::Safe>;
         #[doc = "Field `ADDRESS_PREFIX` reader - "]
         pub type AddressPrefixR = crate::FieldReader<u16>;
         #[doc = "Field `ADDRESS_PREFIX` writer - "]
-        pub type AddressPrefixW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        pub type AddressPrefixW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
         impl R {
+            #[doc = "Bits 0:21 - Full HAL initialization writes zero to the low 22 unassigned positions."]
+            #[inline(always)]
+            pub fn zero_low_22_unknown(&self) -> ZeroLow22UnknownR {
+                ZeroLow22UnknownR::new(self.bits & 0x003f_ffff)
+            }
             #[doc = "Bits 22:31"]
             #[inline(always)]
             pub fn address_prefix(&self) -> AddressPrefixR {
@@ -40002,6 +40011,13 @@ pub mod bluetooth_controller_core {
             }
         }
         impl W {
+            #[doc = "Bits 0:21 - Full HAL initialization writes zero to the low 22 unassigned positions."]
+            #[inline(always)]
+            pub fn zero_low_22_unknown(
+                &mut self,
+            ) -> ZeroLow22UnknownW<'_, SchedulerSramPointerPrefixSpec> {
+                ZeroLow22UnknownW::new(self, 0)
+            }
             #[doc = "Bits 22:31"]
             #[inline(always)]
             pub fn address_prefix(&mut self) -> AddressPrefixW<'_, SchedulerSramPointerPrefixSpec> {
@@ -40057,11 +40073,11 @@ pub mod bluetooth_controller_core {
         #[doc = "Field `VALUE_0` reader - "]
         pub type Value0R = crate::FieldReader;
         #[doc = "Field `VALUE_0` writer - "]
-        pub type Value0W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type Value0W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `VALUE_1` reader - "]
         pub type Value1R = crate::FieldReader;
         #[doc = "Field `VALUE_1` writer - "]
-        pub type Value1W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type Value1W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:7"]
             #[inline(always)]
@@ -40110,15 +40126,23 @@ pub mod bluetooth_controller_core {
         #[doc = "Field `CONFIG_LOW_3` reader - "]
         pub type ConfigLow3R = crate::FieldReader;
         #[doc = "Field `CONFIG_LOW_3` writer - "]
-        pub type ConfigLow3W<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        pub type ConfigLow3W<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
         #[doc = "Field `CONFIG_24` reader - "]
         pub type Config24R = crate::BitReader;
         #[doc = "Field `CONFIG_24` writer - "]
         pub type Config24W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `INIT_CLEAR_25_UNKNOWN` reader - HAL initialization clears this unassigned position together with the complete high-byte reset."]
+        pub type InitClear25UnknownR = crate::BitReader;
+        #[doc = "Field `INIT_CLEAR_25_UNKNOWN` writer - HAL initialization clears this unassigned position together with the complete high-byte reset."]
+        pub type InitClear25UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `LATCH_REQUEST` reader - "]
         pub type LatchRequestR = crate::BitReader;
         #[doc = "Field `LATCH_REQUEST` writer - "]
         pub type LatchRequestW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `INIT_CLEAR_27_30_UNKNOWN` reader - HAL initialization clears these unassigned positions together with the complete high-byte reset."]
+        pub type InitClear27_30UnknownR = crate::FieldReader;
+        #[doc = "Field `INIT_CLEAR_27_30_UNKNOWN` writer - HAL initialization clears these unassigned positions together with the complete high-byte reset."]
+        pub type InitClear27_30UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `TIMER_ARM` reader - "]
         pub type TimerArmR = crate::BitReader;
         #[doc = "Field `TIMER_ARM` writer - "]
@@ -40134,10 +40158,20 @@ pub mod bluetooth_controller_core {
             pub fn config_24(&self) -> Config24R {
                 Config24R::new(((self.bits >> 24) & 1) != 0)
             }
+            #[doc = "Bit 25 - HAL initialization clears this unassigned position together with the complete high-byte reset."]
+            #[inline(always)]
+            pub fn init_clear_25_unknown(&self) -> InitClear25UnknownR {
+                InitClear25UnknownR::new(((self.bits >> 25) & 1) != 0)
+            }
             #[doc = "Bit 26"]
             #[inline(always)]
             pub fn latch_request(&self) -> LatchRequestR {
                 LatchRequestR::new(((self.bits >> 26) & 1) != 0)
+            }
+            #[doc = "Bits 27:30 - HAL initialization clears these unassigned positions together with the complete high-byte reset."]
+            #[inline(always)]
+            pub fn init_clear_27_30_unknown(&self) -> InitClear27_30UnknownR {
+                InitClear27_30UnknownR::new(((self.bits >> 27) & 0x0f) as u8)
             }
             #[doc = "Bit 31"]
             #[inline(always)]
@@ -40156,10 +40190,24 @@ pub mod bluetooth_controller_core {
             pub fn config_24(&mut self) -> Config24W<'_, SleepTimerControlSpec> {
                 Config24W::new(self, 24)
             }
+            #[doc = "Bit 25 - HAL initialization clears this unassigned position together with the complete high-byte reset."]
+            #[inline(always)]
+            pub fn init_clear_25_unknown(
+                &mut self,
+            ) -> InitClear25UnknownW<'_, SleepTimerControlSpec> {
+                InitClear25UnknownW::new(self, 25)
+            }
             #[doc = "Bit 26"]
             #[inline(always)]
             pub fn latch_request(&mut self) -> LatchRequestW<'_, SleepTimerControlSpec> {
                 LatchRequestW::new(self, 26)
+            }
+            #[doc = "Bits 27:30 - HAL initialization clears these unassigned positions together with the complete high-byte reset."]
+            #[inline(always)]
+            pub fn init_clear_27_30_unknown(
+                &mut self,
+            ) -> InitClear27_30UnknownW<'_, SleepTimerControlSpec> {
+                InitClear27_30UnknownW::new(self, 27)
             }
             #[doc = "Bit 31"]
             #[inline(always)]
@@ -40758,7 +40806,7 @@ pub mod bluetooth_controller_core {
         #[doc = "Field `CONFIG_6_7` reader - "]
         pub type Config6_7R = crate::FieldReader;
         #[doc = "Field `CONFIG_6_7` writer - "]
-        pub type Config6_7W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type Config6_7W<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `CONFIG_15` reader - "]
         pub type Config15R = crate::BitReader;
         #[doc = "Field `CONFIG_15` writer - "]
@@ -40766,7 +40814,7 @@ pub mod bluetooth_controller_core {
         #[doc = "Field `CONFIG_18_19` reader - "]
         pub type Config18_19R = crate::FieldReader;
         #[doc = "Field `CONFIG_18_19` writer - "]
-        pub type Config18_19W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type Config18_19W<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         impl R {
             #[doc = "Bit 3"]
             #[inline(always)]
@@ -40832,19 +40880,37 @@ pub mod bluetooth_controller_core {
         pub type R = crate::R<HalInitLatchSpec>;
         #[doc = "Register `HAL_INIT_LATCH` writer"]
         pub type W = crate::W<HalInitLatchSpec>;
+        #[doc = "Field `ZERO_LOW_6_UNKNOWN` reader - The initial complete HAL write clears these unassigned positions."]
+        pub type ZeroLow6UnknownR = crate::FieldReader;
+        #[doc = "Field `ZERO_LOW_6_UNKNOWN` writer - The initial complete HAL write clears these unassigned positions."]
+        pub type ZeroLow6UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         #[doc = "Field `CONFIG_6` reader - "]
         pub type Config6R = crate::BitReader;
         #[doc = "Field `CONFIG_6` writer - "]
         pub type Config6W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ZERO_MIDDLE_24_UNKNOWN` reader - The initial complete HAL write clears these unassigned positions."]
+        pub type ZeroMiddle24UnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `ZERO_MIDDLE_24_UNKNOWN` writer - The initial complete HAL write clears these unassigned positions."]
+        pub type ZeroMiddle24UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 24, u32, crate::Safe>;
         #[doc = "Field `ENABLE_31` reader - "]
         pub type Enable31R = crate::BitReader;
         #[doc = "Field `ENABLE_31` writer - "]
         pub type Enable31W<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
+            #[doc = "Bits 0:5 - The initial complete HAL write clears these unassigned positions."]
+            #[inline(always)]
+            pub fn zero_low_6_unknown(&self) -> ZeroLow6UnknownR {
+                ZeroLow6UnknownR::new((self.bits & 0x3f) as u8)
+            }
             #[doc = "Bit 6"]
             #[inline(always)]
             pub fn config_6(&self) -> Config6R {
                 Config6R::new(((self.bits >> 6) & 1) != 0)
+            }
+            #[doc = "Bits 7:30 - The initial complete HAL write clears these unassigned positions."]
+            #[inline(always)]
+            pub fn zero_middle_24_unknown(&self) -> ZeroMiddle24UnknownR {
+                ZeroMiddle24UnknownR::new((self.bits >> 7) & 0x00ff_ffff)
             }
             #[doc = "Bit 31"]
             #[inline(always)]
@@ -40853,10 +40919,20 @@ pub mod bluetooth_controller_core {
             }
         }
         impl W {
+            #[doc = "Bits 0:5 - The initial complete HAL write clears these unassigned positions."]
+            #[inline(always)]
+            pub fn zero_low_6_unknown(&mut self) -> ZeroLow6UnknownW<'_, HalInitLatchSpec> {
+                ZeroLow6UnknownW::new(self, 0)
+            }
             #[doc = "Bit 6"]
             #[inline(always)]
             pub fn config_6(&mut self) -> Config6W<'_, HalInitLatchSpec> {
                 Config6W::new(self, 6)
+            }
+            #[doc = "Bits 7:30 - The initial complete HAL write clears these unassigned positions."]
+            #[inline(always)]
+            pub fn zero_middle_24_unknown(&mut self) -> ZeroMiddle24UnknownW<'_, HalInitLatchSpec> {
+                ZeroMiddle24UnknownW::new(self, 7)
             }
             #[doc = "Bit 31"]
             #[inline(always)]
@@ -40884,12 +40960,19 @@ pub mod bluetooth_controller_core {
         #[doc = "Register `HAL_INIT_LOW_20` writer"]
         pub type W = crate::W<HalInitLow20Spec>;
         #[doc = "Field `CONFIG_LOW_20` writer - "]
-        pub type ConfigLow20W<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        pub type ConfigLow20W<'a, REG> = crate::FieldWriter<'a, REG, 20, u32, crate::Safe>;
+        #[doc = "Field `ZERO_HIGH_12_UNKNOWN` writer - The complete HAL write clears the unassigned high positions."]
+        pub type ZeroHigh12UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16, crate::Safe>;
         impl W {
             #[doc = "Bits 0:19"]
             #[inline(always)]
             pub fn config_low_20(&mut self) -> ConfigLow20W<'_, HalInitLow20Spec> {
                 ConfigLow20W::new(self, 0)
+            }
+            #[doc = "Bits 20:31 - The complete HAL write clears the unassigned high positions."]
+            #[inline(always)]
+            pub fn zero_high_12_unknown(&mut self) -> ZeroHigh12UnknownW<'_, HalInitLow20Spec> {
+                ZeroHigh12UnknownW::new(self, 20)
             }
         }
         #[doc = "BTDM HAL initialization writes the finite complete image 0x000FFFFF. Inner semantics remain unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`hal_init_low_20::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -41374,11 +41457,11 @@ pub mod bluetooth_controller_core {
         #[doc = "Field `CONFIG_BYTE_1` reader - "]
         pub type ConfigByte1R = crate::FieldReader;
         #[doc = "Field `CONFIG_BYTE_1` writer - "]
-        pub type ConfigByte1W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type ConfigByte1W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `CONFIG_16_20` reader - "]
         pub type Config16_20R = crate::FieldReader;
         #[doc = "Field `CONFIG_16_20` writer - "]
-        pub type Config16_20W<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        pub type Config16_20W<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
         #[doc = "Field `ENABLE_31` reader - "]
         pub type Enable31R = crate::BitReader;
         #[doc = "Field `ENABLE_31` writer - "]
@@ -41726,7 +41809,7 @@ pub mod bluetooth_controller_core {
         #[doc = "Field `CONFIG_LOW_16` reader - "]
         pub type ConfigLow16R = crate::FieldReader<u16>;
         #[doc = "Field `CONFIG_LOW_16` writer - "]
-        pub type ConfigLow16W<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        pub type ConfigLow16W<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
         impl R {
             #[doc = "Bits 0:15"]
             #[inline(always)]
@@ -42065,132 +42148,500 @@ pub mod bluetooth_controller_core {
         #[doc = "`read()` method returns [`scan_hw_snapshot::R`](R) reader structure"]
         impl crate::Readable for ScanHwSnapshotSpec {}
     }
-    #[doc = "HAL_INIT_SLOT_MAP (rw) register accessor: The adjacent words at 0x2010134c and 0x20101350 each hold eight independently initialized four-bit lanes. For every lane, the complete BTDM HAL loop clears nibble mask 0xc, then ORs 1 | ((global index & 3) << 1) through a fresh read. Bit one can therefore retain a pre-existing one. The hardware meaning of the words and values remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`hal_init_slot_map::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`hal_init_slot_map::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@hal_init_slot_map`] module"]
+    #[doc = "HAL_INIT_SLOT_MAP (rw) register accessor: The adjacent words at 0x2010134c and 0x20101350 each hold eight independently initialized four-bit lanes. For every lane, the complete BTDM HAL loop first clears bits 3:2, then sets bit 0, conditionally sets but never clears bit 1, and publishes the global-index high bit into bit 2. The hardware meaning of the words and values remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`hal_init_slot_map::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`hal_init_slot_map::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@hal_init_slot_map`] module"]
     #[doc(alias = "HAL_INIT_SLOT_MAP")]
     pub type HalInitSlotMap = crate::Reg<hal_init_slot_map::HalInitSlotMapSpec>;
-    #[doc = "The adjacent words at 0x2010134c and 0x20101350 each hold eight independently initialized four-bit lanes. For every lane, the complete BTDM HAL loop clears nibble mask 0xc, then ORs 1 | ((global index & 3) << 1) through a fresh read. Bit one can therefore retain a pre-existing one. The hardware meaning of the words and values remains unknown."]
+    #[doc = "The adjacent words at 0x2010134c and 0x20101350 each hold eight independently initialized four-bit lanes. For every lane, the complete BTDM HAL loop first clears bits 3:2, then sets bit 0, conditionally sets but never clears bit 1, and publishes the global-index high bit into bit 2. The hardware meaning of the words and values remains unknown."]
     pub mod hal_init_slot_map {
         #[doc = "Register `HAL_INIT_SLOT_MAP%s` reader"]
         pub type R = crate::R<HalInitSlotMapSpec>;
         #[doc = "Register `HAL_INIT_SLOT_MAP%s` writer"]
         pub type W = crate::W<HalInitSlotMapSpec>;
-        #[doc = "Field `LANE_0` reader - "]
-        pub type Lane0R = crate::FieldReader;
-        #[doc = "Field `LANE_0` writer - "]
-        pub type Lane0W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
-        #[doc = "Field `LANE_1` reader - "]
-        pub type Lane1R = crate::FieldReader;
-        #[doc = "Field `LANE_1` writer - "]
-        pub type Lane1W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
-        #[doc = "Field `LANE_2` reader - "]
-        pub type Lane2R = crate::FieldReader;
-        #[doc = "Field `LANE_2` writer - "]
-        pub type Lane2W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
-        #[doc = "Field `LANE_3` reader - "]
-        pub type Lane3R = crate::FieldReader;
-        #[doc = "Field `LANE_3` writer - "]
-        pub type Lane3W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
-        #[doc = "Field `LANE_4` reader - "]
-        pub type Lane4R = crate::FieldReader;
-        #[doc = "Field `LANE_4` writer - "]
-        pub type Lane4W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
-        #[doc = "Field `LANE_5` reader - "]
-        pub type Lane5R = crate::FieldReader;
-        #[doc = "Field `LANE_5` writer - "]
-        pub type Lane5W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
-        #[doc = "Field `LANE_6` reader - "]
-        pub type Lane6R = crate::FieldReader;
-        #[doc = "Field `LANE_6` writer - "]
-        pub type Lane6W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
-        #[doc = "Field `LANE_7` reader - "]
-        pub type Lane7R = crate::FieldReader;
-        #[doc = "Field `LANE_7` writer - "]
-        pub type Lane7W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `LANE_0_ENABLE` reader - "]
+        pub type Lane0EnableR = crate::BitReader;
+        #[doc = "Field `LANE_0_ENABLE` writer - "]
+        pub type Lane0EnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_0_RETAINED_INDEX_LOW` reader - "]
+        pub type Lane0RetainedIndexLowR = crate::BitReader;
+        #[doc = "Field `LANE_0_RETAINED_INDEX_LOW` writer - "]
+        pub type Lane0RetainedIndexLowW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_0_INDEX_HIGH` reader - "]
+        pub type Lane0IndexHighR = crate::BitReader;
+        #[doc = "Field `LANE_0_INDEX_HIGH` writer - "]
+        pub type Lane0IndexHighW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_0_CLEAR_HIGH_UNKNOWN` reader - "]
+        pub type Lane0ClearHighUnknownR = crate::BitReader;
+        #[doc = "Field `LANE_0_CLEAR_HIGH_UNKNOWN` writer - "]
+        pub type Lane0ClearHighUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_1_ENABLE` reader - "]
+        pub type Lane1EnableR = crate::BitReader;
+        #[doc = "Field `LANE_1_ENABLE` writer - "]
+        pub type Lane1EnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_1_RETAINED_INDEX_LOW` reader - "]
+        pub type Lane1RetainedIndexLowR = crate::BitReader;
+        #[doc = "Field `LANE_1_RETAINED_INDEX_LOW` writer - "]
+        pub type Lane1RetainedIndexLowW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_1_INDEX_HIGH` reader - "]
+        pub type Lane1IndexHighR = crate::BitReader;
+        #[doc = "Field `LANE_1_INDEX_HIGH` writer - "]
+        pub type Lane1IndexHighW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_1_CLEAR_HIGH_UNKNOWN` reader - "]
+        pub type Lane1ClearHighUnknownR = crate::BitReader;
+        #[doc = "Field `LANE_1_CLEAR_HIGH_UNKNOWN` writer - "]
+        pub type Lane1ClearHighUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_2_ENABLE` reader - "]
+        pub type Lane2EnableR = crate::BitReader;
+        #[doc = "Field `LANE_2_ENABLE` writer - "]
+        pub type Lane2EnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_2_RETAINED_INDEX_LOW` reader - "]
+        pub type Lane2RetainedIndexLowR = crate::BitReader;
+        #[doc = "Field `LANE_2_RETAINED_INDEX_LOW` writer - "]
+        pub type Lane2RetainedIndexLowW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_2_INDEX_HIGH` reader - "]
+        pub type Lane2IndexHighR = crate::BitReader;
+        #[doc = "Field `LANE_2_INDEX_HIGH` writer - "]
+        pub type Lane2IndexHighW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_2_CLEAR_HIGH_UNKNOWN` reader - "]
+        pub type Lane2ClearHighUnknownR = crate::BitReader;
+        #[doc = "Field `LANE_2_CLEAR_HIGH_UNKNOWN` writer - "]
+        pub type Lane2ClearHighUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_3_ENABLE` reader - "]
+        pub type Lane3EnableR = crate::BitReader;
+        #[doc = "Field `LANE_3_ENABLE` writer - "]
+        pub type Lane3EnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_3_RETAINED_INDEX_LOW` reader - "]
+        pub type Lane3RetainedIndexLowR = crate::BitReader;
+        #[doc = "Field `LANE_3_RETAINED_INDEX_LOW` writer - "]
+        pub type Lane3RetainedIndexLowW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_3_INDEX_HIGH` reader - "]
+        pub type Lane3IndexHighR = crate::BitReader;
+        #[doc = "Field `LANE_3_INDEX_HIGH` writer - "]
+        pub type Lane3IndexHighW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_3_CLEAR_HIGH_UNKNOWN` reader - "]
+        pub type Lane3ClearHighUnknownR = crate::BitReader;
+        #[doc = "Field `LANE_3_CLEAR_HIGH_UNKNOWN` writer - "]
+        pub type Lane3ClearHighUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_4_ENABLE` reader - "]
+        pub type Lane4EnableR = crate::BitReader;
+        #[doc = "Field `LANE_4_ENABLE` writer - "]
+        pub type Lane4EnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_4_RETAINED_INDEX_LOW` reader - "]
+        pub type Lane4RetainedIndexLowR = crate::BitReader;
+        #[doc = "Field `LANE_4_RETAINED_INDEX_LOW` writer - "]
+        pub type Lane4RetainedIndexLowW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_4_INDEX_HIGH` reader - "]
+        pub type Lane4IndexHighR = crate::BitReader;
+        #[doc = "Field `LANE_4_INDEX_HIGH` writer - "]
+        pub type Lane4IndexHighW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_4_CLEAR_HIGH_UNKNOWN` reader - "]
+        pub type Lane4ClearHighUnknownR = crate::BitReader;
+        #[doc = "Field `LANE_4_CLEAR_HIGH_UNKNOWN` writer - "]
+        pub type Lane4ClearHighUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_5_ENABLE` reader - "]
+        pub type Lane5EnableR = crate::BitReader;
+        #[doc = "Field `LANE_5_ENABLE` writer - "]
+        pub type Lane5EnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_5_RETAINED_INDEX_LOW` reader - "]
+        pub type Lane5RetainedIndexLowR = crate::BitReader;
+        #[doc = "Field `LANE_5_RETAINED_INDEX_LOW` writer - "]
+        pub type Lane5RetainedIndexLowW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_5_INDEX_HIGH` reader - "]
+        pub type Lane5IndexHighR = crate::BitReader;
+        #[doc = "Field `LANE_5_INDEX_HIGH` writer - "]
+        pub type Lane5IndexHighW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_5_CLEAR_HIGH_UNKNOWN` reader - "]
+        pub type Lane5ClearHighUnknownR = crate::BitReader;
+        #[doc = "Field `LANE_5_CLEAR_HIGH_UNKNOWN` writer - "]
+        pub type Lane5ClearHighUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_6_ENABLE` reader - "]
+        pub type Lane6EnableR = crate::BitReader;
+        #[doc = "Field `LANE_6_ENABLE` writer - "]
+        pub type Lane6EnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_6_RETAINED_INDEX_LOW` reader - "]
+        pub type Lane6RetainedIndexLowR = crate::BitReader;
+        #[doc = "Field `LANE_6_RETAINED_INDEX_LOW` writer - "]
+        pub type Lane6RetainedIndexLowW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_6_INDEX_HIGH` reader - "]
+        pub type Lane6IndexHighR = crate::BitReader;
+        #[doc = "Field `LANE_6_INDEX_HIGH` writer - "]
+        pub type Lane6IndexHighW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_6_CLEAR_HIGH_UNKNOWN` reader - "]
+        pub type Lane6ClearHighUnknownR = crate::BitReader;
+        #[doc = "Field `LANE_6_CLEAR_HIGH_UNKNOWN` writer - "]
+        pub type Lane6ClearHighUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_7_ENABLE` reader - "]
+        pub type Lane7EnableR = crate::BitReader;
+        #[doc = "Field `LANE_7_ENABLE` writer - "]
+        pub type Lane7EnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_7_RETAINED_INDEX_LOW` reader - "]
+        pub type Lane7RetainedIndexLowR = crate::BitReader;
+        #[doc = "Field `LANE_7_RETAINED_INDEX_LOW` writer - "]
+        pub type Lane7RetainedIndexLowW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_7_INDEX_HIGH` reader - "]
+        pub type Lane7IndexHighR = crate::BitReader;
+        #[doc = "Field `LANE_7_INDEX_HIGH` writer - "]
+        pub type Lane7IndexHighW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LANE_7_CLEAR_HIGH_UNKNOWN` reader - "]
+        pub type Lane7ClearHighUnknownR = crate::BitReader;
+        #[doc = "Field `LANE_7_CLEAR_HIGH_UNKNOWN` writer - "]
+        pub type Lane7ClearHighUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bits 0:3"]
+            #[doc = "Bit 0"]
             #[inline(always)]
-            pub fn lane_0(&self) -> Lane0R {
-                Lane0R::new((self.bits & 0x0f) as u8)
+            pub fn lane_0_enable(&self) -> Lane0EnableR {
+                Lane0EnableR::new((self.bits & 1) != 0)
             }
-            #[doc = "Bits 4:7"]
+            #[doc = "Bit 1"]
             #[inline(always)]
-            pub fn lane_1(&self) -> Lane1R {
-                Lane1R::new(((self.bits >> 4) & 0x0f) as u8)
+            pub fn lane_0_retained_index_low(&self) -> Lane0RetainedIndexLowR {
+                Lane0RetainedIndexLowR::new(((self.bits >> 1) & 1) != 0)
             }
-            #[doc = "Bits 8:11"]
+            #[doc = "Bit 2"]
             #[inline(always)]
-            pub fn lane_2(&self) -> Lane2R {
-                Lane2R::new(((self.bits >> 8) & 0x0f) as u8)
+            pub fn lane_0_index_high(&self) -> Lane0IndexHighR {
+                Lane0IndexHighR::new(((self.bits >> 2) & 1) != 0)
             }
-            #[doc = "Bits 12:15"]
+            #[doc = "Bit 3"]
             #[inline(always)]
-            pub fn lane_3(&self) -> Lane3R {
-                Lane3R::new(((self.bits >> 12) & 0x0f) as u8)
+            pub fn lane_0_clear_high_unknown(&self) -> Lane0ClearHighUnknownR {
+                Lane0ClearHighUnknownR::new(((self.bits >> 3) & 1) != 0)
             }
-            #[doc = "Bits 16:19"]
+            #[doc = "Bit 4"]
             #[inline(always)]
-            pub fn lane_4(&self) -> Lane4R {
-                Lane4R::new(((self.bits >> 16) & 0x0f) as u8)
+            pub fn lane_1_enable(&self) -> Lane1EnableR {
+                Lane1EnableR::new(((self.bits >> 4) & 1) != 0)
             }
-            #[doc = "Bits 20:23"]
+            #[doc = "Bit 5"]
             #[inline(always)]
-            pub fn lane_5(&self) -> Lane5R {
-                Lane5R::new(((self.bits >> 20) & 0x0f) as u8)
+            pub fn lane_1_retained_index_low(&self) -> Lane1RetainedIndexLowR {
+                Lane1RetainedIndexLowR::new(((self.bits >> 5) & 1) != 0)
             }
-            #[doc = "Bits 24:27"]
+            #[doc = "Bit 6"]
             #[inline(always)]
-            pub fn lane_6(&self) -> Lane6R {
-                Lane6R::new(((self.bits >> 24) & 0x0f) as u8)
+            pub fn lane_1_index_high(&self) -> Lane1IndexHighR {
+                Lane1IndexHighR::new(((self.bits >> 6) & 1) != 0)
             }
-            #[doc = "Bits 28:31"]
+            #[doc = "Bit 7"]
             #[inline(always)]
-            pub fn lane_7(&self) -> Lane7R {
-                Lane7R::new(((self.bits >> 28) & 0x0f) as u8)
+            pub fn lane_1_clear_high_unknown(&self) -> Lane1ClearHighUnknownR {
+                Lane1ClearHighUnknownR::new(((self.bits >> 7) & 1) != 0)
+            }
+            #[doc = "Bit 8"]
+            #[inline(always)]
+            pub fn lane_2_enable(&self) -> Lane2EnableR {
+                Lane2EnableR::new(((self.bits >> 8) & 1) != 0)
+            }
+            #[doc = "Bit 9"]
+            #[inline(always)]
+            pub fn lane_2_retained_index_low(&self) -> Lane2RetainedIndexLowR {
+                Lane2RetainedIndexLowR::new(((self.bits >> 9) & 1) != 0)
+            }
+            #[doc = "Bit 10"]
+            #[inline(always)]
+            pub fn lane_2_index_high(&self) -> Lane2IndexHighR {
+                Lane2IndexHighR::new(((self.bits >> 10) & 1) != 0)
+            }
+            #[doc = "Bit 11"]
+            #[inline(always)]
+            pub fn lane_2_clear_high_unknown(&self) -> Lane2ClearHighUnknownR {
+                Lane2ClearHighUnknownR::new(((self.bits >> 11) & 1) != 0)
+            }
+            #[doc = "Bit 12"]
+            #[inline(always)]
+            pub fn lane_3_enable(&self) -> Lane3EnableR {
+                Lane3EnableR::new(((self.bits >> 12) & 1) != 0)
+            }
+            #[doc = "Bit 13"]
+            #[inline(always)]
+            pub fn lane_3_retained_index_low(&self) -> Lane3RetainedIndexLowR {
+                Lane3RetainedIndexLowR::new(((self.bits >> 13) & 1) != 0)
+            }
+            #[doc = "Bit 14"]
+            #[inline(always)]
+            pub fn lane_3_index_high(&self) -> Lane3IndexHighR {
+                Lane3IndexHighR::new(((self.bits >> 14) & 1) != 0)
+            }
+            #[doc = "Bit 15"]
+            #[inline(always)]
+            pub fn lane_3_clear_high_unknown(&self) -> Lane3ClearHighUnknownR {
+                Lane3ClearHighUnknownR::new(((self.bits >> 15) & 1) != 0)
+            }
+            #[doc = "Bit 16"]
+            #[inline(always)]
+            pub fn lane_4_enable(&self) -> Lane4EnableR {
+                Lane4EnableR::new(((self.bits >> 16) & 1) != 0)
+            }
+            #[doc = "Bit 17"]
+            #[inline(always)]
+            pub fn lane_4_retained_index_low(&self) -> Lane4RetainedIndexLowR {
+                Lane4RetainedIndexLowR::new(((self.bits >> 17) & 1) != 0)
+            }
+            #[doc = "Bit 18"]
+            #[inline(always)]
+            pub fn lane_4_index_high(&self) -> Lane4IndexHighR {
+                Lane4IndexHighR::new(((self.bits >> 18) & 1) != 0)
+            }
+            #[doc = "Bit 19"]
+            #[inline(always)]
+            pub fn lane_4_clear_high_unknown(&self) -> Lane4ClearHighUnknownR {
+                Lane4ClearHighUnknownR::new(((self.bits >> 19) & 1) != 0)
+            }
+            #[doc = "Bit 20"]
+            #[inline(always)]
+            pub fn lane_5_enable(&self) -> Lane5EnableR {
+                Lane5EnableR::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bit 21"]
+            #[inline(always)]
+            pub fn lane_5_retained_index_low(&self) -> Lane5RetainedIndexLowR {
+                Lane5RetainedIndexLowR::new(((self.bits >> 21) & 1) != 0)
+            }
+            #[doc = "Bit 22"]
+            #[inline(always)]
+            pub fn lane_5_index_high(&self) -> Lane5IndexHighR {
+                Lane5IndexHighR::new(((self.bits >> 22) & 1) != 0)
+            }
+            #[doc = "Bit 23"]
+            #[inline(always)]
+            pub fn lane_5_clear_high_unknown(&self) -> Lane5ClearHighUnknownR {
+                Lane5ClearHighUnknownR::new(((self.bits >> 23) & 1) != 0)
+            }
+            #[doc = "Bit 24"]
+            #[inline(always)]
+            pub fn lane_6_enable(&self) -> Lane6EnableR {
+                Lane6EnableR::new(((self.bits >> 24) & 1) != 0)
+            }
+            #[doc = "Bit 25"]
+            #[inline(always)]
+            pub fn lane_6_retained_index_low(&self) -> Lane6RetainedIndexLowR {
+                Lane6RetainedIndexLowR::new(((self.bits >> 25) & 1) != 0)
+            }
+            #[doc = "Bit 26"]
+            #[inline(always)]
+            pub fn lane_6_index_high(&self) -> Lane6IndexHighR {
+                Lane6IndexHighR::new(((self.bits >> 26) & 1) != 0)
+            }
+            #[doc = "Bit 27"]
+            #[inline(always)]
+            pub fn lane_6_clear_high_unknown(&self) -> Lane6ClearHighUnknownR {
+                Lane6ClearHighUnknownR::new(((self.bits >> 27) & 1) != 0)
+            }
+            #[doc = "Bit 28"]
+            #[inline(always)]
+            pub fn lane_7_enable(&self) -> Lane7EnableR {
+                Lane7EnableR::new(((self.bits >> 28) & 1) != 0)
+            }
+            #[doc = "Bit 29"]
+            #[inline(always)]
+            pub fn lane_7_retained_index_low(&self) -> Lane7RetainedIndexLowR {
+                Lane7RetainedIndexLowR::new(((self.bits >> 29) & 1) != 0)
+            }
+            #[doc = "Bit 30"]
+            #[inline(always)]
+            pub fn lane_7_index_high(&self) -> Lane7IndexHighR {
+                Lane7IndexHighR::new(((self.bits >> 30) & 1) != 0)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn lane_7_clear_high_unknown(&self) -> Lane7ClearHighUnknownR {
+                Lane7ClearHighUnknownR::new(((self.bits >> 31) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bits 0:3"]
+            #[doc = "Bit 0"]
             #[inline(always)]
-            pub fn lane_0(&mut self) -> Lane0W<'_, HalInitSlotMapSpec> {
-                Lane0W::new(self, 0)
+            pub fn lane_0_enable(&mut self) -> Lane0EnableW<'_, HalInitSlotMapSpec> {
+                Lane0EnableW::new(self, 0)
             }
-            #[doc = "Bits 4:7"]
+            #[doc = "Bit 1"]
             #[inline(always)]
-            pub fn lane_1(&mut self) -> Lane1W<'_, HalInitSlotMapSpec> {
-                Lane1W::new(self, 4)
+            pub fn lane_0_retained_index_low(
+                &mut self,
+            ) -> Lane0RetainedIndexLowW<'_, HalInitSlotMapSpec> {
+                Lane0RetainedIndexLowW::new(self, 1)
             }
-            #[doc = "Bits 8:11"]
+            #[doc = "Bit 2"]
             #[inline(always)]
-            pub fn lane_2(&mut self) -> Lane2W<'_, HalInitSlotMapSpec> {
-                Lane2W::new(self, 8)
+            pub fn lane_0_index_high(&mut self) -> Lane0IndexHighW<'_, HalInitSlotMapSpec> {
+                Lane0IndexHighW::new(self, 2)
             }
-            #[doc = "Bits 12:15"]
+            #[doc = "Bit 3"]
             #[inline(always)]
-            pub fn lane_3(&mut self) -> Lane3W<'_, HalInitSlotMapSpec> {
-                Lane3W::new(self, 12)
+            pub fn lane_0_clear_high_unknown(
+                &mut self,
+            ) -> Lane0ClearHighUnknownW<'_, HalInitSlotMapSpec> {
+                Lane0ClearHighUnknownW::new(self, 3)
             }
-            #[doc = "Bits 16:19"]
+            #[doc = "Bit 4"]
             #[inline(always)]
-            pub fn lane_4(&mut self) -> Lane4W<'_, HalInitSlotMapSpec> {
-                Lane4W::new(self, 16)
+            pub fn lane_1_enable(&mut self) -> Lane1EnableW<'_, HalInitSlotMapSpec> {
+                Lane1EnableW::new(self, 4)
             }
-            #[doc = "Bits 20:23"]
+            #[doc = "Bit 5"]
             #[inline(always)]
-            pub fn lane_5(&mut self) -> Lane5W<'_, HalInitSlotMapSpec> {
-                Lane5W::new(self, 20)
+            pub fn lane_1_retained_index_low(
+                &mut self,
+            ) -> Lane1RetainedIndexLowW<'_, HalInitSlotMapSpec> {
+                Lane1RetainedIndexLowW::new(self, 5)
             }
-            #[doc = "Bits 24:27"]
+            #[doc = "Bit 6"]
             #[inline(always)]
-            pub fn lane_6(&mut self) -> Lane6W<'_, HalInitSlotMapSpec> {
-                Lane6W::new(self, 24)
+            pub fn lane_1_index_high(&mut self) -> Lane1IndexHighW<'_, HalInitSlotMapSpec> {
+                Lane1IndexHighW::new(self, 6)
             }
-            #[doc = "Bits 28:31"]
+            #[doc = "Bit 7"]
             #[inline(always)]
-            pub fn lane_7(&mut self) -> Lane7W<'_, HalInitSlotMapSpec> {
-                Lane7W::new(self, 28)
+            pub fn lane_1_clear_high_unknown(
+                &mut self,
+            ) -> Lane1ClearHighUnknownW<'_, HalInitSlotMapSpec> {
+                Lane1ClearHighUnknownW::new(self, 7)
+            }
+            #[doc = "Bit 8"]
+            #[inline(always)]
+            pub fn lane_2_enable(&mut self) -> Lane2EnableW<'_, HalInitSlotMapSpec> {
+                Lane2EnableW::new(self, 8)
+            }
+            #[doc = "Bit 9"]
+            #[inline(always)]
+            pub fn lane_2_retained_index_low(
+                &mut self,
+            ) -> Lane2RetainedIndexLowW<'_, HalInitSlotMapSpec> {
+                Lane2RetainedIndexLowW::new(self, 9)
+            }
+            #[doc = "Bit 10"]
+            #[inline(always)]
+            pub fn lane_2_index_high(&mut self) -> Lane2IndexHighW<'_, HalInitSlotMapSpec> {
+                Lane2IndexHighW::new(self, 10)
+            }
+            #[doc = "Bit 11"]
+            #[inline(always)]
+            pub fn lane_2_clear_high_unknown(
+                &mut self,
+            ) -> Lane2ClearHighUnknownW<'_, HalInitSlotMapSpec> {
+                Lane2ClearHighUnknownW::new(self, 11)
+            }
+            #[doc = "Bit 12"]
+            #[inline(always)]
+            pub fn lane_3_enable(&mut self) -> Lane3EnableW<'_, HalInitSlotMapSpec> {
+                Lane3EnableW::new(self, 12)
+            }
+            #[doc = "Bit 13"]
+            #[inline(always)]
+            pub fn lane_3_retained_index_low(
+                &mut self,
+            ) -> Lane3RetainedIndexLowW<'_, HalInitSlotMapSpec> {
+                Lane3RetainedIndexLowW::new(self, 13)
+            }
+            #[doc = "Bit 14"]
+            #[inline(always)]
+            pub fn lane_3_index_high(&mut self) -> Lane3IndexHighW<'_, HalInitSlotMapSpec> {
+                Lane3IndexHighW::new(self, 14)
+            }
+            #[doc = "Bit 15"]
+            #[inline(always)]
+            pub fn lane_3_clear_high_unknown(
+                &mut self,
+            ) -> Lane3ClearHighUnknownW<'_, HalInitSlotMapSpec> {
+                Lane3ClearHighUnknownW::new(self, 15)
+            }
+            #[doc = "Bit 16"]
+            #[inline(always)]
+            pub fn lane_4_enable(&mut self) -> Lane4EnableW<'_, HalInitSlotMapSpec> {
+                Lane4EnableW::new(self, 16)
+            }
+            #[doc = "Bit 17"]
+            #[inline(always)]
+            pub fn lane_4_retained_index_low(
+                &mut self,
+            ) -> Lane4RetainedIndexLowW<'_, HalInitSlotMapSpec> {
+                Lane4RetainedIndexLowW::new(self, 17)
+            }
+            #[doc = "Bit 18"]
+            #[inline(always)]
+            pub fn lane_4_index_high(&mut self) -> Lane4IndexHighW<'_, HalInitSlotMapSpec> {
+                Lane4IndexHighW::new(self, 18)
+            }
+            #[doc = "Bit 19"]
+            #[inline(always)]
+            pub fn lane_4_clear_high_unknown(
+                &mut self,
+            ) -> Lane4ClearHighUnknownW<'_, HalInitSlotMapSpec> {
+                Lane4ClearHighUnknownW::new(self, 19)
+            }
+            #[doc = "Bit 20"]
+            #[inline(always)]
+            pub fn lane_5_enable(&mut self) -> Lane5EnableW<'_, HalInitSlotMapSpec> {
+                Lane5EnableW::new(self, 20)
+            }
+            #[doc = "Bit 21"]
+            #[inline(always)]
+            pub fn lane_5_retained_index_low(
+                &mut self,
+            ) -> Lane5RetainedIndexLowW<'_, HalInitSlotMapSpec> {
+                Lane5RetainedIndexLowW::new(self, 21)
+            }
+            #[doc = "Bit 22"]
+            #[inline(always)]
+            pub fn lane_5_index_high(&mut self) -> Lane5IndexHighW<'_, HalInitSlotMapSpec> {
+                Lane5IndexHighW::new(self, 22)
+            }
+            #[doc = "Bit 23"]
+            #[inline(always)]
+            pub fn lane_5_clear_high_unknown(
+                &mut self,
+            ) -> Lane5ClearHighUnknownW<'_, HalInitSlotMapSpec> {
+                Lane5ClearHighUnknownW::new(self, 23)
+            }
+            #[doc = "Bit 24"]
+            #[inline(always)]
+            pub fn lane_6_enable(&mut self) -> Lane6EnableW<'_, HalInitSlotMapSpec> {
+                Lane6EnableW::new(self, 24)
+            }
+            #[doc = "Bit 25"]
+            #[inline(always)]
+            pub fn lane_6_retained_index_low(
+                &mut self,
+            ) -> Lane6RetainedIndexLowW<'_, HalInitSlotMapSpec> {
+                Lane6RetainedIndexLowW::new(self, 25)
+            }
+            #[doc = "Bit 26"]
+            #[inline(always)]
+            pub fn lane_6_index_high(&mut self) -> Lane6IndexHighW<'_, HalInitSlotMapSpec> {
+                Lane6IndexHighW::new(self, 26)
+            }
+            #[doc = "Bit 27"]
+            #[inline(always)]
+            pub fn lane_6_clear_high_unknown(
+                &mut self,
+            ) -> Lane6ClearHighUnknownW<'_, HalInitSlotMapSpec> {
+                Lane6ClearHighUnknownW::new(self, 27)
+            }
+            #[doc = "Bit 28"]
+            #[inline(always)]
+            pub fn lane_7_enable(&mut self) -> Lane7EnableW<'_, HalInitSlotMapSpec> {
+                Lane7EnableW::new(self, 28)
+            }
+            #[doc = "Bit 29"]
+            #[inline(always)]
+            pub fn lane_7_retained_index_low(
+                &mut self,
+            ) -> Lane7RetainedIndexLowW<'_, HalInitSlotMapSpec> {
+                Lane7RetainedIndexLowW::new(self, 29)
+            }
+            #[doc = "Bit 30"]
+            #[inline(always)]
+            pub fn lane_7_index_high(&mut self) -> Lane7IndexHighW<'_, HalInitSlotMapSpec> {
+                Lane7IndexHighW::new(self, 30)
+            }
+            #[doc = "Bit 31"]
+            #[inline(always)]
+            pub fn lane_7_clear_high_unknown(
+                &mut self,
+            ) -> Lane7ClearHighUnknownW<'_, HalInitSlotMapSpec> {
+                Lane7ClearHighUnknownW::new(self, 31)
             }
         }
-        #[doc = "The adjacent words at 0x2010134c and 0x20101350 each hold eight independently initialized four-bit lanes. For every lane, the complete BTDM HAL loop clears nibble mask 0xc, then ORs 1 | ((global index & 3) << 1) through a fresh read. Bit one can therefore retain a pre-existing one. The hardware meaning of the words and values remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`hal_init_slot_map::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`hal_init_slot_map::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "The adjacent words at 0x2010134c and 0x20101350 each hold eight independently initialized four-bit lanes. For every lane, the complete BTDM HAL loop first clears bits 3:2, then sets bit 0, conditionally sets but never clears bit 1, and publishes the global-index high bit into bit 2. The hardware meaning of the words and values remains unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`hal_init_slot_map::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`hal_init_slot_map::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct HalInitSlotMapSpec;
         impl crate::RegisterSpec for HalInitSlotMapSpec {
             type Ux = u32;
@@ -56074,6 +56525,48 @@ pub mod zero_based_field_write {
                         .start()
                         .bit(start_value)
                 });
+        }
+    }
+
+    /// Write `ADDRESS_PREFIX` in `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_SRAM_POINTER_PREFIX` while publishing zero to every other register bit.
+    #[inline]
+    pub fn publish_bluetooth_hal_scheduler_sram_prefix(
+        registers: &crate::BluetoothControllerCore,
+        value: u16,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .scheduler_sram_pointer_prefix()
+                .write_with_zero(|writer| writer.address_prefix().set(value));
+        }
+    }
+
+    /// Write `CONFIG_6` in `BLUETOOTH_CONTROLLER_CORE`.`HAL_INIT_LATCH` while publishing zero to every other register bit.
+    #[inline]
+    pub fn initialize_bluetooth_hal_latch(registers: &crate::BluetoothControllerCore, value: bool) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .hal_init_latch()
+                .write_with_zero(|writer| writer.config_6().bit(value));
+        }
+    }
+
+    /// Write `CONFIG_LOW_20` in `BLUETOOTH_CONTROLLER_CORE`.`HAL_INIT_LOW_20` while publishing zero to every other register bit.
+    #[inline]
+    pub fn initialize_bluetooth_hal_low_20(registers: &crate::BluetoothControllerCore, value: u32) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .hal_init_low_20()
+                .write_with_zero(|writer| writer.config_low_20().set(value));
         }
     }
 

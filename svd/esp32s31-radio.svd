@@ -16546,9 +16546,27 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           <access>read-write</access>
           <fields>
             <field>
+              <name>ZERO_LOW_22_UNKNOWN</name>
+              <description>Full HAL initialization writes zero to the low 22 unassigned positions.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>22</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>4194303</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
               <name>ADDRESS_PREFIX</name>
               <bitOffset>22</bitOffset>
               <bitWidth>10</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>1023</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -16577,11 +16595,23 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
               <name>VALUE_0</name>
               <bitOffset>0</bitOffset>
               <bitWidth>8</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>255</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>VALUE_1</name>
               <bitOffset>8</bitOffset>
               <bitWidth>8</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>255</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -16596,6 +16626,12 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
               <name>CONFIG_LOW_3</name>
               <bitOffset>0</bitOffset>
               <bitWidth>3</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>7</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>CONFIG_24</name>
@@ -16603,9 +16639,27 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
               <bitWidth>1</bitWidth>
             </field>
             <field>
+              <name>INIT_CLEAR_25_UNKNOWN</name>
+              <description>HAL initialization clears this unassigned position together with the complete high-byte reset.</description>
+              <bitOffset>25</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
               <name>LATCH_REQUEST</name>
               <bitOffset>26</bitOffset>
               <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>INIT_CLEAR_27_30_UNKNOWN</name>
+              <description>HAL initialization clears these unassigned positions together with the complete high-byte reset.</description>
+              <bitOffset>27</bitOffset>
+              <bitWidth>4</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>15</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>TIMER_ARM</name>
@@ -16845,6 +16899,12 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
               <name>CONFIG_6_7</name>
               <bitOffset>6</bitOffset>
               <bitWidth>2</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>3</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>CONFIG_15</name>
@@ -16855,6 +16915,12 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
               <name>CONFIG_18_19</name>
               <bitOffset>18</bitOffset>
               <bitWidth>2</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>3</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -16866,9 +16932,33 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           <access>read-write</access>
           <fields>
             <field>
+              <name>ZERO_LOW_6_UNKNOWN</name>
+              <description>The initial complete HAL write clears these unassigned positions.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>6</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>63</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
               <name>CONFIG_6</name>
               <bitOffset>6</bitOffset>
               <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ZERO_MIDDLE_24_UNKNOWN</name>
+              <description>The initial complete HAL write clears these unassigned positions.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>24</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>16777215</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>ENABLE_31</name>
@@ -16888,6 +16978,24 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
               <name>CONFIG_LOW_20</name>
               <bitOffset>0</bitOffset>
               <bitWidth>20</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>1048575</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>ZERO_HIGH_12_UNKNOWN</name>
+              <description>The complete HAL write clears the unassigned high positions.</description>
+              <bitOffset>20</bitOffset>
+              <bitWidth>12</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>4095</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -17085,11 +17193,23 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
               <name>CONFIG_BYTE_1</name>
               <bitOffset>8</bitOffset>
               <bitWidth>8</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>255</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>CONFIG_16_20</name>
               <bitOffset>16</bitOffset>
               <bitWidth>5</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>31</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>ENABLE_31</name>
@@ -17221,6 +17341,12 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
               <name>CONFIG_LOW_16</name>
               <bitOffset>0</bitOffset>
               <bitWidth>16</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>65535</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -17342,50 +17468,170 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           <dimIncrement>0x4</dimIncrement>
           <dimIndex>0-1</dimIndex>
           <name>HAL_INIT_SLOT_MAP%s</name>
-          <description>The adjacent words at 0x2010134c and 0x20101350 each hold eight independently initialized four-bit lanes. For every lane, the complete BTDM HAL loop clears nibble mask 0xc, then ORs 1 | ((global index &amp; 3) &lt;&lt; 1) through a fresh read. Bit one can therefore retain a pre-existing one. The hardware meaning of the words and values remains unknown.</description>
+          <description>The adjacent words at 0x2010134c and 0x20101350 each hold eight independently initialized four-bit lanes. For every lane, the complete BTDM HAL loop first clears bits 3:2, then sets bit 0, conditionally sets but never clears bit 1, and publishes the global-index high bit into bit 2. The hardware meaning of the words and values remains unknown.</description>
           <addressOffset>0x34C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>LANE_0</name>
+              <name>LANE_0_ENABLE</name>
               <bitOffset>0</bitOffset>
-              <bitWidth>4</bitWidth>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>LANE_1</name>
+              <name>LANE_0_RETAINED_INDEX_LOW</name>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LANE_0_INDEX_HIGH</name>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LANE_0_CLEAR_HIGH_UNKNOWN</name>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LANE_1_ENABLE</name>
               <bitOffset>4</bitOffset>
-              <bitWidth>4</bitWidth>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>LANE_2</name>
+              <name>LANE_1_RETAINED_INDEX_LOW</name>
+              <bitOffset>5</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LANE_1_INDEX_HIGH</name>
+              <bitOffset>6</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LANE_1_CLEAR_HIGH_UNKNOWN</name>
+              <bitOffset>7</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LANE_2_ENABLE</name>
               <bitOffset>8</bitOffset>
-              <bitWidth>4</bitWidth>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>LANE_3</name>
+              <name>LANE_2_RETAINED_INDEX_LOW</name>
+              <bitOffset>9</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LANE_2_INDEX_HIGH</name>
+              <bitOffset>10</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LANE_2_CLEAR_HIGH_UNKNOWN</name>
+              <bitOffset>11</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LANE_3_ENABLE</name>
               <bitOffset>12</bitOffset>
-              <bitWidth>4</bitWidth>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>LANE_4</name>
+              <name>LANE_3_RETAINED_INDEX_LOW</name>
+              <bitOffset>13</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LANE_3_INDEX_HIGH</name>
+              <bitOffset>14</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LANE_3_CLEAR_HIGH_UNKNOWN</name>
+              <bitOffset>15</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LANE_4_ENABLE</name>
               <bitOffset>16</bitOffset>
-              <bitWidth>4</bitWidth>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>LANE_5</name>
+              <name>LANE_4_RETAINED_INDEX_LOW</name>
+              <bitOffset>17</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LANE_4_INDEX_HIGH</name>
+              <bitOffset>18</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LANE_4_CLEAR_HIGH_UNKNOWN</name>
+              <bitOffset>19</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LANE_5_ENABLE</name>
               <bitOffset>20</bitOffset>
-              <bitWidth>4</bitWidth>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>LANE_6</name>
+              <name>LANE_5_RETAINED_INDEX_LOW</name>
+              <bitOffset>21</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LANE_5_INDEX_HIGH</name>
+              <bitOffset>22</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LANE_5_CLEAR_HIGH_UNKNOWN</name>
+              <bitOffset>23</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LANE_6_ENABLE</name>
               <bitOffset>24</bitOffset>
-              <bitWidth>4</bitWidth>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>LANE_7</name>
+              <name>LANE_6_RETAINED_INDEX_LOW</name>
+              <bitOffset>25</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LANE_6_INDEX_HIGH</name>
+              <bitOffset>26</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LANE_6_CLEAR_HIGH_UNKNOWN</name>
+              <bitOffset>27</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LANE_7_ENABLE</name>
               <bitOffset>28</bitOffset>
-              <bitWidth>4</bitWidth>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LANE_7_RETAINED_INDEX_LOW</name>
+              <bitOffset>29</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LANE_7_INDEX_HIGH</name>
+              <bitOffset>30</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LANE_7_CLEAR_HIGH_UNKNOWN</name>
+              <bitOffset>31</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>

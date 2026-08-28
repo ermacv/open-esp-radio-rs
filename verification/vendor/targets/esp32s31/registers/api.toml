@@ -1170,6 +1170,27 @@ fields = ["COMPRESSED_SRAM_POINTER", "START"]
 sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 
 [[zero-based-field-writes]]
+name = "publish_bluetooth_hal_scheduler_sram_prefix"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SCHEDULER_SRAM_POINTER_PREFIX"
+fields = ["ADDRESS_PREFIX"]
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[zero-based-field-writes]]
+name = "initialize_bluetooth_hal_latch"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_LATCH"
+fields = ["CONFIG_6"]
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[zero-based-field-writes]]
+name = "initialize_bluetooth_hal_low_20"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "HAL_INIT_LOW_20"
+fields = ["CONFIG_LOW_20"]
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+
+[[zero-based-field-writes]]
 name = "publish_mac_tx_plcp1_fields"
 peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
 register = "PLCP1%s"

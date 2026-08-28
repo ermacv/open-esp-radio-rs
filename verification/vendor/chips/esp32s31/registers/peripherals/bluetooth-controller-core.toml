@@ -43,9 +43,20 @@ addressOffset = 0x74
 size = 32
 access = "read-write"
 [[peripherals.registers.register.fields]]
+name = "ZERO_LOW_22_UNKNOWN"
+description = "Full HAL initialization writes zero to the low 22 unassigned positions."
+bitOffset = 0
+bitWidth = 22
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0x3F_FFFF
+[[peripherals.registers.register.fields]]
 name = "ADDRESS_PREFIX"
 bitOffset = 22
 bitWidth = 10
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0x3FF
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "CONTROLLER_AUXILIARY_POINTER"
@@ -68,10 +79,16 @@ access = "read-write"
 name = "VALUE_0"
 bitOffset = 0
 bitWidth = 8
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xFF
 [[peripherals.registers.register.fields]]
 name = "VALUE_1"
 bitOffset = 8
 bitWidth = 8
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xFF
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "SLEEP_TIMER_CONTROL"
@@ -83,14 +100,30 @@ access = "read-write"
 name = "CONFIG_LOW_3"
 bitOffset = 0
 bitWidth = 3
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0x7
 [[peripherals.registers.register.fields]]
 name = "CONFIG_24"
 bitOffset = 24
 bitWidth = 1
 [[peripherals.registers.register.fields]]
+name = "INIT_CLEAR_25_UNKNOWN"
+description = "HAL initialization clears this unassigned position together with the complete high-byte reset."
+bitOffset = 25
+bitWidth = 1
+[[peripherals.registers.register.fields]]
 name = "LATCH_REQUEST"
 bitOffset = 26
 bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "INIT_CLEAR_27_30_UNKNOWN"
+description = "HAL initialization clears these unassigned positions together with the complete high-byte reset."
+bitOffset = 27
+bitWidth = 4
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xF
 [[peripherals.registers.register.fields]]
 name = "TIMER_ARM"
 bitOffset = 31
@@ -280,6 +313,9 @@ bitWidth = 1
 name = "CONFIG_6_7"
 bitOffset = 6
 bitWidth = 2
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0x3
 [[peripherals.registers.register.fields]]
 name = "CONFIG_15"
 bitOffset = 15
@@ -288,6 +324,9 @@ bitWidth = 1
 name = "CONFIG_18_19"
 bitOffset = 18
 bitWidth = 2
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0x3
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "HAL_INIT_LATCH"
@@ -296,9 +335,25 @@ addressOffset = 0x1C0
 size = 32
 access = "read-write"
 [[peripherals.registers.register.fields]]
+name = "ZERO_LOW_6_UNKNOWN"
+description = "The initial complete HAL write clears these unassigned positions."
+bitOffset = 0
+bitWidth = 6
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0x3F
+[[peripherals.registers.register.fields]]
 name = "CONFIG_6"
 bitOffset = 6
 bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "ZERO_MIDDLE_24_UNKNOWN"
+description = "The initial complete HAL write clears these unassigned positions."
+bitOffset = 7
+bitWidth = 24
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xFF_FFFF
 [[peripherals.registers.register.fields]]
 name = "ENABLE_31"
 bitOffset = 31
@@ -314,6 +369,17 @@ access = "write-only"
 name = "CONFIG_LOW_20"
 bitOffset = 0
 bitWidth = 20
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xF_FFFF
+[[peripherals.registers.register.fields]]
+name = "ZERO_HIGH_12_UNKNOWN"
+description = "The complete HAL write clears the unassigned high positions."
+bitOffset = 20
+bitWidth = 12
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xFFF
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "PHY_INIT_VALUE_01F0"
@@ -473,10 +539,16 @@ access = "read-write"
 name = "CONFIG_BYTE_1"
 bitOffset = 8
 bitWidth = 8
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xFF
 [[peripherals.registers.register.fields]]
 name = "CONFIG_16_20"
 bitOffset = 16
 bitWidth = 5
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0x1F
 [[peripherals.registers.register.fields]]
 name = "ENABLE_31"
 bitOffset = 31
@@ -579,6 +651,9 @@ access = "read-write"
 name = "CONFIG_LOW_16"
 bitOffset = 0
 bitWidth = 16
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xFFFF
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "MMGMT_LIST_1_POINTER_A"
@@ -674,42 +749,138 @@ dim = 2
 dimIncrement = 0x4
 dimIndex = "0,1"
 name = "HAL_INIT_SLOT_MAP%s"
-description = "The adjacent words at 0x2010134c and 0x20101350 each hold eight independently initialized four-bit lanes. For every lane, the complete BTDM HAL loop clears nibble mask 0xc, then ORs 1 | ((global index & 3) << 1) through a fresh read. Bit one can therefore retain a pre-existing one. The hardware meaning of the words and values remains unknown."
+description = "The adjacent words at 0x2010134c and 0x20101350 each hold eight independently initialized four-bit lanes. For every lane, the complete BTDM HAL loop first clears bits 3:2, then sets bit 0, conditionally sets but never clears bit 1, and publishes the global-index high bit into bit 2. The hardware meaning of the words and values remains unknown."
 addressOffset = 0x34C
 size = 32
 access = "read-write"
 [[peripherals.registers.register.fields]]
-name = "LANE_0"
+name = "LANE_0_ENABLE"
 bitOffset = 0
-bitWidth = 4
+bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "LANE_1"
+name = "LANE_0_RETAINED_INDEX_LOW"
+bitOffset = 1
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "LANE_0_INDEX_HIGH"
+bitOffset = 2
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "LANE_0_CLEAR_HIGH_UNKNOWN"
+bitOffset = 3
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "LANE_1_ENABLE"
 bitOffset = 4
-bitWidth = 4
+bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "LANE_2"
+name = "LANE_1_RETAINED_INDEX_LOW"
+bitOffset = 5
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "LANE_1_INDEX_HIGH"
+bitOffset = 6
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "LANE_1_CLEAR_HIGH_UNKNOWN"
+bitOffset = 7
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "LANE_2_ENABLE"
 bitOffset = 8
-bitWidth = 4
+bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "LANE_3"
+name = "LANE_2_RETAINED_INDEX_LOW"
+bitOffset = 9
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "LANE_2_INDEX_HIGH"
+bitOffset = 10
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "LANE_2_CLEAR_HIGH_UNKNOWN"
+bitOffset = 11
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "LANE_3_ENABLE"
 bitOffset = 12
-bitWidth = 4
+bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "LANE_4"
+name = "LANE_3_RETAINED_INDEX_LOW"
+bitOffset = 13
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "LANE_3_INDEX_HIGH"
+bitOffset = 14
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "LANE_3_CLEAR_HIGH_UNKNOWN"
+bitOffset = 15
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "LANE_4_ENABLE"
 bitOffset = 16
-bitWidth = 4
+bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "LANE_5"
+name = "LANE_4_RETAINED_INDEX_LOW"
+bitOffset = 17
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "LANE_4_INDEX_HIGH"
+bitOffset = 18
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "LANE_4_CLEAR_HIGH_UNKNOWN"
+bitOffset = 19
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "LANE_5_ENABLE"
 bitOffset = 20
-bitWidth = 4
+bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "LANE_6"
+name = "LANE_5_RETAINED_INDEX_LOW"
+bitOffset = 21
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "LANE_5_INDEX_HIGH"
+bitOffset = 22
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "LANE_5_CLEAR_HIGH_UNKNOWN"
+bitOffset = 23
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "LANE_6_ENABLE"
 bitOffset = 24
-bitWidth = 4
+bitWidth = 1
 [[peripherals.registers.register.fields]]
-name = "LANE_7"
+name = "LANE_6_RETAINED_INDEX_LOW"
+bitOffset = 25
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "LANE_6_INDEX_HIGH"
+bitOffset = 26
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "LANE_6_CLEAR_HIGH_UNKNOWN"
+bitOffset = 27
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "LANE_7_ENABLE"
 bitOffset = 28
-bitWidth = 4
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "LANE_7_RETAINED_INDEX_LOW"
+bitOffset = 29
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "LANE_7_INDEX_HIGH"
+bitOffset = 30
+bitWidth = 1
+[[peripherals.registers.register.fields]]
+name = "LANE_7_CLEAR_HIGH_UNKNOWN"
+bitOffset = 31
+bitWidth = 1
 
 [[peripherals.registers]]
 [peripherals.registers.register]
@@ -910,6 +1081,13 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_SRAM_POINTER_PREFIX.ZERO_LOW_22_UNKNOWN"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
 entity = "BLUETOOTH_CONTROLLER_CORE.SCHEDULER_SRAM_POINTER_PREFIX.ADDRESS_PREFIX"
 sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
 provenance = "observed"
@@ -938,8 +1116,22 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL.INIT_CLEAR_25_UNKNOWN"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
 entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL.LATCH_REQUEST"
 sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "PUBLIC_ESP32S31_BT_TIME_ROLES"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.SLEEP_TIMER_CONTROL.INIT_CLEAR_27_30_UNKNOWN"
+sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
@@ -1540,7 +1732,21 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LATCH.ZERO_LOW_6_UNKNOWN"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
 entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LATCH.CONFIG_6"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LATCH.ZERO_MIDDLE_24_UNKNOWN"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
 accuracy = "exact"
@@ -1562,6 +1768,13 @@ completeness = "partial"
 
 [[review]]
 entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LOW_20.CONFIG_LOW_20"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_LOW_20.ZERO_HIGH_12_UNKNOWN"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
 accuracy = "exact"
@@ -1617,56 +1830,224 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_0"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_0_ENABLE"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_1"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_0_RETAINED_INDEX_LOW"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_2"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_0_INDEX_HIGH"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_3"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_0_CLEAR_HIGH_UNKNOWN"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_4"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_1_ENABLE"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_5"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_1_RETAINED_INDEX_LOW"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_6"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_1_INDEX_HIGH"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_7"
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_1_CLEAR_HIGH_UNKNOWN"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_2_ENABLE"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_2_RETAINED_INDEX_LOW"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_2_INDEX_HIGH"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_2_CLEAR_HIGH_UNKNOWN"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_3_ENABLE"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_3_RETAINED_INDEX_LOW"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_3_INDEX_HIGH"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_3_CLEAR_HIGH_UNKNOWN"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_4_ENABLE"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_4_RETAINED_INDEX_LOW"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_4_INDEX_HIGH"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_4_CLEAR_HIGH_UNKNOWN"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_5_ENABLE"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_5_RETAINED_INDEX_LOW"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_5_INDEX_HIGH"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_5_CLEAR_HIGH_UNKNOWN"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_6_ENABLE"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_6_RETAINED_INDEX_LOW"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_6_INDEX_HIGH"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_6_CLEAR_HIGH_UNKNOWN"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_7_ENABLE"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_7_RETAINED_INDEX_LOW"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_7_INDEX_HIGH"
+sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BLUETOOTH_CONTROLLER_CORE.HAL_INIT_SLOT_MAP%s.LANE_7_CLEAR_HIGH_UNKNOWN"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 provenance = "observed"
 accuracy = "exact"

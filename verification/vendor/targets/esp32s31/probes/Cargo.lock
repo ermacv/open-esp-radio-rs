@@ -269,7 +269,7 @@ checksum = "524eb3c489760508f71360112bca70f6e53173e6fe48fc5f0efd0f5ab217751d"
 [[package]]
 name = "embassy-net-driver"
 version = "0.2.0"
-source = "git+https://github.com/embassy-rs/embassy?rev=e7a576f22393edaf9070f29ee5f4f07f5f4d8782#e7a576f22393edaf9070f29ee5f4f07f5f4d8782"
+source = "git+ssh://git@github.com/ermacv/embassy.git?rev=f7f09eb6f0c6c3971b8fce637a18cd5cff80b618#f7f09eb6f0c6c3971b8fce637a18cd5cff80b618"
 
 [[package]]
 name = "embassy-sync"
@@ -809,7 +809,7 @@ version = "0.1.0"
 name = "open-esp-radio-embassy-net"
 version = "0.1.0"
 dependencies = [
- "embassy-net-driver 0.2.0 (git+https://github.com/embassy-rs/embassy?rev=e7a576f22393edaf9070f29ee5f4f07f5f4d8782)",
+ "embassy-net-driver 0.2.0 (git+ssh://git@github.com/ermacv/embassy.git?rev=f7f09eb6f0c6c3971b8fce637a18cd5cff80b618)",
  "embassy-sync 0.8.0",
  "open-esp-radio-dma",
 ]

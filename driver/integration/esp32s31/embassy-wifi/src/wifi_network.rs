@@ -9,10 +9,10 @@ pub struct Esp32s31WifiNetworkRunner<'resources> {
 
 impl Esp32s31WifiNetworkRunner<'_> {
     pub async fn run(mut self) -> ! {
-        // The device already bounds RX epochs and TX credits. Keep xarxa's
-        // native batched poll here: wrapping its single-packet primitives in
-        // a second scheduler measurably lowers the saturated RX ceiling.
-        self.inner.run().await
+        // The IP runner and socket owners share one executor. Bound each
+        // ingress/egress turn so a continuously replenished device queue
+        // cannot starve UDP/TCP consumers in one unbounded poll.
+        self.inner.run_work_conserving().await
     }
 }
 

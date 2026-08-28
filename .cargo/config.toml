@@ -6,3 +6,8 @@ qualification = "run --quiet -p open-esp-radio-qualification-check --"
 # compiler rebuild or `Blocking waiting for file lock` behind a silent pause;
 # the Blobray UI can only start after Cargo launches the binary.
 blobray = "run --profile blobray -p blobray-esp32s31 --bin blobray --"
+
+[net]
+# GitHub access in the lab uses the SSH agent. Cargo's built-in transport does
+# not share that agent reliably, so delegate git dependencies to the CLI.
+git-fetch-with-cli = true

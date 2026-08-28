@@ -27,31 +27,31 @@ magnitude of the recovered throughput. That exact archived-image degradation
 was therefore an uncontrolled radio-cell precondition, not a DUT code
 regression.
 
-Current source independently reaches `105.861 Mbit/s` in the observer-free
-production image and `106.831 Mbit/s` in the latest diagnostic same-ELF
-control. Its normal saturated Core0 radio-poll residence is about 92--95%, not
-50%, but the AP-to-target delivery frontier can still be the immediate air
-ceiling. Separate intermittent `93` and `51 Mbit/s` states admit fewer frames
-and have lower Core0 residence; they are localized before the measured DMA
-path but are not yet assigned to AP scheduling, RF or PHY.
+Current source independently reaches `109.310 Mbit/s` in the final
+observer-free production image. Its normal saturated Core0 radio-poll residence is about
+92--95%, not 50%, but the AP-to-target delivery frontier can still be the
+immediate air ceiling. A separate 512-byte packet-rate control exposed and
+then closed a Core1 scheduler defect: unbounded Embassy polling lost UDP
+datagrams after successful driver enqueue even at only 40 Mbit/s. That defect
+is distinct from the saturated full-size-frame ceiling.
 
 The investigation also found real engineering concerns: exact ELF placement
 can affect cache behavior, and retained RX credits are finite under overload.
 Neither explains the identical-binary channel A/B or has been shown to cause
 the latest intermittent underfed state. No current evidence supports a broken
-A-MPDU/BlockAck agreement, a laptop WLAN route, the upstream Embassy switch,
-checksum policy, or the OpenWrt Ethernet path as its cause.
+A-MPDU/BlockAck agreement, a laptop WLAN route, checksum policy, or the OpenWrt
+Ethernet path as the saturated ceiling cause. Removing the bounded Embassy
+runner did cause a separate, now proven packet-rate delivery defect on Core1.
 
 ## Current working state
 
 The former mixed dirty tree described by the early chronology below has been
-split, reviewed and merged. Current `main` at the start of this checkpoint is
-`603d94c4`. Its shipping topology includes the synchronous ordinary RX path,
+split, reviewed and merged. The final scheduler delta is one commit over
+`ed5cf11f`. Its shipping topology includes the synchronous ordinary RX path,
 same-Core0 combined DMA/protocol owner, bounded affine SPSC and fixed
-ring64/retained32 policy. The current uncommitted delta is diagnostic only:
-paired Core0 cycle/instruction accounting, synchronous reorder phase
-accounting, a runtime-selectable L1 event counter, its same-ELF HIL control and
-this updated record.
+ring64/retained32 policy. The final delta also restores a production network
+poll bound after delivery evidence proved that native unbounded polling can
+starve the UDP consumer on Core1.
 
 The production ceiling scenarios retain three repetitions and their published
 acceptance thresholds. The new cache controls are explicitly diagnostic,
@@ -59,9 +59,11 @@ one-repetition scenarios with a low correctness floor; they are not
 qualification gates. Laptop WLAN remains soft-blocked, its optional monitor is
 disabled in these controls, and the validated host data route is Ethernet.
 
-Cargo manifests and locks remain on upstream Embassy commit `e7a576f2` plus
-crates.io support crates, with no local fork override. The post-instrumentation
-production build is observer-free and passes the linked-image audits; the HIL
+Cargo manifests and locks now use one minimal Embassy fork commit
+`f7f09eb6`, rebased as a single commit over upstream `645068a3`. The fork adds
+only bounded, directionally fair network polling and its tests; Embassy
+support crates remain the published crates.io versions. The production build
+is observer-free and passes the linked-image audits; HIL
 cache/reorder/performance symbols are feature-eliminated from that image.
 
 ## Reconstructed chronology and useful A/B results
@@ -543,8 +545,11 @@ replace the still-required checksum-mode A/B.
 
 - Historical and archived current-cell RX can exceed `100 Mbit/s`.
 - The laptop sends over the Ethernet route with the correct source address.
-- Native Embassy/xarxa `Runner::run()` can be much faster than the old custom
-  cooperative wrapper; restoring the fork is not the answer.
+- Native Embassy/xarxa `Runner::run()` was faster than the old 64-ingress
+  cooperative wrapper for the preserved full-size-frame A/B, but it is not a
+  correct shared-executor policy: a 512-byte control proves that it can starve
+  the socket consumer and lose already-enqueued UDP datagrams. The accepted
+  replacement uses a 32-ingress bound against a 64-packet socket reserve.
 - Hardware cache counter enable itself is not the speed increase.
 - Performance does not accidentally enable diagnostic features.
 - BA16 negotiation and reorder behavior are intact in the observed run.
@@ -561,8 +566,9 @@ replace the still-required checksum-mode A/B.
 - The old ring policy silently dropped completed bulk RX frames under staging
   pressure; the preservation policy exposes a real 64-descriptor hardware
   capacity limit instead.
-- Neither upstream-vs-fork, the one-waiter gate, nor unused network features
-  alone explains the complete loss.
+- Neither the one-waiter gate nor unused network features explains the
+  saturated full-size-frame ceiling. The upstream switch did independently
+  remove a required packet-rate fairness boundary.
 
 ### Separate, strong but not yet causal for code robustness
 
@@ -602,7 +608,8 @@ replace the still-required checksum-mode A/B.
 - Any ceiling run whose pre-workload channel utilization exceeds the explicit
   laboratory threshold.
 - Another raw pre-`e5` versus post-`e5` throughput run.
-- Another old-fork versus upstream dependency run.
+- Another comparison against the rejected 64-ingress fork without the
+  512-byte delivery ledger.
 - Another cache trace bit on/off run.
 - Another broad feature-disable build without an identical ELF/source control.
 - Another multiple-waiter versus one-waiter run as an explanation for 10
@@ -1992,3 +1999,129 @@ establishes that neither the lifecycle correction nor its mainline rebase
 introduced a production-layout throughput regression. The small difference is
 not claimed as a throughput improvement: both values remain inside the already
 observed air-supply variation around the HT40 LGI ceiling.
+
+## 2026-08-28: Core1 packet-rate loss and bounded Embassy polling
+
+The full-size saturated ceiling concealed a separate packet-rate defect. A new
+40 Mbit/s control reduced UDP payload from 1,472 to 512 bytes, increasing the
+packet rate to approximately 9.77 kpps without approaching the HT40 byte-rate
+ceiling. On the upstream Embassy `Runner::run()` path, both the coarse image
+and the observer-free production image lost sequence ranges after successful
+AP transmission:
+
+| Network runner | Image/run | Host datagrams | Target datagrams | Forward missing | RX |
+| --- | --- | ---: | ---: | ---: | ---: |
+| upstream unbounded | production `1787896075456-0035b54e` | 117,111 | 114,280 | 2,830 | 39.008 Mbit/s |
+| upstream unbounded | coarse `1787895841554-0035a6da` | 117,189 | 115,621 | 1,564 | 39.468 Mbit/s |
+| cooperative, 64 ingress | production `1787896821370-0035cf9c` | 117,183 | 113,868 | 3,313 | 38.869 Mbit/s |
+| cooperative, 32 ingress | production `1787897053343-0035d68b` | 117,165 | 117,157 | 0 | 39.995 Mbit/s |
+
+The host tail in the accepted run was eight datagrams beyond the highest
+target sequence; there was no gap inside the target interval. The 64-ingress
+variant is not accepted: its maximum observed sequence gap was exactly 64,
+the complete HIL UDP socket metadata depth. A network quantum equal to the
+whole application reserve still permits the runner to fill that reserve
+before the consumer receives an executor turn. The accepted production
+policy processes at most 32 ingress packets per poll against the HIL's
+64-packet socket reserve and self-wakes when work remains.
+
+The delivery profile localized the defect rather than inferring it from
+throughput. Before the fix, run `1787896169402-0035bb73` observed 117,185 host
+data units, 117,185 post-BA/reorder units and 117,185 successful driver-to-stack
+enqueues, but only 117,127 UDP consumer observations. The delivery ledger
+reported 58 skipped sequences and zero driver network queue-full events.
+DMA admitted 117,393 units with no malformed/overload discard, BA16 reorder
+released all 117,201 benchmark MPDUs with no missing/stale/expiry event, and
+hardware `BUFFER_FULL`/`FIFO_OVERFLOW` remained zero. The loss boundary was
+therefore inside the Core1 IP/socket scheduling interval, after the Wi-Fi
+driver enqueue.
+
+Task timing independently matches that boundary. In the unbounded coarse run,
+one Core1 network poll lasted up to 37.653 ms and eleven polls exceeded 5 ms.
+After bounding ingress to 32, run `1787898031640-00362069` had a 2.247 ms
+maximum network poll and no poll exceeded 5 ms. It received 117,188 datagrams
+with zero sequence gap at 40.002 Mbit/s. Total Core1 network residence rose
+from 7.273 to 8.648 seconds because the fixed path actually processed the
+packets previously discarded; this is not evidence that the fix made network
+processing cheaper.
+
+The final delivery run `1787897708884-0036191e`, runtime CRC32 `80ca0baa`,
+closed every measured frontier exactly:
+
+```text
+host data        117189
+post reorder     117189
+stack enqueue    117189
+UDP consumer     117189
+ledger skipped        0
+queue full            0
+BA missing/stale      0 / 0
+HW full/overflow      0 / 0
+```
+
+This is a Core1 executor-fairness correction, not a radio-ring or Core0
+optimization. The split-core ownership remains correct: Core0 is still the
+saturated DMA/MAC/CCMP/BA owner, while Core1 owns IP and sockets. What was
+incorrect was allowing the Core1 stack future to drain a continuously
+replenished cross-core device queue in one executor poll and thereby starve
+its sibling socket task.
+
+Upstream Embassy main `645068a3` still exports only the unbounded runner; the
+single-packet xarxa primitives needed to implement this policy are private.
+The repository therefore pins minimal fork commit `f7f09eb6`, one commit
+rebased over that upstream main. It adds the 4/4 directionally fair polling
+loop, 32-ingress and 32-egress bounds, self-wake semantics, TX-credit
+distinction and focused tests. Published `embassy-time`, `embassy-futures` and
+`embassy-sync` crates remain in use. This is the previously missing functional
+reason for the fork.
+
+The fairness change did not trade away the existing ceilings:
+
+- observer-free saturated RX `1787897214560-0035ee1c`: 108.928 Mbit/s;
+- observer-free TX `1787897343048-003612db`: 106.671, 106.941 and
+  107.582 Mbit/s host floors;
+- observer-free 40/40 full duplex `1787897476706-00361585`: five passes at
+  79.996--80.035 Mbit/s combined.
+
+This result supersedes the broad earlier conclusion that restoring a fork
+cannot be the answer. The old 64-ingress fork remains rejected by measurement;
+the accepted 32-ingress policy solves a different, explicitly localized
+packet-rate failure while preserving full-size RX, TX and bidirectional
+throughput. It does not remove the independently proven greater-than-90%
+Core0 residence at the saturated RX ceiling. Further Core0 work must continue
+from the DMA/protocol cycle decomposition and must not relabel this Core1 fix
+as a solution to the remaining Core0 headroom problem.
+
+Pre-rebase validation used the cleaned lockfiles rather than reusing an
+intermediate ELF. Observer-free performance run
+`1787898803779-003668b6`, runtime CRC32 `faf16f19`, passed at 109.310 Mbit/s.
+The immediately preceding attempt `1787898644374-0036655f` used the same
+runtime CRC but never published connected-station readiness and therefore
+contained no traffic measurement. The unchanged second attempt passed; the
+first attempt remains recorded as an association/lifecycle event rather than
+being relabeled as throughput noise.
+
+Correctness run `1787898870718-00366a08`, runtime CRC32 `d8e305a7`, then
+passed all 10 cold boots and all 30 station reconnect cycles. CPU0 and CPU1
+free stack remained 25,216 and 12,012 bytes at every connected boundary.
+Together these final-image controls establish both the restored packet-rate
+fairness and preservation of the existing full-size RX and lifecycle behavior.
+
+The scheduler commit was then rebased over five newer mainline commits. One of
+them, `de24dca5`, changes the production RX-DMA register API to typed field
+access; the other four refactor Bluetooth PAC access. Because the first change
+touches the actual Wi-Fi DMA path, the earlier ELF was not accepted as final
+evidence. Post-rebase observer-free run `1787899595905-0036cc2c`, runtime
+CRC32 `3501bff3`, passed at 109.353 Mbit/s. Post-rebase correctness run
+`1787899749385-0036d8e3`, runtime CRC32 `e35d0a75`, again passed all 10 cold
+boots and all 30 reconnect cycles with the same 25,216/12,012-byte CPU0/CPU1
+free-stack floors. The mainline RX-DMA field refactor therefore introduced no
+measured throughput or station-lifecycle regression in the integrated tree.
+
+A final mainline commit, `ed5cf11f`, moved MAC interrupt-enable access to
+typed PAC fields. The fully integrated observer-free ELF therefore changed
+again and was measured rather than assumed equivalent. Run
+`1787900107117-0037256a`, runtime CRC32 `ab220437`, passed at 109.208 Mbit/s
+after a successful station connection. This checks the shipping MAC interrupt
+path and preserves the RX ceiling; the exhaustive 10-boot/30-reconnect result
+immediately before it remains the lifecycle stress control.

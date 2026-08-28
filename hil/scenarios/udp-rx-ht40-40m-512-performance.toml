@@ -1,0 +1,23 @@
+schema = 3
+id = "udp-rx-ht40-40m-512-performance"
+description = "Production HT40 RX packet-rate control at 40 Mbit/s with 512-byte UDP payloads"
+image = "performance"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["performance", "udp", "station", "rx", "ht40", "split-core", "packet-rate"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "udp"
+direction = "rx"
+duration_seconds = 12
+rx_rate_bps = 40000000
+payload_bytes = 512
+
+[criteria]
+exact_delivery = false
+require_no_beacon_loss = false
+minimum_rx_bps = 30000000
+maximum_idle_channel_utilization_255 = 64

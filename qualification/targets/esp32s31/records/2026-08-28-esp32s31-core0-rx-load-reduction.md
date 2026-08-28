@@ -370,11 +370,86 @@ The production changes are concentrated in:
 
 ## Remaining work
 
-Core0 is no longer the measured full-size RX ceiling at 102--104 Mbit/s. The
-remaining approximately 36--37% is real DMA/MAC/CCMP/BA and orchestration work,
-but this record does not claim every remaining cycle is irreducible. Further
-optimization should begin with normalized cycles per MPDU and DMA batch width,
-not throughput alone.
+### Free-channel closure and the next CPU boundary
+
+Later measurements on OpenWrt channel 13 HT40- removed the busy-channel
+confound from the original 102--104 Mbit/s final controls. Observer-free run
+`1787924660180-003f8fd2` delivered 112.520 Mbit/s. Production-like
+task-residence run `1787925121968-003f9d82` delivered 112.005 Mbit/s and
+measured:
+
+| Owner | Residence | Fraction of interval |
+| --- | ---: | ---: |
+| Core0 radio | 4.227393 / 12.059872 s | 35.05% |
+| Core1 network | 9.800644 / 12.059872 s | 81.27% |
+| Core1 UDP RX application | 0.452161 / 12.059872 s | 3.75% |
+
+The independent observer decoded 7,212 full and four partial BlockAck frames
+covering 114,728 unique MPDUs, with no backward BA starts. The AP reported
+MCS7/HT40 at 135 Mbit/s and the target reported no DMA `BUFFER_FULL` or FIFO
+overflow. This supersedes the earlier conservative 102--104 Mbit/s wording:
+the shipping Core0 architecture is below 40% at approximately 112 Mbit/s and
+is not the current full-size RX ceiling.
+
+The next measured CPU boundary is the Core1 software Internet checksum. A
+same-ELF runtime-policy A/B on CRC `55720549` changed only RX checksum policy:
+
+| Policy | Run | RX | Core1 network residence |
+| --- | --- | ---: | ---: |
+| full software validation | `1787925507737-003ff06d` | 112.374 Mbit/s | 81.47% |
+| diagnostic assume-valid | `1787925679379-003ff785` | 112.258 Mbit/s | 58.10% |
+
+Thus the reviewed full checksum costs 23.37 percentage points of Core1 in the
+current byte-load implementation, but does not lower throughput at the
+MCS7/HT40 long-GI air ceiling. `assume-valid` is only a diagnostic and is not
+an acceptable production policy.
+
+The pinned `xarxa` checksum was then changed in an isolated exact-revision
+tree, one algorithm at a time. The current compiler output uses four `lbu`
+loads plus shifts and ORs per four payload bytes. An aligned native `u16`
+loop reduced network residence from 83.51% to 79.39%. A native `u32` loop
+reduced it to about 70.4%, and a four-word/16-byte unrolled loop reduced it to
+66.85% while delivering 112.255 Mbit/s. The matching unrolled same-ELF
+assume-valid control, CRC `f8baf89b`, used 56.26%, leaving 10.59 percentage
+points attributable to full checksum validation. Relative to the original
+same-ELF checksum gap, the candidate removes approximately 55% of the
+checksum cost while retaining validation.
+
+The unrolled run's independent observer saw 9,620 full and five partial
+BlockAck frames, 153,115 unique MPDUs, and the target delivered 153,090
+datagrams. The 25-frame difference is 0.016%; hardware overflow counters
+remained zero. Two earlier 110.6--110.9 Mbit/s candidate runs were therefore
+not a target-processing ceiling: the AP emitted only about 150.6 thousand
+unique MPDUs in those intervals, and the target delivered essentially all of
+them.
+
+Placing the 170-byte scalar `u32` checksum function in internal hot text did
+not improve its cost: Core1 network residence was 70.53% from PSRAM and
+70.52% from IRAM. The hot loop already fits in instruction cache; packet-data
+loads and arithmetic dominate. Checksum code placement in SRAM is rejected as
+a production optimization on this evidence.
+
+These checksum runs used a temporary path override of the exact pinned
+`xarxa` revision and are diagnostic rather than sealed qualification. The
+algorithm and its alignment/maximum-IPv4-length tests must land in a durable
+`xarxa` revision before the application dependency is updated. The current
+repository dependency remains unchanged until that integration exists.
+
+### Next actions
+
+Core0 is no longer the measured full-size RX ceiling at approximately
+112 Mbit/s. Its remaining approximately 35% is real DMA/MAC/CCMP/BA and
+orchestration work, but this record does not claim every remaining cycle is
+irreducible. Further Core0 optimization should begin with normalized cycles
+per MPDU and DMA batch width, not throughput alone, and only after a measured
+regression or a workload which actually exhausts that headroom.
+
+The immediate production task is to integrate the reviewed `xarxa` checksum
+loop through a durable upstream or explicitly owned revision, repeat the
+full-software/assume-valid same-ELF pair, and then run RX, TX and bidirectional
+ceilings. Exceeding the current RX rate is a separate radio-rate-control task:
+the AP currently transmits at the 135 Mbit/s long-GI rate. A forced-SGI test
+reduced BA occupancy and is not a valid proof that SGI itself is slower.
 
 The next qualification should cover the final integrated ELF across cold
 boot/reconnect, TX, full duplex, mixed small/large RX and latency-sensitive

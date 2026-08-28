@@ -64,14 +64,52 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "VALID_BITMAP"
-description = "WDEVTXQBSR_VD[0-7]. Complete mac_tx_set_tb proves that bits zero through three are also the write-side Trigger-ready bits selected by logical queue number; no source yet proves whether hardware subsequently translates those queue bits into per-TID validity."
+name = "VALID_0"
+description = "WDEVTXQBSR_VD[0]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue zero."
 bitOffset = 0
-bitWidth = 8
+bitWidth = 1
 
-[peripherals.registers.register.fields.writeConstraint.range]
-minimum = 0x0
-maximum = 0xFF
+[[peripherals.registers.register.fields]]
+name = "VALID_1"
+description = "WDEVTXQBSR_VD[1]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue one."
+bitOffset = 1
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "VALID_2"
+description = "WDEVTXQBSR_VD[2]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue two."
+bitOffset = 2
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "VALID_3"
+description = "WDEVTXQBSR_VD[3]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue three."
+bitOffset = 3
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "VALID_4"
+description = "WDEVTXQBSR_VD[4]. No write-side queue interpretation is currently claimed."
+bitOffset = 4
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "VALID_5"
+description = "WDEVTXQBSR_VD[5]. No write-side queue interpretation is currently claimed."
+bitOffset = 5
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "VALID_6"
+description = "WDEVTXQBSR_VD[6]. No write-side queue interpretation is currently claimed."
+bitOffset = 6
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "VALID_7"
+description = "WDEVTXQBSR_VD[7]. No write-side queue interpretation is currently claimed."
+bitOffset = 7
+bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "AC_EMPTY_SOFTWARE_TID"
@@ -85,14 +123,52 @@ bitOffset = 12
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "TID_BITMAP"
-description = "Trigger-based TIDs enabled by successful HE BlockAck setup."
+name = "TRIGGER_BASED_TID_0_ENABLED"
+description = "Trigger-based TID zero enabled by successful HE BlockAck setup."
 bitOffset = 13
-bitWidth = 8
+bitWidth = 1
 
-[peripherals.registers.register.fields.writeConstraint.range]
-minimum = 0x0
-maximum = 0xFF
+[[peripherals.registers.register.fields]]
+name = "TRIGGER_BASED_TID_1_ENABLED"
+description = "Trigger-based TID one enabled by successful HE BlockAck setup."
+bitOffset = 14
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TRIGGER_BASED_TID_2_ENABLED"
+description = "Trigger-based TID two enabled by successful HE BlockAck setup."
+bitOffset = 15
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TRIGGER_BASED_TID_3_ENABLED"
+description = "Trigger-based TID three enabled by successful HE BlockAck setup."
+bitOffset = 16
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TRIGGER_BASED_TID_4_ENABLED"
+description = "Trigger-based TID four enabled by successful HE BlockAck setup."
+bitOffset = 17
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TRIGGER_BASED_TID_5_ENABLED"
+description = "Trigger-based TID five enabled by successful HE BlockAck setup."
+bitOffset = 18
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TRIGGER_BASED_TID_6_ENABLED"
+description = "Trigger-based TID six enabled by successful HE BlockAck setup."
+bitOffset = 19
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TRIGGER_BASED_TID_7_ENABLED"
+description = "Trigger-based TID seven enabled by successful HE BlockAck setup."
+bitOffset = 20
+bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "BASIC_SPECIAL_BSR_SEQUENCE"

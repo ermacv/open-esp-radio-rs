@@ -20474,7 +20474,7 @@ pub mod wifi_mac_he_init_prefix {
         tb_tx_control: TbTxControl,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - Canonical RX_HE_BSS_COLOR_CONF word. Complete dbg_read_color_collision names the fields; the HE init parent replaces TIMEOUT_SECONDS bits 8:3 with 0x3c. HE Operation programming sets BITMAP_CONTROL bit zero to clear the accumulated BSS-color collision bitmap, so the clear action is a semantic view of the existing two-bit field rather than a second register identity."]
+        #[doc = "0x00 - Canonical RX_HE_BSS_COLOR_CONF word. Complete dbg_read_color_collision names the fields; the HE init parent replaces TIMEOUT_SECONDS bits 8:3 with 0x3c. HE Operation programming sets COLOR_BITMAP_CLEAR to clear the accumulated BSS-color collision bitmap."]
         #[inline(always)]
         pub const fn rx_field_control(&self) -> &RxFieldControl {
             &self.rx_field_control
@@ -20535,19 +20535,23 @@ pub mod wifi_mac_he_init_prefix {
             &self.tb_tx_control
         }
     }
-    #[doc = "RX_FIELD_CONTROL (rw) register accessor: Canonical RX_HE_BSS_COLOR_CONF word. Complete dbg_read_color_collision names the fields; the HE init parent replaces TIMEOUT_SECONDS bits 8:3 with 0x3c. HE Operation programming sets BITMAP_CONTROL bit zero to clear the accumulated BSS-color collision bitmap, so the clear action is a semantic view of the existing two-bit field rather than a second register identity.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_field_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_field_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_field_control`] module"]
+    #[doc = "RX_FIELD_CONTROL (rw) register accessor: Canonical RX_HE_BSS_COLOR_CONF word. Complete dbg_read_color_collision names the fields; the HE init parent replaces TIMEOUT_SECONDS bits 8:3 with 0x3c. HE Operation programming sets COLOR_BITMAP_CLEAR to clear the accumulated BSS-color collision bitmap.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_field_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_field_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_field_control`] module"]
     #[doc(alias = "RX_FIELD_CONTROL")]
     pub type RxFieldControl = crate::Reg<rx_field_control::RxFieldControlSpec>;
-    #[doc = "Canonical RX_HE_BSS_COLOR_CONF word. Complete dbg_read_color_collision names the fields; the HE init parent replaces TIMEOUT_SECONDS bits 8:3 with 0x3c. HE Operation programming sets BITMAP_CONTROL bit zero to clear the accumulated BSS-color collision bitmap, so the clear action is a semantic view of the existing two-bit field rather than a second register identity."]
+    #[doc = "Canonical RX_HE_BSS_COLOR_CONF word. Complete dbg_read_color_collision names the fields; the HE init parent replaces TIMEOUT_SECONDS bits 8:3 with 0x3c. HE Operation programming sets COLOR_BITMAP_CLEAR to clear the accumulated BSS-color collision bitmap."]
     pub mod rx_field_control {
         #[doc = "Register `RX_FIELD_CONTROL` reader"]
         pub type R = crate::R<RxFieldControlSpec>;
         #[doc = "Register `RX_FIELD_CONTROL` writer"]
         pub type W = crate::W<RxFieldControlSpec>;
-        #[doc = "Field `BITMAP_CONTROL` reader - Complete dbg_read_color_collision prints this two-bit value as BITMAP and separately prints its low bit as COLOR_BITMAP_CLR. COLOR_BITMAP_CLR is therefore a semantic view of BITMAP_CONTROL\\[0\\], not a second overlapping SVD field."]
-        pub type BitmapControlR = crate::FieldReader;
-        #[doc = "Field `BITMAP_CONTROL` writer - Complete dbg_read_color_collision prints this two-bit value as BITMAP and separately prints its low bit as COLOR_BITMAP_CLR. COLOR_BITMAP_CLR is therefore a semantic view of BITMAP_CONTROL\\[0\\], not a second overlapping SVD field."]
-        pub type BitmapControlW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
+        #[doc = "Field `COLOR_BITMAP_CLEAR` reader - COLOR_BITMAP_CLR in complete dbg_read_color_collision. HE Operation programming sets this bit to clear the accumulated BSS-color collision bitmap."]
+        pub type ColorBitmapClearR = crate::BitReader;
+        #[doc = "Field `COLOR_BITMAP_CLEAR` writer - COLOR_BITMAP_CLR in complete dbg_read_color_collision. HE Operation programming sets this bit to clear the accumulated BSS-color collision bitmap."]
+        pub type ColorBitmapClearW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BITMAP_CONTROL_HIGH` reader - High bit of the two-bit BITMAP diagnostic printed by complete dbg_read_color_collision. No independent write-side meaning is currently claimed."]
+        pub type BitmapControlHighR = crate::BitReader;
+        #[doc = "Field `BITMAP_CONTROL_HIGH` writer - High bit of the two-bit BITMAP diagnostic printed by complete dbg_read_color_collision. No independent write-side meaning is currently claimed."]
+        pub type BitmapControlHighW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `TIMEOUT_SECONDS` reader - "]
         pub type TimeoutSecondsR = crate::FieldReader;
         #[doc = "Field `TIMEOUT_SECONDS` writer - "]
@@ -20557,10 +20561,15 @@ pub mod wifi_mac_he_init_prefix {
         #[doc = "Field `COLLISION_THRESHOLD` writer - "]
         pub type CollisionThresholdW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
         impl R {
-            #[doc = "Bits 0:1 - Complete dbg_read_color_collision prints this two-bit value as BITMAP and separately prints its low bit as COLOR_BITMAP_CLR. COLOR_BITMAP_CLR is therefore a semantic view of BITMAP_CONTROL\\[0\\], not a second overlapping SVD field."]
+            #[doc = "Bit 0 - COLOR_BITMAP_CLR in complete dbg_read_color_collision. HE Operation programming sets this bit to clear the accumulated BSS-color collision bitmap."]
             #[inline(always)]
-            pub fn bitmap_control(&self) -> BitmapControlR {
-                BitmapControlR::new((self.bits & 3) as u8)
+            pub fn color_bitmap_clear(&self) -> ColorBitmapClearR {
+                ColorBitmapClearR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - High bit of the two-bit BITMAP diagnostic printed by complete dbg_read_color_collision. No independent write-side meaning is currently claimed."]
+            #[inline(always)]
+            pub fn bitmap_control_high(&self) -> BitmapControlHighR {
+                BitmapControlHighR::new(((self.bits >> 1) & 1) != 0)
             }
             #[doc = "Bits 3:8"]
             #[inline(always)]
@@ -20574,10 +20583,15 @@ pub mod wifi_mac_he_init_prefix {
             }
         }
         impl W {
-            #[doc = "Bits 0:1 - Complete dbg_read_color_collision prints this two-bit value as BITMAP and separately prints its low bit as COLOR_BITMAP_CLR. COLOR_BITMAP_CLR is therefore a semantic view of BITMAP_CONTROL\\[0\\], not a second overlapping SVD field."]
+            #[doc = "Bit 0 - COLOR_BITMAP_CLR in complete dbg_read_color_collision. HE Operation programming sets this bit to clear the accumulated BSS-color collision bitmap."]
             #[inline(always)]
-            pub fn bitmap_control(&mut self) -> BitmapControlW<'_, RxFieldControlSpec> {
-                BitmapControlW::new(self, 0)
+            pub fn color_bitmap_clear(&mut self) -> ColorBitmapClearW<'_, RxFieldControlSpec> {
+                ColorBitmapClearW::new(self, 0)
+            }
+            #[doc = "Bit 1 - High bit of the two-bit BITMAP diagnostic printed by complete dbg_read_color_collision. No independent write-side meaning is currently claimed."]
+            #[inline(always)]
+            pub fn bitmap_control_high(&mut self) -> BitmapControlHighW<'_, RxFieldControlSpec> {
+                BitmapControlHighW::new(self, 1)
             }
             #[doc = "Bits 3:8"]
             #[inline(always)]
@@ -20590,7 +20604,7 @@ pub mod wifi_mac_he_init_prefix {
                 CollisionThresholdW::new(self, 9)
             }
         }
-        #[doc = "Canonical RX_HE_BSS_COLOR_CONF word. Complete dbg_read_color_collision names the fields; the HE init parent replaces TIMEOUT_SECONDS bits 8:3 with 0x3c. HE Operation programming sets BITMAP_CONTROL bit zero to clear the accumulated BSS-color collision bitmap, so the clear action is a semantic view of the existing two-bit field rather than a second register identity.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_field_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_field_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Canonical RX_HE_BSS_COLOR_CONF word. Complete dbg_read_color_collision names the fields; the HE init parent replaces TIMEOUT_SECONDS bits 8:3 with 0x3c. HE Operation programming sets COLOR_BITMAP_CLEAR to clear the accumulated BSS-color collision bitmap.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_field_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_field_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxFieldControlSpec;
         impl crate::RegisterSpec for RxFieldControlSpec {
             type Ux = u32;
@@ -21823,10 +21837,38 @@ pub mod wifi_mac_he_buffer_status {
         pub type R = crate::R<ControlSpec>;
         #[doc = "Register `CONTROL` writer"]
         pub type W = crate::W<ControlSpec>;
-        #[doc = "Field `VALID_BITMAP` reader - WDEVTXQBSR_VD\\[0-7\\]. Complete mac_tx_set_tb proves that bits zero through three are also the write-side Trigger-ready bits selected by logical queue number; no source yet proves whether hardware subsequently translates those queue bits into per-TID validity."]
-        pub type ValidBitmapR = crate::FieldReader;
-        #[doc = "Field `VALID_BITMAP` writer - WDEVTXQBSR_VD\\[0-7\\]. Complete mac_tx_set_tb proves that bits zero through three are also the write-side Trigger-ready bits selected by logical queue number; no source yet proves whether hardware subsequently translates those queue bits into per-TID validity."]
-        pub type ValidBitmapW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `VALID_0` reader - WDEVTXQBSR_VD\\[0\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue zero."]
+        pub type Valid0R = crate::BitReader;
+        #[doc = "Field `VALID_0` writer - WDEVTXQBSR_VD\\[0\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue zero."]
+        pub type Valid0W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `VALID_1` reader - WDEVTXQBSR_VD\\[1\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue one."]
+        pub type Valid1R = crate::BitReader;
+        #[doc = "Field `VALID_1` writer - WDEVTXQBSR_VD\\[1\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue one."]
+        pub type Valid1W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `VALID_2` reader - WDEVTXQBSR_VD\\[2\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue two."]
+        pub type Valid2R = crate::BitReader;
+        #[doc = "Field `VALID_2` writer - WDEVTXQBSR_VD\\[2\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue two."]
+        pub type Valid2W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `VALID_3` reader - WDEVTXQBSR_VD\\[3\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue three."]
+        pub type Valid3R = crate::BitReader;
+        #[doc = "Field `VALID_3` writer - WDEVTXQBSR_VD\\[3\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue three."]
+        pub type Valid3W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `VALID_4` reader - WDEVTXQBSR_VD\\[4\\]. No write-side queue interpretation is currently claimed."]
+        pub type Valid4R = crate::BitReader;
+        #[doc = "Field `VALID_4` writer - WDEVTXQBSR_VD\\[4\\]. No write-side queue interpretation is currently claimed."]
+        pub type Valid4W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `VALID_5` reader - WDEVTXQBSR_VD\\[5\\]. No write-side queue interpretation is currently claimed."]
+        pub type Valid5R = crate::BitReader;
+        #[doc = "Field `VALID_5` writer - WDEVTXQBSR_VD\\[5\\]. No write-side queue interpretation is currently claimed."]
+        pub type Valid5W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `VALID_6` reader - WDEVTXQBSR_VD\\[6\\]. No write-side queue interpretation is currently claimed."]
+        pub type Valid6R = crate::BitReader;
+        #[doc = "Field `VALID_6` writer - WDEVTXQBSR_VD\\[6\\]. No write-side queue interpretation is currently claimed."]
+        pub type Valid6W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `VALID_7` reader - WDEVTXQBSR_VD\\[7\\]. No write-side queue interpretation is currently claimed."]
+        pub type Valid7R = crate::BitReader;
+        #[doc = "Field `VALID_7` writer - WDEVTXQBSR_VD\\[7\\]. No write-side queue interpretation is currently claimed."]
+        pub type Valid7W<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `AC_EMPTY_SOFTWARE_TID` reader - TID used when AC_EMPTY_USE_SW_TID is set."]
         pub type AcEmptySoftwareTidR = crate::FieldReader;
         #[doc = "Field `AC_EMPTY_SOFTWARE_TID` writer - TID used when AC_EMPTY_USE_SW_TID is set."]
@@ -21835,10 +21877,38 @@ pub mod wifi_mac_he_buffer_status {
         pub type AcEmptyUseSoftwareTidR = crate::BitReader;
         #[doc = "Field `AC_EMPTY_USE_SOFTWARE_TID` writer - "]
         pub type AcEmptyUseSoftwareTidW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `TID_BITMAP` reader - Trigger-based TIDs enabled by successful HE BlockAck setup."]
-        pub type TidBitmapR = crate::FieldReader;
-        #[doc = "Field `TID_BITMAP` writer - Trigger-based TIDs enabled by successful HE BlockAck setup."]
-        pub type TidBitmapW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
+        #[doc = "Field `TRIGGER_BASED_TID_0_ENABLED` reader - Trigger-based TID zero enabled by successful HE BlockAck setup."]
+        pub type TriggerBasedTid0EnabledR = crate::BitReader;
+        #[doc = "Field `TRIGGER_BASED_TID_0_ENABLED` writer - Trigger-based TID zero enabled by successful HE BlockAck setup."]
+        pub type TriggerBasedTid0EnabledW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TRIGGER_BASED_TID_1_ENABLED` reader - Trigger-based TID one enabled by successful HE BlockAck setup."]
+        pub type TriggerBasedTid1EnabledR = crate::BitReader;
+        #[doc = "Field `TRIGGER_BASED_TID_1_ENABLED` writer - Trigger-based TID one enabled by successful HE BlockAck setup."]
+        pub type TriggerBasedTid1EnabledW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TRIGGER_BASED_TID_2_ENABLED` reader - Trigger-based TID two enabled by successful HE BlockAck setup."]
+        pub type TriggerBasedTid2EnabledR = crate::BitReader;
+        #[doc = "Field `TRIGGER_BASED_TID_2_ENABLED` writer - Trigger-based TID two enabled by successful HE BlockAck setup."]
+        pub type TriggerBasedTid2EnabledW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TRIGGER_BASED_TID_3_ENABLED` reader - Trigger-based TID three enabled by successful HE BlockAck setup."]
+        pub type TriggerBasedTid3EnabledR = crate::BitReader;
+        #[doc = "Field `TRIGGER_BASED_TID_3_ENABLED` writer - Trigger-based TID three enabled by successful HE BlockAck setup."]
+        pub type TriggerBasedTid3EnabledW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TRIGGER_BASED_TID_4_ENABLED` reader - Trigger-based TID four enabled by successful HE BlockAck setup."]
+        pub type TriggerBasedTid4EnabledR = crate::BitReader;
+        #[doc = "Field `TRIGGER_BASED_TID_4_ENABLED` writer - Trigger-based TID four enabled by successful HE BlockAck setup."]
+        pub type TriggerBasedTid4EnabledW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TRIGGER_BASED_TID_5_ENABLED` reader - Trigger-based TID five enabled by successful HE BlockAck setup."]
+        pub type TriggerBasedTid5EnabledR = crate::BitReader;
+        #[doc = "Field `TRIGGER_BASED_TID_5_ENABLED` writer - Trigger-based TID five enabled by successful HE BlockAck setup."]
+        pub type TriggerBasedTid5EnabledW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TRIGGER_BASED_TID_6_ENABLED` reader - Trigger-based TID six enabled by successful HE BlockAck setup."]
+        pub type TriggerBasedTid6EnabledR = crate::BitReader;
+        #[doc = "Field `TRIGGER_BASED_TID_6_ENABLED` writer - Trigger-based TID six enabled by successful HE BlockAck setup."]
+        pub type TriggerBasedTid6EnabledW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TRIGGER_BASED_TID_7_ENABLED` reader - Trigger-based TID seven enabled by successful HE BlockAck setup."]
+        pub type TriggerBasedTid7EnabledR = crate::BitReader;
+        #[doc = "Field `TRIGGER_BASED_TID_7_ENABLED` writer - Trigger-based TID seven enabled by successful HE BlockAck setup."]
+        pub type TriggerBasedTid7EnabledW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `BASIC_SPECIAL_BSR_SEQUENCE` reader - "]
         pub type BasicSpecialBsrSequenceR = crate::BitReader;
         #[doc = "Field `BASIC_SPECIAL_BSR_SEQUENCE` writer - "]
@@ -21852,10 +21922,45 @@ pub mod wifi_mac_he_buffer_status {
         #[doc = "Field `HIGH_UNKNOWN` writer - "]
         pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 9, u16>;
         impl R {
-            #[doc = "Bits 0:7 - WDEVTXQBSR_VD\\[0-7\\]. Complete mac_tx_set_tb proves that bits zero through three are also the write-side Trigger-ready bits selected by logical queue number; no source yet proves whether hardware subsequently translates those queue bits into per-TID validity."]
+            #[doc = "Bit 0 - WDEVTXQBSR_VD\\[0\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue zero."]
             #[inline(always)]
-            pub fn valid_bitmap(&self) -> ValidBitmapR {
-                ValidBitmapR::new((self.bits & 0xff) as u8)
+            pub fn valid_0(&self) -> Valid0R {
+                Valid0R::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - WDEVTXQBSR_VD\\[1\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue one."]
+            #[inline(always)]
+            pub fn valid_1(&self) -> Valid1R {
+                Valid1R::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2 - WDEVTXQBSR_VD\\[2\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue two."]
+            #[inline(always)]
+            pub fn valid_2(&self) -> Valid2R {
+                Valid2R::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3 - WDEVTXQBSR_VD\\[3\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue three."]
+            #[inline(always)]
+            pub fn valid_3(&self) -> Valid3R {
+                Valid3R::new(((self.bits >> 3) & 1) != 0)
+            }
+            #[doc = "Bit 4 - WDEVTXQBSR_VD\\[4\\]. No write-side queue interpretation is currently claimed."]
+            #[inline(always)]
+            pub fn valid_4(&self) -> Valid4R {
+                Valid4R::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bit 5 - WDEVTXQBSR_VD\\[5\\]. No write-side queue interpretation is currently claimed."]
+            #[inline(always)]
+            pub fn valid_5(&self) -> Valid5R {
+                Valid5R::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bit 6 - WDEVTXQBSR_VD\\[6\\]. No write-side queue interpretation is currently claimed."]
+            #[inline(always)]
+            pub fn valid_6(&self) -> Valid6R {
+                Valid6R::new(((self.bits >> 6) & 1) != 0)
+            }
+            #[doc = "Bit 7 - WDEVTXQBSR_VD\\[7\\]. No write-side queue interpretation is currently claimed."]
+            #[inline(always)]
+            pub fn valid_7(&self) -> Valid7R {
+                Valid7R::new(((self.bits >> 7) & 1) != 0)
             }
             #[doc = "Bits 8:11 - TID used when AC_EMPTY_USE_SW_TID is set."]
             #[inline(always)]
@@ -21867,10 +21972,45 @@ pub mod wifi_mac_he_buffer_status {
             pub fn ac_empty_use_software_tid(&self) -> AcEmptyUseSoftwareTidR {
                 AcEmptyUseSoftwareTidR::new(((self.bits >> 12) & 1) != 0)
             }
-            #[doc = "Bits 13:20 - Trigger-based TIDs enabled by successful HE BlockAck setup."]
+            #[doc = "Bit 13 - Trigger-based TID zero enabled by successful HE BlockAck setup."]
             #[inline(always)]
-            pub fn tid_bitmap(&self) -> TidBitmapR {
-                TidBitmapR::new(((self.bits >> 13) & 0xff) as u8)
+            pub fn trigger_based_tid_0_enabled(&self) -> TriggerBasedTid0EnabledR {
+                TriggerBasedTid0EnabledR::new(((self.bits >> 13) & 1) != 0)
+            }
+            #[doc = "Bit 14 - Trigger-based TID one enabled by successful HE BlockAck setup."]
+            #[inline(always)]
+            pub fn trigger_based_tid_1_enabled(&self) -> TriggerBasedTid1EnabledR {
+                TriggerBasedTid1EnabledR::new(((self.bits >> 14) & 1) != 0)
+            }
+            #[doc = "Bit 15 - Trigger-based TID two enabled by successful HE BlockAck setup."]
+            #[inline(always)]
+            pub fn trigger_based_tid_2_enabled(&self) -> TriggerBasedTid2EnabledR {
+                TriggerBasedTid2EnabledR::new(((self.bits >> 15) & 1) != 0)
+            }
+            #[doc = "Bit 16 - Trigger-based TID three enabled by successful HE BlockAck setup."]
+            #[inline(always)]
+            pub fn trigger_based_tid_3_enabled(&self) -> TriggerBasedTid3EnabledR {
+                TriggerBasedTid3EnabledR::new(((self.bits >> 16) & 1) != 0)
+            }
+            #[doc = "Bit 17 - Trigger-based TID four enabled by successful HE BlockAck setup."]
+            #[inline(always)]
+            pub fn trigger_based_tid_4_enabled(&self) -> TriggerBasedTid4EnabledR {
+                TriggerBasedTid4EnabledR::new(((self.bits >> 17) & 1) != 0)
+            }
+            #[doc = "Bit 18 - Trigger-based TID five enabled by successful HE BlockAck setup."]
+            #[inline(always)]
+            pub fn trigger_based_tid_5_enabled(&self) -> TriggerBasedTid5EnabledR {
+                TriggerBasedTid5EnabledR::new(((self.bits >> 18) & 1) != 0)
+            }
+            #[doc = "Bit 19 - Trigger-based TID six enabled by successful HE BlockAck setup."]
+            #[inline(always)]
+            pub fn trigger_based_tid_6_enabled(&self) -> TriggerBasedTid6EnabledR {
+                TriggerBasedTid6EnabledR::new(((self.bits >> 19) & 1) != 0)
+            }
+            #[doc = "Bit 20 - Trigger-based TID seven enabled by successful HE BlockAck setup."]
+            #[inline(always)]
+            pub fn trigger_based_tid_7_enabled(&self) -> TriggerBasedTid7EnabledR {
+                TriggerBasedTid7EnabledR::new(((self.bits >> 20) & 1) != 0)
             }
             #[doc = "Bit 21"]
             #[inline(always)]
@@ -21889,10 +22029,45 @@ pub mod wifi_mac_he_buffer_status {
             }
         }
         impl W {
-            #[doc = "Bits 0:7 - WDEVTXQBSR_VD\\[0-7\\]. Complete mac_tx_set_tb proves that bits zero through three are also the write-side Trigger-ready bits selected by logical queue number; no source yet proves whether hardware subsequently translates those queue bits into per-TID validity."]
+            #[doc = "Bit 0 - WDEVTXQBSR_VD\\[0\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue zero."]
             #[inline(always)]
-            pub fn valid_bitmap(&mut self) -> ValidBitmapW<'_, ControlSpec> {
-                ValidBitmapW::new(self, 0)
+            pub fn valid_0(&mut self) -> Valid0W<'_, ControlSpec> {
+                Valid0W::new(self, 0)
+            }
+            #[doc = "Bit 1 - WDEVTXQBSR_VD\\[1\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue one."]
+            #[inline(always)]
+            pub fn valid_1(&mut self) -> Valid1W<'_, ControlSpec> {
+                Valid1W::new(self, 1)
+            }
+            #[doc = "Bit 2 - WDEVTXQBSR_VD\\[2\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue two."]
+            #[inline(always)]
+            pub fn valid_2(&mut self) -> Valid2W<'_, ControlSpec> {
+                Valid2W::new(self, 2)
+            }
+            #[doc = "Bit 3 - WDEVTXQBSR_VD\\[3\\]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue three."]
+            #[inline(always)]
+            pub fn valid_3(&mut self) -> Valid3W<'_, ControlSpec> {
+                Valid3W::new(self, 3)
+            }
+            #[doc = "Bit 4 - WDEVTXQBSR_VD\\[4\\]. No write-side queue interpretation is currently claimed."]
+            #[inline(always)]
+            pub fn valid_4(&mut self) -> Valid4W<'_, ControlSpec> {
+                Valid4W::new(self, 4)
+            }
+            #[doc = "Bit 5 - WDEVTXQBSR_VD\\[5\\]. No write-side queue interpretation is currently claimed."]
+            #[inline(always)]
+            pub fn valid_5(&mut self) -> Valid5W<'_, ControlSpec> {
+                Valid5W::new(self, 5)
+            }
+            #[doc = "Bit 6 - WDEVTXQBSR_VD\\[6\\]. No write-side queue interpretation is currently claimed."]
+            #[inline(always)]
+            pub fn valid_6(&mut self) -> Valid6W<'_, ControlSpec> {
+                Valid6W::new(self, 6)
+            }
+            #[doc = "Bit 7 - WDEVTXQBSR_VD\\[7\\]. No write-side queue interpretation is currently claimed."]
+            #[inline(always)]
+            pub fn valid_7(&mut self) -> Valid7W<'_, ControlSpec> {
+                Valid7W::new(self, 7)
             }
             #[doc = "Bits 8:11 - TID used when AC_EMPTY_USE_SW_TID is set."]
             #[inline(always)]
@@ -21904,10 +22079,61 @@ pub mod wifi_mac_he_buffer_status {
             pub fn ac_empty_use_software_tid(&mut self) -> AcEmptyUseSoftwareTidW<'_, ControlSpec> {
                 AcEmptyUseSoftwareTidW::new(self, 12)
             }
-            #[doc = "Bits 13:20 - Trigger-based TIDs enabled by successful HE BlockAck setup."]
+            #[doc = "Bit 13 - Trigger-based TID zero enabled by successful HE BlockAck setup."]
             #[inline(always)]
-            pub fn tid_bitmap(&mut self) -> TidBitmapW<'_, ControlSpec> {
-                TidBitmapW::new(self, 13)
+            pub fn trigger_based_tid_0_enabled(
+                &mut self,
+            ) -> TriggerBasedTid0EnabledW<'_, ControlSpec> {
+                TriggerBasedTid0EnabledW::new(self, 13)
+            }
+            #[doc = "Bit 14 - Trigger-based TID one enabled by successful HE BlockAck setup."]
+            #[inline(always)]
+            pub fn trigger_based_tid_1_enabled(
+                &mut self,
+            ) -> TriggerBasedTid1EnabledW<'_, ControlSpec> {
+                TriggerBasedTid1EnabledW::new(self, 14)
+            }
+            #[doc = "Bit 15 - Trigger-based TID two enabled by successful HE BlockAck setup."]
+            #[inline(always)]
+            pub fn trigger_based_tid_2_enabled(
+                &mut self,
+            ) -> TriggerBasedTid2EnabledW<'_, ControlSpec> {
+                TriggerBasedTid2EnabledW::new(self, 15)
+            }
+            #[doc = "Bit 16 - Trigger-based TID three enabled by successful HE BlockAck setup."]
+            #[inline(always)]
+            pub fn trigger_based_tid_3_enabled(
+                &mut self,
+            ) -> TriggerBasedTid3EnabledW<'_, ControlSpec> {
+                TriggerBasedTid3EnabledW::new(self, 16)
+            }
+            #[doc = "Bit 17 - Trigger-based TID four enabled by successful HE BlockAck setup."]
+            #[inline(always)]
+            pub fn trigger_based_tid_4_enabled(
+                &mut self,
+            ) -> TriggerBasedTid4EnabledW<'_, ControlSpec> {
+                TriggerBasedTid4EnabledW::new(self, 17)
+            }
+            #[doc = "Bit 18 - Trigger-based TID five enabled by successful HE BlockAck setup."]
+            #[inline(always)]
+            pub fn trigger_based_tid_5_enabled(
+                &mut self,
+            ) -> TriggerBasedTid5EnabledW<'_, ControlSpec> {
+                TriggerBasedTid5EnabledW::new(self, 18)
+            }
+            #[doc = "Bit 19 - Trigger-based TID six enabled by successful HE BlockAck setup."]
+            #[inline(always)]
+            pub fn trigger_based_tid_6_enabled(
+                &mut self,
+            ) -> TriggerBasedTid6EnabledW<'_, ControlSpec> {
+                TriggerBasedTid6EnabledW::new(self, 19)
+            }
+            #[doc = "Bit 20 - Trigger-based TID seven enabled by successful HE BlockAck setup."]
+            #[inline(always)]
+            pub fn trigger_based_tid_7_enabled(
+                &mut self,
+            ) -> TriggerBasedTid7EnabledW<'_, ControlSpec> {
+                TriggerBasedTid7EnabledW::new(self, 20)
             }
             #[doc = "Bit 21"]
             #[inline(always)]

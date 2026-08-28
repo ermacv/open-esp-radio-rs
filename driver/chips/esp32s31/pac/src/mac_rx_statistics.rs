@@ -8,8 +8,8 @@ pub struct MacHeColorCollisionSnapshot {
     pub observed_color_bitmap: u64,
     pub collision_threshold: u8,
     pub timeout_seconds: u8,
-    pub bitmap_control: u8,
     pub color_bitmap_clear: bool,
+    pub bitmap_control_high: bool,
 }
 
 /// Ordinary receive, completion and interface counters.
@@ -244,13 +244,8 @@ impl WifiRadioRegisters {
             observed_color_bitmap: u64::from(low) | (u64::from(high) << 32),
             collision_threshold: control.collision_threshold().bits(),
             timeout_seconds: control.timeout_seconds().bits(),
-            bitmap_control: control.bitmap_control().bits(),
-            // SOURCE: complete `libpp.a[hal_debug.o]::
-            // dbg_read_color_collision` prints the low bit separately as
-            // COLOR_BITMAP_CLR and the containing two-bit value as BITMAP.
-            // The SVD keeps one non-overlapping field; this typed diagnostic
-            // exposes the named low-bit view without duplicating MMIO fields.
-            color_bitmap_clear: control.bitmap_control().bits() & 1 != 0,
+            color_bitmap_clear: control.color_bitmap_clear().bit(),
+            bitmap_control_high: control.bitmap_control_high().bit(),
         }
     }
 

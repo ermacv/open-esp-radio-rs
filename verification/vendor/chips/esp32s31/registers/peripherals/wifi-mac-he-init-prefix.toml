@@ -9,20 +9,22 @@ baseAddress = 0x20104048
 
 [peripherals.registers.register]
 name = "RX_FIELD_CONTROL"
-description = "Canonical RX_HE_BSS_COLOR_CONF word. Complete dbg_read_color_collision names the fields; the HE init parent replaces TIMEOUT_SECONDS bits 8:3 with 0x3c. HE Operation programming sets BITMAP_CONTROL bit zero to clear the accumulated BSS-color collision bitmap, so the clear action is a semantic view of the existing two-bit field rather than a second register identity."
+description = "Canonical RX_HE_BSS_COLOR_CONF word. Complete dbg_read_color_collision names the fields; the HE init parent replaces TIMEOUT_SECONDS bits 8:3 with 0x3c. HE Operation programming sets COLOR_BITMAP_CLEAR to clear the accumulated BSS-color collision bitmap."
 addressOffset = 0x0
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "BITMAP_CONTROL"
-description = "Complete dbg_read_color_collision prints this two-bit value as BITMAP and separately prints its low bit as COLOR_BITMAP_CLR. COLOR_BITMAP_CLR is therefore a semantic view of BITMAP_CONTROL[0], not a second overlapping SVD field."
+name = "COLOR_BITMAP_CLEAR"
+description = "COLOR_BITMAP_CLR in complete dbg_read_color_collision. HE Operation programming sets this bit to clear the accumulated BSS-color collision bitmap."
 bitOffset = 0
-bitWidth = 2
+bitWidth = 1
 
-[peripherals.registers.register.fields.writeConstraint.range]
-minimum = 0x0
-maximum = 0x3
+[[peripherals.registers.register.fields]]
+name = "BITMAP_CONTROL_HIGH"
+description = "High bit of the two-bit BITMAP diagnostic printed by complete dbg_read_color_collision. No independent write-side meaning is currently claimed."
+bitOffset = 1
+bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "TIMEOUT_SECONDS"

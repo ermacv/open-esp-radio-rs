@@ -178,8 +178,8 @@ pub struct MacHeTriggerTxQueueSnapshot {
 pub struct MacHeBufferStatusSnapshot {
     pub hardware: [u32; MacHeTid::COUNT],
     pub software: [u32; MacHeTid::COUNT],
-    pub valid_tid_bitmap: u8,
-    pub trigger_based_tid_bitmap: u8,
+    pub valid: [bool; MacHeTid::COUNT],
+    pub trigger_based_tid_enabled: [bool; MacHeTid::COUNT],
     pub ac_empty_software_tid: u8,
     pub ac_empty_uses_software_tid: bool,
     pub basic_special_bsr_sequence: bool,
@@ -484,7 +484,13 @@ impl WifiRadioRegisters {
             .wifi_mac
             .wifi_mac_he_buffer_status
             .control()
-            .modify(|r, w| w.valid_bitmap().set(r.valid_bitmap().bits() | (1 << queue)));
+            .modify(|_, w| match queue {
+                0 => w.valid_0().set_bit(),
+                1 => w.valid_1().set_bit(),
+                2 => w.valid_2().set_bit(),
+                3 => w.valid_3().set_bit(),
+                _ => unreachable!("ordinary queue validation precedes publication"),
+            });
         let mut snapshot = self.he_trigger_based_queue_snapshot(reservation);
         snapshot.programmed_msdu_bytes = queued_msdu_bytes;
         Ok(snapshot)
@@ -560,7 +566,13 @@ impl WifiRadioRegisters {
             tail_link: tail.link_index().bits(),
             programmed_msdu_bytes: bsr.value().bits(),
             queued_msdu_bytes: bsr.value().bits(),
-            queue_valid: control.valid_bitmap().bits() & (1 << queue) != 0,
+            queue_valid: match queue {
+                0 => control.valid_0().bit(),
+                1 => control.valid_1().bit(),
+                2 => control.valid_2().bit(),
+                3 => control.valid_3().bit(),
+                _ => unreachable!("reservation owns an ordinary queue"),
+            },
         }
     }
 
@@ -577,14 +589,18 @@ impl WifiRadioRegisters {
             .wifi_mac
             .wifi_mac_he_buffer_status
             .control();
-        let old_bitmap = control.read().tid_bitmap().bits();
-        let bitmap = if enabled {
-            old_bitmap | tid.mask()
-        } else {
-            old_bitmap & !tid.mask()
-        };
-
-        control.modify(|_, w| w.tid_bitmap().set(bitmap));
+        let _initial = control.read();
+        control.modify(|_, w| match tid.value() {
+            0 => w.trigger_based_tid_0_enabled().bit(enabled),
+            1 => w.trigger_based_tid_1_enabled().bit(enabled),
+            2 => w.trigger_based_tid_2_enabled().bit(enabled),
+            3 => w.trigger_based_tid_3_enabled().bit(enabled),
+            4 => w.trigger_based_tid_4_enabled().bit(enabled),
+            5 => w.trigger_based_tid_5_enabled().bit(enabled),
+            6 => w.trigger_based_tid_6_enabled().bit(enabled),
+            7 => w.trigger_based_tid_7_enabled().bit(enabled),
+            _ => unreachable!("MacHeTid is bounded"),
+        });
     }
 
     /// Read all eight interleaved hardware/software BSR values and control.
@@ -605,8 +621,26 @@ impl WifiRadioRegisters {
         MacHeBufferStatusSnapshot {
             hardware,
             software,
-            valid_tid_bitmap: control.valid_bitmap().bits(),
-            trigger_based_tid_bitmap: control.tid_bitmap().bits(),
+            valid: [
+                control.valid_0().bit(),
+                control.valid_1().bit(),
+                control.valid_2().bit(),
+                control.valid_3().bit(),
+                control.valid_4().bit(),
+                control.valid_5().bit(),
+                control.valid_6().bit(),
+                control.valid_7().bit(),
+            ],
+            trigger_based_tid_enabled: [
+                control.trigger_based_tid_0_enabled().bit(),
+                control.trigger_based_tid_1_enabled().bit(),
+                control.trigger_based_tid_2_enabled().bit(),
+                control.trigger_based_tid_3_enabled().bit(),
+                control.trigger_based_tid_4_enabled().bit(),
+                control.trigger_based_tid_5_enabled().bit(),
+                control.trigger_based_tid_6_enabled().bit(),
+                control.trigger_based_tid_7_enabled().bit(),
+            ],
             ac_empty_software_tid: control.ac_empty_software_tid().bits(),
             ac_empty_uses_software_tid: control.ac_empty_use_software_tid().bit(),
             basic_special_bsr_sequence: control.basic_special_bsr_sequence().bit(),

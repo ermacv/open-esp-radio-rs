@@ -8363,22 +8363,22 @@
       <registers>
         <register>
           <name>RX_FIELD_CONTROL</name>
-          <description>Canonical RX_HE_BSS_COLOR_CONF word. Complete dbg_read_color_collision names the fields; the HE init parent replaces TIMEOUT_SECONDS bits 8:3 with 0x3c. HE Operation programming sets BITMAP_CONTROL bit zero to clear the accumulated BSS-color collision bitmap, so the clear action is a semantic view of the existing two-bit field rather than a second register identity.</description>
+          <description>Canonical RX_HE_BSS_COLOR_CONF word. Complete dbg_read_color_collision names the fields; the HE init parent replaces TIMEOUT_SECONDS bits 8:3 with 0x3c. HE Operation programming sets COLOR_BITMAP_CLEAR to clear the accumulated BSS-color collision bitmap.</description>
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>BITMAP_CONTROL</name>
-              <description>Complete dbg_read_color_collision prints this two-bit value as BITMAP and separately prints its low bit as COLOR_BITMAP_CLR. COLOR_BITMAP_CLR is therefore a semantic view of BITMAP_CONTROL[0], not a second overlapping SVD field.</description>
+              <name>COLOR_BITMAP_CLEAR</name>
+              <description>COLOR_BITMAP_CLR in complete dbg_read_color_collision. HE Operation programming sets this bit to clear the accumulated BSS-color collision bitmap.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>2</bitWidth>
-              <writeConstraint>
-                <range>
-                  <minimum>0</minimum>
-                  <maximum>3</maximum>
-                </range>
-              </writeConstraint>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>BITMAP_CONTROL_HIGH</name>
+              <description>High bit of the two-bit BITMAP diagnostic printed by complete dbg_read_color_collision. No independent write-side meaning is currently claimed.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>TIMEOUT_SECONDS</name>
@@ -8988,16 +8988,52 @@
           <access>read-write</access>
           <fields>
             <field>
-              <name>VALID_BITMAP</name>
-              <description>WDEVTXQBSR_VD[0-7]. Complete mac_tx_set_tb proves that bits zero through three are also the write-side Trigger-ready bits selected by logical queue number; no source yet proves whether hardware subsequently translates those queue bits into per-TID validity.</description>
+              <name>VALID_0</name>
+              <description>WDEVTXQBSR_VD[0]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue zero.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>8</bitWidth>
-              <writeConstraint>
-                <range>
-                  <minimum>0</minimum>
-                  <maximum>255</maximum>
-                </range>
-              </writeConstraint>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>VALID_1</name>
+              <description>WDEVTXQBSR_VD[1]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue one.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>VALID_2</name>
+              <description>WDEVTXQBSR_VD[2]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue two.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>VALID_3</name>
+              <description>WDEVTXQBSR_VD[3]. Complete mac_tx_set_tb also proves this is the write-side Trigger-ready bit for logical queue three.</description>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>VALID_4</name>
+              <description>WDEVTXQBSR_VD[4]. No write-side queue interpretation is currently claimed.</description>
+              <bitOffset>4</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>VALID_5</name>
+              <description>WDEVTXQBSR_VD[5]. No write-side queue interpretation is currently claimed.</description>
+              <bitOffset>5</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>VALID_6</name>
+              <description>WDEVTXQBSR_VD[6]. No write-side queue interpretation is currently claimed.</description>
+              <bitOffset>6</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>VALID_7</name>
+              <description>WDEVTXQBSR_VD[7]. No write-side queue interpretation is currently claimed.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>AC_EMPTY_SOFTWARE_TID</name>
@@ -9011,16 +9047,52 @@
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>TID_BITMAP</name>
-              <description>Trigger-based TIDs enabled by successful HE BlockAck setup.</description>
+              <name>TRIGGER_BASED_TID_0_ENABLED</name>
+              <description>Trigger-based TID zero enabled by successful HE BlockAck setup.</description>
               <bitOffset>13</bitOffset>
-              <bitWidth>8</bitWidth>
-              <writeConstraint>
-                <range>
-                  <minimum>0</minimum>
-                  <maximum>255</maximum>
-                </range>
-              </writeConstraint>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TRIGGER_BASED_TID_1_ENABLED</name>
+              <description>Trigger-based TID one enabled by successful HE BlockAck setup.</description>
+              <bitOffset>14</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TRIGGER_BASED_TID_2_ENABLED</name>
+              <description>Trigger-based TID two enabled by successful HE BlockAck setup.</description>
+              <bitOffset>15</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TRIGGER_BASED_TID_3_ENABLED</name>
+              <description>Trigger-based TID three enabled by successful HE BlockAck setup.</description>
+              <bitOffset>16</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TRIGGER_BASED_TID_4_ENABLED</name>
+              <description>Trigger-based TID four enabled by successful HE BlockAck setup.</description>
+              <bitOffset>17</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TRIGGER_BASED_TID_5_ENABLED</name>
+              <description>Trigger-based TID five enabled by successful HE BlockAck setup.</description>
+              <bitOffset>18</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TRIGGER_BASED_TID_6_ENABLED</name>
+              <description>Trigger-based TID six enabled by successful HE BlockAck setup.</description>
+              <bitOffset>19</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TRIGGER_BASED_TID_7_ENABLED</name>
+              <description>Trigger-based TID seven enabled by successful HE BlockAck setup.</description>
+              <bitOffset>20</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>BASIC_SPECIAL_BSR_SEQUENCE</name>

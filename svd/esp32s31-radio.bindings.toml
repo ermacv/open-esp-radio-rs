@@ -10642,10 +10642,17 @@ scope = []
 register-method = "rx_field_control"
 
 [[registers.fields]]
-svd-name = "BITMAP_CONTROL"
-method = "bitmap_control"
+svd-name = "COLOR_BITMAP_CLEAR"
+method = "color_bitmap_clear"
 bit-offset = 0
-bit-width = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "BITMAP_CONTROL_HIGH"
+method = "bitmap_control_high"
+bit-offset = 1
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
@@ -20246,10 +20253,59 @@ scope = []
 register-method = "control"
 
 [[registers.fields]]
-svd-name = "VALID_BITMAP"
-method = "valid_bitmap"
+svd-name = "VALID_0"
+method = "valid_0"
 bit-offset = 0
-bit-width = 8
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "VALID_1"
+method = "valid_1"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "VALID_2"
+method = "valid_2"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "VALID_3"
+method = "valid_3"
+bit-offset = 3
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "VALID_4"
+method = "valid_4"
+bit-offset = 4
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "VALID_5"
+method = "valid_5"
+bit-offset = 5
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "VALID_6"
+method = "valid_6"
+bit-offset = 6
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "VALID_7"
+method = "valid_7"
+bit-offset = 7
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
@@ -20267,10 +20323,59 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "TID_BITMAP"
-method = "tid_bitmap"
+svd-name = "TRIGGER_BASED_TID_0_ENABLED"
+method = "trigger_based_tid_0_enabled"
 bit-offset = 13
-bit-width = 8
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TRIGGER_BASED_TID_1_ENABLED"
+method = "trigger_based_tid_1_enabled"
+bit-offset = 14
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TRIGGER_BASED_TID_2_ENABLED"
+method = "trigger_based_tid_2_enabled"
+bit-offset = 15
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TRIGGER_BASED_TID_3_ENABLED"
+method = "trigger_based_tid_3_enabled"
+bit-offset = 16
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TRIGGER_BASED_TID_4_ENABLED"
+method = "trigger_based_tid_4_enabled"
+bit-offset = 17
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TRIGGER_BASED_TID_5_ENABLED"
+method = "trigger_based_tid_5_enabled"
+bit-offset = 18
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TRIGGER_BASED_TID_6_ENABLED"
+method = "trigger_based_tid_6_enabled"
+bit-offset = 19
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TRIGGER_BASED_TID_7_ENABLED"
+method = "trigger_based_tid_7_enabled"
+bit-offset = 20
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]

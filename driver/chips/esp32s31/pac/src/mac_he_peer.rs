@@ -84,7 +84,7 @@ impl WifiRadioRegisters {
             .wifi_mac
             .wifi_mac_he_init_prefix
             .rx_field_control()
-            .modify(|r, w| w.bitmap_control().set(r.bitmap_control().bits() | 1));
+            .modify(|_, w| w.color_bitmap_clear().set_bit());
         init.he_default_control().modify(|_, w| {
             w.default_pe_duration()
                 .set((config.operation_parameters & 0x07) as u8)

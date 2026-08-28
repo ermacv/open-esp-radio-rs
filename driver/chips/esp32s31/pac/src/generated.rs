@@ -1664,6 +1664,22 @@ pub(crate) fn enable_bluetooth_scheduler_run_interrupts_bank_1(
     crate::svd::field_or_modify::enable_bluetooth_scheduler_run_interrupts_bank_1(registers);
 }
 
+/// Typed bridge for the reviewed `enable_bluetooth_primary_baseline_bank_0` fixed field-OR transaction.
+#[inline]
+pub(crate) fn enable_bluetooth_primary_baseline_bank_0(
+    registers: &crate::svd::BluetoothInterruptBank,
+) {
+    crate::svd::field_or_modify::enable_bluetooth_primary_baseline_bank_0(registers);
+}
+
+/// Typed bridge for the reviewed `enable_bluetooth_primary_baseline_bank_1` fixed field-OR transaction.
+#[inline]
+pub(crate) fn enable_bluetooth_primary_baseline_bank_1(
+    registers: &crate::svd::BluetoothInterruptBank,
+) {
+    crate::svd::field_or_modify::enable_bluetooth_primary_baseline_bank_1(registers);
+}
+
 /// Typed bridge for the reviewed `prepare_bluetooth_modem_lp_timer_control_25` fixed field-OR transaction.
 #[inline]
 pub(crate) fn prepare_bluetooth_modem_lp_timer_control_25(
@@ -1829,6 +1845,22 @@ pub(crate) fn clear_bluetooth_memory_list_1_pointer_a(
     registers: &crate::svd::BluetoothControllerCore,
 ) {
     crate::svd::field_replace_modify::clear_bluetooth_memory_list_1_pointer_a(registers);
+}
+
+/// Typed bridge for the reviewed `mask_bluetooth_primary_baseline_bank_0` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn mask_bluetooth_primary_baseline_bank_0(
+    registers: &crate::svd::BluetoothInterruptBank,
+) {
+    crate::svd::field_replace_modify::mask_bluetooth_primary_baseline_bank_0(registers);
+}
+
+/// Typed bridge for the reviewed `mask_bluetooth_primary_baseline_bank_1` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn mask_bluetooth_primary_baseline_bank_1(
+    registers: &crate::svd::BluetoothInterruptBank,
+) {
+    crate::svd::field_replace_modify::mask_bluetooth_primary_baseline_bank_1(registers);
 }
 
 /// Typed bridge for the reviewed `clear_bluetooth_memory_list_1_pointer_b` fixed field-replacement transaction.

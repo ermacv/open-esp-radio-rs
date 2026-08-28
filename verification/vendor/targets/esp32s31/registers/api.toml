@@ -2608,6 +2608,50 @@ sources = [
 ]
 
 [[field-or-modifies]]
+name = "enable_bluetooth_primary_baseline_bank_0"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+register = "IRQ_ENABLE_0"
+fields = [{ field = "SOURCE_15", source-bit-offset = 15 }]
+value = 0x00008000
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
+
+[[field-or-modifies]]
+name = "enable_bluetooth_primary_baseline_bank_1"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+register = "IRQ_ENABLE_1"
+fields = [
+    { field = "SOURCE_8", source-bit-offset = 8 },
+    { field = "SOURCE_9", source-bit-offset = 9 },
+    { field = "SOURCE_12", source-bit-offset = 12 },
+]
+value = 0x00001300
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
+
+[[field-replace-modifies]]
+name = "mask_bluetooth_primary_baseline_bank_0"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+register = "IRQ_ENABLE_0"
+fields = [{ field = "SOURCE_15", source-bit-offset = 15 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
+
+[[field-replace-modifies]]
+name = "mask_bluetooth_primary_baseline_bank_1"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+register = "IRQ_ENABLE_1"
+fields = [
+    { field = "SOURCE_8", source-bit-offset = 8 },
+    { field = "SOURCE_9", source-bit-offset = 9 },
+    { field = "SOURCE_12", source-bit-offset = 12 },
+]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
+
+[[field-or-modifies]]
 name = "prepare_bluetooth_modem_lp_timer_control_25"
 peripheral = "BTDM_RUNTIME_CONTROL"
 register = "CONTROL_0078"
@@ -3066,6 +3110,34 @@ peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "SCHEDULER_FINISHED_LIST_STATUS"
 field = "FINISHED_LIST_MASK"
 sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS", "PUBLIC_ESP32S31_BLE_COMPLETION_ROLES"]
+
+[[field-reads]]
+name = "capture_bluetooth_irq_diagnostic_detail_0"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+register = "IRQ_DIAGNOSTIC_DETAIL_0"
+field = "IMAGE"
+sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
+
+[[field-reads]]
+name = "capture_bluetooth_irq_diagnostic_detail_1"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+register = "IRQ_DIAGNOSTIC_DETAIL_1"
+field = "IMAGE"
+sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
+
+[[field-reads]]
+name = "capture_bluetooth_irq_diagnostic_state"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+register = "IRQ_DIAGNOSTIC_STATE"
+field = "IMAGE"
+sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
+
+[[field-reads]]
+name = "observe_bluetooth_interrupt_output_scheduler_busy"
+peripheral = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME"
+register = "SCHEDULER_STATE"
+field = "BUSY"
+sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"

@@ -58272,6 +58272,38 @@ pub mod field_read {
             .bits()
     }
 
+    /// Read `BLUETOOTH_INTERRUPT_BANK`.`IRQ_DIAGNOSTIC_DETAIL_0`.`IMAGE` without exposing its register block.
+    #[inline]
+    pub fn capture_bluetooth_irq_diagnostic_detail_0(
+        registers: &crate::BluetoothInterruptBank,
+    ) -> u32 {
+        registers.irq_diagnostic_detail_0().read().image().bits()
+    }
+
+    /// Read `BLUETOOTH_INTERRUPT_BANK`.`IRQ_DIAGNOSTIC_DETAIL_1`.`IMAGE` without exposing its register block.
+    #[inline]
+    pub fn capture_bluetooth_irq_diagnostic_detail_1(
+        registers: &crate::BluetoothInterruptBank,
+    ) -> u32 {
+        registers.irq_diagnostic_detail_1().read().image().bits()
+    }
+
+    /// Read `BLUETOOTH_INTERRUPT_BANK`.`IRQ_DIAGNOSTIC_STATE`.`IMAGE` without exposing its register block.
+    #[inline]
+    pub fn capture_bluetooth_irq_diagnostic_state(
+        registers: &crate::BluetoothInterruptBank,
+    ) -> u32 {
+        registers.irq_diagnostic_state().read().image().bits()
+    }
+
+    /// Read `BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME`.`SCHEDULER_STATE`.`BUSY` without exposing its register block.
+    #[inline]
+    pub fn observe_bluetooth_interrupt_output_scheduler_busy(
+        registers: &crate::BluetoothSchedulerInterruptRuntime,
+    ) -> bool {
+        registers.scheduler_state().read().busy().bit()
+    }
+
     /// Read `BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME`.`SCHEDULER_STATE`.`BUSY` without exposing its register block.
     #[inline]
     pub fn observe_bluetooth_scheduler_lock_modify_busy(
@@ -61169,6 +61201,36 @@ pub mod field_or_modify {
         });
     }
 
+    /// OR one reviewed logical image into BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_0 fields [SOURCE_15] while preserving the fresh register observation.
+    #[inline]
+    pub fn enable_bluetooth_primary_baseline_bank_0(registers: &crate::BluetoothInterruptBank) {
+        registers.irq_enable_0().modify(|reader, writer| {
+            let input = 0x00008000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .source_15()
+                .bit(reader.source_15().bit() || ((input >> 15) & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_1 fields [SOURCE_8, SOURCE_9, SOURCE_12] while preserving the fresh register observation.
+    #[inline]
+    pub fn enable_bluetooth_primary_baseline_bank_1(registers: &crate::BluetoothInterruptBank) {
+        registers.irq_enable_1().modify(|reader, writer| {
+            let input = 0x00001300_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .source_8()
+                .bit(reader.source_8().bit() || ((input >> 8) & 0x00000001) != 0)
+                .source_9()
+                .bit(reader.source_9().bit() || ((input >> 9) & 0x00000001) != 0)
+                .source_12()
+                .bit(reader.source_12().bit() || ((input >> 12) & 0x00000001) != 0)
+        });
+    }
+
     /// OR one reviewed logical image into BTDM_RUNTIME_CONTROL.CONTROL_0078 fields [CONTROL_25] while preserving the fresh register observation.
     #[inline]
     pub fn prepare_bluetooth_modem_lp_timer_control_25(registers: &crate::BtdmRuntimeControl) {
@@ -61469,6 +61531,34 @@ pub mod field_replace_modify {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe { writer.compressed_sram_pointer().bits(input & 0x000fffff) }
+        });
+    }
+
+    /// Replace BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_0 fields [SOURCE_15] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn mask_bluetooth_primary_baseline_bank_0(registers: &crate::BluetoothInterruptBank) {
+        registers.irq_enable_0().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.source_15().bit(((input >> 15) & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BLUETOOTH_INTERRUPT_BANK.IRQ_ENABLE_1 fields [SOURCE_8, SOURCE_9, SOURCE_12] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn mask_bluetooth_primary_baseline_bank_1(registers: &crate::BluetoothInterruptBank) {
+        registers.irq_enable_1().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .source_8()
+                .bit(((input >> 8) & 0x00000001) != 0)
+                .source_9()
+                .bit(((input >> 9) & 0x00000001) != 0)
+                .source_12()
+                .bit(((input >> 12) & 0x00000001) != 0)
         });
     }
 

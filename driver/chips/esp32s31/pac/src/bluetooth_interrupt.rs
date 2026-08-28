@@ -4,7 +4,9 @@
 
 use super::{
     BluetoothInterruptRegisters, BluetoothInterruptSetup, device_fence,
-    svd::{field_or_modify, fixed_register_image, interrupt_snapshot},
+    svd::{
+        field_or_modify, field_read, field_replace_modify, fixed_register_image, interrupt_snapshot,
+    },
 };
 
 trait BluetoothSchedulerRunInterruptControl {
@@ -76,21 +78,11 @@ impl BluetoothInterruptControl for HardwareInterruptControl<'_> {
     }
 
     fn enable_primary_baseline_bank_0(&mut self) {
-        self.bank
-            .irq_enable_0()
-            .modify(|_, writer| writer.source_15().set_bit());
+        field_or_modify::enable_bluetooth_primary_baseline_bank_0(self.bank);
     }
 
     fn enable_primary_baseline_bank_1(&mut self) {
-        self.bank.irq_enable_1().modify(|_, writer| {
-            writer
-                .source_8()
-                .set_bit()
-                .source_9()
-                .set_bit()
-                .source_12()
-                .set_bit()
-        });
+        field_or_modify::enable_bluetooth_primary_baseline_bank_1(self.bank);
     }
 
     fn prepare_output(&mut self) {
@@ -106,21 +98,11 @@ impl BluetoothInterruptControl for HardwareInterruptControl<'_> {
     }
 
     fn mask_primary_baseline_bank_0(&mut self) {
-        self.bank
-            .irq_enable_0()
-            .modify(|_, writer| writer.source_15().clear_bit());
+        field_replace_modify::mask_bluetooth_primary_baseline_bank_0(self.bank);
     }
 
     fn mask_primary_baseline_bank_1(&mut self) {
-        self.bank.irq_enable_1().modify(|_, writer| {
-            writer
-                .source_8()
-                .clear_bit()
-                .source_9()
-                .clear_bit()
-                .source_12()
-                .clear_bit()
-        });
+        field_replace_modify::mask_bluetooth_primary_baseline_bank_1(self.bank);
     }
 }
 
@@ -202,15 +184,15 @@ impl BluetoothPrimaryInterruptControl for HardwareInterruptControl<'_> {
     }
 
     fn capture_diagnostic_detail_0(&mut self) {
-        let _ = self.bank.irq_diagnostic_detail_0().read();
+        let _ = field_read::capture_bluetooth_irq_diagnostic_detail_0(self.bank);
     }
 
     fn capture_diagnostic_detail_1(&mut self) {
-        let _ = self.bank.irq_diagnostic_detail_1().read();
+        let _ = field_read::capture_bluetooth_irq_diagnostic_detail_1(self.bank);
     }
 
     fn capture_diagnostic_state(&mut self) {
-        let _ = self.bank.irq_diagnostic_state().read();
+        let _ = field_read::capture_bluetooth_irq_diagnostic_state(self.bank);
     }
 }
 
@@ -264,12 +246,9 @@ impl BluetoothInterruptSetup {
 
 impl BluetoothInterruptOutputPrepared {
     pub(super) fn scheduler_busy_after_routes(&self) -> bool {
-        self.peripherals
-            .bluetooth_scheduler_interrupt_runtime
-            .scheduler_state()
-            .read()
-            .busy()
-            .bit_is_set()
+        field_read::observe_bluetooth_interrupt_output_scheduler_busy(
+            &self.peripherals.bluetooth_scheduler_interrupt_runtime,
+        )
     }
 
     /// Release a prepared controller output after any CPU route has been

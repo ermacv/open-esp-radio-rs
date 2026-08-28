@@ -101,7 +101,7 @@ fn creates_a_valid_project_and_refuses_to_overwrite_it() {
     );
     let api = crate::registers::PacApiPack::load(&directory.join("registers/api.toml")).unwrap();
     assert_eq!(api.operation_count(), 0);
-    assert_eq!(api.schema, 4);
+    assert_eq!(api.schema, 5);
     assert_eq!(api.domain_count(), 0);
     assert_eq!(api.ownership_partition_count(), 0);
     assert_eq!(

@@ -1,5 +1,5 @@
 # Reviewed ESP32-S31 closed-PAC domains and safe transactions; no discovery facts or hardware metadata.
-schema = 4
+schema = 5
 
 [options]
 device-access = true
@@ -330,6 +330,13 @@ description = "Zero-based low-twenty-bit compressed SRAM pointer image ORed into
 min = 0
 max = 0x000f_ffff
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+
+[[bounded-domains]]
+name = "BluetoothPhyInitTimingByte"
+description = "Runtime-derived byte ORed into both BLE link-controller transmit-delay fields by one fresh-read transaction."
+min = 0
+max = 0xff
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[bounded-domains]]
 name = "ModemLowPowerClockDivider"
@@ -1819,7 +1826,7 @@ sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
 name = "or_bluetooth_memory_list_1_pointer_a"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "MMGMT_LIST_1_POINTER_A"
-field = "COMPRESSED_SRAM_POINTER"
+fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
 domain = "BluetoothMemoryListPointerBits"
 exposure = "facade"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
@@ -1828,7 +1835,7 @@ sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 name = "or_bluetooth_memory_list_1_pointer_b"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "MMGMT_LIST_1_POINTER_B"
-field = "COMPRESSED_SRAM_POINTER"
+fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
 domain = "BluetoothMemoryListPointerBits"
 exposure = "facade"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
@@ -1837,7 +1844,7 @@ sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 name = "or_bluetooth_memory_list_2_pointer_a"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "MMGMT_LIST_2_POINTER_A"
-field = "COMPRESSED_SRAM_POINTER"
+fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
 domain = "BluetoothMemoryListPointerBits"
 exposure = "facade"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
@@ -1846,7 +1853,7 @@ sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 name = "or_bluetooth_memory_list_2_pointer_b"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "MMGMT_LIST_2_POINTER_B"
-field = "COMPRESSED_SRAM_POINTER"
+fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
 domain = "BluetoothMemoryListPointerBits"
 exposure = "facade"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
@@ -1855,7 +1862,7 @@ sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 name = "or_bluetooth_memory_list_3_pointer_a"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "MMGMT_LIST_3_POINTER_A"
-field = "COMPRESSED_SRAM_POINTER"
+fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
 domain = "BluetoothMemoryListPointerBits"
 exposure = "facade"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
@@ -1864,10 +1871,46 @@ sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 name = "or_bluetooth_memory_list_3_pointer_b"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "MMGMT_LIST_3_POINTER_B"
-field = "COMPRESSED_SRAM_POINTER"
+fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
 domain = "BluetoothMemoryListPointerBits"
 exposure = "facade"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+
+[[field-or-modifies]]
+name = "or_ble_phy_init_tx_on_delay"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "LC_TX_ON_DELAY_CONFIG"
+fields = [
+    { field = "LC_TX_ON_DELAY", source-bit-offset = 0 },
+    { field = "INIT_DUPLICATE_BYTE", source-bit-offset = 0 },
+]
+domain = "BluetoothPhyInitTimingByte"
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-or-modifies]]
+name = "or_ble_phy_init_low_byte_pair"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_BYTES_0254"
+fields = [
+    { field = "INIT_BYTE_0", source-bit-offset = 0 },
+    { field = "INIT_BYTE_1", source-bit-offset = 8 },
+]
+value = 0x0000_0101
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-or-modifies]]
+name = "or_ble_phy_init_byte_2"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_BYTES_0254"
+fields = [
+    { field = "INIT_BYTE_2_LOW_7", source-bit-offset = 0 },
+    { field = "INIT_BYTE_2_HIGH", source-bit-offset = 7 },
+]
+value = 0xb2
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[indexed-bit-set-modifies]]
 name = "request_rx_block_ack_entry_update"

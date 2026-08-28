@@ -106,15 +106,6 @@ impl BluetoothPhyRegisterInitInputs {
     }
 }
 
-const fn replace_byte(image: u32, byte: u32, value: u8) -> u32 {
-    let shift = byte * 8;
-    (image & !(0xff_u32 << shift)) | ((value as u32) << shift)
-}
-
-const fn le_tx_on_delay_image(image: u32, timing_byte: u8) -> u32 {
-    (image & 0xf800_ffff) | ((timing_byte.wrapping_sub(10) as u32) << 19)
-}
-
 impl BluetoothTaskRegisters {
     /// Execute the exact MMIO body of the recovered BLE PHY register init.
     ///
@@ -139,185 +130,233 @@ impl BluetoothTaskRegisters {
     #[allow(
         unsafe_code,
         dead_code,
-        reason = "the unsafe signature and raw writes retain unmodeled lifecycle and pointed-storage prerequisites"
+        reason = "the unsafe signature and field accessors retain unmodeled lifecycle and pointed-storage prerequisites"
     )]
     pub(crate) unsafe fn initialize_ble_phy_registers(
         &mut self,
         inputs: BluetoothPhyRegisterInitInputs,
     ) {
-        macro_rules! write_image {
-            ($register:expr, $image:expr) => {{
-                let register = $register;
-                // SAFETY: this method is reachable only through its unsafe,
-                // lifecycle-qualified contract and writes a reviewed image to
-                // the exact reviewed register.
-                unsafe {
-                    register.write_with_zero(|writer| writer.bits($image));
-                }
-            }};
-        }
+        // SAFETY: every call below writes through a named SVD field accessor.
+        // The reviewed transaction supplies values inside those fields; the
+        // caller upholds the surrounding lifecycle and pointed-storage rules.
+        unsafe {
+            let timing_byte = inputs.private_configuration_byte_0x10.wrapping_sub(1);
+            let environment = inputs.environment.address();
+            let resolving_list = (inputs.resolving_list.address() >> 2) & 0x000f_ffff;
 
-        macro_rules! modify_image {
-            ($register:expr, $transform:expr) => {{
-                let register = $register;
-                register.modify(|reader, writer| {
-                    let image = ($transform)(reader.bits());
-                    // SAFETY: the transform is the exact reviewed fresh-read
-                    // RMW for this register and the caller upholds the outer
-                    // hardware lifecycle contract.
-                    unsafe { writer.bits(image) }
+            let bluetooth = &self.bluetooth;
+            let btmac = &bluetooth.btmac_ble_phy_init;
+
+            // Entry toggle and BTMAC prefix.
+            bluetooth
+                .ble_phy_init_toggle
+                .init_toggle()
+                .write_with_zero(|writer| writer.image().bits(0));
+            bluetooth
+                .ble_phy_init_toggle
+                .init_toggle()
+                .write_with_zero(|writer| writer.image().bits(1));
+            let init_control = btmac.init_control_00b4();
+            let preserved_bit_17 = init_control.read().init_preserve_17().bit();
+            init_control.write_with_zero(|writer| writer.init_preserve_17().bit(preserved_bit_17));
+            btmac
+                .init_ones_00b8()
+                .write_with_zero(|writer| writer.init_image().bits(u32::MAX));
+            btmac.lc_tx_on_delay_config().modify(|_, writer| {
+                writer
+                    .lc_tx_on_delay()
+                    .bits(0)
+                    .init_duplicate_byte()
+                    .bits(0)
+            });
+            super::generated::or_ble_phy_init_tx_on_delay(
+                btmac,
+                super::generated::BluetoothPhyInitTimingByte::new(u32::from(timing_byte))
+                    .expect("one byte always fits the reviewed BLE PHY timing domain"),
+            );
+
+            // The vendor reaches this leaf through the registered external-BB
+            // function table. The restricted transaction preserves its MMIO edge
+            // at the same position without claiming a static call-table install.
+            bluetooth
+                .bt_v3_2_baseband
+                .le_tx_on_delay()
+                .modify(|_, writer| {
+                    writer
+                        .force_zero_bits_16_18()
+                        .bits(0)
+                        .encoded_value_minus_10()
+                        .bits(timing_byte.wrapping_sub(10))
                 });
-            }};
-        }
 
-        let timing_byte = inputs.private_configuration_byte_0x10.wrapping_sub(1);
-        let environment = inputs.environment.address();
-        let resolving_list = (inputs.resolving_list.address() >> 2) & 0x000f_ffff;
+            btmac
+                .init_value_0138()
+                .write_with_zero(|writer| writer.init_image().bits(0x0000_065b));
+            btmac.init_bytes_04a4().write_with_zero(|writer| {
+                writer
+                    .init_byte_0()
+                    .bits(2)
+                    .init_byte_1()
+                    .bits(2)
+                    .init_byte_2()
+                    .bits(2)
+                    .init_byte_3()
+                    .bits(2)
+            });
+            btmac.init_bytes_04a8().write_with_zero(|writer| {
+                writer
+                    .init_byte_0()
+                    .bits(2)
+                    .init_byte_1()
+                    .bits(2)
+                    .init_byte_2()
+                    .bits(2)
+                    .init_byte_3()
+                    .bits(2)
+            });
+            btmac.init_dynamic_image_04a0().write_with_zero(|writer| {
+                writer
+                    .init_image()
+                    .bits(inputs.environment.compressed_member(0x2c))
+            });
+            btmac
+                .init_value_04ac()
+                .write_with_zero(|writer| writer.init_image().bits(0x00ff_0002));
+            btmac
+                .init_value_045c()
+                .write_with_zero(|writer| writer.init_image().bits(8));
 
-        let bluetooth = &self.bluetooth;
-        let btmac = &bluetooth.btmac_ble_phy_init;
+            // Four independent fresh-read updates at 0x20101654.
+            let init_bytes = btmac.init_bytes_0254();
+            init_bytes.modify(|_, writer| writer.init_byte_0().bits(0).init_byte_1().bits(0));
+            super::generated::or_ble_phy_init_low_byte_pair(btmac);
+            init_bytes.modify(|_, writer| writer.init_byte_2_low_7().bits(0));
+            super::generated::or_ble_phy_init_byte_2(btmac);
 
-        // Entry toggle and BTMAC prefix.
-        write_image!(bluetooth.ble_phy_init_toggle.init_toggle(), 0);
-        write_image!(bluetooth.ble_phy_init_toggle.init_toggle(), 1);
-        modify_image!(btmac.init_control_00b4(), |image| image & 0x0002_0000);
-        write_image!(btmac.init_ones_00b8(), u32::MAX);
-        modify_image!(btmac.lc_tx_on_delay_config(), |image| image & 0xff00_ff00);
-        modify_image!(btmac.lc_tx_on_delay_config(), |image| {
-            image | u32::from(timing_byte) | (u32::from(timing_byte) << 16)
-        });
+            btmac
+                .init_zero_0074()
+                .write_with_zero(|writer| writer.init_image().bits(0));
+            bluetooth
+                .ble_phy_init_phase
+                .init_phase()
+                .write_with_zero(|writer| writer.image().bits(0x20));
+            bluetooth
+                .ble_hw_accelerator
+                .init_config()
+                .write_with_zero(|writer| writer.image().bits(0x0000_02f0));
+            bluetooth
+                .ble_hw_accelerator
+                .init_sram_region_0()
+                .write_with_zero(|writer| writer.image().bits(0x2f08_0000));
+            bluetooth
+                .ble_hw_accelerator
+                .init_sram_region_1()
+                .write_with_zero(|writer| writer.image().bits(0x2f00_0000));
+            bluetooth
+                .ble_hw_resolving_list
+                .base_pointer()
+                .write_with_zero(|writer| writer.compressed_sram_pointer().bits(resolving_list));
 
-        // The vendor reaches this leaf through the registered external-BB
-        // function table. The restricted transaction preserves its MMIO edge
-        // at the same position without claiming a static call-table install.
-        modify_image!(bluetooth.bt_v3_2_baseband.le_tx_on_delay(), |image| {
-            le_tx_on_delay_image(image, timing_byte)
-        });
+            btmac
+                .init_control_0400()
+                .write_with_zero(|writer| writer.init_enable_31().set_bit());
+            btmac
+                .init_control_0400()
+                .modify(|_, writer| writer.init_enable_22().set_bit());
+            btmac
+                .init_value_0540()
+                .write_with_zero(|writer| writer.init_image().bits(0x0000_07d0));
 
-        write_image!(btmac.init_value_0138(), 0x0000_065b);
-        write_image!(btmac.init_bytes_04a4(), 0x0202_0202);
-        write_image!(btmac.init_bytes_04a8(), 0x0202_0202);
-        write_image!(
-            btmac.init_dynamic_image_04a0(),
-            inputs.environment.compressed_member(0x2c)
-        );
-        write_image!(btmac.init_value_04ac(), 0x00ff_0002);
-        write_image!(btmac.init_value_045c(), 8);
+            // Each byte replacement is a distinct fresh-read RMW in vendor order.
+            let bytes_0550 = btmac.init_bytes_0550();
+            bytes_0550.modify(|_, writer| writer.init_byte_0().bits(0x03));
+            bytes_0550.modify(|_, writer| writer.init_byte_1().bits(0x03));
+            bytes_0550.modify(|_, writer| writer.init_byte_2().bits(0x44));
 
-        // Four independent fresh-read updates at 0x20101654.
-        modify_image!(btmac.init_bytes_0254(), |image| image & 0xffff_0000);
-        modify_image!(btmac.init_bytes_0254(), |image| image | 0x0000_0101);
-        modify_image!(btmac.init_bytes_0254(), |image| image & 0xff80_ffff);
-        modify_image!(btmac.init_bytes_0254(), |image| image | 0x00b2_0000);
+            let bytes_0554 = btmac.init_bytes_0554();
+            bytes_0554.modify(|_, writer| writer.init_byte_0().bits(0x10));
+            bytes_0554.modify(|_, writer| writer.init_byte_1().bits(0x10));
+            bytes_0554.modify(|_, writer| writer.init_byte_2().bits(0x3c));
+            bytes_0554.modify(|_, writer| writer.init_byte_3().bits(0x28));
 
-        write_image!(btmac.init_zero_0074(), 0);
-        write_image!(bluetooth.ble_phy_init_phase.init_phase(), 0x20);
-        write_image!(bluetooth.ble_hw_accelerator.init_config(), 0x0000_02f0);
-        write_image!(
-            bluetooth.ble_hw_accelerator.init_sram_region_0(),
-            0x2f08_0000
-        );
-        write_image!(
-            bluetooth.ble_hw_accelerator.init_sram_region_1(),
-            0x2f00_0000
-        );
-        write_image!(
-            bluetooth.ble_hw_resolving_list.base_pointer(),
-            resolving_list
-        );
+            let bytes_055c = btmac.init_bytes_055c();
+            bytes_055c.modify(|_, writer| writer.init_byte_0().bits(0x08));
+            bytes_055c.modify(|_, writer| writer.init_byte_1().bits(0x08));
+            bytes_055c.modify(|_, writer| writer.init_byte_2().bits(0x08));
+            bytes_055c.modify(|_, writer| writer.init_byte_3().bits(0x08));
 
-        write_image!(btmac.init_control_0400(), 0x8000_0000);
-        modify_image!(btmac.init_control_0400(), |image| image | 0x0040_0000);
-        write_image!(btmac.init_value_0540(), 0x0000_07d0);
+            let bytes_0558 = btmac.init_bytes_0558();
+            bytes_0558.modify(|_, writer| writer.init_byte_0().bits(0x0c));
+            bytes_0558.modify(|_, writer| writer.init_byte_1().bits(0x08));
+            bytes_0558.modify(|_, writer| writer.init_byte_2().bits(0x0c));
+            bytes_0558.modify(|_, writer| writer.init_byte_3().bits(0x0c));
 
-        // Each byte replacement is a distinct fresh-read RMW in vendor order.
-        modify_image!(btmac.init_bytes_0550(), |image| replace_byte(
-            image, 0, 0x03
-        ));
-        modify_image!(btmac.init_bytes_0550(), |image| replace_byte(
-            image, 1, 0x03
-        ));
-        modify_image!(btmac.init_bytes_0550(), |image| replace_byte(
-            image, 2, 0x44
-        ));
+            btmac
+                .init_high_half_0458()
+                .modify(|_, writer| writer.init_high_half().bits(0x000f));
+            btmac
+                .init_low_5_054c()
+                .modify(|_, writer| writer.init_low_5().bits(0x12));
+            bluetooth
+                .ble_phy_init_phase
+                .init_phase()
+                .write_with_zero(|writer| writer.image().bits(0x40));
 
-        modify_image!(btmac.init_bytes_0554(), |image| replace_byte(
-            image, 0, 0x10
-        ));
-        modify_image!(btmac.init_bytes_0554(), |image| replace_byte(
-            image, 1, 0x10
-        ));
-        modify_image!(btmac.init_bytes_0554(), |image| replace_byte(
-            image, 2, 0x3c
-        ));
-        modify_image!(btmac.init_bytes_0554(), |image| replace_byte(
-            image, 3, 0x28
-        ));
+            if inputs.option_byte_0x55_nonzero {
+                btmac
+                    .init_branch_control_0470()
+                    .modify(|_, writer| writer.init_enable_18().set_bit());
+            }
 
-        modify_image!(btmac.init_bytes_055c(), |image| replace_byte(
-            image, 0, 0x08
-        ));
-        modify_image!(btmac.init_bytes_055c(), |image| replace_byte(
-            image, 1, 0x08
-        ));
-        modify_image!(btmac.init_bytes_055c(), |image| replace_byte(
-            image, 2, 0x08
-        ));
-        modify_image!(btmac.init_bytes_055c(), |image| replace_byte(
-            image, 3, 0x08
-        ));
-
-        modify_image!(btmac.init_bytes_0558(), |image| replace_byte(
-            image, 0, 0x0c
-        ));
-        modify_image!(btmac.init_bytes_0558(), |image| replace_byte(
-            image, 1, 0x08
-        ));
-        modify_image!(btmac.init_bytes_0558(), |image| replace_byte(
-            image, 2, 0x0c
-        ));
-        modify_image!(btmac.init_bytes_0558(), |image| replace_byte(
-            image, 3, 0x0c
-        ));
-
-        modify_image!(btmac.init_high_half_0458(), |image| {
-            (image & 0x0000_ffff) | 0x000f_0000
-        });
-        modify_image!(btmac.init_low_5_054c(), |image| {
-            (image & 0xffff_ffe0) | 0x12
-        });
-        write_image!(bluetooth.ble_phy_init_phase.init_phase(), 0x40);
-
-        if inputs.option_byte_0x55_nonzero {
-            modify_image!(btmac.init_branch_control_0470(), |image| image
-                | 0x0004_0000);
-        }
-
-        write_image!(
-            bluetooth.ble_hw_runtime_control.phy_init_configuration(),
-            0x100 | u32::from(inputs.option_byte_0x59)
-        );
-        write_image!(
             bluetooth
                 .ble_hw_runtime_control
-                .phy_init_configuration_latch(),
-            1
-        );
-        modify_image!(btmac.init_control_00b4(), |image| image | 0x0110_8800);
-        modify_image!(btmac.init_control_00c4(), |image| image | 0x0000_0200);
+                .phy_init_configuration()
+                .write_with_zero(|writer| {
+                    writer
+                        .value_low_8()
+                        .bits(inputs.option_byte_0x59)
+                        .config_8()
+                        .set_bit()
+                });
+            bluetooth
+                .ble_hw_runtime_control
+                .phy_init_configuration_latch()
+                .write_with_zero(|writer| writer.image().bits(1));
+            btmac.init_control_00b4().modify(|_, writer| {
+                writer
+                    .init_set_11()
+                    .set_bit()
+                    .init_set_15()
+                    .set_bit()
+                    .init_set_20()
+                    .set_bit()
+                    .init_set_24()
+                    .set_bit()
+            });
+            btmac
+                .init_control_00c4()
+                .modify(|_, writer| writer.init_enable_9().set_bit());
 
-        let controller = &bluetooth.bluetooth_controller_core;
-        write_image!(controller.phy_init_zero_0244(), 0);
-        write_image!(controller.phy_init_value_01f0(), 0x55);
-        write_image!(controller.phy_init_value_0248(), 0x0000_0fff);
-        write_image!(
-            controller.phy_init_dynamic_image_024c(),
-            environment + ENVIRONMENT_LAST_OFFSET
-        );
+            let controller = &bluetooth.bluetooth_controller_core;
+            controller
+                .phy_init_zero_0244()
+                .write_with_zero(|writer| writer.image().bits(0));
+            controller
+                .phy_init_value_01f0()
+                .write_with_zero(|writer| writer.image().bits(0x55));
+            controller
+                .phy_init_value_0248()
+                .write_with_zero(|writer| writer.image().bits(0x0000_0fff));
+            controller
+                .phy_init_dynamic_image_024c()
+                .write_with_zero(|writer| {
+                    writer.image().bits(environment + ENVIRONMENT_LAST_OFFSET)
+                });
 
-        // One ordering boundary is a reviewed Rust-side addition. It does not
-        // replace, merge, or reorder any vendor MMIO edge above.
-        device_fence();
+            // One ordering boundary is a reviewed Rust-side addition. It does not
+            // replace, merge, or reorder any vendor MMIO edge above.
+            device_fence();
+        }
     }
 }
 

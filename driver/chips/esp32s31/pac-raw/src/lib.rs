@@ -39697,10 +39697,14 @@ pub mod btmac_ble_phy_init {
         pub type InitByte1R = crate::FieldReader;
         #[doc = "Field `INIT_BYTE_1` writer - "]
         pub type InitByte1W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
-        #[doc = "Field `INIT_BYTE_2` reader - "]
-        pub type InitByte2R = crate::FieldReader;
-        #[doc = "Field `INIT_BYTE_2` writer - "]
-        pub type InitByte2W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `INIT_BYTE_2_LOW_7` reader - "]
+        pub type InitByte2Low7R = crate::FieldReader;
+        #[doc = "Field `INIT_BYTE_2_LOW_7` writer - "]
+        pub type InitByte2Low7W<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        #[doc = "Field `INIT_BYTE_2_HIGH` reader - The first byte-two clear preserves this bit and the following OR forces it to one."]
+        pub type InitByte2HighR = crate::BitReader;
+        #[doc = "Field `INIT_BYTE_2_HIGH` writer - The first byte-two clear preserves this bit and the following OR forces it to one."]
+        pub type InitByte2HighW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bits 0:7"]
             #[inline(always)]
@@ -39712,10 +39716,15 @@ pub mod btmac_ble_phy_init {
             pub fn init_byte_1(&self) -> InitByte1R {
                 InitByte1R::new(((self.bits >> 8) & 0xff) as u8)
             }
-            #[doc = "Bits 16:23"]
+            #[doc = "Bits 16:22"]
             #[inline(always)]
-            pub fn init_byte_2(&self) -> InitByte2R {
-                InitByte2R::new(((self.bits >> 16) & 0xff) as u8)
+            pub fn init_byte_2_low_7(&self) -> InitByte2Low7R {
+                InitByte2Low7R::new(((self.bits >> 16) & 0x7f) as u8)
+            }
+            #[doc = "Bit 23 - The first byte-two clear preserves this bit and the following OR forces it to one."]
+            #[inline(always)]
+            pub fn init_byte_2_high(&self) -> InitByte2HighR {
+                InitByte2HighR::new(((self.bits >> 23) & 1) != 0)
             }
         }
         impl W {
@@ -39729,10 +39738,15 @@ pub mod btmac_ble_phy_init {
             pub fn init_byte_1(&mut self) -> InitByte1W<'_, InitBytes0254Spec> {
                 InitByte1W::new(self, 8)
             }
-            #[doc = "Bits 16:23"]
+            #[doc = "Bits 16:22"]
             #[inline(always)]
-            pub fn init_byte_2(&mut self) -> InitByte2W<'_, InitBytes0254Spec> {
-                InitByte2W::new(self, 16)
+            pub fn init_byte_2_low_7(&mut self) -> InitByte2Low7W<'_, InitBytes0254Spec> {
+                InitByte2Low7W::new(self, 16)
+            }
+            #[doc = "Bit 23 - The first byte-two clear preserves this bit and the following OR forces it to one."]
+            #[inline(always)]
+            pub fn init_byte_2_high(&mut self) -> InitByte2HighW<'_, InitBytes0254Spec> {
+                InitByte2HighW::new(self, 23)
             }
         }
         #[doc = "BLE PHY initialization replaces the first three bytes with the exact images 0x01, 0x01 and 0xB2.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_bytes_0254::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_bytes_0254::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -59194,81 +59208,155 @@ pub mod masked_register_modify {
 /// Safe, SVD-declared field-local OR read-modify-write transactions.
 pub mod field_or_modify {
 
-    /// OR one reviewed value into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A.COMPRESSED_SRAM_POINTER while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A fields [COMPRESSED_SRAM_POINTER] while preserving the fresh register observation.
     #[inline]
     pub fn or_bluetooth_memory_list_1_pointer_a(
         registers: &crate::BluetoothControllerCore,
         input: u32,
     ) {
         registers.mmgmt_list_1_pointer_a().modify(|reader, writer| {
-            // SAFETY: generator validation proves that the bounded input fits
-            // the selected field before positioning it in this ordinary register.
-            unsafe { writer.bits(reader.bits() | input) }
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .compressed_sram_pointer()
+                    .bits(reader.compressed_sram_pointer().bits() | input & 0x000fffff)
+            }
         });
     }
 
-    /// OR one reviewed value into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_B.COMPRESSED_SRAM_POINTER while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_B fields [COMPRESSED_SRAM_POINTER] while preserving the fresh register observation.
     #[inline]
     pub fn or_bluetooth_memory_list_1_pointer_b(
         registers: &crate::BluetoothControllerCore,
         input: u32,
     ) {
         registers.mmgmt_list_1_pointer_b().modify(|reader, writer| {
-            // SAFETY: generator validation proves that the bounded input fits
-            // the selected field before positioning it in this ordinary register.
-            unsafe { writer.bits(reader.bits() | input) }
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .compressed_sram_pointer()
+                    .bits(reader.compressed_sram_pointer().bits() | input & 0x000fffff)
+            }
         });
     }
 
-    /// OR one reviewed value into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_A.COMPRESSED_SRAM_POINTER while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_A fields [COMPRESSED_SRAM_POINTER] while preserving the fresh register observation.
     #[inline]
     pub fn or_bluetooth_memory_list_2_pointer_a(
         registers: &crate::BluetoothControllerCore,
         input: u32,
     ) {
         registers.mmgmt_list_2_pointer_a().modify(|reader, writer| {
-            // SAFETY: generator validation proves that the bounded input fits
-            // the selected field before positioning it in this ordinary register.
-            unsafe { writer.bits(reader.bits() | input) }
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .compressed_sram_pointer()
+                    .bits(reader.compressed_sram_pointer().bits() | input & 0x000fffff)
+            }
         });
     }
 
-    /// OR one reviewed value into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_B.COMPRESSED_SRAM_POINTER while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_B fields [COMPRESSED_SRAM_POINTER] while preserving the fresh register observation.
     #[inline]
     pub fn or_bluetooth_memory_list_2_pointer_b(
         registers: &crate::BluetoothControllerCore,
         input: u32,
     ) {
         registers.mmgmt_list_2_pointer_b().modify(|reader, writer| {
-            // SAFETY: generator validation proves that the bounded input fits
-            // the selected field before positioning it in this ordinary register.
-            unsafe { writer.bits(reader.bits() | input) }
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .compressed_sram_pointer()
+                    .bits(reader.compressed_sram_pointer().bits() | input & 0x000fffff)
+            }
         });
     }
 
-    /// OR one reviewed value into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_A.COMPRESSED_SRAM_POINTER while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_A fields [COMPRESSED_SRAM_POINTER] while preserving the fresh register observation.
     #[inline]
     pub fn or_bluetooth_memory_list_3_pointer_a(
         registers: &crate::BluetoothControllerCore,
         input: u32,
     ) {
         registers.mmgmt_list_3_pointer_a().modify(|reader, writer| {
-            // SAFETY: generator validation proves that the bounded input fits
-            // the selected field before positioning it in this ordinary register.
-            unsafe { writer.bits(reader.bits() | input) }
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .compressed_sram_pointer()
+                    .bits(reader.compressed_sram_pointer().bits() | input & 0x000fffff)
+            }
         });
     }
 
-    /// OR one reviewed value into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_B.COMPRESSED_SRAM_POINTER while preserving the fresh register observation.
+    /// OR one reviewed logical image into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_B fields [COMPRESSED_SRAM_POINTER] while preserving the fresh register observation.
     #[inline]
     pub fn or_bluetooth_memory_list_3_pointer_b(
         registers: &crate::BluetoothControllerCore,
         input: u32,
     ) {
         registers.mmgmt_list_3_pointer_b().modify(|reader, writer| {
-            // SAFETY: generator validation proves that the bounded input fits
-            // the selected field before positioning it in this ordinary register.
-            unsafe { writer.bits(reader.bits() | input) }
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .compressed_sram_pointer()
+                    .bits(reader.compressed_sram_pointer().bits() | input & 0x000fffff)
+            }
+        });
+    }
+
+    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.LC_TX_ON_DELAY_CONFIG fields [LC_TX_ON_DELAY, INIT_DUPLICATE_BYTE] while preserving the fresh register observation.
+    #[inline]
+    pub fn or_ble_phy_init_tx_on_delay(registers: &crate::BtmacBlePhyInit, input: u32) {
+        registers.lc_tx_on_delay_config().modify(|reader, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .lc_tx_on_delay()
+                    .bits(reader.lc_tx_on_delay().bits() | (input & 0x000000ff) as u8)
+                    .init_duplicate_byte()
+                    .bits(reader.init_duplicate_byte().bits() | (input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INIT_BYTES_0254 fields [INIT_BYTE_0, INIT_BYTE_1] while preserving the fresh register observation.
+    #[inline]
+    pub fn or_ble_phy_init_low_byte_pair(registers: &crate::BtmacBlePhyInit) {
+        registers.init_bytes_0254().modify(|reader, writer| {
+            let input = 0x00000101_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .init_byte_0()
+                    .bits(reader.init_byte_0().bits() | (input & 0x000000ff) as u8)
+                    .init_byte_1()
+                    .bits(reader.init_byte_1().bits() | ((input >> 8) & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INIT_BYTES_0254 fields [INIT_BYTE_2_LOW_7, INIT_BYTE_2_HIGH] while preserving the fresh register observation.
+    #[inline]
+    pub fn or_ble_phy_init_byte_2(registers: &crate::BtmacBlePhyInit) {
+        registers.init_bytes_0254().modify(|reader, writer| {
+            let input = 0x000000b2_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .init_byte_2_low_7()
+                    .bits(reader.init_byte_2_low_7().bits() | (input & 0x0000007f) as u8)
+                    .init_byte_2_high()
+                    .bit(reader.init_byte_2_high().bit() || ((input >> 7) & 0x00000001) != 0)
+            }
         });
     }
 }

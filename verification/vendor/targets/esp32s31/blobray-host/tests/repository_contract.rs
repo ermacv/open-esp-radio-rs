@@ -23,11 +23,11 @@ fn target_ownership_partitions_exactly_cover_the_register_model() {
     let chip = repository.join("verification/vendor/chips/esp32s31");
     let api_path = target.join("registers/api.toml");
     let api = toml_document(&api_path);
-    assert_eq!(api["schema"].as_integer(), Some(4));
+    assert_eq!(api["schema"].as_integer(), Some(5));
 
     let partitions = api["ownership-partitions"]
         .as_array_of_tables()
-        .expect("schema-4 target pack must declare ownership partitions");
+        .expect("schema-5 target pack must declare ownership partitions");
     let expected = [
         ("WifiMacPeripherals", "wifi_mac", 50_usize),
         ("WifiInterruptPeripherals", "wifi_interrupts", 2),

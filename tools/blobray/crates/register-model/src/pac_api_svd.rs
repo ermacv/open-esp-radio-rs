@@ -300,28 +300,40 @@ impl PacApiPack {
             )?;
             require_size_access(&operation.name, binding, Access::ReadWrite, "read-write")?;
             require_ordinary(&operation.name, binding.info)?;
-            let field = field(&operation.name, binding.info, &operation.field)?;
-            let width = field.bit_width();
-            if !(1..=32).contains(&width) {
-                return Err(Error::message(format!(
-                    "PAC API field-or-modify {:?} field has invalid width {width}",
-                    operation.name
-                )));
+            let mut source_mask = 0_u32;
+            for projection in &operation.fields {
+                let field = field(&operation.name, binding.info, &projection.field)?;
+                let width = field.bit_width();
+                if !(1..=32).contains(&width)
+                    || u32::from(projection.source_bit_offset) + width > 32
+                {
+                    return Err(Error::message(format!(
+                        "PAC API field-or-modify {:?} field {:?} has invalid {}-bit projection at source offset {}",
+                        operation.name, projection.field, width, projection.source_bit_offset,
+                    )));
+                }
+                let field_mask = if width == 32 {
+                    u32::MAX
+                } else {
+                    (1_u32 << width) - 1
+                };
+                source_mask |= field_mask << projection.source_bit_offset;
             }
-            let domain = self
-                .bounded_domains
-                .iter()
-                .find(|candidate| candidate.name == operation.domain)
-                .expect("pack validation requires a bounded field-or-modify domain");
-            let field_max = if width == 32 {
-                u32::MAX
-            } else {
-                (1_u32 << width) - 1
-            };
-            if domain.max > field_max {
+            let maximum_input = operation.value.unwrap_or_else(|| {
+                let domain_name = operation
+                    .domain
+                    .as_deref()
+                    .expect("pack validation requires a field-or value or domain");
+                self.bounded_domains
+                    .iter()
+                    .find(|candidate| candidate.name == domain_name)
+                    .expect("pack validation requires a bounded field-or-modify domain")
+                    .max
+            });
+            if maximum_input & !source_mask != 0 {
                 return Err(Error::message(format!(
-                    "PAC API field-or-modify {:?} domain maximum 0x{:08x} exceeds its {width}-bit field",
-                    operation.name, domain.max
+                    "PAC API field-or-modify {:?} input 0x{maximum_input:08x} exceeds its projected source mask 0x{source_mask:08x}",
+                    operation.name,
                 )));
             }
         }
@@ -1032,7 +1044,7 @@ mod tests {
 
     fn w1c_register_snapshot_pack(register: &str) -> PacApiPack {
         toml_edit::de::from_str(&format!(
-            r#"schema = 4
+            r#"schema = 5
 
 [[w1c-register-snapshots]]
 name = "event_status"
@@ -1047,7 +1059,7 @@ sources = ["PUBLIC_EVENT_STATUS_W1C"]
 
     fn fixed_register_image_pack(register: &str) -> PacApiPack {
         toml_edit::de::from_str(&format!(
-            r#"schema = 4
+            r#"schema = 5
 
 [[fixed-register-images]]
 name = "publish_image"
@@ -1062,7 +1074,7 @@ sources = ["PUBLIC_FIXED_IMAGE"]
 
     fn full_register_read_pack(register: &str) -> PacApiPack {
         toml_edit::de::from_str(&format!(
-            r#"schema = 4
+            r#"schema = 5
 
 [[opaque-domains]]
 name = "ObservedWord"
@@ -1086,7 +1098,7 @@ sources = ["PUBLIC_READ"]
 
     fn ownership_pack(peripherals: &str) -> PacApiPack {
         toml_edit::de::from_str(&format!(
-            r#"schema = 4
+            r#"schema = 5
 
 [[ownership-partitions]]
 name = "FixturePeripherals"
@@ -1100,7 +1112,7 @@ peripherals = [{peripherals}]
 
     fn separated_ownership_pack() -> PacApiPack {
         toml_edit::de::from_str(
-            r#"schema = 4
+            r#"schema = 5
 
 [[ownership-partitions]]
 name = "RadioPeripherals"

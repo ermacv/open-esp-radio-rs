@@ -45,7 +45,7 @@ artifact-sha256 = "fa22a8a2aca48b807addda2bbad78868d6774c82bcdeb8090f9140f6cbccd
 
 [[inputs]]
 source = "bluetooth"
-artifact-sha256 = "1420ecdd53054f3c6980cc2ddf5df4fb09e5085cd60e55b2a7f22a8f2afcdf1f"
+artifact-sha256 = "c7a9516d571230929adc2d631c4c8a3612ac20c02602c94337be33e6cdf87edd"
 
 [[inputs]]
 source = "bredr"

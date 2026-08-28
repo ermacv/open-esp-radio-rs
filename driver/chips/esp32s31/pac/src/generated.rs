@@ -255,6 +255,29 @@ impl BluetoothMemoryListPointerBits {
     }
 }
 
+/// Runtime-derived byte ORed into both BLE link-controller transmit-delay fields by one fresh-read transaction.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct BluetoothPhyInitTimingByte(u32);
+
+impl BluetoothPhyInitTimingByte {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x000000ff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x000000ff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Twelve-bit divider accepted by the canonical MODEM_LPCON low-power timer selector.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ModemLowPowerClockDivider(u32);
@@ -1426,6 +1449,27 @@ pub(crate) fn or_bluetooth_memory_list_3_pointer_b(
     value: BluetoothMemoryListPointerBits,
 ) {
     crate::svd::field_or_modify::or_bluetooth_memory_list_3_pointer_b(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `or_ble_phy_init_tx_on_delay` field-OR transaction.
+#[inline]
+pub(crate) fn or_ble_phy_init_tx_on_delay(
+    registers: &crate::svd::BtmacBlePhyInit,
+    value: BluetoothPhyInitTimingByte,
+) {
+    crate::svd::field_or_modify::or_ble_phy_init_tx_on_delay(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `or_ble_phy_init_low_byte_pair` fixed field-OR transaction.
+#[inline]
+pub(crate) fn or_ble_phy_init_low_byte_pair(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_or_modify::or_ble_phy_init_low_byte_pair(registers);
+}
+
+/// Typed bridge for the reviewed `or_ble_phy_init_byte_2` fixed field-OR transaction.
+#[inline]
+pub(crate) fn or_ble_phy_init_byte_2(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_or_modify::or_ble_phy_init_byte_2(registers);
 }
 
 /// Typed bridge for the reviewed `request_rx_block_ack_entry_update` indexed bit-set transaction.

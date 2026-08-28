@@ -16901,9 +16901,15 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
               <bitWidth>8</bitWidth>
             </field>
             <field>
-              <name>INIT_BYTE_2</name>
+              <name>INIT_BYTE_2_LOW_7</name>
               <bitOffset>16</bitOffset>
-              <bitWidth>8</bitWidth>
+              <bitWidth>7</bitWidth>
+            </field>
+            <field>
+              <name>INIT_BYTE_2_HIGH</name>
+              <description>The first byte-two clear preserves this bit and the following OR forces it to one.</description>
+              <bitOffset>23</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>

@@ -4769,10 +4769,17 @@ bit-width = 8
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "INIT_BYTE_2"
-method = "init_byte_2"
+svd-name = "INIT_BYTE_2_LOW_7"
+method = "init_byte_2_low_7"
 bit-offset = 16
-bit-width = 8
+bit-width = 7
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_BYTE_2_HIGH"
+method = "init_byte_2_high"
+bit-offset = 23
+bit-width = 1
 access = "read-write"
 
 [[registers]]

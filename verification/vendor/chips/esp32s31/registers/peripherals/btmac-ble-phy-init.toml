@@ -146,9 +146,15 @@ bitOffset = 8
 bitWidth = 8
 
 [[peripherals.registers.register.fields]]
-name = "INIT_BYTE_2"
+name = "INIT_BYTE_2_LOW_7"
 bitOffset = 16
-bitWidth = 8
+bitWidth = 7
+
+[[peripherals.registers.register.fields]]
+name = "INIT_BYTE_2_HIGH"
+description = "The first byte-two clear preserves this bit and the following OR forces it to one."
+bitOffset = 23
+bitWidth = 1
 
 [[peripherals.registers]]
 
@@ -598,7 +604,14 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0254.INIT_BYTE_2"
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0254.INIT_BYTE_2_LOW_7"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INIT_BYTES_0254.INIT_BYTE_2_HIGH"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"

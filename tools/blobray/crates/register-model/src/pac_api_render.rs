@@ -221,20 +221,29 @@ impl PacApiPack {
             if !operation.exposure.exposes_facade() {
                 continue;
             }
-            let domain = operation.domain.as_str();
             let (index_parameter, index_argument) = if operation.register.contains("%s") {
                 ("index: usize, ", "index, ")
             } else {
                 ("", "")
             };
-            output.push_str(&format!(
-                "/// Typed bridge for the reviewed `{}` field-OR transaction.\n#[inline]\npub(crate) fn {}(registers: &crate::svd::{}, {index_parameter}value: {}) {{\n    crate::svd::field_or_modify::{}(registers, {index_argument}value.get());\n}}\n\n",
-                operation.name,
-                operation.name,
-                type_binding_name(&operation.peripheral),
-                domain,
-                operation.name,
-            ));
+            if let Some(domain) = &operation.domain {
+                output.push_str(&format!(
+                    "/// Typed bridge for the reviewed `{}` field-OR transaction.\n#[inline]\npub(crate) fn {}(registers: &crate::svd::{}, {index_parameter}value: {}) {{\n    crate::svd::field_or_modify::{}(registers, {index_argument}value.get());\n}}\n\n",
+                    operation.name,
+                    operation.name,
+                    type_binding_name(&operation.peripheral),
+                    domain,
+                    operation.name,
+                ));
+            } else {
+                output.push_str(&format!(
+                    "/// Typed bridge for the reviewed `{}` fixed field-OR transaction.\n#[inline]\npub(crate) fn {}(registers: &crate::svd::{}, {index_parameter}) {{\n    crate::svd::field_or_modify::{}(registers, {index_argument});\n}}\n\n",
+                    operation.name,
+                    operation.name,
+                    type_binding_name(&operation.peripheral),
+                    operation.name,
+                ));
+            }
         }
         for operation in &self.indexed_bit_set_modifies {
             if !operation.exposure.exposes_facade() {
@@ -992,30 +1001,80 @@ impl PacApiPack {
                 &binding.peripheral,
                 &binding.register,
             )?;
-            let selected_field =
-                pac_api_svd::field(&binding.name, register_binding.info, &binding.field)?;
-            let offset = selected_field.bit_offset();
             let (index_parameter, index_argument) = if register_binding.is_array {
                 ("index: usize, ", "index")
             } else {
                 ("", "")
             };
-            let positioned_input = if offset == 0 {
-                "input".to_owned()
+            let (input_parameter, fixed_input) = if binding.domain.is_some() {
+                ("input: u32", String::new())
             } else {
-                format!("(input << {offset})")
+                (
+                    "",
+                    format!(
+                        "let input = 0x{:08x}_u32;\n                         ",
+                        binding
+                            .value
+                            .expect("pack validation requires a fixed field-OR value")
+                    ),
+                )
             };
+            let mut update = String::from("writer");
+            let mut requires_unsafe = false;
+            for projection in &binding.fields {
+                let selected_field =
+                    pac_api_svd::field(&binding.name, register_binding.info, &projection.field)?;
+                let field = member_binding_name(&projection.field);
+                let width = selected_field.bit_width();
+                let mask = if width == 32 {
+                    u32::MAX
+                } else {
+                    (1_u32 << width) - 1
+                };
+                let projected = if projection.source_bit_offset == 0 {
+                    format!("input & 0x{mask:08x}")
+                } else {
+                    format!("(input >> {}) & 0x{mask:08x}", projection.source_bit_offset)
+                };
+                if width == 1 {
+                    update.push_str(&format!(
+                        "\n                             .{field}().bit(reader.{field}().bit() || ({projected}) != 0)"
+                    ));
+                } else {
+                    requires_unsafe = true;
+                    let projected = match width {
+                        2..=8 => format!("({projected}) as u8"),
+                        9..=16 => format!("({projected}) as u16"),
+                        17..=32 => projected,
+                        _ => unreachable!("SVD validation rejects invalid field widths"),
+                    };
+                    update.push_str(&format!(
+                        "\n                             .{field}().bits(reader.{field}().bits() | {projected})"
+                    ));
+                }
+            }
+            let update = if requires_unsafe {
+                format!("unsafe {{ {update} }}")
+            } else {
+                update
+            };
+            let fields = binding
+                .fields
+                .iter()
+                .map(|projection| projection.field.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
             output.push_str(&format!(
-                "\n    /// OR one reviewed value into {}.{}.{} while preserving the fresh register observation.\n\
+                "\n    /// OR one reviewed logical image into {}.{} fields [{}] while preserving the fresh register observation.\n\
                  #[inline]\n\
-                 pub fn {}(registers: &crate::{peripheral_type}, {index_parameter}input: u32) {{\n\
+                 pub fn {}(registers: &crate::{peripheral_type}, {index_parameter}{input_parameter}) {{\n\
                      registers.{register}({index_argument}).modify(|reader, writer| {{\n\
-                         // SAFETY: generator validation proves that the bounded input fits\n\
-                         // the selected field before positioning it in this ordinary register.\n\
-                         unsafe {{ writer.bits(reader.bits() | {positioned_input}) }}\n\
+                         {fixed_input}// SAFETY: generator validation proves every logical input projection\n\
+                         // fits its named SVD field; no whole-register image crosses this API.\n\
+                         {update}\n\
                      }});\n\
                  }}\n",
-                binding.peripheral, binding.register, binding.field, binding.name,
+                binding.peripheral, binding.register, fields, binding.name,
             ));
         }
         output.push_str("}\n");
@@ -1181,7 +1240,7 @@ mod tests {
     #[test]
     fn renders_target_declared_n_way_ownership_without_legacy_split() {
         let pack: PacApiPack = toml_edit::de::from_str(
-            r#"schema = 4
+            r#"schema = 5
 
 [[ownership-partitions]]
 name = "TaskPeripherals"
@@ -1230,7 +1289,7 @@ peripherals = ["INTERRUPT"]
     #[test]
     fn feature_modules_are_reproducible_and_feature_gated() {
         let pack: PacApiPack = toml_edit::de::from_str(
-            r#"schema = 4
+            r#"schema = 5
 
 [[feature-modules]]
 name = "event_status_validation"
@@ -1248,7 +1307,7 @@ feature = "validation-probes"
     #[test]
     fn sidecar_modules_are_reproducible_without_a_feature_gate() {
         let pack: PacApiPack = toml_edit::de::from_str(
-            r#"schema = 4
+            r#"schema = 5
 
 [[sidecar-modules]]
 name = "interrupt_route_observation"
@@ -1265,7 +1324,7 @@ name = "interrupt_route_observation"
     #[test]
     fn interrupt_snapshot_exposes_status_fields_without_public_construction() {
         let pack: PacApiPack = toml_edit::de::from_str(
-            r#"schema = 4
+            r#"schema = 5
 
 [[interrupt-snapshots]]
 name = "radio_interrupt"
@@ -1307,7 +1366,7 @@ sources = ["PUBLIC_IRQ"]
     #[test]
     fn w1c_register_snapshot_renders_an_affine_masked_transaction() {
         let pack: PacApiPack = toml_edit::de::from_str(
-            r#"schema = 4
+            r#"schema = 5
 
 [[w1c-register-snapshots]]
 name = "event_status"
@@ -1386,7 +1445,7 @@ sources = ["PUBLIC_EVENT_STATUS_W1C"]
     #[test]
     fn facade_flags_have_no_public_integer_constructor() {
         let pack: PacApiPack = toml_edit::de::from_str(
-            r#"schema = 4
+            r#"schema = 5
 
 [[flag-domains]]
 name = "InterruptMask"
@@ -1473,7 +1532,7 @@ sources = ["VENDOR_MODE"]
     #[test]
     fn raw_only_operations_skip_facade_bridges_but_keep_generated_leaves() {
         let pack: PacApiPack = toml_edit::de::from_str(
-            r#"schema = 4
+            r#"schema = 5
 
 [[opaque-domains]]
 name = "CommandWord"

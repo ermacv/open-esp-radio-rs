@@ -298,11 +298,23 @@ pub struct FieldOrModify {
     pub name: String,
     pub peripheral: String,
     pub register: String,
-    pub field: String,
-    /// Zero-based bounded domain whose maximum fits the selected SVD field.
-    pub domain: String,
+    /// Disjoint SVD fields updated by one fresh-read RMW. Each projection
+    /// selects its value from the logical input image rather than exposing
+    /// register geometry to the handwritten caller.
+    pub fields: Vec<FieldOrProjection>,
+    /// Zero-based bounded logical input for caller-controlled transactions.
+    pub domain: Option<String>,
+    /// Fixed logical input for argument-free initialization transactions.
+    pub value: Option<u32>,
     pub exposure: PacApiExposure,
     pub sources: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct FieldOrProjection {
+    pub field: String,
+    pub source_bit_offset: u8,
 }
 
 /// Read-modify-write transaction that sets one bit selected by a reviewed
@@ -330,9 +342,9 @@ impl PacApiPack {
     }
 
     pub fn validate(&self) -> Result<()> {
-        if self.schema != 4 {
+        if self.schema != 5 {
             return Err(Error::message(format!(
-                "PAC API pack requires schema = 4, got {}",
+                "PAC API pack requires schema = 5, got {}",
                 self.schema
             )));
         }
@@ -389,7 +401,34 @@ impl PacApiPack {
         validate_operations("indexed-bit-set-modify", &self.indexed_bit_set_modifies)?;
 
         for operation in &self.field_or_modifies {
-            validate_component("field", &operation.name, &operation.field)?;
+            if operation.fields.is_empty() {
+                return Err(Error::message(format!(
+                    "PAC API field-or-modify {:?} requires at least one field projection",
+                    operation.name
+                )));
+            }
+            let mut fields = BTreeSet::new();
+            for projection in &operation.fields {
+                validate_component("field", &operation.name, &projection.field)?;
+                if !fields.insert(projection.field.as_str()) {
+                    return Err(Error::message(format!(
+                        "PAC API field-or-modify {:?} repeats field {:?}",
+                        operation.name, projection.field
+                    )));
+                }
+            }
+            if operation.domain.is_some() == operation.value.is_some() {
+                return Err(Error::message(format!(
+                    "PAC API field-or-modify {:?} requires exactly one of domain or value",
+                    operation.name
+                )));
+            }
+            if !operation.exposure.exposes_facade() && operation.value.is_some() {
+                return Err(Error::message(format!(
+                    "PAC API fixed field-or-modify {:?} must expose its argument-free facade",
+                    operation.name
+                )));
+            }
         }
         for operation in &self.indexed_bit_set_modifies {
             validate_component("field", &operation.name, &operation.field)?;
@@ -479,29 +518,31 @@ impl PacApiPack {
             )?;
         }
         for operation in &self.field_or_modifies {
-            self.validate_operation_domain(
-                "field-or-modify",
-                &operation.name,
-                &operation.peripheral,
-                &operation.register,
-                &operation.domain,
-                &domain_names,
-            )?;
-            let Some(domain) = self
-                .bounded_domains
-                .iter()
-                .find(|candidate| candidate.name == operation.domain)
-            else {
-                return Err(Error::message(format!(
-                    "PAC API field-or-modify {:?} requires a bounded domain",
-                    operation.name
-                )));
-            };
-            if domain.min != 0 {
-                return Err(Error::message(format!(
-                    "PAC API field-or-modify {:?} domain must start at zero",
-                    operation.name
-                )));
+            if let Some(domain_name) = &operation.domain {
+                self.validate_operation_domain(
+                    "field-or-modify",
+                    &operation.name,
+                    &operation.peripheral,
+                    &operation.register,
+                    domain_name,
+                    &domain_names,
+                )?;
+                let Some(domain) = self
+                    .bounded_domains
+                    .iter()
+                    .find(|candidate| candidate.name == *domain_name)
+                else {
+                    return Err(Error::message(format!(
+                        "PAC API field-or-modify {:?} requires a bounded domain",
+                        operation.name
+                    )));
+                };
+                if domain.min != 0 {
+                    return Err(Error::message(format!(
+                        "PAC API field-or-modify {:?} domain must start at zero",
+                        operation.name
+                    )));
+                }
             }
         }
         for operation in &self.indexed_bit_set_modifies {
@@ -1127,7 +1168,7 @@ mod tests {
 
     fn empty_pack() -> PacApiPack {
         PacApiPack {
-            schema: 4,
+            schema: 5,
             options: PacApiOptions::default(),
             ownership_partitions: Vec::new(),
             feature_modules: Vec::new(),
@@ -1240,8 +1281,12 @@ mod tests {
             name: "publish_pointer".to_owned(),
             peripheral: "RADIO".to_owned(),
             register: "POINTER".to_owned(),
-            field: "COMPRESSED_POINTER".to_owned(),
-            domain: "FieldInput".to_owned(),
+            fields: vec![FieldOrProjection {
+                field: "COMPRESSED_POINTER".to_owned(),
+                source_bit_offset: 0,
+            }],
+            domain: Some("FieldInput".to_owned()),
+            value: None,
             exposure: PacApiExposure::Facade,
             sources: vec!["REVIEW".to_owned()],
         });
@@ -1361,20 +1406,20 @@ mod tests {
     }
 
     #[test]
-    fn rejects_schema_three_without_compatibility() {
+    fn rejects_obsolete_schema_without_compatibility() {
         let mut pack = empty_pack();
         pack.schema = 3;
         assert!(
             pack.validate()
                 .unwrap_err()
                 .to_string()
-                .contains("requires schema = 4")
+                .contains("requires schema = 5")
         );
     }
 
     #[test]
     fn rejects_removed_inferred_ownership_option() {
-        let input = r#"schema = 4
+        let input = r#"schema = 5
 
 [options]
 peripheral-ownership = true

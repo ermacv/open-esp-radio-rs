@@ -166,13 +166,13 @@ implicit/default exposure and no compatibility escape hatch.
 
 ### Affine snapshots for same-register W1C fields
 
-The closed-PAC API pack uses schema 4. Schema 3 is rejected; there is no
+The closed-PAC API pack uses schema 5. Schema 4 is rejected; there is no
 compatibility or migration path. A same-register status/acknowledgement path is
 declared as one transaction rather than as a general writable register or an
 untyped integer write:
 
 ```toml
-schema = 4
+schema = 5
 
 [[w1c-register-snapshots]]
 name = "event_status"

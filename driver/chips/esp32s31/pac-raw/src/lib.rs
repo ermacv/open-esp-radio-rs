@@ -18871,7 +18871,7 @@ pub mod wifi_mac_tx_queue_vector {
         #[doc = "Field `IMAGE` reader - Complete four-byte HE-Control image. Its A-Control subfields depend on the control ID; keep the finite protocol interpretation in the handwritten IEEE 802.11 layer rather than exposing overlapping mode-dependent SVD fields."]
         pub type ImageR = crate::FieldReader<u32>;
         #[doc = "Field `IMAGE` writer - Complete four-byte HE-Control image. Its A-Control subfields depend on the control ID; keep the finite protocol interpretation in the handwritten IEEE 802.11 layer rather than exposing overlapping mode-dependent SVD fields."]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl R {
             #[doc = "Bits 0:31 - Complete four-byte HE-Control image. Its A-Control subfields depend on the control ID; keep the finite protocol interpretation in the handwritten IEEE 802.11 layer rather than exposing overlapping mode-dependent SVD fields."]
             #[inline(always)]
@@ -18895,7 +18895,7 @@ pub mod wifi_mac_tx_queue_vector {
         impl crate::Readable for HeControlSpec {}
         #[doc = "`write(|w| ..)` method takes [`he_control::W`](W) writer structure"]
         impl crate::Writable for HeControlSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "HT_SIGNAL (rw) register accessor: Complete libpp.a\\[hal_mac_tx.o\\]::mac_tx_set_htsig (size 0x23c) writes the packed HT-SIG1/HT-SIG2 queue image here for non-HE rates 16..35. Complete dbg_read_tx_sig independently prints the low MCS nibble and sixteen-bit length. The formatter copies descriptor word1 bit 15 to HT-SIG1 bit 7, whose standard meaning is CBW: zero selects 20 MHz and one selects 40 MHz. The exact vendor single-MPDU HT20 MCS0 callback image carried HT_SIGNAL=0x07006e00 for length 0x6e, confirming MCS zero, CBW20 and aggregate bit zero. Open HIL qualified the same single formatter at HT20 MCS0 LGI and HT40 MCS7 SGI. The independent two-MPDU HT20 MCS7/SGI capture carried 0x8f0c2e07 for aggregate length 0x0c2e, confirming aggregate bit one. The open direct-DMA A-MPDU path then received complete BlockAck for four separate HT40 MCS7/SGI two-MPDU submissions.\n\nYou can [`read`](crate::Reg::read) this register and get [`ht_signal::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`ht_signal::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@ht_signal`] module"]
@@ -19339,7 +19339,7 @@ pub mod wifi_mac_tx_queue_vector {
         #[doc = "Field `MCS` reader - "]
         pub type McsR = crate::FieldReader;
         #[doc = "Field `MCS` writer - "]
-        pub type McsW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type McsW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `DCM` reader - Complete mac_tx_set_hesig copies descriptor-state word at offset 0x30 bit 15 into HE-SIG-A1 bit 7. Complete rcGetDCMMaxRate bounds the ordinary BCC DCM rate family to MCS0, MCS1 and MCS3 according to the peer DCM receive constellation. The vendor raw-TX configuration path independently set descriptor byte +0x31 bit 7 while retaining descriptor rate 0x1a, and the live formatter published HE-SIG-A1 0xfc204087. The owned open S-MPDU path reproduced that word and received an ordinary ACK with completion status zero. Rate-bounded open A-MPDUs with 30, 29 and 26 MPDUs then received BlockAck at MCS0 for the three qualified GI/LTF selectors. Explicit DCM and rate-control fallback therefore use distinct descriptor-code domains; BPSK DCM TX is hardware-qualified for both S-MPDU and multi-subframe A-MPDU, while QPSK and 16-QAM still require a capable peer."]
         pub type DcmR = crate::BitReader;
         #[doc = "Field `DCM` writer - Complete mac_tx_set_hesig copies descriptor-state word at offset 0x30 bit 15 into HE-SIG-A1 bit 7. Complete rcGetDCMMaxRate bounds the ordinary BCC DCM rate family to MCS0, MCS1 and MCS3 according to the peer DCM receive constellation. The vendor raw-TX configuration path independently set descriptor byte +0x31 bit 7 while retaining descriptor rate 0x1a, and the live formatter published HE-SIG-A1 0xfc204087. The owned open S-MPDU path reproduced that word and received an ordinary ACK with completion status zero. Rate-bounded open A-MPDUs with 30, 29 and 26 MPDUs then received BlockAck at MCS0 for the three qualified GI/LTF selectors. Explicit DCM and rate-control fallback therefore use distinct descriptor-code domains; BPSK DCM TX is hardware-qualified for both S-MPDU and multi-subframe A-MPDU, while QPSK and 16-QAM still require a capable peer."]
@@ -19347,7 +19347,7 @@ pub mod wifi_mac_tx_queue_vector {
         #[doc = "Field `BSS_COLOR` reader - "]
         pub type BssColorR = crate::FieldReader;
         #[doc = "Field `BSS_COLOR` writer - "]
-        pub type BssColorW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type BssColorW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         #[doc = "Field `VECTOR_REQUIRED_14` reader - Complete mac_tx_set_hesig ORs 0x40 into the second output byte before publication; both synchronous MCS9 vendor captures retained this otherwise non-payload vector bit."]
         pub type VectorRequired14R = crate::BitReader;
         #[doc = "Field `VECTOR_REQUIRED_14` writer - Complete mac_tx_set_hesig ORs 0x40 into the second output byte before publication; both synchronous MCS9 vendor captures retained this otherwise non-payload vector bit."]
@@ -19355,23 +19355,24 @@ pub mod wifi_mac_tx_queue_vector {
         #[doc = "Field `SPATIAL_REUSE` reader - "]
         pub type SpatialReuseR = crate::FieldReader;
         #[doc = "Field `SPATIAL_REUSE` writer - "]
-        pub type SpatialReuseW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type SpatialReuseW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `BANDWIDTH` reader - "]
         pub type BandwidthR = crate::FieldReader;
         #[doc = "Field `BANDWIDTH` writer - "]
-        pub type BandwidthW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type BandwidthW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `GI_LTF` reader - "]
         pub type GiLtfR = crate::FieldReader;
         #[doc = "Field `GI_LTF` writer - "]
-        pub type GiLtfW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type GiLtfW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `NSTS_AND_MIDAMBLE_PERIODICITY` reader - Complete dbg_dump_rx_ppdu shifts HE-SIG-A1 right by 23, masks three bits and prints the value as nsts_and_midamble_periodicity. The complete vendor private header uses the same name. A live 1T1R HE-SU RX vector 0x00e0591b with STBC set in HE-SIG-A2 produced encoding one: two space-time streams created from one spatial stream. This field is therefore not an unconditional NSS-minus-one value; with Doppler enabled it also carries midamble-periodicity information."]
         pub type NstsAndMidamblePeriodicityR = crate::FieldReader;
         #[doc = "Field `NSTS_AND_MIDAMBLE_PERIODICITY` writer - Complete dbg_dump_rx_ppdu shifts HE-SIG-A1 right by 23, masks three bits and prints the value as nsts_and_midamble_periodicity. The complete vendor private header uses the same name. A live 1T1R HE-SU RX vector 0x00e0591b with STBC set in HE-SIG-A2 produced encoding one: two space-time streams created from one spatial stream. This field is therefore not an unconditional NSS-minus-one value; with Doppler enabled it also carries midamble-periodicity information."]
-        pub type NstsAndMidamblePeriodicityW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        pub type NstsAndMidamblePeriodicityW<'a, REG> =
+            crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
         #[doc = "Field `VECTOR_REQUIRED_HIGH` reader - Complete formatter ORs 0xfc000000 before publication; both synchronous vendor captures retained all six bits."]
         pub type VectorRequiredHighR = crate::FieldReader;
         #[doc = "Field `VECTOR_REQUIRED_HIGH` writer - Complete formatter ORs 0xfc000000 before publication; both synchronous vendor captures retained all six bits."]
-        pub type VectorRequiredHighW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type VectorRequiredHighW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         impl R {
             #[doc = "Bit 0"]
             #[inline(always)]
@@ -19519,10 +19520,30 @@ pub mod wifi_mac_tx_queue_vector {
         pub type R = crate::R<HeSuSignalA2LengthSpec>;
         #[doc = "Register `HE_SU_SIGNAL_A2_LENGTH%s` writer"]
         pub type W = crate::W<HeSuSignalA2LengthSpec>;
-        #[doc = "Field `CONTROL_LOW` reader - Ten-bit HE-SIG-A2/control image derived from coding, STBC and related descriptor state. The bounded BCC, non-STBC, non-beamformed SU oracle uses 0x105."]
-        pub type ControlLowR = crate::FieldReader<u16>;
-        #[doc = "Field `CONTROL_LOW` writer - Ten-bit HE-SIG-A2/control image derived from coding, STBC and related descriptor state. The bounded BCC, non-STBC, non-beamformed SU oracle uses 0x105."]
-        pub type ControlLowW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        #[doc = "Field `CONTROL_REQUIRED_0` reader - Bounded HE SU formatter-required low control bit."]
+        pub type ControlRequired0R = crate::BitReader;
+        #[doc = "Field `CONTROL_REQUIRED_0` writer - Bounded HE SU formatter-required low control bit."]
+        pub type ControlRequired0W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `FEC_CODING` reader - Zero selects BCC and one selects LDPC in the bounded HE SU formatter."]
+        pub type FecCodingR = crate::BitReader;
+        #[doc = "Field `FEC_CODING` writer - Zero selects BCC and one selects LDPC in the bounded HE SU formatter."]
+        pub type FecCodingW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CONTROL_REQUIRED_2` reader - Bounded HE SU formatter-required low control bit."]
+        pub type ControlRequired2R = crate::BitReader;
+        #[doc = "Field `CONTROL_REQUIRED_2` writer - Bounded HE SU formatter-required low control bit."]
+        pub type ControlRequired2W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CONTROL_7_3_UNKNOWN` reader - "]
+        pub type Control7_3UnknownR = crate::FieldReader;
+        #[doc = "Field `CONTROL_7_3_UNKNOWN` writer - "]
+        pub type Control7_3UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
+        #[doc = "Field `CONTROL_REQUIRED_8` reader - Bounded HE SU formatter-required low control bit."]
+        pub type ControlRequired8R = crate::BitReader;
+        #[doc = "Field `CONTROL_REQUIRED_8` writer - Bounded HE SU formatter-required low control bit."]
+        pub type ControlRequired8W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CONTROL_9_UNKNOWN` reader - "]
+        pub type Control9UnknownR = crate::BitReader;
+        #[doc = "Field `CONTROL_9_UNKNOWN` writer - "]
+        pub type Control9UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `DESCRIPTOR_CLASS_MATCH` reader - Set exactly when descriptor byte 0x2f bits 6:3 equal seven."]
         pub type DescriptorClassMatchR = crate::BitReader;
         #[doc = "Field `DESCRIPTOR_CLASS_MATCH` writer - Set exactly when descriptor byte 0x2f bits 6:3 equal seven."]
@@ -19530,16 +19551,41 @@ pub mod wifi_mac_tx_queue_vector {
         #[doc = "Field `APEP_LENGTH` reader - Sixteen-bit assembled HE APEP byte count produced by ppCalTxHEAMPDULength or ppCalTxHESMPDULength and copied by mac_tx_set_hesig. For A-MPDU, DMA metadata byte seven bit zero contributes the four-byte hardware HE-Control insertion without changing the low fourteen-bit MPDU length. The qualified S-MPDU value is 32 bytes: four-byte delimiter plus 24-byte MPDU, four-byte hardware FCS slot and alignment."]
         pub type ApepLengthR = crate::FieldReader<u16>;
         #[doc = "Field `APEP_LENGTH` writer - Sixteen-bit assembled HE APEP byte count produced by ppCalTxHEAMPDULength or ppCalTxHESMPDULength and copied by mac_tx_set_hesig. For A-MPDU, DMA metadata byte seven bit zero contributes the four-byte hardware HE-Control insertion without changing the low fourteen-bit MPDU length. The qualified S-MPDU value is 32 bytes: four-byte delimiter plus 24-byte MPDU, four-byte hardware FCS slot and alignment."]
-        pub type ApepLengthW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        pub type ApepLengthW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
         #[doc = "Field `AMPDU_LENGTH_VALID` reader - Copy of frame-state bit 12; set in live HE A-MPDU images and clear in the acknowledged HE S-MPDU image."]
         pub type AmpduLengthValidR = crate::BitReader;
         #[doc = "Field `AMPDU_LENGTH_VALID` writer - Copy of frame-state bit 12; set in live HE A-MPDU images and clear in the acknowledged HE S-MPDU image."]
         pub type AmpduLengthValidW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bits 0:9 - Ten-bit HE-SIG-A2/control image derived from coding, STBC and related descriptor state. The bounded BCC, non-STBC, non-beamformed SU oracle uses 0x105."]
+            #[doc = "Bit 0 - Bounded HE SU formatter-required low control bit."]
             #[inline(always)]
-            pub fn control_low(&self) -> ControlLowR {
-                ControlLowR::new((self.bits & 0x03ff) as u16)
+            pub fn control_required_0(&self) -> ControlRequired0R {
+                ControlRequired0R::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - Zero selects BCC and one selects LDPC in the bounded HE SU formatter."]
+            #[inline(always)]
+            pub fn fec_coding(&self) -> FecCodingR {
+                FecCodingR::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2 - Bounded HE SU formatter-required low control bit."]
+            #[inline(always)]
+            pub fn control_required_2(&self) -> ControlRequired2R {
+                ControlRequired2R::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bits 3:7"]
+            #[inline(always)]
+            pub fn control_7_3_unknown(&self) -> Control7_3UnknownR {
+                Control7_3UnknownR::new(((self.bits >> 3) & 0x1f) as u8)
+            }
+            #[doc = "Bit 8 - Bounded HE SU formatter-required low control bit."]
+            #[inline(always)]
+            pub fn control_required_8(&self) -> ControlRequired8R {
+                ControlRequired8R::new(((self.bits >> 8) & 1) != 0)
+            }
+            #[doc = "Bit 9"]
+            #[inline(always)]
+            pub fn control_9_unknown(&self) -> Control9UnknownR {
+                Control9UnknownR::new(((self.bits >> 9) & 1) != 0)
             }
             #[doc = "Bit 10 - Set exactly when descriptor byte 0x2f bits 6:3 equal seven."]
             #[inline(always)]
@@ -19558,10 +19604,37 @@ pub mod wifi_mac_tx_queue_vector {
             }
         }
         impl W {
-            #[doc = "Bits 0:9 - Ten-bit HE-SIG-A2/control image derived from coding, STBC and related descriptor state. The bounded BCC, non-STBC, non-beamformed SU oracle uses 0x105."]
+            #[doc = "Bit 0 - Bounded HE SU formatter-required low control bit."]
             #[inline(always)]
-            pub fn control_low(&mut self) -> ControlLowW<'_, HeSuSignalA2LengthSpec> {
-                ControlLowW::new(self, 0)
+            pub fn control_required_0(&mut self) -> ControlRequired0W<'_, HeSuSignalA2LengthSpec> {
+                ControlRequired0W::new(self, 0)
+            }
+            #[doc = "Bit 1 - Zero selects BCC and one selects LDPC in the bounded HE SU formatter."]
+            #[inline(always)]
+            pub fn fec_coding(&mut self) -> FecCodingW<'_, HeSuSignalA2LengthSpec> {
+                FecCodingW::new(self, 1)
+            }
+            #[doc = "Bit 2 - Bounded HE SU formatter-required low control bit."]
+            #[inline(always)]
+            pub fn control_required_2(&mut self) -> ControlRequired2W<'_, HeSuSignalA2LengthSpec> {
+                ControlRequired2W::new(self, 2)
+            }
+            #[doc = "Bits 3:7"]
+            #[inline(always)]
+            pub fn control_7_3_unknown(
+                &mut self,
+            ) -> Control7_3UnknownW<'_, HeSuSignalA2LengthSpec> {
+                Control7_3UnknownW::new(self, 3)
+            }
+            #[doc = "Bit 8 - Bounded HE SU formatter-required low control bit."]
+            #[inline(always)]
+            pub fn control_required_8(&mut self) -> ControlRequired8W<'_, HeSuSignalA2LengthSpec> {
+                ControlRequired8W::new(self, 8)
+            }
+            #[doc = "Bit 9"]
+            #[inline(always)]
+            pub fn control_9_unknown(&mut self) -> Control9UnknownW<'_, HeSuSignalA2LengthSpec> {
+                Control9UnknownW::new(self, 9)
             }
             #[doc = "Bit 10 - Set exactly when descriptor byte 0x2f bits 6:3 equal seven."]
             #[inline(always)]
@@ -55130,23 +55203,6 @@ pub mod w1c_register_snapshot {
 /// Safe, SVD-declared writes of dynamic complete-register images.
 pub mod register_image_write {
 
-    /// Publish a caller-built complete image to `WIFI_MAC_TX_QUEUE_CONTROL`.`CONTROL%s`.
-    #[inline]
-    pub fn publish_mac_tx_control(
-        registers: &crate::WifiMacTxQueueControl,
-        index: usize,
-        image: u32,
-    ) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register. The SVD extension and
-        // its provenance qualify this semantic whole-image operation.
-        unsafe {
-            registers
-                .control(index)
-                .write_with_zero(|writer| writer.bits(image));
-        }
-    }
-
     /// Publish a caller-built complete image to `BLUETOOTH_CONTROLLER_CORE`.`OPERATIONAL_WORD_036C`.
     #[inline]
     pub fn publish_bluetooth_scheduler_operational_word(
@@ -55159,134 +55215,6 @@ pub mod register_image_write {
         unsafe {
             registers
                 .operational_word_036c()
-                .write_with_zero(|writer| writer.bits(image));
-        }
-    }
-
-    /// Publish a caller-built complete image to `WIFI_MAC_TX_QUEUE_VECTOR`.`PLCP1%s`.
-    #[inline]
-    pub fn publish_mac_tx_plcp1(registers: &crate::WifiMacTxQueueVector, index: usize, image: u32) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register. The SVD extension and
-        // its provenance qualify this semantic whole-image operation.
-        unsafe {
-            registers
-                .plcp1(index)
-                .write_with_zero(|writer| writer.bits(image));
-        }
-    }
-
-    /// Publish a caller-built complete image to `WIFI_MAC_TX_QUEUE_VECTOR`.`HT_SIGNAL%s`.
-    #[inline]
-    pub fn publish_mac_tx_ht_signal(
-        registers: &crate::WifiMacTxQueueVector,
-        index: usize,
-        image: u32,
-    ) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register. The SVD extension and
-        // its provenance qualify this semantic whole-image operation.
-        unsafe {
-            registers
-                .ht_signal(index)
-                .write_with_zero(|writer| writer.bits(image));
-        }
-    }
-
-    /// Publish a caller-built complete image to `WIFI_MAC_TX_QUEUE_VECTOR`.`HE_SU_SIGNAL_A1%s`.
-    #[inline]
-    pub fn publish_mac_tx_he_signal_a1(
-        registers: &crate::WifiMacTxQueueVector,
-        index: usize,
-        image: u32,
-    ) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register. The SVD extension and
-        // its provenance qualify this semantic whole-image operation.
-        unsafe {
-            registers
-                .he_su_signal_a1(index)
-                .write_with_zero(|writer| writer.bits(image));
-        }
-    }
-
-    /// Publish a caller-built complete image to `WIFI_MAC_TX_QUEUE_VECTOR`.`HE_SU_SIGNAL_A2_LENGTH%s`.
-    #[inline]
-    pub fn publish_mac_tx_he_signal_a2_length(
-        registers: &crate::WifiMacTxQueueVector,
-        index: usize,
-        image: u32,
-    ) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register. The SVD extension and
-        // its provenance qualify this semantic whole-image operation.
-        unsafe {
-            registers
-                .he_su_signal_a2_length(index)
-                .write_with_zero(|writer| writer.bits(image));
-        }
-    }
-
-    /// Publish a caller-built complete image to `WIFI_MAC_TX_QUEUE_VECTOR`.`HE_CONTROL%s`.
-    #[inline]
-    pub fn publish_mac_tx_he_control(
-        registers: &crate::WifiMacTxQueueVector,
-        index: usize,
-        image: u32,
-    ) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register. The SVD extension and
-        // its provenance qualify this semantic whole-image operation.
-        unsafe {
-            registers
-                .he_control(index)
-                .write_with_zero(|writer| writer.bits(image));
-        }
-    }
-
-    /// Publish a caller-built complete image to `WIFI_MAC_TX_QUEUE_VECTOR`.`POWER%s`.
-    #[inline]
-    pub fn publish_mac_tx_power(registers: &crate::WifiMacTxQueueVector, index: usize, image: u32) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register. The SVD extension and
-        // its provenance qualify this semantic whole-image operation.
-        unsafe {
-            registers
-                .power(index)
-                .write_with_zero(|writer| writer.bits(image));
-        }
-    }
-
-    /// Publish a caller-built complete image to `WIFI_MAC_TX_QUEUE_VECTOR`.`DATA_LENGTH%s`.
-    #[inline]
-    pub fn publish_mac_tx_data_length(
-        registers: &crate::WifiMacTxQueueVector,
-        index: usize,
-        image: u32,
-    ) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register. The SVD extension and
-        // its provenance qualify this semantic whole-image operation.
-        unsafe {
-            registers
-                .data_length(index)
-                .write_with_zero(|writer| writer.bits(image));
-        }
-    }
-
-    /// Publish a caller-built complete image to `WIFI_MAC_TX_QUEUE_VECTOR`.`LENGTH_CONTROL%s`.
-    #[inline]
-    pub fn publish_mac_tx_length_control(
-        registers: &crate::WifiMacTxQueueVector,
-        index: usize,
-        image: u32,
-    ) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register. The SVD extension and
-        // its provenance qualify this semantic whole-image operation.
-        unsafe {
-            registers
-                .length_control(index)
                 .write_with_zero(|writer| writer.bits(image));
         }
     }
@@ -55608,6 +55536,122 @@ pub mod zero_based_field_write {
                     .short_gi()
                     .bit(short_gi_value)
             });
+        }
+    }
+
+    /// Write `FORMAT`, `BEAM_CHANGE`, `UPLINK`, `MCS`, `DCM`, `BSS_COLOR`, `VECTOR_REQUIRED_14`, `SPATIAL_REUSE`, `BANDWIDTH`, `GI_LTF`, `NSTS_AND_MIDAMBLE_PERIODICITY`, `VECTOR_REQUIRED_HIGH` in `WIFI_MAC_TX_QUEUE_VECTOR`.`HE_SU_SIGNAL_A1%s` while publishing zero to every other register bit.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "reviewed hardware transaction exposes one typed argument per field"
+    )]
+    #[inline]
+    pub fn publish_mac_tx_he_signal_a1_fields(
+        registers: &crate::WifiMacTxQueueVector,
+        index: usize,
+        format_value: bool,
+        beam_change_value: bool,
+        uplink_value: bool,
+        mcs_value: u8,
+        dcm_value: bool,
+        bss_color_value: u8,
+        vector_required_14_value: bool,
+        spatial_reuse_value: u8,
+        bandwidth_value: u8,
+        gi_ltf_value: u8,
+        nsts_and_midamble_periodicity_value: u8,
+        vector_required_high_value: u8,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.he_su_signal_a1(index).write_with_zero(|writer| {
+                writer
+                    .format()
+                    .bit(format_value)
+                    .beam_change()
+                    .bit(beam_change_value)
+                    .uplink()
+                    .bit(uplink_value)
+                    .mcs()
+                    .set(mcs_value)
+                    .dcm()
+                    .bit(dcm_value)
+                    .bss_color()
+                    .set(bss_color_value)
+                    .vector_required_14()
+                    .bit(vector_required_14_value)
+                    .spatial_reuse()
+                    .set(spatial_reuse_value)
+                    .bandwidth()
+                    .set(bandwidth_value)
+                    .gi_ltf()
+                    .set(gi_ltf_value)
+                    .nsts_and_midamble_periodicity()
+                    .set(nsts_and_midamble_periodicity_value)
+                    .vector_required_high()
+                    .set(vector_required_high_value)
+            });
+        }
+    }
+
+    /// Write `CONTROL_REQUIRED_0`, `FEC_CODING`, `CONTROL_REQUIRED_2`, `CONTROL_REQUIRED_8`, `DESCRIPTOR_CLASS_MATCH`, `APEP_LENGTH`, `AMPDU_LENGTH_VALID` in `WIFI_MAC_TX_QUEUE_VECTOR`.`HE_SU_SIGNAL_A2_LENGTH%s` while publishing zero to every other register bit.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "reviewed hardware transaction exposes one typed argument per field"
+    )]
+    #[inline]
+    pub fn publish_mac_tx_he_signal_a2_fields(
+        registers: &crate::WifiMacTxQueueVector,
+        index: usize,
+        control_required_0_value: bool,
+        fec_coding_value: bool,
+        control_required_2_value: bool,
+        control_required_8_value: bool,
+        descriptor_class_match_value: bool,
+        apep_length_value: u16,
+        ampdu_length_valid_value: bool,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .he_su_signal_a2_length(index)
+                .write_with_zero(|writer| {
+                    writer
+                        .control_required_0()
+                        .bit(control_required_0_value)
+                        .fec_coding()
+                        .bit(fec_coding_value)
+                        .control_required_2()
+                        .bit(control_required_2_value)
+                        .control_required_8()
+                        .bit(control_required_8_value)
+                        .descriptor_class_match()
+                        .bit(descriptor_class_match_value)
+                        .apep_length()
+                        .set(apep_length_value)
+                        .ampdu_length_valid()
+                        .bit(ampdu_length_valid_value)
+                });
+        }
+    }
+
+    /// Write `IMAGE` in `WIFI_MAC_TX_QUEUE_VECTOR`.`HE_CONTROL%s` while publishing zero to every other register bit.
+    #[inline]
+    pub fn publish_mac_tx_he_control_field(
+        registers: &crate::WifiMacTxQueueVector,
+        index: usize,
+        value: u32,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .he_control(index)
+                .write_with_zero(|writer| writer.image().set(value));
         }
     }
 

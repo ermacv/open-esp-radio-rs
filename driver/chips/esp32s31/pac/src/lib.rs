@@ -209,7 +209,8 @@ pub use mac_tsf::{
     StaTbttWakePrepareError, StaTbttWakeRestore, StaTbttWakeRestoreError, StaTbttWakeRestoreFailure,
 };
 pub use mac_tx::{
-    MacHeTxProgram, MacHeTxVectorSnapshot, MacHtAmpduCompletionObservation, MacHtChannelWidth,
+    MacHeFecCoding, MacHeGuardIntervalAndLtf, MacHeMcs, MacHeRate, MacHeTxFormat,
+    MacHeTxParameters, MacHeTxProgram, MacHtAmpduCompletionObservation, MacHtChannelWidth,
     MacHtGuardInterval, MacHtMcs, MacHtProtectionSpacing, MacHtRate, MacHtTxFormat,
     MacHtTxParameters, MacHtTxProgram, MacLegacyRate, MacLegacyTxParameters, MacLegacyTxProgram,
     MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason, MacTxPtiProgram,

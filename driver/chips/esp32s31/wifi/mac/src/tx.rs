@@ -14,14 +14,14 @@ use alloc::boxed::Box;
 
 pub use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
 use open_esp_radio_esp32s31_hal::types::{
-    MacHeTbTidLimit, MacHeTid, MacHeTxProgram, MacHeTxVectorSnapshot, MacHtChannelWidth,
-    MacHtGuardInterval, MacHtMcs, MacHtProtectionSpacing, MacHtRate, MacHtTxFormat,
-    MacHtTxParameters, MacHtTxProgram, MacInterface, MacLegacyRate, MacLegacyTxParameters,
-    MacLegacyTxProgram, MacPartialRuPowerSelector, MacTxCompletionObservation, MacTxDetachOutcome,
-    MacTxDetachReason, MacTxQueueDetached,
+    MacHeFecCoding, MacHeGuardIntervalAndLtf, MacHeMcs, MacHeRate, MacHeTbTidLimit, MacHeTid,
+    MacHeTxFormat, MacHeTxParameters, MacHeTxProgram, MacHtChannelWidth, MacHtGuardInterval,
+    MacHtMcs, MacHtProtectionSpacing, MacHtRate, MacHtTxFormat, MacHtTxParameters, MacHtTxProgram,
+    MacInterface, MacLegacyRate, MacLegacyTxParameters, MacLegacyTxProgram,
+    MacPartialRuPowerSelector, MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason,
+    MacTxQueueDetached,
 };
 use open_esp_radio_esp32s31_hal::{RadioRuntimeOwner, wifi_mac::WifiMacHal};
-use open_esp_radio_esp32s31_wifi_dma::descriptor::descriptor_address_valid;
 pub use open_esp_radio_esp32s31_wifi_dma::tx_storage::TxDmaState as TxSlotState;
 #[cfg(not(target_pointer_width = "32"))]
 use open_esp_radio_esp32s31_wifi_dma::tx_storage::TxDmaStorage;
@@ -40,23 +40,12 @@ use crate::{
     rate_schedule::{
         RateScheduleKind, RateScheduleRef, schedule_publication_limit, schedule_rate_after_failures,
     },
-    tx_plcp::{basic_length_control_word, basic_plcp0_word, he_ampdu_plcp0_word, he_plcp1_word},
 };
 
 const LEGACY_FCS_LENGTH: u16 = 4;
 // SOURCE: HIL_VENDOR_HE20_MCS9_SU_2026_07_29. Two synchronous vendor HE SU
 // A-MPDU formatter captures used descriptor flags 0xc0403009, entry class one
 // and the bounded BCC/non-STBC A2 low control image 0x105.
-const HE_AMPDU_ENTRY_FLAGS: u8 = 1;
-// SOURCE: complete `libpp.a[pp_he.o]::ppCalTxHESMPDULength`
-// selects one descriptor/MPDU and leaves HE-SIG-A2 bit 28 clear. The
-// synchronous 24-byte vendor raw DCM oracle nevertheless published
-// LENGTH_CONTROL 0x0040_02c4, proving that queue length entry class one is
-// independent of the on-air A-MPDU selector.
-const HE_SMPDU_ENTRY_FLAGS: u8 = 1;
-const HE_SMPDU_DESCRIPTOR_FLAGS: u32 = 0xc040_7008;
-const HE_SU_A2_CONTROL_BCC: u16 = 0x0105;
-const HE_SU_A2_CONTROL_LDPC: u16 = 0x0107;
 
 /// Hardware lifetime class selected by the descriptor's A-MPDU-container bit.
 ///
@@ -197,23 +186,14 @@ pub trait TxHardware {
 
     fn prepare_bound_he_tx(
         &mut self,
-        dma: &dyn PreparedTxDma,
+        _dma: &dyn PreparedTxDma,
         _queue: u8,
-        program: MacHeTxProgram,
+        _program: MacHeTxProgram,
     ) -> bool {
-        assert_tx_dma_head(dma.descriptor_head(), program.plcp0);
         false
     }
 
-    fn start_bound_he_tx(&mut self, dma: &dyn HardwareOwnedTxDma, _queue: u8, plcp0: u32) {
-        assert_tx_dma_head(dma.descriptor_head(), plcp0);
-    }
-    /// Copy a submitted HE vector when the backend exposes typed readback.
-    ///
-    /// Pure software test backends may leave this unsupported.
-    fn he_tx_vector_snapshot(&self, _queue: u8) -> Option<MacHeTxVectorSnapshot> {
-        None
-    }
+    fn start_bound_he_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8) {}
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation>;
     fn begin_tx_timeout_abort(&mut self, queue: u8) -> bool;
     fn with_tx_queue_detached<R>(
@@ -223,10 +203,6 @@ pub trait TxHardware {
         reason: MacTxDetachReason,
         detached: impl for<'detached> FnOnce(MacTxQueueDetached<'detached>) -> R,
     ) -> MacTxDetachOutcome<R>;
-}
-
-fn assert_tx_dma_head(authority_head: u32, plcp0: u32) {
-    assert_eq!(authority_head & 0x000f_ffff, plcp0 & 0x000f_ffff);
 }
 
 impl TxHardware for WifiMacHal<'_> {
@@ -271,12 +247,8 @@ impl TxHardware for WifiMacHal<'_> {
         WifiMacHal::prepare_bound_he_tx(self, dma, queue, program)
     }
 
-    fn start_bound_he_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, _plcp0: u32) {
+    fn start_bound_he_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8) {
         WifiMacHal::start_bound_tx(self, dma, queue);
-    }
-
-    fn he_tx_vector_snapshot(&self, queue: u8) -> Option<MacHeTxVectorSnapshot> {
-        Some(WifiMacHal::he_tx_vector_snapshot(self, queue))
     }
 
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation> {
@@ -340,12 +312,8 @@ impl TxHardware for RadioRuntimeOwner {
         TxHardware::prepare_bound_he_tx(&mut self.wifi_mac_hal(), dma, queue, program)
     }
 
-    fn start_bound_he_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
-        TxHardware::start_bound_he_tx(&mut self.wifi_mac_hal(), dma, queue, plcp0);
-    }
-
-    fn he_tx_vector_snapshot(&self, queue: u8) -> Option<MacHeTxVectorSnapshot> {
-        Some(RadioRuntimeOwner::he_tx_vector_snapshot(self, queue))
+    fn start_bound_he_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8) {
+        TxHardware::start_bound_he_tx(&mut self.wifi_mac_hal(), dma, queue);
     }
 
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation> {
@@ -1538,6 +1506,21 @@ impl HeMcs {
             _ => None,
         }
     }
+
+    const fn pac_mcs(self) -> MacHeMcs {
+        match self {
+            Self::Mcs0 => MacHeMcs::Mcs0,
+            Self::Mcs1 => MacHeMcs::Mcs1,
+            Self::Mcs2 => MacHeMcs::Mcs2,
+            Self::Mcs3 => MacHeMcs::Mcs3,
+            Self::Mcs4 => MacHeMcs::Mcs4,
+            Self::Mcs5 => MacHeMcs::Mcs5,
+            Self::Mcs6 => MacHeMcs::Mcs6,
+            Self::Mcs7 => MacHeMcs::Mcs7,
+            Self::Mcs8 => MacHeMcs::Mcs8,
+            Self::Mcs9 => MacHeMcs::Mcs9,
+        }
+    }
 }
 
 /// Forward-error-correction profile carried by the S31 HE-SIG-A2 control.
@@ -1743,6 +1726,28 @@ impl HeRate {
 
     pub const fn is_dcm(self) -> bool {
         self.dcm
+    }
+
+    const fn pac_rate(self) -> MacHeRate {
+        let guard_interval_and_ltf = match self.guard_interval_and_ltf {
+            crate::rx::HeGuardIntervalAndLtf::OneLtf800Ns => MacHeGuardIntervalAndLtf::OneLtf800Ns,
+            crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns => MacHeGuardIntervalAndLtf::TwoLtf800Ns,
+            crate::rx::HeGuardIntervalAndLtf::TwoLtf1600Ns => {
+                MacHeGuardIntervalAndLtf::TwoLtf1600Ns
+            }
+            crate::rx::HeGuardIntervalAndLtf::FourLtf3200Ns => {
+                MacHeGuardIntervalAndLtf::FourLtf3200Ns
+            }
+        };
+        MacHeRate {
+            mcs: self.mcs.pac_mcs(),
+            guard_interval_and_ltf,
+            fec_coding: match self.fec_coding {
+                HeFecCoding::Bcc => MacHeFecCoding::Bcc,
+                HeFecCoding::Ldpc => MacHeFecCoding::Ldpc,
+            },
+            dcm: self.dcm,
+        }
     }
 
     /// Canonical S31 HE descriptor rate code.
@@ -2497,16 +2502,6 @@ pub struct LegacyTxConfig {
     pub hardware_key_selector: u8,
 }
 
-/// Compose the byte consumed by `mac_tx_set_plcp1`.
-///
-/// Bits 5:0 select the key entry while bits 7:6 select the BSSID/interface.
-/// The vendor AP peer-one path therefore publishes `0x48`: AP interface one
-/// (`0x40`) plus pairwise key slot eight (`0x08`). The independent EDCA
-/// interface field is still required and is programmed separately.
-const fn plcp1_descriptor_control(hardware_key_selector: u8, interface: MacInterface) -> u8 {
-    hardware_key_selector | ((interface.bits() as u8) << 6)
-}
-
 /// Inputs for one finite, non-aggregate HT MPDU attempt.
 ///
 /// `length` is the complete on-air PSDU byte count produced by hardware:
@@ -2663,7 +2658,7 @@ impl HeSmpduTxConfig {
         ((self.mpdu_length + 3) & !3) + 8
     }
 
-    const fn valid(self) -> bool {
+    pub(crate) const fn valid(self) -> bool {
         self.bss_color <= 0x3f
             && self.spatial_reuse <= 0x0f
             && self.mpdu_length != 0
@@ -2676,6 +2671,31 @@ impl HeSmpduTxConfig {
             && self.pti <= 0x0f
             && self.pti_count <= 0x0fff
             && self.protection_spacing <= 0x03ff
+    }
+
+    const fn pac_parameters(self) -> MacHeTxParameters {
+        MacHeTxParameters {
+            rate: self.rate.pac_rate(),
+            format: MacHeTxFormat::Smpdu,
+            apep_length: self.apep_length(),
+            descriptor_count: 1,
+            bss_color: self.bss_color,
+            spatial_reuse: self.spatial_reuse,
+            software_he_control: None,
+            data_power_primary: self.data_power_primary,
+            data_power_alternate: self.data_power_alternate,
+            rts_power_primary: self.rts_power_primary,
+            rts_power_alternate: self.rts_power_alternate,
+            protection_spacing: self.protection_spacing,
+            timeout: self.timeout,
+            scheduler_priority: self.scheduler_priority,
+            packet_priority: self.pti,
+            priority_count: self.pti_count,
+            aifsn: self.aifsn,
+            contention_window: self.contention_window,
+            interface: self.interface,
+            hardware_key_selector: self.hardware_key_selector,
+        }
     }
 }
 
@@ -2957,7 +2977,7 @@ impl HeAmpduTxConfig {
         self.trigger_based
     }
 
-    const fn valid(self) -> bool {
+    pub(crate) const fn valid(self) -> bool {
         let apep_valid = match self.rate.checked_maximum_apep_bytes(self.txop_limit) {
             Some(limit) => (self.aggregate_length as u32) <= limit,
             None => false,
@@ -2976,6 +2996,31 @@ impl HeAmpduTxConfig {
             && self.scheduler_priority <= 0x0f
             && self.pti <= 0x0f
             && self.pti_count <= 0x0fff
+    }
+
+    pub(crate) const fn pac_parameters(self) -> MacHeTxParameters {
+        MacHeTxParameters {
+            rate: self.rate.pac_rate(),
+            format: MacHeTxFormat::Ampdu,
+            apep_length: self.aggregate_length,
+            descriptor_count: self.subframes,
+            bss_color: self.bss_color,
+            spatial_reuse: self.spatial_reuse,
+            software_he_control: None,
+            data_power_primary: self.data_power_primary,
+            data_power_alternate: self.data_power_alternate,
+            rts_power_primary: self.rts_power_primary,
+            rts_power_alternate: self.rts_power_alternate,
+            protection_spacing: self.protection_spacing,
+            timeout: self.timeout,
+            scheduler_priority: self.scheduler_priority,
+            packet_priority: self.pti,
+            priority_count: self.pti_count,
+            aifsn: self.aifsn,
+            contention_window: self.contention_window,
+            interface: self.interface,
+            hardware_key_selector: self.hardware_key_selector,
+        }
     }
 }
 
@@ -3077,121 +3122,6 @@ impl LegacyTxConfig {
         }
         Some(Self::management_1m(signal))
     }
-}
-
-/// Pure register image for one HE20 SU A-MPDU.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct HeQ0Image {
-    pub plcp0: u32,
-    pub plcp1: u32,
-    pub he_signal_a1: u32,
-    pub he_signal_a2_length: u32,
-    pub power: u32,
-    pub length_control: u32,
-    pub descriptor_count_a: u8,
-    pub descriptor_count_b: u8,
-    pub protection_spacing: u16,
-}
-
-const fn he_su_signal_a1(rate: HeRate, bss_color: u8, spatial_reuse: u8) -> u32 {
-    0xfc00_4007
-        | ((rate.mcs.index() as u32) << 3)
-        | ((rate.is_dcm() as u32) << 7)
-        | ((bss_color as u32) << 8)
-        | ((spatial_reuse as u32) << 15)
-        | ((rate.guard_interval_and_ltf.encoding() as u32) << 21)
-}
-
-const fn he_su_signal_a2_control(rate: HeRate) -> u16 {
-    match rate.fec_coding() {
-        HeFecCoding::Bcc => HE_SU_A2_CONTROL_BCC,
-        HeFecCoding::Ldpc => HE_SU_A2_CONTROL_LDPC,
-    }
-}
-
-/// Build the instruction-exact bounded HE20 SU S-MPDU queue image.
-///
-/// SOURCE: complete `libpp.a[pp_he.o]::ppCalTxHESMPDULength`,
-/// complete `libpp.a[hal_mac_tx.o]::{mac_tx_set_plcp0,
-/// mac_tx_set_plcp1,mac_tx_set_hesig,mac_tx_set_len,
-/// hal_mac_tx_set_ppdu}`, and
-/// `HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29`.
-pub const fn he_smpdu_q0_image(
-    dma_head_address: u32,
-    config: HeSmpduTxConfig,
-) -> Option<HeQ0Image> {
-    if !descriptor_address_valid(dma_head_address) || !config.valid() {
-        return None;
-    }
-    let rate = config.rate.code();
-    let rts_rate = config.rate.vendor_rts_rate();
-    Some(HeQ0Image {
-        // The live single-MPDU descriptor flags 0xc040_7008 select basic
-        // PLCP0 format one. HE A-MPDU's separate formatter selects format
-        // five and must not be reused here.
-        plcp0: basic_plcp0_word(dma_head_address as usize, HE_SMPDU_DESCRIPTOR_FLAGS),
-        plcp1: he_plcp1_word(
-            rate,
-            plcp1_descriptor_control(config.hardware_key_selector, config.interface),
-        ),
-        he_signal_a1: he_su_signal_a1(config.rate, config.bss_color, config.spatial_reuse),
-        // S-MPDU leaves the A-MPDU selector at bit 28 clear.
-        he_signal_a2_length: (he_su_signal_a2_control(config.rate) as u32)
-            | ((config.apep_length() as u32) << 11),
-        power: config.data_power_primary as u32
-            | ((config.data_power_alternate as u32) << 8)
-            | ((config.rts_power_primary as u32) << 16)
-            | ((config.rts_power_alternate as u32) << 24),
-        length_control: basic_length_control_word(
-            rts_rate.code(),
-            HE_SMPDU_ENTRY_FLAGS,
-            config.hardware_key_selector as u32,
-        ),
-        descriptor_count_a: 1,
-        descriptor_count_b: 1,
-        protection_spacing: config.protection_spacing,
-    })
-}
-
-/// Build the instruction-exact bounded HE20 SU A-MPDU queue image.
-///
-/// SOURCE: complete `libpp.a[hal_mac_tx.o]::{mac_tx_set_plcp0,
-/// mac_tx_set_plcp1,mac_tx_set_hesig,mac_tx_set_len,
-/// hal_mac_tx_set_ppdu}`, complete `pp_he.o::ppCalTxHEAMPDULength`, and
-/// `HIL_VENDOR_HE20_MCS9_SU_2026_07_29`.
-pub const fn he_ampdu_q0_image(
-    dma_head_address: u32,
-    config: HeAmpduTxConfig,
-) -> Option<HeQ0Image> {
-    if !descriptor_address_valid(dma_head_address) || !config.valid() {
-        return None;
-    }
-    let rate = config.rate.code();
-    let rts_rate = config.rate.vendor_rts_rate();
-    let he_signal_a1 = he_su_signal_a1(config.rate, config.bss_color, config.spatial_reuse);
-    Some(HeQ0Image {
-        plcp0: he_ampdu_plcp0_word(dma_head_address as usize),
-        plcp1: he_plcp1_word(
-            rate,
-            plcp1_descriptor_control(config.hardware_key_selector, config.interface),
-        ),
-        he_signal_a1,
-        he_signal_a2_length: (he_su_signal_a2_control(config.rate) as u32)
-            | ((config.aggregate_length as u32) << 11)
-            | 0x1000_0000,
-        power: config.data_power_primary as u32
-            | ((config.data_power_alternate as u32) << 8)
-            | ((config.rts_power_primary as u32) << 16)
-            | ((config.rts_power_alternate as u32) << 24),
-        length_control: basic_length_control_word(
-            rts_rate.code(),
-            HE_AMPDU_ENTRY_FLAGS,
-            config.hardware_key_selector as u32,
-        ),
-        descriptor_count_a: config.subframes,
-        descriptor_count_b: config.subframes,
-        protection_spacing: config.protection_spacing,
-    })
 }
 
 /// MAC policy owner for one lower, permanently located TX DMA allocation.
@@ -3396,9 +3326,9 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
     ///
     /// The source descriptor retains the encoded MPDU (and any
     /// hardware-generated CCMP MIC/FCS space). The HE queue vector supplies
-    /// the S-MPDU delimiter/APEP geometry recovered by
-    /// [`he_smpdu_q0_image`]; this path deliberately does not borrow the
-    /// multi-descriptor A-MPDU owner or its BlockAck completion contract.
+    /// the S-MPDU delimiter/APEP geometry; this path deliberately does not
+    /// borrow the multi-descriptor A-MPDU owner or its BlockAck completion
+    /// contract.
     pub fn submit_he_smpdu<H: TxHardware>(
         self: Pin<&mut Self>,
         hardware: &mut H,
@@ -3410,37 +3340,19 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         if slot.dma.state() != TxSlotState::Reserved || cookie != slot.active {
             return Err(TxError::Stale);
         }
-        let image = he_smpdu_q0_image(slot.dma.binding().descriptor_address(), config)
-            .ok_or(TxError::Invalid)?;
         let index = queue.index();
-        let program = MacHeTxProgram {
-            plcp0: image.plcp0,
-            plcp1: image.plcp1,
-            he_signal_a1: image.he_signal_a1,
-            he_signal_a2_length: image.he_signal_a2_length,
-            software_he_control: None,
-            power: image.power,
-            length_control: image.length_control,
-            descriptor_count_a: image.descriptor_count_a,
-            descriptor_count_b: image.descriptor_count_b,
-            protection_spacing: image.protection_spacing,
-            timeout: config.timeout,
-            scheduler_priority: config.scheduler_priority,
-            packet_priority: config.pti,
-            priority_count: config.pti_count,
-            aifsn: config.aifsn,
-            contention_window: config.contention_window,
-            interface: config.interface,
-        };
         let publication = slot.dma.publication().map_err(map_dma_storage_error)?;
+        if !config.valid() {
+            return Err(TxError::Invalid);
+        }
+        let program =
+            MacHeTxProgram::new(&publication, config.pac_parameters()).ok_or(TxError::Invalid)?;
         if !hardware.prepare_bound_he_tx(&publication, index, program) {
             return Err(TxError::QueueActive);
         }
 
         slot.queue = queue;
-        publication.commit(|start| {
-            hardware.start_bound_he_tx(start, index, image.plcp0);
-        });
+        publication.commit(|start| hardware.start_bound_he_tx(start, index));
         Ok(())
     }
 

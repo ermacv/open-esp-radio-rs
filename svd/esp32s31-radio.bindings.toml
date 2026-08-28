@@ -22533,10 +22533,45 @@ register-method = "he_su_signal_a2_length"
 register-index = 0
 
 [[registers.fields]]
-svd-name = "CONTROL_LOW"
-method = "control_low"
+svd-name = "CONTROL_REQUIRED_0"
+method = "control_required_0"
 bit-offset = 0
-bit-width = 10
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "FEC_CODING"
+method = "fec_coding"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_REQUIRED_2"
+method = "control_required_2"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_7_3_UNKNOWN"
+method = "control_7_3_unknown"
+bit-offset = 3
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_REQUIRED_8"
+method = "control_required_8"
+bit-offset = 8
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_9_UNKNOWN"
+method = "control_9_unknown"
+bit-offset = 9
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
@@ -23518,10 +23553,45 @@ register-method = "he_su_signal_a2_length"
 register-index = 1
 
 [[registers.fields]]
-svd-name = "CONTROL_LOW"
-method = "control_low"
+svd-name = "CONTROL_REQUIRED_0"
+method = "control_required_0"
 bit-offset = 0
-bit-width = 10
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "FEC_CODING"
+method = "fec_coding"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_REQUIRED_2"
+method = "control_required_2"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_7_3_UNKNOWN"
+method = "control_7_3_unknown"
+bit-offset = 3
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_REQUIRED_8"
+method = "control_required_8"
+bit-offset = 8
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_9_UNKNOWN"
+method = "control_9_unknown"
+bit-offset = 9
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
@@ -24503,10 +24573,45 @@ register-method = "he_su_signal_a2_length"
 register-index = 2
 
 [[registers.fields]]
-svd-name = "CONTROL_LOW"
-method = "control_low"
+svd-name = "CONTROL_REQUIRED_0"
+method = "control_required_0"
 bit-offset = 0
-bit-width = 10
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "FEC_CODING"
+method = "fec_coding"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_REQUIRED_2"
+method = "control_required_2"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_7_3_UNKNOWN"
+method = "control_7_3_unknown"
+bit-offset = 3
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_REQUIRED_8"
+method = "control_required_8"
+bit-offset = 8
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_9_UNKNOWN"
+method = "control_9_unknown"
+bit-offset = 9
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
@@ -25488,10 +25593,45 @@ register-method = "he_su_signal_a2_length"
 register-index = 3
 
 [[registers.fields]]
-svd-name = "CONTROL_LOW"
-method = "control_low"
+svd-name = "CONTROL_REQUIRED_0"
+method = "control_required_0"
 bit-offset = 0
-bit-width = 10
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "FEC_CODING"
+method = "fec_coding"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_REQUIRED_2"
+method = "control_required_2"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_7_3_UNKNOWN"
+method = "control_7_3_unknown"
+bit-offset = 3
+bit-width = 5
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_REQUIRED_8"
+method = "control_required_8"
+bit-offset = 8
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_9_UNKNOWN"
+method = "control_9_unknown"
+bit-offset = 9
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]

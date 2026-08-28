@@ -189,6 +189,10 @@ description = "Complete four-byte HE-Control image. Its A-Control subfields depe
 bitOffset = 0
 bitWidth = 32
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFFFFFFFF
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -397,6 +401,10 @@ name = "MCS"
 bitOffset = 3
 bitWidth = 4
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xF
+
 [[peripherals.registers.register.fields]]
 name = "DCM"
 description = "Complete mac_tx_set_hesig copies descriptor-state word at offset 0x30 bit 15 into HE-SIG-A1 bit 7. Complete rcGetDCMMaxRate bounds the ordinary BCC DCM rate family to MCS0, MCS1 and MCS3 according to the peer DCM receive constellation. The vendor raw-TX configuration path independently set descriptor byte +0x31 bit 7 while retaining descriptor rate 0x1a, and the live formatter published HE-SIG-A1 0xfc204087. The owned open S-MPDU path reproduced that word and received an ordinary ACK with completion status zero. Rate-bounded open A-MPDUs with 30, 29 and 26 MPDUs then received BlockAck at MCS0 for the three qualified GI/LTF selectors. Explicit DCM and rate-control fallback therefore use distinct descriptor-code domains; BPSK DCM TX is hardware-qualified for both S-MPDU and multi-subframe A-MPDU, while QPSK and 16-QAM still require a capable peer."
@@ -407,6 +415,10 @@ bitWidth = 1
 name = "BSS_COLOR"
 bitOffset = 8
 bitWidth = 6
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x3F
 
 [[peripherals.registers.register.fields]]
 name = "VECTOR_REQUIRED_14"
@@ -419,15 +431,27 @@ name = "SPATIAL_REUSE"
 bitOffset = 15
 bitWidth = 4
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xF
+
 [[peripherals.registers.register.fields]]
 name = "BANDWIDTH"
 bitOffset = 19
 bitWidth = 2
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x3
+
 [[peripherals.registers.register.fields]]
 name = "GI_LTF"
 bitOffset = 21
 bitWidth = 2
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x3
 
 [[peripherals.registers.register.fields]]
 name = "NSTS_AND_MIDAMBLE_PERIODICITY"
@@ -435,11 +459,19 @@ description = "Complete dbg_dump_rx_ppdu shifts HE-SIG-A1 right by 23, masks thr
 bitOffset = 23
 bitWidth = 3
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x7
+
 [[peripherals.registers.register.fields]]
 name = "VECTOR_REQUIRED_HIGH"
 description = "Complete formatter ORs 0xfc000000 before publication; both synchronous vendor captures retained all six bits."
 bitOffset = 26
 bitWidth = 6
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x3F
 
 [[peripherals.registers]]
 
@@ -454,10 +486,42 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "CONTROL_LOW"
-description = "Ten-bit HE-SIG-A2/control image derived from coding, STBC and related descriptor state. The bounded BCC, non-STBC, non-beamformed SU oracle uses 0x105."
+name = "CONTROL_REQUIRED_0"
+description = "Bounded HE SU formatter-required low control bit."
 bitOffset = 0
-bitWidth = 10
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "FEC_CODING"
+description = "Zero selects BCC and one selects LDPC in the bounded HE SU formatter."
+bitOffset = 1
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "CONTROL_REQUIRED_2"
+description = "Bounded HE SU formatter-required low control bit."
+bitOffset = 2
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "CONTROL_7_3_UNKNOWN"
+bitOffset = 3
+bitWidth = 5
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x1F
+
+[[peripherals.registers.register.fields]]
+name = "CONTROL_REQUIRED_8"
+description = "Bounded HE SU formatter-required low control bit."
+bitOffset = 8
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "CONTROL_9_UNKNOWN"
+bitOffset = 9
+bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "DESCRIPTOR_CLASS_MATCH"
@@ -470,6 +534,10 @@ name = "APEP_LENGTH"
 description = "Sixteen-bit assembled HE APEP byte count produced by ppCalTxHEAMPDULength or ppCalTxHESMPDULength and copied by mac_tx_set_hesig. For A-MPDU, DMA metadata byte seven bit zero contributes the four-byte hardware HE-Control insertion without changing the low fourteen-bit MPDU length. The qualified S-MPDU value is 32 bytes: four-byte delimiter plus 24-byte MPDU, four-byte hardware FCS slot and alignment."
 bitOffset = 11
 bitWidth = 16
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFFFF
 
 [[peripherals.registers.register.fields]]
 name = "AMPDU_LENGTH_VALID"
@@ -937,11 +1005,8 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A2_LENGTH%s.CONTROL_LOW"
-sources = [
-    "BLOB_LIBPP_HAL_HE_TX",
-    "HIL_VENDOR_HE20_MCS9_SU_2026_07_29",
-]
+entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A2_LENGTH%s.FEC_CODING"
+sources = ["BLOB_LIBPP_HAL_HE_TX"]
 provenance = "reviewed"
 accuracy = "exact"
 completeness = "complete"

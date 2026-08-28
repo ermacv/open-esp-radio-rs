@@ -18,10 +18,10 @@ use crate::types::{
     MacExtraSoftApRxBlockAckEntryIndex, MacHe20PeerConfig, MacHe20PeerError,
     MacHeBeamformingReportProfile, MacHeErSuAckRateProfile, MacHeTbLinkReservation,
     MacHeTbProgramError, MacHeTbTidLimit, MacHeTid, MacHeTriggerRxDiagnostics,
-    MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHeTxVectorSnapshot,
-    MacHtAmpduCompletionObservation, MacHtTxProgram, MacKeyEntryIndex, MacLegacyTxProgram,
-    MacRxBlockAckEntryIndex, MacRxBlockAckStartingSequence, MacRxBlockAckTid, MacRxBlockAckWindow,
-    MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
+    MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHtAmpduCompletionObservation, MacHtTxProgram,
+    MacKeyEntryIndex, MacLegacyTxProgram, MacRxBlockAckEntryIndex, MacRxBlockAckStartingSequence,
+    MacRxBlockAckTid, MacRxBlockAckWindow, MacTxCompletionObservation, MacTxDetachOutcome,
+    MacTxDetachReason, MacTxQueueDetached,
 };
 use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma, StableDmaRange};
 use open_esp_radio_esp32s31_coex::{
@@ -628,10 +628,6 @@ impl<'registers> WifiMacHal<'registers> {
         self.registers
             .pac_mut()
             .prepare_bound_he_mac_tx(dma, queue, program)
-    }
-
-    pub fn he_tx_vector_snapshot(&self, queue: u8) -> MacHeTxVectorSnapshot {
-        self.pac().he_mac_tx_vector_snapshot(queue)
     }
 
     pub fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation> {

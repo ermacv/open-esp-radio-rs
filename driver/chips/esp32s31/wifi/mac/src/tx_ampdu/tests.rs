@@ -7,9 +7,8 @@ use crate::tx::{
 use crate::tx_runtime::{AmpduRetryDecision, AmpduRetryPolicy, AmpduRetryState};
 use open_esp_radio_dma::{HardwareOwnedTxDma, PinnedDmaTxPool, PreparedTxDma};
 use open_esp_radio_esp32s31_hal::types::{
-    MacHeTbTidLimit, MacHeTid, MacHeTxVectorSnapshot, MacHtAmpduCompletionObservation,
-    MacHtTxProgram, MacLegacyTxProgram, MacTxCompletionObservation, MacTxDetachOutcome,
-    MacTxDetachReason, MacTxQueueDetached,
+    MacHeTbTidLimit, MacHeTid, MacHtAmpduCompletionObservation, MacHtTxProgram, MacLegacyTxProgram,
+    MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
 };
 
 struct CompletionHardware {
@@ -35,10 +34,6 @@ impl TxHardware for CompletionHardware {
     }
 
     fn start_bound_ht_tx(&mut self, _: &dyn HardwareOwnedTxDma, _: u8) {}
-
-    fn he_tx_vector_snapshot(&self, _: u8) -> Option<MacHeTxVectorSnapshot> {
-        None
-    }
 
     fn take_tx_completion(&mut self, _: u8) -> Option<MacTxCompletionObservation> {
         None
@@ -127,10 +122,6 @@ impl TxHardware for DetachingCompletionHardware {
     }
 
     fn start_bound_ht_tx(&mut self, _: &dyn HardwareOwnedTxDma, _: u8) {}
-
-    fn he_tx_vector_snapshot(&self, _: u8) -> Option<MacHeTxVectorSnapshot> {
-        None
-    }
 
     fn take_tx_completion(&mut self, _: u8) -> Option<MacTxCompletionObservation> {
         None

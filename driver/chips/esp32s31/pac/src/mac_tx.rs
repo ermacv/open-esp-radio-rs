@@ -317,29 +317,121 @@ impl MacHtTxProgram {
     }
 }
 
-/// Complete bounded queue-vector image for one HE SU A-MPDU.
-///
-/// SOURCE: complete `libpp.a[hal_mac_tx.o]::{
-/// hal_mac_tx_set_ppdu,mac_tx_set_hesig,mac_tx_set_len}` and
-/// `HIL_VENDOR_HE20_MCS9_SU_2026_07_29`. The MAC layer constructs the
-/// standard-semantic fields; this PAC layer owns only their ordered MMIO
-/// publication.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MacHeTxProgram {
-    pub plcp0: u32,
-    pub plcp1: u32,
-    pub he_signal_a1: u32,
-    pub he_signal_a2_length: u32,
-    /// Explicit software HE-Control image, when one is present.
-    ///
-    /// `None` preserves the vendor hardware-generated path used for BSR.
-    /// `Some` writes the complete four-byte OMC/other A-Control image and
-    /// selects it through the independent per-queue override bit.
+pub enum MacHeMcs {
+    Mcs0,
+    Mcs1,
+    Mcs2,
+    Mcs3,
+    Mcs4,
+    Mcs5,
+    Mcs6,
+    Mcs7,
+    Mcs8,
+    Mcs9,
+}
+
+impl MacHeMcs {
+    const fn index(self) -> u8 {
+        match self {
+            Self::Mcs0 => 0,
+            Self::Mcs1 => 1,
+            Self::Mcs2 => 2,
+            Self::Mcs3 => 3,
+            Self::Mcs4 => 4,
+            Self::Mcs5 => 5,
+            Self::Mcs6 => 6,
+            Self::Mcs7 => 7,
+            Self::Mcs8 => 8,
+            Self::Mcs9 => 9,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacHeGuardIntervalAndLtf {
+    OneLtf800Ns,
+    TwoLtf800Ns,
+    TwoLtf1600Ns,
+    FourLtf3200Ns,
+}
+
+impl MacHeGuardIntervalAndLtf {
+    const fn register_value(self) -> u8 {
+        match self {
+            Self::OneLtf800Ns => 0,
+            Self::TwoLtf800Ns => 1,
+            Self::TwoLtf1600Ns => 2,
+            Self::FourLtf3200Ns => 3,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacHeFecCoding {
+    Bcc,
+    Ldpc,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacHeRate {
+    pub mcs: MacHeMcs,
+    pub guard_interval_and_ltf: MacHeGuardIntervalAndLtf,
+    pub fec_coding: MacHeFecCoding,
+    pub dcm: bool,
+}
+
+impl MacHeRate {
+    const fn plcp_rate_field(self) -> u8 {
+        match self.mcs {
+            MacHeMcs::Mcs0 => 26,
+            MacHeMcs::Mcs1 => 27,
+            MacHeMcs::Mcs2 => 28,
+            MacHeMcs::Mcs3 => 29,
+            MacHeMcs::Mcs4 => 30,
+            MacHeMcs::Mcs5 => 31,
+            MacHeMcs::Mcs6 => 0,
+            MacHeMcs::Mcs7 => 1,
+            MacHeMcs::Mcs8 => 2,
+            MacHeMcs::Mcs9 => 3,
+        }
+    }
+
+    const fn rts_register_value(self) -> u8 {
+        match self.mcs {
+            MacHeMcs::Mcs0 => 0x0b,
+            MacHeMcs::Mcs1 | MacHeMcs::Mcs2 => 0x0a,
+            MacHeMcs::Mcs3
+            | MacHeMcs::Mcs4
+            | MacHeMcs::Mcs5
+            | MacHeMcs::Mcs6
+            | MacHeMcs::Mcs7
+            | MacHeMcs::Mcs8
+            | MacHeMcs::Mcs9 => 0x09,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacHeTxFormat {
+    Smpdu,
+    Ampdu,
+}
+
+/// Semantic inputs for one bounded HE SU queue publication.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacHeTxParameters {
+    pub rate: MacHeRate,
+    pub format: MacHeTxFormat,
+    pub apep_length: u16,
+    pub descriptor_count: u8,
+    pub bss_color: u8,
+    pub spatial_reuse: u8,
     pub software_he_control: Option<u32>,
-    pub power: u32,
-    pub length_control: u32,
-    pub descriptor_count_a: u8,
-    pub descriptor_count_b: u8,
+    pub data_power_primary: u8,
+    pub data_power_alternate: u8,
+    pub rts_power_primary: u8,
+    pub rts_power_alternate: u8,
     pub protection_spacing: u16,
     pub timeout: u16,
     pub scheduler_priority: u8,
@@ -348,24 +440,41 @@ pub struct MacHeTxProgram {
     pub aifsn: u8,
     pub contention_window: u16,
     pub interface: MacInterface,
+    pub hardware_key_selector: u8,
 }
 
-/// HE queue-vector words sampled from one physical queue bank.
-///
-/// This read-only snapshot exists for formatter HIL: it lets the caller copy
-/// the vector immediately after the final submit edge and defer logging until
-/// hardware ownership has ended. In particular, a later non-HE retry may
-/// legitimately replace PLCP1 while leaving the HE-SIG words unchanged.
+/// PAC-owned transaction for one bounded HE SU PPDU.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MacHeTxVectorSnapshot {
-    pub plcp0: u32,
-    pub plcp1: u32,
-    pub he_signal_a1: u32,
-    pub he_signal_a2_length: u32,
-    pub he_control: u32,
-    pub software_he_control_enabled: bool,
-    pub power: u32,
-    pub length_control: u32,
+pub struct MacHeTxProgram {
+    descriptor_head: u32,
+    parameters: MacHeTxParameters,
+}
+
+impl MacHeTxProgram {
+    pub fn new(dma: &dyn PreparedTxDma, parameters: MacHeTxParameters) -> Option<Self> {
+        if parameters.apep_length == 0
+            || parameters.descriptor_count == 0
+            || parameters.descriptor_count > 32
+            || (matches!(parameters.format, MacHeTxFormat::Smpdu)
+                && parameters.descriptor_count != 1)
+            || parameters.bss_color > 0x3f
+            || parameters.spatial_reuse > 0x0f
+            || parameters.protection_spacing > 0x03ff
+            || parameters.timeout > 0x0fff
+            || parameters.scheduler_priority > 0x0f
+            || parameters.packet_priority > 0x0f
+            || parameters.priority_count > 0x0fff
+            || parameters.aifsn > 0x0f
+            || parameters.contention_window > 0x03ff
+            || parameters.hardware_key_selector > 0x3f
+        {
+            return None;
+        }
+        Some(Self {
+            descriptor_head: dma.descriptor_head(),
+            parameters,
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -646,7 +755,7 @@ impl WifiRadioRegisters {
         queue: u8,
         program: MacHeTxProgram,
     ) -> bool {
-        assert_tx_descriptor_head(dma.descriptor_head(), program.plcp0);
+        assert_eq!(dma.descriptor_head(), program.descriptor_head);
         self.prepare_he_mac_tx(queue, program)
     }
 
@@ -673,75 +782,6 @@ impl WifiRadioRegisters {
         let control = self.peripherals.wifi_mac.wifi_mac_tx_common.cca_control();
         control.modify(|_, w| w.force().set(image));
         control.modify(|_, w| w.phy_aux_force().set(image));
-    }
-
-    /// Sample the complete HE vector for one ordinary logical queue.
-    ///
-    /// SOURCE: the same generated-PAC identities and logical-to-physical
-    /// queue mapping used by [`Self::prepare_he_mac_tx`]. This method performs
-    /// no ownership transition and does not acknowledge a completion.
-    pub fn he_mac_tx_vector_snapshot(&self, queue: u8) -> MacHeTxVectorSnapshot {
-        assert!(queue < ORDINARY_QUEUE_COUNT);
-        let bank = physical_bank(queue);
-        MacHeTxVectorSnapshot {
-            plcp0: self
-                .peripherals
-                .wifi_mac
-                .wifi_mac_tx_queue_control
-                .control(bank)
-                .read()
-                .bits(),
-            plcp1: self
-                .peripherals
-                .wifi_mac
-                .wifi_mac_tx_queue_vector
-                .plcp1(bank)
-                .read()
-                .bits(),
-            he_signal_a1: self
-                .peripherals
-                .wifi_mac
-                .wifi_mac_tx_queue_vector
-                .he_su_signal_a1(bank)
-                .read()
-                .bits(),
-            he_signal_a2_length: self
-                .peripherals
-                .wifi_mac
-                .wifi_mac_tx_queue_vector
-                .he_su_signal_a2_length(bank)
-                .read()
-                .bits(),
-            he_control: self
-                .peripherals
-                .wifi_mac
-                .wifi_mac_tx_queue_vector
-                .he_control(bank)
-                .read()
-                .bits(),
-            software_he_control_enabled: self
-                .peripherals
-                .wifi_mac
-                .wifi_mac_tx_queue_vector
-                .he_control_config(bank)
-                .read()
-                .software_he_control_enable()
-                .bit_is_set(),
-            power: self
-                .peripherals
-                .wifi_mac
-                .wifi_mac_tx_queue_vector
-                .power(bank)
-                .read()
-                .bits(),
-            length_control: self
-                .peripherals
-                .wifi_mac
-                .wifi_mac_tx_queue_vector
-                .length_control(bank)
-                .read()
-                .bits(),
-        }
     }
 
     /// Program one ordinary queue up to, but excluding, its ENABLE|VALID edge.
@@ -1019,16 +1059,16 @@ impl WifiRadioRegisters {
     /// This is separate from HT because HE publishes two different vector
     /// words and deliberately does not write the non-HE DATA_LENGTH word.
     fn prepare_he_mac_tx(&mut self, queue: u8, program: MacHeTxProgram) -> bool {
+        let parameters = program.parameters;
         assert!(queue < ORDINARY_QUEUE_COUNT);
-        assert!(program.descriptor_count_a <= 0x7f);
-        assert!(program.descriptor_count_b <= 0x7f);
-        assert!(program.protection_spacing <= 0x03ff);
-        assert!(program.timeout <= 0x0fff);
-        assert!(program.scheduler_priority <= 0x0f);
-        assert!(program.packet_priority <= 0x0f);
-        assert!(program.priority_count <= 0x0fff);
-        assert!(program.aifsn <= 0x0f);
-        assert!(program.contention_window <= 0x03ff);
+        assert!(parameters.descriptor_count <= 32);
+        assert!(parameters.protection_spacing <= 0x03ff);
+        assert!(parameters.timeout <= 0x0fff);
+        assert!(parameters.scheduler_priority <= 0x0f);
+        assert!(parameters.packet_priority <= 0x0f);
+        assert!(parameters.priority_count <= 0x0fff);
+        assert!(parameters.aifsn <= 0x0f);
+        assert!(parameters.contention_window <= 0x03ff);
 
         let bank = physical_bank(queue);
         let control_bank = &self.peripherals.wifi_mac.wifi_mac_tx_queue_control;
@@ -1040,16 +1080,28 @@ impl WifiRadioRegisters {
 
         control_bank
             .config(bank)
-            .modify(|_, w| w.timeout().set(program.timeout));
-        super::generated::publish_mac_tx_control(
+            .modify(|_, w| w.timeout().set(parameters.timeout));
+        super::svd::zero_based_field_write::publish_mac_tx_prepared_control(
             control_bank,
             bank,
-            super::generated::MacTxControlImage::new(program.plcp0),
+            program.descriptor_head,
+            2,
+            true,
+            match parameters.format {
+                MacHeTxFormat::Smpdu => 1,
+                MacHeTxFormat::Ampdu => 5,
+            },
         );
-        super::generated::publish_mac_tx_plcp1(
-            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
+        let vectors = &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector;
+        super::svd::zero_based_field_write::publish_mac_tx_plcp1_fields(
+            vectors,
             bank,
-            super::generated::MacTxPlcp1Image::new(program.plcp1),
+            0,
+            parameters.rate.plcp_rate_field(),
+            parameters.hardware_key_selector,
+            parameters.interface.bits() as u8,
+            2,
+            false,
         );
         self.peripherals
             .wifi_mac
@@ -1064,45 +1116,60 @@ impl WifiRadioRegisters {
         protection.modify(|_, w| w.software_cts().clear_bit());
         protection.modify(|_, w| {
             w.minimum_mpdu_length_cbw20()
-                .set(program.protection_spacing)
+                .set(parameters.protection_spacing)
         });
         protection.modify(|_, w| {
             w.minimum_mpdu_length_cbw40()
-                .set(program.protection_spacing)
+                .set(parameters.protection_spacing)
         });
         protection.modify(|_, w| {
             w.minimum_mpdu_length_cbw80()
-                .set(program.protection_spacing)
+                .set(parameters.protection_spacing)
         });
 
         // SOURCE: complete mac_tx_set_hesig stores A1 then A2/length before
         // publishing the same three descriptor-count edges used by HT.
-        super::generated::publish_mac_tx_he_signal_a1(
-            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
+        super::svd::zero_based_field_write::publish_mac_tx_he_signal_a1_fields(
+            vectors,
             bank,
-            super::generated::MacTxHeSignalA1Image::new(program.he_signal_a1),
+            true,
+            true,
+            true,
+            parameters.rate.mcs.index(),
+            parameters.rate.dcm,
+            parameters.bss_color,
+            true,
+            parameters.spatial_reuse,
+            0,
+            parameters.rate.guard_interval_and_ltf.register_value(),
+            0,
+            0x3f,
         );
-        super::generated::publish_mac_tx_he_signal_a2_length(
-            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
+        super::svd::zero_based_field_write::publish_mac_tx_he_signal_a2_fields(
+            vectors,
             bank,
-            super::generated::MacTxHeSignalA2LengthImage::new(program.he_signal_a2_length),
+            true,
+            matches!(parameters.rate.fec_coding, MacHeFecCoding::Ldpc),
+            true,
+            true,
+            false,
+            parameters.apep_length,
+            matches!(parameters.format, MacHeTxFormat::Ampdu),
         );
-        let descriptor_counts = self
-            .peripherals
-            .wifi_mac
-            .wifi_mac_tx_queue_vector
-            .ht_descriptor_counts(bank);
-        descriptor_counts.modify(|_, w| w.descriptor_count_a().set(program.descriptor_count_a));
-        descriptor_counts.modify(|_, w| w.descriptor_count_b().set(program.descriptor_count_b));
+        let descriptor_counts = vectors.ht_descriptor_counts(bank);
+        descriptor_counts.modify(|_, w| w.descriptor_count_a().set(parameters.descriptor_count));
+        descriptor_counts.modify(|_, w| w.descriptor_count_b().set(parameters.descriptor_count));
         descriptor_counts
-            .modify(|_, w| w.descriptor_count_a_copy().set(program.descriptor_count_a));
+            .modify(|_, w| w.descriptor_count_a_copy().set(parameters.descriptor_count));
 
         // HE reaches mac_tx_set_len for LENGTH_CONTROL, but its flag-bit-31
         // branch intentionally skips the non-HE DATA_LENGTH register.
-        super::generated::publish_mac_tx_length_control(
-            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
+        super::svd::zero_based_field_write::publish_mac_tx_length_control_fields(
+            vectors,
             bank,
-            super::generated::MacTxLengthControlImage::new(program.length_control),
+            true,
+            parameters.rate.rts_register_value(),
+            1,
         );
         // SOURCE: complete `libpp.a[hal_mac_tx.o]::
         // hal_mac_tx_set_ppdu` calls complete
@@ -1111,46 +1178,43 @@ impl WifiRadioRegisters {
         // then sets or clears bit 28 through a fresh-read RMW. A missing
         // software image is not "no HE-Control": it deliberately leaves the
         // hardware-generated BSR path selected.
-        let (he_control, software_he_control_enabled) = program
+        let (he_control, software_he_control_enabled) = parameters
             .software_he_control
             .map_or((0, false), |image| (image, true));
-        super::generated::publish_mac_tx_he_control(
-            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
-            bank,
-            super::generated::MacTxHeControlImage::new(he_control),
+        super::svd::zero_based_field_write::publish_mac_tx_he_control_field(
+            vectors, bank, he_control,
         );
-        self.peripherals
-            .wifi_mac
-            .wifi_mac_tx_queue_vector
-            .he_control_config(bank)
-            .modify(|_, w| {
-                w.software_he_control_enable()
-                    .bit(software_he_control_enabled)
-            });
+        vectors.he_control_config(bank).modify(|_, w| {
+            w.software_he_control_enable()
+                .bit(software_he_control_enabled)
+        });
         // The complete parent selects and publishes the data/RTS power pair
         // only after the HE-Control leaf returns.
-        super::generated::publish_mac_tx_power(
-            &self.peripherals.wifi_mac.wifi_mac_tx_queue_vector,
+        super::svd::zero_based_field_write::publish_mac_tx_power_fields(
+            vectors,
             bank,
-            super::generated::MacTxPowerImage::new(program.power),
+            parameters.data_power_primary,
+            parameters.data_power_alternate,
+            parameters.rts_power_primary,
+            parameters.rts_power_alternate,
         );
 
         control_bank
             .config(bank)
-            .modify(|_, w| w.scheduler_priority().set(program.scheduler_priority));
-        let pti = self.peripherals.wifi_mac.wifi_mac_tx_queue_vector.pti(bank);
-        pti.modify(|_, w| w.pti_2().set(program.packet_priority));
-        pti.modify(|_, w| w.pti_1().set(program.packet_priority));
-        pti.modify(|_, w| w.pti_0().set(program.packet_priority));
-        pti.modify(|_, w| w.pti_3().set(program.packet_priority));
-        pti.modify(|_, w| w.count().set(program.priority_count));
+            .modify(|_, w| w.scheduler_priority().set(parameters.scheduler_priority));
+        let pti = vectors.pti(bank);
+        pti.modify(|_, w| w.pti_2().set(parameters.packet_priority));
+        pti.modify(|_, w| w.pti_1().set(parameters.packet_priority));
+        pti.modify(|_, w| w.pti_0().set(parameters.packet_priority));
+        pti.modify(|_, w| w.pti_3().set(parameters.packet_priority));
+        pti.modify(|_, w| w.count().set(parameters.priority_count));
 
         mac_tx_queue::configure_edca(
             control_bank,
             u32::from(queue),
-            program.aifsn,
-            program.contention_window,
-            program.interface,
+            parameters.aifsn,
+            parameters.contention_window,
+            parameters.interface,
         );
         true
     }

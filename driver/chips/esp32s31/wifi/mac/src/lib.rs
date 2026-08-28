@@ -49,7 +49,6 @@ pub mod sta_ap_registers;
 mod sta_link_policy;
 pub mod tx;
 pub mod tx_ampdu;
-pub mod tx_plcp;
 pub mod tx_policy;
 pub mod tx_protection;
 pub mod tx_runtime;

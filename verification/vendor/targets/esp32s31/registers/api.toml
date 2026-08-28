@@ -589,69 +589,6 @@ register = "SATURATION_GAIN_HIGH"
 sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
 
 [[opaque-domains]]
-name = "MacTxControlImage"
-description = "Complete queue-specific MAC TX control image assembled by a reviewed TX program."
-peripheral = "WIFI_MAC_TX_QUEUE_CONTROL"
-register = "CONTROL%s"
-sources = ["BLOB_LIBPP_HAL_MAC_TX", "PROMOTED_LMAC_TX"]
-
-[[opaque-domains]]
-name = "MacTxPlcp1Image"
-description = "Complete queue-specific PLCP1 image assembled by a reviewed TX program."
-peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
-register = "PLCP1%s"
-sources = ["BLOB_LIBPP_HAL_MAC_TX"]
-
-[[opaque-domains]]
-name = "MacTxHtSignalImage"
-description = "Complete queue-specific HT signal image assembled by a reviewed TX program."
-peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
-register = "HT_SIGNAL%s"
-sources = ["BLOB_LIBPP_HAL_MAC_TX"]
-
-[[opaque-domains]]
-name = "MacTxHeSignalA1Image"
-description = "Complete queue-specific HE-SU SIGNAL A1 image assembled by a reviewed TX program."
-peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
-register = "HE_SU_SIGNAL_A1%s"
-sources = ["BLOB_LIBPP_HAL_HE_TX"]
-
-[[opaque-domains]]
-name = "MacTxHeSignalA2LengthImage"
-description = "Complete queue-specific HE-SU SIGNAL A2 length image assembled by a reviewed TX program."
-peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
-register = "HE_SU_SIGNAL_A2_LENGTH%s"
-sources = ["BLOB_LIBPP_HAL_HE_TX"]
-
-[[opaque-domains]]
-name = "MacTxHeControlImage"
-description = "Complete queue-specific HE control image assembled by a reviewed TX program."
-peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
-register = "HE_CONTROL%s"
-sources = ["BLOB_LIBPP_HAL_HE_TX", "BLOB_LIBNET80211_HE_CONTROL_TX"]
-
-[[opaque-domains]]
-name = "MacTxPowerImage"
-description = "Complete queue-specific TX power image assembled by a reviewed TX program."
-peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
-register = "POWER%s"
-sources = ["BLOB_LIBPP_HAL_MAC_TX"]
-
-[[opaque-domains]]
-name = "MacTxDataLengthImage"
-description = "Complete queue-specific TX data-length image assembled by a reviewed TX program."
-peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
-register = "DATA_LENGTH%s"
-sources = ["BLOB_LIBPP_HAL_MAC_TX"]
-
-[[opaque-domains]]
-name = "MacTxLengthControlImage"
-description = "Complete queue-specific TX length-control image assembled by a reviewed TX program."
-peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
-register = "LENGTH_CONTROL%s"
-sources = ["BLOB_LIBPP_HAL_MAC_TX"]
-
-[[opaque-domains]]
 name = "PowerDetectorTable1Image"
 description = "Register-specific power-detector table image preserved and restored by calibration."
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
@@ -1204,14 +1141,6 @@ register = "POWER_DETECTOR_TABLE_1"
 value = 0x00ff0f64
 sources = ["ROM_REV0_PHY_POWER_DETECTOR"]
 
-[[register-image-writes]]
-name = "publish_mac_tx_control"
-peripheral = "WIFI_MAC_TX_QUEUE_CONTROL"
-register = "CONTROL%s"
-domain = "MacTxControlImage"
-exposure = "facade"
-sources = ["BLOB_LIBPP_HAL_MAC_TX", "PROMOTED_LMAC_TX"]
-
 [[zero-based-field-writes]]
 name = "publish_mac_tx_prepared_control"
 peripheral = "WIFI_MAC_TX_QUEUE_CONTROL"
@@ -1255,27 +1184,11 @@ register = "SCHEDULER_LOCK_MODIFY_REQUEST"
 fields = ["COMPRESSED_SRAM_POINTER", "START"]
 sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 
-[[register-image-writes]]
-name = "publish_mac_tx_plcp1"
-peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
-register = "PLCP1%s"
-domain = "MacTxPlcp1Image"
-exposure = "facade"
-sources = ["BLOB_LIBPP_HAL_MAC_TX"]
-
 [[zero-based-field-writes]]
 name = "publish_mac_tx_plcp1_fields"
 peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
 register = "PLCP1%s"
 fields = ["LEGACY_SIGNAL", "RATE", "KEY_ENTRY_INDEX", "BSSID_SELECT", "VECTOR_FORMAT", "CBW40"]
-sources = ["BLOB_LIBPP_HAL_MAC_TX"]
-
-[[register-image-writes]]
-name = "publish_mac_tx_ht_signal"
-peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
-register = "HT_SIGNAL%s"
-domain = "MacTxHtSignalImage"
-exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
 
 [[zero-based-field-writes]]
@@ -1285,37 +1198,26 @@ register = "HT_SIGNAL%s"
 fields = ["MCS", "CBW40", "LENGTH", "SMOOTHING", "NOT_SOUNDING", "REQUIRED_ONE", "AGGREGATION", "SHORT_GI"]
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
 
-[[register-image-writes]]
-name = "publish_mac_tx_he_signal_a1"
+[[zero-based-field-writes]]
+name = "publish_mac_tx_he_signal_a1_fields"
 peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
 register = "HE_SU_SIGNAL_A1%s"
-domain = "MacTxHeSignalA1Image"
-exposure = "facade"
+fields = ["FORMAT", "BEAM_CHANGE", "UPLINK", "MCS", "DCM", "BSS_COLOR", "VECTOR_REQUIRED_14", "SPATIAL_REUSE", "BANDWIDTH", "GI_LTF", "NSTS_AND_MIDAMBLE_PERIODICITY", "VECTOR_REQUIRED_HIGH"]
 sources = ["BLOB_LIBPP_HAL_HE_TX"]
 
-[[register-image-writes]]
-name = "publish_mac_tx_he_signal_a2_length"
+[[zero-based-field-writes]]
+name = "publish_mac_tx_he_signal_a2_fields"
 peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
 register = "HE_SU_SIGNAL_A2_LENGTH%s"
-domain = "MacTxHeSignalA2LengthImage"
-exposure = "facade"
+fields = ["CONTROL_REQUIRED_0", "FEC_CODING", "CONTROL_REQUIRED_2", "CONTROL_REQUIRED_8", "DESCRIPTOR_CLASS_MATCH", "APEP_LENGTH", "AMPDU_LENGTH_VALID"]
 sources = ["BLOB_LIBPP_HAL_HE_TX"]
 
-[[register-image-writes]]
-name = "publish_mac_tx_he_control"
+[[zero-based-field-writes]]
+name = "publish_mac_tx_he_control_field"
 peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
 register = "HE_CONTROL%s"
-domain = "MacTxHeControlImage"
-exposure = "facade"
+fields = ["IMAGE"]
 sources = ["BLOB_LIBPP_HAL_HE_TX", "BLOB_LIBNET80211_HE_CONTROL_TX"]
-
-[[register-image-writes]]
-name = "publish_mac_tx_power"
-peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
-register = "POWER%s"
-domain = "MacTxPowerImage"
-exposure = "facade"
-sources = ["BLOB_LIBPP_HAL_MAC_TX"]
 
 [[zero-based-field-writes]]
 name = "publish_mac_tx_power_fields"
@@ -1324,27 +1226,11 @@ register = "POWER%s"
 fields = ["DATA_PRIMARY", "DATA_ALTERNATE", "RTS_PRIMARY", "RTS_ALTERNATE"]
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
 
-[[register-image-writes]]
-name = "publish_mac_tx_data_length"
-peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
-register = "DATA_LENGTH%s"
-domain = "MacTxDataLengthImage"
-exposure = "facade"
-sources = ["BLOB_LIBPP_HAL_MAC_TX"]
-
 [[zero-based-field-writes]]
 name = "publish_mac_tx_data_length_fields"
 peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
 register = "DATA_LENGTH%s"
 fields = ["HT40_LENGTH", "HT40_EOF_COUNT", "HT40_MCS"]
-sources = ["BLOB_LIBPP_HAL_MAC_TX"]
-
-[[register-image-writes]]
-name = "publish_mac_tx_length_control"
-peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
-register = "LENGTH_CONTROL%s"
-domain = "MacTxLengthControlImage"
-exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
 
 [[zero-based-field-writes]]

@@ -7545,6 +7545,12 @@
               <description>Complete four-byte HE-Control image. Its A-Control subfields depend on the control ID; keep the finite protocol interpretation in the handwritten IEEE 802.11 layer rather than exposing overlapping mode-dependent SVD fields.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>4294967295</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -7759,6 +7765,12 @@
               <name>MCS</name>
               <bitOffset>3</bitOffset>
               <bitWidth>4</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>15</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>DCM</name>
@@ -7770,6 +7782,12 @@
               <name>BSS_COLOR</name>
               <bitOffset>8</bitOffset>
               <bitWidth>6</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>63</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>VECTOR_REQUIRED_14</name>
@@ -7781,28 +7799,58 @@
               <name>SPATIAL_REUSE</name>
               <bitOffset>15</bitOffset>
               <bitWidth>4</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>15</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>BANDWIDTH</name>
               <bitOffset>19</bitOffset>
               <bitWidth>2</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>3</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>GI_LTF</name>
               <bitOffset>21</bitOffset>
               <bitWidth>2</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>3</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>NSTS_AND_MIDAMBLE_PERIODICITY</name>
               <description>Complete dbg_dump_rx_ppdu shifts HE-SIG-A1 right by 23, masks three bits and prints the value as nsts_and_midamble_periodicity. The complete vendor private header uses the same name. A live 1T1R HE-SU RX vector 0x00e0591b with STBC set in HE-SIG-A2 produced encoding one: two space-time streams created from one spatial stream. This field is therefore not an unconditional NSS-minus-one value; with Doppler enabled it also carries midamble-periodicity information.</description>
               <bitOffset>23</bitOffset>
               <bitWidth>3</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>7</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>VECTOR_REQUIRED_HIGH</name>
               <description>Complete formatter ORs 0xfc000000 before publication; both synchronous vendor captures retained all six bits.</description>
               <bitOffset>26</bitOffset>
               <bitWidth>6</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>63</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -7817,10 +7865,44 @@
           <access>read-write</access>
           <fields>
             <field>
-              <name>CONTROL_LOW</name>
-              <description>Ten-bit HE-SIG-A2/control image derived from coding, STBC and related descriptor state. The bounded BCC, non-STBC, non-beamformed SU oracle uses 0x105.</description>
+              <name>CONTROL_REQUIRED_0</name>
+              <description>Bounded HE SU formatter-required low control bit.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>10</bitWidth>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>FEC_CODING</name>
+              <description>Zero selects BCC and one selects LDPC in the bounded HE SU formatter.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CONTROL_REQUIRED_2</name>
+              <description>Bounded HE SU formatter-required low control bit.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CONTROL_7_3_UNKNOWN</name>
+              <bitOffset>3</bitOffset>
+              <bitWidth>5</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>31</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>CONTROL_REQUIRED_8</name>
+              <description>Bounded HE SU formatter-required low control bit.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CONTROL_9_UNKNOWN</name>
+              <bitOffset>9</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>DESCRIPTOR_CLASS_MATCH</name>
@@ -7833,6 +7915,12 @@
               <description>Sixteen-bit assembled HE APEP byte count produced by ppCalTxHEAMPDULength or ppCalTxHESMPDULength and copied by mac_tx_set_hesig. For A-MPDU, DMA metadata byte seven bit zero contributes the four-byte hardware HE-Control insertion without changing the low fourteen-bit MPDU length. The qualified S-MPDU value is 32 bytes: four-byte delimiter plus 24-byte MPDU, four-byte hardware FCS slot and alignment.</description>
               <bitOffset>11</bitOffset>
               <bitWidth>16</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>65535</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>AMPDU_LENGTH_VALID</name>

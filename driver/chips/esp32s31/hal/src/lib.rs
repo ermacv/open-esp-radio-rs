@@ -600,11 +600,6 @@ impl RadioRuntimeOwner {
         self.wifi_mac_hal().rx_block_ack_entry_snapshot(index)
     }
 
-    /// Copy the reviewed HE transmit-vector readback for one queue.
-    pub fn he_tx_vector_snapshot(&self, queue: u8) -> types::MacHeTxVectorSnapshot {
-        self.registers.he_mac_tx_vector_snapshot(queue)
-    }
-
     /// Copy the reviewed Trigger-queue readback for one reservation.
     pub fn he_trigger_based_queue_snapshot(
         &self,

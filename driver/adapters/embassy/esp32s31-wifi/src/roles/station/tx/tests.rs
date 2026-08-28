@@ -171,7 +171,7 @@ impl open_esp_radio_esp32s31_wifi_mac::tx::TxHardware for Hardware {
         true
     }
 
-    fn start_bound_he_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8, _plcp0: u32) {}
+    fn start_bound_he_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8) {}
 
     fn take_tx_completion(&mut self, _queue: u8) -> Option<MacTxCompletionObservation> {
         self.ordinary_completion.take()

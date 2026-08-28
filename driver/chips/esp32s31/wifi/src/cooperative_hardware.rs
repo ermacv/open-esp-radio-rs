@@ -13,10 +13,9 @@ use open_esp_radio_esp32s31_hal::radio_arena::{
 use open_esp_radio_esp32s31_hal::types::{
     MacHe20PeerConfig, MacHe20PeerError, MacHeBeamformingReportProfile, MacHeErSuAckRateProfile,
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
-    MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHeTxVectorSnapshot,
-    MacHtAmpduCompletionObservation, MacHtTxProgram, MacKeyInstallOutcome, MacLegacyTxProgram,
-    MacRxDmaSnapshot, MacStaReceivePolicySnapshot, MacTxCompletionObservation, MacTxDetachOutcome,
-    MacTxDetachReason, MacTxQueueDetached,
+    MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHtAmpduCompletionObservation, MacHtTxProgram,
+    MacKeyInstallOutcome, MacLegacyTxProgram, MacRxDmaSnapshot, MacStaReceivePolicySnapshot,
+    MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
 };
 use open_esp_radio_esp32s31_hal::wifi_mac::WifiMacHal;
 use open_esp_radio_esp32s31_wifi_mac::sta_ap_registers::StaApRegisterHardware;
@@ -307,12 +306,8 @@ impl TxHardware for CooperativeRadioHardware<'_> {
         TxHardware::prepare_bound_he_tx(&mut self.wifi_mac_hal(), dma, queue, program)
     }
 
-    fn start_bound_he_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
-        TxHardware::start_bound_he_tx(&mut self.wifi_mac_hal(), dma, queue, plcp0);
-    }
-
-    fn he_tx_vector_snapshot(&self, queue: u8) -> Option<MacHeTxVectorSnapshot> {
-        TxHardware::he_tx_vector_snapshot(&self.wifi_mac_hal(), queue)
+    fn start_bound_he_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8) {
+        TxHardware::start_bound_he_tx(&mut self.wifi_mac_hal(), dma, queue);
     }
 
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation> {

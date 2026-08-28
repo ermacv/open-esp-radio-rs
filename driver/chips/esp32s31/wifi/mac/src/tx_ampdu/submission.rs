@@ -1,11 +1,11 @@
-//! Fallible, side-effect-free HT/HE register-image preparation.
+//! Fallible, side-effect-free HT/HE submission preparation.
 
 use open_esp_radio_esp32s31_hal::types::{
-    MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid, MacHeTxProgram,
+    MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid, MacHeTxParameters,
     MacHtTxParameters,
 };
 
-use super::{HtAmpduLength, HtAmpduTxError, HtAmpduTxFormat, HtAmpduTxStorage};
+use super::{HtAmpduLength, HtAmpduTxError, HtAmpduTxStorage};
 use crate::tx::{HeAmpduTxConfig, HtAmpduTxConfig, LegacyTxQueue, TxCookie, TxSlotState};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -23,8 +23,7 @@ pub(super) struct PreparedHtSubmission {
 
 pub(super) struct PreparedHeSubmission {
     pub(super) aggregate: HtAmpduLength,
-    pub(super) program: MacHeTxProgram,
-    pub(super) plcp0: u32,
+    pub(super) parameters: MacHeTxParameters,
     pub(super) trigger: Option<PreparedHeTrigger>,
 }
 
@@ -52,7 +51,6 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
 
     pub(super) fn prepared_he_submission(
         &self,
-        descriptor_head: u32,
         cookie: TxCookie,
         queue: LegacyTxQueue,
         config: HeAmpduTxConfig,
@@ -67,34 +65,15 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         if config.aggregate_length != aggregate.bytes || config.subframes != aggregate.subframes {
             return Err(HtAmpduTxError::AggregateConfigurationMismatch);
         }
+        if !config.valid() {
+            return Err(HtAmpduTxError::TxProgramUnavailable {
+                format: super::HtAmpduTxFormat::HeAmpdu,
+            });
+        }
         let trigger = self.prepared_he_trigger(queue, config)?;
-        let image = crate::tx::he_ampdu_q0_image(descriptor_head, config).ok_or(
-            HtAmpduTxError::TxProgramUnavailable {
-                format: HtAmpduTxFormat::HeAmpdu,
-            },
-        )?;
         Ok(PreparedHeSubmission {
             aggregate,
-            program: MacHeTxProgram {
-                plcp0: image.plcp0,
-                plcp1: image.plcp1,
-                he_signal_a1: image.he_signal_a1,
-                he_signal_a2_length: image.he_signal_a2_length,
-                software_he_control: None,
-                power: image.power,
-                length_control: image.length_control,
-                descriptor_count_a: image.descriptor_count_a,
-                descriptor_count_b: image.descriptor_count_b,
-                protection_spacing: image.protection_spacing,
-                timeout: config.timeout,
-                scheduler_priority: config.scheduler_priority,
-                packet_priority: config.pti,
-                priority_count: config.pti_count,
-                aifsn: config.aifsn,
-                contention_window: config.contention_window,
-                interface: config.interface,
-            },
-            plcp0: image.plcp0,
+            parameters: config.pac_parameters(),
             trigger,
         })
     }

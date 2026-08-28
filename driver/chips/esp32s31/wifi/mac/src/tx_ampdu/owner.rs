@@ -8,7 +8,9 @@ use alloc::boxed::Box;
 use core::{ops::Deref, pin::Pin};
 
 use open_esp_radio_dma::StableDmaBacking;
-use open_esp_radio_esp32s31_hal::types::{MacHtTxProgram, MacTxDetachOutcome, MacTxDetachReason};
+use open_esp_radio_esp32s31_hal::types::{
+    MacHeTxProgram, MacHtTxProgram, MacTxDetachOutcome, MacTxDetachReason,
+};
 use open_esp_radio_esp32s31_wifi_dma::tx_ampdu_storage::{
     AmpduDmaState, AmpduDmaStorage, AmpduDmaStorageError, PinnedAmpduDmaStorage, RetainedAmpduDma,
     RetainedAmpduDmaStorage,
@@ -18,7 +20,7 @@ use crate::tx::{HeAmpduTxConfig, HtAmpduTxConfig, LegacyTxQueue, TxCookie, TxSlo
 
 use super::{
     HeAmpduFrameRequest, HtAmpduFrameRequest, HtAmpduHardware, HtAmpduLength, HtAmpduTxCompletion,
-    HtAmpduTxError, HtAmpduTxStorage, RetainedAmpduRetryCompletion,
+    HtAmpduTxError, HtAmpduTxFormat, HtAmpduTxStorage, RetainedAmpduRetryCompletion,
     RetainedAmpduRetryCompletionError, TX_AMPDU_METADATA_SIZE,
 };
 
@@ -553,16 +555,19 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
                 .as_mut()
                 .expect("retained DMA owner keeps descriptor storage until teardown"),
         );
-        let prepared = storage.as_ref().get_ref().prepared_he_submission(
-            dma.descriptor_head(),
-            cookie,
-            queue,
-            config,
-        )?;
+        let prepared = storage
+            .as_ref()
+            .get_ref()
+            .prepared_he_submission(cookie, queue, config)?;
         let count = usize::from(storage.as_ref().get_ref().count);
         let publication = dma.publish_retained_chain(count)?;
         let queue_index = queue.index();
-        if !hardware.prepare_bound_he_tx(&publication, queue_index, prepared.program) {
+        let program = MacHeTxProgram::new(&publication, prepared.parameters).ok_or(
+            HtAmpduTxError::TxProgramUnavailable {
+                format: HtAmpduTxFormat::HeAmpdu,
+            },
+        )?;
+        if !hardware.prepare_bound_he_tx(&publication, queue_index, program) {
             return Err(HtAmpduTxError::QueueActive);
         }
         let mut trigger_snapshot = None;
@@ -586,7 +591,7 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
         *metadata.aggregate_length = prepared.aggregate.bytes;
         *metadata.detached = false;
         *metadata.state = TxSlotState::HardwareOwned;
-        publication.commit(|dma| hardware.start_bound_he_tx(dma, queue_index, prepared.plcp0));
+        publication.commit(|dma| hardware.start_bound_he_tx(dma, queue_index));
         Ok(())
     }
 

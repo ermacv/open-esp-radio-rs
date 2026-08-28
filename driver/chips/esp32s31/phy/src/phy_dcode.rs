@@ -10,7 +10,7 @@
 //! eight output bytes are Rust-owned values; no ROM RAM or callback table is
 //! required.
 
-use crate::phy_i2c::PhyI2cAddress;
+use crate::phy_i2c::{PhyI2cField, analog_registers};
 use crate::phy_rfpll::{
     RfpllFrequencyAction, RfpllFrequencyCompletion, RfpllFrequencyFailure, RfpllFrequencyRequest,
     RfpllFrequencyTransition,
@@ -18,16 +18,12 @@ use crate::phy_rfpll::{
 
 pub const PHY_DCODE_FREQUENCY_CODES: [u8; 4] = [115, 116, 117, 118];
 
-const CKGEN_WRITES: [(u8, u8, u8, u8); 4] = [
-    (0x13, 6, 6, 0),
-    (0x14, 6, 6, 0),
-    (0x04, 7, 7, 0),
-    (0x04, 7, 7, 1),
+const CKGEN_WRITES: [(PhyI2cField, u8); 4] = [
+    (analog_registers::RFPLL_DCODE_0_SOURCE_SELECT, 0),
+    (analog_registers::RFPLL_DCODE_1_SOURCE_SELECT, 0),
+    (analog_registers::RFPLL_DCODE_CKGEN_RESET, 0),
+    (analog_registers::RFPLL_DCODE_CKGEN_RESET, 1),
 ];
-
-const fn address(register: u8) -> PhyI2cAddress {
-    PhyI2cAddress::rfpll(register)
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyDcodeParameters {
@@ -50,20 +46,9 @@ pub enum PhyDcodeFailure {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyDcodeAction {
     Rfpll(RfpllFrequencyAction),
-    ConfigureNrx {
-        frequency_code: u8,
-    },
-    WriteMasked {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
-        value: u8,
-    },
-    ReadMasked {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
-    },
+    ConfigureNrx { frequency_code: u8 },
+    WriteMasked { field: PhyI2cField, value: u8 },
+    ReadMasked { field: PhyI2cField },
     Complete(PhyDcodeOutcome),
     Failed(PhyDcodeFailure),
 }
@@ -71,21 +56,9 @@ pub enum PhyDcodeAction {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyDcodeCompletion {
     Rfpll(RfpllFrequencyCompletion),
-    NrxConfigured {
-        frequency_code: u8,
-    },
-    MaskedWrite {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
-        value: u8,
-    },
-    MaskedRead {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
-        value: u8,
-    },
+    NrxConfigured { frequency_code: u8 },
+    MaskedWrite { field: PhyI2cField, value: u8 },
+    MaskedRead { field: PhyI2cField, value: u8 },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -151,23 +124,14 @@ impl PhyDcodeTransition {
                 frequency_code: PHY_DCODE_FREQUENCY_CODES[calibration_index as usize],
             },
             PhyDcodeStep::ResetCkgen { write_index, .. } => {
-                let (register, high_bit, low_bit, value) = CKGEN_WRITES[write_index as usize];
-                PhyDcodeAction::WriteMasked {
-                    address: address(register),
-                    high_bit,
-                    low_bit,
-                    value,
-                }
+                let (field, value) = CKGEN_WRITES[write_index as usize];
+                PhyDcodeAction::WriteMasked { field, value }
             }
             PhyDcodeStep::ReadLow { .. } => PhyDcodeAction::ReadMasked {
-                address: address(0x11),
-                high_bit: 5,
-                low_bit: 0,
+                field: analog_registers::RFPLL_INTERNAL_DCODE_0,
             },
             PhyDcodeStep::ReadHigh { .. } => PhyDcodeAction::ReadMasked {
-                address: address(0x12),
-                high_bit: 5,
-                low_bit: 0,
+                field: analog_registers::RFPLL_INTERNAL_DCODE_1,
             },
             PhyDcodeStep::Complete(outcome) => PhyDcodeAction::Complete(outcome),
             PhyDcodeStep::Failed(failure) => PhyDcodeAction::Failed(failure),
@@ -219,20 +183,10 @@ impl PhyDcodeTransition {
                     calibration_index,
                     write_index,
                 },
-                PhyDcodeCompletion::MaskedWrite {
-                    address: completed_address,
-                    high_bit,
-                    low_bit,
-                    value,
-                },
+                PhyDcodeCompletion::MaskedWrite { field, value },
             ) => {
-                let (register, expected_high, expected_low, expected_value) =
-                    CKGEN_WRITES[write_index as usize];
-                if completed_address != address(register)
-                    || high_bit != expected_high
-                    || low_bit != expected_low
-                    || value != expected_value
-                {
+                let (expected_field, expected_value) = CKGEN_WRITES[write_index as usize];
+                if field != expected_field || value != expected_value {
                     return Err(PhyDcodeTransitionError::WrongCompletion);
                 }
                 if write_index + 1 == CKGEN_WRITES.len() as u8 {
@@ -247,24 +201,20 @@ impl PhyDcodeTransition {
             (
                 PhyDcodeStep::ReadLow { calibration_index },
                 PhyDcodeCompletion::MaskedRead {
-                    address: completed_address,
-                    high_bit: 5,
-                    low_bit: 0,
+                    field: analog_registers::RFPLL_INTERNAL_DCODE_0,
                     value,
                 },
-            ) if completed_address == address(0x11) && value <= 0x3f => {
+            ) if value <= 0x3f => {
                 self.codes[calibration_index as usize * 2] = value;
                 PhyDcodeStep::ReadHigh { calibration_index }
             }
             (
                 PhyDcodeStep::ReadHigh { calibration_index },
                 PhyDcodeCompletion::MaskedRead {
-                    address: completed_address,
-                    high_bit: 5,
-                    low_bit: 0,
+                    field: analog_registers::RFPLL_INTERNAL_DCODE_1,
                     value,
                 },
-            ) if completed_address == address(0x12) && value <= 0x3f => {
+            ) if value <= 0x3f => {
                 self.codes[calibration_index as usize * 2 + 1] = value;
                 if calibration_index + 1 == PHY_DCODE_FREQUENCY_CODES.len() as u8 {
                     PhyDcodeStep::Complete(PhyDcodeOutcome { codes: self.codes })
@@ -329,21 +279,12 @@ pub struct PhyDcodeI2cBinding {
 impl PhyDcodeI2cBinding {
     pub fn new(action: PhyDcodeAction) -> Result<Self, PhyDcodeBindingError> {
         let request = match action {
-            PhyDcodeAction::WriteMasked {
-                address,
-                high_bit,
-                low_bit,
-                value,
-            } => {
-                crate::phy_cold::PhyColdI2cRequest::write_masked(address, high_bit, low_bit, value)
-                    .ok_or(PhyDcodeBindingError::UnsupportedAction)?
+            PhyDcodeAction::WriteMasked { field, value } => {
+                crate::phy_cold::PhyColdI2cRequest::write_field(field, value)
             }
-            PhyDcodeAction::ReadMasked {
-                address,
-                high_bit,
-                low_bit,
-            } => crate::phy_cold::PhyColdI2cRequest::read_masked(address, high_bit, low_bit)
-                .ok_or(PhyDcodeBindingError::UnsupportedAction)?,
+            PhyDcodeAction::ReadMasked { field } => {
+                crate::phy_cold::PhyColdI2cRequest::read_field(field)
+            }
             _ => return Err(PhyDcodeBindingError::UnsupportedAction),
         };
         Ok(Self {
@@ -400,35 +341,20 @@ impl PhyDcodeI2cBinding {
         };
         match (self.outer_action, outcome) {
             (
-                PhyDcodeAction::WriteMasked {
-                    address,
-                    high_bit,
-                    low_bit,
-                    value,
-                },
+                PhyDcodeAction::WriteMasked { field, value },
                 crate::phy_cold::PhyColdI2cOutcome::Written { address: completed },
-            ) if completed == address => Ok(PhyDcodeCompletion::MaskedWrite {
-                address,
-                high_bit,
-                low_bit,
-                value,
-            }),
+            ) if completed == field.address() => {
+                Ok(PhyDcodeCompletion::MaskedWrite { field, value })
+            }
             (
-                PhyDcodeAction::ReadMasked {
-                    address,
-                    high_bit,
-                    low_bit,
-                },
+                PhyDcodeAction::ReadMasked { field },
                 crate::phy_cold::PhyColdI2cOutcome::Read {
                     address: completed,
                     value,
                 },
-            ) if completed == address => Ok(PhyDcodeCompletion::MaskedRead {
-                address,
-                high_bit,
-                low_bit,
-                value,
-            }),
+            ) if completed == field.address() => {
+                Ok(PhyDcodeCompletion::MaskedRead { field, value })
+            }
             _ => Err(PhyDcodeBindingError::UnexpectedOutcome),
         }
     }
@@ -518,41 +444,20 @@ mod tests {
             .unwrap();
 
         for _ in 0..4 {
-            let PhyDcodeAction::WriteMasked {
-                address,
-                high_bit,
-                low_bit,
-                value,
-            } = transition.action()
-            else {
+            let PhyDcodeAction::WriteMasked { field, value } = transition.action() else {
                 panic!("expected CKGEN write");
             };
             transition
-                .advance(PhyDcodeCompletion::MaskedWrite {
-                    address,
-                    high_bit,
-                    low_bit,
-                    value,
-                })
+                .advance(PhyDcodeCompletion::MaskedWrite { field, value })
                 .unwrap();
         }
 
         for value in [7, 8] {
-            let PhyDcodeAction::ReadMasked {
-                address,
-                high_bit,
-                low_bit,
-            } = transition.action()
-            else {
+            let PhyDcodeAction::ReadMasked { field } = transition.action() else {
                 panic!("expected D-code read");
             };
             transition
-                .advance(PhyDcodeCompletion::MaskedRead {
-                    address,
-                    high_bit,
-                    low_bit,
-                    value,
-                })
+                .advance(PhyDcodeCompletion::MaskedRead { field, value })
                 .unwrap();
         }
 
@@ -575,21 +480,11 @@ mod tests {
                 calibration_index: 0,
             },
         };
-        let PhyDcodeAction::ReadMasked {
-            address,
-            high_bit,
-            low_bit,
-        } = transition.action()
-        else {
+        let PhyDcodeAction::ReadMasked { field } = transition.action() else {
             panic!("expected D-code read");
         };
         assert_eq!(
-            transition.advance(PhyDcodeCompletion::MaskedRead {
-                address,
-                high_bit,
-                low_bit,
-                value: 0x40,
-            }),
+            transition.advance(PhyDcodeCompletion::MaskedRead { field, value: 0x40 }),
             Err(PhyDcodeTransitionError::WrongCompletion)
         );
     }
@@ -610,18 +505,14 @@ mod tests {
         ));
         assert!(matches!(
             PhyDcodeExternalBinding::lower(PhyDcodeAction::WriteMasked {
-                address: address(0x13),
-                high_bit: 6,
-                low_bit: 6,
+                field: analog_registers::RFPLL_DCODE_0_SOURCE_SELECT,
                 value: 0,
             }),
             Ok(PhyDcodeExternalBinding::I2c(_))
         ));
         assert!(matches!(
             PhyDcodeExternalBinding::lower(PhyDcodeAction::ReadMasked {
-                address: address(0x11),
-                high_bit: 5,
-                low_bit: 0,
+                field: analog_registers::RFPLL_INTERNAL_DCODE_0,
             }),
             Ok(PhyDcodeExternalBinding::I2c(_))
         ));

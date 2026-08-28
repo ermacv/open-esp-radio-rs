@@ -14,7 +14,7 @@
 use crate::{
     phy_i2c::{
         MaskedI2cWriteAction, MaskedI2cWriteCompletion, MaskedI2cWriteTransition, PhyI2cAddress,
-        analog_registers,
+        PhyI2cField, analog_registers,
     },
     phy_pbus::PhyPbusForceTest,
     phy_pwdet::sar_signal_reference,
@@ -39,9 +39,6 @@ use crate::{
 const TX_CAP_ADDRESS: PhyI2cAddress = analog_registers::TX_CAPACITOR_BANKS;
 const D_CODE_0_ADDRESS: PhyI2cAddress = PhyI2cAddress::new(0x62, 0x13).unwrap();
 const D_CODE_1_ADDRESS: PhyI2cAddress = PhyI2cAddress::new(0x62, 0x14).unwrap();
-const INTERNAL_D_CODE_0_ADDRESS: PhyI2cAddress = PhyI2cAddress::new(0x62, 0x11).unwrap();
-const INTERNAL_D_CODE_1_ADDRESS: PhyI2cAddress = PhyI2cAddress::new(0x62, 0x12).unwrap();
-const LOOPBACK_ADDRESS: PhyI2cAddress = PhyI2cAddress::new(0x67, 0).unwrap();
 const TXIQ_COVER_ITERATIONS: u8 = 7;
 
 const fn txiq_coefficient(value: i16, kind: PhyTxIqCoefficientKind) -> i8 {
@@ -736,11 +733,8 @@ pub struct PhyTxIqLoopbackTransition {
 
 impl PhyTxIqLoopbackTransition {
     pub fn new(enabled: bool) -> Self {
-        let transition = match MaskedI2cWriteTransition::new(LOOPBACK_ADDRESS, 6, 6, enabled as u8)
-        {
-            Some(transition) => transition,
-            None => unreachable!(),
-        };
+        let transition =
+            MaskedI2cWriteTransition::new(analog_registers::TX_IQ_LOOPBACK_ENABLE, enabled as u8);
         Self {
             enabled,
             step: LoopbackStep::I2c(transition),
@@ -1263,15 +1257,8 @@ pub enum PhyTxIqInitFailure {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyTxIqInitAction {
     Rfpll(RfpllFrequencyAction),
-    WriteI2c {
-        address: PhyI2cAddress,
-        value: u8,
-    },
-    ReadI2cMasked {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
-    },
+    WriteI2c { address: PhyI2cAddress, value: u8 },
+    ReadI2cMasked { field: PhyI2cField },
     Calibration(PhyTxIqCalibrationAction),
     Temperature(PhyTemperatureAction),
     Complete(PhyTxIqInitOutcome),
@@ -1281,16 +1268,8 @@ pub enum PhyTxIqInitAction {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyTxIqInitCompletion {
     Rfpll(RfpllFrequencyCompletion),
-    I2cWritten {
-        address: PhyI2cAddress,
-        value: u8,
-    },
-    I2cMaskedRead {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
-        value: u8,
-    },
+    I2cWritten { address: PhyI2cAddress, value: u8 },
+    I2cMaskedRead { field: PhyI2cField, value: u8 },
     Calibration(PhyTxIqCalibrationCompletion),
     Temperature(PhyTemperatureCompletion),
 }
@@ -1403,27 +1382,21 @@ impl PhyTxIqInitTransition {
                 value: (self.parameters.channel_6_dcode[1] & 0x3f) | 0x40,
             },
             InitStep::ReadDcodeMode => PhyTxIqInitAction::ReadI2cMasked {
-                address: D_CODE_0_ADDRESS,
-                high_bit: 6,
-                low_bit: 6,
+                field: analog_registers::RFPLL_DCODE_0_SOURCE_SELECT,
             },
             InitStep::ReadDcode0 { external } => PhyTxIqInitAction::ReadI2cMasked {
-                address: if external {
-                    D_CODE_0_ADDRESS
+                field: if external {
+                    analog_registers::RFPLL_EXTERNAL_DCODE_0
                 } else {
-                    INTERNAL_D_CODE_0_ADDRESS
+                    analog_registers::RFPLL_INTERNAL_DCODE_0
                 },
-                high_bit: 5,
-                low_bit: 0,
             },
             InitStep::ReadDcode1 { external } => PhyTxIqInitAction::ReadI2cMasked {
-                address: if external {
-                    D_CODE_1_ADDRESS
+                field: if external {
+                    analog_registers::RFPLL_EXTERNAL_DCODE_1
                 } else {
-                    INTERNAL_D_CODE_1_ADDRESS
+                    analog_registers::RFPLL_INTERNAL_DCODE_1
                 },
-                high_bit: 5,
-                low_bit: 0,
             },
             InitStep::Calibration { transition, .. } => {
                 PhyTxIqInitAction::Calibration(transition.action())
@@ -1489,9 +1462,7 @@ impl PhyTxIqInitTransition {
             (
                 InitStep::ReadDcodeMode,
                 PhyTxIqInitCompletion::I2cMaskedRead {
-                    address: D_CODE_0_ADDRESS,
-                    high_bit: 6,
-                    low_bit: 6,
+                    field: analog_registers::RFPLL_DCODE_0_SOURCE_SELECT,
                     value,
                 },
             ) => {
@@ -1501,17 +1472,12 @@ impl PhyTxIqInitTransition {
             }
             (
                 InitStep::ReadDcode0 { external },
-                PhyTxIqInitCompletion::I2cMaskedRead {
-                    address,
-                    high_bit: 5,
-                    low_bit: 0,
-                    value,
-                },
-            ) if address
+                PhyTxIqInitCompletion::I2cMaskedRead { field, value },
+            ) if field
                 == if external {
-                    D_CODE_0_ADDRESS
+                    analog_registers::RFPLL_EXTERNAL_DCODE_0
                 } else {
-                    INTERNAL_D_CODE_0_ADDRESS
+                    analog_registers::RFPLL_INTERNAL_DCODE_0
                 } =>
             {
                 self.external_dcode[0] = value & 0x3f;
@@ -1519,17 +1485,12 @@ impl PhyTxIqInitTransition {
             }
             (
                 InitStep::ReadDcode1 { external },
-                PhyTxIqInitCompletion::I2cMaskedRead {
-                    address,
-                    high_bit: 5,
-                    low_bit: 0,
-                    value,
-                },
-            ) if address
+                PhyTxIqInitCompletion::I2cMaskedRead { field, value },
+            ) if field
                 == if external {
-                    D_CODE_1_ADDRESS
+                    analog_registers::RFPLL_EXTERNAL_DCODE_1
                 } else {
-                    INTERNAL_D_CODE_1_ADDRESS
+                    analog_registers::RFPLL_INTERNAL_DCODE_1
                 } =>
             {
                 self.external_dcode[1] = value & 0x3f;
@@ -2039,12 +2000,9 @@ impl PhyTxIqInitI2cBinding {
             PhyTxIqInitAction::WriteI2c { address, value } => {
                 crate::phy_cold::PhyColdI2cRequest::write_byte(address, value)
             }
-            PhyTxIqInitAction::ReadI2cMasked {
-                address,
-                high_bit,
-                low_bit,
-            } => crate::phy_cold::PhyColdI2cRequest::read_masked(address, high_bit, low_bit)
-                .ok_or(PhyTxIqExternalBindingError::UnsupportedAction)?,
+            PhyTxIqInitAction::ReadI2cMasked { field } => {
+                crate::phy_cold::PhyColdI2cRequest::read_field(field)
+            }
             _ => return Err(PhyTxIqExternalBindingError::UnsupportedAction),
         };
         Ok(Self {
@@ -2105,21 +2063,14 @@ impl PhyTxIqInitI2cBinding {
                 crate::phy_cold::PhyColdI2cOutcome::Written { address: completed },
             ) if completed == address => Ok(PhyTxIqInitCompletion::I2cWritten { address, value }),
             (
-                PhyTxIqInitAction::ReadI2cMasked {
-                    address,
-                    high_bit,
-                    low_bit,
-                },
+                PhyTxIqInitAction::ReadI2cMasked { field },
                 crate::phy_cold::PhyColdI2cOutcome::Read {
                     address: completed,
                     value,
                 },
-            ) if completed == address => Ok(PhyTxIqInitCompletion::I2cMaskedRead {
-                address,
-                high_bit,
-                low_bit,
-                value,
-            }),
+            ) if completed == field.address() => {
+                Ok(PhyTxIqInitCompletion::I2cMaskedRead { field, value })
+            }
             _ => Err(PhyTxIqExternalBindingError::UnexpectedOutcome),
         }
     }
@@ -2741,7 +2692,7 @@ mod tests {
         assert!(matches!(
             PhyTxIqCalibrationExternalBinding::lower(PhyTxIqCalibrationAction::Loopback(
                 PhyTxIqLoopbackAction::I2c(MaskedI2cWriteAction::ReadByte {
-                    address: LOOPBACK_ADDRESS,
+                    address: analog_registers::TX_IQ_LOOPBACK_ENABLE.address(),
                 })
             )),
             Ok(PhyTxIqCalibrationExternalBinding::Loopback(

@@ -7,7 +7,7 @@
 //! caller-driven actions.
 
 use crate::phy_i2c::{
-    MaskedI2cWriteAction, MaskedI2cWriteCompletion, MaskedI2cWriteTransition, PhyI2cAddress,
+    MaskedI2cWriteAction, MaskedI2cWriteCompletion, MaskedI2cWriteTransition, analog_registers,
 };
 use crate::phy_pbus::PhyPbusForceTest;
 use crate::phy_rfpll::{
@@ -516,8 +516,6 @@ const SHARED_CALIBRATION_GAIN: [u16; 11] = [
 ];
 const RX_ON_COUNT: u8 = 7;
 const RX_OFF_COUNT: u8 = 3;
-const RX_GAIN_I2C_ADDRESS: PhyI2cAddress = PhyI2cAddress::new(0x67, 3).unwrap();
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyRxGainDcBank {
     Wifi,
@@ -1095,9 +1093,10 @@ impl PhyRxGainDcTransition {
                 index: index + 1,
             };
         } else if bank == PhyRxGainDcBank::Shared {
-            self.step = DcStep::SharedRestoreI2c(
-                MaskedI2cWriteTransition::new(RX_GAIN_I2C_ADDRESS, 2, 2, 1).unwrap(),
-            );
+            self.step = DcStep::SharedRestoreI2c(MaskedI2cWriteTransition::new(
+                analog_registers::SHARED_RX_GAIN_CALIBRATION_ENABLE,
+                1,
+            ));
         } else {
             self.cleanup(DcTerminal::Complete);
         }
@@ -1277,9 +1276,10 @@ impl PhyRxGainDcTransition {
                     transaction,
                 },
             ) if transaction == PhyPbusForceTest::new(1, 1, value) => {
-                self.step = DcStep::SharedI2c(
-                    MaskedI2cWriteTransition::new(RX_GAIN_I2C_ADDRESS, 2, 2, 0).unwrap(),
-                );
+                self.step = DcStep::SharedI2c(MaskedI2cWriteTransition::new(
+                    analog_registers::SHARED_RX_GAIN_CALIBRATION_ENABLE,
+                    0,
+                ));
             }
             (DcStep::SharedI2c(mut transition), PhyRxGainDcCompletion::I2c(completion)) => {
                 transition

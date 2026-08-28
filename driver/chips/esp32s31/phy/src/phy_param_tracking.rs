@@ -1276,22 +1276,14 @@ mod tests {
 
         let mut state = crate::phy_state::PhyState::new(crate::phy_state::PhyConfig::production());
         let mut temperature = transition.begin_temperature_read(&mut state).unwrap();
-        let crate::phy_temperature::PhyTemperatureAction::ReadMasked {
-            address,
-            high_bit,
-            low_bit,
-        } = temperature.action()
+        let crate::phy_temperature::PhyTemperatureAction::ReadMasked { field } =
+            temperature.action()
         else {
             panic!("temperature child did not begin with its DAC read")
         };
         temperature
             .advance(
-                crate::phy_temperature::PhyTemperatureCompletion::MaskedRead {
-                    address,
-                    high_bit,
-                    low_bit,
-                    value: 3,
-                },
+                crate::phy_temperature::PhyTemperatureCompletion::MaskedRead { field, value: 3 },
             )
             .unwrap();
         assert_eq!(

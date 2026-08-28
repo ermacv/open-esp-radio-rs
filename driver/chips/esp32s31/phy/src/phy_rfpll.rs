@@ -30,7 +30,7 @@ use crate::{
         PhyFrequencyCapMemoryOutcome, PhyFrequencyCapMemoryRequest,
         PhyFrequencyCapMemoryTransition,
     },
-    phy_i2c::{PhyI2cAddress, analog_registers},
+    phy_i2c::{PhyI2cAddress, PhyI2cField, analog_registers},
 };
 
 const LOCK_ATTEMPTS: u8 = 100;
@@ -130,9 +130,7 @@ pub enum RfpllFrequencyAction {
         frequency_mhz: u16,
     },
     WriteMasked {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
+        field: PhyI2cField,
         value: u8,
     },
     WriteByte {
@@ -140,9 +138,7 @@ pub enum RfpllFrequencyAction {
         value: u8,
     },
     ReadMasked {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
+        field: PhyI2cField,
     },
     ReadByte {
         address: PhyI2cAddress,
@@ -167,17 +163,13 @@ pub enum RfpllFrequencyCompletion {
         frequency_mhz: u16,
     },
     MaskedWrite {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
+        field: PhyI2cField,
     },
     ByteWrite {
         address: PhyI2cAddress,
     },
     MaskedRead {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
+        field: PhyI2cField,
         value: u8,
     },
     ByteRead {
@@ -314,26 +306,19 @@ impl RfpllFrequencyTransition {
     }
 
     const fn initial_write(index: u8) -> RfpllFrequencyAction {
-        let (register, high_bit, low_bit, value) = match index {
-            0 => (0x0b, 6, 6, 0),
-            1 => (0x02, 7, 7, 1),
-            _ => (0x02, 5, 0, 0x3f),
+        let (field, value) = match index {
+            0 => (analog_registers::RFPLL_CAPACITOR_SEARCH_ENABLE, 0),
+            1 => (analog_registers::RFPLL_INITIAL_CONFIGURATION_HIGH, 1),
+            _ => (analog_registers::RFPLL_INITIAL_CONFIGURATION_LOW, 0x3f),
         };
-        RfpllFrequencyAction::WriteMasked {
-            address: PhyI2cAddress::rfpll(register),
-            high_bit,
-            low_bit,
-            value,
-        }
+        RfpllFrequencyAction::WriteMasked { field, value }
     }
 
     const fn sdm_write(self, index: u8) -> RfpllFrequencyAction {
         let bytes = self.sdm.bytes;
         match index {
             0 => RfpllFrequencyAction::WriteMasked {
-                address: PhyI2cAddress::sdm(0),
-                high_bit: 3,
-                low_bit: 3,
+                field: analog_registers::RFPLL_SDM_UPDATE_ENABLE,
                 value: 0,
             },
             1 => RfpllFrequencyAction::WriteByte {
@@ -349,33 +334,24 @@ impl RfpllFrequencyTransition {
                 value: bytes[1],
             },
             4 => RfpllFrequencyAction::WriteMasked {
-                address: analog_registers::RFPLL_SDM_LOW.address,
-                high_bit: analog_registers::RFPLL_SDM_LOW.high_bit,
-                low_bit: analog_registers::RFPLL_SDM_LOW.low_bit,
+                field: analog_registers::RFPLL_SDM_LOW,
                 value: bytes[0],
             },
             _ => RfpllFrequencyAction::WriteMasked {
-                address: PhyI2cAddress::sdm(0),
-                high_bit: 3,
-                low_bit: 3,
+                field: analog_registers::RFPLL_SDM_UPDATE_ENABLE,
                 value: 1,
             },
         }
     }
 
     const fn restart_write(index: u8) -> RfpllFrequencyAction {
-        let (high_bit, value) = match index {
-            0 => (6, 0),
-            1 => (5, 0),
-            2 => (5, 1),
-            _ => (6, 1),
+        let (field, value) = match index {
+            0 => (analog_registers::RFPLL_RESTART_HIGH, 0),
+            1 => (analog_registers::RFPLL_RESTART_LOW, 0),
+            2 => (analog_registers::RFPLL_RESTART_LOW, 1),
+            _ => (analog_registers::RFPLL_RESTART_HIGH, 1),
         };
-        RfpllFrequencyAction::WriteMasked {
-            address: PhyI2cAddress::rfpll(0),
-            high_bit,
-            low_bit: high_bit,
-            value,
-        }
+        RfpllFrequencyAction::WriteMasked { field, value }
     }
 
     pub const fn action(self) -> RfpllFrequencyAction {
@@ -398,22 +374,16 @@ impl RfpllFrequencyTransition {
             RfpllFrequencyStep::RestartWrite(index) => Self::restart_write(index),
             RfpllFrequencyStep::LockDelay { .. } => RfpllFrequencyAction::DelayMicros(20),
             RfpllFrequencyStep::LockRead { .. } => RfpllFrequencyAction::ReadMasked {
-                address: PhyI2cAddress::rfpll(7),
-                high_bit: 1,
-                low_bit: 1,
+                field: analog_registers::RFPLL_LOCK_STATUS,
             },
             RfpllFrequencyStep::CapLowRead { .. } => RfpllFrequencyAction::ReadByte {
                 address: PhyI2cAddress::rfpll(5),
             },
             RfpllFrequencyStep::CapHighRead { .. } => RfpllFrequencyAction::ReadMasked {
-                address: PhyI2cAddress::rfpll(7),
-                high_bit: 2,
-                low_bit: 2,
+                field: analog_registers::RFPLL_CALIBRATED_CAPACITOR_HIGH,
             },
             RfpllFrequencyStep::EnableCapSearch { .. } => RfpllFrequencyAction::WriteMasked {
-                address: PhyI2cAddress::rfpll(0x0b),
-                high_bit: 6,
-                low_bit: 6,
+                field: analog_registers::RFPLL_CAPACITOR_SEARCH_ENABLE,
                 value: 1,
             },
             RfpllFrequencyStep::CapWriteLow(continuation) => RfpllFrequencyAction::WriteByte {
@@ -421,14 +391,12 @@ impl RfpllFrequencyTransition {
                 value: continuation.programmed_value() as u8,
             },
             RfpllFrequencyStep::CapWriteHigh(continuation) => RfpllFrequencyAction::WriteMasked {
-                address: analog_registers::RFPLL_CAPACITOR_HIGH.address,
-                high_bit: analog_registers::RFPLL_CAPACITOR_HIGH.high_bit,
-                low_bit: analog_registers::RFPLL_CAPACITOR_HIGH.low_bit,
+                field: analog_registers::RFPLL_CAPACITOR_HIGH,
                 value: (continuation.programmed_value() >> 8) as u8,
             },
             RfpllFrequencyStep::CapDelay(_) => RfpllFrequencyAction::DelayMicros(5),
-            RfpllFrequencyStep::CapStatusRead(_) => RfpllFrequencyAction::ReadByte {
-                address: PhyI2cAddress::rfpll(0x0c),
+            RfpllFrequencyStep::CapStatusRead(_) => RfpllFrequencyAction::ReadMasked {
+                field: analog_registers::RFPLL_CAPACITOR_SEARCH_STATUS,
             },
             RfpllFrequencyStep::Complete(outcome) => RfpllFrequencyAction::Complete(outcome),
             RfpllFrequencyStep::Failed(failure) => RfpllFrequencyAction::Failed(failure),
@@ -438,18 +406,9 @@ impl RfpllFrequencyTransition {
     fn matches_write(action: RfpllFrequencyAction, completion: RfpllFrequencyCompletion) -> bool {
         match (action, completion) {
             (
-                RfpllFrequencyAction::WriteMasked {
-                    address,
-                    high_bit,
-                    low_bit,
-                    ..
-                },
-                RfpllFrequencyCompletion::MaskedWrite {
-                    address: completed,
-                    high_bit: completed_high,
-                    low_bit: completed_low,
-                },
-            ) => address == completed && high_bit == completed_high && low_bit == completed_low,
+                RfpllFrequencyAction::WriteMasked { field, .. },
+                RfpllFrequencyCompletion::MaskedWrite { field: completed },
+            ) => field == completed,
             (
                 RfpllFrequencyAction::WriteByte { address, .. },
                 RfpllFrequencyCompletion::ByteWrite { address: completed },
@@ -573,12 +532,10 @@ impl RfpllFrequencyTransition {
             (
                 RfpllFrequencyStep::LockRead { attempt },
                 RfpllFrequencyCompletion::MaskedRead {
-                    address: completed,
-                    high_bit: 1,
-                    low_bit: 1,
+                    field: analog_registers::RFPLL_LOCK_STATUS,
                     value,
                 },
-            ) if completed == PhyI2cAddress::rfpll(7) => {
+            ) => {
                 if value != 0 {
                     RfpllFrequencyStep::CapLowRead {
                         lock_observed: true,
@@ -606,12 +563,10 @@ impl RfpllFrequencyTransition {
             (
                 RfpllFrequencyStep::CapHighRead { low, lock_observed },
                 RfpllFrequencyCompletion::MaskedRead {
-                    address: completed,
-                    high_bit: 2,
-                    low_bit: 2,
+                    field: analog_registers::RFPLL_CALIBRATED_CAPACITOR_HIGH,
                     value,
                 },
-            ) if completed == PhyI2cAddress::rfpll(7) => RfpllFrequencyStep::EnableCapSearch {
+            ) => RfpllFrequencyStep::EnableCapSearch {
                 initial: u16::from(low) | (u16::from(value) << 8),
                 lock_observed,
             },
@@ -662,13 +617,12 @@ impl RfpllFrequencyTransition {
             },
             (
                 RfpllFrequencyStep::CapStatusRead(mut search),
-                RfpllFrequencyCompletion::ByteRead {
-                    address: completed,
+                RfpllFrequencyCompletion::MaskedRead {
+                    field: analog_registers::RFPLL_CAPACITOR_SEARCH_STATUS,
                     value,
                 },
-            ) if completed == PhyI2cAddress::rfpll(0x0c) => {
-                let status = (value >> 2) & 0x3;
-                if status == 0 {
+            ) => {
+                if value == 0 {
                     search.sum = search.sum.wrapping_add(search.candidate());
                     search.accepted = search.accepted.wrapping_add(1);
                     search.offset = search.offset.wrapping_add(1);
@@ -756,48 +710,20 @@ pub struct RfpllCapCorrectionOutcome {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RfpllCapCorrectionAction {
-    ReadMasked {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
-    },
-    ReadByte {
-        address: PhyI2cAddress,
-    },
-    WriteMasked {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
-        value: u8,
-    },
-    WriteByte {
-        address: PhyI2cAddress,
-        value: u8,
-    },
+    ReadMasked { field: PhyI2cField },
+    ReadByte { address: PhyI2cAddress },
+    WriteMasked { field: PhyI2cField, value: u8 },
+    WriteByte { address: PhyI2cAddress, value: u8 },
     Memory(PhyFrequencyCapMemoryAction),
     Complete(RfpllCapCorrectionOutcome),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RfpllCapCorrectionCompletion {
-    MaskedRead {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
-        value: u8,
-    },
-    ByteRead {
-        address: PhyI2cAddress,
-        value: u8,
-    },
-    MaskedWrite {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
-    },
-    ByteWrite {
-        address: PhyI2cAddress,
-    },
+    MaskedRead { field: PhyI2cField, value: u8 },
+    ByteRead { address: PhyI2cAddress, value: u8 },
+    MaskedWrite { field: PhyI2cField },
+    ByteWrite { address: PhyI2cAddress },
     Memory(PhyFrequencyCapMemoryCompletion),
 }
 
@@ -856,17 +782,13 @@ impl RfpllCapCorrectionTransition {
     pub const fn action(&self) -> RfpllCapCorrectionAction {
         match &self.step {
             RfpllCapCorrectionStep::ReadDirection => RfpllCapCorrectionAction::ReadMasked {
-                address: analog_registers::RFPLL_CAPACITOR_CORRECTION_DIRECTION.address,
-                high_bit: analog_registers::RFPLL_CAPACITOR_CORRECTION_DIRECTION.high_bit,
-                low_bit: analog_registers::RFPLL_CAPACITOR_CORRECTION_DIRECTION.low_bit,
+                field: analog_registers::RFPLL_CAPACITOR_CORRECTION_DIRECTION,
             },
             RfpllCapCorrectionStep::ReadCapLow { .. } => RfpllCapCorrectionAction::ReadByte {
                 address: analog_registers::RFPLL_CALIBRATED_CAPACITOR_LOW,
             },
             RfpllCapCorrectionStep::ReadCapHigh { .. } => RfpllCapCorrectionAction::ReadMasked {
-                address: analog_registers::RFPLL_CALIBRATED_CAPACITOR_HIGH.address,
-                high_bit: analog_registers::RFPLL_CALIBRATED_CAPACITOR_HIGH.high_bit,
-                low_bit: analog_registers::RFPLL_CALIBRATED_CAPACITOR_HIGH.low_bit,
+                field: analog_registers::RFPLL_CALIBRATED_CAPACITOR_HIGH,
             },
             RfpllCapCorrectionStep::WriteCapLow(context) => RfpllCapCorrectionAction::WriteByte {
                 address: analog_registers::RFPLL_CAPACITOR_LOW,
@@ -874,9 +796,7 @@ impl RfpllCapCorrectionTransition {
             },
             RfpllCapCorrectionStep::WriteCapHigh(context) => {
                 RfpllCapCorrectionAction::WriteMasked {
-                    address: analog_registers::RFPLL_CAPACITOR_HIGH.address,
-                    high_bit: analog_registers::RFPLL_CAPACITOR_HIGH.high_bit,
-                    low_bit: analog_registers::RFPLL_CAPACITOR_HIGH.low_bit,
+                    field: analog_registers::RFPLL_CAPACITOR_HIGH,
                     value: (context.programmed_cap >> 8) as u8,
                 }
             }
@@ -923,15 +843,10 @@ impl RfpllCapCorrectionTransition {
             (
                 RfpllCapCorrectionStep::ReadDirection,
                 RfpllCapCorrectionCompletion::MaskedRead {
-                    address,
-                    high_bit,
-                    low_bit,
+                    field: analog_registers::RFPLL_CAPACITOR_CORRECTION_DIRECTION,
                     value,
                 },
-            ) if address == analog_registers::RFPLL_CAPACITOR_CORRECTION_DIRECTION.address
-                && high_bit == analog_registers::RFPLL_CAPACITOR_CORRECTION_DIRECTION.high_bit
-                && low_bit == analog_registers::RFPLL_CAPACITOR_CORRECTION_DIRECTION.low_bit =>
-            {
+            ) => {
                 let direction = RfpllCapCorrectionDirection::from_field(value);
                 match direction.correction() {
                     Some(correction) => RfpllCapCorrectionStep::ReadCapLow {
@@ -964,15 +879,10 @@ impl RfpllCapCorrectionTransition {
                     low,
                 },
                 RfpllCapCorrectionCompletion::MaskedRead {
-                    address,
-                    high_bit,
-                    low_bit,
+                    field: analog_registers::RFPLL_CALIBRATED_CAPACITOR_HIGH,
                     value,
                 },
-            ) if address == analog_registers::RFPLL_CALIBRATED_CAPACITOR_HIGH.address
-                && high_bit == analog_registers::RFPLL_CALIBRATED_CAPACITOR_HIGH.high_bit
-                && low_bit == analog_registers::RFPLL_CALIBRATED_CAPACITOR_HIGH.low_bit =>
-            {
+            ) => {
                 let previous_cap = u16::from(*low) | (u16::from(value) << 8);
                 let requested_cap = (previous_cap as i16).wrapping_add(correction.delta());
                 let programmed_cap = if requested_cap < 0 {
@@ -997,22 +907,15 @@ impl RfpllCapCorrectionTransition {
             (
                 RfpllCapCorrectionStep::WriteCapHigh(context),
                 RfpllCapCorrectionCompletion::MaskedWrite {
-                    address,
-                    high_bit,
-                    low_bit,
+                    field: analog_registers::RFPLL_CAPACITOR_HIGH,
                 },
-            ) if address == analog_registers::RFPLL_CAPACITOR_HIGH.address
-                && high_bit == analog_registers::RFPLL_CAPACITOR_HIGH.high_bit
-                && low_bit == analog_registers::RFPLL_CAPACITOR_HIGH.low_bit =>
-            {
-                RfpllCapCorrectionStep::Memory {
-                    context: *context,
-                    child: PhyFrequencyCapMemoryTransition::new(PhyFrequencyCapMemoryRequest {
-                        correction: context.correction,
-                        current_channel: self.request.current_channel,
-                    }),
-                }
-            }
+            ) => RfpllCapCorrectionStep::Memory {
+                context: *context,
+                child: PhyFrequencyCapMemoryTransition::new(PhyFrequencyCapMemoryRequest {
+                    correction: context.correction,
+                    current_channel: self.request.current_channel,
+                }),
+            },
             (RfpllCapCorrectionStep::Complete(_), _) => {
                 return Err(RfpllCapCorrectionTransitionError::AlreadyComplete);
             }
@@ -1195,24 +1098,15 @@ pub struct RfpllFrequencyI2cBinding {
 impl RfpllFrequencyI2cBinding {
     pub fn new(action: RfpllFrequencyAction) -> Result<Self, RfpllFrequencyBindingError> {
         let request = match action {
-            RfpllFrequencyAction::WriteMasked {
-                address,
-                high_bit,
-                low_bit,
-                value,
-            } => {
-                crate::phy_cold::PhyColdI2cRequest::write_masked(address, high_bit, low_bit, value)
-                    .ok_or(RfpllFrequencyBindingError::UnsupportedAction)?
+            RfpllFrequencyAction::WriteMasked { field, value } => {
+                crate::phy_cold::PhyColdI2cRequest::write_field(field, value)
             }
             RfpllFrequencyAction::WriteByte { address, value } => {
                 crate::phy_cold::PhyColdI2cRequest::write_byte(address, value)
             }
-            RfpllFrequencyAction::ReadMasked {
-                address,
-                high_bit,
-                low_bit,
-            } => crate::phy_cold::PhyColdI2cRequest::read_masked(address, high_bit, low_bit)
-                .ok_or(RfpllFrequencyBindingError::UnsupportedAction)?,
+            RfpllFrequencyAction::ReadMasked { field } => {
+                crate::phy_cold::PhyColdI2cRequest::read_field(field)
+            }
             RfpllFrequencyAction::ReadByte { address } => {
                 crate::phy_cold::PhyColdI2cRequest::read_byte(address)
             }
@@ -1280,38 +1174,24 @@ impl RfpllFrequencyI2cBinding {
         };
         match (self.outer_action, outcome) {
             (
-                RfpllFrequencyAction::WriteMasked {
-                    address,
-                    high_bit,
-                    low_bit,
-                    ..
-                },
+                RfpllFrequencyAction::WriteMasked { field, .. },
                 crate::phy_cold::PhyColdI2cOutcome::Written { address: completed },
-            ) if completed == address => Ok(RfpllFrequencyCompletion::MaskedWrite {
-                address,
-                high_bit,
-                low_bit,
-            }),
+            ) if completed == field.address() => {
+                Ok(RfpllFrequencyCompletion::MaskedWrite { field })
+            }
             (
                 RfpllFrequencyAction::WriteByte { address, .. },
                 crate::phy_cold::PhyColdI2cOutcome::Written { address: completed },
             ) if completed == address => Ok(RfpllFrequencyCompletion::ByteWrite { address }),
             (
-                RfpllFrequencyAction::ReadMasked {
-                    address,
-                    high_bit,
-                    low_bit,
-                },
+                RfpllFrequencyAction::ReadMasked { field },
                 crate::phy_cold::PhyColdI2cOutcome::Read {
                     address: completed,
                     value,
                 },
-            ) if completed == address => Ok(RfpllFrequencyCompletion::MaskedRead {
-                address,
-                high_bit,
-                low_bit,
-                value,
-            }),
+            ) if completed == field.address() => {
+                Ok(RfpllFrequencyCompletion::MaskedRead { field, value })
+            }
             (
                 RfpllFrequencyAction::ReadByte { address },
                 crate::phy_cold::PhyColdI2cOutcome::Read {
@@ -1456,29 +1336,15 @@ pub struct RfpllCapCorrectionI2cBinding {
 impl RfpllCapCorrectionI2cBinding {
     pub fn new(action: RfpllCapCorrectionAction) -> Result<Self, RfpllCapCorrectionBindingError> {
         let inner_action = match action {
-            RfpllCapCorrectionAction::ReadMasked {
-                address,
-                high_bit,
-                low_bit,
-            } => RfpllFrequencyAction::ReadMasked {
-                address,
-                high_bit,
-                low_bit,
-            },
+            RfpllCapCorrectionAction::ReadMasked { field } => {
+                RfpllFrequencyAction::ReadMasked { field }
+            }
             RfpllCapCorrectionAction::ReadByte { address } => {
                 RfpllFrequencyAction::ReadByte { address }
             }
-            RfpllCapCorrectionAction::WriteMasked {
-                address,
-                high_bit,
-                low_bit,
-                value,
-            } => RfpllFrequencyAction::WriteMasked {
-                address,
-                high_bit,
-                low_bit,
-                value,
-            },
+            RfpllCapCorrectionAction::WriteMasked { field, value } => {
+                RfpllFrequencyAction::WriteMasked { field, value }
+            }
             RfpllCapCorrectionAction::WriteByte { address, value } => {
                 RfpllFrequencyAction::WriteByte { address, value }
             }
@@ -1550,24 +1416,13 @@ impl RfpllCapCorrectionI2cBinding {
         })?;
         match (self.outer_action, completion) {
             (
-                RfpllCapCorrectionAction::ReadMasked {
-                    address,
-                    high_bit,
-                    low_bit,
-                },
+                RfpllCapCorrectionAction::ReadMasked { field },
                 RfpllFrequencyCompletion::MaskedRead {
-                    address: completed,
-                    high_bit: completed_high,
-                    low_bit: completed_low,
+                    field: completed,
                     value,
                 },
-            ) if completed == address && completed_high == high_bit && completed_low == low_bit => {
-                Ok(RfpllCapCorrectionCompletion::MaskedRead {
-                    address,
-                    high_bit,
-                    low_bit,
-                    value,
-                })
+            ) if completed == field => {
+                Ok(RfpllCapCorrectionCompletion::MaskedRead { field, value })
             }
             (
                 RfpllCapCorrectionAction::ReadByte { address },
@@ -1579,24 +1434,9 @@ impl RfpllCapCorrectionI2cBinding {
                 Ok(RfpllCapCorrectionCompletion::ByteRead { address, value })
             }
             (
-                RfpllCapCorrectionAction::WriteMasked {
-                    address,
-                    high_bit,
-                    low_bit,
-                    ..
-                },
-                RfpllFrequencyCompletion::MaskedWrite {
-                    address: completed,
-                    high_bit: completed_high,
-                    low_bit: completed_low,
-                },
-            ) if completed == address && completed_high == high_bit && completed_low == low_bit => {
-                Ok(RfpllCapCorrectionCompletion::MaskedWrite {
-                    address,
-                    high_bit,
-                    low_bit,
-                })
-            }
+                RfpllCapCorrectionAction::WriteMasked { field, .. },
+                RfpllFrequencyCompletion::MaskedWrite { field: completed },
+            ) if completed == field => Ok(RfpllCapCorrectionCompletion::MaskedWrite { field }),
             (
                 RfpllCapCorrectionAction::WriteByte { address, .. },
                 RfpllFrequencyCompletion::ByteWrite { address: completed },
@@ -1709,16 +1549,9 @@ mod tests {
         value: u8,
     ) -> RfpllCapCorrectionCompletion {
         match action {
-            RfpllCapCorrectionAction::ReadMasked {
-                address,
-                high_bit,
-                low_bit,
-            } => RfpllCapCorrectionCompletion::MaskedRead {
-                address,
-                high_bit,
-                low_bit,
-                value,
-            },
+            RfpllCapCorrectionAction::ReadMasked { field } => {
+                RfpllCapCorrectionCompletion::MaskedRead { field, value }
+            }
             RfpllCapCorrectionAction::ReadByte { address } => {
                 RfpllCapCorrectionCompletion::ByteRead { address, value }
             }
@@ -1728,16 +1561,9 @@ mod tests {
 
     fn cap_write_completion(action: RfpllCapCorrectionAction) -> RfpllCapCorrectionCompletion {
         match action {
-            RfpllCapCorrectionAction::WriteMasked {
-                address,
-                high_bit,
-                low_bit,
-                ..
-            } => RfpllCapCorrectionCompletion::MaskedWrite {
-                address,
-                high_bit,
-                low_bit,
-            },
+            RfpllCapCorrectionAction::WriteMasked { field, .. } => {
+                RfpllCapCorrectionCompletion::MaskedWrite { field }
+            }
             RfpllCapCorrectionAction::WriteByte { address, .. } => {
                 RfpllCapCorrectionCompletion::ByteWrite { address }
             }
@@ -1988,16 +1814,13 @@ mod tests {
     }
 
     #[test]
-    fn cap_correction_rejects_a_completion_for_the_old_low_status_bits() {
+    fn cap_correction_rejects_a_completion_for_another_reviewed_field() {
         let mut transition = RfpllCapCorrectionTransition::new(RfpllCapCorrectionRequest {
             current_channel: 11,
         });
-        let address = super::analog_registers::RFPLL_CAPACITOR_CORRECTION_DIRECTION.address;
         assert_eq!(
             transition.advance(RfpllCapCorrectionCompletion::MaskedRead {
-                address,
-                high_bit: 1,
-                low_bit: 0,
+                field: super::analog_registers::RFPLL_LOCK_STATUS,
                 value: 1,
             }),
             Err(RfpllCapCorrectionTransitionError::WrongCompletion)
@@ -2006,16 +1829,9 @@ mod tests {
 
     fn complete_write(action: RfpllFrequencyAction) -> RfpllFrequencyCompletion {
         match action {
-            RfpllFrequencyAction::WriteMasked {
-                address,
-                high_bit,
-                low_bit,
-                ..
-            } => RfpllFrequencyCompletion::MaskedWrite {
-                address,
-                high_bit,
-                low_bit,
-            },
+            RfpllFrequencyAction::WriteMasked { field, .. } => {
+                RfpllFrequencyCompletion::MaskedWrite { field }
+            }
             RfpllFrequencyAction::WriteByte { address, .. } => {
                 RfpllFrequencyCompletion::ByteWrite { address }
             }
@@ -2038,21 +1854,11 @@ mod tests {
         transition
             .advance(RfpllFrequencyCompletion::DelayElapsed(20))
             .unwrap();
-        let RfpllFrequencyAction::ReadMasked {
-            address,
-            high_bit,
-            low_bit,
-        } = transition.action()
-        else {
+        let RfpllFrequencyAction::ReadMasked { field } = transition.action() else {
             panic!("expected lock read");
         };
         transition
-            .advance(RfpllFrequencyCompletion::MaskedRead {
-                address,
-                high_bit,
-                low_bit,
-                value: 1,
-            })
+            .advance(RfpllFrequencyCompletion::MaskedRead { field, value: 1 })
             .unwrap();
 
         let RfpllFrequencyAction::ReadByte { address } = transition.action() else {
@@ -2064,21 +1870,11 @@ mod tests {
                 value: low,
             })
             .unwrap();
-        let RfpllFrequencyAction::ReadMasked {
-            address,
-            high_bit,
-            low_bit,
-        } = transition.action()
-        else {
+        let RfpllFrequencyAction::ReadMasked { field } = transition.action() else {
             panic!("expected cap high read");
         };
         transition
-            .advance(RfpllFrequencyCompletion::MaskedRead {
-                address,
-                high_bit,
-                low_bit,
-                value: high,
-            })
+            .advance(RfpllFrequencyCompletion::MaskedRead { field, value: high })
             .unwrap();
         let completion = complete_write(transition.action());
         transition.advance(completion).unwrap();
@@ -2090,13 +1886,13 @@ mod tests {
         transition
             .advance(RfpllFrequencyCompletion::DelayElapsed(5))
             .unwrap();
-        let RfpllFrequencyAction::ReadByte { address } = transition.action() else {
+        let RfpllFrequencyAction::ReadMasked { field } = transition.action() else {
             panic!("expected cap status read");
         };
         transition
-            .advance(RfpllFrequencyCompletion::ByteRead {
-                address,
-                value: status << 2,
+            .advance(RfpllFrequencyCompletion::MaskedRead {
+                field,
+                value: status,
             })
             .unwrap();
     }
@@ -2128,21 +1924,11 @@ mod tests {
             transition
                 .advance(RfpllFrequencyCompletion::DelayElapsed(20))
                 .unwrap();
-            let RfpllFrequencyAction::ReadMasked {
-                address,
-                high_bit,
-                low_bit,
-            } = transition.action()
-            else {
+            let RfpllFrequencyAction::ReadMasked { field } = transition.action() else {
                 panic!("expected lock read");
             };
             transition
-                .advance(RfpllFrequencyCompletion::MaskedRead {
-                    address,
-                    high_bit,
-                    low_bit,
-                    value: 0,
-                })
+                .advance(RfpllFrequencyCompletion::MaskedRead { field, value: 0 })
                 .unwrap();
             attempts += 1;
         }
@@ -2274,18 +2060,15 @@ mod tests {
             }),
             Ok(RfpllFrequencyExternalBinding::Mmio(_))
         ));
-        let register = PhyI2cAddress::rfpll(7);
         assert!(matches!(
             RfpllFrequencyExternalBinding::lower(RfpllFrequencyAction::ReadMasked {
-                address: register,
-                high_bit: 1,
-                low_bit: 1,
+                field: super::analog_registers::RFPLL_LOCK_STATUS,
             }),
             Ok(RfpllFrequencyExternalBinding::I2c(_))
         ));
         assert!(matches!(
             RfpllFrequencyExternalBinding::lower(RfpllFrequencyAction::WriteByte {
-                address: register,
+                address: PhyI2cAddress::rfpll(7),
                 value: 3,
             }),
             Ok(RfpllFrequencyExternalBinding::I2c(_))
@@ -2316,26 +2099,17 @@ mod tests {
 
     #[test]
     fn rfpll_i2c_binding_preserves_the_masked_read_identity() {
-        let register = PhyI2cAddress::rfpll(7);
-        let mut binding = RfpllFrequencyI2cBinding::new(RfpllFrequencyAction::ReadMasked {
-            address: register,
-            high_bit: 2,
-            low_bit: 1,
-        })
-        .unwrap();
+        let field = super::analog_registers::RFPLL_CAPACITOR_CORRECTION_DIRECTION;
+        let mut binding =
+            RfpllFrequencyI2cBinding::new(RfpllFrequencyAction::ReadMasked { field }).unwrap();
         binding.read_started().unwrap();
         assert_eq!(
-            binding.observe_read_result(Ok(0b1010)).unwrap(),
+            binding.observe_read_result(Ok(0b0100)).unwrap(),
             crate::phy_cold::PhyColdI2cObservation::EdgeConsumed
         );
         assert_eq!(
             binding.into_completion().unwrap(),
-            RfpllFrequencyCompletion::MaskedRead {
-                address: register,
-                high_bit: 2,
-                low_bit: 1,
-                value: 1,
-            }
+            RfpllFrequencyCompletion::MaskedRead { field, value: 1 }
         );
     }
 }

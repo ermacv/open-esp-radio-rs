@@ -20,7 +20,7 @@ pub const fn phy_freq_mem_backup() {}
 pub const fn phy_freq_offset_set() {}
 
 use crate::{
-    phy_i2c::PhyI2cAddress,
+    phy_i2c::{PhyI2cAddress, PhyI2cField, analog_registers},
     phy_rfpll::{
         RfpllFrequencyAction, RfpllFrequencyCompletion, RfpllFrequencyFailure,
         RfpllFrequencyOutcome, RfpllFrequencyRequest, RfpllFrequencyTransition,
@@ -548,9 +548,7 @@ pub struct PhyFrequencyI2cOutcome {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyFrequencyI2cAction {
     WriteMasked {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
+        field: PhyI2cField,
         value: u8,
     },
     ReadByte {
@@ -570,9 +568,7 @@ pub enum PhyFrequencyI2cAction {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyFrequencyI2cCompletion {
     MaskedWrite {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
+        field: PhyI2cField,
     },
     ByteRead {
         address: PhyI2cAddress,
@@ -855,9 +851,7 @@ impl PhyFrequencyI2cTransition {
     pub const fn action(self) -> PhyFrequencyI2cAction {
         match self.step {
             PhyFrequencyI2cStep::EnableSnapshot => PhyFrequencyI2cAction::WriteMasked {
-                address: PhyI2cAddress::rfpll(0x0b),
-                high_bit: 6,
-                low_bit: 6,
+                field: analog_registers::RFPLL_CAPACITOR_SEARCH_ENABLE,
                 value: 1,
             },
             PhyFrequencyI2cStep::ReadRfpll => PhyFrequencyI2cAction::ReadByte {
@@ -916,11 +910,9 @@ impl PhyFrequencyI2cTransition {
             (
                 PhyFrequencyI2cStep::EnableSnapshot,
                 PhyFrequencyI2cCompletion::MaskedWrite {
-                    address,
-                    high_bit: 6,
-                    low_bit: 6,
+                    field: analog_registers::RFPLL_CAPACITOR_SEARCH_ENABLE,
                 },
-            ) if address == PhyI2cAddress::rfpll(0x0b) => PhyFrequencyI2cStep::ReadRfpll,
+            ) => PhyFrequencyI2cStep::ReadRfpll,
             (
                 PhyFrequencyI2cStep::ReadRfpll,
                 PhyFrequencyI2cCompletion::ByteRead { address, value },
@@ -1095,9 +1087,7 @@ pub enum PhyChannelFrequencyInitAction {
         parameter_override: bool,
     },
     WriteMasked {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
+        field: PhyI2cField,
         value: u8,
     },
     WriteByte {
@@ -1119,21 +1109,10 @@ pub enum PhyChannelFrequencyInitAction {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyChannelFrequencyInitCompletion {
-    FrequencyRegistersConfigured {
-        parameter_override: bool,
-    },
-    MaskedWrite {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
-    },
-    ByteWrite {
-        address: PhyI2cAddress,
-    },
-    ByteRead {
-        address: PhyI2cAddress,
-        value: u8,
-    },
+    FrequencyRegistersConfigured { parameter_override: bool },
+    MaskedWrite { field: PhyI2cField },
+    ByteWrite { address: PhyI2cAddress },
+    ByteRead { address: PhyI2cAddress, value: u8 },
     Rfpll(RfpllFrequencyCompletion),
     Table(PhyFrequencyTableCompletion),
     I2c(PhyFrequencyI2cCompletion),
@@ -1207,7 +1186,6 @@ pub struct PhyChannelFrequencyInitTransition {
 }
 
 impl PhyChannelFrequencyInitTransition {
-    const RFPLL_ADDRESS: PhyI2cAddress = PhyI2cAddress::new(0x62, 2).unwrap();
     const SDM_REGISTER_SIX: PhyI2cAddress = PhyI2cAddress::new(0x63, 6).unwrap();
 
     pub const fn new(request: PhyChannelFrequencyInitRequest) -> Self {
@@ -1240,17 +1218,13 @@ impl PhyChannelFrequencyInitTransition {
             }
             PhyChannelFrequencyInitStep::InitialCapHigh => {
                 PhyChannelFrequencyInitAction::WriteMasked {
-                    address: Self::RFPLL_ADDRESS,
-                    high_bit: 6,
-                    low_bit: 6,
+                    field: analog_registers::RFPLL_CAPACITOR_HIGH,
                     value: 0,
                 }
             }
             PhyChannelFrequencyInitStep::DisableRfpll => {
                 PhyChannelFrequencyInitAction::WriteMasked {
-                    address: Self::RFPLL_ADDRESS,
-                    high_bit: 7,
-                    low_bit: 7,
+                    field: analog_registers::RFPLL_INITIAL_CONFIGURATION_HIGH,
                     value: 0,
                 }
             }
@@ -1262,17 +1236,13 @@ impl PhyChannelFrequencyInitTransition {
             }
             PhyChannelFrequencyInitStep::EnableCapRange { .. } => {
                 PhyChannelFrequencyInitAction::WriteMasked {
-                    address: Self::RFPLL_ADDRESS,
-                    high_bit: 5,
-                    low_bit: 0,
+                    field: analog_registers::RFPLL_INITIAL_CONFIGURATION_LOW,
                     value: 0x3f,
                 }
             }
             PhyChannelFrequencyInitStep::EnableRfpll { .. } => {
                 PhyChannelFrequencyInitAction::WriteMasked {
-                    address: Self::RFPLL_ADDRESS,
-                    high_bit: 7,
-                    low_bit: 7,
+                    field: analog_registers::RFPLL_INITIAL_CONFIGURATION_HIGH,
                     value: 1,
                 }
             }
@@ -1356,21 +1326,15 @@ impl PhyChannelFrequencyInitTransition {
             (
                 PhyChannelFrequencyInitStep::InitialCapHigh,
                 PhyChannelFrequencyInitCompletion::MaskedWrite {
-                    address,
-                    high_bit: 6,
-                    low_bit: 6,
+                    field: analog_registers::RFPLL_CAPACITOR_HIGH,
                 },
-            ) if address == Self::RFPLL_ADDRESS => PhyChannelFrequencyInitStep::DisableRfpll,
+            ) => PhyChannelFrequencyInitStep::DisableRfpll,
             (
                 PhyChannelFrequencyInitStep::DisableRfpll,
                 PhyChannelFrequencyInitCompletion::MaskedWrite {
-                    address,
-                    high_bit: 7,
-                    low_bit: 7,
+                    field: analog_registers::RFPLL_INITIAL_CONFIGURATION_HIGH,
                 },
-            ) if address == Self::RFPLL_ADDRESS => {
-                PhyChannelFrequencyInitStep::Nominal(self.rfpll_transition(0x985))
-            }
+            ) => PhyChannelFrequencyInitStep::Nominal(self.rfpll_transition(0x985)),
             (
                 PhyChannelFrequencyInitStep::Nominal(mut transition),
                 PhyChannelFrequencyInitCompletion::Rfpll(completion),
@@ -1394,21 +1358,15 @@ impl PhyChannelFrequencyInitTransition {
             (
                 PhyChannelFrequencyInitStep::EnableCapRange { nominal },
                 PhyChannelFrequencyInitCompletion::MaskedWrite {
-                    address,
-                    high_bit: 5,
-                    low_bit: 0,
+                    field: analog_registers::RFPLL_INITIAL_CONFIGURATION_LOW,
                 },
-            ) if address == Self::RFPLL_ADDRESS => {
-                PhyChannelFrequencyInitStep::EnableRfpll { nominal }
-            }
+            ) => PhyChannelFrequencyInitStep::EnableRfpll { nominal },
             (
                 PhyChannelFrequencyInitStep::EnableRfpll { nominal },
                 PhyChannelFrequencyInitCompletion::MaskedWrite {
-                    address,
-                    high_bit: 7,
-                    low_bit: 7,
+                    field: analog_registers::RFPLL_INITIAL_CONFIGURATION_HIGH,
                 },
-            ) if address == Self::RFPLL_ADDRESS => PhyChannelFrequencyInitStep::Low {
+            ) => PhyChannelFrequencyInitStep::Low {
                 nominal,
                 transition: self.rfpll_transition(0x960),
             },
@@ -1556,6 +1514,8 @@ impl PhyChannelFrequencyInitTransition {
 
 #[cfg(test)]
 mod tests {
+    use crate::phy_i2c::analog_registers;
+
     use super::{
         PHY_FREQUENCY_TABLE_ENTRY_COUNT, PhyChannelFrequencyInitAction,
         PhyChannelFrequencyInitCompletion, PhyChannelFrequencyInitRequest,
@@ -1825,17 +1785,13 @@ mod tests {
         assert_eq!(
             transition.action(),
             PhyFrequencyI2cAction::WriteMasked {
-                address: PhyI2cAddress::rfpll(0x0b),
-                high_bit: 6,
-                low_bit: 6,
+                field: analog_registers::RFPLL_CAPACITOR_SEARCH_ENABLE,
                 value: 1,
             }
         );
         transition
             .advance(PhyFrequencyI2cCompletion::MaskedWrite {
-                address: PhyI2cAddress::rfpll(0x0b),
-                high_bit: 6,
-                low_bit: 6,
+                field: analog_registers::RFPLL_CAPACITOR_SEARCH_ENABLE,
             })
             .unwrap();
         for (address, value) in [
@@ -1945,9 +1901,7 @@ mod tests {
         });
         assert_eq!(
             transition.advance(PhyFrequencyI2cCompletion::MaskedWrite {
-                address: PhyI2cAddress::rfpll(0x0a),
-                high_bit: 6,
-                low_bit: 6,
+                field: analog_registers::RFPLL_CAPACITOR_HIGH,
             }),
             Err(PhyFrequencyI2cTransitionError::WrongCompletion)
         );
@@ -1976,29 +1930,25 @@ mod tests {
         status_reads: &mut [u8; 3],
     ) -> RfpllFrequencyCompletion {
         match action {
-            RfpllFrequencyAction::WriteMasked {
-                address,
-                high_bit,
-                low_bit,
-                ..
-            } => RfpllFrequencyCompletion::MaskedWrite {
-                address,
-                high_bit,
-                low_bit,
-            },
+            RfpllFrequencyAction::WriteMasked { field, .. } => {
+                RfpllFrequencyCompletion::MaskedWrite { field }
+            }
             RfpllFrequencyAction::WriteByte { address, .. } => {
                 RfpllFrequencyCompletion::ByteWrite { address }
             }
-            RfpllFrequencyAction::ReadMasked {
-                address,
-                high_bit,
-                low_bit,
-            } => RfpllFrequencyCompletion::MaskedRead {
-                address,
-                high_bit,
-                low_bit,
-                value: if high_bit == 1 { 1 } else { 0 },
-            },
+            RfpllFrequencyAction::ReadMasked { field } => {
+                let value = if field == crate::phy_i2c::analog_registers::RFPLL_LOCK_STATUS {
+                    1
+                } else if field == crate::phy_i2c::analog_registers::RFPLL_CAPACITOR_SEARCH_STATUS {
+                    let index = point_index(point);
+                    let status = if status_reads[index] & 1 == 0 { 0 } else { 1 };
+                    status_reads[index] += 1;
+                    status
+                } else {
+                    0
+                };
+                RfpllFrequencyCompletion::MaskedRead { field, value }
+            }
             RfpllFrequencyAction::ReadByte { address } if address == PhyI2cAddress::rfpll(5) => {
                 RfpllFrequencyCompletion::ByteRead {
                     address,
@@ -2010,13 +1960,7 @@ mod tests {
                 }
             }
             RfpllFrequencyAction::ReadByte { address } => {
-                let index = point_index(point);
-                let status = if status_reads[index] & 1 == 0 { 0 } else { 1 };
-                status_reads[index] += 1;
-                RfpllFrequencyCompletion::ByteRead {
-                    address,
-                    value: status << 2,
-                }
+                RfpllFrequencyCompletion::ByteRead { address, value: 0 }
             }
             RfpllFrequencyAction::DelayMicros(micros) => {
                 RfpllFrequencyCompletion::DelayElapsed(micros)
@@ -2027,16 +1971,9 @@ mod tests {
 
     fn i2c_completion(action: PhyFrequencyI2cAction) -> PhyFrequencyI2cCompletion {
         match action {
-            PhyFrequencyI2cAction::WriteMasked {
-                address,
-                high_bit,
-                low_bit,
-                ..
-            } => PhyFrequencyI2cCompletion::MaskedWrite {
-                address,
-                high_bit,
-                low_bit,
-            },
+            PhyFrequencyI2cAction::WriteMasked { field, .. } => {
+                PhyFrequencyI2cCompletion::MaskedWrite { field }
+            }
             PhyFrequencyI2cAction::ReadByte { address } => {
                 let value = if address == PhyI2cAddress::rfpll(0x0b) {
                     0x5a
@@ -2081,16 +2018,9 @@ mod tests {
                 } => PhyChannelFrequencyInitCompletion::FrequencyRegistersConfigured {
                     parameter_override,
                 },
-                PhyChannelFrequencyInitAction::WriteMasked {
-                    address,
-                    high_bit,
-                    low_bit,
-                    ..
-                } => PhyChannelFrequencyInitCompletion::MaskedWrite {
-                    address,
-                    high_bit,
-                    low_bit,
-                },
+                PhyChannelFrequencyInitAction::WriteMasked { field, .. } => {
+                    PhyChannelFrequencyInitCompletion::MaskedWrite { field }
+                }
                 PhyChannelFrequencyInitAction::WriteByte { address, .. } => {
                     PhyChannelFrequencyInitCompletion::ByteWrite { address }
                 }

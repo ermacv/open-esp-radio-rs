@@ -103,8 +103,7 @@ impl PhyWifiI2cTrackingTransition {
         } else {
             (analog_registers::WIFI_TX_TEMPERATURE_TRACKING_1, second)
         };
-        MaskedI2cWriteTransition::new(field.address, field.high_bit, field.low_bit, value)
-            .expect("reviewed Wi-Fi tracking fields have valid bit ranges")
+        MaskedI2cWriteTransition::new(field, value)
     }
 
     pub const fn action(&self) -> PhyWifiI2cTrackingAction {

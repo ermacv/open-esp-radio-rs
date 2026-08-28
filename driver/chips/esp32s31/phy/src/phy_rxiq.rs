@@ -13,7 +13,7 @@
 
 use crate::{
     phy_dc_iq::{PhyDcIqDelayPhase, PhyDcIqEnablePhase, PhyDcIqReadinessSnapshot},
-    phy_i2c::{PhyI2cAddress, analog_registers},
+    phy_i2c::{PhyI2cAddress, PhyI2cField, analog_registers},
     phy_pbus::PhyPbusForceTest,
     phy_rfpll::{
         RfpllFrequencyAction, RfpllFrequencyCompletion, RfpllFrequencyFailure,
@@ -26,8 +26,6 @@ use crate::{
     phy_txiq::{PhyTxIqLoopbackAction, PhyTxIqLoopbackCompletion, PhyTxIqLoopbackTransition},
 };
 
-const INTERNAL_DCODE_0: PhyI2cAddress = PhyI2cAddress::new(0x62, 0x11).unwrap();
-const INTERNAL_DCODE_1: PhyI2cAddress = PhyI2cAddress::new(0x62, 0x12).unwrap();
 const EXTERNAL_DCODE_0: PhyI2cAddress = PhyI2cAddress::new(0x62, 0x13).unwrap();
 const EXTERNAL_DCODE_1: PhyI2cAddress = PhyI2cAddress::new(0x62, 0x14).unwrap();
 
@@ -420,22 +418,13 @@ pub struct PhyRxIqAdjustedTxOutcome {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyRxIqAdjustedTxAction {
-    ReadI2cMasked {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
-    },
+    ReadI2cMasked { field: PhyI2cField },
     Complete(PhyRxIqAdjustedTxOutcome),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyRxIqAdjustedTxCompletion {
-    I2cMaskedRead {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
-        value: u8,
-    },
+    I2cMaskedRead { field: PhyI2cField, value: u8 },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -533,31 +522,25 @@ impl PhyRxIqAdjustedTxTransition {
         }
     }
 
-    const fn address(external: bool, second: bool) -> PhyI2cAddress {
+    const fn field(external: bool, second: bool) -> PhyI2cField {
         match (external, second) {
-            (false, false) => INTERNAL_DCODE_0,
-            (false, true) => INTERNAL_DCODE_1,
-            (true, false) => EXTERNAL_DCODE_0,
-            (true, true) => EXTERNAL_DCODE_1,
+            (false, false) => analog_registers::RFPLL_INTERNAL_DCODE_0,
+            (false, true) => analog_registers::RFPLL_INTERNAL_DCODE_1,
+            (true, false) => analog_registers::RFPLL_EXTERNAL_DCODE_0,
+            (true, true) => analog_registers::RFPLL_EXTERNAL_DCODE_1,
         }
     }
 
     pub fn action(self) -> PhyRxIqAdjustedTxAction {
         match self.step {
             AdjustedTxStep::ReadMode => PhyRxIqAdjustedTxAction::ReadI2cMasked {
-                address: EXTERNAL_DCODE_0,
-                high_bit: 6,
-                low_bit: 6,
+                field: analog_registers::RFPLL_DCODE_0_SOURCE_SELECT,
             },
             AdjustedTxStep::ReadFirst { external } => PhyRxIqAdjustedTxAction::ReadI2cMasked {
-                address: Self::address(external, false),
-                high_bit: 5,
-                low_bit: 0,
+                field: Self::field(external, false),
             },
             AdjustedTxStep::ReadSecond { external } => PhyRxIqAdjustedTxAction::ReadI2cMasked {
-                address: Self::address(external, true),
-                high_bit: 5,
-                low_bit: 0,
+                field: Self::field(external, true),
             },
             AdjustedTxStep::Complete => {
                 PhyRxIqAdjustedTxAction::Complete(PhyRxIqAdjustedTxOutcome {
@@ -577,9 +560,7 @@ impl PhyRxIqAdjustedTxTransition {
             (
                 AdjustedTxStep::ReadMode,
                 PhyRxIqAdjustedTxCompletion::I2cMaskedRead {
-                    address: EXTERNAL_DCODE_0,
-                    high_bit: 6,
-                    low_bit: 6,
+                    field: analog_registers::RFPLL_DCODE_0_SOURCE_SELECT,
                     value,
                 },
             ) => {
@@ -590,25 +571,15 @@ impl PhyRxIqAdjustedTxTransition {
             }
             (
                 AdjustedTxStep::ReadFirst { external },
-                PhyRxIqAdjustedTxCompletion::I2cMaskedRead {
-                    address,
-                    high_bit: 5,
-                    low_bit: 0,
-                    value,
-                },
-            ) if address == Self::address(external, false) => {
+                PhyRxIqAdjustedTxCompletion::I2cMaskedRead { field, value },
+            ) if field == Self::field(external, false) => {
                 self.observed_dcode[0] = value & 0x3f;
                 self.step = AdjustedTxStep::ReadSecond { external };
             }
             (
                 AdjustedTxStep::ReadSecond { external },
-                PhyRxIqAdjustedTxCompletion::I2cMaskedRead {
-                    address,
-                    high_bit: 5,
-                    low_bit: 0,
-                    value,
-                },
-            ) if address == Self::address(external, true) => {
+                PhyRxIqAdjustedTxCompletion::I2cMaskedRead { field, value },
+            ) if field == Self::field(external, true) => {
                 self.observed_dcode[1] = value & 0x3f;
                 self.step = AdjustedTxStep::Complete;
             }
@@ -2512,28 +2483,18 @@ pub enum PhyRxIqExternalBindingError {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct PhyRxIqAdjustedTxI2cBinding {
-    address: PhyI2cAddress,
-    high_bit: u8,
-    low_bit: u8,
+    field: PhyI2cField,
     transaction: crate::phy_cold::PhyColdI2cTransaction,
 }
 
 impl PhyRxIqAdjustedTxI2cBinding {
     pub fn new(action: PhyRxIqAdjustedTxAction) -> Result<Self, PhyRxIqExternalBindingError> {
-        let PhyRxIqAdjustedTxAction::ReadI2cMasked {
-            address,
-            high_bit,
-            low_bit,
-        } = action
-        else {
+        let PhyRxIqAdjustedTxAction::ReadI2cMasked { field } = action else {
             return Err(PhyRxIqExternalBindingError::UnsupportedAction);
         };
-        let request = crate::phy_cold::PhyColdI2cRequest::read_masked(address, high_bit, low_bit)
-            .ok_or(PhyRxIqExternalBindingError::UnsupportedAction)?;
+        let request = crate::phy_cold::PhyColdI2cRequest::read_field(field);
         Ok(Self {
-            address,
-            high_bit,
-            low_bit,
+            field,
             transaction: crate::phy_cold::PhyColdI2cTransaction::new(request),
         })
     }
@@ -2575,12 +2536,12 @@ impl PhyRxIqAdjustedTxI2cBinding {
         match self.transaction.action() {
             crate::phy_cold::PhyColdI2cAction::Complete(
                 crate::phy_cold::PhyColdI2cOutcome::Read { address, value },
-            ) if address == self.address => Ok(PhyRxIqAdjustedTxCompletion::I2cMaskedRead {
-                address,
-                high_bit: self.high_bit,
-                low_bit: self.low_bit,
-                value,
-            }),
+            ) if address == self.field.address() => {
+                Ok(PhyRxIqAdjustedTxCompletion::I2cMaskedRead {
+                    field: self.field,
+                    value,
+                })
+            }
             crate::phy_cold::PhyColdI2cAction::Complete(_) => {
                 Err(PhyRxIqExternalBindingError::UnexpectedOutcome)
             }
@@ -3156,37 +3117,26 @@ mod tests {
         cap_status_reads: &mut u8,
     ) -> RfpllFrequencyCompletion {
         match action {
-            RfpllFrequencyAction::WriteMasked {
-                address,
-                high_bit,
-                low_bit,
-                ..
-            } => RfpllFrequencyCompletion::MaskedWrite {
-                address,
-                high_bit,
-                low_bit,
-            },
+            RfpllFrequencyAction::WriteMasked { field, .. } => {
+                RfpllFrequencyCompletion::MaskedWrite { field }
+            }
             RfpllFrequencyAction::WriteByte { address, .. } => {
                 RfpllFrequencyCompletion::ByteWrite { address }
             }
-            RfpllFrequencyAction::ReadMasked {
-                address,
-                high_bit,
-                low_bit,
-            } => RfpllFrequencyCompletion::MaskedRead {
-                address,
-                high_bit,
-                low_bit,
-                value: if high_bit == 1 { 1 } else { 0 },
-            },
+            RfpllFrequencyAction::ReadMasked { field } => {
+                let value = if field == analog_registers::RFPLL_LOCK_STATUS {
+                    1
+                } else if field == analog_registers::RFPLL_CAPACITOR_SEARCH_STATUS {
+                    *cap_status_reads = cap_status_reads.wrapping_add(1);
+                    if *cap_status_reads & 1 == 1 { 0 } else { 1 }
+                } else {
+                    0
+                };
+                RfpllFrequencyCompletion::MaskedRead { field, value }
+            }
             RfpllFrequencyAction::ReadByte { address } => {
                 let value = if address == PhyI2cAddress::new(0x62, 5).unwrap() {
                     0xc8
-                } else if address == PhyI2cAddress::new(0x62, 0x0c).unwrap() {
-                    // Accept one capacitor in each direction, then terminate
-                    // that phase with the following non-match.
-                    *cap_status_reads = cap_status_reads.wrapping_add(1);
-                    if *cap_status_reads & 1 == 1 { 0 } else { 4 }
                 } else {
                     4
                 };
@@ -3303,16 +3253,12 @@ mod tests {
             PhyRxIqGainAction::WriteI2c { address, value } => {
                 PhyRxIqGainCompletion::I2cWritten { address, value }
             }
-            PhyRxIqGainAction::AdjustTx(PhyRxIqAdjustedTxAction::ReadI2cMasked {
-                address,
-                high_bit,
-                low_bit,
-            }) => PhyRxIqGainCompletion::AdjustTx(PhyRxIqAdjustedTxCompletion::I2cMaskedRead {
-                address,
-                high_bit,
-                low_bit,
-                value: 0,
-            }),
+            PhyRxIqGainAction::AdjustTx(PhyRxIqAdjustedTxAction::ReadI2cMasked { field }) => {
+                PhyRxIqGainCompletion::AdjustTx(PhyRxIqAdjustedTxCompletion::I2cMaskedRead {
+                    field,
+                    value: 0,
+                })
+            }
             PhyRxIqGainAction::ConfigureTxIq { kind, value } => {
                 if kind == PhyTxIqCoefficientKind::Phase {
                     *configured_phase = Some(value);
@@ -3663,7 +3609,7 @@ mod tests {
         ));
         assert!(matches!(
             PhyRxIqGainExternalBinding::lower(PhyRxIqGainAction::WriteI2c {
-                address: INTERNAL_DCODE_0,
+                address: analog_registers::RFPLL_INTERNAL_DCODE_0.address(),
                 value: 1,
             }),
             Ok(PhyRxIqGainExternalBinding::I2c(_))
@@ -3671,9 +3617,7 @@ mod tests {
         assert!(matches!(
             PhyRxIqGainExternalBinding::lower(PhyRxIqGainAction::AdjustTx(
                 PhyRxIqAdjustedTxAction::ReadI2cMasked {
-                    address: INTERNAL_DCODE_0,
-                    high_bit: 5,
-                    low_bit: 0,
+                    field: analog_registers::RFPLL_INTERNAL_DCODE_0,
                 }
             )),
             Ok(PhyRxIqGainExternalBinding::AdjustTx(_))
@@ -3692,7 +3636,7 @@ mod tests {
         ));
         assert!(matches!(
             PhyRxIqInitExternalBinding::lower(PhyRxIqInitAction::WriteTxCap {
-                address: INTERNAL_DCODE_0,
+                address: analog_registers::RFPLL_INTERNAL_DCODE_0.address(),
                 value: 1,
             }),
             Ok(PhyRxIqInitExternalBinding::I2c(_))

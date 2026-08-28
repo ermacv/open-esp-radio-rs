@@ -1742,22 +1742,14 @@ mod tests {
     #[test]
     fn temperature_step_error_restores_the_terminal_child() {
         let mut temperature = crate::phy_temperature::PhyTemperatureTransition::new();
-        let crate::phy_temperature::PhyTemperatureAction::ReadMasked {
-            address,
-            high_bit,
-            low_bit,
-        } = temperature.action()
+        let crate::phy_temperature::PhyTemperatureAction::ReadMasked { field } =
+            temperature.action()
         else {
             unreachable!()
         };
         temperature
             .advance(
-                crate::phy_temperature::PhyTemperatureCompletion::MaskedRead {
-                    address,
-                    high_bit,
-                    low_bit,
-                    value: 5,
-                },
+                crate::phy_temperature::PhyTemperatureCompletion::MaskedRead { field, value: 5 },
             )
             .unwrap();
         temperature

@@ -889,9 +889,7 @@ pub struct XtalDutyPassOutcome {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XtalDutyPassAction {
     WriteMasked {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
+        field: crate::phy_i2c::PhyI2cField,
         value: u8,
     },
     WriteByte {
@@ -906,7 +904,7 @@ pub enum XtalDutyPassAction {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XtalDutyPassCompletion {
-    MaskedWrite { address: PhyI2cAddress },
+    MaskedWrite { field: crate::phy_i2c::PhyI2cField },
     ByteWrite { address: PhyI2cAddress },
     Prepare(XtalDutyPrepareCompletion),
     Search(XtalDutySearchCompletion),
@@ -942,7 +940,6 @@ pub struct XtalDutyPassTransition {
 }
 
 impl XtalDutyPassTransition {
-    const CONTROL_ADDRESS: PhyI2cAddress = PhyI2cAddress::new(0x61, 7).unwrap();
     const DUTY_ADDRESS: PhyI2cAddress = crate::phy_i2c::analog_registers::XTAL_DUTY_CANDIDATE;
 
     pub const fn new(
@@ -961,9 +958,7 @@ impl XtalDutyPassTransition {
     pub const fn action(self) -> XtalDutyPassAction {
         match self.step {
             XtalDutyPassStep::DisablePath => XtalDutyPassAction::WriteMasked {
-                address: Self::CONTROL_ADDRESS,
-                high_bit: 5,
-                low_bit: 5,
+                field: crate::phy_i2c::analog_registers::XTAL_DUTY_CALIBRATION_PATH_ENABLE,
                 value: 0,
             },
             XtalDutyPassStep::WriteInitialDuty => XtalDutyPassAction::WriteByte {
@@ -993,8 +988,10 @@ impl XtalDutyPassTransition {
             match (self.step, completion) {
                 (
                     XtalDutyPassStep::DisablePath,
-                    XtalDutyPassCompletion::MaskedWrite { address },
-                ) if address == Self::CONTROL_ADDRESS => XtalDutyPassStep::WriteInitialDuty,
+                    XtalDutyPassCompletion::MaskedWrite {
+                        field: crate::phy_i2c::analog_registers::XTAL_DUTY_CALIBRATION_PATH_ENABLE,
+                    },
+                ) => XtalDutyPassStep::WriteInitialDuty,
                 (
                     XtalDutyPassStep::WriteInitialDuty,
                     XtalDutyPassCompletion::ByteWrite { address },
@@ -1076,14 +1073,10 @@ pub struct XtalDutyCalibrationOutcome {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XtalDutyCalibrationAction {
     ReadInitialDuty {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
+        field: crate::phy_i2c::PhyI2cField,
     },
     DisableCalibrationPath {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
+        field: crate::phy_i2c::PhyI2cField,
         value: u8,
     },
     Pass(XtalDutyPassAction),
@@ -1092,8 +1085,13 @@ pub enum XtalDutyCalibrationAction {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XtalDutyCalibrationCompletion {
-    InitialDutyRead { address: PhyI2cAddress, value: u8 },
-    CalibrationPathDisabled { address: PhyI2cAddress },
+    InitialDutyRead {
+        field: crate::phy_i2c::PhyI2cField,
+        value: u8,
+    },
+    CalibrationPathDisabled {
+        field: crate::phy_i2c::PhyI2cField,
+    },
     Pass(XtalDutyPassCompletion),
 }
 
@@ -1126,9 +1124,6 @@ pub struct XtalDutyCalibrationTransition {
 }
 
 impl XtalDutyCalibrationTransition {
-    const INITIAL_DUTY_ADDRESS: PhyI2cAddress = crate::phy_i2c::analog_registers::XTAL_DUTY_SEED;
-    const CONTROL_ADDRESS: PhyI2cAddress = PhyI2cAddress::new(0x61, 7).unwrap();
-
     pub const fn new(parameter: XtalDutyCalibrationParameters) -> Self {
         Self {
             parameter,
@@ -1140,16 +1135,12 @@ impl XtalDutyCalibrationTransition {
         match self.step {
             XtalDutyCalibrationStep::ReadInitialDuty => {
                 XtalDutyCalibrationAction::ReadInitialDuty {
-                    address: Self::INITIAL_DUTY_ADDRESS,
-                    high_bit: 5,
-                    low_bit: 0,
+                    field: crate::phy_i2c::analog_registers::XTAL_DUTY_INITIAL,
                 }
             }
             XtalDutyCalibrationStep::DisableCalibrationPath { .. } => {
                 XtalDutyCalibrationAction::DisableCalibrationPath {
-                    address: Self::CONTROL_ADDRESS,
-                    high_bit: 5,
-                    low_bit: 5,
+                    field: crate::phy_i2c::analog_registers::XTAL_DUTY_CALIBRATION_PATH_ENABLE,
                     value: 0,
                 }
             }
@@ -1170,18 +1161,23 @@ impl XtalDutyCalibrationTransition {
         self.step = match (self.step, completion) {
             (
                 XtalDutyCalibrationStep::ReadInitialDuty,
-                XtalDutyCalibrationCompletion::InitialDutyRead { address, value },
-            ) if address == Self::INITIAL_DUTY_ADDRESS => {
-                XtalDutyCalibrationStep::DisableCalibrationPath {
-                    initial_duty: value,
-                }
-            }
+                XtalDutyCalibrationCompletion::InitialDutyRead {
+                    field: crate::phy_i2c::analog_registers::XTAL_DUTY_INITIAL,
+                    value,
+                },
+            ) => XtalDutyCalibrationStep::DisableCalibrationPath {
+                initial_duty: value,
+            },
             (
                 XtalDutyCalibrationStep::DisableCalibrationPath { initial_duty },
-                XtalDutyCalibrationCompletion::CalibrationPathDisabled { address },
-            ) if address == Self::CONTROL_ADDRESS => XtalDutyCalibrationStep::LowFrequencyPass(
-                XtalDutyPassTransition::new(0x988, initial_duty, self.parameter),
-            ),
+                XtalDutyCalibrationCompletion::CalibrationPathDisabled {
+                    field: crate::phy_i2c::analog_registers::XTAL_DUTY_CALIBRATION_PATH_ENABLE,
+                },
+            ) => XtalDutyCalibrationStep::LowFrequencyPass(XtalDutyPassTransition::new(
+                0x988,
+                initial_duty,
+                self.parameter,
+            )),
             (
                 XtalDutyCalibrationStep::LowFrequencyPass(mut transition),
                 XtalDutyCalibrationCompletion::Pass(completion),
@@ -1436,42 +1432,35 @@ mod tests {
         cap_status_reads: &mut u8,
     ) -> RfpllFrequencyCompletion {
         match action {
-            RfpllFrequencyAction::WriteMasked {
-                address,
-                high_bit,
-                low_bit,
-                ..
-            } => RfpllFrequencyCompletion::MaskedWrite {
-                address,
-                high_bit,
-                low_bit,
-            },
+            RfpllFrequencyAction::WriteMasked { field, .. } => {
+                RfpllFrequencyCompletion::MaskedWrite { field }
+            }
             RfpllFrequencyAction::WriteByte { address, .. } => {
                 RfpllFrequencyCompletion::ByteWrite { address }
             }
-            RfpllFrequencyAction::ReadMasked {
-                address,
-                high_bit,
-                low_bit,
-            } => RfpllFrequencyCompletion::MaskedRead {
-                address,
-                high_bit,
-                low_bit,
-                value: if high_bit == 1 { 1 } else { 0 },
-            },
+            RfpllFrequencyAction::ReadMasked { field } => {
+                let value = if field == crate::phy_i2c::analog_registers::RFPLL_LOCK_STATUS {
+                    1
+                } else if field == crate::phy_i2c::analog_registers::RFPLL_CAPACITOR_SEARCH_STATUS {
+                    let value = if (*cap_status_reads).is_multiple_of(3) {
+                        0
+                    } else {
+                        1
+                    };
+                    *cap_status_reads = (*cap_status_reads).wrapping_add(1);
+                    value
+                } else {
+                    0
+                };
+                RfpllFrequencyCompletion::MaskedRead { field, value }
+            }
             RfpllFrequencyAction::ReadByte { address } => {
                 let value = if address
                     == crate::phy_i2c::analog_registers::RFPLL_CALIBRATED_CAPACITOR_LOW
                 {
                     100
                 } else {
-                    let value = if (*cap_status_reads).is_multiple_of(3) {
-                        0
-                    } else {
-                        1 << 2
-                    };
-                    *cap_status_reads = (*cap_status_reads).wrapping_add(1);
-                    value
+                    0
                 };
                 RfpllFrequencyCompletion::ByteRead { address, value }
             }
@@ -1563,14 +1552,12 @@ mod tests {
         loop {
             match transition.action() {
                 XtalDutyCalibrationAction::Pass(XtalDutyPassAction::WriteMasked {
-                    address,
-                    high_bit: 5,
-                    low_bit: 5,
+                    field,
                     value: 0,
                 }) => {
                     transition
                         .advance(XtalDutyCalibrationCompletion::Pass(
-                            XtalDutyPassCompletion::MaskedWrite { address },
+                            XtalDutyPassCompletion::MaskedWrite { field },
                         ))
                         .unwrap();
                 }
@@ -1935,23 +1922,23 @@ mod tests {
     }
 
     #[test]
-    fn pass_rejects_wrong_address_and_stale_parameter_completion() {
+    fn pass_rejects_wrong_field_and_stale_parameter_completion() {
         let parameter = XtalDutyCalibrationParameters {
             rf_frequency_offset_base: 0x31,
             pbus_rx_path_value: 0x42,
         };
         let mut transition = XtalDutyPassTransition::new(0x988, 0x2a, parameter);
-        let XtalDutyPassAction::WriteMasked { address, .. } = transition.action() else {
+        let XtalDutyPassAction::WriteMasked { field, .. } = transition.action() else {
             panic!("expected path-disable write");
         };
         assert_eq!(
             transition.advance(XtalDutyPassCompletion::MaskedWrite {
-                address: PhyI2cAddress::new(0x62, 7).unwrap(),
+                field: crate::phy_i2c::analog_registers::RFPLL_LOCK_STATUS,
             }),
             Err(XtalDutyPassTransitionError::WrongCompletion)
         );
         transition
-            .advance(XtalDutyPassCompletion::MaskedWrite { address })
+            .advance(XtalDutyPassCompletion::MaskedWrite { field })
             .unwrap();
 
         let XtalDutyPassAction::WriteByte { address, .. } = transition.action() else {
@@ -1982,32 +1969,23 @@ mod tests {
             pbus_rx_path_value: 0x42,
         });
 
-        let XtalDutyCalibrationAction::ReadInitialDuty {
-            address,
-            high_bit: 5,
-            low_bit: 0,
-        } = transition.action()
-        else {
+        let XtalDutyCalibrationAction::ReadInitialDuty { field } = transition.action() else {
             panic!("expected the initial duty read");
         };
         transition
             .advance(XtalDutyCalibrationCompletion::InitialDutyRead {
-                address,
+                field,
                 value: initial_duty,
             })
             .unwrap();
 
-        let XtalDutyCalibrationAction::DisableCalibrationPath {
-            address,
-            high_bit: 5,
-            low_bit: 5,
-            value: 0,
-        } = transition.action()
+        let XtalDutyCalibrationAction::DisableCalibrationPath { field, value: 0 } =
+            transition.action()
         else {
             panic!("expected the calibration-path write");
         };
         transition
-            .advance(XtalDutyCalibrationCompletion::CalibrationPathDisabled { address })
+            .advance(XtalDutyCalibrationCompletion::CalibrationPathDisabled { field })
             .unwrap();
 
         drive_pass(&mut transition, 0x988, initial_duty);

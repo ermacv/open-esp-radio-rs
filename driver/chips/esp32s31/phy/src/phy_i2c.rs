@@ -68,7 +68,9 @@ use crate::phy_xtal_duty::{
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::SharedPhyAccess;
 use open_esp_radio_esp32s31_hal::phy_i2c::PhyAdcRate;
-pub(crate) use open_esp_radio_esp32s31_hal::phy_i2c::{PhyI2cAddress, analog_registers};
+pub(crate) use open_esp_radio_esp32s31_hal::phy_i2c::{
+    PhyI2cAddress, PhyI2cField, analog_registers,
+};
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::{analog_i2c, phy_i2c as hal_phy_i2c};
 
@@ -434,49 +436,31 @@ enum MaskedI2cWriteStep {
 /// remains inside a nominally synchronous action.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MaskedI2cWriteTransition {
-    address: PhyI2cAddress,
-    high_bit: u8,
-    low_bit: u8,
+    field: PhyI2cField,
     field_value: u8,
     step: MaskedI2cWriteStep,
 }
 
 impl MaskedI2cWriteTransition {
-    pub const fn new(
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
-        field_value: u8,
-    ) -> Option<Self> {
-        if high_bit < 8 && low_bit <= high_bit {
-            Some(Self {
-                address,
-                high_bit,
-                low_bit,
-                field_value,
-                step: MaskedI2cWriteStep::ReadByte,
-            })
-        } else {
-            None
+    pub const fn new(field: PhyI2cField, field_value: u8) -> Self {
+        Self {
+            field,
+            field_value,
+            step: MaskedI2cWriteStep::ReadByte,
         }
     }
 
     pub const fn action(self) -> MaskedI2cWriteAction {
         match self.step {
             MaskedI2cWriteStep::ReadByte => MaskedI2cWriteAction::ReadByte {
-                address: self.address,
+                address: self.field.address(),
             },
             MaskedI2cWriteStep::WriteByte(value) => MaskedI2cWriteAction::WriteByte {
-                address: self.address,
+                address: self.field.address(),
                 value,
             },
             MaskedI2cWriteStep::Complete => MaskedI2cWriteAction::Complete,
         }
-    }
-
-    const fn mask(self) -> u8 {
-        let width = self.high_bit - self.low_bit + 1;
-        ((((1u16 << width) - 1) << self.low_bit) & 0xff) as u8
     }
 
     pub fn advance(
@@ -487,16 +471,13 @@ impl MaskedI2cWriteTransition {
             (
                 MaskedI2cWriteStep::ReadByte,
                 MaskedI2cWriteCompletion::I2cReadCompleted { address, value },
-            ) if address == self.address => {
-                let mask = self.mask();
-                MaskedI2cWriteStep::WriteByte(
-                    (value & !mask) | ((self.field_value << self.low_bit) & mask),
-                )
+            ) if address == self.field.address() => {
+                MaskedI2cWriteStep::WriteByte(self.field.replace(value, self.field_value))
             }
             (
                 MaskedI2cWriteStep::WriteByte(_),
                 MaskedI2cWriteCompletion::I2cWriteCompleted { address },
-            ) if address == self.address => MaskedI2cWriteStep::Complete,
+            ) if address == self.field.address() => MaskedI2cWriteStep::Complete,
             (MaskedI2cWriteStep::Complete, _) => {
                 return Err(MaskedI2cWriteTransitionError::AlreadyComplete);
             }
@@ -819,21 +800,10 @@ pub struct RfpllChargePumpOutcome {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RfpllChargePumpAction {
-    WriteMasked {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
-        value: u8,
-    },
+    WriteMasked { field: PhyI2cField, value: u8 },
     DelayMicros(u32),
-    ReadMasked {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
-    },
-    ReadByte {
-        address: PhyI2cAddress,
-    },
+    ReadMasked { field: PhyI2cField },
+    ReadByte { address: PhyI2cAddress },
     Complete(RfpllChargePumpOutcome),
 }
 
@@ -875,9 +845,6 @@ pub struct RfpllChargePumpTransition {
 }
 
 impl RfpllChargePumpTransition {
-    const REGISTER_F: PhyI2cAddress = PhyI2cAddress::new(0x62, 0x0f).unwrap();
-    const REGISTER_E: PhyI2cAddress = PhyI2cAddress::new(0x62, 0x0e).unwrap();
-
     pub const fn new() -> Self {
         Self {
             step: RfpllChargePumpStep::InitialWrite(0),
@@ -885,17 +852,12 @@ impl RfpllChargePumpTransition {
     }
 
     const fn initial_write(index: u8) -> RfpllChargePumpAction {
-        let (high_bit, value) = match index {
-            0 => (6, 0),
-            1 => (5, 0),
-            _ => (5, 1),
+        let (field, value) = match index {
+            0 => (analog_registers::RFPLL_CHARGE_PUMP_CALIBRATION_ENABLE, 0),
+            1 => (analog_registers::RFPLL_CHARGE_PUMP_CALIBRATION_PULSE, 0),
+            _ => (analog_registers::RFPLL_CHARGE_PUMP_CALIBRATION_PULSE, 1),
         };
-        RfpllChargePumpAction::WriteMasked {
-            address: Self::REGISTER_F,
-            high_bit,
-            low_bit: high_bit,
-            value,
-        }
+        RfpllChargePumpAction::WriteMasked { field, value }
     }
 
     pub const fn action(self) -> RfpllChargePumpAction {
@@ -903,31 +865,23 @@ impl RfpllChargePumpTransition {
             RfpllChargePumpStep::InitialWrite(index) => Self::initial_write(index),
             RfpllChargePumpStep::Delay { .. } => RfpllChargePumpAction::DelayMicros(20),
             RfpllChargePumpStep::LockRead { .. } => RfpllChargePumpAction::ReadMasked {
-                address: Self::REGISTER_E,
-                high_bit: 7,
-                low_bit: 7,
+                field: analog_registers::RFPLL_CHARGE_PUMP_LOCK_STATUS,
             },
             RfpllChargePumpStep::CapRead { .. } => RfpllChargePumpAction::ReadMasked {
-                address: Self::REGISTER_E,
-                high_bit: 4,
-                low_bit: 0,
+                field: analog_registers::RFPLL_CHARGE_PUMP_RESULT,
             },
             RfpllChargePumpStep::EnableAdjustedValue { .. } => RfpllChargePumpAction::WriteMasked {
-                address: Self::REGISTER_F,
-                high_bit: 6,
-                low_bit: 6,
+                field: analog_registers::RFPLL_CHARGE_PUMP_CALIBRATION_ENABLE,
                 value: 1,
             },
             RfpllChargePumpStep::WriteAdjustedValue { value, .. } => {
                 RfpllChargePumpAction::WriteMasked {
-                    address: Self::REGISTER_F,
-                    high_bit: 4,
-                    low_bit: 0,
+                    field: analog_registers::RFPLL_CHARGE_PUMP_VALUE,
                     value,
                 }
             }
             RfpllChargePumpStep::FinalRead { .. } => RfpllChargePumpAction::ReadByte {
-                address: Self::REGISTER_F,
+                address: analog_registers::RFPLL_CHARGE_PUMP_VALUE.address(),
             },
             RfpllChargePumpStep::Complete(outcome) => RfpllChargePumpAction::Complete(outcome),
         }
@@ -993,7 +947,7 @@ impl RfpllChargePumpTransition {
             (
                 RfpllChargePumpStep::FinalRead { lock_observed },
                 RfpllChargePumpCompletion::ReadByte { address, value },
-            ) if address == Self::REGISTER_F => {
+            ) if address == analog_registers::RFPLL_CHARGE_PUMP_VALUE.address() => {
                 RfpllChargePumpStep::Complete(RfpllChargePumpOutcome {
                     parameter_18e: value,
                     lock_observed,
@@ -1061,9 +1015,7 @@ pub enum PhyRfInitPrefixAction {
         parameter: PhyRfInitParameterSnapshot,
     },
     ReadMasked69 {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
+        field: PhyI2cField,
     },
     ConfigureSar2,
     CaptureXtalDutyParameters,
@@ -1313,9 +1265,7 @@ impl PhyRfInitPrefixTransition {
                 PhyRfInitPrefixAction::ConfigureI2cMasterCommandMemory { parameter }
             }
             PhyRfInitPrefixStep::Masked69Read { .. } => PhyRfInitPrefixAction::ReadMasked69 {
-                address: PhyI2cAddress::new(0x69, 4).unwrap(),
-                high_bit: 3,
-                low_bit: 0,
+                field: analog_registers::TEMPERATURE_SENSOR_SAR2_STATUS,
             },
             PhyRfInitPrefixStep::Sar2Configuration { .. } => PhyRfInitPrefixAction::ConfigureSar2,
             PhyRfInitPrefixStep::XtalDutyParameters { .. } => {
@@ -1721,18 +1671,9 @@ impl Default for PhyRfInitPrefixTransition {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RcCalibrationAction {
-    WriteMasked {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
-        value: u8,
-    },
+    WriteMasked { field: PhyI2cField, value: u8 },
     DelayMicros(u32),
-    ReadMasked {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
-    },
+    ReadMasked { field: PhyI2cField },
     ApplyResult(u8),
     Complete,
 }
@@ -1768,21 +1709,13 @@ impl RcCalibrationTransition {
     }
 
     pub const fn action(self) -> RcCalibrationAction {
-        const BLOCK_61_REG_8: PhyI2cAddress = PhyI2cAddress::new(0x61, 8).unwrap();
-        const BLOCK_6B_REG_13: PhyI2cAddress = PhyI2cAddress::new(0x6b, 0x13).unwrap();
-        const BLOCK_6B_REG_14: PhyI2cAddress = PhyI2cAddress::new(0x6b, 0x14).unwrap();
-
         match self.step {
             0 => RcCalibrationAction::WriteMasked {
-                address: BLOCK_61_REG_8,
-                high_bit: 2,
-                low_bit: 2,
+                field: analog_registers::RC_CALIBRATION_DOUT_PATH_ENABLE,
                 value: 1,
             },
             1 => RcCalibrationAction::WriteMasked {
-                address: BLOCK_6B_REG_13,
-                high_bit: 0,
-                low_bit: 0,
+                field: analog_registers::RC_CALIBRATION_ENABLE,
                 // ROM `phy_get_rc_dout` asserts the RC-calibration enable
                 // before pulsing bit 1. Leaving this clear makes the result
                 // register stay at zero and poisons every derived RX filter
@@ -1790,33 +1723,23 @@ impl RcCalibrationTransition {
                 value: 1,
             },
             2 => RcCalibrationAction::WriteMasked {
-                address: BLOCK_6B_REG_13,
-                high_bit: 1,
-                low_bit: 1,
+                field: analog_registers::RC_CALIBRATION_PULSE,
                 value: 0,
             },
             3 => RcCalibrationAction::WriteMasked {
-                address: BLOCK_6B_REG_13,
-                high_bit: 1,
-                low_bit: 1,
+                field: analog_registers::RC_CALIBRATION_PULSE,
                 value: 1,
             },
             4 => RcCalibrationAction::DelayMicros(100),
             5 => RcCalibrationAction::ReadMasked {
-                address: BLOCK_6B_REG_14,
-                high_bit: 5,
-                low_bit: 0,
+                field: analog_registers::RC_CALIBRATION_RESULT,
             },
             6 => RcCalibrationAction::WriteMasked {
-                address: BLOCK_61_REG_8,
-                high_bit: 2,
-                low_bit: 2,
+                field: analog_registers::RC_CALIBRATION_DOUT_PATH_ENABLE,
                 value: 0,
             },
             7 => RcCalibrationAction::WriteMasked {
-                address: BLOCK_6B_REG_13,
-                high_bit: 0,
-                low_bit: 0,
+                field: analog_registers::RC_CALIBRATION_ENABLE,
                 value: 0,
             },
             8 => RcCalibrationAction::ApplyResult(self.result),
@@ -1878,7 +1801,7 @@ mod tests {
         PhyRfInitPrefixStep, PhyRfInitPrefixTransition, PhyRfInitPrefixTransitionError,
         RcCalibrationAction, RcCalibrationCompletion, RcCalibrationTransition,
         RcCalibrationTransitionError, RfpllChargePumpAction, RfpllChargePumpCompletion,
-        RfpllChargePumpOutcome, RfpllChargePumpTransition,
+        RfpllChargePumpOutcome, RfpllChargePumpTransition, analog_registers,
     };
     use crate::phy_cold::PhyColdExternalBinding;
     use crate::phy_dc_iq::{
@@ -2033,42 +1956,35 @@ mod tests {
         cap_status_reads: &mut u8,
     ) -> RfpllFrequencyCompletion {
         match action {
-            RfpllFrequencyAction::WriteMasked {
-                address,
-                high_bit,
-                low_bit,
-                ..
-            } => RfpllFrequencyCompletion::MaskedWrite {
-                address,
-                high_bit,
-                low_bit,
-            },
+            RfpllFrequencyAction::WriteMasked { field, .. } => {
+                RfpllFrequencyCompletion::MaskedWrite { field }
+            }
             RfpllFrequencyAction::WriteByte { address, .. } => {
                 RfpllFrequencyCompletion::ByteWrite { address }
             }
-            RfpllFrequencyAction::ReadMasked {
-                address,
-                high_bit,
-                low_bit,
-            } => RfpllFrequencyCompletion::MaskedRead {
-                address,
-                high_bit,
-                low_bit,
-                value: if high_bit == 1 { 1 } else { 0 },
-            },
+            RfpllFrequencyAction::ReadMasked { field } => {
+                let value = if field == analog_registers::RFPLL_LOCK_STATUS {
+                    1
+                } else if field == analog_registers::RFPLL_CAPACITOR_SEARCH_STATUS {
+                    let value = if (*cap_status_reads).is_multiple_of(3) {
+                        0
+                    } else {
+                        1
+                    };
+                    *cap_status_reads = (*cap_status_reads).wrapping_add(1);
+                    value
+                } else {
+                    0
+                };
+                RfpllFrequencyCompletion::MaskedRead { field, value }
+            }
             RfpllFrequencyAction::ReadByte { address } => {
                 let value = if address
                     == crate::phy_i2c::analog_registers::RFPLL_CALIBRATED_CAPACITOR_LOW
                 {
                     100
                 } else {
-                    let value = if (*cap_status_reads).is_multiple_of(3) {
-                        0
-                    } else {
-                        1 << 2
-                    };
-                    *cap_status_reads = (*cap_status_reads).wrapping_add(1);
-                    value
+                    0
                 };
                 RfpllFrequencyCompletion::ByteRead { address, value }
             }
@@ -2166,34 +2082,33 @@ mod tests {
             }
             match outer_action {
                 PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::ReadInitialDuty {
-                    address,
-                    ..
+                    field,
                 }) => {
                     transition
                         .advance(PhyRfInitPrefixCompletion::XtalDuty(
                             XtalDutyCalibrationCompletion::InitialDutyRead {
-                                address,
+                                field,
                                 value: initial_duty,
                             },
                         ))
                         .unwrap();
                 }
                 PhyRfInitPrefixAction::XtalDuty(
-                    XtalDutyCalibrationAction::DisableCalibrationPath { address, .. },
+                    XtalDutyCalibrationAction::DisableCalibrationPath { field, .. },
                 ) => {
                     transition
                         .advance(PhyRfInitPrefixCompletion::XtalDuty(
-                            XtalDutyCalibrationCompletion::CalibrationPathDisabled { address },
+                            XtalDutyCalibrationCompletion::CalibrationPathDisabled { field },
                         ))
                         .unwrap();
                 }
                 PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
-                    XtalDutyPassAction::WriteMasked { address, .. },
+                    XtalDutyPassAction::WriteMasked { field, .. },
                 )) => {
                     transition
                         .advance(PhyRfInitPrefixCompletion::XtalDuty(
                             XtalDutyCalibrationCompletion::Pass(
-                                XtalDutyPassCompletion::MaskedWrite { address },
+                                XtalDutyPassCompletion::MaskedWrite { field },
                             ),
                         ))
                         .unwrap();
@@ -2307,16 +2222,9 @@ mod tests {
                     action,
                 )) => {
                     let completion = match action {
-                        PhyFrequencyI2cAction::WriteMasked {
-                            address,
-                            high_bit,
-                            low_bit,
-                            ..
-                        } => PhyFrequencyI2cCompletion::MaskedWrite {
-                            address,
-                            high_bit,
-                            low_bit,
-                        },
+                        PhyFrequencyI2cAction::WriteMasked { field, .. } => {
+                            PhyFrequencyI2cCompletion::MaskedWrite { field }
+                        }
                         PhyFrequencyI2cAction::ReadByte { address } => {
                             let value = if address == PhyI2cAddress::new(0x62, 0x0b).unwrap() {
                                 0x5a
@@ -2372,9 +2280,7 @@ mod tests {
         assert!(matches!(
             transition.action(),
             RcCalibrationAction::ReadMasked {
-                high_bit: 5,
-                low_bit: 0,
-                ..
+                field: analog_registers::RC_CALIBRATION_RESULT,
             }
         ));
         transition
@@ -2395,11 +2301,9 @@ mod tests {
 
     #[test]
     fn masked_i2c_write_owns_read_transform_and_write_edges() {
-        let address = PhyI2cAddress::new(0x6b, 0x11).unwrap();
-        assert!(MaskedI2cWriteTransition::new(address, 3, 4, 0).is_none());
-        assert!(MaskedI2cWriteTransition::new(address, 8, 0, 0).is_none());
-
-        let mut transition = MaskedI2cWriteTransition::new(address, 5, 4, 3).unwrap();
+        let field = analog_registers::WIFI_TX_TEMPERATURE_TRACKING_0;
+        let address = field.address();
+        let mut transition = MaskedI2cWriteTransition::new(field, 3);
         assert_eq!(
             transition.action(),
             MaskedI2cWriteAction::ReadByte { address }
@@ -2418,7 +2322,7 @@ mod tests {
             transition.action(),
             MaskedI2cWriteAction::WriteByte {
                 address,
-                value: 0x3f,
+                value: 0x03,
             }
         );
         transition
@@ -2459,15 +2363,14 @@ mod tests {
     }
 
     fn complete_rfpll_initial_writes(transition: &mut RfpllChargePumpTransition) {
-        for (high_bit, value) in [(6, 0), (5, 0), (5, 1)] {
+        for (field, value) in [
+            (analog_registers::RFPLL_CHARGE_PUMP_CALIBRATION_ENABLE, 0),
+            (analog_registers::RFPLL_CHARGE_PUMP_CALIBRATION_PULSE, 0),
+            (analog_registers::RFPLL_CHARGE_PUMP_CALIBRATION_PULSE, 1),
+        ] {
             assert_eq!(
                 transition.action(),
-                RfpllChargePumpAction::WriteMasked {
-                    address: PhyI2cAddress::new(0x62, 0x0f).unwrap(),
-                    high_bit,
-                    low_bit: high_bit,
-                    value,
-                }
+                RfpllChargePumpAction::WriteMasked { field, value }
             );
             transition
                 .advance(RfpllChargePumpCompletion::Write)
@@ -2486,9 +2389,7 @@ mod tests {
         assert_eq!(
             transition.action(),
             RfpllChargePumpAction::ReadMasked {
-                address: PhyI2cAddress::new(0x62, 0x0e).unwrap(),
-                high_bit: 7,
-                low_bit: 7,
+                field: analog_registers::RFPLL_CHARGE_PUMP_LOCK_STATUS,
             }
         );
         transition
@@ -2497,9 +2398,7 @@ mod tests {
         assert_eq!(
             transition.action(),
             RfpllChargePumpAction::ReadMasked {
-                address: PhyI2cAddress::new(0x62, 0x0e).unwrap(),
-                high_bit: 4,
-                low_bit: 0,
+                field: analog_registers::RFPLL_CHARGE_PUMP_RESULT,
             }
         );
         transition
@@ -2508,9 +2407,7 @@ mod tests {
         assert_eq!(
             transition.action(),
             RfpllChargePumpAction::WriteMasked {
-                address: PhyI2cAddress::new(0x62, 0x0f).unwrap(),
-                high_bit: 6,
-                low_bit: 6,
+                field: analog_registers::RFPLL_CHARGE_PUMP_CALIBRATION_ENABLE,
                 value: 1,
             }
         );
@@ -2520,16 +2417,14 @@ mod tests {
         assert_eq!(
             transition.action(),
             RfpllChargePumpAction::WriteMasked {
-                address: PhyI2cAddress::new(0x62, 0x0f).unwrap(),
-                high_bit: 4,
-                low_bit: 0,
+                field: analog_registers::RFPLL_CHARGE_PUMP_VALUE,
                 value: 23,
             }
         );
         transition
             .advance(RfpllChargePumpCompletion::Write)
             .unwrap();
-        let final_address = PhyI2cAddress::new(0x62, 0x0f).unwrap();
+        let final_address = analog_registers::RFPLL_CHARGE_PUMP_VALUE.address();
         assert_eq!(
             transition.action(),
             RfpllChargePumpAction::ReadByte {
@@ -2570,9 +2465,7 @@ mod tests {
         assert_eq!(
             transition.action(),
             RfpllChargePumpAction::ReadMasked {
-                address: PhyI2cAddress::new(0x62, 0x0e).unwrap(),
-                high_bit: 4,
-                low_bit: 0,
+                field: analog_registers::RFPLL_CHARGE_PUMP_RESULT,
             }
         );
         transition
@@ -2584,7 +2477,7 @@ mod tests {
         transition
             .advance(RfpllChargePumpCompletion::Write)
             .unwrap();
-        let final_address = PhyI2cAddress::new(0x62, 0x0f).unwrap();
+        let final_address = analog_registers::RFPLL_CHARGE_PUMP_VALUE.address();
         transition
             .advance(RfpllChargePumpCompletion::ReadByte {
                 address: final_address,
@@ -2808,27 +2701,19 @@ mod tests {
             .unwrap();
         for expected in [
             RcCalibrationAction::WriteMasked {
-                address: PhyI2cAddress::new(0x61, 8).unwrap(),
-                high_bit: 2,
-                low_bit: 2,
+                field: analog_registers::RC_CALIBRATION_DOUT_PATH_ENABLE,
                 value: 1,
             },
             RcCalibrationAction::WriteMasked {
-                address: PhyI2cAddress::new(0x6b, 0x13).unwrap(),
-                high_bit: 0,
-                low_bit: 0,
+                field: analog_registers::RC_CALIBRATION_ENABLE,
                 value: 1,
             },
             RcCalibrationAction::WriteMasked {
-                address: PhyI2cAddress::new(0x6b, 0x13).unwrap(),
-                high_bit: 1,
-                low_bit: 1,
+                field: analog_registers::RC_CALIBRATION_PULSE,
                 value: 0,
             },
             RcCalibrationAction::WriteMasked {
-                address: PhyI2cAddress::new(0x6b, 0x13).unwrap(),
-                high_bit: 1,
-                low_bit: 1,
+                field: analog_registers::RC_CALIBRATION_PULSE,
                 value: 1,
             },
         ] {
@@ -2854,9 +2739,7 @@ mod tests {
         assert_eq!(
             transition.action(),
             PhyRfInitPrefixAction::RcCalibration(RcCalibrationAction::ReadMasked {
-                address: PhyI2cAddress::new(0x6b, 0x14).unwrap(),
-                high_bit: 5,
-                low_bit: 0,
+                field: analog_registers::RC_CALIBRATION_RESULT,
             })
         );
         transition
@@ -2866,15 +2749,11 @@ mod tests {
             .unwrap();
         for expected in [
             RcCalibrationAction::WriteMasked {
-                address: PhyI2cAddress::new(0x61, 8).unwrap(),
-                high_bit: 2,
-                low_bit: 2,
+                field: analog_registers::RC_CALIBRATION_DOUT_PATH_ENABLE,
                 value: 0,
             },
             RcCalibrationAction::WriteMasked {
-                address: PhyI2cAddress::new(0x6b, 0x13).unwrap(),
-                high_bit: 0,
-                low_bit: 0,
+                field: analog_registers::RC_CALIBRATION_ENABLE,
                 value: 0,
             },
         ] {
@@ -3001,9 +2880,7 @@ mod tests {
         assert_eq!(
             transition.action(),
             PhyRfInitPrefixAction::ReadMasked69 {
-                address: PhyI2cAddress::new(0x69, 4).unwrap(),
-                high_bit: 3,
-                low_bit: 0,
+                field: analog_registers::TEMPERATURE_SENSOR_SAR2_STATUS,
             }
         );
         let mut already_initialized = transition;

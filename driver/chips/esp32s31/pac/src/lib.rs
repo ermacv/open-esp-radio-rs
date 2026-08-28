@@ -234,7 +234,7 @@ pub use phy_i2c::{
     BluetoothTxPowerControlTransaction, PhyAdcRate, PhyFilterDcapInputs, PhyI2cAccessError,
     PhyI2cAddress, PhyI2cCommandMemoryInputs, PhyI2cConfigurationAction, PhyI2cConfigurationError,
     PhyI2cConfigurationObservation, PhyI2cConfigurationOperation, PhyI2cConfigurationTransaction,
-    PhyI2cHost, PhyI2cInitializationStageOneInputs, analog_registers,
+    PhyI2cField, PhyI2cHost, PhyI2cInitializationStageOneInputs, analog_registers,
 };
 pub use platform_clock_power::PlatformClockPowerObservation;
 pub use table_memory::{PbusMemoryGroupBoundary, PhyGainMemoryEntry, PhyMemoryError};

@@ -21,8 +21,7 @@ pub fn phy_tx_atten_comp(values: &mut [u8; 3]) {
 use crate::{
     phy_dc_iq::phy_linear_to_db,
     phy_i2c::{
-        MaskedI2cWriteAction, MaskedI2cWriteCompletion, MaskedI2cWriteTransition, PhyI2cAddress,
-        analog_registers,
+        MaskedI2cWriteAction, MaskedI2cWriteCompletion, MaskedI2cWriteTransition, analog_registers,
     },
     phy_pbus::PhyPbusForceTest,
     phy_pwdet::sar_signal_reference,
@@ -808,7 +807,6 @@ impl PhyPowerAttenuationTransition {
     }
 }
 
-const TX_CAP_I2C_ADDRESS: PhyI2cAddress = analog_registers::TX_CAPACITOR_BANKS;
 const TX_CAP_CHANNELS: [u16; 3] = [1, 6, 11];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -869,17 +867,11 @@ enum TxCapSearchStep {
     Failed(PhyTxCapSearchFailure),
 }
 
-const fn tx_cap_field(bank: u8) -> (u8, u8) {
+const fn tx_cap_field(bank: u8) -> crate::phy_i2c::PhyI2cField {
     if bank == 0 {
-        (
-            analog_registers::TX_CAPACITOR_LOW.high_bit,
-            analog_registers::TX_CAPACITOR_LOW.low_bit,
-        )
+        analog_registers::TX_CAPACITOR_LOW
     } else {
-        (
-            analog_registers::TX_CAPACITOR_HIGH.high_bit,
-            analog_registers::TX_CAPACITOR_HIGH.low_bit,
-        )
+        analog_registers::TX_CAPACITOR_HIGH
     }
 }
 
@@ -910,8 +902,7 @@ impl PhyTxCapSearchTransition {
     }
 
     const fn write(self, value: u8) -> MaskedI2cWriteTransition {
-        let (high, low) = tx_cap_field(self.bank);
-        MaskedI2cWriteTransition::new(TX_CAP_I2C_ADDRESS, high, low, value).unwrap()
+        MaskedI2cWriteTransition::new(tx_cap_field(self.bank), value)
     }
 
     pub const fn action(self) -> PhyTxCapSearchAction {
@@ -1203,15 +1194,10 @@ impl PhyTxCapTransition {
                     .map_err(|_| PhyTxCapTransitionError::WrongCompletion)?;
                 match transition.action() {
                     RfpllFrequencyAction::Complete(_) => {
-                        self.step = TxCapStep::SetLow(
-                            MaskedI2cWriteTransition::new(
-                                TX_CAP_I2C_ADDRESS,
-                                analog_registers::TX_CAPACITOR_LOW.high_bit,
-                                analog_registers::TX_CAPACITOR_LOW.low_bit,
-                                7,
-                            )
-                            .unwrap(),
-                        );
+                        self.step = TxCapStep::SetLow(MaskedI2cWriteTransition::new(
+                            analog_registers::TX_CAPACITOR_LOW,
+                            7,
+                        ));
                     }
                     RfpllFrequencyAction::Failed(failure) => {
                         self.fail(PhyTxCapFailure::Rfpll(failure));
@@ -1224,15 +1210,10 @@ impl PhyTxCapTransition {
                     .advance(completion)
                     .map_err(|_| PhyTxCapTransitionError::WrongCompletion)?;
                 self.step = if transition.action() == MaskedI2cWriteAction::Complete {
-                    TxCapStep::SetHigh(
-                        MaskedI2cWriteTransition::new(
-                            TX_CAP_I2C_ADDRESS,
-                            analog_registers::TX_CAPACITOR_HIGH.high_bit,
-                            analog_registers::TX_CAPACITOR_HIGH.low_bit,
-                            13,
-                        )
-                        .unwrap(),
-                    )
+                    TxCapStep::SetHigh(MaskedI2cWriteTransition::new(
+                        analog_registers::TX_CAPACITOR_HIGH,
+                        13,
+                    ))
                 } else {
                     TxCapStep::SetLow(transition)
                 };
@@ -1887,6 +1868,7 @@ impl PhyTxCapExternalBinding {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::phy_i2c::PhyI2cAddress;
 
     fn tone_sar_completion(action: PhyToneSarAction, value: u16) -> PhyToneSarCompletion {
         match action {

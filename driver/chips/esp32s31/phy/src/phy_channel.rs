@@ -1244,30 +1244,15 @@ mod tests {
 
     fn temperature_completion(action: PhyTemperatureAction) -> PhyTemperatureCompletion {
         match action {
-            PhyTemperatureAction::ReadMasked {
-                address,
-                high_bit,
-                low_bit,
-            } => PhyTemperatureCompletion::MaskedRead {
-                address,
-                high_bit,
-                low_bit,
-                value: 15,
-            },
+            PhyTemperatureAction::ReadMasked { field } => {
+                PhyTemperatureCompletion::MaskedRead { field, value: 15 }
+            }
             PhyTemperatureAction::SampleCode => {
                 PhyTemperatureCompletion::CodeSampled { value: 128 }
             }
-            PhyTemperatureAction::WriteMasked {
-                address,
-                high_bit,
-                low_bit,
-                value,
-            } => PhyTemperatureCompletion::MaskedWrite {
-                address,
-                high_bit,
-                low_bit,
-                value,
-            },
+            PhyTemperatureAction::WriteMasked { field, value } => {
+                PhyTemperatureCompletion::MaskedWrite { field, value }
+            }
             action => panic!("unexpected terminal temperature action: {action:?}"),
         }
     }

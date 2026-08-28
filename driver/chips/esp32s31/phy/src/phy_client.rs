@@ -1526,22 +1526,13 @@ mod tests {
                 _
             ))
         ));
-        let crate::phy_temperature::PhyTemperatureAction::ReadMasked {
-            address,
-            high_bit,
-            low_bit,
-        } = child.action()
+        let crate::phy_temperature::PhyTemperatureAction::ReadMasked { field } = child.action()
         else {
             panic!("temperature child did not begin with its DAC read")
         };
         child
             .advance(
-                crate::phy_temperature::PhyTemperatureCompletion::MaskedRead {
-                    address,
-                    high_bit,
-                    low_bit,
-                    value: dac,
-                },
+                crate::phy_temperature::PhyTemperatureCompletion::MaskedRead { field, value: dac },
             )
             .unwrap();
         assert!(matches!(

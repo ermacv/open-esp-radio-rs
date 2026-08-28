@@ -30,6 +30,79 @@ pub struct PhyI2cAddress {
     register: u8,
 }
 
+/// Opaque field in one internal analog PHY-I²C byte register.
+///
+/// Only the PAC retains the recovered bit geometry. Higher layers can select
+/// a reviewed semantic field and ask the PAC to transform a sampled byte,
+/// without learning or reproducing masks and shifts.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyI2cField {
+    encoded: u16,
+}
+
+impl PhyI2cField {
+    #[inline]
+    const fn recovered(address: PhyI2cAddress, high_bit: u8, low_bit: u8) -> Self {
+        assert!(high_bit < 8 && low_bit <= high_bit);
+        assert!(address.register < 0x20);
+        let block = match address.block {
+            0x61 => 0,
+            0x62 => 1,
+            0x63 => 2,
+            0x67 => 3,
+            0x69 => 4,
+            0x6b => 5,
+            _ => panic!("unsupported analog PHY-I2C field block"),
+        };
+        let address = block << 5 | address.register;
+        let range = high_bit << 4 | low_bit;
+        Self {
+            encoded: ((range as u16) << 8) | address as u16,
+        }
+    }
+
+    /// Return the opaque byte-register identity needed for the bus transfer.
+    #[inline]
+    pub const fn address(self) -> PhyI2cAddress {
+        let encoded = self.encoded as u8;
+        let block = match encoded >> 5 {
+            0 => 0x61,
+            1 => 0x62,
+            2 => 0x63,
+            3 => 0x67,
+            4 => 0x69,
+            5 => 0x6b,
+            _ => unreachable!(),
+        };
+        PhyI2cAddress::recovered(block, encoded & 0x1f)
+    }
+
+    /// Extract this reviewed field from a sampled register byte.
+    #[inline]
+    pub const fn extract(self, byte: u8) -> u8 {
+        (byte & self.mask()) >> self.low_bit()
+    }
+
+    /// Replace this reviewed field while preserving every other bit.
+    #[inline]
+    pub const fn replace(self, byte: u8, field_value: u8) -> u8 {
+        let mask = self.mask();
+        (byte & !mask) | ((field_value << self.low_bit()) & mask)
+    }
+
+    #[inline]
+    const fn mask(self) -> u8 {
+        let low_bit = self.low_bit();
+        let width = (self.encoded >> 12) as u8 - low_bit + 1;
+        ((((1u16 << width) - 1) << low_bit) & 0xff) as u8
+    }
+
+    #[inline]
+    const fn low_bit(self) -> u8 {
+        (self.encoded >> 8) as u8 & 0x0f
+    }
+}
+
 /// One finite analog-register command is still owned by its hardware host.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyI2cAccessError {
@@ -85,43 +158,88 @@ impl PhyI2cAddress {
 /// These are not CPU addresses. Their command-bus geometry is private to the
 /// PAC; the names expose only semantics established by the recovered code.
 pub mod analog_registers {
-    use super::PhyI2cAddress;
-
-    /// One reviewed byte field in an internal analog register.
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    pub struct Field {
-        pub address: PhyI2cAddress,
-        pub high_bit: u8,
-        pub low_bit: u8,
-    }
-
-    impl Field {
-        const fn new(address: PhyI2cAddress, high_bit: u8, low_bit: u8) -> Self {
-            Self {
-                address,
-                high_bit,
-                low_bit,
-            }
-        }
-    }
+    use super::{PhyI2cAddress, PhyI2cField};
 
     pub const XTAL_DUTY_SEED: PhyI2cAddress = PhyI2cAddress::recovered(0x61, 0x09);
     pub const XTAL_DUTY_CANDIDATE: PhyI2cAddress = PhyI2cAddress::recovered(0x61, 0x0a);
     pub const RFPLL_CAPACITOR_LOW: PhyI2cAddress = PhyI2cAddress::recovered(0x62, 0x01);
-    pub const RFPLL_CAPACITOR_HIGH: Field = Field::new(PhyI2cAddress::recovered(0x62, 0x02), 6, 6);
+    pub const RFPLL_CAPACITOR_HIGH: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x62, 0x02), 6, 6);
+    pub const RFPLL_CAPACITOR_SEARCH_ENABLE: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x62, 0x0b), 6, 6);
+    pub const RFPLL_CAPACITOR_SEARCH_STATUS: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x62, 0x0c), 3, 2);
+    pub const RFPLL_INITIAL_CONFIGURATION_HIGH: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x62, 0x02), 7, 7);
+    pub const RFPLL_INITIAL_CONFIGURATION_LOW: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x62, 0x02), 5, 0);
+    pub const RFPLL_RESTART_HIGH: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x62, 0x00), 6, 6);
+    pub const RFPLL_RESTART_LOW: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x62, 0x00), 5, 5);
+    pub const RFPLL_LOCK_STATUS: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x62, 0x07), 1, 1);
     pub const RFPLL_CALIBRATED_CAPACITOR_LOW: PhyI2cAddress = PhyI2cAddress::recovered(0x62, 0x05);
-    pub const RFPLL_CALIBRATED_CAPACITOR_HIGH: Field =
-        Field::new(PhyI2cAddress::recovered(0x62, 0x07), 2, 2);
-    pub const RFPLL_CAPACITOR_CORRECTION_DIRECTION: Field =
-        Field::new(PhyI2cAddress::recovered(0x62, 0x0c), 3, 2);
-    pub const RFPLL_SDM_LOW: Field = Field::new(PhyI2cAddress::recovered(0x63, 0x06), 2, 0);
+    pub const RFPLL_CALIBRATED_CAPACITOR_HIGH: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x62, 0x07), 2, 2);
+    pub const RFPLL_CAPACITOR_CORRECTION_DIRECTION: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x62, 0x0c), 3, 2);
+    pub const RFPLL_SDM_LOW: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x63, 0x06), 2, 0);
+    pub const RFPLL_SDM_UPDATE_ENABLE: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x63, 0x00), 3, 3);
+    pub const RFPLL_CHARGE_PUMP_CALIBRATION_ENABLE: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x62, 0x0f), 6, 6);
+    pub const RFPLL_CHARGE_PUMP_CALIBRATION_PULSE: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x62, 0x0f), 5, 5);
+    pub const RFPLL_CHARGE_PUMP_VALUE: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x62, 0x0f), 4, 0);
+    pub const RFPLL_CHARGE_PUMP_LOCK_STATUS: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x62, 0x0e), 7, 7);
+    pub const RFPLL_CHARGE_PUMP_RESULT: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x62, 0x0e), 4, 0);
+    pub const RC_CALIBRATION_DOUT_PATH_ENABLE: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x61, 0x08), 2, 2);
+    pub const RC_CALIBRATION_ENABLE: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x6b, 0x13), 0, 0);
+    pub const RC_CALIBRATION_PULSE: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x6b, 0x13), 1, 1);
+    pub const RC_CALIBRATION_RESULT: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x6b, 0x14), 5, 0);
     pub const TX_CAPACITOR_BANKS: PhyI2cAddress = PhyI2cAddress::recovered(0x6b, 0x02);
-    pub const TX_CAPACITOR_LOW: Field = Field::new(TX_CAPACITOR_BANKS, 3, 0);
-    pub const TX_CAPACITOR_HIGH: Field = Field::new(TX_CAPACITOR_BANKS, 7, 4);
-    pub const WIFI_TX_TEMPERATURE_TRACKING_0: Field =
-        Field::new(PhyI2cAddress::recovered(0x6b, 0x03), 3, 0);
-    pub const WIFI_TX_TEMPERATURE_TRACKING_1: Field =
-        Field::new(PhyI2cAddress::recovered(0x6b, 0x07), 3, 0);
+    pub const TX_CAPACITOR_LOW: PhyI2cField = PhyI2cField::recovered(TX_CAPACITOR_BANKS, 3, 0);
+    pub const TX_CAPACITOR_HIGH: PhyI2cField = PhyI2cField::recovered(TX_CAPACITOR_BANKS, 7, 4);
+    pub const WIFI_TX_TEMPERATURE_TRACKING_0: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x6b, 0x03), 3, 0);
+    pub const WIFI_TX_TEMPERATURE_TRACKING_1: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x6b, 0x07), 3, 0);
+    pub const TX_IQ_LOOPBACK_ENABLE: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x67, 0x00), 6, 6);
+    pub const SHARED_RX_GAIN_CALIBRATION_ENABLE: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x67, 0x03), 2, 2);
+    pub const TEMPERATURE_SENSOR_DAC_STATUS: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x69, 0x00), 6, 0);
+    pub const TEMPERATURE_SENSOR_DAC: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x69, 0x00), 3, 0);
+    pub const TEMPERATURE_SENSOR_SAR2_STATUS: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x69, 0x04), 3, 0);
+    pub const RFPLL_DCODE_0_SOURCE_SELECT: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x62, 0x13), 6, 6);
+    pub const RFPLL_DCODE_1_SOURCE_SELECT: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x62, 0x14), 6, 6);
+    pub const RFPLL_DCODE_CKGEN_RESET: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x62, 0x04), 7, 7);
+    pub const RFPLL_INTERNAL_DCODE_0: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x62, 0x11), 5, 0);
+    pub const RFPLL_INTERNAL_DCODE_1: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x62, 0x12), 5, 0);
+    pub const RFPLL_EXTERNAL_DCODE_0: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x62, 0x13), 5, 0);
+    pub const RFPLL_EXTERNAL_DCODE_1: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x62, 0x14), 5, 0);
+    pub const XTAL_DUTY_INITIAL: PhyI2cField = PhyI2cField::recovered(XTAL_DUTY_SEED, 5, 0);
+    pub const XTAL_DUTY_CALIBRATION_PATH_ENABLE: PhyI2cField =
+        PhyI2cField::recovered(PhyI2cAddress::recovered(0x61, 0x07), 5, 5);
 }
 
 const PHY_I2C_COMMAND_MEMORY_ENTRY_COUNT: usize = 45;

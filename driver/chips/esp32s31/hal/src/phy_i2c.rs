@@ -7,7 +7,7 @@ pub use open_esp_radio_esp32s31_pac::{
     BluetoothTxPowerControlTransaction, PhyAdcRate, PhyFilterDcapInputs, PhyI2cAccessError,
     PhyI2cAddress, PhyI2cCommandMemoryInputs, PhyI2cConfigurationAction, PhyI2cConfigurationError,
     PhyI2cConfigurationObservation, PhyI2cConfigurationOperation, PhyI2cConfigurationTransaction,
-    PhyI2cHost, PhyI2cInitializationStageOneInputs, analog_registers,
+    PhyI2cField, PhyI2cHost, PhyI2cInitializationStageOneInputs, analog_registers,
 };
 
 /// Start the current command of one PAC-owned PHY-I²C configuration.

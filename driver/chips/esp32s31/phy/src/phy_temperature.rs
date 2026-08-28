@@ -15,9 +15,8 @@
 //! vendor-oracle handoff primes the same field to the first ROM range (DAC 5)
 //! before entering the open channel graph.
 
-use crate::phy_i2c::PhyI2cAddress;
+use crate::phy_i2c::{PhyI2cField, analog_registers};
 
-const SENSOR_ADDRESS: PhyI2cAddress = PhyI2cAddress::new(0x69, 0).unwrap();
 const RESET_DAC: u8 = 0;
 const DEFAULT_DAC: u8 = 5;
 const DEFAULT_SENSOR_INDEX: u8 = 0;
@@ -78,39 +77,18 @@ pub enum PhyTemperatureFailure {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyTemperatureAction {
-    ReadMasked {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
-    },
+    ReadMasked { field: PhyI2cField },
     SampleCode,
-    WriteMasked {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
-        value: u8,
-    },
+    WriteMasked { field: PhyI2cField, value: u8 },
     Complete(PhyTemperatureOutcome),
     Failed(PhyTemperatureFailure),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyTemperatureCompletion {
-    MaskedRead {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
-        value: u8,
-    },
-    CodeSampled {
-        value: u8,
-    },
-    MaskedWrite {
-        address: PhyI2cAddress,
-        high_bit: u8,
-        low_bit: u8,
-        value: u8,
-    },
+    MaskedRead { field: PhyI2cField, value: u8 },
+    CodeSampled { value: u8 },
+    MaskedWrite { field: PhyI2cField, value: u8 },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -196,21 +174,15 @@ impl PhyTemperatureTransition {
     pub const fn action(self) -> PhyTemperatureAction {
         match self.step {
             PhyTemperatureStep::ReadDac => PhyTemperatureAction::ReadMasked {
-                address: SENSOR_ADDRESS,
-                high_bit: 6,
-                low_bit: 0,
+                field: analog_registers::TEMPERATURE_SENSOR_DAC_STATUS,
             },
             PhyTemperatureStep::PrimeDefaultDac => PhyTemperatureAction::WriteMasked {
-                address: SENSOR_ADDRESS,
-                high_bit: 3,
-                low_bit: 0,
+                field: analog_registers::TEMPERATURE_SENSOR_DAC,
                 value: DEFAULT_DAC,
             },
             PhyTemperatureStep::SampleCode { .. } => PhyTemperatureAction::SampleCode,
             PhyTemperatureStep::WriteDac { outcome } => PhyTemperatureAction::WriteMasked {
-                address: SENSOR_ADDRESS,
-                high_bit: 3,
-                low_bit: 0,
+                field: analog_registers::TEMPERATURE_SENSOR_DAC,
                 value: outcome.next_dac,
             },
             PhyTemperatureStep::Complete(outcome) => PhyTemperatureAction::Complete(outcome),
@@ -226,9 +198,7 @@ impl PhyTemperatureTransition {
             (
                 PhyTemperatureStep::ReadDac,
                 PhyTemperatureCompletion::MaskedRead {
-                    address: SENSOR_ADDRESS,
-                    high_bit: 6,
-                    low_bit: 0,
+                    field: analog_registers::TEMPERATURE_SENSOR_DAC_STATUS,
                     value,
                 },
             ) => {
@@ -253,9 +223,7 @@ impl PhyTemperatureTransition {
             (
                 PhyTemperatureStep::PrimeDefaultDac,
                 PhyTemperatureCompletion::MaskedWrite {
-                    address: SENSOR_ADDRESS,
-                    high_bit: 3,
-                    low_bit: 0,
+                    field: analog_registers::TEMPERATURE_SENSOR_DAC,
                     value: DEFAULT_DAC,
                 },
             ) => PhyTemperatureStep::SampleCode {
@@ -282,9 +250,7 @@ impl PhyTemperatureTransition {
             (
                 PhyTemperatureStep::WriteDac { outcome },
                 PhyTemperatureCompletion::MaskedWrite {
-                    address: SENSOR_ADDRESS,
-                    high_bit: 3,
-                    low_bit: 0,
+                    field: analog_registers::TEMPERATURE_SENSOR_DAC,
                     value,
                 },
             ) if value == outcome.next_dac => PhyTemperatureStep::Complete(outcome),
@@ -324,19 +290,12 @@ pub struct PhyTemperatureI2cBinding {
 impl PhyTemperatureI2cBinding {
     pub fn new(action: PhyTemperatureAction) -> Result<Self, PhyTemperatureBindingError> {
         let request = match action {
-            PhyTemperatureAction::ReadMasked {
-                address,
-                high_bit,
-                low_bit,
-            } => crate::phy_cold::PhyColdI2cRequest::read_masked(address, high_bit, low_bit),
-            PhyTemperatureAction::WriteMasked {
-                address,
-                high_bit,
-                low_bit,
-                value,
-            } => {
-                crate::phy_cold::PhyColdI2cRequest::write_masked(address, high_bit, low_bit, value)
+            PhyTemperatureAction::ReadMasked { field } => {
+                Some(crate::phy_cold::PhyColdI2cRequest::read_field(field))
             }
+            PhyTemperatureAction::WriteMasked { field, value } => Some(
+                crate::phy_cold::PhyColdI2cRequest::write_field(field, value),
+            ),
             _ => None,
         }
         .ok_or(PhyTemperatureBindingError::UnsupportedAction)?;
@@ -398,37 +357,22 @@ impl PhyTemperatureI2cBinding {
         };
         match (self.outer_action, outcome) {
             (
-                PhyTemperatureAction::ReadMasked {
-                    address,
-                    high_bit,
-                    low_bit,
-                },
+                PhyTemperatureAction::ReadMasked { field },
                 crate::phy_cold::PhyColdI2cOutcome::Read {
                     address: completed_address,
                     value,
                 },
-            ) if completed_address == address => Ok(PhyTemperatureCompletion::MaskedRead {
-                address,
-                high_bit,
-                low_bit,
-                value,
-            }),
+            ) if completed_address == field.address() => {
+                Ok(PhyTemperatureCompletion::MaskedRead { field, value })
+            }
             (
-                PhyTemperatureAction::WriteMasked {
-                    address,
-                    high_bit,
-                    low_bit,
-                    value,
-                },
+                PhyTemperatureAction::WriteMasked { field, value },
                 crate::phy_cold::PhyColdI2cOutcome::Written {
                     address: completed_address,
                 },
-            ) if completed_address == address => Ok(PhyTemperatureCompletion::MaskedWrite {
-                address,
-                high_bit,
-                low_bit,
-                value,
-            }),
+            ) if completed_address == field.address() => {
+                Ok(PhyTemperatureCompletion::MaskedWrite { field, value })
+            }
             _ => Err(PhyTemperatureBindingError::UnexpectedOutcome),
         }
     }
@@ -483,6 +427,7 @@ impl PhyTemperatureExternalBinding {
 mod binding_tests {
     use super::*;
     use crate::phy_cold::{PhyColdI2cAction, PhyColdI2cObservation, PhyColdI2cOutcome};
+    use crate::phy_i2c::analog_registers;
 
     #[test]
     fn i2c_binding_preserves_read_identity_and_extracts_the_field() {
@@ -491,7 +436,7 @@ mod binding_tests {
         assert_eq!(
             binding.action(),
             PhyColdI2cAction::StartRead {
-                address: SENSOR_ADDRESS,
+                address: analog_registers::TEMPERATURE_SENSOR_DAC_STATUS.address(),
             }
         );
         binding.read_started().unwrap();
@@ -502,16 +447,14 @@ mod binding_tests {
         assert_eq!(
             binding.action(),
             PhyColdI2cAction::Complete(PhyColdI2cOutcome::Read {
-                address: SENSOR_ADDRESS,
+                address: analog_registers::TEMPERATURE_SENSOR_DAC_STATUS.address(),
                 value: 0x4f,
             })
         );
         assert_eq!(
             binding.into_completion().unwrap(),
             PhyTemperatureCompletion::MaskedRead {
-                address: SENSOR_ADDRESS,
-                high_bit: 6,
-                low_bit: 0,
+                field: analog_registers::TEMPERATURE_SENSOR_DAC_STATUS,
                 value: 0x4f,
             }
         );
@@ -541,18 +484,18 @@ mod binding_tests {
 
 #[cfg(test)]
 mod tests {
+    use crate::phy_i2c::analog_registers;
+
     use super::{
         PhyTemperatureAction, PhyTemperatureCompletion, PhyTemperatureFailure,
         PhyTemperatureOutcome, PhyTemperatureTransition, PhyTemperatureTransitionError,
-        SENSOR_ADDRESS, temperature_from_code,
+        temperature_from_code,
     };
 
     fn complete_dac_read(transition: &mut PhyTemperatureTransition, dac: u8) {
         transition
             .advance(PhyTemperatureCompletion::MaskedRead {
-                address: SENSOR_ADDRESS,
-                high_bit: 6,
-                low_bit: 0,
+                field: analog_registers::TEMPERATURE_SENSOR_DAC_STATUS,
                 value: dac,
             })
             .unwrap();
@@ -595,26 +538,20 @@ mod tests {
         assert_eq!(
             transition.action(),
             PhyTemperatureAction::WriteMasked {
-                address: SENSOR_ADDRESS,
-                high_bit: 3,
-                low_bit: 0,
+                field: analog_registers::TEMPERATURE_SENSOR_DAC,
                 value: 7,
             }
         );
         assert_eq!(
             transition.advance(PhyTemperatureCompletion::MaskedWrite {
-                address: SENSOR_ADDRESS,
-                high_bit: 3,
-                low_bit: 0,
+                field: analog_registers::TEMPERATURE_SENSOR_DAC,
                 value: 5,
             }),
             Err(PhyTemperatureTransitionError::WrongCompletion)
         );
         transition
             .advance(PhyTemperatureCompletion::MaskedWrite {
-                address: SENSOR_ADDRESS,
-                high_bit: 3,
-                low_bit: 0,
+                field: analog_registers::TEMPERATURE_SENSOR_DAC,
                 value: 7,
             })
             .unwrap();
@@ -635,17 +572,13 @@ mod tests {
         assert_eq!(
             transition.action(),
             PhyTemperatureAction::WriteMasked {
-                address: SENSOR_ADDRESS,
-                high_bit: 3,
-                low_bit: 0,
+                field: analog_registers::TEMPERATURE_SENSOR_DAC,
                 value: 5,
             }
         );
         transition
             .advance(PhyTemperatureCompletion::MaskedWrite {
-                address: SENSOR_ADDRESS,
-                high_bit: 3,
-                low_bit: 0,
+                field: analog_registers::TEMPERATURE_SENSOR_DAC,
                 value: 5,
             })
             .unwrap();
@@ -668,9 +601,7 @@ mod tests {
         complete_dac_read(&mut transition, 5);
         assert_eq!(
             transition.advance(PhyTemperatureCompletion::MaskedRead {
-                address: SENSOR_ADDRESS,
-                high_bit: 6,
-                low_bit: 0,
+                field: analog_registers::TEMPERATURE_SENSOR_DAC_STATUS,
                 value: 128,
             }),
             Err(PhyTemperatureTransitionError::WrongCompletion)

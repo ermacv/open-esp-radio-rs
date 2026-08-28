@@ -37,7 +37,8 @@ pub use open_esp_radio_esp32s31_pac::{
     BluetoothSchedulerFinishedListPop, BluetoothSchedulerLockModifyInterruptObservation,
     BluetoothSchedulerLockModifyObservation, BluetoothSchedulerLockModifyPublished,
     BluetoothSchedulerLockModifyRequest, BluetoothSchedulerLockModifyTaskObservation,
-    BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerWorkObservation,
+    BluetoothSchedulerReferenceCleared, BluetoothSchedulerReferenceGateObservation,
+    BluetoothSchedulerWorkObservation,
 };
 
 /// Opaque HAL owner for the exclusive Bluetooth route before task/IRQ split.
@@ -624,6 +625,15 @@ impl BluetoothInterruptRegistersOwner {
         &mut self,
     ) -> BluetoothSchedulerReferenceGateObservation {
         self.registers.capture_scheduler_reference_gate()
+    }
+
+    /// Clear the scheduler reference selected by the source-124 gate.
+    ///
+    /// The returned affine token proves only the ordered PAC write and device
+    /// fence. The controller must still consume it in the mandatory post-clear
+    /// scheduler invariant before taking the later work observation.
+    pub fn clear_scheduler_reference(&mut self) -> BluetoothSchedulerReferenceCleared {
+        self.registers.clear_scheduler_reference()
     }
 
     /// Capture the later, independent scheduler-state observation used to

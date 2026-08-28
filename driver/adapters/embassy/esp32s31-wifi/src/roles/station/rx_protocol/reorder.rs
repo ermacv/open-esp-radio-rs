@@ -1,5 +1,8 @@
 use super::*;
 
+#[cfg(feature = "task-poll-telemetry")]
+use crate::diagnostics::core0_rx_reorder_cycles::{CORE0_REORDER_CYCLES, Core0ReorderPath};
+
 impl<
     'queue,
     'pool,
@@ -22,11 +25,20 @@ where
             self.runtime.dispatcher_configured(),
             "stopped connected RX processor cannot dispatch another frame"
         );
+        #[cfg(feature = "task-poll-telemetry")]
+        CORE0_REORDER_CYCLES.begin();
         #[cfg(any(feature = "diagnostics", test))]
         let reorder_started = self.pipeline_observer.map(|observer| observer.now_micros());
-        let Some(key) = self.runtime.dispatcher.reorder_key(frame.segment()) else {
+        let reorder_key = self.runtime.dispatcher.reorder_key(frame.segment());
+        #[cfg(feature = "task-poll-telemetry")]
+        CORE0_REORDER_CYCLES.key_completed();
+        let Some(key) = reorder_key else {
             #[cfg(any(feature = "diagnostics", test))]
             self.observe_reorder_prepared(reorder_started);
+            #[cfg(feature = "task-poll-telemetry")]
+            CORE0_REORDER_CYCLES.prepared_observer_completed();
+            #[cfg(feature = "task-poll-telemetry")]
+            CORE0_REORDER_CYCLES.finish(Core0ReorderPath::NoKey);
             return Some(self.dispatch_owned_frame(frame).await);
         };
         let bank = self.runtime.reorder_banks.find(
@@ -34,6 +46,8 @@ where
             key.peer,
             key.tid,
         );
+        #[cfg(feature = "task-poll-telemetry")]
+        CORE0_REORDER_CYCLES.bank_completed();
         let active = bank.is_some();
         #[cfg(any(feature = "diagnostics", test))]
         if let Some(observer) = self.pipeline_observer {
@@ -42,9 +56,15 @@ where
                 retry: key.retry,
             });
         }
+        #[cfg(feature = "task-poll-telemetry")]
+        CORE0_REORDER_CYCLES.ingress_observer_completed();
         if !active {
             #[cfg(any(feature = "diagnostics", test))]
             self.observe_reorder_prepared(reorder_started);
+            #[cfg(feature = "task-poll-telemetry")]
+            CORE0_REORDER_CYCLES.prepared_observer_completed();
+            #[cfg(feature = "task-poll-telemetry")]
+            CORE0_REORDER_CYCLES.finish(Core0ReorderPath::Inactive);
             return Some(self.dispatch_owned_frame(frame).await);
         }
         let bank = bank.expect("active reorder has one hardware-bank identity");
@@ -65,20 +85,26 @@ where
                 });
             }
         }
+        #[cfg(feature = "task-poll-telemetry")]
+        CORE0_REORDER_CYCLES.first_completed();
 
         let immediate = RxAmpduMpdu {
             sequence: key.sequence,
             slot: RX_REORDER_CURRENT_SLOT as u8,
         };
-        match self
+        let immediate_result = self
             .runtime
             .reorder_banks
             .state_mut(bank)
             .expect("active TID was checked above")
-            .try_ingest_immediate(immediate)
-        {
+            .try_ingest_immediate(immediate);
+        #[cfg(feature = "task-poll-telemetry")]
+        CORE0_REORDER_CYCLES.ingest_completed();
+        match immediate_result {
             Ok(Some(_)) => {
                 self.update_gap_deadline(bank);
+                #[cfg(feature = "task-poll-telemetry")]
+                CORE0_REORDER_CYCLES.deadline_completed();
                 #[cfg(any(feature = "diagnostics", test))]
                 if let Some(observer) = self.pipeline_observer {
                     observer.observe(RxPipelineObservation::ReorderReleased {
@@ -88,13 +114,24 @@ where
                         stale: false,
                     });
                 }
+                #[cfg(feature = "task-poll-telemetry")]
+                CORE0_REORDER_CYCLES.release_observer_completed();
                 #[cfg(any(feature = "diagnostics", test))]
                 self.record_reorder_occupied();
+                #[cfg(feature = "task-poll-telemetry")]
+                CORE0_REORDER_CYCLES.occupied_observer_completed();
                 #[cfg(any(feature = "diagnostics", test))]
                 self.observe_reorder_prepared(reorder_started);
+                #[cfg(feature = "task-poll-telemetry")]
+                CORE0_REORDER_CYCLES.prepared_observer_completed();
+                #[cfg(feature = "task-poll-telemetry")]
+                CORE0_REORDER_CYCLES.finish(Core0ReorderPath::Immediate);
                 return Some(self.dispatch_owned_frame(frame).await);
             }
-            Ok(None) => {}
+            Ok(None) => {
+                #[cfg(feature = "task-poll-telemetry")]
+                CORE0_REORDER_CYCLES.finish(Core0ReorderPath::Slow);
+            }
             Err(error) => {
                 #[cfg(any(feature = "diagnostics", test))]
                 if let Some(observer) = self.pipeline_observer {
@@ -102,6 +139,8 @@ where
                 }
                 drop(frame);
                 self.irq.notify_rx_capacity();
+                #[cfg(feature = "task-poll-telemetry")]
+                CORE0_REORDER_CYCLES.finish(Core0ReorderPath::Slow);
                 return Some(if matches!(error, RxAmpduError::DuplicateSequence(_)) {
                     ConnectedRxDispatch::Duplicate
                 } else {

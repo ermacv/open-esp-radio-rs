@@ -194,14 +194,24 @@ where
         let limit = context.maximum_protocol_frames.unwrap_or(SLOTS).max(1);
         let before_dma = if self.protocol.has_ready_work() {
             #[cfg(feature = "task-poll-telemetry")]
-            let protocol_started = crate::diagnostics::core0_rx_cycles::cycle_count();
+            let protocol_started =
+                crate::diagnostics::core0_rx_performance::Core0PerformanceSample::read();
             #[cfg(feature = "task-poll-telemetry")]
             crate::diagnostics::core0_rx_cycles::CORE0_RX_CYCLES
+                .begin_protocol_poll(protocol_started.cycles);
+            #[cfg(feature = "task-poll-telemetry")]
+            crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE
                 .begin_protocol_poll(protocol_started);
             let turn = self.protocol.service_bounded(limit).await;
             #[cfg(feature = "task-poll-telemetry")]
-            crate::diagnostics::core0_rx_cycles::CORE0_RX_CYCLES
-                .end_protocol_poll(crate::diagnostics::core0_rx_cycles::cycle_count());
+            {
+                let protocol_ended =
+                    crate::diagnostics::core0_rx_performance::Core0PerformanceSample::read();
+                crate::diagnostics::core0_rx_cycles::CORE0_RX_CYCLES
+                    .end_protocol_poll(protocol_ended.cycles);
+                crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE
+                    .end_protocol_poll(protocol_ended);
+            }
             turn
         } else {
             Default::default()
@@ -221,14 +231,24 @@ where
             Default::default()
         } else {
             #[cfg(feature = "task-poll-telemetry")]
-            let protocol_started = crate::diagnostics::core0_rx_cycles::cycle_count();
+            let protocol_started =
+                crate::diagnostics::core0_rx_performance::Core0PerformanceSample::read();
             #[cfg(feature = "task-poll-telemetry")]
             crate::diagnostics::core0_rx_cycles::CORE0_RX_CYCLES
+                .begin_protocol_poll(protocol_started.cycles);
+            #[cfg(feature = "task-poll-telemetry")]
+            crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE
                 .begin_protocol_poll(protocol_started);
             let turn = self.protocol.service_bounded(remaining).await;
             #[cfg(feature = "task-poll-telemetry")]
-            crate::diagnostics::core0_rx_cycles::CORE0_RX_CYCLES
-                .end_protocol_poll(crate::diagnostics::core0_rx_cycles::cycle_count());
+            {
+                let protocol_ended =
+                    crate::diagnostics::core0_rx_performance::Core0PerformanceSample::read();
+                crate::diagnostics::core0_rx_cycles::CORE0_RX_CYCLES
+                    .end_protocol_poll(protocol_ended.cycles);
+                crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE
+                    .end_protocol_poll(protocol_ended);
+            }
             turn
         };
         self.serviced_frames = self

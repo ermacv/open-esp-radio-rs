@@ -5,7 +5,8 @@ image = "diagnostic-core0-rx-cycles"
 isolation = "reset"
 data_plane = "split-radio-network"
 rx_admission = "synchronous-shared"
-tags = ["diagnostic", "udp", "station", "rx", "ht40", "mcs7", "core0", "cycles", "credits", "admission-ab"]
+l1_cache_counters = true
+tags = ["diagnostic", "udp", "station", "rx", "ht40", "mcs7", "core0", "cycles", "credits", "admission-ab", "cache-ab"]
 
 [link]
 phy = "ht40"
@@ -27,4 +28,4 @@ maximum_idle_channel_utilization_255 = 64
 
 [evidence]
 openwrt_tx_monitor_rx = true
-independent_laptop_monitor_rx = true
+independent_laptop_monitor_rx = false

@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 67;
+pub const PROTOCOL_VERSION: u16 = 68;
 // Keep command envelopes small: startup artifacts are transferred as an
 // ordered CRC-protected stream, so a large per-command inline buffer only
 // inflates UART queues and executor futures without improving semantics.
@@ -801,6 +801,7 @@ pub struct InitializationConfiguration {
     pub data_plane: WifiDataPlanePlacement,
     pub rx_checksum: WifiRxChecksumPolicy,
     pub rx_admission: WifiRxAdmissionPolicy,
+    pub l1_cache_counters: bool,
 }
 
 impl InitializationConfiguration {
@@ -809,12 +810,14 @@ impl InitializationConfiguration {
         data_plane: WifiDataPlanePlacement,
         rx_checksum: WifiRxChecksumPolicy,
         rx_admission: WifiRxAdmissionPolicy,
+        l1_cache_counters: bool,
     ) -> Self {
         Self {
             ipv4,
             data_plane,
             rx_checksum,
             rx_admission,
+            l1_cache_counters,
         }
     }
 

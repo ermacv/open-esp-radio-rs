@@ -26,6 +26,7 @@ pub(crate) struct LabConfig {
     data_plane: Cell<WifiDataPlanePlacement>,
     rx_checksum: Cell<WifiRxChecksumPolicy>,
     rx_admission: Cell<WifiRxAdmissionPolicy>,
+    l1_cache_counters: Cell<bool>,
 }
 
 #[derive(Deserialize)]
@@ -334,6 +335,7 @@ impl LabConfig {
             data_plane: Cell::new(WifiDataPlanePlacement::SingleCore),
             rx_checksum: Cell::new(WifiRxChecksumPolicy::Software),
             rx_admission: Cell::new(WifiRxAdmissionPolicy::SynchronousShared),
+            l1_cache_counters: Cell::new(false),
         })
     }
 
@@ -382,6 +384,7 @@ impl LabConfig {
             data_plane: Cell::new(WifiDataPlanePlacement::SingleCore),
             rx_checksum: Cell::new(WifiRxChecksumPolicy::Software),
             rx_admission: Cell::new(WifiRxAdmissionPolicy::SynchronousShared),
+            l1_cache_counters: Cell::new(false),
         }
     }
 
@@ -407,6 +410,14 @@ impl LabConfig {
 
     pub(crate) fn rx_admission(&self) -> WifiRxAdmissionPolicy {
         self.rx_admission.get()
+    }
+
+    pub(crate) fn set_l1_cache_counters(&self, enabled: bool) {
+        self.l1_cache_counters.set(enabled);
+    }
+
+    pub(crate) fn l1_cache_counters(&self) -> bool {
+        self.l1_cache_counters.get()
     }
 }
 

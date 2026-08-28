@@ -6,8 +6,9 @@ use embassy_futures::yield_now;
 use embassy_time::Instant;
 #[cfg(feature = "core0-rx-cycle-telemetry")]
 use open_esp_radio_esp32s31_embassy_wifi::{
-    CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM, Core0RxCycleSnapshot,
-    Core0RxServiceHistogramSnapshot, cycle_count,
+    CORE0_PERFORMANCE, CORE0_REORDER_CYCLES, CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM,
+    Core0PerformanceSample, Core0PerformanceSnapshot, Core0ReorderSnapshot, Core0RxCycleSnapshot,
+    Core0RxServiceHistogramSnapshot,
 };
 use open_esp_radio_hil_esp32s31_telemetry::{
     aggregate_tx::{AggregateTxCounterSnapshot, AggregateTxCounters},
@@ -18,6 +19,9 @@ use open_esp_radio_hil_esp32s31_telemetry::{
 use open_esp_radio_hil_protocol::{RadioEvidence, TxAggregateTimingEvidence, TxRadioEvidence};
 
 use crate::console::{runtime_log, runtime_log_reliably};
+
+#[cfg(feature = "core0-rx-cycle-telemetry")]
+use super::cache_performance::L1CachePerformanceSnapshot;
 
 pub(in crate::product_hil) fn aggregate_tx_evidence(
     aggregate: AggregateTxCounterSnapshot,
@@ -483,8 +487,17 @@ pub(in crate::product_hil) async fn log_open_radio_task_poll_interval(
 #[cfg(feature = "core0-rx-cycle-telemetry")]
 pub(in crate::product_hil) async fn log_open_radio_core0_rx_cycles(
     earlier: Core0RxCycleSnapshot,
+    performance_earlier: Core0PerformanceSnapshot,
+    reorder_earlier: Core0ReorderSnapshot,
+    cache: L1CachePerformanceSnapshot,
 ) {
     let cycles = CORE0_RX_CYCLES.snapshot().wrapping_delta_since(earlier);
+    let performance = CORE0_PERFORMANCE
+        .snapshot()
+        .wrapping_delta_since(performance_earlier);
+    let reorder = CORE0_REORDER_CYCLES
+        .snapshot()
+        .wrapping_delta_since(reorder_earlier);
     runtime_log_reliably(format_args!(
         "ORC0 services={} units={} total={} setup={} frontier={} admission={} \
          stage_total={} stage_take={} stage_pool={} recycle={} reload={} publish={} tail={}",
@@ -630,6 +643,86 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_cycles(
     ))
     .await;
     yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ORC0J radio_polls={} radio_cycles={} radio_instret={} poll_to_runner_instret={} runner_to_exit_instret={} runner_calls={} runner_cycles={} runner_instret={} protocol_polls={} protocol_cycles={} protocol_instret={}",
+        performance.radio_polls,
+        performance.radio_cycles,
+        performance.radio_instructions,
+        performance.poll_to_runner_instructions,
+        performance.runner_to_poll_exit_instructions,
+        performance.runner_calls,
+        performance.runner_cycles,
+        performance.runner_instructions,
+        performance.protocol_polls,
+        performance.protocol_cycles,
+        performance.protocol_instructions,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ORC0K dma_calls={} dma_units={} dma_cycles={} dma_instret={} protocol_frames={} protocol_frame_cycles={} protocol_frame_instret={}",
+        performance.dma_calls,
+        performance.dma_units,
+        performance.dma_cycles,
+        performance.dma_instructions,
+        performance.protocol_frames,
+        performance.protocol_frame_cycles,
+        performance.protocol_frame_instructions,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ORC0G calls={} no_key={} inactive={} immediate={} slow={} total={} key={} bank={} ingress_observer={} first={} ingest={} deadline={} release_observer={} occupied_observer={} prepared_observer={} tail={} telemetry={}",
+        reorder.calls,
+        reorder.no_key,
+        reorder.inactive,
+        reorder.immediate,
+        reorder.slow,
+        reorder.total,
+        reorder.key,
+        reorder.bank,
+        reorder.ingress_observer,
+        reorder.first,
+        reorder.ingest,
+        reorder.deadline,
+        reorder.release_observer,
+        reorder.occupied_observer,
+        reorder.prepared_observer,
+        reorder.tail,
+        reorder.telemetry_record,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "OCACHEI trace={} enable=0x{:02x} bus0_hit={} bus0_miss={} bus0_conflict={} bus0_next={} bus1_hit={} bus1_miss={} bus1_conflict={} bus1_next={}",
+        u8::from(cache.trace_enabled),
+        cache.counter_enable,
+        cache.ibus0.hit,
+        cache.ibus0.miss,
+        cache.ibus0.conflict,
+        cache.ibus0.next_level_read,
+        cache.ibus1.hit,
+        cache.ibus1.miss,
+        cache.ibus1.conflict,
+        cache.ibus1.next_level_read,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "OCACHED bus0_hit={} bus0_miss={} bus0_conflict={} bus0_next_read={} bus0_next_write={} bus1_hit={} bus1_miss={} bus1_conflict={} bus1_next_read={} bus1_next_write={}",
+        cache.dbus0.hit,
+        cache.dbus0.miss,
+        cache.dbus0.conflict,
+        cache.dbus0.next_level_read,
+        cache.dbus0.next_level_write,
+        cache.dbus1.hit,
+        cache.dbus1.miss,
+        cache.dbus1.conflict,
+        cache.dbus1.next_level_read,
+        cache.dbus1.next_level_write,
+    ))
+    .await;
+    yield_now().await;
 }
 
 #[cfg(feature = "core0-rx-cycle-telemetry")]
@@ -732,10 +825,13 @@ pub(in crate::product_hil) async fn observe_open_radio_core0_task_polls<F: Futur
     let mut future = core::pin::pin!(future);
     core::future::poll_fn(|context| {
         let started = Instant::now();
-        let cycle_started = cycle_count();
-        CORE0_RX_CYCLES.begin_radio_poll(cycle_started);
+        let performance_started = Core0PerformanceSample::read();
+        CORE0_PERFORMANCE.begin_radio_poll(performance_started);
+        CORE0_RX_CYCLES.begin_radio_poll(performance_started.cycles);
         let result = future.as_mut().poll(context);
-        CORE0_RX_CYCLES.end_radio_poll(cycle_count());
+        let performance_ended = Core0PerformanceSample::read();
+        CORE0_RX_CYCLES.end_radio_poll(performance_ended.cycles);
+        CORE0_PERFORMANCE.record_radio_poll(performance_started, performance_ended);
         counters.record(started.elapsed().as_micros());
         result
     })

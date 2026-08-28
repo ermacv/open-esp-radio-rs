@@ -823,6 +823,7 @@ impl SerialCapture {
                     lab.data_plane(),
                     lab.rx_checksum(),
                     lab.rx_admission(),
+                    lab.l1_cache_counters(),
                 ),
             ),
             timeout,

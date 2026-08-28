@@ -371,6 +371,8 @@ pub struct Scenario {
     #[serde(default)]
     pub rx_admission: WifiRxAdmissionPolicy,
     #[serde(default)]
+    pub l1_cache_counters: bool,
+    #[serde(default)]
     pub tags: Vec<String>,
     pub link: Option<LinkExpectation>,
     pub workload: Workload,
@@ -461,6 +463,13 @@ impl Scenario {
         {
             return Err(format!(
                 "{}: deferred-ready-diagnostic RX admission is restricted to the Core0 RX cycle diagnostic",
+                self.source.display()
+            )
+            .into());
+        }
+        if self.l1_cache_counters && self.image != ImageClass::DiagnosticCore0RxCycles {
+            return Err(format!(
+                "{}: L1 cache counters are restricted to the Core0 RX cycle diagnostic",
                 self.source.display()
             )
             .into());
@@ -1454,6 +1463,34 @@ mod tests {
         );
 
         let mut wrong_image = deferred.clone();
+        wrong_image.image = ImageClass::DiagnosticTaskPoll;
+        assert!(wrong_image.validate().is_err());
+    }
+
+    #[test]
+    fn l1_cache_counter_control_is_a_same_image_core0_control() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+        let catalog = Catalog::load(&root).unwrap();
+        let enabled = catalog
+            .get("udp-rx-ht40-core0-rx-cycles-diagnostic")
+            .unwrap();
+        let disabled = catalog
+            .get("udp-rx-ht40-core0-rx-cache-off-diagnostic")
+            .unwrap();
+
+        assert!(enabled.l1_cache_counters);
+        assert!(!disabled.l1_cache_counters);
+        assert_eq!(enabled.image, disabled.image);
+        assert_eq!(enabled.isolation, disabled.isolation);
+        assert_eq!(enabled.data_plane, disabled.data_plane);
+        assert_eq!(enabled.rx_checksum, disabled.rx_checksum);
+        assert_eq!(enabled.rx_admission, disabled.rx_admission);
+        assert_eq!(enabled.workload, disabled.workload);
+        assert_eq!(enabled.link, disabled.link);
+        assert_eq!(enabled.criteria, disabled.criteria);
+        assert_eq!(enabled.evidence, disabled.evidence);
+
+        let mut wrong_image = enabled.clone();
         wrong_image.image = ImageClass::DiagnosticTaskPoll;
         assert!(wrong_image.validate().is_err());
     }

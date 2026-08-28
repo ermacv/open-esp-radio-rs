@@ -11,65 +11,58 @@ repeating throughput-only A/B runs that no longer distinguish causes.
 ## Executive status
 
 The historical STA RX expectation is valid: the 2026-08-13 qualification
-record measured `108.752..116.172 Mbit/s`. The immediate `7..10 Mbit/s` loss
-investigated here now has a causal fixture-level explanation. A byte-identical
-archived application that had produced `102.378..104.699 Mbit/s` measured only
-`94.559..96.798 Mbit/s` on OpenWrt channel 6, then measured
-`101.772..103.119 Mbit/s` after changing only the AP primary channel to 11.
-The application, runtime ELF, host route, HT40 width, MCS7 vector, offer, and
-checksum policy were unchanged.
+record measured `108.752..116.172 Mbit/s`. One reproducible `7..10 Mbit/s`
+loss in this investigation has a causal fixture-level explanation. A
+byte-identical archived application that had produced `102.378..104.699
+Mbit/s` measured only `94.559..96.798 Mbit/s` on OpenWrt channel 6, then
+measured `101.772..103.119 Mbit/s` after changing only the AP primary channel
+to 11. The application, runtime ELF, host route, HT40 width, MCS7 vector,
+offer, and checksum policy were unchanged.
 
 Channel 6 had `31.5%` idle CCA busy time versus `23.6%` on channel 11. An
 independent capture identified a `FRITZ!Box 7530 FN` on channel 6 at
 approximately `-28..-37 dBm`, close to the laboratory AP's signal. The
 `7.9` percentage-point idle-busy difference matches both the direction and
-magnitude of the recovered throughput. The current degradation is therefore
-an uncontrolled radio-cell precondition, not a DUT code regression.
+magnitude of the recovered throughput. That exact archived-image degradation
+was therefore an uncontrolled radio-cell precondition, not a DUT code
+regression.
 
-The investigation also found two real but separate engineering concerns:
-exact ELF placement can affect the network-core cache ceiling, and the dirty
-ownership diagnostic exposes finite RX-ring capacity under overload. Neither
-explains the identical-binary channel A/B. No evidence supports a broken
+Current source independently reaches `105.861 Mbit/s` in the observer-free
+production image and `106.831 Mbit/s` in the latest diagnostic same-ELF
+control. Its normal saturated Core0 radio-poll residence is about 92--95%, not
+50%, but the AP-to-target delivery frontier can still be the immediate air
+ceiling. Separate intermittent `93` and `51 Mbit/s` states admit fewer frames
+and have lower Core0 residence; they are localized before the measured DMA
+path but are not yet assigned to AP scheduling, RF or PHY.
+
+The investigation also found real engineering concerns: exact ELF placement
+can affect cache behavior, and retained RX credits are finite under overload.
+Neither explains the identical-binary channel A/B or has been shown to cause
+the latest intermittent underfed state. No current evidence supports a broken
 A-MPDU/BlockAck agreement, a laptop WLAN route, the upstream Embassy switch,
-checksum policy, or the OpenWrt Ethernet path as the cause of the current
-`94..97 Mbit/s` ceiling.
+checksum policy, or the OpenWrt Ethernet path as its cause.
 
 ## Current working state
 
-The source tree is not a clean current-main performance baseline. It contains
-28 modified files and one untracked scenario, about 1,000 insertions and 105
-deletions before this record is counted. The changes belong to several
-different experiments and must be split
-before publication:
+The former mixed dirty tree described by the early chronology below has been
+split, reviewed and merged. Current `main` at the start of this checkpoint is
+`603d94c4`. Its shipping topology includes the synchronous ordinary RX path,
+same-Core0 combined DMA/protocol owner, bounded affine SPSC and fixed
+ring64/retained32 policy. The current uncommitted delta is diagnostic only:
+paired Core0 cycle/instruction accounting, synchronous reorder phase
+accounting, a runtime-selectable L1 event counter, its same-ELF HIL control and
+this updated record.
 
-- RX ring ownership: bulk frames are preserved at a completed ring head when
-  staging is full instead of being discarded and recycled. Focused adapter
-  tests passed (`244` tests in the affected crate during this investigation).
-- Driver/HIL observation: expanded RX PHY/decode/hang counters, fuller ring
-  frontier accounting, task-poll timing, and AP/independent-air evidence.
-- Runtime startup: one `wait_config_up` waiter starts all long-lived network
-  services, avoiding replacement churn in Embassy's single `state_waker`.
-- Temporary experiment scaffolding: same-boot RX probes controlled by
-  `OPEN_RADIO_RX_SAME_BOOT_PROBES`, one-repetition scenarios, and relaxed
-  acceptance criteria.
+The production ceiling scenarios retain three repetitions and their published
+acceptance thresholds. The new cache controls are explicitly diagnostic,
+one-repetition scenarios with a low correctness floor; they are not
+qualification gates. Laptop WLAN remains soft-blocked, its optional monitor is
+disabled in these controls, and the validated host data route is Ethernet.
 
-The local performance scenario is deliberately weakened for diagnosis:
-
-- repetitions changed from `3` to `1`;
-- the RX floor changed from `100` to `90 Mbit/s`;
-- the RX-delivery diagnostic changed from exact `80 Mbit/s` delivery to a
-  lossy `120 Mbit/s` overload probe and no longer requires beacon integrity.
-
-Those scenario changes are not acceptable as a final qualification gate.
-
-The Cargo manifests and locks are restored to upstream Embassy and have no
-local diff. They select Embassy commit `e7a576f2` and crates.io support crates.
-The source-only audit before the final rebase rebuilt the dirty root performance
-application with SHA-256 `697a3dcc...` from those restored manifests, but did
-not flash or run it. The DUT was most recently flashed from the separate clean
-`e5fbc5e0` worktree with current-main application `961dc049...`. That clean
-control is valid, but neither it nor the successful dirty build makes the dirty
-root worktree a publishable performance baseline.
+Cargo manifests and locks remain on upstream Embassy commit `e7a576f2` plus
+crates.io support crates, with no local fork override. The post-instrumentation
+production build is observer-free and passes the linked-image audits; the HIL
+cache/reorder/performance symbols are feature-eliminated from that image.
 
 ## Reconstructed chronology and useful A/B results
 
@@ -1529,3 +1522,235 @@ Run `1787884057659-0032014e` passed at `105.861 Mbit/s` from an actual
 the AP reported MCS7/HT40, and station retries/failed were zero. This run has
 no driver or independent-air observer and is therefore only a shipping-feature
 throughput non-regression, not additional BA/PHY correctness evidence.
+
+## 2026-08-28: retired instructions and same-ELF cache-counter control
+
+The cycle profile was extended with coarse, paired `mcycle` and `minstret`
+samples around the complete Core0 radio poll, runner transaction and protocol
+poll. This addresses a limitation of the earlier occupancy wording: poll
+residence is not synonymous with useful instruction execution. Per-frame CSR
+reads were deliberately avoided at these three boundaries. A separate phase
+profile decomposes only synchronous BA reorder ingress and explicitly accounts
+for its own counter updates.
+
+The first completed profile, run `1787886107321-00328a6b`, passed at
+`105.401 Mbit/s`. The 12.058104-second interval contained 3,626,470,787 radio
+poll cycles and 818,237,191 retired instructions. At a measured 320 MHz this
+is about 94.0% Core0 radio-poll residence and 4.43 cycles per retired
+instruction. The runner used 2,953,519,999 cycles / 751,126,242 instructions
+and the nested protocol owner used 1,976,447,959 / 478,106,897. This is direct
+evidence that the normal saturated state is not a 50%-residence state. It is
+not evidence that the remaining cycles are all cache stalls.
+
+Hardware L1 cache counters were then exposed through the safe S31 CACHE PAC.
+The reported bus names are deliberately kept as `IBUS0/1` and `DBUS0/1`; they
+are not relabelled as CPU identities. `HIT`, `MISS`, `ACS_CONFLICT` and
+`NEXT_LEVEL` are also kept as separate events. In particular, the existence
+of a distinct hardware miss counter makes it invalid to call every access
+conflict a set-associative conflict miss.
+
+Enabling those counters changes peripheral state, so a runtime selector and a
+same-image scenario pair were added. Run `1787886776974-0032c322` executed
+both policies from runtime CRC32 `46bcab46`:
+
+| L1 counters | RX | UDP / admitted frames | Core0 radio cycles / instructions | Runner cycles / instructions | Protocol cycles / instructions |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| off | 106.831 Mbit/s | 109,422 / 109,586 | 3,662,331,938 / 839,750,279 | 2,952,611,333 / 769,160,621 | 1,942,476,078 / 489,150,534 |
+| on | 106.652 Mbit/s | 109,279 / 109,441 | 3,653,765,159 / 839,161,452 | 2,941,561,267 / 768,366,358 | 1,932,302,845 / 488,432,203 |
+
+The `0.179 Mbit/s` difference is 0.17%. Normalized cycle and instruction
+totals also agree within about one percent. Enabling the hardware event
+counters is therefore non-intrusive at the resolution of this workload. The
+preceding cache-enabled run `1787886473817-00329495` reached only
+`93.230 Mbit/s`, but this same-ELF control proves that the trace bit did not
+cause that state. The slow-ish run admitted fewer frames, reduced Core0
+residence to about 86%, and diverged before the measured DMA path, like the
+earlier 51 Mbit/s underfed state.
+
+For the cache-off control, the radio-poll region occupied 94.89% of the
+320 MHz interval and retired about 69.6 million instructions/second. Its CPI
+was 4.36; runner CPI was 3.84 and protocol CPI was 3.97. Subtracting nested
+regions gives a more useful architectural split:
+
+| Exclusive region | Cycles | Instructions | CPI | Interval share |
+| --- | ---: | ---: | ---: | ---: |
+| protocol poll | 1,942,476,078 | 489,150,534 | 3.97 | 50.33% |
+| runner outside protocol | 1,010,135,255 | 280,010,087 | 3.61 | 26.17% |
+| radio poll outside runner | 709,720,605 | 70,589,658 | 10.05 | 18.39% |
+
+The last row is the most instruction-sparse measured region, but it still
+contains several possible causes: async scheduler/state-machine execution,
+interrupt preemption, multi-cycle instructions and memory/cache stalls. CPI
+alone cannot distinguish them. Espressif's official `ccomp_timer` component
+also states that on RISC-V it falls back to the CPU cycle counter and cannot
+compensate cache misses; IRAM placement is its proposed control. Thus there is
+no supported CPU PMU shortcut which can convert these cycles directly into
+cache-stall cycles on S31. The CACHE peripheral events provide hierarchy
+traffic, not stall duration.
+
+With counters enabled, the raw L1 events were:
+
+| Bus | Hit | Miss | Access conflict | Next-level read | Next-level write |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| IBUS0 | 596,944,814 | 1,636,948,621 | 0 | 11,252,488 | n/a |
+| IBUS1 | 1,223,230,656 | 642,697,273 | 0 | 3,993,142 | n/a |
+| DBUS0 | 301,522,583 | 81,261,870 | 3,216,740 | 469,710 | 362,883 |
+| DBUS1 | 139,294,677 | 49,325,926 | 3,274,286 | 319,267 | 227,503 |
+
+The corresponding `MISS/(HIT+MISS)` ratios are 73.28%, 34.44%, 21.23% and
+26.15%, while next-level reads are only 0.62--0.69% of the instruction-bus
+miss events and 0.58--0.65% of the data-bus miss events. The miss counters
+therefore cannot be interpreted as one external refill or one CPU stall each.
+Per admitted frame, the observed next-level reads are approximately 102.8,
+36.5, 4.29 and 2.92 respectively. These numbers establish a usable current
+baseline; without a same-ELF fast/slow pair they do not establish that cache
+traffic is the throughput blocker.
+
+The reorder phase split further corrects an earlier attribution error. Of
+109,586 calls in the cache-off run, 109,438 took the immediate BA path, 148
+had no reorder key and none took the slow buffered path. The measured
+synchronous ingress cost was 312,065,160 cycles, but about 180.7 million of
+those cycles were diagnostic observer callbacks (`ingress`, `release`,
+`occupied`, and `prepared`) and another 43.0 million cycles were spent updating
+the phase telemetry itself. After excluding those diagnostic-only regions, the
+remaining measured key lookup, bank lookup, immediate ingest, deadline and
+tail are about 1,200 cycles per frame. Calling the full approximately
+2,850-cycle value intrinsic BA processing would therefore be wrong. Production
+does not enable these observers.
+
+Both same-ELF controls retained BA16, had zero buffered/slow reorder ingress,
+zero software capacity blocks, zero hardware `BUFFER_FULL` and
+`FIFO_OVERFLOW`, and pool/queue credit floors of 20/22 and 17/18. The current
+ring64/retained32 architecture is consequently not showing a credit or reorder
+failure in the normal ceiling state. This does not erase its bounded
+backpressure contract; it only demonstrates adequate credits in this measured
+workload.
+
+Two failures observed while establishing the control remain separate. Run
+`1787885914266-003261c8` failed during connected TX protection publication
+before RX traffic, with `PhysicalPublicationUnverified` for CTS-to-self HT
+nonmember protection, despite a fully armed 64-entry ring. Run
+`1787886031457-00328523` failed because the optional independent laptop monitor
+could not enable its intentionally soft-blocked WLAN. The RX scenarios now use
+the OpenWrt monitor while the laptop WLAN remains blocked and the host route is
+validated over `enp0s20f0u2u4c2`. Neither failure is evidence about RX cache or
+ring behavior; the TX protection failure is an additional current-main
+stability issue to reproduce independently.
+
+The diagnostic fat-LTO build also exposed a pre-existing stack-audit mismatch:
+`cold_start::start_esp32s31_wifi` materializes as 20,400 bytes after the recent
+PAC-owned PHY transition refactors, above its former reviewed 18,432-byte
+limit. A clean detached build of exact commit `603d94c4` produced the same
+20,400-byte frame, proving that the new telemetry did not cause it. The
+function-specific reviewed limit is raised to 21,504 bytes; the global 48 KiB
+limit and 4 KiB move limit remain unchanged, and runtime stack painting remains
+the dynamic bound.
+
+### Architecture decision at this checkpoint
+
+The current ownership topology remains the best measured design: Core0 owns
+DMA/MAC/CCMP/BA, Core1 owns IP/UDP/sockets, the fixed ring has 64 entries with
+retention bounded to 32, and only detached packet ownership crosses cores.
+Copied immediate release and live descriptor replacement were already measured
+as more expensive; moving the Core1 stack onto a Core0 owner with 94--95%
+radio-poll residence is not justified. The synchronous ordinary admission and
+affine SPSC changes are valid because they reduced nested cycle counters in
+same-ELF controls, not because of a throughput guess.
+
+The architecture is not finished. Normal ceiling operation leaves little
+executor-return headroom, and the exclusive radio-outside-runner region has a
+measured CPI near 10. The next CPU experiment must pair `mcycle/minstret` at
+the existing DMA-service and protocol-frame boundaries, not add another broad
+rewrite. That will distinguish instruction-heavy work from instruction-sparse
+residence before selecting a small runtime-selectable IRAM control. A
+same-ELF external/internal implementation A/B is required before cache
+placement becomes a production decision.
+
+The intermittent 93/51 Mbit/s state is a different localization problem. It
+has lower, not higher, Core0 residence and fewer DMA admissions. The next
+recurrence must preserve the exact ELF and collect AP station airtime/rate,
+target PHY abort/restart/frontier counters and, where available, independent
+air MPDU/BA counts in the same interval. Only that correlation can distinguish
+AP scheduling/RF/PHY admission. Repeating cache on/off, changing the ring, or
+calling zero buffer errors proof of a healthy radio path would not answer it.
+
+An observer-free production build after this instrumentation has application
+SHA256 `8825d4b5...`, runtime CRC32 `c42f03e8`, and still occupies 2,898,896 of
+the 4,194,304-byte partition. Placement, stack-frame, autonomous-source-graph
+and serialized-log-writer audits pass. This proves that the diagnostic modules
+and cache-counter access do not leak into the shipping feature graph; it is a
+build/audit result, not a new on-air throughput measurement.
+
+## 2026-08-28: instruction split inside the Core0 owner
+
+The next profile paired `mcycle/minstret` at the existing synchronous DMA
+transaction and ordinary protocol-frame boundaries. It also split instructions
+before runner entry and after runner completion within one top-level radio
+poll. No ownership, queue, ring, BA or scheduling policy changed.
+
+Final-source run `1787887802948-0032fe68`, runtime CRC32 `4b18a1e1`, passed at
+`107.152 Mbit/s`. It admitted 109,927 frames, delivered 109,762 UDP datagrams,
+received only HT40/MCS7 benchmark vectors, retained BA16 with zero buffered,
+missing or stale reorder events, and reported zero software capacity blocks,
+`BUFFER_FULL`, `FIFO_OVERFLOW`, AP retries and AP failures. Pool/queue credit
+floors were 22/24. The mean DMA batch was 4.76 MPDUs per service.
+
+At 320 MHz, 3,671,037,068 radio-poll cycles over 12.062768 seconds are 95.10%
+Core0 residence. The exclusive decomposition is:
+
+| Region | Cycles | Retired instructions | CPI | Interval share |
+| --- | ---: | ---: | ---: | ---: |
+| DMA transaction | 952,146,420 | 264,379,394 | 3.60 | 24.67% |
+| protocol frame body | 1,106,450,312 | 319,348,815 | 3.46 | 28.66% |
+| protocol poll outside frame bodies | 702,954,439 | 171,930,370 | 4.09 | 18.21% |
+| runner outside DMA and protocol polls | 147,168,300 | 18,789,825 | 7.83 | 3.81% |
+| radio poll outside runner | 762,317,597 | 73,380,818 | 10.39 | 19.75% |
+
+The percentages sum to radio residence rather than 100% of the interval. The
+DMA transaction averaged 8,662 cycles and 2,405 instructions per admitted
+frame. The protocol body averaged 10,065 cycles and 2,905 instructions per
+frame. They are substantial real work, but neither has the worst CPI.
+
+The outer radio region is now almost completely closed by the pre/post split:
+
+| Scheduler boundary | Cycles | Instructions | CPI | Per runner call |
+| --- | ---: | ---: | ---: | ---: |
+| radio poll to runner entry | 486,609,670 | 54,133,572 | 8.99 | 21,091 cycles |
+| runner completion to poll exit | 267,941,874 | 18,173,317 | 14.74 | 11,613 cycles |
+| remaining polls/sampling difference | 7,766,053 | 1,073,929 | 7.23 | n/a |
+
+Existing cycle-only subphases independently account for the first row:
+scheduler reentry was 183.5 million cycles, stop probing 30.2 million,
+housekeeping 140.2 million, TX checks 78.0 million and final RX checks
+41.5 million. The second row is primarily counter publication followed by the
+mandatory `yield_now` poll and async unwind to the executor. The earlier
+no-yield A/B remains decisive: deleting the yield caused premature empty
+re-entry, reduced batching and made total radio residence worse. Therefore the
+new numbers do not justify removing fairness or spinning on DMA.
+
+The approximately 703-million-cycle protocol wrapper is not all production
+protocol work. This image's reorder observer callbacks consumed about 188.8
+million phase cycles and reorder counter updates another 37.8 million; general
+dequeue/entry/frame/data/publication telemetry adds more measured work. The
+ordinary path nevertheless took 109,784 of 109,927 keyed reorder calls and no
+call used slow buffering. BA buffering, gap recovery and ring backpressure are
+not responsible for the large wrapper total in this interval.
+
+This changes the optimization order. Dynamic descriptor replacement,
+unconditional copies, moving the IP stack to Core0 and deleting the local SPSC
+remain rejected by measured costs. A broad SRAM move is also premature. The
+largest instruction-sparse, non-payload cost is the scheduler/service boundary,
+crossed 23,073 times for 109,927 MPDUs. The next architecture A/B should reduce
+that boundary frequency or its generic state-machine work while preserving the
+useful coalescing produced by the yield.
+
+A valid candidate is a bounded RX continuation state, not a busy loop: after
+one finite DMA/protocol turn and one cooperative yield, an unchanged
+stop/control/TX generation may re-enter the RX owner through a compact fast
+path when a durable RX signal is already present; any changed generation or
+empty frontier returns to the complete scheduler. Its same-ELF acceptance must
+show lower poll-to-runner and runner-to-exit cycles *and* instructions, no drop
+in mean DMA batch, unchanged RX-before-TX/stop/control ordering, zero credit or
+hardware exhaustion, and no throughput regression. If a runtime-selectable
+small IRAM copy of that fast path lowers CPI after the semantic win is proven,
+cache placement becomes causal evidence rather than layout speculation.

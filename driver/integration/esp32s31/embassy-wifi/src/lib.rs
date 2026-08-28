@@ -118,6 +118,14 @@ pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_rx_cycles::{
     CORE0_RX_CYCLES, Core0RxCycleSnapshot, cycle_count,
 };
 #[cfg(feature = "task-poll-telemetry")]
+pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_rx_performance::{
+    CORE0_PERFORMANCE, Core0PerformanceSample, Core0PerformanceSnapshot,
+};
+#[cfg(feature = "task-poll-telemetry")]
+pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_rx_reorder_cycles::{
+    CORE0_REORDER_CYCLES, Core0ReorderSnapshot,
+};
+#[cfg(feature = "task-poll-telemetry")]
 pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_rx_service_histogram::{
     CORE0_RX_SERVICE_HISTOGRAM, CORE0_RX_SERVICE_HISTOGRAM_BINS,
     Core0RxServiceBinSnapshot, Core0RxServiceHistogramSnapshot,

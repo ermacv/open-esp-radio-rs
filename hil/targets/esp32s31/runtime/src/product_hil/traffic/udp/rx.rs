@@ -10,7 +10,7 @@ use embassy_net::{Stack, udp::UdpSocket};
 use embassy_time::{Duration, Instant, with_timeout};
 #[cfg(feature = "core0-rx-cycle-telemetry")]
 use open_esp_radio_esp32s31_embassy_wifi::{
-    CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM,
+    CORE0_PERFORMANCE, CORE0_REORDER_CYCLES, CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM,
 };
 use open_esp_radio_hil_esp32s31_telemetry::{
     rx_evidence::{RX_HE_MCS_BUCKETS, RX_HT_MCS_BUCKETS},
@@ -39,7 +39,8 @@ use crate::{
 };
 #[cfg(feature = "core0-rx-cycle-telemetry")]
 use crate::product_hil::traffic::{
-    log_open_radio_core0_rx_cycles, log_open_radio_core0_rx_service_histogram,
+    L1CachePerformanceSnapshot, enable_l1_cache_counters, log_open_radio_core0_rx_cycles,
+    log_open_radio_core0_rx_service_histogram,
 };
 
 #[derive(Clone, Copy)]
@@ -143,6 +144,12 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         .await;
         yield_now().await;
 
+        #[cfg(feature = "core0-rx-cycle-telemetry")]
+        if crate::product_hil::L1_CACHE_COUNTERS_ENABLED.load(Ordering::Relaxed) {
+            enable_l1_cache_counters();
+        }
+        #[cfg(feature = "core0-rx-cycle-telemetry")]
+        let cache_start = L1CachePerformanceSnapshot::read();
         let qualification_start = qualification_sample(QualificationRequester::UdpRx).await;
         let hardware_start = qualification_start.rx_primary;
         let irq_start = qualification_start.rx_interrupt_posts;
@@ -153,6 +160,10 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         let task_poll_start = telemetry.task_polls.snapshot();
         #[cfg(feature = "core0-rx-cycle-telemetry")]
         let core0_rx_cycle_start = CORE0_RX_CYCLES.snapshot();
+        #[cfg(feature = "core0-rx-cycle-telemetry")]
+        let core0_performance_start = CORE0_PERFORMANCE.snapshot();
+        #[cfg(feature = "core0-rx-cycle-telemetry")]
+        let core0_reorder_start = CORE0_REORDER_CYCLES.snapshot();
         #[cfg(feature = "core0-rx-cycle-telemetry")]
         let core0_rx_service_start = CORE0_RX_SERVICE_HISTOGRAM.snapshot();
         rx_qualification::LAST_FORMAT.store(u32::MAX, Ordering::Relaxed);
@@ -248,6 +259,8 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
 
         let elapsed_us = last_packet.duration_since(started).as_micros().max(1);
         let qualification_end = qualification_sample(QualificationRequester::UdpRx).await;
+        #[cfg(feature = "core0-rx-cycle-telemetry")]
+        let cache_interval = L1CachePerformanceSnapshot::read().wrapping_delta_since(cache_start);
         let hardware = qualification_end
             .rx_primary
             .zip(hardware_start)
@@ -527,7 +540,13 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         )
         .await;
         #[cfg(feature = "core0-rx-cycle-telemetry")]
-        log_open_radio_core0_rx_cycles(core0_rx_cycle_start).await;
+        log_open_radio_core0_rx_cycles(
+            core0_rx_cycle_start,
+            core0_performance_start,
+            core0_reorder_start,
+            cache_interval,
+        )
+        .await;
         #[cfg(feature = "core0-rx-cycle-telemetry")]
         log_open_radio_core0_rx_service_histogram(&core0_rx_service_start).await;
         let evidence = TransportEvidence {

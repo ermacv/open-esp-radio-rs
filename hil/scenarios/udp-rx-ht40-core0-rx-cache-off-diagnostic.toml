@@ -1,12 +1,12 @@
 schema = 3
-id = "udp-rx-ht40-core0-rx-deferred-ready-diagnostic"
-description = "Same-image Core0 RX control retaining the former immediately-ready async admission edge"
+id = "udp-rx-ht40-core0-rx-cache-off-diagnostic"
+description = "Same-ELF Core0 RX control with L1 cache event tracing disabled"
 image = "diagnostic-core0-rx-cycles"
 isolation = "reset"
 data_plane = "split-radio-network"
-rx_admission = "deferred-ready-diagnostic"
-l1_cache_counters = true
-tags = ["diagnostic", "udp", "station", "rx", "ht40", "mcs7", "core0", "cycles", "admission-ab"]
+rx_admission = "synchronous-shared"
+l1_cache_counters = false
+tags = ["diagnostic", "udp", "station", "rx", "ht40", "mcs7", "core0", "cycles", "cache-ab"]
 
 [link]
 phy = "ht40"

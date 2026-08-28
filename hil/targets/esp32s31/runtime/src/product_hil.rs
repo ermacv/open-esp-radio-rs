@@ -5,7 +5,7 @@
 
 use core::{
     num::NonZeroU16,
-    sync::atomic::{AtomicU32, Ordering},
+    sync::atomic::{AtomicBool, AtomicU32, Ordering},
 };
 
 use embassy_executor::{SendSpawner, Spawner};
@@ -406,6 +406,7 @@ static PHY_CALIBRATION_ARTIFACT: ConstStaticCell<
 > = ConstStaticCell::new([0; crate::phy_calibration_artifact::MAX_ENCODED_LEN]);
 static STATION_LIFECYCLE: Channel<CriticalSectionRawMutex, StationLinkEdge, 16> = Channel::new();
 static STATION_TX_BLOCK_ACK_OPERATIONAL_TIDS: AtomicU32 = AtomicU32::new(0);
+static L1_CACHE_COUNTERS_ENABLED: AtomicBool = AtomicBool::new(false);
 static AP_CHANNEL: AtomicU32 = AtomicU32::new(0);
 static AP_BANDWIDTH_MHZ: AtomicU32 = AtomicU32::new(0);
 static AP_BEACONS: AtomicU32 = AtomicU32::new(0);
@@ -2265,8 +2266,10 @@ pub async fn run(
         data_plane,
         rx_checksum,
         rx_admission,
+        l1_cache_counters,
         phy_calibration_artifact,
     } = startup;
+    L1_CACHE_COUNTERS_ENABLED.store(l1_cache_counters, Ordering::Relaxed);
     let efuse_registers = esp_hal::peripherals::EFUSE::regs();
     let mut station_address = [0; 6];
     station_address
@@ -2458,7 +2461,7 @@ pub async fn run(
     runtime_log(format_args!(
         "OPEN_RADIO_HIL data_plane={data_plane:?} radio_core=0 \
          protocol_core=0 network_core={data_plane_core} rx_checksum={rx_checksum:?} \
-         rx_admission={rx_admission:?}",
+         rx_admission={rx_admission:?} l1_cache_counters={l1_cache_counters}",
     ));
 }
 

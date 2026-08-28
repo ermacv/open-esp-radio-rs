@@ -7,6 +7,8 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
+use super::core0_rx_performance::{CORE0_PERFORMANCE, Core0PerformanceSample};
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Core0RxCycleSnapshot {
     pub services: u32,
@@ -978,6 +980,7 @@ pub(crate) enum Core0ProtocolPath {
 }
 
 pub(crate) struct Core0ProtocolCycleProfile {
+    performance_started: Core0PerformanceSample,
     poll_generation: u32,
     started: u32,
     last: u32,
@@ -994,8 +997,10 @@ pub(crate) struct Core0ProtocolCycleProfile {
 impl Core0ProtocolCycleProfile {
     #[inline(always)]
     pub(crate) fn begin() -> Self {
-        let now = cycle_count();
+        let performance_started = Core0PerformanceSample::read();
+        let now = performance_started.cycles;
         Self {
+            performance_started,
             poll_generation: CORE0_RX_CYCLES.record_protocol_frame_entry(now),
             started: now,
             last: now,
@@ -1043,10 +1048,13 @@ impl Core0ProtocolCycleProfile {
 
     #[inline(always)]
     pub(crate) fn finish(mut self, path: Core0ProtocolPath) {
-        let now = cycle_count();
+        let performance_ended = Core0PerformanceSample::read();
+        let now = performance_ended.cycles;
         self.publish_tail = now.wrapping_sub(self.last);
         self.path = path;
+        let performance_started = self.performance_started;
         CORE0_RX_CYCLES.record_protocol_frame(self, now);
+        CORE0_PERFORMANCE.record_protocol_frame(performance_started, performance_ended);
     }
 }
 
@@ -1157,6 +1165,7 @@ impl Core0RxSchedulerCycleProfile {
 }
 
 pub(crate) struct Core0RxCycleProfile {
+    performance_started: Core0PerformanceSample,
     started: u32,
     last: u32,
     phase: Core0RxCyclePhase,
@@ -1164,6 +1173,7 @@ pub(crate) struct Core0RxCycleProfile {
 }
 
 pub(crate) struct Core0RxRunnerCycleProfile {
+    performance_started: Core0PerformanceSample,
     started: u32,
     last: u32,
     pre: u32,
@@ -1173,9 +1183,11 @@ pub(crate) struct Core0RxRunnerCycleProfile {
 impl Core0RxRunnerCycleProfile {
     #[inline(always)]
     pub(crate) fn begin() -> Self {
-        let now = cycle_count();
+        let performance_started = Core0PerformanceSample::read();
+        let now = performance_started.cycles;
         CORE0_RX_CYCLES.record_runner_entry(now);
         Self {
+            performance_started,
             started: now,
             last: now,
             pre: 0,
@@ -1201,7 +1213,8 @@ impl Core0RxRunnerCycleProfile {
     /// yielding is deliberately excluded from Core0 executor residence.
     #[inline(always)]
     pub(crate) fn finish_before_yield(self) {
-        let now = cycle_count();
+        let performance_ended = Core0PerformanceSample::read();
+        let now = performance_ended.cycles;
         let post = now.wrapping_sub(self.last);
         debug_assert_eq!(
             now.wrapping_sub(self.started),
@@ -1209,14 +1222,17 @@ impl Core0RxRunnerCycleProfile {
         );
         CORE0_RX_CYCLES.record_runner_rx(self.pre, self.driver, post);
         CORE0_RX_CYCLES.record_runner_end(now);
+        CORE0_PERFORMANCE.record_runner(self.performance_started, performance_ended);
     }
 }
 
 impl Core0RxCycleProfile {
     #[inline(always)]
     pub(crate) fn begin() -> Self {
-        let now = cycle_count();
+        let performance_started = Core0PerformanceSample::read();
+        let now = performance_started.cycles;
         Self {
+            performance_started,
             started: now,
             last: now,
             phase: Core0RxCyclePhase::Setup,
@@ -1234,10 +1250,12 @@ impl Core0RxCycleProfile {
 
     #[inline(always)]
     pub(crate) fn finish(mut self, units: usize) {
-        let now = cycle_count();
+        let performance_ended = Core0PerformanceSample::read();
+        let now = performance_ended.cycles;
         self.add_current(now.wrapping_sub(self.last));
         self.sample.units = u32::try_from(units).unwrap_or(u32::MAX);
         self.sample.total = now.wrapping_sub(self.started);
+        CORE0_PERFORMANCE.record_dma(units, self.performance_started, performance_ended);
         crate::diagnostics::core0_rx_service_histogram::CORE0_RX_SERVICE_HISTOGRAM
             .record_service(units, &self.sample);
         if units == 0 {

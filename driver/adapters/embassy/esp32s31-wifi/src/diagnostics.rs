@@ -9,6 +9,10 @@ pub mod aggregate_tx;
 #[cfg(feature = "task-poll-telemetry")]
 pub mod core0_rx_cycles;
 #[cfg(feature = "task-poll-telemetry")]
+pub mod core0_rx_performance;
+#[cfg(feature = "task-poll-telemetry")]
+pub mod core0_rx_reorder_cycles;
+#[cfg(feature = "task-poll-telemetry")]
 pub mod core0_rx_service_histogram;
 #[cfg(feature = "diagnostics")]
 pub mod network;

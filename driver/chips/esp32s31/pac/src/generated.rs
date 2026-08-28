@@ -3815,6 +3815,30 @@ pub(crate) fn restore_phy_rx_dco_calibration_control(
     );
 }
 
+/// Typed bridge for the reviewed `enable_phy_calibration_clock` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_phy_calibration_clock(registers: &crate::svd::PhyClockOracle) {
+    crate::svd::field_replace_modify::enable_phy_calibration_clock(registers);
+}
+
+/// Typed bridge for the reviewed `disable_phy_calibration_clock` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn disable_phy_calibration_clock(registers: &crate::svd::PhyClockOracle) {
+    crate::svd::field_replace_modify::disable_phy_calibration_clock(registers);
+}
+
+/// Typed bridge for the reviewed `open_frontend_baseband_control` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn open_frontend_baseband_control(registers: &crate::svd::PhyClockOracle) {
+    crate::svd::field_replace_modify::open_frontend_baseband_control(registers);
+}
+
+/// Typed bridge for the reviewed `close_frontend_baseband_control` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn close_frontend_baseband_control(registers: &crate::svd::PhyClockOracle) {
+    crate::svd::field_replace_modify::close_frontend_baseband_control(registers);
+}
+
 /// Typed bridge for the reviewed `clear_bluetooth_scheduler_lock_modify_argument` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_bluetooth_scheduler_lock_modify_argument(

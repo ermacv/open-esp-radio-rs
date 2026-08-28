@@ -5332,6 +5332,42 @@ register = "DEADLINE_COUNTER_UNKNOWN"
 field = "VALUE"
 sources = ["ROM_REV0_PHY_WAIT_I2C_SDM_STABLE"]
 
+[[field-replace-modifies]]
+name = "enable_phy_calibration_clock"
+peripheral = "PHY_CLOCK_ORACLE"
+register = "FE_BB_CLOCK_CONTROL_OPAQUE"
+fields = [{ field = "PHY_CALIBRATION_CLOCK_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_BB_INIT"]
+
+[[field-replace-modifies]]
+name = "disable_phy_calibration_clock"
+peripheral = "PHY_CLOCK_ORACLE"
+register = "FE_BB_CLOCK_CONTROL_OPAQUE"
+fields = [{ field = "PHY_CALIBRATION_CLOCK_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_BB_INIT"]
+
+[[field-replace-modifies]]
+name = "open_frontend_baseband_control"
+peripheral = "PHY_CLOCK_ORACLE"
+register = "FE_BB_CLOCK_CONTROL_OPAQUE"
+fields = [{ field = "ROM_FE_BB_ENABLE_UNKNOWN", source-bit-offset = 0 }]
+value = 3
+exposure = "facade"
+sources = ["ROM_REV0_PHY_OPEN_FE_BB_CLK"]
+
+[[field-replace-modifies]]
+name = "close_frontend_baseband_control"
+peripheral = "PHY_CLOCK_ORACLE"
+register = "FE_BB_CLOCK_CONTROL_OPAQUE"
+fields = [{ field = "ROM_FE_BB_ENABLE_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

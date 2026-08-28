@@ -64871,6 +64871,62 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace PHY_CLOCK_ORACLE.FE_BB_CLOCK_CONTROL_OPAQUE fields [PHY_CALIBRATION_CLOCK_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_phy_calibration_clock(registers: &crate::PhyClockOracle) {
+        registers.fe_bb_clock_control_opaque().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .phy_calibration_clock_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_CLOCK_ORACLE.FE_BB_CLOCK_CONTROL_OPAQUE fields [PHY_CALIBRATION_CLOCK_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn disable_phy_calibration_clock(registers: &crate::PhyClockOracle) {
+        registers.fe_bb_clock_control_opaque().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .phy_calibration_clock_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_CLOCK_ORACLE.FE_BB_CLOCK_CONTROL_OPAQUE fields [ROM_FE_BB_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn open_frontend_baseband_control(registers: &crate::PhyClockOracle) {
+        registers.fe_bb_clock_control_opaque().modify(|_, writer| {
+            let input = 0x00000003_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .rom_fe_bb_enable_unknown()
+                    .bits((input & 0x00000003) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_CLOCK_ORACLE.FE_BB_CLOCK_CONTROL_OPAQUE fields [ROM_FE_BB_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn close_frontend_baseband_control(registers: &crate::PhyClockOracle) {
+        registers.fe_bb_clock_control_opaque().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .rom_fe_bb_enable_unknown()
+                    .bits((input & 0x00000003) as u8)
+            }
+        });
+    }
+
     /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields [LOCK_MODIFY_ARGUMENT] from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_scheduler_lock_modify_argument(

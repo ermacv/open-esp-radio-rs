@@ -15,10 +15,11 @@ impl RadioPhyRegisters {
     /// SOURCE\[BLOB_LIBPHY_PHY_BB_INIT]; the complete parent sets this bit
     /// before executing the baseband calibration sequence.
     pub fn set_phy_calibration_clock(&mut self, enabled: bool) {
-        self.peripherals
-            .phy_clock_oracle
-            .fe_bb_clock_control_opaque()
-            .modify(|_, w| w.phy_calibration_clock_unknown().bit(enabled));
+        if enabled {
+            crate::generated::enable_phy_calibration_clock(&self.peripherals.phy_clock_oracle);
+        } else {
+            crate::generated::disable_phy_calibration_clock(&self.peripherals.phy_clock_oracle);
+        }
     }
 
     /// Open the three undocumented front-end and baseband radio clock gates.
@@ -31,10 +32,7 @@ impl RadioPhyRegisters {
             &self.peripherals.phy_clock_oracle,
         );
 
-        self.peripherals
-            .phy_clock_oracle
-            .fe_bb_clock_control_opaque()
-            .modify(|_, w| w.rom_fe_bb_enable_unknown().open());
+        crate::generated::open_frontend_baseband_control(&self.peripherals.phy_clock_oracle);
 
         super::svd::fixed_register_write::open_baseband_clock_gates(
             &self.peripherals.phy_clock_oracle,
@@ -51,10 +49,7 @@ impl RadioPhyRegisters {
             &self.peripherals.phy_clock_oracle,
         );
 
-        self.peripherals
-            .phy_clock_oracle
-            .fe_bb_clock_control_opaque()
-            .modify(|_, w| w.rom_fe_bb_enable_unknown().closed());
+        crate::generated::close_frontend_baseband_control(&self.peripherals.phy_clock_oracle);
 
         super::svd::fixed_register_write::close_baseband_clock_gates(
             &self.peripherals.phy_clock_oracle,

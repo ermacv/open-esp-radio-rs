@@ -3790,6 +3790,60 @@ value = 8
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_gain_offset_0_bits_5_9"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "GAIN_OFFSET_WORD_0_OPAQUE"
+fields = [{ field = "POSITIONAL_BITS_5_9", source-bit-offset = 0 }]
+value = 4
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_gain_offset_0_bits_0_4"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "GAIN_OFFSET_WORD_0_OPAQUE"
+fields = [{ field = "POSITIONAL_BITS_0_4", source-bit-offset = 0 }]
+value = 4
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_gain_offset_0_bits_16_23"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "GAIN_OFFSET_WORD_0_OPAQUE"
+fields = [{ field = "POSITIONAL_BITS_16_23", source-bit-offset = 0 }]
+value = 0x50
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_gain_offset_0_bits_24_31"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "GAIN_OFFSET_WORD_0_OPAQUE"
+fields = [{ field = "POSITIONAL_BITS_24_31", source-bit-offset = 0 }]
+value = 0x50
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_gain_offset_1_bits_24_31"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "GAIN_OFFSET_WORD_1_OPAQUE"
+fields = [{ field = "POSITIONAL_BITS_24_31", source-bit-offset = 0 }]
+value = 0x50
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_gain_offset_1_bits_16_23"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "GAIN_OFFSET_WORD_1_OPAQUE"
+fields = [{ field = "POSITIONAL_BITS_16_23", source-bit-offset = 0 }]
+value = 0x50
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

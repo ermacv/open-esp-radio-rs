@@ -2512,6 +2512,66 @@ pub(crate) fn initialize_bluetooth_receive_compensation_14_18(
     crate::svd::field_replace_modify::initialize_bluetooth_receive_compensation_14_18(registers);
 }
 
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_gain_offset_0_bits_5_9` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_gain_offset_0_bits_5_9(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_gain_offset_0_bits_5_9(
+        registers,
+    );
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_gain_offset_0_bits_0_4` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_gain_offset_0_bits_0_4(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_gain_offset_0_bits_0_4(
+        registers,
+    );
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_gain_offset_0_bits_16_23` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_gain_offset_0_bits_16_23(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_gain_offset_0_bits_16_23(
+        registers,
+    );
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_gain_offset_0_bits_24_31` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_gain_offset_0_bits_24_31(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_gain_offset_0_bits_24_31(
+        registers,
+    );
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_gain_offset_1_bits_24_31` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_gain_offset_1_bits_24_31(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_gain_offset_1_bits_24_31(
+        registers,
+    );
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_gain_offset_1_bits_16_23` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_gain_offset_1_bits_16_23(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_gain_offset_1_bits_16_23(
+        registers,
+    );
+}
+
 /// Typed bridge for the reviewed `clear_bluetooth_scheduler_lock_modify_argument` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_bluetooth_scheduler_lock_modify_argument(

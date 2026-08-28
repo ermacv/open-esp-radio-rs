@@ -263,15 +263,12 @@ impl BluetoothBasebandV2Transaction<'_> {
 
     fn initialize_receive_gain_offsets(&self) {
         let btagc = &self.radio_phy.phy_btagc_recovered;
-        let first = btagc.gain_offset_word_0_opaque();
-        first.modify(|_, w| w.positional_bits_5_9().set(4));
-        first.modify(|_, w| w.positional_bits_0_4().set(4));
-        first.modify(|_, w| w.positional_bits_16_23().set(0x50));
-        first.modify(|_, w| w.positional_bits_24_31().set(0x50));
-
-        let second = btagc.gain_offset_word_1_opaque();
-        second.modify(|_, w| w.positional_bits_24_31().set(0x50));
-        second.modify(|_, w| w.positional_bits_16_23().set(0x50));
+        super::generated::initialize_bluetooth_receive_gain_offset_0_bits_5_9(btagc);
+        super::generated::initialize_bluetooth_receive_gain_offset_0_bits_0_4(btagc);
+        super::generated::initialize_bluetooth_receive_gain_offset_0_bits_16_23(btagc);
+        super::generated::initialize_bluetooth_receive_gain_offset_0_bits_24_31(btagc);
+        super::generated::initialize_bluetooth_receive_gain_offset_1_bits_24_31(btagc);
+        super::generated::initialize_bluetooth_receive_gain_offset_1_bits_16_23(btagc);
     }
 
     fn initialize_receive_gain(&self, parameter: u8) {

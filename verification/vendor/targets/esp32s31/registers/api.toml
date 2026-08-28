@@ -3139,6 +3139,48 @@ register = "SCHEDULER_STATE"
 field = "BUSY"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 
+[[field-reads]]
+name = "observe_bluetooth_modem_lp_timer_status_0038"
+peripheral = "BTDM_RUNTIME_CONTROL"
+register = "STATUS_0038"
+field = "IMAGE"
+sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_IRQ"]
+
+[[field-reads]]
+name = "observe_bluetooth_modem_lp_timer_value_006c"
+peripheral = "BTDM_RUNTIME_CONTROL"
+register = "VALUE_006C"
+field = "IMAGE"
+sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_IRQ", "BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
+
+[[field-reads]]
+name = "observe_bluetooth_modem_lp_timer_control_2"
+peripheral = "BTDM_RUNTIME_CONTROL"
+register = "CONTROL_0058"
+field = "CONTROL_2"
+sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_IRQ"]
+
+[[field-reads]]
+name = "observe_bluetooth_modem_lp_timer_state_0024"
+peripheral = "BTDM_RUNTIME_CONTROL"
+register = "STATE_0024"
+field = "LOW_BYTE"
+sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_IRQ", "BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
+
+[[field-reads]]
+name = "observe_bluetooth_modem_lp_timer_state_002c"
+peripheral = "BTDM_RUNTIME_CONTROL"
+register = "STATE_002C"
+field = "LOW_BYTE"
+sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_IRQ", "BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
+
+[[field-reads]]
+name = "observe_bluetooth_modem_lp_timer_counter"
+peripheral = "BTDM_RUNTIME_CONTROL"
+register = "STATUS_0048"
+field = "IMAGE"
+sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

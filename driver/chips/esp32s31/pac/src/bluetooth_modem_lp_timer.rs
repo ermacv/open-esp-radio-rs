@@ -572,19 +572,15 @@ impl ModemLpTimerTransaction for HardwareModemLpTimerTransaction<'_> {
 
 impl ModemLpTimerInterruptTransaction for HardwareModemLpTimerTransaction<'_> {
     fn read_status_0038(&mut self) -> u32 {
-        self.registers.status_0038().read().image().bits()
+        super::svd::field_read::observe_bluetooth_modem_lp_timer_status_0038(self.registers)
     }
 
     fn read_value_006c(&mut self) -> u32 {
-        self.registers.value_006c().read().image().bits()
+        super::svd::field_read::observe_bluetooth_modem_lp_timer_value_006c(self.registers)
     }
 
     fn control_0058_bit_2_is_set(&mut self) -> bool {
-        self.registers
-            .control_0058()
-            .read()
-            .control_2()
-            .bit_is_set()
+        super::svd::field_read::observe_bluetooth_modem_lp_timer_control_2(self.registers)
     }
 
     fn set_control_0058_bit_1_from_fresh_read(&mut self) {
@@ -598,7 +594,7 @@ impl ModemLpTimerInterruptTransaction for HardwareModemLpTimerTransaction<'_> {
 
 impl ModemLpTimerHandlerRegisterTransaction for HardwareModemLpTimerTransaction<'_> {
     fn sample_state_0024_low_byte_nonzero(&mut self) -> bool {
-        self.registers.state_0024().read().low_byte().bits() != 0
+        super::svd::field_read::observe_bluetooth_modem_lp_timer_state_0024(self.registers) != 0
     }
 
     fn clear_state_0024(&mut self) {
@@ -606,7 +602,7 @@ impl ModemLpTimerHandlerRegisterTransaction for HardwareModemLpTimerTransaction<
     }
 
     fn sample_state_002c_low_byte_nonzero(&mut self) -> bool {
-        self.registers.state_002c().read().low_byte().bits() != 0
+        super::svd::field_read::observe_bluetooth_modem_lp_timer_state_002c(self.registers) != 0
     }
 
     fn clear_state_002c(&mut self) {
@@ -614,7 +610,7 @@ impl ModemLpTimerHandlerRegisterTransaction for HardwareModemLpTimerTransaction<
     }
 
     fn sample_final_state_0024(&mut self) {
-        let _ = self.registers.state_0024().read().low_byte().bits();
+        let _ = super::svd::field_read::observe_bluetooth_modem_lp_timer_state_0024(self.registers);
     }
 
     fn fence(&mut self) {
@@ -624,11 +620,11 @@ impl ModemLpTimerHandlerRegisterTransaction for HardwareModemLpTimerTransaction<
 
 impl ModemLpTimerRuntimeTransaction for HardwareModemLpTimerTransaction<'_> {
     fn read_counter(&mut self) -> u32 {
-        self.registers.status_0048().read().image().bits()
+        super::svd::field_read::observe_bluetooth_modem_lp_timer_counter(self.registers)
     }
 
     fn rollover_low_byte_nonzero(&mut self) -> bool {
-        self.registers.state_002c().read().low_byte().bits() != 0
+        super::svd::field_read::observe_bluetooth_modem_lp_timer_state_002c(self.registers) != 0
     }
 
     fn clear_rollover(&mut self) {

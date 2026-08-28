@@ -58304,6 +58304,52 @@ pub mod field_read {
         registers.scheduler_state().read().busy().bit()
     }
 
+    /// Read `BTDM_RUNTIME_CONTROL`.`STATUS_0038`.`IMAGE` without exposing its register block.
+    #[inline]
+    pub fn observe_bluetooth_modem_lp_timer_status_0038(
+        registers: &crate::BtdmRuntimeControl,
+    ) -> u32 {
+        registers.status_0038().read().image().bits()
+    }
+
+    /// Read `BTDM_RUNTIME_CONTROL`.`VALUE_006C`.`IMAGE` without exposing its register block.
+    #[inline]
+    pub fn observe_bluetooth_modem_lp_timer_value_006c(
+        registers: &crate::BtdmRuntimeControl,
+    ) -> u32 {
+        registers.value_006c().read().image().bits()
+    }
+
+    /// Read `BTDM_RUNTIME_CONTROL`.`CONTROL_0058`.`CONTROL_2` without exposing its register block.
+    #[inline]
+    pub fn observe_bluetooth_modem_lp_timer_control_2(
+        registers: &crate::BtdmRuntimeControl,
+    ) -> bool {
+        registers.control_0058().read().control_2().bit()
+    }
+
+    /// Read `BTDM_RUNTIME_CONTROL`.`STATE_0024`.`LOW_BYTE` without exposing its register block.
+    #[inline]
+    pub fn observe_bluetooth_modem_lp_timer_state_0024(
+        registers: &crate::BtdmRuntimeControl,
+    ) -> u8 {
+        registers.state_0024().read().low_byte().bits()
+    }
+
+    /// Read `BTDM_RUNTIME_CONTROL`.`STATE_002C`.`LOW_BYTE` without exposing its register block.
+    #[inline]
+    pub fn observe_bluetooth_modem_lp_timer_state_002c(
+        registers: &crate::BtdmRuntimeControl,
+    ) -> u8 {
+        registers.state_002c().read().low_byte().bits()
+    }
+
+    /// Read `BTDM_RUNTIME_CONTROL`.`STATUS_0048`.`IMAGE` without exposing its register block.
+    #[inline]
+    pub fn observe_bluetooth_modem_lp_timer_counter(registers: &crate::BtdmRuntimeControl) -> u32 {
+        registers.status_0048().read().image().bits()
+    }
+
     /// Read `BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME`.`SCHEDULER_STATE`.`BUSY` without exposing its register block.
     #[inline]
     pub fn observe_bluetooth_scheduler_lock_modify_busy(

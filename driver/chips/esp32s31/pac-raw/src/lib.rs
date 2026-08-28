@@ -62422,6 +62422,41 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace BT_V3_2_BASEBAND.RX_SETUP_ARGUMENT fields [TX_ARGUMENT_0] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_baseband_tx_argument(registers: &crate::BtV3_2Baseband) {
+        registers.rx_setup_argument().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.tx_argument_0().bits((input & 0x0000003f) as u8) }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.RX_SETUP_IMAGE_0 fields [TX_SETUP_IMAGE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_baseband_tx_setup_image(registers: &crate::BtV3_2Baseband) {
+        registers.rx_setup_image_0().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.tx_setup_image().bits((input & 0x0000000f) as u8) }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_AND_TX_CONFIG fields [TX_SET_LOW_BYTE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_baseband_tx_low_byte(registers: &crate::BtV3_2Baseband) {
+        registers
+            .gaussian_2m_coefficient_and_tx_config()
+            .modify(|_, writer| {
+                let input = 0x000000f5_u32;
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                unsafe { writer.tx_set_low_byte().bits((input & 0x000000ff) as u8) }
+            });
+    }
+
     /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields [LOCK_MODIFY_ARGUMENT] from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_scheduler_lock_modify_argument(

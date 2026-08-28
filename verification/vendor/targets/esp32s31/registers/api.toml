@@ -3556,6 +3556,33 @@ value = 7
 exposure = "facade"
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 
+[[field-replace-modifies]]
+name = "initialize_bluetooth_baseband_tx_argument"
+peripheral = "BT_V3_2_BASEBAND"
+register = "RX_SETUP_ARGUMENT"
+fields = [{ field = "TX_ARGUMENT_0", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_baseband_tx_setup_image"
+peripheral = "BT_V3_2_BASEBAND"
+register = "RX_SETUP_IMAGE_0"
+fields = [{ field = "TX_SETUP_IMAGE", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_baseband_tx_low_byte"
+peripheral = "BT_V3_2_BASEBAND"
+register = "GAUSSIAN_2M_COEFFICIENT_AND_TX_CONFIG"
+fields = [{ field = "TX_SET_LOW_BYTE", source-bit-offset = 0 }]
+value = 0xf5
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_TX_SET"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

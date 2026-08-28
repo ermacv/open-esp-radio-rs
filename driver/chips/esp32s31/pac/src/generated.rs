@@ -2346,6 +2346,24 @@ pub(crate) fn publish_bluetooth_hal_slot_lane_7(
     crate::svd::field_replace_modify::publish_bluetooth_hal_slot_lane_7(registers, index);
 }
 
+/// Typed bridge for the reviewed `initialize_bluetooth_baseband_tx_argument` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_baseband_tx_argument(registers: &crate::svd::BtV3_2Baseband) {
+    crate::svd::field_replace_modify::initialize_bluetooth_baseband_tx_argument(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_baseband_tx_setup_image` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_baseband_tx_setup_image(registers: &crate::svd::BtV3_2Baseband) {
+    crate::svd::field_replace_modify::initialize_bluetooth_baseband_tx_setup_image(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_baseband_tx_low_byte` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_baseband_tx_low_byte(registers: &crate::svd::BtV3_2Baseband) {
+    crate::svd::field_replace_modify::initialize_bluetooth_baseband_tx_low_byte(registers);
+}
+
 /// Typed bridge for the reviewed `clear_bluetooth_scheduler_lock_modify_argument` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_bluetooth_scheduler_lock_modify_argument(

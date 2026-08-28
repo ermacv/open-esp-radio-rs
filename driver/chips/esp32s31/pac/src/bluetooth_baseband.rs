@@ -126,15 +126,9 @@ impl BluetoothBasebandV2TransitionPort for BluetoothBasebandV2Transaction<'_> {
 impl BluetoothBasebandV2Transaction<'_> {
     fn initialize_baseband_v2_tx(&self) {
         let baseband = &self.bluetooth.bt_v3_2_baseband;
-        baseband
-            .rx_setup_argument()
-            .modify(|_, w| w.tx_argument_0().set(0));
-        baseband
-            .rx_setup_image_0()
-            .modify(|_, w| w.tx_setup_image().set(0));
-        baseband
-            .gaussian_2m_coefficient_and_tx_config()
-            .modify(|_, w| w.tx_set_low_byte().set(0xf5));
+        super::generated::initialize_bluetooth_baseband_tx_argument(baseband);
+        super::generated::initialize_bluetooth_baseband_tx_setup_image(baseband);
+        super::generated::initialize_bluetooth_baseband_tx_low_byte(baseband);
     }
 
     fn initialize_baseband_v2_rx(&self, gain_parameter: u8) {

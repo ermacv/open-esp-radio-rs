@@ -800,6 +800,22 @@ impl Ieee802154Timer0ThresholdWord {
     }
 }
 
+/// Raw argument accepted by complete phy_set_ftm_en; only its low bit is projected into FTM_CONTROL.ENABLE by the generated PAC transaction.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyFtmEnableVendorArgument(u32);
+
+impl PhyFtmEnableVendorArgument {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Register-specific complete TIMER0 counter observation returned by the public common LL; no clock source or unit is assigned at the PAC boundary.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Ieee802154Timer0ValueWord(u32);
@@ -1356,6 +1372,18 @@ pub(crate) fn publish_ieee802154_rx_dma_address(
     value: Ieee802154RxDmaAddress,
 ) {
     crate::svd::full_register_write::publish_ieee802154_rx_dma_address(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `set_ftm_enabled_from_vendor_argument` masked transaction.
+#[inline]
+pub(crate) fn set_ftm_enabled_from_vendor_argument(
+    registers: &crate::svd::PhyAgcOracle,
+    value: PhyFtmEnableVendorArgument,
+) {
+    crate::svd::masked_register_modify::set_ftm_enabled_from_vendor_argument(
+        registers,
+        value.get(),
+    );
 }
 
 /// Typed bridge for the reviewed `publish_station_tbtt_target` masked transaction.

@@ -507,6 +507,13 @@ register = "TIMER0_THRESHOLD"
 sources = ["esp-idf-7b9cc1ac-ieee802154-common-ll"]
 
 [[opaque-domains]]
+name = "PhyFtmEnableVendorArgument"
+description = "Raw argument accepted by complete phy_set_ftm_en; only its low bit is projected into FTM_CONTROL.ENABLE by the generated PAC transaction."
+peripheral = "PHY_AGC_ORACLE"
+register = "FTM_CONTROL"
+sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
+
+[[opaque-domains]]
 name = "Ieee802154Timer0ValueWord"
 description = "Register-specific complete TIMER0 counter observation returned by the public common LL; no clock source or unit is assigned at the PAC boundary."
 peripheral = "IEEE802154_MAC"
@@ -2004,6 +2011,17 @@ name = "clear_tx_gain_compensation_aux"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 register = "TX_GAIN_COMPENSATION_AUX"
 sources = ["BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW"]
+
+[[masked-register-modifies]]
+name = "set_ftm_enabled_from_vendor_argument"
+peripheral = "PHY_AGC_ORACLE"
+register = "FTM_CONTROL"
+domain = "PhyFtmEnableVendorArgument"
+preserve-mask = 0xfffffffe
+input-mask = 0x00000001
+set-mask = 0x00000000
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
 
 [[masked-register-modifies]]
 name = "publish_station_tbtt_target"

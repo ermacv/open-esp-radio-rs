@@ -6,6 +6,7 @@
 
 #![forbid(unsafe_code)]
 
+use crate::types::PhyFtmEnableVendorArgument;
 use crate::{SharedPhyAccess, phy_pac, phy_pac_mut};
 
 #[cfg(target_arch = "riscv32")]
@@ -24,7 +25,7 @@ impl FtmEnableRestore {
     }
 
     pub fn restore(self, registers: &mut impl SharedPhyAccess) {
-        set_ftm_enabled(registers, u32::from(self.previous));
+        set_ftm_enabled(registers, self.previous);
     }
 }
 
@@ -153,9 +154,15 @@ pub fn set_saturation_gain(registers: &mut impl SharedPhyAccess, value: u32) {
 }
 
 /// Apply complete pinned `libphy.a[phy_reg.o]::phy_set_ftm_en`.
-pub fn set_ftm_enabled(registers: &mut impl SharedPhyAccess, input: u32) {
+pub fn set_ftm_enabled(registers: &mut impl SharedPhyAccess, enabled: bool) {
     let registers = phy_pac_mut(registers);
-    registers.set_ftm_enabled(input & 1 != 0);
+    registers.set_ftm_enabled(enabled);
+}
+
+/// Apply complete `phy_set_ftm_en` semantics to one raw vendor ABI argument.
+pub fn set_ftm_enabled_from_vendor_argument(registers: &mut impl SharedPhyAccess, input: u32) {
+    let registers = phy_pac_mut(registers);
+    registers.set_ftm_enabled_from_vendor_argument(PhyFtmEnableVendorArgument::new(input));
 }
 
 /// Read the exact bit written by [`set_ftm_enabled`].
@@ -169,7 +176,7 @@ pub fn prepare_ftm_enabled(
     enabled: bool,
 ) -> FtmEnableRestore {
     let previous = ftm_enabled(registers);
-    set_ftm_enabled(registers, u32::from(enabled));
+    set_ftm_enabled(registers, enabled);
     FtmEnableRestore { previous }
 }
 

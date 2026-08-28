@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioPhyRegisters;
+use super::{PhyFtmEnableVendorArgument, RadioPhyRegisters};
 
 const fn agc_parameter_offset(parameter: u8) -> u8 {
     parameter.wrapping_add(0x50)
@@ -222,6 +222,14 @@ impl RadioPhyRegisters {
             .phy_agc_oracle
             .ftm_control()
             .modify(|_, w| w.enable().bit(enabled));
+    }
+
+    /// Apply the complete vendor ABI projection through generated PAC masks.
+    pub fn set_ftm_enabled_from_vendor_argument(&mut self, input: PhyFtmEnableVendorArgument) {
+        super::generated::set_ftm_enabled_from_vendor_argument(
+            &self.peripherals.phy_agc_oracle,
+            input,
+        );
     }
 
     /// Read back the single field owned by `phy_set_ftm_en`.

@@ -60212,6 +60212,17 @@ pub mod zero_register_write {
 /// Safe, SVD-declared masked read-modify-write transactions.
 pub mod masked_register_modify {
 
+    /// Preserve mask 0xfffffffe, accept input mask 0x00000001, and set 0x00000000 in PHY_AGC_ORACLE.FTM_CONTROL.
+    #[inline]
+    pub fn set_ftm_enabled_from_vendor_argument(registers: &crate::PhyAgcOracle, input: u32) {
+        registers.ftm_control().modify(|reader, writer| {
+            let image = (reader.bits() & 0xfffffffe) | (input & 0x00000001);
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
     /// Preserve mask 0xfc000000, accept input mask 0x03ffffff, and set 0x00000000 in WIFI_MAC_STA_TBTT_TARGET.TARGET.
     #[inline]
     pub fn publish_station_tbtt_target(registers: &crate::WifiMacStaTbttTarget, input: u32) {

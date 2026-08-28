@@ -1275,7 +1275,7 @@ pub extern "C" fn open_phy_trace_phy_dc_mem_clr(registers: &mut RadioPhyRegister
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_phy_set_ftm_en(input: u32, registers: &mut RadioPhyRegisters) {
-    open_esp_radio_esp32s31_hal::phy_agc::set_ftm_enabled(registers, input);
+    open_esp_radio_esp32s31_hal::phy_agc::set_ftm_enabled_from_vendor_argument(registers, input);
 }
 
 #[unsafe(no_mangle)]

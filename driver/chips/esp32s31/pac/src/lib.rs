@@ -141,7 +141,7 @@ pub use generated::{
     MacHePacketPaddingDuration, MacInterface, MacItwtClearIndex, MacKeyEntryIndex,
     MacMinimumMpduStartSpacing, MacPti, MacRxBlockAckEntryIndex, MacRxBlockAckStartingSequence,
     MacRxBlockAckTid, MacRxBlockAckWindow, MacTxPtiCount, MacTxQueueIndex,
-    ModemLowPowerClockDivider, PhyForcedPowerIndex,
+    ModemLowPowerClockDivider, PhyForcedPowerIndex, PhyFtmEnableVendorArgument,
 };
 
 const BLUETOOTH_MAIN_XTAL_LOW_POWER_DIVIDER: ModemLowPowerClockDivider =

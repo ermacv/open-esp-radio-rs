@@ -330,18 +330,45 @@ impl<const N: usize> ScanTable<N> {
         fallback_channel: u8,
         rssi: i8,
     ) -> ScanObservation {
-        let Some(record) = parse_management(frame, fallback_channel, rssi) else {
+        let Some(mut record) = parse_management(frame, fallback_channel, rssi) else {
             return ScanObservation::Ignored;
         };
         self.observed_frames = self.observed_frames.saturating_add(1);
 
         for (index, existing) in self.records[..self.length].iter_mut().enumerate() {
             if existing.bssid == record.bssid {
-                if record.rssi > existing.rssi || existing.ssid_len == 0 {
-                    *existing = record;
+                // A BSS record is current control-plane state, not a sample
+                // selected by peak RSSI. HT/ERP protection, WMM and Operation
+                // elements can change while a BSSID remains the same. Keeping
+                // the strongest historical frame would retain stale policy
+                // indefinitely whenever a later beacon happened to be even
+                // one dB weaker.
+                //
+                // A hidden-SSID beacon is the one exception to wholesale
+                // replacement: preserve an SSID learned from a probe response
+                // while still taking every current advertised parameter from
+                // the latest complete frame.
+                if record.ssid_len == 0 && existing.ssid_len != 0 {
+                    record.ssid = existing.ssid;
+                    record.ssid_len = existing.ssid_len;
+                }
+                if record.information_elements_truncated && !existing.information_elements_truncated
+                {
+                    // A malformed suffix cannot prove that a previously
+                    // observed security/protection element disappeared. Keep
+                    // the complete policy, but retain the current signal
+                    // sample used to select among BSSIDs.
+                    if existing.rssi == record.rssi {
+                        return ScanObservation::Duplicate { index };
+                    }
+                    existing.rssi = record.rssi;
                     return ScanObservation::Updated { index };
                 }
-                return ScanObservation::Duplicate { index };
+                if *existing == record {
+                    return ScanObservation::Duplicate { index };
+                }
+                *existing = record;
+                return ScanObservation::Updated { index };
             }
         }
 
@@ -619,7 +646,7 @@ mod tests {
     }
 
     #[test]
-    fn table_deduplicates_by_bssid_and_retains_strongest_record() {
+    fn table_deduplicates_by_bssid_and_retains_latest_record() {
         let mut table = ScanTable::<1>::new();
         let mut frame = [0_u8; 42];
         frame[0] = 0x80;
@@ -634,7 +661,63 @@ mod tests {
             ScanObservation::Updated { index: 0 }
         );
         assert_eq!(table.records()[0].rssi, -30);
-        assert_eq!(table.summary().observed_frames, 2);
+        assert_eq!(
+            table.observe_management(&frame, 1, -60),
+            ScanObservation::Updated { index: 0 }
+        );
+        assert_eq!(table.records()[0].rssi, -60);
+        assert_eq!(table.summary().observed_frames, 3);
+    }
+
+    #[test]
+    fn weaker_latest_beacon_replaces_stale_ht_protection() {
+        let mut table = ScanTable::<1>::new();
+        let mut frame = [0_u8; 69];
+        frame[0] = 0x80;
+        frame[16..22].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
+        frame[36..42].copy_from_slice(&[0, 4, b't', b'e', b's', b't']);
+        frame[42..45].copy_from_slice(&[3, 1, 11]);
+        frame[45..69].copy_from_slice(&[
+            61, 22, 11, 0x07, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ]);
+
+        assert_eq!(
+            table.observe_management(&frame, 11, -30),
+            ScanObservation::Inserted { index: 0 }
+        );
+        assert_eq!(table.records()[0].ht_operation_ie[4] & 0x03, 1);
+
+        frame[49] = 0;
+        assert_eq!(
+            table.observe_management(&frame, 11, -60),
+            ScanObservation::Updated { index: 0 }
+        );
+        assert_eq!(table.records()[0].ht_operation_ie[4] & 0x03, 0);
+        assert_eq!(table.records()[0].rssi, -60);
+    }
+
+    #[test]
+    fn latest_hidden_beacon_preserves_probe_response_ssid() {
+        let mut table = ScanTable::<1>::new();
+        let mut probe = [0_u8; 42];
+        probe[0] = 0x50;
+        probe[16..22].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
+        probe[36..42].copy_from_slice(&[0, 4, b't', b'e', b's', b't']);
+        assert_eq!(
+            table.observe_management(&probe, 1, -40),
+            ScanObservation::Inserted { index: 0 }
+        );
+
+        let mut beacon = [0_u8; 38];
+        beacon[0] = 0x80;
+        beacon[16..22].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
+        beacon[36..38].copy_from_slice(&[0, 0]);
+        assert_eq!(
+            table.observe_management(&beacon, 1, -55),
+            ScanObservation::Updated { index: 0 }
+        );
+        assert_eq!(table.records()[0].ssid_bytes(), b"test");
+        assert_eq!(table.records()[0].rssi, -55);
     }
 
     #[test]

@@ -6,7 +6,9 @@ use core::{
 };
 use std::{sync::Arc, task::Wake};
 
-use embassy_net_driver::{Driver, HardwareAddress, LinkState, RxToken as _, TxToken as _};
+use embassy_net_driver::{
+    Checksum, ChecksumCapabilities, Driver, HardwareAddress, LinkState, RxToken as _, TxToken as _,
+};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use open_esp_radio_dma::RxHandoffPool;
 use open_esp_radio_embassy_net::{
@@ -714,4 +716,27 @@ fn pinned_rx_and_tx_depths_are_independent() {
         drop(reply);
     }
     assert_eq!(publisher.free_capacity(), 3);
+}
+
+#[test]
+fn pinned_device_reports_explicit_checksum_capabilities() {
+    type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+    let resources = Box::leak(Box::new(TestResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let (device, _radio) = split_pinned!(
+        resources,
+        pool,
+        NetworkInterfaceId::new(0),
+        [2, 0, 0, 0, 0, 1]
+    );
+    let mut requested = ChecksumCapabilities::default();
+    requested.ipv4 = Checksum::Tx;
+    requested.udp = Checksum::Tx;
+    let device = device.with_checksum_capabilities(requested);
+
+    let checksum = device.capabilities().checksum;
+    assert!(matches!(checksum.ipv4, Checksum::Tx));
+    assert!(matches!(checksum.udp, Checksum::Tx));
+    assert!(matches!(checksum.tcp, Checksum::Both));
 }

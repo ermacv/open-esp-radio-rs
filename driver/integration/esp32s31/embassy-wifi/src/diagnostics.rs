@@ -183,12 +183,8 @@ fn decode_phy(
     metadata: MacRxMetadata<RxPhyInfo>,
 ) -> Esp32s31RxEvidence<Esp32s31DecodedRxPhyObservation> {
     match metadata.rate {
-        MacRxEvidence::HardwareObserved(phy) => {
-            Esp32s31RxEvidence::Hardware(phy.into())
-        }
-        MacRxEvidence::ProtocolValidated(phy) => {
-            Esp32s31RxEvidence::Protocol(phy.into())
-        }
+        MacRxEvidence::HardwareObserved(phy) => Esp32s31RxEvidence::Hardware(phy.into()),
+        MacRxEvidence::ProtocolValidated(phy) => Esp32s31RxEvidence::Protocol(phy.into()),
         MacRxEvidence::Unavailable => Esp32s31RxEvidence::Unavailable,
     }
 }

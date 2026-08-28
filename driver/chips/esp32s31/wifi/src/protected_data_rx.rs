@@ -4,6 +4,8 @@
 //! with AP/STA. Once a role admits the public header, both roles must decode
 //! the S31 CCMP result and Ethernet payload through this single path.
 
+#[cfg(feature = "task-poll-telemetry")]
+use core::sync::atomic::{AtomicU32, Ordering};
 use open_esp_radio_esp32s31_wifi_mac::rx::{
     RxCcmpDataView, RxError, RxIngressConfig, RxPhyInfo, RxSegment, decode_normalized_rx_metadata,
     view_ccmp_data, view_ccmp_data_fragment, view_normalized_rx_frame,
@@ -24,6 +26,64 @@ const MORE_FRAGMENTS: u16 = 0x0400;
 const PROTECTED: u16 = 0x4000;
 const ORDERED: u16 = 0x8000;
 const TO_FROM_DS: u16 = 0x0300;
+
+#[cfg(feature = "task-poll-telemetry")]
+static PROTECTED_DATA_VIEW_CALLS: AtomicU32 = AtomicU32::new(0);
+#[cfg(feature = "task-poll-telemetry")]
+static PROTECTED_DATA_VIEW_CYCLES: AtomicU32 = AtomicU32::new(0);
+
+#[cfg(all(feature = "task-poll-telemetry", target_arch = "riscv32"))]
+#[inline(always)]
+fn cycle_count() -> u32 {
+    riscv::register::mcycle::read() as u32
+}
+
+#[cfg(all(feature = "task-poll-telemetry", not(target_arch = "riscv32")))]
+#[inline(always)]
+fn cycle_count() -> u32 {
+    0
+}
+
+#[cfg(feature = "task-poll-telemetry")]
+pub fn protected_data_view_cycle_snapshot() -> (u32, u32) {
+    (
+        PROTECTED_DATA_VIEW_CALLS.load(Ordering::Relaxed),
+        PROTECTED_DATA_VIEW_CYCLES.load(Ordering::Relaxed),
+    )
+}
+
+macro_rules! protected_data_view_body {
+    ($raw:ident, $data:ident) => {{
+        let mpdu = &$data.mpdu[..$data.frame.mpdu.length];
+        if mpdu.len() < 24 {
+            return Err(RxError::Bounds);
+        }
+        let mut metadata = decode_normalized_rx_metadata($raw).ok_or(RxError::Metadata)?;
+        // `view_ccmp_data` admits only the successful S31 RX state and rejects
+        // the dedicated MIC-failure state before exposing plaintext.
+        metadata.crypto =
+            MacRxEvidence::HardwareObserved(MacRxCryptoStatus::DecryptedAndIntegrityVerified);
+        let frame_control = u16::from_le_bytes([mpdu[0], mpdu[1]]);
+        let sequence_control = u16::from_le_bytes([mpdu[22], mpdu[23]]);
+        let tid = if frame_control & QOS_SUBTYPE != 0 && mpdu.len() >= 26 {
+            Some(mpdu[24] & 0x0f)
+        } else {
+            None
+        };
+        Ok(ProtectedDataRxView {
+            raw: $raw,
+            mpdu,
+            frame_control,
+            sequence_control,
+            tid,
+            retry: frame_control & RETRY != 0,
+            ccmp_header: $data.frame.ccmp_header,
+            payload_offset: $data.frame.payload_offset,
+            payload_length: $data.frame.payload_length,
+            metadata,
+        })
+    }};
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct ProtectedDataRxView<'frame> {
@@ -47,42 +107,39 @@ pub fn view_protected_data(
     ingress: RxIngressConfig,
 ) -> Result<ProtectedDataRxView<'_>, RxError> {
     let data = view_ccmp_data(&segment, ingress)?;
-    protected_data_view(segment.buffer, data)
+    #[cfg(feature = "task-poll-telemetry")]
+    {
+        let started = cycle_count();
+        let result = protected_data_view_hot(segment.buffer, data);
+        let ended = cycle_count();
+        PROTECTED_DATA_VIEW_CALLS.fetch_add(1, Ordering::Relaxed);
+        PROTECTED_DATA_VIEW_CYCLES.fetch_add(ended.wrapping_sub(started), Ordering::Relaxed);
+        result
+    }
+    #[cfg(not(feature = "task-poll-telemetry"))]
+    protected_data_view_hot(segment.buffer, data)
 }
 
+#[inline(never)]
 fn protected_data_view<'frame>(
     raw: &'frame [u8],
     data: RxCcmpDataView<'frame>,
 ) -> Result<ProtectedDataRxView<'frame>, RxError> {
-    let mpdu = &data.mpdu[..data.frame.mpdu.length];
-    if mpdu.len() < 24 {
-        return Err(RxError::Bounds);
-    }
-    let mut metadata = decode_normalized_rx_metadata(raw).ok_or(RxError::Metadata)?;
-    // `view_ccmp_data` admits only the successful S31 RX state and rejects
-    // the dedicated MIC-failure state before exposing plaintext.
-    metadata.crypto =
-        MacRxEvidence::HardwareObserved(MacRxCryptoStatus::DecryptedAndIntegrityVerified);
-    let frame_control = u16::from_le_bytes([mpdu[0], mpdu[1]]);
-    let sequence_control = u16::from_le_bytes([mpdu[22], mpdu[23]]);
-    let tid = if frame_control & QOS_SUBTYPE != 0 && mpdu.len() >= 26 {
-        Some(mpdu[24] & 0x0f)
-    } else {
-        None
-    };
-    Ok(ProtectedDataRxView {
-        raw,
-        mpdu,
-        frame_control,
-        sequence_control,
-        tid,
-        retry: frame_control & RETRY != 0,
-        ccmp_header: data.frame.ccmp_header,
-        payload_offset: data.frame.payload_offset,
-        payload_length: data.frame.payload_length,
-        metadata,
-    })
+    protected_data_view_body!(raw, data)
 }
+
+open_esp_radio_esp32s31_wifi_dma::place_rx_hot_path! {
+/// Decode the normalized metadata which every ordinary protected MPDU needs.
+///
+/// Keep the original PSRAM function present for the cold fragment path so this
+/// controlled experiment does not shift all later cached code by its size.
+#[inline(never)]
+fn protected_data_view_hot<'frame>(
+    raw: &'frame [u8],
+    data: RxCcmpDataView<'frame>,
+) -> Result<ProtectedDataRxView<'frame>, RxError> {
+    protected_data_view_body!(raw, data)
+}}
 
 /// Hardware-authenticated plaintext view of one fragmented CCMP data MPDU.
 ///

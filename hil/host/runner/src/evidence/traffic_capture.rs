@@ -821,6 +821,8 @@ impl SerialCapture {
                 open_esp_radio_hil_protocol::InitializationConfiguration::new(
                     lab.station.ipv4(),
                     lab.data_plane(),
+                    lab.rx_checksum(),
+                    lab.rx_admission(),
                 ),
             ),
             timeout,
@@ -2202,6 +2204,7 @@ mod tests {
                     driver_observation_evidence: true,
                     rx_delivery_evidence: true,
                     task_poll_evidence: false,
+                    core0_rx_cycle_evidence: false,
                     mac_irq_evidence: false,
                     psram_task_stack: false,
                     network_scheduler_evidence: false,

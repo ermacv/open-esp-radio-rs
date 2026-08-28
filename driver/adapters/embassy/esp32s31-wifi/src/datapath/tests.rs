@@ -1326,6 +1326,35 @@ fn network_data_completion_does_not_repoll_idle_control() {
 }
 
 #[test]
+fn ordinary_rx_completion_does_not_repoll_idle_control() {
+    let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+    let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
+    let (_device, network) = split_network!(resources, pool);
+    let irq = std::boxed::Box::leak(std::boxed::Box::new(
+        EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
+    ));
+    irq.publish(MAC_INT_RX_SUCCESS);
+    let services = NonPollingControlBackend {
+        irq,
+        control_calls: 0,
+        control_tx_on_first: false,
+        finish_on_second: false,
+    };
+    let mut runner = DatapathRunner::new(irq, network, NetworkInterfaceId::new(0), services);
+    let mut run = std::boxed::Box::pin(runner.run());
+    let mut context = Context::from_waker(core::task::Waker::noop());
+
+    // The first poll consumes initial control readiness and the RX frontier,
+    // ending at the RX cooperative yield. The resumed poll must wait for a
+    // real control wake instead of manufacturing another idle control pass.
+    assert_eq!(run.as_mut().poll(&mut context), Poll::Pending);
+    assert_eq!(run.as_mut().poll(&mut context), Poll::Pending);
+    drop(run);
+    assert_eq!(runner.services().control_calls, 1);
+    assert!(!runner.control_ready_latched);
+}
+
+#[test]
 fn control_tx_completion_rearms_exactly_one_control_step() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));

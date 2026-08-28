@@ -20,6 +20,7 @@ pub struct RxServiceObservation {
     pub overload_discarded: usize,
     pub overload_recycled_descriptors: usize,
     pub critical_reserve_admitted: usize,
+    pub stage_capacity_blocked: bool,
     pub critical_admission_blocked: bool,
     pub minimum_pool_credits: usize,
     pub minimum_queue_credits: usize,
@@ -35,6 +36,7 @@ pub struct RxServiceObservation {
 pub enum RxStageDiscard {
     Empty,
     TooLong,
+    Chained,
     OverloadBulk,
 }
 
@@ -87,6 +89,21 @@ pub enum RxPipelineObservation {
     },
     StageDiscarded(RxStageDiscard),
     NetworkReadyWait {
+        micros: u64,
+    },
+    /// Time from ownership of one staged frame through reorder and protocol
+    /// handling. Queue selection before the frame is acquired is excluded.
+    ProtocolFrameCompleted {
+        micros: u64,
+    },
+    /// Synchronous reorder-key lookup and BlockAck state transition before
+    /// the frame enters ordinary MAC dispatch.
+    ReorderPrepared {
+        micros: u64,
+    },
+    /// Synchronous classification performed by the protocol owner before it
+    /// waits for a network publication credit.
+    ProtocolPreflightCompleted {
         micros: u64,
     },
     ProtocolDispatched {

@@ -1,8 +1,11 @@
 //! Role-neutral ownership handoff from physical RX DMA to protocol roles.
 
-use embassy_sync::{
-    blocking_mutex::raw::RawMutex,
-    channel::{Channel, Receiver, Sender},
+use core::marker::PhantomData;
+
+use embassy_sync::{blocking_mutex::raw::RawMutex, channel::TryReceiveError};
+use open_esp_radio_dma::{
+    AffineSpscQueue, AffineSpscReceiver, AffineSpscSender, AffineSpscTryReceiveError,
+    AffineSpscTrySendError,
 };
 use open_esp_radio_esp32s31_wifi_mac::{
     rx::RxPhyInfo,
@@ -17,6 +20,104 @@ pub type Esp32s31StagedRxFrame<
     const SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
 > = NetworkRxFrame<'pool, SLOTS, CAPACITY>;
 
+/// Full result from a non-blocking staged-RX publication.
+pub struct StagedRxTrySendError<T>(pub T);
+
+/// Single physical-DMA producer endpoint.
+///
+/// The producer and consumer cursors occupy different cache lines. Payload
+/// ownership is published by the producer cursor's Release store and returned
+/// by the consumer cursor's Release store; no mutex, interrupt masking, scan,
+/// or per-slot state transition is required for this same-stream handoff.
+pub struct Esp32s31StagedRxSender<
+    'queue,
+    'pool,
+    M: RawMutex,
+    const DEPTH: usize,
+    const CAPACITY: usize,
+    const SLOTS: usize,
+> {
+    inner: AffineSpscSender<'queue, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
+    mutex: PhantomData<M>,
+}
+
+impl<'queue, 'pool, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, const SLOTS: usize>
+    Esp32s31StagedRxSender<'queue, 'pool, M, DEPTH, CAPACITY, SLOTS>
+{
+    pub fn try_send(
+        &self,
+        frame: Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>,
+    ) -> Result<(), StagedRxTrySendError<Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>>> {
+        #[cfg(feature = "task-poll-telemetry")]
+        let started = crate::diagnostics::core0_rx_cycles::cycle_count();
+        let result = self
+            .inner
+            .try_send(frame)
+            .map_err(|AffineSpscTrySendError(frame)| StagedRxTrySendError(frame));
+        #[cfg(feature = "task-poll-telemetry")]
+        crate::diagnostics::core0_rx_service_histogram::CORE0_RX_SERVICE_HISTOGRAM
+            .record_spsc_push(
+                crate::diagnostics::core0_rx_cycles::cycle_count().wrapping_sub(started),
+                result.is_err(),
+            );
+        result
+    }
+
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn free_capacity(&self) -> usize {
+        DEPTH.saturating_sub(self.len())
+    }
+}
+
+/// Single protocol consumer endpoint paired with [`Esp32s31StagedRxSender`].
+pub struct Esp32s31StagedRxReceiver<
+    'queue,
+    'pool,
+    M: RawMutex,
+    const DEPTH: usize,
+    const CAPACITY: usize,
+    const SLOTS: usize,
+> {
+    inner: AffineSpscReceiver<'queue, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
+    mutex: PhantomData<M>,
+}
+
+impl<'queue, 'pool, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, const SLOTS: usize>
+    Esp32s31StagedRxReceiver<'queue, 'pool, M, DEPTH, CAPACITY, SLOTS>
+{
+    pub fn try_receive(
+        &self,
+    ) -> Result<Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, TryReceiveError> {
+        #[cfg(feature = "task-poll-telemetry")]
+        let started = crate::diagnostics::core0_rx_cycles::cycle_count();
+        let result = self
+            .inner
+            .try_receive()
+            .map_err(|AffineSpscTryReceiveError::Empty| TryReceiveError::Empty);
+        #[cfg(feature = "task-poll-telemetry")]
+        crate::diagnostics::core0_rx_service_histogram::CORE0_RX_SERVICE_HISTOGRAM.record_spsc_pop(
+            crate::diagnostics::core0_rx_cycles::cycle_count().wrapping_sub(started),
+            result.is_err(),
+        );
+        result
+    }
+
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
 /// Static bounded storage for the physical-RX to protocol-role handoff.
 pub struct Esp32s31StagedRxQueue<
     'pool,
@@ -25,7 +126,8 @@ pub struct Esp32s31StagedRxQueue<
     const CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
     const SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
 > {
-    frames: Channel<M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
+    inner: AffineSpscQueue<Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
+    mutex: PhantomData<M>,
 }
 
 impl<'pool, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, const SLOTS: usize>
@@ -34,21 +136,36 @@ impl<'pool, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, const SLOTS:
     pub const fn new() -> Self {
         assert!(DEPTH != 0, "staged RX queue must not be empty");
         assert!(
+            DEPTH <= usize::MAX / 2,
+            "staged RX cursor domain must fit usize"
+        );
+        assert!(
             DEPTH <= SLOTS,
             "staged RX queue cannot outgrow its ownership pool"
         );
         Self {
-            frames: Channel::new(),
+            inner: AffineSpscQueue::new(),
+            mutex: PhantomData,
         }
     }
 
     pub fn split(
         &self,
     ) -> (
-        Sender<'_, M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
-        Receiver<'_, M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
+        Esp32s31StagedRxSender<'_, 'pool, M, DEPTH, CAPACITY, SLOTS>,
+        Esp32s31StagedRxReceiver<'_, 'pool, M, DEPTH, CAPACITY, SLOTS>,
     ) {
-        (self.frames.sender(), self.frames.receiver())
+        let (sender, receiver) = self.inner.split();
+        (
+            Esp32s31StagedRxSender {
+                inner: sender,
+                mutex: PhantomData,
+            },
+            Esp32s31StagedRxReceiver {
+                inner: receiver,
+                mutex: PhantomData,
+            },
+        )
     }
 }
 

@@ -1,0 +1,24 @@
+schema = 3
+id = "udp-rx-ht40-guard-interval-auto-diagnostic"
+description = "Same-ELF HT40 MCS7 automatic-GI RX ceiling and Core0 residence control"
+image = "diagnostic-task-poll"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic", "udp", "station", "rx", "ht40", "mcs7", "automatic-gi", "same-elf"]
+
+[link]
+phy = "ht40"
+minimum_mcs = 7
+guard_interval = "any"
+
+[workload]
+kind = "udp"
+direction = "rx"
+duration_seconds = 16
+rx_rate_bps = 140000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = false
+require_no_beacon_loss = false
+minimum_rx_bps = 90000000

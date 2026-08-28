@@ -15,6 +15,7 @@ const RUNTIME_HEADER_BYTES: usize = 44;
 struct ImageCapabilitySignature {
     driver_observation: bool,
     task_poll: bool,
+    core0_rx_cycles: bool,
     rx_delivery: bool,
     mac_irq: bool,
     ieee802154_event_status: bool,
@@ -28,6 +29,7 @@ pub(crate) fn classify_flashed_capabilities(
     classify_image_signature(ImageCapabilitySignature {
         driver_observation: features.driver_observation_evidence,
         task_poll: features.task_poll_evidence,
+        core0_rx_cycles: features.core0_rx_cycle_evidence,
         rx_delivery: features.rx_delivery_evidence,
         mac_irq: features.mac_irq_evidence,
         ieee802154_event_status: features.ieee802154_event_status_probe,
@@ -45,6 +47,7 @@ fn classify_image_signature(
         ImageCapabilitySignature {
             driver_observation: false,
             task_poll: false,
+            core0_rx_cycles: false,
             rx_delivery: false,
             mac_irq: false,
             ieee802154_event_status: false,
@@ -54,6 +57,7 @@ fn classify_image_signature(
         ImageCapabilitySignature {
             driver_observation: true,
             task_poll: false,
+            core0_rx_cycles: false,
             rx_delivery: false,
             mac_irq: false,
             ieee802154_event_status: false,
@@ -63,6 +67,7 @@ fn classify_image_signature(
         ImageCapabilitySignature {
             driver_observation: true,
             task_poll: false,
+            core0_rx_cycles: false,
             rx_delivery: false,
             mac_irq: true,
             ieee802154_event_status: false,
@@ -72,6 +77,7 @@ fn classify_image_signature(
         ImageCapabilitySignature {
             driver_observation: true,
             task_poll: true,
+            core0_rx_cycles: false,
             rx_delivery: false,
             mac_irq: false,
             ieee802154_event_status: false,
@@ -80,7 +86,28 @@ fn classify_image_signature(
         } => Some(ImageClass::DiagnosticTaskPoll),
         ImageCapabilitySignature {
             driver_observation: true,
+            task_poll: true,
+            core0_rx_cycles: true,
+            rx_delivery: false,
+            mac_irq: false,
+            ieee802154_event_status: false,
+            ieee802154_ed_event: false,
+            psram_task_stack: true,
+        } => Some(ImageClass::DiagnosticCore0RxCycles),
+        ImageCapabilitySignature {
+            driver_observation: false,
+            task_poll: true,
+            core0_rx_cycles: false,
+            rx_delivery: false,
+            mac_irq: false,
+            ieee802154_event_status: false,
+            ieee802154_ed_event: false,
+            psram_task_stack: true,
+        } => Some(ImageClass::DiagnosticTaskResidence),
+        ImageCapabilitySignature {
+            driver_observation: true,
             task_poll: false,
+            core0_rx_cycles: false,
             rx_delivery: true,
             mac_irq: false,
             ieee802154_event_status: false,
@@ -90,6 +117,7 @@ fn classify_image_signature(
         ImageCapabilitySignature {
             driver_observation: false,
             task_poll: false,
+            core0_rx_cycles: false,
             rx_delivery: false,
             mac_irq: false,
             ieee802154_event_status: true,
@@ -99,6 +127,7 @@ fn classify_image_signature(
         ImageCapabilitySignature {
             driver_observation: false,
             task_poll: false,
+            core0_rx_cycles: false,
             rx_delivery: false,
             mac_irq: false,
             ieee802154_event_status: false,
@@ -785,6 +814,7 @@ mod tests {
         ImageCapabilitySignature {
             driver_observation,
             task_poll,
+            core0_rx_cycles: false,
             rx_delivery,
             mac_irq,
             ieee802154_event_status,
@@ -820,7 +850,7 @@ mod tests {
 
     #[test]
     fn image_classes_are_stable_and_do_not_use_workload_environment() {
-        assert_eq!(qualification::scenario::ImageClass::ALL.len(), 8);
+        assert_eq!(qualification::scenario::ImageClass::ALL.len(), 10);
         assert!(
             qualification::scenario::ImageClass::ALL
                 .into_iter()
@@ -843,8 +873,16 @@ mod tests {
             "open-radio-hil,psram-task-stack,mac-irq-telemetry,code-psram,profile-psram-data"
         );
         assert_eq!(
+            qualification::scenario::ImageClass::DiagnosticTaskResidence.runtime_features(),
+            "open-radio-hil,psram-task-stack,task-residence-telemetry,code-psram,profile-psram-data"
+        );
+        assert_eq!(
             qualification::scenario::ImageClass::DiagnosticTaskPoll.runtime_features(),
             "open-radio-hil,psram-task-stack,task-poll-telemetry,code-psram,profile-psram-data"
+        );
+        assert_eq!(
+            qualification::scenario::ImageClass::DiagnosticCore0RxCycles.runtime_features(),
+            "open-radio-hil,psram-task-stack,core0-rx-cycle-telemetry,code-psram,profile-psram-data"
         );
         assert_eq!(
             qualification::scenario::ImageClass::DiagnosticRxDelivery.runtime_features(),
@@ -878,6 +916,10 @@ mod tests {
                 ImageClass::DiagnosticMacIrq,
             ),
             (
+                image_signature(false, true, false, false, false, false),
+                ImageClass::DiagnosticTaskResidence,
+            ),
+            (
                 image_signature(true, true, false, false, false, false),
                 ImageClass::DiagnosticTaskPoll,
             ),
@@ -896,6 +938,12 @@ mod tests {
         ] {
             assert_eq!(classify_image_signature(signals), Some(expected));
         }
+        let mut core0_rx_cycles = image_signature(true, true, false, false, false, false);
+        core0_rx_cycles.core0_rx_cycles = true;
+        assert_eq!(
+            classify_image_signature(core0_rx_cycles),
+            Some(ImageClass::DiagnosticCore0RxCycles),
+        );
     }
 
     #[test]

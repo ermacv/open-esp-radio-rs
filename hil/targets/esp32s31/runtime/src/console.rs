@@ -175,6 +175,8 @@ pub struct StartupConfiguration {
     pub request_id: u32,
     pub ipv4: NetworkIpv4Configuration,
     pub data_plane: open_esp_radio_hil_protocol::WifiDataPlanePlacement,
+    pub rx_checksum: open_esp_radio_hil_protocol::WifiRxChecksumPolicy,
+    pub rx_admission: open_esp_radio_hil_protocol::WifiRxAdmissionPolicy,
     pub phy_calibration_artifact: Option<StartupArtifact>,
 }
 
@@ -1038,6 +1040,8 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                 request_id,
                                 ipv4: configuration.ipv4,
                                 data_plane: configuration.data_plane,
+                                rx_checksum: configuration.rx_checksum,
+                                rx_admission: configuration.rx_admission,
                                 phy_calibration_artifact: startup_artifact.completed_artifact(),
                             })
                             .is_err()

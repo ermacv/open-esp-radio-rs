@@ -1215,9 +1215,11 @@ version = "0.1.0"
 dependencies = [
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-phy",
+ "open-esp-radio-esp32s31-wifi-dma",
  "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-ieee80211",
  "open-esp-radio-wifi-softmac",
+ "riscv 0.15.0",
 ]
 
 [[package]]
@@ -1266,6 +1268,7 @@ dependencies = [
  "open-esp-radio-wifi-softmac",
  "open-esp-radio-wifi-sta",
  "open-esp-radio-wpa2",
+ "riscv 0.15.0",
  "static_cell",
 ]
 
@@ -1310,6 +1313,7 @@ dependencies = [
  "open-esp-radio-wifi-softmac",
  "open-esp-radio-wifi-sta",
  "open-esp-radio-wpa2",
+ "riscv 0.15.0",
  "static_cell",
 ]
 

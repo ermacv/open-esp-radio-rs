@@ -1,21 +1,28 @@
 schema = 3
 id = "udp-rx-ht40-task-poll-diagnostic"
 description = "Split-core HT40 saturated RX executor-residence diagnostic"
-image = "diagnostic-task-poll"
+image = "diagnostic-task-residence"
 isolation = "reset"
 data_plane = "split-radio-network"
-tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "task-poll"]
+tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "task-poll", "checksum-ab", "rx-residence-sweep"]
 
 [link]
 phy = "ht40"
+guard_interval = "any"
 
 [workload]
 kind = "udp"
 direction = "rx"
 duration_seconds = 16
-rx_rate_bps = 120000000
+rx_rate_bps = 140000000
 payload_bytes = 1472
 
 [criteria]
 exact_delivery = false
 require_no_beacon_loss = false
+minimum_rx_bps = 90000000
+maximum_idle_channel_utilization_255 = 64
+
+[evidence]
+openwrt_tx_monitor_rx = true
+independent_laptop_monitor_rx = true

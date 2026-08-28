@@ -45,7 +45,10 @@ diagnostics = [
 # Hard-IRQ callbacks are a deliberately separate diagnostic boundary. Enabling
 # ordinary value observers must not change the SRAM-closed interrupt call graph.
 mac-irq-diagnostics = ["diagnostics"]
-task-poll-telemetry = ["diagnostics"]
+task-poll-telemetry = [
+    "diagnostics",
+    "open-esp-radio-esp32s31-wifi-embassy/task-poll-telemetry",
+]
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

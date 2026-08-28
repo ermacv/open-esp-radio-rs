@@ -27,6 +27,8 @@ fn execute_workload_inner(
     use qualification::scenario::{Direction, Workload};
 
     lab.set_data_plane(selected.data_plane);
+    lab.set_rx_checksum(selected.rx_checksum);
+    lab.set_rx_admission(selected.rx_admission);
 
     // Ordinary station workloads own their AP fixture for the complete run.
     // Loss/absence and Wi-Fi-role workloads manage that lifetime internally;
@@ -113,6 +115,9 @@ fn execute_workload_inner(
             );
             match direction {
                 Direction::Rx => {
+                    let link = selected
+                        .link
+                        .expect("validated station workload has a link expectation");
                     push_option(
                         &mut arguments,
                         "--rate",
@@ -135,12 +140,18 @@ fn execute_workload_inner(
                         traffic::rx_traffic::EvidencePolicy {
                             require_exact_delivery: selected.criteria.exact_delivery,
                             require_no_beacon_loss: selected.criteria.require_no_beacon_loss,
-                            require_driver_observation: selected.image
-                                != qualification::scenario::ImageClass::Performance,
+                            require_driver_observation: selected
+                                .image
+                                .requires_driver_observation(),
                             capture_openwrt_tx_monitor: selected.evidence.openwrt_tx_monitor_rx,
                             capture_independent_laptop_monitor: selected
                                 .evidence
                                 .independent_laptop_monitor_rx,
+                            minimum_mcs: link.minimum_mcs,
+                            guard_interval: link.guard_interval,
+                            fixture_guard_interval: selected
+                                .fixture_mutation
+                                .openwrt_fixed_guard_interval,
                         },
                     )
                 }
@@ -157,10 +168,13 @@ fn execute_workload_inner(
                         lab,
                         selected.criteria.exact_delivery,
                         selected.criteria.require_no_beacon_loss,
-                        selected.image != qualification::scenario::ImageClass::Performance,
+                        selected.image.requires_driver_observation(),
                     )
                 }
                 Direction::Bidirectional => {
+                    let link = selected
+                        .link
+                        .expect("validated station workload has a link expectation");
                     push_option(
                         &mut arguments,
                         "--rate",
@@ -189,8 +203,14 @@ fn execute_workload_inner(
                             capture_independent_laptop_monitor_rx: selected
                                 .evidence
                                 .independent_laptop_monitor_rx,
-                            require_driver_observation: selected.image
-                                != qualification::scenario::ImageClass::Performance,
+                            require_driver_observation: selected
+                                .image
+                                .requires_driver_observation(),
+                            minimum_mcs: link.minimum_mcs,
+                            guard_interval: link.guard_interval,
+                            fixture_guard_interval: selected
+                                .fixture_mutation
+                                .openwrt_fixed_guard_interval,
                         },
                     )
                 }
@@ -381,8 +401,7 @@ fn execute_workload_inner(
                 traffic: traffic.clone(),
                 criteria: selected.criteria.clone(),
                 expected_link: selected.link,
-                require_driver_observation: selected.image
-                    != qualification::scenario::ImageClass::Performance,
+                require_driver_observation: selected.image.requires_driver_observation(),
                 require_rx_delivery_evidence: selected.image
                     == qualification::scenario::ImageClass::DiagnosticRxDelivery,
             },

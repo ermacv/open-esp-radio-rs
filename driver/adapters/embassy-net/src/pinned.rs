@@ -6,7 +6,9 @@ use core::{
     task::{Context, Poll},
 };
 
-use embassy_net_driver::{Capabilities, Driver, HardwareAddress, LinkState};
+use embassy_net_driver::{
+    Capabilities, Checksum, ChecksumCapabilities, Driver, HardwareAddress, LinkState,
+};
 use embassy_sync::{
     blocking_mutex::raw::RawMutex,
     channel::{Channel, Receiver, Sender, TryReceiveError, TrySendError},
@@ -14,8 +16,9 @@ use embassy_sync::{
     waitqueue::GenericAtomicWaker,
 };
 use open_esp_radio_dma::{
-    DmaIndexReturn, PinnedDmaTxNetworkLease, PinnedDmaTxPool, PinnedDmaTxRadioLease,
-    ReturningStableDmaBacking, RxHandoffPool, RxNetworkLease, RxRadioLease, TaggedStableDmaBacking,
+    DmaIndexReturn, ExternalRxHandoffPool, ExternalRxNetworkLease, PinnedDmaTxNetworkLease,
+    PinnedDmaTxPool, PinnedDmaTxRadioLease, ReturningStableDmaBacking, RxHandoffPool,
+    RxNetworkLease, RxRadioLease, TaggedStableDmaBacking,
 };
 
 use crate::{ETHERNET_HEADER_LEN, FrameLengthError, RxEnqueueError, SharedLinkState};
@@ -183,7 +186,38 @@ impl<M: RawMutex, const SLOT_COUNT: usize> SharedPinnedRxQueue<M, SLOT_COUNT> {
             SharedPinnedRxConsumer {
                 ready: self.ready.receiver(),
                 ready_sender: self.ready.sender(),
-                pool,
+                pool: SharedPinnedRxPool::Copied(pool),
+                on_release,
+            },
+        )
+    }
+
+    /// Split a queue whose indices retain original descriptor-backed buffers.
+    pub fn split_external<'resources, const FRAME_CAPACITY: usize>(
+        &'resources self,
+        pool: &'resources ExternalRxHandoffPool<FRAME_CAPACITY, SLOT_COUNT>,
+        on_release: fn(),
+    ) -> (
+        SharedPinnedRxPublisher<'resources, M, SLOT_COUNT>,
+        SharedPinnedRxConsumer<'resources, M, FRAME_CAPACITY, SLOT_COUNT>,
+    ) {
+        assert!(SLOT_COUNT > 0, "shared external RX pool must not be empty");
+        assert!(
+            SLOT_COUNT <= usize::from(ORDERED_RX_SHARED_BIT),
+            "shared external RX index must fit in seven bits"
+        );
+        assert!(
+            !self.split.swap(true, Ordering::AcqRel),
+            "shared external RX queue may only be split once"
+        );
+        (
+            SharedPinnedRxPublisher {
+                ready: self.ready.sender(),
+            },
+            SharedPinnedRxConsumer {
+                ready: self.ready.receiver(),
+                ready_sender: self.ready.sender(),
+                pool: SharedPinnedRxPool::External(pool),
                 on_release,
             },
         )
@@ -242,8 +276,24 @@ pub struct SharedPinnedRxConsumer<
 > {
     ready: Receiver<'resources, M, OrderedRxReady, ORDERED_RX_READY_CAPACITY>,
     ready_sender: Sender<'resources, M, OrderedRxReady, ORDERED_RX_READY_CAPACITY>,
-    pool: &'resources RxHandoffPool<FRAME_CAPACITY, SLOT_COUNT>,
+    pool: SharedPinnedRxPool<'resources, FRAME_CAPACITY, SLOT_COUNT>,
     on_release: fn(),
+}
+
+enum SharedPinnedRxPool<'resources, const FRAME_CAPACITY: usize, const SLOT_COUNT: usize> {
+    Copied(&'resources RxHandoffPool<FRAME_CAPACITY, SLOT_COUNT>),
+    External(&'resources ExternalRxHandoffPool<FRAME_CAPACITY, SLOT_COUNT>),
+}
+
+impl<'resources, const FRAME_CAPACITY: usize, const SLOT_COUNT: usize>
+    SharedPinnedRxPool<'resources, FRAME_CAPACITY, SLOT_COUNT>
+{
+    fn claim_network(&self, index: u8) -> SharedPoolNetworkLease<'resources, FRAME_CAPACITY> {
+        match self {
+            Self::Copied(pool) => SharedPoolNetworkLease::Copied(pool.claim_network(index)),
+            Self::External(pool) => SharedPoolNetworkLease::External(pool.claim_network(index)),
+        }
+    }
 }
 
 /// Static resources for copy-minimal RX and copy-free TX ownership boundaries.
@@ -465,6 +515,7 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
                 application_tx: None,
                 reserve_ingress_tx: false,
                 waiting_for_tx_credit: false,
+                checksum: ChecksumCapabilities::default(),
                 tx_reservation: (),
             },
             SplitPinnedRxRunner {
@@ -552,6 +603,7 @@ pub struct SplitPinnedDevice<
     application_tx: Option<u8>,
     reserve_ingress_tx: bool,
     waiting_for_tx_credit: bool,
+    checksum: ChecksumCapabilities,
     tx_reservation: (),
 }
 
@@ -589,6 +641,15 @@ impl<
             self.try_take_free_tx()
                 .expect("an ingress-enabled endpoint needs one dedicated TX credit"),
         );
+        self
+    }
+
+    /// Override the checksum work advertised to the network stack.
+    ///
+    /// Selecting a mode which skips RX validation is sound only when a lower
+    /// layer has already validated the corresponding packet checksum.
+    pub fn with_checksum_capabilities(mut self, checksum: ChecksumCapabilities) -> Self {
+        self.checksum = checksum;
         self
     }
 
@@ -743,8 +804,22 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Drop
 /// Network token backed by a lower staging pool rather than the adapter's
 /// copying slow-path pool.
 pub struct SharedPoolReceiveToken<'resources, const FRAME_CAPACITY: usize> {
-    lease: Option<RxNetworkLease<'resources, FRAME_CAPACITY>>,
+    lease: Option<SharedPoolNetworkLease<'resources, FRAME_CAPACITY>>,
     on_release: fn(),
+}
+
+enum SharedPoolNetworkLease<'resources, const FRAME_CAPACITY: usize> {
+    Copied(RxNetworkLease<'resources, FRAME_CAPACITY>),
+    External(ExternalRxNetworkLease<'resources, FRAME_CAPACITY>),
+}
+
+impl<const FRAME_CAPACITY: usize> SharedPoolNetworkLease<'_, FRAME_CAPACITY> {
+    fn with_frame<R>(&mut self, f: impl FnOnce(&mut [u8]) -> R) -> R {
+        match self {
+            Self::Copied(lease) => lease.with_frame(f),
+            Self::External(lease) => lease.with_frame(f),
+        }
+    }
 }
 
 impl<const FRAME_CAPACITY: usize> embassy_net_driver::RxToken
@@ -825,6 +900,50 @@ pub struct SharedRxSplitPinnedDevice<
         TX_QUEUE_DEPTH,
     >,
     shared: SharedPinnedRxConsumer<'resources, M, SHARED_CAPACITY, SHARED_SLOTS>,
+}
+
+impl<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const RX_QUEUE_DEPTH: usize,
+    const TX_QUEUE_DEPTH: usize,
+    const SHARED_CAPACITY: usize,
+    const SHARED_SLOTS: usize,
+>
+    SharedRxSplitPinnedDevice<
+        'resources,
+        M,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        RX_QUEUE_DEPTH,
+        TX_QUEUE_DEPTH,
+        SHARED_CAPACITY,
+        SHARED_SLOTS,
+    >
+{
+    /// Override checksum capabilities before constructing the IP stack.
+    pub fn with_checksum_capabilities(mut self, checksum: ChecksumCapabilities) -> Self {
+        self.inner = self.inner.with_checksum_capabilities(checksum);
+        self
+    }
+
+    /// Select software IPv4/UDP validation for received packets.
+    ///
+    /// Disabling it is intended for a controlled diagnostic or for a future
+    /// lower layer that can prove both checksums were already validated. TX
+    /// checksum generation and all other protocol policies remain unchanged.
+    pub fn with_software_ipv4_udp_rx_checksum_validation(self, enabled: bool) -> Self {
+        let mut checksum = ChecksumCapabilities::default();
+        if !enabled {
+            checksum.ipv4 = Checksum::Tx;
+            checksum.udp = Checksum::Tx;
+        }
+        self.with_checksum_capabilities(checksum)
+    }
 }
 
 impl<
@@ -1007,6 +1126,7 @@ impl<
         let mut capabilities = Capabilities::default();
         capabilities.max_transmission_unit = FRAME_CAPACITY;
         capabilities.max_burst_size = Some(RX_QUEUE_DEPTH.min(TX_QUEUE_DEPTH));
+        capabilities.checksum = self.checksum.clone();
         capabilities
     }
 

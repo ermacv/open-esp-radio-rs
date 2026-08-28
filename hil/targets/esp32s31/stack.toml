@@ -113,8 +113,8 @@ reason = "connected transition future preserves the exact join and teardown owne
 [[reviewed_frames]]
 function_contains = "::supervisor::station::run_connected::{closure#0}"
 source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/supervisor/station.rs"
-max_bytes = 35328
-reason = "connected epoch future owns the recoverable DMA, VIF-scoped BlockAck, split pairwise/group WPA2 replay, rekey, key, network, Rust rate-control, low-power/TWT, ESP-NOW and protected-fragment frontiers plus the parked paired-role scratch lease on the PSRAM task stack"
+max_bytes = 35584
+reason = "connected epoch future owns the recoverable DMA, VIF-scoped BlockAck including the immediate in-order dispatch branch, split pairwise/group WPA2 replay, rekey, key, network, Rust rate-control, low-power/TWT, ESP-NOW and protected-fragment frontiers plus the parked paired-role scratch lease on the PSRAM task stack"
 
 [[reviewed_frames]]
 function_contains = "::advance_station_to_paired_frontier::{closure#0}"

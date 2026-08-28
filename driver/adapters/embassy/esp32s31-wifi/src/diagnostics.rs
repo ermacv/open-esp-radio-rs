@@ -6,6 +6,10 @@
 #[cfg(any(feature = "diagnostics", test))]
 pub mod access_point;
 pub mod aggregate_tx;
+#[cfg(feature = "task-poll-telemetry")]
+pub mod core0_rx_cycles;
+#[cfg(feature = "task-poll-telemetry")]
+pub mod core0_rx_service_histogram;
 #[cfg(feature = "diagnostics")]
 pub mod network;
 pub mod rx_pipeline;

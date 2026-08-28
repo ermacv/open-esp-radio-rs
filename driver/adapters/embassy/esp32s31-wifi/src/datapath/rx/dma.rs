@@ -1,15 +1,15 @@
 //! Production ownership of the ESP32-S31 Wi-Fi RX descriptor ring.
 //!
-//! DMA storage, the live descriptor frontier and independent staging storage
-//! are kept in one finite service. No DMA pointer escapes this owner: a
-//! completed unit is copied into independent staging before its lease is handed
-//! to the protocol consumer. The service freezes LAST before copying and
-//! returns each copied complete unit in its own append/reload transaction;
-//! no fixed descriptor suffix is withheld from the live list.
+//! DMA storage and the live descriptor frontier are kept in one finite radio
+//! service. A completed single-buffer unit transfers its original allocation
+//! through a bounded affine lease to the protocol and network consumers. The
+//! descriptor stays CPU-owned until that lease returns; the radio owner then
+//! rearms only the contiguous released prefix. At most half of the 64-buffer
+//! ring may be retained, leaving 32 buffers to the walker and BA-16 traffic.
 
 #![forbid(unsafe_code)]
 
-use core::future::Future;
+use core::{future::Future, marker::PhantomData};
 
 use embassy_sync::channel::{Sender, TrySendError};
 use embassy_time::Instant;
@@ -32,9 +32,12 @@ use crate::diagnostics::rx_pipeline::{
     RxPipelineObservation, RxPipelineObserver, RxServiceObservation,
 };
 use crate::{
-    datapath::DatapathRxProgress, datapath::rx::hardware::RxDmaObservationDelay,
-    datapath::rx::staging::Esp32s31StagedRxFrame, datapath::services::DatapathRxService,
-    diagnostics::rx_pipeline::RxStageDiscard, roles::concurrent::Esp32s31StaApStagedRxFrame,
+    datapath::DatapathRxProgress,
+    datapath::rx::hardware::RxDmaObservationDelay,
+    datapath::rx::staging::{Esp32s31StagedRxFrame, Esp32s31StagedRxSender, StagedRxTrySendError},
+    datapath::services::DatapathRxService,
+    diagnostics::rx_pipeline::RxStageDiscard,
+    roles::concurrent::Esp32s31StaApStagedRxFrame,
 };
 
 /// Descriptor count and allocation geometry qualified by the ordinary S31
@@ -120,7 +123,7 @@ pub enum Esp32s31RxIngressObservation {
         unit: Esp32s31RxCompletedUnit,
         reason: RxStageDiscard,
     },
-    /// The copied unit was published into the independent staging queue.
+    /// The original DMA buffer was published into the bounded upper queue.
     Staged(Esp32s31RxCompletedUnit),
     /// A bulk unit could not acquire an upper-layer credit and followed the
     /// reviewed vendor discard/append path.
@@ -219,9 +222,7 @@ pub enum Esp32s31StagedRxPublisher<
     const STAGE_CAPACITY: usize,
     const STAGE_SLOTS: usize,
 > {
-    Standalone(
-        Sender<'queue, M, Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>, QUEUE_DEPTH>,
-    ),
+    Standalone(Esp32s31StagedRxSender<'queue, 'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>),
     StaAp {
         frames: Sender<
             'queue,
@@ -244,12 +245,7 @@ impl<
 > Esp32s31StagedRxPublisher<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>
 {
     pub const fn standalone(
-        frames: Sender<
-            'queue,
-            M,
-            Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
-            QUEUE_DEPTH,
-        >,
+        frames: Esp32s31StagedRxSender<'queue, 'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
     ) -> Self {
         Self::Standalone(frames)
     }
@@ -343,7 +339,7 @@ impl<
         frame.mark_runtime_received_at_micros(Instant::now().as_micros());
         match self {
             Self::Standalone(frames) => frames.try_send(frame).map_err(|error| match error {
-                TrySendError::Full(frame) => frame,
+                StagedRxTrySendError(frame) => frame,
             }),
             Self::StaAp {
                 frames,
@@ -376,7 +372,7 @@ pub struct Esp32s31StagedRxProducer<
     P = FullRxStageAdmission,
 > {
     ring: RxRingLive<'storage, COUNT>,
-    storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    storage: &'static Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
     frames: Esp32s31StagedRxPublisher<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
     delay: D,
@@ -406,7 +402,7 @@ pub struct Esp32s31StoppedRx<
     const DMA_STORAGE_SIZE: usize = ESP32S31_RX_BUFFER_STORAGE_SIZE,
 > {
     ring: RxRingHalted<'storage, COUNT>,
-    storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    storage: &'static Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
     frames: Esp32s31StagedRxPublisher<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
     delay: D,
@@ -435,7 +431,8 @@ pub struct Esp32s31RxEpochResources<
     const DMA_BUFFER_SIZE: usize = ESP32S31_RX_BUFFER_SIZE,
     const DMA_STORAGE_SIZE: usize = ESP32S31_RX_BUFFER_STORAGE_SIZE,
 > {
-    storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    ring_lifetime: PhantomData<&'storage ()>,
+    storage: &'static Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
     frames: Esp32s31StagedRxPublisher<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
     delay: D,
@@ -462,7 +459,7 @@ pub struct Esp32s31PreparedRx<
     const DMA_STORAGE_SIZE: usize = ESP32S31_RX_BUFFER_STORAGE_SIZE,
 > {
     ring: RxRingStopped<'storage, COUNT>,
-    storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    storage: &'static Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
     frames: Esp32s31StagedRxPublisher<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
     delay: D,

@@ -19,9 +19,9 @@ pub use open_esp_radio_esp32s31_wifi_dma::{
     rx_ring::{
         RX_BUFFER_SENTINEL, RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxCompletedDescriptor,
         RxCompletedDescriptorFrontier, RxCompletedUnit, RxCompletedUnitFrontier,
-        RxDescriptorSnapshot, RxDmaArenaState, RxFrozenCursor, RxLiveAppend, RxReloadObservation,
-        RxRingError, RxRingHalted, RxRingLive, RxRingStopped, RxRingTopologySnapshot, RxSegment,
-        prepare_recycled_buffer,
+        RxDescriptorSnapshot, RxDmaArenaState, RxDmaBufferAddresses, RxFrozenCursor, RxLiveAppend,
+        RxReloadObservation, RxRingError, RxRingHalted, RxRingLive, RxRingStopped,
+        RxRingTopologySnapshot, RxSegment, prepare_recycled_buffer,
     },
 };
 
@@ -1269,6 +1269,8 @@ enum CcmpFragmentAdmission {
     Fragmented,
 }
 
+open_esp_radio_esp32s31_wifi_dma::place_rx_hot_path! {
+#[inline(never)]
 fn view_ccmp_data_with_fragment_admission<'frame>(
     segment: &RxSegment<'frame>,
     config: RxIngressConfig,
@@ -1311,8 +1313,10 @@ fn view_ccmp_data_with_fragment_admission<'frame>(
     };
     let frame = validate_ccmp_data(mpdu, metadata, consumed_trailer_length, fragment_admission)?;
     Ok(RxCcmpDataView { mpdu, frame })
-}
+}}
 
+open_esp_radio_esp32s31_wifi_dma::place_rx_hot_path! {
+#[inline(never)]
 fn validate_ccmp_data(
     mpdu: &[u8],
     frame: RxMpduFrame,
@@ -1393,4 +1397,4 @@ fn validate_ccmp_data(
         mic_bytes_in_dma,
         mic_present_in_dma,
     })
-}
+}}

@@ -26,6 +26,15 @@ use crate::{
 /// capacity, so backing storage must reserve four additional bytes.
 pub const RX_BUFFER_SENTINEL: u32 = 0xdead_beef;
 
+/// Immutable descriptor-to-buffer address authority for one DMA lifecycle.
+pub type RxDmaBufferAddresses<const COUNT: usize> = [u32; COUNT];
+
+fn rx_buffer_address_snapshot<const COUNT: usize>(
+    binding: &RxDmaBufferAddresses<COUNT>,
+) -> [u32; COUNT] {
+    *binding
+}
+
 const RX_DESCRIPTOR_ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
 const RX_EXHAUSTED_REPUBLICATION_ACCEPTED: u32 = 0x8000_0000;
 /// Exact maximum number of `APPEND_DESCRIPTOR_RELOAD` observations recovered
@@ -286,7 +295,7 @@ enum RxRecycleGroupShape {
 /// staging owner can copy every DMA segment without rereading mutable
 /// descriptor state. S31 live rings are limited to the 64 bits represented by
 /// `RxRingLive::observed_mask`.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RxCompletedUnit {
     head_index: usize,
     descriptor_count: usize,
@@ -296,7 +305,7 @@ pub struct RxCompletedUnit {
     segment_lengths: RxCompletedUnitLengths,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum RxCompletedUnitLengths {
     Single(u16),
     Chained([u16; 64]),
@@ -360,7 +369,10 @@ pub enum RxReloadObservation {
 pub struct RxRingStopped<'a, const COUNT: usize> {
     descriptors: &'a [Descriptor; COUNT],
     descriptor_base: u32,
-    buffer_addresses: &'a [u32; COUNT],
+    #[cfg(target_pointer_width = "32")]
+    buffer_addresses: &'a RxDmaBufferAddresses<COUNT>,
+    #[cfg(not(target_pointer_width = "32"))]
+    buffer_addresses: [u32; COUNT],
     buffer_size: u16,
     initial_start: usize,
     accepted_tail: usize,
@@ -384,7 +396,10 @@ pub struct RxRingStopped<'a, const COUNT: usize> {
 pub struct RxRingLive<'a, const COUNT: usize> {
     descriptors: &'a [Descriptor; COUNT],
     descriptor_base: u32,
-    buffer_addresses: &'a [u32; COUNT],
+    #[cfg(target_pointer_width = "32")]
+    buffer_addresses: &'a RxDmaBufferAddresses<COUNT>,
+    #[cfg(not(target_pointer_width = "32"))]
+    buffer_addresses: [u32; COUNT],
     buffer_size: u16,
     observed_mask: u64,
     recycle_start: usize,
@@ -409,7 +424,10 @@ pub struct RxRingLive<'a, const COUNT: usize> {
 pub struct RxRingHalted<'a, const COUNT: usize> {
     descriptors: &'a [Descriptor; COUNT],
     descriptor_base: u32,
-    buffer_addresses: &'a [u32; COUNT],
+    #[cfg(target_pointer_width = "32")]
+    buffer_addresses: &'a RxDmaBufferAddresses<COUNT>,
+    #[cfg(not(target_pointer_width = "32"))]
+    buffer_addresses: [u32; COUNT],
     buffer_size: u16,
     lifecycle: Option<&'a AtomicU8>,
 }
@@ -423,8 +441,14 @@ impl<'a, const COUNT: usize> RxRingHalted<'a, COUNT> {
         self.descriptors
     }
 
-    pub const fn buffer_addresses(&self) -> &'a [u32; COUNT] {
+    #[cfg(target_pointer_width = "32")]
+    pub const fn buffer_addresses(&self) -> &RxDmaBufferAddresses<COUNT> {
         self.buffer_addresses
+    }
+
+    #[cfg(not(target_pointer_width = "32"))]
+    pub const fn buffer_addresses(&self) -> &RxDmaBufferAddresses<COUNT> {
+        &self.buffer_addresses
     }
 
     /// Observe one halted descriptor without recovering mutation authority.
@@ -455,11 +479,15 @@ impl<'a, const COUNT: usize> RxRingHalted<'a, COUNT> {
             return Err((self, RxRingError::Size));
         }
         let lifecycle = self.lifecycle;
+        #[cfg(target_pointer_width = "32")]
+        let buffer_addresses = self.buffer_addresses;
+        #[cfg(not(target_pointer_width = "32"))]
+        let buffer_addresses = &self.buffer_addresses;
         match RxRingStopped::prepare_inner(
             mmio,
             self.descriptors,
             self.descriptor_base,
-            self.buffer_addresses,
+            buffer_addresses,
             buffer_size,
             prepare_buffer,
             self.lifecycle,
@@ -536,7 +564,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
         mmio: &mut M,
         descriptors: &'a [Descriptor; COUNT],
         descriptor_base: u32,
-        buffer_addresses: &'a [u32; COUNT],
+        buffer_addresses: &[u32; COUNT],
         buffer_size: u32,
         prepare_buffer: F,
     ) -> Result<Self, RxRingError>
@@ -572,7 +600,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
         mmio: &mut M,
         descriptors: &'a [Descriptor; COUNT],
         descriptor_base: u32,
-        buffer_addresses: &'a [u32; COUNT],
+        buffer_addresses: &'a RxDmaBufferAddresses<COUNT>,
         buffer_size: u32,
         prepare_buffer: F,
     ) -> Result<Self, RxRingError>
@@ -595,7 +623,8 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
         mmio: &mut M,
         descriptors: &'a [Descriptor; COUNT],
         descriptor_base: u32,
-        buffer_addresses: &'a [u32; COUNT],
+        #[cfg(target_pointer_width = "32")] buffer_addresses: &'a RxDmaBufferAddresses<COUNT>,
+        #[cfg(not(target_pointer_width = "32"))] buffer_addresses: &RxDmaBufferAddresses<COUNT>,
         buffer_size: u32,
         mut prepare_buffer: F,
         lifecycle: Option<&'a AtomicU8>,
@@ -634,14 +663,20 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
                 .ok_or(RxRingError::Corrupt)?
         };
 
+        let buffer_addresses_snapshot = rx_buffer_address_snapshot(buffer_addresses);
         for index in 0..COUNT {
             prepare_buffer(index)?;
         }
-        build_cold_ring_inner(descriptors, descriptor_base, buffer_addresses, buffer_size)?;
+        build_cold_ring_inner(
+            descriptors,
+            descriptor_base,
+            &buffer_addresses_snapshot,
+            buffer_size,
+        )?;
         relink_rotated_ring(
             descriptors,
             descriptor_base,
-            buffer_addresses,
+            &buffer_addresses_snapshot,
             initial_start,
         )?;
         let head = descriptor_address(descriptor_base, initial_start)?;
@@ -650,7 +685,10 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
         Ok(Self {
             descriptors,
             descriptor_base,
+            #[cfg(target_pointer_width = "32")]
             buffer_addresses,
+            #[cfg(not(target_pointer_width = "32"))]
+            buffer_addresses: buffer_addresses_snapshot,
             buffer_size: buffer_size_u16,
             initial_start,
             accepted_tail: wrap_sub_one::<COUNT>(initial_start),
@@ -677,6 +715,16 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
         self.retained_next_low
     }
 
+    #[cfg(target_pointer_width = "32")]
+    pub const fn buffer_addresses(&self) -> &RxDmaBufferAddresses<COUNT> {
+        self.buffer_addresses
+    }
+
+    #[cfg(not(target_pointer_width = "32"))]
+    pub const fn buffer_addresses(&self) -> &RxDmaBufferAddresses<COUNT> {
+        &self.buffer_addresses
+    }
+
     /// Observe one descriptor without exposing mutation authority.
     pub fn descriptor_snapshot(&self, index: usize) -> Option<RxDescriptorSnapshot> {
         descriptor_snapshot(self.descriptors, self.descriptor_base, index)
@@ -684,10 +732,11 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
 
     /// Validate the complete stopped list before it becomes hardware-owned.
     pub fn topology_snapshot(&self) -> RxRingTopologySnapshot {
+        let buffer_addresses = rx_buffer_address_snapshot(self.buffer_addresses());
         ring_topology_snapshot(
             self.descriptors,
             self.descriptor_base,
-            self.buffer_addresses,
+            &buffer_addresses,
             self.initial_start,
             true,
         )
@@ -762,8 +811,32 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         self.descriptors
     }
 
-    pub const fn buffer_addresses(&self) -> &'a [u32; COUNT] {
+    fn bound_buffer_address(&self, index: usize) -> Option<u32> {
+        self.buffer_addresses.get(index).copied()
+    }
+
+    #[cfg(target_pointer_width = "32")]
+    pub const fn buffer_addresses(&self) -> &RxDmaBufferAddresses<COUNT> {
         self.buffer_addresses
+    }
+
+    #[cfg(not(target_pointer_width = "32"))]
+    pub const fn buffer_addresses(&self) -> &RxDmaBufferAddresses<COUNT> {
+        &self.buffer_addresses
+    }
+
+    /// Return whether this live owner was constructed by the storage arena
+    /// carrying `lifecycle`.
+    ///
+    /// `RxDmaStorage::prepare_ring` validates the complete immutable address
+    /// table before it installs this exact arena-local lifecycle capability.
+    /// The capability then travels through stopped/live/halted typestates, so
+    /// pointer identity is a constant-time proof of the same binding during a
+    /// live epoch. Raw validation rings carry no lifecycle and deliberately
+    /// fall back to complete address validation.
+    pub(crate) fn belongs_to_lifecycle(&self, lifecycle: &AtomicU8) -> bool {
+        self.lifecycle
+            .is_some_and(|bound| core::ptr::eq(bound, lifecycle))
     }
 
     /// Observe one live descriptor without transferring its ownership.
@@ -778,10 +851,11 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     /// `valid` still proves the address, link, buffer and terminal topology
     /// observed during this finite walk.
     pub fn topology_snapshot(&self) -> RxRingTopologySnapshot {
+        let buffer_addresses = rx_buffer_address_snapshot(self.buffer_addresses());
         ring_topology_snapshot(
             self.descriptors,
             self.descriptor_base,
-            self.buffer_addresses,
+            &buffer_addresses,
             self.recycle_start,
             false,
         )
@@ -1033,16 +1107,21 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     where
         F: FnMut(usize) -> bool,
     {
-        let frontier =
-            self.completed_unit_frontier_through_with(last_descriptor_low, nonterminal_consumed);
-        if frontier.unit_count > 1 {
-            RxCompletedUnitFrontier {
-                unit_count: 1,
-                descriptor_count: 1,
-            }
-        } else {
-            frontier
+        let Some(last_index) = descriptor_index(last_descriptor_low, self.descriptor_base, COUNT)
+        else {
+            return RxCompletedUnitFrontier::default();
+        };
+        let observed = self.observed_prefix_len();
+        if observed == COUNT {
+            return RxCompletedUnitFrontier::default();
         }
+        let last_distance = (last_index + COUNT - self.recycle_start) % COUNT;
+        let accepted_distance = (self.accepted_tail + COUNT - self.recycle_start) % COUNT;
+        if last_distance < observed || last_distance > accepted_distance {
+            return RxCompletedUnitFrontier::default();
+        }
+        let descriptor_limit = last_distance + 1 - observed;
+        self.first_completed_unit_frontier_with_limit(descriptor_limit, nonterminal_consumed)
     }
 
     /// Unit-sized counterpart of
@@ -1056,18 +1135,16 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     where
         F: FnMut(usize) -> bool,
     {
-        let frontier = self.completed_unit_frontier_through_cursor_with(
-            last_descriptor_low,
-            next_descriptor_low,
-            nonterminal_consumed,
-        );
-        if frontier.unit_count > 1 {
-            RxCompletedUnitFrontier {
-                unit_count: 1,
-                descriptor_count: 1,
-            }
+        if next_descriptor_low == 0
+            && descriptor_index(last_descriptor_low, self.descriptor_base, COUNT)
+                == Some(self.accepted_tail)
+        {
+            self.first_completed_unit_frontier_through_with(last_descriptor_low, |_| true)
         } else {
-            frontier
+            self.first_completed_unit_frontier_through_with(
+                last_descriptor_low,
+                nonterminal_consumed,
+            )
         }
     }
 
@@ -1127,6 +1204,58 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         // Only a later terminal can distinguish a consumed non-terminal
         // segment from an ordinary armed descriptor. Report at most this one
         // chain; a following unit belongs to the next finite service epoch.
+        for step in 1..descriptor_limit {
+            let index = wrap_add::<COUNT>(first_index, step);
+            let bit = 1_u64 << index;
+            if self.observed_mask & bit != 0 {
+                break;
+            }
+            if rx_done(self.descriptors[index].word0()) {
+                return RxCompletedUnitFrontier {
+                    unit_count: 1,
+                    descriptor_count: step + 1,
+                };
+            }
+            if !nonterminal_consumed(index) {
+                break;
+            }
+        }
+        RxCompletedUnitFrontier::default()
+    }
+
+    fn first_completed_unit_frontier_with_limit<F>(
+        &self,
+        descriptor_limit: usize,
+        mut nonterminal_consumed: F,
+    ) -> RxCompletedUnitFrontier
+    where
+        F: FnMut(usize) -> bool,
+    {
+        if COUNT == 0 || COUNT > 64 {
+            return RxCompletedUnitFrontier::default();
+        }
+        let observed = self.observed_prefix_len();
+        let descriptor_limit = descriptor_limit.min(COUNT.saturating_sub(observed));
+        if descriptor_limit == 0 {
+            return RxCompletedUnitFrontier::default();
+        }
+        let first_index = wrap_add::<COUNT>(self.recycle_start, observed);
+        if rx_done(self.descriptors[first_index].word0()) {
+            // The caller only needs one ownership proof. Avoid walking the
+            // rest of a terminal-only burst merely to truncate its unit count
+            // back to one: the next finite cursor check will prove the next
+            // descriptor after this unit has been recycled.
+            return RxCompletedUnitFrontier {
+                unit_count: 1,
+                descriptor_count: 1,
+            };
+        }
+        if !nonterminal_consumed(first_index) {
+            return RxCompletedUnitFrontier::default();
+        }
+        // A split unit still needs a bounded walk through its terminal. This
+        // is identical to the general scanner, which already reports at most
+        // one unit when the first descriptor is non-terminal.
         for step in 1..descriptor_limit {
             let index = wrap_add::<COUNT>(first_index, step);
             let bit = 1_u64 << index;
@@ -1317,7 +1446,8 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         let expected_size = u32::from(self.buffer_size);
         if descriptor_size(word0) != expected_size
             || descriptor_length(word0) > expected_size
-            || descriptor.buffer_address() != self.buffer_addresses[index]
+            || descriptor.buffer_address()
+                != self.bound_buffer_address(index).ok_or(RxRingError::Count)?
         {
             return Err(RxRingError::Corrupt);
         }
@@ -1506,6 +1636,34 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         )
     }
 
+    /// Rearm an exact contiguous prefix of independently released terminal
+    /// descriptors.
+    ///
+    /// Unlike [`Self::recycle_completed_prefix_owned`], the caller has already
+    /// bounded `descriptor_count` by an upper-owner release state. This keeps
+    /// a later still-retained descriptor out of the same irreversible append
+    /// transaction.
+    pub(crate) fn recycle_released_terminal_prefix_owned<M, F>(
+        &mut self,
+        mmio: &mut M,
+        descriptor_count: usize,
+        prepare_buffer: F,
+    ) -> Result<Option<RxLiveAppend>, RxRingError>
+    where
+        M: RxDma,
+        F: FnMut(usize) -> Result<(), RxRingError>,
+    {
+        if descriptor_count == 0 || descriptor_count > COUNT {
+            return Err(RxRingError::Count);
+        }
+        self.recycle_completed_group(
+            mmio,
+            descriptor_count,
+            RxRecycleGroupShape::EveryDescriptorTerminal,
+            prepare_buffer,
+        )
+    }
+
     /// Rearm exactly one copied RX unit released by a frozen vendor LAST.
     ///
     /// `wdevProcessRxSucDataAll` does not collect multiple complete units into
@@ -1635,7 +1793,8 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
             return Err(RxRingError::Corrupt);
         };
         for step in 0..group_size {
-            if let Err(error) = prepare_buffer(wrap_add::<COUNT>(self.recycle_start, step)) {
+            let index = wrap_add::<COUNT>(self.recycle_start, step);
+            if let Err(error) = prepare_buffer(index) {
                 // The completed-unit token has already been consumed and an
                 // earlier callback may have changed buffer-side guards. That
                 // partial transaction cannot be reconstructed from the next
@@ -1653,9 +1812,10 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
             } else {
                 0
             };
+            let buffer_address = self.bound_buffer_address(index).ok_or(RxRingError::Count)?;
             descriptor.publish_owned(
                 rx_rearm_word(descriptor.word0()).ok_or(RxRingError::Size)?,
-                self.buffer_addresses[index],
+                buffer_address,
                 next,
             );
         }

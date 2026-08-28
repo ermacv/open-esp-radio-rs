@@ -2,9 +2,6 @@ use open_esp_radio_embassy_net::NoopRawMutex;
 use open_esp_radio_esp32s31_wifi_mac::rx::RxIngressConfig;
 use open_esp_radio_esp32s31_wifi_sta::connected_rx::ConnectedRxConfig;
 use open_esp_radio_ieee80211::security::WifiSecurityMode;
-use open_esp_radio_wifi_embassy::connected_tasks::{
-    ConnectedTaskControlResources, ConnectedTaskGroup,
-};
 use std::boxed::Box;
 
 use super::*;
@@ -51,7 +48,7 @@ fn protocol_rejects_an_unconfigured_static_dispatcher_arena() {
 }
 
 #[test]
-#[should_panic(expected = "stopped connected RX protocol cannot dispatch another frame")]
+#[should_panic(expected = "stopped connected RX protocol cannot service another turn")]
 fn stopped_protocol_cannot_dispatch_with_a_parked_dispatcher() {
     let queue = Esp32s31StagedRxQueue::<NoopRawMutex, 1, 64, 1>::new();
     let (_sender, receiver) = queue.split();
@@ -64,13 +61,13 @@ fn stopped_protocol_cannot_dispatch_with_a_parked_dispatcher() {
         Esp32s31ConnectedRxProtocol::new(receiver, &irq, Sink, &mut mpdu, &mut ethernet, runtime);
 
     protocol.shutdown_discard();
-    embassy_futures::block_on(protocol.dispatch_next());
+    embassy_futures::block_on(protocol.service_bounded(1));
 }
 
 #[test]
 fn empty_standalone_queue_can_be_replaced_without_rebuilding_station_protocol() {
     let queue = Esp32s31StagedRxQueue::<NoopRawMutex, 1, 64, 1>::new();
-    let (_sender, receiver) = queue.split();
+    let (sender, receiver) = queue.split();
     let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
     let mut mpdu = [0_u8; 64];
     let mut ethernet = [0_u8; 64];
@@ -82,11 +79,12 @@ fn empty_standalone_queue_can_be_replaced_without_rebuilding_station_protocol() 
     let processor = protocol
         .try_into_processor()
         .unwrap_or_else(|_| panic!("an empty standalone queue must detach"));
+    drop(sender);
     let (_sender, receiver) = queue.split();
     let protocol = Esp32s31ConnectedRxProtocol::from_processor(receiver, processor);
 
     assert_eq!(protocol.queue_len(), 0);
-    let stopped = embassy_futures::block_on(protocol.run_until_stopped(ready(())));
+    let stopped = protocol.into_stopped();
     assert_eq!(stopped.shutdown(), ConnectedRxProtocolShutdown::default());
 }
 
@@ -139,7 +137,7 @@ fn stop_edge_returns_an_empty_reusable_protocol_epoch() {
         "the movable protocol handle must remain pointer-sized state, not absorb the dispatcher"
     );
 
-    let stopped = embassy_futures::block_on(protocol.run_until_stopped(ready(())));
+    let stopped = protocol.into_stopped();
     assert_eq!(stopped.shutdown(), ConnectedRxProtocolShutdown::default());
     let (returned_mpdu, returned_ethernet, returned_runtime) = stopped.into_parts();
     assert_eq!(returned_mpdu.as_mut_ptr(), mpdu_ptr);
@@ -150,42 +148,9 @@ fn stop_edge_returns_an_empty_reusable_protocol_epoch() {
 }
 
 #[test]
-fn controlled_task_observes_shutdown_before_returning_exact_scratch() {
-    let queue = Esp32s31StagedRxQueue::<NoopRawMutex, 1, 64, 1>::new();
-    let (_sender, receiver) = queue.split();
-    let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
-    let mut mpdu = [0_u8; 64];
-    let mut ethernet = [0_u8; 64];
-    // Host tests leak the arena to model the static lifetime required by an
-    // embedded composition root without consuming thread-stack space.
-    let runtime = Box::leak(Box::new(Esp32s31ConnectedRxProtocolStorage::new()));
-    runtime.try_reconfigure_dispatcher(open_config()).unwrap();
-    let runtime_ptr = runtime as *mut _;
-    let mpdu_ptr = mpdu.as_mut_ptr();
-    let ethernet_ptr = ethernet.as_mut_ptr();
-    let protocol =
-        Esp32s31ConnectedRxProtocol::new(receiver, &irq, Sink, &mut mpdu, &mut ethernet, runtime);
-    let control = ConnectedTaskControlResources::<NoopRawMutex, _>::new();
-    let (mut controller, endpoint) = control.split().expect("fresh task epoch starts");
-    controller.request_stop();
-    let mut observed = None;
-
-    embassy_futures::block_on(protocol.run_controlled_task(endpoint, |shutdown| {
-        observed = Some(shutdown);
-    }));
-    let stopped = embassy_futures::block_on(controller.wait_stopped());
-
-    assert_eq!(observed, Some(ConnectedRxProtocolShutdown::default()));
-    let (returned_mpdu, returned_ethernet, returned_runtime) = stopped.into_parts();
-    assert_eq!(returned_mpdu.as_mut_ptr(), mpdu_ptr);
-    assert_eq!(returned_ethernet.as_mut_ptr(), ethernet_ptr);
-    assert_eq!(returned_runtime as *mut _, runtime_ptr);
-}
-
-#[test]
 fn stopped_protocol_arena_starts_a_second_epoch_without_reinitialization() {
     let queue = Esp32s31StagedRxQueue::<NoopRawMutex, 1, 64, 1>::new();
-    let (_sender, receiver) = queue.split();
+    let (sender, receiver) = queue.split();
     let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
     let mut mpdu = [0_u8; 64];
     let mut ethernet = [0_u8; 64];
@@ -196,15 +161,16 @@ fn stopped_protocol_arena_starts_a_second_epoch_without_reinitialization() {
 
     let first =
         Esp32s31ConnectedRxProtocol::new(receiver, &irq, Sink, &mut mpdu, &mut ethernet, runtime);
-    let stopped = embassy_futures::block_on(first.run_until_stopped(ready(())));
+    let stopped = first.into_stopped();
     let (mpdu, ethernet, runtime) = stopped.into_parts();
     assert!(!runtime.dispatcher_configured());
     runtime.try_reconfigure_dispatcher(open_config()).unwrap();
     assert!(runtime.dispatcher_configured());
 
+    drop(sender);
     let (_sender, receiver) = queue.split();
     let second = Esp32s31ConnectedRxProtocol::new(receiver, &irq, Sink, mpdu, ethernet, runtime);
-    let stopped = embassy_futures::block_on(second.run_until_stopped(ready(())));
+    let stopped = second.into_stopped();
     let (mpdu, ethernet, runtime) = stopped.into_parts();
 
     assert_eq!(mpdu.as_mut_ptr(), scratch_ptrs.0);

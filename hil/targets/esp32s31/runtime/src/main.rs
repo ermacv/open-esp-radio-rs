@@ -1,5 +1,6 @@
 #![no_main]
 #![no_std]
+#![recursion_limit = "256"]
 #[cfg(not(any(feature = "boot-smoke", feature = "open-radio-hil")))]
 compile_error!("select a HIL scenario feature: boot-smoke or open-radio-hil");
 #[cfg(all(feature = "boot-smoke", feature = "open-radio-hil"))]

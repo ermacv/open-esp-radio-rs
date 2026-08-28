@@ -110,14 +110,14 @@ title = "RX and TX DMA ownership"
 scope = "Descriptor lifetime staging publication and finite TX completion for the connected STA path"
 depends-on = ["interrupt-recovery"]
 owners = [
-  { path = "driver/chips/esp32s31/wifi/mac/src/rx_pool.rs", token = "RxStageReloadPending" },
+  { path = "driver/chips/esp32s31/wifi/mac/src/rx_pool.rs", token = "stage_dma_unit_deferred_bounded" },
   { path = "driver/chips/esp32s31/wifi/dma/src/rx_storage.rs", token = "RxDmaStorage" },
   { path = "driver/chips/esp32s31/wifi/mac/src/rx.rs", token = "decode_normalized_rx_metadata" },
   { path = "driver/chips/esp32s31/wifi/mac/src/rx_pool.rs", token = "normalized_metadata" },
   { path = "driver/chips/esp32s31/wifi/sta/src/connected_rx.rs", token = "ConnectedRxEvent" },
   { path = "driver/chips/esp32s31/wifi/mac/src/tx.rs", token = "TxSlot" },
   { path = "driver/chips/esp32s31/wifi/dma/src/rx_ring.rs", token = "complete_pending_reload" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/rx/hardware.rs", token = "complete_staged_rx_reload" },
+  { path = "driver/chips/esp32s31/wifi/dma/src/rx_storage.rs", token = "recycle_released_prefix" },
   { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/mod.rs", token = "DatapathRunner" },
   { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/tx.rs", token = "Esp32s31ConnectedTx" },
   { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/connected/port.rs", token = "Esp32s31ConnectedStaPort" },
@@ -127,8 +127,8 @@ owners = [
   { path = "driver/chips/esp32s31/wifi/sta/src/tx_epoch.rs", token = "Esp32s31StaTxEpoch" },
 ]
 tests = [
-  { path = "driver/chips/esp32s31/wifi/mac/tests/mac.rs", token = "staged_rx_frame_remains_private_until_reload_settles" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/rx/hardware.rs", token = "completes_pending_reload_without_a_scheduling_boundary" },
+  { path = "driver/chips/esp32s31/wifi/dma/src/rx_storage.rs", token = "detached_buffer_cannot_rearm_until_the_network_lease_returns" },
+  { path = "driver/chips/esp32s31/wifi/dma/src/rx_storage.rs", token = "released_dma_buffers_rearm_only_as_a_contiguous_ring_prefix" },
   { path = "driver/chips/esp32s31/wifi/dma/src/rx_storage.rs", token = "arena_initializes_in_its_final_location_and_recycles_one_buffer" },
   { path = "driver/chips/esp32s31/wifi/mac/tests/mac.rs", token = "staged_rx_metadata_decodes_only_instruction_proved_s31_fields" },
   { path = "driver/chips/esp32s31/wifi/mac/tests/mac.rs", token = "normalized_ht_rx_metadata_uses_the_direct_ht_sig_aggregation_bit" },

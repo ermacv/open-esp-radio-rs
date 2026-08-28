@@ -8,6 +8,7 @@ mod assembly;
 mod epoch;
 pub(crate) mod port;
 mod preparation;
+mod rx_service;
 mod shutdown;
 mod start;
 mod transaction;
@@ -43,6 +44,7 @@ pub use preparation::{
     Esp32s31ConnectedServicePrepareFailure, Esp32s31PreparedConnectedService,
     Esp32s31PreparedConnectedServiceParts, prepare_esp32s31_connected_service,
 };
+pub use rx_service::{Esp32s31ConnectedStaRxService, Esp32s31ConnectedStaRxStopped};
 pub use shutdown::{
     Esp32s31ConnectedEpochQuiesceFailure, Esp32s31ConnectedEpochQuiesced,
     Esp32s31ConnectedEpochRunnerOwner, Esp32s31ConnectedEpochTeardown,
@@ -115,10 +117,10 @@ pub type Esp32s31ConnectedDriverTeardownFailure<
 >;
 
 /// Concrete DATAPATH service graph used by production connected composition.
-pub type Esp32s31ConnectedDriverServices<'resources, M, H, R, X, const CONTROL_CAPACITY: usize> =
+pub type Esp32s31ConnectedDriverServices<'resources, M, H, R, P, X, const CONTROL_CAPACITY: usize> =
     crate::datapath::services::SingleRoleServices<
         H,
-        R,
+        Esp32s31ConnectedStaRxService<R, P>,
         X,
         super::control::Esp32s31ConnectedControl<'resources, M, CONTROL_CAPACITY>,
     >;

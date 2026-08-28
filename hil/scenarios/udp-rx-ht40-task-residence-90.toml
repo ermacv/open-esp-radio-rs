@@ -1,0 +1,22 @@
+schema = 3
+id = "udp-rx-ht40-task-residence-90"
+description = "Split-core HT40 RX executor-residence control at 90 Mbit/s offered load"
+image = "diagnostic-task-residence"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "task-poll", "rx-residence-sweep"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "udp"
+direction = "rx"
+duration_seconds = 16
+rx_rate_bps = 90000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = false
+require_no_beacon_loss = false
+minimum_rx_bps = 75000000

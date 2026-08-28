@@ -13,7 +13,7 @@ pub struct Esp32s31ConnectedStaRxProtocolResources<
     const SLOTS: usize,
     const REORDER_SLOTS: usize = RX_REORDER_BACKING_SLOT_COUNT,
 > {
-    pub frames: Receiver<'queue, M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
+    pub frames: Esp32s31StagedRxReceiver<'queue, 'pool, M, DEPTH, CAPACITY, SLOTS>,
     pub irq: &'irq EmbassyMacIrqRuntime<M>,
     pub sink: S,
     pub mpdu: &'scratch mut [u8],
@@ -225,8 +225,12 @@ pub struct Esp32s31ConnectedStaCompositionFailure<H, R, P, C, X> {
 
 /// Driver composition returned to the executor/application layer.
 pub struct Esp32s31ConnectedStaDrivers<H, R, X, C, P> {
-    pub services: SingleRoleServices<H, R, X, C>,
-    pub protocol: P,
+    pub services: SingleRoleServices<
+        H,
+        crate::roles::station::connected::Esp32s31ConnectedStaRxService<R, P>,
+        X,
+        C,
+    >,
     pub report: Esp32s31ConnectedStaReport,
 }
 

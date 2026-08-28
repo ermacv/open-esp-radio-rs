@@ -24,6 +24,7 @@ use open_esp_radio::{
 use open_esp_radio_esp32s31_wifi::datapath::lifecycle::{
     StaApLifecycle, StaApReceiveIdentities, apply_sta_ap_register_action, sta_ap_register_action,
 };
+use open_esp_radio_esp32s31_wifi_embassy::roles::station::connected::Esp32s31ConnectedStaGroupSecurity;
 use open_esp_radio_esp32s31_wifi_embassy::{
     composition::resources::{
         ESP32S31_DEFAULT_RX_REORDER_WINDOW as RX_REORDER_WINDOW,
@@ -55,18 +56,16 @@ use open_esp_radio_esp32s31_wifi_embassy::{
         Esp32s31StaApStationPrepared, finish_sta_ap_station, prepare_sta_ap_station,
     },
 };
-use open_esp_radio_ieee80211::vif::StaApRxAddresses;
 use open_esp_radio_esp32s31_wifi_sta::{
     attempt::{Esp32s31StaAttemptSecurityMaterial, Esp32s31StaInstalledSecurity},
     single_mpdu_tx::ConnectedTxSecurity,
 };
+use open_esp_radio_ieee80211::vif::StaApRxAddresses;
 use open_esp_radio_wifi_embassy::station_network::RunningStationNetwork;
-use open_esp_radio_esp32s31_wifi_embassy::roles::station::connected::
-    Esp32s31ConnectedStaGroupSecurity;
 
 use crate::supervisor::station::{
     ConnectedStationReplaySetupFailure, IRQ_RUNTIME, RX_REORDER_COMMANDS, RX_REORDER_STORAGE,
-    RX_STAGE_POOL, STA_AP_STAGED_RX_QUEUE, STAGED_RX_QUEUE, STA_CCMP_RX_REPLAY,
+    RX_STAGE_POOL, STA_AP_STAGED_RX_QUEUE, STA_CCMP_RX_REPLAY, STAGED_RX_QUEUE,
 };
 
 /// Result of advancing the finite station lifecycle to its paired cutover
@@ -520,7 +519,6 @@ impl ProductionWifiEpochRunner {
                                     _sequences: sequences,
                                     _material: station_security_material,
                                     _control_tx: control_tx,
-                                    _task_reservation: None,
                                 },
                                 _station: station,
                                 _access_point: access_point,
@@ -530,12 +528,11 @@ impl ProductionWifiEpochRunner {
                     }
                 };
                 let tx_security = ConnectedTxSecurity::Wpa2Personal(pairwise);
-                let group_security =
-                    Esp32s31ConnectedStaGroupSecurity::Wpa2PersonalRekey {
-                        group,
-                        material: group_material,
-                        replay: replay_control,
-                    };
+                let group_security = Esp32s31ConnectedStaGroupSecurity::Wpa2PersonalRekey {
+                    group,
+                    material: group_material,
+                    replay: replay_control,
+                };
                 if let Err(failure) = plan.enable_ccmp_rx_replay(replay_rx) {
                     endpoint
                         .respond(EmbassyWifiSupervisorResponse::StationAccessPoint(Err(
@@ -573,7 +570,6 @@ impl ProductionWifiEpochRunner {
                                 _sequences: sequences,
                                 _material: station_security_material,
                                 _control_tx: control_tx,
-                                _task_reservation: None,
                             },
                             _station: station,
                             _access_point: access_point,
@@ -654,9 +650,7 @@ impl ProductionWifiEpochRunner {
                 sequences,
                 #[cfg(feature = "diagnostics")]
                 aggregate_tx_observer: diagnostics.map(|hooks| hooks.aggregate_tx),
-                tx_block_ack_status_sink: Some(
-                    crate::status::publish_station_tx_block_ack,
-                ),
+                tx_block_ack_status_sink: Some(crate::status::publish_station_tx_block_ack),
                 network_domain: Esp32s31ConnectedStaNetworkTxDomain::new(),
             },
         )
@@ -745,12 +739,9 @@ impl ProductionWifiEpochRunner {
             "paired STA and AP must share the one ordinary RX BlockAck bank owner",
         );
         let access_point_service = match access_point_security {
-            AccessPointSecurity::Open => AccessPointService::new_open(
-                address,
-                client_limit,
-                inactive_timeout,
-                peer_storage,
-            ),
+            AccessPointSecurity::Open => {
+                AccessPointService::new_open(address, client_limit, inactive_timeout, peer_storage)
+            }
             AccessPointSecurity::Wpa2Personal(pmk) => {
                 let mut gtk_key = [0_u8; 16];
                 for word in gtk_key.chunks_exact_mut(4) {
@@ -1008,10 +999,11 @@ impl ProductionWifiEpochRunner {
 
         let open_esp_radio_esp32s31_wifi_embassy::roles::station::connected::Esp32s31ConnectedStaDrivers {
             services: station_services,
-            protocol: station_protocol,
             report: _,
         } = station_drivers;
-        let (hardware, (), station_tx, mut station_control) = station_services.into_parts();
+        let (hardware, station_rx, station_tx, mut station_control) =
+            station_services.into_parts();
+        let ((), station_protocol) = station_rx.into_parts();
         let group_security = match &mut station_security_material {
             Esp32s31StaAttemptSecurityMaterial::Open => group_security
                 .take()

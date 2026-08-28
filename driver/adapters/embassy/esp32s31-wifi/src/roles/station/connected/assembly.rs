@@ -24,9 +24,8 @@ use crate::{
 };
 
 /// Complete running frontier returned by connected driver assembly.
-pub struct Esp32s31ConnectedDriverAssembly<R, P> {
+pub struct Esp32s31ConnectedDriverAssembly<R> {
     pub runner: R,
-    pub protocol: P,
     pub report: Esp32s31ConnectedStaReport,
 }
 
@@ -141,18 +140,6 @@ pub fn assemble_esp32s31_connected_driver<
             RX_QUEUE_DEPTH,
             TX_QUEUE_DEPTH,
         >,
-        Esp32s31ConnectedRxProtocol<
-            'queue,
-            'pool,
-            'scratch,
-            'irq,
-            M,
-            S,
-            RX_DEPTH,
-            RX_CAPACITY,
-            RX_SLOTS,
-            REORDER_SLOTS,
-        >,
     >,
     Esp32s31ConnectedDriverAssemblyFailure<
         N,
@@ -206,7 +193,21 @@ where
     F: FnOnce(
         crate::datapath::services::SingleRoleServices<
             H,
-            R,
+            crate::roles::station::connected::Esp32s31ConnectedStaRxService<
+                R,
+                Esp32s31ConnectedRxProtocol<
+                    'queue,
+                    'pool,
+                    'scratch,
+                    'irq,
+                    M,
+                    S,
+                    RX_DEPTH,
+                    RX_CAPACITY,
+                    RX_SLOTS,
+                    REORDER_SLOTS,
+                >,
+            >,
             Esp32s31ConnectedTx<
                 'slot,
                 'resources,
@@ -258,7 +259,6 @@ where
             crate::roles::concurrent::STA_NETWORK_INTERFACE_ID,
             services,
         ),
-        protocol: drivers.protocol,
         report: drivers.report,
     })
 }

@@ -20,6 +20,16 @@ open-esp-radio-wpa2 = { path = "../../../../wifi/wpa2" }
 open-esp-radio-wifi-sta = { path = "../../../../wifi/sta" }
 static_cell = "2.1.1"
 
+[features]
+default = []
+task-poll-telemetry = [
+    "dep:riscv",
+    "open-esp-radio-esp32s31-wifi/task-poll-telemetry",
+]
+
+[target.'cfg(target_arch = "riscv32")'.dependencies]
+riscv = { version = "0.15", optional = true }
+
 [dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }
 

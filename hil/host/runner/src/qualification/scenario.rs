@@ -6,12 +6,17 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use open_esp_radio_hil_protocol::WifiDataPlanePlacement;
+use open_esp_radio_hil_protocol::{
+    WifiDataPlanePlacement, WifiRxAdmissionPolicy, WifiRxChecksumPolicy,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::Result;
 
 pub const SCENARIO_SCHEMA: u16 = 3;
+// Diagnostic phase totals use u32 cycle accumulators. At 320 MHz, 12 seconds
+// leaves margin below the 2^32 wrap point; a 14-second interval cannot.
+const CORE0_RX_CYCLE_MAX_DURATION_SECONDS: u16 = 12;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -20,19 +25,23 @@ pub enum ImageClass {
     Performance,
     Correctness,
     DiagnosticMacIrq,
+    DiagnosticTaskResidence,
     DiagnosticTaskPoll,
+    DiagnosticCore0RxCycles,
     DiagnosticRxDelivery,
     DiagnosticIeee802154EventStatus,
     DiagnosticIeee802154EdEvent,
 }
 
 impl ImageClass {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 10] = [
         Self::BootSmoke,
         Self::Performance,
         Self::Correctness,
         Self::DiagnosticMacIrq,
+        Self::DiagnosticTaskResidence,
         Self::DiagnosticTaskPoll,
+        Self::DiagnosticCore0RxCycles,
         Self::DiagnosticRxDelivery,
         Self::DiagnosticIeee802154EventStatus,
         Self::DiagnosticIeee802154EdEvent,
@@ -44,7 +53,9 @@ impl ImageClass {
             Self::Performance => "performance",
             Self::Correctness => "correctness",
             Self::DiagnosticMacIrq => "diagnostic-mac-irq",
+            Self::DiagnosticTaskResidence => "diagnostic-task-residence",
             Self::DiagnosticTaskPoll => "diagnostic-task-poll",
+            Self::DiagnosticCore0RxCycles => "diagnostic-core0-rx-cycles",
             Self::DiagnosticRxDelivery => "diagnostic-rx-delivery",
             Self::DiagnosticIeee802154EventStatus => "diagnostic-ieee802154-event-status",
             Self::DiagnosticIeee802154EdEvent => "diagnostic-ieee802154-ed-event",
@@ -61,8 +72,14 @@ impl ImageClass {
             Self::DiagnosticMacIrq => {
                 "open-radio-hil,psram-task-stack,mac-irq-telemetry,code-psram,profile-psram-data"
             }
+            Self::DiagnosticTaskResidence => {
+                "open-radio-hil,psram-task-stack,task-residence-telemetry,code-psram,profile-psram-data"
+            }
             Self::DiagnosticTaskPoll => {
                 "open-radio-hil,psram-task-stack,task-poll-telemetry,code-psram,profile-psram-data"
+            }
+            Self::DiagnosticCore0RxCycles => {
+                "open-radio-hil,psram-task-stack,core0-rx-cycle-telemetry,code-psram,profile-psram-data"
             }
             Self::DiagnosticRxDelivery => {
                 "open-radio-hil,psram-task-stack,rx-delivery-telemetry,code-psram,profile-psram-data"
@@ -82,7 +99,9 @@ impl ImageClass {
             | Self::Performance
             | Self::Correctness
             | Self::DiagnosticMacIrq
+            | Self::DiagnosticTaskResidence
             | Self::DiagnosticTaskPoll
+            | Self::DiagnosticCore0RxCycles
             | Self::DiagnosticRxDelivery
             | Self::DiagnosticIeee802154EventStatus
             | Self::DiagnosticIeee802154EdEvent => "psram-code-psram-data-psram-stack",
@@ -91,6 +110,18 @@ impl ImageClass {
 
     pub const fn uses_psram_task_stack(self) -> bool {
         true
+    }
+
+    /// Whether the image promises typed driver-internal evidence.
+    ///
+    /// The task-residence image is deliberately production-like: its only
+    /// diagnostic boundary is executor residence, so it must use the same
+    /// transport/external-link acceptance path as the performance image.
+    pub const fn requires_driver_observation(self) -> bool {
+        !matches!(
+            self,
+            Self::BootSmoke | Self::Performance | Self::DiagnosticTaskResidence
+        )
     }
 }
 
@@ -312,6 +343,17 @@ pub struct EvidenceConfig {
     pub independent_laptop_monitor_rx: bool,
 }
 
+/// Explicit, diagnostic-only mutations of a managed laboratory fixture.
+///
+/// Link expectations never change the peer: they only validate target-side
+/// observations. Keeping the mutation separate prevents a ceiling scenario
+/// from silently entering a vendor firmware's fixed-rate-control mode.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct FixtureMutationConfig {
+    pub openwrt_fixed_guard_interval: HtGuardIntervalExpectation,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Scenario {
@@ -325,6 +367,10 @@ pub struct Scenario {
     #[serde(default)]
     pub data_plane: WifiDataPlanePlacement,
     #[serde(default)]
+    pub rx_checksum: WifiRxChecksumPolicy,
+    #[serde(default)]
+    pub rx_admission: WifiRxAdmissionPolicy,
+    #[serde(default)]
     pub tags: Vec<String>,
     pub link: Option<LinkExpectation>,
     pub workload: Workload,
@@ -332,6 +378,8 @@ pub struct Scenario {
     pub criteria: Criteria,
     #[serde(default)]
     pub evidence: EvidenceConfig,
+    #[serde(default)]
+    pub fixture_mutation: FixtureMutationConfig,
     #[serde(skip)]
     pub source: PathBuf,
 }
@@ -342,6 +390,27 @@ pub struct LinkExpectation {
     pub phy: PhyExpectation,
     #[serde(default)]
     pub minimum_mcs: Option<u8>,
+    #[serde(default)]
+    pub guard_interval: HtGuardIntervalExpectation,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum HtGuardIntervalExpectation {
+    #[default]
+    Any,
+    Long,
+    Short,
+}
+
+impl HtGuardIntervalExpectation {
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Any => "any",
+            Self::Long => "long",
+            Self::Short => "short",
+        }
+    }
 }
 
 impl Scenario {
@@ -371,6 +440,31 @@ impl Scenario {
             return Err(format!("{}: scenario description is empty", self.source.display()).into());
         }
         bounded(self.repetitions, 1, 20, self, "repetitions")?;
+        if self.rx_checksum == WifiRxChecksumPolicy::AssumeValidDiagnostic
+            && (self.image != ImageClass::DiagnosticTaskPoll
+                || !matches!(
+                    self.workload,
+                    Workload::Udp {
+                        direction: Direction::Rx,
+                        ..
+                    }
+                ))
+        {
+            return Err(format!(
+                "{}: assume-valid-diagnostic RX checksum policy is restricted to the UDP RX task-poll diagnostic",
+                self.source.display()
+            )
+            .into());
+        }
+        if self.rx_admission == WifiRxAdmissionPolicy::DeferredReadyDiagnostic
+            && self.image != ImageClass::DiagnosticCore0RxCycles
+        {
+            return Err(format!(
+                "{}: deferred-ready-diagnostic RX admission is restricted to the Core0 RX cycle diagnostic",
+                self.source.display()
+            )
+            .into());
+        }
         let boot_smoke_image = self.image == ImageClass::BootSmoke;
         if boot_smoke_image && !matches!(self.workload, Workload::BootSmoke) {
             return Err(format!(
@@ -405,17 +499,21 @@ impl Scenario {
             .into());
         }
         if self.evidence.openwrt_tx_monitor_rx
-            && (self.image != ImageClass::DiagnosticRxDelivery
-                || !matches!(
-                    self.workload,
-                    Workload::Udp {
-                        direction: Direction::Rx | Direction::Bidirectional,
-                        ..
-                    }
-                ))
+            && (!matches!(
+                self.image,
+                ImageClass::DiagnosticTaskResidence
+                    | ImageClass::DiagnosticRxDelivery
+                    | ImageClass::DiagnosticCore0RxCycles
+            ) || !matches!(
+                self.workload,
+                Workload::Udp {
+                    direction: Direction::Rx | Direction::Bidirectional,
+                    ..
+                }
+            ))
         {
             return Err(format!(
-                "{}: OpenWrt TX-monitor RX evidence requires an RX-bearing UDP RX-delivery diagnostic",
+                "{}: OpenWrt TX-monitor RX evidence requires an RX-bearing UDP diagnostic with residence, delivery, or Core0-cycle evidence",
                 self.source.display()
             )
             .into());
@@ -426,6 +524,43 @@ impl Scenario {
                 self.source.display()
             )
             .into());
+        }
+        if let Some(link) = self.link
+            && !self.image.requires_driver_observation()
+            && (link.minimum_mcs.is_some()
+                || link.guard_interval != HtGuardIntervalExpectation::Any)
+        {
+            return Err(format!(
+                "{}: per-frame MCS/GI requirements require a driver-observation image",
+                self.source.display(),
+            )
+            .into());
+        }
+        if self.fixture_mutation.openwrt_fixed_guard_interval != HtGuardIntervalExpectation::Any {
+            let Some(link) = self.link else {
+                return Err(format!(
+                    "{}: OpenWrt fixed-GI mutation requires an HT link expectation",
+                    self.source.display(),
+                )
+                .into());
+            };
+            if !matches!(link.phy, PhyExpectation::Ht20 | PhyExpectation::Ht40)
+                || link.guard_interval != self.fixture_mutation.openwrt_fixed_guard_interval
+            {
+                return Err(format!(
+                    "{}: OpenWrt fixed-GI mutation must equal the strict HT guard-interval expectation",
+                    self.source.display(),
+                )
+                .into());
+            }
+            if !self.evidence.openwrt_tx_monitor_rx || !self.evidence.independent_laptop_monitor_rx
+            {
+                return Err(format!(
+                    "{}: OpenWrt fixed-GI mutation requires AP and independent air evidence",
+                    self.source.display(),
+                )
+                .into());
+            }
         }
         if self.isolation == Isolation::MatrixSession {
             return Err(format!(
@@ -476,6 +611,25 @@ impl Scenario {
                     "{}: minimum_mcs={minimum_mcs} exceeds the {} capability MCS{maximum_mcs}",
                     self.source.display(),
                     link.phy.id(),
+                )
+                .into());
+            }
+        }
+        if let Some(link) = self.link
+            && link.guard_interval != HtGuardIntervalExpectation::Any
+        {
+            if !matches!(link.phy, PhyExpectation::Ht20 | PhyExpectation::Ht40) {
+                return Err(format!(
+                    "{}: guard_interval={} is valid only for an HT link",
+                    self.source.display(),
+                    link.guard_interval.id(),
+                )
+                .into());
+            }
+            if !self.image.requires_driver_observation() {
+                return Err(format!(
+                    "{}: strict guard_interval requires complete target-side driver observation",
+                    self.source.display(),
                 )
                 .into());
             }
@@ -538,6 +692,17 @@ impl Scenario {
                 ..
             } => {
                 bounded(*duration_seconds, 5, 300, self, "duration_seconds")?;
+                if self.image == ImageClass::DiagnosticCore0RxCycles
+                    && *duration_seconds > CORE0_RX_CYCLE_MAX_DURATION_SECONDS
+                {
+                    return Err(format!(
+                        "{}: Core0 cycle diagnostic duration {} exceeds the u32-safe {} second interval",
+                        self.source.display(),
+                        duration_seconds,
+                        CORE0_RX_CYCLE_MAX_DURATION_SECONDS,
+                    )
+                    .into());
+                }
                 bounded(*payload_bytes, 64, 1472, self, "payload_bytes")?;
                 validate_direction_rates(*direction, *rx_rate_bps, *tx_rate_bps, self)?;
             }
@@ -1171,7 +1336,126 @@ mod tests {
                 "{}",
                 scenario.id
             );
+            assert_eq!(
+                scenario.fixture_mutation.openwrt_fixed_guard_interval,
+                HtGuardIntervalExpectation::Any,
+                "{}",
+                scenario.id,
+            );
         }
+    }
+
+    #[test]
+    fn link_guard_interval_observation_is_separate_from_fixed_gi_mutation() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+        let catalog = Catalog::load(&root).unwrap();
+        let auto = catalog
+            .get("udp-rx-ht40-rate-mask-auto-air-diagnostic")
+            .unwrap();
+        let lgi = catalog
+            .get("udp-rx-ht40-rate-mask-lgi-air-diagnostic")
+            .unwrap();
+        assert_eq!(
+            auto.fixture_mutation.openwrt_fixed_guard_interval,
+            HtGuardIntervalExpectation::Any,
+        );
+        assert_eq!(
+            lgi.link.unwrap().guard_interval,
+            HtGuardIntervalExpectation::Long,
+        );
+        assert_eq!(
+            lgi.fixture_mutation.openwrt_fixed_guard_interval,
+            HtGuardIntervalExpectation::Long,
+        );
+
+        let mut mismatch = lgi.clone();
+        mismatch.fixture_mutation.openwrt_fixed_guard_interval = HtGuardIntervalExpectation::Short;
+        assert!(mismatch.validate().is_err());
+
+        let mut unobserved = lgi.clone();
+        unobserved.evidence.independent_laptop_monitor_rx = false;
+        assert!(unobserved.validate().is_err());
+    }
+
+    #[test]
+    fn per_frame_phy_requirements_cannot_be_silently_accepted_by_residence_image() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+        let catalog = Catalog::load(&root).unwrap();
+        let mut residence = catalog
+            .get("udp-rx-ht40-task-poll-diagnostic")
+            .unwrap()
+            .clone();
+        residence.link.as_mut().unwrap().minimum_mcs = Some(7);
+        assert!(
+            residence
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("per-frame MCS/GI")
+        );
+
+        let mut observed = residence;
+        observed.image = ImageClass::DiagnosticCore0RxCycles;
+        let Workload::Udp {
+            duration_seconds, ..
+        } = &mut observed.workload
+        else {
+            panic!("residence scenario must remain UDP")
+        };
+        *duration_seconds = CORE0_RX_CYCLE_MAX_DURATION_SECONDS;
+        observed.validate().unwrap();
+    }
+
+    #[test]
+    fn core0_cycle_image_cannot_overrun_its_u32_accumulators() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+        let catalog = Catalog::load(&root).unwrap();
+        let mut scenario = catalog
+            .get("udp-rx-ht40-core0-rx-cycles-diagnostic")
+            .unwrap()
+            .clone();
+        let Workload::Udp {
+            duration_seconds, ..
+        } = &mut scenario.workload
+        else {
+            panic!("Core0 cycle scenario must remain UDP")
+        };
+        *duration_seconds = CORE0_RX_CYCLE_MAX_DURATION_SECONDS + 1;
+        assert!(
+            scenario
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("u32-safe")
+        );
+    }
+
+    #[test]
+    fn deferred_ready_admission_is_a_same_image_core0_control() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+        let catalog = Catalog::load(&root).unwrap();
+        let deferred = catalog
+            .get("udp-rx-ht40-core0-rx-deferred-ready-diagnostic")
+            .unwrap();
+        let synchronous = catalog
+            .get("udp-rx-ht40-core0-rx-cycles-diagnostic")
+            .unwrap();
+        assert_eq!(deferred.image, synchronous.image);
+        assert_eq!(deferred.workload, synchronous.workload);
+        assert_eq!(deferred.link, synchronous.link);
+        assert_eq!(deferred.evidence, synchronous.evidence);
+        assert_eq!(
+            deferred.rx_admission,
+            WifiRxAdmissionPolicy::DeferredReadyDiagnostic
+        );
+        assert_eq!(
+            synchronous.rx_admission,
+            WifiRxAdmissionPolicy::SynchronousShared
+        );
+
+        let mut wrong_image = deferred.clone();
+        wrong_image.image = ImageClass::DiagnosticTaskPoll;
+        assert!(wrong_image.validate().is_err());
     }
 
     #[test]

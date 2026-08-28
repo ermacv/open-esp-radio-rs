@@ -1,5 +1,8 @@
 use super::*;
 
+#[cfg(feature = "task-poll-telemetry")]
+use crate::diagnostics::core0_rx_cycles::{Core0ProtocolCycleProfile, Core0ProtocolPath};
+
 impl<
     'queue,
     'pool,
@@ -66,35 +69,55 @@ where
         &mut self,
         frame: Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>,
     ) -> ConnectedRxDispatch {
+        #[cfg(feature = "task-poll-telemetry")]
+        let mut core0_cycles = Core0ProtocolCycleProfile::begin();
         let runtime_received_at_micros = frame.runtime_received_at_micros();
-        if self.runtime.dispatcher.may_publish_amsdu(frame.segment())
+        #[cfg(any(feature = "diagnostics", test))]
+        let preflight_started = self.pipeline_observer.map(|observer| observer.now_micros());
+        let dispatch_via_scratch = self.runtime.dispatcher.may_publish_amsdu(frame.segment())
             || !self
                 .runtime
                 .dispatcher
-                .may_publish_ethernet(frame.segment())
-        {
+                .may_publish_ethernet(frame.segment());
+        #[cfg(any(feature = "diagnostics", test))]
+        if let (Some(observer), Some(started)) = (self.pipeline_observer, preflight_started) {
+            observer.observe(RxPipelineObservation::ProtocolPreflightCompleted {
+                micros: observer.elapsed_micros_since(started),
+            });
+        }
+        #[cfg(feature = "task-poll-telemetry")]
+        core0_cycles.preflight_completed();
+        if dispatch_via_scratch {
             let result = self
                 .dispatch_segment(frame.segment(), runtime_received_at_micros)
                 .await;
+            #[cfg(feature = "task-poll-telemetry")]
+            core0_cycles.dispatch_completed();
             drop(frame);
             self.irq.notify_rx_capacity();
+            #[cfg(feature = "task-poll-telemetry")]
+            core0_cycles.finish(Core0ProtocolPath::Scratch);
             return result;
         }
 
-        #[cfg(any(feature = "diagnostics", test))]
-        let wait_started = self.pipeline_observer.map(|observer| observer.now_micros());
-        self.sink.wait_staged_ready().await;
-        #[cfg(any(feature = "diagnostics", test))]
-        if let (Some(observer), Some(started)) = (self.pipeline_observer, wait_started) {
-            observer.observe(RxPipelineObservation::NetworkReadyWait {
-                micros: observer.elapsed_micros_since(started),
-            });
+        if self.sink.staged_rx_admission() == StagedRxAdmission::AwaitCapacity {
+            #[cfg(any(feature = "diagnostics", test))]
+            let wait_started = self.pipeline_observer.map(|observer| observer.now_micros());
+            self.sink.wait_staged_ready().await;
+            #[cfg(any(feature = "diagnostics", test))]
+            if let (Some(observer), Some(started)) = (self.pipeline_observer, wait_started) {
+                observer.observe(RxPipelineObservation::NetworkReadyWait {
+                    micros: observer.elapsed_micros_since(started),
+                });
+            }
+            #[cfg(feature = "task-poll-telemetry")]
+            core0_cycles.wait_completed();
         }
 
         #[cfg(any(feature = "diagnostics", test))]
         let dispatch_started = self.pipeline_observer.map(|observer| observer.now_micros());
         let segment = frame.segment();
-        let (result, ethernet) = {
+        let (result, ethernet, _callback_started, _callback_ended, _data_cycles) = {
             let mut capture = StagedEthernetCapture::new(&mut self.sink, segment.buffer);
             let result = self.runtime.dispatcher.dispatch_with_runtime_received_at(
                 segment,
@@ -103,8 +126,24 @@ where
                 runtime_received_at_micros,
                 &mut capture,
             );
-            (result, capture.captured)
+            (
+                result,
+                capture.captured,
+                capture.callback_started,
+                capture.callback_ended,
+                #[cfg(feature = "task-poll-telemetry")]
+                capture.data_cycles,
+                #[cfg(not(feature = "task-poll-telemetry"))]
+                (),
+            )
         };
+        #[cfg(feature = "task-poll-telemetry")]
+        {
+            core0_cycles.dispatch_split_completed(_callback_started, _callback_ended);
+            if let Some(profile) = _data_cycles {
+                crate::diagnostics::core0_rx_cycles::CORE0_RX_CYCLES.record_data_profile(profile);
+            }
+        }
         #[cfg(any(feature = "diagnostics", test))]
         if let (Some(observer), Some(started)) = (self.pipeline_observer, dispatch_started) {
             let (data, amsdu, amsdu_subframes) = match result {
@@ -132,6 +171,8 @@ where
         if disposition == StagedRxDisposition::Released {
             self.irq.notify_rx_capacity();
         }
+        #[cfg(feature = "task-poll-telemetry")]
+        core0_cycles.finish(Core0ProtocolPath::Ordinary);
         result
     }
 
@@ -230,6 +271,10 @@ struct StagedEthernetCapture<'sink, S> {
     raw_start: usize,
     raw_length: usize,
     captured: Option<StagedEthernetPublication>,
+    callback_started: u32,
+    callback_ended: u32,
+    #[cfg(feature = "task-poll-telemetry")]
+    data_cycles: Option<ConnectedRxDataCycleProfile>,
 }
 
 impl<'sink, S> StagedEthernetCapture<'sink, S> {
@@ -239,11 +284,21 @@ impl<'sink, S> StagedEthernetCapture<'sink, S> {
             raw_start: raw.as_ptr() as usize,
             raw_length: raw.len(),
             captured: None,
+            callback_started: 0,
+            callback_ended: 0,
+            #[cfg(feature = "task-poll-telemetry")]
+            data_cycles: None,
         }
     }
 }
 
 impl<S: ConnectedRxSink> ConnectedRxSink for StagedEthernetCapture<'_, S> {
+    #[cfg(feature = "task-poll-telemetry")]
+    fn observe_data_cycle_profile(&mut self, profile: ConnectedRxDataCycleProfile) {
+        debug_assert!(self.data_cycles.is_none());
+        self.data_cycles = Some(profile);
+    }
+
     fn wants_power_save_delivery(&self) -> bool {
         self.sink.wants_power_save_delivery()
     }
@@ -259,6 +314,8 @@ impl<S: ConnectedRxSink> ConnectedRxSink for StagedEthernetCapture<'_, S> {
             self.sink.publish(event);
             return;
         };
+        #[cfg(feature = "task-poll-telemetry")]
+        let callback_started = crate::diagnostics::core0_rx_cycles::cycle_count();
         let payload_start = frame.payload.as_ptr() as usize;
         let payload_offset = payload_start
             .checked_sub(self.raw_start)
@@ -280,6 +337,11 @@ impl<S: ConnectedRxSink> ConnectedRxSink for StagedEthernetCapture<'_, S> {
             payload_length: frame.payload.len(),
             metadata,
         });
+        #[cfg(feature = "task-poll-telemetry")]
+        {
+            self.callback_started = callback_started;
+            self.callback_ended = crate::diagnostics::core0_rx_cycles::cycle_count();
+        }
     }
 
     fn supports_esp_now_v2(&self) -> bool {

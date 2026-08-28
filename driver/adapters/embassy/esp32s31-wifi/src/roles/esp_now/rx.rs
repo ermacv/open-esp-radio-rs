@@ -1,7 +1,9 @@
 //! Normal-RX DMA owner for one standalone ESP-NOW peer epoch.
 
 use open_esp_radio_esp32s31_wifi_dma::rx_ring::RxSegment;
-use open_esp_radio_esp32s31_wifi_mac::rx::{RxDma, RxIngressConfig, RxRingError, RxRingHalted};
+use open_esp_radio_esp32s31_wifi_mac::rx::{
+    RxDma, RxDmaBufferAddresses, RxIngressConfig, RxRingError, RxRingHalted,
+};
 use open_esp_radio_esp32s31_wifi_sta::standalone_esp_now_rx::{
     StandaloneEspNowRxDispatch, StandaloneEspNowRxDispatcher, StandaloneEspNowRxSink,
 };
@@ -84,7 +86,7 @@ impl<
         hardware: &mut H,
         storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         descriptor_base: u32,
-        buffer_addresses: &'storage [u32; COUNT],
+        buffer_addresses: &'storage RxDmaBufferAddresses<COUNT>,
         mpdu: &'storage mut [u8; DMA_BUFFER_SIZE],
         epoch: EspNowRxEpoch<PEERS>,
         ingress: RxIngressConfig,
@@ -108,7 +110,7 @@ impl<
         hardware: &mut H,
         storage: &'static Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         descriptor_base: u32,
-        buffer_addresses: &'storage [u32; COUNT],
+        buffer_addresses: &'storage RxDmaBufferAddresses<COUNT>,
         mpdu: &'storage mut [u8; DMA_BUFFER_SIZE],
         epoch: EspNowRxEpoch<PEERS>,
         ingress: RxIngressConfig,

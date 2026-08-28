@@ -4,6 +4,11 @@ use core::future::Future;
 
 use embassy_futures::yield_now;
 use embassy_time::Instant;
+#[cfg(feature = "core0-rx-cycle-telemetry")]
+use open_esp_radio_esp32s31_embassy_wifi::{
+    CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM, Core0RxCycleSnapshot,
+    Core0RxServiceHistogramSnapshot, cycle_count,
+};
 use open_esp_radio_hil_esp32s31_telemetry::{
     aggregate_tx::{AggregateTxCounterSnapshot, AggregateTxCounters},
     mac_irq::MacIrqClassificationSnapshot,
@@ -271,9 +276,8 @@ pub(in crate::product_hil) async fn log_open_radio_rx_pipeline_interval(
     let pipeline = counters.snapshot().wrapping_delta_since(earlier);
     runtime_log_reliably(format_args!(
         "ORXS calls={} frontier={} completed={} descriptors={} admitted={} staged={} bytes={} \
-         discarded={} discard_empty={} discard_long={} discard_overload={} \
+         discarded={} discard_empty={} discard_long={} discard_chained={} discard_overload={} \
          overload_discarded={} recycled={} overload_recycled={} \
-         back={} pool={} queue={} deferred_max={} pool_min={} queue_min={} \
          fmax={} amax={} service_us={} service_boot_max_us={}",
         pipeline.service_calls,
         pipeline.completion_frontier_frames,
@@ -285,20 +289,31 @@ pub(in crate::product_hil) async fn log_open_radio_rx_pipeline_interval(
         pipeline.discarded_units,
         pipeline.stage_empty_discards,
         pipeline.stage_too_long_discards,
+        pipeline.stage_chained_discards,
         pipeline.stage_overload_bulk_discards,
         pipeline.overload_discarded_units,
         pipeline.recycled_descriptors,
         pipeline.overload_recycled_descriptors,
+        pipeline.maximum_frontier,
+        pipeline.maximum_admitted,
+        pipeline.service_micros,
+        pipeline.service_lifetime_max_micros,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ORXSC samples={} back={} bulk_blocked={} pool={} queue={} deferred_max={} \
+         pool_min={} queue_min={} pool_floor={} queue_floor={}",
+        pipeline.service_calls,
         pipeline.backpressured_services,
+        pipeline.bulk_capacity_blocked_services,
         pipeline.pool_credit_limited_services,
         pipeline.queue_credit_limited_services,
         pipeline.maximum_deferred_frames,
         pipeline.minimum_backpressured_pool_credits,
         pipeline.minimum_backpressured_queue_credits,
-        pipeline.maximum_frontier,
-        pipeline.maximum_admitted,
-        pipeline.service_micros,
-        pipeline.service_lifetime_max_micros,
+        pipeline.minimum_pool_credits,
+        pipeline.minimum_queue_credits,
     ))
     .await;
     yield_now().await;
@@ -354,6 +369,21 @@ pub(in crate::product_hil) async fn log_open_radio_rx_pipeline_interval(
         pipeline.network_published_bytes,
         pipeline.network_publish_micros,
         pipeline.network_publish_lifetime_max_micros,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ORXP frames={} frame_us={} frame_boot_max_us={} reorder={} reorder_us={} \
+         reorder_boot_max_us={} preflight={} preflight_us={} preflight_boot_max_us={}",
+        pipeline.protocol_frame_transactions,
+        pipeline.protocol_frame_micros,
+        pipeline.protocol_frame_lifetime_max_micros,
+        pipeline.reorder_preflights,
+        pipeline.reorder_preflight_micros,
+        pipeline.reorder_preflight_lifetime_max_micros,
+        pipeline.protocol_preflights,
+        pipeline.protocol_preflight_micros,
+        pipeline.protocol_preflight_lifetime_max_micros,
     ))
     .await;
     yield_now().await;
@@ -436,11 +466,6 @@ pub(in crate::product_hil) async fn log_open_radio_task_poll_interval(
         current.network.wrapping_delta_since(earlier.network),
     )
     .await;
-    log_open_radio_task_poll(
-        "protocol",
-        current.protocol.wrapping_delta_since(earlier.protocol),
-    )
-    .await;
     log_open_radio_task_poll("radio", current.radio.wrapping_delta_since(earlier.radio)).await;
     log_open_radio_task_poll(
         "udp_rx",
@@ -453,6 +478,203 @@ pub(in crate::product_hil) async fn log_open_radio_task_poll_interval(
     )
     .await;
     log_open_radio_task_poll("tcp", current.tcp.wrapping_delta_since(earlier.tcp)).await;
+}
+
+#[cfg(feature = "core0-rx-cycle-telemetry")]
+pub(in crate::product_hil) async fn log_open_radio_core0_rx_cycles(
+    earlier: Core0RxCycleSnapshot,
+) {
+    let cycles = CORE0_RX_CYCLES.snapshot().wrapping_delta_since(earlier);
+    runtime_log_reliably(format_args!(
+        "ORC0 services={} units={} total={} setup={} frontier={} admission={} \
+         stage_total={} stage_take={} stage_pool={} recycle={} reload={} publish={} tail={}",
+        cycles.services,
+        cycles.units,
+        cycles.total,
+        cycles.setup,
+        cycles.frontier,
+        cycles.admission,
+        cycles.stage_total,
+        cycles.stage_take,
+        cycles.stage_pool,
+        cycles.recycle,
+        cycles.reload,
+        cycles.publish,
+        cycles.tail,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ORC0R runner_calls={} runner_total={} runner_pre={} runner_driver={} runner_post={} \
+         mac_irq_entries={} mac_irq_cycles={} control_calls={} control_cycles={} \
+         control_idle={} control_more={} control_tx={}",
+        cycles.runner_rx_calls,
+        cycles.runner_rx_total,
+        cycles.runner_rx_pre,
+        cycles.runner_rx_driver,
+        cycles.runner_rx_post,
+        cycles.mac_irq_entries,
+        cycles.mac_irq_cycles,
+        cycles.control_calls,
+        cycles.control_cycles,
+        cycles.control_idle,
+        cycles.control_more,
+        cycles.control_tx_pending,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ORC0P polls={} poll_cycles={} polls_with_rx={} poll_to_runner={} runner_to_exit={}",
+        cycles.radio_polls,
+        cycles.radio_poll_cycles,
+        cycles.radio_polls_with_rx,
+        cycles.poll_to_runner_cycles,
+        cycles.runner_to_poll_exit_cycles,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ORC0S calls={} software={} irq={} select={} reentry={} stop={} housekeeping={} tx_checks={} rx_checks={}",
+        cycles.scheduler_rx_calls,
+        cycles.scheduler_software_rx_calls,
+        cycles.scheduler_irq_rx_calls,
+        cycles.scheduler_select_rx_calls,
+        cycles.scheduler_reentry_cycles,
+        cycles.scheduler_stop_cycles,
+        cycles.scheduler_housekeeping_cycles,
+        cycles.scheduler_tx_checks_cycles,
+        cycles.scheduler_rx_checks_cycles,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ORC0H discard={} queue={} control_ready={} prepared={} pending={} idle={}",
+        cycles.scheduler_discard_wakes_cycles,
+        cycles.scheduler_first_network_queue_cycles,
+        cycles.scheduler_control_ready_cycles,
+        cycles.scheduler_prepared_cycles,
+        cycles.scheduler_network_pending_cycles,
+        cycles.scheduler_idle_accounting_cycles,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ORC0T polls={} poll_cycles={} polls_with_frame={} poll_to_frame={} frame_to_exit={}",
+        cycles.protocol_polls,
+        cycles.protocol_poll_cycles,
+        cycles.protocol_polls_with_frame,
+        cycles.protocol_poll_to_first_frame_cycles,
+        cycles.protocol_last_frame_to_poll_exit_cycles,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ORC0Q dequeues={} poll_to_dequeue={} between_to_dequeue={} dequeue_to_frame={}",
+        cycles.protocol_dequeues,
+        cycles.protocol_poll_to_first_dequeue_cycles,
+        cycles.protocol_between_frame_to_dequeue_cycles,
+        cycles.protocol_dequeue_to_frame_cycles,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ORC0D calls={} ordinary={} scratch={} total={} preflight={} wait={} dispatch={} publish_tail={}",
+        cycles.protocol_frame_calls,
+        cycles.protocol_frame_ordinary,
+        cycles.protocol_frame_scratch,
+        cycles.protocol_frame_total,
+        cycles.protocol_frame_preflight,
+        cycles.protocol_frame_wait,
+        cycles.protocol_frame_dispatch,
+        cycles.protocol_frame_publish_tail,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ORC0E dispatch_pre={} capture={} dispatch_post={} observer={} in_place={} shared={} protected_calls={} protected_cycles={}",
+        cycles.protocol_dispatch_pre_publish,
+        cycles.protocol_dispatch_capture,
+        cycles.protocol_dispatch_post_publish,
+        cycles.protocol_publication_observer,
+        cycles.protocol_publication_in_place,
+        cycles.protocol_publication_shared,
+        cycles.protocol_protected_view_calls,
+        cycles.protocol_protected_view_cycles,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ORC0F calls={} completed={} total={} view={} fragment_guard={} decapsulate={} replay={} duplicate={} publish={}",
+        cycles.data_calls,
+        cycles.data_completed,
+        cycles.data_total,
+        cycles.data_view,
+        cycles.data_fragment_guard,
+        cycles.data_decapsulate,
+        cycles.data_replay,
+        cycles.data_duplicate,
+        cycles.data_publish,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ORC0I dma={} runner={} scheduler={} protocol_dequeue={} protocol_entry={} protocol_frame={} data={} publication={}",
+        cycles.telemetry_dma_record,
+        cycles.telemetry_runner_record,
+        cycles.telemetry_scheduler_record,
+        cycles.telemetry_protocol_dequeue_record,
+        cycles.telemetry_protocol_entry_record,
+        cycles.telemetry_protocol_frame_record,
+        cycles.telemetry_data_record,
+        cycles.telemetry_publication_record,
+    ))
+    .await;
+    yield_now().await;
+}
+
+#[cfg(feature = "core0-rx-cycle-telemetry")]
+pub(in crate::product_hil) async fn log_open_radio_core0_rx_service_histogram(
+    earlier: &Core0RxServiceHistogramSnapshot,
+) {
+    let services = CORE0_RX_SERVICE_HISTOGRAM
+        .snapshot()
+        .wrapping_delta_since(*earlier);
+    runtime_log_reliably(format_args!(
+        "ORC0X spsc_push_calls={} spsc_push_full={} spsc_push_cycles={} \
+         spsc_pop_calls={} spsc_pop_empty={} spsc_pop_cycles={} \
+         service_record_cycles={} spsc_record_cycles={}",
+        services.spsc_push_calls,
+        services.spsc_push_full,
+        services.spsc_push_cycles,
+        services.spsc_pop_calls,
+        services.spsc_pop_empty,
+        services.spsc_pop_cycles,
+        services.service_record_cycles,
+        services.spsc_record_cycles,
+    ))
+    .await;
+    yield_now().await;
+    for (units, bin) in services.bins.into_iter().enumerate() {
+        if bin.services == 0 {
+            continue;
+        }
+        runtime_log_reliably(format_args!(
+            "ORC0B units={} services={} total={} setup={} frontier={} admission={} \
+             stage_take={} stage_pool={} publish={} tail={}",
+            units,
+            bin.services,
+            bin.total,
+            bin.setup,
+            bin.frontier,
+            bin.admission,
+            bin.stage_take,
+            bin.stage_pool,
+            bin.publish,
+            bin.tail,
+        ))
+        .await;
+        yield_now().await;
+    }
 }
 
 async fn log_open_radio_task_poll(task: &str, poll: TaskPollSnapshot) {
@@ -492,6 +714,28 @@ pub(in crate::product_hil) async fn observe_open_radio_task_polls<F: Future>(
     core::future::poll_fn(|context| {
         let started = Instant::now();
         let result = future.as_mut().poll(context);
+        counters.record(started.elapsed().as_micros());
+        result
+    })
+    .await
+}
+
+#[cfg(feature = "core0-rx-cycle-telemetry")]
+#[allow(
+    large_assignments,
+    reason = "the diagnostic wrapper pins the existing radio future directly inside its reviewed static task arena"
+)]
+pub(in crate::product_hil) async fn observe_open_radio_core0_task_polls<F: Future>(
+    future: F,
+    counters: &'static TaskPollCounters,
+) -> F::Output {
+    let mut future = core::pin::pin!(future);
+    core::future::poll_fn(|context| {
+        let started = Instant::now();
+        let cycle_started = cycle_count();
+        CORE0_RX_CYCLES.begin_radio_poll(cycle_started);
+        let result = future.as_mut().poll(context);
+        CORE0_RX_CYCLES.end_radio_poll(cycle_count());
         counters.record(started.elapsed().as_micros());
         result
     })

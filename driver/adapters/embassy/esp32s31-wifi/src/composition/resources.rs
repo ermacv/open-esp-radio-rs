@@ -40,24 +40,26 @@ const _: () = assert!(ESP32S31_DEFAULT_TX_BUFFER_SIZE >= ESP_NOW_V2_TX_MINIMUM_C
 const _: () =
     assert!(ESP32S31_DEFAULT_RX_BUFFER_SIZE >= PUBLIC_HEADER_SIZE + ESP_NOW_V2_MAX_MPDU_LEN);
 const _: () = assert!(ESP32S31_DEFAULT_RX_STAGE_CAPACITY >= ESP_NOW_V2_MAX_MPDU_LEN);
-// These slots form the latency-critical copy-before-DMA-reload working set and
-// stay in SRAM. Two complete negotiated reorder windows let RX copy one burst
-// while the protocol consumer owns another; descriptor reclaim itself follows
-// the frozen hardware LAST and does not reserve a fixed suffix. Paired mode
-// must service the protocol consumer instead of hiding sustained backpressure
-// by growing this latency-critical SRAM pool.
+// These SRAM slots store only affine handoff records. An admitted ordinary
+// frame retains its original DMA buffer until the final network lease is
+// released; payload bytes are not copied into this pool. Capping upper
+// ownership at two negotiated BA-16 windows reserves the other half of the
+// 64-entry ring for the hardware walker. Sustained consumer backpressure must
+// be serviced or dropped according to admission policy instead of being hidden
+// by growing this latency-critical ownership window.
 pub const ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT: usize = 32;
-// Keep one complete negotiated HT BlockAck window of DMA descriptors in
-// reserve while software copies and republishes the preceding window. A
-// 32-entry agreement consumed the entire 32-descriptor frontier and exposed
-// ordinary executor latency as RX BUFFER_FULL under sustained HT40 traffic.
+// Keep at least two negotiated HT BlockAck windows worth of descriptor credits
+// outside the maximum retained upper-ownership window. A 32-entry agreement
+// consumed the entire 32-descriptor frontier and exposed ordinary executor
+// latency as RX BUFFER_FULL under sustained HT40 traffic.
 pub const ESP32S31_DEFAULT_RX_REORDER_WINDOW: usize = 16;
 pub const ESP32S31_DEFAULT_CONTROL_QUEUE_DEPTH: usize = 16;
 
 pub const ESP32S31_DEFAULT_NETWORK_FRAME_CAPACITY: usize = 1_600;
-// The CPU-only queue retains two complete 32-frame bursts and belongs in
-// PSRAM. This prevents the network consumer from extending ownership of the
-// latency-critical SRAM staging pool.
+// The CPU-only network endpoint queue belongs in PSRAM. Its depth is separate
+// from the 32-slot retained-buffer ownership cap: an ordinary zero-copy RX
+// token still retains one of those slots until Core 1 consumes it, while copied
+// reorder/reassembly frames use independent queue backing.
 pub const ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH: usize = 64;
 // One additional credit per permanent network endpoint is reserved for the
 // TX token paired with ingress. Combined STA+AP therefore needs two reserves;

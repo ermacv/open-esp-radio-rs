@@ -281,7 +281,7 @@ where
     S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
 {
     pub fn new_with_reorder_slots(
-        frames: Receiver<'queue, M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
+        frames: Esp32s31StagedRxReceiver<'queue, 'pool, M, DEPTH, CAPACITY, SLOTS>,
         irq: &'irq EmbassyMacIrqRuntime<M>,
         sink: S,
         mpdu: &'scratch mut [u8],
@@ -391,7 +391,7 @@ where
     /// tagged type and must be drained before the station can resume its
     /// standalone lifecycle.
     pub fn from_processor(
-        frames: Receiver<'queue, M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
+        frames: Esp32s31StagedRxReceiver<'queue, 'pool, M, DEPTH, CAPACITY, SLOTS>,
         processor: Esp32s31ConnectedRxProcessor<
             'queue,
             'pool,
@@ -428,6 +428,21 @@ where
             self.processor.irq.notify_rx_capacity();
         }
         shutdown
+    }
+
+    /// Stop the queue and processor now that the common DATAPATH owner has
+    /// reached its terminal edge.
+    pub fn into_stopped(
+        mut self,
+    ) -> Esp32s31ConnectedRxProtocolStopped<'scratch, 'pool, CAPACITY, SLOTS, REORDER_SLOTS> {
+        let shutdown = self.shutdown_discard();
+        let (mpdu, ethernet, runtime) = self.into_stopped_parts();
+        ConnectedRxProtocolStopped {
+            shutdown,
+            mpdu,
+            ethernet,
+            runtime,
+        }
     }
 
     pub(super) fn into_stopped_parts(
@@ -468,7 +483,7 @@ where
     S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
 {
     pub fn new(
-        frames: Receiver<'queue, M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
+        frames: Esp32s31StagedRxReceiver<'queue, 'pool, M, DEPTH, CAPACITY, SLOTS>,
         irq: &'irq EmbassyMacIrqRuntime<M>,
         sink: S,
         mpdu: &'scratch mut [u8],

@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 66;
+pub const PROTOCOL_VERSION: u16 = 67;
 // Keep command envelopes small: startup artifacts are transferred as an
 // ordered CRC-protected stream, so a large per-command inline buffer only
 // inflates UART queues and executor futures without improving semantics.
@@ -180,6 +180,9 @@ pub struct FeatureCapabilities {
     /// This image instruments bounded Embassy task poll residence. Ordinary
     /// qualification images deliberately omit this timing perturbation.
     pub task_poll_evidence: bool,
+    /// This image additionally instruments the intrusive Core0 RX phase and
+    /// service histograms. It is separate from ordinary task-poll residence.
+    pub core0_rx_cycle_evidence: bool,
     /// This image samples MAC interrupt publication timestamps in the hard
     /// ISR. Ordinary correctness and performance images keep that extended
     /// SRAM call graph absent.
@@ -763,15 +766,56 @@ pub enum WifiDataPlanePlacement {
     SplitRadioNetwork,
 }
 
+/// IPv4/UDP receive checksum policy selected before the network stack starts.
+///
+/// The diagnostic variant exists only for a same-image HIL cost experiment;
+/// it is not a claim that the Wi-Fi MAC performs transport checksum offload.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum WifiRxChecksumPolicy {
+    /// Validate IPv4 and UDP receive checksums in the software IP stack.
+    #[default]
+    Software,
+    /// Trust the isolated HIL traffic generator and skip IPv4/UDP RX checks.
+    AssumeValidDiagnostic,
+}
+
+/// Ordinary shared-RX admission selected before the radio stack starts.
+///
+/// Both variants live in one diagnostic ELF. The deferred variant preserves
+/// the former immediately-ready async edge solely to measure its cost without
+/// changing code layout.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum WifiRxAdmissionPolicy {
+    /// The retained staging slot is the complete network publication credit.
+    #[default]
+    SynchronousShared,
+    /// Poll an immediately-ready future before publishing the same slot.
+    DeferredReadyDiagnostic,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct InitializationConfiguration {
     pub ipv4: NetworkIpv4Configuration,
     pub data_plane: WifiDataPlanePlacement,
+    pub rx_checksum: WifiRxChecksumPolicy,
+    pub rx_admission: WifiRxAdmissionPolicy,
 }
 
 impl InitializationConfiguration {
-    pub const fn new(ipv4: NetworkIpv4Configuration, data_plane: WifiDataPlanePlacement) -> Self {
-        Self { ipv4, data_plane }
+    pub const fn new(
+        ipv4: NetworkIpv4Configuration,
+        data_plane: WifiDataPlanePlacement,
+        rx_checksum: WifiRxChecksumPolicy,
+        rx_admission: WifiRxAdmissionPolicy,
+    ) -> Self {
+        Self {
+            ipv4,
+            data_plane,
+            rx_checksum,
+            rx_admission,
+        }
     }
 
     pub fn validate(self) -> bool {
@@ -1519,6 +1563,14 @@ pub struct RadioEvidence {
 pub struct RxRadioEvidence {
     /// ESP hardware RX format code observed for the measured interval.
     pub phy_format: u8,
+    /// Complete benchmark-UDP HT40 observations at 800 ns GI.
+    pub ht40_long_gi_frames: u32,
+    /// Complete benchmark-UDP HT40 observations at 400 ns GI.
+    pub ht40_short_gi_frames: u32,
+    /// HT40 observations below MCS7. This is a subset of the two GI totals.
+    pub ht40_below_mcs7_frames: u32,
+    /// Benchmark vectors outside HT40 MCS0..7 geometry/format.
+    pub ht_invalid_frames: u32,
     pub dma_buffer_full: u32,
     pub dma_fifo_overflow: u32,
     pub network_dropped: u32,

@@ -799,30 +799,30 @@ impl Esp32s31ConnectedControlCore {
             || self.initial_tx_block_ack.into_iter().any(|pending| pending)
     }
 
-    pub fn next_alarm_deadline(&self) -> Option<u64> {
-        let block_ack = STA_TX_BLOCK_ACK_TIDS
-            .into_iter()
-            .filter_map(|tid| self.tx_block_ack.alarm(tid))
-            .map(|alarm| alarm.deadline_us)
-            .min();
-        let link = self
-            .beacon_monitor
-            .as_ref()
-            .and_then(StaBeaconMonitor::deadline_micros);
-        let individual_twt = self
-            .individual_twt
-            .as_ref()
-            .and_then(IndividualTwtRequester::next_deadline_micros);
-        earliest_deadline(
-            earliest_deadline(
-                earliest_deadline(
-                    earliest_deadline(block_ack, link),
-                    self.power_save_wake_deadline_micros,
-                ),
-                self.ps_poll_delivery_deadline_micros,
-            ),
-            individual_twt,
-        )
+    open_esp_radio_esp32s31_wifi_dma::place_rx_hot_path! {
+      /// Return the first owned control deadline without allocating executor state.
+      #[inline(never)]
+      pub fn next_alarm_deadline(&self) -> Option<u64> {
+          let block_ack = self.tx_block_ack.earliest_alarm_deadline();
+          let link = self
+              .beacon_monitor
+              .as_ref()
+              .and_then(StaBeaconMonitor::deadline_micros);
+          let individual_twt = self
+              .individual_twt
+              .as_ref()
+              .and_then(IndividualTwtRequester::next_deadline_micros);
+          earliest_deadline(
+              earliest_deadline(
+                  earliest_deadline(
+                      earliest_deadline(block_ack, link),
+                      self.power_save_wake_deadline_micros,
+                  ),
+                  self.ps_poll_delivery_deadline_micros,
+              ),
+              individual_twt,
+          )
+      }
     }
 
     pub fn shutdown<H, X, const PEER_CAPACITY: usize>(

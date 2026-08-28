@@ -1,12 +1,8 @@
-#![expect(
-    clippy::result_large_err,
-    reason = "no-alloc RX transitions return the exact physical frontier on failure"
-)]
-
 use core::marker::PhantomData;
 
 use open_esp_radio_esp32s31_wifi_mac::rx::{
-    RxDescriptorSnapshot, RxDma, RxRingError, RxRingHalted, RxRingLive, RxRingStopped, RxSegment,
+    RxDescriptorSnapshot, RxDma, RxDmaBufferAddresses, RxRingError, RxRingHalted, RxRingLive,
+    RxRingStopped, RxSegment,
 };
 
 use crate::datapath::rx::dma::{ESP32S31_RX_WALKER_ENABLE_SETTLE_US, Esp32s31RxDmaStorage};
@@ -29,7 +25,7 @@ where
         hardware: &mut M,
         storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         descriptor_base: u32,
-        buffer_addresses: &'storage [u32; COUNT],
+        buffer_addresses: &'storage RxDmaBufferAddresses<COUNT>,
     ) -> Result<Self, RxRingError> {
         if DMA_BUFFER_SIZE > u32::MAX as usize {
             return Err(RxRingError::Size);
@@ -44,7 +40,7 @@ where
         hardware: &mut M,
         storage: &'static Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         descriptor_base: u32,
-        buffer_addresses: &'storage [u32; COUNT],
+        buffer_addresses: &'storage RxDmaBufferAddresses<COUNT>,
     ) -> Result<Self, RxRingError> {
         if DMA_BUFFER_SIZE > u32::MAX as usize {
             return Err(RxRingError::Size);

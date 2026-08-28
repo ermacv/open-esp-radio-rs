@@ -75,6 +75,11 @@ pub(super) use reporting::{
     aggregate_tx_evidence, log_open_radio_ampdu_interval, log_open_radio_rx_pipeline_interval,
     log_open_radio_task_poll_interval, observe_open_radio_task_polls,
 };
+#[cfg(feature = "core0-rx-cycle-telemetry")]
+pub(super) use reporting::{
+    log_open_radio_core0_rx_cycles, log_open_radio_core0_rx_service_histogram,
+    observe_open_radio_core0_task_polls,
+};
 pub(in crate::product_hil) use runtime::{start_connected_traffic, start_traffic_dispatcher};
 pub(super) use tcp::{TcpBenchmarkConfig, run_open_radio_tcp_benchmark};
 pub(super) use udp::{

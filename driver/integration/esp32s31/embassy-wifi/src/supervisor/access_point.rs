@@ -1077,15 +1077,8 @@ impl ProductionWifiEpochRunner {
             }
         };
 
-        let (
-            ssid,
-            security,
-            channel,
-            client_limit,
-            inactive_timeout,
-            beacon_interval,
-            dtim_period,
-        ) = request.into_parts();
+        let (ssid, security, channel, client_limit, inactive_timeout, beacon_interval, dtim_period) =
+            request.into_parts();
         let ProductionAccessPointResources {
             address,
             beacon,
@@ -1101,12 +1094,9 @@ impl ProductionWifiEpochRunner {
             observation_storage,
         } = access_point;
         let service = match security {
-            AccessPointSecurity::Open => AccessPointService::new_open(
-                address,
-                client_limit,
-                inactive_timeout,
-                peer_storage,
-            ),
+            AccessPointSecurity::Open => {
+                AccessPointService::new_open(address, client_limit, inactive_timeout, peer_storage)
+            }
             AccessPointSecurity::Wpa2Personal(pmk) => {
                 let mut gtk_key = [0_u8; 16];
                 for word in gtk_key.chunks_exact_mut(4) {
@@ -1506,9 +1496,7 @@ impl ProductionWifiEpochRunner {
                     rx_delivery_observer,
                     publish_access_point_shared_network_rx,
                     wait_for_active_wifi_role_stop(endpoint),
-                    |status| crate::status::publish_access_point_status(
-                        generation, status
-                    ),
+                    |status| crate::status::publish_access_point_status(generation, status),
                     || {
                         let mut nonce = [0_u8; 32];
                         for word in nonce.chunks_exact_mut(4) {

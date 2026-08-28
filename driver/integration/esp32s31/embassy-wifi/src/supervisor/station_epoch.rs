@@ -861,7 +861,8 @@ pub(super) type ProductionStationTask = Esp32s31StationTask<
     CriticalSectionRawMutex,
     ProductionStationRunner<'static, 'static>,
 >;
-pub(super) type ProductionStationControl = Esp32s31StationController<'static, CriticalSectionRawMutex>;
+pub(super) type ProductionStationControl =
+    Esp32s31StationController<'static, CriticalSectionRawMutex>;
 pub(super) type ProductionStationExit = Esp32s31StationExit<
     ProductionStationOwner<'static, 'static>,
     ProductionStationRunner<'static, 'static>,
@@ -1109,13 +1110,11 @@ impl ProductionWifiEpochRunner {
             }
         };
         let port = match mode {
-            ProductionStationMode::Service => {
-                ProductionStationEnginePort::new(
-                    power_mode,
-                    access_point_resources,
-                    monitor_resources,
-                )
-            }
+            ProductionStationMode::Service => ProductionStationEnginePort::new(
+                power_mode,
+                access_point_resources,
+                monitor_resources,
+            ),
             ProductionStationMode::PairedCutover => ProductionStationEnginePort::paired_cutover(
                 power_mode,
                 access_point_resources,

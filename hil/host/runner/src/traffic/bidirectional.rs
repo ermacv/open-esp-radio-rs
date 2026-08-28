@@ -21,6 +21,7 @@ use open_esp_radio_hil_protocol::{
     TxRadioEvidence,
 };
 
+use crate::qualification::scenario::HtGuardIntervalExpectation;
 use crate::{
     Result, evidence,
     evidence::traffic_capture::{SerialCapture, SessionEvidence, await_udp_rx_ready},
@@ -478,6 +479,10 @@ pub(crate) struct RxQualification {
     pub(crate) dropped: u64,
     pub(crate) he_mcs_histogram: [u64; 12],
     pub(crate) other_phy_frames: u64,
+    pub(crate) ht40_long_gi_mcs: [u64; 8],
+    pub(crate) ht40_short_gi_mcs: [u64; 8],
+    pub(crate) ht20_mcs: [u64; 8],
+    pub(crate) ht_other_frames: u64,
     pub(crate) s_mpdu: RxSmpduEvidence,
     pub(crate) ampdu: RxAmpduEvidence,
     pub(crate) pipeline: RxPipelineEvidence,
@@ -504,6 +509,21 @@ impl RxQualification {
             received_datagrams: transport.rx_units,
             enqueued: transport.rx_units,
             dropped: u64::from(radio.network_dropped),
+            ht40_long_gi_mcs: {
+                let mut histogram = [0; 8];
+                if radio.ht40_below_mcs7_frames == 0 {
+                    histogram[7] = u64::from(radio.ht40_long_gi_frames);
+                }
+                histogram
+            },
+            ht40_short_gi_mcs: {
+                let mut histogram = [0; 8];
+                if radio.ht40_below_mcs7_frames == 0 {
+                    histogram[7] = u64::from(radio.ht40_short_gi_frames);
+                }
+                histogram
+            },
+            ht_other_frames: u64::from(radio.ht_invalid_frames),
             s_mpdu: RxSmpduEvidence {
                 s_mpdu_datagrams: u64::from(radio.s_mpdu_datagrams),
                 not_s_mpdu_datagrams: u64::from(radio.not_s_mpdu_datagrams),
@@ -551,6 +571,77 @@ impl RxQualification {
             ..Self::default()
         }
     }
+
+    /// Overlay authoritative compact radio evidence onto optional text
+    /// diagnostics. Text owns phase/cycle detail and need not duplicate the
+    /// complete per-frame HT vector contract.
+    pub(crate) fn with_typed_radio(mut self, typed: &Self) -> Self {
+        self.ht40_long_gi_mcs = typed.ht40_long_gi_mcs;
+        self.ht40_short_gi_mcs = typed.ht40_short_gi_mcs;
+        self.ht20_mcs = typed.ht20_mcs;
+        self.ht_other_frames = typed.ht_other_frames;
+        self.s_mpdu = typed.s_mpdu;
+        self.ampdu = typed.ampdu;
+        self.buffer_full = typed.buffer_full;
+        self.fifo_overflow = typed.fifo_overflow;
+        self
+    }
+}
+
+pub(crate) fn validate_ht40_rx_vector(
+    radio: &RxRadioEvidence,
+    minimum_mcs: Option<u8>,
+    guard_interval: HtGuardIntervalExpectation,
+) -> Result<()> {
+    let long_total = u64::from(radio.ht40_long_gi_frames);
+    let short_total = u64::from(radio.ht40_short_gi_frames);
+    let vector_total = long_total
+        .saturating_add(short_total)
+        .saturating_add(u64::from(radio.ht_invalid_frames));
+    let observed_udp = u64::from(radio.s_mpdu_datagrams)
+        .saturating_add(u64::from(radio.not_s_mpdu_datagrams))
+        .saturating_add(u64::from(radio.s_mpdu_unavailable_datagrams));
+    if vector_total == 0 || vector_total != observed_udp {
+        return Err(format!(
+            "incomplete HT RX-vector interval: vectors={vector_total} benchmark_udp={observed_udp}"
+        )
+        .into());
+    }
+    if radio.ht_invalid_frames != 0 {
+        return Err(format!(
+            "HT RX did not remain inside MCS0..7/40 MHz: invalid={}",
+            radio.ht_invalid_frames,
+        )
+        .into());
+    }
+    if let Some(minimum_mcs) = minimum_mcs {
+        if minimum_mcs != 7 {
+            return Err(format!(
+                "typed HT interval evidence currently supports only the MCS7 floor, requested MCS{minimum_mcs}"
+            )
+            .into());
+        }
+        if radio.ht40_below_mcs7_frames != 0 {
+            return Err(format!(
+                "HT40 RX used a vector below MCS7: below={}",
+                radio.ht40_below_mcs7_frames,
+            )
+            .into());
+        }
+    }
+    match guard_interval {
+        HtGuardIntervalExpectation::Any => {}
+        HtGuardIntervalExpectation::Long if long_total != 0 && short_total == 0 => {}
+        HtGuardIntervalExpectation::Short if short_total != 0 && long_total == 0 => {}
+        expected => {
+            return Err(format!(
+                "HT40 RX guard interval mismatch: required={} long={long_total} short={short_total}",
+                expected.id(),
+            )
+            .into());
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -814,7 +905,6 @@ impl TaskPollEvidence {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct TaskPollSet {
     pub(crate) network: TaskPollEvidence,
-    pub(crate) protocol: TaskPollEvidence,
     pub(crate) radio: TaskPollEvidence,
     pub(crate) udp_rx: TaskPollEvidence,
     pub(crate) udp_tx: TaskPollEvidence,
@@ -824,7 +914,6 @@ pub(crate) struct TaskPollSet {
 impl TaskPollSet {
     fn is_complete(self) -> bool {
         self.network.intervals != 0
-            && self.protocol.intervals != 0
             && self.radio.intervals != 0
             && self.udp_rx.intervals != 0
             && self.udp_tx.intervals != 0
@@ -885,6 +974,7 @@ impl MacIrqEvidence {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct RxPipelineEvidence {
     pub(crate) service_calls: u64,
+    pub(crate) service_credit_samples: u64,
     pub(crate) frontier_zero_services: u64,
     pub(crate) frontier_one_services: u64,
     pub(crate) frontier_two_three_services: u64,
@@ -898,11 +988,14 @@ pub(crate) struct RxPipelineEvidence {
     pub(crate) stage_empty_discards: u64,
     pub(crate) stage_too_long_discards: u64,
     pub(crate) backpressured_services: u64,
+    pub(crate) bulk_capacity_blocked_services: u64,
     pub(crate) pool_credit_limited_services: u64,
     pub(crate) queue_credit_limited_services: u64,
     pub(crate) maximum_deferred_frames: u64,
     pub(crate) minimum_backpressured_pool_credits: u64,
     pub(crate) minimum_backpressured_queue_credits: u64,
+    pub(crate) minimum_pool_credits: u64,
+    pub(crate) minimum_queue_credits: u64,
     pub(crate) maximum_frontier: u64,
     pub(crate) maximum_admitted: u64,
     pub(crate) service_us: u64,
@@ -953,9 +1046,14 @@ pub(crate) struct RxPipelineEvidence {
 
 impl RxPipelineEvidence {
     fn merge(&mut self, sample: Self) {
+        let had_credit_samples = self.service_credit_samples != 0;
+        let sample_has_credit_samples = sample.service_credit_samples != 0;
         let had_backpressure = self.backpressured_services != 0;
         let sample_has_backpressure = sample.backpressured_services != 0;
         self.service_calls = self.service_calls.saturating_add(sample.service_calls);
+        self.service_credit_samples = self
+            .service_credit_samples
+            .saturating_add(sample.service_credit_samples);
         self.frontier_zero_services = self
             .frontier_zero_services
             .saturating_add(sample.frontier_zero_services);
@@ -989,6 +1087,9 @@ impl RxPipelineEvidence {
         self.backpressured_services = self
             .backpressured_services
             .saturating_add(sample.backpressured_services);
+        self.bulk_capacity_blocked_services = self
+            .bulk_capacity_blocked_services
+            .saturating_add(sample.bulk_capacity_blocked_services);
         self.pool_credit_limited_services = self
             .pool_credit_limited_services
             .saturating_add(sample.pool_credit_limited_services);
@@ -1010,6 +1111,17 @@ impl RxPipelineEvidence {
                 self.minimum_backpressured_pool_credits = sample.minimum_backpressured_pool_credits;
                 self.minimum_backpressured_queue_credits =
                     sample.minimum_backpressured_queue_credits;
+            }
+        }
+        if sample_has_credit_samples {
+            if had_credit_samples {
+                self.minimum_pool_credits =
+                    self.minimum_pool_credits.min(sample.minimum_pool_credits);
+                self.minimum_queue_credits =
+                    self.minimum_queue_credits.min(sample.minimum_queue_credits);
+            } else {
+                self.minimum_pool_credits = sample.minimum_pool_credits;
+                self.minimum_queue_credits = sample.minimum_queue_credits;
             }
         }
         self.maximum_frontier = self.maximum_frontier.max(sample.maximum_frontier);
@@ -1136,6 +1248,9 @@ struct DeviceReport {
     tx_irq_timings: Vec<TxIrqTimingSample>,
     ampdu_block_acks: Vec<AmpduBlockAckSample>,
     rx_mcs_histograms: Vec<([u64; 12], u64)>,
+    rx_ht40_long_gi_histograms: Vec<[u64; 8]>,
+    rx_ht40_short_gi_histograms: Vec<[u64; 8]>,
+    rx_ht20_histograms: Vec<([u64; 8], u64)>,
     rx_s_mpdu: Vec<RxSmpduEvidence>,
     rx_ampdu: Vec<RxAmpduEvidence>,
     rx_service: Vec<RxPipelineEvidence>,
@@ -1159,6 +1274,9 @@ pub(crate) struct RunPolicy {
     pub(crate) capture_openwrt_tx_monitor_rx: bool,
     pub(crate) capture_independent_laptop_monitor_rx: bool,
     pub(crate) require_driver_observation: bool,
+    pub(crate) minimum_mcs: Option<u8>,
+    pub(crate) guard_interval: HtGuardIntervalExpectation,
+    pub(crate) fixture_guard_interval: HtGuardIntervalExpectation,
 }
 
 pub(crate) fn run(
@@ -1173,6 +1291,9 @@ pub(crate) fn run(
         capture_openwrt_tx_monitor_rx,
         capture_independent_laptop_monitor_rx,
         require_driver_observation,
+        minimum_mcs,
+        guard_interval,
+        fixture_guard_interval,
     } = policy;
     let mut options = parse_options(&arguments, lab)?;
     fs::create_dir_all(output)?;
@@ -1222,6 +1343,7 @@ pub(crate) fn run(
             Phy::Ht40 => crate::qualification::scenario::PhyExpectation::Ht40,
             Phy::He20 => crate::qualification::scenario::PhyExpectation::He20,
         },
+        fixture_guard_interval,
         None,
     )?;
     let fixture_tx_capture = match &lab.station_fixture {
@@ -1464,17 +1586,29 @@ pub(crate) fn run(
     }
     .err()
     .map(|error| error.to_string());
-    let text_assessment = assess_rx_report(&report, options.phy.expected_rx_format()).ok();
+    if options.phy == Phy::Ht40
+        && let Err(error) = validate_ht40_rx_vector(&raw_rx_radio, minimum_mcs, guard_interval)
+    {
+        qualification_failure.get_or_insert_with(|| error.to_string());
+    }
+    let text_assessment = match assess_rx_report(&report, options.phy.expected_rx_format()) {
+        Ok(assessment) => Some(assessment),
+        Err(error) => {
+            eprintln!("diagnostic_text_warning={error}");
+            None
+        }
+    };
     if let Some(failure) = text_assessment
         .as_ref()
         .and_then(|assessment| assessment.failure.as_deref())
     {
         eprintln!("diagnostic_text_warning={failure}");
     }
+    let typed_rx = RxQualification::from_typed(structured.transport, raw_rx_radio);
     let rx = text_assessment
-        .map(|assessment| assessment.rx)
+        .map(|assessment| assessment.rx.with_typed_radio(&typed_rx))
         .unwrap_or_else(|| {
-            let mut rx = RxQualification::from_typed(structured.transport, raw_rx_radio);
+            let mut rx = typed_rx;
             // A failed typed acceptance result must not hide independent
             // diagnostic poll evidence from the same completed interval.
             rx.task_polls = report.task_polls;
@@ -2067,7 +2201,6 @@ fn parse_device_report(log: &str) -> DeviceReport {
             if include_rx_interval_evidence && let Some(sample) = sample {
                 match text_field(line, "task") {
                     Some("network") => report.task_polls.network.merge(sample),
-                    Some("protocol") => report.task_polls.protocol.merge(sample),
                     Some("radio") => report.task_polls.radio.merge(sample),
                     Some("udp_rx") => report.task_polls.udp_rx.merge(sample),
                     Some("udp_tx") => report.task_polls.udp_tx.merge(sample),
@@ -2084,16 +2217,29 @@ fn parse_device_report(log: &str) -> DeviceReport {
                     staged_bytes: field(line, "bytes")?,
                     stage_empty_discards: field(line, "discard_empty").unwrap_or(0),
                     stage_too_long_discards: field(line, "discard_long").unwrap_or(0),
+                    maximum_frontier: field(line, "fmax")?,
+                    maximum_admitted: field(line, "amax")?,
+                    service_us: field(line, "service_us")?,
+                    service_max_us: field(line, "service_boot_max_us")?,
+                    ..RxPipelineEvidence::default()
+                })
+            })();
+            if include_rx_interval_evidence && let Some(sample) = sample {
+                report.rx_service.push(sample);
+            }
+        } else if line.starts_with("ORXSC ") || line.contains(" ORXSC ") {
+            let sample = (|| {
+                Some(RxPipelineEvidence {
+                    service_credit_samples: field(line, "samples")?,
                     backpressured_services: field(line, "back")?,
+                    bulk_capacity_blocked_services: field(line, "bulk_blocked")?,
                     pool_credit_limited_services: field(line, "pool")?,
                     queue_credit_limited_services: field(line, "queue")?,
                     maximum_deferred_frames: field(line, "deferred_max")?,
                     minimum_backpressured_pool_credits: field(line, "pool_min")?,
                     minimum_backpressured_queue_credits: field(line, "queue_min")?,
-                    maximum_frontier: field(line, "fmax")?,
-                    maximum_admitted: field(line, "amax")?,
-                    service_us: field(line, "service_us")?,
-                    service_max_us: field(line, "service_boot_max_us")?,
+                    minimum_pool_credits: field(line, "pool_floor")?,
+                    minimum_queue_credits: field(line, "queue_floor")?,
                     ..RxPipelineEvidence::default()
                 })
             })();
@@ -2275,6 +2421,30 @@ fn parse_device_report(log: &str) -> DeviceReport {
             {
                 report
                     .rx_mcs_histograms
+                    .push((histogram.map(Option::unwrap), other));
+            }
+        } else if line.starts_with("ORXHTL ") || line.contains(" ORXHTL ") {
+            let histogram = core::array::from_fn(|mcs| field(line, &format!("m{mcs}")));
+            if include_rx_interval_evidence && histogram.iter().all(Option::is_some) {
+                report
+                    .rx_ht40_long_gi_histograms
+                    .push(histogram.map(Option::unwrap));
+            }
+        } else if line.starts_with("ORXHTS ") || line.contains(" ORXHTS ") {
+            let histogram = core::array::from_fn(|mcs| field(line, &format!("m{mcs}")));
+            if include_rx_interval_evidence && histogram.iter().all(Option::is_some) {
+                report
+                    .rx_ht40_short_gi_histograms
+                    .push(histogram.map(Option::unwrap));
+            }
+        } else if line.starts_with("ORXHTW ") || line.contains(" ORXHTW ") {
+            let histogram = core::array::from_fn(|mcs| field(line, &format!("m{mcs}")));
+            if include_rx_interval_evidence
+                && histogram.iter().all(Option::is_some)
+                && let Some(other) = field(line, "other")
+            {
+                report
+                    .rx_ht20_histograms
                     .push((histogram.map(Option::unwrap), other));
             }
         } else if line.starts_with("ORX ") || line.contains(" ORX ") {
@@ -2674,6 +2844,26 @@ fn observe_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQua
         }
         other_phy_frames = other_phy_frames.saturating_add(*other);
     }
+    let mut ht40_long_gi_mcs = [0_u64; 8];
+    let mut ht40_short_gi_mcs = [0_u64; 8];
+    let mut ht20_mcs = [0_u64; 8];
+    let mut ht_other_frames = 0_u64;
+    for long_gi in &report.rx_ht40_long_gi_histograms {
+        for (total, sample) in ht40_long_gi_mcs.iter_mut().zip(long_gi) {
+            *total = total.saturating_add(*sample);
+        }
+    }
+    for short_gi in &report.rx_ht40_short_gi_histograms {
+        for (total, sample) in ht40_short_gi_mcs.iter_mut().zip(short_gi) {
+            *total = total.saturating_add(*sample);
+        }
+    }
+    for (ht20, other) in &report.rx_ht20_histograms {
+        for (total, sample) in ht20_mcs.iter_mut().zip(ht20) {
+            *total = total.saturating_add(*sample);
+        }
+        ht_other_frames = ht_other_frames.saturating_add(*other);
+    }
     let mut s_mpdu = RxSmpduEvidence::default();
     for sample in &report.rx_s_mpdu {
         s_mpdu.merge(*sample);
@@ -2817,6 +3007,10 @@ fn observe_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQua
             .sum(),
         he_mcs_histogram,
         other_phy_frames,
+        ht40_long_gi_mcs,
+        ht40_short_gi_mcs,
+        ht20_mcs,
+        ht_other_frames,
         s_mpdu,
         ampdu,
         pipeline,
@@ -3000,7 +3194,6 @@ pub(crate) fn task_poll_markdown(task_polls: TaskPollSet) -> String {
     );
     for (name, evidence) in [
         ("network", task_polls.network),
-        ("protocol", task_polls.protocol),
         ("radio", task_polls.radio),
         ("udp_rx", task_polls.udp_rx),
         ("udp_tx", task_polls.udp_tx),
@@ -3475,6 +3668,7 @@ fn write_report(
              ## RX evidence\n\n\
              - Enqueued/software-dropped frames: `{}` / `{}`\n\
              - Sampled HE-SU MCS0..11 frame histogram: `{:?}`; other sampled PHY frames: `{}`\n\
+             - Complete HT benchmark vectors: MCS0..7 LGI40 `{:?}`, SGI40 `{:?}`, HT20 `{:?}`, other `{}`\n\
              - Benchmark UDP datagrams marked S-MPDU / not S-MPDU / unavailable provenance: `{}` / `{}` / `{}`\n\
              - Connected beacons marked S-MPDU / not S-MPDU / unavailable provenance: `{}` / `{}` / `{}`\n\
              - Benchmark UDP datagrams marked A-MPDU / not A-MPDU / unavailable provenance: `{}` / `{}` / `{}`\n\
@@ -3487,7 +3681,7 @@ fn write_report(
              - MAC entry causes spurious / RX-work-only / RX-mixed / TX-only / TX-mixed / auxiliary-or-unknown-only: `{}` / `{}` / `{}` / `{}` / `{}` / `{}`; classified `{}` entries; extra snapshots `{}`, loop saturations `{}`, auxiliary STATUS OR `0x{:08x}`, unknown STATUS OR `0x{:08x}`\n\
              - Staged bytes: `{}`; invalid empty/oversize units recycled: `{}` / `{}`; service: `{:.2} us/frame` average, `{}` us boot maximum\n\
              - Safe reload transactions: `{}`; `{:.2} us` average, `{}` us boot maximum; `{}` us total\n\
-             - Backpressured services: `{}`; pool/queue credit limited: `{}` / `{}`; maximum deferred frames: `{}`; minimum pool/queue credits: `{}` / `{}`\n\
+             - Backpressured services (bulk-preserve): `{}` (`{}`); pool/queue credit limited: `{}` / `{}`; maximum deferred frames: `{}`; backpressured pool/queue minimum: `{}` / `{}`; all-service pool/queue floor: `{}` / `{}`\n\
              - Protocol frames/data: `{}` / `{}`; dispatch: `{:.2} us/frame` average, `{}` us boot maximum\n\
              - A-MSDU MPDUs/subframes: `{}` / `{}`; raw unit buckets <=1700 / 1701-3400 / >3400 bytes: `{}` / `{}` / `{}`; boot maximum: `{}` bytes\n\
              - Network publications/bytes: `{}` / `{}`; copy+publish: `{:.2} us/frame` average, `{}` us boot maximum\n\
@@ -3540,6 +3734,10 @@ fn write_report(
             rx.dropped,
             rx.he_mcs_histogram,
             rx.other_phy_frames,
+            rx.ht40_long_gi_mcs,
+            rx.ht40_short_gi_mcs,
+            rx.ht20_mcs,
+            rx.ht_other_frames,
             rx.s_mpdu.s_mpdu_datagrams,
             rx.s_mpdu.not_s_mpdu_datagrams,
             rx.s_mpdu.unavailable_datagrams,
@@ -3610,11 +3808,14 @@ fn write_report(
             pipeline.reload_max_us,
             pipeline.reload_us,
             pipeline.backpressured_services,
+            pipeline.bulk_capacity_blocked_services,
             pipeline.pool_credit_limited_services,
             pipeline.queue_credit_limited_services,
             pipeline.maximum_deferred_frames,
             pipeline.minimum_backpressured_pool_credits,
             pipeline.minimum_backpressured_queue_credits,
+            pipeline.minimum_pool_credits,
+            pipeline.minimum_queue_credits,
             pipeline.protocol_frames,
             pipeline.protocol_data_frames,
             average_dispatch_us,
@@ -3811,6 +4012,34 @@ mod tests {
     }
 
     #[test]
+    fn ht40_rx_vector_gate_covers_the_complete_interval_and_guard_policy() {
+        let mut radio = RxRadioEvidence {
+            not_s_mpdu_datagrams: 100,
+            ..RxRadioEvidence::default()
+        };
+        radio.ht40_long_gi_frames = 100;
+        validate_ht40_rx_vector(&radio, Some(7), HtGuardIntervalExpectation::Long).unwrap();
+        validate_ht40_rx_vector(&radio, Some(7), HtGuardIntervalExpectation::Any).unwrap();
+        assert!(
+            validate_ht40_rx_vector(&radio, Some(7), HtGuardIntervalExpectation::Short,).is_err()
+        );
+
+        radio.ht40_below_mcs7_frames = 1;
+        assert!(validate_ht40_rx_vector(&radio, Some(7), HtGuardIntervalExpectation::Any).is_err());
+
+        radio.ht40_below_mcs7_frames = 0;
+        radio.ht40_long_gi_frames = 99;
+        radio.ht_invalid_frames = 1;
+        assert!(validate_ht40_rx_vector(&radio, Some(7), HtGuardIntervalExpectation::Any).is_err());
+
+        radio.ht_invalid_frames = 0;
+        assert!(
+            validate_ht40_rx_vector(&radio, Some(7), HtGuardIntervalExpectation::Any).is_err(),
+            "missing one vector must fail instead of being treated as sampling",
+        );
+    }
+
+    #[test]
     fn quantifies_delivery_loss_after_positive_block_ack() {
         let ampdu = AmpduEvidence {
             subframes: 31_101,
@@ -3917,7 +4146,8 @@ mod tests {
              ORXO gap_events=0 forward_missing=0 backward=0 adjacent_duplicates=0 backward_mac_backward=0 backward_mac_same=0 backward_mac_forward=0 backward_mac_other_tid=0 backward_mac_unavailable=0\n\
              ORXSM s_mpdu=0 not_s_mpdu=1 unavailable=0 beacon_s_mpdu=0 beacon_not_s_mpdu=1 beacon_unavailable=0\n\
              ORXAG ampdu=1 not_ampdu=0 hardware_ampdu=0 hardware_not_ampdu=0 protocol_ampdu=1 protocol_not_ampdu=0 unavailable=0\n\
-             ORXS calls=3 frontier=37 admitted=37 bytes=60860 back=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 fmax=31 amax=31 service_us=636 service_boot_max_us=503\n\
+             ORXS calls=3 frontier=37 admitted=37 bytes=60860 back=0 bulk_blocked=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 pool_floor=1 queue_floor=1 fmax=31 amax=31 service_us=636 service_boot_max_us=503\n\
+             ORXSC samples=3 back=0 bulk_blocked=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 pool_floor=1 queue_floor=1\n\
              ORTP task=network polls=2 poll_us=1626 poll_boot_max_us=1582 over_100us=1 over_500us=1 over_1000us=1 over_5000us=0\n\
              OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx bytes=6000000 datagrams=5000 elapsed_us=5000000 throughput_kbps=9600 code_address=1342257664\n\
              OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx-path buffer_full=0 fifo_overflow=0 enqueued=5000 queue_dropped=0 rx_format=4\n\
@@ -3925,18 +4155,22 @@ mod tests {
              ORXO gap_events=2 forward_missing=3 backward=3 adjacent_duplicates=0 backward_mac_backward=3 backward_mac_same=0 backward_mac_forward=0 backward_mac_other_tid=0 backward_mac_unavailable=0\n\
              ORXSM s_mpdu=100 not_s_mpdu=4900 unavailable=0 beacon_s_mpdu=0 beacon_not_s_mpdu=50 beacon_unavailable=0\n\
              ORXAG ampdu=5000 not_ampdu=0 hardware_ampdu=0 hardware_not_ampdu=0 protocol_ampdu=5000 protocol_not_ampdu=0 unavailable=0\n\
-             ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 fmax=1 amax=1 service_us=100000 service_boot_max_us=24\n\
+             ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 bulk_blocked=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 pool_floor=31 queue_floor=63 fmax=1 amax=1 service_us=100000 service_boot_max_us=24\n\
+             ORXSC samples=5000 back=0 bulk_blocked=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 pool_floor=31 queue_floor=63\n\
              ORXL transactions=300 reload_us=1500 reload_boot_max_us=9\n\
              ORTP task=network polls=5100 poll_us=210000 poll_boot_max_us=140 over_100us=2 over_500us=0 over_1000us=0 over_5000us=0\n",
         );
 
         assert_eq!(report.software_health, [(5_000, 0)]);
         assert_eq!(report.dma_health, [(0, 0)]);
-        assert_eq!(report.rx_service.len(), 2);
+        assert_eq!(report.rx_service.len(), 3);
         assert_eq!(report.rx_service[0].service_calls, 5_000);
-        assert_eq!(report.rx_service[1].reload_transactions, 300);
-        assert_eq!(report.rx_service[1].reload_us, 1_500);
-        assert_eq!(report.rx_service[1].reload_max_us, 9);
+        assert_eq!(report.rx_service[1].service_credit_samples, 5_000);
+        assert_eq!(report.rx_service[1].minimum_pool_credits, 31);
+        assert_eq!(report.rx_service[1].minimum_queue_credits, 63);
+        assert_eq!(report.rx_service[2].reload_transactions, 300);
+        assert_eq!(report.rx_service[2].reload_us, 1_500);
+        assert_eq!(report.rx_service[2].reload_max_us, 9);
         assert_eq!(report.task_polls.network.intervals, 1);
         assert_eq!(report.task_polls.network.polls, 5_100);
         assert_eq!(report.rx_sequences.len(), 1);
@@ -3965,7 +4199,8 @@ mod tests {
              ORXQ first=0 highest=4999 next=5000 gap_events=0 forward_missing=0 maximum_gap=0 maximum_gap_at=4294967295 first_gap_at=4294967295 last_gap_at=4294967295 backward=0 adjacent_duplicates=0 unsequenced=0 maximum_interarrival_us=100 maximum_interarrival_at=1\n\
              ORXSM s_mpdu=100 not_s_mpdu=4900 unavailable=0 beacon_s_mpdu=0 beacon_not_s_mpdu=50 beacon_unavailable=0\n\
              ORXAG ampdu=5000 not_ampdu=0 hardware_ampdu=0 hardware_not_ampdu=0 protocol_ampdu=5000 protocol_not_ampdu=0 unavailable=0\n\
-             ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 fmax=1 amax=1 service_us=100000 service_boot_max_us=24\n\
+             ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 bulk_blocked=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 pool_floor=31 queue_floor=63 fmax=1 amax=1 service_us=100000 service_boot_max_us=24\n\
+             ORXSC samples=5000 back=0 bulk_blocked=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 pool_floor=31 queue_floor=63\n\
              ORXD frames=5000 data=5000 waits=5000 wait_us=1000 wait_boot_max_us=2 dispatch_us=150000 dispatch_boot_max_us=35 publications=5000 bytes=7570000 publish_us=60000 publish_boot_max_us=15\n\
              ORXR starts=0 stops=0 start_tid=0 start_seq=6 window=8 first_samples=1 first_tid=0 first_start=6 first_seq=6 first_distance=0 buffered=3 released=5000 missing=0 stale=0 expiries=0 occupied=0 occupied_max=7\n\
              ORXF zero=0 one=5000 two_three=0 four_seven=0 eight_fifteen=0 sixteen_thirty_one=0 thirty_two_plus=0 irq_posts=5000 irq_epochs=5000 irq_entries=5000 irq_coalesced=0 irq_samples=5000 irq_skew=0 irq_service_us=25000 irq_service_boot_max_us=8\n\
@@ -4017,7 +4252,11 @@ mod tests {
              ORXSM s_mpdu=50 not_s_mpdu=4950 unavailable=0 beacon_s_mpdu=0 beacon_not_s_mpdu=50 beacon_unavailable=0\n\
              ORXAG ampdu=5000 not_ampdu=0 hardware_ampdu=0 hardware_not_ampdu=0 protocol_ampdu=5000 protocol_not_ampdu=0 unavailable=0\n\
              ORXM m0=0 m1=0 m2=0 m3=0 m4=0 m5=0 m6=0 m7=20 m8=30 m9=4950 m10=0 m11=0 other=0\n\
-             ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 fmax=1 amax=1 service_us=100000 service_boot_max_us=24\n\
+             ORXHTL m0=0 m1=0 m2=0 m3=0 m4=0 m5=0 m6=0 m7=5000\n\
+             ORXHTS m0=0 m1=0 m2=0 m3=0 m4=0 m5=0 m6=0 m7=0\n\
+             ORXHTW m0=0 m1=0 m2=0 m3=0 m4=0 m5=0 m6=0 m7=0 other=0\n\
+             ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 bulk_blocked=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 pool_floor=31 queue_floor=63 fmax=1 amax=1 service_us=100000 service_boot_max_us=24\n\
+             ORXSC samples=5000 back=0 bulk_blocked=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 pool_floor=31 queue_floor=63\n\
              ORXB increments=2 samples=1 between=1 during=1 between_samples=1 during_samples=1 last_service=6123 last_phase=3 last_counter=17 last_frontier=7 last_admitted=7 last_pool=60 last_queue=61 last_service_us=73\n\
              ORXD frames=5000 data=5000 waits=5000 wait_us=1000 wait_boot_max_us=2 dispatch_us=150000 dispatch_boot_max_us=35 publications=5000 bytes=7570000 publish_us=60000 publish_boot_max_us=15\n\
              ORXR starts=0 stops=0 start_tid=0 start_seq=6 window=8 first_samples=1 first_tid=0 first_start=6 first_seq=6 first_distance=0 buffered=3 released=5000 missing=0 stale=0 expiries=0 occupied=0 occupied_max=7\n\
@@ -4046,6 +4285,7 @@ mod tests {
             report.rx_mcs_histograms,
             [([0, 0, 0, 0, 0, 0, 0, 20, 30, 4_950, 0, 0], 0)]
         );
+        assert_eq!(report.rx_ht40_long_gi_histograms[0][7], 5_000);
         let rx = qualify_rx_report(&report, 4).unwrap();
         assert_eq!(rx.he_mcs_histogram[9], 4_950);
         assert_eq!(rx.s_mpdu.not_s_mpdu_datagrams, 4_950);

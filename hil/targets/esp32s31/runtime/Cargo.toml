@@ -42,11 +42,23 @@ mac-irq-telemetry = [
     "driver-observation",
     "open-esp-radio-esp32s31-embassy-wifi/mac-irq-diagnostics",
 ]
-# Diagnostic overlay for measuring continuous Embassy Future::poll
-# residence. Keep it out of correctness and performance images because the
-# per-poll timer reads and atomics are intentionally observable overhead.
+# Minimal diagnostic overlay for measuring continuous Embassy Future::poll
+# residence. It intentionally does not enable driver observation or any
+# per-phase cycle accounting: the point of this image is to bound production
+# executor occupancy with only the poll timer and counter overhead remaining.
+task-residence-telemetry = []
+# General task-poll diagnostic. Driver observation remains available for the
+# existing RX/TX/AP diagnostic scenarios, but Core0 per-phase accounting is
+# deliberately separate below.
 task-poll-telemetry = [
+    "task-residence-telemetry",
     "driver-observation",
+]
+# Intrusive Core0 RX phase accounting. This retains the same top-level task
+# residence evidence, but is a separate feature because its per-phase cycle
+# reads, atomics, and larger linked image measurably perturb the result.
+core0-rx-cycle-telemetry = [
+    "task-poll-telemetry",
     "open-esp-radio-esp32s31-embassy-wifi/task-poll-telemetry",
 ]
 # Diagnostic overlay proving each UDP RX delivery frontier from software

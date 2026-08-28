@@ -1,0 +1,23 @@
+schema = 3
+id = "udp-rx-ht40-task-poll-no-rx-checksum-diagnostic"
+description = "Split-core HT40 saturated RX checksum-cost diagnostic"
+image = "diagnostic-task-poll"
+isolation = "reset"
+data_plane = "split-radio-network"
+rx_checksum = "assume-valid-diagnostic"
+tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "task-poll", "checksum", "checksum-ab"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "udp"
+direction = "rx"
+duration_seconds = 16
+rx_rate_bps = 120000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = false
+require_no_beacon_loss = false
+minimum_rx_bps = 90000000

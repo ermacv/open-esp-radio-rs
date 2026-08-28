@@ -250,6 +250,27 @@ impl StaTxBlockAckSessions {
         };
         self.alarms[index]
     }
+
+    /// Earliest negotiation deadline already owned by this fixed session set.
+    ///
+    /// The control readiness path calls this for every serviced RX batch. Walk
+    /// the three physical alarm slots directly instead of rebuilding the
+    /// public TID-to-slot mapping on each query.
+    #[inline(always)]
+    pub const fn earliest_alarm_deadline(&self) -> Option<u64> {
+        let mut earliest = None;
+        let mut index = 0;
+        while index < self.alarms.len() {
+            if let Some(alarm) = self.alarms[index] {
+                earliest = match earliest {
+                    Some(deadline) if deadline <= alarm.deadline_us => Some(deadline),
+                    _ => Some(alarm.deadline_us),
+                };
+            }
+            index += 1;
+        }
+        earliest
+    }
 }
 
 const fn sta_tx_block_ack_index(tid: u8) -> Option<usize> {
@@ -550,7 +571,7 @@ impl Default for TxAmpduBatch {
 
 #[cfg(test)]
 mod tests {
-    use super::TxBlockAckDialogTokenSequence;
+    use super::{StaTxBlockAckSessions, TxBlockAckDialogTokenSequence};
 
     #[test]
     fn shared_dialog_tokens_reproduce_the_qualified_vendor_modulus() {
@@ -560,5 +581,19 @@ mod tests {
         }
         assert_eq!(tokens.take().value(), 0);
         assert_eq!(tokens.take().value(), 1);
+    }
+
+    #[test]
+    fn earliest_alarm_deadline_walks_owned_slots_without_tid_remapping() {
+        let mut sessions = StaTxBlockAckSessions::new(16, 100_000, false).unwrap();
+        assert_eq!(sessions.earliest_alarm_deadline(), None);
+
+        sessions.begin(0, 0, 75).unwrap();
+        sessions.begin(7, 0, 25).unwrap();
+        sessions.begin(5, 0, 50).unwrap();
+
+        assert_eq!(sessions.earliest_alarm_deadline(), Some(100_025));
+        assert!(sessions.stop(7));
+        assert_eq!(sessions.earliest_alarm_deadline(), Some(100_050));
     }
 }

@@ -5,7 +5,6 @@
 
 use core::future::Future;
 
-use embassy_sync::channel::Receiver;
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::{
     rx::{PUBLIC_HEADER_SIZE, RxDescriptorSnapshot, RxDma, RxRingHalted, RxSegment},
@@ -20,7 +19,8 @@ use crate::{
     datapath::rx::frontier::Esp32s31RxFrontierSchedulerSnapshot,
     datapath::rx::hardware::RxDmaObservationDelay,
     datapath::rx::staging::{
-        Esp32s31StagedRxFrame, Esp32s31StagedRxQueue, StagedEthernetPublication,
+        Esp32s31StagedRxFrame, Esp32s31StagedRxQueue, Esp32s31StagedRxReceiver,
+        StagedEthernetPublication,
     },
 };
 
@@ -128,8 +128,7 @@ pub struct Esp32s31AccessPointRxConsumer<
     const STAGE_CAPACITY: usize,
     const STAGE_SLOTS: usize,
 > {
-    frames:
-        Receiver<'queue, M, Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>, QUEUE_DEPTH>,
+    frames: Esp32s31StagedRxReceiver<'queue, 'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
     deferred: Option<Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>>,
 }
 
@@ -175,7 +174,7 @@ where
 {
     pub fn from_halted(
         ring: RxRingHalted<'storage, COUNT>,
-        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        storage: &'static Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
         queue: &'queue Esp32s31StagedRxQueue<'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
         delay: D,
@@ -200,7 +199,7 @@ where
     #[cfg(any(feature = "diagnostics", test))]
     pub fn from_halted_with_pipeline_observer(
         ring: RxRingHalted<'storage, COUNT>,
-        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        storage: &'static Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
         queue: &'queue Esp32s31StagedRxQueue<'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
         delay: D,

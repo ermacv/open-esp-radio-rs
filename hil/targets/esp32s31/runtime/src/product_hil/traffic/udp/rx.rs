@@ -8,8 +8,14 @@ use embassy_futures::{
 };
 use embassy_net::{Stack, udp::UdpSocket};
 use embassy_time::{Duration, Instant, with_timeout};
+#[cfg(feature = "core0-rx-cycle-telemetry")]
+use open_esp_radio_esp32s31_embassy_wifi::{
+    CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM,
+};
 use open_esp_radio_hil_esp32s31_telemetry::{
-    rx_evidence::RX_HE_MCS_BUCKETS, rx_pipeline::RxPipelineCounters, task_poll::TaskPollSet,
+    rx_evidence::{RX_HE_MCS_BUCKETS, RX_HT_MCS_BUCKETS},
+    rx_pipeline::RxPipelineCounters,
+    task_poll::TaskPollSet,
 };
 #[cfg(feature = "rx-delivery-telemetry")]
 use open_esp_radio_hil_protocol::RxReorderDeliveryEvidence;
@@ -30,6 +36,10 @@ use crate::{
             log_open_radio_rx_pipeline_interval, log_open_radio_task_poll_interval,
         },
     },
+};
+#[cfg(feature = "core0-rx-cycle-telemetry")]
+use crate::product_hil::traffic::{
+    log_open_radio_core0_rx_cycles, log_open_radio_core0_rx_service_histogram,
 };
 
 #[derive(Clone, Copy)]
@@ -141,6 +151,10 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         let _ = crate::product_hil::MAC_IRQ.take_unknown_status_or();
         let pipeline_start = telemetry.pipeline.snapshot();
         let task_poll_start = telemetry.task_polls.snapshot();
+        #[cfg(feature = "core0-rx-cycle-telemetry")]
+        let core0_rx_cycle_start = CORE0_RX_CYCLES.snapshot();
+        #[cfg(feature = "core0-rx-cycle-telemetry")]
+        let core0_rx_service_start = CORE0_RX_SERVICE_HISTOGRAM.snapshot();
         rx_qualification::LAST_FORMAT.store(u32::MAX, Ordering::Relaxed);
         rx_qualification::LAST_PHY.store(u32::MAX, Ordering::Relaxed);
         let phy_start = rx_qualification::RX_PHY.snapshot();
@@ -433,6 +447,69 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             phy_end.other.wrapping_sub(phy_start.other),
         ));
         yield_now().await;
+        let ht40_long_gi_mcs = core::array::from_fn::<_, RX_HT_MCS_BUCKETS, _>(|index| {
+            phy_end.ht40_long_gi_mcs[index]
+                .wrapping_sub(phy_start.ht40_long_gi_mcs[index])
+        });
+        let ht40_short_gi_mcs = core::array::from_fn::<_, RX_HT_MCS_BUCKETS, _>(|index| {
+            phy_end.ht40_short_gi_mcs[index]
+                .wrapping_sub(phy_start.ht40_short_gi_mcs[index])
+        });
+        let ht20_mcs = core::array::from_fn::<_, RX_HT_MCS_BUCKETS, _>(|index| {
+            phy_end.ht20_mcs[index].wrapping_sub(phy_start.ht20_mcs[index])
+        });
+        let ht_other = phy_end.ht_other.wrapping_sub(phy_start.ht_other);
+        let ht40_long_gi_frames = ht40_long_gi_mcs.iter().copied().sum();
+        let ht40_short_gi_frames = ht40_short_gi_mcs.iter().copied().sum();
+        let ht40_below_mcs7_frames = ht40_long_gi_mcs[..7]
+            .iter()
+            .chain(&ht40_short_gi_mcs[..7])
+            .copied()
+            .sum();
+        let ht_invalid_frames = ht20_mcs
+            .iter()
+            .chain(&mcs)
+            .copied()
+            .sum::<u32>()
+            .saturating_add(ht_other)
+            .saturating_add(phy_end.other.wrapping_sub(phy_start.other));
+        runtime_log(format_args!(
+            "ORXHTL m0={} m1={} m2={} m3={} m4={} m5={} m6={} m7={}",
+            ht40_long_gi_mcs[0],
+            ht40_long_gi_mcs[1],
+            ht40_long_gi_mcs[2],
+            ht40_long_gi_mcs[3],
+            ht40_long_gi_mcs[4],
+            ht40_long_gi_mcs[5],
+            ht40_long_gi_mcs[6],
+            ht40_long_gi_mcs[7],
+        ));
+        yield_now().await;
+        runtime_log(format_args!(
+            "ORXHTS m0={} m1={} m2={} m3={} m4={} m5={} m6={} m7={}",
+            ht40_short_gi_mcs[0],
+            ht40_short_gi_mcs[1],
+            ht40_short_gi_mcs[2],
+            ht40_short_gi_mcs[3],
+            ht40_short_gi_mcs[4],
+            ht40_short_gi_mcs[5],
+            ht40_short_gi_mcs[6],
+            ht40_short_gi_mcs[7],
+        ));
+        yield_now().await;
+        runtime_log(format_args!(
+            "ORXHTW m0={} m1={} m2={} m3={} m4={} m5={} m6={} m7={} other={}",
+            ht20_mcs[0],
+            ht20_mcs[1],
+            ht20_mcs[2],
+            ht20_mcs[3],
+            ht20_mcs[4],
+            ht20_mcs[5],
+            ht20_mcs[6],
+            ht20_mcs[7],
+            ht_other,
+        ));
+        yield_now().await;
         log_open_radio_rx_pipeline_interval(
             pipeline_start,
             rx_irq_posts,
@@ -449,6 +526,10 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             telemetry.task_polls,
         )
         .await;
+        #[cfg(feature = "core0-rx-cycle-telemetry")]
+        log_open_radio_core0_rx_cycles(core0_rx_cycle_start).await;
+        #[cfg(feature = "core0-rx-cycle-telemetry")]
+        log_open_radio_core0_rx_service_histogram(&core0_rx_service_start).await;
         let evidence = TransportEvidence {
             rx_bytes: bytes,
             tx_bytes: 0,
@@ -462,6 +543,10 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             rx: Some(RxRadioEvidence {
                 phy_format: u8::try_from(rx_qualification::LAST_FORMAT.load(Ordering::Relaxed))
                     .unwrap_or(u8::MAX),
+                ht40_long_gi_frames,
+                ht40_short_gi_frames,
+                ht40_below_mcs7_frames,
+                ht_invalid_frames,
                 dma_buffer_full: u32::from(hardware.buffer_full),
                 dma_fifo_overflow: u32::from(hardware.fifo_overflow),
                 network_dropped: queue_dropped,

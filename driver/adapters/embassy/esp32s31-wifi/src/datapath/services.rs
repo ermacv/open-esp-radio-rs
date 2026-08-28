@@ -13,14 +13,18 @@ use core::{
 use open_esp_radio_embassy_net::{PinnedTxFrame, PinnedTxInterfaceConsumer, RawMutex};
 
 use crate::datapath::{
-    DatapathControlContext, DatapathControlProgress, DatapathRxProgress, DatapathServices,
-    WifiTxProgress, WifiTxWake,
+    DatapathControlContext, DatapathControlProgress, DatapathRxProgress, DatapathRxServiceContext,
+    DatapathServices, WifiTxProgress, WifiTxWake, network::DatapathNetworkRxSet,
 };
 
-/// One RX owner that copies a finite descriptor frontier into independent
-/// staging ownership. Protocol dispatch belongs to a separate consumer.
-/// Implementations may await bounded reload timer edges but must not retain the
-/// mutable hardware borrow across an await.
+/// One bounded RX owner spanning physical descriptor service and any
+/// role-local protocol consumer.
+///
+/// A DMA-only role may ignore `network_rx` and `context`. Connected roles keep
+/// their protocol processor in this same owner so one executor turn can stage,
+/// recycle and dispatch a finite batch without an intermediate task wake.
+/// Implementations may await bounded reload or protocol timer edges but must
+/// not retain the mutable hardware borrow across an unrelated executor turn.
 pub trait DatapathRxService<H> {
     type Error;
 
@@ -28,6 +32,51 @@ pub trait DatapathRxService<H> {
         &'a mut self,
         hardware: &'a mut H,
     ) -> impl Future<Output = Result<DatapathRxProgress, Self::Error>> + 'a;
+
+    /// Service one complete physical/protocol turn. DMA-only owners retain the
+    /// narrow historical primitive above; a connected owner overrides this
+    /// method to consume the staged frames in the same executor turn.
+    fn service_turn<'a>(
+        &'a mut self,
+        hardware: &'a mut H,
+        network_rx: &'a mut dyn DatapathNetworkRxSet,
+        context: DatapathRxServiceContext,
+    ) -> impl Future<Output = Result<DatapathRxProgress, Self::Error>> + 'a {
+        let _ = (network_rx, context);
+        self.service(hardware)
+    }
+
+    /// Bounded RX work permitted while TX owns the physical transaction.
+    fn service_turn_during_tx<'a>(
+        &'a mut self,
+        hardware: &'a mut H,
+        network_rx: &'a mut dyn DatapathNetworkRxSet,
+    ) -> impl Future<Output = Result<DatapathRxProgress, Self::Error>> + 'a {
+        self.service_turn(
+            hardware,
+            network_rx,
+            DatapathRxServiceContext {
+                maximum_protocol_frames: None,
+            },
+        )
+    }
+
+    /// Software-owned frames, commands or expired deadlines ready without a
+    /// fresh MAC interrupt.
+    fn has_work(&self) -> bool {
+        false
+    }
+
+    /// Monotonic number of staged protocol frames consumed by this owner.
+    fn serviced_frames(&self) -> u64 {
+        0
+    }
+
+    /// Wake edge for a future protocol deadline. Queue publications paired
+    /// with a MAC interrupt need no second wake source.
+    fn wait_ready(&mut self) -> impl Future<Output = ()> + '_ {
+        pending()
+    }
 }
 
 /// One owned control scheduler sharing the services owner's PAC and TX transaction.
@@ -343,16 +392,37 @@ where
 
     fn service_rx<'a>(
         &'a mut self,
-        _network_rx: &'a mut dyn crate::datapath::network::DatapathNetworkRxSet,
-        _context: crate::datapath::DatapathRxServiceContext,
+        network_rx: &'a mut dyn crate::datapath::network::DatapathNetworkRxSet,
+        context: crate::datapath::DatapathRxServiceContext,
     ) -> impl Future<Output = Result<DatapathRxProgress, Self::Error>> + 'a {
         async move {
             self.role
                 .rx
-                .service(&mut self.hardware)
+                .service_turn(&mut self.hardware, network_rx, context)
                 .await
                 .map_err(DatapathServiceError::Rx)
         }
+    }
+
+    fn service_rx_during_tx<'a>(
+        &'a mut self,
+        network_rx: &'a mut dyn crate::datapath::network::DatapathNetworkRxSet,
+    ) -> impl Future<Output = Result<DatapathRxProgress, Self::Error>> + 'a {
+        async move {
+            self.role
+                .rx
+                .service_turn_during_tx(&mut self.hardware, network_rx)
+                .await
+                .map_err(DatapathServiceError::Rx)
+        }
+    }
+
+    fn has_rx_work(&self) -> bool {
+        self.role.rx.has_work()
+    }
+
+    fn serviced_rx_frames(&self) -> u64 {
+        self.role.rx.serviced_frames()
     }
 
     fn service_control<'a>(
@@ -389,7 +459,10 @@ where
         'resources: 'a,
         M: 'a,
     {
-        self.role.control.wait_ready(&mut self.role.tx)
+        async move {
+            let RoleRuntime { rx, tx, control } = &mut self.role;
+            let _ = embassy_futures::select::select(control.wait_ready(tx), rx.wait_ready()).await;
+        }
     }
 
     fn start_tx<'a>(

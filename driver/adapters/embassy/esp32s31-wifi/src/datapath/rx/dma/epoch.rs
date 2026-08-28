@@ -134,14 +134,9 @@ where
 {
     pub fn from_halted(
         ring: RxRingHalted<'storage, COUNT>,
-        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        storage: &'static Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
-        frames: Sender<
-            'queue,
-            M,
-            Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
-            QUEUE_DEPTH,
-        >,
+        frames: Esp32s31StagedRxSender<'queue, 'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
         delay: D,
     ) -> Self {
         Self::from_halted_resources(
@@ -155,7 +150,7 @@ where
     /// role protocol consumers never receive DMA ownership.
     pub fn from_halted_sta_ap(
         ring: RxRingHalted<'storage, COUNT>,
-        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        storage: &'static Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
         frames: Sender<
             'queue,
@@ -253,14 +248,9 @@ where
     #[cfg(any(feature = "diagnostics", test))]
     pub fn from_halted_with_pipeline_observer(
         ring: RxRingHalted<'storage, COUNT>,
-        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        storage: &'static Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
-        frames: Sender<
-            'queue,
-            M,
-            Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
-            QUEUE_DEPTH,
-        >,
+        frames: Esp32s31StagedRxSender<'queue, 'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
         delay: D,
         observer: &'pool dyn RxPipelineObserver,
     ) -> Self {
@@ -399,12 +389,7 @@ where
     /// so standalone resume does not rebuild ownership from raw addresses.
     pub fn try_into_standalone_stopped(
         self,
-        frames: Sender<
-            'queue,
-            M,
-            Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
-            QUEUE_DEPTH,
-        >,
+        frames: Esp32s31StagedRxSender<'queue, 'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
     ) -> Result<
         Esp32s31StoppedRx<
             'storage,

@@ -1,5 +1,11 @@
 use super::*;
 
+#[cfg(feature = "task-poll-telemetry")]
+use crate::diagnostics::core0_rx_cycles::{
+    CORE0_RX_CYCLES, Core0ControlOutcome, Core0RxSchedulerCycleProfile, Core0RxSchedulerPath,
+    cycle_count,
+};
+
 impl<
     'resources,
     'irq,
@@ -65,6 +71,8 @@ where
         let mut stopping = false;
         let mut tx_batch_states = [TxBatchState::new(); 2];
         loop {
+            #[cfg(feature = "task-poll-telemetry")]
+            let mut core0_scheduler_cycles = Core0RxSchedulerCycleProfile::begin();
             #[cfg(any(feature = "diagnostics", test))]
             self.services.mark_prepared_tx_scheduler_phase(
                 PreparedTxSchedulerPhase::SchedulerLoopResumed,
@@ -76,6 +84,8 @@ where
             if !stopping && matches!(select(stop.as_mut(), ready(())).await, Either::First(())) {
                 stopping = true;
             }
+            #[cfg(feature = "task-poll-telemetry")]
+            core0_scheduler_cycles.stop_completed();
             #[cfg(any(feature = "diagnostics", test))]
             self.services.mark_prepared_tx_scheduler_phase(
                 PreparedTxSchedulerPhase::StopPollCompleted,
@@ -134,10 +144,16 @@ where
             // wakes before a control or network publication can create a new
             // generation.
             self.discard_stale_tx_wakes();
+            #[cfg(feature = "task-poll-telemetry")]
+            core0_scheduler_cycles.discard_wakes_completed();
             let network_tx_pending = self.network_tx_queue_len() != 0;
+            #[cfg(feature = "task-poll-telemetry")]
+            core0_scheduler_cycles.first_network_queue_completed();
             let control_ready = self.control_ready_latched
                 || self.services.control_ready(Instant::now().as_micros())
                 || (network_tx_pending && self.services.control_required_before_network_tx());
+            #[cfg(feature = "task-poll-telemetry")]
+            core0_scheduler_cycles.control_ready_completed();
             #[cfg(any(feature = "diagnostics", test))]
             self.services.mark_prepared_tx_scheduler_phase(
                 PreparedTxSchedulerPhase::ControlReadinessChecked {
@@ -151,7 +167,20 @@ where
                     network_tx_pending,
                     stop_pending: false,
                 };
-                match self.services.service_control(control_context).await? {
+                #[cfg(feature = "task-poll-telemetry")]
+                let core0_control_started = cycle_count();
+                let control_progress = self.services.service_control(control_context).await?;
+                #[cfg(feature = "task-poll-telemetry")]
+                CORE0_RX_CYCLES.record_control(
+                    cycle_count().wrapping_sub(core0_control_started),
+                    match &control_progress {
+                        DatapathControlProgress::Idle => Core0ControlOutcome::Idle,
+                        DatapathControlProgress::More => Core0ControlOutcome::More,
+                        DatapathControlProgress::TxPending => Core0ControlOutcome::TxPending,
+                        DatapathControlProgress::Exit(_) => Core0ControlOutcome::Exit,
+                    },
+                );
+                match control_progress {
                     DatapathControlProgress::More => {
                         self.control_ready_latched = true;
                         continue;
@@ -173,7 +202,6 @@ where
                     DatapathControlProgress::Idle => {}
                 }
             }
-
             // The active transaction can finish with a complete standby
             // aggregate already owned by software. Once stop, control and RX
             // priority have been established above, publish it directly.
@@ -193,9 +221,12 @@ where
                     continue;
                 }
             }
-
+            #[cfg(feature = "task-poll-telemetry")]
+            core0_scheduler_cycles.prepared_completed();
             let network_tx_pending =
                 self.services.has_prepared_tx() || self.network_tx_queue_len() != 0;
+            #[cfg(feature = "task-poll-telemetry")]
+            core0_scheduler_cycles.network_pending_completed();
             let now = Instant::now();
             match self.interfaces {
                 DatapathInterfaceScope::Single(interface) => {
@@ -212,6 +243,8 @@ where
                     }
                 }
             }
+            #[cfg(feature = "task-poll-telemetry")]
+            core0_scheduler_cycles.tx_checks_completed();
 
             // A staged protocol owner or reorder timeout has no new MAC IRQ
             // edge, but it is still charged to the same frame deficit as an
@@ -219,6 +252,8 @@ where
             // transaction at the configured quantum; otherwise this early
             // software-work branch bypasses the fairness gate below.
             if self.services.has_rx_work() && !(network_tx_pending && self.network_turn_owed()) {
+                #[cfg(feature = "task-poll-telemetry")]
+                core0_scheduler_cycles.finish(Core0RxSchedulerPath::Software);
                 self.service_rx().await?;
                 continue;
             }
@@ -240,6 +275,8 @@ where
                 && !(network_tx_pending && self.network_turn_owed())
             {
                 self.irq.wait_rx().await;
+                #[cfg(feature = "task-poll-telemetry")]
+                core0_scheduler_cycles.finish(Core0RxSchedulerPath::Irq);
                 self.service_rx().await?;
                 continue;
             }
@@ -351,7 +388,11 @@ where
                 Either::First(()) => {
                     stopping = true;
                 }
-                Either::Second(Either3::First(())) => self.service_rx().await?,
+                Either::Second(Either3::First(())) => {
+                    #[cfg(feature = "task-poll-telemetry")]
+                    core0_scheduler_cycles.finish(Core0RxSchedulerPath::Select);
+                    self.service_rx().await?
+                }
                 Either::Second(Either3::Second(())) => {
                     self.control_ready_latched = true;
                 }

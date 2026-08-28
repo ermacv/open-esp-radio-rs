@@ -548,7 +548,7 @@ where
     /// backed by internal executable SRAM.  This does not make the protocol
     /// routine interrupt-safe and does not change its ownership semantics.
     #[cfg_attr(
-        target_arch = "riscv32",
+        all(target_arch = "riscv32", not(feature = "task-poll-telemetry")),
         unsafe(link_section = ".hot.text.open_radio_ap_rx")
     )]
     #[inline(never)]

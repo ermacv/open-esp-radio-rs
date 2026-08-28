@@ -4,15 +4,22 @@
 //! payload capacity and placement policy are selected by the board or runtime
 //! composition and remain const-generic here.
 
-use core::{cell::UnsafeCell, sync::atomic::AtomicU8};
+use core::{
+    cell::UnsafeCell,
+    marker::PhantomData,
+    ptr::NonNull,
+    sync::atomic::{AtomicU8, Ordering},
+};
+
+use open_esp_radio_dma::ExternalRxBuffer;
 
 use crate::{
     descriptor::Descriptor,
     rx_dma::RxDma,
     rx_ring::{
         RX_BUFFER_SENTINEL, RxCompletedDescriptor, RxCompletedUnit, RxCompletedUnitFrontier,
-        RxDmaArenaState, RxFrozenCursor, RxLiveAppend, RxRingError, RxRingHalted, RxRingLive,
-        RxRingStopped, RxSegment, prepare_recycled_buffer,
+        RxDmaArenaState, RxDmaBufferAddresses, RxFrozenCursor, RxLiveAppend, RxRingError,
+        RxRingHalted, RxRingLive, RxRingStopped, RxSegment, prepare_recycled_buffer,
     },
 };
 
@@ -20,12 +27,20 @@ use crate::{
 #[repr(C, align(4))]
 pub struct RxDmaBuffer<const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>(
     UnsafeCell<[u8; STORAGE_SIZE]>,
+    AtomicU8,
 );
+
+const RX_BUFFER_RING: u8 = 0;
+const RX_BUFFER_DETACHED: u8 = 1;
+const RX_BUFFER_RELEASED: u8 = 2;
 
 impl<const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> RxDmaBuffer<BUFFER_SIZE, STORAGE_SIZE> {
     const fn new() -> Self {
         assert!(STORAGE_SIZE >= BUFFER_SIZE + 4);
-        Self(UnsafeCell::new([0; STORAGE_SIZE]))
+        Self(
+            UnsafeCell::new([0; STORAGE_SIZE]),
+            AtomicU8::new(RX_BUFFER_RING),
+        )
     }
 
     pub(crate) fn dma_address(&self) -> Result<u32, RxDmaStorageError> {
@@ -65,6 +80,90 @@ impl<const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> RxDmaBuffer<BUFFER_SIZ
         unsafe { prepare_recycled_buffer(&mut *self.0.get(), BUFFER_SIZE) }
     }
 
+    fn detach(&self, length: usize, index: usize) -> Result<ExternalRxBuffer, RxRingError> {
+        if length == 0 || length > BUFFER_SIZE {
+            return Err(RxRingError::Size);
+        }
+        self.1
+            .compare_exchange(
+                RX_BUFFER_RING,
+                RX_BUFFER_DETACHED,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .map_err(|_| RxRingError::Busy)?;
+        let pointer = NonNull::new(self.0.get().cast::<u8>()).expect("RX DMA buffer is non-null");
+        let owner = NonNull::from(self).cast::<()>();
+        // SAFETY: the completed-unit owner proved that DMA released this
+        // buffer. The buffer is part of stable arena storage and the state
+        // transition prevents recycle until the callback marks it released.
+        #[allow(
+            unsafe_code,
+            reason = "completed descriptor detaches stable DMA buffer ownership"
+        )]
+        Ok(unsafe {
+            ExternalRxBuffer::new(
+                pointer,
+                length,
+                BUFFER_SIZE,
+                owner,
+                index,
+                release_detached_buffer::<BUFFER_SIZE, STORAGE_SIZE>,
+            )
+        })
+    }
+
+    fn is_released(&self) -> bool {
+        self.1.load(Ordering::Acquire) == RX_BUFFER_RELEASED
+    }
+
+    fn state(&self) -> u8 {
+        self.1.load(Ordering::Acquire)
+    }
+
+    #[allow(
+        unsafe_code,
+        reason = "released affine buffer is returned to its descriptor owner"
+    )]
+    unsafe fn prepare_released_for_recycle(&self) -> Result<(), RxRingError> {
+        self.1
+            .compare_exchange(
+                RX_BUFFER_RELEASED,
+                RX_BUFFER_RING,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .map_err(|_| RxRingError::Busy)?;
+        // SAFETY: the successful state transition proves that neither upper
+        // software nor DMA owns the buffer while the ring prepares it.
+        unsafe { self.prepare_for_recycle() }
+    }
+
+    #[allow(
+        unsafe_code,
+        reason = "stopped DMA owner may normalize a returned detached buffer"
+    )]
+    unsafe fn prepare_for_stopped_ring(&self) -> Result<(), RxRingError> {
+        match self.1.load(Ordering::Acquire) {
+            RX_BUFFER_RING => {}
+            RX_BUFFER_RELEASED => {
+                self.1
+                    .compare_exchange(
+                        RX_BUFFER_RELEASED,
+                        RX_BUFFER_RING,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    )
+                    .map_err(|_| RxRingError::Busy)?;
+            }
+            RX_BUFFER_DETACHED => return Err(RxRingError::Busy),
+            _ => return Err(RxRingError::Corrupt),
+        }
+        // SAFETY: stopped-ring ownership excludes DMA, and DETACHED was
+        // rejected before touching the allocation.
+        unsafe { self.prepare_for_recycle() }
+    }
+
     /// Whether DMA has overwritten the leading recycle guard.
     ///
     /// This is observation only: it never transfers buffer ownership. It is
@@ -81,9 +180,58 @@ impl<const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> RxDmaBuffer<BUFFER_SIZ
     }
 }
 
+#[allow(
+    unsafe_code,
+    reason = "detached-buffer state machine serializes cross-core access"
+)]
+unsafe impl<const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> Sync
+    for RxDmaBuffer<BUFFER_SIZE, STORAGE_SIZE>
+{
+}
+
+#[allow(
+    unsafe_code,
+    reason = "type-erased external lease returns to its concrete DMA buffer"
+)]
+unsafe fn release_detached_buffer<const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>(
+    owner: NonNull<()>,
+    _index: usize,
+) {
+    // SAFETY: `RxDmaBuffer::detach` installed this callback with a pointer to
+    // the same concrete buffer allocation, which remains static for the DMA
+    // epoch.
+    let buffer = unsafe {
+        owner
+            .cast::<RxDmaBuffer<BUFFER_SIZE, STORAGE_SIZE>>()
+            .as_ref()
+    };
+    assert_eq!(
+        buffer.1.compare_exchange(
+            RX_BUFFER_DETACHED,
+            RX_BUFFER_RELEASED,
+            Ordering::Release,
+            Ordering::Acquire,
+        ),
+        Ok(RX_BUFFER_DETACHED),
+        "detached RX DMA buffer must be released exactly once"
+    );
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RxDmaStorageError {
     AddressWidth,
+    Count,
+}
+
+const fn identity_atomic_buffer_ids<const COUNT: usize>() -> [AtomicU8; COUNT] {
+    assert!(COUNT <= u8::MAX as usize + 1);
+    let mut ids = [const { AtomicU8::new(0) }; COUNT];
+    let mut index = 0;
+    while index < COUNT {
+        ids[index] = AtomicU8::new(index as u8);
+        index += 1;
+    }
+    ids
 }
 
 /// First immutable DMA-address binding that no longer matches its arena.
@@ -111,6 +259,10 @@ pub struct RxDmaCompletedDescriptor<
     descriptor: RxCompletedDescriptor,
     buffer: &'owner RxDmaBuffer<BUFFER_SIZE, STORAGE_SIZE>,
     _ring: &'owner mut RxRingLive<'ring, COUNT>,
+    // A hardware completion transaction belongs to the core-local DMA owner.
+    // Only the detached packet buffer produced by that transaction may cross
+    // an executor/core boundary.
+    _not_send: PhantomData<*mut ()>,
 }
 
 impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
@@ -144,6 +296,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
 /// created. The token retains the unique live-ring borrow until the complete
 /// copy is finished and [`recycle`](Self::recycle) consumes it.
 pub struct RxDmaCompletedUnit<
+    'storage,
     'owner,
     'ring,
     const COUNT: usize,
@@ -151,13 +304,49 @@ pub struct RxDmaCompletedUnit<
     const STORAGE_SIZE: usize,
 > {
     unit: RxCompletedUnit,
-    storage: &'owner RxDmaStorage<COUNT, BUFFER_SIZE, STORAGE_SIZE>,
+    storage: &'storage RxDmaStorage<COUNT, BUFFER_SIZE, STORAGE_SIZE>,
     ring: &'owner mut RxRingLive<'ring, COUNT>,
     requires_recycle: bool,
+    // Keep physical descriptor credit on the core-local DMA owner. The
+    // consuming detach transition deliberately returns a separate Send-able
+    // packet-buffer type.
+    _not_send: PhantomData<*mut ()>,
 }
 
-impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
-    RxDmaCompletedUnit<'_, '_, COUNT, BUFFER_SIZE, STORAGE_SIZE>
+/// One complete single-buffer unit detached from its descriptor.
+pub struct RxDmaDetachedUnit {
+    buffer: ExternalRxBuffer,
+    descriptor_address: u32,
+    descriptor_word0: u32,
+    length: usize,
+}
+
+impl RxDmaDetachedUnit {
+    pub const fn descriptor_address(&self) -> u32 {
+        self.descriptor_address
+    }
+
+    pub const fn descriptor_word0(&self) -> u32 {
+        self.descriptor_word0
+    }
+
+    pub const fn length(&self) -> usize {
+        self.length
+    }
+
+    pub fn into_buffer(self) -> ExternalRxBuffer {
+        self.buffer
+    }
+}
+
+impl<
+    'storage,
+    'owner,
+    'ring,
+    const COUNT: usize,
+    const BUFFER_SIZE: usize,
+    const STORAGE_SIZE: usize,
+> RxDmaCompletedUnit<'storage, 'owner, 'ring, COUNT, BUFFER_SIZE, STORAGE_SIZE>
 {
     pub const fn head_index(&self) -> usize {
         self.unit.head_index()
@@ -183,7 +372,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
             .head_index()
             .checked_add(step)?
             .checked_rem(COUNT)?;
-        let buffer = self.storage.buffers.get(index)?;
+        let buffer = self.storage.buffer_for_descriptor(index)?;
         // SAFETY: `RxCompletedUnit` proves that the terminal descriptor made
         // every preceding segment CPU-owned. This token retains the mutable
         // ring borrow, preventing recycle while the returned slice lives.
@@ -201,7 +390,12 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
             .recycle_completed_unit_owned(mmio, descriptor_count, |index| {
                 // SAFETY: this consuming token owns every segment until this
                 // rearm closure returns it to the live walker.
-                unsafe { self.storage.buffers[index].prepare_for_recycle() }
+                unsafe {
+                    self.storage
+                        .buffer_for_descriptor(index)
+                        .ok_or(RxRingError::Count)?
+                        .prepare_for_recycle()
+                }
             });
         if matches!(result, Ok(Some(_))) {
             self.requires_recycle = false;
@@ -218,10 +412,41 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
     pub fn retain_for_deferred_recycle(mut self) {
         self.requires_recycle = false;
     }
+
+    /// Detach one complete hardware buffer for zero-copy upper ownership.
+    ///
+    /// The descriptor remains observed and CPU-owned in the ring. Dropping
+    /// the returned buffer marks it released; only a later ring-owner service
+    /// may rearm the descriptor.
+    pub fn detach_single(mut self) -> Result<RxDmaDetachedUnit, RxRingError>
+    where
+        'storage: 'static,
+    {
+        if self.unit.descriptor_count() != 1 {
+            return Err(RxRingError::Count);
+        }
+        let index = self.unit.head_index();
+        let buffer_id = self
+            .storage
+            .descriptor_buffer_id(index)
+            .ok_or(RxRingError::Count)?;
+        let buffer = self
+            .storage
+            .buffer_for_descriptor(index)
+            .ok_or(RxRingError::Count)?
+            .detach(self.unit.total_length(), buffer_id)?;
+        self.requires_recycle = false;
+        Ok(RxDmaDetachedUnit {
+            buffer,
+            descriptor_address: self.unit.descriptor_address(),
+            descriptor_word0: self.unit.staged_word0(),
+            length: self.unit.total_length(),
+        })
+    }
 }
 
 impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> Drop
-    for RxDmaCompletedUnit<'_, '_, COUNT, BUFFER_SIZE, STORAGE_SIZE>
+    for RxDmaCompletedUnit<'_, '_, '_, COUNT, BUFFER_SIZE, STORAGE_SIZE>
 {
     fn drop(&mut self) {
         if self.requires_recycle {
@@ -244,7 +469,14 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> Dr
 pub struct RxDmaStorage<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> {
     descriptors: [Descriptor; COUNT],
     buffers: [RxDmaBuffer<BUFFER_SIZE, STORAGE_SIZE>; COUNT],
+    descriptor_buffer_ids: [AtomicU8; COUNT],
     lifecycle: AtomicU8,
+}
+
+#[allow(unsafe_code, reason = "atomic bindings serialize cross-core ownership")]
+unsafe impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> Sync
+    for RxDmaStorage<COUNT, BUFFER_SIZE, STORAGE_SIZE>
+{
 }
 
 impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
@@ -254,6 +486,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         Self {
             descriptors: [const { Descriptor::new() }; COUNT],
             buffers: [const { RxDmaBuffer::new() }; COUNT],
+            descriptor_buffer_ids: identity_atomic_buffer_ids(),
             lifecycle: AtomicU8::new(RxDmaArenaState::Reusable as u8),
         }
     }
@@ -293,12 +526,86 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
 
     pub fn dma_layout(
         &self,
-        buffer_addresses: &mut [u32; COUNT],
+        buffer_addresses: &mut RxDmaBufferAddresses<COUNT>,
     ) -> Result<u32, RxDmaStorageError> {
-        for (address, buffer) in buffer_addresses.iter_mut().zip(&self.buffers) {
-            *address = buffer.dma_address()?;
+        self.dma_layout_rotated(buffer_addresses, 0)
+    }
+
+    /// Bind each physical descriptor to a cyclically shifted arena buffer.
+    ///
+    /// Rotation zero is the production identity layout. A non-zero rotation
+    /// is a target proof that every CPU ownership path follows the explicit
+    /// descriptor-to-buffer binding instead of indexing the buffer arena by
+    /// descriptor number. The binding is frozen before the first ring owner
+    /// exists and remains immutable for that complete DMA lifecycle.
+    #[allow(
+        unsafe_code,
+        reason = "Reusable lifecycle is the exclusive pre-ring binding boundary"
+    )]
+    pub fn dma_layout_rotated(
+        &self,
+        buffer_addresses: &mut RxDmaBufferAddresses<COUNT>,
+        rotation: usize,
+    ) -> Result<u32, RxDmaStorageError> {
+        self.validate_descriptor_rotation(rotation)?;
+        for (descriptor_index, address) in buffer_addresses.iter_mut().enumerate() {
+            let buffer_id = (descriptor_index + rotation) % COUNT;
+            *address = self.buffers[buffer_id].dma_address()?;
         }
+        self.bind_descriptor_rotation(rotation)?;
         u32::try_from(self.descriptors.as_ptr().addr()).map_err(|_| RxDmaStorageError::AddressWidth)
+    }
+
+    fn validate_descriptor_rotation(&self, rotation: usize) -> Result<(), RxDmaStorageError> {
+        if COUNT == 0 || COUNT > usize::from(u8::MAX) + 1 || rotation >= COUNT {
+            return Err(RxDmaStorageError::Count);
+        }
+        if self.lifecycle_state() != RxDmaArenaState::Reusable {
+            return Err(RxDmaStorageError::Count);
+        }
+        Ok(())
+    }
+
+    #[allow(
+        unsafe_code,
+        reason = "Reusable lifecycle is the exclusive pre-ring binding boundary"
+    )]
+    fn bind_descriptor_rotation(&self, rotation: usize) -> Result<(), RxDmaStorageError> {
+        self.validate_descriptor_rotation(rotation)?;
+        for descriptor_index in 0..COUNT {
+            let buffer_id = (descriptor_index + rotation) % COUNT;
+            self.descriptor_buffer_ids[descriptor_index].store(buffer_id as u8, Ordering::Release);
+        }
+        Ok(())
+    }
+
+    /// Current physical buffer identity bound to one descriptor.
+    pub fn descriptor_buffer_id(&self, descriptor_index: usize) -> Option<usize> {
+        self.descriptor_buffer_ids
+            .get(descriptor_index)
+            .map(|id| usize::from(id.load(Ordering::Acquire)))
+    }
+
+    fn buffer_for_descriptor(
+        &self,
+        descriptor_index: usize,
+    ) -> Option<&RxDmaBuffer<BUFFER_SIZE, STORAGE_SIZE>> {
+        self.buffer_by_id(self.descriptor_buffer_id(descriptor_index)?)
+    }
+
+    fn any_buffer_in_state(&self, state: u8) -> bool {
+        self.buffers.iter().any(|buffer| buffer.state() == state)
+    }
+
+    pub fn detached_buffer_count(&self) -> usize {
+        self.buffers
+            .iter()
+            .filter(|buffer| buffer.state() == RX_BUFFER_DETACHED)
+            .count()
+    }
+
+    fn buffer_by_id(&self, buffer_id: usize) -> Option<&RxDmaBuffer<BUFFER_SIZE, STORAGE_SIZE>> {
+        self.buffers.get(buffer_id)
     }
 
     /// Prepare the first stopped ring on a hardware target.
@@ -312,7 +619,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         &'static self,
         mmio: &mut M,
         descriptor_base: u32,
-        buffer_addresses: &'addresses [u32; COUNT],
+        buffer_addresses: &'addresses RxDmaBufferAddresses<COUNT>,
     ) -> Result<RxRingStopped<'addresses, COUNT>, RxRingError> {
         self.prepare_ring_bound(mmio, descriptor_base, buffer_addresses)
     }
@@ -336,7 +643,8 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         &'storage self,
         mmio: &mut M,
         descriptor_base: u32,
-        buffer_addresses: &'storage [u32; COUNT],
+        #[cfg(target_pointer_width = "32")] buffer_addresses: &'storage RxDmaBufferAddresses<COUNT>,
+        #[cfg(not(target_pointer_width = "32"))] buffer_addresses: &'storage [u32; COUNT],
     ) -> Result<RxRingStopped<'storage, COUNT>, RxRingError> {
         self.validate_descriptor_base(descriptor_base)?;
         self.validate_buffer_addresses(buffer_addresses)?;
@@ -363,7 +671,11 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
             |index| {
                 // SAFETY: stopped-ring preparation owns every descriptor and
                 // the validated address table binds `index` to this arena.
-                unsafe { self.buffers[index].prepare_for_recycle() }
+                unsafe {
+                    self.buffer_for_descriptor(index)
+                        .ok_or(RxRingError::Count)?
+                        .prepare_for_stopped_ring()
+                }
             },
             Some(&self.lifecycle),
         );
@@ -384,6 +696,9 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         ring: RxRingHalted<'storage, COUNT>,
         mmio: &mut M,
     ) -> Result<RxRingStopped<'storage, COUNT>, (RxRingHalted<'storage, COUNT>, RxRingError)> {
+        if self.any_buffer_in_state(RX_BUFFER_DETACHED) {
+            return Err((ring, RxRingError::Busy));
+        }
         match self.lifecycle_state() {
             RxDmaArenaState::Prepared => {}
             #[cfg(not(target_pointer_width = "32"))]
@@ -421,7 +736,11 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         ring.prepare_owned(mmio, buffer_size, |index| {
             // SAFETY: the halted owner proves that DMA is stopped, and the
             // validated layout binds the descriptor to this exact buffer.
-            unsafe { self.buffers[index].prepare_for_recycle() }
+            unsafe {
+                self.buffer_for_descriptor(index)
+                    .ok_or(RxRingError::Count)?
+                    .prepare_for_stopped_ring()
+            }
         })
     }
 
@@ -449,11 +768,14 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         let Some(descriptor) = ring.take_completed_owned(index) else {
             return Ok(None);
         };
-        let buffer = self.buffers.get(index).ok_or(RxRingError::Count)?;
+        let buffer = self
+            .buffer_for_descriptor(index)
+            .ok_or(RxRingError::Count)?;
         Ok(Some(RxDmaCompletedDescriptor {
             descriptor,
             buffer,
             _ring: ring,
+            _not_send: PhantomData,
         }))
     }
 
@@ -470,7 +792,11 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         ring.recycle_completed_half_owned(mmio, |index| {
             // SAFETY: the ring invokes the closure only after observing the
             // complete half and immediately before descriptor publication.
-            unsafe { self.buffers[index].prepare_for_recycle() }
+            unsafe {
+                self.buffer_for_descriptor(index)
+                    .ok_or(RxRingError::Count)?
+                    .prepare_for_recycle()
+            }
         })
     }
 
@@ -487,8 +813,70 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         ring.recycle_completed_prefix_owned::<MAX_BATCH, _, _>(mmio, |index| {
             // SAFETY: the ring invokes the closure only for its observed
             // prefix immediately before returning those buffers to DMA.
-            unsafe { self.buffers[index].prepare_for_recycle() }
+            unsafe {
+                self.buffer_for_descriptor(index)
+                    .ok_or(RxRingError::Count)?
+                    .prepare_for_recycle()
+            }
         })
+    }
+
+    /// Return the longest contiguous prefix whose detached upper owners have
+    /// all released their original DMA buffers.
+    ///
+    /// A still-retained descriptor terminates the prefix even if later frames
+    /// have already returned. This preserves hardware list order while making
+    /// network-token release the only authorization for descriptor reuse.
+    #[allow(
+        unsafe_code,
+        reason = "released buffer state authorizes the ring rearm transition"
+    )]
+    pub fn recycle_released_prefix<const MAX_BATCH: usize, M: RxDma>(
+        &self,
+        ring: &mut RxRingLive<'_, COUNT>,
+        mmio: &mut M,
+    ) -> Result<Option<RxLiveAppend>, RxRingError> {
+        self.validate_live_ring(ring)?;
+        if MAX_BATCH == 0 {
+            return Err(RxRingError::Count);
+        }
+        let start = ring.recycle_start();
+        let observed = ring.observed_mask();
+        let mut released = 0_usize;
+        while released < MAX_BATCH.min(COUNT) {
+            let index = (start + released) % COUNT;
+            if observed & (1_u64 << index) == 0
+                || !crate::descriptor::rx_done(self.descriptors[index].word0())
+                || !self
+                    .buffer_for_descriptor(index)
+                    .ok_or(RxRingError::Count)?
+                    .is_released()
+            {
+                break;
+            }
+            released += 1;
+        }
+        if released == 0 {
+            return Ok(None);
+        }
+        ring.recycle_released_terminal_prefix_owned(mmio, released, |index| {
+            // SAFETY: the prefix scan proved RELEASED and the ring revalidates
+            // the complete descriptor image before invoking this callback.
+            unsafe {
+                self.buffer_for_descriptor(index)
+                    .ok_or(RxRingError::Count)?
+                    .prepare_released_for_recycle()
+            }
+        })
+    }
+
+    /// Number of detached buffers already returned by upper owners but not
+    /// yet appended back to the hardware list.
+    pub fn released_buffer_count(&self) -> usize {
+        self.buffers
+            .iter()
+            .filter(|buffer| buffer.is_released())
+            .count()
     }
 
     pub fn completed_unit_frontier(
@@ -496,8 +884,10 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         ring: &RxRingLive<'_, COUNT>,
     ) -> Result<RxCompletedUnitFrontier, RxRingError> {
         self.validate_live_ring(ring)?;
-        Ok(ring
-            .completed_unit_frontier_with(|index| self.buffers[index].leading_guard_overwritten()))
+        Ok(ring.completed_unit_frontier_with(|index| {
+            self.buffer_for_descriptor(index)
+                .is_some_and(RxDmaBuffer::leading_guard_overwritten)
+        }))
     }
 
     /// Return only complete units which the hardware last-descriptor frontier
@@ -511,7 +901,8 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         self.validate_live_ring(ring)?;
         Ok(
             ring.completed_unit_frontier_through_with(last_descriptor_low, |index| {
-                self.buffers[index].leading_guard_overwritten()
+                self.buffer_for_descriptor(index)
+                    .is_some_and(RxDmaBuffer::leading_guard_overwritten)
             }),
         )
     }
@@ -529,7 +920,10 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         Ok(ring.completed_unit_frontier_through_cursor_with(
             last_descriptor_low,
             next_descriptor_low,
-            |index| self.buffers[index].leading_guard_overwritten(),
+            |index| {
+                self.buffer_for_descriptor(index)
+                    .is_some_and(RxDmaBuffer::leading_guard_overwritten)
+            },
         ))
     }
 
@@ -544,7 +938,8 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         self.validate_live_ring(ring)?;
         Ok(
             ring.first_completed_unit_frontier_through_with(last_descriptor_low, |index| {
-                self.buffers[index].leading_guard_overwritten()
+                self.buffer_for_descriptor(index)
+                    .is_some_and(RxDmaBuffer::leading_guard_overwritten)
             }),
         )
     }
@@ -559,7 +954,10 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         Ok(ring.first_completed_unit_frontier_through_cursor_with(
             last_descriptor_low,
             next_descriptor_low,
-            |index| self.buffers[index].leading_guard_overwritten(),
+            |index| {
+                self.buffer_for_descriptor(index)
+                    .is_some_and(RxDmaBuffer::leading_guard_overwritten)
+            },
         ))
     }
 
@@ -587,12 +985,17 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         let frontier = ring.first_completed_unit_frontier_through_cursor_with(
             last_descriptor_low,
             next_descriptor_low,
-            |index| self.buffers[index].leading_guard_overwritten(),
+            |index| {
+                self.buffer_for_descriptor(index)
+                    .is_some_and(RxDmaBuffer::leading_guard_overwritten)
+            },
         );
         if frontier.unit_count == 0 {
             return Ok(false);
         }
-        let index = ring.recycle_start();
+        let index = self
+            .completion_frontier_head(ring)?
+            .ok_or(RxRingError::Corrupt)?;
         let available = crate::descriptor::length(ring.descriptors()[index].word0()) as usize;
         let Some(end) = offset
             .checked_add(output.len())
@@ -603,21 +1006,45 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         // SAFETY: the frozen cursor and terminal unit frontier establish that
         // DMA has released this descriptor. Only values are copied, and the
         // immutable view ends before this function returns.
-        output.copy_from_slice(unsafe { &self.buffers[index].completed()[offset..end] });
+        let buffer = self
+            .buffer_for_descriptor(index)
+            .ok_or(RxRingError::Count)?;
+        output.copy_from_slice(unsafe { &buffer.completed()[offset..end] });
         Ok(true)
     }
 
-    pub fn take_completed_unit<'owner, 'ring>(
-        &'owner self,
+    /// Physical descriptor index immediately after the contiguous observed
+    /// prefix retained by upper owners.
+    ///
+    /// This is only an index calculation; callers still need a hardware
+    /// frontier proof before reading descriptor metadata or payload bytes.
+    pub fn completion_frontier_head(
+        &self,
+        ring: &RxRingLive<'_, COUNT>,
+    ) -> Result<Option<usize>, RxRingError> {
+        self.validate_live_ring(ring)?;
+        let observed = ring.observed_mask();
+        for distance in 0..COUNT {
+            let index = (ring.recycle_start() + distance) % COUNT;
+            if observed & (1_u64 << index) == 0 {
+                return Ok(Some(index));
+            }
+        }
+        Ok(None)
+    }
+
+    pub fn take_completed_unit<'storage, 'owner, 'ring>(
+        &'storage self,
         ring: &'owner mut RxRingLive<'ring, COUNT>,
         descriptor_limit: usize,
     ) -> Result<
-        Option<RxDmaCompletedUnit<'owner, 'ring, COUNT, BUFFER_SIZE, STORAGE_SIZE>>,
+        Option<RxDmaCompletedUnit<'storage, 'owner, 'ring, COUNT, BUFFER_SIZE, STORAGE_SIZE>>,
         RxRingError,
     > {
         self.validate_live_ring(ring)?;
         let unit = match ring.take_completed_unit_owned(descriptor_limit, |index| {
-            self.buffers[index].leading_guard_overwritten()
+            self.buffer_for_descriptor(index)
+                .is_some_and(RxDmaBuffer::leading_guard_overwritten)
         }) {
             Ok(Some(unit)) => unit,
             Ok(None) => return Ok(None),
@@ -631,6 +1058,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
             storage: self,
             ring,
             requires_recycle: true,
+            _not_send: PhantomData,
         }))
     }
 
@@ -655,12 +1083,19 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
             |index| {
                 // SAFETY: the ring limits mutation to the observed complete
                 // unit ending at or before the generation-bound LAST.
-                unsafe { self.buffers[index].prepare_for_recycle() }
+                unsafe {
+                    self.buffer_for_descriptor(index)
+                        .ok_or(RxRingError::Count)?
+                        .prepare_for_recycle()
+                }
             },
         )
     }
 
     fn validate_live_ring(&self, ring: &RxRingLive<'_, COUNT>) -> Result<(), RxRingError> {
+        if ring.belongs_to_lifecycle(&self.lifecycle) {
+            return Ok(());
+        }
         self.validate_ring_layout(
             ring.descriptor_base(),
             ring.descriptors(),
@@ -672,7 +1107,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         &self,
         descriptor_base: u32,
         descriptors: &[Descriptor; COUNT],
-        buffer_addresses: &[u32; COUNT],
+        buffer_addresses: &RxDmaBufferAddresses<COUNT>,
     ) -> Result<(), RxRingError> {
         if !core::ptr::eq(descriptors, &self.descriptors) {
             return Err(RxRingError::DescriptorOwnerAddress);
@@ -695,13 +1130,16 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
 
     fn validate_buffer_addresses(
         &self,
-        buffer_addresses: &[u32; COUNT],
+        buffer_addresses: &RxDmaBufferAddresses<COUNT>,
     ) -> Result<(), RxRingError> {
         // ESP32-S31 DMA is a 32-bit target. Native builds use synthetic low
         // addresses and a mock that never touches host memory; descriptor
         // identity remains checked by `validate_ring_layout` there.
         #[cfg(target_pointer_width = "32")]
-        for (index, (buffer, &address)) in self.buffers.iter().zip(buffer_addresses).enumerate() {
+        for (index, &address) in buffer_addresses.iter().enumerate() {
+            let buffer = self
+                .buffer_for_descriptor(index)
+                .ok_or(RxRingError::Count)?;
             if buffer.dma_address().map_err(|_| RxRingError::Address)? != address {
                 return Err(if index + 1 == COUNT {
                     RxRingError::TailBufferAddress
@@ -715,13 +1153,12 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         Ok(())
     }
 
-    /// Report the first changed address-table entry without changing the
-    /// fail-closed ring state.
     pub fn first_buffer_address_mismatch(
         &self,
-        buffer_addresses: &[u32; COUNT],
+        buffer_addresses: &RxDmaBufferAddresses<COUNT>,
     ) -> Option<RxBufferAddressMismatch> {
-        for (index, (buffer, &observed)) in self.buffers.iter().zip(buffer_addresses).enumerate() {
+        for (index, &observed) in buffer_addresses.iter().enumerate() {
+            let buffer = self.buffer_for_descriptor(index)?;
             let expected = buffer.dma_address().ok()?;
             if expected != observed {
                 return Some(RxBufferAddressMismatch {
@@ -745,6 +1182,9 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> De
 
 #[cfg(test)]
 mod tests {
+    extern crate std;
+
+    use self::std::boxed::Box;
     use super::*;
     use crate::rx_dma::RxDmaBinding;
 
@@ -857,6 +1297,209 @@ mod tests {
     }
 
     #[test]
+    fn completed_ownership_follows_a_permuted_descriptor_buffer_binding() {
+        const COUNT: usize = 2;
+        const BASE: u32 = 0x2f00_1000;
+        const ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
+        // Descriptor zero names physical buffer one; descriptor one names
+        // physical buffer zero. Synthetic host addresses preserve that order.
+        let buffers = [0x2f00_2200, 0x2f00_2000];
+        let mut storage = Box::new(RxDmaStorage::<COUNT, 16, 20>::new());
+        storage.buffer_mut(1).unwrap()[4..8].copy_from_slice(&[5, 6, 7, 8]);
+        let storage = Box::leak(storage);
+        storage
+            .bind_descriptor_rotation(1)
+            .expect("pre-ring rotation");
+        assert_eq!(storage.descriptor_buffer_id(0), Some(1));
+        assert_eq!(storage.descriptor_buffer_id(1), Some(0));
+
+        let mut mmio = MockRxDma::default();
+        let prepared = storage
+            .prepare_ring(&mut mmio, BASE, &buffers)
+            .expect("prepared rotated owner");
+        let mut live = prepared
+            .try_start(&mut mmio)
+            .map_err(|(_, error)| error)
+            .expect("live rotated epoch");
+        storage.descriptors()[0].write_word0(
+            16 | (8 << crate::descriptor::LENGTH_SHIFT)
+                | crate::descriptor::BIT_30
+                | crate::descriptor::BIT_31,
+        );
+        mmio.last_descriptor_low = (BASE + crate::descriptor::DESCRIPTOR_BYTES) & ADDRESS_LOW_MASK;
+        mmio.next_descriptor_low = 0;
+
+        let detached = storage
+            .take_completed_unit(&mut live, 1)
+            .unwrap()
+            .expect("completed rotated unit")
+            .detach_single()
+            .expect("rotated buffer detaches");
+        let pool = open_esp_radio_dma::ExternalRxHandoffPool::<16, 1>::new();
+        let radio = pool
+            .try_claim_radio(detached.into_buffer(), 0)
+            .map_err(drop)
+            .expect("rotated handoff slot");
+        let length = radio.frame().len();
+        let mut network = pool.claim_network(radio.republish(0, length));
+        assert_eq!(
+            network.with_frame(|frame| frame[4..8].to_vec()),
+            [5, 6, 7, 8],
+            "descriptor zero must expose its bound physical buffer one"
+        );
+        drop(network);
+        assert!(
+            storage
+                .recycle_released_prefix::<COUNT, _>(&mut live, &mut mmio)
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn detached_buffer_cannot_rearm_until_the_network_lease_returns() {
+        const COUNT: usize = 2;
+        const BASE: u32 = 0x2f00_1000;
+        const ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
+        let buffers = [0x2f00_2000, 0x2f00_2200];
+        let storage = Box::leak(Box::new(RxDmaStorage::<COUNT, 16, 20>::new()));
+        storage.buffer_mut(0).unwrap()[4..8].copy_from_slice(&[1, 2, 3, 4]);
+        let mut mmio = MockRxDma::default();
+        let prepared = storage
+            .prepare_ring(&mut mmio, BASE, &buffers)
+            .expect("prepared owner");
+        let mut live = prepared
+            .try_start(&mut mmio)
+            .map_err(|(_, error)| error)
+            .expect("live epoch");
+        storage.descriptors()[0].write_word0(
+            16 | (8 << crate::descriptor::LENGTH_SHIFT)
+                | crate::descriptor::BIT_30
+                | crate::descriptor::BIT_31,
+        );
+        // Model the finite list exhausted at its accepted tail. Merely seeing
+        // NEXT name descriptor one is not sufficient: HIL proved that image
+        // may precede hardware fetching descriptor zero's link word.
+        mmio.last_descriptor_low = (BASE + crate::descriptor::DESCRIPTOR_BYTES) & ADDRESS_LOW_MASK;
+        mmio.next_descriptor_low = 0;
+
+        let detached = storage
+            .take_completed_unit(&mut live, 1)
+            .unwrap()
+            .expect("completed unit")
+            .detach_single()
+            .expect("single descriptor detaches");
+        let pool = open_esp_radio_dma::ExternalRxHandoffPool::<16, 1>::new();
+        let radio = pool
+            .try_claim_radio(detached.into_buffer(), 0)
+            .map_err(drop)
+            .expect("external handoff slot");
+        let length = radio.frame().len();
+        let mut network = pool.claim_network(radio.republish(0, length));
+        assert_eq!(
+            network.with_frame(|frame| frame[4..8].to_vec()),
+            [1, 2, 3, 4]
+        );
+        assert_eq!(
+            storage.recycle_released_prefix::<COUNT, _>(&mut live, &mut mmio),
+            Ok(None),
+            "live network token must keep the descriptor CPU-owned"
+        );
+        assert_ne!(
+            storage.descriptors()[0].word0() & crate::descriptor::BIT_30,
+            0
+        );
+
+        drop(network);
+        let append = storage
+            .recycle_released_prefix::<COUNT, _>(&mut live, &mut mmio)
+            .expect("released prefix reclaim")
+            .expect("one descriptor appended");
+        assert_eq!(append.descriptor_count, 1);
+        assert_eq!(storage.released_buffer_count(), 0);
+        assert_eq!(
+            storage.descriptors()[0].word0() & crate::descriptor::BIT_30,
+            0
+        );
+    }
+
+    #[test]
+    fn released_dma_buffers_rearm_only_as_a_contiguous_ring_prefix() {
+        const COUNT: usize = 4;
+        const BASE: u32 = 0x2f00_1000;
+        const ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
+        let buffers = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
+        let storage = Box::leak(Box::new(RxDmaStorage::<COUNT, 16, 20>::new()));
+        let mut mmio = MockRxDma::default();
+        let prepared = storage
+            .prepare_ring(&mut mmio, BASE, &buffers)
+            .expect("prepared owner");
+        let mut live = prepared
+            .try_start(&mut mmio)
+            .map_err(|(_, error)| error)
+            .expect("live epoch");
+        for descriptor in &storage.descriptors()[..2] {
+            descriptor.write_word0(
+                16 | (8 << crate::descriptor::LENGTH_SHIFT)
+                    | crate::descriptor::BIT_30
+                    | crate::descriptor::BIT_31,
+            );
+        }
+        mmio.last_descriptor_low =
+            (BASE + 3 * crate::descriptor::DESCRIPTOR_BYTES) & ADDRESS_LOW_MASK;
+        mmio.next_descriptor_low = 0;
+
+        let first = storage
+            .take_completed_unit(&mut live, 1)
+            .unwrap()
+            .expect("first completed unit")
+            .detach_single()
+            .expect("first single descriptor");
+        let second = storage
+            .take_completed_unit(&mut live, 1)
+            .unwrap()
+            .expect("second completed unit")
+            .detach_single()
+            .expect("second single descriptor");
+        let pool = open_esp_radio_dma::ExternalRxHandoffPool::<16, 2>::new();
+        let first = pool
+            .try_claim_radio(first.into_buffer(), 0)
+            .map_err(drop)
+            .expect("first handoff slot");
+        let first_length = first.frame().len();
+        let first = pool.claim_network(first.republish(0, first_length));
+        let second = pool
+            .try_claim_radio(second.into_buffer(), 1)
+            .map_err(drop)
+            .expect("second handoff slot");
+        let second_length = second.frame().len();
+        let second = pool.claim_network(second.republish(0, second_length));
+
+        drop(second);
+        assert_eq!(storage.released_buffer_count(), 1);
+        assert_eq!(
+            storage.recycle_released_prefix::<COUNT, _>(&mut live, &mut mmio),
+            Ok(None),
+            "a returned successor must not skip a retained ring head"
+        );
+
+        drop(first);
+        let append = storage
+            .recycle_released_prefix::<COUNT, _>(&mut live, &mut mmio)
+            .expect("released prefix reclaim")
+            .expect("both returned descriptors append together");
+        assert_eq!(append.head_index, 0);
+        assert_eq!(append.descriptor_count, 2);
+        assert_eq!(storage.released_buffer_count(), 0);
+        assert_eq!(live.recycle_start(), 2);
+        assert!(
+            storage.descriptors()[..2]
+                .iter()
+                .all(|descriptor| descriptor.word0() & crate::descriptor::BIT_30 == 0)
+        );
+    }
+
+    #[test]
     fn one_arena_cannot_issue_two_root_ring_capabilities() {
         const COUNT: usize = 2;
         const BASE: u32 = 0x2f00_1000;
@@ -887,6 +1530,80 @@ mod tests {
             storage.prepare_ring(&mut second_mmio, BASE, &buffers),
             Err(RxRingError::Busy)
         ));
+    }
+
+    #[test]
+    fn live_binding_rejects_a_foreign_storage_arena() {
+        const COUNT: usize = 2;
+        const BASE: u32 = 0x2f00_1000;
+        let buffers = [0x2f00_2000, 0x2f00_2200];
+        let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+        let foreign = RxDmaStorage::<COUNT, 16, 20>::new();
+        let mut mmio = MockRxDma::default();
+        let live = storage
+            .prepare_ring(&mut mmio, BASE, &buffers)
+            .expect("prepared owner")
+            .try_start(&mut mmio)
+            .map_err(|(_, error)| error)
+            .expect("live owner");
+
+        assert_eq!(
+            foreign.completed_unit_frontier(&live),
+            Err(RxRingError::DescriptorOwnerAddress)
+        );
+
+        let _halted = live
+            .try_stop(&mut mmio)
+            .unwrap_or_else(|_| panic!("walker stops"));
+    }
+
+    #[test]
+    fn first_frontier_returns_one_unit_from_a_terminal_burst() {
+        const COUNT: usize = 4;
+        const BASE: u32 = 0x2f00_1000;
+        const ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
+        let buffers = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
+        let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+        let mut mmio = MockRxDma::default();
+        let prepared = storage
+            .prepare_ring(&mut mmio, BASE, &buffers)
+            .expect("prepared owner");
+        let live = prepared
+            .try_start(&mut mmio)
+            .map_err(|(_, error)| error)
+            .expect("live epoch");
+
+        for descriptor in storage.descriptors() {
+            descriptor.write_word0(
+                16 | (4 << crate::descriptor::LENGTH_SHIFT)
+                    | crate::descriptor::BIT_30
+                    | crate::descriptor::BIT_31,
+            );
+        }
+        mmio.last_descriptor_low =
+            (BASE + 3 * crate::descriptor::DESCRIPTOR_BYTES) & ADDRESS_LOW_MASK;
+        mmio.next_descriptor_low = BASE & ADDRESS_LOW_MASK;
+
+        let complete = storage
+            .completed_unit_frontier_through_cursor(
+                &live,
+                mmio.last_descriptor_low,
+                mmio.next_descriptor_low,
+            )
+            .expect("complete burst frontier");
+        assert_eq!(complete.unit_count, COUNT);
+        assert_eq!(complete.descriptor_count, COUNT);
+
+        let first = storage
+            .first_completed_unit_frontier_through_cursor(
+                &live,
+                mmio.last_descriptor_low,
+                mmio.next_descriptor_low,
+            )
+            .expect("first unit frontier");
+        assert_eq!(first.unit_count, 1);
+        assert_eq!(first.descriptor_count, 1);
+        assert!(live.try_stop(&mut mmio).is_ok());
     }
 
     #[test]

@@ -34,9 +34,12 @@ use crate::{
     },
     datapath::rx::staging::{Esp32s31StagedRxFrame, Esp32s31StagedRxQueue},
     datapath::{
-        DatapathRxServiceContext, network::DatapathNetworkRx, paired::DatapathPairedRxService,
+        DatapathRxServiceContext,
+        network::{DatapathNetworkRx, DatapathNetworkRxSet},
+        paired::DatapathPairedRxService,
     },
     roles::concurrent::Esp32s31StaApStagedRxQueue,
+    roles::station::connected::Esp32s31ConnectedStaRxService,
     roles::station::rx_protocol::{
         AlwaysReadyConnectedRxSink, Esp32s31ConnectedRxProcessor, Esp32s31ConnectedRxProtocol,
         Esp32s31ConnectedRxProtocolStorage,
@@ -58,7 +61,7 @@ fn one_physical_producer_routes_one_ordered_lease_into_station_processor() {
     const AP: [u8; 6] = [0x02, 0, 0, 0, 0, 3];
     const PEER: [u8; 6] = [0x02, 0, 0, 0, 0, 4];
 
-    let mut storage = Esp32s31RxDmaStorage::<COUNT>::new();
+    let storage = Box::leak(Box::new(Esp32s31RxDmaStorage::<COUNT>::new()));
     let initialize_frame = |buffer: &mut [u8],
                             frame_control: u16,
                             receiver: [u8; 6],
@@ -115,7 +118,7 @@ fn one_physical_producer_routes_one_ordered_lease_into_station_processor() {
     let (sender, mut receiver) = queue.split();
     let mut service = Esp32s31StagedRxProducer::new_sta_ap(
         ring,
-        &storage,
+        storage,
         &pool,
         NoDelay,
         sender,
@@ -133,7 +136,7 @@ fn one_physical_producer_routes_one_ordered_lease_into_station_processor() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(DatapathRxProgress::ProbePending),
+        Ok(DatapathRxProgress::Drained),
     );
     assert_eq!(pool.claimed_slots(), 2);
 
@@ -203,6 +206,19 @@ fn one_physical_producer_routes_one_ordered_lease_into_station_processor() {
         crate::roles::concurrent::Esp32s31StaApRxTurn::AccessPoint
     );
     assert_eq!(pool.claimed_slots(), 0);
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(DatapathRxProgress::ProbePending),
+    );
+    hardware.next_descriptor_low = BASE & 0x000f_ffff;
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(DatapathRxProgress::ProbePending),
+    );
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(DatapathRxProgress::Drained),
+    );
     service
         .try_stop(&mut hardware)
         .unwrap_or_else(|_| panic!("test RX service must stop"));
@@ -256,6 +272,27 @@ impl DatapathNetworkRx for PairedNetworkRx {
             before_publish();
         }
         result
+    }
+}
+
+impl DatapathNetworkRxSet for PairedNetworkRx {
+    fn primary_mut(&mut self) -> &mut dyn DatapathNetworkRx {
+        self
+    }
+
+    fn get_mut(
+        &mut self,
+        _interface: open_esp_radio_embassy_net::NetworkInterfaceId,
+    ) -> Option<&mut dyn DatapathNetworkRx> {
+        None
+    }
+
+    fn pair_mut(
+        &mut self,
+        _first: open_esp_radio_embassy_net::NetworkInterfaceId,
+        _second: open_esp_radio_embassy_net::NetworkInterfaceId,
+    ) -> Option<(&mut dyn DatapathNetworkRx, &mut dyn DatapathNetworkRx)> {
+        None
     }
 }
 
@@ -371,7 +408,7 @@ fn paired_datapath_rx_uses_one_dma_epoch_and_two_narrow_role_capabilities() {
     const AP: [u8; 6] = [0x02, 0, 0, 0, 0, 3];
     const PEER: [u8; 6] = [0x02, 0, 0, 0, 0, 4];
 
-    let mut storage = Esp32s31RxDmaStorage::<COUNT>::new();
+    let storage = Box::leak(Box::new(Esp32s31RxDmaStorage::<COUNT>::new()));
     for (index, (frame_control, receiver, transmitter, third)) in
         [(0x0208_u16, STA, UPLINK, PEER), (0x0108_u16, AP, PEER, STA)]
             .into_iter()
@@ -404,7 +441,7 @@ fn paired_datapath_rx_uses_one_dma_epoch_and_two_narrow_role_capabilities() {
     let (sender, consumer) = queue.split();
     let epoch = Esp32s31StagedRxEpoch::from_halted_sta_ap(
         halted,
-        &storage,
+        storage,
         &pool,
         sender,
         RxIngressConfig {
@@ -494,6 +531,7 @@ fn paired_datapath_rx_uses_one_dma_epoch_and_two_narrow_role_capabilities() {
 #[derive(Default)]
 struct RecordingRxObserver {
     stage_too_long_discards: AtomicU32,
+    stage_chained_discards: AtomicU32,
     completed_descriptors: AtomicUsize,
     recycled_descriptors: AtomicUsize,
     overload_discarded_units: AtomicUsize,
@@ -513,6 +551,9 @@ impl RxPipelineObserver for RecordingRxObserver {
         match observation {
             RxPipelineObservation::StageDiscarded(RxStageDiscard::TooLong) => {
                 self.stage_too_long_discards.fetch_add(1, Ordering::Relaxed);
+            }
+            RxPipelineObservation::StageDiscarded(RxStageDiscard::Chained) => {
+                self.stage_chained_discards.fetch_add(1, Ordering::Relaxed);
             }
             RxPipelineObservation::ServiceCompleted(observation) => {
                 self.completed_descriptors
@@ -573,6 +614,26 @@ impl Esp32s31RxStageAdmissionPolicy for OneShotNarrowAdmission {
                 Ok(2),
             ),
             _ => panic!("unexpected admission observation: {observation:?}"),
+        }
+    }
+}
+
+#[derive(Default)]
+struct CountingUnavailableAdmission(AtomicU32);
+
+impl Esp32s31RxStageAdmissionPolicy for CountingUnavailableAdmission {
+    fn unavailable_disposition(
+        &self,
+        preview: Esp32s31RxCompletedUnitPreview,
+    ) -> RxStageUnavailableDisposition {
+        self.0.fetch_add(1, Ordering::Relaxed);
+        match preview.class {
+            Esp32s31RxIngressClass::BulkProtectedData => {
+                RxStageUnavailableDisposition::PreserveForCapacity
+            }
+            Esp32s31RxIngressClass::Critical | Esp32s31RxIngressClass::Unclassified => {
+                RxStageUnavailableDisposition::PreserveForCriticalAdmission
+            }
         }
     }
 }
@@ -756,10 +817,10 @@ fn configure_dispatcher<
 }
 
 #[test]
-fn finite_service_uses_queue_credits_and_protocol_dispatch_returns_ownership() {
+fn connected_rx_turn_recycles_protocol_credits_before_the_next_dma_probe() {
     const COUNT: usize = 2;
     const STAGED_DEPTH: usize = 1;
-    let storage = Esp32s31RxDmaStorage::<COUNT>::new();
+    let storage = Box::leak(Box::new(Esp32s31RxDmaStorage::<COUNT>::new()));
     let addresses = [0x2f00_2000, 0x2f00_3200];
     let mut hardware = MockRxDma::default();
     let stopped = RxRingStopped::prepare(
@@ -783,13 +844,15 @@ fn finite_service_uses_queue_credits_and_protocol_dispatch_returns_ownership() {
     let pool = RxStagePool::new();
     let queue = Esp32s31StagedRxQueue::<NoopRawMutex, STAGED_DEPTH>::new();
     let (sender, receiver) = queue.split();
+    let admission = CountingUnavailableAdmission::default();
     let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
     let mut mpdu = [0; ESP32S31_RX_BUFFER_SIZE];
     let mut ethernet = [0; ESP32S31_RX_BUFFER_SIZE];
     let protocol_runtime = Box::leak(Box::new(Esp32s31ConnectedRxProtocolStorage::new()));
     configure_dispatcher(protocol_runtime);
-    let mut service = Esp32s31StagedRxProducer::new(ring, &storage, &pool, NoDelay, sender);
-    let mut protocol = Esp32s31ConnectedRxProtocol::new(
+    let dma = Esp32s31StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
+        .with_stage_admission_policy(&admission);
+    let protocol = Esp32s31ConnectedRxProtocol::new(
         receiver,
         &irq,
         AlwaysReadyConnectedRxSink(Observer::default()),
@@ -797,36 +860,61 @@ fn finite_service_uses_queue_credits_and_protocol_dispatch_returns_ownership() {
         &mut ethernet,
         protocol_runtime,
     );
+    let mut service = Esp32s31ConnectedStaRxService::new(dma, protocol);
+    let mut network_rx = PairedNetworkRx::default();
 
     assert_eq!(
-        embassy_futures::block_on(service.service(&mut hardware)),
+        embassy_futures::block_on(service.service_turn(
+            &mut hardware,
+            &mut network_rx,
+            DatapathRxServiceContext {
+                maximum_protocol_frames: Some(1),
+            },
+        )),
         Ok(DatapathRxProgress::StageCapacityBlocked),
     );
-    assert_eq!(pool.claimed_slots(), 1);
-    assert_eq!(pool.network_slots(), 1);
-    assert_eq!(protocol.queue_len(), 1);
-    embassy_futures::block_on(protocol.dispatch_next());
     assert_eq!(pool.claimed_slots(), 0);
     assert_eq!(pool.network_slots(), 0);
-    assert_eq!(service.ring().recycle_start(), 1);
-    assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
+    assert_eq!(service.protocol().queue_len(), 0);
+    assert_eq!(service.serviced_frames(), 1);
+    assert_eq!(admission.0.load(Ordering::Relaxed), 1);
+    assert_eq!(service.dma().ring().recycle_start(), 0);
+    assert_ne!(storage.descriptors()[0].word0() & BIT_30, 0);
     assert_ne!(storage.descriptors()[0].word0() & BIT_31, 0);
 
     assert_eq!(
-        embassy_futures::block_on(service.service(&mut hardware)),
+        embassy_futures::block_on(service.service_turn(
+            &mut hardware,
+            &mut network_rx,
+            DatapathRxServiceContext {
+                maximum_protocol_frames: Some(1),
+            },
+        )),
         Ok(DatapathRxProgress::ProbePending),
     );
-    assert_eq!(service.ring().recycle_start(), 0);
-    assert_eq!(protocol.queue_len(), 1);
-    embassy_futures::block_on(protocol.dispatch_next());
+    assert_eq!(service.dma().ring().recycle_start(), 1);
+    assert_eq!(service.protocol().queue_len(), 0);
+    assert_eq!(service.serviced_frames(), 2);
+    assert_eq!(admission.0.load(Ordering::Relaxed), 1);
     assert_eq!(pool.claimed_slots(), 0);
     assert_eq!(pool.network_slots(), 0);
     assert_eq!(
-        embassy_futures::block_on(service.service(&mut hardware)),
+        embassy_futures::block_on(service.service_turn(
+            &mut hardware,
+            &mut network_rx,
+            DatapathRxServiceContext {
+                maximum_protocol_frames: Some(1),
+            },
+        )),
         Ok(DatapathRxProgress::Drained),
     );
-    service
-        .try_stop(&mut hardware)
+    let (dma, protocol) = service.into_parts();
+    let stopped_protocol = protocol.into_stopped();
+    assert_eq!(
+        stopped_protocol.shutdown(),
+        crate::roles::station::rx_protocol::ConnectedRxProtocolShutdown::default()
+    );
+    dma.try_stop(&mut hardware)
         .unwrap_or_else(|_| panic!("test RX service must stop"));
 }
 
@@ -834,7 +922,7 @@ fn finite_service_uses_queue_credits_and_protocol_dispatch_returns_ownership() {
 fn connected_rx_stop_confirms_walker_off_and_preserves_static_resources() {
     const COUNT: usize = 2;
     const STAGED_DEPTH: usize = 1;
-    let storage = Esp32s31RxDmaStorage::<COUNT>::new();
+    let storage = Box::leak(Box::new(Esp32s31RxDmaStorage::<COUNT>::new()));
     let addresses = [0x2f00_2000, 0x2f00_3200];
     let mut hardware = MockRxDma::default();
     let stopped = RxRingStopped::prepare(
@@ -858,7 +946,7 @@ fn connected_rx_stop_confirms_walker_off_and_preserves_static_resources() {
         STAGED_DEPTH,
     >::new();
     let (sender, _receiver) = queue.split();
-    let service = Esp32s31StagedRxProducer::new(ring, &storage, &pool, NoDelay, sender);
+    let service = Esp32s31StagedRxProducer::new(ring, storage, &pool, NoDelay, sender);
     assert!(hardware.walker);
 
     let stopped = match service.try_stop(&mut hardware) {
@@ -928,7 +1016,7 @@ fn connected_rx_stop_confirms_walker_off_and_preserves_static_resources() {
 fn exhausted_cursor_keeps_service_live_until_terminal_writeback_arrives() {
     const COUNT: usize = 4;
     const STAGE_CAPACITY: usize = 16;
-    let storage = Esp32s31RxDmaStorage::<COUNT>::new();
+    let storage = Box::leak(Box::new(Esp32s31RxDmaStorage::<COUNT>::new()));
     let addresses = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
     let mut hardware = MockRxDma::default();
     let stopped = RxRingStopped::prepare(
@@ -952,7 +1040,7 @@ fn exhausted_cursor_keeps_service_live_until_terminal_writeback_arrives() {
     let pool = RxStagePool::<COUNT, STAGE_CAPACITY>::new();
     let queue = Esp32s31StagedRxQueue::<NoopRawMutex, COUNT, STAGE_CAPACITY, COUNT>::new();
     let (sender, receiver) = queue.split();
-    let mut service = Esp32s31StagedRxProducer::new(ring, &storage, &pool, NoDelay, sender);
+    let mut service = Esp32s31StagedRxProducer::new(ring, storage, &pool, NoDelay, sender);
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
@@ -965,21 +1053,36 @@ fn exhausted_cursor_keeps_service_live_until_terminal_writeback_arrives() {
         .write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(DatapathRxProgress::ProbePending),
+        Ok(DatapathRxProgress::Drained),
     );
     assert_eq!(receiver.len(), 4);
+    while receiver.try_receive().is_ok() {}
+    assert_eq!(pool.claimed_slots(), 0);
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(DatapathRxProgress::ProbePending),
+    );
     assert_eq!(service.ring().observed_mask(), 0);
+    hardware.next_descriptor_low = BASE & 0x000f_ffff;
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(DatapathRxProgress::ProbePending),
+    );
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(DatapathRxProgress::Drained),
+    );
     service
         .try_stop(&mut hardware)
         .unwrap_or_else(|_| panic!("test RX service must stop"));
 }
 
 #[test]
-fn finite_service_stages_a_descriptor_chain_as_one_contiguous_unit() {
+fn finite_service_discards_a_descriptor_chain_without_copying_it() {
     const COUNT: usize = 2;
     const STAGED_DEPTH: usize = 1;
     const STAGE_CAPACITY: usize = 16;
-    let mut storage = Esp32s31RxDmaStorage::<COUNT>::new();
+    let storage = Box::leak(Box::new(Esp32s31RxDmaStorage::<COUNT>::new()));
     storage.buffer_mut(0).unwrap()[..4].copy_from_slice(&[1, 2, 3, 4]);
     storage.buffer_mut(1).unwrap()[..4].copy_from_slice(&[5, 6, 7, 8]);
     let addresses = [0x2f00_2000, 0x2f00_3200];
@@ -1002,24 +1105,28 @@ fn finite_service_stages_a_descriptor_chain_as_one_contiguous_unit() {
     storage.descriptors()[1]
         .write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
     hardware.release_through(1, None);
+    let observer = RecordingRxObserver::default();
     let pool = RxStagePool::<STAGED_DEPTH, STAGE_CAPACITY>::new();
     let queue =
         Esp32s31StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, STAGE_CAPACITY, STAGED_DEPTH>::new();
     let (sender, receiver) = queue.split();
-    let mut service = Esp32s31StagedRxProducer::new(ring, &storage, &pool, NoDelay, sender);
+    let mut service = Esp32s31StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
+        .with_pipeline_observer(&observer);
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
         Ok(DatapathRxProgress::ProbePending),
     );
-    let frame = receiver.try_receive().expect("one chained staged unit");
-    assert_eq!(frame.segment().buffer, &[1, 2, 3, 4, 5, 6, 7, 8]);
+    assert!(matches!(
+        receiver.try_receive(),
+        Err(TryReceiveError::Empty)
+    ));
+    assert_eq!(observer.stage_chained_discards.load(Ordering::Relaxed), 1);
     assert_eq!(service.ring().recycle_start(), 0);
     // The frozen LAST releases its complete chained unit inclusively, exactly
     // as the vendor worker processes the descriptor equal to saved LAST.
     assert_ne!(storage.descriptors()[0].word0() & BIT_31, 0);
     assert_eq!(storage.descriptors()[1].word0() & BIT_30, 0);
-    drop(frame);
     assert_eq!(pool.claimed_slots(), 0);
     service
         .try_stop(&mut hardware)
@@ -1027,10 +1134,10 @@ fn finite_service_stages_a_descriptor_chain_as_one_contiguous_unit() {
 }
 
 #[test]
-fn frozen_last_reclaims_every_complete_observed_unit_through_its_frontier() {
+fn frozen_last_reclaims_chained_and_empty_discards_through_its_frontier() {
     const COUNT: usize = 4;
     const STAGE_CAPACITY: usize = 16;
-    let mut storage = Esp32s31RxDmaStorage::<COUNT>::new();
+    let storage = Box::leak(Box::new(Esp32s31RxDmaStorage::<COUNT>::new()));
     storage.buffer_mut(0).unwrap()[..4].copy_from_slice(&[1, 2, 3, 4]);
     storage.buffer_mut(1).unwrap()[..4].copy_from_slice(&[5, 6, 7, 8]);
     let addresses = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
@@ -1055,10 +1162,12 @@ fn frozen_last_reclaims_every_complete_observed_unit_through_its_frontier() {
     storage.descriptors()[2].write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | BIT_30 | BIT_31);
     storage.descriptors()[3].write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | BIT_30 | BIT_31);
     hardware.release_through(3, None);
+    let observer = RecordingRxObserver::default();
     let pool = RxStagePool::<COUNT, STAGE_CAPACITY>::new();
     let queue = Esp32s31StagedRxQueue::<NoopRawMutex, COUNT, STAGE_CAPACITY, COUNT>::new();
     let (sender, receiver) = queue.split();
-    let mut service = Esp32s31StagedRxProducer::new(ring, &storage, &pool, NoDelay, sender);
+    let mut service = Esp32s31StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
+        .with_pipeline_observer(&observer);
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
@@ -1078,9 +1187,11 @@ fn frozen_last_reclaims_every_complete_observed_unit_through_its_frontier() {
     assert_eq!(storage.descriptors()[2].word0() & BIT_30, 0);
     assert_eq!(storage.descriptors()[3].word0() & BIT_30, 0);
     assert!(!service.ring().exhausted_republication_probe_pending());
-    let frame = receiver.try_receive().expect("one staged unit");
-    assert_eq!(frame.segment().buffer, &[1, 2, 3, 4, 5, 6, 7, 8]);
-    drop(frame);
+    assert!(matches!(
+        receiver.try_receive(),
+        Err(TryReceiveError::Empty)
+    ));
+    assert_eq!(observer.stage_chained_discards.load(Ordering::Relaxed), 1);
     service
         .try_stop(&mut hardware)
         .unwrap_or_else(|_| panic!("test RX service must stop"));
@@ -1094,7 +1205,11 @@ fn production_ring_reclaims_before_a_32_slot_stage_pool_saturates() {
     const STAGE_CAPACITY: usize = 16;
     const DMA_BUFFER_SIZE: usize = 16;
     const DMA_STORAGE_SIZE: usize = 20;
-    let mut storage = Esp32s31RxDmaStorage::<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>::new();
+    let storage = Box::leak(Box::new(Esp32s31RxDmaStorage::<
+        COUNT,
+        DMA_BUFFER_SIZE,
+        DMA_STORAGE_SIZE,
+    >::new()));
     let mut addresses = [0_u32; COUNT];
     for (index, address) in addresses.iter_mut().enumerate() {
         *address = 0x2f00_2000 + index as u32 * 0x20;
@@ -1126,7 +1241,7 @@ fn production_ring_reclaims_before_a_32_slot_stage_pool_saturates() {
     let queue =
         Esp32s31StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, STAGE_CAPACITY, STAGED_DEPTH>::new();
     let (sender, receiver) = queue.split();
-    let mut service = Esp32s31StagedRxProducer::new(ring, &storage, &pool, NoDelay, sender)
+    let mut service = Esp32s31StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
         .with_pipeline_observer(&observer);
 
     assert_eq!(
@@ -1134,14 +1249,28 @@ fn production_ring_reclaims_before_a_32_slot_stage_pool_saturates() {
         Ok(DatapathRxProgress::BudgetExhausted),
     );
     assert_eq!(observer.completed_descriptors.load(Ordering::Relaxed), 32);
-    assert_eq!(observer.recycled_descriptors.load(Ordering::Relaxed), 32);
-    assert_eq!(service.ring().recycle_start(), 32);
+    assert_eq!(observer.recycled_descriptors.load(Ordering::Relaxed), 0);
+    assert_eq!(service.ring().recycle_start(), 0);
     assert_eq!(pool.claimed_slots(), 32);
     for expected in 0_u32..32 {
         let frame = receiver.try_receive().expect("staged prefix frame");
         assert_eq!(frame.segment().buffer, expected.to_le_bytes());
     }
     assert_eq!(pool.claimed_slots(), 0);
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(DatapathRxProgress::ProbePending),
+    );
+    assert_eq!(service.ring().recycle_start(), 32);
+    for expected in 32_u32..40 {
+        let frame = receiver.try_receive().expect("remaining staged frame");
+        assert_eq!(frame.segment().buffer, expected.to_le_bytes());
+    }
+    assert_eq!(pool.claimed_slots(), 0);
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(DatapathRxProgress::Drained),
+    );
     service
         .try_stop(&mut hardware)
         .unwrap_or_else(|_| panic!("test RX service must stop"));
@@ -1154,7 +1283,7 @@ fn saturated_bulk_rx_preserves_completed_head_until_staging_capacity_wakes() {
     const FRAME_LENGTH: usize = PUBLIC_HEADER_SIZE + 24;
     const STAGED: usize = VENDOR_LARGE_RX_SLOT_COUNT - 1;
 
-    let mut storage = Esp32s31RxDmaStorage::<COUNT>::new();
+    let storage = Box::leak(Box::new(Esp32s31RxDmaStorage::<COUNT>::new()));
     for index in 0..COMPLETED {
         storage.buffer_mut(index).unwrap()[PUBLIC_HEADER_SIZE..PUBLIC_HEADER_SIZE + 2]
             .copy_from_slice(&0x4008_u16.to_le_bytes());
@@ -1193,7 +1322,7 @@ fn saturated_bulk_rx_preserves_completed_head_until_staging_capacity_wakes() {
         VENDOR_LARGE_RX_SLOT_COUNT,
     >::new();
     let (sender, receiver) = queue.split();
-    let mut service = Esp32s31StagedRxProducer::new(ring, &storage, &pool, NoDelay, sender)
+    let mut service = Esp32s31StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
         .with_pipeline_observer(&observer);
 
     assert_eq!(
@@ -1216,7 +1345,7 @@ fn saturated_bulk_rx_preserves_completed_head_until_staging_capacity_wakes() {
     assert_eq!(observer.minimum_pool_credits.load(Ordering::Relaxed), 1);
     assert_eq!(observer.minimum_queue_credits.load(Ordering::Relaxed), 1);
 
-    assert_eq!(service.ring().recycle_start(), STAGED);
+    assert_eq!(service.ring().recycle_start(), 0);
     assert_ne!(storage.descriptors()[STAGED].word0() & BIT_30, 0);
     assert_eq!(pool.available_slots(), 1);
 
@@ -1225,7 +1354,7 @@ fn saturated_bulk_rx_preserves_completed_head_until_staging_capacity_wakes() {
         embassy_futures::block_on(service.service(&mut hardware)),
         Ok(DatapathRxProgress::StageCapacityBlocked),
     );
-    assert_eq!(service.ring().recycle_start(), STAGED + 1);
+    assert_eq!(service.ring().recycle_start(), 1);
     assert_ne!(storage.descriptors()[STAGED + 1].word0() & BIT_30, 0);
     assert_eq!(observer.overload_discarded_units.load(Ordering::Relaxed), 0);
 }
@@ -1234,7 +1363,7 @@ fn saturated_bulk_rx_preserves_completed_head_until_staging_capacity_wakes() {
 fn critical_frame_consumes_the_reserved_final_staging_credit() {
     const COUNT: usize = VENDOR_LARGE_RX_SLOT_COUNT;
     const FRAME_LENGTH: usize = PUBLIC_HEADER_SIZE + 24;
-    let mut storage = Esp32s31RxDmaStorage::<COUNT>::new();
+    let storage = Box::leak(Box::new(Esp32s31RxDmaStorage::<COUNT>::new()));
     for index in 0..COUNT {
         let frame_control: u16 = if index + 1 == COUNT { 0x0000 } else { 0x4008 };
         storage.buffer_mut(index).unwrap()[PUBLIC_HEADER_SIZE..PUBLIC_HEADER_SIZE + 2]
@@ -1268,12 +1397,12 @@ fn critical_frame_consumes_the_reserved_final_staging_credit() {
     let observer = RecordingRxObserver::default();
     let queue = Esp32s31StagedRxQueue::<NoopRawMutex, COUNT, ESP32S31_RX_BUFFER_SIZE, COUNT>::new();
     let (sender, _receiver) = queue.split();
-    let mut service = Esp32s31StagedRxProducer::new(ring, &storage, &pool, NoDelay, sender)
+    let mut service = Esp32s31StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
         .with_pipeline_observer(&observer);
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(DatapathRxProgress::ProbePending),
+        Ok(DatapathRxProgress::Drained),
     );
     assert_eq!(pool.claimed_slots(), COUNT as u32);
     assert_eq!(
@@ -1294,7 +1423,7 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
     const SIGNAL: usize = MPDU + 4;
     const RECEIVED: usize = PUBLIC_HEADER_SIZE + SIGNAL;
 
-    let mut storage = Esp32s31RxDmaStorage::<COUNT>::new();
+    let storage = Box::leak(Box::new(Esp32s31RxDmaStorage::<COUNT>::new()));
     let addresses = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
     let mut hardware = MockRxDma::default();
 
@@ -1368,7 +1497,7 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
     let mut reorder_scratch = [0; STAGE_CAPACITY];
     let protocol_runtime = Box::leak(Box::new(Esp32s31ConnectedRxProtocolStorage::new()));
     configure_dispatcher(protocol_runtime);
-    let mut service = Esp32s31StagedRxProducer::new(ring, &storage, &pool, NoDelay, sender);
+    let mut service = Esp32s31StagedRxProducer::new(ring, storage, &pool, NoDelay, sender);
     let mut protocol = Esp32s31ConnectedRxProtocol::new(
         receiver,
         &irq,
@@ -1386,7 +1515,8 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
         Ok(DatapathRxProgress::ProbePending),
     );
     assert_eq!(pool.claimed_slots(), 3);
-    embassy_futures::block_on(protocol.dispatch_next());
+    hardware.next_descriptor_low = (BASE + 3 * DESCRIPTOR_BYTES) & 0x000f_ffff;
+    embassy_futures::block_on(protocol.service_bounded(2));
     assert_eq!(protocol.sink().0.0, [100]);
     // Sequence 102 is retained in the cold reorder backing while 100 has
     // been dispatched. The former implementation retained both staging
@@ -1396,7 +1526,7 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
         reorder_storage.available_slots(),
         crate::datapath::rx::reorder::RX_REORDER_BACKING_SLOT_COUNT - 1
     );
-    embassy_futures::block_on(protocol.dispatch_next());
+    embassy_futures::block_on(protocol.service_bounded(1));
     assert_eq!(protocol.sink().0.0, [100, 101, 102]);
     assert_eq!(pool.claimed_slots(), 0);
     assert_eq!(
@@ -1405,7 +1535,7 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
     );
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(DatapathRxProgress::Drained),
+        Ok(DatapathRxProgress::ProbePending),
     );
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
@@ -1420,7 +1550,7 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
 fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
     const COUNT: usize = 2;
     const STAGED_DEPTH: usize = 1;
-    let storage = Esp32s31RxDmaStorage::<COUNT>::new();
+    let storage = Box::leak(Box::new(Esp32s31RxDmaStorage::<COUNT>::new()));
     let addresses = [0x2f00_2000, 0x2f00_3200];
     let mut hardware = MockRxDma::default();
     let stopped = RxRingStopped::prepare(
@@ -1448,7 +1578,7 @@ fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
     let observer = RecordingRxObserver::default();
     let queue = Esp32s31StagedRxQueue::<NoopRawMutex, STAGED_DEPTH>::new();
     let (sender, receiver) = queue.split();
-    let mut service = Esp32s31StagedRxProducer::new(ring, &storage, &pool, NoDelay, sender)
+    let mut service = Esp32s31StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
         .with_pipeline_observer(&observer);
 
     assert_eq!(
@@ -1464,6 +1594,7 @@ fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
         Err(TryReceiveError::Empty)
     ));
     assert_eq!(observer.stage_too_long_discards.load(Ordering::Relaxed), 1);
+    hardware.next_descriptor_low = BASE & 0x000f_ffff;
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
@@ -1488,7 +1619,7 @@ fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
     hardware.release_through(0, None);
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(DatapathRxProgress::ProbePending),
+        Ok(DatapathRxProgress::Drained),
     );
     let next = receiver.try_receive().expect("post-discard frame");
     assert_eq!(next.length(), 4);
@@ -1508,7 +1639,7 @@ fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
 fn one_shot_admission_discards_before_staging_then_observes_same_live_ring() {
     const COUNT: usize = 2;
     const STAGED_DEPTH: usize = 1;
-    let storage = Esp32s31RxDmaStorage::<COUNT>::new();
+    let storage = Box::leak(Box::new(Esp32s31RxDmaStorage::<COUNT>::new()));
     let addresses = [0x2f00_2000, 0x2f00_3200];
     let mut hardware = MockRxDma::default();
     let stopped = RxRingStopped::prepare(
@@ -1528,7 +1659,7 @@ fn one_shot_admission_discards_before_staging_then_observes_same_live_ring() {
     let admission = OneShotNarrowAdmission::default();
     let queue = Esp32s31StagedRxQueue::<NoopRawMutex, STAGED_DEPTH>::new();
     let (sender, receiver) = queue.split();
-    let mut service = Esp32s31StagedRxProducer::new(ring, &storage, &pool, NoDelay, sender)
+    let mut service = Esp32s31StagedRxProducer::new(ring, storage, &pool, NoDelay, sender)
         .with_stage_admission_policy(&admission);
 
     storage.descriptors()[0]
@@ -1563,7 +1694,7 @@ fn one_shot_admission_discards_before_staging_then_observes_same_live_ring() {
         embassy_futures::block_on(service.service(&mut hardware)),
         Ok(DatapathRxProgress::Drained),
     );
-    assert_eq!(service.ring().recycle_start(), 0);
+    assert_eq!(service.ring().recycle_start(), 1);
     service
         .try_stop(&mut hardware)
         .unwrap_or_else(|_| panic!("test RX service must stop"));
@@ -1574,7 +1705,7 @@ fn finite_service_accepts_a_unit_within_a_wider_negotiated_stage() {
     const COUNT: usize = 2;
     const STAGED_DEPTH: usize = 1;
     const WIDE_STAGE_CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY + 1;
-    let storage = Esp32s31RxDmaStorage::<COUNT>::new();
+    let storage = Box::leak(Box::new(Esp32s31RxDmaStorage::<COUNT>::new()));
     let addresses = [0x2f00_2000, 0x2f00_3200];
     let mut hardware = MockRxDma::default();
     let stopped = RxRingStopped::prepare(
@@ -1601,7 +1732,7 @@ fn finite_service_accepts_a_unit_within_a_wider_negotiated_stage() {
     let pool = RxStagePool::<VENDOR_LARGE_RX_SLOT_COUNT, WIDE_STAGE_CAPACITY>::new();
     let queue = Esp32s31StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, WIDE_STAGE_CAPACITY>::new();
     let (sender, receiver) = queue.split();
-    let mut service = Esp32s31StagedRxProducer::new(ring, &storage, &pool, NoDelay, sender);
+    let mut service = Esp32s31StagedRxProducer::new(ring, storage, &pool, NoDelay, sender);
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),

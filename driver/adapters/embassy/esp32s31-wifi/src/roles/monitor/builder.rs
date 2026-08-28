@@ -16,7 +16,7 @@ use open_esp_radio_esp32s31_wifi_dma::rx_storage::RxDmaStorageError;
 use open_esp_radio_esp32s31_wifi_mac::{
     init::activate_promiscuous_receive,
     irq::MacInterruptRoute,
-    rx::{RxPhyInfo, RxRingHalted},
+    rx::{RxDmaBufferAddresses, RxPhyInfo, RxRingHalted},
 };
 use open_esp_radio_ieee80211::channel::WifiChannel;
 use open_esp_radio_wifi_softmac::{
@@ -50,7 +50,7 @@ pub struct Esp32s31MonitorMemory<
     const DMA_STORAGE_SIZE: usize,
 > {
     storage: &'static Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
-    buffer_addresses: &'static [u32; COUNT],
+    buffer_addresses: &'static RxDmaBufferAddresses<COUNT>,
     descriptor_base: u32,
 }
 
@@ -59,7 +59,7 @@ impl<const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORAGE_SIZE: u
 {
     pub fn new(
         storage: &'static Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
-        buffer_addresses: &'static mut [u32; COUNT],
+        buffer_addresses: &'static mut RxDmaBufferAddresses<COUNT>,
     ) -> Result<Self, RxDmaStorageError> {
         let descriptor_base = storage.dma_layout(buffer_addresses)?;
         Ok(Self {
@@ -77,7 +77,7 @@ impl<const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORAGE_SIZE: u
         self.storage
     }
 
-    pub const fn buffer_addresses(self) -> &'static [u32; COUNT] {
+    pub const fn buffer_addresses(self) -> &'static RxDmaBufferAddresses<COUNT> {
         self.buffer_addresses
     }
 

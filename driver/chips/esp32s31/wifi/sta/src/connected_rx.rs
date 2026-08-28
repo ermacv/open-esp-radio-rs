@@ -78,6 +78,33 @@ const MORE_FRAGMENTS: u16 = 0x0400;
 const QOS_AMSDU_PRESENT: u8 = 0x80;
 const OPEN_FRAGMENT_CONTEXTS: usize = 2;
 
+/// Exact `mcycle` attribution inside the ordinary WPA2 pairwise RX path.
+#[cfg(feature = "task-poll-telemetry")]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ConnectedRxDataCycleProfile {
+    pub calls: u32,
+    pub completed: u32,
+    pub total: u32,
+    pub view: u32,
+    pub fragment_guard: u32,
+    pub decapsulate: u32,
+    pub replay: u32,
+    pub duplicate: u32,
+    pub publish: u32,
+}
+
+#[cfg(all(feature = "task-poll-telemetry", target_arch = "riscv32"))]
+#[inline(always)]
+fn connected_rx_cycle_count() -> u32 {
+    riscv::register::mcycle::read() as u32
+}
+
+#[cfg(all(feature = "task-poll-telemetry", not(target_arch = "riscv32")))]
+#[inline(always)]
+fn connected_rx_cycle_count() -> u32 {
+    0
+}
+
 /// Immutable identity and descriptor-ingress policy for one connected STA.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ConnectedRxConfig {
@@ -1159,6 +1186,9 @@ impl ConnectedRxEvent<'_> {
 pub trait ConnectedRxSink {
     fn publish(&mut self, event: ConnectedRxEvent<'_>);
 
+    #[cfg(feature = "task-poll-telemetry")]
+    fn observe_data_cycle_profile(&mut self, _profile: ConnectedRxDataCycleProfile) {}
+
     /// Return whether connected control currently waits for one legacy
     /// PS-Poll delivery observation.
     ///
@@ -1563,12 +1593,12 @@ impl ConnectedRxDispatcher {
     ///
     /// The supplied segment is already detached from DMA ownership. This call
     /// is finite and allocation-free; it performs no MMIO and never waits.
-    pub fn dispatch<S: ConnectedRxSink>(
+    pub fn dispatch(
         &mut self,
         segment: RxSegment<'_>,
         mpdu: &mut [u8],
         _ethernet: &mut [u8],
-        sink: &mut S,
+        sink: &mut dyn ConnectedRxSink,
     ) -> ConnectedRxDispatch {
         self.dispatch_with_runtime_received_at(segment, mpdu, _ethernet, None, sink)
     }
@@ -1579,13 +1609,13 @@ impl ConnectedRxDispatcher {
     /// The timestamp is optional because executor-neutral and synthetic users
     /// cannot manufacture it. Runtime Trigger/NDPA response policy rejects a
     /// missing sample rather than starting a fresh window at mailbox dequeue.
-    pub fn dispatch_with_runtime_received_at<S: ConnectedRxSink>(
+    pub fn dispatch_with_runtime_received_at(
         &mut self,
         segment: RxSegment<'_>,
         mpdu: &mut [u8],
         _ethernet: &mut [u8],
         runtime_received_at_micros: Option<u64>,
-        sink: &mut S,
+        sink: &mut dyn ConnectedRxSink,
     ) -> ConnectedRxDispatch {
         let raw = segment.buffer;
         let Some(frame_control) = public_frame_control(raw) else {
@@ -1877,13 +1907,13 @@ impl ConnectedRxDispatcher {
         })
     }
 
-    fn dispatch_data<S: ConnectedRxSink>(
+    fn dispatch_data(
         &mut self,
         segment: RxSegment<'_>,
         public_frame_control: u16,
         protection: ConnectedRxProtection,
         runtime_received_at_micros: Option<u64>,
-        sink: &mut S,
+        sink: &mut dyn ConnectedRxSink,
     ) -> ConnectedRxDispatch {
         if public_frame_control & DATA_TYPE_MASK != DATA_TYPE {
             return ConnectedRxDispatch::Ignored;
@@ -2090,18 +2120,22 @@ impl ConnectedRxDispatcher {
       /// Dispatch an ordinary production WPA2 pairwise MPDU without routing
       /// it through the group-publication and fragment-reassembly owner graph.
       #[inline(never)]
-      fn dispatch_shared_pairwise_data<S: ConnectedRxSink>(
+      fn dispatch_shared_pairwise_data(
         &mut self,
         segment: RxSegment<'_>,
         public_frame_control: u16,
         runtime_received_at_micros: Option<u64>,
-        sink: &mut S,
+        sink: &mut dyn ConnectedRxSink,
       ) -> ConnectedRxDispatch {
+        #[cfg(feature = "task-poll-telemetry")]
+        let cycle_started = connected_rx_cycle_count();
         let protection = ConnectedRxProtection::Pairwise;
         let view = match view_protected_data(segment, self.config.ingress) {
-            Ok(view) => view,
-            Err(error) => return rejected(protection, ConnectedRxError::Rx(error)),
+          Ok(view) => view,
+          Err(error) => return rejected(protection, ConnectedRxError::Rx(error)),
         };
+        #[cfg(feature = "task-poll-telemetry")]
+        let cycle_view = connected_rx_cycle_count();
         if self.fragment_admission_active {
             let identity = match parse_ccmp_data_identity(
                 DataInterfaceRole::Station,
@@ -2136,28 +2170,36 @@ impl ConnectedRxDispatcher {
             return ConnectedRxDispatch::Ignored;
         }
         if view.tid.is_some() && !self.config.peer_qos {
-            return rejected(protection, ConnectedRxError::PeerQosMismatch);
+          return rejected(protection, ConnectedRxError::PeerQosMismatch);
         }
+        #[cfg(feature = "task-poll-telemetry")]
+        let cycle_fragment_guard = connected_rx_cycle_count();
         let retry = view.retry;
         let sequence_control = view.sequence_control;
         let tid = view.tid;
         let ccmp_header = view.ccmp_header;
         let data = match view.decapsulate(DataInterfaceRole::Station) {
-            Ok(data) => data,
-            Err(error) => return rejected(protection, ConnectedRxError::Data(error)),
+          Ok(data) => data,
+          Err(error) => return rejected(protection, ConnectedRxError::Data(error)),
         };
+        #[cfg(feature = "task-poll-telemetry")]
+        let cycle_decapsulate = connected_rx_cycle_count();
         if let Err(error) = self
             .shared_ccmp_replay
             .commit_pairwise_immediate(tid, ccmp_header)
         {
-            return rejected(protection, ConnectedRxError::CcmpReplay(error));
+          return rejected(protection, ConnectedRxError::CcmpReplay(error));
         }
+        #[cfg(feature = "task-poll-telemetry")]
+        let cycle_replay = connected_rx_cycle_count();
         if self
             .duplicate_filter
             .is_duplicate(retry, sequence_control, tid)
         {
-            return ConnectedRxDispatch::Duplicate;
+          return ConnectedRxDispatch::Duplicate;
         }
+        #[cfg(feature = "task-poll-telemetry")]
+        let cycle_duplicate = connected_rx_cycle_count();
         if sink.wants_power_save_delivery() {
             sink.publish(ConnectedRxEvent::PowerSaveDelivery(StaPsPollDelivery {
                 more_data: public_frame_control & MORE_DATA != 0,
@@ -2177,7 +2219,22 @@ impl ConnectedRxDispatcher {
                 amsdu,
                 metadata: data.metadata,
             });
-            count = count.saturating_add(1);
+          count = count.saturating_add(1);
+        }
+        #[cfg(feature = "task-poll-telemetry")]
+        {
+          let cycle_publish = connected_rx_cycle_count();
+          sink.observe_data_cycle_profile(ConnectedRxDataCycleProfile {
+            calls: 1,
+            completed: 1,
+            total: cycle_publish.wrapping_sub(cycle_started),
+            view: cycle_view.wrapping_sub(cycle_started),
+            fragment_guard: cycle_fragment_guard.wrapping_sub(cycle_view),
+            decapsulate: cycle_decapsulate.wrapping_sub(cycle_fragment_guard),
+            replay: cycle_replay.wrapping_sub(cycle_decapsulate),
+            duplicate: cycle_duplicate.wrapping_sub(cycle_replay),
+            publish: cycle_publish.wrapping_sub(cycle_duplicate),
+          });
         }
         ConnectedRxDispatch::Data {
             ethernet_frames: count,
@@ -2186,12 +2243,12 @@ impl ConnectedRxDispatcher {
       }
     }
 
-    fn dispatch_open_fragment<S: ConnectedRxSink>(
+    fn dispatch_open_fragment(
         &mut self,
         segment: RxSegment<'_>,
         protection: ConnectedRxProtection,
         runtime_received_at_micros: Option<u64>,
-        sink: &mut S,
+        sink: &mut dyn ConnectedRxSink,
     ) -> ConnectedRxDispatch {
         let Some(now_micros) = runtime_received_at_micros else {
             return rejected(
@@ -2273,12 +2330,12 @@ impl ConnectedRxDispatcher {
         }
     }
 
-    fn dispatch_protected_fragment<S: ConnectedRxSink>(
+    fn dispatch_protected_fragment(
         &mut self,
         segment: RxSegment<'_>,
         protection: ConnectedRxProtection,
         runtime_received_at_micros: Option<u64>,
-        sink: &mut S,
+        sink: &mut dyn ConnectedRxSink,
     ) -> ConnectedRxDispatch {
         let Some(now_micros) = runtime_received_at_micros else {
             return rejected(
@@ -2405,11 +2462,11 @@ impl ConnectedRxDispatcher {
         }
     }
 
-    fn dispatch_unprotected_eapol<S: ConnectedRxSink>(
+    fn dispatch_unprotected_eapol(
         &mut self,
         segment: RxSegment<'_>,
         protection: ConnectedRxProtection,
-        sink: &mut S,
+        sink: &mut dyn ConnectedRxSink,
     ) -> ConnectedRxDispatch {
         if protection != ConnectedRxProtection::Pairwise {
             return rejected(protection, ConnectedRxError::SecurityModeMismatch);

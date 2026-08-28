@@ -3,6 +3,7 @@
 use core::marker::PhantomData;
 
 use open_esp_radio_esp32s31_phy::PhyState;
+use open_esp_radio_esp32s31_wifi_mac::rx::RxDmaBufferAddresses;
 use open_esp_radio_ieee80211::scan::ScanTable;
 
 /// RX DMA arena and the address layout derived from that exact allocation.
@@ -13,14 +14,14 @@ use open_esp_radio_ieee80211::scan::ScanTable;
 pub struct Esp32s31StationDmaResources<'storage, S, const COUNT: usize> {
     storage: &'storage S,
     descriptor_base: u32,
-    buffer_addresses: &'storage [u32; COUNT],
+    buffer_addresses: &'storage RxDmaBufferAddresses<COUNT>,
 }
 
 impl<'storage, S, const COUNT: usize> Esp32s31StationDmaResources<'storage, S, COUNT> {
     pub const fn new(
         storage: &'storage S,
         descriptor_base: u32,
-        buffer_addresses: &'storage [u32; COUNT],
+        buffer_addresses: &'storage RxDmaBufferAddresses<COUNT>,
     ) -> Self {
         Self {
             storage,
@@ -37,11 +38,11 @@ impl<'storage, S, const COUNT: usize> Esp32s31StationDmaResources<'storage, S, C
         self.descriptor_base
     }
 
-    pub const fn buffer_addresses(&self) -> &'storage [u32; COUNT] {
+    pub const fn buffer_addresses(&self) -> &'storage RxDmaBufferAddresses<COUNT> {
         self.buffer_addresses
     }
 
-    pub fn into_parts(self) -> (&'storage S, u32, &'storage [u32; COUNT]) {
+    pub fn into_parts(self) -> (&'storage S, u32, &'storage RxDmaBufferAddresses<COUNT>) {
         (self.storage, self.descriptor_base, self.buffer_addresses)
     }
 }

@@ -36,9 +36,11 @@ pub struct RxPipelineCounters {
     overload_recycled_descriptors: AtomicU32,
     stage_empty_discards: AtomicU32,
     stage_too_long_discards: AtomicU32,
+    stage_chained_discards: AtomicU32,
     stage_overload_bulk_discards: AtomicU32,
     overload_discarded_units: AtomicU32,
     critical_reserve_admissions: AtomicU32,
+    bulk_capacity_blocked_services: AtomicU32,
     critical_admission_blocked_services: AtomicU32,
     backpressured_services: AtomicU32,
     pool_credit_limited_services: AtomicU32,
@@ -46,6 +48,8 @@ pub struct RxPipelineCounters {
     maximum_deferred_frames: AtomicU32,
     minimum_backpressured_pool_credits: AtomicU32,
     minimum_backpressured_queue_credits: AtomicU32,
+    minimum_pool_credits: AtomicU32,
+    minimum_queue_credits: AtomicU32,
     maximum_frontier: AtomicU32,
     maximum_admitted: AtomicU32,
     service_micros: AtomicU32,
@@ -92,6 +96,15 @@ pub struct RxPipelineCounters {
     network_ready_waits: AtomicU32,
     network_ready_wait_micros: AtomicU32,
     network_ready_wait_lifetime_max_micros: AtomicU32,
+    protocol_frame_transactions: AtomicU32,
+    protocol_frame_micros: AtomicU32,
+    protocol_frame_lifetime_max_micros: AtomicU32,
+    reorder_preflights: AtomicU32,
+    reorder_preflight_micros: AtomicU32,
+    reorder_preflight_lifetime_max_micros: AtomicU32,
+    protocol_preflights: AtomicU32,
+    protocol_preflight_micros: AtomicU32,
+    protocol_preflight_lifetime_max_micros: AtomicU32,
     dispatch_micros: AtomicU32,
     dispatch_lifetime_max_micros: AtomicU32,
     network_publications: AtomicU32,
@@ -135,9 +148,11 @@ impl RxPipelineCounters {
             overload_recycled_descriptors: AtomicU32::new(0),
             stage_empty_discards: AtomicU32::new(0),
             stage_too_long_discards: AtomicU32::new(0),
+            stage_chained_discards: AtomicU32::new(0),
             stage_overload_bulk_discards: AtomicU32::new(0),
             overload_discarded_units: AtomicU32::new(0),
             critical_reserve_admissions: AtomicU32::new(0),
+            bulk_capacity_blocked_services: AtomicU32::new(0),
             critical_admission_blocked_services: AtomicU32::new(0),
             backpressured_services: AtomicU32::new(0),
             pool_credit_limited_services: AtomicU32::new(0),
@@ -145,6 +160,8 @@ impl RxPipelineCounters {
             maximum_deferred_frames: AtomicU32::new(0),
             minimum_backpressured_pool_credits: AtomicU32::new(u32::MAX),
             minimum_backpressured_queue_credits: AtomicU32::new(u32::MAX),
+            minimum_pool_credits: AtomicU32::new(u32::MAX),
+            minimum_queue_credits: AtomicU32::new(u32::MAX),
             maximum_frontier: AtomicU32::new(0),
             maximum_admitted: AtomicU32::new(0),
             service_micros: AtomicU32::new(0),
@@ -191,6 +208,15 @@ impl RxPipelineCounters {
             network_ready_waits: AtomicU32::new(0),
             network_ready_wait_micros: AtomicU32::new(0),
             network_ready_wait_lifetime_max_micros: AtomicU32::new(0),
+            protocol_frame_transactions: AtomicU32::new(0),
+            protocol_frame_micros: AtomicU32::new(0),
+            protocol_frame_lifetime_max_micros: AtomicU32::new(0),
+            reorder_preflights: AtomicU32::new(0),
+            reorder_preflight_micros: AtomicU32::new(0),
+            reorder_preflight_lifetime_max_micros: AtomicU32::new(0),
+            protocol_preflights: AtomicU32::new(0),
+            protocol_preflight_micros: AtomicU32::new(0),
+            protocol_preflight_lifetime_max_micros: AtomicU32::new(0),
             dispatch_micros: AtomicU32::new(0),
             dispatch_lifetime_max_micros: AtomicU32::new(0),
             network_publications: AtomicU32::new(0),
@@ -295,9 +321,13 @@ impl RxPipelineCounters {
                 .load(Ordering::Relaxed),
             stage_empty_discards: self.stage_empty_discards.load(Ordering::Relaxed),
             stage_too_long_discards: self.stage_too_long_discards.load(Ordering::Relaxed),
+            stage_chained_discards: self.stage_chained_discards.load(Ordering::Relaxed),
             stage_overload_bulk_discards: self.stage_overload_bulk_discards.load(Ordering::Relaxed),
             overload_discarded_units: self.overload_discarded_units.load(Ordering::Relaxed),
             critical_reserve_admissions: self.critical_reserve_admissions.load(Ordering::Relaxed),
+            bulk_capacity_blocked_services: self
+                .bulk_capacity_blocked_services
+                .load(Ordering::Relaxed),
             critical_admission_blocked_services: self
                 .critical_admission_blocked_services
                 .load(Ordering::Relaxed),
@@ -313,6 +343,8 @@ impl RxPipelineCounters {
             minimum_backpressured_queue_credits: self
                 .minimum_backpressured_queue_credits
                 .load(Ordering::Relaxed),
+            minimum_pool_credits: self.minimum_pool_credits.load(Ordering::Relaxed),
+            minimum_queue_credits: self.minimum_queue_credits.load(Ordering::Relaxed),
             maximum_frontier: self.maximum_frontier.load(Ordering::Relaxed),
             maximum_admitted: self.maximum_admitted.load(Ordering::Relaxed),
             service_micros: self.service_micros.load(Ordering::Relaxed),
@@ -378,6 +410,23 @@ impl RxPipelineCounters {
             network_ready_wait_lifetime_max_micros: self
                 .network_ready_wait_lifetime_max_micros
                 .load(Ordering::Relaxed),
+            protocol_frame_transactions: self
+                .protocol_frame_transactions
+                .load(Ordering::Relaxed),
+            protocol_frame_micros: self.protocol_frame_micros.load(Ordering::Relaxed),
+            protocol_frame_lifetime_max_micros: self
+                .protocol_frame_lifetime_max_micros
+                .load(Ordering::Relaxed),
+            reorder_preflights: self.reorder_preflights.load(Ordering::Relaxed),
+            reorder_preflight_micros: self.reorder_preflight_micros.load(Ordering::Relaxed),
+            reorder_preflight_lifetime_max_micros: self
+                .reorder_preflight_lifetime_max_micros
+                .load(Ordering::Relaxed),
+            protocol_preflights: self.protocol_preflights.load(Ordering::Relaxed),
+            protocol_preflight_micros: self.protocol_preflight_micros.load(Ordering::Relaxed),
+            protocol_preflight_lifetime_max_micros: self
+                .protocol_preflight_lifetime_max_micros
+                .load(Ordering::Relaxed),
             dispatch_micros: self.dispatch_micros.load(Ordering::Relaxed),
             dispatch_lifetime_max_micros: self.dispatch_lifetime_max_micros.load(Ordering::Relaxed),
             network_publications: self.network_publications.load(Ordering::Relaxed),
@@ -413,6 +462,7 @@ impl RxPipelineCounters {
             overload_discarded,
             overload_recycled_descriptors,
             critical_reserve_admitted,
+            stage_capacity_blocked,
             critical_admission_blocked,
             minimum_pool_credits,
             minimum_queue_credits,
@@ -445,6 +495,10 @@ impl RxPipelineCounters {
         );
         Self::add_usize(&self.overload_discarded_units, overload_discarded);
         Self::add_usize(&self.critical_reserve_admissions, critical_reserve_admitted);
+        if stage_capacity_blocked {
+            self.bulk_capacity_blocked_services
+                .fetch_add(1, Ordering::Relaxed);
+        }
         if critical_admission_blocked {
             self.critical_admission_blocked_services
                 .fetch_add(1, Ordering::Relaxed);
@@ -469,7 +523,15 @@ impl RxPipelineCounters {
         // actually exhausted admission credits or could not preserve a
         // critical unit, and use the in-transaction low-water marks rather
         // than the entry credits that preceded staging.
-        if overload_discarded != 0 || critical_admission_blocked {
+        self.minimum_pool_credits.fetch_min(
+            u32::try_from(minimum_pool_credits).unwrap_or(u32::MAX),
+            Ordering::Relaxed,
+        );
+        self.minimum_queue_credits.fetch_min(
+            u32::try_from(minimum_queue_credits).unwrap_or(u32::MAX),
+            Ordering::Relaxed,
+        );
+        if stage_capacity_blocked || overload_discarded != 0 || critical_admission_blocked {
             self.backpressured_services.fetch_add(1, Ordering::Relaxed);
             self.minimum_backpressured_pool_credits.fetch_min(
                 u32::try_from(minimum_pool_credits).unwrap_or(u32::MAX),
@@ -568,10 +630,39 @@ impl RxPipelineCounters {
         );
     }
 
+    fn record_protocol_frame(&self, micros: u64) {
+        self.protocol_frame_transactions
+            .fetch_add(1, Ordering::Relaxed);
+        Self::record_time(
+            &self.protocol_frame_micros,
+            &self.protocol_frame_lifetime_max_micros,
+            micros,
+        );
+    }
+
+    fn record_reorder_preflight(&self, micros: u64) {
+        self.reorder_preflights.fetch_add(1, Ordering::Relaxed);
+        Self::record_time(
+            &self.reorder_preflight_micros,
+            &self.reorder_preflight_lifetime_max_micros,
+            micros,
+        );
+    }
+
+    fn record_protocol_preflight(&self, micros: u64) {
+        self.protocol_preflights.fetch_add(1, Ordering::Relaxed);
+        Self::record_time(
+            &self.protocol_preflight_micros,
+            &self.protocol_preflight_lifetime_max_micros,
+            micros,
+        );
+    }
+
     fn record_stage_discard(&self, error: RxStageDiscard) {
         match error {
             RxStageDiscard::Empty => &self.stage_empty_discards,
             RxStageDiscard::TooLong => &self.stage_too_long_discards,
+            RxStageDiscard::Chained => &self.stage_chained_discards,
             RxStageDiscard::OverloadBulk => &self.stage_overload_bulk_discards,
         }
         .fetch_add(1, Ordering::Relaxed);
@@ -738,6 +829,15 @@ impl RxPipelineObserver for RxPipelineCounters {
             RxPipelineObservation::NetworkReadyWait { micros } => {
                 self.record_network_ready_wait(micros)
             }
+            RxPipelineObservation::ProtocolFrameCompleted { micros } => {
+                self.record_protocol_frame(micros)
+            }
+            RxPipelineObservation::ReorderPrepared { micros } => {
+                self.record_reorder_preflight(micros)
+            }
+            RxPipelineObservation::ProtocolPreflightCompleted { micros } => {
+                self.record_protocol_preflight(micros)
+            }
             RxPipelineObservation::ProtocolDispatched {
                 data,
                 amsdu,
@@ -837,10 +937,12 @@ pub struct RxPipelineCounterSnapshot {
     pub overload_recycled_descriptors: u32,
     pub stage_empty_discards: u32,
     pub stage_too_long_discards: u32,
+    pub stage_chained_discards: u32,
     /// Bulk data units deliberately discarded and exactly recycled under overload.
     pub stage_overload_bulk_discards: u32,
     pub overload_discarded_units: u32,
     pub critical_reserve_admissions: u32,
+    pub bulk_capacity_blocked_services: u32,
     pub critical_admission_blocked_services: u32,
     pub backpressured_services: u32,
     pub pool_credit_limited_services: u32,
@@ -851,6 +953,10 @@ pub struct RxPipelineCounterSnapshot {
     pub minimum_backpressured_pool_credits: u32,
     /// Smallest staging-queue credit observation at a backpressured service.
     pub minimum_backpressured_queue_credits: u32,
+    /// Smallest staging-pool credit observation since boot.
+    pub minimum_pool_credits: u32,
+    /// Smallest staging-queue credit observation since boot.
+    pub minimum_queue_credits: u32,
     /// Maximum observed since boot, not an interval delta.
     pub maximum_frontier: u32,
     /// Maximum observed since boot, not an interval delta.
@@ -914,6 +1020,18 @@ pub struct RxPipelineCounterSnapshot {
     pub network_ready_wait_micros: u32,
     /// Maximum observed since boot, not an interval delta.
     pub network_ready_wait_lifetime_max_micros: u32,
+    pub protocol_frame_transactions: u32,
+    pub protocol_frame_micros: u32,
+    /// Maximum observed since boot, not an interval delta.
+    pub protocol_frame_lifetime_max_micros: u32,
+    pub reorder_preflights: u32,
+    pub reorder_preflight_micros: u32,
+    /// Maximum observed since boot, not an interval delta.
+    pub reorder_preflight_lifetime_max_micros: u32,
+    pub protocol_preflights: u32,
+    pub protocol_preflight_micros: u32,
+    /// Maximum observed since boot, not an interval delta.
+    pub protocol_preflight_lifetime_max_micros: u32,
     pub dispatch_micros: u32,
     /// Maximum observed since boot, not an interval delta.
     pub dispatch_lifetime_max_micros: u32,
@@ -980,6 +1098,9 @@ impl RxPipelineCounterSnapshot {
             stage_too_long_discards: self
                 .stage_too_long_discards
                 .wrapping_sub(earlier.stage_too_long_discards),
+            stage_chained_discards: self
+                .stage_chained_discards
+                .wrapping_sub(earlier.stage_chained_discards),
             stage_overload_bulk_discards: self
                 .stage_overload_bulk_discards
                 .wrapping_sub(earlier.stage_overload_bulk_discards),
@@ -989,6 +1110,9 @@ impl RxPipelineCounterSnapshot {
             critical_reserve_admissions: self
                 .critical_reserve_admissions
                 .wrapping_sub(earlier.critical_reserve_admissions),
+            bulk_capacity_blocked_services: self
+                .bulk_capacity_blocked_services
+                .wrapping_sub(earlier.bulk_capacity_blocked_services),
             critical_admission_blocked_services: self
                 .critical_admission_blocked_services
                 .wrapping_sub(earlier.critical_admission_blocked_services),
@@ -1004,6 +1128,8 @@ impl RxPipelineCounterSnapshot {
             maximum_deferred_frames: self.maximum_deferred_frames,
             minimum_backpressured_pool_credits: self.minimum_backpressured_pool_credits,
             minimum_backpressured_queue_credits: self.minimum_backpressured_queue_credits,
+            minimum_pool_credits: self.minimum_pool_credits,
+            minimum_queue_credits: self.minimum_queue_credits,
             maximum_frontier: self.maximum_frontier,
             maximum_admitted: self.maximum_admitted,
             service_micros: self.service_micros.wrapping_sub(earlier.service_micros),
@@ -1091,6 +1217,27 @@ impl RxPipelineCounterSnapshot {
                 .network_ready_wait_micros
                 .wrapping_sub(earlier.network_ready_wait_micros),
             network_ready_wait_lifetime_max_micros: self.network_ready_wait_lifetime_max_micros,
+            protocol_frame_transactions: self
+                .protocol_frame_transactions
+                .wrapping_sub(earlier.protocol_frame_transactions),
+            protocol_frame_micros: self
+                .protocol_frame_micros
+                .wrapping_sub(earlier.protocol_frame_micros),
+            protocol_frame_lifetime_max_micros: self.protocol_frame_lifetime_max_micros,
+            reorder_preflights: self
+                .reorder_preflights
+                .wrapping_sub(earlier.reorder_preflights),
+            reorder_preflight_micros: self
+                .reorder_preflight_micros
+                .wrapping_sub(earlier.reorder_preflight_micros),
+            reorder_preflight_lifetime_max_micros: self.reorder_preflight_lifetime_max_micros,
+            protocol_preflights: self
+                .protocol_preflights
+                .wrapping_sub(earlier.protocol_preflights),
+            protocol_preflight_micros: self
+                .protocol_preflight_micros
+                .wrapping_sub(earlier.protocol_preflight_micros),
+            protocol_preflight_lifetime_max_micros: self.protocol_preflight_lifetime_max_micros,
             dispatch_micros: self.dispatch_micros.wrapping_sub(earlier.dispatch_micros),
             dispatch_lifetime_max_micros: self.dispatch_lifetime_max_micros,
             network_publications: self
@@ -1201,6 +1348,7 @@ mod tests {
         });
         counters.record_stage_discard(RxStageDiscard::Empty);
         counters.record_stage_discard(RxStageDiscard::TooLong);
+        counters.record_stage_discard(RxStageDiscard::Chained);
         counters.record_stage_discard(RxStageDiscard::OverloadBulk);
         counters.record_network_ready_wait(2);
         counters.record_network_publish(1_514, 13, RxNetworkPublicationOutcome::Enqueued);
@@ -1220,6 +1368,7 @@ mod tests {
         assert_eq!(delta.reload_lifetime_max_micros, 7);
         assert_eq!(delta.stage_empty_discards, 1);
         assert_eq!(delta.stage_too_long_discards, 1);
+        assert_eq!(delta.stage_chained_discards, 1);
         assert_eq!(delta.stage_overload_bulk_discards, 1);
         assert_eq!(delta.overload_discarded_units, 2);
         assert_eq!(delta.critical_reserve_admissions, 1);
@@ -1230,6 +1379,8 @@ mod tests {
         assert_eq!(delta.maximum_deferred_frames, 1);
         assert_eq!(delta.minimum_backpressured_pool_credits, 1);
         assert_eq!(delta.minimum_backpressured_queue_credits, 4);
+        assert_eq!(delta.minimum_pool_credits, 1);
+        assert_eq!(delta.minimum_queue_credits, 4);
         assert_eq!(delta.maximum_frontier, 4);
         assert_eq!(delta.maximum_admitted, 3);
         assert_eq!(delta.service_micros, 70);
@@ -1245,6 +1396,32 @@ mod tests {
         assert_eq!(delta.protocol_units_1701_3400, 1);
         assert_eq!(delta.protocol_unit_lifetime_max_bytes, 2_750);
         assert_eq!(delta.dispatch_micros, 31);
+    }
+
+    #[test]
+    fn preserved_bulk_head_is_reported_as_admission_backpressure() {
+        let counters = RxPipelineCounters::new(test_clock);
+        let before = counters.snapshot();
+        counters.record_service(RxServiceObservation {
+            frontier: 4,
+            pool_credits: 1,
+            queue_credits: 8,
+            admitted: 0,
+            stage_capacity_blocked: true,
+            minimum_pool_credits: 1,
+            minimum_queue_credits: 8,
+            ..RxServiceObservation::default()
+        });
+        let delta = counters.snapshot().wrapping_delta_since(before);
+
+        assert_eq!(delta.bulk_capacity_blocked_services, 1);
+        assert_eq!(delta.backpressured_services, 1);
+        assert_eq!(delta.pool_credit_limited_services, 1);
+        assert_eq!(delta.queue_credit_limited_services, 0);
+        assert_eq!(delta.minimum_backpressured_pool_credits, 1);
+        assert_eq!(delta.minimum_backpressured_queue_credits, 8);
+        assert_eq!(delta.minimum_pool_credits, 1);
+        assert_eq!(delta.minimum_queue_credits, 8);
     }
 
     #[test]

@@ -41,6 +41,17 @@ diagnostics = [
     "open-esp-radio-embassy-net/diagnostics",
     "open-esp-radio-esp32s31-wifi-ap/diagnostics",
 ]
+# Low-overhead phase timing for the Core0 RX producer. This is deliberately
+# tied to the intrusive task-poll image and is absent from production builds.
+task-poll-telemetry = [
+    "diagnostics",
+    "dep:riscv",
+    "open-esp-radio-esp32s31-wifi/task-poll-telemetry",
+    "open-esp-radio-esp32s31-wifi-sta/task-poll-telemetry",
+]
+
+[target.'cfg(target_arch = "riscv32")'.dependencies]
+riscv = { version = "0.15", optional = true }
 
 [lints]
 workspace = true

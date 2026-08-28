@@ -369,8 +369,7 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                         access_point_resources,
                         monitor_resources,
                     ) = stopped.into_parts();
-                    let (physical_resources, halted_ring) =
-                        physical_resources.take_halted_rx();
+                    let (physical_resources, halted_ring) = physical_resources.take_halted_rx();
                     let discarded = self.monitor_capture.discard_queued();
                     crate::monitor::record_discarded_monitor_frames(discarded);
                     let (mut controller, mut task) = match prepare_esp32s31_monitor_task(

@@ -14,10 +14,10 @@ use open_esp_radio_hil_protocol::{
 use crate::{
     Result, evidence,
     evidence::traffic_capture::{SerialCapture, await_udp_rx_ready},
-    qualification::scenario::PhyExpectation,
+    qualification::scenario::{HtGuardIntervalExpectation, PhyExpectation},
     traffic::bidirectional::{
         RxQualification, assess_rx_log, rx_order_markdown, rx_reorder_markdown, task_poll_markdown,
-        udp_sequence_markdown,
+        udp_sequence_markdown, validate_ht40_rx_vector,
     },
     traffic::host_network::BenchmarkIpv4Route,
     traffic::paced_udp::{Config as PacedUdpConfig, send as send_paced_udp},
@@ -54,6 +54,9 @@ pub(crate) struct EvidencePolicy {
     pub(crate) require_driver_observation: bool,
     pub(crate) capture_openwrt_tx_monitor: bool,
     pub(crate) capture_independent_laptop_monitor: bool,
+    pub(crate) minimum_mcs: Option<u8>,
+    pub(crate) guard_interval: HtGuardIntervalExpectation,
+    pub(crate) fixture_guard_interval: HtGuardIntervalExpectation,
 }
 
 pub(crate) fn run(
@@ -98,6 +101,7 @@ pub(crate) fn run(
             options.port,
             options.duration,
             options.phy,
+            evidence_policy.fixture_guard_interval,
             options.maximum_idle_channel_utilization_255,
         )?;
         let duration_millis = u32::try_from(options.duration.as_millis())?;
@@ -152,6 +156,7 @@ pub(crate) fn run(
         options.port,
         options.duration,
         options.phy,
+        evidence_policy.fixture_guard_interval,
         options.maximum_idle_channel_utilization_255,
     )?;
     let tx_monitor_capture = if evidence_policy.capture_openwrt_tx_monitor {
@@ -310,14 +315,17 @@ pub(crate) fn run(
             || String::from("- AP-side link vector: `external AP; not observed`\n"),
             |fixture| fixture.markdown(),
         );
+        let air_report =
+            rx_air_evidence_markdown(tx_monitor_rx.as_ref(), independent_air_rx.as_ref());
         fs::write(
             output.join("report.md"),
             format!(
                 "# Open-radio {} RX performance HIL\n\n\
                  - Result: `{result}`\n\
                  {failure_report}\
-                 - Evidence boundary: `transport, external host offer, stack watermark; driver observation not collected`\n\
+                 - Evidence boundary: `transport, external host offer, stack watermark, requested air capture; driver observation not collected`\n\
                  {fixture_report}\
+                 {air_report}\
                  - Device: `{}`\n\
                  - Requested/actual host offer: `{:.3}` / `{:.3} Mbit/s`\n\
                  - Host payload: `{}` bytes in `{}` datagrams\n\
@@ -371,20 +379,38 @@ pub(crate) fn run(
     }
     .err()
     .map(|error| error.to_string());
+    let typed_phy_failure = (options.phy == PhyExpectation::Ht40)
+        .then(|| {
+            validate_ht40_rx_vector(
+                &raw_rx_radio,
+                evidence_policy.minimum_mcs,
+                evidence_policy.guard_interval,
+            )
+        })
+        .transpose()
+        .err()
+        .map(|error| error.to_string());
     // Text telemetry enriches the report when present. Typed transport/radio
     // evidence alone decides qualification and therefore remains authoritative
     // even if the bounded diagnostic stream is truncated.
-    let text_assessment = assess_rx_log(&log, options.expected_rx_format).ok();
+    let text_assessment = match assess_rx_log(&log, options.expected_rx_format) {
+        Ok(assessment) => Some(assessment),
+        Err(error) => {
+            eprintln!("diagnostic_text_warning={error}");
+            None
+        }
+    };
     if let Some(failure) = text_assessment
         .as_ref()
         .and_then(|assessment| assessment.failure.as_deref())
     {
         eprintln!("diagnostic_text_warning={failure}");
     }
+    let typed_rx = RxQualification::from_typed(structured.transport, raw_rx_radio);
     let rx = text_assessment
-        .map(|assessment| assessment.rx)
-        .unwrap_or_else(|| RxQualification::from_typed(structured.transport, raw_rx_radio));
-    let structured_failure = {
+        .map(|assessment| assessment.rx.with_typed_radio(&typed_rx))
+        .unwrap_or(typed_rx);
+    let structured_failure = typed_phy_failure.or_else(|| {
         let evidence = structured;
         let expected_bytes = evidence
             .transport
@@ -422,7 +448,7 @@ pub(crate) fn run(
         } else {
             None
         }
-    };
+    });
     let typed_delivery_failure = if require_exact_delivery {
         structured.rx_delivery.and_then(|delivery| {
             let assessment = evidence::rx_delivery::assess(host.datagrams, delivery);
@@ -529,6 +555,7 @@ pub(crate) fn run(
              - Device RX median: `{:.3} Mbit/s` across `{}` samples; received UDP datagrams: `{}`\n\
              - Enqueued/software-dropped frames: `{}` / `{}`\n\
              - Sampled HE-SU MCS0..11 frame histogram: `{:?}`; other sampled PHY frames: `{}`\n\
+             - Complete HT benchmark vectors: MCS0..7 LGI40 `{:?}`, SGI40 `{:?}`, HT20 `{:?}`, other `{}`\n\
              - Benchmark UDP datagrams marked S-MPDU / not S-MPDU / unavailable provenance: `{}` / `{}` / `{}`\n\
              - Connected beacons marked S-MPDU / not S-MPDU / unavailable provenance: `{}` / `{}` / `{}`\n\
              - Benchmark UDP datagrams marked A-MPDU / not A-MPDU / unavailable provenance: `{}` / `{}` / `{}`\n\
@@ -546,7 +573,7 @@ pub(crate) fn run(
              - MAC entry causes spurious / RX-work-only / RX-mixed / TX-only / TX-mixed / auxiliary-or-unknown-only: `{}` / `{}` / `{}` / `{}` / `{}` / `{}`; classified `{}` entries; extra snapshots `{}`, loop saturations `{}`, auxiliary STATUS OR `0x{:08x}`, unknown STATUS OR `0x{:08x}`\n\
              - Staged bytes: `{}`; invalid empty/oversize units recycled: `{}` / `{}`; service: `{:.2} us/frame` average, `{}` us boot maximum\n\
              - Safe reload transactions: `{}`; `{:.2} us` average, `{}` us boot maximum; `{}` us total\n\
-             - Backpressured services: `{}`; pool/queue credit limited: `{}` / `{}`; maximum deferred frames: `{}`; minimum pool/queue credits: `{}` / `{}`\n\
+             - Backpressured services (bulk-preserve): `{}` (`{}`); pool/queue credit limited: `{}` / `{}`; maximum deferred frames: `{}`; backpressured pool/queue minimum: `{}` / `{}`; all-service pool/queue floor: `{}` / `{}`\n\
              - Protocol frames/data: `{}` / `{}`; dispatch: `{:.2} us/frame` average, `{}` us boot maximum\n\
              - A-MSDU MPDUs/subframes: `{}` / `{}`; raw unit buckets <=1700 / 1701-3400 / >3400 bytes: `{}` / `{}` / `{}`; boot maximum: `{}` bytes\n\
              - Network publications/bytes: `{}` / `{}`; copy+publish: `{:.2} us/frame` average, `{}` us boot maximum\n\
@@ -574,6 +601,10 @@ pub(crate) fn run(
             rx.dropped,
             rx.he_mcs_histogram,
             rx.other_phy_frames,
+            rx.ht40_long_gi_mcs,
+            rx.ht40_short_gi_mcs,
+            rx.ht20_mcs,
+            rx.ht_other_frames,
             rx.s_mpdu.s_mpdu_datagrams,
             rx.s_mpdu.not_s_mpdu_datagrams,
             rx.s_mpdu.unavailable_datagrams,
@@ -644,11 +675,14 @@ pub(crate) fn run(
             pipeline.reload_max_us,
             pipeline.reload_us,
             pipeline.backpressured_services,
+            pipeline.bulk_capacity_blocked_services,
             pipeline.pool_credit_limited_services,
             pipeline.queue_credit_limited_services,
             pipeline.maximum_deferred_frames,
             pipeline.minimum_backpressured_pool_credits,
             pipeline.minimum_backpressured_queue_credits,
+            pipeline.minimum_pool_credits,
+            pipeline.minimum_queue_credits,
             pipeline.protocol_frames,
             pipeline.protocol_data_frames,
             average_dispatch_us,

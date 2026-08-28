@@ -230,7 +230,7 @@ impl DatapathInterfaceScope {
 /// An implementation normally owns the live RX descriptor ring, staging
 /// storage, staging publisher, TX descriptor state and a short-lived PAC
 /// facade such as `CooperativeRadioHardware`. `service_rx` must snapshot and drain one
-/// durable RX frontier into independent staging ownership. A separate
+/// durable RX frontier into bounded descriptor-backed upper ownership. A separate
 /// protocol consumer retains duplicate/protocol history.
 ///
 /// Every method must finish after a bounded number of hardware observations.

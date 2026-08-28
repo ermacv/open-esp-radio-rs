@@ -9,6 +9,7 @@ use std::{
 
 use open_esp_radio_hil_protocol::{
     NetworkCredentials, NetworkIpv4Configuration, WifiChannelWidth, WifiDataPlanePlacement,
+    WifiRxAdmissionPolicy, WifiRxChecksumPolicy,
 };
 use serde::Deserialize;
 use zeroize::{Zeroize, Zeroizing};
@@ -23,6 +24,8 @@ pub(crate) struct LabConfig {
     pub(crate) access_point: AccessPointConfig,
     pub(crate) station_fixture: StationFixtureConfig,
     data_plane: Cell<WifiDataPlanePlacement>,
+    rx_checksum: Cell<WifiRxChecksumPolicy>,
+    rx_admission: Cell<WifiRxAdmissionPolicy>,
 }
 
 #[derive(Deserialize)]
@@ -329,6 +332,8 @@ impl LabConfig {
                 }
             },
             data_plane: Cell::new(WifiDataPlanePlacement::SingleCore),
+            rx_checksum: Cell::new(WifiRxChecksumPolicy::Software),
+            rx_admission: Cell::new(WifiRxAdmissionPolicy::SynchronousShared),
         })
     }
 
@@ -375,6 +380,8 @@ impl LabConfig {
                 independent_laptop_monitor: true,
             }),
             data_plane: Cell::new(WifiDataPlanePlacement::SingleCore),
+            rx_checksum: Cell::new(WifiRxChecksumPolicy::Software),
+            rx_admission: Cell::new(WifiRxAdmissionPolicy::SynchronousShared),
         }
     }
 
@@ -384,6 +391,22 @@ impl LabConfig {
 
     pub(crate) fn data_plane(&self) -> WifiDataPlanePlacement {
         self.data_plane.get()
+    }
+
+    pub(crate) fn set_rx_checksum(&self, policy: WifiRxChecksumPolicy) {
+        self.rx_checksum.set(policy);
+    }
+
+    pub(crate) fn rx_checksum(&self) -> WifiRxChecksumPolicy {
+        self.rx_checksum.get()
+    }
+
+    pub(crate) fn set_rx_admission(&self, policy: WifiRxAdmissionPolicy) {
+        self.rx_admission.set(policy);
+    }
+
+    pub(crate) fn rx_admission(&self) -> WifiRxAdmissionPolicy {
+        self.rx_admission.get()
     }
 }
 

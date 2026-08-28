@@ -1194,6 +1194,10 @@ mod tests {
             Event::Evidence(EvidenceRecord::Radio(RadioEvidence {
                 rx: Some(RxRadioEvidence {
                     phy_format: u8::MAX,
+                    ht40_long_gi_frames: u32::MAX,
+                    ht40_short_gi_frames: u32::MAX,
+                    ht40_below_mcs7_frames: u32::MAX,
+                    ht_invalid_frames: u32::MAX,
                     dma_buffer_full: u32::MAX,
                     dma_fifo_overflow: u32::MAX,
                     network_dropped: u32::MAX,

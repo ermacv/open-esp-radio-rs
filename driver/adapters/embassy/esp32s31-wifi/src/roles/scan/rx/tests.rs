@@ -19,6 +19,7 @@ use open_esp_radio_wifi_softmac::{
     WifiMonitorConfig,
     interface::{ChannelContextId, MonitorTapPoint},
 };
+use std::boxed::Box;
 
 fn block_on<F: Future>(future: F) -> F::Output {
     let mut future = pin!(future);
@@ -443,11 +444,14 @@ fn monitor_only_wifi_plan_materializes_the_promiscuous_ring_owner() {
 
 #[test]
 fn complete_initial_scan_can_prepare_the_same_ring_for_a_retry() {
-    let storage =
-        Esp32s31RxDmaStorage::<RX_TEST_COUNT, RX_TEST_BUFFER_SIZE, RX_TEST_STORAGE_SIZE>::new();
+    let storage = Box::leak(Box::new(Esp32s31RxDmaStorage::<
+        RX_TEST_COUNT,
+        RX_TEST_BUFFER_SIZE,
+        RX_TEST_STORAGE_SIZE,
+    >::new()));
     let mut hardware = MockRxDma::default();
     let mut rx =
-        Esp32s31ScanRx::prepare_initial(&mut hardware, &storage, RX_TEST_BASE, &RX_TEST_BUFFERS)
+        Esp32s31ScanRx::prepare_initial(&mut hardware, storage, RX_TEST_BASE, &RX_TEST_BUFFERS)
             .unwrap();
 
     rx.prepare_initial_or_retry(&mut hardware).unwrap();
@@ -462,11 +466,14 @@ fn complete_initial_scan_can_prepare_the_same_ring_for_a_retry() {
 
 #[test]
 fn scan_rx_retains_its_typed_phase_across_enable_and_disable_failure() {
-    let storage =
-        Esp32s31RxDmaStorage::<RX_TEST_COUNT, RX_TEST_BUFFER_SIZE, RX_TEST_STORAGE_SIZE>::new();
+    let storage = Box::leak(Box::new(Esp32s31RxDmaStorage::<
+        RX_TEST_COUNT,
+        RX_TEST_BUFFER_SIZE,
+        RX_TEST_STORAGE_SIZE,
+    >::new()));
     let mut hardware = MockRxDma::default();
     let mut rx =
-        Esp32s31ScanRx::prepare_initial(&mut hardware, &storage, RX_TEST_BASE, &RX_TEST_BUFFERS)
+        Esp32s31ScanRx::prepare_initial(&mut hardware, storage, RX_TEST_BASE, &RX_TEST_BUFFERS)
             .unwrap();
 
     hardware.fail_enable = true;
@@ -502,8 +509,11 @@ fn running_scan_rx_returns_the_exact_connected_epoch_resources() {
         }
     }
 
-    let storage =
-        Esp32s31RxDmaStorage::<RX_TEST_COUNT, RX_TEST_BUFFER_SIZE, RX_TEST_STORAGE_SIZE>::new();
+    let storage = Box::leak(Box::new(Esp32s31RxDmaStorage::<
+        RX_TEST_COUNT,
+        RX_TEST_BUFFER_SIZE,
+        RX_TEST_STORAGE_SIZE,
+    >::new()));
     let mut hardware = MockRxDma::default();
     let stopped = RxRingStopped::prepare(
         &mut hardware,
@@ -522,7 +532,7 @@ fn running_scan_rx_returns_the_exact_connected_epoch_resources() {
     let queue =
         Esp32s31StagedRxQueue::<NoopRawMutex, STAGE_SLOTS, STAGE_CAPACITY, STAGE_SLOTS>::new();
     let (sender, _receiver) = queue.split();
-    let connected = Esp32s31StagedRxProducer::new(ring, &storage, &pool, TestDelay, sender);
+    let connected = Esp32s31StagedRxProducer::new(ring, storage, &pool, TestDelay, sender);
     let stopped = connected
         .try_stop(&mut hardware)
         .unwrap_or_else(|_| panic!("mock connected ring must stop"));

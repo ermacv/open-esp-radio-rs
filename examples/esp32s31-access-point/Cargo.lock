@@ -1455,6 +1455,7 @@ version = "0.1.0"
 dependencies = [
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-phy",
+ "open-esp-radio-esp32s31-wifi-dma",
  "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-ieee80211",
  "open-esp-radio-wifi-softmac",

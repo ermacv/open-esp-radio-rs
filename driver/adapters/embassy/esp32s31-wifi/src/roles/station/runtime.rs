@@ -423,12 +423,9 @@ where
     T: WifiTxTimer,
     'resources: 'ampdu,
 {
-    let Esp32s31ConnectedStaDrivers {
-        services,
-        protocol,
-        report,
-    } = drivers;
-    let (hardware, physical_rx, tx, control) = services.into_parts();
+    let Esp32s31ConnectedStaDrivers { services, report } = drivers;
+    let (hardware, rx, tx, control) = services.into_parts();
+    let (physical_rx, protocol) = rx.into_parts();
     match park_sta_ap_station_role(StationRoleRuntime::new(protocol, tx, control)) {
         Ok((station, physical_tx)) => Ok(Esp32s31StaApStationPrepared {
             hardware,
@@ -620,8 +617,15 @@ where
     let tx = Esp32s31ConnectedTx::resume(ordinary, aggregate, parked);
 
     Ok(Esp32s31ConnectedStaDrivers {
-        services: SingleRoleServices::with_control(hardware, physical_rx, tx, control),
-        protocol,
+        services: SingleRoleServices::with_control(
+            hardware,
+            crate::roles::station::connected::Esp32s31ConnectedStaRxService::new(
+                physical_rx,
+                protocol,
+            ),
+            tx,
+            control,
+        ),
         report,
     })
 }

@@ -531,11 +531,13 @@ impl Esp32s31ConnectedStaPort {
         Esp32s31ConnectedStaDrivers {
             services: SingleRoleServices::with_control(
                 parts.hardware,
-                parts.rx,
+                crate::roles::station::connected::Esp32s31ConnectedStaRxService::new(
+                    parts.rx,
+                    parts.protocol,
+                ),
                 parts.tx,
                 parts.control,
             ),
-            protocol: parts.protocol,
             report: Esp32s31ConnectedStaReport {
                 link: plan.link,
                 data_tx_rate: plan.data_tx_rate,

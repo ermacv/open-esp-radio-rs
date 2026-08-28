@@ -3,15 +3,24 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 
 pub const RX_HE_MCS_BUCKETS: usize = 12;
+pub const RX_HT_MCS_BUCKETS: usize = 8;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct RxPhySnapshot {
     pub he_mcs: [u32; RX_HE_MCS_BUCKETS],
+    pub ht40_long_gi_mcs: [u32; RX_HT_MCS_BUCKETS],
+    pub ht40_short_gi_mcs: [u32; RX_HT_MCS_BUCKETS],
+    pub ht20_mcs: [u32; RX_HT_MCS_BUCKETS],
+    pub ht_other: u32,
     pub other: u32,
 }
 
 pub struct RxPhyCounters {
     he_mcs: [AtomicU32; RX_HE_MCS_BUCKETS],
+    ht40_long_gi_mcs: [AtomicU32; RX_HT_MCS_BUCKETS],
+    ht40_short_gi_mcs: [AtomicU32; RX_HT_MCS_BUCKETS],
+    ht20_mcs: [AtomicU32; RX_HT_MCS_BUCKETS],
+    ht_other: AtomicU32,
     other: AtomicU32,
 }
 
@@ -19,6 +28,10 @@ impl RxPhyCounters {
     pub const fn new() -> Self {
         Self {
             he_mcs: [const { AtomicU32::new(0) }; RX_HE_MCS_BUCKETS],
+            ht40_long_gi_mcs: [const { AtomicU32::new(0) }; RX_HT_MCS_BUCKETS],
+            ht40_short_gi_mcs: [const { AtomicU32::new(0) }; RX_HT_MCS_BUCKETS],
+            ht20_mcs: [const { AtomicU32::new(0) }; RX_HT_MCS_BUCKETS],
+            ht_other: AtomicU32::new(0),
             other: AtomicU32::new(0),
         }
     }
@@ -32,6 +45,26 @@ impl RxPhyCounters {
         }
     }
 
+    pub fn observe_ht(&self, mcs: u8, bandwidth_mhz: u16, short_guard_interval: bool) {
+        let counters = match (bandwidth_mhz, short_guard_interval) {
+            (40, false) => &self.ht40_long_gi_mcs,
+            (40, true) => &self.ht40_short_gi_mcs,
+            (20, _) => &self.ht20_mcs,
+            _ => {
+                self.ht_other.fetch_add(1, Ordering::Relaxed);
+                return;
+            }
+        };
+        match counters.get(usize::from(mcs)) {
+            Some(counter) => {
+                counter.fetch_add(1, Ordering::Relaxed);
+            }
+            None => {
+                self.ht_other.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+
     pub fn observe_other(&self) {
         self.other.fetch_add(1, Ordering::Relaxed);
     }
@@ -39,6 +72,16 @@ impl RxPhyCounters {
     pub fn snapshot(&self) -> RxPhySnapshot {
         RxPhySnapshot {
             he_mcs: core::array::from_fn(|index| self.he_mcs[index].load(Ordering::Relaxed)),
+            ht40_long_gi_mcs: core::array::from_fn(|index| {
+                self.ht40_long_gi_mcs[index].load(Ordering::Relaxed)
+            }),
+            ht40_short_gi_mcs: core::array::from_fn(|index| {
+                self.ht40_short_gi_mcs[index].load(Ordering::Relaxed)
+            }),
+            ht20_mcs: core::array::from_fn(|index| {
+                self.ht20_mcs[index].load(Ordering::Relaxed)
+            }),
+            ht_other: self.ht_other.load(Ordering::Relaxed),
             other: self.other.load(Ordering::Relaxed),
         }
     }

@@ -1011,6 +1011,40 @@ impl<const SLOT_CAPACITY: usize> RxBlockAckReorderState<SLOT_CAPACITY> {
         Ok(distance_after_advance != 0)
     }
 
+    /// Consume the common in-order frame without materializing a maximum-size
+    /// release list.
+    ///
+    /// A buffered successor still requires the ordinary ingest path because
+    /// receiving the missing frontier frame must release the complete
+    /// contiguous run in sequence order. A gap, stale frame or window advance
+    /// likewise returns `None` without changing the reorder state.
+    pub fn try_ingest_immediate(
+        &mut self,
+        frame: RxAmpduMpdu,
+    ) -> Result<Option<RxAmpduMpdu>, RxAmpduError> {
+        if frame.sequence > SEQUENCE_MASK {
+            return Err(RxAmpduError::InvalidSequence(frame.sequence));
+        }
+        if SLOT_CAPACITY == 0
+            || SLOT_CAPACITY > usize::from(u8::MAX) + 1
+            || usize::from(frame.slot) >= SLOT_CAPACITY
+        {
+            return Err(RxAmpduError::InvalidSlot(frame.slot));
+        }
+        if frame.sequence != self.next_sequence {
+            return Ok(None);
+        }
+        if self.has_sequence(frame.sequence) {
+            return Err(RxAmpduError::DuplicateSequence(frame.sequence));
+        }
+        let successor = wrapping_sequence(self.next_sequence, 1);
+        if self.has_sequence(successor) {
+            return Ok(None);
+        }
+        self.next_sequence = successor;
+        Ok(Some(frame))
+    }
+
     #[inline(always)]
     pub fn ingest(&mut self, frame: RxAmpduMpdu) -> Result<RxAmpduRelease, RxAmpduError> {
         if frame.sequence > SEQUENCE_MASK {
@@ -1257,6 +1291,28 @@ mod tests {
         assert_eq!(release.iter().collect::<std::vec::Vec<_>>(), [frame(10, 0)]);
         assert_eq!(reorder.next_sequence(), 11);
         assert_eq!(reorder.occupied(), 0);
+    }
+
+    #[test]
+    fn immediate_ingest_avoids_a_release_list_only_without_a_buffered_successor() {
+        let mut reorder = RxBlockAckReorderState::<65>::new(100, 16).unwrap();
+        assert_eq!(
+            reorder.try_ingest_immediate(frame(100, 64)),
+            Ok(Some(frame(100, 64)))
+        );
+        assert_eq!(reorder.next_sequence(), 101);
+        assert_eq!(reorder.occupied(), 0);
+
+        assert_eq!(reorder.try_ingest_immediate(frame(103, 64)), Ok(None));
+        assert_eq!(reorder.next_sequence(), 101);
+
+        assert!(reorder.ingest(frame(102, 2)).unwrap().buffered);
+        assert_eq!(reorder.try_ingest_immediate(frame(101, 64)), Ok(None));
+        let release = reorder.ingest(frame(101, 64)).unwrap();
+        assert_eq!(
+            release.iter().collect::<std::vec::Vec<_>>(),
+            [frame(101, 64), frame(102, 2)]
+        );
     }
 
     #[test]

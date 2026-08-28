@@ -1,5 +1,8 @@
 use super::*;
 
+#[cfg(feature = "task-poll-telemetry")]
+use crate::diagnostics::core0_rx_cycles::Core0RxRunnerCycleProfile;
+
 impl<
     'resources,
     'irq,
@@ -40,6 +43,8 @@ where
     R: DatapathNetworkRxSet,
 {
     pub(super) async fn service_rx(&mut self) -> Result<(), B::Error> {
+        #[cfg(feature = "task-poll-telemetry")]
+        let mut core0_cycles = Core0RxRunnerCycleProfile::begin();
         let context = DatapathRxServiceContext {
             maximum_protocol_frames: rx_protocol_frame_budget(
                 self.rx_frame_deficit,
@@ -47,10 +52,14 @@ where
             ),
         };
         let serviced_before = self.services.serviced_rx_frames();
+        #[cfg(feature = "task-poll-telemetry")]
+        core0_cycles.begin_driver();
         let progress = self
             .services
             .service_rx(&mut self.network_rx, context)
             .await?;
+        #[cfg(feature = "task-poll-telemetry")]
+        core0_cycles.end_driver();
         let serviced = self
             .services
             .serviced_rx_frames()
@@ -58,11 +67,18 @@ where
         self.rx_frame_deficit = self
             .rx_frame_deficit
             .saturating_add(i64::try_from(serviced).unwrap_or(i64::MAX));
-        self.complete_rx_service(progress).await;
-        // A finite protocol RX turn may have staged a management response or
-        // changed a role-local deadline. Re-arm control without speculating
-        // about the role's protocol state.
-        self.control_ready_latched = true;
+        self.complete_rx_service(
+            progress,
+            #[cfg(feature = "task-poll-telemetry")]
+            core0_cycles,
+        )
+        .await;
+        // Control work has its own O(1) readiness predicate and wake future.
+        // An ordinary data-only DMA pass must not force the complete control
+        // machine to run once per RX frontier. If a role-specific RX turn
+        // stages a response, `active_tx_interface` below owns it immediately;
+        // mailbox and deadline changes are exposed by `control_ready` /
+        // `wait_control_ready` at the next scheduler boundary.
         if self.services.active_tx_interface().is_some() {
             self.begin_active_tx(
                 self.reported_active_tx_interface(),
@@ -74,11 +90,17 @@ where
     }
 
     async fn service_rx_during_tx(&mut self) -> Result<(), B::Error> {
+        #[cfg(feature = "task-poll-telemetry")]
+        let mut core0_cycles = Core0RxRunnerCycleProfile::begin();
         let serviced_before = self.services.serviced_rx_frames();
+        #[cfg(feature = "task-poll-telemetry")]
+        core0_cycles.begin_driver();
         let progress = self
             .services
             .service_rx_during_tx(&mut self.network_rx)
             .await?;
+        #[cfg(feature = "task-poll-telemetry")]
+        core0_cycles.end_driver();
         let serviced = self
             .services
             .serviced_rx_frames()
@@ -86,12 +108,20 @@ where
         self.rx_frame_deficit = self
             .rx_frame_deficit
             .saturating_add(i64::try_from(serviced).unwrap_or(i64::MAX));
-        self.complete_rx_service(progress).await;
-        self.control_ready_latched = true;
+        self.complete_rx_service(
+            progress,
+            #[cfg(feature = "task-poll-telemetry")]
+            core0_cycles,
+        )
+        .await;
         Ok(())
     }
 
-    async fn complete_rx_service(&mut self, progress: DatapathRxProgress) {
+    async fn complete_rx_service(
+        &mut self,
+        progress: DatapathRxProgress,
+        #[cfg(feature = "task-poll-telemetry")] core0_cycles: Core0RxRunnerCycleProfile,
+    ) {
         self.rx_progress = progress;
         if matches!(
             progress,
@@ -115,6 +145,8 @@ where
         // its start. Publish the terminal IRQ ownership edge before yielding:
         // otherwise an unrelated long executor poll can leave RX masked for
         // milliseconds after the durable frontier was already drained.
+        #[cfg(feature = "task-poll-telemetry")]
+        core0_cycles.finish_before_yield();
         yield_now().await;
     }
 

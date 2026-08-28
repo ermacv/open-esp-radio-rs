@@ -1,14 +1,14 @@
 //! Ownership handoff between the PAC/DMA RX actor and protocol processing.
 //!
 //! The producer queue stores unique staging-pool leases, never DMA pointers.
-//! This lets the radio owner finish one finite completion epoch and return to
-//! TX/control arbitration while a separate future performs 802.11 parsing and
-//! publishes Ethernet or connected-control effects.
+//! The standalone STA DATAPATH owner services the queue and physical DMA as
+//! one bounded producer/consumer turn before returning to TX/control
+//! arbitration.
 
-use core::future::{Future, ready};
+use core::future::{Future, pending, ready};
+#[cfg(feature = "diagnostics")]
+use core::sync::atomic::{AtomicBool, Ordering};
 
-use embassy_futures::select::{Either, select};
-use embassy_sync::channel::Receiver;
 use embassy_time::{Duration, Instant, Timer};
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::{
@@ -18,12 +18,13 @@ use open_esp_radio_esp32s31_wifi_mac::{
     },
     rx_pool::{VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT},
 };
+#[cfg(feature = "task-poll-telemetry")]
+use open_esp_radio_esp32s31_wifi_sta::connected_rx::ConnectedRxDataCycleProfile;
 use open_esp_radio_esp32s31_wifi_sta::connected_rx::{
     ConnectedRxConfig, ConnectedRxDispatch, ConnectedRxDispatcher, ConnectedRxEvent,
     ConnectedRxSink, StaCcmpRxReplayError,
 };
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
-use open_esp_radio_wifi_embassy::connected_tasks::ConnectedTaskEndpoint;
 use open_esp_radio_wifi_softmac::MacRxMetadata;
 
 #[cfg(test)]
@@ -42,18 +43,10 @@ use crate::{
         RxReorderFrameStorage, try_receive_rx_reorder_command,
     },
     datapath::rx::staging::{
-        Esp32s31StagedRxFrame, StagedEthernetPublication, StagedRxDisposition,
+        Esp32s31StagedRxFrame, Esp32s31StagedRxReceiver, StagedEthernetPublication,
+        StagedRxDisposition,
     },
 };
-
-/// Maximum completed protocol dispatches in one cooperative service turn.
-///
-/// A count is deterministic and free of timer reads in the production
-/// datapath. One dispatch always completes before yielding, so no staging or
-/// reorder owner is split across executor turns. This matches the finite
-/// staging arena: a smaller quantum fragmented service into more executor
-/// turns without preventing hardware RX starvation under PSRAM-stack HIL.
-const RX_PROTOCOL_DISPATCH_BUDGET: usize = 32;
 
 /// Ownership released when a connected staged-RX epoch is stopped.
 ///
@@ -72,6 +65,48 @@ pub struct ConnectedRxProtocolShutdown {
     /// Incomplete Open MSDUs revoked before the dispatcher leaves its
     /// connected association epoch.
     pub incomplete_fragment_contexts: usize,
+}
+
+/// Result of one bounded, non-waiting protocol service turn.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ConnectedRxProtocolTurn {
+    /// Staging leases removed from the physical-to-protocol queue.
+    pub consumed_frames: usize,
+    /// Commands, deadlines or frames remain ready for the next outer turn.
+    pub work_remaining: bool,
+}
+
+/// Admission contract for an ordinary frame which retains its staging slot.
+///
+/// `Immediate` is a capability, not a transient queue observation: the sink
+/// guarantees that publishing this staging owner cannot require another
+/// capacity slot. This lets the protocol owner omit an otherwise immediately
+/// ready async edge without turning a racy `is_full` check into correctness.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum StagedRxAdmission {
+    /// Publication may need an independently owned output slot.
+    #[default]
+    AwaitCapacity,
+    /// The staging slot itself is the complete output ownership credit.
+    Immediate,
+}
+
+#[cfg(feature = "diagnostics")]
+static DEFER_SHARED_RX_ADMISSION: AtomicBool = AtomicBool::new(false);
+
+/// Select the same-image legacy admission control before a radio epoch starts.
+///
+/// This diagnostic switch may only make a stable shared credit take the
+/// slower path. It can never manufacture `Immediate` admission for a sink
+/// which does not own that capability.
+#[cfg(feature = "diagnostics")]
+pub fn configure_deferred_shared_rx_admission_for_diagnostics(deferred: bool) {
+    DEFER_SHARED_RX_ADMISSION.store(deferred, Ordering::Relaxed);
+}
+
+#[cfg(feature = "diagnostics")]
+pub(crate) fn deferred_shared_rx_admission_for_diagnostics() -> bool {
+    DEFER_SHARED_RX_ADMISSION.load(Ordering::Relaxed)
 }
 
 /// Scratch and runtime-arena ownership returned only after a staged RX
@@ -125,6 +160,11 @@ pub trait ConnectedRxProtocolSink<
     /// Capacity edge for a frame that must be copied into adapter-owned
     /// storage, including A-MSDU subframes and reorder slow paths.
     fn wait_ready(&mut self) -> impl Future<Output = ()> + '_;
+
+    /// Return the stable ordinary-frame admission capability of this sink.
+    fn staged_rx_admission(&self) -> StagedRxAdmission {
+        StagedRxAdmission::AwaitCapacity
+    }
 
     /// Capacity edge for an ordinary frame still owning its staging slot.
     /// In-place sinks need no second slot and therefore return immediately.
@@ -199,6 +239,10 @@ impl<S: ConnectedRxSink> ConnectedRxSink for AlwaysReadyConnectedRxSink<S> {
 impl<S: ConnectedRxSink, const CAPACITY: usize, const SLOTS: usize>
     ConnectedRxProtocolSink<CAPACITY, SLOTS> for AlwaysReadyConnectedRxSink<S>
 {
+    fn staged_rx_admission(&self) -> StagedRxAdmission {
+        StagedRxAdmission::Immediate
+    }
+
     fn wait_ready(&mut self) -> impl Future<Output = ()> + '_ {
         ready(())
     }
@@ -382,7 +426,7 @@ pub struct Esp32s31ConnectedRxProtocol<
     const SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
     const REORDER_SLOTS: usize = RX_REORDER_BACKING_SLOT_COUNT,
 > {
-    frames: Receiver<'queue, M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
+    frames: Esp32s31StagedRxReceiver<'queue, 'pool, M, DEPTH, CAPACITY, SLOTS>,
     processor: Esp32s31ConnectedRxProcessor<
         'queue,
         'pool,

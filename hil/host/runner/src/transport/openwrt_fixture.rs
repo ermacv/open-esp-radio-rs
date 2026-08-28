@@ -9,7 +9,9 @@ use std::{
 };
 
 use crate::{
-    Result, qualification::scenario::PhyExpectation, transport::lab_config::OpenWrtConfig,
+    Result,
+    qualification::scenario::{HtGuardIntervalExpectation, PhyExpectation},
+    transport::lab_config::OpenWrtConfig,
 };
 
 const PRE_WORKLOAD_CHANNEL_SAMPLE: Duration = Duration::from_secs(12);
@@ -30,8 +32,10 @@ pub(crate) struct OpenWrtRxEvidence {
     pub(crate) station_tx_packets: u64,
     pub(crate) station_tx_retries: u64,
     pub(crate) station_tx_failed: u64,
+    pub(crate) station_tx_duration_micros: u64,
     pub(crate) station_tid0_aqm_drops: u64,
     pub(crate) pre_workload_channel_utilization: Option<ChannelUtilization>,
+    pub(crate) workload_channel_utilization: ChannelUtilization,
     pub(crate) channel_width_mhz: u8,
     pub(crate) tx_bitrate: String,
     pub(crate) rx_bitrate: String,
@@ -45,7 +49,10 @@ struct Snapshot {
     station_tx_packets: u64,
     station_tx_retries: u64,
     station_tx_failed: u64,
+    station_tx_duration_micros: u64,
     station_tid0_aqm_drops: u64,
+    channel_active_millis: u64,
+    channel_busy_millis: u64,
     channel_width_mhz: u8,
     tx_bitrate: String,
     rx_bitrate: String,
@@ -63,6 +70,67 @@ struct Capture {
     child: Child,
 }
 
+struct OpenWrtRateMask {
+    config: OpenWrtConfig,
+    active: bool,
+}
+
+impl OpenWrtRateMask {
+    fn apply(
+        config: &OpenWrtConfig,
+        forced_guard_interval: HtGuardIntervalExpectation,
+    ) -> Result<Option<Self>> {
+        let interval = match forced_guard_interval {
+            HtGuardIntervalExpectation::Any => return Ok(None),
+            HtGuardIntervalExpectation::Long => "lgi-2.4",
+            HtGuardIntervalExpectation::Short => "sgi-2.4",
+        };
+        let script = format!(
+            "set -eu; iw dev {} set bitrates {interval}",
+            config.wireless_interface
+        );
+        let output = openwrt_command(config, &script)?;
+        if !output.status.success() {
+            return Err(format!(
+                "cannot apply OpenWrt HT {} guard-interval policy: {}",
+                forced_guard_interval.id(),
+                String::from_utf8_lossy(&output.stderr).trim(),
+            )
+            .into());
+        }
+        Ok(Some(Self {
+            config: config.clone(),
+            active: true,
+        }))
+    }
+
+    fn clear(&mut self) -> Result<()> {
+        if !self.active {
+            return Ok(());
+        }
+        let script = format!(
+            "set -eu; iw dev {} set bitrates",
+            self.config.wireless_interface
+        );
+        let output = openwrt_command(&self.config, &script)?;
+        if !output.status.success() {
+            return Err(format!(
+                "cannot restore the OpenWrt automatic rate mask: {}",
+                String::from_utf8_lossy(&output.stderr).trim(),
+            )
+            .into());
+        }
+        self.active = false;
+        Ok(())
+    }
+}
+
+impl Drop for OpenWrtRateMask {
+    fn drop(&mut self) {
+        let _ = self.clear();
+    }
+}
+
 pub(crate) struct OpenWrtRxCapture {
     config: OpenWrtConfig,
     target: Ipv4Addr,
@@ -71,6 +139,7 @@ pub(crate) struct OpenWrtRxCapture {
     pre_workload_channel_utilization: Option<ChannelUtilization>,
     ingress: Option<Capture>,
     wireless: Option<Capture>,
+    rate_mask: Option<OpenWrtRateMask>,
 }
 
 impl OpenWrtRxCapture {
@@ -80,8 +149,18 @@ impl OpenWrtRxCapture {
         port: u16,
         traffic_duration: Duration,
         expected_phy: PhyExpectation,
+        forced_guard_interval: HtGuardIntervalExpectation,
         maximum_idle_channel_utilization_255: Option<u8>,
     ) -> Result<Self> {
+        if forced_guard_interval != HtGuardIntervalExpectation::Any
+            && expected_phy != PhyExpectation::Ht40
+        {
+            return Err(
+                "OpenWrt guard-interval control currently owns only the HT40 MCS7 diagnostic"
+                    .into(),
+            );
+        }
+        let rate_mask = OpenWrtRateMask::apply(config, forced_guard_interval)?;
         let pre_workload_channel_utilization = maximum_idle_channel_utilization_255
             .map(|maximum| -> Result<_> {
                 let utilization = measure_channel_utilization(config)?;
@@ -136,6 +215,7 @@ impl OpenWrtRxCapture {
             pre_workload_channel_utilization,
             ingress: Some(ingress),
             wireless: Some(wireless),
+            rate_mask,
         })
     }
 
@@ -144,6 +224,19 @@ impl OpenWrtRxCapture {
         let wireless = finish_capture(self.wireless.take().expect("capture owns wireless"))?;
         let after = snapshot(&self.config, self.target, Some(self.before.station_mac))?;
         require_width(self.expected_phy, after.channel_width_mhz)?;
+        if let Some(rate_mask) = self.rate_mask.as_mut() {
+            rate_mask.clear()?;
+        }
+        let workload_channel_active_millis = delta(
+            "workload channel active time",
+            self.before.channel_active_millis,
+            after.channel_active_millis,
+        )?;
+        let workload_channel_busy_millis = delta(
+            "workload channel busy time",
+            self.before.channel_busy_millis,
+            after.channel_busy_millis,
+        )?;
         Ok(OpenWrtRxEvidence {
             ingress_packets: ingress,
             wireless_packets: wireless,
@@ -172,17 +265,38 @@ impl OpenWrtRxCapture {
                 self.before.station_tx_failed,
                 after.station_tx_failed,
             )?,
+            station_tx_duration_micros: delta(
+                "station TX duration",
+                self.before.station_tx_duration_micros,
+                after.station_tx_duration_micros,
+            )?,
             station_tid0_aqm_drops: delta(
                 "station TID-0 AQM drops",
                 self.before.station_tid0_aqm_drops,
                 after.station_tid0_aqm_drops,
             )?,
             pre_workload_channel_utilization: self.pre_workload_channel_utilization,
+            workload_channel_utilization: ChannelUtilization {
+                active_millis: workload_channel_active_millis,
+                busy_millis: workload_channel_busy_millis,
+                scaled_255: scale_channel_utilization(
+                    workload_channel_active_millis,
+                    workload_channel_busy_millis,
+                )?,
+            },
             channel_width_mhz: after.channel_width_mhz,
             tx_bitrate: after.tx_bitrate,
             rx_bitrate: after.rx_bitrate,
         })
     }
+}
+
+fn openwrt_command(config: &OpenWrtConfig, script: &str) -> Result<std::process::Output> {
+    Ok(Command::new("ssh")
+        .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
+        .arg(&config.ssh_target)
+        .arg(script)
+        .output()?)
 }
 
 /// Snapshot the final AP/STA link vector after one measured workload.
@@ -209,7 +323,7 @@ fn snapshot(
             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
         ),
         None => format!(
-            "mac=$(ip neigh show {target} | awk 'NR==1 {{print $5}}'); \
+            "mac=$(ip neigh show {target} | awk '{{for (i = 1; i < NF; i++) if ($i == \"lladdr\") {{print $(i + 1); exit}}}}'); \
              if test -z \"$mac\"; then \
                set -- $(iw dev {} station dump | awk '/^Station / {{print $2}}'); \
                test \"$#\" -eq 1; mac=\"$1\"; \
@@ -222,12 +336,16 @@ fn snapshot(
          {mac_assignment}\
          test -n \"$mac\"; \
          stats=$(iw dev {wireless} station get \"$mac\"); \
+         airtime=$(ubus -S call hostapd.{wireless} get_status); \
          printf 'station_mac=%s\n' \"$mac\"; \
          printf 'ingress_rx=%s\\n' \"$(cat /sys/class/net/{ingress}/statistics/rx_packets)\"; \
          printf 'wireless_tx=%s\\n' \"$(cat /sys/class/net/{wireless}/statistics/tx_packets)\"; \
          printf 'station_tx=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/tx packets:/ {{print $3}}')\"; \
          printf 'station_retries=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/tx retries:/ {{print $3}}')\"; \
          printf 'station_failed=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/tx failed:/ {{print $3}}')\"; \
+         printf 'station_tx_duration_us=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/tx duration:/ {{print $3}}')\"; \
+         printf 'channel_active_ms=%s\\n' \"$(jsonfilter -s \"$airtime\" -e '@.airtime.time')\"; \
+         printf 'channel_busy_ms=%s\\n' \"$(jsonfilter -s \"$airtime\" -e '@.airtime.time_busy')\"; \
          printf 'tx_bitrate=%s\\n' \"$(printf '%s\\n' \"$stats\" | sed -n 's/^[[:space:]]*tx bitrate:[[:space:]]*//p')\"; \
          printf 'rx_bitrate=%s\\n' \"$(printf '%s\\n' \"$stats\" | sed -n 's/^[[:space:]]*rx bitrate:[[:space:]]*//p')\"; \
          set -- /sys/kernel/debug/ieee80211/*/netdev:{wireless}/stations/$mac/aqm; \
@@ -257,7 +375,10 @@ fn snapshot(
         station_tx_packets: tagged(&stdout, "station_tx")?,
         station_tx_retries: tagged(&stdout, "station_retries")?,
         station_tx_failed: tagged(&stdout, "station_failed")?,
+        station_tx_duration_micros: tagged(&stdout, "station_tx_duration_us")?,
         station_tid0_aqm_drops: tagged(&stdout, "station_tid0_aqm_drops")?,
+        channel_active_millis: tagged(&stdout, "channel_active_ms")?,
+        channel_busy_millis: tagged(&stdout, "channel_busy_ms")?,
         channel_width_mhz: u8::try_from(tagged(&stdout, "channel_width")?)?,
         tx_bitrate: nonempty_tagged_text(&stdout, "tx_bitrate")?.to_owned(),
         rx_bitrate: nonempty_tagged_text(&stdout, "rx_bitrate")?.to_owned(),
@@ -299,7 +420,7 @@ fn parse_mac(value: &str) -> Result<[u8; 6]> {
 pub(crate) fn resolve_station_mac(config: &OpenWrtConfig, target: Ipv4Addr) -> Result<String> {
     let script = format!(
         "set -eu; \
-         mac=$(ip neigh show {target} | awk 'NR==1 {{print $5}}'); \
+         mac=$(ip neigh show {target} | awk '{{for (i = 1; i < NF; i++) if ($i == \"lladdr\") {{print $(i + 1); exit}}}}'); \
          if test -z \"$mac\"; then \
            set -- $(iw dev {} station dump | awk '/^Station / {{print $2}}'); \
            test \"$#\" -eq 1; mac=\"$1\"; \

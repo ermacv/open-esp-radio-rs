@@ -7,11 +7,11 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use open_esp_radio::RadioSubsystemGeneration;
 pub use open_esp_radio::{
     MONITOR_CHANNEL_SEQUENCE_CAPACITY, MonitorCapturePolicy, MonitorChannelPolicy,
     MonitorChannelSequence, MonitorChannelSequenceError, MonitorRequest,
 };
-use open_esp_radio::RadioSubsystemGeneration;
 use open_esp_radio_esp32s31_wifi_embassy::roles::monitor::{
     Esp32s31MonitorControlResources, Esp32s31MonitorInterrupts, Esp32s31MonitorMemory,
     Esp32s31MonitorStoppedResources, Esp32s31MonitorTask, Esp32s31MonitorTaskBuildFailure,

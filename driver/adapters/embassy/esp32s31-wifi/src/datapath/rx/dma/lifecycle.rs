@@ -96,6 +96,7 @@ impl<
         (
             ring,
             Esp32s31RxEpochResources {
+                ring_lifetime: PhantomData,
                 storage,
                 pool,
                 frames,
@@ -199,17 +200,13 @@ impl<
     /// Bind board-allocated DMA/staging resources before the first connected
     /// epoch. Later epochs recover this same owner from [`Esp32s31StoppedRx`].
     pub fn new(
-        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        storage: &'static Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
-        frames: Sender<
-            'queue,
-            M,
-            Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
-            QUEUE_DEPTH,
-        >,
+        frames: Esp32s31StagedRxSender<'queue, 'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
         delay: D,
     ) -> Self {
         Self {
+            ring_lifetime: PhantomData,
             storage,
             pool,
             frames: Esp32s31StagedRxPublisher::standalone(frames),
@@ -221,7 +218,7 @@ impl<
 
     /// Bind one ordered fact-routed queue for a same-channel STA+AP epoch.
     pub fn new_sta_ap(
-        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        storage: &'static Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
         frames: Sender<
             'queue,
@@ -238,6 +235,7 @@ impl<
         delay: D,
     ) -> Self {
         Self {
+            ring_lifetime: PhantomData,
             storage,
             pool,
             frames: Esp32s31StagedRxPublisher::sta_ap(frames, ingress, addresses),
@@ -464,15 +462,10 @@ impl<
 {
     pub fn new(
         ring: RxRingLive<'storage, COUNT>,
-        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        storage: &'static Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
         delay: D,
-        frames: Sender<
-            'queue,
-            M,
-            Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
-            QUEUE_DEPTH,
-        >,
+        frames: Esp32s31StagedRxSender<'queue, 'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
     ) -> Self {
         Self {
             ring,
@@ -490,7 +483,7 @@ impl<
     /// Create the sole physical producer for a same-channel STA+AP stream.
     pub fn new_sta_ap(
         ring: RxRingLive<'storage, COUNT>,
-        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        storage: &'static Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
         delay: D,
         frames: Sender<
@@ -594,6 +587,12 @@ impl<
         &self.ring
     }
 
+    pub const fn storage(
+        &self,
+    ) -> &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE> {
+        self.storage
+    }
+
     /// Preserve exact immutable layout evidence after a fail-closed RX exit.
     pub fn first_buffer_address_mismatch(
         &self,
@@ -636,6 +635,9 @@ impl<
         >,
         (Self, RxRingError),
     > {
+        if self.pool.claimed_slots() != 0 {
+            return Err((self, RxRingError::Busy));
+        }
         let Self {
             ring,
             storage,

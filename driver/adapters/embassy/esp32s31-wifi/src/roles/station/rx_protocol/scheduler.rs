@@ -27,175 +27,92 @@ impl<
 where
     S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
 {
-    /// Wait for and dispatch one independently owned staged frame.
-    pub async fn dispatch_next(&mut self) -> ConnectedRxDispatch {
+    /// Whether this owner can make protocol progress without a fresh MAC IRQ.
+    pub fn has_ready_work(&self) -> bool {
+        !self.frames.is_empty()
+            || self
+                .processor
+                .reorder_commands
+                .as_ref()
+                .is_some_and(|commands| !commands.is_empty())
+            || self
+                .processor
+                .next_gap_deadline()
+                .is_some_and(|(_, deadline)| deadline <= Instant::now())
+    }
+
+    /// Wait only for the next finite reorder deadline.
+    ///
+    /// Staging publications already carry the physical RX wake and reorder
+    /// commands are emitted by the connected control owner. Keeping this
+    /// future timer-only avoids consuming a queue item merely to wake the
+    /// common DATAPATH scheduler.
+    pub fn wait_ready(&mut self) -> impl Future<Output = ()> + '_ {
+        let deadline = self
+            .processor
+            .next_gap_deadline()
+            .map(|(_, deadline)| deadline);
+        async move {
+            match deadline {
+                Some(deadline) => Timer::at(deadline).await,
+                None => pending().await,
+            }
+        }
+    }
+
+    /// Drain ready commands/deadlines and at most `maximum_frames` staging
+    /// leases without waiting for another producer edge.
+    ///
+    /// Command and gap processing stays ahead of every frame exactly as in the
+    /// former task loop. The independent action bound prevents a continuously
+    /// publishing control plane from turning one radio poll into an unbounded
+    /// protocol loop.
+    pub async fn service_bounded(&mut self, maximum_frames: usize) -> ConnectedRxProtocolTurn {
         assert!(
             self.processor.runtime.dispatcher_configured(),
-            "stopped connected RX protocol cannot dispatch another frame"
+            "stopped connected RX protocol cannot service another turn"
         );
-        loop {
+        let maximum_frames = maximum_frames.max(1);
+        let maximum_actions = maximum_frames
+            .saturating_add(crate::datapath::rx::reorder::RX_REORDER_COMMAND_CAPACITY)
+            .saturating_add(RX_BLOCK_ACK_BANK_COUNT);
+        let mut actions = 0_usize;
+        let mut consumed_frames = 0_usize;
+
+        while consumed_frames < maximum_frames && actions < maximum_actions {
             if let Some(command) = self
                 .processor
                 .reorder_commands
                 .as_ref()
                 .and_then(try_receive_rx_reorder_command)
             {
-                if let Some(result) = self.processor.apply_reorder_command(command).await {
-                    return result;
-                }
+                actions = actions.saturating_add(1);
+                let _ = self.processor.apply_reorder_command(command).await;
                 continue;
             }
 
-            let next_gap = self.processor.next_gap_deadline();
-            let frame = if let Some(commands) = &self.processor.reorder_commands {
-                if let Some((tid, deadline)) = next_gap {
-                    match select(
-                        select(commands.receive(), self.frames.receive()),
-                        Timer::at(deadline),
-                    )
-                    .await
-                    {
-                        Either::First(Either::First(command)) => {
-                            if let Some(result) =
-                                self.processor.apply_reorder_command(command).await
-                            {
-                                return result;
-                            }
-                            continue;
-                        }
-                        Either::First(Either::Second(frame)) => frame,
-                        Either::Second(()) => {
-                            if let Some(result) = self.processor.expire_reorder_gap(tid).await {
-                                return result;
-                            }
-                            continue;
-                        }
-                    }
-                } else {
-                    match select(commands.receive(), self.frames.receive()).await {
-                        Either::First(command) => {
-                            if let Some(result) =
-                                self.processor.apply_reorder_command(command).await
-                            {
-                                return result;
-                            }
-                            continue;
-                        }
-                        Either::Second(frame) => frame,
-                    }
-                }
-            } else if let Some((tid, deadline)) = next_gap {
-                match select(self.frames.receive(), Timer::at(deadline)).await {
-                    Either::First(frame) => frame,
-                    Either::Second(()) => {
-                        if let Some(result) = self.processor.expire_reorder_gap(tid).await {
-                            return result;
-                        }
-                        continue;
-                    }
-                }
-            } else {
-                self.frames.receive().await
+            if let Some((bank, deadline)) = self.processor.next_gap_deadline()
+                && deadline <= Instant::now()
+            {
+                actions = actions.saturating_add(1);
+                let _ = self.processor.expire_reorder_gap(bank).await;
+                continue;
+            }
+
+            let Ok(frame) = self.frames.try_receive() else {
+                break;
             };
-            if let Some(result) = self.processor.dispatch_frame(frame).await {
-                return result;
-            }
+            #[cfg(feature = "task-poll-telemetry")]
+            crate::diagnostics::core0_rx_cycles::CORE0_RX_CYCLES
+                .record_protocol_frame_dequeued(crate::diagnostics::core0_rx_cycles::cycle_count());
+            actions = actions.saturating_add(1);
+            consumed_frames = consumed_frames.saturating_add(1);
+            let _ = self.processor.dispatch_frame(frame).await;
         }
-    }
 
-    /// Run protocol processing independently from the PAC/DMA owner.
-    pub async fn run(&mut self) -> ! {
-        let mut completed_in_turn = 0;
-        loop {
-            self.dispatch_next().await;
-            checkpoint_protocol_turn(&mut completed_in_turn).await;
+        ConnectedRxProtocolTurn {
+            consumed_frames,
+            work_remaining: self.has_ready_work(),
         }
-    }
-
-    /// Run until an outer connected-epoch owner requests teardown.
-    ///
-    /// The stop future is polled first, so a simultaneous frame/stop edge does
-    /// not publish new network input after disconnect. Cancelling the current
-    /// `dispatch_next` future drops its local staging lease; the explicit
-    /// shutdown then drains queued and retained ownership before returning.
-    pub async fn run_until<F: Future<Output = ()>>(
-        &mut self,
-        stop: F,
-    ) -> ConnectedRxProtocolShutdown {
-        let mut stop = core::pin::pin!(stop);
-        let mut completed_in_turn = 0;
-        loop {
-            match select(stop.as_mut(), self.dispatch_next()).await {
-                Either::First(()) => return self.shutdown_discard(),
-                Either::Second(_) => checkpoint_protocol_turn(&mut completed_in_turn).await,
-            }
-        }
-    }
-
-    /// Consume one protocol epoch and return its scratch only after shutdown.
-    pub async fn run_until_stopped<F: Future<Output = ()>>(
-        mut self,
-        stop: F,
-    ) -> Esp32s31ConnectedRxProtocolStopped<'scratch, 'pool, CAPACITY, SLOTS, REORDER_SLOTS> {
-        let shutdown = self.run_until(stop).await;
-        let (mpdu, ethernet, runtime) = self.into_stopped_parts();
-        ConnectedRxProtocolStopped {
-            shutdown,
-            mpdu,
-            ethernet,
-            runtime,
-        }
-    }
-
-    /// Run one executor-owned protocol epoch and return its exact scratch
-    /// through the shared task-control capability.
-    ///
-    /// The observation receives value-only shutdown evidence before the task
-    /// endpoint publishes completion. Dropping this future instead poisons the
-    /// endpoint, so a caller cannot confuse cancellation with owner return.
-    pub async fn run_controlled_task<O>(
-        self,
-        endpoint: ConnectedTaskEndpoint<
-            '_,
-            M,
-            Esp32s31ConnectedRxProtocolStopped<'scratch, 'pool, CAPACITY, SLOTS, REORDER_SLOTS>,
-        >,
-        observe_shutdown: O,
-    ) where
-        O: FnOnce(ConnectedRxProtocolShutdown),
-    {
-        let stopped = self.run_until_stopped(endpoint.wait_for_stop()).await;
-        observe_shutdown(stopped.shutdown());
-        endpoint.complete(stopped);
-    }
-}
-
-async fn checkpoint_protocol_turn(completed: &mut usize) {
-    if advance_protocol_turn(completed) {
-        embassy_futures::yield_now().await;
-    }
-}
-
-fn advance_protocol_turn(completed: &mut usize) -> bool {
-    *completed += 1;
-    if *completed < RX_PROTOCOL_DISPATCH_BUDGET {
-        return false;
-    }
-    *completed = 0;
-    true
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{RX_PROTOCOL_DISPATCH_BUDGET, advance_protocol_turn};
-
-    #[test]
-    fn protocol_turn_yields_at_the_configured_budget() {
-        let mut completed = 0;
-        for _ in 1..RX_PROTOCOL_DISPATCH_BUDGET {
-            assert!(!advance_protocol_turn(&mut completed));
-        }
-        assert!(advance_protocol_turn(&mut completed));
-        assert_eq!(completed, 0);
     }
 }

@@ -258,7 +258,7 @@ struct AccessPointProtectedFrameDispatch;
 
 impl AccessPointProtectedFrameDispatch {
     #[cfg_attr(
-        target_arch = "riscv32",
+        all(target_arch = "riscv32", not(feature = "task-poll-telemetry")),
         unsafe(link_section = ".hot.text.open_radio_ap_rx_dispatch")
     )]
     #[inline(never)]

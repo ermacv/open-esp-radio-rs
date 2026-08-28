@@ -123,10 +123,24 @@ impl<const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
 
     /// Claim the first free slot without exposing its storage.
     pub fn try_claim_radio(&self) -> Option<RxRadioLease<'_, FRAME_CAPACITY>> {
+        self.try_claim_radio_from(0)
+    }
+
+    /// Claim a free slot starting at a caller-owned round-robin hint.
+    ///
+    /// The atomic slot transition remains the ownership proof; `start` is
+    /// only an efficiency hint and therefore need not be synchronized with a
+    /// consumer which releases an earlier slot concurrently.
+    pub fn try_claim_radio_from(&self, start: usize) -> Option<RxRadioLease<'_, FRAME_CAPACITY>> {
         if QUEUE_DEPTH > usize::from(u8::MAX) + 1 {
             return None;
         }
-        self.slots.iter().enumerate().find_map(|(index, slot)| {
+        if QUEUE_DEPTH == 0 {
+            return None;
+        }
+        (0..QUEUE_DEPTH).find_map(|distance| {
+            let index = (start + distance) % QUEUE_DEPTH;
+            let slot = &self.slots[index];
             slot.try_claim(SLOT_FREE, SLOT_RADIO).then(|| RxRadioLease {
                 slot,
                 index: index as u8,
@@ -383,6 +397,20 @@ mod tests {
         drop(owner);
         assert_eq!(pool.claimed_slots(), 0);
         assert!(pool.try_claim_radio().is_some());
+    }
+
+    #[test]
+    fn hinted_claim_wraps_and_keeps_the_atomic_slot_proof() {
+        let pool = RxHandoffPool::<16, 4>::new();
+        let third = pool.try_claim_radio_from(2).unwrap();
+        assert_eq!(third.index(), 2);
+        let fourth = pool.try_claim_radio_from(2).unwrap();
+        assert_eq!(fourth.index(), 3);
+        let first = pool.try_claim_radio_from(2).unwrap();
+        assert_eq!(first.index(), 0);
+        drop(third);
+        drop(fourth);
+        drop(first);
     }
 
     #[test]

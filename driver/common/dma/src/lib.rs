@@ -13,12 +13,21 @@
 
 use core::marker::PhantomData;
 
+mod affine_spsc;
 mod pinned_tx;
+mod rx_external_handoff;
 mod rx_handoff;
 
+pub use affine_spsc::{
+    AffineSpscQueue, AffineSpscReceiver, AffineSpscSender, AffineSpscTryReceiveError,
+    AffineSpscTrySendError,
+};
 pub use pinned_tx::{
     DmaIndexReturn, IndexedStableDmaLease, PinnedDmaTxNetworkLease, PinnedDmaTxPool,
     PinnedDmaTxRadioLease, ReturningStableDmaBacking, TaggedStableDmaBacking,
+};
+pub use rx_external_handoff::{
+    ExternalRxBuffer, ExternalRxHandoffPool, ExternalRxNetworkLease, ExternalRxRadioLease,
 };
 pub use rx_handoff::{RxHandoffPool, RxNetworkLease, RxRadioLease};
 

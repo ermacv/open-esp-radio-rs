@@ -1,0 +1,27 @@
+schema = 3
+id = "udp-rx-ht40-openwrt-delivery-diagnostic"
+description = "Split-core HT40 AP TX-monitor to station delivery-frontier diagnostic"
+repetitions = 1
+image = "diagnostic-rx-delivery"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "openwrt-monitor"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "udp"
+direction = "rx"
+duration_seconds = 16
+rx_rate_bps = 120000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = false
+minimum_rx_bps = 72000000
+require_no_beacon_loss = false
+
+[evidence]
+openwrt_tx_monitor_rx = true
+independent_laptop_monitor_rx = false

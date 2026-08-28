@@ -5,7 +5,6 @@
 //! the associated peer, RX dispatcher/protocol, control-TX handoff,
 //! ordinary/A-MPDU TX, BlockAck control and the final [`SingleRoleServices`].
 
-use embassy_sync::channel::Receiver;
 use open_esp_radio_embassy_net::{PinnedTxFrame, RawMutex};
 use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 use open_esp_radio_esp32s31_wifi_mac::{
@@ -57,7 +56,7 @@ use crate::{
         RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandReceiver, RxReorderCommandSender,
         RxReorderFrameStorage,
     },
-    datapath::rx::staging::Esp32s31StagedRxFrame,
+    datapath::rx::staging::Esp32s31StagedRxReceiver,
     datapath::services::SingleRoleServices,
     datapath::tx::resources::AggregateTxResources,
     roles::concurrent::Esp32s31StaApRxBlockAck,

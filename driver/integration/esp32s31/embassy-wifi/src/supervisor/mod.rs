@@ -33,9 +33,8 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use esp_hal::rng::{Rng, Trng};
 use open_esp_radio::{
     AccessPointRequest, AccessPointSecurity, StationDiscovery, StationPowerMode, StationRequest,
-    StationSecurity,
-    WIFI_SCAN_RESULT_CAPACITY, WifiAccessPointConfig, WifiConfig, WifiScanFailure, WifiScanReport,
-    WifiScanRequest, WifiScanResult, WifiServicePlanningError, WifiServiceRequest,
+    StationSecurity, WIFI_SCAN_RESULT_CAPACITY, WifiAccessPointConfig, WifiConfig, WifiScanFailure,
+    WifiScanReport, WifiScanRequest, WifiScanResult, WifiServicePlanningError, WifiServiceRequest,
     WifiStartFailure, WifiStartReport, WifiStationConfig, WifiStopReport,
     WifiSupervisorConfiguration,
     embassy_supervisor::{
@@ -114,7 +113,9 @@ use open_esp_radio_esp32s31_wifi_esp_hal::{
     EspHalRadioPeripheral, mac_interrupt_epoch::EspHalMacInterruptRoute,
 };
 use open_esp_radio_esp32s31_wifi_mac::{
-    init::activate_promiscuous_receive, rx::RxRingError, tx::TxSlot,
+    init::activate_promiscuous_receive,
+    rx::{RxDmaBufferAddresses, RxRingError},
+    tx::TxSlot,
 };
 use open_esp_radio_esp32s31_wifi_sta::attempt::{
     Esp32s31StaAttemptObserver, Esp32s31StaAttemptSecurity, Esp32s31StaAttemptStage,
@@ -140,25 +141,25 @@ use open_esp_radio_wifi_sta::station::{
 use open_esp_radio_wpa2::frames::Wpa2Gtk;
 use static_cell::{ConstStaticCell, StaticCell};
 
-#[cfg(feature = "mac-irq-diagnostics")]
-use crate::supervisor::station::configure_mac_irq_observer;
-use crate::supervisor::station::{
-    ConnectedDisconnectedEpoch, ConnectedReconnectedEpoch, ConnectedRxEpochResources,
-    ConnectedRxProtocolStorage, ConnectedStationEpoch, ConnectedStationFault,
-    ConnectedStationOutcome, ConnectedStationResources, ConnectedStationRunExit,
-    ConnectedStoppedRx, ControlResources, Esp32s31WifiProtocolRunner,
-    InitialConnectedStaticResources, MacInterruptEpoch, ProductionAccessPointRxConsumer,
-    ProductionAccessPointRxProducer, access_point_rx_pipeline, connected_config,
-    initialize_connected_rx_protocol_runtime, initialize_connected_static_resources,
-    initialize_ethernet_frame, initialize_sta_ap_station_rx_batch, initialize_station_network,
-    mac_interrupt_epoch, publish_access_point_shared_network_rx, run_connected,
-};
 use crate::monitor::{
     CaptureResources, MonitorMemory, MonitorResourcesError, ProductionMonitorBuildFailure,
     ProductionMonitorResources, ProductionMonitorTask, initialize_monitor_resources,
 };
 use crate::radio_resources::{
     NetworkRunner, RadioAmpduStorage, RadioTxBacking, RunningWifiNetwork, WifiNetworkResources,
+};
+#[cfg(feature = "mac-irq-diagnostics")]
+use crate::supervisor::station::configure_mac_irq_observer;
+use crate::supervisor::station::{
+    ConnectedDisconnectedEpoch, ConnectedReconnectedEpoch, ConnectedRxEpochResources,
+    ConnectedRxProtocolStorage, ConnectedStationEpoch, ConnectedStationFault,
+    ConnectedStationOutcome, ConnectedStationResources, ConnectedStationRunExit,
+    ConnectedStoppedRx, ControlResources,
+    InitialConnectedStaticResources, MacInterruptEpoch, ProductionAccessPointRxConsumer,
+    ProductionAccessPointRxProducer, access_point_rx_pipeline, connected_config,
+    initialize_connected_rx_protocol_runtime, initialize_connected_static_resources,
+    initialize_ethernet_frame, initialize_sta_ap_station_rx_batch, initialize_station_network,
+    mac_interrupt_epoch, publish_access_point_shared_network_rx, run_connected,
 };
 use crate::{
     Esp32s31NewError, Esp32s31Radio, Esp32s31RadioError, Esp32s31RadioInitialization, Esp32s31Wifi,
@@ -221,7 +222,7 @@ static WIFI_MEMORY: Esp32s31DefaultWifiMemory<CriticalSectionRawMutex> =
     reason = "the linker must retain the RX DMA address binding in internal SRAM"
 )]
 #[unsafe(link_section = ".critical.bss.open_radio_rx_addresses")]
-static RX_BUFFER_ADDRESSES: ConstStaticCell<[u32; RX_DESCRIPTOR_COUNT]> =
+static RX_BUFFER_ADDRESSES: ConstStaticCell<RxDmaBufferAddresses<RX_DESCRIPTOR_COUNT>> =
     ConstStaticCell::new([0; RX_DESCRIPTOR_COUNT]);
 // These two owners contain runtime-derived DMA and PHY values. StaticCell
 // retains their final address while `init_with` below avoids a by-value
@@ -311,8 +312,7 @@ struct ProductionConnectedPhase {
     network: WifiNetworkResources,
     station: Esp32s31StaAttemptStation,
     peer: open_esp_radio_esp32s31_wifi_sta::peer::Esp32s31ConnectedStaPeer,
-    installed_security:
-        open_esp_radio_esp32s31_wifi_sta::attempt::Esp32s31StaInstalledSecurity,
+    installed_security: open_esp_radio_esp32s31_wifi_sta::attempt::Esp32s31StaInstalledSecurity,
 }
 
 type ProductionStationOwner<'state, 'security> = Esp32s31StationServiceOwner<
@@ -424,14 +424,9 @@ pub struct Esp32s31RadioRunner {
         Esp32s31RadioSupervisorTask<'static, CriticalSectionRawMutex, ProductionWifiEpochRunner>,
 }
 
-/// Explicitly placed eternal runners returned by [`new`].
-///
-/// The hardware runner owns PAC/DMA/ISR state. The protocol runner owns only
-/// the connected 802.11 processing task endpoint. Keeping them separate lets
-/// an application select a core topology without changing driver behavior.
+/// Eternal hardware/radio runner returned by [`new`].
 pub struct Esp32s31RadioRunners {
     pub hardware: Esp32s31RadioRunner,
-    pub wifi_protocol: Esp32s31WifiProtocolRunner,
 }
 
 /// Complete initialized radio root and all eternal execution obligations.
@@ -712,14 +707,16 @@ pub async fn new(
         #[cfg(feature = "diagnostics")]
         diagnostics,
     } = config;
-    let wifi_protocol = Esp32s31WifiProtocolRunner::new(
-        #[cfg(feature = "task-poll-telemetry")]
-        diagnostics.map(|hooks| hooks.protocol_task_poll),
-    );
     #[cfg(feature = "mac-irq-diagnostics")]
     if let Some(hooks) = diagnostics {
         configure_mac_irq_observer(hooks.mac_irq);
     }
+    #[cfg(feature = "diagnostics")]
+    open_esp_radio_esp32s31_wifi_embassy::roles::station::rx_protocol::configure_deferred_shared_rx_admission_for_diagnostics(
+        diagnostics.is_some_and(|hooks| {
+            hooks.rx_admission == crate::Esp32s31DiagnosticRxAdmission::DeferredReady
+        }),
+    );
     let owned = Radio::claim(platform).map_err(|_| Esp32s31NewError::RadioAlreadyClaimed)?;
     let mut wifi_start = Esp32s31WifiStartConfig::new(calibration, initial_channel);
     if let Some(maximum) = maximum_tx_power_quarter_dbm {
@@ -764,7 +761,7 @@ pub async fn new(
         Ok(memory) => memory,
         Err(_error) => return Err(Esp32s31NewError::StationMemoryInUse),
     };
-    let rx_storage = memory.rx_dma;
+    let rx_storage: &'static RxStorage = memory.rx_dma;
     let buffer_addresses = RX_BUFFER_ADDRESSES.take();
     let monitor_memory = MonitorMemory::new(rx_storage, buffer_addresses)
         .map_err(|_| Esp32s31NewError::RxDmaLayout)?;
@@ -840,7 +837,8 @@ pub async fn new(
                             csi_config: 0,
                             flags: 0,
                         },
-                        security: open_esp_radio_ieee80211::security::WifiSecurityMode::Wpa2Personal,
+                        security:
+                            open_esp_radio_ieee80211::security::WifiSecurityMode::Wpa2Personal,
                     },
                 )
             }),
@@ -888,7 +886,6 @@ pub async fn new(
         ),
         runners: Esp32s31RadioRunners {
             hardware: Esp32s31RadioRunner { supervisor },
-            wifi_protocol,
         },
     })
 }

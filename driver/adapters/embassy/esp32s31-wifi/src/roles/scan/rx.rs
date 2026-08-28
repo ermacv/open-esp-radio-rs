@@ -9,7 +9,7 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::rx::{
-    RxDma, RxIngressConfig, RxRingError, RxRingHalted, extract_management,
+    RxDma, RxDmaBufferAddresses, RxIngressConfig, RxRingError, RxRingHalted, extract_management,
 };
 use open_esp_radio_ieee80211::scan::{ScanObservation, ScanTable};
 
@@ -100,7 +100,7 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         hardware: &mut H,
         storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         descriptor_base: u32,
-        buffer_addresses: &'storage [u32; COUNT],
+        buffer_addresses: &'storage RxDmaBufferAddresses<COUNT>,
     ) -> Result<Self, RxRingError> {
         Esp32s31RxFrontier::prepare_initial(hardware, storage, descriptor_base, buffer_addresses)
             .map(|receive| Self { receive, storage })
@@ -111,7 +111,7 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         hardware: &mut H,
         storage: &'static Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         descriptor_base: u32,
-        buffer_addresses: &'storage [u32; COUNT],
+        buffer_addresses: &'storage RxDmaBufferAddresses<COUNT>,
     ) -> Result<Self, RxRingError> {
         Esp32s31RxFrontier::prepare_initial(hardware, storage, descriptor_base, buffer_addresses)
             .map(|receive| Self { receive, storage })

@@ -1,0 +1,28 @@
+schema = 3
+id = "udp-rx-ht40-rate-mask-auto-air-diagnostic"
+description = "HT40 MCS7 automatic-rate RX air and AP aggregation control"
+image = "diagnostic-rx-delivery"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic", "udp", "station", "rx", "ht40", "mcs7", "automatic-gi", "rate-mask", "air"]
+
+[link]
+phy = "ht40"
+minimum_mcs = 7
+guard_interval = "any"
+
+[workload]
+kind = "udp"
+direction = "rx"
+duration_seconds = 16
+rx_rate_bps = 140000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = false
+require_no_beacon_loss = false
+minimum_rx_bps = 60000000
+
+[evidence]
+openwrt_tx_monitor_rx = true
+independent_laptop_monitor_rx = true

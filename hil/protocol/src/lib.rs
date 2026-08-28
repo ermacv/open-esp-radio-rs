@@ -39,7 +39,7 @@ pub use message::{
     WifiMonitorFrameChunk, WifiMonitorFrameChunkError, WifiMonitorObserved, WifiMonitorPhyEvidence,
     WifiMonitorPhyFormat, WifiMonitorRequest, WifiNetworkInterface, WifiRole,
     WifiRoleFailureEvidence, WifiRoleFailureReason, WifiRoleOperation, WifiRoleTransitionEvidence,
-    WifiScanEvidence, WifiScanRequest, WifiStationAccessPointRequest,
-    WifiStationAccessPointStopEvidence, WireBody, WireKind,
+    WifiRxAdmissionPolicy, WifiRxChecksumPolicy, WifiScanEvidence, WifiScanRequest,
+    WifiStationAccessPointRequest, WifiStationAccessPointStopEvidence, WireBody, WireKind,
 };
 pub use stream_pattern::{fill_stream_pattern, stream_pattern_byte, stream_pattern_matches};

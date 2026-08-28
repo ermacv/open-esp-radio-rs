@@ -38,7 +38,7 @@ use open_esp_radio_esp32s31_embassy_wifi::{
     Esp32s31MonitorFrames, Esp32s31MonitorPhyInfo, Esp32s31RadioConfig, Esp32s31RadioParts,
     Esp32s31RadioRunner, Esp32s31RadioRunners, Esp32s31RadioSystem, Esp32s31StationLinkState,
     Esp32s31StationStatus, Esp32s31WifiControl, Esp32s31WifiDevice, Esp32s31WifiNetworkRunner,
-    Esp32s31WifiParts, Esp32s31WifiProtocolRunner,
+    Esp32s31WifiParts,
 };
 #[cfg(feature = "driver-observation")]
 use open_esp_radio_esp32s31_embassy_wifi::{
@@ -86,8 +86,8 @@ use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
     feature = "driver-observation",
     not(any(
         feature = "mac-irq-telemetry",
-        feature = "task-poll-telemetry",
-        feature = "rx-delivery-telemetry"
+        feature = "rx-delivery-telemetry",
+        feature = "core0-rx-cycle-telemetry"
     ))
 ))]
 use open_esp_radio_hil_esp32s31_telemetry::rx_pipeline::RxCorrectnessObserver;
@@ -144,11 +144,14 @@ mod rx_qualification;
 mod traffic;
 
 use traffic::{observe_open_radio_task_polls, start_connected_traffic, start_traffic_dispatcher};
+#[cfg(feature = "core0-rx-cycle-telemetry")]
+use traffic::observe_open_radio_core0_task_polls;
 
 const NETWORK_SOCKET_COUNT: usize = 5;
 const SCAN_DWELL_MS: u16 = 200;
 const MAXIMUM_TX_POWER_QUARTER_DBM: i8 = 80;
-pub(crate) const OPEN_RADIO_TASK_POLL_TELEMETRY: bool = cfg!(feature = "task-poll-telemetry");
+pub(crate) const OPEN_RADIO_TASK_POLL_TELEMETRY: bool =
+    cfg!(feature = "task-residence-telemetry");
 pub(crate) const OPEN_RADIO_MAC_IRQ_TELEMETRY: bool = cfg!(feature = "mac-irq-telemetry");
 pub(crate) const OPEN_RADIO_RX_DELIVERY_TELEMETRY: bool = cfg!(feature = "rx-delivery-telemetry");
 pub(crate) const OPEN_RADIO_DRIVER_OBSERVATION: bool = cfg!(feature = "driver-observation");
@@ -949,8 +952,8 @@ pub(crate) static RX_PIPELINE: RxPipelineCounters = RxPipelineCounters::new(now_
     feature = "driver-observation",
     not(any(
         feature = "mac-irq-telemetry",
-        feature = "task-poll-telemetry",
-        feature = "rx-delivery-telemetry"
+        feature = "rx-delivery-telemetry",
+        feature = "core0-rx-cycle-telemetry"
     ))
 ))]
 #[unsafe(link_section = ".critical.data.open_radio_rx_telemetry")]
@@ -1177,11 +1180,6 @@ fn observe_mac_irq(observation: Esp32s31MacIrqObservation) {
     }
 }
 
-#[cfg(feature = "task-poll-telemetry")]
-fn observe_protocol_task_poll(elapsed_micros: u64) {
-    TASK_POLLS.protocol().record(elapsed_micros);
-}
-
 pub fn diagnostic_snapshot() -> (u32, u32) {
     (DIAGNOSTIC_STAGE.load(Ordering::Acquire), 0)
 }
@@ -1207,6 +1205,7 @@ pub const fn hil_capabilities() -> Capabilities {
             driver_observation_evidence: OPEN_RADIO_DRIVER_OBSERVATION,
             rx_delivery_evidence: OPEN_RADIO_RX_DELIVERY_TELEMETRY,
             task_poll_evidence: OPEN_RADIO_TASK_POLL_TELEMETRY,
+            core0_rx_cycle_evidence: cfg!(feature = "core0-rx-cycle-telemetry"),
             mac_irq_evidence: OPEN_RADIO_MAC_IRQ_TELEMETRY,
             psram_task_stack: cfg!(feature = "psram-task-stack"),
             network_scheduler_evidence: false,
@@ -1226,21 +1225,15 @@ pub const fn hil_capabilities() -> Capabilities {
     reason = "the unique production radio runner is moved once into its static Embassy task arena; the linked-image stack audit remains authoritative"
 )]
 async fn radio_runner_task(runner: Esp32s31RadioRunner) {
+    #[cfg(feature = "core0-rx-cycle-telemetry")]
+    observe_open_radio_core0_task_polls(runner.run(), TASK_POLLS.radio()).await;
+    #[cfg(not(feature = "core0-rx-cycle-telemetry"))]
     observe_open_radio_task_polls(
         runner.run(),
         TASK_POLLS.radio(),
         OPEN_RADIO_TASK_POLL_TELEMETRY,
     )
     .await
-}
-
-#[embassy_executor::task]
-#[allow(
-    large_assignments,
-    reason = "the unique protocol runner is moved once into its static Embassy task arena; the linked-image stack audit remains authoritative"
-)]
-async fn wifi_protocol_runner_task(runner: Esp32s31WifiProtocolRunner) {
-    runner.run().await
 }
 
 #[cfg(feature = "driver-observation")]
@@ -2270,9 +2263,10 @@ pub async fn run(
         request_id: initialization_request_id,
         ipv4: startup_ipv4,
         data_plane,
+        rx_checksum,
+        rx_admission,
         phy_calibration_artifact,
     } = startup;
-    let primary_core_spawner = spawner.make_send();
     let efuse_registers = esp_hal::peripherals::EFUSE::regs();
     let mut station_address = [0; 6];
     station_address
@@ -2299,19 +2293,25 @@ pub async fn run(
     .with_maximum_tx_power_quarter_dbm(MAXIMUM_TX_POWER_QUARTER_DBM);
     #[cfg(feature = "driver-observation")]
     let config = config.with_diagnostic_observers(Esp32s31DiagnosticObservers {
+        rx_admission: match rx_admission {
+            open_esp_radio_hil_protocol::WifiRxAdmissionPolicy::SynchronousShared =>
+                open_esp_radio_esp32s31_embassy_wifi::Esp32s31DiagnosticRxAdmission::SynchronousShared,
+            open_esp_radio_hil_protocol::WifiRxAdmissionPolicy::DeferredReadyDiagnostic =>
+                open_esp_radio_esp32s31_embassy_wifi::Esp32s31DiagnosticRxAdmission::DeferredReady,
+        },
         rx_pipeline: {
             #[cfg(any(
                 feature = "mac-irq-telemetry",
-                feature = "task-poll-telemetry",
-                feature = "rx-delivery-telemetry"
+                feature = "rx-delivery-telemetry",
+                feature = "core0-rx-cycle-telemetry"
             ))]
             {
                 Some(&RX_PIPELINE)
             }
             #[cfg(not(any(
                 feature = "mac-irq-telemetry",
-                feature = "task-poll-telemetry",
-                feature = "rx-delivery-telemetry"
+                feature = "rx-delivery-telemetry",
+                feature = "core0-rx-cycle-telemetry"
             )))]
             {
                 None
@@ -2320,16 +2320,16 @@ pub async fn run(
         rx_reorder: {
             #[cfg(any(
                 feature = "mac-irq-telemetry",
-                feature = "task-poll-telemetry",
-                feature = "rx-delivery-telemetry"
+                feature = "rx-delivery-telemetry",
+                feature = "core0-rx-cycle-telemetry"
             ))]
             {
                 None
             }
             #[cfg(not(any(
                 feature = "mac-irq-telemetry",
-                feature = "task-poll-telemetry",
-                feature = "rx-delivery-telemetry"
+                feature = "rx-delivery-telemetry",
+                feature = "core0-rx-cycle-telemetry"
             )))]
             {
                 Some(&RX_CORRECTNESS)
@@ -2349,8 +2349,6 @@ pub async fn run(
         },
         #[cfg(feature = "mac-irq-telemetry")]
         mac_irq: observe_mac_irq,
-        #[cfg(feature = "task-poll-telemetry")]
-        protocol_task_poll: observe_protocol_task_poll,
         station_attempt: observe_station_attempt,
         access_point: observe_access_point,
     });
@@ -2368,10 +2366,7 @@ pub async fn run(
         open_esp_radio_esp32s31_embassy_wifi::new(platform, trng, config)
     )
     .unwrap_or_else(|error| panic!("production radio initialization failed: {error:?}"));
-    let Esp32s31RadioRunners {
-        hardware: runner,
-        wifi_protocol,
-    } = runners;
+    let Esp32s31RadioRunners { hardware: runner } = runners;
     let Esp32s31RadioParts {
         wifi,
         initialization,
@@ -2381,10 +2376,6 @@ pub async fn run(
     // graph is moved into the task arena instead of retained in this future.
     spawner
         .spawn(radio_runner_task(runner).expect("production radio runner task must allocate once"));
-    primary_core_spawner.spawn(
-        wifi_protocol_runner_task(wifi_protocol)
-            .expect("Wi-Fi protocol runner task must allocate once"),
-    );
     if let Some(cache) = initialization.calibration_cache {
         let disposition = match initialization.start.wifi.registration.calibration_path {
             PhyCalibrationPath::FullAfterRejectedCache => StartupArtifactDisposition::Replaced,
@@ -2431,9 +2422,15 @@ pub async fn run(
         0xa5,
         0x31,
     ]);
+    let validate_ipv4_udp_rx_checksums = matches!(
+        rx_checksum,
+        open_esp_radio_hil_protocol::WifiRxChecksumPolicy::Software
+    );
     let network_start = AppNetworkStart {
-        station_device,
-        access_point_device,
+        station_device: station_device
+            .with_software_ipv4_udp_rx_checksum_validation(validate_ipv4_udp_rx_checksums),
+        access_point_device: access_point_device
+            .with_software_ipv4_udp_rx_checksum_validation(validate_ipv4_udp_rx_checksums),
         station_ipv4: startup_ipv4,
         seed,
     };
@@ -2460,7 +2457,8 @@ pub async fn run(
     };
     runtime_log(format_args!(
         "OPEN_RADIO_HIL data_plane={data_plane:?} radio_core=0 \
-         protocol_core=0 network_core={data_plane_core}",
+         protocol_core=0 network_core={data_plane_core} rx_checksum={rx_checksum:?} \
+         rx_admission={rx_admission:?}",
     ));
 }
 

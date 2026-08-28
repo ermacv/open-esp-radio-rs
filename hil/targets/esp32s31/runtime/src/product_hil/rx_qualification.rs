@@ -44,16 +44,12 @@ pub(crate) static LAST_PHY: AtomicU32 = AtomicU32::new(u32::MAX);
 #[cfg(feature = "driver-observation")]
 pub(crate) struct HilConnectedRxObserver {
     udp_port: u16,
-    phy_sample_cursor: AtomicU32,
 }
 
 #[cfg(feature = "driver-observation")]
 impl HilConnectedRxObserver {
     pub(crate) const fn new(udp_port: u16) -> Self {
-        Self {
-            udp_port,
-            phy_sample_cursor: AtomicU32::new(0),
-        }
+        Self { udp_port }
     }
 
     #[cfg(feature = "rx-delivery-telemetry")]
@@ -92,8 +88,11 @@ impl HilConnectedRxObserver {
 #[cfg(feature = "driver-observation")]
 impl Esp32s31ConnectedRxObserver for HilConnectedRxObserver {
     fn requests_phy(&self, frame: RxObservedEthernetFrame<'_>) -> bool {
+        // A strict interval vector gate cannot be based on one out of every
+        // 64 packets: a fallback vector could otherwise remain invisible.
+        // The observer already classifies every benchmark UDP publication;
+        // requesting its decoded value adds no raw-prefix ownership or wait.
         ipv4_udp_destination_port(frame) == Some(self.udp_port)
-            && self.phy_sample_cursor.fetch_add(1, Ordering::Relaxed) & 63 == 0
     }
 
     fn observe(&self, event: Esp32s31ConnectedRxObservation<'_>) {
@@ -112,7 +111,17 @@ impl Esp32s31ConnectedRxObserver for HilConnectedRxObserver {
                 if let Some(phy) = available(phy) {
                     LAST_FORMAT.store(u32::from(phy.baseband_format), Ordering::Relaxed);
                     let mut packed = u32::from(phy.baseband_format) | (u32::from(phy.rate) << 4);
-                    if let Some(signal) = phy.he_su {
+                    if let Some(signal) = phy.ht {
+                        packed |= (1 << 30)
+                            | (u32::from(signal.mcs) << 9)
+                            | (u32::from(signal.short_guard_interval) << 16)
+                            | (u32::from(signal.bandwidth_mhz == 40) << 17);
+                        RX_PHY.observe_ht(
+                            signal.mcs,
+                            signal.bandwidth_mhz,
+                            signal.short_guard_interval,
+                        );
+                    } else if let Some(signal) = phy.he_su {
                         let bandwidth = match signal.bandwidth_mhz {
                             20 => 0,
                             40 => 1,

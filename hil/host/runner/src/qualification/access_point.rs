@@ -541,6 +541,7 @@ fn validate_mcs_evidence(
     let Some(LinkExpectation {
         phy,
         minimum_mcs: Some(minimum_mcs),
+        ..
     }) = expected_link
     else {
         return Ok(());
@@ -1684,6 +1685,7 @@ mod tests {
         let link = Some(LinkExpectation {
             phy: PhyExpectation::Ht40,
             minimum_mcs: Some(7),
+            guard_interval: crate::qualification::scenario::HtGuardIntervalExpectation::Any,
         });
         let rx = AccessPointTraffic::Udp {
             direction: Direction::Rx,

@@ -22,6 +22,7 @@ use crate::{
         Esp32s31StagedRxFrame, StagedEthernetPublication, StagedRxDisposition,
     },
     roles::station::rx_protocol::ConnectedRxProtocolSink,
+    roles::station::rx_protocol::StagedRxAdmission,
 };
 
 /// Copies Ethernet events into the bounded network queue and forwards every
@@ -90,6 +91,25 @@ impl<
         STAGE_SLOTS,
     >
 {
+    /// Create a sink which releases descriptor-backed staging immediately
+    /// after copying the decoded Ethernet frame into the endpoint-owned RX
+    /// pool. This keeps DMA credit independent from network-task latency while
+    /// allowing the physical stage and network pools to use distinct shapes.
+    pub const fn new_with_copied_rx(
+        network: PinnedRxPublisher<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH>,
+        observer: O,
+    ) -> Self {
+        Self {
+            network,
+            shared: None,
+            observer,
+            #[cfg(any(feature = "diagnostics", test))]
+            pipeline_observer: None,
+            #[cfg(feature = "diagnostics")]
+            delivery_observer: None,
+        }
+    }
+
     /// Create a zero-copy sink whose network and staging capacities may differ.
     pub const fn new_with_shared_rx(
         network: PinnedRxPublisher<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH>,
@@ -252,6 +272,17 @@ impl<
         STAGE_SLOTS,
     >
 {
+    fn staged_rx_admission(&self) -> StagedRxAdmission {
+        if self.shared.is_none() {
+            return StagedRxAdmission::AwaitCapacity;
+        }
+        #[cfg(feature = "diagnostics")]
+        if super::rx_protocol::deferred_shared_rx_admission_for_diagnostics() {
+            return StagedRxAdmission::AwaitCapacity;
+        }
+        StagedRxAdmission::Immediate
+    }
+
     fn wait_ready(&mut self) -> impl Future<Output = ()> + '_ {
         self.network.wait_ready()
     }
@@ -294,6 +325,8 @@ impl<
 
         #[cfg(any(feature = "diagnostics", test))]
         let publish_started = self.pipeline_observer.map(|observer| observer.now_micros());
+        #[cfg(feature = "task-poll-telemetry")]
+        let core0_publication_started = crate::diagnostics::core0_rx_cycles::cycle_count();
         {
             let raw = frame.segment().buffer;
             let payload =
@@ -328,6 +361,8 @@ impl<
             }
             self.observer.publish(event);
         }
+        #[cfg(feature = "task-poll-telemetry")]
+        let core0_observer_completed = crate::diagnostics::core0_rx_cycles::cycle_count();
 
         #[cfg(any(feature = "diagnostics", test))]
         let ethernet_length = ethernet.payload_length.saturating_add(14);
@@ -343,7 +378,16 @@ impl<
                 unreachable!("validated staged Ethernet publication failed: {error:?}")
             }
         };
+        #[cfg(feature = "task-poll-telemetry")]
+        let core0_in_place_completed = crate::diagnostics::core0_rx_cycles::cycle_count();
         shared.publish(index);
+        #[cfg(feature = "task-poll-telemetry")]
+        crate::diagnostics::core0_rx_cycles::CORE0_RX_CYCLES.record_protocol_publication(
+            core0_observer_completed.wrapping_sub(core0_publication_started),
+            core0_in_place_completed.wrapping_sub(core0_observer_completed),
+            crate::diagnostics::core0_rx_cycles::cycle_count()
+                .wrapping_sub(core0_in_place_completed),
+        );
         #[cfg(any(feature = "diagnostics", test))]
         if let (Some(observer), Some(started)) = (self.pipeline_observer, publish_started) {
             observer.observe(RxPipelineObservation::NetworkPublication {
@@ -361,9 +405,10 @@ mod tests {
     use core::sync::atomic::{AtomicU64, Ordering};
     use core::task::{Context, Waker};
 
+    use open_esp_radio_dma::RxHandoffPool;
     use open_esp_radio_embassy_net::{
         Driver as _, NetworkInterfaceId, NoopRawMutex, PinnedEndpointResources,
-        PinnedNetworkRunner, PinnedTxPool, PinnedTxResources,
+        PinnedNetworkRunner, PinnedTxPool, PinnedTxResources, SharedPinnedRxQueue,
     };
     use open_esp_radio_esp32s31_wifi_sta::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
     use open_esp_radio_ieee80211::data::EthernetFrameParts;
@@ -378,6 +423,8 @@ mod tests {
             self.0 += 1;
         }
     }
+
+    fn observe_shared_release() {}
 
     #[derive(Default)]
     struct PipelineObserver {
@@ -421,6 +468,32 @@ mod tests {
             QUEUE_DEPTH,
         >::new(runner.rx_publisher(), Observer::default())
         .with_pipeline_observer(&pipeline_observer);
+        assert_eq!(sink.staged_rx_admission(), StagedRxAdmission::AwaitCapacity);
+
+        let shared_pool = std::boxed::Box::leak(std::boxed::Box::new(RxHandoffPool::<
+            FRAME_CAPACITY,
+            1,
+        >::new()));
+        let shared_queue = std::boxed::Box::leak(std::boxed::Box::new(SharedPinnedRxQueue::<
+            NoopRawMutex,
+            1,
+        >::new()));
+        let (shared_publisher, _shared_consumer) =
+            shared_queue.split(shared_pool, observe_shared_release);
+        let shared_sink = EmbassyNetConnectedRxSink::<
+            _,
+            _,
+            FRAME_CAPACITY,
+            QUEUE_DEPTH,
+            FRAME_CAPACITY,
+            1,
+        >::new_with_shared_rx(
+            runner.rx_publisher(), shared_publisher, Observer::default()
+        );
+        assert_eq!(
+            shared_sink.staged_rx_admission(),
+            StagedRxAdmission::Immediate
+        );
         let ethernet = [0_u8; 14];
         let event = ConnectedRxEvent::Ethernet {
             frame: EthernetFrameParts {

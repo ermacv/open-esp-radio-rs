@@ -4,7 +4,7 @@ use std::{net::Ipv4Addr, time::Duration};
 
 use crate::{
     Result,
-    qualification::scenario::PhyExpectation,
+    qualification::scenario::{HtGuardIntervalExpectation, PhyExpectation},
     transport::lab_config::StationFixtureConfig,
     transport::local_linux_fixture::{LocalLinuxRxCapture, LocalLinuxRxEvidence},
     transport::openwrt_fixture::{OpenWrtRxCapture, OpenWrtRxEvidence},
@@ -12,7 +12,7 @@ use crate::{
 
 pub(crate) enum RxCapture {
     LocalLinux(LocalLinuxRxCapture),
-    OpenWrt(OpenWrtRxCapture),
+    OpenWrt(Box<OpenWrtRxCapture>),
 }
 
 #[derive(Debug)]
@@ -28,10 +28,16 @@ impl RxCapture {
         port: u16,
         duration: Duration,
         phy: PhyExpectation,
+        forced_guard_interval: HtGuardIntervalExpectation,
         maximum_idle_channel_utilization_255: Option<u8>,
     ) -> Result<Option<Self>> {
         match fixture {
             StationFixtureConfig::LocalLinux(config) => {
+                if forced_guard_interval != HtGuardIntervalExpectation::Any {
+                    return Err(
+                        "OpenWrt fixed-GI mutation requires the managed OpenWrt fixture".into(),
+                    );
+                }
                 if maximum_idle_channel_utilization_255.is_some() {
                     return Err(
                         "idle channel utilization requires an OpenWrt station fixture".into(),
@@ -42,16 +48,22 @@ impl RxCapture {
                 )?)))
             }
             StationFixtureConfig::OpenWrt(config) => {
-                Ok(Some(Self::OpenWrt(OpenWrtRxCapture::start(
+                Ok(Some(Self::OpenWrt(Box::new(OpenWrtRxCapture::start(
                     config,
                     target,
                     port,
                     duration,
                     phy,
+                    forced_guard_interval,
                     maximum_idle_channel_utilization_255,
-                )?)))
+                )?))))
             }
             StationFixtureConfig::External(_) => {
+                if forced_guard_interval != HtGuardIntervalExpectation::Any {
+                    return Err(
+                        "OpenWrt fixed-GI mutation requires the managed OpenWrt fixture".into(),
+                    );
+                }
                 if maximum_idle_channel_utilization_255.is_some() {
                     return Err(
                         "idle channel utilization requires a managed OpenWrt station fixture"
@@ -66,7 +78,7 @@ impl RxCapture {
     pub(crate) fn finish(self) -> Result<RxEvidence> {
         match self {
             Self::LocalLinux(capture) => capture.finish().map(RxEvidence::LocalLinux),
-            Self::OpenWrt(capture) => capture.finish().map(RxEvidence::OpenWrt),
+            Self::OpenWrt(capture) => (*capture).finish().map(RxEvidence::OpenWrt),
         }
     }
 }
@@ -105,8 +117,9 @@ impl RxEvidence {
                         )
                     })
                     .unwrap_or_else(|| String::from("not required"));
+                let workload = evidence.workload_channel_utilization;
                 format!(
-                    "- OpenWrt filtered Ethernet ingress (diagnostic) / Wi-Fi egress (exact): `{}` / `{}`; interface RX/TX: `{}` / `{}`; station TX/retries/failed: `{}` / `{}` / `{}`; pre-air TID-0 AQM drops: `{}`; pre-workload channel utilization: `{channel_utilization}`; channel width: `{}` MHz; AP TX/RX bitrate: `{}` / `{}`\n",
+                    "- OpenWrt filtered Ethernet ingress (diagnostic) / Wi-Fi egress (exact): `{}` / `{}`; interface RX/TX: `{}` / `{}`; station TX/retries/failed: `{}` / `{}` / `{}`; station TX duration: `{}` us; pre-air TID-0 AQM drops: `{}`; pre-workload channel utilization: `{channel_utilization}`; workload channel utilization: `{}/255` (busy/active: `{}/{}` ms); channel width: `{}` MHz; AP TX/RX bitrate: `{}` / `{}`\n",
                     evidence.ingress_packets,
                     evidence.wireless_packets,
                     evidence.ingress_interface_rx_packets,
@@ -114,7 +127,11 @@ impl RxEvidence {
                     evidence.station_tx_packets,
                     evidence.station_tx_retries,
                     evidence.station_tx_failed,
+                    evidence.station_tx_duration_micros,
                     evidence.station_tid0_aqm_drops,
+                    workload.scaled_255,
+                    workload.busy_millis,
+                    workload.active_millis,
                     evidence.channel_width_mhz,
                     evidence.tx_bitrate,
                     evidence.rx_bitrate,

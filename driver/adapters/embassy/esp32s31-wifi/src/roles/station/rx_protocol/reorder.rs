@@ -22,7 +22,11 @@ where
             self.runtime.dispatcher_configured(),
             "stopped connected RX processor cannot dispatch another frame"
         );
+        #[cfg(any(feature = "diagnostics", test))]
+        let reorder_started = self.pipeline_observer.map(|observer| observer.now_micros());
         let Some(key) = self.runtime.dispatcher.reorder_key(frame.segment()) else {
+            #[cfg(any(feature = "diagnostics", test))]
+            self.observe_reorder_prepared(reorder_started);
             return Some(self.dispatch_owned_frame(frame).await);
         };
         let bank = self.runtime.reorder_banks.find(
@@ -39,6 +43,8 @@ where
             });
         }
         if !active {
+            #[cfg(any(feature = "diagnostics", test))]
+            self.observe_reorder_prepared(reorder_started);
             return Some(self.dispatch_owned_frame(frame).await);
         }
         let bank = bank.expect("active reorder has one hardware-bank identity");
@@ -56,6 +62,50 @@ where
                     tid: key.tid,
                     start,
                     sequence: key.sequence,
+                });
+            }
+        }
+
+        let immediate = RxAmpduMpdu {
+            sequence: key.sequence,
+            slot: RX_REORDER_CURRENT_SLOT as u8,
+        };
+        match self
+            .runtime
+            .reorder_banks
+            .state_mut(bank)
+            .expect("active TID was checked above")
+            .try_ingest_immediate(immediate)
+        {
+            Ok(Some(_)) => {
+                self.update_gap_deadline(bank);
+                #[cfg(any(feature = "diagnostics", test))]
+                if let Some(observer) = self.pipeline_observer {
+                    observer.observe(RxPipelineObservation::ReorderReleased {
+                        buffered: false,
+                        released: 1,
+                        missing: 0,
+                        stale: false,
+                    });
+                }
+                #[cfg(any(feature = "diagnostics", test))]
+                self.record_reorder_occupied();
+                #[cfg(any(feature = "diagnostics", test))]
+                self.observe_reorder_prepared(reorder_started);
+                return Some(self.dispatch_owned_frame(frame).await);
+            }
+            Ok(None) => {}
+            Err(error) => {
+                #[cfg(any(feature = "diagnostics", test))]
+                if let Some(observer) = self.pipeline_observer {
+                    observer.observe(RxPipelineObservation::ReorderDiscarded);
+                }
+                drop(frame);
+                self.irq.notify_rx_capacity();
+                return Some(if matches!(error, RxAmpduError::DuplicateSequence(_)) {
+                    ConnectedRxDispatch::Duplicate
+                } else {
+                    ConnectedRxDispatch::Ignored
                 });
             }
         }
@@ -311,6 +361,15 @@ where
         #[cfg(any(feature = "diagnostics", test))]
         self.record_reorder_occupied();
         self.dispatch_release(release).await
+    }
+
+    #[cfg(any(feature = "diagnostics", test))]
+    fn observe_reorder_prepared(&self, started: Option<u64>) {
+        if let (Some(observer), Some(started)) = (self.pipeline_observer, started) {
+            observer.observe(RxPipelineObservation::ReorderPrepared {
+                micros: observer.elapsed_micros_since(started),
+            });
+        }
     }
 
     #[cfg(any(feature = "diagnostics", test))]

@@ -508,6 +508,10 @@ impl<
 > ConnectedRxProtocolSink<FRAME_CAPACITY, FRAME_SLOTS>
     for EspNowMailboxConnectedRxSink<'_, M, S, MAILBOX_CAPACITY>
 {
+    fn staged_rx_admission(&self) -> super::rx_protocol::StagedRxAdmission {
+        self.inner.staged_rx_admission()
+    }
+
     fn wait_ready(&mut self) -> impl Future<Output = ()> + '_ {
         self.inner.wait_ready()
     }

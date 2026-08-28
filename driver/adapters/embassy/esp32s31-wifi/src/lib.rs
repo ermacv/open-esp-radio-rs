@@ -1,5 +1,5 @@
 #![no_std]
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 //! Embassy-specific composition for the ESP32-S31 Wi-Fi backend.
 //!

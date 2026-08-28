@@ -9,7 +9,7 @@
 
 use open_esp_radio_esp32s31_wifi_mac::rx::RxRingHalted;
 use open_esp_radio_esp32s31_wifi_mac::rx::{
-    RxDma, RxIngressConfig, RxPhyInfo, RxRingError, view_normalized_rx_frame,
+    RxDma, RxDmaBufferAddresses, RxIngressConfig, RxPhyInfo, RxRingError, view_normalized_rx_frame,
 };
 use open_esp_radio_wifi_softmac::{
     MonitorDropReason, MonitorFilter, MonitorFrame, MonitorPublishOutcome, MonitorSink,
@@ -71,7 +71,7 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         hardware: &mut H,
         storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         descriptor_base: u32,
-        buffer_addresses: &'storage [u32; COUNT],
+        buffer_addresses: &'storage RxDmaBufferAddresses<COUNT>,
     ) -> Result<Self, Esp32s31MonitorPrepareError> {
         let (channel_context, filter) =
             monitor_context(plan).map_err(Esp32s31MonitorPrepareError::Configuration)?;
@@ -121,7 +121,7 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         hardware: &mut H,
         storage: &'static Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         descriptor_base: u32,
-        buffer_addresses: &'storage [u32; COUNT],
+        buffer_addresses: &'storage RxDmaBufferAddresses<COUNT>,
     ) -> Result<Self, Esp32s31MonitorPrepareError> {
         let (channel_context, filter) =
             monitor_context(plan).map_err(Esp32s31MonitorPrepareError::Configuration)?;

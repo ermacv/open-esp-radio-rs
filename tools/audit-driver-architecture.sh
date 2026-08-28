@@ -313,12 +313,21 @@ for profile in performance correctness; do
     package_id_for_manifest "$graph" "$hil_runtime_manifest" >/dev/null
 done
 
-task_poll_graph="$audit_dir/hil-task-poll.json"
-metadata_for "$hil_runtime_manifest" "$task_poll_graph" \
+task_residence_graph="$audit_dir/hil-task-residence.json"
+metadata_for "$hil_runtime_manifest" "$task_residence_graph" \
     --no-default-features \
-    --features "$common_hil_features,task-poll-telemetry"
-if ! package_has_feature "$task_poll_graph" "$integration_package" task-poll-telemetry; then
-    echo "task-poll HIL profile did not enable integration task-poll telemetry" >&2
+    --features "$common_hil_features,task-residence-telemetry"
+if package_has_feature "$task_residence_graph" "$integration_package" task-poll-telemetry; then
+    echo "minimal task-residence HIL profile enabled intrusive integration telemetry" >&2
+    exit 1
+fi
+
+core0_rx_cycle_graph="$audit_dir/hil-core0-rx-cycle.json"
+metadata_for "$hil_runtime_manifest" "$core0_rx_cycle_graph" \
+    --no-default-features \
+    --features "$common_hil_features,core0-rx-cycle-telemetry"
+if ! package_has_feature "$core0_rx_cycle_graph" "$integration_package" task-poll-telemetry; then
+    echo "Core0 RX cycle HIL profile did not enable integration phase telemetry" >&2
     exit 1
 fi
 

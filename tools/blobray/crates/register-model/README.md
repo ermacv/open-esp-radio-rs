@@ -20,7 +20,7 @@ The PAC pack declares `sidecar-modules` for reviewed hand-written modules that
 must remain available in every generated raw PAC build. Validation-only
 sidecars use the separate feature-gated `feature-modules` list.
 
-The closed-PAC transaction pack is schema 4 only. Its
+The closed-PAC transaction pack is schema 5 only. Its
 `w1c-register-snapshots` operation binds one non-array 32-bit W1C register field
 to an affine sample token. The token has no public constructor, is not cloneable
 and is consumed by the exact same-register acknowledgement; no caller-built

@@ -22,6 +22,9 @@ name = "COMPRESSED_SRAM_POINTER"
 description = "Bits 0..19 contain address >> 2; bits 20..31 are written as zero."
 bitOffset = 0
 bitWidth = 20
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xF_FFFF
 
 [[review]]
 entity = "BLE_HW_RESOLVING_LIST"

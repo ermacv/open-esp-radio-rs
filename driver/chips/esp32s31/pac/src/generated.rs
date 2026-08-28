@@ -1136,6 +1136,38 @@ impl BluetoothModemLpTimerCompareImage {
     }
 }
 
+/// Register-specific complete image produced from the validated BLE PHY environment member address.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct BluetoothPhyInitEnvironmentMemberImage(u32);
+
+impl BluetoothPhyInitEnvironmentMemberImage {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Register-specific complete image produced from the validated BLE PHY environment tail address.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct BluetoothPhyControllerEnvironmentTailImage(u32);
+
+impl BluetoothPhyControllerEnvironmentTailImage {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Reviewed named fields in the eight-bit PHY analog-I2C register space. Generated accessors exclusively own sampled-byte masks and shifts.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct PhyI2cField {

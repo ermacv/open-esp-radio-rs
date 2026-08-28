@@ -47,6 +47,8 @@ pub struct PacApiPack {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub zero_based_field_writes: Vec<ZeroBasedFieldWrite>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sampled_bit_zero_writes: Vec<SampledBitZeroWrite>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub zero_register_writes: Vec<ZeroRegisterWrite>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub masked_register_modifies: Vec<MaskedRegisterModify>,
@@ -233,7 +235,7 @@ pub struct FullRegisterWrite {
     pub field: String,
     /// Reviewed value domain accepted by the closed-PAC bridge.
     ///
-    /// Schema 4 intentionally has no untyped compatibility path: every
+    /// Schema 5 intentionally has no untyped compatibility path: every
     /// complete-register write crossing from the closed PAC into the raw PAC
     /// must carry a register-specific or otherwise reviewed value type.
     pub domain: String,
@@ -305,6 +307,13 @@ pub struct RegisterImageRead {
 common_operation!(ZeroBasedFieldWrite {
     register: String,
     fields: Vec<String>,
+});
+// One fresh one-bit sample republished into an otherwise zero register image.
+// This is distinct from an RMW: all fields other than the sampled bit are
+// deliberately written as zero.
+common_operation!(SampledBitZeroWrite {
+    register: String,
+    field: String,
 });
 common_operation!(ZeroRegisterWrite { register: String });
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -446,6 +455,7 @@ impl PacApiPack {
         validate_operations("register-image-read", &self.register_image_reads)?;
         validate_operations("register-image-write", &self.register_image_writes)?;
         validate_operations("zero-based-field-write", &self.zero_based_field_writes)?;
+        validate_operations("sampled-bit-zero-write", &self.sampled_bit_zero_writes)?;
         validate_operations("zero-register-write", &self.zero_register_writes)?;
         validate_operations("masked-register-modify", &self.masked_register_modifies)?;
         validate_operations("field-or-modify", &self.field_or_modifies)?;
@@ -718,6 +728,9 @@ impl PacApiPack {
                 }
             }
         }
+        for operation in &self.sampled_bit_zero_writes {
+            validate_component("field", &operation.name, &operation.field)?;
+        }
         for operation in &self.masked_register_modifies {
             if operation.preserve_mask & operation.input_mask != 0
                 || operation.preserve_mask & operation.set_mask != 0
@@ -832,6 +845,7 @@ impl PacApiPack {
             + self.register_image_reads.len()
             + self.register_image_writes.len()
             + self.zero_based_field_writes.len()
+            + self.sampled_bit_zero_writes.len()
             + self.zero_register_writes.len()
             + self.masked_register_modifies.len()
             + self.field_or_modifies.len()
@@ -895,6 +909,7 @@ impl PacApiPack {
                     .chain(self.register_image_reads.iter().map(Operation::sources))
                     .chain(self.register_image_writes.iter().map(Operation::sources))
                     .chain(self.zero_based_field_writes.iter().map(Operation::sources))
+                    .chain(self.sampled_bit_zero_writes.iter().map(Operation::sources))
                     .chain(self.zero_register_writes.iter().map(Operation::sources))
                     .chain(self.masked_register_modifies.iter().map(Operation::sources))
                     .chain(self.field_or_modifies.iter().map(Operation::sources))
@@ -1202,6 +1217,7 @@ impl_register_operation!(W1cRegisterSnapshot);
 impl_register_operation!(RegisterImageRead);
 impl_register_operation!(RegisterImageWrite);
 impl_register_operation!(ZeroBasedFieldWrite);
+impl_register_operation!(SampledBitZeroWrite);
 impl_register_operation!(ZeroRegisterWrite);
 impl_register_operation!(MaskedRegisterModify);
 impl_register_operation!(FieldOrModify);
@@ -1373,6 +1389,7 @@ mod tests {
             register_image_reads: Vec::new(),
             register_image_writes: Vec::new(),
             zero_based_field_writes: Vec::new(),
+            sampled_bit_zero_writes: Vec::new(),
             zero_register_writes: Vec::new(),
             masked_register_modifies: Vec::new(),
             field_or_modifies: Vec::new(),

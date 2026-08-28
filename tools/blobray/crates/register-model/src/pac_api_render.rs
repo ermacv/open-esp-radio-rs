@@ -401,6 +401,7 @@ impl PacApiPack {
         output.push_str(&self.render_register_image_reads(&device)?);
         output.push_str(&self.render_register_image_writes(&device)?);
         output.push_str(&self.render_zero_based_field_writes(&device)?);
+        output.push_str(&self.render_sampled_bit_zero_writes());
         output.push_str(&self.render_zero_register_writes(&device)?);
         output.push_str(&self.render_masked_register_modifies(&device)?);
         output.push_str(&self.render_field_or_modifies(&device)?);
@@ -1045,6 +1046,39 @@ impl PacApiPack {
         }
         output.push_str("}\n");
         Ok(output)
+    }
+
+    fn render_sampled_bit_zero_writes(&self) -> String {
+        if self.sampled_bit_zero_writes.is_empty() {
+            return String::new();
+        }
+        let mut output = String::from(
+            "\n/// Safe fresh one-bit samples republished over otherwise zero register images.\n\
+             pub mod sampled_bit_zero_write {\n",
+        );
+        for binding in &self.sampled_bit_zero_writes {
+            let peripheral_type = type_binding_name(&binding.peripheral);
+            let register = member_binding_name(&binding.register);
+            let field = member_binding_name(&binding.field);
+            output.push_str(&format!(
+                "\n    /// Sample `{}`.`{}`.`{}` and write only that bit into a fresh zero image.\n\
+                 #[inline]\n\
+                 pub fn {}(registers: &crate::{peripheral_type}) {{\n\
+                     let sampled = registers.{register}().read().{field}().bit();\n\
+                     // SAFETY: generator validation proves that the target is one\n\
+                     // ordinary readable/writable bit. Every other register bit is\n\
+                     // intentionally published as zero by this reviewed transaction.\n\
+                     unsafe {{\n\
+                         registers.{register}().write_with_zero(|writer|\n\
+                             writer.{field}().bit(sampled)\n\
+                         );\n\
+                     }}\n\
+                 }}\n",
+                binding.peripheral, binding.register, binding.field, binding.name,
+            ));
+        }
+        output.push_str("}\n");
+        output
     }
 
     fn render_zero_register_writes(&self, device: &Device) -> Result<String> {

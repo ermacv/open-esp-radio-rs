@@ -47753,7 +47753,8 @@ pub mod ble_hw_resolving_list {
         #[doc = "Register `BASE_POINTER` writer"]
         pub type W = crate::W<BasePointerSpec>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` writer - Bits 0..19 contain address >> 2; bits 20..31 are written as zero."]
-        pub type CompressedSramPointerW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        pub type CompressedSramPointerW<'a, REG> =
+            crate::FieldWriter<'a, REG, 20, u32, crate::Safe>;
         impl W {
             #[doc = "Bits 0:19 - Bits 0..19 contain address >> 2; bits 20..31 are written as zero."]
             #[inline(always)]
@@ -47905,7 +47906,7 @@ pub mod ble_hw_runtime_control {
         #[doc = "Register `PHY_INIT_CONFIGURATION` writer"]
         pub type W = crate::W<PhyInitConfigurationSpec>;
         #[doc = "Field `VALUE_LOW_8` writer - "]
-        pub type ValueLow8W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type ValueLow8W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `CONFIG_8` writer - "]
         pub type Config8W<'a, REG> = crate::BitWriter<'a, REG>;
         impl W {
@@ -59247,6 +59248,39 @@ pub mod w1c_register_snapshot {
     }
 }
 
+/// Safe, SVD-declared writes of dynamic complete-register images.
+pub mod register_image_write {
+
+    /// Publish a caller-built complete image to `BTMAC_BLE_PHY_INIT`.`INIT_DYNAMIC_IMAGE_04A0`.
+    #[inline]
+    pub fn publish_ble_phy_init_environment_member(registers: &crate::BtmacBlePhyInit, image: u32) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register. The SVD extension and
+        // its provenance qualify this semantic whole-image operation.
+        unsafe {
+            registers
+                .init_dynamic_image_04a0()
+                .write_with_zero(|writer| writer.bits(image));
+        }
+    }
+
+    /// Publish a caller-built complete image to `BLUETOOTH_CONTROLLER_CORE`.`PHY_INIT_DYNAMIC_IMAGE_024C`.
+    #[inline]
+    pub fn publish_ble_phy_controller_environment_tail(
+        registers: &crate::BluetoothControllerCore,
+        image: u32,
+    ) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register. The SVD extension and
+        // its provenance qualify this semantic whole-image operation.
+        unsafe {
+            registers
+                .phy_init_dynamic_image_024c()
+                .write_with_zero(|writer| writer.bits(image));
+        }
+    }
+}
+
 /// Safe, SVD-declared field writes based on an all-zero register image.
 pub mod zero_based_field_write {
 
@@ -60522,6 +60556,67 @@ pub mod zero_based_field_write {
             registers
                 .power_detector_reference()
                 .write_with_zero(|writer| writer.reference_code().set(value));
+        }
+    }
+
+    /// Write `COMPRESSED_SRAM_POINTER` in `BLE_HW_RESOLVING_LIST`.`BASE_POINTER` while publishing zero to every other register bit.
+    #[inline]
+    pub fn publish_ble_phy_resolving_list_base_pointer(
+        registers: &crate::BleHwResolvingList,
+        value: u32,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .base_pointer()
+                .write_with_zero(|writer| writer.compressed_sram_pointer().set(value));
+        }
+    }
+
+    /// Write `VALUE_LOW_8`, `CONFIG_8` in `BLE_HW_RUNTIME_CONTROL`.`PHY_INIT_CONFIGURATION` while publishing zero to every other register bit.
+    #[inline]
+    pub fn publish_ble_phy_runtime_configuration(
+        registers: &crate::BleHwRuntimeControl,
+        value_low_8_value: u8,
+        config_8_value: bool,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .phy_init_configuration()
+                .write_with_zero(|writer| {
+                    writer
+                        .value_low_8()
+                        .set(value_low_8_value)
+                        .config_8()
+                        .bit(config_8_value)
+                });
+        }
+    }
+}
+
+/// Safe fresh one-bit samples republished over otherwise zero register images.
+pub mod sampled_bit_zero_write {
+
+    /// Sample `BTMAC_BLE_PHY_INIT`.`INIT_CONTROL_00B4`.`INIT_PRESERVE_17` and write only that bit into a fresh zero image.
+    #[inline]
+    pub fn preserve_ble_phy_init_control_00b4_bit_17(registers: &crate::BtmacBlePhyInit) {
+        let sampled = registers
+            .init_control_00b4()
+            .read()
+            .init_preserve_17()
+            .bit();
+        // SAFETY: generator validation proves that the target is one
+        // ordinary readable/writable bit. Every other register bit is
+        // intentionally published as zero by this reviewed transaction.
+        unsafe {
+            registers
+                .init_control_00b4()
+                .write_with_zero(|writer| writer.init_preserve_17().bit(sampled));
         }
     }
 }

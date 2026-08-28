@@ -295,6 +295,39 @@ impl PacApiPack {
             }
         }
 
+        for operation in &self.sampled_bit_zero_writes {
+            let binding = register(
+                &device,
+                &operation.name,
+                &operation.peripheral,
+                &operation.register,
+            )?;
+            require_size_access(&operation.name, binding, Access::ReadWrite, "read-write")?;
+            require_ordinary(&operation.name, binding.info)?;
+            if binding.is_array {
+                return Err(Error::message(format!(
+                    "PAC API sampled-bit-zero-write {:?} requires one exact non-array register",
+                    operation.name
+                )));
+            }
+            if binding.info.read_action.is_some() {
+                return Err(Error::message(format!(
+                    "PAC API sampled-bit-zero-write {:?} cannot target register read-side effects",
+                    operation.name
+                )));
+            }
+            let selected = field(&operation.name, binding.info, &operation.field)?;
+            if selected.bit_width() != 1
+                || matches!(selected.access, Some(Access::ReadOnly | Access::WriteOnly))
+                || selected.read_action.is_some()
+            {
+                return Err(Error::message(format!(
+                    "PAC API sampled-bit-zero-write {:?} requires one ordinary readable and writable one-bit field",
+                    operation.name
+                )));
+            }
+        }
+
         for operation in &self.masked_register_modifies {
             let binding = register(
                 &device,
@@ -1108,6 +1141,41 @@ mod tests {
 </device>
 "#;
 
+    const SAMPLED_BIT_ZERO_WRITE_SVD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<device schemaVersion="1.3" xmlns:xs="http://www.w3.org/2001/XMLSchema-instance">
+  <name>FIXTURE</name>
+  <version>1</version>
+  <description>sample and zero fixture</description>
+  <addressUnitBits>8</addressUnitBits>
+  <width>32</width>
+  <peripherals>
+    <peripheral>
+      <name>RADIO</name>
+      <description>radio</description>
+      <baseAddress>0x40000000</baseAddress>
+      <registers>
+        <register>
+          <name>GOOD</name>
+          <description>ordinary control bit</description>
+          <addressOffset>0</addressOffset>
+          <size>32</size>
+          <access>read-write</access>
+          <fields><field><name>VALUE</name><description>value</description><bitOffset>4</bitOffset><bitWidth>1</bitWidth></field></fields>
+        </register>
+        <register>
+          <name>WIDE</name>
+          <description>ordinary multi-bit field</description>
+          <addressOffset>4</addressOffset>
+          <size>32</size>
+          <access>read-write</access>
+          <fields><field><name>VALUE</name><description>value</description><bitOffset>4</bitOffset><bitWidth>2</bitWidth></field></fields>
+        </register>
+      </registers>
+    </peripheral>
+  </peripherals>
+</device>
+"#;
+
     fn w1c_register_snapshot_pack(register: &str) -> PacApiPack {
         toml_edit::de::from_str(&format!(
             r#"schema = 5
@@ -1156,6 +1224,21 @@ field = "WORD"
 domain = "ObservedWord"
 exposure = "raw-only"
 sources = ["PUBLIC_READ"]
+"#
+        ))
+        .unwrap()
+    }
+
+    fn sampled_bit_zero_write_pack(register: &str) -> PacApiPack {
+        toml_edit::de::from_str(&format!(
+            r#"schema = 5
+
+[[sampled-bit-zero-writes]]
+name = "preserve_control_bit"
+peripheral = "RADIO"
+register = "{register}"
+field = "VALUE"
+sources = ["PUBLIC_CONTROL"]
 "#
         ))
         .unwrap()
@@ -1255,6 +1338,20 @@ peripherals = ["INTERRUPT"]
                 "unexpected rejection for {register}: {error}"
             );
         }
+    }
+
+    #[test]
+    fn sampled_bit_zero_write_requires_one_ordinary_rw_bit() {
+        assert!(
+            sampled_bit_zero_write_pack("GOOD")
+                .validate_against_svd(SAMPLED_BIT_ZERO_WRITE_SVD)
+                .is_ok()
+        );
+        let error = sampled_bit_zero_write_pack("WIDE")
+            .validate_against_svd(SAMPLED_BIT_ZERO_WRITE_SVD)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("one-bit field"));
     }
 
     #[test]

@@ -51,6 +51,9 @@ access = "write-only"
 name = "VALUE_LOW_8"
 bitOffset = 0
 bitWidth = 8
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xFF
 [[peripherals.registers.register.fields]]
 name = "CONFIG_8"
 bitOffset = 8

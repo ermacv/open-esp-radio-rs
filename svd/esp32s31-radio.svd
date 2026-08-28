@@ -20165,6 +20165,12 @@ does not prove that adjacent BTMAC addresses belong to the same logical block.
               <description>Bits 0..19 contain address &gt;&gt; 2; bits 20..31 are written as zero.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>20</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>1048575</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -20224,6 +20230,12 @@ semantics instead of promoting diagnostic strings to hardware truth.
               <name>VALUE_LOW_8</name>
               <bitOffset>0</bitOffset>
               <bitWidth>8</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>255</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>CONFIG_8</name>

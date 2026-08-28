@@ -1089,6 +1089,20 @@ peripheral = "BTDM_RUNTIME_CONTROL"
 register = "VALUE_006C"
 sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
 
+[[opaque-domains]]
+name = "BluetoothPhyInitEnvironmentMemberImage"
+description = "Register-specific complete image produced from the validated BLE PHY environment member address."
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_DYNAMIC_IMAGE_04A0"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[opaque-domains]]
+name = "BluetoothPhyControllerEnvironmentTailImage"
+description = "Register-specific complete image produced from the validated BLE PHY environment tail address."
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "PHY_INIT_DYNAMIC_IMAGE_024C"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
 [[zero-based-field-writes]]
 name = "coex_timer_configuration"
 peripheral = "COEX_HW_TIMER"
@@ -2873,6 +2887,43 @@ register = "INIT_LOW_5_054C"
 fields = [{ field = "INIT_LOW_5", source-bit-offset = 0 }]
 value = 0x12
 exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[sampled-bit-zero-writes]]
+name = "preserve_ble_phy_init_control_00b4_bit_17"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_CONTROL_00B4"
+field = "INIT_PRESERVE_17"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[register-image-writes]]
+name = "publish_ble_phy_init_environment_member"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_DYNAMIC_IMAGE_04A0"
+domain = "BluetoothPhyInitEnvironmentMemberImage"
+exposure = "raw-only"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[zero-based-field-writes]]
+name = "publish_ble_phy_resolving_list_base_pointer"
+peripheral = "BLE_HW_RESOLVING_LIST"
+register = "BASE_POINTER"
+fields = ["COMPRESSED_SRAM_POINTER"]
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[zero-based-field-writes]]
+name = "publish_ble_phy_runtime_configuration"
+peripheral = "BLE_HW_RUNTIME_CONTROL"
+register = "PHY_INIT_CONFIGURATION"
+fields = ["VALUE_LOW_8", "CONFIG_8"]
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[register-image-writes]]
+name = "publish_ble_phy_controller_environment_tail"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "PHY_INIT_DYNAMIC_IMAGE_024C"
+domain = "BluetoothPhyControllerEnvironmentTailImage"
+exposure = "raw-only"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[indexed-bit-set-modifies]]

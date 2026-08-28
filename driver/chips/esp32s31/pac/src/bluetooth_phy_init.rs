@@ -130,151 +130,137 @@ impl BluetoothTaskRegisters {
     #[allow(
         unsafe_code,
         dead_code,
-        reason = "the unsafe signature and field accessors retain unmodeled lifecycle and pointed-storage prerequisites"
+        reason = "the unsafe signature retains unmodeled lifecycle and pointed-storage prerequisites"
     )]
     pub(crate) unsafe fn initialize_ble_phy_registers(
         &mut self,
         inputs: BluetoothPhyRegisterInitInputs,
     ) {
-        // SAFETY: every call below writes through a named SVD field accessor.
-        // The reviewed transaction supplies values inside those fields; the
-        // caller upholds the surrounding lifecycle and pointed-storage rules.
-        unsafe {
-            let timing_byte = inputs.private_configuration_byte_0x10.wrapping_sub(1);
-            let environment = inputs.environment.address();
-            let resolving_list = (inputs.resolving_list.address() >> 2) & 0x000f_ffff;
+        let timing_byte = inputs.private_configuration_byte_0x10.wrapping_sub(1);
+        let environment = inputs.environment.address();
+        let resolving_list = inputs.resolving_list.compressed_image();
 
-            let bluetooth = &self.bluetooth;
-            let btmac = &bluetooth.btmac_ble_phy_init;
+        let bluetooth = &self.bluetooth;
+        let btmac = &bluetooth.btmac_ble_phy_init;
 
-            // Entry toggle and BTMAC prefix.
-            super::svd::zero_register_write::begin_ble_phy_register_initialization(
-                &bluetooth.ble_phy_init_toggle,
-            );
-            super::svd::fixed_register_image::latch_ble_phy_register_initialization_entry(
-                &bluetooth.ble_phy_init_toggle,
-            );
-            let init_control = btmac.init_control_00b4();
-            let preserved_bit_17 = init_control.read().init_preserve_17().bit();
-            init_control.write_with_zero(|writer| writer.init_preserve_17().bit(preserved_bit_17));
-            super::svd::fixed_register_image::fill_ble_phy_init_ones_00b8(btmac);
-            super::generated::clear_ble_phy_lc_tx_on_delay_fields(btmac);
-            super::generated::or_ble_phy_init_tx_on_delay(
-                btmac,
-                super::generated::BluetoothPhyInitTimingByte::new(u32::from(timing_byte))
-                    .expect("one byte always fits the reviewed BLE PHY timing domain"),
-            );
-
-            // The vendor reaches this leaf through the registered external-BB
-            // function table. The restricted transaction preserves its MMIO edge
-            // at the same position without claiming a static call-table install.
-            super::generated::publish_ble_phy_le_tx_on_delay(
-                &bluetooth.bt_v3_2_baseband,
-                super::generated::BluetoothPhyInitTimingByte::new(u32::from(
-                    timing_byte.wrapping_sub(10),
-                ))
+        // Entry toggle and BTMAC prefix.
+        super::svd::zero_register_write::begin_ble_phy_register_initialization(
+            &bluetooth.ble_phy_init_toggle,
+        );
+        super::svd::fixed_register_image::latch_ble_phy_register_initialization_entry(
+            &bluetooth.ble_phy_init_toggle,
+        );
+        super::svd::sampled_bit_zero_write::preserve_ble_phy_init_control_00b4_bit_17(btmac);
+        super::svd::fixed_register_image::fill_ble_phy_init_ones_00b8(btmac);
+        super::generated::clear_ble_phy_lc_tx_on_delay_fields(btmac);
+        super::generated::or_ble_phy_init_tx_on_delay(
+            btmac,
+            super::generated::BluetoothPhyInitTimingByte::new(u32::from(timing_byte))
                 .expect("one byte always fits the reviewed BLE PHY timing domain"),
-            );
+        );
 
-            super::svd::fixed_register_image::publish_ble_phy_init_value_0138(btmac);
-            super::svd::fixed_register_image::publish_ble_phy_init_bytes_04a4(btmac);
-            super::svd::fixed_register_image::publish_ble_phy_init_bytes_04a8(btmac);
-            btmac.init_dynamic_image_04a0().write_with_zero(|writer| {
-                writer
-                    .init_image()
-                    .bits(inputs.environment.compressed_member(0x2c))
-            });
-            super::svd::fixed_register_image::publish_ble_phy_init_value_04ac(btmac);
-            super::svd::fixed_register_image::publish_ble_phy_init_value_045c(btmac);
+        // The vendor reaches this leaf through the registered external-BB
+        // function table. The restricted transaction preserves its MMIO edge
+        // at the same position without claiming a static call-table install.
+        super::generated::publish_ble_phy_le_tx_on_delay(
+            &bluetooth.bt_v3_2_baseband,
+            super::generated::BluetoothPhyInitTimingByte::new(u32::from(
+                timing_byte.wrapping_sub(10),
+            ))
+            .expect("one byte always fits the reviewed BLE PHY timing domain"),
+        );
 
-            // Four independent fresh-read updates at 0x20101654.
-            super::generated::clear_ble_phy_init_low_byte_pair(btmac);
-            super::generated::or_ble_phy_init_low_byte_pair(btmac);
-            super::generated::clear_ble_phy_init_byte_2_low_7(btmac);
-            super::generated::or_ble_phy_init_byte_2(btmac);
+        super::svd::fixed_register_image::publish_ble_phy_init_value_0138(btmac);
+        super::svd::fixed_register_image::publish_ble_phy_init_bytes_04a4(btmac);
+        super::svd::fixed_register_image::publish_ble_phy_init_bytes_04a8(btmac);
+        super::svd::register_image_write::publish_ble_phy_init_environment_member(
+            btmac,
+            inputs.environment.compressed_member(0x2c),
+        );
+        super::svd::fixed_register_image::publish_ble_phy_init_value_04ac(btmac);
+        super::svd::fixed_register_image::publish_ble_phy_init_value_045c(btmac);
 
-            super::svd::zero_register_write::clear_ble_phy_init_zero_0074(btmac);
-            super::svd::fixed_register_image::publish_ble_phy_init_phase_20(
-                &bluetooth.ble_phy_init_phase,
-            );
-            super::svd::fixed_register_image::publish_ble_phy_accelerator_config(
-                &bluetooth.ble_hw_accelerator,
-            );
-            super::svd::fixed_register_image::publish_ble_phy_accelerator_sram_region_0(
-                &bluetooth.ble_hw_accelerator,
-            );
-            super::svd::fixed_register_image::publish_ble_phy_accelerator_sram_region_1(
-                &bluetooth.ble_hw_accelerator,
-            );
-            bluetooth
-                .ble_hw_resolving_list
-                .base_pointer()
-                .write_with_zero(|writer| writer.compressed_sram_pointer().bits(resolving_list));
+        // Four independent fresh-read updates at 0x20101654.
+        super::generated::clear_ble_phy_init_low_byte_pair(btmac);
+        super::generated::or_ble_phy_init_low_byte_pair(btmac);
+        super::generated::clear_ble_phy_init_byte_2_low_7(btmac);
+        super::generated::or_ble_phy_init_byte_2(btmac);
 
-            super::svd::fixed_register_image::publish_ble_phy_init_control_0400(btmac);
-            super::generated::enable_ble_phy_init_control_0400(btmac);
-            super::svd::fixed_register_image::publish_ble_phy_init_value_0540(btmac);
+        super::svd::zero_register_write::clear_ble_phy_init_zero_0074(btmac);
+        super::svd::fixed_register_image::publish_ble_phy_init_phase_20(
+            &bluetooth.ble_phy_init_phase,
+        );
+        super::svd::fixed_register_image::publish_ble_phy_accelerator_config(
+            &bluetooth.ble_hw_accelerator,
+        );
+        super::svd::fixed_register_image::publish_ble_phy_accelerator_sram_region_0(
+            &bluetooth.ble_hw_accelerator,
+        );
+        super::svd::fixed_register_image::publish_ble_phy_accelerator_sram_region_1(
+            &bluetooth.ble_hw_accelerator,
+        );
+        super::svd::zero_based_field_write::publish_ble_phy_resolving_list_base_pointer(
+            &bluetooth.ble_hw_resolving_list,
+            resolving_list,
+        );
 
-            // Each byte replacement is a distinct fresh-read RMW in vendor order.
-            super::generated::publish_ble_phy_init_0550_byte_0(btmac);
-            super::generated::publish_ble_phy_init_0550_byte_1(btmac);
-            super::generated::publish_ble_phy_init_0550_byte_2(btmac);
+        super::svd::fixed_register_image::publish_ble_phy_init_control_0400(btmac);
+        super::generated::enable_ble_phy_init_control_0400(btmac);
+        super::svd::fixed_register_image::publish_ble_phy_init_value_0540(btmac);
 
-            super::generated::publish_ble_phy_init_0554_byte_0(btmac);
-            super::generated::publish_ble_phy_init_0554_byte_1(btmac);
-            super::generated::publish_ble_phy_init_0554_byte_2(btmac);
-            super::generated::publish_ble_phy_init_0554_byte_3(btmac);
+        // Each byte replacement is a distinct fresh-read RMW in vendor order.
+        super::generated::publish_ble_phy_init_0550_byte_0(btmac);
+        super::generated::publish_ble_phy_init_0550_byte_1(btmac);
+        super::generated::publish_ble_phy_init_0550_byte_2(btmac);
 
-            super::generated::publish_ble_phy_init_055c_byte_0(btmac);
-            super::generated::publish_ble_phy_init_055c_byte_1(btmac);
-            super::generated::publish_ble_phy_init_055c_byte_2(btmac);
-            super::generated::publish_ble_phy_init_055c_byte_3(btmac);
+        super::generated::publish_ble_phy_init_0554_byte_0(btmac);
+        super::generated::publish_ble_phy_init_0554_byte_1(btmac);
+        super::generated::publish_ble_phy_init_0554_byte_2(btmac);
+        super::generated::publish_ble_phy_init_0554_byte_3(btmac);
 
-            super::generated::publish_ble_phy_init_0558_byte_0(btmac);
-            super::generated::publish_ble_phy_init_0558_byte_1(btmac);
-            super::generated::publish_ble_phy_init_0558_byte_2(btmac);
-            super::generated::publish_ble_phy_init_0558_byte_3(btmac);
+        super::generated::publish_ble_phy_init_055c_byte_0(btmac);
+        super::generated::publish_ble_phy_init_055c_byte_1(btmac);
+        super::generated::publish_ble_phy_init_055c_byte_2(btmac);
+        super::generated::publish_ble_phy_init_055c_byte_3(btmac);
 
-            super::generated::publish_ble_phy_init_high_half_0458(btmac);
-            super::generated::publish_ble_phy_init_low_5_054c(btmac);
-            super::svd::fixed_register_image::publish_ble_phy_init_phase_40(
-                &bluetooth.ble_phy_init_phase,
-            );
+        super::generated::publish_ble_phy_init_0558_byte_0(btmac);
+        super::generated::publish_ble_phy_init_0558_byte_1(btmac);
+        super::generated::publish_ble_phy_init_0558_byte_2(btmac);
+        super::generated::publish_ble_phy_init_0558_byte_3(btmac);
 
-            if inputs.option_byte_0x55_nonzero {
-                super::generated::enable_ble_phy_init_branch_control_0470(btmac);
-            }
+        super::generated::publish_ble_phy_init_high_half_0458(btmac);
+        super::generated::publish_ble_phy_init_low_5_054c(btmac);
+        super::svd::fixed_register_image::publish_ble_phy_init_phase_40(
+            &bluetooth.ble_phy_init_phase,
+        );
 
-            bluetooth
-                .ble_hw_runtime_control
-                .phy_init_configuration()
-                .write_with_zero(|writer| {
-                    writer
-                        .value_low_8()
-                        .bits(inputs.option_byte_0x59)
-                        .config_8()
-                        .set_bit()
-                });
-            super::svd::fixed_register_image::latch_ble_phy_runtime_configuration(
-                &bluetooth.ble_hw_runtime_control,
-            );
-            super::generated::publish_ble_phy_init_control_00b4_tail(btmac);
-            super::generated::enable_ble_phy_init_control_00c4(btmac);
-
-            let controller = &bluetooth.bluetooth_controller_core;
-            super::svd::zero_register_write::clear_ble_phy_controller_value_0244(controller);
-            super::svd::fixed_register_image::publish_ble_phy_controller_value_01f0(controller);
-            super::svd::fixed_register_image::publish_ble_phy_controller_value_0248(controller);
-            controller
-                .phy_init_dynamic_image_024c()
-                .write_with_zero(|writer| {
-                    writer.image().bits(environment + ENVIRONMENT_LAST_OFFSET)
-                });
-
-            // One ordering boundary is a reviewed Rust-side addition. It does not
-            // replace, merge, or reorder any vendor MMIO edge above.
-            device_fence();
+        if inputs.option_byte_0x55_nonzero {
+            super::generated::enable_ble_phy_init_branch_control_0470(btmac);
         }
+
+        super::svd::zero_based_field_write::publish_ble_phy_runtime_configuration(
+            &bluetooth.ble_hw_runtime_control,
+            inputs.option_byte_0x59,
+            true,
+        );
+        super::svd::fixed_register_image::latch_ble_phy_runtime_configuration(
+            &bluetooth.ble_hw_runtime_control,
+        );
+        super::generated::publish_ble_phy_init_control_00b4_tail(btmac);
+        super::generated::enable_ble_phy_init_control_00c4(btmac);
+
+        let controller = &bluetooth.bluetooth_controller_core;
+        super::svd::zero_register_write::clear_ble_phy_controller_value_0244(controller);
+        super::svd::fixed_register_image::publish_ble_phy_controller_value_01f0(controller);
+        super::svd::fixed_register_image::publish_ble_phy_controller_value_0248(controller);
+        super::svd::register_image_write::publish_ble_phy_controller_environment_tail(
+            controller,
+            environment + ENVIRONMENT_LAST_OFFSET,
+        );
+
+        // One ordering boundary is a reviewed Rust-side addition. It does not
+        // replace, merge, or reorder any vendor MMIO edge above.
+        device_fence();
     }
 }
 

@@ -161,9 +161,19 @@ PAC/HAL code receives only the typed or argument-free accessor. Separate
 declarations remain separate volatile reads, so an evidenced sequence of RMW
 operations is not silently collapsed into a software register image.
 
+### Sample-and-zero bit publication
+
+`[[sampled-bit-zero-writes]]` declares the non-RMW transaction used when the
+hardware sequence samples one ordinary readable/writable bit and then writes
+that sample into an otherwise all-zero register image. Blobray rejects arrays,
+multi-bit or read/write-restricted fields, modified-write semantics and read
+side effects. The generated leaf owns both volatile accesses, so handwritten
+PAC and HAL code cannot accidentally turn the transaction into an RMW or reach
+for a raw writer.
+
 ### Complete-word observations and raw-only leaves
 
-Schema-4 API packs may declare a reviewed 32-bit observation with
+Schema-5 API packs may declare a reviewed 32-bit observation with
 `[[full-register-reads]]`. Publication accepts only one non-array readable
 32-bit register with one full-width readable field, rejects read-side effects,
 and requires the declared domain to represent every `u32`. The generated raw

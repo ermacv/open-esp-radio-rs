@@ -87,8 +87,9 @@ pub unsafe fn initialize_baseband_v2(gain_parameter: u8) {
 /// # Safety
 ///
 /// The caller must be an isolated compiled-production probe modeling enabled
-/// clocks, common PHY, BTBB, quiescent controller queues and an inactive IRQ
-/// bank. The powered owners remain retained after return.
+/// clocks, the selected controller-SRAM prefix and an inactive IRQ bank. The
+/// powered owners remain retained after return; scheduler, PHY, BTBB,
+/// Link-Layer and HCI readiness remain unclaimed.
 #[allow(
     unsafe_code,
     reason = "the validation-only API preserves the complete HAL-init prerequisites"

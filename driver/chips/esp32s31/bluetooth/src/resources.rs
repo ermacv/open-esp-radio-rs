@@ -246,9 +246,9 @@ impl BluetoothTaskResources {
 
     /// Execute the complete reviewed controller HAL-init component.
     ///
-    /// This bridge remains disconnected from ordinary production lifecycle
-    /// until event/list initialization, the BLE enable stages and IRQ routing
-    /// own the prerequisites between BTBB initialization and this transaction.
+    /// The owning lifecycle invokes this component after clocks and before
+    /// scheduler initialization. Later event/list, interrupt, PHY, BTBB and
+    /// BLE stages remain separate prerequisites for a running controller.
     ///
     /// # Safety
     ///
@@ -257,11 +257,11 @@ impl BluetoothTaskResources {
     #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
     #[allow(
         unsafe_code,
-        reason = "the unsafe bridge retains the PAC controller HAL-init prerequisites"
+        reason = "the unsafe bridge retains the controller HAL-init clock and IRQ prerequisites"
     )]
     #[allow(
         dead_code,
-        reason = "the verified component awaits composition across the missing BLE lifecycle stages"
+        reason = "only the target lifecycle and isolated validation probes invoke this component"
     )]
     pub(crate) unsafe fn initialize_controller_hal(
         &mut self,

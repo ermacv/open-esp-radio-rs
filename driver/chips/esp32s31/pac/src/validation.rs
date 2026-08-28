@@ -105,9 +105,10 @@ pub unsafe fn initialize_bluetooth_baseband_v2(gain_parameter: u8) {
 ///
 /// # Safety
 ///
-/// The caller must model enabled Bluetooth clocks, completed common PHY and
-/// BTBB initialization, quiescent controller software queues and an inactive
-/// retained interrupt bank. No other radio owner may be used afterwards.
+/// The caller must model enabled Bluetooth clocks, the selected controller
+/// SRAM-prefix policy and an inactive retained interrupt bank. No other radio
+/// owner may be used afterwards, and return does not establish scheduler,
+/// PHY, BTBB, Link-Layer or HCI readiness.
 #[allow(
     unsafe_code,
     reason = "the validation bridge preserves the complete HAL-init lifecycle prerequisites"

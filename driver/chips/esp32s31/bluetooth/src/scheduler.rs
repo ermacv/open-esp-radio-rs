@@ -1,13 +1,14 @@
-//! First fact-bounded controller-init transaction after clock setup.
+//! Fact-bounded scheduler initialization after the controller HAL component.
 
 use crate::{
-    BluetoothClockedResources, BluetoothControllerInterruptRuntime,
-    BluetoothControllerRuntimeResources, BluetoothControllerTaskRuntime,
+    BluetoothControllerInterruptRuntime, BluetoothControllerRuntimeResources,
+    BluetoothControllerTaskRuntime,
+    controller_hal::BluetoothControllerHalInitialized,
     resources::{
         BluetoothInterruptBankOwner, BluetoothTaskResources, BluetoothTeardownPendingPlatform,
-        separate_interrupt_owner,
     },
 };
+use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
 
 /// Bluetooth hardware after only the sixteen scheduler-table low fields were
 /// cleared.
@@ -23,6 +24,7 @@ pub struct BluetoothSchedulerTableLowBitsCleared<P> {
     task: BluetoothTaskResources,
     interrupts: BluetoothInterruptBankOwner,
     platform: BluetoothTeardownPendingPlatform<P>,
+    time_scale: BluetoothControllerTimeScale,
 }
 
 /// Scheduler-prefix hardware ownership paired with one pristine static
@@ -36,10 +38,16 @@ pub struct BluetoothSchedulerRuntimeResourcesBound<P, const MODEM_TIMER_CAPACITY
     _task: BluetoothTaskResources,
     _interrupts: BluetoothInterruptBankOwner,
     _platform: BluetoothTeardownPendingPlatform<P>,
+    time_scale: BluetoothControllerTimeScale,
     runtime: BluetoothControllerRuntimeResources<MODEM_TIMER_CAPACITY>,
 }
 
 impl<P> BluetoothSchedulerTableLowBitsCleared<P> {
+    /// Return the scheduler scale established by the preceding HAL component.
+    pub const fn controller_time_scale(&self) -> BluetoothControllerTimeScale {
+        self.time_scale
+    }
+
     /// Bind one freshly constructed no-RTOS runtime aggregate to this exact
     /// powered hardware epoch.
     ///
@@ -58,6 +66,7 @@ impl<P> BluetoothSchedulerTableLowBitsCleared<P> {
             _task: self.task,
             _interrupts: self.interrupts,
             _platform: self.platform,
+            time_scale: self.time_scale,
             runtime,
         }
     }
@@ -69,6 +78,11 @@ impl<P, const MODEM_TIMER_CAPACITY: usize>
     /// Number of fixed modem timer slots retained by the bound epoch.
     pub const fn modem_timer_capacity(&self) -> usize {
         self.runtime.modem_timer_capacity()
+    }
+
+    /// Return the scheduler scale retained by this exact hardware epoch.
+    pub const fn controller_time_scale(&self) -> BluetoothControllerTimeScale {
+        self.time_scale
     }
 
     /// Whether no software event has entered the bound epoch.
@@ -92,13 +106,14 @@ impl<P, const MODEM_TIMER_CAPACITY: usize>
     }
 }
 
-impl<P> BluetoothClockedResources<P> {
+impl<P> BluetoothControllerHalInitialized<P> {
     /// Clear bits 19:0 of all sixteen scheduler-table entries in ascending
     /// address order.
     ///
-    /// This consumes the reversible clocked state before the first scheduler
-    /// write. The result intentionally has no next transition until the rest
-    /// of controller init has independent evidence and production owners.
+    /// This consumes the completed controller HAL state before the first
+    /// scheduler-table write. The result intentionally has no next hardware
+    /// transition until the remaining scheduler lifecycle has independent
+    /// evidence and production owners.
     #[cfg(target_arch = "riscv32")]
     pub fn clear_scheduler_table_low_bits(self) -> BluetoothSchedulerTableLowBitsCleared<P> {
         self.clear_scheduler_table_low_bits_with(|task| {
@@ -110,15 +125,18 @@ impl<P> BluetoothClockedResources<P> {
         self,
         clear: impl FnOnce(&mut BluetoothTaskResources),
     ) -> BluetoothSchedulerTableLowBitsCleared<P> {
-        let (registers, platform) = self.into_parts();
-        // Arm fail-stop ownership before the first scheduler MMIO mutation.
-        let platform = BluetoothTeardownPendingPlatform::new(platform);
-        let (mut task, interrupts) = separate_interrupt_owner(registers);
+        let Self {
+            mut task,
+            interrupts,
+            platform,
+            time_scale,
+        } = self;
         clear(&mut task);
         BluetoothSchedulerTableLowBitsCleared {
             task,
             interrupts,
             platform,
+            time_scale,
         }
     }
 }
@@ -128,6 +146,8 @@ mod tests {
     use core::sync::atomic::{AtomicUsize, Ordering};
 
     use open_esp_radio_esp32s31_pac::RadioHardware;
+
+    use std::{cell::RefCell, rc::Rc, vec::Vec};
 
     use crate::{BluetoothClockedResources, BluetoothControllerRuntimeResources, BluetoothStopped};
 
@@ -142,19 +162,31 @@ mod tests {
     }
 
     #[test]
-    fn scheduler_prefix_consumes_reversible_clocks_and_arms_fail_stop() {
+    fn controller_hal_precedes_scheduler_prefix_and_arms_fail_stop() {
         PLATFORM_DROPS.store(0, Ordering::Relaxed);
         let stopped =
             BluetoothStopped::from_hardware(FakePlatform, RadioHardware::for_validation());
         let (registers, platform) = stopped.into_parts();
         let clocked = BluetoothClockedResources::for_validation(registers, platform);
-        let mut called = false;
-
-        let scheduler = clocked.clear_scheduler_table_low_bits_with(|_| called = true);
-        assert!(called);
+        let operations = Rc::new(RefCell::new(Vec::new()));
+        let hal_operations = Rc::clone(&operations);
+        let initialized = clocked.initialize_controller_hal_with(|_, _| {
+            hal_operations.borrow_mut().push("controller-hal");
+        });
+        let time_scale = initialized.controller_time_scale();
+        let scheduler_operations = Rc::clone(&operations);
+        let scheduler = initialized.clear_scheduler_table_low_bits_with(|_| {
+            scheduler_operations.borrow_mut().push("scheduler-prefix");
+        });
+        assert_eq!(
+            operations.borrow().as_slice(),
+            ["controller-hal", "scheduler-prefix"]
+        );
+        assert_eq!(scheduler.controller_time_scale(), time_scale);
         let mut bound =
             scheduler.bind_runtime_resources(BluetoothControllerRuntimeResources::<4>::new());
         assert_eq!(bound.modem_timer_capacity(), 4);
+        assert_eq!(bound.controller_time_scale(), time_scale);
         assert!(bound.runtime_is_pristine());
         let (interrupt, task) = bound.split_runtime();
         assert!(core::ptr::eq(

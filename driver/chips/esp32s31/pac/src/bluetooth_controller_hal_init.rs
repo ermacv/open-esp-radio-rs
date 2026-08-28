@@ -501,9 +501,10 @@ impl BluetoothTaskRegisters {
     /// This method does not initialize software events/lists, route a CPU
     /// interrupt, enable the Link Layer or claim HCI readiness.
     ///
-    /// Clocks, PHY, BTBB, software queues, SRAM and interrupt lifecycle are
-    /// upper-layer ownership facts. They are deliberately not represented by
-    /// a forgeable PAC proof token.
+    /// Enabled clocks, the selected SRAM-prefix policy and inactive interrupt
+    /// lifecycle are upper-layer ownership facts. PHY, BTBB, scheduler lists,
+    /// Link Layer and HCI are later stages and are not established here. None
+    /// of those facts is represented by a forgeable PAC proof token.
     #[doc(hidden)]
     pub fn initialize_controller_hal(&mut self, config: BluetoothControllerHalInitConfig) {
         let mut transaction = MmioHalInit {

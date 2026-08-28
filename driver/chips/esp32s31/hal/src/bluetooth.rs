@@ -286,12 +286,13 @@ impl BluetoothTaskOwner {
     ///
     /// # Safety
     ///
-    /// The caller must retain the matching powered PHY, initialized BTBB,
-    /// controller SRAM, software queues, and inactive interrupt bank.
+    /// The caller must retain enabled controller clocks, the selected
+    /// controller-SRAM prefix and the inactive interrupt bank. It must not
+    /// infer scheduler, PHY, BTBB, Link-Layer or HCI readiness from return.
     #[doc(hidden)]
     #[allow(
         unsafe_code,
-        reason = "the caller must retain the external powered PHY, BTBB, SRAM and queue owners"
+        reason = "the caller must retain the external clock, SRAM-prefix and interrupt owners"
     )]
     pub unsafe fn initialize_controller_hal_transaction(
         &mut self,

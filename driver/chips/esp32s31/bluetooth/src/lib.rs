@@ -2,9 +2,9 @@
 //!
 //! This crate is intentionally below HCI and the Bluetooth Link Layer. The
 //! implemented slices establish lossless physical ownership, the route-owned
-//! clock/reset prerequisite and the first finite scheduler-table transaction
-//! of controller init. Common PHY, BT-baseband and the complete 50-operation
-//! BTDM HAL-init body are implemented as later enable-stage components. The
+//! clock/reset prerequisite, the complete 50-operation BTDM HAL-init body and
+//! the following finite scheduler-table transaction of controller init.
+//! Common PHY and BT-baseband remain later enable-stage components. The
 //! two Controller interrupt sources, level/residency policies, baseline masks,
 //! snapshot modes, positional dynamic scheduler classifier, coalesced wake
 //! state, affine ISR scheduler-register staging and one live finite
@@ -35,6 +35,8 @@ mod baseband;
 mod clock;
 #[cfg(any(target_arch = "riscv32", test))]
 mod common_phy_state;
+#[cfg(any(target_arch = "riscv32", test))]
+mod controller_hal;
 mod controller_time;
 mod dtm_event_prepare;
 mod dtm_event_timing;
@@ -67,6 +69,8 @@ pub use clock::{
     BluetoothClockCheckpoint, BluetoothClockEnableFailure, BluetoothClockError,
     BluetoothClockState, BluetoothClockedResources,
 };
+#[cfg(target_arch = "riscv32")]
+pub use controller_hal::BluetoothControllerHalInitialized;
 pub use controller_time::{BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample};
 pub use dtm_event_prepare::{
     BluetoothDtmReviewedEventWordsPlan, BluetoothDtmReviewedEventWordsPlanError,

@@ -183,6 +183,10 @@ impl BluetoothDtmSchedulerBookkeepingPrepared {
     /// complete hardware-consumed descriptor and publication boundary. It is
     /// currently used only to retain the exact request identity in ownership
     /// tests; external controller code cannot submit an incomplete graph.
+    #[allow(
+        dead_code,
+        reason = "publication stays closed until the complete hardware-consumed descriptor exists"
+    )]
     pub(crate) const fn scheduler_lock_modify_request(
         &self,
     ) -> BluetoothSchedulerLockModifyRequest {

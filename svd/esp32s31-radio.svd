@@ -21895,7 +21895,7 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
       <registers>
         <register>
           <name>RX_SETUP_IMAGE</name>
-          <description>bt_bb_rx_set preserves the low 12 bits and replaces bits 31:12 with the finite image 0x001CB.</description>
+          <description>bt_bb_rx_set preserves the low 12 bits and replaces bits 31:12 with the finite image 0x001CB; after the shared receive prefix, bt_bb_v2_init_cmplx(1) independently replaces the same field with 0x0019F.</description>
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>read-write</access>

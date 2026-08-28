@@ -3697,6 +3697,14 @@ pub(crate) fn initialize_bluetooth_shared_tx_delay(registers: &crate::svd::Share
     crate::svd::field_replace_modify::initialize_bluetooth_shared_tx_delay(registers);
 }
 
+/// Typed bridge for the reviewed `initialize_bluetooth_shared_receive_final_image` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_shared_receive_final_image(
+    registers: &crate::svd::ZbbbRadioControl,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_shared_receive_final_image(registers);
+}
+
 /// Typed bridge for the reviewed `clear_bluetooth_scheduler_lock_modify_argument` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_bluetooth_scheduler_lock_modify_argument(

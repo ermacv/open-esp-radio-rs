@@ -13,7 +13,7 @@ baseAddress = 0x20102C00
 
 [peripherals.registers.register]
 name = "RX_SETUP_IMAGE"
-description = "bt_bb_rx_set preserves the low 12 bits and replaces bits 31:12 with the finite image 0x001CB."
+description = "bt_bb_rx_set preserves the low 12 bits and replaces bits 31:12 with the finite image 0x001CB; after the shared receive prefix, bt_bb_v2_init_cmplx(1) independently replaces the same field with 0x0019F."
 addressOffset = 0x0
 size = 32
 access = "read-write"
@@ -238,21 +238,21 @@ bitWidth = 3
 
 [[review]]
 entity = "ZBBB_RADIO_CONTROL"
-sources = ["BLOB_LIBBTBB_BT_RX_SETUP", "BLOB_LIBBTBB_BBMAC_IDLE_FOR_SWRST", "BLOB_LIBBTBB_SHARED_RX_INIT"]
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP", "BLOB_LIBBTBB_BBMAC_IDLE_FOR_SWRST", "BLOB_LIBBTBB_SHARED_RX_INIT", "BLOB_LIBBTBB_BT_BB_V2_INIT"]
 provenance = "derived"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
 entity = "ZBBB_RADIO_CONTROL.RX_SETUP_IMAGE"
-sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP", "BLOB_LIBBTBB_BT_BB_V2_INIT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
 entity = "ZBBB_RADIO_CONTROL.RX_SETUP_IMAGE.CONFIG_IMAGE"
-sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP", "BLOB_LIBBTBB_BT_BB_V2_INIT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"

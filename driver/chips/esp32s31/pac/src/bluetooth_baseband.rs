@@ -403,10 +403,9 @@ impl BluetoothBasebandV2Transaction<'_> {
 
     fn initialize_shared_receive_image(&self) {
         self.initialize_shared_receive_prefix();
-        self.shared_radio
-            .zbbb_radio_control
-            .rx_setup_image()
-            .modify(|_, w| w.config_image().set(0x0019f));
+        super::generated::initialize_bluetooth_shared_receive_final_image(
+            &self.shared_radio.zbbb_radio_control,
+        );
     }
 }
 

@@ -5104,6 +5104,15 @@ value = 0x190
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_SHARED_TX_TIMING_INIT"]
 
+[[field-replace-modifies]]
+name = "initialize_bluetooth_shared_receive_final_image"
+peripheral = "ZBBB_RADIO_CONTROL"
+register = "RX_SETUP_IMAGE"
+fields = [{ field = "CONFIG_IMAGE", source-bit-offset = 0 }]
+value = 0x0019f
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_INIT"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

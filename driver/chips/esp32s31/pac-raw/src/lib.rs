@@ -51543,7 +51543,7 @@ pub mod zbbb_radio_control {
         software_reset_idle_status: SoftwareResetIdleStatus,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - bt_bb_rx_set preserves the low 12 bits and replaces bits 31:12 with the finite image 0x001CB."]
+        #[doc = "0x00 - bt_bb_rx_set preserves the low 12 bits and replaces bits 31:12 with the finite image 0x001CB; after the shared receive prefix, bt_bb_v2_init_cmplx(1) independently replaces the same field with 0x0019F."]
         #[inline(always)]
         pub const fn rx_setup_image(&self) -> &RxSetupImage {
             &self.rx_setup_image
@@ -51594,10 +51594,10 @@ pub mod zbbb_radio_control {
             &self.software_reset_idle_status
         }
     }
-    #[doc = "RX_SETUP_IMAGE (rw) register accessor: bt_bb_rx_set preserves the low 12 bits and replaces bits 31:12 with the finite image 0x001CB.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_setup_image::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_setup_image::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_setup_image`] module"]
+    #[doc = "RX_SETUP_IMAGE (rw) register accessor: bt_bb_rx_set preserves the low 12 bits and replaces bits 31:12 with the finite image 0x001CB; after the shared receive prefix, bt_bb_v2_init_cmplx(1) independently replaces the same field with 0x0019F.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_setup_image::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_setup_image::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_setup_image`] module"]
     #[doc(alias = "RX_SETUP_IMAGE")]
     pub type RxSetupImage = crate::Reg<rx_setup_image::RxSetupImageSpec>;
-    #[doc = "bt_bb_rx_set preserves the low 12 bits and replaces bits 31:12 with the finite image 0x001CB."]
+    #[doc = "bt_bb_rx_set preserves the low 12 bits and replaces bits 31:12 with the finite image 0x001CB; after the shared receive prefix, bt_bb_v2_init_cmplx(1) independently replaces the same field with 0x0019F."]
     pub mod rx_setup_image {
         #[doc = "Register `RX_SETUP_IMAGE` reader"]
         pub type R = crate::R<RxSetupImageSpec>;
@@ -51621,7 +51621,7 @@ pub mod zbbb_radio_control {
                 ConfigImageW::new(self, 12)
             }
         }
-        #[doc = "bt_bb_rx_set preserves the low 12 bits and replaces bits 31:12 with the finite image 0x001CB.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_setup_image::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_setup_image::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "bt_bb_rx_set preserves the low 12 bits and replaces bits 31:12 with the finite image 0x001CB; after the shared receive prefix, bt_bb_v2_init_cmplx(1) independently replaces the same field with 0x0019F.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_setup_image::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_setup_image::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxSetupImageSpec;
         impl crate::RegisterSpec for RxSetupImageSpec {
             type Ux = u32;
@@ -64584,6 +64584,17 @@ pub mod field_replace_modify {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe { writer.encoded_image().bits((input & 0x000007ff) as u16) }
+        });
+    }
+
+    /// Replace ZBBB_RADIO_CONTROL.RX_SETUP_IMAGE fields [CONFIG_IMAGE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_shared_receive_final_image(registers: &crate::ZbbbRadioControl) {
+        registers.rx_setup_image().modify(|_, writer| {
+            let input = 0x0000019f_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.config_image().bits(input & 0x000fffff) }
         });
     }
 

@@ -26,9 +26,7 @@ impl WifiRadioRegisters {
             interface,
             u16::from_le_bytes([address[4], address[5]]),
         );
-        addresses
-            .address_high(interface)
-            .modify(|_, w| w.rx_policy_enable().set_bit());
+        crate::generated::enable_mac_interface_receive_policy(addresses, interface);
     }
 
     /// Publish the STA and AP interface addresses used by the open cold path.

@@ -5129,6 +5129,15 @@ value = 0
 exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_ENABLE_MAC"]
 
+[[field-replace-modifies]]
+name = "enable_mac_interface_receive_policy"
+peripheral = "WIFI_MAC_INTERFACE_ADDRESS"
+register = "ADDRESS_HIGH%s"
+fields = [{ field = "RX_POLICY_ENABLE", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBPP_HAL_MAC_SET_ADDR"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

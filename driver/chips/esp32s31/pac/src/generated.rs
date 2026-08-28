@@ -3711,6 +3711,15 @@ pub(crate) fn enable_wifi_mac_core(registers: &crate::svd::WifiMacCoreEnable) {
     crate::svd::field_replace_modify::enable_wifi_mac_core(registers);
 }
 
+/// Typed bridge for the reviewed `enable_mac_interface_receive_policy` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_mac_interface_receive_policy(
+    registers: &crate::svd::WifiMacInterfaceAddress,
+    index: usize,
+) {
+    crate::svd::field_replace_modify::enable_mac_interface_receive_policy(registers, index);
+}
+
 /// Typed bridge for the reviewed `clear_bluetooth_scheduler_lock_modify_argument` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_bluetooth_scheduler_lock_modify_argument(

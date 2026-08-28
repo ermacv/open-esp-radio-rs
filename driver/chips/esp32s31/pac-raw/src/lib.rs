@@ -64619,6 +64619,20 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace WIFI_MAC_INTERFACE_ADDRESS.ADDRESS_HIGH%s fields [RX_POLICY_ENABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_mac_interface_receive_policy(
+        registers: &crate::WifiMacInterfaceAddress,
+        index: usize,
+    ) {
+        registers.address_high(index).modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.rx_policy_enable().bit((input & 0x00000001) != 0)
+        });
+    }
+
     /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields [LOCK_MODIFY_ARGUMENT] from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_scheduler_lock_modify_argument(

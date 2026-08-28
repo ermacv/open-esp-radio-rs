@@ -4156,6 +4156,60 @@ value = 0xa6
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_100_20_23"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RESTART_IMAGE_0100"
+fields = [{ field = "BITS_20_23", source-bit-offset = 0 }]
+value = 6
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_100_24_27"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RESTART_IMAGE_0100"
+fields = [{ field = "BITS_24_27", source-bit-offset = 0 }]
+value = 6
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_100_16_19"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RESTART_IMAGE_0100"
+fields = [{ field = "BITS_16_19", source-bit-offset = 0 }]
+value = 8
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_100_12_15"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RESTART_IMAGE_0100"
+fields = [{ field = "BITS_12_15", source-bit-offset = 0 }]
+value = 0x0a
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_100_28_31"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RESTART_IMAGE_0100"
+fields = [{ field = "BITS_28_31", source-bit-offset = 0 }]
+value = 6
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_restart_e8_10_15"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RESTART_IMAGE_00E8"
+fields = [{ field = "BITS_10_15", source-bit-offset = 0 }]
+value = 3
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

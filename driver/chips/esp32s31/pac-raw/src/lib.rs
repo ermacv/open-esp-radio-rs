@@ -63269,6 +63269,72 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100 fields [BITS_20_23] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_restart_100_20_23(registers: &crate::PhyBtagcRecovered) {
+        registers.agc_restart_image_0100().modify(|_, writer| {
+            let input = 0x00000006_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_20_23().bits((input & 0x0000000f) as u8) }
+        });
+    }
+
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100 fields [BITS_24_27] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_restart_100_24_27(registers: &crate::PhyBtagcRecovered) {
+        registers.agc_restart_image_0100().modify(|_, writer| {
+            let input = 0x00000006_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_24_27().bits((input & 0x0000000f) as u8) }
+        });
+    }
+
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100 fields [BITS_16_19] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_restart_100_16_19(registers: &crate::PhyBtagcRecovered) {
+        registers.agc_restart_image_0100().modify(|_, writer| {
+            let input = 0x00000008_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_16_19().bits((input & 0x0000000f) as u8) }
+        });
+    }
+
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100 fields [BITS_12_15] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_restart_100_12_15(registers: &crate::PhyBtagcRecovered) {
+        registers.agc_restart_image_0100().modify(|_, writer| {
+            let input = 0x0000000a_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_12_15().bits((input & 0x0000000f) as u8) }
+        });
+    }
+
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_0100 fields [BITS_28_31] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_restart_100_28_31(registers: &crate::PhyBtagcRecovered) {
+        registers.agc_restart_image_0100().modify(|_, writer| {
+            let input = 0x00000006_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_28_31().bits((input & 0x0000000f) as u8) }
+        });
+    }
+
+    /// Replace PHY_BTAGC_RECOVERED.AGC_RESTART_IMAGE_00E8 fields [BITS_10_15] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_restart_e8_10_15(registers: &crate::PhyBtagcRecovered) {
+        registers.agc_restart_image_00e8().modify(|_, writer| {
+            let input = 0x00000003_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_10_15().bits((input & 0x0000003f) as u8) }
+        });
+    }
+
     /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields [LOCK_MODIFY_ARGUMENT] from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_scheduler_lock_modify_argument(

@@ -322,15 +322,12 @@ impl BluetoothBasebandV2Transaction<'_> {
         super::generated::initialize_bluetooth_receive_restart_ec_0_7(btagc);
         super::generated::initialize_bluetooth_receive_restart_f0_16_23(btagc);
 
-        let image_100 = btagc.agc_restart_image_0100();
-        image_100.modify(|_, w| w.bits_20_23().set(6));
-        image_100.modify(|_, w| w.bits_24_27().set(6));
-        image_100.modify(|_, w| w.bits_16_19().set(8));
-        image_100.modify(|_, w| w.bits_12_15().set(0x0a));
-        image_100.modify(|_, w| w.bits_28_31().set(6));
-        btagc
-            .agc_restart_image_00e8()
-            .modify(|_, w| w.bits_10_15().set(3));
+        super::generated::initialize_bluetooth_receive_restart_100_20_23(btagc);
+        super::generated::initialize_bluetooth_receive_restart_100_24_27(btagc);
+        super::generated::initialize_bluetooth_receive_restart_100_16_19(btagc);
+        super::generated::initialize_bluetooth_receive_restart_100_12_15(btagc);
+        super::generated::initialize_bluetooth_receive_restart_100_28_31(btagc);
+        super::generated::initialize_bluetooth_receive_restart_e8_10_15(btagc);
 
         let baseband = &self.bluetooth.bt_v3_2_baseband;
         baseband

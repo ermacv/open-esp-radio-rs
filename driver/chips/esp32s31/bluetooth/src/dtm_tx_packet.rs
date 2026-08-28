@@ -10,15 +10,88 @@
 
 #![forbid(unsafe_code)]
 
-use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmPreparedTxPacketStorage;
 pub use open_esp_radio_esp32s31_bluetooth_memory::{
     BLUETOOTH_DTM_MAX_PACKET_CAPACITY as BLUETOOTH_DTM_TX_MAX_PAYLOAD_BYTES,
     BLUETOOTH_DTM_TX_PACKET_BYTES as BLUETOOTH_DTM_TX_PACKET_STORAGE_BYTES,
     BLUETOOTH_DTM_TX_PACKET_PREFIX_BYTES, BluetoothDtmTxBufferHeaderImage,
     BluetoothDtmTxPacketAddress, BluetoothDtmTxPacketAddressError, BluetoothDtmTxPacketStorage,
 };
+use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphTxPacketPrepared,
+    BluetoothDtmPreparedTxPacketStorage,
+};
 
 use crate::{BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern};
+
+/// LLL extension that consumes a bound graph into a standard DTM TX packet.
+pub trait BluetoothDtmTxGraphPrepare {
+    /// Fill every declared payload byte and retain its semantic pattern proof.
+    fn prepare_dtm_tx_packet(
+        self,
+        pattern: BluetoothDtmPayloadPattern,
+        length: BluetoothDtmPayloadLength,
+    ) -> BluetoothDtmPreparedTxGraph;
+}
+
+impl BluetoothDtmTxGraphPrepare for BluetoothDtmMemoryGraphCpuOwned {
+    fn prepare_dtm_tx_packet(
+        self,
+        pattern: BluetoothDtmPayloadPattern,
+        length: BluetoothDtmPayloadLength,
+    ) -> BluetoothDtmPreparedTxGraph {
+        let mut payload = [0; BLUETOOTH_DTM_TX_MAX_PAYLOAD_BYTES];
+        pattern.fill_reviewed(&mut payload[..usize::from(length.hci_image())]);
+        let memory = self.prepare_tx_packet(pattern.hci_selector(), length.hci_image(), &payload);
+        BluetoothDtmPreparedTxGraph {
+            memory,
+            pattern,
+            length,
+        }
+    }
+}
+
+/// Bound CPU-owned graph carrying one complete standard DTM TX packet.
+///
+/// This state proves only packet construction. The graph remains unreachable
+/// by hardware and has no scheduler, fence or publication authority.
+#[must_use = "the prepared TX graph must be composed or explicitly discarded"]
+pub struct BluetoothDtmPreparedTxGraph {
+    memory: BluetoothDtmMemoryGraphTxPacketPrepared,
+    pattern: BluetoothDtmPayloadPattern,
+    length: BluetoothDtmPayloadLength,
+}
+
+impl BluetoothDtmPreparedTxGraph {
+    /// Return the validated HCI test pattern represented by the packet.
+    pub const fn pattern(&self) -> BluetoothDtmPayloadPattern {
+        self.pattern
+    }
+
+    /// Return the validated HCI payload length represented by the packet.
+    pub const fn length(&self) -> BluetoothDtmPayloadLength {
+        self.length
+    }
+
+    /// Borrow the complete reviewed prefix and declared payload.
+    pub fn prepared_bytes(&self) -> &[u8] {
+        self.memory.prepared_packet_bytes()
+    }
+
+    /// Discard packet readiness and recover the ordinary CPU-owned graph.
+    pub fn discard(self) -> BluetoothDtmMemoryGraphCpuOwned {
+        self.memory.discard_packet_readiness()
+    }
+
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        BluetoothDtmMemoryGraphTxPacketPrepared,
+        BluetoothDtmPayloadPattern,
+        BluetoothDtmPayloadLength,
+    ) {
+        (self.memory, self.pattern, self.length)
+    }
+}
 
 /// LLL extension that fills standard DTM pattern bytes in the sole memory-layer
 /// TX backing slot.
@@ -89,7 +162,14 @@ impl<'storage> BluetoothDtmPreparedTxPacket<'storage> {
 
 #[cfg(test)]
 mod tests {
-    use super::{BluetoothDtmTxPacketPrepare, BluetoothDtmTxPacketStorage};
+    use open_esp_radio_esp32s31_bluetooth_memory::{
+        BluetoothDtmMemoryGraphModelAddress, BluetoothDtmMemoryGraphStorage,
+        BluetoothDtmSchedulerAllocationConfig,
+    };
+
+    use super::{
+        BluetoothDtmTxGraphPrepare, BluetoothDtmTxPacketPrepare, BluetoothDtmTxPacketStorage,
+    };
     use crate::{BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern};
 
     #[test]
@@ -129,5 +209,31 @@ mod tests {
         let storage = prepared.release();
         assert_eq!(storage.bytes()[0x14], 0xff);
         assert_eq!(storage.bytes()[0x15], 0xff);
+    }
+
+    #[test]
+    fn bound_graph_preparation_retains_the_typed_packet_identity() {
+        let storage =
+            std::boxed::Box::leak(std::boxed::Box::new(BluetoothDtmMemoryGraphStorage::new()));
+        let base = BluetoothDtmMemoryGraphModelAddress::new(0x2f00_0100)
+            .expect("test base has valid compressed-pointer syntax");
+        let owner = BluetoothDtmMemoryGraphStorage::pin_static_model(
+            storage,
+            base,
+            BluetoothDtmSchedulerAllocationConfig::new(2, 3, 5, 4),
+        )
+        .expect("test graph fits physical controller SRAM");
+
+        let prepared = owner.prepare_dtm_tx_packet(
+            BluetoothDtmPayloadPattern::Repeated11110000,
+            BluetoothDtmPayloadLength::from_hci_image(3),
+        );
+
+        assert_eq!(
+            prepared.pattern(),
+            BluetoothDtmPayloadPattern::Repeated11110000
+        );
+        assert_eq!(prepared.length().hci_image(), 3);
+        assert_eq!(&prepared.prepared_bytes()[0x12..], &[0x0f; 3]);
     }
 }

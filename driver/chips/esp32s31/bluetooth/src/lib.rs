@@ -73,8 +73,9 @@ pub use clock::{
 pub use controller_hal::BluetoothControllerHalInitialized;
 pub use controller_time::{BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample};
 pub use dtm_event_prepare::{
-    BluetoothDtmReviewedEventWordsPlan, BluetoothDtmReviewedEventWordsPlanError,
-    BluetoothDtmReviewedEventWordsPrepared, BluetoothDtmSchedulerBookkeepingPrepared,
+    BluetoothDtmReceiverEvent, BluetoothDtmReviewedEventWordsPlan,
+    BluetoothDtmReviewedEventWordsPlanError, BluetoothDtmReviewedEventWordsPrepared,
+    BluetoothDtmSchedulerBookkeepingPrepared, BluetoothDtmTransmitterEvent,
 };
 pub use dtm_event_timing::{
     BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerMargin, BluetoothDtmTxEventAdvance,
@@ -103,9 +104,10 @@ pub use dtm_scheduler_item::{
 pub use dtm_timing::{BluetoothDtmTxSchedulerTiming, BluetoothDtmTxTimingMicros};
 pub use dtm_tx_packet::{
     BLUETOOTH_DTM_TX_MAX_PAYLOAD_BYTES, BLUETOOTH_DTM_TX_PACKET_PREFIX_BYTES,
-    BLUETOOTH_DTM_TX_PACKET_STORAGE_BYTES, BluetoothDtmPreparedTxPacket,
-    BluetoothDtmTxBufferHeaderImage, BluetoothDtmTxPacketAddress, BluetoothDtmTxPacketAddressError,
-    BluetoothDtmTxPacketPrepare, BluetoothDtmTxPacketStorage,
+    BLUETOOTH_DTM_TX_PACKET_STORAGE_BYTES, BluetoothDtmPreparedTxGraph,
+    BluetoothDtmPreparedTxPacket, BluetoothDtmTxBufferHeaderImage, BluetoothDtmTxGraphPrepare,
+    BluetoothDtmTxPacketAddress, BluetoothDtmTxPacketAddressError, BluetoothDtmTxPacketPrepare,
+    BluetoothDtmTxPacketStorage,
 };
 pub use interrupt::{
     BluetoothCpuInterruptRoutePolicy, BluetoothCpuInterruptSource,

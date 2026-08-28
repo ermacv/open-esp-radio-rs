@@ -136,12 +136,15 @@ SHA-256 `e2a8f5102484eb3bda6e3b5ebb6917bdf31920d3351d68d8b46a645e57356678`;
 PRBS15 has SHA-256
 `7ba700ed15ee66201f072225222e181a024baee13aca0b08c43a4416c7d4fba9`.
 The open implementation regenerates both complete images with bounded LFSR
-steps instead of retaining extracted arrays. It prepares at most 255 bytes in
-caller-owned storage, rejects a short destination before mutation and returns
-an affine read-only payload view. This is CPU-owned preparation only: no packet
-header address, descriptor publication, fence or hardware ownership is
-implied. Reproducing the vendor allocation and internal object layout remains
-unnecessary.
+steps instead of retaining extracted arrays. Its standalone verifier prepares
+at most 255 bytes in caller-owned storage, rejects a short destination before
+mutation and returns an affine read-only payload view. Production composition
+instead consumes the bound graph owner, copies every declared payload byte and
+returns a typed packet-ready graph retaining the validated pattern and length.
+Only that state can enter a transmitter event plan; the receiver plan accepts
+the ordinary graph. The TX proof survives the positional-event and scheduler-
+bookkeeping transitions. All of these states remain CPU-owned: no packet
+header publication, fence or hardware ownership is implied.
 
 The generic TX-buffer/header allocator is narrow enough to replace as well.
 Current `r_sym_ble_4FZFpypyQDtGoyqc084f` is instruction-identical to named
@@ -516,8 +519,8 @@ time source.
 | SVD / restricted PAC | Typed controller-window fields, complete publication/ack order, controller-time reads and the SRAM compression domain | Lock/modify and always-awake time-latch fields, exact images and wait predicates are finite. Live cross-owner MMIO and the remaining scheduler commands are absent. |
 | HAL | Powered controller epoch, common RF wake, cache/device fences, timer conversion, same-core IRQ routing and bounded stop/quiesce | Clock/PHY/BTBB components exist separately; the time-scale transform and pure affine latch phases exist, but no reachable composed epoch, live latch owner or powered rollback exists. |
 | Scheduler core | Affine event item, ordered deadline queue, insert/abort/complete states, hardware-head replacement and consistency check | One head lock/modify operation has affine event-driven phases; nine DTM scheduler-item words and their typed channel/role/PHY inputs have exact pre-insert transforms. The finished-item/recycle call chain and DTM callback edge are mapped; the open queue, raw status source, fences and abort path are absent. |
-| Packet memory | Static aligned TX/RX/link-state slots with `CPU -> prepared -> hardware -> completed -> CPU` ownership | A separate no-heap controller-memory crate reserves every reviewed per-event DTM link-graph allocation with four-byte alignment: link state, scheduler item/context, three role-specific headers and complete TX/RX packet slots. The separate `0x28`-byte DTM environment remains LLL state. Target binding gives a movable CPU owner one non-movable static allocation, validates the complete physical SRAM extent before mutation and installs the bound headers, five private-chain anchors and scheduler-item link. TX/RX re-arm sentinels, list routing and positional result parsing are also exact CPU-owned components. Production placement ownership, the packet-engine latch/consumer, cacheability/fences and affine hardware completion/reclaim states are absent. |
-| LLL DTM | Parameter validation, channel/PHY/pattern image, TX/RX event state machine and receive counter | The complete channel domain, composed frequency lookup, role-dependent PHY/rate mapping, all eight bounded TX payload patterns, packet-duration/minimum-interval/tick arithmetic, constant-time event catch-up and one-word RX accounting transition are typed. Exact command roles, allocation rollback, descriptor chain anchors, wrapping received-packet count and unconditional handoff to the append decision are mapped. The ordinary re-arm is fail-closed on the swap bit; remaining field meanings, swap ownership, live item/buffer ownership, abort and quiescence are incomplete. |
+| Packet memory | Static aligned TX/RX/link-state slots with `CPU -> prepared -> hardware -> completed -> CPU` ownership | A separate no-heap controller-memory crate reserves every reviewed per-event DTM link-graph allocation with four-byte alignment: link state, scheduler item/context, three role-specific headers and complete TX/RX packet slots. The separate `0x28`-byte DTM environment remains LLL state. Target binding gives a movable CPU owner one non-movable static allocation, validates the complete physical SRAM extent before mutation and installs the bound headers, five private-chain anchors and scheduler-item link. TX preparation consumes that owner and yields packet readiness only after a total declared-byte copy; mutable TX-slot access is unavailable after binding. TX/RX re-arm sentinels, list routing and positional result parsing are also exact CPU-owned components. Production placement ownership, the packet-engine latch/consumer, cacheability/fences and affine hardware completion/reclaim states are absent. |
+| LLL DTM | Parameter validation, channel/PHY/pattern image, TX/RX event state machine and receive counter | The complete channel domain, composed frequency lookup, role-dependent PHY/rate mapping, all eight bounded TX payload patterns, packet-duration/minimum-interval/tick arithmetic, constant-time event catch-up and one-word RX accounting transition are typed. TX and RX event plans are distinct states: TX requires a prepared graph and retains its exact pattern/length through scheduler bookkeeping, while RX accepts an ordinary bound graph. Exact command roles, allocation rollback, descriptor chain anchors, wrapping received-packet count and unconditional handoff to the append decision are mapped. The ordinary re-arm is fail-closed on the swap bit; remaining field meanings, swap ownership, live item/buffer ownership, abort and quiescence are incomplete. |
 | HCI | LE Receiver Test, LE Transmitter Test and LE Test End command/event semantics for only the implemented variants | Bootstrap transport exists; operational DTM opcodes must remain unsupported until the physical owner is live. |
 
 No ULL advertising, scanning, connection, ACL or LLCP implementation is
@@ -569,11 +572,11 @@ The remaining work should proceed in narrow, testable increments:
    link. Bind the private `item -> link state -> RX tail` path to its internal
    packet-engine latch and the required publication fence.
 4. **Advance the bound graph into hardware ownership.** The no-heap aligned
-   capacity, non-forgeable physical-SRAM binding, exact allocation-time links
-   and negative extent tests now exist. Add only the remaining
-   `Prepared/HardwareOwned/Completed/Recycled` transitions after the private
-   packet-engine latch and release/acquire rules are proven; prevent mutation
-   after publication and reuse before callback, abort or quiescence. The exact
+   capacity, non-forgeable physical-SRAM binding, exact allocation-time links,
+   consuming TX packet readiness and role-specific event preparation now
+   exist. Add `HardwareOwned/Completed/Recycled` only after the private packet-
+   engine latch and release/acquire rules are proven; prevent mutation after
+   publication and reuse before callback, abort or quiescence. The exact
    wrapping receive count and append-decision outcome may be consumed only by
    the completed owner; the swap-reserve observation must remain quarantined
    until its detached-header ownership is proven.

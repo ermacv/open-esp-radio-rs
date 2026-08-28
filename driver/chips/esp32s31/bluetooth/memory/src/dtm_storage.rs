@@ -1041,15 +1041,97 @@ pub struct BluetoothDtmMemoryGraphCpuOwned {
     binding: BluetoothDtmMemoryGraphBinding,
 }
 
+/// CPU-owned graph whose sole TX packet slot has a complete DTM image.
+///
+/// Construction consumes the graph owner and copies every declared payload
+/// byte. The state remains unreachable by hardware and grants no scheduler or
+/// publication authority.
+#[must_use = "the prepared TX graph must remain owned or be explicitly discarded"]
+pub struct BluetoothDtmMemoryGraphTxPacketPrepared {
+    storage: Pin<&'static mut BluetoothDtmMemoryGraphStorage>,
+    binding: BluetoothDtmMemoryGraphBinding,
+    pattern_selector: u8,
+    payload_length: u8,
+}
+
+impl BluetoothDtmMemoryGraphTxPacketPrepared {
+    /// Return the positional DTM pattern selector written into the packet.
+    pub const fn pattern_selector(&self) -> u8 {
+        self.pattern_selector
+    }
+
+    /// Return the declared packet payload length.
+    pub const fn payload_length(&self) -> u8 {
+        self.payload_length
+    }
+
+    /// Borrow the complete reviewed prefix and declared payload.
+    pub fn prepared_packet_bytes(&self) -> &[u8] {
+        let storage = self.storage.as_ref().get_ref();
+        &storage.tx_packet.bytes
+            [..BLUETOOTH_DTM_TX_PACKET_PREFIX_BYTES + self.payload_length as usize]
+    }
+
+    /// Build and commit one positional event image while consuming readiness.
+    ///
+    /// A successful upper TX transition can retain this construction path in
+    /// its own typestate. On failure the ordinary CPU owner is returned and
+    /// the caller must explicitly prepare the packet again before retrying TX.
+    pub fn try_prepare_positional_event<BuildError>(
+        self,
+        build: impl FnOnce(
+            BluetoothDtmPositionalEventSeed,
+        ) -> Result<BluetoothDtmPositionalEventWords, BuildError>,
+    ) -> Result<
+        BluetoothDtmMemoryGraphPositionalEventPrepared,
+        BluetoothDtmMemoryGraphPrepareFailure<BuildError>,
+    > {
+        self.discard_packet_readiness()
+            .try_prepare_positional_event(build)
+    }
+
+    /// Discard only the readiness proof and recover the CPU-owned graph.
+    ///
+    /// Packet bytes are retained, but another TX event must prepare them again
+    /// to obtain a fresh proof for its exact pattern and length.
+    pub fn discard_packet_readiness(self) -> BluetoothDtmMemoryGraphCpuOwned {
+        BluetoothDtmMemoryGraphCpuOwned {
+            storage: self.storage,
+            binding: self.binding,
+        }
+    }
+}
+
 impl BluetoothDtmMemoryGraphCpuOwned {
     /// Borrow the location proof without granting publication authority.
     pub const fn binding(&self) -> &BluetoothDtmMemoryGraphBinding {
         &self.binding
     }
 
-    /// Borrow the sole TX packet slot for CPU-only LLL pattern preparation.
-    pub fn tx_packet_mut(&mut self) -> &mut BluetoothDtmTxPacketStorage {
-        self.storage.as_mut().project().tx_packet
+    /// Consume this graph and install one complete CPU-owned TX packet image.
+    ///
+    /// The fixed payload array makes the copy total for every accepted `u8`
+    /// length; no callback can claim readiness without supplying all declared
+    /// bytes. Bytes after the declared payload remain unchanged.
+    pub fn prepare_tx_packet(
+        mut self,
+        pattern_selector: u8,
+        payload_length: u8,
+        payload: &[u8; BLUETOOTH_DTM_MAX_PACKET_CAPACITY],
+    ) -> BluetoothDtmMemoryGraphTxPacketPrepared {
+        let packet = self.storage.as_mut().project().tx_packet;
+        let mut preparation = packet.begin_prepare(pattern_selector, payload_length);
+        preparation
+            .payload_mut()
+            .copy_from_slice(&payload[..payload_length as usize]);
+        let _prepared = preparation.finish();
+
+        BluetoothDtmMemoryGraphTxPacketPrepared {
+            storage: self.storage,
+            binding: self.binding,
+            pattern_selector,
+            payload_length,
+        }
     }
 
     /// Borrow the ordinary RX packet/header allocations as one CPU transition.
@@ -1335,16 +1417,16 @@ mod tests {
 
     use super::{
         BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_DTM_BUFFER_HEADER_BYTES,
-        BLUETOOTH_DTM_LINK_STATE_BYTES, BLUETOOTH_DTM_RX_PACKET_BYTES,
-        BLUETOOTH_DTM_SCHEDULER_CONTEXT_BYTES, BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES,
-        BLUETOOTH_DTM_TX_PACKET_BYTES, BluetoothDtmBufferHeaderStorage,
-        BluetoothDtmLinkStateReviewedWords, BluetoothDtmLinkStateStorage,
-        BluetoothDtmMemoryGraphBindError, BluetoothDtmMemoryGraphCpuOwned,
-        BluetoothDtmMemoryGraphModelAddress, BluetoothDtmMemoryGraphPrepareError,
-        BluetoothDtmMemoryGraphStorage, BluetoothDtmPositionalEventSeed,
-        BluetoothDtmPositionalEventWords, BluetoothDtmRxBufferHeaderImage,
-        BluetoothDtmRxBufferStorage, BluetoothDtmRxPacketAddress, BluetoothDtmRxPacketAddressError,
-        BluetoothDtmRxPacketStorage, BluetoothDtmRxRearmError,
+        BLUETOOTH_DTM_LINK_STATE_BYTES, BLUETOOTH_DTM_MAX_PACKET_CAPACITY,
+        BLUETOOTH_DTM_RX_PACKET_BYTES, BLUETOOTH_DTM_SCHEDULER_CONTEXT_BYTES,
+        BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES, BLUETOOTH_DTM_TX_PACKET_BYTES,
+        BluetoothDtmBufferHeaderStorage, BluetoothDtmLinkStateReviewedWords,
+        BluetoothDtmLinkStateStorage, BluetoothDtmMemoryGraphBindError,
+        BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphModelAddress,
+        BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphStorage,
+        BluetoothDtmPositionalEventSeed, BluetoothDtmPositionalEventWords,
+        BluetoothDtmRxBufferHeaderImage, BluetoothDtmRxBufferStorage, BluetoothDtmRxPacketAddress,
+        BluetoothDtmRxPacketAddressError, BluetoothDtmRxPacketStorage, BluetoothDtmRxRearmError,
         BluetoothDtmSchedulerAllocationConfig, BluetoothDtmSchedulerContextStorage,
         BluetoothDtmSchedulerItemReviewedWords, BluetoothDtmSchedulerItemStorage,
         BluetoothDtmTxBufferHeaderImage, BluetoothDtmTxPacketAddress,
@@ -1588,10 +1670,11 @@ mod tests {
 
     #[test]
     fn cancel_restores_the_complete_logical_graph_image() {
-        let mut owner = model_owner(0x2f00_0500);
-        let mut packet = owner.tx_packet_mut().begin_prepare(7, 3);
-        packet.payload_mut().copy_from_slice(&[0xaa, 0xbb, 0xcc]);
-        packet.finish().release();
+        let mut payload = [0; BLUETOOTH_DTM_MAX_PACKET_CAPACITY];
+        payload[..3].copy_from_slice(&[0xaa, 0xbb, 0xcc]);
+        let owner = model_owner(0x2f00_0500)
+            .prepare_tx_packet(7, 3, &payload)
+            .discard_packet_readiness();
         let before = snapshot(owner.storage.as_ref().get_ref());
 
         let prepared = owner

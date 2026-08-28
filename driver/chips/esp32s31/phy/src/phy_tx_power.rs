@@ -1532,7 +1532,7 @@ mod tests {
 
     #[test]
     fn external_lowering_covers_every_tx_power_operation_class() {
-        let i2c = PhyI2cAddress::new(0x62, 1).unwrap();
+        let i2c = analog_registers::RFPLL_CAPACITOR_LOW;
         assert!(matches!(
             PhyTxPowerExternalBinding::lower(PhyTxPowerAction::Environment(
                 PhyTxCalibrationEnvironmentAction::ConfigurePowerDetector

@@ -322,15 +322,15 @@ impl RfpllFrequencyTransition {
                 value: 0,
             },
             1 => RfpllFrequencyAction::WriteByte {
-                address: PhyI2cAddress::sdm(3),
+                address: analog_registers::RFPLL_SDM_MOST_SIGNIFICANT_BYTE,
                 value: bytes[3],
             },
             2 => RfpllFrequencyAction::WriteByte {
-                address: PhyI2cAddress::sdm(4),
+                address: analog_registers::RFPLL_SDM_UPPER_MIDDLE_BYTE,
                 value: bytes[2],
             },
             3 => RfpllFrequencyAction::WriteByte {
-                address: PhyI2cAddress::sdm(5),
+                address: analog_registers::RFPLL_SDM_LOWER_MIDDLE_BYTE,
                 value: bytes[1],
             },
             4 => RfpllFrequencyAction::WriteMasked {
@@ -377,7 +377,7 @@ impl RfpllFrequencyTransition {
                 field: analog_registers::RFPLL_LOCK_STATUS,
             },
             RfpllFrequencyStep::CapLowRead { .. } => RfpllFrequencyAction::ReadByte {
-                address: PhyI2cAddress::rfpll(5),
+                address: analog_registers::RFPLL_CALIBRATED_CAPACITOR_LOW,
             },
             RfpllFrequencyStep::CapHighRead { .. } => RfpllFrequencyAction::ReadMasked {
                 field: analog_registers::RFPLL_CALIBRATED_CAPACITOR_HIGH,
@@ -556,10 +556,12 @@ impl RfpllFrequencyTransition {
                     address: completed,
                     value,
                 },
-            ) if completed == PhyI2cAddress::rfpll(5) => RfpllFrequencyStep::CapHighRead {
-                low: value,
-                lock_observed,
-            },
+            ) if completed == analog_registers::RFPLL_CALIBRATED_CAPACITOR_LOW => {
+                RfpllFrequencyStep::CapHighRead {
+                    low: value,
+                    lock_observed,
+                }
+            }
             (
                 RfpllFrequencyStep::CapHighRead { low, lock_observed },
                 RfpllFrequencyCompletion::MaskedRead {
@@ -1542,7 +1544,7 @@ mod tests {
         RfpllFrequencyI2cBinding, RfpllFrequencyOutcome, RfpllFrequencyRequest,
         RfpllFrequencyTransition, calculate_rfpll_sdm,
     };
-    use crate::phy_i2c::PhyI2cAddress;
+    use crate::phy_i2c::analog_registers;
 
     fn cap_read_completion(
         action: RfpllCapCorrectionAction,
@@ -2068,7 +2070,7 @@ mod tests {
         ));
         assert!(matches!(
             RfpllFrequencyExternalBinding::lower(RfpllFrequencyAction::WriteByte {
-                address: PhyI2cAddress::rfpll(7),
+                address: analog_registers::RFPLL_LOCK_STATUS.address(),
                 value: 3,
             }),
             Ok(RfpllFrequencyExternalBinding::I2c(_))

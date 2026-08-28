@@ -1868,7 +1868,6 @@ impl PhyTxCapExternalBinding {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::phy_i2c::PhyI2cAddress;
 
     fn tone_sar_completion(action: PhyToneSarAction, value: u16) -> PhyToneSarCompletion {
         match action {
@@ -2094,7 +2093,7 @@ mod tests {
 
     #[test]
     fn tx_cap_lowering_covers_every_nested_operation_class() {
-        let i2c = PhyI2cAddress::new(0x62, 1).unwrap();
+        let i2c = analog_registers::RFPLL_CAPACITOR_LOW;
         assert!(matches!(
             PhyTxCapExternalBinding::lower(PhyTxCapAction::Environment(
                 PhyTxCalibrationEnvironmentAction::ConfigurePbusDebugMode

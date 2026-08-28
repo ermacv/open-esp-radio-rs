@@ -1238,18 +1238,18 @@ impl XtalDutyCalibrationTransition {
 #[cfg(test)]
 mod tests {
     use super::{
-        PhyI2cAddress, XtalDutyCalibrationAction, XtalDutyCalibrationCompletion,
-        XtalDutyCalibrationOutcome, XtalDutyCalibrationParameters, XtalDutyCalibrationTransition,
-        XtalDutyHardwareFailure, XtalDutyPassAction, XtalDutyPassCompletion, XtalDutyPassOutcome,
-        XtalDutyPassTransition, XtalDutyPassTransitionError, XtalDutyPrepareAction,
-        XtalDutyPrepareCompletion, XtalDutyPrepareTransition, XtalDutyRestoreAction,
-        XtalDutyRestoreCompletion, XtalDutyRestoreTransition, XtalDutySearchAction,
-        XtalDutySearchCompletion, XtalDutySearchOutcome, XtalDutySearchTransition,
-        XtalDutySearchTransitionError,
+        XtalDutyCalibrationAction, XtalDutyCalibrationCompletion, XtalDutyCalibrationOutcome,
+        XtalDutyCalibrationParameters, XtalDutyCalibrationTransition, XtalDutyHardwareFailure,
+        XtalDutyPassAction, XtalDutyPassCompletion, XtalDutyPassOutcome, XtalDutyPassTransition,
+        XtalDutyPassTransitionError, XtalDutyPrepareAction, XtalDutyPrepareCompletion,
+        XtalDutyPrepareTransition, XtalDutyRestoreAction, XtalDutyRestoreCompletion,
+        XtalDutyRestoreTransition, XtalDutySearchAction, XtalDutySearchCompletion,
+        XtalDutySearchOutcome, XtalDutySearchTransition, XtalDutySearchTransitionError,
     };
     use crate::phy_dc_iq::{
         PhyDcIqAccumulatorSnapshot, PhyDcIqAction, PhyDcIqCompletion, PhyDcIqReadinessSnapshot,
     };
+    use crate::phy_i2c::analog_registers;
     use crate::phy_pbus::PhyPbusForceTest;
     use crate::phy_rfpll::{RfpllFrequencyAction, RfpllFrequencyCompletion};
     use crate::phy_rx_dco::{PhyRxDcoAction, PhyRxDcoCompletion};
@@ -1693,7 +1693,7 @@ mod tests {
     #[test]
     fn each_outlier_uses_at_most_two_identity_bound_replacements() {
         let mut transition = XtalDutySearchTransition::new();
-        let duty_address = PhyI2cAddress::new(0x61, 0x0a).unwrap();
+        let duty_address = analog_registers::XTAL_DUTY_CANDIDATE;
         transition
             .advance(XtalDutySearchCompletion::CandidateWritten {
                 address: duty_address,

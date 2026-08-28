@@ -13,6 +13,43 @@ pub enum PhyI2cHost {
     Host1,
 }
 
+/// Validated identity of one internal analog PHY-I²C block.
+///
+/// This is exposed only so ABI bridges can validate a vendor block argument
+/// without inventing a register address outside the PAC.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyI2cBlock {
+    code: u8,
+}
+
+impl PhyI2cBlock {
+    /// Convert the raw block byte accepted by the vendor ABI.
+    pub const fn from_vendor_abi(code: u8) -> Option<Self> {
+        if code >= 0x61 && code <= 0x6d {
+            Some(Self { code })
+        } else {
+            None
+        }
+    }
+
+    const fn recovered(code: u8) -> Self {
+        assert!(code >= 0x61 && code <= 0x6d);
+        Self { code }
+    }
+
+    const fn index(self) -> u8 {
+        self.code.wrapping_sub(0x61)
+    }
+
+    const fn host(self) -> PhyI2cHost {
+        if (PHY_I2C_HOST_ONE_BLOCKS >> self.index()) & 1 == 0 {
+            PhyI2cHost::Host0
+        } else {
+            PhyI2cHost::Host1
+        }
+    }
+}
+
 const PHY_I2C_READ_MASKS: [u16; 13] = [
     0x0100, 0x0020, 0x0010, 0x0000, 0x0000, 0x0080, 0x0004, 0x0000, 0x0800, 0x0040, 0x0008, 0x0000,
     0x8000,
@@ -26,7 +63,7 @@ const PHY_I2C_HOST_ONE_BLOCKS: u16 = 0x0647;
 /// transaction, but cannot decompose it into command-register fields.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyI2cAddress {
-    block: u8,
+    block: PhyI2cBlock,
     register: u8,
 }
 
@@ -45,7 +82,7 @@ impl PhyI2cField {
     const fn recovered(address: PhyI2cAddress, high_bit: u8, low_bit: u8) -> Self {
         assert!(high_bit < 8 && low_bit <= high_bit);
         assert!(address.register < 0x20);
-        let block = match address.block {
+        let block = match address.block.code {
             0x61 => 0,
             0x62 => 1,
             0x63 => 2,
@@ -110,46 +147,19 @@ pub enum PhyI2cAccessError {
 }
 
 impl PhyI2cAddress {
-    /// Validate one recovered internal analog-register identity.
-    pub const fn new(block: u8, register: u8) -> Option<Self> {
-        if block >= 0x61 && block <= 0x6d {
-            Some(Self { block, register })
-        } else {
-            None
-        }
-    }
-
-    /// Address one recovered RFPLL byte register.
-    pub const fn rfpll(register: u8) -> Self {
-        Self::recovered(0x62, register)
-    }
-
-    /// Address one recovered sigma-delta-modulator byte register.
-    pub const fn sdm(register: u8) -> Self {
-        Self::recovered(0x63, register)
-    }
-
-    /// Address one recovered analog front-end byte register.
-    pub const fn front_end(register: u8) -> Self {
-        Self::recovered(0x67, register)
-    }
-
     const fn recovered(block: u8, register: u8) -> Self {
-        assert!(block >= 0x61 && block <= 0x6d);
-        Self { block, register }
+        Self {
+            block: PhyI2cBlock::recovered(block),
+            register,
+        }
     }
 
     const fn host(self) -> PhyI2cHost {
-        let index = self.block.wrapping_sub(0x61);
-        if (PHY_I2C_HOST_ONE_BLOCKS >> index) & 1 == 0 {
-            PhyI2cHost::Host0
-        } else {
-            PhyI2cHost::Host1
-        }
+        self.block.host()
     }
 
     const fn read_mask(self) -> u16 {
-        PHY_I2C_READ_MASKS[self.block.wrapping_sub(0x61) as usize]
+        PHY_I2C_READ_MASKS[self.block.index() as usize]
     }
 }
 
@@ -184,6 +194,9 @@ pub mod analog_registers {
         PhyI2cField::recovered(PhyI2cAddress::recovered(0x62, 0x07), 2, 2);
     pub const RFPLL_CAPACITOR_CORRECTION_DIRECTION: PhyI2cField =
         PhyI2cField::recovered(PhyI2cAddress::recovered(0x62, 0x0c), 3, 2);
+    pub const RFPLL_SDM_MOST_SIGNIFICANT_BYTE: PhyI2cAddress = PhyI2cAddress::recovered(0x63, 0x03);
+    pub const RFPLL_SDM_UPPER_MIDDLE_BYTE: PhyI2cAddress = PhyI2cAddress::recovered(0x63, 0x04);
+    pub const RFPLL_SDM_LOWER_MIDDLE_BYTE: PhyI2cAddress = PhyI2cAddress::recovered(0x63, 0x05);
     pub const RFPLL_SDM_LOW: PhyI2cField =
         PhyI2cField::recovered(PhyI2cAddress::recovered(0x63, 0x06), 2, 0);
     pub const RFPLL_SDM_UPDATE_ENABLE: PhyI2cField =
@@ -1199,9 +1212,9 @@ const fn map_restore_error(
 impl RadioPhyRegisters {
     /// Configure the reviewed host map and select the typed host for one
     /// opaque analog-register identity.
-    pub fn configure_and_select_phy_i2c_host(&mut self, address: PhyI2cAddress) -> PhyI2cHost {
+    pub fn configure_and_select_phy_i2c_host(&mut self, block: PhyI2cBlock) -> PhyI2cHost {
         self.configure_phy_i2c_host_map();
-        address.host()
+        block.host()
     }
 
     /// Start one opaque analog-register read without exposing command fields.
@@ -1209,12 +1222,12 @@ impl RadioPhyRegisters {
         &mut self,
         address: PhyI2cAddress,
     ) -> Result<(), PhyI2cAccessError> {
-        let host = self.configure_and_select_phy_i2c_host(address);
+        let host = self.configure_and_select_phy_i2c_host(address.block);
         if self.phy_i2c_master_is_busy(host) {
             return Err(PhyI2cAccessError::Busy);
         }
         self.publish_phy_i2c_read_mask(address.read_mask());
-        self.publish_phy_i2c_command(host, address.block, address.register, 0, false);
+        self.publish_phy_i2c_command(host, address.block.code, address.register, 0, false);
         Ok(())
     }
 
@@ -1234,11 +1247,11 @@ impl RadioPhyRegisters {
         address: PhyI2cAddress,
         value: u8,
     ) -> Result<(), PhyI2cAccessError> {
-        let host = self.configure_and_select_phy_i2c_host(address);
+        let host = self.configure_and_select_phy_i2c_host(address.block);
         if self.phy_i2c_master_is_busy(host) {
             return Err(PhyI2cAccessError::Busy);
         }
-        self.publish_phy_i2c_command(host, address.block, address.register, value, true);
+        self.publish_phy_i2c_command(host, address.block.code, address.register, value, true);
         Ok(())
     }
 

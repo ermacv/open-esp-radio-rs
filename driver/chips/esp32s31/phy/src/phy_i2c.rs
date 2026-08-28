@@ -68,6 +68,8 @@ use crate::phy_xtal_duty::{
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::SharedPhyAccess;
 use open_esp_radio_esp32s31_hal::phy_i2c::PhyAdcRate;
+#[cfg(all(feature = "validation-probes", target_arch = "riscv32"))]
+pub(crate) use open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cBlock;
 pub(crate) use open_esp_radio_esp32s31_hal::phy_i2c::{
     PhyI2cAddress, PhyI2cField, analog_registers,
 };
@@ -268,7 +270,7 @@ impl OpenI2cXpdTransition {
     }
 
     pub const fn action(self) -> OpenI2cXpdAction {
-        const SDM_SAMPLE: PhyI2cAddress = PhyI2cAddress::new(0x63, 0).unwrap();
+        const SDM_SAMPLE: PhyI2cAddress = analog_registers::RFPLL_SDM_UPDATE_ENABLE.address();
 
         match self.step {
             OpenI2cXpdStep::PreDelayConfiguration => OpenI2cXpdAction::ConfigurePreDelay,
@@ -1232,13 +1234,13 @@ impl PhyRfInitPrefixTransition {
             }
             PhyRfInitPrefixStep::FilterDcap(transition) => match transition.action() {
                 FilterDcapAction::Complete => PhyRfInitPrefixAction::ReadParameter18e {
-                    address: PhyI2cAddress::new(0x62, 0x0f).unwrap(),
+                    address: analog_registers::RFPLL_CHARGE_PUMP_VALUE.address(),
                 },
                 action => PhyRfInitPrefixAction::FilterDcap(action),
             },
             PhyRfInitPrefixStep::Parameter18eRead { .. } => {
                 PhyRfInitPrefixAction::ReadParameter18e {
-                    address: PhyI2cAddress::new(0x62, 0x0f).unwrap(),
+                    address: analog_registers::RFPLL_CHARGE_PUMP_VALUE.address(),
                 }
             }
             PhyRfInitPrefixStep::I2cInit1 {
@@ -1434,7 +1436,7 @@ impl PhyRfInitPrefixTransition {
             (
                 PhyRfInitPrefixStep::Parameter18eRead { filter_dcap },
                 PhyRfInitPrefixCompletion::Parameter18eRead { address, value },
-            ) if address == PhyI2cAddress::new(0x62, 0x0f).unwrap() => {
+            ) if address == analog_registers::RFPLL_CHARGE_PUMP_VALUE.address() => {
                 let parameter = PhyRfInitParameterSnapshot::new(filter_dcap, value);
                 PhyRfInitPrefixStep::I2cInit1 {
                     transition: I2cInit1Transition::new(parameter),
@@ -1796,12 +1798,12 @@ mod tests {
         I2cInit1Completion, I2cInit1Transition, I2cInit1TransitionError, MaskedI2cWriteAction,
         MaskedI2cWriteCompletion, MaskedI2cWriteTransition, MaskedI2cWriteTransitionError,
         OpenI2cXpdAction, OpenI2cXpdCompletion, OpenI2cXpdOutcome, OpenI2cXpdTransition,
-        OpenI2cXpdTransitionError, PhyI2cAddress, PhyRfInitParameterSnapshot,
-        PhyRfInitPrefixAction, PhyRfInitPrefixCompletion, PhyRfInitPrefixOutcome,
-        PhyRfInitPrefixStep, PhyRfInitPrefixTransition, PhyRfInitPrefixTransitionError,
-        RcCalibrationAction, RcCalibrationCompletion, RcCalibrationTransition,
-        RcCalibrationTransitionError, RfpllChargePumpAction, RfpllChargePumpCompletion,
-        RfpllChargePumpOutcome, RfpllChargePumpTransition, analog_registers,
+        OpenI2cXpdTransitionError, PhyRfInitParameterSnapshot, PhyRfInitPrefixAction,
+        PhyRfInitPrefixCompletion, PhyRfInitPrefixOutcome, PhyRfInitPrefixStep,
+        PhyRfInitPrefixTransition, PhyRfInitPrefixTransitionError, RcCalibrationAction,
+        RcCalibrationCompletion, RcCalibrationTransition, RcCalibrationTransitionError,
+        RfpllChargePumpAction, RfpllChargePumpCompletion, RfpllChargePumpOutcome,
+        RfpllChargePumpTransition, analog_registers,
     };
     use crate::phy_cold::PhyColdExternalBinding;
     use crate::phy_dc_iq::{
@@ -2226,9 +2228,12 @@ mod tests {
                             PhyFrequencyI2cCompletion::MaskedWrite { field }
                         }
                         PhyFrequencyI2cAction::ReadByte { address } => {
-                            let value = if address == PhyI2cAddress::new(0x62, 0x0b).unwrap() {
+                            let value = if address
+                                == analog_registers::RFPLL_CAPACITOR_SEARCH_ENABLE.address()
+                            {
                                 0x5a
-                            } else if address == PhyI2cAddress::new(0x63, 0).unwrap() {
+                            } else if address == analog_registers::RFPLL_SDM_UPDATE_ENABLE.address()
+                            {
                                 0x8f
                             } else {
                                 0x10
@@ -2795,7 +2800,7 @@ mod tests {
                 FilterDcapCompletion::Configured,
             ))
             .unwrap();
-        let parameter_18e_address = PhyI2cAddress::new(0x62, 0x0f).unwrap();
+        let parameter_18e_address = analog_registers::RFPLL_CHARGE_PUMP_VALUE.address();
         assert_eq!(
             transition.action(),
             PhyRfInitPrefixAction::ReadParameter18e {
@@ -2804,7 +2809,7 @@ mod tests {
         );
         assert_eq!(
             transition.advance(PhyRfInitPrefixCompletion::Parameter18eRead {
-                address: PhyI2cAddress::new(0x62, 0x0e).unwrap(),
+                address: analog_registers::RFPLL_CHARGE_PUMP_RESULT.address(),
                 value: 0x55,
             }),
             Err(PhyRfInitPrefixTransitionError::WrongCompletion)
@@ -3058,7 +3063,7 @@ mod tests {
         assert_eq!(
             transition.action(),
             OpenI2cXpdAction::ReadSdmSample {
-                address: PhyI2cAddress::new(0x63, 0).unwrap()
+                address: analog_registers::RFPLL_SDM_UPDATE_ENABLE.address()
             }
         );
 

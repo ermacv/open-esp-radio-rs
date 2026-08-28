@@ -210,13 +210,13 @@ mod tests {
         });
         complete_write(
             &mut transition,
-            PhyI2cAddress::new(0x6b, 3).unwrap(),
+            analog_registers::WIFI_TX_TEMPERATURE_TRACKING_0.address(),
             0xa0,
             0xa6,
         );
         complete_write(
             &mut transition,
-            PhyI2cAddress::new(0x6b, 7).unwrap(),
+            analog_registers::WIFI_TX_TEMPERATURE_TRACKING_1.address(),
             0x40,
             0x4f,
         );

@@ -37,8 +37,8 @@ use crate::{
 };
 
 const TX_CAP_ADDRESS: PhyI2cAddress = analog_registers::TX_CAPACITOR_BANKS;
-const D_CODE_0_ADDRESS: PhyI2cAddress = PhyI2cAddress::new(0x62, 0x13).unwrap();
-const D_CODE_1_ADDRESS: PhyI2cAddress = PhyI2cAddress::new(0x62, 0x14).unwrap();
+const D_CODE_0_ADDRESS: PhyI2cAddress = analog_registers::RFPLL_EXTERNAL_DCODE_0.address();
+const D_CODE_1_ADDRESS: PhyI2cAddress = analog_registers::RFPLL_EXTERNAL_DCODE_1.address();
 const TXIQ_COVER_ITERATIONS: u8 = 7;
 
 const fn txiq_coefficient(value: i16, kind: PhyTxIqCoefficientKind) -> i8 {
@@ -2647,7 +2647,7 @@ mod tests {
 
     #[test]
     fn external_lowering_covers_every_txiq_operation_layer() {
-        let i2c = PhyI2cAddress::new(0x62, 1).unwrap();
+        let i2c = analog_registers::RFPLL_CAPACITOR_LOW;
         assert!(matches!(
             PhyTxIqInitExternalBinding::lower(PhyTxIqInitAction::Rfpll(
                 RfpllFrequencyAction::DelayMicros(5)

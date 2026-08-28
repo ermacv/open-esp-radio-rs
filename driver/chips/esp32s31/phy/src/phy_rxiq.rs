@@ -26,8 +26,8 @@ use crate::{
     phy_txiq::{PhyTxIqLoopbackAction, PhyTxIqLoopbackCompletion, PhyTxIqLoopbackTransition},
 };
 
-const EXTERNAL_DCODE_0: PhyI2cAddress = PhyI2cAddress::new(0x62, 0x13).unwrap();
-const EXTERNAL_DCODE_1: PhyI2cAddress = PhyI2cAddress::new(0x62, 0x14).unwrap();
+const EXTERNAL_DCODE_0: PhyI2cAddress = analog_registers::RFPLL_EXTERNAL_DCODE_0.address();
+const EXTERNAL_DCODE_1: PhyI2cAddress = analog_registers::RFPLL_EXTERNAL_DCODE_1.address();
 
 const fn channel_to_frequency(channel: u16) -> u16 {
     if channel > 14 {
@@ -3135,7 +3135,7 @@ mod tests {
                 RfpllFrequencyCompletion::MaskedRead { field, value }
             }
             RfpllFrequencyAction::ReadByte { address } => {
-                let value = if address == PhyI2cAddress::new(0x62, 5).unwrap() {
+                let value = if address == analog_registers::RFPLL_CALIBRATED_CAPACITOR_LOW {
                     0xc8
                 } else {
                     4

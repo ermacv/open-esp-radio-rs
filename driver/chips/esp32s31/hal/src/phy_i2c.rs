@@ -5,9 +5,10 @@ pub use open_esp_radio_esp32s31_pac::{
     BluetoothTxPowerControlAction, BluetoothTxPowerControlCompletion, BluetoothTxPowerControlError,
     BluetoothTxPowerControlObservation, BluetoothTxPowerControlOperation,
     BluetoothTxPowerControlTransaction, PhyAdcRate, PhyFilterDcapInputs, PhyI2cAccessError,
-    PhyI2cAddress, PhyI2cCommandMemoryInputs, PhyI2cConfigurationAction, PhyI2cConfigurationError,
-    PhyI2cConfigurationObservation, PhyI2cConfigurationOperation, PhyI2cConfigurationTransaction,
-    PhyI2cField, PhyI2cHost, PhyI2cInitializationStageOneInputs, analog_registers,
+    PhyI2cAddress, PhyI2cBlock, PhyI2cCommandMemoryInputs, PhyI2cConfigurationAction,
+    PhyI2cConfigurationError, PhyI2cConfigurationObservation, PhyI2cConfigurationOperation,
+    PhyI2cConfigurationTransaction, PhyI2cField, PhyI2cHost, PhyI2cInitializationStageOneInputs,
+    analog_registers,
 };
 
 /// Start the current command of one PAC-owned PHY-I²C configuration.
@@ -47,9 +48,9 @@ pub fn observe_bluetooth_tx_power_control(
 /// Configure the PAC-owned host map and return its typed selection.
 pub fn configure_and_select_host(
     registers: &mut impl SharedPhyAccess,
-    address: PhyI2cAddress,
+    block: PhyI2cBlock,
 ) -> PhyI2cHost {
-    phy_pac_mut(registers).configure_and_select_phy_i2c_host(address)
+    phy_pac_mut(registers).configure_and_select_phy_i2c_host(block)
 }
 
 /// Start one PAC-encoded analog-register read.

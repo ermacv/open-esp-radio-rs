@@ -2308,9 +2308,8 @@ mod tests {
     use crate::phy_frequency::{PhyChannelFrequencyInitAction, PhyChannelFrequencyInitCompletion};
     use crate::phy_i2c::{
         FilterDcapAction, FilterDcapParameters, I2cInit1Action, OpenI2cXpdAction,
-        OpenI2cXpdCompletion, PhyI2cAddress, PhyI2cError, PhyRfInitParameterSnapshot,
-        PhyRfInitPrefixAction, PhyRfInitPrefixCompletion, RcCalibrationAction,
-        RcCalibrationCompletion,
+        OpenI2cXpdCompletion, PhyI2cError, PhyRfInitParameterSnapshot, PhyRfInitPrefixAction,
+        PhyRfInitPrefixCompletion, RcCalibrationAction, RcCalibrationCompletion, analog_registers,
     };
     use crate::phy_pbus::{PhyPbusClearAction, PhyPbusClearCompletion, PhyPbusForceTest};
     use crate::phy_rfpll::{RfpllFrequencyAction, RfpllFrequencyCompletion};
@@ -2327,7 +2326,7 @@ mod tests {
     };
     #[test]
     fn busy_observation_preserves_await_state_without_self_progress() {
-        let address = PhyI2cAddress::new(0x66, 4).unwrap();
+        let address = analog_registers::RFPLL_CAPACITOR_LOW;
         let mut transaction = PhyColdI2cTransaction::new(PhyColdI2cRequest::read_byte(address));
         assert_eq!(
             transaction.action(),
@@ -3080,7 +3079,7 @@ mod tests {
             Ok(PhyColdExternalBinding::I2cConfiguration(_))
         ));
 
-        let address = PhyI2cAddress::new(0x62, 1).unwrap();
+        let address = analog_registers::RFPLL_CAPACITOR_LOW;
         assert!(matches!(
             PhyColdExternalBinding::lower(PhyRfInitPrefixAction::ReadParameter18e { address }),
             Ok(PhyColdExternalBinding::I2c(_))
@@ -3200,7 +3199,7 @@ mod tests {
             ))
         );
 
-        let candidate_address = PhyI2cAddress::new(0x61, 0x0a).unwrap();
+        let candidate_address = analog_registers::XTAL_DUTY_CANDIDATE;
         let candidate_action = PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
             XtalDutyPassAction::Search(XtalDutySearchAction::WriteCandidate {
                 address: candidate_address,

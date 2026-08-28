@@ -855,13 +855,13 @@ impl PhyFrequencyI2cTransition {
                 value: 1,
             },
             PhyFrequencyI2cStep::ReadRfpll => PhyFrequencyI2cAction::ReadByte {
-                address: PhyI2cAddress::rfpll(0x0b),
+                address: analog_registers::RFPLL_CAPACITOR_SEARCH_ENABLE.address(),
             },
             PhyFrequencyI2cStep::ReadSdm { .. } => PhyFrequencyI2cAction::ReadByte {
-                address: PhyI2cAddress::sdm(0),
+                address: analog_registers::RFPLL_SDM_UPDATE_ENABLE.address(),
             },
             PhyFrequencyI2cStep::ReadFrontEnd { .. } => PhyFrequencyI2cAction::ReadByte {
-                address: PhyI2cAddress::front_end(3),
+                address: analog_registers::SHARED_RX_GAIN_CALIBRATION_ENABLE.address(),
             },
             PhyFrequencyI2cStep::Memory {
                 rfpll_register_0b,
@@ -916,29 +916,35 @@ impl PhyFrequencyI2cTransition {
             (
                 PhyFrequencyI2cStep::ReadRfpll,
                 PhyFrequencyI2cCompletion::ByteRead { address, value },
-            ) if address == PhyI2cAddress::rfpll(0x0b) => PhyFrequencyI2cStep::ReadSdm {
-                rfpll_register_0b: value,
-            },
+            ) if address == analog_registers::RFPLL_CAPACITOR_SEARCH_ENABLE.address() => {
+                PhyFrequencyI2cStep::ReadSdm {
+                    rfpll_register_0b: value,
+                }
+            }
             (
                 PhyFrequencyI2cStep::ReadSdm { rfpll_register_0b },
                 PhyFrequencyI2cCompletion::ByteRead { address, value },
-            ) if address == PhyI2cAddress::sdm(0) => PhyFrequencyI2cStep::ReadFrontEnd {
-                rfpll_register_0b,
-                sdm_register_0: value,
-            },
+            ) if address == analog_registers::RFPLL_SDM_UPDATE_ENABLE.address() => {
+                PhyFrequencyI2cStep::ReadFrontEnd {
+                    rfpll_register_0b,
+                    sdm_register_0: value,
+                }
+            }
             (
                 PhyFrequencyI2cStep::ReadFrontEnd {
                     rfpll_register_0b,
                     sdm_register_0,
                 },
                 PhyFrequencyI2cCompletion::ByteRead { address, value },
-            ) if address == PhyI2cAddress::front_end(3) => PhyFrequencyI2cStep::Memory {
-                rfpll_register_0b,
-                sdm_register_0,
-                front_end_register_3: value,
-                descriptor_index: 0,
-                copy_index: 0,
-            },
+            ) if address == analog_registers::SHARED_RX_GAIN_CALIBRATION_ENABLE.address() => {
+                PhyFrequencyI2cStep::Memory {
+                    rfpll_register_0b,
+                    sdm_register_0,
+                    front_end_register_3: value,
+                    descriptor_index: 0,
+                    copy_index: 0,
+                }
+            }
             (
                 PhyFrequencyI2cStep::Memory {
                     rfpll_register_0b,
@@ -1186,7 +1192,7 @@ pub struct PhyChannelFrequencyInitTransition {
 }
 
 impl PhyChannelFrequencyInitTransition {
-    const SDM_REGISTER_SIX: PhyI2cAddress = PhyI2cAddress::new(0x63, 6).unwrap();
+    const SDM_REGISTER_SIX: PhyI2cAddress = analog_registers::RFPLL_SDM_LOW.address();
 
     pub const fn new(request: PhyChannelFrequencyInitRequest) -> Self {
         Self {
@@ -1212,7 +1218,7 @@ impl PhyChannelFrequencyInitTransition {
             }
             PhyChannelFrequencyInitStep::InitialCapLow => {
                 PhyChannelFrequencyInitAction::WriteByte {
-                    address: PhyI2cAddress::rfpll(1),
+                    address: analog_registers::RFPLL_CAPACITOR_LOW,
                     value: 0xc8,
                 }
             }
@@ -1322,7 +1328,9 @@ impl PhyChannelFrequencyInitTransition {
             (
                 PhyChannelFrequencyInitStep::InitialCapLow,
                 PhyChannelFrequencyInitCompletion::ByteWrite { address },
-            ) if address == PhyI2cAddress::rfpll(1) => PhyChannelFrequencyInitStep::InitialCapHigh,
+            ) if address == analog_registers::RFPLL_CAPACITOR_LOW => {
+                PhyChannelFrequencyInitStep::InitialCapHigh
+            }
             (
                 PhyChannelFrequencyInitStep::InitialCapHigh,
                 PhyChannelFrequencyInitCompletion::MaskedWrite {
@@ -1531,7 +1539,6 @@ mod tests {
         phy_frequency_i2c_number_address_image, phy_frequency_memory_record,
         phy_frequency_xtal_duty,
     };
-    use crate::phy_i2c::PhyI2cAddress;
     use crate::phy_rfpll::{RfpllFrequencyAction, RfpllFrequencyCompletion};
 
     const REQUEST: PhyFrequencyTableRequest = PhyFrequencyTableRequest {
@@ -1795,9 +1802,18 @@ mod tests {
             })
             .unwrap();
         for (address, value) in [
-            (PhyI2cAddress::rfpll(0x0b), rfpll_register_0b),
-            (PhyI2cAddress::sdm(0), sdm_register_0),
-            (PhyI2cAddress::front_end(3), front_end_register_3),
+            (
+                analog_registers::RFPLL_CAPACITOR_SEARCH_ENABLE.address(),
+                rfpll_register_0b,
+            ),
+            (
+                analog_registers::RFPLL_SDM_UPDATE_ENABLE.address(),
+                sdm_register_0,
+            ),
+            (
+                analog_registers::SHARED_RX_GAIN_CALIBRATION_ENABLE.address(),
+                front_end_register_3,
+            ),
         ] {
             assert_eq!(
                 transition.action(),
@@ -1949,7 +1965,9 @@ mod tests {
                 };
                 RfpllFrequencyCompletion::MaskedRead { field, value }
             }
-            RfpllFrequencyAction::ReadByte { address } if address == PhyI2cAddress::rfpll(5) => {
+            RfpllFrequencyAction::ReadByte { address }
+                if address == analog_registers::RFPLL_CALIBRATED_CAPACITOR_LOW =>
+            {
                 RfpllFrequencyCompletion::ByteRead {
                     address,
                     value: match point {
@@ -1975,9 +1993,10 @@ mod tests {
                 PhyFrequencyI2cCompletion::MaskedWrite { field }
             }
             PhyFrequencyI2cAction::ReadByte { address } => {
-                let value = if address == PhyI2cAddress::rfpll(0x0b) {
+                let value = if address == analog_registers::RFPLL_CAPACITOR_SEARCH_ENABLE.address()
+                {
                     0x5a
-                } else if address == PhyI2cAddress::sdm(0) {
+                } else if address == analog_registers::RFPLL_SDM_UPDATE_ENABLE.address() {
                     0x8f
                 } else {
                     0x10
@@ -2025,7 +2044,7 @@ mod tests {
                     PhyChannelFrequencyInitCompletion::ByteWrite { address }
                 }
                 PhyChannelFrequencyInitAction::ReadByte { address } => {
-                    assert_eq!(address, PhyI2cAddress::sdm(6));
+                    assert_eq!(address, analog_registers::RFPLL_SDM_LOW.address());
                     PhyChannelFrequencyInitCompletion::ByteRead {
                         address,
                         value: 0xab,

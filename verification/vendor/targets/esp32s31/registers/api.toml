@@ -3886,6 +3886,42 @@ input-transform = { wrapping-subtract = 5, retain-mask = 0x7f }
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_INIT"]
 
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_rssi_threshold_00a0"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "SHARED_RX_SENSE_AND_DETECT_00A0"
+fields = [{ field = "POSITIONAL_BITS_16_23", source-bit-offset = 0 }]
+value = 0x9c
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_rssi_threshold_00a8_high"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "SHARED_RX_SENSE_AND_DETECT_00A8"
+fields = [{ field = "POSITIONAL_BITS_17_24", source-bit-offset = 0 }]
+value = 0x9c
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_rssi_threshold_00a8_low"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "SHARED_RX_SENSE_AND_DETECT_00A8"
+fields = [{ field = "POSITIONAL_BITS_4_11", source-bit-offset = 0 }]
+value = 0x88
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_rssi_threshold_00b8"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "SHARED_RX_SENSE_AND_DETECT_00B8"
+fields = [{ field = "POSITIONAL_BITS_12_19", source-bit-offset = 0 }]
+value = 0x88
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

@@ -282,18 +282,10 @@ impl BluetoothBasebandV2Transaction<'_> {
 
     fn initialize_receive_rssi_thresholds(&self) {
         let btagc = &self.radio_phy.phy_btagc_recovered;
-        btagc
-            .shared_rx_sense_and_detect_00a0()
-            .modify(|_, w| w.positional_bits_16_23().set(0x9c));
-        btagc
-            .shared_rx_sense_and_detect_00a8()
-            .modify(|_, w| w.positional_bits_17_24().set(0x9c));
-        btagc
-            .shared_rx_sense_and_detect_00a8()
-            .modify(|_, w| w.positional_bits_4_11().set(0x88));
-        btagc
-            .shared_rx_sense_and_detect_00b8()
-            .modify(|_, w| w.positional_bits_12_19().set(0x88));
+        super::generated::initialize_bluetooth_receive_rssi_threshold_00a0(btagc);
+        super::generated::initialize_bluetooth_receive_rssi_threshold_00a8_high(btagc);
+        super::generated::initialize_bluetooth_receive_rssi_threshold_00a8_low(btagc);
+        super::generated::initialize_bluetooth_receive_rssi_threshold_00b8(btagc);
     }
 
     fn initialize_receive_targets(&self) {

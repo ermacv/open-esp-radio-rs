@@ -62901,6 +62901,78 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A0 fields [POSITIONAL_BITS_16_23] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_rssi_threshold_00a0(registers: &crate::PhyBtagcRecovered) {
+        registers
+            .shared_rx_sense_and_detect_00a0()
+            .modify(|_, writer| {
+                let input = 0x0000009c_u32;
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                unsafe {
+                    writer
+                        .positional_bits_16_23()
+                        .bits((input & 0x000000ff) as u8)
+                }
+            });
+    }
+
+    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A8 fields [POSITIONAL_BITS_17_24] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_rssi_threshold_00a8_high(
+        registers: &crate::PhyBtagcRecovered,
+    ) {
+        registers
+            .shared_rx_sense_and_detect_00a8()
+            .modify(|_, writer| {
+                let input = 0x0000009c_u32;
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                unsafe {
+                    writer
+                        .positional_bits_17_24()
+                        .bits((input & 0x000000ff) as u8)
+                }
+            });
+    }
+
+    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00A8 fields [POSITIONAL_BITS_4_11] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_rssi_threshold_00a8_low(
+        registers: &crate::PhyBtagcRecovered,
+    ) {
+        registers
+            .shared_rx_sense_and_detect_00a8()
+            .modify(|_, writer| {
+                let input = 0x00000088_u32;
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                unsafe {
+                    writer
+                        .positional_bits_4_11()
+                        .bits((input & 0x000000ff) as u8)
+                }
+            });
+    }
+
+    /// Replace PHY_BTAGC_RECOVERED.SHARED_RX_SENSE_AND_DETECT_00B8 fields [POSITIONAL_BITS_12_19] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_rssi_threshold_00b8(registers: &crate::PhyBtagcRecovered) {
+        registers
+            .shared_rx_sense_and_detect_00b8()
+            .modify(|_, writer| {
+                let input = 0x00000088_u32;
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                unsafe {
+                    writer
+                        .positional_bits_12_19()
+                        .bits((input & 0x000000ff) as u8)
+                }
+            });
+    }
+
     /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields [LOCK_MODIFY_ARGUMENT] from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_scheduler_lock_modify_argument(

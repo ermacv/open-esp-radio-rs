@@ -2627,6 +2627,42 @@ pub(crate) fn initialize_bluetooth_receive_gain_image(
     );
 }
 
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_rssi_threshold_00a0` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_rssi_threshold_00a0(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_rssi_threshold_00a0(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_rssi_threshold_00a8_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_rssi_threshold_00a8_high(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_rssi_threshold_00a8_high(
+        registers,
+    );
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_rssi_threshold_00a8_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_rssi_threshold_00a8_low(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_rssi_threshold_00a8_low(
+        registers,
+    );
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_rssi_threshold_00b8` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_rssi_threshold_00b8(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_rssi_threshold_00b8(registers);
+}
+
 /// Typed bridge for the reviewed `clear_bluetooth_scheduler_lock_modify_argument` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_bluetooth_scheduler_lock_modify_argument(

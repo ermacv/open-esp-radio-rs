@@ -89,8 +89,8 @@ pub use bluetooth_controller_hal_init::{
 };
 pub use bluetooth_controller_time::{
     BluetoothControllerLatchedTime, BluetoothControllerTimeLatchBeginError,
-    BluetoothControllerTimeLatchObservation, BluetoothControllerTimeLatchRequest,
-    BluetoothControllerTimeLatchStep, BluetoothControllerTimeLatchStepError,
+    BluetoothControllerTimeLatchRequest, BluetoothControllerTimeLatchStep,
+    BluetoothControllerTimeLatchStepError,
 };
 pub use bluetooth_interrupt::{
     BluetoothInterruptOutputPrepared, BluetoothNrtInterruptAcknowledged,

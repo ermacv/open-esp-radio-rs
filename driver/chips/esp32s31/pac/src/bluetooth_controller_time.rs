@@ -8,8 +8,6 @@
 
 #![deny(unsafe_code)]
 
-const LATCH_REQUEST: u32 = 1 << 26;
-
 /// A controller-time transaction has not yet been drained by software.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothControllerTimeLatchBeginError {
@@ -32,27 +30,6 @@ impl BluetoothControllerTimeLatchRequest {
     /// Construct one request without touching MMIO.
     pub const fn new() -> Self {
         Self
-    }
-
-    /// Return the exact fresh-read OR image published to `SLEEP_TIMER_CONTROL`.
-    pub const fn publication_image(self, fresh_control_read: u32) -> u32 {
-        fresh_control_read | LATCH_REQUEST
-    }
-}
-
-/// One fresh `SLEEP_TIMER_CONTROL` observation after request publication.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothControllerTimeLatchObservation(u32);
-
-impl BluetoothControllerTimeLatchObservation {
-    /// Retain the complete control-register image used by one decision.
-    pub const fn from_control_bits(bits: u32) -> Self {
-        Self(bits)
-    }
-
-    /// Whether hardware still owns the latch request.
-    pub const fn pending(self) -> bool {
-        self.0 & LATCH_REQUEST != 0
     }
 }
 
@@ -136,7 +113,7 @@ impl BluetoothControllerTimeLatchOwnership {
 trait BluetoothControllerTimeLatchControl {
     fn publish_latch_request(&mut self, request: BluetoothControllerTimeLatchRequest);
     fn order_after_publication(&mut self);
-    fn read_control(&mut self) -> u32;
+    fn latch_request_pending(&mut self) -> bool;
     fn order_after_clear_observation(&mut self);
     fn read_latched_time_0(&mut self) -> u32;
 }
@@ -156,8 +133,12 @@ impl BluetoothControllerTimeLatchControl for HardwareControllerTimeLatchControl<
         super::device_fence();
     }
 
-    fn read_control(&mut self) -> u32 {
-        self.registers.sleep_timer_control().read().bits()
+    fn latch_request_pending(&mut self) -> bool {
+        self.registers
+            .sleep_timer_control()
+            .read()
+            .latch_request()
+            .bit()
     }
 
     fn order_after_clear_observation(&mut self) {
@@ -189,9 +170,7 @@ fn execute_latch_step(
     control: &mut impl BluetoothControllerTimeLatchControl,
 ) -> Result<BluetoothControllerTimeLatchStep, BluetoothControllerTimeLatchStepError> {
     ownership.require_in_flight()?;
-    let observation =
-        BluetoothControllerTimeLatchObservation::from_control_bits(control.read_control());
-    if observation.pending() {
+    if control.latch_request_pending() {
         Ok(BluetoothControllerTimeLatchStep::Waiting)
     } else {
         control.order_after_clear_observation();
@@ -259,40 +238,39 @@ mod tests {
 
     use super::{
         BluetoothControllerLatchedTime, BluetoothControllerTimeLatchBeginError,
-        BluetoothControllerTimeLatchControl, BluetoothControllerTimeLatchObservation,
-        BluetoothControllerTimeLatchOwnership, BluetoothControllerTimeLatchRequest,
-        BluetoothControllerTimeLatchStep, BluetoothControllerTimeLatchStepError, LATCH_REQUEST,
-        execute_latch_publication, execute_latch_step,
+        BluetoothControllerTimeLatchControl, BluetoothControllerTimeLatchOwnership,
+        BluetoothControllerTimeLatchRequest, BluetoothControllerTimeLatchStep,
+        BluetoothControllerTimeLatchStepError, execute_latch_publication, execute_latch_step,
     };
     use crate::RadioHardware;
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum Operation {
-        Publish(u32),
+        Publish,
         ReadControl,
         Fence,
         ReadLatchedTime0,
     }
 
     struct Recorder {
-        control: u32,
+        latch_request_pending: bool,
         latched_time_0: u32,
         operations: Vec<Operation>,
     }
 
     impl BluetoothControllerTimeLatchControl for Recorder {
-        fn publish_latch_request(&mut self, request: BluetoothControllerTimeLatchRequest) {
-            self.control = request.publication_image(self.control);
-            self.operations.push(Operation::Publish(self.control));
+        fn publish_latch_request(&mut self, _request: BluetoothControllerTimeLatchRequest) {
+            self.latch_request_pending = true;
+            self.operations.push(Operation::Publish);
         }
 
         fn order_after_publication(&mut self) {
             self.operations.push(Operation::Fence);
         }
 
-        fn read_control(&mut self) -> u32 {
+        fn latch_request_pending(&mut self) -> bool {
             self.operations.push(Operation::ReadControl);
-            self.control
+            self.latch_request_pending
         }
 
         fn order_after_clear_observation(&mut self) {
@@ -306,21 +284,6 @@ mod tests {
     }
 
     #[test]
-    fn latch_publication_preserves_every_non_request_bit() {
-        let request = BluetoothControllerTimeLatchRequest::new();
-
-        assert_eq!(request.publication_image(0xa123_4567), 0xa523_4567);
-        assert_eq!(request.publication_image(0xa523_4567), 0xa523_4567);
-    }
-
-    #[test]
-    fn only_latch_request_bit_controls_the_wait_decision() {
-        assert!(!BluetoothControllerTimeLatchObservation::from_control_bits(0).pending());
-        assert!(BluetoothControllerTimeLatchObservation::from_control_bits(0x8400_0000).pending());
-        assert!(!BluetoothControllerTimeLatchObservation::from_control_bits(0x8000_0007).pending());
-    }
-
-    #[test]
     fn latched_time_retains_the_complete_wrapping_image() {
         assert_eq!(
             BluetoothControllerLatchedTime::from_bits(0xffff_fffe).bits(),
@@ -329,10 +292,10 @@ mod tests {
     }
 
     #[test]
-    fn publication_is_one_fresh_read_rmw_preserving_other_bits() {
+    fn publication_is_one_accessor_write_followed_by_one_fence() {
         let mut ownership = BluetoothControllerTimeLatchOwnership::new();
         let mut recorder = Recorder {
-            control: 0xa123_4567,
+            latch_request_pending: false,
             latched_time_0: 0,
             operations: Vec::new(),
         };
@@ -346,11 +309,8 @@ mod tests {
             Ok(())
         );
 
-        assert_eq!(recorder.control, 0xa523_4567);
-        assert_eq!(
-            recorder.operations,
-            [Operation::Publish(0xa523_4567), Operation::Fence]
-        );
+        assert!(recorder.latch_request_pending);
+        assert_eq!(recorder.operations, [Operation::Publish, Operation::Fence]);
         assert!(ownership.in_flight());
 
         assert_eq!(
@@ -361,10 +321,7 @@ mod tests {
             ),
             Err(BluetoothControllerTimeLatchBeginError::AlreadyInFlight)
         );
-        assert_eq!(
-            recorder.operations,
-            [Operation::Publish(0xa523_4567), Operation::Fence]
-        );
+        assert_eq!(recorder.operations, [Operation::Publish, Operation::Fence]);
     }
 
     #[test]
@@ -372,7 +329,7 @@ mod tests {
         let mut ownership = BluetoothControllerTimeLatchOwnership::new();
         assert_eq!(ownership.begin(), Ok(()));
         let mut recorder = Recorder {
-            control: LATCH_REQUEST | 7,
+            latch_request_pending: true,
             latched_time_0: 0xdead_beef,
             operations: Vec::new(),
         };
@@ -390,7 +347,7 @@ mod tests {
         let mut ownership = BluetoothControllerTimeLatchOwnership::new();
         assert_eq!(ownership.begin(), Ok(()));
         let mut recorder = Recorder {
-            control: 0x8000_0007,
+            latch_request_pending: false,
             latched_time_0: 0xffff_fffe,
             operations: Vec::new(),
         };
@@ -423,7 +380,7 @@ mod tests {
     fn cancelled_worker_resumes_the_same_request_and_drains_it_once() {
         let mut ownership = BluetoothControllerTimeLatchOwnership::new();
         let mut publication = Recorder {
-            control: 7,
+            latch_request_pending: false,
             latched_time_0: 0,
             operations: Vec::new(),
         };
@@ -437,7 +394,7 @@ mod tests {
         );
 
         let mut first_worker = Recorder {
-            control: LATCH_REQUEST | 7,
+            latch_request_pending: true,
             latched_time_0: 0,
             operations: Vec::new(),
         };
@@ -448,7 +405,7 @@ mod tests {
         drop(first_worker);
 
         let mut replacement_worker = Recorder {
-            control: 7,
+            latch_request_pending: false,
             latched_time_0: 0x1234_5678,
             operations: Vec::new(),
         };
@@ -488,7 +445,7 @@ mod tests {
     fn idle_step_fails_without_any_register_access() {
         let mut ownership = BluetoothControllerTimeLatchOwnership::new();
         let mut recorder = Recorder {
-            control: 0,
+            latch_request_pending: false,
             latched_time_0: 0,
             operations: Vec::new(),
         };

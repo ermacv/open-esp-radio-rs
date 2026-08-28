@@ -270,6 +270,40 @@ impl PacApiPack {
             require_size_access(&operation.name, binding, Access::ReadWrite, "read-write")?;
             require_ordinary(&operation.name, binding.info)?;
         }
+        for operation in &self.field_or_modifies {
+            let binding = writable_register(
+                &device,
+                &operation.name,
+                &operation.peripheral,
+                &operation.register,
+            )?;
+            require_size_access(&operation.name, binding, Access::ReadWrite, "read-write")?;
+            require_ordinary(&operation.name, binding.info)?;
+            let field = field(&operation.name, binding.info, &operation.field)?;
+            let width = field.bit_width();
+            if !(1..=32).contains(&width) {
+                return Err(Error::message(format!(
+                    "PAC API field-or-modify {:?} field has invalid width {width}",
+                    operation.name
+                )));
+            }
+            let domain = self
+                .bounded_domains
+                .iter()
+                .find(|candidate| candidate.name == operation.domain)
+                .expect("pack validation requires a bounded field-or-modify domain");
+            let field_max = if width == 32 {
+                u32::MAX
+            } else {
+                (1_u32 << width) - 1
+            };
+            if domain.max > field_max {
+                return Err(Error::message(format!(
+                    "PAC API field-or-modify {:?} domain maximum 0x{:08x} exceeds its {width}-bit field",
+                    operation.name, domain.max
+                )));
+            }
+        }
         for operation in &self.indexed_bit_set_modifies {
             let binding = writable_register(
                 &device,

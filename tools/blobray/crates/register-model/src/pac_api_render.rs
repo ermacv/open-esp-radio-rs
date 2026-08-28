@@ -188,6 +188,25 @@ impl PacApiPack {
                 value,
             ));
         }
+        for operation in &self.field_or_modifies {
+            if !operation.exposure.exposes_facade() {
+                continue;
+            }
+            let domain = operation.domain.as_str();
+            let (index_parameter, index_argument) = if operation.register.contains("%s") {
+                ("index: usize, ", "index, ")
+            } else {
+                ("", "")
+            };
+            output.push_str(&format!(
+                "/// Typed bridge for the reviewed `{}` field-OR transaction.\n#[inline]\npub(crate) fn {}(registers: &crate::svd::{}, {index_parameter}value: {}) {{\n    crate::svd::field_or_modify::{}(registers, {index_argument}value.get());\n}}\n\n",
+                operation.name,
+                operation.name,
+                type_binding_name(&operation.peripheral),
+                domain,
+                operation.name,
+            ));
+        }
         for operation in &self.indexed_bit_set_modifies {
             if !operation.exposure.exposes_facade() {
                 continue;
@@ -236,6 +255,7 @@ impl PacApiPack {
         output.push_str(&self.render_zero_based_field_writes(&device)?);
         output.push_str(&self.render_zero_register_writes(&device)?);
         output.push_str(&self.render_masked_register_modifies(&device)?);
+        output.push_str(&self.render_field_or_modifies(&device)?);
         output.push_str(&self.render_indexed_bit_set_modifies(&device)?);
         if self.options.device_access {
             output.push_str(device_access_api());
@@ -888,6 +908,53 @@ impl PacApiPack {
                 binding.peripheral,
                 binding.register,
                 binding.name,
+            ));
+        }
+        output.push_str("}\n");
+        Ok(output)
+    }
+
+    fn render_field_or_modifies(&self, device: &Device) -> Result<String> {
+        if self.field_or_modifies.is_empty() {
+            return Ok(String::new());
+        }
+        let mut output = String::from(
+            "\n/// Safe, SVD-declared field-local OR read-modify-write transactions.\n\
+             pub mod field_or_modify {\n",
+        );
+        for binding in &self.field_or_modifies {
+            let peripheral_type = type_binding_name(&binding.peripheral);
+            let register = member_binding_name(&binding.register);
+            let register_binding = pac_api_svd::register(
+                device,
+                &binding.name,
+                &binding.peripheral,
+                &binding.register,
+            )?;
+            let selected_field =
+                pac_api_svd::field(&binding.name, register_binding.info, &binding.field)?;
+            let offset = selected_field.bit_offset();
+            let (index_parameter, index_argument) = if register_binding.is_array {
+                ("index: usize, ", "index")
+            } else {
+                ("", "")
+            };
+            let positioned_input = if offset == 0 {
+                "input".to_owned()
+            } else {
+                format!("(input << {offset})")
+            };
+            output.push_str(&format!(
+                "\n    /// OR one reviewed value into {}.{}.{} while preserving the fresh register observation.\n\
+                 #[inline]\n\
+                 pub fn {}(registers: &crate::{peripheral_type}, {index_parameter}input: u32) {{\n\
+                     registers.{register}({index_argument}).modify(|reader, writer| {{\n\
+                         // SAFETY: generator validation proves that the bounded input fits\n\
+                         // the selected field before positioning it in this ordinary register.\n\
+                         unsafe {{ writer.bits(reader.bits() | {positioned_input}) }}\n\
+                     }});\n\
+                 }}\n",
+                binding.peripheral, binding.register, binding.field, binding.name,
             ));
         }
         output.push_str("}\n");

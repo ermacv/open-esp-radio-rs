@@ -58767,6 +58767,88 @@ pub mod masked_register_modify {
     }
 }
 
+/// Safe, SVD-declared field-local OR read-modify-write transactions.
+pub mod field_or_modify {
+
+    /// OR one reviewed value into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A.COMPRESSED_SRAM_POINTER while preserving the fresh register observation.
+    #[inline]
+    pub fn or_bluetooth_memory_list_1_pointer_a(
+        registers: &crate::BluetoothControllerCore,
+        input: u32,
+    ) {
+        registers.mmgmt_list_1_pointer_a().modify(|reader, writer| {
+            // SAFETY: generator validation proves that the bounded input fits
+            // the selected field before positioning it in this ordinary register.
+            unsafe { writer.bits(reader.bits() | input) }
+        });
+    }
+
+    /// OR one reviewed value into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_B.COMPRESSED_SRAM_POINTER while preserving the fresh register observation.
+    #[inline]
+    pub fn or_bluetooth_memory_list_1_pointer_b(
+        registers: &crate::BluetoothControllerCore,
+        input: u32,
+    ) {
+        registers.mmgmt_list_1_pointer_b().modify(|reader, writer| {
+            // SAFETY: generator validation proves that the bounded input fits
+            // the selected field before positioning it in this ordinary register.
+            unsafe { writer.bits(reader.bits() | input) }
+        });
+    }
+
+    /// OR one reviewed value into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_A.COMPRESSED_SRAM_POINTER while preserving the fresh register observation.
+    #[inline]
+    pub fn or_bluetooth_memory_list_2_pointer_a(
+        registers: &crate::BluetoothControllerCore,
+        input: u32,
+    ) {
+        registers.mmgmt_list_2_pointer_a().modify(|reader, writer| {
+            // SAFETY: generator validation proves that the bounded input fits
+            // the selected field before positioning it in this ordinary register.
+            unsafe { writer.bits(reader.bits() | input) }
+        });
+    }
+
+    /// OR one reviewed value into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_B.COMPRESSED_SRAM_POINTER while preserving the fresh register observation.
+    #[inline]
+    pub fn or_bluetooth_memory_list_2_pointer_b(
+        registers: &crate::BluetoothControllerCore,
+        input: u32,
+    ) {
+        registers.mmgmt_list_2_pointer_b().modify(|reader, writer| {
+            // SAFETY: generator validation proves that the bounded input fits
+            // the selected field before positioning it in this ordinary register.
+            unsafe { writer.bits(reader.bits() | input) }
+        });
+    }
+
+    /// OR one reviewed value into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_A.COMPRESSED_SRAM_POINTER while preserving the fresh register observation.
+    #[inline]
+    pub fn or_bluetooth_memory_list_3_pointer_a(
+        registers: &crate::BluetoothControllerCore,
+        input: u32,
+    ) {
+        registers.mmgmt_list_3_pointer_a().modify(|reader, writer| {
+            // SAFETY: generator validation proves that the bounded input fits
+            // the selected field before positioning it in this ordinary register.
+            unsafe { writer.bits(reader.bits() | input) }
+        });
+    }
+
+    /// OR one reviewed value into BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_B.COMPRESSED_SRAM_POINTER while preserving the fresh register observation.
+    #[inline]
+    pub fn or_bluetooth_memory_list_3_pointer_b(
+        registers: &crate::BluetoothControllerCore,
+        input: u32,
+    ) {
+        registers.mmgmt_list_3_pointer_b().modify(|reader, writer| {
+            // SAFETY: generator validation proves that the bounded input fits
+            // the selected field before positioning it in this ordinary register.
+            unsafe { writer.bits(reader.bits() | input) }
+        });
+    }
+}
+
 /// Safe, SVD-declared indexed bit-set read-modify-write transactions.
 pub mod indexed_bit_set_modify {
 

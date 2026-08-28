@@ -325,6 +325,13 @@ max = 15
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME", "BLOB_LIBPP_HAL_INIT_COEX", "BLOB_LIBPP_HAL_MAC_TX"]
 
 [[bounded-domains]]
+name = "BluetoothMemoryListPointerBits"
+description = "Zero-based low-twenty-bit compressed SRAM pointer image ORed into one Bluetooth memory-list field after its separate clear transaction."
+min = 0
+max = 0x000f_ffff
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+
+[[bounded-domains]]
 name = "ModemLowPowerClockDivider"
 description = "Twelve-bit divider accepted by the canonical MODEM_LPCON low-power timer selector."
 min = 0
@@ -1799,6 +1806,60 @@ input-mask = 0x000000ff
 set-mask = 0x00000000
 exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
+
+[[field-or-modifies]]
+name = "or_bluetooth_memory_list_1_pointer_a"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "MMGMT_LIST_1_POINTER_A"
+field = "COMPRESSED_SRAM_POINTER"
+domain = "BluetoothMemoryListPointerBits"
+exposure = "facade"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+
+[[field-or-modifies]]
+name = "or_bluetooth_memory_list_1_pointer_b"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "MMGMT_LIST_1_POINTER_B"
+field = "COMPRESSED_SRAM_POINTER"
+domain = "BluetoothMemoryListPointerBits"
+exposure = "facade"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+
+[[field-or-modifies]]
+name = "or_bluetooth_memory_list_2_pointer_a"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "MMGMT_LIST_2_POINTER_A"
+field = "COMPRESSED_SRAM_POINTER"
+domain = "BluetoothMemoryListPointerBits"
+exposure = "facade"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+
+[[field-or-modifies]]
+name = "or_bluetooth_memory_list_2_pointer_b"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "MMGMT_LIST_2_POINTER_B"
+field = "COMPRESSED_SRAM_POINTER"
+domain = "BluetoothMemoryListPointerBits"
+exposure = "facade"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+
+[[field-or-modifies]]
+name = "or_bluetooth_memory_list_3_pointer_a"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "MMGMT_LIST_3_POINTER_A"
+field = "COMPRESSED_SRAM_POINTER"
+domain = "BluetoothMemoryListPointerBits"
+exposure = "facade"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+
+[[field-or-modifies]]
+name = "or_bluetooth_memory_list_3_pointer_b"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "MMGMT_LIST_3_POINTER_B"
+field = "COMPRESSED_SRAM_POINTER"
+domain = "BluetoothMemoryListPointerBits"
+exposure = "facade"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 
 [[indexed-bit-set-modifies]]
 name = "request_mac_rx_beacon_clear"

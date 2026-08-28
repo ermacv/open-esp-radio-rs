@@ -232,6 +232,29 @@ impl MacPti {
     }
 }
 
+/// Zero-based low-twenty-bit compressed SRAM pointer image ORed into one Bluetooth memory-list field after its separate clear transaction.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct BluetoothMemoryListPointerBits(u32);
+
+impl BluetoothMemoryListPointerBits {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x000fffff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x000fffff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Twelve-bit divider accepted by the canonical MODEM_LPCON low-power timer selector.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ModemLowPowerClockDivider(u32);
@@ -1339,6 +1362,60 @@ pub(crate) fn publish_mac_itwt_control(
     value: MacItwtControlMaskedInput,
 ) {
     crate::svd::masked_register_modify::publish_mac_itwt_control(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `or_bluetooth_memory_list_1_pointer_a` field-OR transaction.
+#[inline]
+pub(crate) fn or_bluetooth_memory_list_1_pointer_a(
+    registers: &crate::svd::BluetoothControllerCore,
+    value: BluetoothMemoryListPointerBits,
+) {
+    crate::svd::field_or_modify::or_bluetooth_memory_list_1_pointer_a(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `or_bluetooth_memory_list_1_pointer_b` field-OR transaction.
+#[inline]
+pub(crate) fn or_bluetooth_memory_list_1_pointer_b(
+    registers: &crate::svd::BluetoothControllerCore,
+    value: BluetoothMemoryListPointerBits,
+) {
+    crate::svd::field_or_modify::or_bluetooth_memory_list_1_pointer_b(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `or_bluetooth_memory_list_2_pointer_a` field-OR transaction.
+#[inline]
+pub(crate) fn or_bluetooth_memory_list_2_pointer_a(
+    registers: &crate::svd::BluetoothControllerCore,
+    value: BluetoothMemoryListPointerBits,
+) {
+    crate::svd::field_or_modify::or_bluetooth_memory_list_2_pointer_a(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `or_bluetooth_memory_list_2_pointer_b` field-OR transaction.
+#[inline]
+pub(crate) fn or_bluetooth_memory_list_2_pointer_b(
+    registers: &crate::svd::BluetoothControllerCore,
+    value: BluetoothMemoryListPointerBits,
+) {
+    crate::svd::field_or_modify::or_bluetooth_memory_list_2_pointer_b(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `or_bluetooth_memory_list_3_pointer_a` field-OR transaction.
+#[inline]
+pub(crate) fn or_bluetooth_memory_list_3_pointer_a(
+    registers: &crate::svd::BluetoothControllerCore,
+    value: BluetoothMemoryListPointerBits,
+) {
+    crate::svd::field_or_modify::or_bluetooth_memory_list_3_pointer_a(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `or_bluetooth_memory_list_3_pointer_b` field-OR transaction.
+#[inline]
+pub(crate) fn or_bluetooth_memory_list_3_pointer_b(
+    registers: &crate::svd::BluetoothControllerCore,
+    value: BluetoothMemoryListPointerBits,
+) {
+    crate::svd::field_or_modify::or_bluetooth_memory_list_3_pointer_b(registers, value.get());
 }
 
 /// Typed bridge for the reviewed `request_mac_rx_beacon_clear` indexed bit-set transaction.

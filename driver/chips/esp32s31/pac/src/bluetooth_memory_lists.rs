@@ -139,36 +139,60 @@ impl BluetoothTaskRegisters {
         slot: BluetoothMemoryListSlot,
         image: BluetoothMemoryListPointerImage,
     ) {
-        let compressed = image.compressed();
+        let compressed = super::generated::BluetoothMemoryListPointerBits::new(image.compressed())
+            .expect("BluetoothMemoryListPointerImage is always a low-twenty-bit value");
 
         macro_rules! program {
-            ($register:expr) => {{
+            ($controller:expr, $register:expr, $publish:path) => {{
                 let register = $register;
                 register.modify(|_, writer| unsafe { writer.compressed_sram_pointer().bits(0) });
-                register
-                    .modify(|reader, writer| unsafe { writer.bits(reader.bits() | compressed) });
+                $publish($controller, compressed);
             }};
         }
 
         let controller = &self.bluetooth.bluetooth_controller_core;
         match (selector, slot) {
             (BluetoothMemoryListSelector::One, BluetoothMemoryListSlot::CurrentRx) => {
-                program!(controller.mmgmt_list_1_pointer_a());
+                program!(
+                    controller,
+                    controller.mmgmt_list_1_pointer_a(),
+                    super::generated::or_bluetooth_memory_list_1_pointer_a
+                );
             }
             (BluetoothMemoryListSelector::One, BluetoothMemoryListSlot::NextRx) => {
-                program!(controller.mmgmt_list_1_pointer_b());
+                program!(
+                    controller,
+                    controller.mmgmt_list_1_pointer_b(),
+                    super::generated::or_bluetooth_memory_list_1_pointer_b
+                );
             }
             (BluetoothMemoryListSelector::Two, BluetoothMemoryListSlot::CurrentRx) => {
-                program!(controller.mmgmt_list_2_pointer_a());
+                program!(
+                    controller,
+                    controller.mmgmt_list_2_pointer_a(),
+                    super::generated::or_bluetooth_memory_list_2_pointer_a
+                );
             }
             (BluetoothMemoryListSelector::Two, BluetoothMemoryListSlot::NextRx) => {
-                program!(controller.mmgmt_list_2_pointer_b());
+                program!(
+                    controller,
+                    controller.mmgmt_list_2_pointer_b(),
+                    super::generated::or_bluetooth_memory_list_2_pointer_b
+                );
             }
             (BluetoothMemoryListSelector::Three, BluetoothMemoryListSlot::CurrentRx) => {
-                program!(controller.mmgmt_list_3_pointer_a());
+                program!(
+                    controller,
+                    controller.mmgmt_list_3_pointer_a(),
+                    super::generated::or_bluetooth_memory_list_3_pointer_a
+                );
             }
             (BluetoothMemoryListSelector::Three, BluetoothMemoryListSlot::NextRx) => {
-                program!(controller.mmgmt_list_3_pointer_b());
+                program!(
+                    controller,
+                    controller.mmgmt_list_3_pointer_b(),
+                    super::generated::or_bluetooth_memory_list_3_pointer_b
+                );
             }
         }
         device_fence();

@@ -72,7 +72,7 @@ const SCHEDULER_ITEM_ALLOCATION_PREFIX_IMAGE: u32 = 0x0030_0000;
 const SCHEDULER_ITEM_CONTEXT_OFFSET: usize = 0x04 / 4;
 const SCHEDULER_ITEM_LINK_STATE_OFFSET: usize = 0x08 / 4;
 const SCHEDULER_ITEM_ALLOCATION_FLAGS_OFFSET: usize = 0x1c / 4;
-const SCHEDULER_ITEM_ALLOCATION_FIXED_FLAGS_IMAGE: u32 = 0x1800_0000;
+const SCHEDULER_ITEM_ALLOCATION_FLAGS_IMAGE: u32 = 0xffdf_ffff;
 const SCHEDULER_ITEM_ALLOCATION_CONFIG_OFFSET: usize = 0x20 / 4;
 const SCHEDULER_ITEM_POSITIONAL_24_OFFSET: usize = 0x24 / 4;
 const SCHEDULER_ITEM_POSITIONAL_24_IMAGE: u32 = 0x0007_bdef;
@@ -1199,7 +1199,7 @@ impl BluetoothDtmMemoryGraphCpuOwned {
         storage.scheduler_item.words[SCHEDULER_ITEM_CONTEXT_OFFSET] = scheduler_context;
         storage.scheduler_item.words[SCHEDULER_ITEM_LINK_STATE_OFFSET] = link_state;
         storage.scheduler_item.words[SCHEDULER_ITEM_ALLOCATION_FLAGS_OFFSET] =
-            SCHEDULER_ITEM_ALLOCATION_FIXED_FLAGS_IMAGE;
+            SCHEDULER_ITEM_ALLOCATION_FLAGS_IMAGE;
         storage.scheduler_item.words[SCHEDULER_ITEM_ALLOCATION_CONFIG_OFFSET] =
             config.allocation_image();
         storage.scheduler_item.words[SCHEDULER_ITEM_POSITIONAL_24_OFFSET] =
@@ -1532,7 +1532,7 @@ mod tests {
         );
         assert_eq!(
             graph.scheduler_item.words[SCHEDULER_ITEM_ALLOCATION_FLAGS_OFFSET],
-            0x1800_0000
+            0xffdf_ffff
         );
         assert_eq!(
             graph.scheduler_item.words[SCHEDULER_ITEM_ALLOCATION_CONFIG_OFFSET],

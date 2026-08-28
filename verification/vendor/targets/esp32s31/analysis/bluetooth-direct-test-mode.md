@@ -260,10 +260,15 @@ The generic scheduler allocator sets item byte `+0x02` to include `0x30`, and
 the DTM body retains that prefix while setting its allocation bit; the resulting
 zero-based word `+0x00` is `0x00300000`. DTM additionally installs the
 compressed scheduler-context link at item `+0x04`, the compressed link-state
-link at `+0x08`, sets the fixed `0x18000000` allocation flags at `+0x1c`, and
-sets the positional low-twenty-bit image `0x0007bdef` at `+0x24`. The open
-static binding now installs these unconditional fields before returning the
-CPU owner. The configuration-derived low twelve bits at item `+0x20` are
+link at `+0x08` and sets the positional low-twenty-bit image `0x0007bdef` at
+`+0x24`. The generic allocator also copies the common scheduler default at
+module-environment `+0x0c` while clearing bit 21. Complete current
+`r_sym_ble_pF0fMZSluGybO8KafMKl`, mapped to named same-chip
+`r_ble_lll_init`, initializes that source word to `0xffffffff`; the resulting
+item `+0x1c` image is therefore `0xffdfffff`. DTM's later OR with
+`0x18000000` does not change that complete image. The open static binding now
+installs these unconditional fields before returning the CPU owner. The
+configuration-derived low twelve bits at item `+0x20` are
 `(ble_multi_adv_instances + 1 + nimble_max_connections +
 private_options_halfword_14 + 4 + ble_ll_sync_cnt) & 0x0fff`. The three named
 inputs and their exact structure positions are public in the pinned ESP-IDF

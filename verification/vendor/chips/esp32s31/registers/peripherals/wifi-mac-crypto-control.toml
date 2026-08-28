@@ -92,14 +92,164 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "VALID_ENTRIES"
-description = "Bits 24:0 correspond to key-table entries 24:0; complete validity writes publish zero to reserved bits 31:25."
+name = "ENTRY_0_VALID"
+description = "Validity of key-table entry zero."
 bitOffset = 0
-bitWidth = 25
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENTRY_1_VALID"
+description = "Validity of key-table entry one."
+bitOffset = 1
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENTRY_2_VALID"
+description = "Validity of key-table entry two."
+bitOffset = 2
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENTRY_3_VALID"
+description = "Validity of key-table entry three."
+bitOffset = 3
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENTRY_4_VALID"
+description = "Validity of key-table entry four."
+bitOffset = 4
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENTRY_5_VALID"
+description = "Validity of key-table entry five."
+bitOffset = 5
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENTRY_6_VALID"
+description = "Validity of key-table entry six."
+bitOffset = 6
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENTRY_7_VALID"
+description = "Validity of key-table entry seven."
+bitOffset = 7
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENTRY_8_VALID"
+description = "Validity of key-table entry eight."
+bitOffset = 8
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENTRY_9_VALID"
+description = "Validity of key-table entry nine."
+bitOffset = 9
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENTRY_10_VALID"
+description = "Validity of key-table entry ten."
+bitOffset = 10
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENTRY_11_VALID"
+description = "Validity of key-table entry eleven."
+bitOffset = 11
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENTRY_12_VALID"
+description = "Validity of key-table entry twelve."
+bitOffset = 12
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENTRY_13_VALID"
+description = "Validity of key-table entry thirteen."
+bitOffset = 13
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENTRY_14_VALID"
+description = "Validity of key-table entry fourteen."
+bitOffset = 14
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENTRY_15_VALID"
+description = "Validity of key-table entry fifteen."
+bitOffset = 15
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENTRY_16_VALID"
+description = "Validity of key-table entry sixteen."
+bitOffset = 16
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENTRY_17_VALID"
+description = "Validity of key-table entry seventeen."
+bitOffset = 17
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENTRY_18_VALID"
+description = "Validity of key-table entry eighteen."
+bitOffset = 18
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENTRY_19_VALID"
+description = "Validity of key-table entry nineteen."
+bitOffset = 19
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENTRY_20_VALID"
+description = "Validity of key-table entry twenty."
+bitOffset = 20
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENTRY_21_VALID"
+description = "Validity of key-table entry twenty-one."
+bitOffset = 21
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENTRY_22_VALID"
+description = "Validity of key-table entry twenty-two."
+bitOffset = 22
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENTRY_23_VALID"
+description = "Validity of key-table entry twenty-three."
+bitOffset = 23
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENTRY_24_VALID"
+description = "Validity of key-table entry twenty-four."
+bitOffset = 24
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "RESERVED_HIGH"
+description = "Reserved bits 31:25. Complete validity writes publish zero here."
+bitOffset = 25
+bitWidth = 7
 
 [peripherals.registers.register.fields.writeConstraint.range]
-minimum = 0x0
-maximum = 0x1FFFFFF
+minimum = 0
+maximum = 0
 
 [[review]]
 entity = "WIFI_MAC_CRYPTO_CONTROL"
@@ -155,13 +305,6 @@ completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_CRYPTO_CONTROL.KEY_VALID_BITMAP"
-sources = ["BLOB_LIBPP_HAL_CRYPTO"]
-provenance = "observed"
-accuracy = "exact"
-completeness = "complete"
-
-[[review]]
-entity = "WIFI_MAC_CRYPTO_CONTROL.KEY_VALID_BITMAP.VALID_ENTRIES"
 sources = ["BLOB_LIBPP_HAL_CRYPTO"]
 provenance = "observed"
 accuracy = "exact"

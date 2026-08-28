@@ -6812,14 +6812,164 @@
           <access>read-write</access>
           <fields>
             <field>
-              <name>VALID_ENTRIES</name>
-              <description>Bits 24:0 correspond to key-table entries 24:0; complete validity writes publish zero to reserved bits 31:25.</description>
+              <name>ENTRY_0_VALID</name>
+              <description>Validity of key-table entry zero.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>25</bitWidth>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENTRY_1_VALID</name>
+              <description>Validity of key-table entry one.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENTRY_2_VALID</name>
+              <description>Validity of key-table entry two.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENTRY_3_VALID</name>
+              <description>Validity of key-table entry three.</description>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENTRY_4_VALID</name>
+              <description>Validity of key-table entry four.</description>
+              <bitOffset>4</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENTRY_5_VALID</name>
+              <description>Validity of key-table entry five.</description>
+              <bitOffset>5</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENTRY_6_VALID</name>
+              <description>Validity of key-table entry six.</description>
+              <bitOffset>6</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENTRY_7_VALID</name>
+              <description>Validity of key-table entry seven.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENTRY_8_VALID</name>
+              <description>Validity of key-table entry eight.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENTRY_9_VALID</name>
+              <description>Validity of key-table entry nine.</description>
+              <bitOffset>9</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENTRY_10_VALID</name>
+              <description>Validity of key-table entry ten.</description>
+              <bitOffset>10</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENTRY_11_VALID</name>
+              <description>Validity of key-table entry eleven.</description>
+              <bitOffset>11</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENTRY_12_VALID</name>
+              <description>Validity of key-table entry twelve.</description>
+              <bitOffset>12</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENTRY_13_VALID</name>
+              <description>Validity of key-table entry thirteen.</description>
+              <bitOffset>13</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENTRY_14_VALID</name>
+              <description>Validity of key-table entry fourteen.</description>
+              <bitOffset>14</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENTRY_15_VALID</name>
+              <description>Validity of key-table entry fifteen.</description>
+              <bitOffset>15</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENTRY_16_VALID</name>
+              <description>Validity of key-table entry sixteen.</description>
+              <bitOffset>16</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENTRY_17_VALID</name>
+              <description>Validity of key-table entry seventeen.</description>
+              <bitOffset>17</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENTRY_18_VALID</name>
+              <description>Validity of key-table entry eighteen.</description>
+              <bitOffset>18</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENTRY_19_VALID</name>
+              <description>Validity of key-table entry nineteen.</description>
+              <bitOffset>19</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENTRY_20_VALID</name>
+              <description>Validity of key-table entry twenty.</description>
+              <bitOffset>20</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENTRY_21_VALID</name>
+              <description>Validity of key-table entry twenty-one.</description>
+              <bitOffset>21</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENTRY_22_VALID</name>
+              <description>Validity of key-table entry twenty-two.</description>
+              <bitOffset>22</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENTRY_23_VALID</name>
+              <description>Validity of key-table entry twenty-three.</description>
+              <bitOffset>23</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENTRY_24_VALID</name>
+              <description>Validity of key-table entry twenty-four.</description>
+              <bitOffset>24</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>RESERVED_HIGH</name>
+              <description>Reserved bits 31:25. Complete validity writes publish zero here.</description>
+              <bitOffset>25</bitOffset>
+              <bitWidth>7</bitWidth>
               <writeConstraint>
                 <range>
                   <minimum>0</minimum>
-                  <maximum>33554431</maximum>
+                  <maximum>0</maximum>
                 </range>
               </writeConstraint>
             </field>

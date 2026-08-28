@@ -17161,22 +17161,372 @@ pub mod wifi_mac_crypto_control {
         pub type R = crate::R<KeyValidBitmapSpec>;
         #[doc = "Register `KEY_VALID_BITMAP` writer"]
         pub type W = crate::W<KeyValidBitmapSpec>;
-        #[doc = "Field `VALID_ENTRIES` reader - Bits 24:0 correspond to key-table entries 24:0; complete validity writes publish zero to reserved bits 31:25."]
-        pub type ValidEntriesR = crate::FieldReader<u32>;
-        #[doc = "Field `VALID_ENTRIES` writer - Bits 24:0 correspond to key-table entries 24:0; complete validity writes publish zero to reserved bits 31:25."]
-        pub type ValidEntriesW<'a, REG> = crate::FieldWriter<'a, REG, 25, u32, crate::Safe>;
+        #[doc = "Field `ENTRY_0_VALID` reader - Validity of key-table entry zero."]
+        pub type Entry0ValidR = crate::BitReader;
+        #[doc = "Field `ENTRY_0_VALID` writer - Validity of key-table entry zero."]
+        pub type Entry0ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENTRY_1_VALID` reader - Validity of key-table entry one."]
+        pub type Entry1ValidR = crate::BitReader;
+        #[doc = "Field `ENTRY_1_VALID` writer - Validity of key-table entry one."]
+        pub type Entry1ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENTRY_2_VALID` reader - Validity of key-table entry two."]
+        pub type Entry2ValidR = crate::BitReader;
+        #[doc = "Field `ENTRY_2_VALID` writer - Validity of key-table entry two."]
+        pub type Entry2ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENTRY_3_VALID` reader - Validity of key-table entry three."]
+        pub type Entry3ValidR = crate::BitReader;
+        #[doc = "Field `ENTRY_3_VALID` writer - Validity of key-table entry three."]
+        pub type Entry3ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENTRY_4_VALID` reader - Validity of key-table entry four."]
+        pub type Entry4ValidR = crate::BitReader;
+        #[doc = "Field `ENTRY_4_VALID` writer - Validity of key-table entry four."]
+        pub type Entry4ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENTRY_5_VALID` reader - Validity of key-table entry five."]
+        pub type Entry5ValidR = crate::BitReader;
+        #[doc = "Field `ENTRY_5_VALID` writer - Validity of key-table entry five."]
+        pub type Entry5ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENTRY_6_VALID` reader - Validity of key-table entry six."]
+        pub type Entry6ValidR = crate::BitReader;
+        #[doc = "Field `ENTRY_6_VALID` writer - Validity of key-table entry six."]
+        pub type Entry6ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENTRY_7_VALID` reader - Validity of key-table entry seven."]
+        pub type Entry7ValidR = crate::BitReader;
+        #[doc = "Field `ENTRY_7_VALID` writer - Validity of key-table entry seven."]
+        pub type Entry7ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENTRY_8_VALID` reader - Validity of key-table entry eight."]
+        pub type Entry8ValidR = crate::BitReader;
+        #[doc = "Field `ENTRY_8_VALID` writer - Validity of key-table entry eight."]
+        pub type Entry8ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENTRY_9_VALID` reader - Validity of key-table entry nine."]
+        pub type Entry9ValidR = crate::BitReader;
+        #[doc = "Field `ENTRY_9_VALID` writer - Validity of key-table entry nine."]
+        pub type Entry9ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENTRY_10_VALID` reader - Validity of key-table entry ten."]
+        pub type Entry10ValidR = crate::BitReader;
+        #[doc = "Field `ENTRY_10_VALID` writer - Validity of key-table entry ten."]
+        pub type Entry10ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENTRY_11_VALID` reader - Validity of key-table entry eleven."]
+        pub type Entry11ValidR = crate::BitReader;
+        #[doc = "Field `ENTRY_11_VALID` writer - Validity of key-table entry eleven."]
+        pub type Entry11ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENTRY_12_VALID` reader - Validity of key-table entry twelve."]
+        pub type Entry12ValidR = crate::BitReader;
+        #[doc = "Field `ENTRY_12_VALID` writer - Validity of key-table entry twelve."]
+        pub type Entry12ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENTRY_13_VALID` reader - Validity of key-table entry thirteen."]
+        pub type Entry13ValidR = crate::BitReader;
+        #[doc = "Field `ENTRY_13_VALID` writer - Validity of key-table entry thirteen."]
+        pub type Entry13ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENTRY_14_VALID` reader - Validity of key-table entry fourteen."]
+        pub type Entry14ValidR = crate::BitReader;
+        #[doc = "Field `ENTRY_14_VALID` writer - Validity of key-table entry fourteen."]
+        pub type Entry14ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENTRY_15_VALID` reader - Validity of key-table entry fifteen."]
+        pub type Entry15ValidR = crate::BitReader;
+        #[doc = "Field `ENTRY_15_VALID` writer - Validity of key-table entry fifteen."]
+        pub type Entry15ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENTRY_16_VALID` reader - Validity of key-table entry sixteen."]
+        pub type Entry16ValidR = crate::BitReader;
+        #[doc = "Field `ENTRY_16_VALID` writer - Validity of key-table entry sixteen."]
+        pub type Entry16ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENTRY_17_VALID` reader - Validity of key-table entry seventeen."]
+        pub type Entry17ValidR = crate::BitReader;
+        #[doc = "Field `ENTRY_17_VALID` writer - Validity of key-table entry seventeen."]
+        pub type Entry17ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENTRY_18_VALID` reader - Validity of key-table entry eighteen."]
+        pub type Entry18ValidR = crate::BitReader;
+        #[doc = "Field `ENTRY_18_VALID` writer - Validity of key-table entry eighteen."]
+        pub type Entry18ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENTRY_19_VALID` reader - Validity of key-table entry nineteen."]
+        pub type Entry19ValidR = crate::BitReader;
+        #[doc = "Field `ENTRY_19_VALID` writer - Validity of key-table entry nineteen."]
+        pub type Entry19ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENTRY_20_VALID` reader - Validity of key-table entry twenty."]
+        pub type Entry20ValidR = crate::BitReader;
+        #[doc = "Field `ENTRY_20_VALID` writer - Validity of key-table entry twenty."]
+        pub type Entry20ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENTRY_21_VALID` reader - Validity of key-table entry twenty-one."]
+        pub type Entry21ValidR = crate::BitReader;
+        #[doc = "Field `ENTRY_21_VALID` writer - Validity of key-table entry twenty-one."]
+        pub type Entry21ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENTRY_22_VALID` reader - Validity of key-table entry twenty-two."]
+        pub type Entry22ValidR = crate::BitReader;
+        #[doc = "Field `ENTRY_22_VALID` writer - Validity of key-table entry twenty-two."]
+        pub type Entry22ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENTRY_23_VALID` reader - Validity of key-table entry twenty-three."]
+        pub type Entry23ValidR = crate::BitReader;
+        #[doc = "Field `ENTRY_23_VALID` writer - Validity of key-table entry twenty-three."]
+        pub type Entry23ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENTRY_24_VALID` reader - Validity of key-table entry twenty-four."]
+        pub type Entry24ValidR = crate::BitReader;
+        #[doc = "Field `ENTRY_24_VALID` writer - Validity of key-table entry twenty-four."]
+        pub type Entry24ValidW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RESERVED_HIGH` reader - Reserved bits 31:25. Complete validity writes publish zero here."]
+        pub type ReservedHighR = crate::FieldReader;
+        #[doc = "Field `RESERVED_HIGH` writer - Reserved bits 31:25. Complete validity writes publish zero here."]
+        pub type ReservedHighW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
         impl R {
-            #[doc = "Bits 0:24 - Bits 24:0 correspond to key-table entries 24:0; complete validity writes publish zero to reserved bits 31:25."]
+            #[doc = "Bit 0 - Validity of key-table entry zero."]
             #[inline(always)]
-            pub fn valid_entries(&self) -> ValidEntriesR {
-                ValidEntriesR::new(self.bits & 0x01ff_ffff)
+            pub fn entry_0_valid(&self) -> Entry0ValidR {
+                Entry0ValidR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1 - Validity of key-table entry one."]
+            #[inline(always)]
+            pub fn entry_1_valid(&self) -> Entry1ValidR {
+                Entry1ValidR::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2 - Validity of key-table entry two."]
+            #[inline(always)]
+            pub fn entry_2_valid(&self) -> Entry2ValidR {
+                Entry2ValidR::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3 - Validity of key-table entry three."]
+            #[inline(always)]
+            pub fn entry_3_valid(&self) -> Entry3ValidR {
+                Entry3ValidR::new(((self.bits >> 3) & 1) != 0)
+            }
+            #[doc = "Bit 4 - Validity of key-table entry four."]
+            #[inline(always)]
+            pub fn entry_4_valid(&self) -> Entry4ValidR {
+                Entry4ValidR::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bit 5 - Validity of key-table entry five."]
+            #[inline(always)]
+            pub fn entry_5_valid(&self) -> Entry5ValidR {
+                Entry5ValidR::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bit 6 - Validity of key-table entry six."]
+            #[inline(always)]
+            pub fn entry_6_valid(&self) -> Entry6ValidR {
+                Entry6ValidR::new(((self.bits >> 6) & 1) != 0)
+            }
+            #[doc = "Bit 7 - Validity of key-table entry seven."]
+            #[inline(always)]
+            pub fn entry_7_valid(&self) -> Entry7ValidR {
+                Entry7ValidR::new(((self.bits >> 7) & 1) != 0)
+            }
+            #[doc = "Bit 8 - Validity of key-table entry eight."]
+            #[inline(always)]
+            pub fn entry_8_valid(&self) -> Entry8ValidR {
+                Entry8ValidR::new(((self.bits >> 8) & 1) != 0)
+            }
+            #[doc = "Bit 9 - Validity of key-table entry nine."]
+            #[inline(always)]
+            pub fn entry_9_valid(&self) -> Entry9ValidR {
+                Entry9ValidR::new(((self.bits >> 9) & 1) != 0)
+            }
+            #[doc = "Bit 10 - Validity of key-table entry ten."]
+            #[inline(always)]
+            pub fn entry_10_valid(&self) -> Entry10ValidR {
+                Entry10ValidR::new(((self.bits >> 10) & 1) != 0)
+            }
+            #[doc = "Bit 11 - Validity of key-table entry eleven."]
+            #[inline(always)]
+            pub fn entry_11_valid(&self) -> Entry11ValidR {
+                Entry11ValidR::new(((self.bits >> 11) & 1) != 0)
+            }
+            #[doc = "Bit 12 - Validity of key-table entry twelve."]
+            #[inline(always)]
+            pub fn entry_12_valid(&self) -> Entry12ValidR {
+                Entry12ValidR::new(((self.bits >> 12) & 1) != 0)
+            }
+            #[doc = "Bit 13 - Validity of key-table entry thirteen."]
+            #[inline(always)]
+            pub fn entry_13_valid(&self) -> Entry13ValidR {
+                Entry13ValidR::new(((self.bits >> 13) & 1) != 0)
+            }
+            #[doc = "Bit 14 - Validity of key-table entry fourteen."]
+            #[inline(always)]
+            pub fn entry_14_valid(&self) -> Entry14ValidR {
+                Entry14ValidR::new(((self.bits >> 14) & 1) != 0)
+            }
+            #[doc = "Bit 15 - Validity of key-table entry fifteen."]
+            #[inline(always)]
+            pub fn entry_15_valid(&self) -> Entry15ValidR {
+                Entry15ValidR::new(((self.bits >> 15) & 1) != 0)
+            }
+            #[doc = "Bit 16 - Validity of key-table entry sixteen."]
+            #[inline(always)]
+            pub fn entry_16_valid(&self) -> Entry16ValidR {
+                Entry16ValidR::new(((self.bits >> 16) & 1) != 0)
+            }
+            #[doc = "Bit 17 - Validity of key-table entry seventeen."]
+            #[inline(always)]
+            pub fn entry_17_valid(&self) -> Entry17ValidR {
+                Entry17ValidR::new(((self.bits >> 17) & 1) != 0)
+            }
+            #[doc = "Bit 18 - Validity of key-table entry eighteen."]
+            #[inline(always)]
+            pub fn entry_18_valid(&self) -> Entry18ValidR {
+                Entry18ValidR::new(((self.bits >> 18) & 1) != 0)
+            }
+            #[doc = "Bit 19 - Validity of key-table entry nineteen."]
+            #[inline(always)]
+            pub fn entry_19_valid(&self) -> Entry19ValidR {
+                Entry19ValidR::new(((self.bits >> 19) & 1) != 0)
+            }
+            #[doc = "Bit 20 - Validity of key-table entry twenty."]
+            #[inline(always)]
+            pub fn entry_20_valid(&self) -> Entry20ValidR {
+                Entry20ValidR::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bit 21 - Validity of key-table entry twenty-one."]
+            #[inline(always)]
+            pub fn entry_21_valid(&self) -> Entry21ValidR {
+                Entry21ValidR::new(((self.bits >> 21) & 1) != 0)
+            }
+            #[doc = "Bit 22 - Validity of key-table entry twenty-two."]
+            #[inline(always)]
+            pub fn entry_22_valid(&self) -> Entry22ValidR {
+                Entry22ValidR::new(((self.bits >> 22) & 1) != 0)
+            }
+            #[doc = "Bit 23 - Validity of key-table entry twenty-three."]
+            #[inline(always)]
+            pub fn entry_23_valid(&self) -> Entry23ValidR {
+                Entry23ValidR::new(((self.bits >> 23) & 1) != 0)
+            }
+            #[doc = "Bit 24 - Validity of key-table entry twenty-four."]
+            #[inline(always)]
+            pub fn entry_24_valid(&self) -> Entry24ValidR {
+                Entry24ValidR::new(((self.bits >> 24) & 1) != 0)
+            }
+            #[doc = "Bits 25:31 - Reserved bits 31:25. Complete validity writes publish zero here."]
+            #[inline(always)]
+            pub fn reserved_high(&self) -> ReservedHighR {
+                ReservedHighR::new(((self.bits >> 25) & 0x7f) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 0:24 - Bits 24:0 correspond to key-table entries 24:0; complete validity writes publish zero to reserved bits 31:25."]
+            #[doc = "Bit 0 - Validity of key-table entry zero."]
             #[inline(always)]
-            pub fn valid_entries(&mut self) -> ValidEntriesW<'_, KeyValidBitmapSpec> {
-                ValidEntriesW::new(self, 0)
+            pub fn entry_0_valid(&mut self) -> Entry0ValidW<'_, KeyValidBitmapSpec> {
+                Entry0ValidW::new(self, 0)
+            }
+            #[doc = "Bit 1 - Validity of key-table entry one."]
+            #[inline(always)]
+            pub fn entry_1_valid(&mut self) -> Entry1ValidW<'_, KeyValidBitmapSpec> {
+                Entry1ValidW::new(self, 1)
+            }
+            #[doc = "Bit 2 - Validity of key-table entry two."]
+            #[inline(always)]
+            pub fn entry_2_valid(&mut self) -> Entry2ValidW<'_, KeyValidBitmapSpec> {
+                Entry2ValidW::new(self, 2)
+            }
+            #[doc = "Bit 3 - Validity of key-table entry three."]
+            #[inline(always)]
+            pub fn entry_3_valid(&mut self) -> Entry3ValidW<'_, KeyValidBitmapSpec> {
+                Entry3ValidW::new(self, 3)
+            }
+            #[doc = "Bit 4 - Validity of key-table entry four."]
+            #[inline(always)]
+            pub fn entry_4_valid(&mut self) -> Entry4ValidW<'_, KeyValidBitmapSpec> {
+                Entry4ValidW::new(self, 4)
+            }
+            #[doc = "Bit 5 - Validity of key-table entry five."]
+            #[inline(always)]
+            pub fn entry_5_valid(&mut self) -> Entry5ValidW<'_, KeyValidBitmapSpec> {
+                Entry5ValidW::new(self, 5)
+            }
+            #[doc = "Bit 6 - Validity of key-table entry six."]
+            #[inline(always)]
+            pub fn entry_6_valid(&mut self) -> Entry6ValidW<'_, KeyValidBitmapSpec> {
+                Entry6ValidW::new(self, 6)
+            }
+            #[doc = "Bit 7 - Validity of key-table entry seven."]
+            #[inline(always)]
+            pub fn entry_7_valid(&mut self) -> Entry7ValidW<'_, KeyValidBitmapSpec> {
+                Entry7ValidW::new(self, 7)
+            }
+            #[doc = "Bit 8 - Validity of key-table entry eight."]
+            #[inline(always)]
+            pub fn entry_8_valid(&mut self) -> Entry8ValidW<'_, KeyValidBitmapSpec> {
+                Entry8ValidW::new(self, 8)
+            }
+            #[doc = "Bit 9 - Validity of key-table entry nine."]
+            #[inline(always)]
+            pub fn entry_9_valid(&mut self) -> Entry9ValidW<'_, KeyValidBitmapSpec> {
+                Entry9ValidW::new(self, 9)
+            }
+            #[doc = "Bit 10 - Validity of key-table entry ten."]
+            #[inline(always)]
+            pub fn entry_10_valid(&mut self) -> Entry10ValidW<'_, KeyValidBitmapSpec> {
+                Entry10ValidW::new(self, 10)
+            }
+            #[doc = "Bit 11 - Validity of key-table entry eleven."]
+            #[inline(always)]
+            pub fn entry_11_valid(&mut self) -> Entry11ValidW<'_, KeyValidBitmapSpec> {
+                Entry11ValidW::new(self, 11)
+            }
+            #[doc = "Bit 12 - Validity of key-table entry twelve."]
+            #[inline(always)]
+            pub fn entry_12_valid(&mut self) -> Entry12ValidW<'_, KeyValidBitmapSpec> {
+                Entry12ValidW::new(self, 12)
+            }
+            #[doc = "Bit 13 - Validity of key-table entry thirteen."]
+            #[inline(always)]
+            pub fn entry_13_valid(&mut self) -> Entry13ValidW<'_, KeyValidBitmapSpec> {
+                Entry13ValidW::new(self, 13)
+            }
+            #[doc = "Bit 14 - Validity of key-table entry fourteen."]
+            #[inline(always)]
+            pub fn entry_14_valid(&mut self) -> Entry14ValidW<'_, KeyValidBitmapSpec> {
+                Entry14ValidW::new(self, 14)
+            }
+            #[doc = "Bit 15 - Validity of key-table entry fifteen."]
+            #[inline(always)]
+            pub fn entry_15_valid(&mut self) -> Entry15ValidW<'_, KeyValidBitmapSpec> {
+                Entry15ValidW::new(self, 15)
+            }
+            #[doc = "Bit 16 - Validity of key-table entry sixteen."]
+            #[inline(always)]
+            pub fn entry_16_valid(&mut self) -> Entry16ValidW<'_, KeyValidBitmapSpec> {
+                Entry16ValidW::new(self, 16)
+            }
+            #[doc = "Bit 17 - Validity of key-table entry seventeen."]
+            #[inline(always)]
+            pub fn entry_17_valid(&mut self) -> Entry17ValidW<'_, KeyValidBitmapSpec> {
+                Entry17ValidW::new(self, 17)
+            }
+            #[doc = "Bit 18 - Validity of key-table entry eighteen."]
+            #[inline(always)]
+            pub fn entry_18_valid(&mut self) -> Entry18ValidW<'_, KeyValidBitmapSpec> {
+                Entry18ValidW::new(self, 18)
+            }
+            #[doc = "Bit 19 - Validity of key-table entry nineteen."]
+            #[inline(always)]
+            pub fn entry_19_valid(&mut self) -> Entry19ValidW<'_, KeyValidBitmapSpec> {
+                Entry19ValidW::new(self, 19)
+            }
+            #[doc = "Bit 20 - Validity of key-table entry twenty."]
+            #[inline(always)]
+            pub fn entry_20_valid(&mut self) -> Entry20ValidW<'_, KeyValidBitmapSpec> {
+                Entry20ValidW::new(self, 20)
+            }
+            #[doc = "Bit 21 - Validity of key-table entry twenty-one."]
+            #[inline(always)]
+            pub fn entry_21_valid(&mut self) -> Entry21ValidW<'_, KeyValidBitmapSpec> {
+                Entry21ValidW::new(self, 21)
+            }
+            #[doc = "Bit 22 - Validity of key-table entry twenty-two."]
+            #[inline(always)]
+            pub fn entry_22_valid(&mut self) -> Entry22ValidW<'_, KeyValidBitmapSpec> {
+                Entry22ValidW::new(self, 22)
+            }
+            #[doc = "Bit 23 - Validity of key-table entry twenty-three."]
+            #[inline(always)]
+            pub fn entry_23_valid(&mut self) -> Entry23ValidW<'_, KeyValidBitmapSpec> {
+                Entry23ValidW::new(self, 23)
+            }
+            #[doc = "Bit 24 - Validity of key-table entry twenty-four."]
+            #[inline(always)]
+            pub fn entry_24_valid(&mut self) -> Entry24ValidW<'_, KeyValidBitmapSpec> {
+                Entry24ValidW::new(self, 24)
+            }
+            #[doc = "Bits 25:31 - Reserved bits 31:25. Complete validity writes publish zero here."]
+            #[inline(always)]
+            pub fn reserved_high(&mut self) -> ReservedHighW<'_, KeyValidBitmapSpec> {
+                ReservedHighW::new(self, 25)
             }
         }
         #[doc = "One validity bit per one of the 25 evidenced hardware key entries.\n\nYou can [`read`](crate::Reg::read) this register and get [`key_valid_bitmap::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`key_valid_bitmap::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -56274,16 +56624,97 @@ pub mod zero_based_field_write {
         }
     }
 
-    /// Write `VALID_ENTRIES` in `WIFI_MAC_CRYPTO_CONTROL`.`KEY_VALID_BITMAP` while publishing zero to every other register bit.
+    /// Write `ENTRY_0_VALID`, `ENTRY_1_VALID`, `ENTRY_2_VALID`, `ENTRY_3_VALID`, `ENTRY_4_VALID`, `ENTRY_5_VALID`, `ENTRY_6_VALID`, `ENTRY_7_VALID`, `ENTRY_8_VALID`, `ENTRY_9_VALID`, `ENTRY_10_VALID`, `ENTRY_11_VALID`, `ENTRY_12_VALID`, `ENTRY_13_VALID`, `ENTRY_14_VALID`, `ENTRY_15_VALID`, `ENTRY_16_VALID`, `ENTRY_17_VALID`, `ENTRY_18_VALID`, `ENTRY_19_VALID`, `ENTRY_20_VALID`, `ENTRY_21_VALID`, `ENTRY_22_VALID`, `ENTRY_23_VALID`, `ENTRY_24_VALID` in `WIFI_MAC_CRYPTO_CONTROL`.`KEY_VALID_BITMAP` while publishing zero to every other register bit.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "reviewed hardware transaction exposes one typed argument per field"
+    )]
     #[inline]
-    pub fn mac_crypto_key_valid_bitmap(registers: &crate::WifiMacCryptoControl, value: u32) {
+    pub fn publish_mac_crypto_key_valid_entries(
+        registers: &crate::WifiMacCryptoControl,
+        entry_0_valid_value: bool,
+        entry_1_valid_value: bool,
+        entry_2_valid_value: bool,
+        entry_3_valid_value: bool,
+        entry_4_valid_value: bool,
+        entry_5_valid_value: bool,
+        entry_6_valid_value: bool,
+        entry_7_valid_value: bool,
+        entry_8_valid_value: bool,
+        entry_9_valid_value: bool,
+        entry_10_valid_value: bool,
+        entry_11_valid_value: bool,
+        entry_12_valid_value: bool,
+        entry_13_valid_value: bool,
+        entry_14_valid_value: bool,
+        entry_15_valid_value: bool,
+        entry_16_valid_value: bool,
+        entry_17_valid_value: bool,
+        entry_18_valid_value: bool,
+        entry_19_valid_value: bool,
+        entry_20_valid_value: bool,
+        entry_21_valid_value: bool,
+        entry_22_valid_value: bool,
+        entry_23_valid_value: bool,
+        entry_24_valid_value: bool,
+    ) {
         // SAFETY: the SVD extension explicitly qualifies the zero-based
         // transaction, and generator validation proves every selected field
         // accepts every value representable by its public argument type.
         unsafe {
-            registers
-                .key_valid_bitmap()
-                .write_with_zero(|writer| writer.valid_entries().set(value));
+            registers.key_valid_bitmap().write_with_zero(|writer| {
+                writer
+                    .entry_0_valid()
+                    .bit(entry_0_valid_value)
+                    .entry_1_valid()
+                    .bit(entry_1_valid_value)
+                    .entry_2_valid()
+                    .bit(entry_2_valid_value)
+                    .entry_3_valid()
+                    .bit(entry_3_valid_value)
+                    .entry_4_valid()
+                    .bit(entry_4_valid_value)
+                    .entry_5_valid()
+                    .bit(entry_5_valid_value)
+                    .entry_6_valid()
+                    .bit(entry_6_valid_value)
+                    .entry_7_valid()
+                    .bit(entry_7_valid_value)
+                    .entry_8_valid()
+                    .bit(entry_8_valid_value)
+                    .entry_9_valid()
+                    .bit(entry_9_valid_value)
+                    .entry_10_valid()
+                    .bit(entry_10_valid_value)
+                    .entry_11_valid()
+                    .bit(entry_11_valid_value)
+                    .entry_12_valid()
+                    .bit(entry_12_valid_value)
+                    .entry_13_valid()
+                    .bit(entry_13_valid_value)
+                    .entry_14_valid()
+                    .bit(entry_14_valid_value)
+                    .entry_15_valid()
+                    .bit(entry_15_valid_value)
+                    .entry_16_valid()
+                    .bit(entry_16_valid_value)
+                    .entry_17_valid()
+                    .bit(entry_17_valid_value)
+                    .entry_18_valid()
+                    .bit(entry_18_valid_value)
+                    .entry_19_valid()
+                    .bit(entry_19_valid_value)
+                    .entry_20_valid()
+                    .bit(entry_20_valid_value)
+                    .entry_21_valid()
+                    .bit(entry_21_valid_value)
+                    .entry_22_valid()
+                    .bit(entry_22_valid_value)
+                    .entry_23_valid()
+                    .bit(entry_23_valid_value)
+                    .entry_24_valid()
+                    .bit(entry_24_valid_value)
+            });
         }
     }
 

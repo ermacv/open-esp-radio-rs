@@ -17162,10 +17162,185 @@ scope = []
 register-method = "key_valid_bitmap"
 
 [[registers.fields]]
-svd-name = "VALID_ENTRIES"
-method = "valid_entries"
+svd-name = "ENTRY_0_VALID"
+method = "entry_0_valid"
 bit-offset = 0
-bit-width = 25
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENTRY_1_VALID"
+method = "entry_1_valid"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENTRY_2_VALID"
+method = "entry_2_valid"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENTRY_3_VALID"
+method = "entry_3_valid"
+bit-offset = 3
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENTRY_4_VALID"
+method = "entry_4_valid"
+bit-offset = 4
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENTRY_5_VALID"
+method = "entry_5_valid"
+bit-offset = 5
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENTRY_6_VALID"
+method = "entry_6_valid"
+bit-offset = 6
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENTRY_7_VALID"
+method = "entry_7_valid"
+bit-offset = 7
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENTRY_8_VALID"
+method = "entry_8_valid"
+bit-offset = 8
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENTRY_9_VALID"
+method = "entry_9_valid"
+bit-offset = 9
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENTRY_10_VALID"
+method = "entry_10_valid"
+bit-offset = 10
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENTRY_11_VALID"
+method = "entry_11_valid"
+bit-offset = 11
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENTRY_12_VALID"
+method = "entry_12_valid"
+bit-offset = 12
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENTRY_13_VALID"
+method = "entry_13_valid"
+bit-offset = 13
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENTRY_14_VALID"
+method = "entry_14_valid"
+bit-offset = 14
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENTRY_15_VALID"
+method = "entry_15_valid"
+bit-offset = 15
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENTRY_16_VALID"
+method = "entry_16_valid"
+bit-offset = 16
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENTRY_17_VALID"
+method = "entry_17_valid"
+bit-offset = 17
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENTRY_18_VALID"
+method = "entry_18_valid"
+bit-offset = 18
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENTRY_19_VALID"
+method = "entry_19_valid"
+bit-offset = 19
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENTRY_20_VALID"
+method = "entry_20_valid"
+bit-offset = 20
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENTRY_21_VALID"
+method = "entry_21_valid"
+bit-offset = 21
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENTRY_22_VALID"
+method = "entry_22_valid"
+bit-offset = 22
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENTRY_23_VALID"
+method = "entry_23_valid"
+bit-offset = 23
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENTRY_24_VALID"
+method = "entry_24_valid"
+bit-offset = 24
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RESERVED_HIGH"
+method = "reserved_high"
+bit-offset = 25
+bit-width = 7
 access = "read-write"
 
 [[registers]]

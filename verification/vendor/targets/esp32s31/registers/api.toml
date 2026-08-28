@@ -1369,10 +1369,36 @@ fields = ["CONTROL_LOW_UNKNOWN", "MODE_HIGH_UNKNOWN"]
 sources = ["BLOB_LIBPP_HAL_CRYPTO", "BLOB_LIBPP_HAL_CRYPTO_INIT"]
 
 [[zero-based-field-writes]]
-name = "mac_crypto_key_valid_bitmap"
+name = "publish_mac_crypto_key_valid_entries"
 peripheral = "WIFI_MAC_CRYPTO_CONTROL"
 register = "KEY_VALID_BITMAP"
-fields = ["VALID_ENTRIES"]
+fields = [
+    "ENTRY_0_VALID",
+    "ENTRY_1_VALID",
+    "ENTRY_2_VALID",
+    "ENTRY_3_VALID",
+    "ENTRY_4_VALID",
+    "ENTRY_5_VALID",
+    "ENTRY_6_VALID",
+    "ENTRY_7_VALID",
+    "ENTRY_8_VALID",
+    "ENTRY_9_VALID",
+    "ENTRY_10_VALID",
+    "ENTRY_11_VALID",
+    "ENTRY_12_VALID",
+    "ENTRY_13_VALID",
+    "ENTRY_14_VALID",
+    "ENTRY_15_VALID",
+    "ENTRY_16_VALID",
+    "ENTRY_17_VALID",
+    "ENTRY_18_VALID",
+    "ENTRY_19_VALID",
+    "ENTRY_20_VALID",
+    "ENTRY_21_VALID",
+    "ENTRY_22_VALID",
+    "ENTRY_23_VALID",
+    "ENTRY_24_VALID",
+]
 sources = ["BLOB_LIBPP_HAL_CRYPTO"]
 
 [[zero-based-field-writes]]

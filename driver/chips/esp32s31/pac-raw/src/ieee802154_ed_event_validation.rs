@@ -13,29 +13,59 @@ fn order_device_accesses() {
     crate::device_access::fence();
 }
 
-/// Replace only the event-enable field with RX-ABORT, ED-DONE and TIMER0.
+/// Enable only RX-ABORT, ED-DONE, and TIMER0.
 #[inline]
 pub fn enable_ed_timer_abort_events(registers: &mut crate::Ieee802154Mac) {
-    registers
-        .event_enable()
-        .modify(|_, writer| writer.events().ed_timer_abort_validation());
+    registers.event_enable().modify(|_, writer| {
+        writer.tx_done().clear_bit();
+        writer.rx_done().clear_bit();
+        writer.ack_tx_done().clear_bit();
+        writer.ack_rx_done().clear_bit();
+        writer.rx_abort().set_bit();
+        writer.tx_abort().clear_bit();
+        writer.ed_done().set_bit();
+        writer.unclassified_7().clear_bit();
+        writer.timer0_overflow().set_bit();
+        writer.timer1_overflow().clear_bit();
+        writer.clock_count_match().clear_bit();
+        writer.tx_sfd_done().clear_bit();
+        writer.rx_sfd_done().clear_bit();
+        writer.unclassified_13().clear_bit()
+    });
     order_device_accesses();
 }
 
 /// Replace only the event-enable field with zero during cleanup.
 #[inline]
 pub fn disable_all_events(registers: &mut crate::Ieee802154Mac) {
-    registers
-        .event_enable()
-        .modify(|_, writer| writer.events().none());
+    registers.event_enable().modify(|_, writer| {
+        writer.tx_done().clear_bit();
+        writer.rx_done().clear_bit();
+        writer.ack_tx_done().clear_bit();
+        writer.ack_rx_done().clear_bit();
+        writer.rx_abort().clear_bit();
+        writer.tx_abort().clear_bit();
+        writer.ed_done().clear_bit();
+        writer.unclassified_7().clear_bit();
+        writer.timer0_overflow().clear_bit();
+        writer.timer1_overflow().clear_bit();
+        writer.clock_count_match().clear_bit();
+        writer.tx_sfd_done().clear_bit();
+        writer.rx_sfd_done().clear_bit();
+        writer.unclassified_13().clear_bit()
+    });
     order_device_accesses();
 }
 
-/// Return one complete fourteen-bit `EVENT_STATUS` sample.
+/// Return one semantic `EVENT_STATUS` sample through generated field readers.
 #[inline]
-pub fn event_status_events(registers: &crate::Ieee802154Mac) -> u16 {
+pub fn event_status_events(
+    registers: &crate::Ieee802154Mac,
+) -> crate::ieee802154_mac_ownership::Ieee802154EventReadback {
     order_device_accesses();
-    let events = registers.event_status().read().events().bits();
+    let events = crate::ieee802154_mac_ownership::Ieee802154EventReadback::from_event_status(
+        &registers.event_status().read(),
+    );
     order_device_accesses();
     events
 }
@@ -166,12 +196,12 @@ pub fn stop_operation(registers: &mut crate::Ieee802154Mac) {
 /// Select only ED-DONE through its generated W1C field variant.
 #[inline]
 pub fn write_ed_done_event(registers: &mut crate::Ieee802154Mac) {
-    // SAFETY: the generated write-only variant selects only ED-DONE in this
-    // reset-isolated validation transaction; no integer image is accepted.
+    // SAFETY: the generated field accessor selects only ED-DONE in this
+    // reset-isolated validation transaction.
     unsafe {
         registers
             .event_status()
-            .write_with_zero(|writer| writer.events().ed_done_only());
+            .write_with_zero(|writer| writer.ed_done().bit(true));
     }
     order_device_accesses();
 }
@@ -179,12 +209,12 @@ pub fn write_ed_done_event(registers: &mut crate::Ieee802154Mac) {
 /// Select only TIMER0 through its generated W1C field variant.
 #[inline]
 pub fn write_timer0_event(registers: &mut crate::Ieee802154Mac) {
-    // SAFETY: the generated write-only variant selects only TIMER0 in this
-    // reset-isolated validation transaction; no integer image is accepted.
+    // SAFETY: the generated field accessor selects only TIMER0 in this
+    // reset-isolated validation transaction.
     unsafe {
         registers
             .event_status()
-            .write_with_zero(|writer| writer.events().timer0_only());
+            .write_with_zero(|writer| writer.timer0_overflow().bit(true));
     }
     order_device_accesses();
 }

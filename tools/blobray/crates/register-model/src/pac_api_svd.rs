@@ -206,13 +206,27 @@ impl PacApiPack {
                     operation.name
                 )));
             }
-            let field = field(&operation.name, binding.info, &operation.field)?;
-            if field.bit_width() == 0 || field.bit_width() > 32 {
-                return Err(Error::message(format!(
-                    "PAC API w1c-register-snapshot {:?} field has invalid width {}",
-                    operation.name,
-                    field.bit_width()
-                )));
+            let fields = binding.info.fields.as_deref().ok_or_else(|| {
+                Error::message(format!(
+                    "PAC API w1c-register-snapshot {:?} register has no fields",
+                    operation.name
+                ))
+            })?;
+            for field in fields {
+                let MaybeArray::Single(field) = field else {
+                    return Err(Error::message(format!(
+                        "PAC API w1c-register-snapshot {:?} does not support array fields",
+                        operation.name
+                    )));
+                };
+                if field.bit_width() == 0 || field.bit_width() > 32 {
+                    return Err(Error::message(format!(
+                        "PAC API w1c-register-snapshot {:?} field {:?} has invalid width {}",
+                        operation.name,
+                        field.name,
+                        field.bit_width()
+                    )));
+                }
             }
         }
         for operation in &self.register_image_reads {
@@ -1050,7 +1064,6 @@ mod tests {
 name = "event_status"
 peripheral = "RADIO"
 register = "{register}"
-field = "EVENTS"
 sources = ["PUBLIC_EVENT_STATUS_W1C"]
 "#
         ))

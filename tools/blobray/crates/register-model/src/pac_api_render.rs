@@ -753,41 +753,84 @@ impl PacApiPack {
                 &binding.register,
             )?;
             debug_assert!(!register_binding.is_array);
-            let field = pac_api_svd::field(&binding.name, register_binding.info, &binding.field)?;
-            let width = field.bit_width();
-            let offset = field.bit_offset();
-            let mask = if width == 32 {
-                u32::MAX
-            } else {
-                (((1_u64 << width) - 1) << offset) as u32
-            };
+            let fields = register_binding.info.fields.as_deref().ok_or_else(|| {
+                Error::message(format!(
+                    "PAC API w1c-register-snapshot {:?} register has no fields",
+                    binding.name
+                ))
+            })?;
+            let mut mask = 0_u32;
+            let mut field_accessors = String::new();
+            for field in fields {
+                let MaybeArray::Single(field) = field else {
+                    return Err(Error::message(format!(
+                        "PAC API w1c-register-snapshot {:?} does not support array field {:?}",
+                        binding.name, field.name
+                    )));
+                };
+                let width = field.bit_width();
+                let offset = field.bit_offset();
+                let field_mask = if width == 32 {
+                    u32::MAX
+                } else {
+                    (((1_u64 << width) - 1) << offset) as u32
+                };
+                mask |= field_mask;
+                let method = member_binding_name(&field.name);
+                let shifted = if offset == 0 {
+                    "self.0".to_owned()
+                } else {
+                    format!("self.0 >> {offset}")
+                };
+                let (value_type, expression) = match width {
+                    1 => ("bool", format!("self.0 & 0x{field_mask:08x} != 0")),
+                    2..=8 => (
+                        "u8",
+                        format!("({shifted} & 0x{:x}) as u8", (1_u64 << width) - 1),
+                    ),
+                    9..=16 => (
+                        "u16",
+                        format!("({shifted} & 0x{:x}) as u16", (1_u64 << width) - 1),
+                    ),
+                    17..=31 => ("u32", format!("{shifted} & 0x{:x}", (1_u64 << width) - 1)),
+                    32 => ("u32", "self.0".to_owned()),
+                    _ => unreachable!("SVD validation rejects invalid field widths"),
+                };
+                field_accessors.push_str(&format!(
+                    "        /// Sampled value of SVD field `{}`.\n\
+                     #[inline]\n\
+                     pub const fn {method}(&self) -> {value_type} {{ {expression} }}\n",
+                    field.name,
+                ));
+            }
             let snapshot_type = format!("{}Snapshot", type_binding_name(&binding.name));
             output.push_str(&format!(
-                "\n    /// One unforgeable `{}.{}` field image sampled before acknowledgement.\n\
+                "\n    /// One unforgeable `{}.{}` field set sampled before acknowledgement.\n\
                  #[must_use = \"a W1C snapshot must be inspected and acknowledged\"]\n\
                  #[derive(Debug)]\n\
                  pub struct {snapshot_type}(u32);\n\
                  impl {snapshot_type} {{\n\
-                     /// Return the complete sampled field image in register bit positions.\n\
+                     /// Whether no declared field was asserted in the sample.\n\
                      #[inline]\n\
-                     pub const fn bits(&self) -> u32 {{ self.0 }}\n\
+                     pub const fn is_clear(&self) -> bool {{ self.0 == 0 }}\n\
+{field_accessors}\
                  }}\n\
                  \n\
-                 /// Sample `{}.{}` once and retain only field `{}` (mask `0x{mask:08x}`).\n\
+                 /// Sample `{}.{}` once and retain only its declared fields.\n\
                  #[inline]\n\
                  pub fn sample_{}(registers: &crate::{peripheral_type}) -> {snapshot_type} {{\n\
                      {snapshot_type}(registers.{register}().read().bits() & 0x{mask:08x})\n\
                  }}\n\
                  \n\
-                 /// Acknowledge exactly the sampled field image and consume it.\n\
+                 /// Acknowledge exactly the sampled declared-field set and consume it.\n\
                  #[inline]\n\
                  pub fn acknowledge_{}(\n\
                      registers: &mut crate::{peripheral_type},\n\
                      snapshot: {snapshot_type},\n\
                  ) {{\n\
                      // SAFETY: generator validation binds the affine snapshot to this\n\
-                     // exact 32-bit same-register W1C field. The token cannot be forged,\n\
-                     // cloned or replayed, and every non-field bit is zero.\n\
+                     // exact 32-bit same-register W1C declaration. The token cannot be\n\
+                     // forged, cloned or replayed, and every undeclared bit is zero.\n\
                      unsafe {{\n\
                          registers.{register}().write_with_zero(|writer| writer.bits(snapshot.0));\n\
                      }}\n\
@@ -796,7 +839,6 @@ impl PacApiPack {
                 binding.register,
                 binding.peripheral,
                 binding.register,
-                binding.field,
                 binding.name,
                 binding.name,
             ));
@@ -1447,7 +1489,6 @@ sources = ["PUBLIC_IRQ"]
 name = "event_status"
 peripheral = "RADIO"
 register = "EVENT_STATUS"
-field = "EVENTS"
 sources = ["PUBLIC_EVENT_STATUS_W1C"]
 "#,
         )
@@ -1473,7 +1514,8 @@ sources = ["PUBLIC_EVENT_STATUS_W1C"]
           <access>read-write</access>
           <modifiedWriteValues>oneToClear</modifiedWriteValues>
           <fields>
-            <field><name>EVENTS</name><description>events</description><bitOffset>0</bitOffset><bitWidth>14</bitWidth></field>
+            <field><name>READY</name><description>ready</description><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
+            <field><name>CAUSES</name><description>causes</description><bitOffset>4</bitOffset><bitWidth>3</bitWidth></field>
           </fields>
         </register>
       </registers>
@@ -1488,7 +1530,7 @@ sources = ["PUBLIC_EVENT_STATUS_W1C"]
         assert!(!source.contains("#[cfg(feature"));
         assert!(!source.contains("core::ptr::write_volatile"));
         assert!(source.contains("pub struct EventStatusSnapshot(u32)"));
-        assert!(source.contains("read().bits() & 0x00003fff"));
+        assert!(!source.contains("pub const fn bits(&self)"));
         assert!(source.contains("pub fn acknowledge_event_status("));
         assert!(source.contains("snapshot: EventStatusSnapshot"));
         assert!(source.contains("writer.bits(snapshot.0)"));

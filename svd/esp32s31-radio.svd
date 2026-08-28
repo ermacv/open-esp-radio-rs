@@ -22621,87 +22621,164 @@ Bluetooth or assign a wider ZBBB protocol meaning.</description>
         </register>
         <register>
           <name>EVENT_ENABLE</name>
-          <description>Fourteen-bit event-enable image mutated by the public common LL. Named values come from its public ieee802154_ll_event_t; unnamed bits seven and thirteen remain possible in the physical field but have no assigned semantics here.</description>
+          <description>Individual event enables mutated by the public common LL. Bits seven and thirteen remain physically observable but have no assigned vendor event semantics.</description>
           <addressOffset>0x60</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>EVENTS</name>
+              <name>TX_DONE</name>
               <bitOffset>0</bitOffset>
-              <bitWidth>14</bitWidth>
-              <writeConstraint>
-                <range>
-                  <minimum>0</minimum>
-                  <maximum>16383</maximum>
-                </range>
-              </writeConstraint>
-              <enumeratedValues>
-                <usage>write</usage>
-                <enumeratedValue>
-                  <name>NONE</name>
-                  <description>Mask every MAC event.</description>
-                  <value>0</value>
-                </enumeratedValue>
-                <enumeratedValue>
-                  <name>TIMER_PAIR_VALIDATION</name>
-                  <description>Enable only TIMER0 and TIMER1 for the reset-isolated timer discriminator.</description>
-                  <value>768</value>
-                </enumeratedValue>
-                <enumeratedValue>
-                  <name>ED_TIMER_ABORT_VALIDATION</name>
-                  <description>Enable RX-ABORT, ED-DONE, and TIMER0 for the reset-isolated ED discriminator.</description>
-                  <value>336</value>
-                </enumeratedValue>
-                <enumeratedValue>
-                  <name>ED_OPERATION</name>
-                  <description>Enable only RX-ABORT and ED-DONE for one finite polled ED or CCA operation.</description>
-                  <value>80</value>
-                </enumeratedValue>
-                <enumeratedValue>
-                  <name>RUNTIME_WITHOUT_TIMER0</name>
-                  <description>Reviewed runtime event baseline before the TIMER0 acknowledgement watchdog is armed.</description>
-                  <value>6783</value>
-                </enumeratedValue>
-                <enumeratedValue>
-                  <name>RUNTIME_WITH_TIMER0</name>
-                  <description>Reviewed runtime event baseline while TIMER0 owns the acknowledgement watchdog.</description>
-                  <value>7039</value>
-                </enumeratedValue>
-              </enumeratedValues>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>RX_DONE</name>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ACK_TX_DONE</name>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ACK_RX_DONE</name>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>RX_ABORT</name>
+              <bitOffset>4</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TX_ABORT</name>
+              <bitOffset>5</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ED_DONE</name>
+              <bitOffset>6</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNCLASSIFIED_7</name>
+              <description>Physically present event-enable bit without an assigned public vendor event.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TIMER0_OVERFLOW</name>
+              <bitOffset>8</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TIMER1_OVERFLOW</name>
+              <bitOffset>9</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CLOCK_COUNT_MATCH</name>
+              <bitOffset>10</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TX_SFD_DONE</name>
+              <bitOffset>11</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>RX_SFD_DONE</name>
+              <bitOffset>12</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNCLASSIFIED_13</name>
+              <description>Physically present event-enable bit without an assigned public vendor event.</description>
+              <bitOffset>13</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>
         <register>
           <name>EVENT_STATUS</name>
-          <description>Fourteen-bit event snapshot read by the public LL. Its clear accessor writes back the intersection of current status and the requested event mask; the target-reviewed overlay assigns the resulting read-write W1C contract for the applicable ESP32-S31 revision.</description>
+          <description>Individual event status bits read by the public LL. The target-reviewed overlay assigns the read-write W1C contract for the applicable ESP32-S31 revision; bits seven and thirteen have no assigned vendor event semantics.</description>
           <addressOffset>0x64</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <modifiedWriteValues>oneToClear</modifiedWriteValues>
           <fields>
             <field>
-              <name>EVENTS</name>
+              <name>TX_DONE</name>
               <bitOffset>0</bitOffset>
-              <bitWidth>14</bitWidth>
-              <enumeratedValues>
-                <usage>write</usage>
-                <enumeratedValue>
-                  <name>ED_DONE_ONLY</name>
-                  <description>Select only the ED-DONE W1C event in a reset-isolated discriminator.</description>
-                  <value>64</value>
-                </enumeratedValue>
-                <enumeratedValue>
-                  <name>TIMER0_ONLY</name>
-                  <description>Select only the TIMER0 W1C event in a reset-isolated discriminator.</description>
-                  <value>256</value>
-                </enumeratedValue>
-                <enumeratedValue>
-                  <name>TIMER1_ONLY</name>
-                  <description>Select only the TIMER1 W1C event in a reset-isolated discriminator.</description>
-                  <value>512</value>
-                </enumeratedValue>
-              </enumeratedValues>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>RX_DONE</name>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ACK_TX_DONE</name>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ACK_RX_DONE</name>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>RX_ABORT</name>
+              <bitOffset>4</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TX_ABORT</name>
+              <bitOffset>5</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ED_DONE</name>
+              <bitOffset>6</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNCLASSIFIED_7</name>
+              <description>Physically present event-status bit without an assigned public vendor event.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TIMER0_OVERFLOW</name>
+              <bitOffset>8</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TIMER1_OVERFLOW</name>
+              <bitOffset>9</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>CLOCK_COUNT_MATCH</name>
+              <bitOffset>10</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TX_SFD_DONE</name>
+              <bitOffset>11</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>RX_SFD_DONE</name>
+              <bitOffset>12</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNCLASSIFIED_13</name>
+              <description>Physically present event-status bit without an assigned public vendor event.</description>
+              <bitOffset>13</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>

@@ -53183,12 +53183,12 @@ pub mod ieee802154_mac {
         pub const fn ack_timeout(&self) -> &AckTimeout {
             &self.ack_timeout
         }
-        #[doc = "0x60 - Fourteen-bit event-enable image mutated by the public common LL. Named values come from its public ieee802154_ll_event_t; unnamed bits seven and thirteen remain possible in the physical field but have no assigned semantics here."]
+        #[doc = "0x60 - Individual event enables mutated by the public common LL. Bits seven and thirteen remain physically observable but have no assigned vendor event semantics."]
         #[inline(always)]
         pub const fn event_enable(&self) -> &EventEnable {
             &self.event_enable
         }
-        #[doc = "0x64 - Fourteen-bit event snapshot read by the public LL. Its clear accessor writes back the intersection of current status and the requested event mask; the target-reviewed overlay assigns the resulting read-write W1C contract for the applicable ESP32-S31 revision."]
+        #[doc = "0x64 - Individual event status bits read by the public LL. The target-reviewed overlay assigns the read-write W1C contract for the applicable ESP32-S31 revision; bits seven and thirteen have no assigned vendor event semantics."]
         #[inline(always)]
         pub const fn event_status(&self) -> &EventStatus {
             &self.event_status
@@ -54288,142 +54288,216 @@ pub mod ieee802154_mac {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "EVENT_ENABLE (rw) register accessor: Fourteen-bit event-enable image mutated by the public common LL. Named values come from its public ieee802154_ll_event_t; unnamed bits seven and thirteen remain possible in the physical field but have no assigned semantics here.\n\nYou can [`read`](crate::Reg::read) this register and get [`event_enable::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`event_enable::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@event_enable`] module"]
+    #[doc = "EVENT_ENABLE (rw) register accessor: Individual event enables mutated by the public common LL. Bits seven and thirteen remain physically observable but have no assigned vendor event semantics.\n\nYou can [`read`](crate::Reg::read) this register and get [`event_enable::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`event_enable::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@event_enable`] module"]
     #[doc(alias = "EVENT_ENABLE")]
     pub type EventEnable = crate::Reg<event_enable::EventEnableSpec>;
-    #[doc = "Fourteen-bit event-enable image mutated by the public common LL. Named values come from its public ieee802154_ll_event_t; unnamed bits seven and thirteen remain possible in the physical field but have no assigned semantics here."]
+    #[doc = "Individual event enables mutated by the public common LL. Bits seven and thirteen remain physically observable but have no assigned vendor event semantics."]
     pub mod event_enable {
         #[doc = "Register `EVENT_ENABLE` reader"]
         pub type R = crate::R<EventEnableSpec>;
         #[doc = "Register `EVENT_ENABLE` writer"]
         pub type W = crate::W<EventEnableSpec>;
-        #[doc = ""]
-        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-        #[repr(u16)]
-        pub enum Events {
-            #[doc = "0: Mask every MAC event."]
-            None = 0,
-            #[doc = "768: Enable only TIMER0 and TIMER1 for the reset-isolated timer discriminator."]
-            TimerPairValidation = 768,
-            #[doc = "336: Enable RX-ABORT, ED-DONE, and TIMER0 for the reset-isolated ED discriminator."]
-            EdTimerAbortValidation = 336,
-            #[doc = "80: Enable only RX-ABORT and ED-DONE for one finite polled ED or CCA operation."]
-            EdOperation = 80,
-            #[doc = "6783: Reviewed runtime event baseline before the TIMER0 acknowledgement watchdog is armed."]
-            RuntimeWithoutTimer0 = 6783,
-            #[doc = "7039: Reviewed runtime event baseline while TIMER0 owns the acknowledgement watchdog."]
-            RuntimeWithTimer0 = 7039,
-        }
-        impl From<Events> for u16 {
-            #[inline(always)]
-            fn from(variant: Events) -> Self {
-                variant as _
-            }
-        }
-        impl crate::FieldSpec for Events {
-            type Ux = u16;
-        }
-        impl crate::IsEnum for Events {}
-        #[doc = "Field `EVENTS` reader - "]
-        pub type EventsR = crate::FieldReader<Events>;
-        impl EventsR {
-            #[doc = "Get enumerated values variant"]
-            #[inline(always)]
-            pub const fn variant(&self) -> Option<Events> {
-                match self.bits {
-                    0 => Some(Events::None),
-                    768 => Some(Events::TimerPairValidation),
-                    336 => Some(Events::EdTimerAbortValidation),
-                    80 => Some(Events::EdOperation),
-                    6783 => Some(Events::RuntimeWithoutTimer0),
-                    7039 => Some(Events::RuntimeWithTimer0),
-                    _ => None,
-                }
-            }
-            #[doc = "Mask every MAC event."]
-            #[inline(always)]
-            pub fn is_none(&self) -> bool {
-                *self == Events::None
-            }
-            #[doc = "Enable only TIMER0 and TIMER1 for the reset-isolated timer discriminator."]
-            #[inline(always)]
-            pub fn is_timer_pair_validation(&self) -> bool {
-                *self == Events::TimerPairValidation
-            }
-            #[doc = "Enable RX-ABORT, ED-DONE, and TIMER0 for the reset-isolated ED discriminator."]
-            #[inline(always)]
-            pub fn is_ed_timer_abort_validation(&self) -> bool {
-                *self == Events::EdTimerAbortValidation
-            }
-            #[doc = "Enable only RX-ABORT and ED-DONE for one finite polled ED or CCA operation."]
-            #[inline(always)]
-            pub fn is_ed_operation(&self) -> bool {
-                *self == Events::EdOperation
-            }
-            #[doc = "Reviewed runtime event baseline before the TIMER0 acknowledgement watchdog is armed."]
-            #[inline(always)]
-            pub fn is_runtime_without_timer0(&self) -> bool {
-                *self == Events::RuntimeWithoutTimer0
-            }
-            #[doc = "Reviewed runtime event baseline while TIMER0 owns the acknowledgement watchdog."]
-            #[inline(always)]
-            pub fn is_runtime_with_timer0(&self) -> bool {
-                *self == Events::RuntimeWithTimer0
-            }
-        }
-        #[doc = "Field `EVENTS` writer - "]
-        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 14, Events, crate::Safe>;
-        impl<'a, REG> EventsW<'a, REG>
-        where
-            REG: crate::Writable + crate::RegisterSpec,
-            REG::Ux: From<u16>,
-        {
-            #[doc = "Mask every MAC event."]
-            #[inline(always)]
-            pub fn none(self) -> &'a mut crate::W<REG> {
-                self.variant(Events::None)
-            }
-            #[doc = "Enable only TIMER0 and TIMER1 for the reset-isolated timer discriminator."]
-            #[inline(always)]
-            pub fn timer_pair_validation(self) -> &'a mut crate::W<REG> {
-                self.variant(Events::TimerPairValidation)
-            }
-            #[doc = "Enable RX-ABORT, ED-DONE, and TIMER0 for the reset-isolated ED discriminator."]
-            #[inline(always)]
-            pub fn ed_timer_abort_validation(self) -> &'a mut crate::W<REG> {
-                self.variant(Events::EdTimerAbortValidation)
-            }
-            #[doc = "Enable only RX-ABORT and ED-DONE for one finite polled ED or CCA operation."]
-            #[inline(always)]
-            pub fn ed_operation(self) -> &'a mut crate::W<REG> {
-                self.variant(Events::EdOperation)
-            }
-            #[doc = "Reviewed runtime event baseline before the TIMER0 acknowledgement watchdog is armed."]
-            #[inline(always)]
-            pub fn runtime_without_timer0(self) -> &'a mut crate::W<REG> {
-                self.variant(Events::RuntimeWithoutTimer0)
-            }
-            #[doc = "Reviewed runtime event baseline while TIMER0 owns the acknowledgement watchdog."]
-            #[inline(always)]
-            pub fn runtime_with_timer0(self) -> &'a mut crate::W<REG> {
-                self.variant(Events::RuntimeWithTimer0)
-            }
-        }
+        #[doc = "Field `TX_DONE` reader - "]
+        pub type TxDoneR = crate::BitReader;
+        #[doc = "Field `TX_DONE` writer - "]
+        pub type TxDoneW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RX_DONE` reader - "]
+        pub type RxDoneR = crate::BitReader;
+        #[doc = "Field `RX_DONE` writer - "]
+        pub type RxDoneW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ACK_TX_DONE` reader - "]
+        pub type AckTxDoneR = crate::BitReader;
+        #[doc = "Field `ACK_TX_DONE` writer - "]
+        pub type AckTxDoneW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ACK_RX_DONE` reader - "]
+        pub type AckRxDoneR = crate::BitReader;
+        #[doc = "Field `ACK_RX_DONE` writer - "]
+        pub type AckRxDoneW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RX_ABORT` reader - "]
+        pub type RxAbortR = crate::BitReader;
+        #[doc = "Field `RX_ABORT` writer - "]
+        pub type RxAbortW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TX_ABORT` reader - "]
+        pub type TxAbortR = crate::BitReader;
+        #[doc = "Field `TX_ABORT` writer - "]
+        pub type TxAbortW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ED_DONE` reader - "]
+        pub type EdDoneR = crate::BitReader;
+        #[doc = "Field `ED_DONE` writer - "]
+        pub type EdDoneW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UNCLASSIFIED_7` reader - Physically present event-enable bit without an assigned public vendor event."]
+        pub type Unclassified7R = crate::BitReader;
+        #[doc = "Field `UNCLASSIFIED_7` writer - Physically present event-enable bit without an assigned public vendor event."]
+        pub type Unclassified7W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TIMER0_OVERFLOW` reader - "]
+        pub type Timer0OverflowR = crate::BitReader;
+        #[doc = "Field `TIMER0_OVERFLOW` writer - "]
+        pub type Timer0OverflowW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TIMER1_OVERFLOW` reader - "]
+        pub type Timer1OverflowR = crate::BitReader;
+        #[doc = "Field `TIMER1_OVERFLOW` writer - "]
+        pub type Timer1OverflowW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CLOCK_COUNT_MATCH` reader - "]
+        pub type ClockCountMatchR = crate::BitReader;
+        #[doc = "Field `CLOCK_COUNT_MATCH` writer - "]
+        pub type ClockCountMatchW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TX_SFD_DONE` reader - "]
+        pub type TxSfdDoneR = crate::BitReader;
+        #[doc = "Field `TX_SFD_DONE` writer - "]
+        pub type TxSfdDoneW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RX_SFD_DONE` reader - "]
+        pub type RxSfdDoneR = crate::BitReader;
+        #[doc = "Field `RX_SFD_DONE` writer - "]
+        pub type RxSfdDoneW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UNCLASSIFIED_13` reader - Physically present event-enable bit without an assigned public vendor event."]
+        pub type Unclassified13R = crate::BitReader;
+        #[doc = "Field `UNCLASSIFIED_13` writer - Physically present event-enable bit without an assigned public vendor event."]
+        pub type Unclassified13W<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bits 0:13"]
+            #[doc = "Bit 0"]
             #[inline(always)]
-            pub fn events(&self) -> EventsR {
-                EventsR::new((self.bits & 0x3fff) as u16)
+            pub fn tx_done(&self) -> TxDoneR {
+                TxDoneR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn rx_done(&self) -> RxDoneR {
+                RxDoneR::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn ack_tx_done(&self) -> AckTxDoneR {
+                AckTxDoneR::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn ack_rx_done(&self) -> AckRxDoneR {
+                AckRxDoneR::new(((self.bits >> 3) & 1) != 0)
+            }
+            #[doc = "Bit 4"]
+            #[inline(always)]
+            pub fn rx_abort(&self) -> RxAbortR {
+                RxAbortR::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bit 5"]
+            #[inline(always)]
+            pub fn tx_abort(&self) -> TxAbortR {
+                TxAbortR::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bit 6"]
+            #[inline(always)]
+            pub fn ed_done(&self) -> EdDoneR {
+                EdDoneR::new(((self.bits >> 6) & 1) != 0)
+            }
+            #[doc = "Bit 7 - Physically present event-enable bit without an assigned public vendor event."]
+            #[inline(always)]
+            pub fn unclassified_7(&self) -> Unclassified7R {
+                Unclassified7R::new(((self.bits >> 7) & 1) != 0)
+            }
+            #[doc = "Bit 8"]
+            #[inline(always)]
+            pub fn timer0_overflow(&self) -> Timer0OverflowR {
+                Timer0OverflowR::new(((self.bits >> 8) & 1) != 0)
+            }
+            #[doc = "Bit 9"]
+            #[inline(always)]
+            pub fn timer1_overflow(&self) -> Timer1OverflowR {
+                Timer1OverflowR::new(((self.bits >> 9) & 1) != 0)
+            }
+            #[doc = "Bit 10"]
+            #[inline(always)]
+            pub fn clock_count_match(&self) -> ClockCountMatchR {
+                ClockCountMatchR::new(((self.bits >> 10) & 1) != 0)
+            }
+            #[doc = "Bit 11"]
+            #[inline(always)]
+            pub fn tx_sfd_done(&self) -> TxSfdDoneR {
+                TxSfdDoneR::new(((self.bits >> 11) & 1) != 0)
+            }
+            #[doc = "Bit 12"]
+            #[inline(always)]
+            pub fn rx_sfd_done(&self) -> RxSfdDoneR {
+                RxSfdDoneR::new(((self.bits >> 12) & 1) != 0)
+            }
+            #[doc = "Bit 13 - Physically present event-enable bit without an assigned public vendor event."]
+            #[inline(always)]
+            pub fn unclassified_13(&self) -> Unclassified13R {
+                Unclassified13R::new(((self.bits >> 13) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bits 0:13"]
+            #[doc = "Bit 0"]
             #[inline(always)]
-            pub fn events(&mut self) -> EventsW<'_, EventEnableSpec> {
-                EventsW::new(self, 0)
+            pub fn tx_done(&mut self) -> TxDoneW<'_, EventEnableSpec> {
+                TxDoneW::new(self, 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn rx_done(&mut self) -> RxDoneW<'_, EventEnableSpec> {
+                RxDoneW::new(self, 1)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn ack_tx_done(&mut self) -> AckTxDoneW<'_, EventEnableSpec> {
+                AckTxDoneW::new(self, 2)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn ack_rx_done(&mut self) -> AckRxDoneW<'_, EventEnableSpec> {
+                AckRxDoneW::new(self, 3)
+            }
+            #[doc = "Bit 4"]
+            #[inline(always)]
+            pub fn rx_abort(&mut self) -> RxAbortW<'_, EventEnableSpec> {
+                RxAbortW::new(self, 4)
+            }
+            #[doc = "Bit 5"]
+            #[inline(always)]
+            pub fn tx_abort(&mut self) -> TxAbortW<'_, EventEnableSpec> {
+                TxAbortW::new(self, 5)
+            }
+            #[doc = "Bit 6"]
+            #[inline(always)]
+            pub fn ed_done(&mut self) -> EdDoneW<'_, EventEnableSpec> {
+                EdDoneW::new(self, 6)
+            }
+            #[doc = "Bit 7 - Physically present event-enable bit without an assigned public vendor event."]
+            #[inline(always)]
+            pub fn unclassified_7(&mut self) -> Unclassified7W<'_, EventEnableSpec> {
+                Unclassified7W::new(self, 7)
+            }
+            #[doc = "Bit 8"]
+            #[inline(always)]
+            pub fn timer0_overflow(&mut self) -> Timer0OverflowW<'_, EventEnableSpec> {
+                Timer0OverflowW::new(self, 8)
+            }
+            #[doc = "Bit 9"]
+            #[inline(always)]
+            pub fn timer1_overflow(&mut self) -> Timer1OverflowW<'_, EventEnableSpec> {
+                Timer1OverflowW::new(self, 9)
+            }
+            #[doc = "Bit 10"]
+            #[inline(always)]
+            pub fn clock_count_match(&mut self) -> ClockCountMatchW<'_, EventEnableSpec> {
+                ClockCountMatchW::new(self, 10)
+            }
+            #[doc = "Bit 11"]
+            #[inline(always)]
+            pub fn tx_sfd_done(&mut self) -> TxSfdDoneW<'_, EventEnableSpec> {
+                TxSfdDoneW::new(self, 11)
+            }
+            #[doc = "Bit 12"]
+            #[inline(always)]
+            pub fn rx_sfd_done(&mut self) -> RxSfdDoneW<'_, EventEnableSpec> {
+                RxSfdDoneW::new(self, 12)
+            }
+            #[doc = "Bit 13 - Physically present event-enable bit without an assigned public vendor event."]
+            #[inline(always)]
+            pub fn unclassified_13(&mut self) -> Unclassified13W<'_, EventEnableSpec> {
+                Unclassified13W::new(self, 13)
             }
         }
-        #[doc = "Fourteen-bit event-enable image mutated by the public common LL. Named values come from its public ieee802154_ll_event_t; unnamed bits seven and thirteen remain possible in the physical field but have no assigned semantics here.\n\nYou can [`read`](crate::Reg::read) this register and get [`event_enable::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`event_enable::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Individual event enables mutated by the public common LL. Bits seven and thirteen remain physically observable but have no assigned vendor event semantics.\n\nYou can [`read`](crate::Reg::read) this register and get [`event_enable::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`event_enable::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct EventEnableSpec;
         impl crate::RegisterSpec for EventEnableSpec {
             type Ux = u32;
@@ -54435,103 +54509,216 @@ pub mod ieee802154_mac {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "EVENT_STATUS (rw) register accessor: Fourteen-bit event snapshot read by the public LL. Its clear accessor writes back the intersection of current status and the requested event mask; the target-reviewed overlay assigns the resulting read-write W1C contract for the applicable ESP32-S31 revision.\n\nYou can [`read`](crate::Reg::read) this register and get [`event_status::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`event_status::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@event_status`] module"]
+    #[doc = "EVENT_STATUS (rw) register accessor: Individual event status bits read by the public LL. The target-reviewed overlay assigns the read-write W1C contract for the applicable ESP32-S31 revision; bits seven and thirteen have no assigned vendor event semantics.\n\nYou can [`read`](crate::Reg::read) this register and get [`event_status::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`event_status::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@event_status`] module"]
     #[doc(alias = "EVENT_STATUS")]
     pub type EventStatus = crate::Reg<event_status::EventStatusSpec>;
-    #[doc = "Fourteen-bit event snapshot read by the public LL. Its clear accessor writes back the intersection of current status and the requested event mask; the target-reviewed overlay assigns the resulting read-write W1C contract for the applicable ESP32-S31 revision."]
+    #[doc = "Individual event status bits read by the public LL. The target-reviewed overlay assigns the read-write W1C contract for the applicable ESP32-S31 revision; bits seven and thirteen have no assigned vendor event semantics."]
     pub mod event_status {
         #[doc = "Register `EVENT_STATUS` reader"]
         pub type R = crate::R<EventStatusSpec>;
         #[doc = "Register `EVENT_STATUS` writer"]
         pub type W = crate::W<EventStatusSpec>;
-        #[doc = ""]
-        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-        #[repr(u16)]
-        pub enum Events {
-            #[doc = "64: Select only the ED-DONE W1C event in a reset-isolated discriminator."]
-            EdDoneOnly = 64,
-            #[doc = "256: Select only the TIMER0 W1C event in a reset-isolated discriminator."]
-            Timer0Only = 256,
-            #[doc = "512: Select only the TIMER1 W1C event in a reset-isolated discriminator."]
-            Timer1Only = 512,
-        }
-        impl From<Events> for u16 {
-            #[inline(always)]
-            fn from(variant: Events) -> Self {
-                variant as _
-            }
-        }
-        impl crate::FieldSpec for Events {
-            type Ux = u16;
-        }
-        impl crate::IsEnum for Events {}
-        #[doc = "Field `EVENTS` reader - "]
-        pub type EventsR = crate::FieldReader<Events>;
-        impl EventsR {
-            #[doc = "Get enumerated values variant"]
-            #[inline(always)]
-            pub const fn variant(&self) -> Option<Events> {
-                match self.bits {
-                    64 => Some(Events::EdDoneOnly),
-                    256 => Some(Events::Timer0Only),
-                    512 => Some(Events::Timer1Only),
-                    _ => None,
-                }
-            }
-            #[doc = "Select only the ED-DONE W1C event in a reset-isolated discriminator."]
-            #[inline(always)]
-            pub fn is_ed_done_only(&self) -> bool {
-                *self == Events::EdDoneOnly
-            }
-            #[doc = "Select only the TIMER0 W1C event in a reset-isolated discriminator."]
-            #[inline(always)]
-            pub fn is_timer0_only(&self) -> bool {
-                *self == Events::Timer0Only
-            }
-            #[doc = "Select only the TIMER1 W1C event in a reset-isolated discriminator."]
-            #[inline(always)]
-            pub fn is_timer1_only(&self) -> bool {
-                *self == Events::Timer1Only
-            }
-        }
-        #[doc = "Field `EVENTS` writer - "]
-        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 14, Events>;
-        impl<'a, REG> EventsW<'a, REG>
-        where
-            REG: crate::Writable + crate::RegisterSpec,
-            REG::Ux: From<u16>,
-        {
-            #[doc = "Select only the ED-DONE W1C event in a reset-isolated discriminator."]
-            #[inline(always)]
-            pub fn ed_done_only(self) -> &'a mut crate::W<REG> {
-                self.variant(Events::EdDoneOnly)
-            }
-            #[doc = "Select only the TIMER0 W1C event in a reset-isolated discriminator."]
-            #[inline(always)]
-            pub fn timer0_only(self) -> &'a mut crate::W<REG> {
-                self.variant(Events::Timer0Only)
-            }
-            #[doc = "Select only the TIMER1 W1C event in a reset-isolated discriminator."]
-            #[inline(always)]
-            pub fn timer1_only(self) -> &'a mut crate::W<REG> {
-                self.variant(Events::Timer1Only)
-            }
-        }
+        #[doc = "Field `TX_DONE` reader - "]
+        pub type TxDoneR = crate::BitReader;
+        #[doc = "Field `TX_DONE` writer - "]
+        pub type TxDoneW<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `RX_DONE` reader - "]
+        pub type RxDoneR = crate::BitReader;
+        #[doc = "Field `RX_DONE` writer - "]
+        pub type RxDoneW<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `ACK_TX_DONE` reader - "]
+        pub type AckTxDoneR = crate::BitReader;
+        #[doc = "Field `ACK_TX_DONE` writer - "]
+        pub type AckTxDoneW<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `ACK_RX_DONE` reader - "]
+        pub type AckRxDoneR = crate::BitReader;
+        #[doc = "Field `ACK_RX_DONE` writer - "]
+        pub type AckRxDoneW<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `RX_ABORT` reader - "]
+        pub type RxAbortR = crate::BitReader;
+        #[doc = "Field `RX_ABORT` writer - "]
+        pub type RxAbortW<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `TX_ABORT` reader - "]
+        pub type TxAbortR = crate::BitReader;
+        #[doc = "Field `TX_ABORT` writer - "]
+        pub type TxAbortW<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `ED_DONE` reader - "]
+        pub type EdDoneR = crate::BitReader;
+        #[doc = "Field `ED_DONE` writer - "]
+        pub type EdDoneW<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `UNCLASSIFIED_7` reader - Physically present event-status bit without an assigned public vendor event."]
+        pub type Unclassified7R = crate::BitReader;
+        #[doc = "Field `UNCLASSIFIED_7` writer - Physically present event-status bit without an assigned public vendor event."]
+        pub type Unclassified7W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `TIMER0_OVERFLOW` reader - "]
+        pub type Timer0OverflowR = crate::BitReader;
+        #[doc = "Field `TIMER0_OVERFLOW` writer - "]
+        pub type Timer0OverflowW<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `TIMER1_OVERFLOW` reader - "]
+        pub type Timer1OverflowR = crate::BitReader;
+        #[doc = "Field `TIMER1_OVERFLOW` writer - "]
+        pub type Timer1OverflowW<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `CLOCK_COUNT_MATCH` reader - "]
+        pub type ClockCountMatchR = crate::BitReader;
+        #[doc = "Field `CLOCK_COUNT_MATCH` writer - "]
+        pub type ClockCountMatchW<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `TX_SFD_DONE` reader - "]
+        pub type TxSfdDoneR = crate::BitReader;
+        #[doc = "Field `TX_SFD_DONE` writer - "]
+        pub type TxSfdDoneW<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `RX_SFD_DONE` reader - "]
+        pub type RxSfdDoneR = crate::BitReader;
+        #[doc = "Field `RX_SFD_DONE` writer - "]
+        pub type RxSfdDoneW<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `UNCLASSIFIED_13` reader - Physically present event-status bit without an assigned public vendor event."]
+        pub type Unclassified13R = crate::BitReader;
+        #[doc = "Field `UNCLASSIFIED_13` writer - Physically present event-status bit without an assigned public vendor event."]
+        pub type Unclassified13W<'a, REG> = crate::BitWriter1C<'a, REG>;
         impl R {
-            #[doc = "Bits 0:13"]
+            #[doc = "Bit 0"]
             #[inline(always)]
-            pub fn events(&self) -> EventsR {
-                EventsR::new((self.bits & 0x3fff) as u16)
+            pub fn tx_done(&self) -> TxDoneR {
+                TxDoneR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn rx_done(&self) -> RxDoneR {
+                RxDoneR::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn ack_tx_done(&self) -> AckTxDoneR {
+                AckTxDoneR::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn ack_rx_done(&self) -> AckRxDoneR {
+                AckRxDoneR::new(((self.bits >> 3) & 1) != 0)
+            }
+            #[doc = "Bit 4"]
+            #[inline(always)]
+            pub fn rx_abort(&self) -> RxAbortR {
+                RxAbortR::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bit 5"]
+            #[inline(always)]
+            pub fn tx_abort(&self) -> TxAbortR {
+                TxAbortR::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bit 6"]
+            #[inline(always)]
+            pub fn ed_done(&self) -> EdDoneR {
+                EdDoneR::new(((self.bits >> 6) & 1) != 0)
+            }
+            #[doc = "Bit 7 - Physically present event-status bit without an assigned public vendor event."]
+            #[inline(always)]
+            pub fn unclassified_7(&self) -> Unclassified7R {
+                Unclassified7R::new(((self.bits >> 7) & 1) != 0)
+            }
+            #[doc = "Bit 8"]
+            #[inline(always)]
+            pub fn timer0_overflow(&self) -> Timer0OverflowR {
+                Timer0OverflowR::new(((self.bits >> 8) & 1) != 0)
+            }
+            #[doc = "Bit 9"]
+            #[inline(always)]
+            pub fn timer1_overflow(&self) -> Timer1OverflowR {
+                Timer1OverflowR::new(((self.bits >> 9) & 1) != 0)
+            }
+            #[doc = "Bit 10"]
+            #[inline(always)]
+            pub fn clock_count_match(&self) -> ClockCountMatchR {
+                ClockCountMatchR::new(((self.bits >> 10) & 1) != 0)
+            }
+            #[doc = "Bit 11"]
+            #[inline(always)]
+            pub fn tx_sfd_done(&self) -> TxSfdDoneR {
+                TxSfdDoneR::new(((self.bits >> 11) & 1) != 0)
+            }
+            #[doc = "Bit 12"]
+            #[inline(always)]
+            pub fn rx_sfd_done(&self) -> RxSfdDoneR {
+                RxSfdDoneR::new(((self.bits >> 12) & 1) != 0)
+            }
+            #[doc = "Bit 13 - Physically present event-status bit without an assigned public vendor event."]
+            #[inline(always)]
+            pub fn unclassified_13(&self) -> Unclassified13R {
+                Unclassified13R::new(((self.bits >> 13) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bits 0:13"]
+            #[doc = "Bit 0"]
             #[inline(always)]
-            pub fn events(&mut self) -> EventsW<'_, EventStatusSpec> {
-                EventsW::new(self, 0)
+            pub fn tx_done(&mut self) -> TxDoneW<'_, EventStatusSpec> {
+                TxDoneW::new(self, 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn rx_done(&mut self) -> RxDoneW<'_, EventStatusSpec> {
+                RxDoneW::new(self, 1)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn ack_tx_done(&mut self) -> AckTxDoneW<'_, EventStatusSpec> {
+                AckTxDoneW::new(self, 2)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn ack_rx_done(&mut self) -> AckRxDoneW<'_, EventStatusSpec> {
+                AckRxDoneW::new(self, 3)
+            }
+            #[doc = "Bit 4"]
+            #[inline(always)]
+            pub fn rx_abort(&mut self) -> RxAbortW<'_, EventStatusSpec> {
+                RxAbortW::new(self, 4)
+            }
+            #[doc = "Bit 5"]
+            #[inline(always)]
+            pub fn tx_abort(&mut self) -> TxAbortW<'_, EventStatusSpec> {
+                TxAbortW::new(self, 5)
+            }
+            #[doc = "Bit 6"]
+            #[inline(always)]
+            pub fn ed_done(&mut self) -> EdDoneW<'_, EventStatusSpec> {
+                EdDoneW::new(self, 6)
+            }
+            #[doc = "Bit 7 - Physically present event-status bit without an assigned public vendor event."]
+            #[inline(always)]
+            pub fn unclassified_7(&mut self) -> Unclassified7W<'_, EventStatusSpec> {
+                Unclassified7W::new(self, 7)
+            }
+            #[doc = "Bit 8"]
+            #[inline(always)]
+            pub fn timer0_overflow(&mut self) -> Timer0OverflowW<'_, EventStatusSpec> {
+                Timer0OverflowW::new(self, 8)
+            }
+            #[doc = "Bit 9"]
+            #[inline(always)]
+            pub fn timer1_overflow(&mut self) -> Timer1OverflowW<'_, EventStatusSpec> {
+                Timer1OverflowW::new(self, 9)
+            }
+            #[doc = "Bit 10"]
+            #[inline(always)]
+            pub fn clock_count_match(&mut self) -> ClockCountMatchW<'_, EventStatusSpec> {
+                ClockCountMatchW::new(self, 10)
+            }
+            #[doc = "Bit 11"]
+            #[inline(always)]
+            pub fn tx_sfd_done(&mut self) -> TxSfdDoneW<'_, EventStatusSpec> {
+                TxSfdDoneW::new(self, 11)
+            }
+            #[doc = "Bit 12"]
+            #[inline(always)]
+            pub fn rx_sfd_done(&mut self) -> RxSfdDoneW<'_, EventStatusSpec> {
+                RxSfdDoneW::new(self, 12)
+            }
+            #[doc = "Bit 13 - Physically present event-status bit without an assigned public vendor event."]
+            #[inline(always)]
+            pub fn unclassified_13(&mut self) -> Unclassified13W<'_, EventStatusSpec> {
+                Unclassified13W::new(self, 13)
             }
         }
-        #[doc = "Fourteen-bit event snapshot read by the public LL. Its clear accessor writes back the intersection of current status and the requested event mask; the target-reviewed overlay assigns the resulting read-write W1C contract for the applicable ESP32-S31 revision.\n\nYou can [`read`](crate::Reg::read) this register and get [`event_status::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`event_status::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Individual event status bits read by the public LL. The target-reviewed overlay assigns the read-write W1C contract for the applicable ESP32-S31 revision; bits seven and thirteen have no assigned vendor event semantics.\n\nYou can [`read`](crate::Reg::read) this register and get [`event_status::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`event_status::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct EventStatusSpec;
         impl crate::RegisterSpec for EventStatusSpec {
             type Ux = u32;
@@ -58126,19 +58313,89 @@ pub mod fixed_register_image {
 /// Affine sample-and-acknowledge transactions for same-register W1C fields.
 pub mod w1c_register_snapshot {
 
-    /// One unforgeable `IEEE802154_MAC.EVENT_STATUS` field image sampled before acknowledgement.
+    /// One unforgeable `IEEE802154_MAC.EVENT_STATUS` field set sampled before acknowledgement.
     #[must_use = "a W1C snapshot must be inspected and acknowledged"]
     #[derive(Debug)]
     pub struct Ieee802154EventStatusSnapshot(u32);
     impl Ieee802154EventStatusSnapshot {
-        /// Return the complete sampled field image in register bit positions.
+        /// Whether no declared field was asserted in the sample.
         #[inline]
-        pub const fn bits(&self) -> u32 {
-            self.0
+        pub const fn is_clear(&self) -> bool {
+            self.0 == 0
+        }
+        /// Sampled value of SVD field `TX_DONE`.
+        #[inline]
+        pub const fn tx_done(&self) -> bool {
+            self.0 & 0x00000001 != 0
+        }
+        /// Sampled value of SVD field `RX_DONE`.
+        #[inline]
+        pub const fn rx_done(&self) -> bool {
+            self.0 & 0x00000002 != 0
+        }
+        /// Sampled value of SVD field `ACK_TX_DONE`.
+        #[inline]
+        pub const fn ack_tx_done(&self) -> bool {
+            self.0 & 0x00000004 != 0
+        }
+        /// Sampled value of SVD field `ACK_RX_DONE`.
+        #[inline]
+        pub const fn ack_rx_done(&self) -> bool {
+            self.0 & 0x00000008 != 0
+        }
+        /// Sampled value of SVD field `RX_ABORT`.
+        #[inline]
+        pub const fn rx_abort(&self) -> bool {
+            self.0 & 0x00000010 != 0
+        }
+        /// Sampled value of SVD field `TX_ABORT`.
+        #[inline]
+        pub const fn tx_abort(&self) -> bool {
+            self.0 & 0x00000020 != 0
+        }
+        /// Sampled value of SVD field `ED_DONE`.
+        #[inline]
+        pub const fn ed_done(&self) -> bool {
+            self.0 & 0x00000040 != 0
+        }
+        /// Sampled value of SVD field `UNCLASSIFIED_7`.
+        #[inline]
+        pub const fn unclassified_7(&self) -> bool {
+            self.0 & 0x00000080 != 0
+        }
+        /// Sampled value of SVD field `TIMER0_OVERFLOW`.
+        #[inline]
+        pub const fn timer0_overflow(&self) -> bool {
+            self.0 & 0x00000100 != 0
+        }
+        /// Sampled value of SVD field `TIMER1_OVERFLOW`.
+        #[inline]
+        pub const fn timer1_overflow(&self) -> bool {
+            self.0 & 0x00000200 != 0
+        }
+        /// Sampled value of SVD field `CLOCK_COUNT_MATCH`.
+        #[inline]
+        pub const fn clock_count_match(&self) -> bool {
+            self.0 & 0x00000400 != 0
+        }
+        /// Sampled value of SVD field `TX_SFD_DONE`.
+        #[inline]
+        pub const fn tx_sfd_done(&self) -> bool {
+            self.0 & 0x00000800 != 0
+        }
+        /// Sampled value of SVD field `RX_SFD_DONE`.
+        #[inline]
+        pub const fn rx_sfd_done(&self) -> bool {
+            self.0 & 0x00001000 != 0
+        }
+        /// Sampled value of SVD field `UNCLASSIFIED_13`.
+        #[inline]
+        pub const fn unclassified_13(&self) -> bool {
+            self.0 & 0x00002000 != 0
         }
     }
 
-    /// Sample `IEEE802154_MAC.EVENT_STATUS` once and retain only field `EVENTS` (mask `0x00003fff`).
+    /// Sample `IEEE802154_MAC.EVENT_STATUS` once and retain only its declared fields.
     #[inline]
     pub fn sample_ieee802154_event_status(
         registers: &crate::Ieee802154Mac,
@@ -58146,15 +58403,15 @@ pub mod w1c_register_snapshot {
         Ieee802154EventStatusSnapshot(registers.event_status().read().bits() & 0x00003fff)
     }
 
-    /// Acknowledge exactly the sampled field image and consume it.
+    /// Acknowledge exactly the sampled declared-field set and consume it.
     #[inline]
     pub fn acknowledge_ieee802154_event_status(
         registers: &mut crate::Ieee802154Mac,
         snapshot: Ieee802154EventStatusSnapshot,
     ) {
         // SAFETY: generator validation binds the affine snapshot to this
-        // exact 32-bit same-register W1C field. The token cannot be forged,
-        // cloned or replayed, and every non-field bit is zero.
+        // exact 32-bit same-register W1C declaration. The token cannot be
+        // forged, cloned or replayed, and every undeclared bit is zero.
         unsafe {
             registers
                 .event_status()

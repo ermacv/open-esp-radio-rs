@@ -186,7 +186,6 @@ name = "ieee802154_mac_ownership"
 name = "ieee802154_event_status"
 peripheral = "IEEE802154_MAC"
 register = "EVENT_STATUS"
-field = "EVENTS"
 sources = [
     "esp-idf-7b9cc1ac-ieee802154-common-ll",
 ]

@@ -403,52 +403,82 @@ maximum = 0xffff
 
 [peripherals.registers.register]
 name = "EVENT_ENABLE"
-description = "Fourteen-bit event-enable image mutated by the public common LL. Named values come from its public ieee802154_ll_event_t; unnamed bits seven and thirteen remain possible in the physical field but have no assigned semantics here."
+description = "Individual event enables mutated by the public common LL. Bits seven and thirteen remain physically observable but have no assigned vendor event semantics."
 addressOffset = 0x060
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "EVENTS"
+name = "TX_DONE"
 bitOffset = 0
-bitWidth = 14
+bitWidth = 1
 
-[peripherals.registers.register.fields.writeConstraint.range]
-minimum = 0
-maximum = 0x3fff
+[[peripherals.registers.register.fields]]
+name = "RX_DONE"
+bitOffset = 1
+bitWidth = 1
 
-[[peripherals.registers.register.fields.enumeratedValues]]
-usage = "write"
+[[peripherals.registers.register.fields]]
+name = "ACK_TX_DONE"
+bitOffset = 2
+bitWidth = 1
 
-[[peripherals.registers.register.fields.enumeratedValues.values]]
-name = "NONE"
-description = "Mask every MAC event."
-value = 0x0000
+[[peripherals.registers.register.fields]]
+name = "ACK_RX_DONE"
+bitOffset = 3
+bitWidth = 1
 
-[[peripherals.registers.register.fields.enumeratedValues.values]]
-name = "TIMER_PAIR_VALIDATION"
-description = "Enable only TIMER0 and TIMER1 for the reset-isolated timer discriminator."
-value = 0x0300
+[[peripherals.registers.register.fields]]
+name = "RX_ABORT"
+bitOffset = 4
+bitWidth = 1
 
-[[peripherals.registers.register.fields.enumeratedValues.values]]
-name = "ED_TIMER_ABORT_VALIDATION"
-description = "Enable RX-ABORT, ED-DONE, and TIMER0 for the reset-isolated ED discriminator."
-value = 0x0150
+[[peripherals.registers.register.fields]]
+name = "TX_ABORT"
+bitOffset = 5
+bitWidth = 1
 
-[[peripherals.registers.register.fields.enumeratedValues.values]]
-name = "ED_OPERATION"
-description = "Enable only RX-ABORT and ED-DONE for one finite polled ED or CCA operation."
-value = 0x0050
+[[peripherals.registers.register.fields]]
+name = "ED_DONE"
+bitOffset = 6
+bitWidth = 1
 
-[[peripherals.registers.register.fields.enumeratedValues.values]]
-name = "RUNTIME_WITHOUT_TIMER0"
-description = "Reviewed runtime event baseline before the TIMER0 acknowledgement watchdog is armed."
-value = 0x1a7f
+[[peripherals.registers.register.fields]]
+name = "UNCLASSIFIED_7"
+description = "Physically present event-enable bit without an assigned public vendor event."
+bitOffset = 7
+bitWidth = 1
 
-[[peripherals.registers.register.fields.enumeratedValues.values]]
-name = "RUNTIME_WITH_TIMER0"
-description = "Reviewed runtime event baseline while TIMER0 owns the acknowledgement watchdog."
-value = 0x1b7f
+[[peripherals.registers.register.fields]]
+name = "TIMER0_OVERFLOW"
+bitOffset = 8
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TIMER1_OVERFLOW"
+bitOffset = 9
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "CLOCK_COUNT_MATCH"
+bitOffset = 10
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TX_SFD_DONE"
+bitOffset = 11
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "RX_SFD_DONE"
+bitOffset = 12
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "UNCLASSIFIED_13"
+description = "Physically present event-enable bit without an assigned public vendor event."
+bitOffset = 13
+bitWidth = 1
 
 [[peripherals.registers]]
 
@@ -456,33 +486,82 @@ value = 0x1b7f
 # Stable non-semantic base identity. The target reviewed pack supplies
 # EVENT_STATUS for the applicable ESP32-S31 revision.
 name = "WORD_064_BASE"
-description = "Fourteen-bit event snapshot read by the public LL. Its clear accessor writes back the intersection of current status and the requested event mask; the target-reviewed overlay assigns the resulting read-write W1C contract for the applicable ESP32-S31 revision."
+description = "Individual event status bits read by the public LL. The target-reviewed overlay assigns the read-write W1C contract for the applicable ESP32-S31 revision; bits seven and thirteen have no assigned vendor event semantics."
 addressOffset = 0x064
 size = 32
 access = "read-only"
 
 [[peripherals.registers.register.fields]]
-name = "EVENTS"
+name = "TX_DONE"
 bitOffset = 0
-bitWidth = 14
+bitWidth = 1
 
-[[peripherals.registers.register.fields.enumeratedValues]]
-usage = "write"
+[[peripherals.registers.register.fields]]
+name = "RX_DONE"
+bitOffset = 1
+bitWidth = 1
 
-[[peripherals.registers.register.fields.enumeratedValues.values]]
-name = "ED_DONE_ONLY"
-description = "Select only the ED-DONE W1C event in a reset-isolated discriminator."
-value = 0x0040
+[[peripherals.registers.register.fields]]
+name = "ACK_TX_DONE"
+bitOffset = 2
+bitWidth = 1
 
-[[peripherals.registers.register.fields.enumeratedValues.values]]
-name = "TIMER0_ONLY"
-description = "Select only the TIMER0 W1C event in a reset-isolated discriminator."
-value = 0x0100
+[[peripherals.registers.register.fields]]
+name = "ACK_RX_DONE"
+bitOffset = 3
+bitWidth = 1
 
-[[peripherals.registers.register.fields.enumeratedValues.values]]
-name = "TIMER1_ONLY"
-description = "Select only the TIMER1 W1C event in a reset-isolated discriminator."
-value = 0x0200
+[[peripherals.registers.register.fields]]
+name = "RX_ABORT"
+bitOffset = 4
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TX_ABORT"
+bitOffset = 5
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ED_DONE"
+bitOffset = 6
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "UNCLASSIFIED_7"
+description = "Physically present event-status bit without an assigned public vendor event."
+bitOffset = 7
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TIMER0_OVERFLOW"
+bitOffset = 8
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TIMER1_OVERFLOW"
+bitOffset = 9
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "CLOCK_COUNT_MATCH"
+bitOffset = 10
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TX_SFD_DONE"
+bitOffset = 11
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "RX_SFD_DONE"
+bitOffset = 12
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "UNCLASSIFIED_13"
+description = "Physically present event-status bit without an assigned public vendor event."
+bitOffset = 13
+bitWidth = 1
 
 [[peripherals.registers]]
 

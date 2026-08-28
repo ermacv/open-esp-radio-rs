@@ -459,6 +459,212 @@ pub enum ValidationEventEnableReadback {
     Unexpected,
 }
 
+/// Semantic observation shared by `EVENT_ENABLE`, `EVENT_STATUS`, and the
+/// generated affine W1C snapshot.
+///
+/// Register positions never cross this type: every value is obtained through
+/// a generated field reader, and only named event predicates are public.
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Ieee802154EventReadback {
+    tx_done: bool,
+    rx_done: bool,
+    ack_tx_done: bool,
+    ack_rx_done: bool,
+    rx_abort: bool,
+    tx_abort: bool,
+    ed_done: bool,
+    unclassified_7: bool,
+    timer0_overflow: bool,
+    timer1_overflow: bool,
+    clock_count_match: bool,
+    tx_sfd_done: bool,
+    rx_sfd_done: bool,
+    unclassified_13: bool,
+}
+
+impl Ieee802154EventReadback {
+    pub(crate) fn from_event_enable(reader: &crate::ieee802154_mac::event_enable::R) -> Self {
+        Self {
+            tx_done: reader.tx_done().bit_is_set(),
+            rx_done: reader.rx_done().bit_is_set(),
+            ack_tx_done: reader.ack_tx_done().bit_is_set(),
+            ack_rx_done: reader.ack_rx_done().bit_is_set(),
+            rx_abort: reader.rx_abort().bit_is_set(),
+            tx_abort: reader.tx_abort().bit_is_set(),
+            ed_done: reader.ed_done().bit_is_set(),
+            unclassified_7: reader.unclassified_7().bit_is_set(),
+            timer0_overflow: reader.timer0_overflow().bit_is_set(),
+            timer1_overflow: reader.timer1_overflow().bit_is_set(),
+            clock_count_match: reader.clock_count_match().bit_is_set(),
+            tx_sfd_done: reader.tx_sfd_done().bit_is_set(),
+            rx_sfd_done: reader.rx_sfd_done().bit_is_set(),
+            unclassified_13: reader.unclassified_13().bit_is_set(),
+        }
+    }
+
+    #[cfg(feature = "validation-probes")]
+    pub(crate) fn from_event_status(reader: &crate::ieee802154_mac::event_status::R) -> Self {
+        Self {
+            tx_done: reader.tx_done().bit_is_set(),
+            rx_done: reader.rx_done().bit_is_set(),
+            ack_tx_done: reader.ack_tx_done().bit_is_set(),
+            ack_rx_done: reader.ack_rx_done().bit_is_set(),
+            rx_abort: reader.rx_abort().bit_is_set(),
+            tx_abort: reader.tx_abort().bit_is_set(),
+            ed_done: reader.ed_done().bit_is_set(),
+            unclassified_7: reader.unclassified_7().bit_is_set(),
+            timer0_overflow: reader.timer0_overflow().bit_is_set(),
+            timer1_overflow: reader.timer1_overflow().bit_is_set(),
+            clock_count_match: reader.clock_count_match().bit_is_set(),
+            tx_sfd_done: reader.tx_sfd_done().bit_is_set(),
+            rx_sfd_done: reader.rx_sfd_done().bit_is_set(),
+            unclassified_13: reader.unclassified_13().bit_is_set(),
+        }
+    }
+
+    pub fn from_event_status_snapshot(
+        snapshot: &crate::w1c_register_snapshot::Ieee802154EventStatusSnapshot,
+    ) -> Self {
+        Self {
+            tx_done: snapshot.tx_done(),
+            rx_done: snapshot.rx_done(),
+            ack_tx_done: snapshot.ack_tx_done(),
+            ack_rx_done: snapshot.ack_rx_done(),
+            rx_abort: snapshot.rx_abort(),
+            tx_abort: snapshot.tx_abort(),
+            ed_done: snapshot.ed_done(),
+            unclassified_7: snapshot.unclassified_7(),
+            timer0_overflow: snapshot.timer0_overflow(),
+            timer1_overflow: snapshot.timer1_overflow(),
+            clock_count_match: snapshot.clock_count_match(),
+            tx_sfd_done: snapshot.tx_sfd_done(),
+            rx_sfd_done: snapshot.rx_sfd_done(),
+            unclassified_13: snapshot.unclassified_13(),
+        }
+    }
+
+    pub const fn tx_done(self) -> bool {
+        self.tx_done
+    }
+
+    pub const fn rx_done(self) -> bool {
+        self.rx_done
+    }
+
+    pub const fn ack_tx_done(self) -> bool {
+        self.ack_tx_done
+    }
+
+    pub const fn ack_rx_done(self) -> bool {
+        self.ack_rx_done
+    }
+
+    pub const fn rx_abort(self) -> bool {
+        self.rx_abort
+    }
+
+    pub const fn tx_abort(self) -> bool {
+        self.tx_abort
+    }
+
+    pub const fn ed_done(self) -> bool {
+        self.ed_done
+    }
+
+    pub const fn timer0_overflow(self) -> bool {
+        self.timer0_overflow
+    }
+
+    pub const fn timer1_overflow(self) -> bool {
+        self.timer1_overflow
+    }
+
+    pub const fn clock_count_match(self) -> bool {
+        self.clock_count_match
+    }
+
+    pub const fn tx_sfd_done(self) -> bool {
+        self.tx_sfd_done
+    }
+
+    pub const fn rx_sfd_done(self) -> bool {
+        self.rx_sfd_done
+    }
+
+    pub const fn has_unclassified(self) -> bool {
+        self.unclassified_7 || self.unclassified_13
+    }
+
+    pub const fn is_clear(self) -> bool {
+        !self.tx_done
+            && !self.rx_done
+            && !self.ack_tx_done
+            && !self.ack_rx_done
+            && !self.rx_abort
+            && !self.tx_abort
+            && !self.ed_done
+            && !self.unclassified_7
+            && !self.timer0_overflow
+            && !self.timer1_overflow
+            && !self.clock_count_match
+            && !self.tx_sfd_done
+            && !self.rx_sfd_done
+            && !self.unclassified_13
+    }
+
+    const fn is_ed_operation(self) -> bool {
+        self.rx_abort
+            && self.ed_done
+            && !self.tx_done
+            && !self.rx_done
+            && !self.ack_tx_done
+            && !self.ack_rx_done
+            && !self.tx_abort
+            && !self.unclassified_7
+            && !self.timer0_overflow
+            && !self.timer1_overflow
+            && !self.clock_count_match
+            && !self.tx_sfd_done
+            && !self.rx_sfd_done
+            && !self.unclassified_13
+    }
+
+    const fn is_timer_pair(self) -> bool {
+        self.timer0_overflow
+            && self.timer1_overflow
+            && !self.tx_done
+            && !self.rx_done
+            && !self.ack_tx_done
+            && !self.ack_rx_done
+            && !self.rx_abort
+            && !self.tx_abort
+            && !self.ed_done
+            && !self.unclassified_7
+            && !self.clock_count_match
+            && !self.tx_sfd_done
+            && !self.rx_sfd_done
+            && !self.unclassified_13
+    }
+
+    const fn is_ed_timer_abort(self) -> bool {
+        self.rx_abort
+            && self.ed_done
+            && self.timer0_overflow
+            && !self.tx_done
+            && !self.rx_done
+            && !self.ack_tx_done
+            && !self.ack_rx_done
+            && !self.tx_abort
+            && !self.unclassified_7
+            && !self.timer1_overflow
+            && !self.clock_count_match
+            && !self.tx_sfd_done
+            && !self.rx_sfd_done
+            && !self.unclassified_13
+    }
+}
+
 /// Non-secret readable transmit-security control fields.
 #[doc(hidden)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -481,33 +687,85 @@ impl TaskRegisters {
     /// Mask every MAC event through the generated closed field variant.
     #[doc(hidden)]
     pub fn mask_all_events(&mut self) {
-        self.registers
-            .event_enable()
-            .modify(|_, writer| writer.events().none());
+        self.registers.event_enable().modify(|_, writer| {
+            writer.tx_done().clear_bit();
+            writer.rx_done().clear_bit();
+            writer.ack_tx_done().clear_bit();
+            writer.ack_rx_done().clear_bit();
+            writer.rx_abort().clear_bit();
+            writer.tx_abort().clear_bit();
+            writer.ed_done().clear_bit();
+            writer.unclassified_7().clear_bit();
+            writer.timer0_overflow().clear_bit();
+            writer.timer1_overflow().clear_bit();
+            writer.clock_count_match().clear_bit();
+            writer.tx_sfd_done().clear_bit();
+            writer.rx_sfd_done().clear_bit();
+            writer.unclassified_13().clear_bit()
+        });
     }
 
     /// Enable the finite ED/CCA operation event set.
     #[doc(hidden)]
     pub fn enable_ed_operation_events(&mut self) {
-        self.registers
-            .event_enable()
-            .modify(|_, writer| writer.events().ed_operation());
+        self.registers.event_enable().modify(|_, writer| {
+            writer.tx_done().clear_bit();
+            writer.rx_done().clear_bit();
+            writer.ack_tx_done().clear_bit();
+            writer.ack_rx_done().clear_bit();
+            writer.rx_abort().set_bit();
+            writer.tx_abort().clear_bit();
+            writer.ed_done().set_bit();
+            writer.unclassified_7().clear_bit();
+            writer.timer0_overflow().clear_bit();
+            writer.timer1_overflow().clear_bit();
+            writer.clock_count_match().clear_bit();
+            writer.tx_sfd_done().clear_bit();
+            writer.rx_sfd_done().clear_bit();
+            writer.unclassified_13().clear_bit()
+        });
     }
 
     /// Enable the reviewed runtime event baseline without TIMER0.
     #[doc(hidden)]
     pub fn enable_runtime_events_without_timer0(&mut self) {
-        self.registers
-            .event_enable()
-            .modify(|_, writer| writer.events().runtime_without_timer0());
+        self.registers.event_enable().modify(|_, writer| {
+            writer.tx_done().set_bit();
+            writer.rx_done().set_bit();
+            writer.ack_tx_done().set_bit();
+            writer.ack_rx_done().set_bit();
+            writer.rx_abort().set_bit();
+            writer.tx_abort().set_bit();
+            writer.ed_done().set_bit();
+            writer.unclassified_7().clear_bit();
+            writer.timer0_overflow().clear_bit();
+            writer.timer1_overflow().set_bit();
+            writer.clock_count_match().clear_bit();
+            writer.tx_sfd_done().set_bit();
+            writer.rx_sfd_done().set_bit();
+            writer.unclassified_13().clear_bit()
+        });
     }
 
     /// Enable the reviewed runtime event baseline with TIMER0.
     #[doc(hidden)]
     pub fn enable_runtime_events_with_timer0(&mut self) {
-        self.registers
-            .event_enable()
-            .modify(|_, writer| writer.events().runtime_with_timer0());
+        self.registers.event_enable().modify(|_, writer| {
+            writer.tx_done().set_bit();
+            writer.rx_done().set_bit();
+            writer.ack_tx_done().set_bit();
+            writer.ack_rx_done().set_bit();
+            writer.rx_abort().set_bit();
+            writer.tx_abort().set_bit();
+            writer.ed_done().set_bit();
+            writer.unclassified_7().clear_bit();
+            writer.timer0_overflow().set_bit();
+            writer.timer1_overflow().set_bit();
+            writer.clock_count_match().clear_bit();
+            writer.tx_sfd_done().set_bit();
+            writer.rx_sfd_done().set_bit();
+            writer.unclassified_13().clear_bit()
+        });
     }
 
     /// Mask every receive-abort reason through the generated field variant.
@@ -558,17 +816,17 @@ impl TaskRegisters {
             .modify(|_, writer| writer.ed_sample_mode().average());
     }
 
-    /// Read the complete fourteen-bit event-delivery field.
+    /// Read the complete event-delivery state through generated field readers.
     #[doc(hidden)]
-    pub fn event_enable(&self) -> u16 {
-        self.registers.event_enable().read().events().bits()
+    pub fn event_enable_readback(&self) -> Ieee802154EventReadback {
+        Ieee802154EventReadback::from_event_enable(&self.registers.event_enable().read())
     }
 
     /// Classify `EVENT_ENABLE` without exporting its physical field image.
     #[doc(hidden)]
     pub fn operation_event_enable_readback(&self) -> OperationEventEnableReadback {
-        let events = self.registers.event_enable().read().events();
-        if events.is_none() {
+        let events = self.event_enable_readback();
+        if events.is_clear() {
             OperationEventEnableReadback::AllMasked
         } else if events.is_ed_operation() {
             OperationEventEnableReadback::EdOperation
@@ -593,12 +851,12 @@ impl TaskRegisters {
     /// Classify the two reset-isolated validation event selections.
     #[doc(hidden)]
     pub fn validation_event_enable_readback(&self) -> ValidationEventEnableReadback {
-        let events = self.registers.event_enable().read().events();
-        if events.is_none() {
+        let events = self.event_enable_readback();
+        if events.is_clear() {
             ValidationEventEnableReadback::AllMasked
-        } else if events.is_timer_pair_validation() {
+        } else if events.is_timer_pair() {
             ValidationEventEnableReadback::TimerPair
-        } else if events.is_ed_timer_abort_validation() {
+        } else if events.is_ed_timer_abort() {
             ValidationEventEnableReadback::EdTimerAbort
         } else {
             ValidationEventEnableReadback::Unexpected
@@ -951,7 +1209,7 @@ impl TaskRegisters {
         let ed_config = self.registers.ed_config().read();
         let coex_pti = self.registers.coex_pti().read();
         FoundationReadback {
-            events_masked: event_enable.events().is_none(),
+            events_masked: Ieee802154EventReadback::from_event_enable(&event_enable).is_clear(),
             rx_aborts_masked: rx_abort_enable.events().is_none(),
             tx_aborts_masked: tx_abort_enable.events().is_none(),
             ed_uses_average: ed_config.ed_sample_mode().is_average(),
@@ -1265,7 +1523,7 @@ impl InterruptRegisters {
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
-    pub fn validation_event_status_events(&self) -> u16 {
+    pub fn validation_event_status_events(&self) -> Ieee802154EventReadback {
         crate::ieee802154_event_status_validation::event_status_events(&self.registers)
     }
 
@@ -1283,7 +1541,7 @@ impl InterruptRegisters {
 
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
-    pub fn validation_ed_event_status_events(&self) -> u16 {
+    pub fn validation_ed_event_status_events(&self) -> Ieee802154EventReadback {
         crate::ieee802154_ed_event_validation::event_status_events(&self.registers)
     }
 

@@ -359,26 +359,9 @@ pub enum Ieee802154Event {
 }
 
 impl Ieee802154Event {
-    const fn field_bit(self) -> u16 {
-        match self {
-            Self::TxDone => 1 << 0,
-            Self::RxDone => 1 << 1,
-            Self::AckTxDone => 1 << 2,
-            Self::AckRxDone => 1 << 3,
-            Self::RxAbort => 1 << 4,
-            Self::TxAbort => 1 << 5,
-            Self::EdDone => 1 << 6,
-            Self::Timer0Overflow => 1 << 8,
-            Self::Timer1Overflow => 1 << 9,
-            Self::ClockCountMatch => 1 << 10,
-            Self::TxSfdDone => 1 << 11,
-            Self::RxSfdDone => 1 << 12,
-        }
-    }
-
     /// Return this event as a validated semantic event set.
     pub const fn mask(self) -> Ieee802154EventMask {
-        Ieee802154EventMask(self.field_bit())
+        Ieee802154EventMask::NONE.with(self)
     }
 }
 
@@ -397,46 +380,184 @@ pub struct Ieee802154EventObservationError;
 /// writer. It is suitable for executor-side classification without granting
 /// event-enable authority.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Ieee802154EventMask(u16);
+pub struct Ieee802154EventMask {
+    tx_done: bool,
+    rx_done: bool,
+    ack_tx_done: bool,
+    ack_rx_done: bool,
+    rx_abort: bool,
+    tx_abort: bool,
+    ed_done: bool,
+    timer0_overflow: bool,
+    timer1_overflow: bool,
+    clock_count_match: bool,
+    tx_sfd_done: bool,
+    rx_sfd_done: bool,
+}
 
 impl Ieee802154EventMask {
-    const NAMED_BITS: u16 = 0x1f7f;
-    const VENDOR_HANDLED_BITS: u16 = 0x1b7f;
-    const HANDLED_BASELINE_NO_TIMER0_BITS: u16 = 0x1a7f;
+    pub const NONE: Self = Self {
+        tx_done: false,
+        rx_done: false,
+        ack_tx_done: false,
+        ack_rx_done: false,
+        rx_abort: false,
+        tx_abort: false,
+        ed_done: false,
+        timer0_overflow: false,
+        timer1_overflow: false,
+        clock_count_match: false,
+        tx_sfd_done: false,
+        rx_sfd_done: false,
+    };
+    pub const NAMED: Self = Self {
+        tx_done: true,
+        rx_done: true,
+        ack_tx_done: true,
+        ack_rx_done: true,
+        rx_abort: true,
+        tx_abort: true,
+        ed_done: true,
+        timer0_overflow: true,
+        timer1_overflow: true,
+        clock_count_match: true,
+        tx_sfd_done: true,
+        rx_sfd_done: true,
+    };
+    pub const VENDOR_HANDLED: Self = Self {
+        clock_count_match: false,
+        ..Self::NAMED
+    };
+    pub const HANDLED_BASELINE_NO_TIMER0: Self = Self {
+        timer0_overflow: false,
+        ..Self::VENDOR_HANDLED
+    };
 
-    pub const NONE: Self = Self(0);
-    pub const NAMED: Self = Self(Self::NAMED_BITS);
-    pub const VENDOR_HANDLED: Self = Self(Self::VENDOR_HANDLED_BITS);
-    pub const HANDLED_BASELINE_NO_TIMER0: Self = Self(Self::HANDLED_BASELINE_NO_TIMER0_BITS);
+    const fn with(mut self, event: Ieee802154Event) -> Self {
+        match event {
+            Ieee802154Event::TxDone => self.tx_done = true,
+            Ieee802154Event::RxDone => self.rx_done = true,
+            Ieee802154Event::AckTxDone => self.ack_tx_done = true,
+            Ieee802154Event::AckRxDone => self.ack_rx_done = true,
+            Ieee802154Event::RxAbort => self.rx_abort = true,
+            Ieee802154Event::TxAbort => self.tx_abort = true,
+            Ieee802154Event::EdDone => self.ed_done = true,
+            Ieee802154Event::Timer0Overflow => self.timer0_overflow = true,
+            Ieee802154Event::Timer1Overflow => self.timer1_overflow = true,
+            Ieee802154Event::ClockCountMatch => self.clock_count_match = true,
+            Ieee802154Event::TxSfdDone => self.tx_sfd_done = true,
+            Ieee802154Event::RxSfdDone => self.rx_sfd_done = true,
+        }
+        self
+    }
+
+    const fn same_as(self, other: Self) -> bool {
+        self.tx_done == other.tx_done
+            && self.rx_done == other.rx_done
+            && self.ack_tx_done == other.ack_tx_done
+            && self.ack_rx_done == other.ack_rx_done
+            && self.rx_abort == other.rx_abort
+            && self.tx_abort == other.tx_abort
+            && self.ed_done == other.ed_done
+            && self.timer0_overflow == other.timer0_overflow
+            && self.timer1_overflow == other.timer1_overflow
+            && self.clock_count_match == other.clock_count_match
+            && self.tx_sfd_done == other.tx_sfd_done
+            && self.rx_sfd_done == other.rx_sfd_done
+    }
 
     /// Return whether the semantic event set is empty.
     pub const fn is_empty(self) -> bool {
-        self.0 == 0
+        self.same_as(Self::NONE)
     }
 
     /// Return whether this set contains `event`.
     pub const fn contains(self, event: Ieee802154Event) -> bool {
-        self.0 & event.field_bit() != 0
+        match event {
+            Ieee802154Event::TxDone => self.tx_done,
+            Ieee802154Event::RxDone => self.rx_done,
+            Ieee802154Event::AckTxDone => self.ack_tx_done,
+            Ieee802154Event::AckRxDone => self.ack_rx_done,
+            Ieee802154Event::RxAbort => self.rx_abort,
+            Ieee802154Event::TxAbort => self.tx_abort,
+            Ieee802154Event::EdDone => self.ed_done,
+            Ieee802154Event::Timer0Overflow => self.timer0_overflow,
+            Ieee802154Event::Timer1Overflow => self.timer1_overflow,
+            Ieee802154Event::ClockCountMatch => self.clock_count_match,
+            Ieee802154Event::TxSfdDone => self.tx_sfd_done,
+            Ieee802154Event::RxSfdDone => self.rx_sfd_done,
+        }
     }
 
     /// Combine two already classified event sets.
     pub const fn union(self, other: Self) -> Self {
-        Self(self.0 | other.0)
+        Self {
+            tx_done: self.tx_done || other.tx_done,
+            rx_done: self.rx_done || other.rx_done,
+            ack_tx_done: self.ack_tx_done || other.ack_tx_done,
+            ack_rx_done: self.ack_rx_done || other.ack_rx_done,
+            rx_abort: self.rx_abort || other.rx_abort,
+            tx_abort: self.tx_abort || other.tx_abort,
+            ed_done: self.ed_done || other.ed_done,
+            timer0_overflow: self.timer0_overflow || other.timer0_overflow,
+            timer1_overflow: self.timer1_overflow || other.timer1_overflow,
+            clock_count_match: self.clock_count_match || other.clock_count_match,
+            tx_sfd_done: self.tx_sfd_done || other.tx_sfd_done,
+            rx_sfd_done: self.rx_sfd_done || other.rx_sfd_done,
+        }
     }
 
     /// Return events present in `self` but absent from `allowed`.
     pub const fn difference(self, allowed: Self) -> Self {
-        Self(self.0 & !allowed.0)
+        Self {
+            tx_done: self.tx_done && !allowed.tx_done,
+            rx_done: self.rx_done && !allowed.rx_done,
+            ack_tx_done: self.ack_tx_done && !allowed.ack_tx_done,
+            ack_rx_done: self.ack_rx_done && !allowed.ack_rx_done,
+            rx_abort: self.rx_abort && !allowed.rx_abort,
+            tx_abort: self.tx_abort && !allowed.tx_abort,
+            ed_done: self.ed_done && !allowed.ed_done,
+            timer0_overflow: self.timer0_overflow && !allowed.timer0_overflow,
+            timer1_overflow: self.timer1_overflow && !allowed.timer1_overflow,
+            clock_count_match: self.clock_count_match && !allowed.clock_count_match,
+            tx_sfd_done: self.tx_sfd_done && !allowed.tx_sfd_done,
+            rx_sfd_done: self.rx_sfd_done && !allowed.rx_sfd_done,
+        }
     }
 
     /// Return events present in both semantic sets.
     pub const fn intersection(self, other: Self) -> Self {
-        Self(self.0 & other.0)
+        Self {
+            tx_done: self.tx_done && other.tx_done,
+            rx_done: self.rx_done && other.rx_done,
+            ack_tx_done: self.ack_tx_done && other.ack_tx_done,
+            ack_rx_done: self.ack_rx_done && other.ack_rx_done,
+            rx_abort: self.rx_abort && other.rx_abort,
+            tx_abort: self.tx_abort && other.tx_abort,
+            ed_done: self.ed_done && other.ed_done,
+            timer0_overflow: self.timer0_overflow && other.timer0_overflow,
+            timer1_overflow: self.timer1_overflow && other.timer1_overflow,
+            clock_count_match: self.clock_count_match && other.clock_count_match,
+            tx_sfd_done: self.tx_sfd_done && other.tx_sfd_done,
+            rx_sfd_done: self.rx_sfd_done && other.rx_sfd_done,
+        }
     }
 
     /// Return whether the set contains more than one semantic event.
     pub const fn has_multiple(self) -> bool {
-        self.0.count_ones() > 1
+        self.tx_done as u8
+            + self.rx_done as u8
+            + self.ack_tx_done as u8
+            + self.ack_rx_done as u8
+            + self.rx_abort as u8
+            + self.tx_abort as u8
+            + self.ed_done as u8
+            + self.timer0_overflow as u8
+            + self.timer1_overflow as u8
+            + self.clock_count_match as u8
+            + self.tx_sfd_done as u8
+            + self.rx_sfd_done as u8
+            > 1
     }
 
     /// Collapse this named set into the closed diagnostic vocabulary.
@@ -478,27 +599,25 @@ impl Ieee802154ObservedEventState {
     const fn from_mask(events: Ieee802154EventMask) -> Self {
         if events.is_empty() {
             Self::Clear
-        } else if events.0 == Ieee802154Event::Timer0Overflow.mask().0 {
+        } else if events.same_as(Ieee802154Event::Timer0Overflow.mask()) {
             Self::Timer0Only
-        } else if events.0 == Ieee802154Event::Timer1Overflow.mask().0 {
+        } else if events.same_as(Ieee802154Event::Timer1Overflow.mask()) {
             Self::Timer1Only
-        } else if events.0
-            == Ieee802154Event::Timer0Overflow
+        } else if events.same_as(
+            Ieee802154Event::Timer0Overflow
                 .mask()
-                .union(Ieee802154Event::Timer1Overflow.mask())
-                .0
-        {
+                .union(Ieee802154Event::Timer1Overflow.mask()),
+        ) {
             Self::Timer0AndTimer1
-        } else if events.0 == Ieee802154Event::EdDone.mask().0 {
+        } else if events.same_as(Ieee802154Event::EdDone.mask()) {
             Self::EdDoneOnly
-        } else if events.0
-            == Ieee802154Event::EdDone
+        } else if events.same_as(
+            Ieee802154Event::EdDone
                 .mask()
-                .union(Ieee802154Event::Timer0Overflow.mask())
-                .0
-        {
+                .union(Ieee802154Event::Timer0Overflow.mask()),
+        ) {
             Self::EdDoneAndTimer0
-        } else if events.0 == Ieee802154Event::RxAbort.mask().0 {
+        } else if events.same_as(Ieee802154Event::RxAbort.mask()) {
             Self::RxAbortOnly
         } else if events.contains(Ieee802154Event::EdDone)
             && events.contains(Ieee802154Event::RxAbort)
@@ -933,30 +1052,83 @@ impl Ieee802154OperationRxAbortEnableObservation {
     }
 }
 
-/// Copyable fourteen-bit `EVENT_ENABLE` or `EVENT_STATUS` observation.
+/// Copyable semantic `EVENT_ENABLE` or `EVENT_STATUS` observation.
 ///
 /// Unlike [`Ieee802154EventEnableState`], this type preserves unnamed physical
 /// bits because observations must not erase unexpected hardware state. It has
 /// no public constructor and cannot be passed to a write. W1C acknowledgement
 /// consumes a separate affine snapshot.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Ieee802154EventObservation(u16);
+pub struct Ieee802154EventObservation {
+    events: Ieee802154EventMask,
+    has_unclassified: bool,
+}
 
 impl Ieee802154EventObservation {
-    const FIELD_MASK: u16 = 0x3fff;
+    const fn from_readback(
+        readback: crate::svd::ieee802154_mac_ownership::Ieee802154EventReadback,
+    ) -> Self {
+        let mut events = Ieee802154EventMask::NONE;
+        if readback.tx_done() {
+            events = events.with(Ieee802154Event::TxDone);
+        }
+        if readback.rx_done() {
+            events = events.with(Ieee802154Event::RxDone);
+        }
+        if readback.ack_tx_done() {
+            events = events.with(Ieee802154Event::AckTxDone);
+        }
+        if readback.ack_rx_done() {
+            events = events.with(Ieee802154Event::AckRxDone);
+        }
+        if readback.rx_abort() {
+            events = events.with(Ieee802154Event::RxAbort);
+        }
+        if readback.tx_abort() {
+            events = events.with(Ieee802154Event::TxAbort);
+        }
+        if readback.ed_done() {
+            events = events.with(Ieee802154Event::EdDone);
+        }
+        if readback.timer0_overflow() {
+            events = events.with(Ieee802154Event::Timer0Overflow);
+        }
+        if readback.timer1_overflow() {
+            events = events.with(Ieee802154Event::Timer1Overflow);
+        }
+        if readback.clock_count_match() {
+            events = events.with(Ieee802154Event::ClockCountMatch);
+        }
+        if readback.tx_sfd_done() {
+            events = events.with(Ieee802154Event::TxSfdDone);
+        }
+        if readback.rx_sfd_done() {
+            events = events.with(Ieee802154Event::RxSfdDone);
+        }
+        Self {
+            events,
+            has_unclassified: readback.has_unclassified(),
+        }
+    }
 
-    const fn from_field(bits: u16) -> Self {
-        Self(bits & Self::FIELD_MASK)
+    fn from_snapshot(
+        snapshot: &crate::svd::w1c_register_snapshot::Ieee802154EventStatusSnapshot,
+    ) -> Self {
+        Self::from_readback(
+            crate::svd::ieee802154_mac_ownership::Ieee802154EventReadback::from_event_status_snapshot(
+                snapshot,
+            ),
+        )
     }
 
     /// Return whether the complete observed event field is clear.
     pub const fn is_clear(self) -> bool {
-        self.0 == 0
+        self.events.is_empty() && !self.has_unclassified
     }
 
     /// Return whether every named event in `required` was observed.
     pub const fn contains(self, required: Ieee802154Event) -> bool {
-        self.0 & required.field_bit() != 0
+        self.events.contains(required)
     }
 
     /// Classify the complete observation as a semantic event set.
@@ -967,10 +1139,10 @@ impl Ieee802154EventObservation {
     pub const fn classification(
         self,
     ) -> Result<Ieee802154EventMask, Ieee802154EventObservationError> {
-        if self.0 & !Ieee802154EventMask::NAMED_BITS == 0 {
-            Ok(Ieee802154EventMask(self.0))
-        } else {
+        if self.has_unclassified {
             Err(Ieee802154EventObservationError)
+        } else {
+            Ok(self.events)
         }
     }
 
@@ -2007,7 +2179,7 @@ impl Ieee802154PolledRegisterLease<'_> {
     /// Observe the complete fourteen-bit event field without acknowledging it.
     pub fn event_status_observation(&self) -> Ieee802154EventObservation {
         let snapshot = self.interrupt.sample_event_status();
-        Ieee802154EventObservation::from_field(snapshot.bits() as u16)
+        Ieee802154EventObservation::from_snapshot(&snapshot)
     }
 
     /// Classify the IRQ-owned RX-abort reason field without exporting the
@@ -2045,8 +2217,8 @@ impl Ieee802154PolledRegisterLease<'_> {
         let event_status = self.interrupt.sample_event_status();
         Ieee802154EdCcaSnapshot::new(
             Ieee802154EdDurationUnits::from_field(self.task.registers.ed_duration()),
-            Ieee802154EventObservation::from_field(self.task.registers.event_enable()),
-            Ieee802154EventObservation::from_field(event_status.bits() as u16),
+            Ieee802154EventObservation::from_readback(self.task.registers.event_enable_readback()),
+            Ieee802154EventObservation::from_snapshot(&event_status),
             self.interrupt.ed_rss_code(),
             self.interrupt.cca_busy(),
         )
@@ -2067,7 +2239,7 @@ impl Ieee802154PolledRegisterLease<'_> {
     pub fn acknowledge_pending_events(&mut self) -> Ieee802154EventObservation {
         crate::device_fence();
         let snapshot = self.interrupt.sample_event_status();
-        let events = Ieee802154EventObservation::from_field(snapshot.bits() as u16);
+        let events = Ieee802154EventObservation::from_snapshot(&snapshot);
         self.interrupt.acknowledge_event_status(snapshot);
         crate::device_fence();
         events
@@ -2108,7 +2280,7 @@ impl Ieee802154PolledRegisterLease<'_> {
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_event_status_state(&self) -> Ieee802154ObservedEventState {
-        Ieee802154EventObservation::from_field(self.interrupt.validation_event_status_events())
+        Ieee802154EventObservation::from_readback(self.interrupt.validation_event_status_events())
             .state()
     }
 
@@ -2215,8 +2387,10 @@ impl Ieee802154PolledRegisterLease<'_> {
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn validation_ed_event_status_state(&self) -> Ieee802154ObservedEventState {
-        Ieee802154EventObservation::from_field(self.interrupt.validation_ed_event_status_events())
-            .state()
+        Ieee802154EventObservation::from_readback(
+            self.interrupt.validation_ed_event_status_events(),
+        )
+        .state()
     }
 
     #[cfg(feature = "validation-probes")]
@@ -2477,7 +2651,7 @@ impl Ieee802154InterruptRegisters {
     /// the exact W1C token for a later consuming acknowledge.
     pub fn sample_interrupt(&self) -> Ieee802154InterruptSnapshot {
         let acknowledgement = self.registers.sample_event_status();
-        let events = Ieee802154EventObservation::from_field(acknowledgement.bits() as u16);
+        let events = Ieee802154EventObservation::from_snapshot(&acknowledgement);
         let rx_abort = events.contains(Ieee802154Event::RxAbort);
         let tx_abort = events.contains(Ieee802154Event::TxAbort);
         let ed_done = events.contains(Ieee802154Event::EdDone);

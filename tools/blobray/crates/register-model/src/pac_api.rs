@@ -265,17 +265,16 @@ common_operation!(FixedRegisterImage {
 });
 /// One sampled, same-register write-one-to-clear transaction.
 ///
-/// The generated sample is an affine token: callers may inspect its masked
-/// image, but cannot construct, clone or acknowledge it more than once. The
-/// acknowledge leaf consumes that token and writes exactly the sampled field
-/// image back to the same W1C register.
+/// The generated sample is an affine token: callers may inspect declared
+/// fields through generated accessors, but cannot construct, clone or
+/// acknowledge it more than once. The acknowledge leaf consumes that token
+/// and writes exactly the sampled declared fields back to the same register.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct W1cRegisterSnapshot {
     pub name: String,
     pub peripheral: String,
     pub register: String,
-    pub field: String,
     pub sources: Vec<String>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -469,9 +468,6 @@ impl PacApiPack {
         for operation in &self.fixed_register_writes {
             validate_component("field", &operation.name, &operation.field)?;
             validate_component("variant", &operation.name, &operation.variant)?;
-        }
-        for operation in &self.w1c_register_snapshots {
-            validate_component("field", &operation.name, &operation.field)?;
         }
         for operation in &self.full_register_writes {
             validate_component("field", &operation.name, &operation.field)?;
@@ -1591,7 +1587,6 @@ peripheral-ownership = true
             name: "event_status".to_owned(),
             peripheral: "RADIO".to_owned(),
             register: "EVENT_STATUS".to_owned(),
-            field: "EVENTS".to_owned(),
             sources: vec!["PUBLIC_EVENT_STATUS_W1C".to_owned()],
         });
 

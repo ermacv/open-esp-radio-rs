@@ -9729,10 +9729,101 @@ scope = []
 register-method = "event_enable"
 
 [[registers.fields]]
-svd-name = "EVENTS"
-method = "events"
+svd-name = "TX_DONE"
+method = "tx_done"
 bit-offset = 0
-bit-width = 14
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_DONE"
+method = "rx_done"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ACK_TX_DONE"
+method = "ack_tx_done"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ACK_RX_DONE"
+method = "ack_rx_done"
+bit-offset = 3
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_ABORT"
+method = "rx_abort"
+bit-offset = 4
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TX_ABORT"
+method = "tx_abort"
+bit-offset = 5
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ED_DONE"
+method = "ed_done"
+bit-offset = 6
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNCLASSIFIED_7"
+method = "unclassified_7"
+bit-offset = 7
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TIMER0_OVERFLOW"
+method = "timer0_overflow"
+bit-offset = 8
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TIMER1_OVERFLOW"
+method = "timer1_overflow"
+bit-offset = 9
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLOCK_COUNT_MATCH"
+method = "clock_count_match"
+bit-offset = 10
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TX_SFD_DONE"
+method = "tx_sfd_done"
+bit-offset = 11
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_SFD_DONE"
+method = "rx_sfd_done"
+bit-offset = 12
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNCLASSIFIED_13"
+method = "unclassified_13"
+bit-offset = 13
+bit-width = 1
 access = "read-write"
 
 [[registers]]
@@ -9747,10 +9838,101 @@ scope = []
 register-method = "event_status"
 
 [[registers.fields]]
-svd-name = "EVENTS"
-method = "events"
+svd-name = "TX_DONE"
+method = "tx_done"
 bit-offset = 0
-bit-width = 14
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_DONE"
+method = "rx_done"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ACK_TX_DONE"
+method = "ack_tx_done"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ACK_RX_DONE"
+method = "ack_rx_done"
+bit-offset = 3
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_ABORT"
+method = "rx_abort"
+bit-offset = 4
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TX_ABORT"
+method = "tx_abort"
+bit-offset = 5
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ED_DONE"
+method = "ed_done"
+bit-offset = 6
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNCLASSIFIED_7"
+method = "unclassified_7"
+bit-offset = 7
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TIMER0_OVERFLOW"
+method = "timer0_overflow"
+bit-offset = 8
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TIMER1_OVERFLOW"
+method = "timer1_overflow"
+bit-offset = 9
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CLOCK_COUNT_MATCH"
+method = "clock_count_match"
+bit-offset = 10
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TX_SFD_DONE"
+method = "tx_sfd_done"
+bit-offset = 11
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_SFD_DONE"
+method = "rx_sfd_done"
+bit-offset = 12
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNCLASSIFIED_13"
+method = "unclassified_13"
+bit-offset = 13
+bit-width = 1
 access = "read-write"
 
 [[registers]]

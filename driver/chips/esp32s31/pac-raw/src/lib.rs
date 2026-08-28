@@ -45664,12 +45664,12 @@ pub mod btdm_runtime_control {
         pub const fn state_0020(&self) -> &State0020 {
             &self.state_0020
         }
-        #[doc = "0x24 - Complete state word read by one path and written with finite images zero and one."]
+        #[doc = "0x24 - State word whose low byte is sampled independently; complete writes publish the finite images zero and one."]
         #[inline(always)]
         pub const fn state_0024(&self) -> &State0024 {
             &self.state_0024
         }
-        #[doc = "0x2c - Complete state word read by runtime functions and cleared by complete paths."]
+        #[doc = "0x2c - State word whose low byte is sampled independently; complete runtime paths clear the word."]
         #[inline(always)]
         pub const fn state_002c(&self) -> &State002c {
             &self.state_002c
@@ -45967,34 +45967,48 @@ pub mod btdm_runtime_control {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "STATE_0024 (rw) register accessor: Complete state word read by one path and written with finite images zero and one.\n\nYou can [`read`](crate::Reg::read) this register and get [`state_0024::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`state_0024::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@state_0024`] module"]
+    #[doc = "STATE_0024 (rw) register accessor: State word whose low byte is sampled independently; complete writes publish the finite images zero and one.\n\nYou can [`read`](crate::Reg::read) this register and get [`state_0024::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`state_0024::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@state_0024`] module"]
     #[doc(alias = "STATE_0024")]
     pub type State0024 = crate::Reg<state_0024::State0024Spec>;
-    #[doc = "Complete state word read by one path and written with finite images zero and one."]
+    #[doc = "State word whose low byte is sampled independently; complete writes publish the finite images zero and one."]
     pub mod state_0024 {
         #[doc = "Register `STATE_0024` reader"]
         pub type R = crate::R<State0024Spec>;
         #[doc = "Register `STATE_0024` writer"]
         pub type W = crate::W<State0024Spec>;
-        #[doc = "Field `IMAGE` reader - "]
-        pub type ImageR = crate::FieldReader<u32>;
-        #[doc = "Field `IMAGE` writer - "]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `LOW_BYTE` reader - "]
+        pub type LowByteR = crate::FieldReader;
+        #[doc = "Field `LOW_BYTE` writer - "]
+        pub type LowByteW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `UNCLASSIFIED_31_8` reader - Upper bits covered by complete-register evidence but not assigned a semantic role."]
+        pub type Unclassified31_8R = crate::FieldReader<u32>;
+        #[doc = "Field `UNCLASSIFIED_31_8` writer - Upper bits covered by complete-register evidence but not assigned a semantic role."]
+        pub type Unclassified31_8W<'a, REG> = crate::FieldWriter<'a, REG, 24, u32>;
         impl R {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:7"]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn low_byte(&self) -> LowByteR {
+                LowByteR::new((self.bits & 0xff) as u8)
+            }
+            #[doc = "Bits 8:31 - Upper bits covered by complete-register evidence but not assigned a semantic role."]
+            #[inline(always)]
+            pub fn unclassified_31_8(&self) -> Unclassified31_8R {
+                Unclassified31_8R::new((self.bits >> 8) & 0x00ff_ffff)
             }
         }
         impl W {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:7"]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, State0024Spec> {
-                ImageW::new(self, 0)
+            pub fn low_byte(&mut self) -> LowByteW<'_, State0024Spec> {
+                LowByteW::new(self, 0)
+            }
+            #[doc = "Bits 8:31 - Upper bits covered by complete-register evidence but not assigned a semantic role."]
+            #[inline(always)]
+            pub fn unclassified_31_8(&mut self) -> Unclassified31_8W<'_, State0024Spec> {
+                Unclassified31_8W::new(self, 8)
             }
         }
-        #[doc = "Complete state word read by one path and written with finite images zero and one.\n\nYou can [`read`](crate::Reg::read) this register and get [`state_0024::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`state_0024::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "State word whose low byte is sampled independently; complete writes publish the finite images zero and one.\n\nYou can [`read`](crate::Reg::read) this register and get [`state_0024::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`state_0024::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct State0024Spec;
         impl crate::RegisterSpec for State0024Spec {
             type Ux = u32;
@@ -46006,34 +46020,48 @@ pub mod btdm_runtime_control {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "STATE_002C (rw) register accessor: Complete state word read by runtime functions and cleared by complete paths.\n\nYou can [`read`](crate::Reg::read) this register and get [`state_002c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`state_002c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@state_002c`] module"]
+    #[doc = "STATE_002C (rw) register accessor: State word whose low byte is sampled independently; complete runtime paths clear the word.\n\nYou can [`read`](crate::Reg::read) this register and get [`state_002c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`state_002c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@state_002c`] module"]
     #[doc(alias = "STATE_002C")]
     pub type State002c = crate::Reg<state_002c::State002cSpec>;
-    #[doc = "Complete state word read by runtime functions and cleared by complete paths."]
+    #[doc = "State word whose low byte is sampled independently; complete runtime paths clear the word."]
     pub mod state_002c {
         #[doc = "Register `STATE_002C` reader"]
         pub type R = crate::R<State002cSpec>;
         #[doc = "Register `STATE_002C` writer"]
         pub type W = crate::W<State002cSpec>;
-        #[doc = "Field `IMAGE` reader - "]
-        pub type ImageR = crate::FieldReader<u32>;
-        #[doc = "Field `IMAGE` writer - "]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `LOW_BYTE` reader - "]
+        pub type LowByteR = crate::FieldReader;
+        #[doc = "Field `LOW_BYTE` writer - "]
+        pub type LowByteW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `UNCLASSIFIED_31_8` reader - Upper bits covered by complete-register evidence but not assigned a semantic role."]
+        pub type Unclassified31_8R = crate::FieldReader<u32>;
+        #[doc = "Field `UNCLASSIFIED_31_8` writer - Upper bits covered by complete-register evidence but not assigned a semantic role."]
+        pub type Unclassified31_8W<'a, REG> = crate::FieldWriter<'a, REG, 24, u32>;
         impl R {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:7"]
             #[inline(always)]
-            pub fn image(&self) -> ImageR {
-                ImageR::new(self.bits)
+            pub fn low_byte(&self) -> LowByteR {
+                LowByteR::new((self.bits & 0xff) as u8)
+            }
+            #[doc = "Bits 8:31 - Upper bits covered by complete-register evidence but not assigned a semantic role."]
+            #[inline(always)]
+            pub fn unclassified_31_8(&self) -> Unclassified31_8R {
+                Unclassified31_8R::new((self.bits >> 8) & 0x00ff_ffff)
             }
         }
         impl W {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:7"]
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, State002cSpec> {
-                ImageW::new(self, 0)
+            pub fn low_byte(&mut self) -> LowByteW<'_, State002cSpec> {
+                LowByteW::new(self, 0)
+            }
+            #[doc = "Bits 8:31 - Upper bits covered by complete-register evidence but not assigned a semantic role."]
+            #[inline(always)]
+            pub fn unclassified_31_8(&mut self) -> Unclassified31_8W<'_, State002cSpec> {
+                Unclassified31_8W::new(self, 8)
             }
         }
-        #[doc = "Complete state word read by runtime functions and cleared by complete paths.\n\nYou can [`read`](crate::Reg::read) this register and get [`state_002c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`state_002c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "State word whose low byte is sampled independently; complete runtime paths clear the word.\n\nYou can [`read`](crate::Reg::read) this register and get [`state_002c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`state_002c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct State002cSpec;
         impl crate::RegisterSpec for State002cSpec {
             type Ux = u32;
@@ -46336,7 +46364,7 @@ pub mod btdm_runtime_control {
         #[doc = "Field `IMAGE` reader - "]
         pub type ImageR = crate::FieldReader<u32>;
         #[doc = "Field `IMAGE` writer - "]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl R {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -46360,7 +46388,7 @@ pub mod btdm_runtime_control {
         impl crate::Readable for Value006cSpec {}
         #[doc = "`write(|w| ..)` method takes [`value_006c::W`](W) writer structure"]
         impl crate::Writable for Value006cSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "CONTROL_0078 (rw) register accessor: Initialization sets bit 25 through a fresh-read RMW. Other bits are preserved.\n\nYou can [`read`](crate::Reg::read) this register and get [`control_0078::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control_0078::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control_0078`] module"]
@@ -58141,6 +58169,22 @@ pub mod full_register_write {
                 .write_with_zero(|writer| writer.threshold().set(value));
         }
     }
+
+    /// Write every bit of `BTDM_RUNTIME_CONTROL`.`VALUE_006C` through its full-width field.
+    #[inline]
+    pub fn publish_bluetooth_modem_lp_timer_compare(
+        registers: &crate::BtdmRuntimeControl,
+        value: u32,
+    ) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .value_006c()
+                .write_with_zero(|writer| writer.image().set(value));
+        }
+    }
 }
 
 /// Safe, SVD-declared observations which cover a complete register.
@@ -58276,6 +58320,112 @@ pub mod fixed_register_image {
             registers
                 .irq_clear_1()
                 .write_with_zero(|writer| writer.bits(0x00001300));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000001` to `BTDM_RUNTIME_CONTROL`.`COMMAND_0004`.
+    #[inline]
+    pub fn prepare_bluetooth_modem_lp_timer_command_0004(registers: &crate::BtdmRuntimeControl) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .command_0004()
+                .write_with_zero(|writer| writer.bits(0x00000001));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000001` to `BTDM_RUNTIME_CONTROL`.`COMMAND_0008`.
+    #[inline]
+    pub fn prepare_bluetooth_modem_lp_timer_command_0008(registers: &crate::BtdmRuntimeControl) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .command_0008()
+                .write_with_zero(|writer| writer.bits(0x00000001));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0xffffffff` to `BTDM_RUNTIME_CONTROL`.`COMMAND_0014`.
+    #[inline]
+    pub fn prepare_bluetooth_modem_lp_timer_command_0014(registers: &crate::BtdmRuntimeControl) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .command_0014()
+                .write_with_zero(|writer| writer.bits(0xffffffff));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0xffffffff` to `BTDM_RUNTIME_CONTROL`.`COMMAND_0034`.
+    #[inline]
+    pub fn prepare_bluetooth_modem_lp_timer_command_0034(registers: &crate::BtdmRuntimeControl) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .command_0034()
+                .write_with_zero(|writer| writer.bits(0xffffffff));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000002` to `BTDM_RUNTIME_CONTROL`.`COMMAND_0010`.
+    #[inline]
+    pub fn prepare_bluetooth_modem_lp_timer_command_0010(registers: &crate::BtdmRuntimeControl) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .command_0010()
+                .write_with_zero(|writer| writer.bits(0x00000002));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000001` to `BTDM_RUNTIME_CONTROL`.`STATE_0024`.
+    #[inline]
+    pub fn publish_bluetooth_modem_lp_timer_software_pending(
+        registers: &crate::BtdmRuntimeControl,
+    ) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .state_0024()
+                .write_with_zero(|writer| writer.bits(0x00000001));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00040000` to `BTDM_RUNTIME_CONTROL`.`COMMAND_0014`.
+    #[inline]
+    pub fn disable_bluetooth_modem_lp_timer_compare(registers: &crate::BtdmRuntimeControl) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .command_0014()
+                .write_with_zero(|writer| writer.bits(0x00040000));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00040000` to `BTDM_RUNTIME_CONTROL`.`COMMAND_0010`.
+    #[inline]
+    pub fn trigger_bluetooth_modem_lp_timer_command(registers: &crate::BtdmRuntimeControl) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .command_0010()
+                .write_with_zero(|writer| writer.bits(0x00040000));
         }
     }
 
@@ -60142,6 +60292,36 @@ pub mod zero_register_write {
         }
     }
 
+    /// Publish zero to every bit of `BTDM_RUNTIME_CONTROL`.`COMMAND_004C`.
+    #[inline]
+    pub fn prepare_bluetooth_modem_lp_timer_command_004c(registers: &crate::BtdmRuntimeControl) {
+        // SAFETY: the SVD extension and its provenance explicitly
+        // qualify a complete zero write to this ordinary register.
+        unsafe {
+            registers.command_004c().write_with_zero(|writer| writer);
+        }
+    }
+
+    /// Publish zero to every bit of `BTDM_RUNTIME_CONTROL`.`STATE_0024`.
+    #[inline]
+    pub fn clear_bluetooth_modem_lp_timer_state_0024(registers: &crate::BtdmRuntimeControl) {
+        // SAFETY: the SVD extension and its provenance explicitly
+        // qualify a complete zero write to this ordinary register.
+        unsafe {
+            registers.state_0024().write_with_zero(|writer| writer);
+        }
+    }
+
+    /// Publish zero to every bit of `BTDM_RUNTIME_CONTROL`.`STATE_002C`.
+    #[inline]
+    pub fn clear_bluetooth_modem_lp_timer_state_002c(registers: &crate::BtdmRuntimeControl) {
+        // SAFETY: the SVD extension and its provenance explicitly
+        // qualify a complete zero write to this ordinary register.
+        unsafe {
+            registers.state_002c().write_with_zero(|writer| writer);
+        }
+    }
+
     /// Publish zero to every bit of `WIFI_MAC_HE_INIT_PREFIX`.`INTERRUPT_1_RAW`.
     #[inline]
     pub fn disable_mac_interrupt_1_raw(registers: &crate::WifiMacHeInitPrefix) {
@@ -60527,6 +60707,32 @@ pub mod field_or_modify {
             writer
                 .source_3()
                 .bit(reader.source_3().bit() || ((input >> 3) & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into BTDM_RUNTIME_CONTROL.CONTROL_0078 fields [CONTROL_25] while preserving the fresh register observation.
+    #[inline]
+    pub fn prepare_bluetooth_modem_lp_timer_control_25(registers: &crate::BtdmRuntimeControl) {
+        registers.control_0078().modify(|reader, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .control_25()
+                .bit(reader.control_25().bit() || (input & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into BTDM_RUNTIME_CONTROL.CONTROL_0058 fields [CONTROL_1] while preserving the fresh register observation.
+    #[inline]
+    pub fn publish_bluetooth_modem_lp_timer_control_1(registers: &crate::BtdmRuntimeControl) {
+        registers.control_0058().modify(|reader, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .control_1()
+                .bit(reader.control_1().bit() || (input & 0x00000001) != 0)
         });
     }
 

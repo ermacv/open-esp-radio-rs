@@ -19392,29 +19392,41 @@ avoid assigning undocumented peripheral semantics.
         </register>
         <register>
           <name>STATE_0024</name>
-          <description>Complete state word read by one path and written with finite images zero and one.</description>
+          <description>State word whose low byte is sampled independently; complete writes publish the finite images zero and one.</description>
           <addressOffset>0x24</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>LOW_BYTE</name>
               <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
+              <bitWidth>8</bitWidth>
+            </field>
+            <field>
+              <name>UNCLASSIFIED_31_8</name>
+              <description>Upper bits covered by complete-register evidence but not assigned a semantic role.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>24</bitWidth>
             </field>
           </fields>
         </register>
         <register>
           <name>STATE_002C</name>
-          <description>Complete state word read by runtime functions and cleared by complete paths.</description>
+          <description>State word whose low byte is sampled independently; complete runtime paths clear the word.</description>
           <addressOffset>0x2C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>LOW_BYTE</name>
               <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
+              <bitWidth>8</bitWidth>
+            </field>
+            <field>
+              <name>UNCLASSIFIED_31_8</name>
+              <description>Upper bits covered by complete-register evidence but not assigned a semantic role.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>24</bitWidth>
             </field>
           </fields>
         </register>
@@ -19564,6 +19576,12 @@ avoid assigning undocumented peripheral semantics.
               <name>IMAGE</name>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>4294967295</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>

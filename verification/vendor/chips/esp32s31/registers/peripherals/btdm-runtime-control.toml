@@ -220,26 +220,36 @@ bitWidth = 32
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "STATE_0024"
-description = "Complete state word read by one path and written with finite images zero and one."
+description = "State word whose low byte is sampled independently; complete writes publish the finite images zero and one."
 addressOffset = 0x24
 size = 32
 access = "read-write"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "LOW_BYTE"
 bitOffset = 0
-bitWidth = 32
+bitWidth = 8
+[[peripherals.registers.register.fields]]
+name = "UNCLASSIFIED_31_8"
+description = "Upper bits covered by complete-register evidence but not assigned a semantic role."
+bitOffset = 8
+bitWidth = 24
 
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "STATE_002C"
-description = "Complete state word read by runtime functions and cleared by complete paths."
+description = "State word whose low byte is sampled independently; complete runtime paths clear the word."
 addressOffset = 0x2C
 size = 32
 access = "read-write"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "LOW_BYTE"
 bitOffset = 0
-bitWidth = 32
+bitWidth = 8
+[[peripherals.registers.register.fields]]
+name = "UNCLASSIFIED_31_8"
+description = "Upper bits covered by complete-register evidence but not assigned a semantic role."
+bitOffset = 8
+bitWidth = 24
 
 [[peripherals.registers]]
 [peripherals.registers.register]
@@ -369,6 +379,9 @@ access = "read-write"
 name = "IMAGE"
 bitOffset = 0
 bitWidth = 32
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFFFFFFFF
 
 [[peripherals.registers]]
 [peripherals.registers.register]
@@ -483,7 +496,13 @@ provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.STATE_0024.IMAGE"
+entity = "BTDM_RUNTIME_CONTROL.STATE_0024.LOW_BYTE"
+sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+[[review]]
+entity = "BTDM_RUNTIME_CONTROL.STATE_0024.UNCLASSIFIED_31_8"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"
@@ -496,7 +515,13 @@ provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.STATE_002C.IMAGE"
+entity = "BTDM_RUNTIME_CONTROL.STATE_002C.LOW_BYTE"
+sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+[[review]]
+entity = "BTDM_RUNTIME_CONTROL.STATE_002C.UNCLASSIFIED_31_8"
 sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 provenance = "observed"
 accuracy = "exact"

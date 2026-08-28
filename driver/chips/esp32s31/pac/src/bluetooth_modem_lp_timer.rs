@@ -352,19 +352,8 @@ pub enum BluetoothModemLpTimerInterruptStep {
     HandlerPending(BluetoothModemLpTimerHandlerPending),
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ModemLpTimerRegister {
-    Command004c,
-    Command0004,
-    Command0008,
-    Command0014,
-    Command0034,
-    Command0010,
-}
-
 trait ModemLpTimerTransaction {
-    fn write_complete(&mut self, register: ModemLpTimerRegister, image: u32);
-    fn set_control_0078_bit_25(&mut self);
+    fn prepare_hardware(&mut self);
     fn fence(&mut self);
 }
 
@@ -396,14 +385,12 @@ trait ModemLpTimerRuntimeTransaction {
     fn clear_rollover(&mut self);
     fn publish_software_pending(&mut self);
     fn disable_compare(&mut self);
-    fn write_compare(&mut self, image: u32);
+    fn write_compare(&mut self, image: crate::generated::BluetoothModemLpTimerCompareImage);
     fn trigger_timer_command(&mut self);
     fn fence(&mut self);
 }
 
-const MODEM_LP_TIMER_COMMAND: u32 = 0x0004_0000;
 const MODEM_LP_TIMER_LOW_SPAN: u32 = 0x0100_0000;
-const MODEM_LP_TIMER_LOW_MASK: u32 = MODEM_LP_TIMER_LOW_SPAN - 1;
 const MODEM_LP_TIMER_HALF_RANGE: u32 = 0x0080_0000;
 const MODEM_LP_TIMER_IMMEDIATE_TOLERANCE: i32 = 2;
 
@@ -513,10 +500,14 @@ fn execute_modem_lp_timer_compare_program(
         transaction.publish_software_pending();
         BluetoothModemLpTimerCompareDisposition::Immediate
     } else if delta < MODEM_LP_TIMER_LOW_SPAN {
-        transaction.write_compare(deadline.bits() & MODEM_LP_TIMER_LOW_MASK);
+        transaction.write_compare(crate::generated::BluetoothModemLpTimerCompareImage::new(
+            deadline.bits() % MODEM_LP_TIMER_LOW_SPAN,
+        ));
         BluetoothModemLpTimerCompareDisposition::Deadline
     } else {
-        transaction.write_compare(counter.wrapping_add(MODEM_LP_TIMER_HALF_RANGE));
+        transaction.write_compare(crate::generated::BluetoothModemLpTimerCompareImage::new(
+            counter.wrapping_add(MODEM_LP_TIMER_HALF_RANGE),
+        ));
         BluetoothModemLpTimerCompareDisposition::HalfRangeCheckpoint
     };
     transaction.trigger_timer_command();
@@ -525,13 +516,7 @@ fn execute_modem_lp_timer_compare_program(
 }
 
 fn execute_modem_lp_timer_prepare(transaction: &mut impl ModemLpTimerTransaction) {
-    transaction.write_complete(ModemLpTimerRegister::Command004c, 0);
-    transaction.set_control_0078_bit_25();
-    transaction.write_complete(ModemLpTimerRegister::Command0004, 1);
-    transaction.write_complete(ModemLpTimerRegister::Command0008, 1);
-    transaction.write_complete(ModemLpTimerRegister::Command0014, u32::MAX);
-    transaction.write_complete(ModemLpTimerRegister::Command0034, u32::MAX);
-    transaction.write_complete(ModemLpTimerRegister::Command0010, 2);
+    transaction.prepare_hardware();
     transaction.fence();
 }
 
@@ -558,48 +543,26 @@ impl ModemLpTimerStartTransaction for HardwareModemLpTimerTransaction<'_> {
 }
 
 impl ModemLpTimerTransaction for HardwareModemLpTimerTransaction<'_> {
-    #[allow(
-        unsafe_code,
-        reason = "the private executor supplies only the seven reviewed complete register images"
-    )]
-    fn write_complete(&mut self, register: ModemLpTimerRegister, image: u32) {
-        macro_rules! write_image {
-            ($register:expr) => {{
-                // SAFETY: every call is closed inside
-                // `execute_modem_lp_timer_prepare`; its exact finite image and
-                // position are regression-tested below.
-                unsafe {
-                    $register.write_with_zero(|writer| writer.image().bits(image));
-                }
-            }};
-        }
-
-        match register {
-            ModemLpTimerRegister::Command004c => {
-                write_image!(self.registers.command_004c())
-            }
-            ModemLpTimerRegister::Command0004 => {
-                write_image!(self.registers.command_0004())
-            }
-            ModemLpTimerRegister::Command0008 => {
-                write_image!(self.registers.command_0008())
-            }
-            ModemLpTimerRegister::Command0014 => {
-                write_image!(self.registers.command_0014())
-            }
-            ModemLpTimerRegister::Command0034 => {
-                write_image!(self.registers.command_0034())
-            }
-            ModemLpTimerRegister::Command0010 => {
-                write_image!(self.registers.command_0010())
-            }
-        }
-    }
-
-    fn set_control_0078_bit_25(&mut self) {
-        self.registers
-            .control_0078()
-            .modify(|_, writer| writer.control_25().set_bit());
+    fn prepare_hardware(&mut self) {
+        super::svd::zero_register_write::prepare_bluetooth_modem_lp_timer_command_004c(
+            self.registers,
+        );
+        super::svd::field_or_modify::prepare_bluetooth_modem_lp_timer_control_25(self.registers);
+        super::svd::fixed_register_image::prepare_bluetooth_modem_lp_timer_command_0004(
+            self.registers,
+        );
+        super::svd::fixed_register_image::prepare_bluetooth_modem_lp_timer_command_0008(
+            self.registers,
+        );
+        super::svd::fixed_register_image::prepare_bluetooth_modem_lp_timer_command_0014(
+            self.registers,
+        );
+        super::svd::fixed_register_image::prepare_bluetooth_modem_lp_timer_command_0034(
+            self.registers,
+        );
+        super::svd::fixed_register_image::prepare_bluetooth_modem_lp_timer_command_0010(
+            self.registers,
+        );
     }
 
     fn fence(&mut self) {
@@ -625,9 +588,7 @@ impl ModemLpTimerInterruptTransaction for HardwareModemLpTimerTransaction<'_> {
     }
 
     fn set_control_0058_bit_1_from_fresh_read(&mut self) {
-        self.registers
-            .control_0058()
-            .modify(|_, writer| writer.control_1().set_bit());
+        crate::generated::publish_bluetooth_modem_lp_timer_control_1(self.registers);
     }
 
     fn fence(&mut self) {
@@ -637,43 +598,23 @@ impl ModemLpTimerInterruptTransaction for HardwareModemLpTimerTransaction<'_> {
 
 impl ModemLpTimerHandlerRegisterTransaction for HardwareModemLpTimerTransaction<'_> {
     fn sample_state_0024_low_byte_nonzero(&mut self) -> bool {
-        self.registers.state_0024().read().image().bits() as u8 != 0
+        self.registers.state_0024().read().low_byte().bits() != 0
     }
 
-    #[allow(
-        unsafe_code,
-        reason = "the closed handler executor supplies the reviewed complete zero image"
-    )]
     fn clear_state_0024(&mut self) {
-        // SAFETY: this trait implementation is private and the only caller is
-        // the finite executor above, which supplies the reviewed zero image.
-        unsafe {
-            self.registers
-                .state_0024()
-                .write_with_zero(|writer| writer.image().bits(0));
-        }
+        super::svd::zero_register_write::clear_bluetooth_modem_lp_timer_state_0024(self.registers);
     }
 
     fn sample_state_002c_low_byte_nonzero(&mut self) -> bool {
-        self.registers.state_002c().read().image().bits() as u8 != 0
+        self.registers.state_002c().read().low_byte().bits() != 0
     }
 
-    #[allow(
-        unsafe_code,
-        reason = "the closed handler executor supplies the reviewed complete zero image"
-    )]
     fn clear_state_002c(&mut self) {
-        // SAFETY: this trait implementation is private and the only caller is
-        // the finite executor above, which supplies the reviewed zero image.
-        unsafe {
-            self.registers
-                .state_002c()
-                .write_with_zero(|writer| writer.image().bits(0));
-        }
+        super::svd::zero_register_write::clear_bluetooth_modem_lp_timer_state_002c(self.registers);
     }
 
     fn sample_final_state_0024(&mut self) {
-        let _ = self.registers.state_0024().read().image().bits();
+        let _ = self.registers.state_0024().read().low_byte().bits();
     }
 
     fn fence(&mut self) {
@@ -687,77 +628,29 @@ impl ModemLpTimerRuntimeTransaction for HardwareModemLpTimerTransaction<'_> {
     }
 
     fn rollover_low_byte_nonzero(&mut self) -> bool {
-        self.registers.state_002c().read().image().bits() as u8 != 0
+        self.registers.state_002c().read().low_byte().bits() != 0
     }
 
-    #[allow(
-        unsafe_code,
-        reason = "the closed runtime executor supplies the reviewed complete zero image"
-    )]
     fn clear_rollover(&mut self) {
-        // SAFETY: this private implementation is called only by the finite
-        // runtime executor with the reviewed complete zero image.
-        unsafe {
-            self.registers
-                .state_002c()
-                .write_with_zero(|writer| writer.image().bits(0));
-        }
+        super::svd::zero_register_write::clear_bluetooth_modem_lp_timer_state_002c(self.registers);
     }
 
-    #[allow(
-        unsafe_code,
-        reason = "the closed runtime executor supplies the reviewed complete one image"
-    )]
     fn publish_software_pending(&mut self) {
-        // SAFETY: this private implementation is called only by the finite
-        // runtime executor with the reviewed complete one image.
-        unsafe {
-            self.registers
-                .state_0024()
-                .write_with_zero(|writer| writer.image().bits(1));
-        }
+        super::svd::fixed_register_image::publish_bluetooth_modem_lp_timer_software_pending(
+            self.registers,
+        );
     }
 
-    #[allow(
-        unsafe_code,
-        reason = "the closed runtime executor supplies the reviewed timer command image"
-    )]
     fn disable_compare(&mut self) {
-        // SAFETY: this private implementation is called only by the finite
-        // runtime executor with the reviewed command image.
-        unsafe {
-            self.registers
-                .command_0014()
-                .write_with_zero(|writer| writer.image().bits(MODEM_LP_TIMER_COMMAND));
-        }
+        super::svd::fixed_register_image::disable_bluetooth_modem_lp_timer_compare(self.registers);
     }
 
-    #[allow(
-        unsafe_code,
-        reason = "the closed runtime executor bounds the dynamic compare image"
-    )]
-    fn write_compare(&mut self, image: u32) {
-        // SAFETY: `image` is closed inside the executor to either the reviewed
-        // low-deadline projection or selected-counter half-range projection.
-        unsafe {
-            self.registers
-                .value_006c()
-                .write_with_zero(|writer| writer.image().bits(image));
-        }
+    fn write_compare(&mut self, image: crate::generated::BluetoothModemLpTimerCompareImage) {
+        crate::generated::publish_bluetooth_modem_lp_timer_compare(self.registers, image);
     }
 
-    #[allow(
-        unsafe_code,
-        reason = "the closed runtime executor supplies the reviewed timer command image"
-    )]
     fn trigger_timer_command(&mut self) {
-        // SAFETY: this private implementation is called only by the finite
-        // runtime executor with the reviewed command image.
-        unsafe {
-            self.registers
-                .command_0010()
-                .write_with_zero(|writer| writer.image().bits(MODEM_LP_TIMER_COMMAND));
-        }
+        super::svd::fixed_register_image::trigger_bluetooth_modem_lp_timer_command(self.registers);
     }
 
     fn fence(&mut self) {
@@ -867,7 +760,7 @@ mod tests {
         BluetoothModemLpTimerHandlerRegisterObservation, BluetoothModemLpTimerInstant,
         BluetoothModemLpTimerInterruptObservation, ModemLpTimerHandlerRegisterDisposition,
         ModemLpTimerHandlerRegisterTransaction, ModemLpTimerInterruptDisposition,
-        ModemLpTimerInterruptTransaction, ModemLpTimerRegister, ModemLpTimerRuntimeTransaction,
+        ModemLpTimerInterruptTransaction, ModemLpTimerRuntimeTransaction,
         ModemLpTimerStartTransaction, ModemLpTimerTransaction,
         execute_modem_lp_timer_compare_disable, execute_modem_lp_timer_compare_program,
         execute_modem_lp_timer_counter_sample, execute_modem_lp_timer_handler_registers,
@@ -876,10 +769,9 @@ mod tests {
     };
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    enum Operation {
-        WriteComplete(ModemLpTimerRegister, u32),
-        SetControl0078Bit25FromFreshRead,
-        Fence,
+    enum PreparationOperation {
+        GeneratedTransaction,
+        DeviceFence,
     }
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -992,8 +884,9 @@ mod tests {
             self.operations.push(RuntimeOperation::DisableCompare);
         }
 
-        fn write_compare(&mut self, image: u32) {
-            self.operations.push(RuntimeOperation::WriteCompare(image));
+        fn write_compare(&mut self, image: crate::generated::BluetoothModemLpTimerCompareImage) {
+            self.operations
+                .push(RuntimeOperation::WriteCompare(image.get()));
         }
 
         fn trigger_timer_command(&mut self) {
@@ -1108,37 +1001,20 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct Recorder(Vec<Operation>);
-
-    impl Recorder {
-        fn mmio_count(&self) -> usize {
-            self.0
-                .iter()
-                .map(|operation| match operation {
-                    Operation::WriteComplete(_, _) => 1,
-                    Operation::SetControl0078Bit25FromFreshRead => 2,
-                    Operation::Fence => 0,
-                })
-                .sum()
-        }
-    }
+    struct Recorder(Vec<PreparationOperation>);
 
     impl ModemLpTimerTransaction for Recorder {
-        fn write_complete(&mut self, register: ModemLpTimerRegister, image: u32) {
-            self.0.push(Operation::WriteComplete(register, image));
-        }
-
-        fn set_control_0078_bit_25(&mut self) {
-            self.0.push(Operation::SetControl0078Bit25FromFreshRead);
+        fn prepare_hardware(&mut self) {
+            self.0.push(PreparationOperation::GeneratedTransaction);
         }
 
         fn fence(&mut self) {
-            self.0.push(Operation::Fence);
+            self.0.push(PreparationOperation::DeviceFence);
         }
     }
 
     #[test]
-    fn source_127_prefix_is_exactly_eight_mmio_operations_then_one_fence() {
+    fn source_127_preparation_fences_after_the_generated_transaction() {
         let mut recorder = Recorder::default();
 
         execute_modem_lp_timer_prepare(&mut recorder);
@@ -1146,24 +1022,9 @@ mod tests {
         assert_eq!(
             recorder.0,
             [
-                Operation::WriteComplete(ModemLpTimerRegister::Command004c, 0),
-                Operation::SetControl0078Bit25FromFreshRead,
-                Operation::WriteComplete(ModemLpTimerRegister::Command0004, 1),
-                Operation::WriteComplete(ModemLpTimerRegister::Command0008, 1),
-                Operation::WriteComplete(ModemLpTimerRegister::Command0014, u32::MAX),
-                Operation::WriteComplete(ModemLpTimerRegister::Command0034, u32::MAX),
-                Operation::WriteComplete(ModemLpTimerRegister::Command0010, 2),
-                Operation::Fence,
+                PreparationOperation::GeneratedTransaction,
+                PreparationOperation::DeviceFence,
             ]
-        );
-        assert_eq!(recorder.mmio_count(), 8);
-        assert_eq!(
-            recorder
-                .0
-                .iter()
-                .filter(|operation| matches!(operation, Operation::Fence))
-                .count(),
-            1
         );
     }
 

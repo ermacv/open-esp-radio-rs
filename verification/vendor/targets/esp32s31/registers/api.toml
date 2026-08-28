@@ -1082,6 +1082,13 @@ peripheral = "WIFI_MAC_COEX_RUNTIME"
 register = "ITWT_CONTROL"
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
 
+[[opaque-domains]]
+name = "BluetoothModemLpTimerCompareImage"
+description = "Register-specific compare image produced only by the reviewed finite modem low-power timer deadline projection."
+peripheral = "BTDM_RUNTIME_CONTROL"
+register = "VALUE_006C"
+sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
+
 [[zero-based-field-writes]]
 name = "coex_timer_configuration"
 peripheral = "COEX_HW_TIMER"
@@ -1172,6 +1179,27 @@ name = "clear_bluetooth_scheduler_reference"
 peripheral = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME"
 register = "SCHEDULER_REFERENCE"
 sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+
+[[zero-register-writes]]
+name = "prepare_bluetooth_modem_lp_timer_command_004c"
+peripheral = "BTDM_RUNTIME_CONTROL"
+register = "COMMAND_004C"
+sources = [
+    "BLOB_LIBBTDM_RUNTIME_CONTROL",
+    "PUBLIC_ESP32S31_BT_RUNTIME_TIMER_ROLE",
+]
+
+[[zero-register-writes]]
+name = "clear_bluetooth_modem_lp_timer_state_0024"
+peripheral = "BTDM_RUNTIME_CONTROL"
+register = "STATE_0024"
+sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
+
+[[zero-register-writes]]
+name = "clear_bluetooth_modem_lp_timer_state_002c"
+peripheral = "BTDM_RUNTIME_CONTROL"
+register = "STATE_002C"
+sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
 
 [[zero-register-writes]]
 name = "disable_mac_interrupt_1_raw"
@@ -1388,6 +1416,86 @@ sources = [
     "BLOB_LIBBTDM_RUNTIME_CONTROL",
     "PUBLIC_ESP32S31_BT_RUNTIME_TIMER_ROLE",
 ]
+
+[[fixed-register-images]]
+name = "prepare_bluetooth_modem_lp_timer_command_0004"
+peripheral = "BTDM_RUNTIME_CONTROL"
+register = "COMMAND_0004"
+value = 0x00000001
+sources = [
+    "BLOB_LIBBTDM_RUNTIME_CONTROL",
+    "PUBLIC_ESP32S31_BT_RUNTIME_TIMER_ROLE",
+]
+
+[[fixed-register-images]]
+name = "prepare_bluetooth_modem_lp_timer_command_0008"
+peripheral = "BTDM_RUNTIME_CONTROL"
+register = "COMMAND_0008"
+value = 0x00000001
+sources = [
+    "BLOB_LIBBTDM_RUNTIME_CONTROL",
+    "PUBLIC_ESP32S31_BT_RUNTIME_TIMER_ROLE",
+]
+
+[[fixed-register-images]]
+name = "prepare_bluetooth_modem_lp_timer_command_0014"
+peripheral = "BTDM_RUNTIME_CONTROL"
+register = "COMMAND_0014"
+value = 0xffffffff
+sources = [
+    "BLOB_LIBBTDM_RUNTIME_CONTROL",
+    "PUBLIC_ESP32S31_BT_RUNTIME_TIMER_ROLE",
+]
+
+[[fixed-register-images]]
+name = "prepare_bluetooth_modem_lp_timer_command_0034"
+peripheral = "BTDM_RUNTIME_CONTROL"
+register = "COMMAND_0034"
+value = 0xffffffff
+sources = [
+    "BLOB_LIBBTDM_RUNTIME_CONTROL",
+    "PUBLIC_ESP32S31_BT_RUNTIME_TIMER_ROLE",
+]
+
+[[fixed-register-images]]
+name = "prepare_bluetooth_modem_lp_timer_command_0010"
+peripheral = "BTDM_RUNTIME_CONTROL"
+register = "COMMAND_0010"
+value = 0x00000002
+sources = [
+    "BLOB_LIBBTDM_RUNTIME_CONTROL",
+    "PUBLIC_ESP32S31_BT_RUNTIME_TIMER_ROLE",
+]
+
+[[fixed-register-images]]
+name = "publish_bluetooth_modem_lp_timer_software_pending"
+peripheral = "BTDM_RUNTIME_CONTROL"
+register = "STATE_0024"
+value = 0x00000001
+sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
+
+[[fixed-register-images]]
+name = "disable_bluetooth_modem_lp_timer_compare"
+peripheral = "BTDM_RUNTIME_CONTROL"
+register = "COMMAND_0014"
+value = 0x00040000
+sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
+
+[[fixed-register-images]]
+name = "trigger_bluetooth_modem_lp_timer_command"
+peripheral = "BTDM_RUNTIME_CONTROL"
+register = "COMMAND_0010"
+value = 0x00040000
+sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
+
+[[full-register-writes]]
+name = "publish_bluetooth_modem_lp_timer_compare"
+peripheral = "BTDM_RUNTIME_CONTROL"
+register = "VALUE_006C"
+field = "IMAGE"
+domain = "BluetoothModemLpTimerCompareImage"
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
 
 [[fixed-register-images]]
 name = "clear_bluetooth_scheduler_run_interrupts_bank_0"
@@ -2280,6 +2388,27 @@ sources = [
     "BLOB_LIBBTDM_CONTROLLER_IRQ",
     "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES",
 ]
+
+[[field-or-modifies]]
+name = "prepare_bluetooth_modem_lp_timer_control_25"
+peripheral = "BTDM_RUNTIME_CONTROL"
+register = "CONTROL_0078"
+fields = [{ field = "CONTROL_25", source-bit-offset = 0 }]
+value = 0x00000001
+exposure = "facade"
+sources = [
+    "BLOB_LIBBTDM_RUNTIME_CONTROL",
+    "PUBLIC_ESP32S31_BT_RUNTIME_TIMER_ROLE",
+]
+
+[[field-or-modifies]]
+name = "publish_bluetooth_modem_lp_timer_control_1"
+peripheral = "BTDM_RUNTIME_CONTROL"
+register = "CONTROL_0058"
+fields = [{ field = "CONTROL_1", source-bit-offset = 0 }]
+value = 0x00000001
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_IRQ"]
 
 [[field-or-modifies]]
 name = "or_bluetooth_memory_list_1_pointer_b"

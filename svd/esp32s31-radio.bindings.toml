@@ -40079,10 +40079,17 @@ scope = []
 register-method = "state_0024"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "LOW_BYTE"
+method = "low_byte"
 bit-offset = 0
-bit-width = 32
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNCLASSIFIED_31_8"
+method = "unclassified_31_8"
+bit-offset = 8
+bit-width = 24
 access = "read-write"
 
 [[registers]]
@@ -40097,10 +40104,17 @@ scope = []
 register-method = "state_002c"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "LOW_BYTE"
+method = "low_byte"
 bit-offset = 0
-bit-width = 32
+bit-width = 8
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNCLASSIFIED_31_8"
+method = "unclassified_31_8"
+bit-offset = 8
+bit-width = 24
 access = "read-write"
 
 [[registers]]

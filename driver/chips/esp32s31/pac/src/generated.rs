@@ -1120,6 +1120,22 @@ impl MacItwtControlMaskedInput {
     }
 }
 
+/// Register-specific compare image produced only by the reviewed finite modem low-power timer deadline projection.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct BluetoothModemLpTimerCompareImage(u32);
+
+impl BluetoothModemLpTimerCompareImage {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Reviewed named fields in the eight-bit PHY analog-I2C register space. Generated accessors exclusively own sampled-byte masks and shifts.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct PhyI2cField {
@@ -1374,6 +1390,18 @@ pub(crate) fn publish_ieee802154_rx_dma_address(
     crate::svd::full_register_write::publish_ieee802154_rx_dma_address(registers, value.get());
 }
 
+/// Typed bridge for the reviewed `publish_bluetooth_modem_lp_timer_compare` complete-register transaction.
+#[inline]
+pub(crate) fn publish_bluetooth_modem_lp_timer_compare(
+    registers: &crate::svd::BtdmRuntimeControl,
+    value: BluetoothModemLpTimerCompareImage,
+) {
+    crate::svd::full_register_write::publish_bluetooth_modem_lp_timer_compare(
+        registers,
+        value.get(),
+    );
+}
+
 /// Typed bridge for the reviewed `set_ftm_enabled_from_vendor_argument` masked transaction.
 #[inline]
 pub(crate) fn set_ftm_enabled_from_vendor_argument(
@@ -1556,6 +1584,22 @@ pub(crate) fn enable_bluetooth_scheduler_run_interrupts_bank_1(
     registers: &crate::svd::BluetoothInterruptBank,
 ) {
     crate::svd::field_or_modify::enable_bluetooth_scheduler_run_interrupts_bank_1(registers);
+}
+
+/// Typed bridge for the reviewed `prepare_bluetooth_modem_lp_timer_control_25` fixed field-OR transaction.
+#[inline]
+pub(crate) fn prepare_bluetooth_modem_lp_timer_control_25(
+    registers: &crate::svd::BtdmRuntimeControl,
+) {
+    crate::svd::field_or_modify::prepare_bluetooth_modem_lp_timer_control_25(registers);
+}
+
+/// Typed bridge for the reviewed `publish_bluetooth_modem_lp_timer_control_1` fixed field-OR transaction.
+#[inline]
+pub(crate) fn publish_bluetooth_modem_lp_timer_control_1(
+    registers: &crate::svd::BtdmRuntimeControl,
+) {
+    crate::svd::field_or_modify::publish_bluetooth_modem_lp_timer_control_1(registers);
 }
 
 /// Typed bridge for the reviewed `or_bluetooth_memory_list_1_pointer_b` field-OR transaction.

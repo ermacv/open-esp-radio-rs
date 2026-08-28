@@ -2729,10 +2729,17 @@ bit-width = 20
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "OPAQUE_STATE_20_29"
-method = "opaque_state_20_29"
+svd-name = "OPAQUE_STATE_20_28"
+method = "opaque_state_20_28"
 bit-offset = 20
-bit-width = 10
+bit-width = 9
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "REFERENCE_PATH_STATE"
+method = "reference_path_state"
+bit-offset = 29
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]

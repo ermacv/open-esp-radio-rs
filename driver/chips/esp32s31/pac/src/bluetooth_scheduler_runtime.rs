@@ -7,26 +7,27 @@ use super::{
     svd::{zero_based_field_write, zero_register_write},
 };
 
-/// First complete `SCHEDULER_STATE` image read for bank-one source 3.
+/// First field-level `SCHEDULER_STATE` observation for bank-one source 3.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothSchedulerReferenceGateObservation(u32);
+pub struct BluetoothSchedulerReferenceGateObservation {
+    busy: bool,
+}
 
 impl BluetoothSchedulerReferenceGateObservation {
-    /// Wrap one complete register image at the reference-gate temporal point.
-    pub(crate) const fn from_bits(bits: u32) -> Self {
-        Self(bits)
+    const fn new(busy: bool) -> Self {
+        Self { busy }
     }
 
     /// Construct a semantic gate observation for upper-layer validation.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub const fn from_busy_for_validation(busy: bool) -> Self {
-        Self(if busy { 1 << 31 } else { 0 })
+        Self::new(busy)
     }
 
     /// Whether the scheduler was busy at the reference-gate temporal point.
     pub const fn is_busy(self) -> bool {
-        self.0 & (1 << 31) != 0
+        self.busy
     }
 }
 
@@ -42,31 +43,36 @@ pub struct BluetoothSchedulerReferenceCleared {
     _private: (),
 }
 
-/// Later complete `SCHEDULER_STATE` image used to construct deferred work.
+/// Later field-level `SCHEDULER_STATE` observation used for deferred work.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothSchedulerWorkObservation(u32);
+pub struct BluetoothSchedulerWorkObservation {
+    busy: bool,
+    reference_path_state: bool,
+}
 
 impl BluetoothSchedulerWorkObservation {
-    /// Wrap one complete register image at the deferred-work temporal point.
-    pub(crate) const fn from_bits(bits: u32) -> Self {
-        Self(bits)
+    const fn new(busy: bool, reference_path_state: bool) -> Self {
+        Self {
+            busy,
+            reference_path_state,
+        }
     }
 
     /// Construct semantic deferred-work fields for upper-layer validation.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub const fn from_fields_for_validation(busy: bool, reference_state_29: bool) -> Self {
-        Self((if busy { 1 << 31 } else { 0 }) | (if reference_state_29 { 1 << 29 } else { 0 }))
+        Self::new(busy, reference_state_29)
     }
 
     /// Whether the scheduler was busy at the deferred-work temporal point.
     pub const fn is_busy(self) -> bool {
-        self.0 & (1 << 31) != 0
+        self.busy
     }
 
     /// Whether the reviewed reference path was active at this temporal point.
     pub const fn reference_path_active(self) -> bool {
-        self.0 & ((1 << 31) | (1 << 29)) == ((1 << 31) | (1 << 29))
+        self.busy && self.reference_path_state
     }
 }
 
@@ -141,8 +147,14 @@ impl BluetoothSchedulerFinishedListObservation {
 }
 
 trait BluetoothSchedulerInterruptControl {
-    fn read_scheduler_state(&mut self) -> u32;
+    fn read_scheduler_state(&mut self) -> SchedulerStateObservation;
     fn clear_scheduler_reference(&mut self);
+}
+
+#[derive(Clone, Copy)]
+struct SchedulerStateObservation {
+    busy: bool,
+    reference_path_state: bool,
 }
 
 struct HardwareSchedulerInterruptControl<'a> {
@@ -150,8 +162,12 @@ struct HardwareSchedulerInterruptControl<'a> {
 }
 
 impl BluetoothSchedulerInterruptControl for HardwareSchedulerInterruptControl<'_> {
-    fn read_scheduler_state(&mut self) -> u32 {
-        self.registers.scheduler_state().read().bits()
+    fn read_scheduler_state(&mut self) -> SchedulerStateObservation {
+        let state = self.registers.scheduler_state().read();
+        SchedulerStateObservation {
+            busy: state.busy().bit(),
+            reference_path_state: state.reference_path_state().bit(),
+        }
     }
 
     fn clear_scheduler_reference(&mut self) {
@@ -185,7 +201,7 @@ impl BluetoothSchedulerFinishedListControl for HardwareSchedulerFinishedListCont
 fn execute_reference_gate_observation(
     control: &mut impl BluetoothSchedulerInterruptControl,
 ) -> BluetoothSchedulerReferenceGateObservation {
-    BluetoothSchedulerReferenceGateObservation::from_bits(control.read_scheduler_state())
+    BluetoothSchedulerReferenceGateObservation::new(control.read_scheduler_state().busy)
 }
 
 fn execute_clear_scheduler_reference(control: &mut impl BluetoothSchedulerInterruptControl) {
@@ -195,7 +211,8 @@ fn execute_clear_scheduler_reference(control: &mut impl BluetoothSchedulerInterr
 fn execute_work_observation(
     control: &mut impl BluetoothSchedulerInterruptControl,
 ) -> BluetoothSchedulerWorkObservation {
-    BluetoothSchedulerWorkObservation::from_bits(control.read_scheduler_state())
+    let state = control.read_scheduler_state();
+    BluetoothSchedulerWorkObservation::new(state.busy, state.reference_path_state)
 }
 
 fn execute_finished_list_transfer(
@@ -272,8 +289,9 @@ mod tests {
 
     use super::{
         BluetoothSchedulerFinishedListControl, BluetoothSchedulerInterruptControl,
-        execute_clear_scheduler_reference, execute_finished_list_transfer,
-        execute_reference_gate_observation, execute_work_observation,
+        SchedulerStateObservation, execute_clear_scheduler_reference,
+        execute_finished_list_transfer, execute_reference_gate_observation,
+        execute_work_observation,
     };
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum InterruptOperation {
@@ -282,13 +300,13 @@ mod tests {
     }
 
     struct InterruptRecorder {
-        states: [u32; 2],
+        states: [SchedulerStateObservation; 2],
         next_state: usize,
         operations: Vec<InterruptOperation>,
     }
 
     impl BluetoothSchedulerInterruptControl for InterruptRecorder {
-        fn read_scheduler_state(&mut self) -> u32 {
+        fn read_scheduler_state(&mut self) -> SchedulerStateObservation {
             let state = self.states[self.next_state];
             self.next_state += 1;
             self.operations.push(InterruptOperation::ReadState);
@@ -325,7 +343,16 @@ mod tests {
     #[test]
     fn temporal_state_reads_remain_distinct_across_reference_clear() {
         let mut recorder = InterruptRecorder {
-            states: [0, u32::MAX],
+            states: [
+                SchedulerStateObservation {
+                    busy: false,
+                    reference_path_state: false,
+                },
+                SchedulerStateObservation {
+                    busy: true,
+                    reference_path_state: true,
+                },
+            ],
             next_state: 0,
             operations: Vec::new(),
         };

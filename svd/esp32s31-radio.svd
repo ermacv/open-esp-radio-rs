@@ -17878,7 +17878,7 @@ controller partition prevents either owner from manufacturing an MMIO alias.
         </register>
         <register>
           <name>SCHEDULER_STATE</name>
-          <description>The source-124 handler reads this complete shared scheduler state at a bank-one reference gate and again before publishing deferred work. Command transactions also wait while bit 31 is set; other complete users consume or publish the low 20 and low 30 bits.</description>
+          <description>The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both REFERENCE_PATH_STATE and BUSY. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits.</description>
           <addressOffset>0x7C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -17889,9 +17889,15 @@ controller partition prevents either owner from manufacturing an MMIO alias.
               <bitWidth>20</bitWidth>
             </field>
             <field>
-              <name>OPAQUE_STATE_20_29</name>
+              <name>OPAQUE_STATE_20_28</name>
               <bitOffset>20</bitOffset>
-              <bitWidth>10</bitWidth>
+              <bitWidth>9</bitWidth>
+            </field>
+            <field>
+              <name>REFERENCE_PATH_STATE</name>
+              <description>State sampled together with BUSY by the complete source-124 deferred-work predicate. The underlying scheduler-state meaning remains unqualified.</description>
+              <bitOffset>29</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>OPAQUE_STATE_30</name>

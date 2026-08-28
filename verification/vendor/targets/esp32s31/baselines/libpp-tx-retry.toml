@@ -1,29 +1,14 @@
 schema = 2
 
 [[evidence]]
-source = "libpp"
-symbol = "rcGetRate"
-kind = "reviewed-domain-equivalence/profile:scenario/libpp-ordinary-rc-get-rate"
-digest = "c0205131b32a81f643bed73424594cc4eae26e15e48e4dcc01f14e355b1b0bd3"
-
-[evidence.components]
-comparison-orchestrator = "acd193e24d6eaa785453b27b7b12cb1d262cbea83db314dda9e58e735051da67"
-diagnostic-contracts = "05b6d61d3d159755f14253601341637a1a1a6be9f4576b7f5c87506755266216"
-execution-image = "b4bc1d7eb5a5125c3517e8d95fbc09a97cdb18a637b3020062ed7d5a0da4b259"
-execution-machine = "ff4f453ddf8d7921e6525db9a1dc97c18fefa73b3e8250f206c162edc425b1fc"
-execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
-profile = "d4d5b130024dde71afac542d8fda027f3c461c779fb41ba9c49902b4b2635837"
-profile-parser = "47752e5d19d316ed2c186e3851bac1101ba13da0e3a053591e059c682ea77fc4"
-
-[[evidence]]
 source = "libpp-replay"
 symbol = "lmacProcessAckTimeout"
 kind = "reviewed-domain-equivalence/profile:state/libpp-lmac-ack-timeout-state"
-digest = "97804cc6936ed7c01ce97c35b66ce09d97082d0ceeaa488f2dba8dba0648bb8d"
+digest = "ea3ba484387522f615557e63a5e1be2f4b57bda23d314b3d34eb9bb0b63e1745"
 
 [evidence.components]
 comparison-orchestrator = "acd193e24d6eaa785453b27b7b12cb1d262cbea83db314dda9e58e735051da67"
-diagnostic-contracts = "05b6d61d3d159755f14253601341637a1a1a6be9f4576b7f5c87506755266216"
+diagnostic-contracts = "249907554bf1828de9098e9524482878673d0cc1c26173f68277a8d4e6e48cc3"
 execution-image = "b4bc1d7eb5a5125c3517e8d95fbc09a97cdb18a637b3020062ed7d5a0da4b259"
 execution-machine = "ff4f453ddf8d7921e6525db9a1dc97c18fefa73b3e8250f206c162edc425b1fc"
 execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
@@ -34,11 +19,11 @@ profile-parser = "47752e5d19d316ed2c186e3851bac1101ba13da0e3a053591e059c682ea77f
 source = "libpp-replay"
 symbol = "lmacProcessTxError"
 kind = "reviewed-domain-equivalence/profile:scenario/libpp-lmac-process-tx-error-dispatch"
-digest = "ddd67142bab814112a9854ee04ee850659f363bdeab29fafab31bc4c630256fb"
+digest = "f7134850d3a5ec8c9abe519cf5ae0d08a1919af9481b4795eed0f96eb093ed51"
 
 [evidence.components]
 comparison-orchestrator = "acd193e24d6eaa785453b27b7b12cb1d262cbea83db314dda9e58e735051da67"
-diagnostic-contracts = "05b6d61d3d159755f14253601341637a1a1a6be9f4576b7f5c87506755266216"
+diagnostic-contracts = "249907554bf1828de9098e9524482878673d0cc1c26173f68277a8d4e6e48cc3"
 execution-image = "b4bc1d7eb5a5125c3517e8d95fbc09a97cdb18a637b3020062ed7d5a0da4b259"
 execution-machine = "ff4f453ddf8d7921e6525db9a1dc97c18fefa73b3e8250f206c162edc425b1fc"
 execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"

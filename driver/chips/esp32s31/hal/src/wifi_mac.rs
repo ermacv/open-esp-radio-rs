@@ -697,27 +697,18 @@ impl<'registers> WifiMacHal<'registers> {
         self.pac_mut().mac_rx_buffer_full_count()
     }
 
-    /// Read the complete reviewed descriptor word.
-    ///
-    /// This is the shared production core used both by the driver's bounded
-    /// address projection and by the compiled vendor-shaped comparison
-    /// entry.  The restricted PAC owns the register read; this HAL boundary
-    /// owns which projection is exposed to each caller.
-    pub fn rx_last_descriptor_word(&self) -> u32 {
-        self.pac().mac_rx_last_descriptor_word()
-    }
-
-    /// Read the complete reviewed next-descriptor word.
-    pub fn rx_next_descriptor_word(&self) -> u32 {
-        self.pac().mac_rx_next_descriptor_word()
-    }
-
     pub fn rx_last_descriptor_low(&mut self) -> u32 {
-        self.rx_last_descriptor_word() & 0x000f_ffff
+        self.pac().mac_rx_last_descriptor_low()
     }
 
     pub fn rx_next_descriptor_low(&mut self) -> u32 {
-        self.rx_next_descriptor_word() & 0x000f_ffff
+        self.pac().mac_rx_next_descriptor().address_low()
+    }
+
+    pub fn rx_next_descriptor(
+        &self,
+    ) -> open_esp_radio_esp32s31_pac::MacRxNextDescriptorObservation {
+        self.pac().mac_rx_next_descriptor()
     }
 
     pub fn rx_walker_enabled(&mut self) -> bool {

@@ -4,11 +4,11 @@ schema = 2
 source = "libpp"
 symbol = "hal_mac_set_addr"
 kind = "whole-function-equivalence/profile:scenario/wifi-interface-address"
-digest = "01d89151f43a7af84a1394723be1a49885a502cbdef0e339f0d39194977aa345"
+digest = "e37bd8667f692febfbe606e2204161162dbb97cd85b38d762204f3609830bb91"
 
 [evidence.components]
 comparison-orchestrator = "acd193e24d6eaa785453b27b7b12cb1d262cbea83db314dda9e58e735051da67"
-diagnostic-contracts = "05b6d61d3d159755f14253601341637a1a1a6be9f4576b7f5c87506755266216"
+diagnostic-contracts = "249907554bf1828de9098e9524482878673d0cc1c26173f68277a8d4e6e48cc3"
 execution-image = "b4bc1d7eb5a5125c3517e8d95fbc09a97cdb18a637b3020062ed7d5a0da4b259"
 execution-machine = "ff4f453ddf8d7921e6525db9a1dc97c18fefa73b3e8250f206c162edc425b1fc"
 execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
@@ -19,11 +19,11 @@ profile-parser = "47752e5d19d316ed2c186e3851bac1101ba13da0e3a053591e059c682ea77f
 source = "libpp"
 symbol = "hal_mac_set_bssid"
 kind = "whole-function-equivalence/profile:scenario/wifi-interface-bssid"
-digest = "1d1a3cfbe69af0c30dbc1a27345662894030ccc6498d80121810a6231603cc97"
+digest = "b3b4a12ca9bf2f549da78e074d4944f18d7dfd643c29eb3360aac2f2b14b9939"
 
 [evidence.components]
 comparison-orchestrator = "acd193e24d6eaa785453b27b7b12cb1d262cbea83db314dda9e58e735051da67"
-diagnostic-contracts = "05b6d61d3d159755f14253601341637a1a1a6be9f4576b7f5c87506755266216"
+diagnostic-contracts = "249907554bf1828de9098e9524482878673d0cc1c26173f68277a8d4e6e48cc3"
 execution-image = "b4bc1d7eb5a5125c3517e8d95fbc09a97cdb18a637b3020062ed7d5a0da4b259"
 execution-machine = "ff4f453ddf8d7921e6525db9a1dc97c18fefa73b3e8250f206c162edc425b1fc"
 execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"

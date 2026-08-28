@@ -13205,6 +13205,12 @@
               <bitOffset>0</bitOffset>
               <bitWidth>20</bitWidth>
             </field>
+            <field>
+              <name>UPPER_UNKNOWN</name>
+              <description>Unassigned upper state retained by the complete-word zero predicate in wDev_AppendRxBlocks. This is deliberately exposed separately from ADDRESS_LOW so production code never reconstructs or masks a register image.</description>
+              <bitOffset>20</bitOffset>
+              <bitWidth>12</bitWidth>
+            </field>
           </fields>
         </register>
         <register>

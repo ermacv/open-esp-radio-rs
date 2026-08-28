@@ -32472,11 +32472,18 @@ pub mod wifi_mac_rx_dma {
         pub type R = crate::R<RxNextDescriptorSpec>;
         #[doc = "Field `ADDRESS_LOW` reader - "]
         pub type AddressLowR = crate::FieldReader<u32>;
+        #[doc = "Field `UPPER_UNKNOWN` reader - Unassigned upper state retained by the complete-word zero predicate in wDev_AppendRxBlocks. This is deliberately exposed separately from ADDRESS_LOW so production code never reconstructs or masks a register image."]
+        pub type UpperUnknownR = crate::FieldReader<u16>;
         impl R {
             #[doc = "Bits 0:19"]
             #[inline(always)]
             pub fn address_low(&self) -> AddressLowR {
                 AddressLowR::new(self.bits & 0x000f_ffff)
+            }
+            #[doc = "Bits 20:31 - Unassigned upper state retained by the complete-word zero predicate in wDev_AppendRxBlocks. This is deliberately exposed separately from ADDRESS_LOW so production code never reconstructs or masks a register image."]
+            #[inline(always)]
+            pub fn upper_unknown(&self) -> UpperUnknownR {
+                UpperUnknownR::new(((self.bits >> 20) & 0x0fff) as u16)
             }
         }
         #[doc = "Complete hardware current/next descriptor word. The low 20 bits are the reviewed address projection; meanings of bits 31:20 remain unknown. Complete ROM wDev_AppendRxBlocks compares the entire 32-bit word with zero after reload completion, not only ADDRESS_LOW, before it may read LAST and repair RX_DESCRIPTOR_BASE.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_next_descriptor::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]

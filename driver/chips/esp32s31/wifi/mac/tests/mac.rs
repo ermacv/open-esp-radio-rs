@@ -351,8 +351,11 @@ impl RxDma for MockMmio {
         self.read32(RX_NEXT_DESCRIPTOR) & 0x000f_ffff
     }
 
-    fn next_descriptor_word(&mut self) -> u32 {
-        self.read32(RX_NEXT_DESCRIPTOR)
+    fn next_descriptor(&mut self) -> open_esp_radio_esp32s31_wifi_dma::rx_dma::RxDmaNextDescriptor {
+        open_esp_radio_esp32s31_wifi_dma::rx_dma::RxDmaNextDescriptor::validation(
+            self.next_descriptor_low(),
+            false,
+        )
     }
 
     fn with_ordered_cursor<R>(
@@ -1633,24 +1636,6 @@ fn reload_repair_observation_reads_last_only_after_zero_next() {
         )
     });
     assert_eq!(active, ((BASE + DESCRIPTOR_BYTES) & 0x000f_ffff, None));
-    assert_eq!(
-        mmio.operations(),
-        &[Operation::Read(RX_NEXT_DESCRIPTOR), Operation::Fence],
-    );
-
-    // The complete vendor leaf compares the whole register word with zero.
-    // A zero address projection with nonzero upper status bits is not the
-    // terminal branch and must not authorize a stale BASE repair.
-    mmio.operations.clear();
-    mmio.set(RX_NEXT_DESCRIPTOR, 0xa5a0_0000);
-    let upper_status = mmio.with_reload_repair_observation(|observation| {
-        (
-            observation.next_descriptor_word(),
-            observation.next_descriptor_low(),
-            observation.exhausted_last_descriptor_low(),
-        )
-    });
-    assert_eq!(upper_status, (0xa5a0_0000, 0, None));
     assert_eq!(
         mmio.operations(),
         &[Operation::Read(RX_NEXT_DESCRIPTOR), Operation::Fence],

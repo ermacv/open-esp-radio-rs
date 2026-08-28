@@ -10969,6 +10969,13 @@ bit-offset = 0
 bit-width = 20
 access = "read-only"
 
+[[registers.fields]]
+svd-name = "UPPER_UNKNOWN"
+method = "upper_unknown"
+bit-offset = 20
+bit-width = 12
+access = "read-only"
+
 [[registers]]
 address = 537936012
 width = 32

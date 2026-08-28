@@ -12,14 +12,34 @@ pub struct MacRxDmaSnapshot {
     pub walker_enabled: bool,
     pub reload_pending: bool,
     pub descriptor_base: u32,
-    /// Complete `RX_NEXT_DESCRIPTOR` register image.
-    ///
-    /// The vendor reload suffix branches on the whole word, so retaining only
-    /// the projected low address would erase fault evidence carried by the
-    /// upper bits.
-    pub next_descriptor_word: u32,
     pub next_descriptor_low: u32,
+    /// True when the unassigned upper `RX_NEXT_DESCRIPTOR` field is nonzero.
+    pub next_descriptor_upper_unknown: bool,
     pub last_descriptor_low: u32,
+}
+
+/// Field-level observation of `RX_NEXT_DESCRIPTOR`.
+///
+/// Keeping the address and unknown hardware state separate preserves the
+/// vendor's complete-word zero predicate without publishing a register image.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacRxNextDescriptorObservation {
+    address_low: u32,
+    upper_unknown: u16,
+}
+
+impl MacRxNextDescriptorObservation {
+    pub const fn address_low(self) -> u32 {
+        self.address_low
+    }
+
+    pub const fn is_zero(self) -> bool {
+        self.address_low == 0 && self.upper_unknown == 0
+    }
+
+    pub const fn has_unknown_upper_state(self) -> bool {
+        self.upper_unknown != 0
+    }
 }
 
 #[inline(always)]
@@ -34,13 +54,19 @@ pub(crate) fn set_walker_enabled(registers: &svd::WifiMacRxDma, enabled: bool) {
 }
 
 #[inline(always)]
-pub(crate) fn read_last_descriptor(registers: &svd::WifiMacRxDma) -> u32 {
-    registers.rx_last_descriptor().read().bits()
+pub(crate) fn read_last_descriptor_low(registers: &svd::WifiMacRxDma) -> u32 {
+    registers.rx_last_descriptor().read().address_low().bits()
 }
 
 #[inline(always)]
-pub(crate) fn read_next_descriptor(registers: &svd::WifiMacRxDma) -> u32 {
-    registers.rx_next_descriptor().read().bits()
+pub(crate) fn read_next_descriptor(
+    registers: &svd::WifiMacRxDma,
+) -> MacRxNextDescriptorObservation {
+    let observation = registers.rx_next_descriptor().read();
+    MacRxNextDescriptorObservation {
+        address_low: observation.address_low().bits(),
+        upper_unknown: observation.upper_unknown().bits(),
+    }
 }
 
 #[inline(always)]
@@ -49,17 +75,6 @@ pub(crate) fn write_descriptor_base(registers: &svd::WifiMacRxDma, address: u32)
         registers,
         super::generated::MacRxDescriptorBaseAddress::new(address),
     );
-}
-
-#[inline(always)]
-pub(crate) fn read_last_descriptor_address(registers: &svd::WifiMacRxDma) -> u32 {
-    let low = registers.rx_last_descriptor().read().address_low().bits();
-    let high = registers
-        .rx_descriptor_high_window()
-        .read()
-        .address_high()
-        .bits();
-    low | (u32::from(high) << 20)
 }
 
 #[inline(always)]
@@ -83,14 +98,14 @@ impl WifiRadioRegisters {
     pub fn mac_rx_dma_snapshot(&self) -> MacRxDmaSnapshot {
         let dma = &self.peripherals.wifi_mac.wifi_mac_rx_dma;
         let control = dma.rx_control().read();
-        let next_descriptor_word = dma.rx_next_descriptor().read().bits();
+        let next_descriptor = read_next_descriptor(dma);
         MacRxDmaSnapshot {
             walker_enabled: control.walker_enable().bit(),
             reload_pending: control.append_descriptor_reload().bit(),
-            descriptor_base: dma.rx_descriptor_base().read().bits(),
-            next_descriptor_word,
-            next_descriptor_low: next_descriptor_word & 0x000f_ffff,
-            last_descriptor_low: dma.rx_last_descriptor().read().bits() & 0x000f_ffff,
+            descriptor_base: dma.rx_descriptor_base().read().address().bits(),
+            next_descriptor_low: next_descriptor.address_low(),
+            next_descriptor_upper_unknown: next_descriptor.has_unknown_upper_state(),
+            last_descriptor_low: read_last_descriptor_low(dma),
         }
     }
 
@@ -111,22 +126,12 @@ impl WifiRadioRegisters {
             .modify(|_, w| w.cold_low_unknown().set(0));
     }
 
-    /// Read the complete hardware word. HAL owns any address-field projection.
-    pub fn mac_rx_last_descriptor_word(&self) -> u32 {
-        read_last_descriptor(&self.peripherals.wifi_mac.wifi_mac_rx_dma)
+    pub fn mac_rx_last_descriptor_low(&self) -> u32 {
+        read_last_descriptor_low(&self.peripherals.wifi_mac.wifi_mac_rx_dma)
     }
 
-    /// Read the complete hardware word. HAL owns any address-field projection.
-    pub fn mac_rx_next_descriptor_word(&self) -> u32 {
+    pub fn mac_rx_next_descriptor(&self) -> MacRxNextDescriptorObservation {
         read_next_descriptor(&self.peripherals.wifi_mac.wifi_mac_rx_dma)
-    }
-
-    /// Reconstruct the complete last descriptor pointer exactly as the
-    /// vendor leaf does. Ring ownership normally needs only the low index,
-    /// but this form keeps the high-window composition available without a
-    /// duplicated handwritten register transaction.
-    pub fn mac_rx_last_descriptor_address(&self) -> u32 {
-        read_last_descriptor_address(&self.peripherals.wifi_mac.wifi_mac_rx_dma)
     }
 
     pub fn mac_rx_walker_enabled(&self) -> bool {

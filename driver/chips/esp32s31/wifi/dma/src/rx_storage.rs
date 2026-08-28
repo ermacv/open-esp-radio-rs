@@ -1207,8 +1207,8 @@ mod tests {
             self.next_descriptor_low
         }
 
-        fn next_descriptor_word(&mut self) -> u32 {
-            self.next_descriptor_low
+        fn next_descriptor(&mut self) -> crate::rx_dma::RxDmaNextDescriptor {
+            crate::rx_dma::RxDmaNextDescriptor::validation(self.next_descriptor_low, false)
         }
 
         fn with_ordered_cursor<R>(
@@ -1893,9 +1893,9 @@ mod tests {
             live.reload_repair_evidence(),
             crate::rx_ring::RxReloadRepairEvidence {
                 observations: 1,
-                nonzero_word_with_zero_address: 0,
+                unknown_upper_with_zero_address: 0,
                 base_repairs: 1,
-                last_next_word: 0,
+                last_next_low: 0,
                 last_last_low: Some(
                     (BASE + crate::descriptor::DESCRIPTOR_BYTES) & ADDRESS_LOW_MASK
                 ),

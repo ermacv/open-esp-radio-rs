@@ -60,8 +60,13 @@ mod tests {
             }
         }
 
-        fn next_descriptor_word(&mut self) -> u32 {
-            self.next_descriptor_low()
+        fn next_descriptor(
+            &mut self,
+        ) -> open_esp_radio_esp32s31_wifi_dma::rx_dma::RxDmaNextDescriptor {
+            open_esp_radio_esp32s31_wifi_dma::rx_dma::RxDmaNextDescriptor::validation(
+                self.next_descriptor_low(),
+                false,
+            )
         }
 
         fn with_ordered_cursor<R>(

@@ -383,8 +383,8 @@ impl RxDma for CooperativeRadioHardware<'_> {
         RxDma::next_descriptor_low(&mut self.wifi_mac_hal())
     }
 
-    fn next_descriptor_word(&mut self) -> u32 {
-        RxDma::next_descriptor_word(&mut self.wifi_mac_hal())
+    fn next_descriptor(&mut self) -> open_esp_radio_esp32s31_wifi_dma::rx_dma::RxDmaNextDescriptor {
+        RxDma::next_descriptor(&mut self.wifi_mac_hal())
     }
 
     fn with_ordered_cursor<R>(

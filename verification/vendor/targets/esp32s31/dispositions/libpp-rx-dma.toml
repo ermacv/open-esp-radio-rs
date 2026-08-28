@@ -43,38 +43,6 @@ disposition = { kind = "required" }
 
 [[functions]]
 source = "libpp"
-symbol = "hal_mac_rx_read_rxdscrlast"
-disposition = "direct"
-protocol = "wifi"
-rust-component = "open_esp_radio_esp32s31_hal::wifi_mac::WifiMacHal::rx_last_descriptor_word"
-binding = "v2"
-rust-binding = "shared-production-core"
-rust-probe = "open_libpp_rx_trace_hal_mac_rx_read_rxdscrlast"
-comparison-plan = "direct-effects-v1"
-compare-return = true
-effect-contract = "exact-effects-v2"
-[[functions.effects]]
-selector = { kind = "mmio-read", width = 32, address = 0x2010408c }
-disposition = { kind = "required" }
-
-[[functions]]
-source = "libpp"
-symbol = "hal_mac_rx_read_rxdscrnext"
-disposition = "direct"
-protocol = "wifi"
-rust-component = "open_esp_radio_esp32s31_hal::wifi_mac::WifiMacHal::rx_next_descriptor_word"
-binding = "v2"
-rust-binding = "shared-production-core"
-rust-probe = "open_libpp_rx_trace_hal_mac_rx_read_rxdscrnext"
-comparison-plan = "direct-effects-v1"
-compare-return = true
-effect-contract = "exact-effects-v2"
-[[functions.effects]]
-selector = { kind = "mmio-read", width = 32, address = 0x20104088 }
-disposition = { kind = "required" }
-
-[[functions]]
-source = "libpp"
 symbol = "hal_mac_rx_set_base"
 disposition = "direct"
 protocol = "wifi"
@@ -86,25 +54,6 @@ comparison-plan = "direct-effects-v1"
 effect-contract = "exact-effects-v2"
 [[functions.effects]]
 selector = { kind = "mmio-write", width = 32, address = 0x20104084 }
-disposition = { kind = "required" }
-
-[[functions]]
-source = "libpp"
-symbol = "hal_mac_rx_get_last_dscr"
-disposition = "direct"
-protocol = "wifi"
-rust-component = "open_esp_radio_esp32s31_pac::mac_rx_dma::read_last_descriptor_address"
-binding = "v2"
-rust-binding = "exact-production-entry"
-rust-probe = "open_libpp_rx_trace_hal_mac_rx_get_last_dscr"
-comparison-plan = "direct-effects-v1"
-compare-return = true
-effect-contract = "exact-effects-v2"
-[[functions.effects]]
-selector = { kind = "mmio-read", width = 32, address = 0x2010408c }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "mmio-read", width = 32, address = 0x20104c70 }
 disposition = { kind = "required" }
 
 [[functions]]

@@ -149,11 +149,13 @@ rust-prefix = "open_libpp_rx_trace_"
 profiles = ["profiles/libpp-rx-dma.toml"]
 dispositions = ["dispositions/libpp-rx-dma.toml"]
 baselines = ["baselines/libpp-rx-dma.toml"]
-# This gate qualifies the eight finite register leaves only. The composed
+# This gate qualifies the five finite production operations only. Raw register
+# word reads and handwritten cross-register address composition are deliberately
+# not exposed by the PAC facade. The composed
 # wDev_AppendRxBlocks/RxRingLive transaction remains visibly uncovered until
 # it receives its own reviewed-domain production profile.
 gate = "regression"
-match-floor = 6
+match-floor = 5
 [[suites.vendor]]
 source = "libpp"
 all = true

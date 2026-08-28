@@ -4,11 +4,11 @@ schema = 2
 source = "coex"
 symbol = "coex_core_event_duration_get"
 kind = "whole-function-equivalence/profile:state/coex-core-event-duration-get"
-digest = "0577f37552876417d506a38bd6a5f29e66256fba855f0236c9c250d996bb237f"
+digest = "06ba1f72cdf954895c1afc5ddaa28eb2c3726c063eea4b30b0ce6dfa887ae21a"
 
 [evidence.components]
 comparison-orchestrator = "acd193e24d6eaa785453b27b7b12cb1d262cbea83db314dda9e58e735051da67"
-diagnostic-contracts = "05b6d61d3d159755f14253601341637a1a1a6be9f4576b7f5c87506755266216"
+diagnostic-contracts = "249907554bf1828de9098e9524482878673d0cc1c26173f68277a8d4e6e48cc3"
 execution-image = "b4bc1d7eb5a5125c3517e8d95fbc09a97cdb18a637b3020062ed7d5a0da4b259"
 execution-machine = "ff4f453ddf8d7921e6525db9a1dc97c18fefa73b3e8250f206c162edc425b1fc"
 execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
@@ -19,11 +19,11 @@ profile-parser = "47752e5d19d316ed2c186e3851bac1101ba13da0e3a053591e059c682ea77f
 source = "coex"
 symbol = "coex_core_pti_get"
 kind = "whole-function-equivalence/profile:state/coex-core-pti-get"
-digest = "68750c46f1c0b17af32e64848025a591e8e092a8a822c24bea0efed8a11134af"
+digest = "7176fdd12e457b6ecc7a74c4e78101d245e2059d09099eb216e9fd5cb4468b23"
 
 [evidence.components]
 comparison-orchestrator = "acd193e24d6eaa785453b27b7b12cb1d262cbea83db314dda9e58e735051da67"
-diagnostic-contracts = "05b6d61d3d159755f14253601341637a1a1a6be9f4576b7f5c87506755266216"
+diagnostic-contracts = "249907554bf1828de9098e9524482878673d0cc1c26173f68277a8d4e6e48cc3"
 execution-image = "b4bc1d7eb5a5125c3517e8d95fbc09a97cdb18a637b3020062ed7d5a0da4b259"
 execution-machine = "ff4f453ddf8d7921e6525db9a1dc97c18fefa73b3e8250f206c162edc425b1fc"
 execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
@@ -34,11 +34,11 @@ profile-parser = "47752e5d19d316ed2c186e3851bac1101ba13da0e3a053591e059c682ea77f
 source = "coex"
 symbol = "coex_core_release"
 kind = "whole-function-equivalence/profile:scenario/coex-core-release"
-digest = "f80f46994c78149bc2a86a851090c7bc51df2ac29ac7abb31b215de61c9511cb"
+digest = "d2dd9d0027d523bddb6b65e4ee97fe34f7ecc5c9e847d1a48970b590686238ca"
 
 [evidence.components]
 comparison-orchestrator = "acd193e24d6eaa785453b27b7b12cb1d262cbea83db314dda9e58e735051da67"
-diagnostic-contracts = "05b6d61d3d159755f14253601341637a1a1a6be9f4576b7f5c87506755266216"
+diagnostic-contracts = "249907554bf1828de9098e9524482878673d0cc1c26173f68277a8d4e6e48cc3"
 execution-image = "b4bc1d7eb5a5125c3517e8d95fbc09a97cdb18a637b3020062ed7d5a0da4b259"
 execution-machine = "ff4f453ddf8d7921e6525db9a1dc97c18fefa73b3e8250f206c162edc425b1fc"
 execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
@@ -49,11 +49,11 @@ profile-parser = "47752e5d19d316ed2c186e3851bac1101ba13da0e3a053591e059c682ea77f
 source = "coex"
 symbol = "coex_core_request"
 kind = "reviewed-domain-equivalence/profile:scenario/coex-core-request"
-digest = "fc03a065be4bb650b1741e9466ff13295e5b9234b045af55a1a3ca2f98561190"
+digest = "8863bea02690d941a807a4e2452aacc4c28577b8a159b74e11bb2a2232a432be"
 
 [evidence.components]
 comparison-orchestrator = "acd193e24d6eaa785453b27b7b12cb1d262cbea83db314dda9e58e735051da67"
-diagnostic-contracts = "05b6d61d3d159755f14253601341637a1a1a6be9f4576b7f5c87506755266216"
+diagnostic-contracts = "249907554bf1828de9098e9524482878673d0cc1c26173f68277a8d4e6e48cc3"
 execution-image = "b4bc1d7eb5a5125c3517e8d95fbc09a97cdb18a637b3020062ed7d5a0da4b259"
 execution-machine = "ff4f453ddf8d7921e6525db9a1dc97c18fefa73b3e8250f206c162edc425b1fc"
 execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
@@ -64,11 +64,11 @@ profile-parser = "47752e5d19d316ed2c186e3851bac1101ba13da0e3a053591e059c682ea77f
 source = "coex"
 symbol = "coex_core_timer_idx_get"
 kind = "whole-function-equivalence/profile:scenario/coex-core-timer-index"
-digest = "ed8f0e21aa0c29b18c62372835d5be42a75629921e7893a4ed64a11e499cdc16"
+digest = "88163a4e1d65acdea2e8c191ab8aa43073191e7c80ed1c9edbf597ba2b424a26"
 
 [evidence.components]
 comparison-orchestrator = "acd193e24d6eaa785453b27b7b12cb1d262cbea83db314dda9e58e735051da67"
-diagnostic-contracts = "05b6d61d3d159755f14253601341637a1a1a6be9f4576b7f5c87506755266216"
+diagnostic-contracts = "249907554bf1828de9098e9524482878673d0cc1c26173f68277a8d4e6e48cc3"
 execution-image = "b4bc1d7eb5a5125c3517e8d95fbc09a97cdb18a637b3020062ed7d5a0da4b259"
 execution-machine = "ff4f453ddf8d7921e6525db9a1dc97c18fefa73b3e8250f206c162edc425b1fc"
 execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"

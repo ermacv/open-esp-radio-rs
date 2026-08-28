@@ -76,26 +76,11 @@ pub fn hal_mac_rx_enable(passthrough: u32) -> u32 {
 }
 
 #[inline(always)]
-pub fn hal_mac_rx_read_rxdscrlast() -> u32 {
-    owner().wifi_mac_hal().rx_last_descriptor_word()
-}
-
-#[inline(always)]
-pub fn hal_mac_rx_read_rxdscrnext() -> u32 {
-    owner().wifi_mac_hal().rx_next_descriptor_word()
-}
-
-#[inline(always)]
 pub fn hal_mac_rx_set_base(address: u32) -> u32 {
     owner()
         .pac_mut()
         .validation_write_mac_rx_descriptor_base(address);
     address
-}
-
-#[inline(always)]
-pub fn hal_mac_rx_get_last_dscr() -> u32 {
-    owner().pac().mac_rx_last_descriptor_address()
 }
 
 #[inline(always)]

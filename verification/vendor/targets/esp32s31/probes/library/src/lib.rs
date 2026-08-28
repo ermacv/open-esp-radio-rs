@@ -141,34 +141,10 @@ pub extern "C" fn open_libpp_rx_trace_hal_mac_rx_enable() {
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_libpp_rx_trace_hal_mac_rx_read_rxdscrlast() -> u32 {
-    // SAFETY: this validation-only function is the sole user of the stolen
-    // peripheral in its isolated probe image.
-    open_esp_radio_esp32s31_hal::validation::hal_mac_rx_read_rxdscrlast()
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_rx_trace_hal_mac_rx_read_rxdscrnext() -> u32 {
-    // SAFETY: this validation-only function is the sole user of the stolen
-    // peripheral in its isolated probe image.
-    open_esp_radio_esp32s31_hal::validation::hal_mac_rx_read_rxdscrnext()
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
 pub extern "C" fn open_libpp_rx_trace_hal_mac_rx_set_base(address: u32) {
     // SAFETY: this validation-only function is the sole user of the stolen
     // peripheral in its isolated probe image.
     let _ = open_esp_radio_esp32s31_hal::validation::hal_mac_rx_set_base(address);
-}
-
-#[unsafe(no_mangle)]
-#[inline(never)]
-pub extern "C" fn open_libpp_rx_trace_hal_mac_rx_get_last_dscr() -> u32 {
-    // SAFETY: this validation-only function is the sole user of the stolen
-    // peripheral in its isolated probe image.
-    open_esp_radio_esp32s31_hal::validation::hal_mac_rx_get_last_dscr()
 }
 
 #[unsafe(no_mangle)]
@@ -1711,10 +1687,7 @@ pub fn retain_all_probes() {
     core::hint::black_box(open_libpp_power_irq_trace_hal_pwr_interrupt_clr_event as *const ());
     core::hint::black_box(open_libpp_rx_trace_hal_mac_rx_disable as *const ());
     core::hint::black_box(open_libpp_rx_trace_hal_mac_rx_enable as *const ());
-    core::hint::black_box(open_libpp_rx_trace_hal_mac_rx_read_rxdscrlast as *const ());
-    core::hint::black_box(open_libpp_rx_trace_hal_mac_rx_read_rxdscrnext as *const ());
     core::hint::black_box(open_libpp_rx_trace_hal_mac_rx_set_base as *const ());
-    core::hint::black_box(open_libpp_rx_trace_hal_mac_rx_get_last_dscr as *const ());
     core::hint::black_box(open_libpp_rx_trace_hal_mac_rx_is_dscr_reload as *const ());
     core::hint::black_box(open_libpp_rx_trace_hal_mac_rx_set_dscr_reload as *const ());
     core::hint::black_box(open_coex_trace_coex_hw_timer_enable as *const ());

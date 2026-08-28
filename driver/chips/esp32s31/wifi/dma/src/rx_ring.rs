@@ -114,16 +114,16 @@ pub struct RxRingTopologySnapshot {
 
 /// Raw observations made while completing the vendor reload-repair suffix.
 ///
-/// These counters deliberately record decisions and register images without
-/// assigning hardware meaning to them. They remain attached to the live ring
+/// These counters deliberately record decisions and field observations without
+/// assigning hardware meaning to unknown state. They remain attached to the live ring
 /// so a later disconnect can explain whether a direct BASE repair preceded a
 /// fault.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct RxReloadRepairEvidence {
     pub observations: u32,
-    pub nonzero_word_with_zero_address: u32,
+    pub unknown_upper_with_zero_address: u32,
     pub base_repairs: u32,
-    pub last_next_word: u32,
+    pub last_next_low: u32,
     pub last_last_low: Option<u32>,
     pub last_repair_head: Option<u32>,
 }
@@ -140,7 +140,7 @@ static RELOAD_UPPER_ONLY: AtomicU32 = AtomicU32::new(0);
 #[cfg(target_pointer_width = "32")]
 static RELOAD_BASE_REPAIRS: AtomicU32 = AtomicU32::new(0);
 #[cfg(target_pointer_width = "32")]
-static RELOAD_LAST_NEXT: AtomicU32 = AtomicU32::new(0);
+static RELOAD_LAST_NEXT_LOW: AtomicU32 = AtomicU32::new(0);
 #[cfg(target_pointer_width = "32")]
 static RELOAD_LAST_LAST: AtomicU32 = AtomicU32::new(u32::MAX);
 #[cfg(target_pointer_width = "32")]
@@ -151,7 +151,7 @@ fn reset_reload_repair_evidence() {
     RELOAD_OBSERVATIONS.store(0, Ordering::Relaxed);
     RELOAD_UPPER_ONLY.store(0, Ordering::Relaxed);
     RELOAD_BASE_REPAIRS.store(0, Ordering::Relaxed);
-    RELOAD_LAST_NEXT.store(0, Ordering::Relaxed);
+    RELOAD_LAST_NEXT_LOW.store(0, Ordering::Relaxed);
     RELOAD_LAST_LAST.store(u32::MAX, Ordering::Relaxed);
     RELOAD_LAST_HEAD.store(u32::MAX, Ordering::Relaxed);
 }
@@ -866,9 +866,9 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         {
             RxReloadRepairEvidence {
                 observations: RELOAD_OBSERVATIONS.load(Ordering::Relaxed),
-                nonzero_word_with_zero_address: RELOAD_UPPER_ONLY.load(Ordering::Relaxed),
+                unknown_upper_with_zero_address: RELOAD_UPPER_ONLY.load(Ordering::Relaxed),
                 base_repairs: RELOAD_BASE_REPAIRS.load(Ordering::Relaxed),
-                last_next_word: RELOAD_LAST_NEXT.load(Ordering::Relaxed),
+                last_next_low: RELOAD_LAST_NEXT_LOW.load(Ordering::Relaxed),
                 last_last_low: decode_optional_evidence(RELOAD_LAST_LAST.load(Ordering::Relaxed)),
                 last_repair_head: decode_optional_evidence(
                     RELOAD_LAST_HEAD.load(Ordering::Relaxed),
@@ -883,19 +883,19 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
 
     fn record_reload_repair_observation(
         &mut self,
-        next_descriptor_word: u32,
+        next_descriptor: crate::rx_dma::RxDmaNextDescriptor,
         last_descriptor_low: Option<u32>,
         repair_head: Option<u32>,
     ) {
         let upper_only =
-            next_descriptor_word != 0 && next_descriptor_word & RX_DESCRIPTOR_ADDRESS_LOW_MASK == 0;
+            next_descriptor.address_low() == 0 && next_descriptor.has_unknown_upper_state();
         #[cfg(target_pointer_width = "32")]
         {
             increment_saturating(&RELOAD_OBSERVATIONS);
             if upper_only {
                 increment_saturating(&RELOAD_UPPER_ONLY);
             }
-            RELOAD_LAST_NEXT.store(next_descriptor_word, Ordering::Relaxed);
+            RELOAD_LAST_NEXT_LOW.store(next_descriptor.address_low(), Ordering::Relaxed);
             RELOAD_LAST_LAST.store(
                 encode_optional_evidence(last_descriptor_low),
                 Ordering::Relaxed,
@@ -910,12 +910,12 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
             self.reload_repair_evidence.observations =
                 self.reload_repair_evidence.observations.saturating_add(1);
             if upper_only {
-                self.reload_repair_evidence.nonzero_word_with_zero_address = self
+                self.reload_repair_evidence.unknown_upper_with_zero_address = self
                     .reload_repair_evidence
-                    .nonzero_word_with_zero_address
+                    .unknown_upper_with_zero_address
                     .saturating_add(1);
             }
-            self.reload_repair_evidence.last_next_word = next_descriptor_word;
+            self.reload_repair_evidence.last_next_low = next_descriptor.address_low();
             self.reload_repair_evidence.last_last_low = last_descriptor_low;
             if let Some(repair_head) = repair_head {
                 self.reload_repair_evidence.base_repairs =
@@ -2176,12 +2176,12 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         let Some(pending_tail) = self.pending_tail else {
             return Ok(());
         };
-        let mut next_descriptor_word = 0;
+        let mut next_descriptor = crate::rx_dma::RxDmaNextDescriptor::default();
         let mut last_descriptor_low = None;
         let repair_head = mmio.with_reload_repair_observation(|observation| {
-            next_descriptor_word = observation.next_descriptor_word();
+            next_descriptor = observation.next_descriptor();
             last_descriptor_low = observation.exhausted_last_descriptor_low();
-            if next_descriptor_word != 0 {
+            if !next_descriptor.is_zero() {
                 return Ok(None);
             }
             let last_descriptor_low = last_descriptor_low.ok_or(RxRingError::Corrupt)?;
@@ -2211,20 +2211,12 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         let repair_head = match repair_head {
             Ok(repair_head) => repair_head,
             Err(error) => {
-                self.record_reload_repair_observation(
-                    next_descriptor_word,
-                    last_descriptor_low,
-                    None,
-                );
+                self.record_reload_repair_observation(next_descriptor, last_descriptor_low, None);
                 self.require_reset();
                 return Err(error);
             }
         };
-        self.record_reload_repair_observation(
-            next_descriptor_word,
-            last_descriptor_low,
-            repair_head,
-        );
+        self.record_reload_repair_observation(next_descriptor, last_descriptor_low, repair_head);
         if let Some(repair_head) = repair_head {
             // The reload suffix is a second direct BASE publication path, not
             // merely completion of the doorbell transaction. Preserve a

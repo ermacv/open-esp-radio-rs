@@ -4,11 +4,11 @@ schema = 2
 source = "libpp"
 symbol = "hal_mac_rx_disable"
 kind = "whole-function-equivalence/profile:scenario/libpp-rx-disable"
-digest = "fdbf383264db9c988644678e5e9e47a4689f23010fa99929ecdb15feee07eeb4"
+digest = "c83d157b975535c963d1148a9e9bf2c51df6c38ddb85d1458c2c8d67b89479b7"
 
 [evidence.components]
 comparison-orchestrator = "acd193e24d6eaa785453b27b7b12cb1d262cbea83db314dda9e58e735051da67"
-diagnostic-contracts = "05b6d61d3d159755f14253601341637a1a1a6be9f4576b7f5c87506755266216"
+diagnostic-contracts = "249907554bf1828de9098e9524482878673d0cc1c26173f68277a8d4e6e48cc3"
 execution-image = "b4bc1d7eb5a5125c3517e8d95fbc09a97cdb18a637b3020062ed7d5a0da4b259"
 execution-machine = "ff4f453ddf8d7921e6525db9a1dc97c18fefa73b3e8250f206c162edc425b1fc"
 execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
@@ -19,11 +19,11 @@ profile-parser = "47752e5d19d316ed2c186e3851bac1101ba13da0e3a053591e059c682ea77f
 source = "libpp"
 symbol = "hal_mac_rx_enable"
 kind = "whole-function-equivalence/profile:scenario/libpp-rx-enable"
-digest = "d4d1d0ef6030f57cfece469f1700aa3b266ec04e668e870897c08d58bd1d8ff6"
+digest = "cf933b8d8da53f74c7917de6879b27c80ab69adc930924eb13f770725c411da0"
 
 [evidence.components]
 comparison-orchestrator = "acd193e24d6eaa785453b27b7b12cb1d262cbea83db314dda9e58e735051da67"
-diagnostic-contracts = "05b6d61d3d159755f14253601341637a1a1a6be9f4576b7f5c87506755266216"
+diagnostic-contracts = "249907554bf1828de9098e9524482878673d0cc1c26173f68277a8d4e6e48cc3"
 execution-image = "b4bc1d7eb5a5125c3517e8d95fbc09a97cdb18a637b3020062ed7d5a0da4b259"
 execution-machine = "ff4f453ddf8d7921e6525db9a1dc97c18fefa73b3e8250f206c162edc425b1fc"
 execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
@@ -32,28 +32,13 @@ profile-parser = "47752e5d19d316ed2c186e3851bac1101ba13da0e3a053591e059c682ea77f
 
 [[evidence]]
 source = "libpp"
-symbol = "hal_mac_rx_get_last_dscr"
-kind = "whole-function-equivalence/profile:scenario/libpp-rx-get-last-descriptor"
-digest = "d00e03c579b9a7b0b104624403f02a58ece9a179a81f96105696db9062ebea76"
-
-[evidence.components]
-comparison-orchestrator = "acd193e24d6eaa785453b27b7b12cb1d262cbea83db314dda9e58e735051da67"
-diagnostic-contracts = "05b6d61d3d159755f14253601341637a1a1a6be9f4576b7f5c87506755266216"
-execution-image = "b4bc1d7eb5a5125c3517e8d95fbc09a97cdb18a637b3020062ed7d5a0da4b259"
-execution-machine = "ff4f453ddf8d7921e6525db9a1dc97c18fefa73b3e8250f206c162edc425b1fc"
-execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
-profile = "0550f81ff794bd0c566ece0adf1af8779a2026529d73b94e0a8709969e12631c"
-profile-parser = "47752e5d19d316ed2c186e3851bac1101ba13da0e3a053591e059c682ea77fc4"
-
-[[evidence]]
-source = "libpp"
 symbol = "hal_mac_rx_is_dscr_reload"
 kind = "whole-function-equivalence/profile:scenario/libpp-rx-reload-pending"
-digest = "e4cdc23f4178f81fc7e9fffb3d13f1c5ec4d12d6ac3a8c5b53596a719f326717"
+digest = "45cf39e7df1554ad18a62f03f219c4c084206221f01e22dbd11d0b45140e0ef9"
 
 [evidence.components]
 comparison-orchestrator = "acd193e24d6eaa785453b27b7b12cb1d262cbea83db314dda9e58e735051da67"
-diagnostic-contracts = "05b6d61d3d159755f14253601341637a1a1a6be9f4576b7f5c87506755266216"
+diagnostic-contracts = "249907554bf1828de9098e9524482878673d0cc1c26173f68277a8d4e6e48cc3"
 execution-image = "b4bc1d7eb5a5125c3517e8d95fbc09a97cdb18a637b3020062ed7d5a0da4b259"
 execution-machine = "ff4f453ddf8d7921e6525db9a1dc97c18fefa73b3e8250f206c162edc425b1fc"
 execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
@@ -62,43 +47,13 @@ profile-parser = "47752e5d19d316ed2c186e3851bac1101ba13da0e3a053591e059c682ea77f
 
 [[evidence]]
 source = "libpp"
-symbol = "hal_mac_rx_read_rxdscrlast"
-kind = "whole-function-equivalence/profile:scenario/libpp-rx-read-last-word"
-digest = "bce7a260586ce4a129d58c0080684194e1ed063654aadc0baa45914ba1fc11d9"
-
-[evidence.components]
-comparison-orchestrator = "acd193e24d6eaa785453b27b7b12cb1d262cbea83db314dda9e58e735051da67"
-diagnostic-contracts = "05b6d61d3d159755f14253601341637a1a1a6be9f4576b7f5c87506755266216"
-execution-image = "b4bc1d7eb5a5125c3517e8d95fbc09a97cdb18a637b3020062ed7d5a0da4b259"
-execution-machine = "ff4f453ddf8d7921e6525db9a1dc97c18fefa73b3e8250f206c162edc425b1fc"
-execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
-profile = "45c24e090d757a1f3167753d46b8d185a22ee0829969b51c429a69b0e292031d"
-profile-parser = "47752e5d19d316ed2c186e3851bac1101ba13da0e3a053591e059c682ea77fc4"
-
-[[evidence]]
-source = "libpp"
-symbol = "hal_mac_rx_read_rxdscrnext"
-kind = "whole-function-equivalence/profile:scenario/libpp-rx-read-next-word"
-digest = "f959ffb0bbbfc027f3caf9a5631a49cbb41390ee91e2e50c04cc16fdd5e9279e"
-
-[evidence.components]
-comparison-orchestrator = "acd193e24d6eaa785453b27b7b12cb1d262cbea83db314dda9e58e735051da67"
-diagnostic-contracts = "05b6d61d3d159755f14253601341637a1a1a6be9f4576b7f5c87506755266216"
-execution-image = "b4bc1d7eb5a5125c3517e8d95fbc09a97cdb18a637b3020062ed7d5a0da4b259"
-execution-machine = "ff4f453ddf8d7921e6525db9a1dc97c18fefa73b3e8250f206c162edc425b1fc"
-execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
-profile = "2b976fd9ad966c49ce2b64bad201591ffdd32db023d81d615bf4bda5aa42fce9"
-profile-parser = "47752e5d19d316ed2c186e3851bac1101ba13da0e3a053591e059c682ea77fc4"
-
-[[evidence]]
-source = "libpp"
 symbol = "hal_mac_rx_set_base"
 kind = "whole-function-equivalence/profile:scenario/libpp-rx-set-base"
-digest = "181d4ad4c6f82668cc937dbe5f8b2b032c734bc5f23b0a94bcf8164d09676c47"
+digest = "63448f3b5d53dcd8ed154c21c5dd7b3a64dc83ea7d7322e9a9376c7cb4209e42"
 
 [evidence.components]
 comparison-orchestrator = "acd193e24d6eaa785453b27b7b12cb1d262cbea83db314dda9e58e735051da67"
-diagnostic-contracts = "05b6d61d3d159755f14253601341637a1a1a6be9f4576b7f5c87506755266216"
+diagnostic-contracts = "249907554bf1828de9098e9524482878673d0cc1c26173f68277a8d4e6e48cc3"
 execution-image = "b4bc1d7eb5a5125c3517e8d95fbc09a97cdb18a637b3020062ed7d5a0da4b259"
 execution-machine = "ff4f453ddf8d7921e6525db9a1dc97c18fefa73b3e8250f206c162edc425b1fc"
 execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"
@@ -109,11 +64,11 @@ profile-parser = "47752e5d19d316ed2c186e3851bac1101ba13da0e3a053591e059c682ea77f
 source = "libpp"
 symbol = "hal_mac_rx_set_dscr_reload"
 kind = "whole-function-equivalence/profile:scenario/libpp-rx-request-reload"
-digest = "7dbb4838434d41dbeeefc72fc1a32573d497b28ccc95c6de651db529996b3355"
+digest = "ad1e2f9f39552443ea406306102cbdf53dca9771ff3d3e094d283bb16f0a3e0e"
 
 [evidence.components]
 comparison-orchestrator = "acd193e24d6eaa785453b27b7b12cb1d262cbea83db314dda9e58e735051da67"
-diagnostic-contracts = "05b6d61d3d159755f14253601341637a1a1a6be9f4576b7f5c87506755266216"
+diagnostic-contracts = "249907554bf1828de9098e9524482878673d0cc1c26173f68277a8d4e6e48cc3"
 execution-image = "b4bc1d7eb5a5125c3517e8d95fbc09a97cdb18a637b3020062ed7d5a0da4b259"
 execution-machine = "ff4f453ddf8d7921e6525db9a1dc97c18fefa73b3e8250f206c162edc425b1fc"
 execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"

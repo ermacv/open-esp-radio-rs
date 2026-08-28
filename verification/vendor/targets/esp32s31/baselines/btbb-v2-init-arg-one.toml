@@ -4,11 +4,11 @@ schema = 2
 source = "btbb"
 symbol = "bt_bb_v2_init_cmplx"
 kind = "reviewed-domain-equivalence/profile:scenario/btbb-v2-init-arg-one-ordered-mmio"
-digest = "092055d0e18e6fac32510942fc1d2df10727109202eb37d831fd505e316303c3"
+digest = "0f57a7aee79bb3b83367289747d8aa2757da4fa345df48b32f7a62e2d288cfc4"
 
 [evidence.components]
 comparison-orchestrator = "acd193e24d6eaa785453b27b7b12cb1d262cbea83db314dda9e58e735051da67"
-diagnostic-contracts = "05b6d61d3d159755f14253601341637a1a1a6be9f4576b7f5c87506755266216"
+diagnostic-contracts = "249907554bf1828de9098e9524482878673d0cc1c26173f68277a8d4e6e48cc3"
 execution-image = "b4bc1d7eb5a5125c3517e8d95fbc09a97cdb18a637b3020062ed7d5a0da4b259"
 execution-machine = "ff4f453ddf8d7921e6525db9a1dc97c18fefa73b3e8250f206c162edc425b1fc"
 execution-model = "a85a7d38e23dae5801a9adc174f8ab165466348898936b05df846c0a01ea893f"

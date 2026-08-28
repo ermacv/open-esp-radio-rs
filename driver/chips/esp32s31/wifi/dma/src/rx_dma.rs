@@ -95,6 +95,39 @@ pub struct RxDmaCursorObservation<'confirmation> {
     _confirmation: PhantomData<&'confirmation mut ()>,
 }
 
+/// Semantic field observation of the hardware next-descriptor state.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RxDmaNextDescriptor {
+    address_low: u32,
+    unknown_upper_nonzero: bool,
+}
+
+impl RxDmaNextDescriptor {
+    const fn from_fields(address_low: u32, unknown_upper_nonzero: bool) -> Self {
+        Self {
+            address_low,
+            unknown_upper_nonzero,
+        }
+    }
+
+    #[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
+    pub const fn validation(address_low: u32, unknown_upper_nonzero: bool) -> Self {
+        Self::from_fields(address_low, unknown_upper_nonzero)
+    }
+
+    pub const fn address_low(self) -> u32 {
+        self.address_low
+    }
+
+    pub const fn is_zero(self) -> bool {
+        self.address_low == 0 && !self.unknown_upper_nonzero
+    }
+
+    pub const fn has_unknown_upper_state(self) -> bool {
+        self.unknown_upper_nonzero
+    }
+}
+
 /// Ordered observation used only by the vendor reload-repair suffix.
 ///
 /// `wDev_AppendRxBlocks` samples `NEXT` first and reads `LAST` only when the
@@ -104,27 +137,29 @@ pub struct RxDmaCursorObservation<'confirmation> {
 /// can pair values from different hardware epochs and authorize a stale BASE
 /// repair.
 pub struct RxDmaReloadRepairObservation<'confirmation> {
-    next_descriptor_word: u32,
+    next_descriptor: RxDmaNextDescriptor,
     last_descriptor_low: Option<u32>,
     _confirmation: PhantomData<&'confirmation mut ()>,
 }
 
 impl RxDmaReloadRepairObservation<'_> {
-    const fn confirmed(next_descriptor_word: u32, last_descriptor_low: Option<u32>) -> Self {
+    const fn confirmed(
+        next_descriptor: RxDmaNextDescriptor,
+        last_descriptor_low: Option<u32>,
+    ) -> Self {
         Self {
-            next_descriptor_word,
+            next_descriptor,
             last_descriptor_low,
             _confirmation: PhantomData,
         }
     }
 
-    /// Return the complete register word used by the vendor zero predicate.
-    pub const fn next_descriptor_word(&self) -> u32 {
-        self.next_descriptor_word
+    pub const fn next_descriptor(&self) -> RxDmaNextDescriptor {
+        self.next_descriptor
     }
 
     pub const fn next_descriptor_low(&self) -> u32 {
-        self.next_descriptor_word & 0x000f_ffff
+        self.next_descriptor.address_low()
     }
 
     /// Return `LAST` only for the vendor branch where the preceding `NEXT`
@@ -228,12 +263,8 @@ pub trait RxDma {
     fn last_descriptor_low(&mut self) -> u32;
     fn next_descriptor_low(&mut self) -> u32;
 
-    /// Read the complete `RX_NEXT_DESCRIPTOR` word.
-    ///
-    /// Address consumers must use [`Self::next_descriptor_low`]. The vendor
-    /// reload-repair branch instead compares the complete word with zero;
-    /// projecting it to the low address field changes that branch predicate.
-    fn next_descriptor_word(&mut self) -> u32;
+    /// Read the address and unassigned upper fields in one hardware sample.
+    fn next_descriptor(&mut self) -> RxDmaNextDescriptor;
     fn with_ordered_cursor<R>(
         &mut self,
         observed: impl for<'confirmation> FnOnce(RxDmaCursorObservation<'confirmation>) -> R,
@@ -245,9 +276,9 @@ pub trait RxDma {
         &mut self,
         observed: impl for<'confirmation> FnOnce(RxDmaReloadRepairObservation<'confirmation>) -> R,
     ) -> R {
-        let next_descriptor_word = self.next_descriptor_word();
+        let next_descriptor = self.next_descriptor();
         self.fence();
-        let last_descriptor_low = if next_descriptor_word == 0 {
+        let last_descriptor_low = if next_descriptor.is_zero() {
             let last_descriptor_low = self.last_descriptor_low();
             self.fence();
             Some(last_descriptor_low)
@@ -255,7 +286,7 @@ pub trait RxDma {
             None
         };
         observed(RxDmaReloadRepairObservation::confirmed(
-            next_descriptor_word,
+            next_descriptor,
             last_descriptor_low,
         ))
     }
@@ -294,8 +325,12 @@ impl RxDma for WifiMacHal<'_> {
         self.rx_next_descriptor_low()
     }
 
-    fn next_descriptor_word(&mut self) -> u32 {
-        self.rx_next_descriptor_word()
+    fn next_descriptor(&mut self) -> RxDmaNextDescriptor {
+        let observation = self.rx_next_descriptor();
+        RxDmaNextDescriptor::from_fields(
+            observation.address_low(),
+            observation.has_unknown_upper_state(),
+        )
     }
 
     fn with_ordered_cursor<R>(
@@ -382,8 +417,8 @@ impl RxDma for RadioRuntimeOwner {
         RxDma::next_descriptor_low(&mut self.wifi_mac_hal())
     }
 
-    fn next_descriptor_word(&mut self) -> u32 {
-        RxDma::next_descriptor_word(&mut self.wifi_mac_hal())
+    fn next_descriptor(&mut self) -> RxDmaNextDescriptor {
+        RxDma::next_descriptor(&mut self.wifi_mac_hal())
     }
 
     fn with_ordered_cursor<R>(

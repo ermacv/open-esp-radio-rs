@@ -86,6 +86,12 @@ name = "ADDRESS_LOW"
 bitOffset = 0
 bitWidth = 20
 
+[[peripherals.registers.register.fields]]
+name = "UPPER_UNKNOWN"
+description = "Unassigned upper state retained by the complete-word zero predicate in wDev_AppendRxBlocks. This is deliberately exposed separately from ADDRESS_LOW so production code never reconstructs or masks a register image."
+bitOffset = 20
+bitWidth = 12
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]

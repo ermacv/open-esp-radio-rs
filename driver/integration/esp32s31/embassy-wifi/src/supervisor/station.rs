@@ -252,12 +252,12 @@ fn log_rx_ring_topology(label: &str, rx: &ConnectedLiveRx) {
         }
     }
     diagnostics_event!(
-        "open-radio: connected RX reload label={} observations={} upper_only={} base_repairs={} last_next={:#010x} last_last={:?} last_head={:?}",
+        "open-radio: connected RX reload label={} observations={} upper_only={} base_repairs={} last_next_low={:#07x} last_last={:?} last_head={:?}",
         label,
         reload.observations,
-        reload.nonzero_word_with_zero_address,
+        reload.unknown_upper_with_zero_address,
         reload.base_repairs,
-        reload.last_next_word,
+        reload.last_next_low,
         reload.last_last_low,
         reload.last_repair_head,
     );

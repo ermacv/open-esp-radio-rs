@@ -13,8 +13,8 @@ pub use open_esp_radio_esp32s31_wifi_dma::rx_ring::{
 pub use open_esp_radio_esp32s31_wifi_dma::rx_ring::{enable_receive, publish_cold_ring};
 pub use open_esp_radio_esp32s31_wifi_dma::{
     rx_dma::{
-        RxDma, RxDmaBinding, RxDmaCursorObservation, RxDmaReloadSettled, RxDmaWalkerEnabled,
-        RxDmaWalkerStopped,
+        RxDma, RxDmaBinding, RxDmaCursorObservation, RxDmaNextDescriptor, RxDmaReloadSettled,
+        RxDmaWalkerEnabled, RxDmaWalkerStopped,
     },
     rx_ring::{
         RX_BUFFER_SENTINEL, RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxCompletedDescriptor,

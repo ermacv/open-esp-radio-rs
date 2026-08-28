@@ -195,7 +195,7 @@ pub use mac_modem_wakeup::{
     StaModemWakePrepareError, StaModemWakeRestore, StaModemWakeRestoreError,
     StaModemWakeRestoreFailure, StaTbttAutoPeriod, StaWakeProtectEarlyTimeRaw,
 };
-pub use mac_rx_dma::MacRxDmaSnapshot;
+pub use mac_rx_dma::{MacRxDmaSnapshot, MacRxNextDescriptorObservation};
 pub use mac_rx_policy::{
     MacApReceivePolicySnapshot, MacRoleReceivePolicy, MacStaApReceivePlan, MacStaPolicyMode,
     MacStaReceivePolicySnapshot,

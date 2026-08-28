@@ -24,7 +24,7 @@ pub use open_esp_radio_esp32s31_pac::{
     MacRxStatisticsSnapshot, MacStaApReceivePlan, MacStaPolicyMode, MacStaReceivePolicySnapshot,
     MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason, MacTxPowerPair,
     MacTxPowerTable, MacTxPtiCount, MacTxPtiProgram, MacTxQueueDetached, MacTxQueueIndex,
-    PbusMemoryGroupBoundary, PhyGainMemoryEntry, PhyMemoryError, RxBlockAckEntrySnapshot,
-    RxDcoControlPrepareError, RxDcoControlRestoreError, TxBlockAckPayload,
+    PbusMemoryGroupBoundary, PhyForcedPowerIndex, PhyGainMemoryEntry, PhyMemoryError,
+    RxBlockAckEntrySnapshot, RxDcoControlPrepareError, RxDcoControlRestoreError, TxBlockAckPayload,
     TxIqToneControlPrepareError, TxIqToneControlRestoreError,
 };

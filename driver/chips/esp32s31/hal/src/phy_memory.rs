@@ -1,6 +1,8 @@
 //! Owned access to the shared ESP32-S31 PHY table-memory aperture.
 
-pub use crate::types::{PbusMemoryGroupBoundary, PhyGainMemoryEntry, PhyMemoryError};
+pub use crate::types::{
+    PbusMemoryGroupBoundary, PhyForcedPowerIndex, PhyGainMemoryEntry, PhyMemoryError,
+};
 #[cfg(target_arch = "riscv32")]
 use crate::{SharedPhyAccess, phy_pac, phy_pac_mut};
 
@@ -48,8 +50,8 @@ pub fn configure_table_memory_base_index(registers: &mut impl SharedPhyAccess, i
 #[cfg(target_arch = "riscv32")]
 pub fn configure_forced_power_index(
     registers: &mut impl SharedPhyAccess,
-    enabled: u32,
-    index: u32,
+    enabled: bool,
+    index: PhyForcedPowerIndex,
 ) {
     let registers = phy_pac_mut(registers);
     registers.configure_forced_power_index(enabled, index);

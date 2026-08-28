@@ -322,6 +322,13 @@ max = 15
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME", "BLOB_LIBPP_HAL_INIT_COEX", "BLOB_LIBPP_HAL_MAC_TX"]
 
 [[bounded-domains]]
+name = "PhyForcedPowerIndex"
+description = "Six-bit transmit-power table index accepted by complete rev0 ROM phy_force_pwr_index."
+min = 0
+max = 63
+sources = ["ROM_REV0_PHY_FORCE_PWR_INDEX"]
+
+[[bounded-domains]]
 name = "BluetoothMemoryListPointerBits"
 description = "Zero-based low-twenty-bit compressed SRAM pointer image ORed into one Bluetooth memory-list field after its separate clear transaction."
 min = 0

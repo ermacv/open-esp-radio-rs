@@ -232,6 +232,29 @@ impl MacPti {
     }
 }
 
+/// Six-bit transmit-power table index accepted by complete rev0 ROM phy_force_pwr_index.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyForcedPowerIndex(u32);
+
+impl PhyForcedPowerIndex {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x0000003f;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x0000003f {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Zero-based low-twenty-bit compressed SRAM pointer image ORed into one Bluetooth memory-list field after its separate clear transaction.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct BluetoothMemoryListPointerBits(u32);

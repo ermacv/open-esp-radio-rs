@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioPhyRegisters;
+use super::{PhyForcedPowerIndex, RadioPhyRegisters};
 
 /// One packed PBUS-memory group boundary.
 ///
@@ -195,13 +195,13 @@ impl RadioPhyRegisters {
 
     /// Apply complete rev0 ROM `phy_force_pwr_index` through its two ordered
     /// fresh-read field replacements.
-    pub fn configure_forced_power_index(&mut self, enabled: u32, index: u32) {
+    pub fn configure_forced_power_index(&mut self, enabled: bool, index: PhyForcedPowerIndex) {
         let control = self
             .peripherals
             .phy_clock_oracle
             .table_memory_index_source();
-        control.modify(|_, w| w.force_power_enable().bit(enabled & 1 != 0));
-        control.modify(|_, w| w.forced_power_index().set(index as u8 & 0x3f));
+        control.modify(|_, w| w.force_power_enable().bit(enabled));
+        control.modify(|_, w| w.forced_power_index().set(index.get() as u8));
     }
 
     /// Publish one TX-CFR entry and its complete set/clear commit pulse.

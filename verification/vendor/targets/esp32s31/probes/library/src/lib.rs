@@ -1571,12 +1571,15 @@ pub extern "C" fn open_phy_trace_dac_rate_set(rate: u32, registers: &mut RadioPh
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_force_pwr_index(
-    enabled: u32,
-    index: u32,
+    enabled: bool,
+    index: u8,
     registers: &mut RadioPhyRegisters,
 ) {
     open_esp_radio_esp32s31_hal::phy_memory::configure_forced_power_index(
-        registers, enabled, index,
+        registers,
+        enabled,
+        open_esp_radio_esp32s31_hal::phy_memory::PhyForcedPowerIndex::new(u32::from(index))
+            .expect("probe input must fit the reviewed forced-power index"),
     );
 }
 

@@ -562,6 +562,7 @@ impl Scenario {
             && (!matches!(
                 self.image,
                 ImageClass::DiagnosticTaskResidence
+                    | ImageClass::DiagnosticTaskPoll
                     | ImageClass::DiagnosticRxDelivery
                     | ImageClass::DiagnosticCore0RxCoarse
                     | ImageClass::DiagnosticCore0RxCycles
@@ -574,7 +575,7 @@ impl Scenario {
             ))
         {
             return Err(format!(
-                "{}: OpenWrt TX-monitor RX evidence requires an RX-bearing UDP diagnostic with residence, delivery, or Core0-cycle evidence",
+                "{}: OpenWrt TX-monitor RX evidence requires an RX-bearing UDP diagnostic with task-poll, delivery, or Core0-cycle evidence",
                 self.source.display()
             )
             .into());

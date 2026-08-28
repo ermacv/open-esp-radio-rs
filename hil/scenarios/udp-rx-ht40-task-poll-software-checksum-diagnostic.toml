@@ -21,3 +21,7 @@ exact_delivery = false
 require_no_beacon_loss = false
 minimum_rx_bps = 90000000
 maximum_idle_channel_utilization_255 = 64
+
+[evidence]
+openwrt_tx_monitor_rx = true
+independent_laptop_monitor_rx = true

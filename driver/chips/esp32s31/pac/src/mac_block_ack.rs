@@ -56,31 +56,86 @@ impl TxBlockAckPayload {
     }
 }
 
-/// Complete five-word `WDEVTXQBA` result plus adjacent TX queue information.
+/// Semantic `WDEVTXQBA` result plus adjacent TX queue information.
 ///
 /// SOURCE: complete `libpp.a[hal_debug.o]::dbg_read_rx_ba`.
 /// Despite the function name, its strings identify eight reverse-addressed
 /// TX BlockAck result banks.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TxBlockAckDiagnosticSnapshot {
-    pub control_and_sequence: u32,
-    pub bitmap_low: u32,
-    pub bitmap_high: u32,
-    pub transmitter_address: [u8; 6],
-    pub acknowledgement_tid: u8,
-    pub acknowledgement_received: bool,
-    pub block_ack_received: bool,
-    pub last_tx_was_trigger_based: bool,
-    pub trigger_based_packet_count: u8,
+    control: u8,
+    starting_sequence: u16,
+    bitmap: u64,
+    transmitter_address: [u8; 6],
+    acknowledgement_tid: u8,
+    acknowledgement_received: bool,
+    block_ack_received: bool,
+    last_tx_was_trigger_based: bool,
+    trigger_based_packet_count: u8,
+}
+
+impl TxBlockAckDiagnosticSnapshot {
+    pub const fn control(self) -> u8 {
+        self.control
+    }
+
+    pub const fn starting_sequence(self) -> u16 {
+        self.starting_sequence
+    }
+
+    pub const fn bitmap(self) -> u64 {
+        self.bitmap
+    }
+
+    pub const fn transmitter_address(self) -> [u8; 6] {
+        self.transmitter_address
+    }
+
+    pub const fn acknowledgement_tid(self) -> u8 {
+        self.acknowledgement_tid
+    }
+
+    pub const fn acknowledgement_received(self) -> bool {
+        self.acknowledgement_received
+    }
+
+    pub const fn block_ack_received(self) -> bool {
+        self.block_ack_received
+    }
+
+    pub const fn last_tx_was_trigger_based(self) -> bool {
+        self.last_tx_was_trigger_based
+    }
+
+    pub const fn trigger_based_packet_count(self) -> u8 {
+        self.trigger_based_packet_count
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct InternalTxBlockAckSnapshot {
-    pub bitmap: u64,
-    pub transmitter_address_words: [u32; 2],
-    pub fragment_number: u8,
-    pub starting_sequence: u16,
-    pub tid: u8,
+    bitmap: u64,
+    fragment_number: u8,
+    starting_sequence: u16,
+    tid: u8,
+}
+
+impl InternalTxBlockAckSnapshot {
+    pub const fn bitmap(self) -> u64 {
+        self.bitmap
+    }
+
+    pub const fn fragment_number(self) -> u8 {
+        self.fragment_number
+    }
+
+    pub const fn starting_sequence(self) -> u16 {
+        self.starting_sequence
+    }
+
+    pub const fn tid(self) -> u8 {
+        self.tid
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -673,159 +728,117 @@ impl WifiRadioRegisters {
         hardware_queue: u8,
     ) -> Option<TxBlockAckDiagnosticSnapshot> {
         let block = &self.peripherals.wifi_mac.wifi_mac_rx_dma;
-        let (
-            control_and_sequence,
-            bitmap_low,
-            bitmap_high,
-            address_high,
-            address_low,
-            queue_information,
-        ) = match hardware_queue {
-            0 => (
-                block.tx_block_ack_control_sequence_q0().read().bits(),
-                block.tx_block_ack_bitmap_low_q0().read().bits(),
-                block.tx_block_ack_bitmap_high_q0().read().bits(),
-                block
-                    .tx_block_ack_transmitter_address_high_q0()
-                    .read()
-                    .bits(),
-                block
-                    .tx_block_ack_transmitter_address_low_q0()
-                    .read()
-                    .bits(),
-                block.tx_queue_information_q0().read().bits(),
+        macro_rules! snapshot {
+            ($control:ident, $bitmap_low:ident, $bitmap_high:ident, $address_high:ident, $address_low:ident, $information:ident) => {{
+                let control = block.$control().read();
+                let bitmap_low = block.$bitmap_low().read().bits();
+                let bitmap_high = block.$bitmap_high().read().bits();
+                let address_high = block.$address_high().read();
+                let address_low = block.$address_low().read().bits().to_le_bytes();
+                let address_tail = address_high.address_bytes_4_5().bits().to_le_bytes();
+                let information = block.$information().read();
+                TxBlockAckDiagnosticSnapshot {
+                    control: control.tid_or_control().bits(),
+                    starting_sequence: control.starting_sequence().bits(),
+                    bitmap: u64::from(bitmap_low) | (u64::from(bitmap_high) << 32),
+                    transmitter_address: [
+                        address_low[0],
+                        address_low[1],
+                        address_low[2],
+                        address_low[3],
+                        address_tail[0],
+                        address_tail[1],
+                    ],
+                    acknowledgement_tid: address_high.ack_tid().bits(),
+                    acknowledgement_received: address_high.ack_received().bit(),
+                    block_ack_received: address_high.block_ack_received().bit(),
+                    last_tx_was_trigger_based: information.last_tx_was_trigger_based().bit(),
+                    trigger_based_packet_count: information.trigger_based_packet_count().bits(),
+                }
+            }};
+        }
+
+        Some(match hardware_queue {
+            0 => snapshot!(
+                tx_block_ack_control_sequence_q0,
+                tx_block_ack_bitmap_low_q0,
+                tx_block_ack_bitmap_high_q0,
+                tx_block_ack_transmitter_address_high_q0,
+                tx_block_ack_transmitter_address_low_q0,
+                tx_queue_information_q0
             ),
-            1 => (
-                block.tx_block_ack_control_sequence_q1().read().bits(),
-                block.tx_block_ack_bitmap_low_q1().read().bits(),
-                block.tx_block_ack_bitmap_high_q1().read().bits(),
-                block
-                    .tx_block_ack_transmitter_address_high_q1()
-                    .read()
-                    .bits(),
-                block
-                    .tx_block_ack_transmitter_address_low_q1()
-                    .read()
-                    .bits(),
-                block.tx_queue_information_q1().read().bits(),
+            1 => snapshot!(
+                tx_block_ack_control_sequence_q1,
+                tx_block_ack_bitmap_low_q1,
+                tx_block_ack_bitmap_high_q1,
+                tx_block_ack_transmitter_address_high_q1,
+                tx_block_ack_transmitter_address_low_q1,
+                tx_queue_information_q1
             ),
-            2 => (
-                block.tx_block_ack_control_sequence_q2().read().bits(),
-                block.tx_block_ack_bitmap_low_q2().read().bits(),
-                block.tx_block_ack_bitmap_high_q2().read().bits(),
-                block
-                    .tx_block_ack_transmitter_address_high_q2()
-                    .read()
-                    .bits(),
-                block
-                    .tx_block_ack_transmitter_address_low_q2()
-                    .read()
-                    .bits(),
-                block.tx_queue_information_q2().read().bits(),
+            2 => snapshot!(
+                tx_block_ack_control_sequence_q2,
+                tx_block_ack_bitmap_low_q2,
+                tx_block_ack_bitmap_high_q2,
+                tx_block_ack_transmitter_address_high_q2,
+                tx_block_ack_transmitter_address_low_q2,
+                tx_queue_information_q2
             ),
-            3 => (
-                block.tx_block_ack_control_sequence_q3().read().bits(),
-                block.tx_block_ack_bitmap_low_q3().read().bits(),
-                block.tx_block_ack_bitmap_high_q3().read().bits(),
-                block
-                    .tx_block_ack_transmitter_address_high_q3()
-                    .read()
-                    .bits(),
-                block
-                    .tx_block_ack_transmitter_address_low_q3()
-                    .read()
-                    .bits(),
-                block.tx_queue_information_q3().read().bits(),
+            3 => snapshot!(
+                tx_block_ack_control_sequence_q3,
+                tx_block_ack_bitmap_low_q3,
+                tx_block_ack_bitmap_high_q3,
+                tx_block_ack_transmitter_address_high_q3,
+                tx_block_ack_transmitter_address_low_q3,
+                tx_queue_information_q3
             ),
-            4 => (
-                block.tx_block_ack_control_sequence_q4().read().bits(),
-                block.tx_block_ack_bitmap_low_q4().read().bits(),
-                block.tx_block_ack_bitmap_high_q4().read().bits(),
-                block
-                    .tx_block_ack_transmitter_address_high_q4()
-                    .read()
-                    .bits(),
-                block
-                    .tx_block_ack_transmitter_address_low_q4()
-                    .read()
-                    .bits(),
-                block.tx_queue_information_q4().read().bits(),
+            4 => snapshot!(
+                tx_block_ack_control_sequence_q4,
+                tx_block_ack_bitmap_low_q4,
+                tx_block_ack_bitmap_high_q4,
+                tx_block_ack_transmitter_address_high_q4,
+                tx_block_ack_transmitter_address_low_q4,
+                tx_queue_information_q4
             ),
-            5 => (
-                block.tx_block_ack_control_sequence_q5().read().bits(),
-                block.tx_block_ack_bitmap_low_q5().read().bits(),
-                block.tx_block_ack_bitmap_high_q5().read().bits(),
-                block
-                    .tx_block_ack_transmitter_address_high_q5()
-                    .read()
-                    .bits(),
-                block
-                    .tx_block_ack_transmitter_address_low_q5()
-                    .read()
-                    .bits(),
-                block.tx_queue_information_q5().read().bits(),
+            5 => snapshot!(
+                tx_block_ack_control_sequence_q5,
+                tx_block_ack_bitmap_low_q5,
+                tx_block_ack_bitmap_high_q5,
+                tx_block_ack_transmitter_address_high_q5,
+                tx_block_ack_transmitter_address_low_q5,
+                tx_queue_information_q5
             ),
-            6 => (
-                block.tx_block_ack_control_sequence_q6().read().bits(),
-                block.tx_block_ack_bitmap_low_q6().read().bits(),
-                block.tx_block_ack_bitmap_high_q6().read().bits(),
-                block
-                    .tx_block_ack_transmitter_address_high_q6()
-                    .read()
-                    .bits(),
-                block
-                    .tx_block_ack_transmitter_address_low_q6()
-                    .read()
-                    .bits(),
-                block.tx_queue_information_q6().read().bits(),
+            6 => snapshot!(
+                tx_block_ack_control_sequence_q6,
+                tx_block_ack_bitmap_low_q6,
+                tx_block_ack_bitmap_high_q6,
+                tx_block_ack_transmitter_address_high_q6,
+                tx_block_ack_transmitter_address_low_q6,
+                tx_queue_information_q6
             ),
-            7 => (
-                block.tx_block_ack_control_sequence_q7().read().bits(),
-                block.tx_block_ack_bitmap_low_q7().read().bits(),
-                block.tx_block_ack_bitmap_high_q7().read().bits(),
-                block
-                    .tx_block_ack_transmitter_address_high_q7()
-                    .read()
-                    .bits(),
-                block
-                    .tx_block_ack_transmitter_address_low_q7()
-                    .read()
-                    .bits(),
-                block.tx_queue_information_q7().read().bits(),
+            7 => snapshot!(
+                tx_block_ack_control_sequence_q7,
+                tx_block_ack_bitmap_low_q7,
+                tx_block_ack_bitmap_high_q7,
+                tx_block_ack_transmitter_address_high_q7,
+                tx_block_ack_transmitter_address_low_q7,
+                tx_queue_information_q7
             ),
             _ => return None,
-        };
-        let low = address_low.to_le_bytes();
-        let high = address_high.to_le_bytes();
-        Some(TxBlockAckDiagnosticSnapshot {
-            control_and_sequence,
-            bitmap_low,
-            bitmap_high,
-            transmitter_address: [low[0], low[1], low[2], low[3], high[0], high[1]],
-            acknowledgement_tid: ((address_high >> 16) & 0x0f) as u8,
-            acknowledgement_received: address_high & (1 << 20) != 0,
-            block_ack_received: address_high & (1 << 21) != 0,
-            last_tx_was_trigger_based: queue_information & (1 << 20) != 0,
-            trigger_based_packet_count: ((queue_information >> 13) & 0x7f) as u8,
         })
     }
 
     /// Sample the standalone internal WDEVTXBA result.
     ///
     /// SOURCE: complete `libpp.a[hal_debug.o]::
-    /// dbg_read_internal_txba`; all five addresses and three masks are exact.
-    /// The blob does not name byte ordering inside the two TA words, so they
-    /// remain raw.
+    /// dbg_read_internal_txba`; the bitmap and control fields are exact. The
+    /// two unqualified transmitter-address words remain evidence-only until
+    /// their byte ordering is established and are not exposed by production.
     pub fn internal_tx_block_ack_snapshot(&self) -> InternalTxBlockAckSnapshot {
         let block = &self.peripherals.wifi_mac.wifi_mac_internal_tx_block_ack;
         let control = block.control_sequence().read();
         InternalTxBlockAckSnapshot {
             bitmap: u64::from(block.bitmap_low().read().bits())
                 | (u64::from(block.bitmap_high().read().bits()) << 32),
-            transmitter_address_words: [
-                block.transmitter_address_word_0().read().bits(),
-                block.transmitter_address_word_1().read().bits(),
-            ],
             fragment_number: control.fragment_number().bits(),
             starting_sequence: control.starting_sequence().bits(),
             tid: control.tid().bits(),

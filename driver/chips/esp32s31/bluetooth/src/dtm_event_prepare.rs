@@ -177,7 +177,14 @@ impl BluetoothDtmSchedulerBookkeepingPrepared {
     /// Complete DTM call-path evidence supplies positional argument zero to
     /// the common forced-insertion path. This method performs no MMIO and does
     /// not change CPU ownership.
-    pub const fn scheduler_lock_modify_request(&self) -> BluetoothSchedulerLockModifyRequest {
+    ///
+    /// This remains crate-private until the lower memory layer represents the
+    /// complete hardware-consumed descriptor and publication boundary. It is
+    /// currently used only to retain the exact request identity in ownership
+    /// tests; external controller code cannot submit an incomplete graph.
+    pub(crate) const fn scheduler_lock_modify_request(
+        &self,
+    ) -> BluetoothSchedulerLockModifyRequest {
         match BluetoothSchedulerLockModifyRequest::new(self.scheduler_item_address(), 0) {
             Ok(request) => request,
             Err(_) => unreachable!(),

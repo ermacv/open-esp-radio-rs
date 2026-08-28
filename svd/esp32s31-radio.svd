@@ -17352,8 +17352,20 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
           <fields>
             <field>
               <name>COMMAND</name>
+              <description>Complete scheduler-stop command image.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
+              <writeConstraint>
+                <useEnumeratedValues>true</useEnumeratedValues>
+              </writeConstraint>
+              <enumeratedValues>
+                <usage>write</usage>
+                <enumeratedValue>
+                  <name>STOP</name>
+                  <description>Request scheduler stop before observing the scheduler busy state.</description>
+                  <value>1</value>
+                </enumeratedValue>
+              </enumeratedValues>
             </field>
           </fields>
         </register>

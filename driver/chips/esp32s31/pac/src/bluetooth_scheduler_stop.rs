@@ -5,7 +5,7 @@
 use super::{BluetoothInterruptOutputPrepared, BluetoothTaskRegisters, device_fence};
 
 trait BluetoothSchedulerStopCommand {
-    fn publish_stop(&mut self, image: u32);
+    fn publish_stop(&mut self);
     fn fence(&mut self);
 }
 
@@ -19,16 +19,8 @@ struct HardwareStopCommand<'a> {
 }
 
 impl BluetoothSchedulerStopCommand for HardwareStopCommand<'_> {
-    #[allow(
-        unsafe_code,
-        reason = "the complete scheduler lifecycle leaf qualifies the sole complete image one"
-    )]
-    fn publish_stop(&mut self, image: u32) {
-        unsafe {
-            self.controller
-                .scheduler_disable_command()
-                .write_with_zero(|writer| writer.command().bits(image));
-        }
+    fn publish_stop(&mut self) {
+        super::svd::fixed_register_write::publish_bluetooth_scheduler_stop_command(self.controller);
     }
 
     fn fence(&mut self) {
@@ -57,7 +49,7 @@ fn execute_stop_begin(
     if controller_time_latch_in_flight {
         return Err(BluetoothSchedulerDisableBeginError::ControllerTimeLatchInFlight);
     }
-    command.publish_stop(1);
+    command.publish_stop();
     command.fence();
     Ok(())
 }
@@ -254,7 +246,7 @@ mod tests {
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum Operation {
-        PublishStop(u32),
+        PublishStop,
         ReadBusy(bool),
         Fence,
     }
@@ -266,8 +258,8 @@ mod tests {
     }
 
     impl BluetoothSchedulerStopCommand for Recorder {
-        fn publish_stop(&mut self, image: u32) {
-            self.operations.push(Operation::PublishStop(image));
+        fn publish_stop(&mut self) {
+            self.operations.push(Operation::PublishStop);
         }
 
         fn fence(&mut self) {
@@ -302,7 +294,7 @@ mod tests {
         assert_eq!(
             recorder.operations,
             [
-                Operation::PublishStop(1),
+                Operation::PublishStop,
                 Operation::Fence,
                 Operation::ReadBusy(false),
                 Operation::Fence,
@@ -324,7 +316,7 @@ mod tests {
         assert_eq!(
             recorder.operations,
             [
-                Operation::PublishStop(1),
+                Operation::PublishStop,
                 Operation::Fence,
                 Operation::ReadBusy(true),
             ]

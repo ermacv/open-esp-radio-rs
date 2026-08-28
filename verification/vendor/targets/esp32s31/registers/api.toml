@@ -1407,6 +1407,14 @@ sources = [
 ]
 
 [[fixed-register-writes]]
+name = "publish_bluetooth_scheduler_stop_command"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SCHEDULER_DISABLE_COMMAND"
+field = "COMMAND"
+variant = "STOP"
+sources = ["BLOB_LIBBTDM_SCHEDULER_LIFECYCLE"]
+
+[[fixed-register-writes]]
 name = "start_bluetooth_runtime_timer"
 peripheral = "BTDM_RUNTIME_CONTROL"
 register = "RUNTIME_TIMER_START_COMMAND"

@@ -41192,10 +41192,38 @@ pub mod bluetooth_controller_core {
     pub mod scheduler_disable_command {
         #[doc = "Register `SCHEDULER_DISABLE_COMMAND` writer"]
         pub type W = crate::W<SchedulerDisableCommandSpec>;
-        #[doc = "Field `COMMAND` writer - "]
-        pub type CommandW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Complete scheduler-stop command image."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u32)]
+        pub enum Command {
+            #[doc = "1: Request scheduler stop before observing the scheduler busy state."]
+            Stop = 1,
+        }
+        impl From<Command> for u32 {
+            #[inline(always)]
+            fn from(variant: Command) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for Command {
+            type Ux = u32;
+        }
+        impl crate::IsEnum for Command {}
+        #[doc = "Field `COMMAND` writer - Complete scheduler-stop command image."]
+        pub type CommandW<'a, REG> = crate::FieldWriter<'a, REG, 32, Command>;
+        impl<'a, REG> CommandW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u32>,
+        {
+            #[doc = "Request scheduler stop before observing the scheduler busy state."]
+            #[inline(always)]
+            pub fn stop(self) -> &'a mut crate::W<REG> {
+                self.variant(Command::Stop)
+            }
+        }
         impl W {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:31 - Complete scheduler-stop command image."]
             #[inline(always)]
             pub fn command(&mut self) -> CommandW<'_, SchedulerDisableCommandSpec> {
                 CommandW::new(self, 0)
@@ -58265,6 +58293,18 @@ pub mod fixed_register_write {
             registers
                 .scheduler_control()
                 .write_with_zero(|writer| writer.command().run());
+        }
+    }
+
+    /// Write the `STOP` variant to every bit of `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_DISABLE_COMMAND`.
+    #[inline]
+    pub fn publish_bluetooth_scheduler_stop_command(registers: &crate::BluetoothControllerCore) {
+        // SAFETY: generator validation proves that the sole field covers
+        // all 32 bits and the named writable variant exists in the SVD.
+        unsafe {
+            registers
+                .scheduler_disable_command()
+                .write_with_zero(|writer| writer.command().stop());
         }
     }
 

@@ -3745,6 +3745,51 @@ value = 1
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
 
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_compensation_7_13"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "RX_COMP_CONTROL"
+fields = [{ field = "DYNAMIC_BITS_7_13", source-bit-offset = 0 }]
+value = 6
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_compensation_0_6"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "RX_COMP_CONTROL"
+fields = [{ field = "DYNAMIC_BITS_0_6", source-bit-offset = 0 }]
+value = 6
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_compensation_24_28"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "RX_COMP_CONTROL"
+fields = [{ field = "FINITE_BITS_24_28", source-bit-offset = 0 }]
+value = 6
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_compensation_19_23"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "RX_COMP_CONTROL"
+fields = [{ field = "FINITE_BITS_19_23", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_compensation_14_18"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "RX_COMP_CONTROL"
+fields = [{ field = "FINITE_BITS_14_18", source-bit-offset = 0 }]
+value = 8
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

@@ -2472,6 +2472,46 @@ pub(crate) fn initialize_shared_receive_image_4_low(registers: &crate::svd::Zbbb
     crate::svd::field_replace_modify::initialize_shared_receive_image_4_low(registers);
 }
 
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_compensation_7_13` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_compensation_7_13(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_compensation_7_13(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_compensation_0_6` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_compensation_0_6(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_compensation_0_6(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_compensation_24_28` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_compensation_24_28(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_compensation_24_28(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_compensation_19_23` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_compensation_19_23(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_compensation_19_23(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_compensation_14_18` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_compensation_14_18(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_compensation_14_18(registers);
+}
+
 /// Typed bridge for the reviewed `clear_bluetooth_scheduler_lock_modify_argument` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_bluetooth_scheduler_lock_modify_argument(

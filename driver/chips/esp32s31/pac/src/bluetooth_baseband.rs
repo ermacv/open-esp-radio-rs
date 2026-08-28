@@ -253,12 +253,12 @@ impl BluetoothBasebandV2Transaction<'_> {
     }
 
     fn initialize_receive_compensation(&self) {
-        let control = self.radio_phy.phy_btagc_recovered.rx_comp_control();
-        control.modify(|_, w| w.dynamic_bits_7_13().set(6));
-        control.modify(|_, w| w.dynamic_bits_0_6().set(6));
-        control.modify(|_, w| w.finite_bits_24_28().set(6));
-        control.modify(|_, w| w.finite_bits_19_23().set(0));
-        control.modify(|_, w| w.finite_bits_14_18().set(8));
+        let btagc = &self.radio_phy.phy_btagc_recovered;
+        super::generated::initialize_bluetooth_receive_compensation_7_13(btagc);
+        super::generated::initialize_bluetooth_receive_compensation_0_6(btagc);
+        super::generated::initialize_bluetooth_receive_compensation_24_28(btagc);
+        super::generated::initialize_bluetooth_receive_compensation_19_23(btagc);
+        super::generated::initialize_bluetooth_receive_compensation_14_18(btagc);
     }
 
     fn initialize_receive_gain_offsets(&self) {

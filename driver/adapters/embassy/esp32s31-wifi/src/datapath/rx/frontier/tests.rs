@@ -401,7 +401,7 @@ fn consuming_connected_promotion_returns_live_ring_or_exact_owner() {
     assert_eq!(hardware.disable_count, disable_count + 1);
     assert_eq!(hardware.reload_count, reload_count);
     assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
-    assert_eq!(live.observed_mask(), 0);
+    assert!(live.observed_mask().is_empty());
     let halted = match live.try_stop(&mut hardware) {
         Ok(halted) => halted,
         Err(_) => panic!("mock walker must stop after the live handoff"),

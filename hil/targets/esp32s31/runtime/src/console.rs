@@ -177,6 +177,8 @@ pub struct StartupConfiguration {
     pub data_plane: open_esp_radio_hil_protocol::WifiDataPlanePlacement,
     pub rx_checksum: open_esp_radio_hil_protocol::WifiRxChecksumPolicy,
     pub rx_admission: open_esp_radio_hil_protocol::WifiRxAdmissionPolicy,
+    pub rx_dispatch: open_esp_radio_hil_protocol::WifiRxDispatchPolicy,
+    pub rx_continuation: open_esp_radio_hil_protocol::WifiRxContinuationPolicy,
     pub l1_cache_counters: bool,
     pub phy_calibration_artifact: Option<StartupArtifact>,
 }
@@ -1043,6 +1045,8 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                 data_plane: configuration.data_plane,
                                 rx_checksum: configuration.rx_checksum,
                                 rx_admission: configuration.rx_admission,
+                                rx_dispatch: configuration.rx_dispatch,
+                                rx_continuation: configuration.rx_continuation,
                                 l1_cache_counters: configuration.l1_cache_counters,
                                 phy_calibration_artifact: startup_artifact.completed_artifact(),
                             })

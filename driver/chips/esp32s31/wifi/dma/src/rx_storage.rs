@@ -844,8 +844,8 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         let observed = ring.observed_mask();
         let mut released = 0_usize;
         while released < MAX_BATCH.min(COUNT) {
-            let index = (start + released) % COUNT;
-            if observed & (1_u64 << index) == 0
+            let index = wrap_index::<COUNT>(start, released);
+            if !observed.contains(index)
                 || !crate::descriptor::rx_done(self.descriptors[index].word0())
                 || !self
                     .buffer_for_descriptor(index)
@@ -1023,14 +1023,8 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         ring: &RxRingLive<'_, COUNT>,
     ) -> Result<Option<usize>, RxRingError> {
         self.validate_live_ring(ring)?;
-        let observed = ring.observed_mask();
-        for distance in 0..COUNT {
-            let index = (ring.recycle_start() + distance) % COUNT;
-            if observed & (1_u64 << index) == 0 {
-                return Ok(Some(index));
-            }
-        }
-        Ok(None)
+        let observed = ring.observed_prefix_len();
+        Ok((observed != COUNT).then(|| wrap_index::<COUNT>(ring.recycle_start(), observed)))
     }
 
     pub fn take_completed_unit<'storage, 'owner, 'ring>(
@@ -1180,6 +1174,14 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> De
     }
 }
 
+fn wrap_index<const COUNT: usize>(index: usize, amount: usize) -> usize {
+    debug_assert!(COUNT != 0);
+    debug_assert!(index < COUNT);
+    debug_assert!(amount <= COUNT);
+    let sum = index + amount;
+    if sum >= COUNT { sum - COUNT } else { sum }
+}
+
 #[cfg(test)]
 mod tests {
     extern crate std;
@@ -1294,6 +1296,58 @@ mod tests {
 
         storage.prepare_unpublished_buffer(0).unwrap();
         assert!(!storage.buffers()[0].leading_guard_overwritten());
+    }
+
+    #[test]
+    fn accepted_list_pressure_projects_next_to_the_current_tail() {
+        const COUNT: usize = 4;
+        const BASE: u32 = 0x2f00_1000;
+        const LOW_MASK: u32 = 0x000f_ffff;
+        let buffers = [0x2f00_2000, 0x2f00_2100, 0x2f00_2200, 0x2f00_2300];
+        let storage = Box::leak(Box::new(RxDmaStorage::<COUNT, 16, 20>::new()));
+        let mut mmio = MockRxDma::default();
+        let prepared = storage
+            .prepare_ring(&mut mmio, BASE, &buffers)
+            .expect("prepared pressure model");
+        let live = prepared
+            .try_start(&mut mmio)
+            .map_err(|(_, error)| error)
+            .expect("live pressure model");
+
+        let next = |index: u32| {
+            crate::rx_dma::RxDmaNextDescriptor::validation(
+                (BASE + index * crate::descriptor::DESCRIPTOR_BYTES) & LOW_MASK,
+                false,
+            )
+        };
+        assert_eq!(live.accepted_list_remaining_from_next(next(0)), Some(4));
+        assert_eq!(live.accepted_list_remaining_from_next(next(1)), Some(3));
+        assert_eq!(live.accepted_list_remaining_from_next(next(3)), Some(1));
+        assert_eq!(
+            live.accepted_list_remaining_from_next(crate::rx_dma::RxDmaNextDescriptor::validation(
+                0, false
+            )),
+            Some(0)
+        );
+        assert_eq!(
+            live.accepted_list_remaining_from_next(crate::rx_dma::RxDmaNextDescriptor::validation(
+                0, true
+            )),
+            None,
+            "upper-only NEXT is not an exhausted-list proof"
+        );
+        assert_eq!(
+            live.accepted_list_remaining_from_next(crate::rx_dma::RxDmaNextDescriptor::validation(
+                (BASE + COUNT as u32 * crate::descriptor::DESCRIPTOR_BYTES) & LOW_MASK,
+                false,
+            )),
+            None,
+            "a foreign cursor must not alias a ring credit"
+        );
+
+        live.try_stop(&mut mmio)
+            .map_err(|(_, error)| error)
+            .expect("stop pressure model");
     }
 
     #[test]
@@ -1730,7 +1784,7 @@ mod tests {
                 storage.take_completed(&mut live, 0),
                 Err(RxRingError::Corrupt)
             ));
-            assert_eq!(live.observed_mask(), 0);
+            assert!(live.observed_mask().is_empty());
             assert_eq!(storage.lifecycle_state(), RxDmaArenaState::ResetRequired);
             assert!(live.try_stop(&mut mmio).is_ok());
         }
@@ -2061,7 +2115,7 @@ mod tests {
             storage.descriptors()[0].word0() & crate::descriptor::BIT_30,
             0
         );
-        assert_eq!(live.observed_mask(), 0);
+        assert!(live.observed_mask().is_empty());
         live.complete_pending_reload(&mut mmio)
             .expect("vendor reload suffix");
         assert_eq!(live.accepted_tail(), 0);
@@ -2108,7 +2162,7 @@ mod tests {
             .expect("first unit precedes LAST");
         assert_eq!(append.head_index, 0);
         assert_eq!(append.descriptor_count, 1);
-        assert_eq!(live.observed_mask(), 0);
+        assert!(live.observed_mask().is_empty());
         assert_ne!(
             storage.descriptors()[1].word0() & crate::descriptor::BIT_30,
             0,

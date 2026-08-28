@@ -1,7 +1,9 @@
 use super::*;
 
 #[cfg(feature = "task-poll-telemetry")]
-use crate::diagnostics::core0_rx_reorder_cycles::{CORE0_REORDER_CYCLES, Core0ReorderPath};
+use crate::diagnostics::core0_rx_reorder_cycles::{
+    CORE0_REORDER_CYCLES, Core0DirectCycleProfile, Core0DirectPath, Core0ReorderPath,
+};
 
 impl<
     'queue,
@@ -17,6 +19,135 @@ impl<
 where
     S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
 {
+    /// Try the run-to-completion path for the common in-order protected QoS
+    /// frame.
+    ///
+    /// Every rejection returns the untouched frame to the general async path.
+    /// `try_ingest_immediate` is specifically non-mutating for gaps, buffered
+    /// successors and window advances, so falling back cannot apply reorder
+    /// state twice. A successful call consumes the reorder frontier and the
+    /// retained staging owner synchronously.
+    #[cfg_attr(
+        target_arch = "riscv32",
+        unsafe(link_section = ".hot.text.open_radio_sta_rx_direct")
+    )]
+    #[inline(never)]
+    pub(super) fn try_dispatch_frame_direct(
+        &mut self,
+        frame: Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>,
+    ) -> Result<Option<ConnectedRxDispatch>, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>> {
+        #[cfg(feature = "task-poll-telemetry")]
+        let mut direct_cycles = Core0DirectCycleProfile::begin();
+        assert!(
+            self.runtime.dispatcher_configured(),
+            "stopped connected RX processor cannot dispatch another frame"
+        );
+        let preflight_rejected = self.sink.staged_rx_admission() != StagedRxAdmission::Immediate
+            || self.runtime.dispatcher.may_publish_amsdu(frame.segment())
+            || !self
+                .runtime
+                .dispatcher
+                .may_publish_ethernet(frame.segment());
+        #[cfg(feature = "task-poll-telemetry")]
+        direct_cycles.preflight_completed();
+        if preflight_rejected {
+            #[cfg(feature = "task-poll-telemetry")]
+            direct_cycles.finish(Core0DirectPath::PreflightRejected);
+            return Err(frame);
+        }
+
+        let key = self.runtime.dispatcher.reorder_key(frame.segment());
+        #[cfg(feature = "task-poll-telemetry")]
+        direct_cycles.key_completed();
+        let Some(key) = key else {
+            #[cfg(feature = "task-poll-telemetry")]
+            direct_cycles.finish(Core0DirectPath::KeyRejected);
+            return Err(frame);
+        };
+        let bank = self.runtime.reorder_banks.find(
+            open_esp_radio_esp32s31_wifi_mac::MacInterface::Station,
+            key.peer,
+            key.tid,
+        );
+        #[cfg(feature = "task-poll-telemetry")]
+        direct_cycles.bank_completed();
+        let Some(bank) = bank else {
+            #[cfg(feature = "task-poll-telemetry")]
+            direct_cycles.finish(Core0DirectPath::BankRejected);
+            return Err(frame);
+        };
+        #[cfg(any(feature = "diagnostics", test))]
+        self.observe_first_reorder_frame(bank, key.tid, key.sequence);
+        let immediate = RxAmpduMpdu {
+            sequence: key.sequence,
+            slot: RX_REORDER_CURRENT_SLOT as u8,
+        };
+        let ingest = self
+            .runtime
+            .reorder_banks
+            .state_mut(bank)
+            .expect("active TID was checked above")
+            .try_ingest_immediate(immediate);
+        #[cfg(feature = "task-poll-telemetry")]
+        direct_cycles.ingest_completed();
+        match ingest {
+            Ok(Some(_)) => {
+                self.update_gap_deadline(bank);
+                #[cfg(feature = "task-poll-telemetry")]
+                direct_cycles.deadline_completed();
+                let dispatch = self.dispatch_owned_frame_direct(frame);
+                #[cfg(feature = "task-poll-telemetry")]
+                direct_cycles.dispatch_completed();
+                #[cfg(feature = "task-poll-telemetry")]
+                direct_cycles.finish(Core0DirectPath::Accepted);
+                Ok(Some(dispatch))
+            }
+            Ok(None) => {
+                #[cfg(feature = "task-poll-telemetry")]
+                direct_cycles.finish(Core0DirectPath::ReorderRejected);
+                Err(frame)
+            }
+            Err(error) => {
+                drop(frame);
+                self.irq.notify_rx_capacity();
+                #[cfg(feature = "task-poll-telemetry")]
+                direct_cycles.finish(Core0DirectPath::DuplicateOrIgnored);
+                Ok(Some(
+                    if matches!(error, RxAmpduError::DuplicateSequence(_)) {
+                        ConnectedRxDispatch::Duplicate
+                    } else {
+                        ConnectedRxDispatch::Ignored
+                    },
+                ))
+            }
+        }
+    }
+
+    /// Consume the agreement's first-frame marker at the common direct/async
+    /// boundary. Leaving it to the async fallback makes a later exceptional
+    /// frame appear to be the first frame even though the direct hot path has
+    /// already advanced the reorder window.
+    #[cfg(any(feature = "diagnostics", test))]
+    pub(super) fn observe_first_reorder_frame(&mut self, bank: usize, tid: u8, sequence: u16) {
+        let Some(start) = self.runtime.reorder_first_starts[bank].take() else {
+            return;
+        };
+        if let Some(observer) = self.pipeline_observer {
+            observer.observe(RxPipelineObservation::ReorderFirst {
+                tid,
+                start,
+                sequence,
+            });
+        }
+        if let Some(observer) = self.reorder_observer {
+            observer.observe(RxReorderAgreementObservation::First {
+                tid,
+                start,
+                sequence,
+            });
+        }
+    }
+
     pub async fn dispatch_frame(
         &mut self,
         frame: Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>,
@@ -69,22 +200,7 @@ where
         }
         let bank = bank.expect("active reorder has one hardware-bank identity");
         #[cfg(any(feature = "diagnostics", test))]
-        if let Some(start) = self.runtime.reorder_first_starts[bank].take() {
-            if let Some(observer) = self.pipeline_observer {
-                observer.observe(RxPipelineObservation::ReorderFirst {
-                    tid: key.tid,
-                    start,
-                    sequence: key.sequence,
-                });
-            }
-            if let Some(observer) = self.reorder_observer {
-                observer.observe(RxReorderAgreementObservation::First {
-                    tid: key.tid,
-                    start,
-                    sequence: key.sequence,
-                });
-            }
-        }
+        self.observe_first_reorder_frame(bank, key.tid, key.sequence);
         #[cfg(feature = "task-poll-telemetry")]
         CORE0_REORDER_CYCLES.first_completed();
 

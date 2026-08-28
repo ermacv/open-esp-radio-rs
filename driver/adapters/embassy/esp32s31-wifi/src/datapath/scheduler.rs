@@ -258,6 +258,20 @@ where
                 continue;
             }
 
+            // A delayed recycled-only continuation retains the masked RX
+            // epoch without keeping this task continuously runnable. Once its
+            // deadline is due it has the same priority as the software repost
+            // it replaces, including the existing RX/TX fairness gate.
+            if self.recycled_rx_probe_due(Instant::now())
+                && !(network_tx_pending && self.network_turn_owed())
+            {
+                self.clear_recycled_rx_probe_deadline();
+                #[cfg(feature = "task-poll-telemetry")]
+                core0_scheduler_cycles.finish(Core0RxSchedulerPath::Software);
+                self.service_rx().await?;
+                continue;
+            }
+
             // Consume a coalesced RX frontier before admitting a fresh
             // network transaction, matching the recovered FIQ priority. If a
             // previous finite RX pass reported a continuation while network
@@ -267,6 +281,7 @@ where
                 self.rx_progress,
                 DatapathRxProgress::Drained
                     | DatapathRxProgress::ProbePending
+                    | DatapathRxProgress::RecycledAppendPending
                     | DatapathRxProgress::BudgetExhausted
                     | DatapathRxProgress::UpperLayerBlockedButDroppable
             );
@@ -336,6 +351,7 @@ where
 
             let irq = self.irq;
             let rx_progress = self.rx_progress;
+            let recycled_rx_probe_deadline = self.recycled_rx_probe_deadline();
             let network_rx = &mut self.network_rx;
             let wait_rx = async move {
                 match rx_progress {
@@ -352,8 +368,18 @@ where
                         )
                         .await;
                     }
+                    DatapathRxProgress::RecycledAppendPending
+                        if recycled_rx_probe_deadline.is_some() =>
+                    {
+                        if let Some(deadline) = recycled_rx_probe_deadline {
+                            Timer::at(deadline).await;
+                        } else {
+                            irq.wait_rx().await;
+                        }
+                    }
+                    DatapathRxProgress::ProbePending
+                    | DatapathRxProgress::RecycledAppendPending => irq.wait_rx().await,
                     DatapathRxProgress::Drained
-                    | DatapathRxProgress::ProbePending
                     | DatapathRxProgress::BudgetExhausted
                     | DatapathRxProgress::UpperLayerBlockedButDroppable => irq.wait_rx().await,
                 }

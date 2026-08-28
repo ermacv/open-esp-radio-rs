@@ -7,6 +7,7 @@ record are therefore evidence, not current usage instructions.
 
 Current records:
 
+- [ESP32-S31 Core0 RX load reduction](2026-08-28-esp32s31-core0-rx-load-reduction.md);
 - [ESP32-S31 STA RX degradation investigation checkpoint](2026-08-26-esp32s31-sta-rx-degradation-investigation.md);
 - [ESP32-S31 production back-to-back IEEE 802.15.4 ED recovery](2026-08-25-esp32s31-ieee802154-back-to-back-ed.md);
 - [ESP32-S31 generated IEEE 802.15.4 ED-DONE selected write](2026-08-25-esp32s31-ieee802154-generated-ed-done.md);

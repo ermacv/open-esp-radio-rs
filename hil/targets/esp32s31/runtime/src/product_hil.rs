@@ -2284,10 +2284,48 @@ pub async fn run(
         data_plane,
         rx_checksum,
         rx_admission,
+        rx_dispatch,
+        rx_continuation,
         l1_cache_counters,
         phy_calibration_artifact,
     } = startup;
     L1_CACHE_COUNTERS_ENABLED.store(l1_cache_counters, Ordering::Relaxed);
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    open_esp_radio_esp32s31_embassy_wifi::configure_direct_immediate_rx_dispatch_for_diagnostics(
+        matches!(
+            rx_dispatch,
+            open_esp_radio_hil_protocol::WifiRxDispatchPolicy::DirectImmediateDiagnostic
+        ),
+    );
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    open_esp_radio_esp32s31_embassy_wifi::configure_interrupt_driven_recycled_append_for_diagnostics(
+        matches!(
+            rx_continuation,
+            open_esp_radio_hil_protocol::WifiRxContinuationPolicy::LevelIrqDiagnostic
+        ),
+    );
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    open_esp_radio_esp32s31_embassy_wifi::configure_adaptive_recycled_rx_probe_for_diagnostics(
+        matches!(
+            rx_continuation,
+            open_esp_radio_hil_protocol::WifiRxContinuationPolicy::AdaptiveProbeDiagnostic
+        ),
+    );
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    open_esp_radio_esp32s31_embassy_wifi::configure_recycled_rx_probe_delay_for_diagnostics(
+        match rx_continuation {
+            open_esp_radio_hil_protocol::WifiRxContinuationPolicy::DelayedProbe64Diagnostic => 64,
+            open_esp_radio_hil_protocol::WifiRxContinuationPolicy::DelayedProbe128Diagnostic => 128,
+            open_esp_radio_hil_protocol::WifiRxContinuationPolicy::DelayedProbe256Diagnostic => 256,
+            open_esp_radio_hil_protocol::WifiRxContinuationPolicy::DelayedProbe512Diagnostic => 512,
+            open_esp_radio_hil_protocol::WifiRxContinuationPolicy::DelayedProbe1024Diagnostic => {
+                1024
+            }
+            open_esp_radio_hil_protocol::WifiRxContinuationPolicy::ImmediateSoftwareProbe
+            | open_esp_radio_hil_protocol::WifiRxContinuationPolicy::LevelIrqDiagnostic
+            | open_esp_radio_hil_protocol::WifiRxContinuationPolicy::AdaptiveProbeDiagnostic => 0,
+        },
+    );
     let efuse_registers = esp_hal::peripherals::EFUSE::regs();
     let mut station_address = [0; 6];
     station_address
@@ -2476,10 +2514,56 @@ pub async fn run(
         WifiDataPlanePlacement::SingleCore => 0,
         WifiDataPlanePlacement::SplitRadioNetwork => 1,
     };
+    // The startup fields are runtime selectors only in the coarse same-image
+    // diagnostic. Ordinary images compile the qualified production policy
+    // directly, so reporting the ignored selector default would describe a
+    // path which is not executing.
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    let effective_rx_dispatch = match rx_dispatch {
+        open_esp_radio_hil_protocol::WifiRxDispatchPolicy::Asynchronous => "asynchronous",
+        open_esp_radio_hil_protocol::WifiRxDispatchPolicy::DirectImmediateDiagnostic => {
+            "direct-immediate"
+        }
+    };
+    #[cfg(not(feature = "core0-rx-coarse-telemetry"))]
+    let effective_rx_dispatch = "direct-immediate";
+    #[cfg(not(feature = "core0-rx-coarse-telemetry"))]
+    let _ = rx_dispatch;
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    let effective_rx_continuation = match rx_continuation {
+        open_esp_radio_hil_protocol::WifiRxContinuationPolicy::ImmediateSoftwareProbe => {
+            "immediate-software-probe"
+        }
+        open_esp_radio_hil_protocol::WifiRxContinuationPolicy::LevelIrqDiagnostic => "level-irq",
+        open_esp_radio_hil_protocol::WifiRxContinuationPolicy::DelayedProbe64Diagnostic => {
+            "delayed-probe-64us"
+        }
+        open_esp_radio_hil_protocol::WifiRxContinuationPolicy::DelayedProbe128Diagnostic => {
+            "delayed-probe-128us"
+        }
+        open_esp_radio_hil_protocol::WifiRxContinuationPolicy::DelayedProbe256Diagnostic => {
+            "delayed-probe-256us"
+        }
+        open_esp_radio_hil_protocol::WifiRxContinuationPolicy::DelayedProbe512Diagnostic => {
+            "delayed-probe-512us"
+        }
+        open_esp_radio_hil_protocol::WifiRxContinuationPolicy::DelayedProbe1024Diagnostic => {
+            "delayed-probe-1024us"
+        }
+        open_esp_radio_hil_protocol::WifiRxContinuationPolicy::AdaptiveProbeDiagnostic => {
+            "adaptive-probe"
+        }
+    };
+    #[cfg(not(feature = "core0-rx-coarse-telemetry"))]
+    let effective_rx_continuation = "adaptive-probe";
+    #[cfg(not(feature = "core0-rx-coarse-telemetry"))]
+    let _ = rx_continuation;
     runtime_log(format_args!(
         "OPEN_RADIO_HIL data_plane={data_plane:?} radio_core=0 \
          protocol_core=0 network_core={data_plane_core} rx_checksum={rx_checksum:?} \
-         rx_admission={rx_admission:?} l1_cache_counters={l1_cache_counters}",
+         rx_admission={rx_admission:?} rx_dispatch={effective_rx_dispatch} \
+         rx_continuation={effective_rx_continuation} \
+         l1_cache_counters={l1_cache_counters}",
     ));
 }
 

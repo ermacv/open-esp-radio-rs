@@ -256,7 +256,7 @@ where
         };
         let frontier = ring.completed_descriptor_frontier();
         for step in 0..frontier.descriptor_count {
-            let index = (frontier.start_index + step) % COUNT;
+            let index = wrap_index::<COUNT>(frontier.start_index, step);
             let Some(completed) = storage.take_completed(ring, index)? else {
                 return Err(Esp32s31RxFrontierError::Ring(RxRingError::Corrupt));
             };
@@ -412,7 +412,7 @@ where
         // LAST-advance proof for the preceding half; that descriptor belongs
         // to the next service/recycle epoch.
         for step in 0..frontier.descriptor_count.min(COUNT / 2) {
-            let index = (frontier.start_index + step) % COUNT;
+            let index = wrap_index::<COUNT>(frontier.start_index, step);
             let Some(completed) = storage.take_completed(ring, index)? else {
                 return Err(Esp32s31RxFrontierError::Ring(RxRingError::Corrupt));
             };
@@ -505,4 +505,12 @@ where
             Err(error) => Err(Esp32s31RxFrontierIntoLiveFailure { owner: self, error }),
         }
     }
+}
+
+fn wrap_index<const COUNT: usize>(index: usize, amount: usize) -> usize {
+    debug_assert!(COUNT != 0);
+    debug_assert!(index < COUNT);
+    debug_assert!(amount <= COUNT);
+    let sum = index + amount;
+    if sum >= COUNT { sum - COUNT } else { sum }
 }

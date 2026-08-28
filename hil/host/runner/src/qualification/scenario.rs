@@ -7,7 +7,8 @@ use std::{
 };
 
 use open_esp_radio_hil_protocol::{
-    WifiDataPlanePlacement, WifiRxAdmissionPolicy, WifiRxChecksumPolicy,
+    WifiDataPlanePlacement, WifiRxAdmissionPolicy, WifiRxChecksumPolicy, WifiRxContinuationPolicy,
+    WifiRxDispatchPolicy,
 };
 use serde::{Deserialize, Serialize};
 
@@ -381,6 +382,10 @@ pub struct Scenario {
     #[serde(default)]
     pub rx_admission: WifiRxAdmissionPolicy,
     #[serde(default)]
+    pub rx_dispatch: WifiRxDispatchPolicy,
+    #[serde(default)]
+    pub rx_continuation: WifiRxContinuationPolicy,
+    #[serde(default)]
     pub l1_cache_counters: bool,
     #[serde(default)]
     pub tags: Vec<String>,
@@ -473,6 +478,42 @@ impl Scenario {
         {
             return Err(format!(
                 "{}: deferred-ready-diagnostic RX admission is restricted to the Core0 RX cycle diagnostic",
+                self.source.display()
+            )
+            .into());
+        }
+        if self.rx_dispatch != WifiRxDispatchPolicy::Asynchronous
+            && (!matches!(
+                self.image,
+                ImageClass::DiagnosticCore0RxCoarse | ImageClass::DiagnosticCore0RxCycles
+            ) || !matches!(
+                self.workload,
+                Workload::Udp {
+                    direction: Direction::Rx,
+                    ..
+                }
+            ))
+        {
+            return Err(format!(
+                "{}: direct-immediate-diagnostic RX dispatch is restricted to a Core0 UDP RX diagnostic",
+                self.source.display()
+            )
+            .into());
+        }
+        if self.rx_continuation != WifiRxContinuationPolicy::ImmediateSoftwareProbe
+            && (!matches!(
+                self.image,
+                ImageClass::DiagnosticCore0RxCoarse | ImageClass::DiagnosticCore0RxCycles
+            ) || !matches!(
+                self.workload,
+                Workload::Udp {
+                    direction: Direction::Rx,
+                    ..
+                }
+            ))
+        {
+            return Err(format!(
+                "{}: selectable RX continuation is restricted to a Core0 UDP RX diagnostic",
                 self.source.display()
             )
             .into());

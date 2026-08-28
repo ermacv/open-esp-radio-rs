@@ -637,6 +637,18 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_cycles(
     .await;
     yield_now().await;
     runtime_log_reliably(format_args!(
+        "ORC0M calls={} total={} admission={} layout={} projection={} validate={} telemetry={}",
+        cycles.ccmp_view_calls,
+        cycles.ccmp_view_total,
+        cycles.ccmp_view_admission,
+        cycles.ccmp_view_layout,
+        cycles.ccmp_view_projection,
+        cycles.ccmp_view_validate,
+        cycles.ccmp_view_telemetry,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
         "ORC0I dma={} runner={} scheduler={} protocol_dequeue={} protocol_entry={} protocol_frame={} data={} publication={}",
         cycles.telemetry_dma_record,
         cycles.telemetry_runner_record,
@@ -700,6 +712,27 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_cycles(
     .await;
     yield_now().await;
     runtime_log_reliably(format_args!(
+        "ORC0L calls={} accepted={} preflight_rejected={} key_rejected={} bank_rejected={} reorder_rejected={} duplicate_or_ignored={} total={} preflight={} key={} bank={} ingest={} deadline={} dispatch={} tail={} telemetry={}",
+        reorder.direct_calls,
+        reorder.direct_accepted,
+        reorder.direct_preflight_rejected,
+        reorder.direct_key_rejected,
+        reorder.direct_bank_rejected,
+        reorder.direct_reorder_rejected,
+        reorder.direct_duplicate_or_ignored,
+        reorder.direct_total,
+        reorder.direct_preflight,
+        reorder.direct_key,
+        reorder.direct_bank,
+        reorder.direct_ingest,
+        reorder.direct_deadline,
+        reorder.direct_dispatch,
+        reorder.direct_tail,
+        reorder.direct_telemetry_record,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
         "OCACHEI trace={} enable=0x{:02x} bus0_hit={} bus0_miss={} bus0_conflict={} bus0_next={} bus1_hit={} bus1_miss={} bus1_conflict={} bus1_next={}",
         u8::from(cache.trace_enabled),
         cache.counter_enable,
@@ -759,14 +792,73 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_coarse(
     .await;
     yield_now().await;
     runtime_log_reliably(format_args!(
-        "ORC0B protocol_polls={} protocol_cycles={} protocol_instret={} dma_calls={} dma_units={} dma_cycles={} dma_instret={}",
+        "ORC0B protocol_polls={} protocol_cycles={} protocol_instret={} direct_frames={} async_frames={} dma_calls={} dma_empty={} dma_units={} dma_cycles={} dma_instret={}",
         performance.protocol_polls,
         performance.protocol_cycles,
         performance.protocol_instructions,
+        performance.direct_protocol_frames,
+        performance.asynchronous_protocol_frames,
         performance.dma_calls,
+        performance.dma_empty_calls,
         performance.dma_units,
         performance.dma_cycles,
         performance.dma_instructions,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ORC0P drained={} probe={} recycled_append={} budget={} stage_blocked={} network_blocked={} droppable={}",
+        performance.rx_progress_drained,
+        performance.rx_progress_probe_pending,
+        performance.rx_progress_recycled_append_pending,
+        performance.rx_progress_budget_exhausted,
+        performance.rx_progress_stage_blocked,
+        performance.rx_progress_network_blocked,
+        performance.rx_progress_droppable,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ORC0Q empty={} one={} two={} three_seven={} eight_plus={} probe_recycled={} probe_frontier={} probe_terminal={} probe_republication={}",
+        performance.dma_empty_calls,
+        performance.dma_single_unit_calls,
+        performance.dma_two_unit_calls,
+        performance.dma_three_to_seven_unit_calls,
+        performance.dma_eight_plus_unit_calls,
+        performance.dma_probe_recycled,
+        performance.dma_probe_completed_frontier,
+        performance.dma_probe_terminal_writeback,
+        performance.dma_probe_republication,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ORC0A delay64={} delay128={} delay256={} delay512={} delay_other={} empty_work={} work_units={} staged_bytes={}",
+        performance.adaptive_probe_delay_64,
+        performance.adaptive_probe_delay_128,
+        performance.adaptive_probe_delay_256,
+        performance.adaptive_probe_delay_512,
+        performance.adaptive_probe_delay_other,
+        performance.adaptive_probe_empty_work,
+        performance.adaptive_probe_work_units,
+        performance.adaptive_probe_staged_bytes,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ORC0R exhausted={} remaining1_8={} remaining9_16={} remaining17_32={} remaining33_48={} remaining49_plus={} unknown={} episodes={} resolved_le64us={} resolved_le256us={} resolved_le1024us={} resolved_gt1024us={}",
+        performance.dma_entry_remaining_exhausted,
+        performance.dma_entry_remaining_1_8,
+        performance.dma_entry_remaining_9_16,
+        performance.dma_entry_remaining_17_32,
+        performance.dma_entry_remaining_33_48,
+        performance.dma_entry_remaining_49_plus,
+        performance.dma_entry_remaining_unknown,
+        performance.dma_exhaustion_episodes,
+        performance.dma_exhaustion_resolved_le_64us,
+        performance.dma_exhaustion_resolved_le_256us,
+        performance.dma_exhaustion_resolved_le_1024us,
+        performance.dma_exhaustion_resolved_gt_1024us,
     ))
     .await;
 }

@@ -12,8 +12,8 @@ use open_esp_radio_embassy_net::RawMutex;
 
 use crate::{
     datapath::{
-        DatapathRxProgress, DatapathRxServiceContext, network::DatapathNetworkRxSet,
-        services::DatapathRxService,
+        DatapathRxProgress, DatapathRxServiceContext, DatapathRxWorkCounters,
+        network::DatapathNetworkRxSet, services::DatapathRxService,
     },
     roles::station::{
         rx_protocol::{
@@ -185,6 +185,10 @@ where
         self.dma.service(hardware)
     }
 
+    fn work_counters(&self) -> DatapathRxWorkCounters {
+        self.dma.work_counters()
+    }
+
     async fn service_turn<'a>(
         &'a mut self,
         hardware: &'a mut H,
@@ -203,6 +207,9 @@ where
             crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE
                 .begin_protocol_poll(protocol_started);
             let turn = self.protocol.service_bounded(limit).await;
+            #[cfg(feature = "core0-rx-coarse-telemetry")]
+            crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE
+                .record_protocol_paths(turn.direct_frames, turn.asynchronous_frames);
             #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
             {
                 let protocol_ended =
@@ -241,6 +248,9 @@ where
             crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE
                 .begin_protocol_poll(protocol_started);
             let turn = self.protocol.service_bounded(remaining).await;
+            #[cfg(feature = "core0-rx-coarse-telemetry")]
+            crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE
+                .record_protocol_paths(turn.direct_frames, turn.asynchronous_frames);
             #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
             {
                 let protocol_ended =
@@ -257,10 +267,19 @@ where
             .serviced_frames
             .saturating_add(after_dma.consumed_frames as u64);
 
+        // `StageCapacityBlocked` describes the capacity observed inside the
+        // DMA phase, not necessarily the state at this fused turn boundary.
+        // A successful after-DMA protocol pass returns at least one staging
+        // credit synchronously. Preserve the known completed DMA frontier as
+        // runnable work instead of sleeping for a capacity edge which already
+        // happened inside this owner.
+        let stage_capacity_released = dma_progress == DatapathRxProgress::StageCapacityBlocked
+            && after_dma.consumed_frames != 0;
         Ok(
             if before_dma.work_remaining
                 || after_dma.work_remaining
                 || self.protocol.has_ready_work()
+                || stage_capacity_released
             {
                 DatapathRxProgress::BudgetExhausted
             } else {

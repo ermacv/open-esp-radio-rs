@@ -4,6 +4,8 @@
 //! through [`DatapathServices`]; the scheduler never imports either role crate.
 
 use core::future::{Future, pending, ready};
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use crate::datapath::irq::EmbassyMacIrqRuntime;
 use crate::datapath::network::{DatapathNetwork, DatapathNetworkRxSet};
@@ -19,7 +21,8 @@ use open_esp_radio_embassy_net::{
     RawMutex,
 };
 pub use open_esp_radio_esp32s31_wifi::datapath::{
-    DatapathControlContext, DatapathControlProgress, DatapathRxProgress, DatapathStopProgress,
+    DatapathControlContext, DatapathControlProgress, DatapathRxProgress, DatapathRxWorkCounters,
+    DatapathStopProgress,
 };
 pub use open_esp_radio_esp32s31_wifi::tx::{WifiTxProgress, WifiTxWake};
 
@@ -42,6 +45,87 @@ const TX_BURST_ENTRY_GAP: Duration = Duration::from_millis(2);
 /// not count as producer silence.
 const TX_BURST_QUIET_TIMEOUT: Duration = Duration::from_millis(4);
 const RX_TX_FAIRNESS_QUANTUM_FRAMES: u32 = 8;
+
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+static RECYCLED_RX_PROBE_DELAY_MICROS: AtomicU32 = AtomicU32::new(0);
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+static ADAPTIVE_RECYCLED_RX_PROBE: AtomicBool = AtomicBool::new(false);
+
+/// Configure a same-image delayed continuation for a masked recycled-only RX
+/// frontier. Zero preserves the production immediate software repost.
+///
+/// The delay applies only after the first IRQ-originated service has finished;
+/// it never delays an idle-to-active RX transition. Hardware terminal,
+/// completion-frontier and budget continuations remain immediate.
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+pub fn configure_recycled_rx_probe_delay_for_diagnostics(delay_micros: u32) {
+    RECYCLED_RX_PROBE_DELAY_MICROS.store(delay_micros, Ordering::Relaxed);
+}
+
+/// Select the same-image adaptive continuation policy for coarse HIL.
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+pub fn configure_adaptive_recycled_rx_probe_for_diagnostics(enabled: bool) {
+    ADAPTIVE_RECYCLED_RX_PROBE.store(enabled, Ordering::Relaxed);
+}
+
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+fn recycled_rx_probe_delay_for_diagnostics() -> Option<Duration> {
+    let micros = RECYCLED_RX_PROBE_DELAY_MICROS.load(Ordering::Relaxed);
+    (micros != 0).then(|| Duration::from_micros(u64::from(micros)))
+}
+
+/// Bound a masked post-append probe by the packet-rate implied by the last
+/// physical batch. Small-frame streams use 512 us against the 96-entry
+/// physical ring. Long-frame streams ramp through 128/256/512 us; their byte
+/// rate bounds packet pressure well below the same reserve and may extend a
+/// proven long-frame burst to 1024 us. A recycle-only confirmation retains the
+/// class established earlier in the same masked drain epoch instead of
+/// collapsing a sustained stream back to the 64-us bootstrap interval.
+fn adaptive_recycled_rx_probe_delay(
+    work: DatapathRxWorkCounters,
+    current_level: u8,
+) -> (Duration, u8) {
+    let average_bytes = work
+        .staged_bytes
+        .checked_div(work.completed_units)
+        .unwrap_or(0);
+    if work.completed_units == 0 {
+        let micros = match current_level {
+            1 => 128,
+            2 => 256,
+            3 => 512,
+            4 => 1_024,
+            _ => 64,
+        };
+        return (Duration::from_micros(micros), current_level.min(4));
+    }
+    if average_bytes < 1_024 {
+        return (Duration::from_micros(512), 3);
+    }
+    let next_level = if work.completed_units >= 4 {
+        4
+    } else {
+        current_level.saturating_add(1).min(4)
+    };
+    let micros = match next_level {
+        0 => 64,
+        1 => 128,
+        2 => 256,
+        3 => 512,
+        _ => 1_024,
+    };
+    (Duration::from_micros(micros), next_level)
+}
+
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+fn adaptive_recycled_rx_probe_enabled() -> bool {
+    ADAPTIVE_RECYCLED_RX_PROBE.load(Ordering::Relaxed)
+}
+
+#[cfg(not(feature = "core0-rx-coarse-telemetry"))]
+fn adaptive_recycled_rx_probe_enabled() -> bool {
+    true
+}
 
 const fn tx_lookahead_allowed(requested: bool, interfaces: DatapathInterfaceScope) -> bool {
     requested && matches!(interfaces, DatapathInterfaceScope::Single(_))
@@ -296,6 +380,11 @@ pub trait DatapathServices<
         0
     }
 
+    /// Monotonic physical units and bytes completed by the RX DMA owner.
+    fn rx_work_counters(&self) -> DatapathRxWorkCounters {
+        DatapathRxWorkCounters::default()
+    }
+
     /// Apply at most one owned control event or publish one control frame.
     ///
     /// The runner invokes this only while no network TX transaction owns the
@@ -499,6 +588,8 @@ pub struct DatapathRunner<
     prepared_tx_interface: Option<NetworkInterfaceId>,
     control_ready_latched: bool,
     rx_progress: DatapathRxProgress,
+    recycled_rx_probe_deadline: Option<Instant>,
+    recycled_rx_probe_coalescing_level: u8,
     /// Signed RX-minus-TX frame balance. A negative value is retained across
     /// transactions so a large aggregate cannot erase the RX credit it
     /// consumed merely because the old unsigned counter saturated at zero.

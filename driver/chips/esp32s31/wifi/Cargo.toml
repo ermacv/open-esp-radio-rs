@@ -17,7 +17,10 @@ open-esp-radio-wifi-softmac = { path = "../../../wifi/softmac" }
 
 [features]
 default = []
-task-poll-telemetry = ["dep:riscv"]
+task-poll-telemetry = [
+    "dep:riscv",
+    "open-esp-radio-esp32s31-wifi-mac/task-poll-telemetry",
+]
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
 riscv = { version = "0.15", optional = true }

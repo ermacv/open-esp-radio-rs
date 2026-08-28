@@ -65,6 +65,82 @@ where
         result
     }
 
+    /// Dispatch one ordinary retained frame without constructing an async
+    /// capacity edge.
+    ///
+    /// The caller has already proved that this is a single-MSDU Ethernet
+    /// publication and that the sink's retained staging slot is the complete
+    /// output credit. Keeping this as a synchronous function avoids building
+    /// and polling a nested Future for the production common case. Reorder,
+    /// A-MSDU and capacity-dependent frames never enter this function.
+    #[cfg_attr(
+        target_arch = "riscv32",
+        unsafe(link_section = ".hot.text.open_radio_sta_rx_direct")
+    )]
+    #[inline(never)]
+    pub(super) fn dispatch_owned_frame_direct(
+        &mut self,
+        frame: Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>,
+    ) -> ConnectedRxDispatch {
+        #[cfg(feature = "task-poll-telemetry")]
+        let mut core0_cycles = Core0ProtocolCycleProfile::begin();
+        debug_assert_eq!(
+            self.sink.staged_rx_admission(),
+            StagedRxAdmission::Immediate
+        );
+        let runtime_received_at_micros = frame.runtime_received_at_micros();
+        let segment = frame.segment();
+        debug_assert!(!self.runtime.dispatcher.may_publish_amsdu(segment));
+        debug_assert!(self.runtime.dispatcher.may_publish_ethernet(segment));
+        #[cfg(feature = "task-poll-telemetry")]
+        core0_cycles.preflight_completed();
+
+        let (result, ethernet, _callback_started, _callback_ended, _data_cycles) = {
+            let mut capture = StagedEthernetCapture::new(&mut self.sink, segment.buffer);
+            let result = self.runtime.dispatcher.dispatch_with_runtime_received_at(
+                segment,
+                self.mpdu,
+                &mut [],
+                runtime_received_at_micros,
+                &mut capture,
+            );
+            (
+                result,
+                capture.captured,
+                capture.callback_started,
+                capture.callback_ended,
+                #[cfg(feature = "task-poll-telemetry")]
+                capture.data_cycles,
+                #[cfg(not(feature = "task-poll-telemetry"))]
+                (),
+            )
+        };
+        #[cfg(feature = "task-poll-telemetry")]
+        {
+            if _callback_started == 0 {
+                core0_cycles.dispatch_completed();
+            } else {
+                core0_cycles.dispatch_split_completed(_callback_started, _callback_ended);
+            }
+            if let Some(profile) = _data_cycles {
+                crate::diagnostics::core0_rx_cycles::CORE0_RX_CYCLES.record_data_profile(profile);
+            }
+        }
+
+        let disposition = if let Some(ethernet) = ethernet {
+            self.sink.publish_staged(frame, ethernet)
+        } else {
+            drop(frame);
+            StagedRxDisposition::Released
+        };
+        if disposition == StagedRxDisposition::Released {
+            self.irq.notify_rx_capacity();
+        }
+        #[cfg(feature = "task-poll-telemetry")]
+        core0_cycles.finish(Core0ProtocolPath::Ordinary);
+        result
+    }
+
     pub(super) async fn dispatch_owned_frame(
         &mut self,
         frame: Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>,

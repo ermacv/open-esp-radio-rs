@@ -5,6 +5,8 @@ image = "diagnostic-core0-rx-cycles"
 isolation = "reset"
 data_plane = "split-radio-network"
 rx_admission = "synchronous-shared"
+rx_dispatch = "direct-immediate-diagnostic"
+rx_continuation = "adaptive-probe-diagnostic"
 l1_cache_counters = false
 tags = ["diagnostic", "udp", "station", "rx", "ht40", "mcs7", "core0", "cycles", "cache-ab"]
 

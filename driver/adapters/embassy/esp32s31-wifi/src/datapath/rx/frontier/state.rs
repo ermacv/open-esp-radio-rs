@@ -1,7 +1,7 @@
 use core::marker::PhantomData;
 
 use open_esp_radio_esp32s31_wifi_mac::rx::{
-    RxRingError, RxRingHalted, RxRingLive, RxRingStopped, RxRingTopologySnapshot,
+    RxObservedMask, RxRingError, RxRingHalted, RxRingLive, RxRingStopped, RxRingTopologySnapshot,
 };
 
 /// Hardware-valid phase retained by the finite RX frontier owner.
@@ -80,7 +80,7 @@ pub enum Esp32s31RxFrontierContinuation {
 pub struct Esp32s31RxFrontierSchedulerSnapshot {
     pub recycle_start: usize,
     pub accepted_tail: usize,
-    pub observed_mask: u64,
+    pub observed_mask: RxObservedMask,
     pub topology: RxRingTopologySnapshot,
 }
 

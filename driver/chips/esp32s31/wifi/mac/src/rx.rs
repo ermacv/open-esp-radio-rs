@@ -20,7 +20,7 @@ pub use open_esp_radio_esp32s31_wifi_dma::{
         RX_BUFFER_SENTINEL, RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxCompletedDescriptor,
         RxCompletedDescriptorFrontier, RxCompletedUnit, RxCompletedUnitFrontier,
         RxDescriptorSnapshot, RxDmaArenaState, RxDmaBufferAddresses, RxFrozenCursor, RxLiveAppend,
-        RxReloadObservation, RxRingError, RxRingHalted, RxRingLive, RxRingStopped,
+        RxObservedMask, RxReloadObservation, RxRingError, RxRingHalted, RxRingLive, RxRingStopped,
         RxRingTopologySnapshot, RxSegment, prepare_recycled_buffer,
     },
 };
@@ -33,9 +33,64 @@ use open_esp_radio_ieee80211::he::{
 use open_esp_radio_ieee80211::ht::HtDuplicateMcs32;
 use open_esp_radio_wifi_softmac::{MacRxEvidence, MacRxMetadata};
 
+#[cfg(feature = "task-poll-telemetry")]
+use core::sync::atomic::{AtomicU32, Ordering};
+
 pub const INGRESS_STRICT_RXEND: u32 = 0x01;
 pub const INGRESS_STRICT_DUMP: u32 = 0x02;
 pub const INGRESS_VALID_FLAGS: u32 = 0x03;
+
+#[cfg(feature = "task-poll-telemetry")]
+static CCMP_VIEW_CALLS: AtomicU32 = AtomicU32::new(0);
+#[cfg(feature = "task-poll-telemetry")]
+static CCMP_VIEW_TOTAL: AtomicU32 = AtomicU32::new(0);
+#[cfg(feature = "task-poll-telemetry")]
+static CCMP_VIEW_ADMISSION: AtomicU32 = AtomicU32::new(0);
+#[cfg(feature = "task-poll-telemetry")]
+static CCMP_VIEW_LAYOUT: AtomicU32 = AtomicU32::new(0);
+#[cfg(feature = "task-poll-telemetry")]
+static CCMP_VIEW_PROJECTION: AtomicU32 = AtomicU32::new(0);
+#[cfg(feature = "task-poll-telemetry")]
+static CCMP_VIEW_VALIDATE: AtomicU32 = AtomicU32::new(0);
+#[cfg(feature = "task-poll-telemetry")]
+static CCMP_VIEW_TELEMETRY: AtomicU32 = AtomicU32::new(0);
+
+#[cfg(feature = "task-poll-telemetry")]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct CcmpViewCycleSnapshot {
+    pub calls: u32,
+    pub total: u32,
+    pub admission: u32,
+    pub layout: u32,
+    pub projection: u32,
+    pub validate: u32,
+    pub telemetry: u32,
+}
+
+#[cfg(all(feature = "task-poll-telemetry", target_arch = "riscv32"))]
+#[inline(always)]
+fn ccmp_view_cycle_count() -> u32 {
+    riscv::register::mcycle::read() as u32
+}
+
+#[cfg(all(feature = "task-poll-telemetry", not(target_arch = "riscv32")))]
+#[inline(always)]
+fn ccmp_view_cycle_count() -> u32 {
+    0
+}
+
+#[cfg(feature = "task-poll-telemetry")]
+pub fn ccmp_view_cycle_snapshot() -> CcmpViewCycleSnapshot {
+    CcmpViewCycleSnapshot {
+        calls: CCMP_VIEW_CALLS.load(Ordering::Relaxed),
+        total: CCMP_VIEW_TOTAL.load(Ordering::Relaxed),
+        admission: CCMP_VIEW_ADMISSION.load(Ordering::Relaxed),
+        layout: CCMP_VIEW_LAYOUT.load(Ordering::Relaxed),
+        projection: CCMP_VIEW_PROJECTION.load(Ordering::Relaxed),
+        validate: CCMP_VIEW_VALIDATE.load(Ordering::Relaxed),
+        telemetry: CCMP_VIEW_TELEMETRY.load(Ordering::Relaxed),
+    }
+}
 
 pub const FIXED_PREFIX_SIZE: usize = 0x38;
 pub const DYNAMIC_TAIL_SIZE: usize = 0x08;
@@ -1276,6 +1331,8 @@ fn view_ccmp_data_with_fragment_admission<'frame>(
     config: RxIngressConfig,
     fragment_admission: CcmpFragmentAdmission,
 ) -> Result<RxCcmpDataView<'frame>, RxError> {
+    #[cfg(feature = "task-poll-telemetry")]
+    let cycle_started = ccmp_view_cycle_count();
     if config.ring_entry_limit == 0
         || config.flags & !INGRESS_VALID_FLAGS != 0
         || !segment_valid(segment)
@@ -1283,7 +1340,11 @@ fn view_ccmp_data_with_fragment_admission<'frame>(
     {
         return Err(RxError::Invalid);
     }
+    #[cfg(feature = "task-poll-telemetry")]
+    let cycle_admission = ccmp_view_cycle_count();
     let layout = first_segment_layout(segment, config)?;
+    #[cfg(feature = "task-poll-telemetry")]
+    let cycle_layout = ccmp_view_cycle_count();
     let consumed_trailer_length = layout.frame_shortfall;
     if consumed_trailer_length > CCMP_MIC_SIZE {
         return Err(RxError::Bounds);
@@ -1311,7 +1372,37 @@ fn view_ccmp_data_with_fragment_admission<'frame>(
         internal_state: layout.internal_state,
         dump_length_matches: layout.dump_length_matches,
     };
-    let frame = validate_ccmp_data(mpdu, metadata, consumed_trailer_length, fragment_admission)?;
+    #[cfg(feature = "task-poll-telemetry")]
+    let cycle_projection = ccmp_view_cycle_count();
+    let frame = validate_ccmp_data(mpdu, metadata, consumed_trailer_length, fragment_admission);
+    #[cfg(feature = "task-poll-telemetry")]
+    {
+        let cycle_validate = ccmp_view_cycle_count();
+        let telemetry_started = ccmp_view_cycle_count();
+        CCMP_VIEW_CALLS.fetch_add(1, Ordering::Relaxed);
+        CCMP_VIEW_TOTAL.fetch_add(cycle_validate.wrapping_sub(cycle_started), Ordering::Relaxed);
+        CCMP_VIEW_ADMISSION.fetch_add(
+            cycle_admission.wrapping_sub(cycle_started),
+            Ordering::Relaxed,
+        );
+        CCMP_VIEW_LAYOUT.fetch_add(
+            cycle_layout.wrapping_sub(cycle_admission),
+            Ordering::Relaxed,
+        );
+        CCMP_VIEW_PROJECTION.fetch_add(
+            cycle_projection.wrapping_sub(cycle_layout),
+            Ordering::Relaxed,
+        );
+        CCMP_VIEW_VALIDATE.fetch_add(
+            cycle_validate.wrapping_sub(cycle_projection),
+            Ordering::Relaxed,
+        );
+        CCMP_VIEW_TELEMETRY.fetch_add(
+            ccmp_view_cycle_count().wrapping_sub(telemetry_started),
+            Ordering::Relaxed,
+        );
+    }
+    let frame = frame?;
     Ok(RxCcmpDataView { mpdu, frame })
 }}
 

@@ -139,6 +139,14 @@ pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::network::{
     RxQosSequenceObservation,
 };
 pub use open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason;
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+pub use open_esp_radio_esp32s31_wifi_embassy::datapath::configure_adaptive_recycled_rx_probe_for_diagnostics;
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+pub use open_esp_radio_esp32s31_wifi_embassy::datapath::configure_recycled_rx_probe_delay_for_diagnostics;
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+pub use open_esp_radio_esp32s31_wifi_embassy::datapath::rx::dma::configure_interrupt_driven_recycled_append_for_diagnostics;
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+pub use open_esp_radio_esp32s31_wifi_embassy::roles::station::rx_protocol::configure_direct_immediate_rx_dispatch_for_diagnostics;
 pub use radio_resources::{Esp32s31WifiDevice, Esp32s31WifiDevices};
 pub use status::{
     Esp32s31AccessPointStatus, Esp32s31AccessPointStatusSnapshot, Esp32s31StationLinkState,

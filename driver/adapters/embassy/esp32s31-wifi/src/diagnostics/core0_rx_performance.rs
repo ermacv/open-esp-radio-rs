@@ -48,13 +48,51 @@ pub struct Core0PerformanceSnapshot {
     pub protocol_polls: u32,
     pub protocol_cycles: u32,
     pub protocol_instructions: u32,
+    pub direct_protocol_frames: u32,
+    pub asynchronous_protocol_frames: u32,
     pub dma_calls: u32,
+    pub dma_empty_calls: u32,
+    pub dma_single_unit_calls: u32,
+    pub dma_two_unit_calls: u32,
+    pub dma_three_to_seven_unit_calls: u32,
+    pub dma_eight_plus_unit_calls: u32,
     pub dma_units: u32,
     pub dma_cycles: u32,
     pub dma_instructions: u32,
     pub protocol_frames: u32,
     pub protocol_frame_cycles: u32,
     pub protocol_frame_instructions: u32,
+    pub rx_progress_drained: u32,
+    pub rx_progress_probe_pending: u32,
+    pub rx_progress_recycled_append_pending: u32,
+    pub rx_progress_budget_exhausted: u32,
+    pub rx_progress_stage_blocked: u32,
+    pub rx_progress_network_blocked: u32,
+    pub rx_progress_droppable: u32,
+    pub dma_probe_recycled: u32,
+    pub dma_probe_completed_frontier: u32,
+    pub dma_probe_terminal_writeback: u32,
+    pub dma_probe_republication: u32,
+    pub adaptive_probe_delay_64: u32,
+    pub adaptive_probe_delay_128: u32,
+    pub adaptive_probe_delay_256: u32,
+    pub adaptive_probe_delay_512: u32,
+    pub adaptive_probe_delay_other: u32,
+    pub adaptive_probe_empty_work: u32,
+    pub adaptive_probe_work_units: u32,
+    pub adaptive_probe_staged_bytes: u32,
+    pub dma_entry_remaining_exhausted: u32,
+    pub dma_entry_remaining_1_8: u32,
+    pub dma_entry_remaining_9_16: u32,
+    pub dma_entry_remaining_17_32: u32,
+    pub dma_entry_remaining_33_48: u32,
+    pub dma_entry_remaining_49_plus: u32,
+    pub dma_entry_remaining_unknown: u32,
+    pub dma_exhaustion_episodes: u32,
+    pub dma_exhaustion_resolved_le_64us: u32,
+    pub dma_exhaustion_resolved_le_256us: u32,
+    pub dma_exhaustion_resolved_le_1024us: u32,
+    pub dma_exhaustion_resolved_gt_1024us: u32,
 }
 
 impl Core0PerformanceSnapshot {
@@ -90,7 +128,26 @@ impl Core0PerformanceSnapshot {
             protocol_instructions: self
                 .protocol_instructions
                 .wrapping_sub(earlier.protocol_instructions),
+            direct_protocol_frames: self
+                .direct_protocol_frames
+                .wrapping_sub(earlier.direct_protocol_frames),
+            asynchronous_protocol_frames: self
+                .asynchronous_protocol_frames
+                .wrapping_sub(earlier.asynchronous_protocol_frames),
             dma_calls: self.dma_calls.wrapping_sub(earlier.dma_calls),
+            dma_empty_calls: self.dma_empty_calls.wrapping_sub(earlier.dma_empty_calls),
+            dma_single_unit_calls: self
+                .dma_single_unit_calls
+                .wrapping_sub(earlier.dma_single_unit_calls),
+            dma_two_unit_calls: self
+                .dma_two_unit_calls
+                .wrapping_sub(earlier.dma_two_unit_calls),
+            dma_three_to_seven_unit_calls: self
+                .dma_three_to_seven_unit_calls
+                .wrapping_sub(earlier.dma_three_to_seven_unit_calls),
+            dma_eight_plus_unit_calls: self
+                .dma_eight_plus_unit_calls
+                .wrapping_sub(earlier.dma_eight_plus_unit_calls),
             dma_units: self.dma_units.wrapping_sub(earlier.dma_units),
             dma_cycles: self.dma_cycles.wrapping_sub(earlier.dma_cycles),
             dma_instructions: self.dma_instructions.wrapping_sub(earlier.dma_instructions),
@@ -101,6 +158,99 @@ impl Core0PerformanceSnapshot {
             protocol_frame_instructions: self
                 .protocol_frame_instructions
                 .wrapping_sub(earlier.protocol_frame_instructions),
+            rx_progress_drained: self
+                .rx_progress_drained
+                .wrapping_sub(earlier.rx_progress_drained),
+            rx_progress_probe_pending: self
+                .rx_progress_probe_pending
+                .wrapping_sub(earlier.rx_progress_probe_pending),
+            rx_progress_recycled_append_pending: self
+                .rx_progress_recycled_append_pending
+                .wrapping_sub(earlier.rx_progress_recycled_append_pending),
+            rx_progress_budget_exhausted: self
+                .rx_progress_budget_exhausted
+                .wrapping_sub(earlier.rx_progress_budget_exhausted),
+            rx_progress_stage_blocked: self
+                .rx_progress_stage_blocked
+                .wrapping_sub(earlier.rx_progress_stage_blocked),
+            rx_progress_network_blocked: self
+                .rx_progress_network_blocked
+                .wrapping_sub(earlier.rx_progress_network_blocked),
+            rx_progress_droppable: self
+                .rx_progress_droppable
+                .wrapping_sub(earlier.rx_progress_droppable),
+            dma_probe_recycled: self
+                .dma_probe_recycled
+                .wrapping_sub(earlier.dma_probe_recycled),
+            dma_probe_completed_frontier: self
+                .dma_probe_completed_frontier
+                .wrapping_sub(earlier.dma_probe_completed_frontier),
+            dma_probe_terminal_writeback: self
+                .dma_probe_terminal_writeback
+                .wrapping_sub(earlier.dma_probe_terminal_writeback),
+            dma_probe_republication: self
+                .dma_probe_republication
+                .wrapping_sub(earlier.dma_probe_republication),
+            adaptive_probe_delay_64: self
+                .adaptive_probe_delay_64
+                .wrapping_sub(earlier.adaptive_probe_delay_64),
+            adaptive_probe_delay_128: self
+                .adaptive_probe_delay_128
+                .wrapping_sub(earlier.adaptive_probe_delay_128),
+            adaptive_probe_delay_256: self
+                .adaptive_probe_delay_256
+                .wrapping_sub(earlier.adaptive_probe_delay_256),
+            adaptive_probe_delay_512: self
+                .adaptive_probe_delay_512
+                .wrapping_sub(earlier.adaptive_probe_delay_512),
+            adaptive_probe_delay_other: self
+                .adaptive_probe_delay_other
+                .wrapping_sub(earlier.adaptive_probe_delay_other),
+            adaptive_probe_empty_work: self
+                .adaptive_probe_empty_work
+                .wrapping_sub(earlier.adaptive_probe_empty_work),
+            adaptive_probe_work_units: self
+                .adaptive_probe_work_units
+                .wrapping_sub(earlier.adaptive_probe_work_units),
+            adaptive_probe_staged_bytes: self
+                .adaptive_probe_staged_bytes
+                .wrapping_sub(earlier.adaptive_probe_staged_bytes),
+            dma_entry_remaining_exhausted: self
+                .dma_entry_remaining_exhausted
+                .wrapping_sub(earlier.dma_entry_remaining_exhausted),
+            dma_entry_remaining_1_8: self
+                .dma_entry_remaining_1_8
+                .wrapping_sub(earlier.dma_entry_remaining_1_8),
+            dma_entry_remaining_9_16: self
+                .dma_entry_remaining_9_16
+                .wrapping_sub(earlier.dma_entry_remaining_9_16),
+            dma_entry_remaining_17_32: self
+                .dma_entry_remaining_17_32
+                .wrapping_sub(earlier.dma_entry_remaining_17_32),
+            dma_entry_remaining_33_48: self
+                .dma_entry_remaining_33_48
+                .wrapping_sub(earlier.dma_entry_remaining_33_48),
+            dma_entry_remaining_49_plus: self
+                .dma_entry_remaining_49_plus
+                .wrapping_sub(earlier.dma_entry_remaining_49_plus),
+            dma_entry_remaining_unknown: self
+                .dma_entry_remaining_unknown
+                .wrapping_sub(earlier.dma_entry_remaining_unknown),
+            dma_exhaustion_episodes: self
+                .dma_exhaustion_episodes
+                .wrapping_sub(earlier.dma_exhaustion_episodes),
+            dma_exhaustion_resolved_le_64us: self
+                .dma_exhaustion_resolved_le_64us
+                .wrapping_sub(earlier.dma_exhaustion_resolved_le_64us),
+            dma_exhaustion_resolved_le_256us: self
+                .dma_exhaustion_resolved_le_256us
+                .wrapping_sub(earlier.dma_exhaustion_resolved_le_256us),
+            dma_exhaustion_resolved_le_1024us: self
+                .dma_exhaustion_resolved_le_1024us
+                .wrapping_sub(earlier.dma_exhaustion_resolved_le_1024us),
+            dma_exhaustion_resolved_gt_1024us: self
+                .dma_exhaustion_resolved_gt_1024us
+                .wrapping_sub(earlier.dma_exhaustion_resolved_gt_1024us),
         }
     }
 }
@@ -120,7 +270,14 @@ pub struct Core0PerformanceCounters {
     protocol_polls: AtomicU32,
     protocol_cycles: AtomicU32,
     protocol_instructions: AtomicU32,
+    direct_protocol_frames: AtomicU32,
+    asynchronous_protocol_frames: AtomicU32,
     dma_calls: AtomicU32,
+    dma_empty_calls: AtomicU32,
+    dma_single_unit_calls: AtomicU32,
+    dma_two_unit_calls: AtomicU32,
+    dma_three_to_seven_unit_calls: AtomicU32,
+    dma_eight_plus_unit_calls: AtomicU32,
     dma_units: AtomicU32,
     dma_cycles: AtomicU32,
     dma_instructions: AtomicU32,
@@ -134,6 +291,41 @@ pub struct Core0PerformanceCounters {
     active_runner_end_instructions: AtomicU32,
     active_protocol_cycles: AtomicU32,
     active_protocol_instructions: AtomicU32,
+    rx_progress_drained: AtomicU32,
+    rx_progress_probe_pending: AtomicU32,
+    rx_progress_recycled_append_pending: AtomicU32,
+    rx_progress_budget_exhausted: AtomicU32,
+    rx_progress_stage_blocked: AtomicU32,
+    rx_progress_network_blocked: AtomicU32,
+    rx_progress_droppable: AtomicU32,
+    dma_probe_recycled: AtomicU32,
+    dma_probe_completed_frontier: AtomicU32,
+    dma_probe_terminal_writeback: AtomicU32,
+    dma_probe_republication: AtomicU32,
+    adaptive_probe_delay_64: AtomicU32,
+    adaptive_probe_delay_128: AtomicU32,
+    adaptive_probe_delay_256: AtomicU32,
+    adaptive_probe_delay_512: AtomicU32,
+    adaptive_probe_delay_other: AtomicU32,
+    adaptive_probe_empty_work: AtomicU32,
+    adaptive_probe_work_units: AtomicU32,
+    adaptive_probe_staged_bytes: AtomicU32,
+    dma_entry_remaining_exhausted: AtomicU32,
+    dma_entry_remaining_1_8: AtomicU32,
+    dma_entry_remaining_9_16: AtomicU32,
+    dma_entry_remaining_17_32: AtomicU32,
+    dma_entry_remaining_33_48: AtomicU32,
+    dma_entry_remaining_49_plus: AtomicU32,
+    dma_entry_remaining_unknown: AtomicU32,
+    dma_exhaustion_episodes: AtomicU32,
+    dma_exhaustion_resolved_le_64us: AtomicU32,
+    dma_exhaustion_resolved_le_256us: AtomicU32,
+    dma_exhaustion_resolved_le_1024us: AtomicU32,
+    dma_exhaustion_resolved_gt_1024us: AtomicU32,
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    dma_exhaustion_active: AtomicU32,
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    dma_exhaustion_started_cycles: AtomicU32,
 }
 
 impl Core0PerformanceCounters {
@@ -153,7 +345,14 @@ impl Core0PerformanceCounters {
             protocol_polls: AtomicU32::new(0),
             protocol_cycles: AtomicU32::new(0),
             protocol_instructions: AtomicU32::new(0),
+            direct_protocol_frames: AtomicU32::new(0),
+            asynchronous_protocol_frames: AtomicU32::new(0),
             dma_calls: AtomicU32::new(0),
+            dma_empty_calls: AtomicU32::new(0),
+            dma_single_unit_calls: AtomicU32::new(0),
+            dma_two_unit_calls: AtomicU32::new(0),
+            dma_three_to_seven_unit_calls: AtomicU32::new(0),
+            dma_eight_plus_unit_calls: AtomicU32::new(0),
             dma_units: AtomicU32::new(0),
             dma_cycles: AtomicU32::new(0),
             dma_instructions: AtomicU32::new(0),
@@ -167,10 +366,46 @@ impl Core0PerformanceCounters {
             active_runner_end_instructions: AtomicU32::new(0),
             active_protocol_cycles: AtomicU32::new(0),
             active_protocol_instructions: AtomicU32::new(0),
+            rx_progress_drained: AtomicU32::new(0),
+            rx_progress_probe_pending: AtomicU32::new(0),
+            rx_progress_recycled_append_pending: AtomicU32::new(0),
+            rx_progress_budget_exhausted: AtomicU32::new(0),
+            rx_progress_stage_blocked: AtomicU32::new(0),
+            rx_progress_network_blocked: AtomicU32::new(0),
+            rx_progress_droppable: AtomicU32::new(0),
+            dma_probe_recycled: AtomicU32::new(0),
+            dma_probe_completed_frontier: AtomicU32::new(0),
+            dma_probe_terminal_writeback: AtomicU32::new(0),
+            dma_probe_republication: AtomicU32::new(0),
+            adaptive_probe_delay_64: AtomicU32::new(0),
+            adaptive_probe_delay_128: AtomicU32::new(0),
+            adaptive_probe_delay_256: AtomicU32::new(0),
+            adaptive_probe_delay_512: AtomicU32::new(0),
+            adaptive_probe_delay_other: AtomicU32::new(0),
+            adaptive_probe_empty_work: AtomicU32::new(0),
+            adaptive_probe_work_units: AtomicU32::new(0),
+            adaptive_probe_staged_bytes: AtomicU32::new(0),
+            dma_entry_remaining_exhausted: AtomicU32::new(0),
+            dma_entry_remaining_1_8: AtomicU32::new(0),
+            dma_entry_remaining_9_16: AtomicU32::new(0),
+            dma_entry_remaining_17_32: AtomicU32::new(0),
+            dma_entry_remaining_33_48: AtomicU32::new(0),
+            dma_entry_remaining_49_plus: AtomicU32::new(0),
+            dma_entry_remaining_unknown: AtomicU32::new(0),
+            dma_exhaustion_episodes: AtomicU32::new(0),
+            dma_exhaustion_resolved_le_64us: AtomicU32::new(0),
+            dma_exhaustion_resolved_le_256us: AtomicU32::new(0),
+            dma_exhaustion_resolved_le_1024us: AtomicU32::new(0),
+            dma_exhaustion_resolved_gt_1024us: AtomicU32::new(0),
+            #[cfg(feature = "core0-rx-coarse-telemetry")]
+            dma_exhaustion_active: AtomicU32::new(0),
+            #[cfg(feature = "core0-rx-coarse-telemetry")]
+            dma_exhaustion_started_cycles: AtomicU32::new(0),
         }
     }
 
     #[inline(always)]
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
     pub(crate) fn record_rx_interrupt_post(&self) {
         self.rx_interrupt_posts.fetch_add(1, Ordering::Relaxed);
     }
@@ -265,6 +500,17 @@ impl Core0PerformanceCounters {
     }
 
     #[inline(always)]
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    pub(crate) fn record_protocol_paths(&self, direct: usize, asynchronous: usize) {
+        self.direct_protocol_frames
+            .fetch_add(u32::try_from(direct).unwrap_or(u32::MAX), Ordering::Relaxed);
+        self.asynchronous_protocol_frames.fetch_add(
+            u32::try_from(asynchronous).unwrap_or(u32::MAX),
+            Ordering::Relaxed,
+        );
+    }
+
+    #[inline(always)]
     pub(crate) fn record_dma(
         &self,
         units: usize,
@@ -273,11 +519,136 @@ impl Core0PerformanceCounters {
     ) {
         let delta = ended.wrapping_delta_since(started);
         self.dma_calls.fetch_add(1, Ordering::Relaxed);
+        if units == 0 {
+            self.dma_empty_calls.fetch_add(1, Ordering::Relaxed);
+        } else if units == 1 {
+            self.dma_single_unit_calls.fetch_add(1, Ordering::Relaxed);
+        } else if units == 2 {
+            self.dma_two_unit_calls.fetch_add(1, Ordering::Relaxed);
+        } else if units < 8 {
+            self.dma_three_to_seven_unit_calls
+                .fetch_add(1, Ordering::Relaxed);
+        } else {
+            self.dma_eight_plus_unit_calls
+                .fetch_add(1, Ordering::Relaxed);
+        }
         self.dma_units
             .fetch_add(u32::try_from(units).unwrap_or(u32::MAX), Ordering::Relaxed);
         self.dma_cycles.fetch_add(delta.cycles, Ordering::Relaxed);
         self.dma_instructions
             .fetch_add(delta.instructions, Ordering::Relaxed);
+    }
+
+    #[inline(always)]
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    pub(crate) fn record_rx_progress(
+        &self,
+        progress: open_esp_radio_esp32s31_wifi::datapath::DatapathRxProgress,
+    ) {
+        use open_esp_radio_esp32s31_wifi::datapath::DatapathRxProgress;
+
+        let counter = match progress {
+            DatapathRxProgress::Drained => &self.rx_progress_drained,
+            DatapathRxProgress::ProbePending => &self.rx_progress_probe_pending,
+            DatapathRxProgress::RecycledAppendPending => &self.rx_progress_recycled_append_pending,
+            DatapathRxProgress::BudgetExhausted => &self.rx_progress_budget_exhausted,
+            DatapathRxProgress::StageCapacityBlocked => &self.rx_progress_stage_blocked,
+            DatapathRxProgress::NetworkBackpressured => &self.rx_progress_network_blocked,
+            DatapathRxProgress::UpperLayerBlockedButDroppable => &self.rx_progress_droppable,
+        };
+        counter.fetch_add(1, Ordering::Relaxed);
+    }
+
+    #[inline(always)]
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    pub(crate) fn record_dma_probe_reasons(
+        &self,
+        recycled: bool,
+        completed_frontier: bool,
+        terminal_writeback: bool,
+        republication: bool,
+    ) {
+        for (present, counter) in [
+            (recycled, &self.dma_probe_recycled),
+            (completed_frontier, &self.dma_probe_completed_frontier),
+            (terminal_writeback, &self.dma_probe_terminal_writeback),
+            (republication, &self.dma_probe_republication),
+        ] {
+            if present {
+                counter.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+
+    #[inline(always)]
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    pub(crate) fn record_adaptive_probe_selection(
+        &self,
+        delay_micros: u64,
+        work: open_esp_radio_esp32s31_wifi::datapath::DatapathRxWorkCounters,
+    ) {
+        let delay_counter = match delay_micros {
+            64 => &self.adaptive_probe_delay_64,
+            128 => &self.adaptive_probe_delay_128,
+            256 => &self.adaptive_probe_delay_256,
+            512 => &self.adaptive_probe_delay_512,
+            _ => &self.adaptive_probe_delay_other,
+        };
+        delay_counter.fetch_add(1, Ordering::Relaxed);
+        if work.completed_units == 0 {
+            self.adaptive_probe_empty_work
+                .fetch_add(1, Ordering::Relaxed);
+        }
+        self.adaptive_probe_work_units.fetch_add(
+            u32::try_from(work.completed_units).unwrap_or(u32::MAX),
+            Ordering::Relaxed,
+        );
+        self.adaptive_probe_staged_bytes.fetch_add(
+            u32::try_from(work.staged_bytes).unwrap_or(u32::MAX),
+            Ordering::Relaxed,
+        );
+    }
+
+    /// Record the instantaneous accepted-list credits seen when a DMA service
+    /// begins. This is deliberately bucketed: it is diagnostic pressure
+    /// evidence and never participates in the descriptor ownership protocol.
+    #[inline(always)]
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    pub(crate) fn record_dma_entry_remaining(&self, remaining: Option<usize>) {
+        match remaining {
+            Some(0) if self.dma_exhaustion_active.load(Ordering::Relaxed) == 0 => {
+                self.dma_exhaustion_started_cycles
+                    .store(cycle_count(), Ordering::Relaxed);
+                self.dma_exhaustion_active.store(1, Ordering::Relaxed);
+                self.dma_exhaustion_episodes.fetch_add(1, Ordering::Relaxed);
+            }
+            Some(1..) if self.dma_exhaustion_active.swap(0, Ordering::Relaxed) != 0 => {
+                // The performance image fixes Core0 at 320 MHz. This interval
+                // begins at the first service entry which observes NEXT=0, so
+                // it is a lower bound on the finite-list stop rather than an
+                // ownership or hardware-error signal.
+                let cycles = cycle_count()
+                    .wrapping_sub(self.dma_exhaustion_started_cycles.load(Ordering::Relaxed));
+                let resolved = match cycles {
+                    0..=20_480 => &self.dma_exhaustion_resolved_le_64us,
+                    20_481..=81_920 => &self.dma_exhaustion_resolved_le_256us,
+                    81_921..=327_680 => &self.dma_exhaustion_resolved_le_1024us,
+                    _ => &self.dma_exhaustion_resolved_gt_1024us,
+                };
+                resolved.fetch_add(1, Ordering::Relaxed);
+            }
+            _ => {}
+        }
+        let counter = match remaining {
+            Some(0) => &self.dma_entry_remaining_exhausted,
+            Some(1..=8) => &self.dma_entry_remaining_1_8,
+            Some(9..=16) => &self.dma_entry_remaining_9_16,
+            Some(17..=32) => &self.dma_entry_remaining_17_32,
+            Some(33..=48) => &self.dma_entry_remaining_33_48,
+            Some(49..) => &self.dma_entry_remaining_49_plus,
+            None => &self.dma_entry_remaining_unknown,
+        };
+        counter.fetch_add(1, Ordering::Relaxed);
     }
 
     #[inline(always)]
@@ -313,13 +684,65 @@ impl Core0PerformanceCounters {
             protocol_polls: self.protocol_polls.load(Ordering::Relaxed),
             protocol_cycles: self.protocol_cycles.load(Ordering::Relaxed),
             protocol_instructions: self.protocol_instructions.load(Ordering::Relaxed),
+            direct_protocol_frames: self.direct_protocol_frames.load(Ordering::Relaxed),
+            asynchronous_protocol_frames: self.asynchronous_protocol_frames.load(Ordering::Relaxed),
             dma_calls: self.dma_calls.load(Ordering::Relaxed),
+            dma_empty_calls: self.dma_empty_calls.load(Ordering::Relaxed),
+            dma_single_unit_calls: self.dma_single_unit_calls.load(Ordering::Relaxed),
+            dma_two_unit_calls: self.dma_two_unit_calls.load(Ordering::Relaxed),
+            dma_three_to_seven_unit_calls: self
+                .dma_three_to_seven_unit_calls
+                .load(Ordering::Relaxed),
+            dma_eight_plus_unit_calls: self.dma_eight_plus_unit_calls.load(Ordering::Relaxed),
             dma_units: self.dma_units.load(Ordering::Relaxed),
             dma_cycles: self.dma_cycles.load(Ordering::Relaxed),
             dma_instructions: self.dma_instructions.load(Ordering::Relaxed),
             protocol_frames: self.protocol_frames.load(Ordering::Relaxed),
             protocol_frame_cycles: self.protocol_frame_cycles.load(Ordering::Relaxed),
             protocol_frame_instructions: self.protocol_frame_instructions.load(Ordering::Relaxed),
+            rx_progress_drained: self.rx_progress_drained.load(Ordering::Relaxed),
+            rx_progress_probe_pending: self.rx_progress_probe_pending.load(Ordering::Relaxed),
+            rx_progress_recycled_append_pending: self
+                .rx_progress_recycled_append_pending
+                .load(Ordering::Relaxed),
+            rx_progress_budget_exhausted: self.rx_progress_budget_exhausted.load(Ordering::Relaxed),
+            rx_progress_stage_blocked: self.rx_progress_stage_blocked.load(Ordering::Relaxed),
+            rx_progress_network_blocked: self.rx_progress_network_blocked.load(Ordering::Relaxed),
+            rx_progress_droppable: self.rx_progress_droppable.load(Ordering::Relaxed),
+            dma_probe_recycled: self.dma_probe_recycled.load(Ordering::Relaxed),
+            dma_probe_completed_frontier: self.dma_probe_completed_frontier.load(Ordering::Relaxed),
+            dma_probe_terminal_writeback: self.dma_probe_terminal_writeback.load(Ordering::Relaxed),
+            dma_probe_republication: self.dma_probe_republication.load(Ordering::Relaxed),
+            adaptive_probe_delay_64: self.adaptive_probe_delay_64.load(Ordering::Relaxed),
+            adaptive_probe_delay_128: self.adaptive_probe_delay_128.load(Ordering::Relaxed),
+            adaptive_probe_delay_256: self.adaptive_probe_delay_256.load(Ordering::Relaxed),
+            adaptive_probe_delay_512: self.adaptive_probe_delay_512.load(Ordering::Relaxed),
+            adaptive_probe_delay_other: self.adaptive_probe_delay_other.load(Ordering::Relaxed),
+            adaptive_probe_empty_work: self.adaptive_probe_empty_work.load(Ordering::Relaxed),
+            adaptive_probe_work_units: self.adaptive_probe_work_units.load(Ordering::Relaxed),
+            adaptive_probe_staged_bytes: self.adaptive_probe_staged_bytes.load(Ordering::Relaxed),
+            dma_entry_remaining_exhausted: self
+                .dma_entry_remaining_exhausted
+                .load(Ordering::Relaxed),
+            dma_entry_remaining_1_8: self.dma_entry_remaining_1_8.load(Ordering::Relaxed),
+            dma_entry_remaining_9_16: self.dma_entry_remaining_9_16.load(Ordering::Relaxed),
+            dma_entry_remaining_17_32: self.dma_entry_remaining_17_32.load(Ordering::Relaxed),
+            dma_entry_remaining_33_48: self.dma_entry_remaining_33_48.load(Ordering::Relaxed),
+            dma_entry_remaining_49_plus: self.dma_entry_remaining_49_plus.load(Ordering::Relaxed),
+            dma_entry_remaining_unknown: self.dma_entry_remaining_unknown.load(Ordering::Relaxed),
+            dma_exhaustion_episodes: self.dma_exhaustion_episodes.load(Ordering::Relaxed),
+            dma_exhaustion_resolved_le_64us: self
+                .dma_exhaustion_resolved_le_64us
+                .load(Ordering::Relaxed),
+            dma_exhaustion_resolved_le_256us: self
+                .dma_exhaustion_resolved_le_256us
+                .load(Ordering::Relaxed),
+            dma_exhaustion_resolved_le_1024us: self
+                .dma_exhaustion_resolved_le_1024us
+                .load(Ordering::Relaxed),
+            dma_exhaustion_resolved_gt_1024us: self
+                .dma_exhaustion_resolved_gt_1024us
+                .load(Ordering::Relaxed),
         }
     }
 }
@@ -410,6 +833,8 @@ fn instruction_count() -> u32 {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    use super::Core0PerformanceCounters;
     use super::Core0PerformanceSnapshot;
 
     #[test]
@@ -442,5 +867,26 @@ mod tests {
         assert_eq!(delta.poll_to_runner_cycles, 4);
         assert_eq!(delta.poll_to_runner_instructions, 5);
         assert_eq!(delta.dma_calls, 3);
+    }
+
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    #[test]
+    fn exhaustion_episode_requires_a_proven_nonzero_resolution() {
+        let counters = Core0PerformanceCounters::new();
+        counters.record_dma_entry_remaining(Some(0));
+        counters.record_dma_entry_remaining(Some(0));
+        counters.record_dma_entry_remaining(None);
+        let active = counters.snapshot();
+        assert_eq!(active.dma_exhaustion_episodes, 1);
+        assert_eq!(active.dma_exhaustion_resolved_le_64us, 0);
+
+        counters.record_dma_entry_remaining(Some(8));
+        counters.record_dma_entry_remaining(Some(9));
+        let resolved = counters.snapshot();
+        assert_eq!(resolved.dma_exhaustion_episodes, 1);
+        assert_eq!(resolved.dma_exhaustion_resolved_le_64us, 1);
+        assert_eq!(resolved.dma_exhaustion_resolved_le_256us, 0);
+        assert_eq!(resolved.dma_exhaustion_resolved_le_1024us, 0);
+        assert_eq!(resolved.dma_exhaustion_resolved_gt_1024us, 0);
     }
 }

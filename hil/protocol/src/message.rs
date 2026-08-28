@@ -795,12 +795,53 @@ pub enum WifiRxAdmissionPolicy {
     DeferredReadyDiagnostic,
 }
 
+/// Core0 dispatch policy selected before the radio stack starts.
+///
+/// Both variants are linked into one coarse diagnostic image. The direct
+/// variant changes only processing of an already-completed, in-order ordinary
+/// data frame; DMA polling cadence and the outer cooperative budget remain
+/// identical.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum WifiRxDispatchPolicy {
+    /// Preserve the general asynchronous protocol dispatch path.
+    #[default]
+    Asynchronous,
+    /// Use synchronous run-to-completion for the qualified immediate BA case.
+    DirectImmediateDiagnostic,
+}
+
+/// Continuation policy for a masked RX drain epoch in one coarse image.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum WifiRxContinuationPolicy {
+    /// Preserve the production immediate software repost.
+    #[default]
+    ImmediateSoftwareProbe,
+    /// Restore the level-triggered source after a recycled-only turn.
+    LevelIrqDiagnostic,
+    /// Retain source masking and repoll after 64 microseconds.
+    DelayedProbe64Diagnostic,
+    /// Retain source masking and repoll after 128 microseconds.
+    DelayedProbe128Diagnostic,
+    /// Retain source masking and repoll after 256 microseconds.
+    DelayedProbe256Diagnostic,
+    /// Retain source masking and repoll after 512 microseconds.
+    DelayedProbe512Diagnostic,
+    /// Retain source masking and repoll after 1024 microseconds.
+    DelayedProbe1024Diagnostic,
+    /// Select a bounded window from the completed physical batch geometry.
+    AdaptiveProbeDiagnostic,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct InitializationConfiguration {
     pub ipv4: NetworkIpv4Configuration,
     pub data_plane: WifiDataPlanePlacement,
     pub rx_checksum: WifiRxChecksumPolicy,
     pub rx_admission: WifiRxAdmissionPolicy,
+    pub rx_dispatch: WifiRxDispatchPolicy,
+    pub rx_continuation: WifiRxContinuationPolicy,
     pub l1_cache_counters: bool,
 }
 
@@ -810,6 +851,8 @@ impl InitializationConfiguration {
         data_plane: WifiDataPlanePlacement,
         rx_checksum: WifiRxChecksumPolicy,
         rx_admission: WifiRxAdmissionPolicy,
+        rx_dispatch: WifiRxDispatchPolicy,
+        rx_continuation: WifiRxContinuationPolicy,
         l1_cache_counters: bool,
     ) -> Self {
         Self {
@@ -817,6 +860,8 @@ impl InitializationConfiguration {
             data_plane,
             rx_checksum,
             rx_admission,
+            rx_dispatch,
+            rx_continuation,
             l1_cache_counters,
         }
     }

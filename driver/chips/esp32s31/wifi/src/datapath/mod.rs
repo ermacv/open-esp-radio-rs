@@ -29,6 +29,34 @@ pub enum DatapathRxProgress {
     NetworkBackpressured,
     /// A republished terminal descriptor needs another hardware observation.
     ProbePending,
+    /// Descriptors were recycled while the RX interrupt source was masked.
+    ///
+    /// No completed descriptor or terminal writeback was observed at the end
+    /// of the bounded pass. The adapter must nevertheless retain ownership of
+    /// the current drain epoch until one later observation proves that the
+    /// recycled descriptors did not complete behind the owned interrupt edge.
+    RecycledAppendPending,
+}
+
+/// Monotonic physical RX work completed by one DMA owner.
+///
+/// The executor uses a before/after delta to select a bounded continuation
+/// window. Keeping units and bytes together distinguishes a low-packet-rate
+/// full-MTU stream from a high-packet-rate small-frame stream without parsing
+/// protocol headers in the role-neutral scheduler.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DatapathRxWorkCounters {
+    pub completed_units: u64,
+    pub staged_bytes: u64,
+}
+
+impl DatapathRxWorkCounters {
+    pub const fn saturating_sub(self, earlier: Self) -> Self {
+        Self {
+            completed_units: self.completed_units.saturating_sub(earlier.completed_units),
+            staged_bytes: self.staged_bytes.saturating_sub(earlier.staged_bytes),
+        }
+    }
 }
 
 /// Coherent scheduler facts supplied to one role-control step.

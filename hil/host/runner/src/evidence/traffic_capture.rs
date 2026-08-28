@@ -823,6 +823,8 @@ impl SerialCapture {
                     lab.data_plane(),
                     lab.rx_checksum(),
                     lab.rx_admission(),
+                    lab.rx_dispatch(),
+                    lab.rx_continuation(),
                     lab.l1_cache_counters(),
                 ),
             ),

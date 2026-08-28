@@ -93,6 +93,8 @@ where
             // establish its first absolute deadline and publish startup work.
             control_ready_latched: true,
             rx_progress: DatapathRxProgress::Drained,
+            recycled_rx_probe_deadline: None,
+            recycled_rx_probe_coalescing_level: 0,
             rx_frame_deficit: 0,
             pair_tx_served_frames: [0; 2],
         }

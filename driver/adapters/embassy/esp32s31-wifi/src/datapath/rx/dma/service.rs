@@ -53,6 +53,17 @@ where
 {
     type Error = RxStageTransactionError;
 
+    /// Service one frozen RX frontier as a synchronous transaction.
+    ///
+    /// This is the measured per-MPDU DMA walker, staging and publication
+    /// working set. It deliberately lives in the semantic hot-text class;
+    /// executor scheduling, protocol fallback and role control remain in
+    /// cached external code.
+    #[cfg_attr(
+        target_arch = "riscv32",
+        unsafe(link_section = ".hot.text.open_radio_rx_dma_service")
+    )]
+    #[inline(never)]
     fn service<'a>(
         &'a mut self,
         hardware: &'a mut H,
@@ -73,6 +84,11 @@ where
             let hardware_buffer_full_before = self
                 .pipeline_observer
                 .and_then(|_| hardware.buffer_full_count());
+            #[cfg(feature = "core0-rx-coarse-telemetry")]
+            crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE.record_dma_entry_remaining(
+                self.ring
+                    .accepted_list_remaining_from_next(hardware.next_descriptor()),
+            );
             // A direct BASE publication has no reload doorbell and may consume
             // its only completion edge while the previous IRQ is still being
             // serviced. Advance its durable two-turn probe before freezing the
@@ -82,7 +98,10 @@ where
             // Upper ownership returns the exact original DMA allocations.
             // Rearm only the longest ordered released prefix before freezing
             // this service's completion frontier; at most 32 such leases can
-            // exist, so the other half of ring64 stays available to BA16.
+            // exist, so ring96 retains 64 descriptors in the radio ownership
+            // domain. They are not necessarily armed while a delayed masked
+            // epoch accumulates completions; accepted-list pressure records
+            // that separate hardware condition.
             if let Some(append) = self
                 .storage
                 .recycle_released_prefix::<RX_DMA_SERVICE_BUDGET_UNITS, _>(&mut self.ring, hardware)
@@ -141,39 +160,6 @@ where
             #[cfg(feature = "task-poll-telemetry")]
             core0_cycles.switch_to(Core0RxCyclePhase::Frontier);
             for _ in 0..service_budget {
-                let unit_frontier = self
-                    .storage
-                    .first_completed_unit_frontier_through_cursor(
-                        &self.ring,
-                        frozen_cursor.last_descriptor_low(),
-                        frozen_cursor.next_descriptor_low(),
-                    )
-                    .map_err(RxStageTransactionError::Ring)?;
-                if unit_frontier.unit_count != 1
-                    || unit_frontier.descriptor_count == 0
-                    || unit_frontier.descriptor_count > remaining_descriptors
-                {
-                    return Err(RxStageTransactionError::Ring(RxRingError::Corrupt));
-                }
-                let unit_descriptor_count = unit_frontier.descriptor_count;
-                let unit_head_index = self
-                    .storage
-                    .completion_frontier_head(&self.ring)
-                    .map_err(RxStageTransactionError::Ring)?
-                    .ok_or(RxStageTransactionError::Ring(RxRingError::Corrupt))?;
-                let unit_observation = Esp32s31RxCompletedUnit {
-                    head_index: unit_head_index,
-                    descriptor_count: unit_descriptor_count,
-                    payload_length: self
-                        .storage
-                        .descriptors()
-                        .get(unit_head_index)
-                        .map(|descriptor| {
-                            open_esp_radio_esp32s31_wifi_dma::descriptor::length(descriptor.word0())
-                                as usize
-                        })
-                        .unwrap_or(0),
-                };
                 #[cfg(feature = "task-poll-telemetry")]
                 core0_cycles.switch_to(Core0RxCyclePhase::Admission);
                 if current_pool_credits <= reserved || current_queue_credits <= reserved {
@@ -183,19 +169,70 @@ where
                 minimum_pool_credits = minimum_pool_credits.min(current_pool_credits);
                 minimum_queue_credits = minimum_queue_credits.min(current_queue_credits);
                 let current_credits = current_pool_credits.min(current_queue_credits);
-                let maximum_payload_length = self
-                    .admission
-                    .maximum_payload_length(unit_observation, STAGE_CAPACITY)
-                    .min(STAGE_CAPACITY);
-                // Empty and descriptor-local oversize units need no staging
-                // slot. They must reach the existing malformed discard path
-                // even when upper credits are exhausted, otherwise a corrupt
-                // unit could pin the hardware ring ahead of valid traffic.
-                let length_discard = unit_observation.payload_length == 0
-                    || unit_observation.payload_length > maximum_payload_length;
                 let ordinary_credit_available = current_credits > reserved;
+                // A free ordinary credit makes ownership transfer
+                // unconditional: policy can still reject the detached unit by
+                // length, but no classification result can leave it at the
+                // hardware frontier. In that common case the descriptor bound
+                // captured by `frontier_snapshot` is already the complete
+                // frozen-cursor proof, so do not rediscover the first unit and
+                // then make `take_completed_unit` validate it a second time.
+                //
+                // At the reserve boundary we must classify before transfer
+                // because PreserveForCapacity deliberately leaves ownership in
+                // DMA. Keep the explicit first-unit proof only on that slow
+                // path.
+                let preflight = if ordinary_credit_available {
+                    None
+                } else {
+                    let unit_frontier = self
+                        .storage
+                        .first_completed_unit_frontier_through_cursor(
+                            &self.ring,
+                            frozen_cursor.last_descriptor_low(),
+                            frozen_cursor.next_descriptor_low(),
+                        )
+                        .map_err(RxStageTransactionError::Ring)?;
+                    if unit_frontier.unit_count != 1
+                        || unit_frontier.descriptor_count == 0
+                        || unit_frontier.descriptor_count > remaining_descriptors
+                    {
+                        return Err(RxStageTransactionError::Ring(RxRingError::Corrupt));
+                    }
+                    let unit_head_index = self
+                        .storage
+                        .completion_frontier_head(&self.ring)
+                        .map_err(RxStageTransactionError::Ring)?
+                        .ok_or(RxStageTransactionError::Ring(RxRingError::Corrupt))?;
+                    let unit_observation = Esp32s31RxCompletedUnit {
+                        head_index: unit_head_index,
+                        descriptor_count: unit_frontier.descriptor_count,
+                        payload_length: self
+                            .storage
+                            .descriptors()
+                            .get(unit_head_index)
+                            .map(|descriptor| {
+                                open_esp_radio_esp32s31_wifi_dma::descriptor::length(
+                                    descriptor.word0(),
+                                ) as usize
+                            })
+                            .unwrap_or(0),
+                    };
+                    let maximum_payload_length = self
+                        .admission
+                        .maximum_payload_length(unit_observation, STAGE_CAPACITY)
+                        .min(STAGE_CAPACITY);
+                    Some((
+                        unit_frontier.descriptor_count,
+                        unit_observation,
+                        maximum_payload_length,
+                    ))
+                };
+                let length_discard = preflight.is_some_and(|(_, unit, maximum)| {
+                    unit.payload_length == 0 || unit.payload_length > maximum
+                });
                 let (unavailable, unavailable_preview) =
-                    if !length_discard && !ordinary_credit_available {
+                    if !length_discard && let Some((_, unit_observation, _)) = preflight {
                         // Classification only affects overload admission. An
                         // ordinary unit with a free bulk credit is staged
                         // regardless of its frame-control or VIF route, so do
@@ -255,6 +292,30 @@ where
                     unavailable,
                     Some(RxStageUnavailableDisposition::DiscardAndRecycle)
                 );
+
+                #[cfg(feature = "task-poll-telemetry")]
+                core0_cycles.switch_to(Core0RxCyclePhase::StageTake);
+                let descriptor_limit = preflight
+                    .map(|(descriptor_count, _, _)| descriptor_count)
+                    .unwrap_or(remaining_descriptors);
+                let unit = self
+                    .storage
+                    .take_completed_unit(&mut self.ring, descriptor_limit)
+                    .map_err(RxStageTransactionError::Ring)?
+                    .ok_or(RxStageTransactionError::Ring(RxRingError::Corrupt))?;
+                let unit_descriptor_count = unit.descriptor_count();
+                let unit_observation = Esp32s31RxCompletedUnit {
+                    head_index: unit.head_index(),
+                    descriptor_count: unit_descriptor_count,
+                    payload_length: unit.total_length(),
+                };
+                let maximum_payload_length = preflight
+                    .map(|(_, _, maximum_payload_length)| maximum_payload_length)
+                    .unwrap_or_else(|| {
+                        self.admission
+                            .maximum_payload_length(unit_observation, STAGE_CAPACITY)
+                            .min(STAGE_CAPACITY)
+                    });
                 let recoverable_discard = if unit_descriptor_count != 1 {
                     Some(RxStageError::Chained)
                 } else if unit_observation.payload_length == 0 {
@@ -263,20 +324,6 @@ where
                     Some(RxStageError::TooLong)
                 } else {
                     None
-                };
-
-                #[cfg(feature = "task-poll-telemetry")]
-                core0_cycles.switch_to(Core0RxCyclePhase::StageTake);
-                let unit = self
-                    .storage
-                    .take_completed_unit(&mut self.ring, unit_descriptor_count)
-                    .map_err(RxStageTransactionError::Ring)?
-                    .ok_or(RxStageTransactionError::Ring(RxRingError::Corrupt))?;
-                let unit_descriptor_count = unit.descriptor_count();
-                let unit_observation = Esp32s31RxCompletedUnit {
-                    head_index: unit.head_index(),
-                    descriptor_count: unit_descriptor_count,
-                    payload_length: unit.total_length(),
                 };
                 remaining_descriptors = remaining_descriptors
                     .checked_sub(unit_descriptor_count)
@@ -421,28 +468,48 @@ where
             self.serviced_descriptors = self
                 .serviced_descriptors
                 .saturating_add(u64::try_from(admitted_descriptors).unwrap_or(u64::MAX));
+            self.serviced_units = self
+                .serviced_units
+                .saturating_add(u64::try_from(admitted).unwrap_or(u64::MAX));
+            self.serviced_bytes = self
+                .serviced_bytes
+                .saturating_add(u64::try_from(staged_bytes).unwrap_or(u64::MAX));
 
             // Every append changes descriptor generation. Retain one
             // cooperative post-append confirmation before the moderated IRQ
             // source is unmasked; a completion can consume the republished
             // unit while the current RX-success edge is still owned here.
-            let completion_frontier_remaining = recycled_descriptors != 0
-                || self
-                    .storage
-                    .completed_unit_frontier_through_cursor(
-                        &self.ring,
-                        frozen_cursor.last_descriptor_low(),
-                        frozen_cursor.next_descriptor_low(),
-                    )
-                    .map_err(RxStageTransactionError::Ring)?
-                    .unit_count
-                    != 0;
+            let completed_frontier_remaining = self
+                .storage
+                .completed_unit_frontier_through_cursor(
+                    &self.ring,
+                    frozen_cursor.last_descriptor_low(),
+                    frozen_cursor.next_descriptor_low(),
+                )
+                .map_err(RxStageTransactionError::Ring)?
+                .unit_count
+                != 0;
+            #[cfg(feature = "core0-rx-coarse-telemetry")]
+            let recycled_probe_pending =
+                recycled_descriptors != 0 && !interrupt_driven_recycled_append_for_diagnostics();
+            #[cfg(not(feature = "core0-rx-coarse-telemetry"))]
+            let recycled_probe_pending = recycled_descriptors != 0;
             // The terminal cursor can precede the final descriptor writeback,
             // and that writeback has no guaranteed fresh RX-success edge.
             // Retain a cooperative pass until the exhausted finite list has
             // been staged and republished.
             let exhausted_writeback_pending =
                 self.ring.exhausted_terminal_writeback_pending(hardware);
+            let exhausted_republication_probe_pending =
+                self.ring.exhausted_republication_probe_pending();
+
+            #[cfg(feature = "core0-rx-coarse-telemetry")]
+            crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE.record_dma_probe_reasons(
+                recycled_descriptors != 0,
+                completed_frontier_remaining,
+                exhausted_writeback_pending,
+                exhausted_republication_probe_pending,
+            );
 
             let budget_exhausted = frontier > RX_DMA_SERVICE_BUDGET_UNITS;
 
@@ -492,16 +559,25 @@ where
                 DatapathRxProgress::StageCapacityBlocked
             } else if budget_exhausted {
                 DatapathRxProgress::BudgetExhausted
-            } else if completion_frontier_remaining
+            } else if completed_frontier_remaining
                 || exhausted_writeback_pending
-                || self.ring.exhausted_republication_probe_pending()
+                || exhausted_republication_probe_pending
             {
                 DatapathRxProgress::ProbePending
+            } else if recycled_probe_pending {
+                DatapathRxProgress::RecycledAppendPending
             } else if overload_discarded != 0 {
                 DatapathRxProgress::UpperLayerBlockedButDroppable
             } else {
                 DatapathRxProgress::Drained
             })
         })())
+    }
+
+    fn work_counters(&self) -> DatapathRxWorkCounters {
+        DatapathRxWorkCounters {
+            completed_units: self.serviced_units,
+            staged_bytes: self.serviced_bytes,
+        }
     }
 }

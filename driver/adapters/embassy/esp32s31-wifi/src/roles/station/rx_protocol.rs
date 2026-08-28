@@ -6,7 +6,7 @@
 //! arbitration.
 
 use core::future::{Future, pending, ready};
-#[cfg(feature = "diagnostics")]
+#[cfg(any(feature = "diagnostics", feature = "core0-rx-coarse-telemetry"))]
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use embassy_time::{Duration, Instant, Timer};
@@ -74,6 +74,12 @@ pub struct ConnectedRxProtocolTurn {
     pub consumed_frames: usize,
     /// Commands, deadlines or frames remain ready for the next outer turn.
     pub work_remaining: bool,
+    /// Frames handled by the diagnostic synchronous in-order fast path.
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    pub direct_frames: usize,
+    /// Frames which retained the general asynchronous dispatch path.
+    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    pub asynchronous_frames: usize,
 }
 
 /// Admission contract for an ordinary frame which retains its staging slot.
@@ -94,6 +100,9 @@ pub enum StagedRxAdmission {
 #[cfg(feature = "diagnostics")]
 static DEFER_SHARED_RX_ADMISSION: AtomicBool = AtomicBool::new(false);
 
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+static DIRECT_IMMEDIATE_RX_DISPATCH: AtomicBool = AtomicBool::new(false);
+
 /// Select the same-image legacy admission control before a radio epoch starts.
 ///
 /// This diagnostic switch may only make a stable shared credit take the
@@ -107,6 +116,39 @@ pub fn configure_deferred_shared_rx_admission_for_diagnostics(deferred: bool) {
 #[cfg(feature = "diagnostics")]
 pub(crate) fn deferred_shared_rx_admission_for_diagnostics() -> bool {
     DEFER_SHARED_RX_ADMISSION.load(Ordering::Relaxed)
+}
+
+/// Select direct synchronous dispatch of an already-completed in-order BA
+/// frame in the coarse same-image diagnostic.
+///
+/// This selector does not change the DMA frontier, poll budget or cooperative
+/// yield. Frames which require reorder retention, scratch storage or an async
+/// capacity edge continue through the general path.
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+pub fn configure_direct_immediate_rx_dispatch_for_diagnostics(enabled: bool) {
+    DIRECT_IMMEDIATE_RX_DISPATCH.store(enabled, Ordering::Relaxed);
+}
+
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+pub(crate) fn direct_immediate_rx_dispatch_for_diagnostics() -> bool {
+    DIRECT_IMMEDIATE_RX_DISPATCH.load(Ordering::Relaxed)
+}
+
+/// Whether an ordinary in-order frame should use the synchronous retained
+/// staging path.
+///
+/// The path is production behavior because `Immediate` is an ownership
+/// capability and every rejected frame is returned untouched to the complete
+/// async implementation. The coarse diagnostic keeps a runtime selector so
+/// the slower control remains available in the same ELF for cycle A/B.
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+pub(crate) fn qualified_direct_rx_dispatch_enabled() -> bool {
+    direct_immediate_rx_dispatch_for_diagnostics()
+}
+
+#[cfg(not(feature = "core0-rx-coarse-telemetry"))]
+pub(crate) fn qualified_direct_rx_dispatch_enabled() -> bool {
+    true
 }
 
 /// Scratch and runtime-arena ownership returned only after a staged RX

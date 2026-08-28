@@ -82,6 +82,13 @@ pub struct Core0RxCycleSnapshot {
     pub protocol_publication_shared: u32,
     pub protocol_protected_view_calls: u32,
     pub protocol_protected_view_cycles: u32,
+    pub ccmp_view_calls: u32,
+    pub ccmp_view_total: u32,
+    pub ccmp_view_admission: u32,
+    pub ccmp_view_layout: u32,
+    pub ccmp_view_projection: u32,
+    pub ccmp_view_validate: u32,
+    pub ccmp_view_telemetry: u32,
     pub data_calls: u32,
     pub data_completed: u32,
     pub data_total: u32,
@@ -262,6 +269,21 @@ impl Core0RxCycleSnapshot {
             protocol_protected_view_cycles: self
                 .protocol_protected_view_cycles
                 .wrapping_sub(earlier.protocol_protected_view_cycles),
+            ccmp_view_calls: self.ccmp_view_calls.wrapping_sub(earlier.ccmp_view_calls),
+            ccmp_view_total: self.ccmp_view_total.wrapping_sub(earlier.ccmp_view_total),
+            ccmp_view_admission: self
+                .ccmp_view_admission
+                .wrapping_sub(earlier.ccmp_view_admission),
+            ccmp_view_layout: self.ccmp_view_layout.wrapping_sub(earlier.ccmp_view_layout),
+            ccmp_view_projection: self
+                .ccmp_view_projection
+                .wrapping_sub(earlier.ccmp_view_projection),
+            ccmp_view_validate: self
+                .ccmp_view_validate
+                .wrapping_sub(earlier.ccmp_view_validate),
+            ccmp_view_telemetry: self
+                .ccmp_view_telemetry
+                .wrapping_sub(earlier.ccmp_view_telemetry),
             data_calls: self.data_calls.wrapping_sub(earlier.data_calls),
             data_completed: self.data_completed.wrapping_sub(earlier.data_completed),
             data_total: self.data_total.wrapping_sub(earlier.data_total),
@@ -528,6 +550,7 @@ impl Core0RxCycleCounters {
     pub fn snapshot(&self) -> Core0RxCycleSnapshot {
         let (protocol_protected_view_calls, protocol_protected_view_cycles) =
             open_esp_radio_esp32s31_wifi::protected_data_rx::protected_data_view_cycle_snapshot();
+        let ccmp_view = open_esp_radio_esp32s31_wifi_mac::rx::ccmp_view_cycle_snapshot();
         Core0RxCycleSnapshot {
             services: self.services.load(Ordering::Relaxed),
             units: self.units.load(Ordering::Relaxed),
@@ -629,6 +652,13 @@ impl Core0RxCycleCounters {
             protocol_publication_shared: self.protocol_publication_shared.load(Ordering::Relaxed),
             protocol_protected_view_calls,
             protocol_protected_view_cycles,
+            ccmp_view_calls: ccmp_view.calls,
+            ccmp_view_total: ccmp_view.total,
+            ccmp_view_admission: ccmp_view.admission,
+            ccmp_view_layout: ccmp_view.layout,
+            ccmp_view_projection: ccmp_view.projection,
+            ccmp_view_validate: ccmp_view.validate,
+            ccmp_view_telemetry: ccmp_view.telemetry,
             data_calls: self.data_calls.load(Ordering::Relaxed),
             data_completed: self.data_completed.load(Ordering::Relaxed),
             data_total: self.data_total.load(Ordering::Relaxed),
@@ -1301,7 +1331,9 @@ pub fn cycle_count() -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{Core0RxCyclePhase, Core0RxCycleProfile, Core0RxCycleSnapshot};
+    use super::{
+        Core0PerformanceSample, Core0RxCyclePhase, Core0RxCycleProfile, Core0RxCycleSnapshot,
+    };
 
     #[test]
     fn interval_snapshot_uses_wrapping_deltas() {
@@ -1329,6 +1361,7 @@ mod tests {
     #[test]
     fn stage_total_is_derived_without_becoming_an_exclusive_phase() {
         let mut profile = Core0RxCycleProfile {
+            performance_started: Core0PerformanceSample::default(),
             started: 0,
             last: 0,
             phase: Core0RxCyclePhase::StageTake,

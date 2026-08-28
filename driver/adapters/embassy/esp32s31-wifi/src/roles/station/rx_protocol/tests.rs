@@ -112,6 +112,28 @@ fn paired_processor_returns_the_same_stopped_protocol_owner() {
 }
 
 #[test]
+fn direct_and_async_reorder_paths_share_one_first_frame_marker() {
+    let queue = Esp32s31StagedRxQueue::<NoopRawMutex, 1, 64, 1>::new();
+    let (_sender, receiver) = queue.split();
+    let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+    let mut mpdu = [0_u8; 64];
+    let mut ethernet = [0_u8; 64];
+    let runtime = Box::leak(Box::new(Esp32s31ConnectedRxProtocolStorage::new()));
+    runtime.try_reconfigure_dispatcher(open_config()).unwrap();
+    let protocol =
+        Esp32s31ConnectedRxProtocol::new(receiver, &irq, Sink, &mut mpdu, &mut ethernet, runtime);
+    let mut processor = protocol
+        .try_into_processor()
+        .unwrap_or_else(|_| panic!("an empty standalone queue must detach"));
+
+    processor.runtime.reorder_first_starts[0] = Some(7);
+    processor.observe_first_reorder_frame(0, 0, 8);
+    assert_eq!(processor.runtime.reorder_first_starts[0], None);
+    processor.observe_first_reorder_frame(0, 0, 9);
+    assert_eq!(processor.runtime.reorder_first_starts[0], None);
+}
+
+#[test]
 fn stop_edge_returns_an_empty_reusable_protocol_epoch() {
     let queue = Esp32s31StagedRxQueue::<NoopRawMutex, 1, 64, 1>::new();
     let (_sender, receiver) = queue.split();

@@ -1938,3 +1938,80 @@ fn disconnected_control_edge_publishes_link_down_and_returns() {
     let (_network, services) = runner.into_parts();
     assert!(services.disconnect);
 }
+
+#[test]
+fn adaptive_rx_continuation_distinguishes_byte_rate_from_packet_rate() {
+    assert_eq!(
+        adaptive_recycled_rx_probe_delay(DatapathRxWorkCounters::default(), 4),
+        (Duration::from_micros(1_024), 4)
+    );
+    assert_eq!(
+        adaptive_recycled_rx_probe_delay(DatapathRxWorkCounters::default(), 0),
+        (Duration::from_micros(64), 0)
+    );
+    assert_eq!(
+        adaptive_recycled_rx_probe_delay(
+            DatapathRxWorkCounters {
+                completed_units: 32,
+                staged_bytes: 32 * 256,
+            },
+            3,
+        ),
+        (Duration::from_micros(512), 3)
+    );
+    assert_eq!(
+        adaptive_recycled_rx_probe_delay(
+            DatapathRxWorkCounters {
+                completed_units: 3,
+                staged_bytes: 3 * 1_536,
+            },
+            0,
+        ),
+        (Duration::from_micros(128), 1)
+    );
+    assert_eq!(
+        adaptive_recycled_rx_probe_delay(
+            DatapathRxWorkCounters {
+                completed_units: 4,
+                staged_bytes: 4 * 1_536,
+            },
+            0,
+        ),
+        (Duration::from_micros(1_024), 4)
+    );
+    assert_eq!(
+        adaptive_recycled_rx_probe_delay(
+            DatapathRxWorkCounters {
+                completed_units: 1,
+                staged_bytes: 1_536,
+            },
+            2,
+        ),
+        (Duration::from_micros(512), 3)
+    );
+}
+
+#[test]
+fn rx_work_counter_delta_is_saturating_across_epoch_reset() {
+    let current = DatapathRxWorkCounters {
+        completed_units: 7,
+        staged_bytes: 10_752,
+    };
+    assert_eq!(
+        current.saturating_sub(DatapathRxWorkCounters {
+            completed_units: 3,
+            staged_bytes: 4_608,
+        }),
+        DatapathRxWorkCounters {
+            completed_units: 4,
+            staged_bytes: 6_144,
+        }
+    );
+    assert_eq!(
+        current.saturating_sub(DatapathRxWorkCounters {
+            completed_units: 9,
+            staged_bytes: 12_000,
+        }),
+        DatapathRxWorkCounters::default()
+    );
+}

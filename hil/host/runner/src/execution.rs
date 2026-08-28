@@ -29,6 +29,8 @@ fn execute_workload_inner(
     lab.set_data_plane(selected.data_plane);
     lab.set_rx_checksum(selected.rx_checksum);
     lab.set_rx_admission(selected.rx_admission);
+    lab.set_rx_dispatch(selected.rx_dispatch);
+    lab.set_rx_continuation(selected.rx_continuation);
     lab.set_l1_cache_counters(selected.l1_cache_counters);
 
     // Ordinary station workloads own their AP fixture for the complete run.

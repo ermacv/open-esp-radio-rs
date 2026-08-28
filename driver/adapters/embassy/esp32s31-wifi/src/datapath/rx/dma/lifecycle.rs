@@ -327,6 +327,8 @@ impl<
             pipeline_observer: self.pipeline_observer,
             admission: FullRxStageAdmission,
             serviced_descriptors: 0,
+            serviced_units: 0,
+            serviced_bytes: 0,
         }
     }
 }
@@ -416,6 +418,8 @@ impl<
                 pipeline_observer,
                 admission: FullRxStageAdmission,
                 serviced_descriptors: 0,
+                serviced_units: 0,
+                serviced_bytes: 0,
             }),
             Err((ring, error)) => Err((
                 Self {
@@ -477,6 +481,8 @@ impl<
             pipeline_observer: None,
             admission: FullRxStageAdmission,
             serviced_descriptors: 0,
+            serviced_units: 0,
+            serviced_bytes: 0,
         }
     }
 
@@ -509,6 +515,8 @@ impl<
             pipeline_observer: None,
             admission: FullRxStageAdmission,
             serviced_descriptors: 0,
+            serviced_units: 0,
+            serviced_bytes: 0,
         }
     }
 
@@ -550,6 +558,8 @@ impl<
             pipeline_observer: self.pipeline_observer,
             admission,
             serviced_descriptors: self.serviced_descriptors,
+            serviced_units: self.serviced_units,
+            serviced_bytes: self.serviced_bytes,
         }
     }
 }
@@ -657,6 +667,8 @@ impl<
             pipeline_observer,
             admission,
             serviced_descriptors,
+            serviced_units,
+            serviced_bytes,
         } = self;
         match ring.try_stop(hardware) {
             Ok(ring) => Ok(Esp32s31StoppedRx {
@@ -679,6 +691,8 @@ impl<
                     pipeline_observer,
                     admission,
                     serviced_descriptors,
+                    serviced_units,
+                    serviced_bytes,
                 },
                 error,
             )),

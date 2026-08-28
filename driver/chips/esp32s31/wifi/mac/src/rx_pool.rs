@@ -1,10 +1,11 @@
 //! Bounded descriptor-retaining receive ownership.
 //!
-//! The physical ring has 64 buffers and the upper handoff admits at most 32.
+//! The production physical ring has 96 buffers and upper handoff admits at most 32.
 //! A completed buffer moves `Dma -> Radio -> Network -> Released`; only the
 //! ring owner can turn the final state back into `Dma`. Thus upper processing
-//! never copies an MPDU and can never consume the half-ring reserved for the
-//! radio walker and a negotiated BA-16 receive window.
+//! never copies an MPDU and cannot consume the 64-descriptor capacity retained
+//! in the radio ownership domain. That capacity includes completed descriptors
+//! awaiting a software drain and is not itself an armed-credit guarantee.
 
 use core::{
     marker::PhantomData,

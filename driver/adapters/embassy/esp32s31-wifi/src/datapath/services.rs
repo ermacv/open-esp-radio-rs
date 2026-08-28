@@ -14,7 +14,8 @@ use open_esp_radio_embassy_net::{PinnedTxFrame, PinnedTxInterfaceConsumer, RawMu
 
 use crate::datapath::{
     DatapathControlContext, DatapathControlProgress, DatapathRxProgress, DatapathRxServiceContext,
-    DatapathServices, WifiTxProgress, WifiTxWake, network::DatapathNetworkRxSet,
+    DatapathRxWorkCounters, DatapathServices, WifiTxProgress, WifiTxWake,
+    network::DatapathNetworkRxSet,
 };
 
 /// One bounded RX owner spanning physical descriptor service and any
@@ -70,6 +71,11 @@ pub trait DatapathRxService<H> {
     /// Monotonic number of staged protocol frames consumed by this owner.
     fn serviced_frames(&self) -> u64 {
         0
+    }
+
+    /// Monotonic physical units and bytes completed by this RX owner.
+    fn work_counters(&self) -> DatapathRxWorkCounters {
+        DatapathRxWorkCounters::default()
     }
 
     /// Wake edge for a future protocol deadline. Queue publications paired
@@ -423,6 +429,10 @@ where
 
     fn serviced_rx_frames(&self) -> u64 {
         self.role.rx.serviced_frames()
+    }
+
+    fn rx_work_counters(&self) -> DatapathRxWorkCounters {
+        self.role.rx.work_counters()
     }
 
     fn service_control<'a>(

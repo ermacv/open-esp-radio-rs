@@ -19,7 +19,11 @@ use static_cell::{ConstStaticCell, StaticCell};
 use crate::datapath::rx::dma::Esp32s31RxDmaStorage;
 use crate::roles::station::Esp32s31StationControlResources;
 
-pub const ESP32S31_DEFAULT_RX_DESCRIPTOR_COUNT: usize = 64;
+/// Physical RX descriptor capacity. The upper zero-copy owner remains capped
+/// at 32, leaving 64 descriptors in the radio domain. A delayed masked-IRQ
+/// epoch can still complete those descriptors faster than software drains
+/// them, so this is not a minimum armed-credit guarantee.
+pub const ESP32S31_DEFAULT_RX_DESCRIPTOR_COUNT: usize = 96;
 pub const ESP32S31_DEFAULT_RX_BUFFER_SIZE: usize = 1_700;
 pub const ESP32S31_DEFAULT_RX_BUFFER_STORAGE_SIZE: usize = ESP32S31_DEFAULT_RX_BUFFER_SIZE + 4;
 pub const ESP32S31_DEFAULT_TX_BUFFER_SIZE: usize = 1_700;
@@ -43,10 +47,12 @@ const _: () = assert!(ESP32S31_DEFAULT_RX_STAGE_CAPACITY >= ESP_NOW_V2_MAX_MPDU_
 // These SRAM slots store only affine handoff records. An admitted ordinary
 // frame retains its original DMA buffer until the final network lease is
 // released; payload bytes are not copied into this pool. Capping upper
-// ownership at two negotiated BA-16 windows reserves the other half of the
-// 64-entry ring for the hardware walker. Sustained consumer backpressure must
-// be serviced or dropped according to admission policy instead of being hidden
-// by growing this latency-critical ownership window.
+// ownership at two negotiated BA-16 windows leaves 64 descriptors in the
+// radio domain. Accepted-list pressure is measured independently because
+// completed descriptors awaiting the next software drain are not armed
+// credits. Sustained consumer backpressure must be serviced or dropped
+// according to admission policy instead of being hidden by growing this
+// latency-critical ownership window.
 pub const ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT: usize = 32;
 // Keep at least two negotiated HT BlockAck windows worth of descriptor credits
 // outside the maximum retained upper-ownership window. A 32-entry agreement

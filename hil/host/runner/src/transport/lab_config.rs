@@ -9,7 +9,7 @@ use std::{
 
 use open_esp_radio_hil_protocol::{
     NetworkCredentials, NetworkIpv4Configuration, WifiChannelWidth, WifiDataPlanePlacement,
-    WifiRxAdmissionPolicy, WifiRxChecksumPolicy,
+    WifiRxAdmissionPolicy, WifiRxChecksumPolicy, WifiRxContinuationPolicy, WifiRxDispatchPolicy,
 };
 use serde::Deserialize;
 use zeroize::{Zeroize, Zeroizing};
@@ -26,6 +26,8 @@ pub(crate) struct LabConfig {
     data_plane: Cell<WifiDataPlanePlacement>,
     rx_checksum: Cell<WifiRxChecksumPolicy>,
     rx_admission: Cell<WifiRxAdmissionPolicy>,
+    rx_dispatch: Cell<WifiRxDispatchPolicy>,
+    rx_continuation: Cell<WifiRxContinuationPolicy>,
     l1_cache_counters: Cell<bool>,
 }
 
@@ -335,6 +337,8 @@ impl LabConfig {
             data_plane: Cell::new(WifiDataPlanePlacement::SingleCore),
             rx_checksum: Cell::new(WifiRxChecksumPolicy::Software),
             rx_admission: Cell::new(WifiRxAdmissionPolicy::SynchronousShared),
+            rx_dispatch: Cell::new(WifiRxDispatchPolicy::Asynchronous),
+            rx_continuation: Cell::new(WifiRxContinuationPolicy::ImmediateSoftwareProbe),
             l1_cache_counters: Cell::new(false),
         })
     }
@@ -384,6 +388,8 @@ impl LabConfig {
             data_plane: Cell::new(WifiDataPlanePlacement::SingleCore),
             rx_checksum: Cell::new(WifiRxChecksumPolicy::Software),
             rx_admission: Cell::new(WifiRxAdmissionPolicy::SynchronousShared),
+            rx_dispatch: Cell::new(WifiRxDispatchPolicy::Asynchronous),
+            rx_continuation: Cell::new(WifiRxContinuationPolicy::ImmediateSoftwareProbe),
             l1_cache_counters: Cell::new(false),
         }
     }
@@ -410,6 +416,22 @@ impl LabConfig {
 
     pub(crate) fn rx_admission(&self) -> WifiRxAdmissionPolicy {
         self.rx_admission.get()
+    }
+
+    pub(crate) fn set_rx_dispatch(&self, policy: WifiRxDispatchPolicy) {
+        self.rx_dispatch.set(policy);
+    }
+
+    pub(crate) fn rx_dispatch(&self) -> WifiRxDispatchPolicy {
+        self.rx_dispatch.get()
+    }
+
+    pub(crate) fn set_rx_continuation(&self, policy: WifiRxContinuationPolicy) {
+        self.rx_continuation.set(policy);
+    }
+
+    pub(crate) fn rx_continuation(&self) -> WifiRxContinuationPolicy {
+        self.rx_continuation.get()
     }
 
     pub(crate) fn set_l1_cache_counters(&self, enabled: bool) {

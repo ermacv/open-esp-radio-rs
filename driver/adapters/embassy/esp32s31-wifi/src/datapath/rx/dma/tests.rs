@@ -874,7 +874,7 @@ fn connected_rx_turn_recycles_protocol_credits_before_the_next_dma_probe() {
                 maximum_protocol_frames: Some(1),
             },
         )),
-        Ok(DatapathRxProgress::StageCapacityBlocked),
+        Ok(DatapathRxProgress::BudgetExhausted),
     );
     assert_eq!(pool.claimed_slots(), 0);
     assert_eq!(pool.network_slots(), 0);
@@ -893,7 +893,7 @@ fn connected_rx_turn_recycles_protocol_credits_before_the_next_dma_probe() {
                 maximum_protocol_frames: Some(1),
             },
         )),
-        Ok(DatapathRxProgress::ProbePending),
+        Ok(DatapathRxProgress::RecycledAppendPending),
     );
     assert_eq!(service.dma().ring().recycle_start(), 1);
     assert_eq!(service.protocol().queue_len(), 0);
@@ -1065,7 +1065,7 @@ fn exhausted_cursor_keeps_service_live_until_terminal_writeback_arrives() {
         embassy_futures::block_on(service.service(&mut hardware)),
         Ok(DatapathRxProgress::ProbePending),
     );
-    assert_eq!(service.ring().observed_mask(), 0);
+    assert!(service.ring().observed_mask().is_empty());
     hardware.next_descriptor_low = BASE & 0x000f_ffff;
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
@@ -1262,7 +1262,7 @@ fn production_ring_reclaims_before_a_32_slot_stage_pool_saturates() {
     assert_eq!(pool.claimed_slots(), 0);
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(DatapathRxProgress::ProbePending),
+        Ok(DatapathRxProgress::RecycledAppendPending),
     );
     assert_eq!(service.ring().recycle_start(), 32);
     for expected in 32_u32..40 {
@@ -1515,7 +1515,7 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(DatapathRxProgress::ProbePending),
+        Ok(DatapathRxProgress::RecycledAppendPending),
     );
     assert_eq!(pool.claimed_slots(), 3);
     hardware.next_descriptor_low = (BASE + 3 * DESCRIPTOR_BYTES) & 0x000f_ffff;
@@ -1538,7 +1538,7 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
     );
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(DatapathRxProgress::ProbePending),
+        Ok(DatapathRxProgress::RecycledAppendPending),
     );
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
@@ -1586,7 +1586,7 @@ fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(DatapathRxProgress::ProbePending),
+        Ok(DatapathRxProgress::RecycledAppendPending),
     );
     assert_eq!(service.ring().recycle_start(), 0);
     assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
@@ -1672,7 +1672,7 @@ fn one_shot_admission_discards_before_staging_then_observes_same_live_ring() {
     hardware.release_through(1, Some(0));
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(DatapathRxProgress::ProbePending),
+        Ok(DatapathRxProgress::RecycledAppendPending),
     );
     assert_eq!(admission.0.load(Ordering::Acquire), 3);
     assert_eq!(
@@ -1739,7 +1739,7 @@ fn finite_service_accepts_a_unit_within_a_wider_negotiated_stage() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(DatapathRxProgress::ProbePending),
+        Ok(DatapathRxProgress::RecycledAppendPending),
     );
     let frame = receiver.try_receive().expect("wide staged frame");
     assert_eq!(frame.length(), WIDE_STAGE_CAPACITY);

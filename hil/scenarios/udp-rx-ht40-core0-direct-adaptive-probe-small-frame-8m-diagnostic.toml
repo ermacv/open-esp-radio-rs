@@ -1,0 +1,30 @@
+schema = 3
+id = "udp-rx-ht40-core0-direct-adaptive-probe-small-frame-8m-diagnostic"
+description = "Stable 64-byte HT40 RX workload with batch-aware masked continuation"
+image = "diagnostic-core0-rx-coarse"
+isolation = "reset"
+data_plane = "split-radio-network"
+rx_dispatch = "direct-immediate-diagnostic"
+rx_continuation = "adaptive-probe-diagnostic"
+tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "core0", "coarse-cycles", "adaptive-probe", "small-frame", "stable-offer"]
+
+[link]
+phy = "ht40"
+guard_interval = "any"
+
+[workload]
+kind = "udp"
+direction = "rx"
+duration_seconds = 12
+rx_rate_bps = 8000000
+payload_bytes = 64
+
+[criteria]
+exact_delivery = false
+require_no_beacon_loss = false
+minimum_rx_bps = 6000000
+maximum_idle_channel_utilization_255 = 64
+
+[evidence]
+openwrt_tx_monitor_rx = true
+independent_laptop_monitor_rx = true

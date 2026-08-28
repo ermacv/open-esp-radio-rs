@@ -57,6 +57,7 @@ where
             ),
         };
         let serviced_before = self.services.serviced_rx_frames();
+        let work_before = self.services.rx_work_counters();
         #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
         core0_cycles.begin_driver();
         let progress = self
@@ -69,11 +70,13 @@ where
             .services
             .serviced_rx_frames()
             .saturating_sub(serviced_before);
+        let work = self.services.rx_work_counters().saturating_sub(work_before);
         self.rx_frame_deficit = self
             .rx_frame_deficit
             .saturating_add(i64::try_from(serviced).unwrap_or(i64::MAX));
         self.complete_rx_service(
             progress,
+            work,
             #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
             core0_cycles,
         )
@@ -98,6 +101,7 @@ where
         #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
         let mut core0_cycles = Core0RxRunnerCycleProfile::begin();
         let serviced_before = self.services.serviced_rx_frames();
+        let work_before = self.services.rx_work_counters();
         #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
         core0_cycles.begin_driver();
         let progress = self
@@ -110,11 +114,13 @@ where
             .services
             .serviced_rx_frames()
             .saturating_sub(serviced_before);
+        let work = self.services.rx_work_counters().saturating_sub(work_before);
         self.rx_frame_deficit = self
             .rx_frame_deficit
             .saturating_add(i64::try_from(serviced).unwrap_or(i64::MAX));
         self.complete_rx_service(
             progress,
+            work,
             #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
             core0_cycles,
         )
@@ -125,10 +131,17 @@ where
     async fn complete_rx_service(
         &mut self,
         progress: DatapathRxProgress,
+        work: DatapathRxWorkCounters,
         #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
         core0_cycles: Core0RxRunnerCycleProfile,
     ) {
         self.rx_progress = progress;
+        if progress != DatapathRxProgress::RecycledAppendPending {
+            self.recycled_rx_probe_coalescing_level = 0;
+        }
+        #[cfg(feature = "core0-rx-coarse-telemetry")]
+        crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE.record_rx_progress(progress);
+        self.clear_recycled_rx_probe_deadline();
         if matches!(
             progress,
             DatapathRxProgress::Drained | DatapathRxProgress::UpperLayerBlockedButDroppable
@@ -138,9 +151,18 @@ where
             // route as soon as this ordered unmask completes; adding a
             // software probe here would duplicate every idle drain edge.
             let _ = self.irq.unmask_rx_after_drain();
+        } else if progress == DatapathRxProgress::RecycledAppendPending
+            && self.defer_recycled_rx_probe(work)
+        {
+            // The initial hardware edge has already been serviced and remains
+            // masked. Keep the drain epoch owned by this runner, but allow the
+            // executor to service control/network work while a short bounded
+            // window accumulates the next DMA frontier.
         } else if matches!(
             progress,
-            DatapathRxProgress::ProbePending | DatapathRxProgress::BudgetExhausted
+            DatapathRxProgress::ProbePending
+                | DatapathRxProgress::RecycledAppendPending
+                | DatapathRxProgress::BudgetExhausted
         ) {
             // Direct BASE publication of an exhausted list has no reload
             // interrupt. Repost before surrendering the executor so the next
@@ -154,6 +176,43 @@ where
         #[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
         core0_cycles.finish_before_yield();
         yield_now().await;
+    }
+
+    pub(super) fn clear_recycled_rx_probe_deadline(&mut self) {
+        self.recycled_rx_probe_deadline = None;
+    }
+
+    fn defer_recycled_rx_probe(&mut self, work: DatapathRxWorkCounters) -> bool {
+        let delay = if adaptive_recycled_rx_probe_enabled() {
+            let (delay, level) =
+                adaptive_recycled_rx_probe_delay(work, self.recycled_rx_probe_coalescing_level);
+            self.recycled_rx_probe_coalescing_level = level;
+            #[cfg(feature = "core0-rx-coarse-telemetry")]
+            crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE
+                .record_adaptive_probe_selection(delay.as_micros(), work);
+            Some(delay)
+        } else {
+            #[cfg(feature = "core0-rx-coarse-telemetry")]
+            {
+                recycled_rx_probe_delay_for_diagnostics()
+            }
+            #[cfg(not(feature = "core0-rx-coarse-telemetry"))]
+            None
+        };
+        if let Some(delay) = delay {
+            self.recycled_rx_probe_deadline = Some(Instant::now() + delay);
+            return true;
+        }
+        false
+    }
+
+    pub(super) fn recycled_rx_probe_deadline(&self) -> Option<Instant> {
+        self.recycled_rx_probe_deadline
+    }
+
+    pub(super) fn recycled_rx_probe_due(&self, now: Instant) -> bool {
+        self.recycled_rx_probe_deadline()
+            .is_some_and(|deadline| now >= deadline)
     }
 
     pub(super) const fn network_turn_owed(&self) -> bool {
@@ -272,6 +331,7 @@ where
             }
             let irq = self.irq;
             let rx_progress = self.rx_progress;
+            let recycled_rx_probe_deadline = self.recycled_rx_probe_deadline();
             let service_rx_during_tx = self.services.can_service_rx_during_tx();
             let active_tx_interface = self.active_tx_interface;
             let competing_tx_pending =
@@ -290,8 +350,18 @@ where
                             )
                             .await;
                         }
+                        DatapathRxProgress::RecycledAppendPending
+                            if recycled_rx_probe_deadline.is_some() =>
+                        {
+                            if let Some(deadline) = recycled_rx_probe_deadline {
+                                Timer::at(deadline).await;
+                            } else {
+                                irq.wait_rx().await;
+                            }
+                        }
+                        DatapathRxProgress::ProbePending
+                        | DatapathRxProgress::RecycledAppendPending => irq.wait_rx().await,
                         DatapathRxProgress::Drained
-                        | DatapathRxProgress::ProbePending
                         | DatapathRxProgress::BudgetExhausted
                         | DatapathRxProgress::UpperLayerBlockedButDroppable => irq.wait_rx().await,
                     }

@@ -4,11 +4,15 @@
 //! service. A completed single-buffer unit transfers its original allocation
 //! through a bounded affine lease to the protocol and network consumers. The
 //! descriptor stays CPU-owned until that lease returns; the radio owner then
-//! rearms only the contiguous released prefix. At most half of the 64-buffer
-//! ring may be retained, leaving 32 buffers to the walker and BA-16 traffic.
+//! rearms only the contiguous released prefix. At most 32 of 96 buffers may be
+//! retained above the radio owner, leaving 64 descriptors in the radio domain.
+//! A delayed masked-IRQ epoch can still consume that finite accepted list, so
+//! this is capacity isolation rather than a minimum armed-credit guarantee.
 
 #![forbid(unsafe_code)]
 
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+use core::sync::atomic::{AtomicBool, Ordering};
 use core::{future::Future, marker::PhantomData};
 
 use embassy_sync::channel::{Sender, TrySendError};
@@ -32,24 +36,44 @@ use crate::diagnostics::rx_pipeline::{
     RxPipelineObservation, RxPipelineObserver, RxServiceObservation,
 };
 use crate::{
-    datapath::DatapathRxProgress,
     datapath::rx::hardware::RxDmaObservationDelay,
     datapath::rx::staging::{
         Esp32s31StagedRxFrame, Esp32s31StagedRxReceiver, Esp32s31StagedRxSender,
         StagedRxTrySendError,
     },
     datapath::services::DatapathRxService,
+    datapath::{DatapathRxProgress, DatapathRxWorkCounters},
     diagnostics::rx_pipeline::RxStageDiscard,
     roles::concurrent::Esp32s31StaApStagedRxFrame,
 };
 
 /// Descriptor count and allocation geometry qualified by the ordinary S31
 /// large-RX profile.
-pub const ESP32S31_RX_DESCRIPTOR_COUNT: usize = 64;
+pub const ESP32S31_RX_DESCRIPTOR_COUNT: usize = 96;
 pub const ESP32S31_RX_BUFFER_SIZE: usize = 4_608;
 pub const ESP32S31_RX_BUFFER_STORAGE_SIZE: usize = ESP32S31_RX_BUFFER_SIZE + 4;
 /// Platform settle edge between stopped-ring publication and walker enable.
 pub const ESP32S31_RX_WALKER_ENABLE_SETTLE_US: u32 = 5;
+
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+static INTERRUPT_DRIVEN_RECYCLED_APPEND: AtomicBool = AtomicBool::new(false);
+
+/// Select the same-image diagnostic which completes a recycled-only RX turn
+/// by restoring the level-triggered MAC interrupt instead of reposting an
+/// unconditional software probe.
+///
+/// Terminal writeback, completed-frontier and exhausted-republication proofs
+/// retain their cooperative continuation. This selector therefore removes
+/// only the conservative append confirmation, not hardware lifecycle checks.
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+pub fn configure_interrupt_driven_recycled_append_for_diagnostics(enabled: bool) {
+    INTERRUPT_DRIVEN_RECYCLED_APPEND.store(enabled, Ordering::Relaxed);
+}
+
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+fn interrupt_driven_recycled_append_for_diagnostics() -> bool {
+    INTERRUPT_DRIVEN_RECYCLED_APPEND.load(Ordering::Relaxed)
+}
 /// Qualified large-RX profile aliases over the executor-independent MAC arena.
 pub type Esp32s31RxDmaBuffer<
     const BUFFER_SIZE: usize = ESP32S31_RX_BUFFER_SIZE,
@@ -393,6 +417,8 @@ pub struct Esp32s31StagedRxProducer<
     pipeline_observer: Option<&'pool dyn RxPipelineObserver>,
     admission: P,
     serviced_descriptors: u64,
+    serviced_units: u64,
+    serviced_bytes: u64,
 }
 
 /// Connected RX resources after the DMA walker is confirmed stopped.

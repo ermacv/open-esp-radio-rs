@@ -1,0 +1,28 @@
+schema = 3
+id = "udp-rx-ht40-task-residence-saturated"
+description = "Split-core HT40 saturated RX residence control for the production direct/adaptive path"
+image = "diagnostic-task-residence"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic", "udp", "station", "rx", "ht40", "split-core", "task-poll", "rx-residence-saturated"]
+
+[link]
+phy = "ht40"
+guard_interval = "any"
+
+[workload]
+kind = "udp"
+direction = "rx"
+duration_seconds = 12
+rx_rate_bps = 140000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = false
+require_no_beacon_loss = false
+minimum_rx_bps = 90000000
+maximum_idle_channel_utilization_255 = 64
+
+[evidence]
+openwrt_tx_monitor_rx = true
+independent_laptop_monitor_rx = true

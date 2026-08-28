@@ -1295,6 +1295,7 @@ dependencies = [
  "open-esp-radio-ieee80211",
  "open-esp-radio-wifi-softmac",
  "pin-project",
+ "riscv 0.15.0",
  "subtle",
  "zeroize",
 ]

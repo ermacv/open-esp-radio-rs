@@ -11466,9 +11466,13 @@ pub mod phy_baseband_config_oracle {
     pub mod baseband_watchdog_status {
         #[doc = "Register `BASEBAND_WATCHDOG_STATUS` reader"]
         pub type R = crate::R<BasebandWatchdogStatusSpec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `STATUS` reader - Complete unrestricted watchdog status value returned by phy_bb_wdt_get_status."]
+        pub type StatusR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31 - Complete unrestricted watchdog status value returned by phy_bb_wdt_get_status."]
+            #[inline(always)]
+            pub fn status(&self) -> StatusR {
+                StatusR::new(self.bits)
             }
         }
         #[doc = "Complete phy_bb_wdt_get_status returns one unrestricted full-word read.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_watchdog_status::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -12075,9 +12079,13 @@ pub mod phy_iq_estimator_oracle {
     pub mod signal_power_sum_i {
         #[doc = "Register `SIGNAL_POWER_SUM_I` reader"]
         pub type R = crate::R<SignalPowerSumISpec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `VALUE` reader - Complete signed estimator result."]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31 - Complete signed estimator result."]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         #[doc = "Signed result consumed by complete phy_rxiq_get_mis and phy_get_rx_sig_pwr.\n\nYou can [`read`](crate::Reg::read) this register and get [`signal_power_sum_i::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -12096,9 +12104,13 @@ pub mod phy_iq_estimator_oracle {
     pub mod signal_power_difference_i {
         #[doc = "Register `SIGNAL_POWER_DIFFERENCE_I` reader"]
         pub type R = crate::R<SignalPowerDifferenceISpec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `VALUE` reader - Complete signed estimator result."]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31 - Complete signed estimator result."]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         #[doc = "Signed result consumed by complete phy_rxiq_get_mis and phy_get_rx_sig_pwr.\n\nYou can [`read`](crate::Reg::read) this register and get [`signal_power_difference_i::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -12117,9 +12129,13 @@ pub mod phy_iq_estimator_oracle {
     pub mod signal_power_difference_q {
         #[doc = "Register `SIGNAL_POWER_DIFFERENCE_Q` reader"]
         pub type R = crate::R<SignalPowerDifferenceQSpec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `VALUE` reader - Complete signed estimator result."]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31 - Complete signed estimator result."]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         #[doc = "Signed result consumed by complete phy_rxiq_get_mis and phy_get_rx_sig_pwr.\n\nYou can [`read`](crate::Reg::read) this register and get [`signal_power_difference_q::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -12137,9 +12153,13 @@ pub mod phy_iq_estimator_oracle {
     pub mod signal_power_sum_q {
         #[doc = "Register `SIGNAL_POWER_SUM_Q` reader"]
         pub type R = crate::R<SignalPowerSumQSpec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `VALUE` reader - Complete signed estimator result."]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31 - Complete signed estimator result."]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         #[doc = "Signed result consumed by complete phy_rxiq_get_mis and phy_get_rx_sig_pwr.\n\nYou can [`read`](crate::Reg::read) this register and get [`signal_power_sum_q::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -12157,9 +12177,13 @@ pub mod phy_iq_estimator_oracle {
     pub mod dc_i_accumulator {
         #[doc = "Register `DC_I_ACCUMULATOR` reader"]
         pub type R = crate::R<DcIAccumulatorSpec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `VALUE` reader - Complete signed accumulator value."]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31 - Complete signed accumulator value."]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         #[doc = "First signed accumulator read by complete phy_dc_iq_est.\n\nYou can [`read`](crate::Reg::read) this register and get [`dc_i_accumulator::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -12177,9 +12201,13 @@ pub mod phy_iq_estimator_oracle {
     pub mod dc_q_accumulator {
         #[doc = "Register `DC_Q_ACCUMULATOR` reader"]
         pub type R = crate::R<DcQAccumulatorSpec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `VALUE` reader - Complete signed accumulator value."]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31 - Complete signed accumulator value."]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         #[doc = "Second signed accumulator read by complete phy_dc_iq_est.\n\nYou can [`read`](crate::Reg::read) this register and get [`dc_q_accumulator::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -12197,9 +12225,13 @@ pub mod phy_iq_estimator_oracle {
     pub mod power_accumulator {
         #[doc = "Register `POWER_ACCUMULATOR` reader"]
         pub type R = crate::R<PowerAccumulatorSpec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `VALUE` reader - Complete signed accumulator value."]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31 - Complete signed accumulator value."]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         #[doc = "Signed power accumulator consumed by complete phy_dc_iq_est, phy_rxiq_get_mis and phy_set_rx_gain_cal_iq.\n\nYou can [`read`](crate::Reg::read) this register and get [`power_accumulator::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]

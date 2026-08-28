@@ -4636,6 +4636,14 @@
           <addressOffset>0x7C08</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>STATUS</name>
+              <description>Complete unrestricted watchdog status value returned by phy_bb_wdt_get_status.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>BASEBAND_TX_PA_TIMING</name>
@@ -4876,6 +4884,14 @@
           <addressOffset>0x454</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>VALUE</name>
+              <description>Complete signed estimator result.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>SIGNAL_POWER_DIFFERENCE_I</name>
@@ -4883,6 +4899,14 @@
           <addressOffset>0x458</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>VALUE</name>
+              <description>Complete signed estimator result.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>SIGNAL_POWER_DIFFERENCE_Q</name>
@@ -4890,6 +4914,14 @@
           <addressOffset>0x45C</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>VALUE</name>
+              <description>Complete signed estimator result.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>SIGNAL_POWER_SUM_Q</name>
@@ -4897,6 +4929,14 @@
           <addressOffset>0x460</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>VALUE</name>
+              <description>Complete signed estimator result.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>DC_I_ACCUMULATOR</name>
@@ -4904,6 +4944,14 @@
           <addressOffset>0x464</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>VALUE</name>
+              <description>Complete signed accumulator value.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>DC_Q_ACCUMULATOR</name>
@@ -4911,6 +4959,14 @@
           <addressOffset>0x468</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>VALUE</name>
+              <description>Complete signed accumulator value.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>POWER_ACCUMULATOR</name>
@@ -4918,6 +4974,14 @@
           <addressOffset>0x46C</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>VALUE</name>
+              <description>Complete signed accumulator value.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>ESTIMATOR_READY_STATUS</name>

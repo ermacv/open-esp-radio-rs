@@ -209,14 +209,4 @@ impl WifiRadioRegisters {
         device_fence();
         Ok(())
     }
-
-    /// Return the complete shared STA TSF control image for HIL comparison.
-    pub fn sta_tsf_control_image(&self) -> u32 {
-        self.peripherals
-            .wifi_mac
-            .wifi_mac_rtc_timer_update
-            .sta_tsf_control()
-            .read()
-            .bits()
-    }
 }

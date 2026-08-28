@@ -958,7 +958,13 @@ peripheral-type = "PhyIqEstimatorOracle"
 peripheral-module = "phy_iq_estimator_oracle"
 scope = []
 register-method = "signal_power_sum_i"
-fields = []
+
+[[registers.fields]]
+svd-name = "VALUE"
+method = "value"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537920600
@@ -970,7 +976,13 @@ peripheral-type = "PhyIqEstimatorOracle"
 peripheral-module = "phy_iq_estimator_oracle"
 scope = []
 register-method = "signal_power_difference_i"
-fields = []
+
+[[registers.fields]]
+svd-name = "VALUE"
+method = "value"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537920604
@@ -982,7 +994,13 @@ peripheral-type = "PhyIqEstimatorOracle"
 peripheral-module = "phy_iq_estimator_oracle"
 scope = []
 register-method = "signal_power_difference_q"
-fields = []
+
+[[registers.fields]]
+svd-name = "VALUE"
+method = "value"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537920608
@@ -994,7 +1012,13 @@ peripheral-type = "PhyIqEstimatorOracle"
 peripheral-module = "phy_iq_estimator_oracle"
 scope = []
 register-method = "signal_power_sum_q"
-fields = []
+
+[[registers.fields]]
+svd-name = "VALUE"
+method = "value"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537920612
@@ -1006,7 +1030,13 @@ peripheral-type = "PhyIqEstimatorOracle"
 peripheral-module = "phy_iq_estimator_oracle"
 scope = []
 register-method = "dc_i_accumulator"
-fields = []
+
+[[registers.fields]]
+svd-name = "VALUE"
+method = "value"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537920616
@@ -1018,7 +1048,13 @@ peripheral-type = "PhyIqEstimatorOracle"
 peripheral-module = "phy_iq_estimator_oracle"
 scope = []
 register-method = "dc_q_accumulator"
-fields = []
+
+[[registers.fields]]
+svd-name = "VALUE"
+method = "value"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537920620
@@ -1030,7 +1066,13 @@ peripheral-type = "PhyIqEstimatorOracle"
 peripheral-module = "phy_iq_estimator_oracle"
 scope = []
 register-method = "power_accumulator"
-fields = []
+
+[[registers.fields]]
+svd-name = "VALUE"
+method = "value"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537920636
@@ -37648,7 +37690,13 @@ peripheral-type = "PhyBasebandConfigOracle"
 peripheral-module = "phy_baseband_config_oracle"
 scope = []
 register-method = "baseband_watchdog_status"
-fields = []
+
+[[registers.fields]]
+svd-name = "STATUS"
+method = "status"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537951252

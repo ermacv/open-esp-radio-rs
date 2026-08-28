@@ -96,6 +96,7 @@ impl WifiRadioRegisters {
             .phy_agc_oracle
             .agc_init_high_control()
             .read()
+            .init_high_unknown()
             .bits();
 
         self.peripherals

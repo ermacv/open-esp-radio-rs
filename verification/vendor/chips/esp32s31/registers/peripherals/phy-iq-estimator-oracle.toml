@@ -75,6 +75,12 @@ addressOffset = 0x454
 size = 32
 access = "read-only"
 
+[[peripherals.registers.register.fields]]
+name = "VALUE"
+description = "Complete signed estimator result."
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -83,6 +89,12 @@ description = "Signed result consumed by complete phy_rxiq_get_mis and phy_get_r
 addressOffset = 0x458
 size = 32
 access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "VALUE"
+description = "Complete signed estimator result."
+bitOffset = 0
+bitWidth = 32
 
 [[peripherals.registers]]
 
@@ -93,6 +105,12 @@ addressOffset = 0x45C
 size = 32
 access = "read-only"
 
+[[peripherals.registers.register.fields]]
+name = "VALUE"
+description = "Complete signed estimator result."
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -101,6 +119,12 @@ description = "Signed result consumed by complete phy_rxiq_get_mis and phy_get_r
 addressOffset = 0x460
 size = 32
 access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "VALUE"
+description = "Complete signed estimator result."
+bitOffset = 0
+bitWidth = 32
 
 [[peripherals.registers]]
 
@@ -111,6 +135,12 @@ addressOffset = 0x464
 size = 32
 access = "read-only"
 
+[[peripherals.registers.register.fields]]
+name = "VALUE"
+description = "Complete signed accumulator value."
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -120,6 +150,12 @@ addressOffset = 0x468
 size = 32
 access = "read-only"
 
+[[peripherals.registers.register.fields]]
+name = "VALUE"
+description = "Complete signed accumulator value."
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -128,6 +164,12 @@ description = "Signed power accumulator consumed by complete phy_dc_iq_est, phy_
 addressOffset = 0x46C
 size = 32
 access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "VALUE"
+description = "Complete signed accumulator value."
+bitOffset = 0
+bitWidth = 32
 
 [[peripherals.registers]]
 
@@ -211,7 +253,21 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
+entity = "PHY_IQ_ESTIMATOR_ORACLE.SIGNAL_POWER_SUM_I.VALUE"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
 entity = "PHY_IQ_ESTIMATOR_ORACLE.SIGNAL_POWER_DIFFERENCE_I"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "PHY_IQ_ESTIMATOR_ORACLE.SIGNAL_POWER_DIFFERENCE_I.VALUE"
 sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
 provenance = "observed"
 accuracy = "exact"
@@ -225,7 +281,21 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
+entity = "PHY_IQ_ESTIMATOR_ORACLE.SIGNAL_POWER_DIFFERENCE_Q.VALUE"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
 entity = "PHY_IQ_ESTIMATOR_ORACLE.SIGNAL_POWER_SUM_Q"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "PHY_IQ_ESTIMATOR_ORACLE.SIGNAL_POWER_SUM_Q.VALUE"
 sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
 provenance = "observed"
 accuracy = "exact"
@@ -239,6 +309,13 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
+entity = "PHY_IQ_ESTIMATOR_ORACLE.DC_I_ACCUMULATOR.VALUE"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
 entity = "PHY_IQ_ESTIMATOR_ORACLE.DC_Q_ACCUMULATOR"
 sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
 provenance = "observed"
@@ -246,7 +323,21 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
+entity = "PHY_IQ_ESTIMATOR_ORACLE.DC_Q_ACCUMULATOR.VALUE"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
 entity = "PHY_IQ_ESTIMATOR_ORACLE.POWER_ACCUMULATOR"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "PHY_IQ_ESTIMATOR_ORACLE.POWER_ACCUMULATOR.VALUE"
 sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
 provenance = "observed"
 accuracy = "exact"

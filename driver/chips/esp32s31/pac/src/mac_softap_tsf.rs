@@ -63,14 +63,4 @@ impl WifiRadioRegisters {
                     .clear_bit()
             });
     }
-
-    /// Return the SoftAP control image for diagnostics and HIL comparison.
-    pub fn softap_tsf_control_image(&self) -> u32 {
-        self.peripherals
-            .wifi_mac
-            .wifi_mac_aux_tsf_control
-            .softap_control()
-            .read()
-            .bits()
-    }
 }

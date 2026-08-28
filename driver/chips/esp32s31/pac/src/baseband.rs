@@ -671,6 +671,7 @@ impl RadioPhyRegisters {
             .phy_baseband_config_oracle
             .baseband_watchdog_status()
             .read()
+            .status()
             .bits()
     }
 

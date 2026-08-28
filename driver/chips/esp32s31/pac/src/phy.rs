@@ -36,6 +36,7 @@ impl RadioPhyRegisters {
             .phy_cold_deadline_oracle
             .deadline_counter_unknown()
             .read()
+            .value()
             .bits()
     }
 }

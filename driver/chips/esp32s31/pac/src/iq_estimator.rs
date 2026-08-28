@@ -79,18 +79,21 @@ impl RadioPhyRegisters {
             .phy_iq_estimator_oracle
             .dc_i_accumulator()
             .read()
+            .value()
             .bits() as i32;
         let q = self
             .peripherals
             .phy_iq_estimator_oracle
             .dc_q_accumulator()
             .read()
+            .value()
             .bits() as i32;
         let power = self
             .peripherals
             .phy_iq_estimator_oracle
             .power_accumulator()
             .read()
+            .value()
             .bits() as i32;
         [i, q, power]
     }
@@ -101,6 +104,7 @@ impl RadioPhyRegisters {
             .phy_iq_estimator_oracle
             .power_accumulator()
             .read()
+            .value()
             .bits() as i32
     }
 
@@ -115,24 +119,28 @@ impl RadioPhyRegisters {
             .phy_iq_estimator_oracle
             .signal_power_sum_i()
             .read()
+            .value()
             .bits() as i32;
         let sum_q = self
             .peripherals
             .phy_iq_estimator_oracle
             .signal_power_sum_q()
             .read()
+            .value()
             .bits() as i32;
         let difference_q = self
             .peripherals
             .phy_iq_estimator_oracle
             .signal_power_difference_q()
             .read()
+            .value()
             .bits() as i32;
         let difference_i = self
             .peripherals
             .phy_iq_estimator_oracle
             .signal_power_difference_i()
             .read()
+            .value()
             .bits() as i32;
         [sum_i, difference_i, difference_q, sum_q]
     }
@@ -148,24 +156,28 @@ impl RadioPhyRegisters {
             .phy_iq_estimator_oracle
             .signal_power_sum_i()
             .read()
+            .value()
             .bits() as i32;
         let sum_q = self
             .peripherals
             .phy_iq_estimator_oracle
             .signal_power_sum_q()
             .read()
+            .value()
             .bits() as i32;
         let difference_i = self
             .peripherals
             .phy_iq_estimator_oracle
             .signal_power_difference_i()
             .read()
+            .value()
             .bits() as i32;
         let difference_q = self
             .peripherals
             .phy_iq_estimator_oracle
             .signal_power_difference_q()
             .read()
+            .value()
             .bits() as i32;
         [sum_i, difference_i, difference_q, sum_q]
     }

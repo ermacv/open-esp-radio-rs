@@ -1329,6 +1329,12 @@ addressOffset = 0x7C08
 size = 32
 access = "read-only"
 
+[[peripherals.registers.register.fields]]
+name = "STATUS"
+description = "Complete unrestricted watchdog status value returned by phy_bb_wdt_get_status."
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -2058,6 +2064,13 @@ sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "unknown"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_WATCHDOG_STATUS.STATUS"
+sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_TX_PA_TIMING"

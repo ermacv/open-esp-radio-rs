@@ -56399,20 +56399,38 @@ pub mod ieee802154_interrupt_route {
         pub type MapR = crate::FieldReader;
         #[doc = "Field `MAP` writer - CPU-interrupt destination selected for the peripheral source."]
         pub type MapW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `UNCLASSIFIED_6_7` reader - Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+        pub type Unclassified6_7R = crate::FieldReader;
+        #[doc = "Field `UNCLASSIFIED_6_7` writer - Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+        pub type Unclassified6_7W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
         #[doc = "Field `PASS_LEVEL` reader - Privilege pass/remap level selected for the peripheral source."]
         pub type PassLevelR = crate::FieldReader;
         #[doc = "Field `PASS_LEVEL` writer - Privilege pass/remap level selected for the peripheral source."]
         pub type PassLevelW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `UNCLASSIFIED_10_31` reader - Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+        pub type Unclassified10_31R = crate::FieldReader<u32>;
+        #[doc = "Field `UNCLASSIFIED_10_31` writer - Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+        pub type Unclassified10_31W<'a, REG> = crate::FieldWriter<'a, REG, 22, u32>;
         impl R {
             #[doc = "Bits 0:5 - CPU-interrupt destination selected for the peripheral source."]
             #[inline(always)]
             pub fn map(&self) -> MapR {
                 MapR::new((self.bits & 0x3f) as u8)
             }
+            #[doc = "Bits 6:7 - Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+            #[inline(always)]
+            pub fn unclassified_6_7(&self) -> Unclassified6_7R {
+                Unclassified6_7R::new(((self.bits >> 6) & 3) as u8)
+            }
             #[doc = "Bits 8:9 - Privilege pass/remap level selected for the peripheral source."]
             #[inline(always)]
             pub fn pass_level(&self) -> PassLevelR {
                 PassLevelR::new(((self.bits >> 8) & 3) as u8)
+            }
+            #[doc = "Bits 10:31 - Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+            #[inline(always)]
+            pub fn unclassified_10_31(&self) -> Unclassified10_31R {
+                Unclassified10_31R::new((self.bits >> 10) & 0x003f_ffff)
             }
         }
         impl W {
@@ -56421,10 +56439,20 @@ pub mod ieee802154_interrupt_route {
             pub fn map(&mut self) -> MapW<'_, Core0RouteSpec> {
                 MapW::new(self, 0)
             }
+            #[doc = "Bits 6:7 - Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+            #[inline(always)]
+            pub fn unclassified_6_7(&mut self) -> Unclassified6_7W<'_, Core0RouteSpec> {
+                Unclassified6_7W::new(self, 6)
+            }
             #[doc = "Bits 8:9 - Privilege pass/remap level selected for the peripheral source."]
             #[inline(always)]
             pub fn pass_level(&mut self) -> PassLevelW<'_, Core0RouteSpec> {
                 PassLevelW::new(self, 8)
+            }
+            #[doc = "Bits 10:31 - Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+            #[inline(always)]
+            pub fn unclassified_10_31(&mut self) -> Unclassified10_31W<'_, Core0RouteSpec> {
+                Unclassified10_31W::new(self, 10)
             }
         }
         #[doc = "Core-zero destination and privilege routing for MODEM_ZB_MAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`core0_route::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`core0_route::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -56454,20 +56482,38 @@ pub mod ieee802154_interrupt_route {
         pub type MapR = crate::FieldReader;
         #[doc = "Field `MAP` writer - CPU-interrupt destination selected for the peripheral source."]
         pub type MapW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        #[doc = "Field `UNCLASSIFIED_6_7` reader - Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+        pub type Unclassified6_7R = crate::FieldReader;
+        #[doc = "Field `UNCLASSIFIED_6_7` writer - Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+        pub type Unclassified6_7W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
         #[doc = "Field `PASS_LEVEL` reader - Privilege pass/remap level selected for the peripheral source."]
         pub type PassLevelR = crate::FieldReader;
         #[doc = "Field `PASS_LEVEL` writer - Privilege pass/remap level selected for the peripheral source."]
         pub type PassLevelW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `UNCLASSIFIED_10_31` reader - Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+        pub type Unclassified10_31R = crate::FieldReader<u32>;
+        #[doc = "Field `UNCLASSIFIED_10_31` writer - Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+        pub type Unclassified10_31W<'a, REG> = crate::FieldWriter<'a, REG, 22, u32>;
         impl R {
             #[doc = "Bits 0:5 - CPU-interrupt destination selected for the peripheral source."]
             #[inline(always)]
             pub fn map(&self) -> MapR {
                 MapR::new((self.bits & 0x3f) as u8)
             }
+            #[doc = "Bits 6:7 - Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+            #[inline(always)]
+            pub fn unclassified_6_7(&self) -> Unclassified6_7R {
+                Unclassified6_7R::new(((self.bits >> 6) & 3) as u8)
+            }
             #[doc = "Bits 8:9 - Privilege pass/remap level selected for the peripheral source."]
             #[inline(always)]
             pub fn pass_level(&self) -> PassLevelR {
                 PassLevelR::new(((self.bits >> 8) & 3) as u8)
+            }
+            #[doc = "Bits 10:31 - Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+            #[inline(always)]
+            pub fn unclassified_10_31(&self) -> Unclassified10_31R {
+                Unclassified10_31R::new((self.bits >> 10) & 0x003f_ffff)
             }
         }
         impl W {
@@ -56476,10 +56522,20 @@ pub mod ieee802154_interrupt_route {
             pub fn map(&mut self) -> MapW<'_, Core1RouteSpec> {
                 MapW::new(self, 0)
             }
+            #[doc = "Bits 6:7 - Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+            #[inline(always)]
+            pub fn unclassified_6_7(&mut self) -> Unclassified6_7W<'_, Core1RouteSpec> {
+                Unclassified6_7W::new(self, 6)
+            }
             #[doc = "Bits 8:9 - Privilege pass/remap level selected for the peripheral source."]
             #[inline(always)]
             pub fn pass_level(&mut self) -> PassLevelW<'_, Core1RouteSpec> {
                 PassLevelW::new(self, 8)
+            }
+            #[doc = "Bits 10:31 - Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value."]
+            #[inline(always)]
+            pub fn unclassified_10_31(&mut self) -> Unclassified10_31W<'_, Core1RouteSpec> {
+                Unclassified10_31W::new(self, 10)
             }
         }
         #[doc = "Core-one destination and privilege routing for MODEM_ZB_MAC.\n\nYou can [`read`](crate::Reg::read) this register and get [`core1_route::R`](R). You can [`reset`](crate::Reg::reset), [`write`](crate::Reg::write), [`write_with_zero`](crate::Reg::write_with_zero) this register using [`core1_route::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]

@@ -1423,15 +1423,10 @@ impl TaskRegisters {
 /// There is no conversion to the task owner and no raw register accessor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct InterruptRxStatusReadback {
-    bits: u32,
     abort_reason_code: u8,
 }
 
 impl InterruptRxStatusReadback {
-    pub const fn bits(&self) -> u32 {
-        self.bits
-    }
-
     pub const fn abort_reason_code(&self) -> u8 {
         self.abort_reason_code
     }
@@ -1439,15 +1434,10 @@ impl InterruptRxStatusReadback {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct InterruptTxStatusReadback {
-    bits: u32,
     abort_reason_code: u8,
 }
 
 impl InterruptTxStatusReadback {
-    pub const fn bits(&self) -> u32 {
-        self.bits
-    }
-
     pub const fn abort_reason_code(&self) -> u8 {
         self.abort_reason_code
     }
@@ -1484,7 +1474,6 @@ impl InterruptRegisters {
     pub fn rx_status_readback(&self) -> InterruptRxStatusReadback {
         let status = self.registers.rx_status().read();
         InterruptRxStatusReadback {
-            bits: status.bits(),
             abort_reason_code: status.abort_reason().bits(),
         }
     }
@@ -1494,7 +1483,6 @@ impl InterruptRegisters {
     pub fn tx_status_readback(&self) -> InterruptTxStatusReadback {
         let status = self.registers.tx_status().read();
         InterruptTxStatusReadback {
-            bits: status.bits(),
             abort_reason_code: status.abort_reason().bits(),
         }
     }
@@ -1543,12 +1531,6 @@ impl InterruptRegisters {
     #[doc(hidden)]
     pub fn validation_ed_event_status_events(&self) -> Ieee802154EventReadback {
         crate::ieee802154_ed_event_validation::event_status_events(&self.registers)
-    }
-
-    #[cfg(feature = "validation-probes")]
-    #[doc(hidden)]
-    pub fn validation_ed_rx_status_raw(&self) -> u32 {
-        crate::ieee802154_ed_event_validation::rx_status_raw(&self.registers)
     }
 
     #[cfg(feature = "validation-probes")]

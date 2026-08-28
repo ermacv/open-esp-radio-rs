@@ -70,15 +70,6 @@ pub fn event_status_events(
     events
 }
 
-/// Return the complete raw RX status for fail-closed abort diagnosis.
-#[inline]
-pub fn rx_status_raw(registers: &crate::Ieee802154Mac) -> u32 {
-    order_device_accesses();
-    let status = registers.rx_status().read().bits();
-    order_device_accesses();
-    status
-}
-
 /// Select exactly ED_ABORT, ED_STOP and ED_COEX_REJECT abort reasons.
 #[inline]
 pub fn enable_ed_abort_reasons(registers: &mut crate::Ieee802154Mac) {

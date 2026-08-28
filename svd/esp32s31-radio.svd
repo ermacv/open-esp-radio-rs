@@ -23666,10 +23666,22 @@ polled or validation transaction starts with both CPU routes detached.</descript
               <bitWidth>6</bitWidth>
             </field>
             <field>
+              <name>UNCLASSIFIED_6_7</name>
+              <description>Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value.</description>
+              <bitOffset>6</bitOffset>
+              <bitWidth>2</bitWidth>
+            </field>
+            <field>
               <name>PASS_LEVEL</name>
               <description>Privilege pass/remap level selected for the peripheral source.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>2</bitWidth>
+            </field>
+            <field>
+              <name>UNCLASSIFIED_10_31</name>
+              <description>Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value.</description>
+              <bitOffset>10</bitOffset>
+              <bitWidth>22</bitWidth>
             </field>
           </fields>
         </register>
@@ -23688,10 +23700,22 @@ polled or validation transaction starts with both CPU routes detached.</descript
               <bitWidth>6</bitWidth>
             </field>
             <field>
+              <name>UNCLASSIFIED_6_7</name>
+              <description>Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value.</description>
+              <bitOffset>6</bitOffset>
+              <bitWidth>2</bitWidth>
+            </field>
+            <field>
               <name>PASS_LEVEL</name>
               <description>Privilege pass/remap level selected for the peripheral source.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>2</bitWidth>
+            </field>
+            <field>
+              <name>UNCLASSIFIED_10_31</name>
+              <description>Unassigned bits retained solely so reset-state observation cannot erase an unexpected nonzero value.</description>
+              <bitOffset>10</bitOffset>
+              <bitWidth>22</bitWidth>
             </field>
           </fields>
         </register>

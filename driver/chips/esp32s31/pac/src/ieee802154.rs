@@ -2251,7 +2251,14 @@ impl Ieee802154PolledRegisterLease<'_> {
         let core0 = self.task.interrupt_route.core0_route().read();
         let core1 = self.task.interrupt_route.core1_route().read();
         Ieee802154RouteState::from_observation(
-            core0.bits() == 0 && core1.bits() == 0,
+            core0.map().bits() == 0
+                && core0.unclassified_6_7().bits() == 0
+                && core0.pass_level().bits() == 0
+                && core0.unclassified_10_31().bits() == 0
+                && core1.map().bits() == 0
+                && core1.unclassified_6_7().bits() == 0
+                && core1.pass_level().bits() == 0
+                && core1.unclassified_10_31().bits() == 0,
             core0.map().bits() != 0 || core1.map().bits() != 0,
             core0.pass_level().bits() != 0 || core1.pass_level().bits() != 0,
         )

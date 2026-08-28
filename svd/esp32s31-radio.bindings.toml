@@ -43925,10 +43925,24 @@ bit-width = 6
 access = "read-write"
 
 [[registers.fields]]
+svd-name = "UNCLASSIFIED_6_7"
+method = "unclassified_6_7"
+bit-offset = 6
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
 svd-name = "PASS_LEVEL"
 method = "pass_level"
 bit-offset = 8
 bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNCLASSIFIED_10_31"
+method = "unclassified_10_31"
+bit-offset = 10
+bit-width = 22
 access = "read-write"
 
 [[registers]]
@@ -43950,10 +43964,24 @@ bit-width = 6
 access = "read-write"
 
 [[registers.fields]]
+svd-name = "UNCLASSIFIED_6_7"
+method = "unclassified_6_7"
+bit-offset = 6
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
 svd-name = "PASS_LEVEL"
 method = "pass_level"
 bit-offset = 8
 bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNCLASSIFIED_10_31"
+method = "unclassified_10_31"
+bit-offset = 10
+bit-width = 22
 access = "read-write"
 
 [[registers]]

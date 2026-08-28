@@ -3305,6 +3305,142 @@ pub(crate) fn initialize_bluetooth_receive_detection_00c4_bits_15_19(
     );
 }
 
+/// Typed bridge for the reviewed `initialize_bluetooth_gaussian_1m_0_bits_28_31` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_gaussian_1m_0_bits_28_31(
+    registers: &crate::svd::BtV3_2Baseband,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_gaussian_1m_0_bits_28_31(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_gaussian_1m_0_bits_23_27` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_gaussian_1m_0_bits_23_27(
+    registers: &crate::svd::BtV3_2Baseband,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_gaussian_1m_0_bits_23_27(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_gaussian_1m_0_bits_17_22` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_gaussian_1m_0_bits_17_22(
+    registers: &crate::svd::BtV3_2Baseband,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_gaussian_1m_0_bits_17_22(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_gaussian_1m_0_bits_10_16` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_gaussian_1m_0_bits_10_16(
+    registers: &crate::svd::BtV3_2Baseband,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_gaussian_1m_0_bits_10_16(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_gaussian_1m_0_bits_2_9` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_gaussian_1m_0_bits_2_9(registers: &crate::svd::BtV3_2Baseband) {
+    crate::svd::field_replace_modify::initialize_bluetooth_gaussian_1m_0_bits_2_9(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_gaussian_1m_1_bits_23_31` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_gaussian_1m_1_bits_23_31(
+    registers: &crate::svd::BtV3_2Baseband,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_gaussian_1m_1_bits_23_31(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_gaussian_1m_1_bits_13_22` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_gaussian_1m_1_bits_13_22(
+    registers: &crate::svd::BtV3_2Baseband,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_gaussian_1m_1_bits_13_22(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_gaussian_1m_1_bits_2_12` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_gaussian_1m_1_bits_2_12(registers: &crate::svd::BtV3_2Baseband) {
+    crate::svd::field_replace_modify::initialize_bluetooth_gaussian_1m_1_bits_2_12(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_gaussian_1m_2_bits_21_31` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_gaussian_1m_2_bits_21_31(
+    registers: &crate::svd::BtV3_2Baseband,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_gaussian_1m_2_bits_21_31(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_gaussian_1m_2_bits_10_20` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_gaussian_1m_2_bits_10_20(
+    registers: &crate::svd::BtV3_2Baseband,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_gaussian_1m_2_bits_10_20(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_gaussian_1m_3_bits_21_31` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_gaussian_1m_3_bits_21_31(
+    registers: &crate::svd::BtV3_2Baseband,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_gaussian_1m_3_bits_21_31(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_gaussian_1m_3_bits_10_20` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_gaussian_1m_3_bits_10_20(
+    registers: &crate::svd::BtV3_2Baseband,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_gaussian_1m_3_bits_10_20(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_gaussian_2m_0_bits_25_31` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_gaussian_2m_0_bits_25_31(
+    registers: &crate::svd::BtV3_2Baseband,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_gaussian_2m_0_bits_25_31(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_gaussian_2m_0_bits_17_24` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_gaussian_2m_0_bits_17_24(
+    registers: &crate::svd::BtV3_2Baseband,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_gaussian_2m_0_bits_17_24(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_gaussian_2m_0_bits_8_16` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_gaussian_2m_0_bits_8_16(registers: &crate::svd::BtV3_2Baseband) {
+    crate::svd::field_replace_modify::initialize_bluetooth_gaussian_2m_0_bits_8_16(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_gaussian_2m_1_bits_22_31` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_gaussian_2m_1_bits_22_31(
+    registers: &crate::svd::BtV3_2Baseband,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_gaussian_2m_1_bits_22_31(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_gaussian_2m_1_bits_11_21` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_gaussian_2m_1_bits_11_21(
+    registers: &crate::svd::BtV3_2Baseband,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_gaussian_2m_1_bits_11_21(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_gaussian_2m_1_bits_0_10` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_gaussian_2m_1_bits_0_10(registers: &crate::svd::BtV3_2Baseband) {
+    crate::svd::field_replace_modify::initialize_bluetooth_gaussian_2m_1_bits_0_10(registers);
+}
+
 /// Typed bridge for the reviewed `clear_bluetooth_scheduler_lock_modify_argument` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_bluetooth_scheduler_lock_modify_argument(

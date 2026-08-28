@@ -4612,6 +4612,168 @@ value = 0x0f
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 
+[[field-replace-modifies]]
+name = "initialize_bluetooth_gaussian_1m_0_bits_28_31"
+peripheral = "BT_V3_2_BASEBAND"
+register = "GAUSSIAN_1M_COEFFICIENT_0"
+fields = [{ field = "BITS_28_31", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_gaussian_1m_0_bits_23_27"
+peripheral = "BT_V3_2_BASEBAND"
+register = "GAUSSIAN_1M_COEFFICIENT_0"
+fields = [{ field = "BITS_23_27", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_gaussian_1m_0_bits_17_22"
+peripheral = "BT_V3_2_BASEBAND"
+register = "GAUSSIAN_1M_COEFFICIENT_0"
+fields = [{ field = "BITS_17_22", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_gaussian_1m_0_bits_10_16"
+peripheral = "BT_V3_2_BASEBAND"
+register = "GAUSSIAN_1M_COEFFICIENT_0"
+fields = [{ field = "BITS_10_16", source-bit-offset = 0 }]
+value = 3
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_gaussian_1m_0_bits_2_9"
+peripheral = "BT_V3_2_BASEBAND"
+register = "GAUSSIAN_1M_COEFFICIENT_0"
+fields = [{ field = "BITS_2_9", source-bit-offset = 0 }]
+value = 0x13
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_gaussian_1m_1_bits_23_31"
+peripheral = "BT_V3_2_BASEBAND"
+register = "GAUSSIAN_1M_COEFFICIENT_1"
+fields = [{ field = "BITS_23_31", source-bit-offset = 0 }]
+value = 0x5f
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_gaussian_1m_1_bits_13_22"
+peripheral = "BT_V3_2_BASEBAND"
+register = "GAUSSIAN_1M_COEFFICIENT_1"
+fields = [{ field = "BITS_13_22", source-bit-offset = 0 }]
+value = 0x140
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_gaussian_1m_1_bits_2_12"
+peripheral = "BT_V3_2_BASEBAND"
+register = "GAUSSIAN_1M_COEFFICIENT_1"
+fields = [{ field = "BITS_2_12", source-bit-offset = 0 }]
+value = 0x2f2
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_gaussian_1m_2_bits_21_31"
+peripheral = "BT_V3_2_BASEBAND"
+register = "GAUSSIAN_1M_COEFFICIENT_2"
+fields = [{ field = "BITS_21_31", source-bit-offset = 0 }]
+value = 0x50d
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_gaussian_1m_2_bits_10_20"
+peripheral = "BT_V3_2_BASEBAND"
+register = "GAUSSIAN_1M_COEFFICIENT_2"
+fields = [{ field = "BITS_10_20", source-bit-offset = 0 }]
+value = 0x6bf
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_gaussian_1m_3_bits_21_31"
+peripheral = "BT_V3_2_BASEBAND"
+register = "GAUSSIAN_1M_COEFFICIENT_3"
+fields = [{ field = "BITS_21_31", source-bit-offset = 0 }]
+value = 0x7a0
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_gaussian_1m_3_bits_10_20"
+peripheral = "BT_V3_2_BASEBAND"
+register = "GAUSSIAN_1M_COEFFICIENT_3"
+fields = [{ field = "BITS_10_20", source-bit-offset = 0 }]
+value = 0x7e9
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_gaussian_2m_0_bits_25_31"
+peripheral = "BT_V3_2_BASEBAND"
+register = "GAUSSIAN_2M_COEFFICIENT_AND_TX_CONFIG"
+fields = [{ field = "GAUSSIAN_BITS_25_31", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_gaussian_2m_0_bits_17_24"
+peripheral = "BT_V3_2_BASEBAND"
+register = "GAUSSIAN_2M_COEFFICIENT_AND_TX_CONFIG"
+fields = [{ field = "GAUSSIAN_BITS_17_24", source-bit-offset = 0 }]
+value = 7
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_gaussian_2m_0_bits_8_16"
+peripheral = "BT_V3_2_BASEBAND"
+register = "GAUSSIAN_2M_COEFFICIENT_AND_TX_CONFIG"
+fields = [{ field = "GAUSSIAN_BITS_8_16", source-bit-offset = 0 }]
+value = 0x69
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_gaussian_2m_1_bits_22_31"
+peripheral = "BT_V3_2_BASEBAND"
+register = "GAUSSIAN_2M_COEFFICIENT_1"
+fields = [{ field = "BITS_22_31", source-bit-offset = 0 }]
+value = 0x258
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_gaussian_2m_1_bits_11_21"
+peripheral = "BT_V3_2_BASEBAND"
+register = "GAUSSIAN_2M_COEFFICIENT_1"
+fields = [{ field = "BITS_11_21", source-bit-offset = 0 }]
+value = 0x5a7
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_gaussian_2m_1_bits_0_10"
+peripheral = "BT_V3_2_BASEBAND"
+register = "GAUSSIAN_2M_COEFFICIENT_1"
+fields = [{ field = "BITS_0_10", source-bit-offset = 0 }]
+value = 0x78f
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_GAUSSIAN_COEFFICIENTS"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

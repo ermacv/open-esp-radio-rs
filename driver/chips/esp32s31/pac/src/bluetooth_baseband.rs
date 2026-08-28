@@ -388,34 +388,28 @@ impl BluetoothBasebandV2Transaction<'_> {
 
     fn initialize_gaussian_1m_coefficients(&self) {
         let baseband = &self.bluetooth.bt_v3_2_baseband;
-        let c0 = baseband.gaussian_1m_coefficient_0();
-        c0.modify(|_, w| w.bits_28_31().set(0));
-        c0.modify(|_, w| w.bits_23_27().set(0));
-        c0.modify(|_, w| w.bits_17_22().set(0));
-        c0.modify(|_, w| w.bits_10_16().set(3));
-        c0.modify(|_, w| w.bits_2_9().set(0x13));
-        let c1 = baseband.gaussian_1m_coefficient_1();
-        c1.modify(|_, w| w.bits_23_31().set(0x5f));
-        c1.modify(|_, w| w.bits_13_22().set(0x140));
-        c1.modify(|_, w| w.bits_2_12().set(0x2f2));
-        let c2 = baseband.gaussian_1m_coefficient_2();
-        c2.modify(|_, w| w.bits_21_31().set(0x50d));
-        c2.modify(|_, w| w.bits_10_20().set(0x6bf));
-        let c3 = baseband.gaussian_1m_coefficient_3();
-        c3.modify(|_, w| w.bits_21_31().set(0x7a0));
-        c3.modify(|_, w| w.bits_10_20().set(0x7e9));
+        super::generated::initialize_bluetooth_gaussian_1m_0_bits_28_31(baseband);
+        super::generated::initialize_bluetooth_gaussian_1m_0_bits_23_27(baseband);
+        super::generated::initialize_bluetooth_gaussian_1m_0_bits_17_22(baseband);
+        super::generated::initialize_bluetooth_gaussian_1m_0_bits_10_16(baseband);
+        super::generated::initialize_bluetooth_gaussian_1m_0_bits_2_9(baseband);
+        super::generated::initialize_bluetooth_gaussian_1m_1_bits_23_31(baseband);
+        super::generated::initialize_bluetooth_gaussian_1m_1_bits_13_22(baseband);
+        super::generated::initialize_bluetooth_gaussian_1m_1_bits_2_12(baseband);
+        super::generated::initialize_bluetooth_gaussian_1m_2_bits_21_31(baseband);
+        super::generated::initialize_bluetooth_gaussian_1m_2_bits_10_20(baseband);
+        super::generated::initialize_bluetooth_gaussian_1m_3_bits_21_31(baseband);
+        super::generated::initialize_bluetooth_gaussian_1m_3_bits_10_20(baseband);
     }
 
     fn initialize_gaussian_2m_coefficients(&self) {
         let baseband = &self.bluetooth.bt_v3_2_baseband;
-        let c0 = baseband.gaussian_2m_coefficient_and_tx_config();
-        c0.modify(|_, w| w.gaussian_bits_25_31().set(0));
-        c0.modify(|_, w| w.gaussian_bits_17_24().set(7));
-        c0.modify(|_, w| w.gaussian_bits_8_16().set(0x69));
-        let c1 = baseband.gaussian_2m_coefficient_1();
-        c1.modify(|_, w| w.bits_22_31().set(0x258));
-        c1.modify(|_, w| w.bits_11_21().set(0x5a7));
-        c1.modify(|_, w| w.bits_0_10().set(0x78f));
+        super::generated::initialize_bluetooth_gaussian_2m_0_bits_25_31(baseband);
+        super::generated::initialize_bluetooth_gaussian_2m_0_bits_17_24(baseband);
+        super::generated::initialize_bluetooth_gaussian_2m_0_bits_8_16(baseband);
+        super::generated::initialize_bluetooth_gaussian_2m_1_bits_22_31(baseband);
+        super::generated::initialize_bluetooth_gaussian_2m_1_bits_11_21(baseband);
+        super::generated::initialize_bluetooth_gaussian_2m_1_bits_0_10(baseband);
     }
 
     fn initialize_baseband_tx_timing(&self) {

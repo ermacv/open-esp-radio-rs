@@ -63947,6 +63947,222 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0 fields [BITS_28_31] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_gaussian_1m_0_bits_28_31(registers: &crate::BtV3_2Baseband) {
+        registers.gaussian_1m_coefficient_0().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_28_31().bits((input & 0x0000000f) as u8) }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0 fields [BITS_23_27] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_gaussian_1m_0_bits_23_27(registers: &crate::BtV3_2Baseband) {
+        registers.gaussian_1m_coefficient_0().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_23_27().bits((input & 0x0000001f) as u8) }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0 fields [BITS_17_22] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_gaussian_1m_0_bits_17_22(registers: &crate::BtV3_2Baseband) {
+        registers.gaussian_1m_coefficient_0().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_17_22().bits((input & 0x0000003f) as u8) }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0 fields [BITS_10_16] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_gaussian_1m_0_bits_10_16(registers: &crate::BtV3_2Baseband) {
+        registers.gaussian_1m_coefficient_0().modify(|_, writer| {
+            let input = 0x00000003_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_10_16().bits((input & 0x0000007f) as u8) }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_0 fields [BITS_2_9] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_gaussian_1m_0_bits_2_9(registers: &crate::BtV3_2Baseband) {
+        registers.gaussian_1m_coefficient_0().modify(|_, writer| {
+            let input = 0x00000013_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_2_9().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1 fields [BITS_23_31] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_gaussian_1m_1_bits_23_31(registers: &crate::BtV3_2Baseband) {
+        registers.gaussian_1m_coefficient_1().modify(|_, writer| {
+            let input = 0x0000005f_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_23_31().bits((input & 0x000001ff) as u16) }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1 fields [BITS_13_22] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_gaussian_1m_1_bits_13_22(registers: &crate::BtV3_2Baseband) {
+        registers.gaussian_1m_coefficient_1().modify(|_, writer| {
+            let input = 0x00000140_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_13_22().bits((input & 0x000003ff) as u16) }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_1 fields [BITS_2_12] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_gaussian_1m_1_bits_2_12(registers: &crate::BtV3_2Baseband) {
+        registers.gaussian_1m_coefficient_1().modify(|_, writer| {
+            let input = 0x000002f2_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_2_12().bits((input & 0x000007ff) as u16) }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_2 fields [BITS_21_31] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_gaussian_1m_2_bits_21_31(registers: &crate::BtV3_2Baseband) {
+        registers.gaussian_1m_coefficient_2().modify(|_, writer| {
+            let input = 0x0000050d_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_21_31().bits((input & 0x000007ff) as u16) }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_2 fields [BITS_10_20] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_gaussian_1m_2_bits_10_20(registers: &crate::BtV3_2Baseband) {
+        registers.gaussian_1m_coefficient_2().modify(|_, writer| {
+            let input = 0x000006bf_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_10_20().bits((input & 0x000007ff) as u16) }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_3 fields [BITS_21_31] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_gaussian_1m_3_bits_21_31(registers: &crate::BtV3_2Baseband) {
+        registers.gaussian_1m_coefficient_3().modify(|_, writer| {
+            let input = 0x000007a0_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_21_31().bits((input & 0x000007ff) as u16) }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_1M_COEFFICIENT_3 fields [BITS_10_20] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_gaussian_1m_3_bits_10_20(registers: &crate::BtV3_2Baseband) {
+        registers.gaussian_1m_coefficient_3().modify(|_, writer| {
+            let input = 0x000007e9_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_10_20().bits((input & 0x000007ff) as u16) }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_AND_TX_CONFIG fields [GAUSSIAN_BITS_25_31] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_gaussian_2m_0_bits_25_31(registers: &crate::BtV3_2Baseband) {
+        registers
+            .gaussian_2m_coefficient_and_tx_config()
+            .modify(|_, writer| {
+                let input = 0x00000000_u32;
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                unsafe {
+                    writer
+                        .gaussian_bits_25_31()
+                        .bits((input & 0x0000007f) as u8)
+                }
+            });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_AND_TX_CONFIG fields [GAUSSIAN_BITS_17_24] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_gaussian_2m_0_bits_17_24(registers: &crate::BtV3_2Baseband) {
+        registers
+            .gaussian_2m_coefficient_and_tx_config()
+            .modify(|_, writer| {
+                let input = 0x00000007_u32;
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                unsafe {
+                    writer
+                        .gaussian_bits_17_24()
+                        .bits((input & 0x000000ff) as u8)
+                }
+            });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_AND_TX_CONFIG fields [GAUSSIAN_BITS_8_16] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_gaussian_2m_0_bits_8_16(registers: &crate::BtV3_2Baseband) {
+        registers
+            .gaussian_2m_coefficient_and_tx_config()
+            .modify(|_, writer| {
+                let input = 0x00000069_u32;
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                unsafe {
+                    writer
+                        .gaussian_bits_8_16()
+                        .bits((input & 0x000001ff) as u16)
+                }
+            });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1 fields [BITS_22_31] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_gaussian_2m_1_bits_22_31(registers: &crate::BtV3_2Baseband) {
+        registers.gaussian_2m_coefficient_1().modify(|_, writer| {
+            let input = 0x00000258_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_22_31().bits((input & 0x000003ff) as u16) }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1 fields [BITS_11_21] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_gaussian_2m_1_bits_11_21(registers: &crate::BtV3_2Baseband) {
+        registers.gaussian_2m_coefficient_1().modify(|_, writer| {
+            let input = 0x000005a7_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_11_21().bits((input & 0x000007ff) as u16) }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.GAUSSIAN_2M_COEFFICIENT_1 fields [BITS_0_10] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_gaussian_2m_1_bits_0_10(registers: &crate::BtV3_2Baseband) {
+        registers.gaussian_2m_coefficient_1().modify(|_, writer| {
+            let input = 0x0000078f_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bits_0_10().bits((input & 0x000007ff) as u16) }
+        });
+    }
+
     /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields [LOCK_MODIFY_ARGUMENT] from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_scheduler_lock_modify_argument(

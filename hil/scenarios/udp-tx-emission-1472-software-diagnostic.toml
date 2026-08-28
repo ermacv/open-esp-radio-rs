@@ -1,11 +1,11 @@
 schema = 3
-id = "udp-tx-ht40-core0-coarse-diagnostic"
-description = "Split-core HT40 saturated TX Core0 cycles and retired-instruction diagnostic"
-repetitions = 3
+id = "udp-tx-emission-1472-software-diagnostic"
+description = "Fixed-rate 1472-byte UDP TX software-checksum emission-cost diagnostic"
+repetitions = 2
 image = "diagnostic-core0-rx-coarse"
 isolation = "reset"
 data_plane = "split-radio-network"
-tags = ["diagnostic", "udp", "station", "tx", "ht40", "split-core", "core0", "coarse-cycles"]
+tags = ["diagnostic", "udp", "station", "tx", "ht40", "split-core", "core0", "coarse-cycles", "tx-emission-sweep"]
 
 [link]
 phy = "ht40"
@@ -15,11 +15,11 @@ guard_interval = "any"
 kind = "udp"
 direction = "tx"
 duration_seconds = 12
-tx_rate_bps = 130000000
+tx_rate_bps = 58880000
 payload_bytes = 1472
 
 [criteria]
 exact_delivery = false
 require_no_beacon_loss = false
-minimum_tx_bps = 90000000
+minimum_tx_bps = 50000000
 maximum_idle_channel_utilization_255 = 64

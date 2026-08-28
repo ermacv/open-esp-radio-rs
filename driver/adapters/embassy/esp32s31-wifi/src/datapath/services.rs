@@ -12,6 +12,9 @@ use core::{
 
 use open_esp_radio_embassy_net::{PinnedTxFrame, PinnedTxInterfaceConsumer, RawMutex};
 
+#[cfg(any(feature = "diagnostics", test))]
+use crate::diagnostics::aggregate_tx::PreparedTxSchedulerPhase;
+
 use crate::datapath::{
     DatapathControlContext, DatapathControlProgress, DatapathRxProgress, DatapathRxServiceContext,
     DatapathRxWorkCounters, DatapathServices, WifiTxProgress, WifiTxWake,
@@ -197,6 +200,10 @@ pub trait DatapathNetworkTxService<
 
     fn prepared_frame_count(&self) -> usize {
         0
+    }
+
+    #[cfg(any(feature = "diagnostics", test))]
+    fn mark_prepared_scheduler_phase(&mut self, _phase: PreparedTxSchedulerPhase, _at_micros: u64) {
     }
 
     fn start_prepared(
@@ -527,6 +534,15 @@ where
 
     fn prepared_tx_frame_count(&self) -> usize {
         self.role.tx.prepared_frame_count()
+    }
+
+    #[cfg(any(feature = "diagnostics", test))]
+    fn mark_prepared_tx_scheduler_phase(
+        &mut self,
+        phase: PreparedTxSchedulerPhase,
+        at_micros: u64,
+    ) {
+        self.role.tx.mark_prepared_scheduler_phase(phase, at_micros);
     }
 
     fn start_prepared_tx(

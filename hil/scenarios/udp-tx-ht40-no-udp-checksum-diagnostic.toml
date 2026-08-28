@@ -1,11 +1,12 @@
 schema = 3
-id = "udp-tx-ht40-core0-coarse-diagnostic"
-description = "Split-core HT40 saturated TX Core0 cycles and retired-instruction diagnostic"
+id = "udp-tx-ht40-no-udp-checksum-diagnostic"
+description = "Split-core HT40 saturated TX software UDP checksum-cost diagnostic"
 repetitions = 3
 image = "diagnostic-core0-rx-coarse"
 isolation = "reset"
 data_plane = "split-radio-network"
-tags = ["diagnostic", "udp", "station", "tx", "ht40", "split-core", "core0", "coarse-cycles"]
+tx_udp_checksum = "omit-ipv4-diagnostic"
+tags = ["diagnostic", "udp", "station", "tx", "ht40", "split-core", "core0", "coarse-cycles", "checksum", "checksum-ab"]
 
 [link]
 phy = "ht40"

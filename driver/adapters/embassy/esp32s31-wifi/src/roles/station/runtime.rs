@@ -18,6 +18,9 @@ use open_esp_radio_esp32s31_wifi::{
 };
 use open_esp_radio_esp32s31_wifi_mac::tx_ampdu::HtAmpduHardware;
 
+#[cfg(any(feature = "diagnostics", test))]
+use crate::diagnostics::aggregate_tx::PreparedTxSchedulerPhase;
+
 use crate::{
     datapath::rx::staging::Esp32s31StagedRxFrame,
     datapath::tx::resources::AggregateTxResources,
@@ -1163,6 +1166,13 @@ where
             .map_or(0, Esp32s31ConnectedTx::prepared_network_frame_count)
     }
 
+    #[cfg(any(feature = "diagnostics", test))]
+    fn mark_prepared_scheduler_phase(&mut self, phase: PreparedTxSchedulerPhase, at_micros: u64) {
+        if let Some(tx) = self.tx_mut().active_mut() {
+            tx.mark_prepared_scheduler_phase(phase, at_micros);
+        }
+    }
+
     fn start_prepared(
         &mut self,
         hardware: &mut H,
@@ -1438,6 +1448,12 @@ where
 
     fn prepared_frame_count(&self) -> usize {
         self.tx().prepared_frame_count()
+    }
+
+    #[cfg(any(feature = "diagnostics", test))]
+    fn mark_prepared_scheduler_phase(&mut self, phase: PreparedTxSchedulerPhase, at_micros: u64) {
+        self.tx_mut()
+            .mark_prepared_scheduler_phase(phase, at_micros);
     }
 
     fn start_prepared(

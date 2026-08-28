@@ -4,6 +4,8 @@ use core::future::Future;
 
 use embassy_futures::yield_now;
 use embassy_time::Instant;
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+use open_esp_radio_embassy_net::{TX_PERFORMANCE, TxPerformanceSnapshot};
 #[cfg(any(
     feature = "core0-rx-cycle-telemetry",
     feature = "core0-rx-coarse-telemetry"
@@ -24,7 +26,7 @@ use open_esp_radio_hil_esp32s31_telemetry::{
 };
 use open_esp_radio_hil_protocol::{RadioEvidence, TxAggregateTimingEvidence, TxRadioEvidence};
 
-use crate::console::{runtime_log, runtime_log_reliably};
+use crate::console::runtime_log_reliably;
 
 #[cfg(feature = "core0-rx-cycle-telemetry")]
 use super::cache_performance::L1CachePerformanceSnapshot;
@@ -109,7 +111,7 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_interval(
     let aggregate = counters.snapshot().wrapping_delta_since(earlier);
     let aggregate_min = aggregate.minimum_prepared_subframes().unwrap_or(0);
     let aggregate_max = aggregate.maximum_prepared_subframes().unwrap_or(0);
-    runtime_log(format_args!(
+    runtime_log_reliably(format_args!(
         "OAMP aggregates={} publications={} completed={} subframes={} \
          acknowledged={} single={} single_rate={} single_ba={} single_pair={} \
          single_capacity={} single_capacity_max_len={} individual_retry={} timeout={} collision={} \
@@ -133,9 +135,10 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_interval(
         aggregate.stopped_at_frame_limit,
         aggregate.stopped_at_capacity_limit,
         aggregate.stopped_on_empty_queue,
-    ));
+    ))
+    .await;
     yield_now().await;
-    runtime_log(format_args!(
+    runtime_log_reliably(format_args!(
         "OAMPH one={} two_three={} four_seven={} eight_fifteen={} \
          sixteen_twentythree={} twentyfour_thirty={} thirtyone={} full32={}",
         aggregate.prepared_in_range(1, 1),
@@ -146,28 +149,18 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_interval(
         aggregate.prepared_in_range(24, 30),
         aggregate.prepared_in_range(31, 31),
         aggregate.prepared_in_range(32, 32),
-    ));
+    ))
+    .await;
     yield_now().await;
-    runtime_log(format_args!(
+    runtime_log_reliably(format_args!(
         "OAMPT preparation_us={} preparation_max_us={} publication_us={} \
-         publication_max_us={} completion_to_publication={}/{} \
-         completion_to_publication_max_us={} completion_core_us={} \
-         completion_core_max_us={} release_us={} release_max_us={} \
-         exchange_us={} exchange_max_us={} \
+         publication_max_us={} exchange_us={} exchange_max_us={} \
          first_exchanges={} first_exchange_us={} first_exchange_max_us={} \
-         retried_exchanges={} retry_publications={} retry_exchange_us={} retry_exchange_max_us={} \
-         r2={}/{} r3={}/{} r4={}/{}",
+         retried_exchanges={} retry_publications={} retry_exchange_us={} retry_exchange_max_us={}",
         aggregate.preparation_micros,
         aggregate.preparation_lifetime_max_micros,
         aggregate.publication_program_micros,
         aggregate.publication_program_lifetime_max_micros,
-        aggregate.completion_to_publication_samples,
-        aggregate.completion_to_publication_micros,
-        aggregate.completion_to_publication_lifetime_max_micros,
-        aggregate.completion_core_micros,
-        aggregate.completion_core_lifetime_max_micros,
-        aggregate.backing_release_micros,
-        aggregate.backing_release_lifetime_max_micros,
         aggregate.exchange_micros,
         aggregate.exchange_lifetime_max_micros,
         aggregate.single_publication_exchanges,
@@ -177,15 +170,34 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_interval(
         aggregate.retried_exchange_publications,
         aggregate.retried_exchange_micros,
         aggregate.retried_exchange_lifetime_max_micros,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "OAMPTD completion_to_publication={}/{} completion_to_publication_max_us={} \
+         completion_core_us={} completion_core_max_us={} release_us={} release_max_us={}",
+        aggregate.completion_to_publication_samples,
+        aggregate.completion_to_publication_micros,
+        aggregate.completion_to_publication_lifetime_max_micros,
+        aggregate.completion_core_micros,
+        aggregate.completion_core_lifetime_max_micros,
+        aggregate.backing_release_micros,
+        aggregate.backing_release_lifetime_max_micros,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "OAMPTR r2={}/{} r3={}/{} r4={}/{}",
         aggregate.exchanges_by_publications[2],
         aggregate.exchange_lifetime_max_micros_by_publications[2],
         aggregate.exchanges_by_publications[3],
         aggregate.exchange_lifetime_max_micros_by_publications[3],
         aggregate.exchanges_by_publications[4],
         aggregate.exchange_lifetime_max_micros_by_publications[4],
-    ));
+    ))
+    .await;
     yield_now().await;
-    runtime_log(format_args!(
+    runtime_log_reliably(format_args!(
         "OAMPS completion_to_entry={}/{} completion_to_entry_max_us={} \
          entry_to_publication={}/{} entry_to_publication_max_us={}",
         aggregate.completion_to_prepared_entry_samples,
@@ -194,10 +206,11 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_interval(
         aggregate.prepared_entry_to_publication_samples,
         aggregate.prepared_entry_to_publication_micros,
         aggregate.prepared_entry_to_publication_lifetime_max_micros,
-    ));
+    ))
+    .await;
     yield_now().await;
     let scheduler = aggregate.prepared_scheduler_timing;
-    runtime_log(format_args!(
+    runtime_log_reliably(format_args!(
         "OAMPSP samples={} passes={} passes_max={} control_ready_passes={} \
          completion_to_return_us={} completion_to_return_max_us={} \
          return_to_loop_us={} return_to_loop_max_us={} \
@@ -225,9 +238,10 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_interval(
         scheduler
             .control_check_to_prepared_entry
             .lifetime_max_micros,
-    ));
+    ))
+    .await;
     yield_now().await;
-    runtime_log(format_args!(
+    runtime_log_reliably(format_args!(
         "OAMPB operational_tids={:#04x} operational_transitions={} samples={} received={} \
          success_without={} nonzero_control={} start_outside={} start_lag_max={} \
          full={} partial={} empty={}",
@@ -242,9 +256,10 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_interval(
         aggregate.full_block_ack,
         aggregate.partial_block_ack,
         aggregate.empty_block_ack,
-    ));
+    ))
+    .await;
     yield_now().await;
-    runtime_log(format_args!(
+    runtime_log_reliably(format_args!(
         "OAMPI tx_irq_epochs={} tx_irq_samples={} tx_irq_skew={} \
          tx_irq_service_us={} tx_irq_service_max_us={} tx_flight_samples={} \
          tx_flight_us={} tx_flight_max_us={}",
@@ -256,21 +271,24 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_interval(
         aggregate.tx_publication_to_irq_samples,
         aggregate.tx_publication_to_irq_micros,
         aggregate.tx_publication_to_irq_lifetime_max_micros,
-    ));
+    ))
+    .await;
     yield_now().await;
-    runtime_log(format_args!(
+    runtime_log_reliably(format_args!(
         "OAMPP standby_prepared={} standby_published={} standby_cancelled={}",
         aggregate.standby_prepared, aggregate.standby_published, aggregate.standby_cancelled,
-    ));
+    ))
+    .await;
     yield_now().await;
-    runtime_log(format_args!(
+    runtime_log_reliably(format_args!(
         "OAMPA ap_udp_claimed={} backward={} first={} after={} maximum_distance={}",
         aggregate.ap_udp_claimed,
         aggregate.ap_udp_claim_backward,
         aggregate.ap_udp_claim_first_sequence,
         aggregate.ap_udp_claim_first_previous,
         aggregate.ap_udp_claim_maximum_distance,
-    ));
+    ))
+    .await;
     yield_now().await;
 }
 
@@ -810,6 +828,34 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_coarse(
     .await;
     yield_now().await;
     runtime_log_reliably(format_args!(
+        "ORC0TX start_calls={} start_cycles={} start_instret={} prepare_calls={} prepare_cycles={} prepare_instret={} publish_calls={} publish_cycles={} publish_instret={} service_calls={} service_cycles={} service_instret={}",
+        performance.tx_start_calls,
+        performance.tx_start_cycles,
+        performance.tx_start_instructions,
+        performance.tx_prepare_calls,
+        performance.tx_prepare_cycles,
+        performance.tx_prepare_instructions,
+        performance.tx_publish_calls,
+        performance.tx_publish_cycles,
+        performance.tx_publish_instructions,
+        performance.tx_service_calls,
+        performance.tx_service_cycles,
+        performance.tx_service_instructions,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ORC0TXN encode_calls={} encode_cycles={} encode_instret={} commit_calls={} commit_cycles={} commit_instret={}",
+        performance.tx_encode_calls,
+        performance.tx_encode_cycles,
+        performance.tx_encode_instructions,
+        performance.tx_commit_calls,
+        performance.tx_commit_cycles,
+        performance.tx_commit_instructions,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
         "ORC0P drained={} probe={} recycled_append={} budget={} stage_blocked={} network_blocked={} droppable={}",
         performance.rx_progress_drained,
         performance.rx_progress_probe_pending,
@@ -864,6 +910,31 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_coarse(
         performance.dma_exhaustion_resolved_gt_1024us,
     ))
     .await;
+}
+
+/// Emit Core1 packet-emission and driver-publication phase costs for TX.
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(
+    earlier: TxPerformanceSnapshot,
+) {
+    let performance = TX_PERFORMANCE.snapshot().wrapping_delta_since(earlier);
+    runtime_log_reliably(format_args!(
+        "ONTX admission_attempts={} admission_successes={} admission_cycles={} admission_instret={} consume_calls={} consume_bytes={} consume_cycles={} consume_instret={} emit_cycles={} emit_instret={} publication_cycles={} publication_instret={}",
+        performance.admission_attempts,
+        performance.admission_successes,
+        performance.admission_cycles,
+        performance.admission_instructions,
+        performance.consume_calls,
+        performance.consume_bytes,
+        performance.consume_cycles,
+        performance.consume_instructions,
+        performance.emit_cycles,
+        performance.emit_instructions,
+        performance.publication_cycles(),
+        performance.publication_instructions(),
+    ))
+    .await;
+    yield_now().await;
 }
 
 #[cfg(feature = "core0-rx-cycle-telemetry")]

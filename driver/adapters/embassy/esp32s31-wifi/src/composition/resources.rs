@@ -67,11 +67,20 @@ pub const ESP32S31_DEFAULT_NETWORK_FRAME_CAPACITY: usize = 1_600;
 // token still retains one of those slots until Core 1 consumes it, while copied
 // reorder/reassembly frames use independent queue backing.
 pub const ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH: usize = 64;
+const ESP32S31_PERMANENT_NETWORK_ENDPOINTS: usize = 2;
+const ESP32S31_NETWORK_TX_PIPELINE_CREDITS: usize = 1;
 // One additional credit per permanent network endpoint is reserved for the
-// TX token paired with ingress. Combined STA+AP therefore needs two reserves;
-// application egress still retains two complete 32-MPDU arenas while
-// saturated. TX frame backing is DMA-visible SRAM.
-pub const ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH: usize = 66;
+// TX token paired with ingress. Combined STA+AP therefore needs two reserves.
+// Application egress needs two complete 32-MPDU arenas plus one pipeline
+// credit: `Driver::transmit` owns that credit while the network stack formats
+// a frame, before the resulting lease becomes visible to the radio consumer.
+// Without it, an instantaneous radio-side drain observes at most 63 leases
+// and saturated 32-entry BlockAck traffic alternates 31- and 32-MPDU batches.
+// TX frame backing is DMA-visible SRAM.
+pub const ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH: usize = 2
+    * ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT
+    + ESP32S31_PERMANENT_NETWORK_ENDPOINTS
+    + ESP32S31_NETWORK_TX_PIPELINE_CREDITS;
 pub const ESP32S31_DEFAULT_NETWORK_TX_TRAILER: usize = 12;
 pub const ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT: usize = 32;
 
@@ -197,6 +206,14 @@ mod tests {
         );
         assert_eq!(Esp32s31DefaultWifiResourceProfile::RX_REORDER_WINDOW, 16);
         assert_eq!(Esp32s31DefaultWifiResourceProfile::RX_STAGE_SLOT_COUNT, 32);
+        assert_eq!(ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH, 67);
+        assert_eq!(
+            ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH
+                - ESP32S31_PERMANENT_NETWORK_ENDPOINTS
+                - ESP32S31_NETWORK_TX_PIPELINE_CREDITS,
+            2 * ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT,
+            "two full aggregate arenas remain visible while Core1 owns one unpublished TX token"
+        );
     }
 
     #[test]

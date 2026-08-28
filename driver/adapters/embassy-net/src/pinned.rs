@@ -6,6 +6,8 @@ use core::{
     task::{Context, Poll},
 };
 
+#[cfg(feature = "tx-phase-telemetry")]
+use crate::tx_performance::{TX_PERFORMANCE, TxPerformanceSample};
 use embassy_net_driver::{
     Capabilities, Checksum, ChecksumCapabilities, Driver, HardwareAddress, LinkState,
 };
@@ -944,6 +946,22 @@ impl<
         }
         self.with_checksum_capabilities(checksum)
     }
+
+    /// Select software generation of the IPv4 UDP checksum.
+    ///
+    /// Disabling generation emits the RFC 768 zero-checksum representation
+    /// and is intended only for a controlled cost diagnostic. The mandatory
+    /// IPv4 header checksum and the selected RX checksum policy are preserved.
+    pub fn with_software_ipv4_udp_tx_checksum_generation(mut self, enabled: bool) -> Self {
+        let validate_rx = matches!(self.inner.checksum.udp, Checksum::Both | Checksum::Rx);
+        self.inner.checksum.udp = match (validate_rx, enabled) {
+            (true, true) => Checksum::Both,
+            (true, false) => Checksum::Rx,
+            (false, true) => Checksum::Tx,
+            (false, false) => Checksum::None,
+        };
+        self
+    }
 }
 
 impl<
@@ -1011,17 +1029,37 @@ impl<
     where
         F: FnOnce(&mut [u8]) -> R,
     {
+        #[cfg(feature = "tx-phase-telemetry")]
+        let consume_started = TxPerformanceSample::read();
         assert!(
             length <= FRAME_CAPACITY,
             "embassy-net requested a frame larger than pinned driver capabilities"
         );
         let lease = self.lease.take().expect("TX token consumed once");
-        let (index, result) = lease.publish(length, f);
+        #[cfg(feature = "tx-phase-telemetry")]
+        let mut emitted = TxPerformanceSample::default();
+        let (index, result) = lease.publish(length, |buffer| {
+            #[cfg(feature = "tx-phase-telemetry")]
+            let started = TxPerformanceSample::read();
+            let result = f(buffer);
+            #[cfg(feature = "tx-phase-telemetry")]
+            {
+                emitted = TxPerformanceSample::read().wrapping_delta_since(started);
+            }
+            result
+        });
         let ready = &self.ready_tx[usize::from(self.interface.value())];
         if let Err(TrySendError::Full(_)) = ready.try_send(index) {
             unreachable!("one ready entry exists per non-free pinned TX slot");
         }
         self.tx_published.signal(());
+        #[cfg(feature = "tx-phase-telemetry")]
+        TX_PERFORMANCE.record_consume(
+            length,
+            consume_started,
+            emitted,
+            TxPerformanceSample::read(),
+        );
         result
     }
 }
@@ -1108,14 +1146,20 @@ impl<
     }
 
     fn transmit(&mut self, cx: &mut Context<'_>) -> Option<Self::TxToken<'_>> {
-        if !self.poll_reserve_application_tx(cx) {
-            return None;
-        }
-        let index = self
-            .application_tx
-            .take()
-            .expect("application admission reserves one TX credit");
-        Some(self.take_tx_token(index))
+        #[cfg(feature = "tx-phase-telemetry")]
+        let started = TxPerformanceSample::read();
+        let token = if !self.poll_reserve_application_tx(cx) {
+            None
+        } else {
+            let index = self
+                .application_tx
+                .take()
+                .expect("application admission reserves one TX credit");
+            Some(self.take_tx_token(index))
+        };
+        #[cfg(feature = "tx-phase-telemetry")]
+        TX_PERFORMANCE.record_admission(started, TxPerformanceSample::read(), token.is_some());
+        token
     }
 
     fn link_state(&mut self, cx: &mut Context<'_>) -> LinkState {

@@ -1,5 +1,10 @@
 use super::*;
 
+#[cfg(feature = "tx-phase-telemetry")]
+use crate::diagnostics::core0_rx_performance::{
+    CORE0_PERFORMANCE, Core0PerformanceSample, Core0TxPhase,
+};
+
 impl<
     'slot,
     'ampdu,
@@ -842,6 +847,8 @@ where
         if self.ampdu.active().held_backing_count() >= SLOTS {
             return Err(HtAmpduTxError::AggregateFull.into());
         }
+        #[cfg(feature = "tx-phase-telemetry")]
+        let encode_started = Core0PerformanceSample::read();
         let metadata = self
             .ordinary
             .take_protected_metadata(traffic.tid())
@@ -857,6 +864,12 @@ where
                 second.ethernet(),
             )
             .map_err(AggregateTxError::Encode)?;
+        #[cfg(feature = "tx-phase-telemetry")]
+        CORE0_PERFORMANCE.record_tx_phase(
+            Core0TxPhase::Encode,
+            encode_started,
+            Core0PerformanceSample::read(),
+        );
         let metadata_size = open_esp_radio_esp32s31_wifi_mac::tx_ampdu::TX_AMPDU_METADATA_SIZE;
         let dma_offset = encoded.offset.checked_sub(metadata_size).ok_or(
             AggregateTxError::DmaPrefixGeometry {
@@ -874,6 +887,8 @@ where
             encoded_offset: encoded.offset,
             metadata_size,
         })?;
+        #[cfg(feature = "tx-phase-telemetry")]
+        let commit_started = Core0PerformanceSample::read();
         match self.config.rate {
             TxPhyRate::Ht(rate) => self.ampdu.active_mut().commit_ht(
                 cookie,
@@ -894,6 +909,12 @@ where
             )?,
             TxPhyRate::Legacy(_) => return Err(AggregateTxError::UnsupportedRate),
         }
+        #[cfg(feature = "tx-phase-telemetry")]
+        CORE0_PERFORMANCE.record_tx_phase(
+            Core0TxPhase::Commit,
+            commit_started,
+            Core0PerformanceSample::read(),
+        );
         drop(second);
         Ok(())
     }
@@ -910,6 +931,8 @@ where
         {
             return Err(HtAmpduTxError::AggregateFull.into());
         }
+        #[cfg(feature = "tx-phase-telemetry")]
+        let encode_started = Core0PerformanceSample::read();
         let metadata = self
             .ordinary
             .take_protected_metadata(traffic.tid())
@@ -925,6 +948,12 @@ where
                 DataHeControl::Disabled,
             )
             .map_err(AggregateTxError::Encode)?;
+        #[cfg(feature = "tx-phase-telemetry")]
+        CORE0_PERFORMANCE.record_tx_phase(
+            Core0TxPhase::Encode,
+            encode_started,
+            Core0PerformanceSample::read(),
+        );
         let metadata_size = open_esp_radio_esp32s31_wifi_mac::tx_ampdu::TX_AMPDU_METADATA_SIZE;
         let dma_offset = encoded.offset.checked_sub(metadata_size).ok_or(
             AggregateTxError::DmaPrefixGeometry {
@@ -941,6 +970,8 @@ where
                 metadata_size,
             },
         )?;
+        #[cfg(feature = "tx-phase-telemetry")]
+        let commit_started = Core0PerformanceSample::read();
         match self.config.rate {
             TxPhyRate::Ht(rate) => self.ampdu.active_mut().commit_ht(
                 cookie,
@@ -961,6 +992,12 @@ where
             )?,
             TxPhyRate::Legacy(_) => return Err(AggregateTxError::UnsupportedRate),
         }
+        #[cfg(feature = "tx-phase-telemetry")]
+        CORE0_PERFORMANCE.record_tx_phase(
+            Core0TxPhase::Commit,
+            commit_started,
+            Core0PerformanceSample::read(),
+        );
         Ok(())
     }
 
@@ -1099,10 +1136,23 @@ where
             observer.observe(AggregateTxObservation::Published {
                 at_micros: publication_started,
                 program_micros: publication_finished.wrapping_sub(publication_started),
-                prepared_scheduler: None,
             });
         }
         active.deadline_micros = deadline;
         Ok(())
+    }
+
+    #[cfg(any(feature = "diagnostics", test))]
+    pub(crate) fn mark_prepared_scheduler_phase(
+        &mut self,
+        phase: PreparedTxSchedulerPhase,
+        at_micros: u64,
+    ) {
+        if !self.has_prepared_network_tx() {
+            return;
+        }
+        if let Some(observer) = self.observer {
+            observer.observe(AggregateTxObservation::PreparedSchedulerPhase { phase, at_micros });
+        }
     }
 }

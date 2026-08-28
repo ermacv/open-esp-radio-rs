@@ -9,7 +9,7 @@ publish = false
 [dependencies]
 embassy-executor = { version = "0.10.0", default-features = false }
 embassy-futures = "0.1.2"
-embassy-net = { git = "ssh://git@github.com/ermacv/embassy.git", rev = "f7f09eb6f0c6c3971b8fce637a18cd5cff80b618", features = ["dhcpv4", "medium-ethernet"] }
+embassy-net = { git = "https://github.com/ermacv/embassy.git", rev = "51c3eb0b7e64921246007af1357f3d9f44bfe466", features = ["dhcpv4", "medium-ethernet"] }
 esp-backtrace = { git = "https://github.com/ermacv/esp-hal", rev = "7f914782f5c689a74f37df83b89a0827d3800323", default-features = false, features = ["esp32s31", "panic-handler", "println"] }
 esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "7f914782f5c689a74f37df83b89a0827d3800323", default-features = false, features = ["esp32s31"] }
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "7f914782f5c689a74f37df83b89a0827d3800323", default-features = false, features = ["esp32s31", "rt", "unstable"] }
@@ -31,7 +31,7 @@ strip = false
 [patch."https://github.com/esp-rs/esp-pacs"]
 esp32s31 = { git = "https://github.com/ermacv/esp-pacs", rev = "5b8b56036abd5f4646505b15988cc9da51cec826" }
 
-[patch."ssh://git@github.com/ermacv/embassy.git"]
+[patch."https://github.com/ermacv/embassy.git"]
 embassy-futures = { version = "0.1.2", registry = "crates-io" }
 embassy-sync = { version = "0.8.0", registry = "crates-io" }
 embassy-time = { version = "0.5.1", registry = "crates-io" }

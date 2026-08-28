@@ -97,7 +97,6 @@ mod mac {
     pub const RX_DESCRIPTOR_BASE: TestRegister = named("RX_DESCRIPTOR_BASE");
     pub const RX_NEXT_DESCRIPTOR: TestRegister = named("RX_NEXT_DESCRIPTOR");
     pub const RX_LAST_DESCRIPTOR: TestRegister = named("RX_LAST_DESCRIPTOR");
-    pub const RX_LAST_DESCRIPTOR_HIGH: TestRegister = named("RX_LAST_DESCRIPTOR_HIGH");
     pub const CRYPTO_KEY_VALID_BITMAP: TestRegister = named("CRYPTO_KEY_VALID_BITMAP");
     pub const CRYPTO_POLICY_CONTROL: TestRegister = named("CRYPTO_POLICY_CONTROL");
     pub const CRYPTO_INTERFACE_CONTROL: [TestRegister; 3] = [
@@ -150,7 +149,6 @@ mod mac_init {
     use super::{TestRegister, indexed, named};
 
     pub const R_4C00: TestRegister = named("R_4C00");
-    pub const R_407C: TestRegister = named("R_407C");
     pub const R_4098: TestRegister = named("R_4098");
     pub const R_4114: TestRegister = named("R_4114");
     pub const R_4118: TestRegister = named("R_4118");
@@ -166,8 +164,6 @@ mod mac_init {
     pub const R_4C54: TestRegister = named("R_4C54");
     pub const R_4C58: TestRegister = named("R_4C58");
     pub const R_4C60: TestRegister = named("R_4C60");
-    pub const R_4C68: TestRegister = named("R_4C68");
-    pub const R_4C6C: TestRegister = named("R_4C6C");
     pub const R_4C8C: TestRegister = named("R_4C8C");
     pub const R_4C98: TestRegister = named("R_4C98");
     pub const R_4CA0: TestRegister = named("R_4CA0");
@@ -229,7 +225,6 @@ trait Mmio {
 const RX_CONTROL: TestRegister = mac::RX_CONTROL;
 const RX_DESCRIPTOR_BASE: TestRegister = mac::RX_DESCRIPTOR_BASE;
 const RX_LAST_DESCRIPTOR: TestRegister = mac::RX_LAST_DESCRIPTOR;
-const RX_LAST_DESCRIPTOR_HIGH: TestRegister = mac::RX_LAST_DESCRIPTOR_HIGH;
 const RX_NEXT_DESCRIPTOR: TestRegister = mac::RX_NEXT_DESCRIPTOR;
 const TX_CCA_CONTROL: TestRegister = mac::TX_CCA_CONTROL;
 const TX_Q0_CONTROL: TestRegister = mac::TX_Q0_CONTROL;
@@ -257,6 +252,8 @@ enum Operation {
     ConfigureModemSourceClocks,
     EnableWifiMacClocks,
     SetWifiMacReset(bool),
+    InitializeRxBufferPrefix,
+    ConfigureRxDescriptorWindow,
     ConfigureOpenPromiscuousReceive,
     ReadInterruptStatus,
     WriteInterruptEnable(u32),
@@ -389,12 +386,8 @@ impl RxDma for MockMmio {
         })
     }
 
-    fn set_descriptor_high_window(&mut self, _: &RxDmaBinding, address_high: u16) {
-        let previous = self.read32(RX_LAST_DESCRIPTOR_HIGH);
-        self.write32(
-            RX_LAST_DESCRIPTOR_HIGH,
-            (previous & 0x000f_ffff) | (u32::from(address_high) << 20),
-        );
+    fn configure_descriptor_window(&mut self, _: &RxDmaBinding) {
+        self.operations.push(Operation::ConfigureRxDescriptorWindow);
     }
 
     fn write_descriptor_base(&mut self, _: &RxDmaBinding, address: u32) {
@@ -813,14 +806,7 @@ impl MacLowRateHardware for MockMmio {
 
 impl MacColdRxBufferHardware for MockMmio {
     fn initialize_rx_buffer_prefix(&mut self) {
-        let mut modify = |register: TestRegister, mask: u32, value: u32| {
-            let current = self.read32(register);
-            self.write32(register, (current & !mask) | (value & mask));
-        };
-        modify(mac_init::R_4C68, 0x000f_ffff, 0x000f_ffff);
-        modify(mac_init::R_4C6C, 0x000f_ffff, 4);
-        modify(mac::RX_LAST_DESCRIPTOR_HIGH, 0xfff0_0000, 0x2f00_0000);
-        modify(mac_init::R_407C, 0x0000_00ff, 0);
+        self.operations.push(Operation::InitializeRxBufferPrefix);
     }
 }
 
@@ -1244,19 +1230,10 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
             .any(|operations| operations == expected_cold_rx_policy)
     );
     assert_eq!(mmio.words.get(&mac_init::R_4E04), Some(&0));
-    assert!(mmio.operations().windows(8).any(|operations| {
-        operations
-            == [
-                Operation::Read(mac_init::R_4C68),
-                Operation::Write(mac_init::R_4C68, 0x000f_ffff),
-                Operation::Read(mac_init::R_4C6C),
-                Operation::Write(mac_init::R_4C6C, 4),
-                Operation::Read(mac::RX_LAST_DESCRIPTOR_HIGH),
-                Operation::Write(mac::RX_LAST_DESCRIPTOR_HIGH, 0x2f00_0000),
-                Operation::Read(mac_init::R_407C),
-                Operation::Write(mac_init::R_407C, 0),
-            ]
-    }));
+    assert!(
+        mmio.operations()
+            .contains(&Operation::InitializeRxBufferPrefix)
+    );
     assert!(mmio.operations().windows(5).any(|operations| {
         operations
             == [
@@ -1418,7 +1395,6 @@ fn cold_rx_ring_publishes_links_and_hardware_in_order() {
     assert_eq!(descriptors[1].next_address(), 0);
 
     let mut mmio = MockMmio::default();
-    mmio.set(RX_LAST_DESCRIPTOR_HIGH, 0x0005_4321);
     mmio.set(RX_CONTROL, 0x1234);
     publish_cold_ring(&mut mmio, 0x2f00_1000, true).unwrap();
 
@@ -1426,8 +1402,7 @@ fn cold_rx_ring_publishes_links_and_hardware_in_order() {
         mmio.operations(),
         &[
             Operation::Fence,
-            Operation::Read(RX_LAST_DESCRIPTOR_HIGH),
-            Operation::Write(RX_LAST_DESCRIPTOR_HIGH, 0x2f05_4321),
+            Operation::ConfigureRxDescriptorWindow,
             Operation::Write(RX_DESCRIPTOR_BASE, 0x2f00_1000),
             Operation::Read(RX_CONTROL),
             Operation::Write(RX_CONTROL, 0x1234 | RX_ENABLE),

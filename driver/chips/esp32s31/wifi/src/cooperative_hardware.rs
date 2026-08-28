@@ -410,8 +410,8 @@ impl RxDma for CooperativeRadioHardware<'_> {
         RxDma::try_with_reload_settled(&mut self.wifi_mac_hal(), settled)
     }
 
-    fn set_descriptor_high_window(&mut self, binding: &RxDmaBinding, address_high: u16) {
-        RxDma::set_descriptor_high_window(&mut self.wifi_mac_hal(), binding, address_high);
+    fn configure_descriptor_window(&mut self, binding: &RxDmaBinding) {
+        RxDma::configure_descriptor_window(&mut self.wifi_mac_hal(), binding);
     }
 
     fn write_descriptor_base(&mut self, binding: &RxDmaBinding, address: u32) {

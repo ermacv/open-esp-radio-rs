@@ -296,7 +296,7 @@ pub trait RxDma {
         &mut self,
         settled: impl for<'confirmation> FnOnce(RxDmaReloadSettled<'confirmation>) -> R,
     ) -> Option<R>;
-    fn set_descriptor_high_window(&mut self, binding: &RxDmaBinding<'_>, address_high: u16);
+    fn configure_descriptor_window(&mut self, binding: &RxDmaBinding<'_>);
     fn write_descriptor_base(&mut self, binding: &RxDmaBinding<'_>, address: u32);
     fn publish_walker_enable(&mut self, binding: &RxDmaBinding<'_>);
     fn request_reload(&mut self, binding: &RxDmaBinding<'_>);
@@ -362,8 +362,8 @@ impl RxDma for WifiMacHal<'_> {
         (!self.rx_reload_pending()).then(|| settled(RxDmaReloadSettled::confirmed()))
     }
 
-    fn set_descriptor_high_window(&mut self, binding: &RxDmaBinding<'_>, address_high: u16) {
-        self.set_rx_descriptor_high_window(binding.range(), address_high);
+    fn configure_descriptor_window(&mut self, binding: &RxDmaBinding<'_>) {
+        self.configure_rx_descriptor_window(binding.range());
     }
 
     fn write_descriptor_base(&mut self, binding: &RxDmaBinding<'_>, address: u32) {
@@ -443,8 +443,8 @@ impl RxDma for RadioRuntimeOwner {
         RxDma::try_with_reload_settled(&mut self.wifi_mac_hal(), settled)
     }
 
-    fn set_descriptor_high_window(&mut self, binding: &RxDmaBinding<'_>, address_high: u16) {
-        RxDma::set_descriptor_high_window(&mut self.wifi_mac_hal(), binding, address_high);
+    fn configure_descriptor_window(&mut self, binding: &RxDmaBinding<'_>) {
+        RxDma::configure_descriptor_window(&mut self.wifi_mac_hal(), binding);
     }
 
     fn write_descriptor_base(&mut self, binding: &RxDmaBinding<'_>, address: u32) {

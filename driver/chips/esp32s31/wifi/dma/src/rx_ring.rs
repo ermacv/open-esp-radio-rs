@@ -2629,7 +2629,7 @@ fn publish_cold_ring_inner<M: RxDma>(
         return Err(RxRingError::Address);
     }
     mmio.fence();
-    mmio.set_descriptor_high_window(binding, 0x02f0);
+    mmio.configure_descriptor_window(binding);
     mmio.write_descriptor_base(binding, descriptor_dma_base);
     if enable_rx {
         mmio.publish_walker_enable(binding);

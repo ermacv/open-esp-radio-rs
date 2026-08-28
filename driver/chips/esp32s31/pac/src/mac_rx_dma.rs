@@ -6,6 +6,9 @@ use open_esp_radio_dma::StableDmaRange;
 
 use super::{WifiRadioRegisters, device_fence, svd};
 
+const RX_DESCRIPTOR_INTERNAL_SRAM_START: u32 = 0x2f00_0000;
+const RX_DESCRIPTOR_INTERNAL_SRAM_END: u32 = 0x2f10_0000;
+
 /// Read-only hardware frontier of the MAC RX descriptor walker.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacRxDmaSnapshot {
@@ -148,19 +151,17 @@ impl WifiRadioRegisters {
         descriptor_reload_pending(&self.peripherals.wifi_mac.wifi_mac_rx_dma)
     }
 
-    /// Select the address window carried by a retained descriptor range.
-    pub fn set_mac_rx_descriptor_high_window(
-        &mut self,
-        binding: &StableDmaRange<'_>,
-        address_high: u16,
-    ) {
-        assert!(address_high <= 0x0fff);
-        assert_eq!(address_high, (binding.start() >> 20) as u16);
+    /// Select the internal-SRAM address window carried by a retained descriptor range.
+    pub fn configure_mac_rx_descriptor_window(&mut self, binding: &StableDmaRange<'_>) {
+        assert!(
+            binding.start() >= RX_DESCRIPTOR_INTERNAL_SRAM_START
+                && binding.start() < RX_DESCRIPTOR_INTERNAL_SRAM_END
+        );
         self.peripherals
             .wifi_mac
             .wifi_mac_rx_dma
             .rx_descriptor_high_window()
-            .modify(|_, w| w.address_high().set(address_high));
+            .modify(|_, w| w.address_high().set(0x02f0));
     }
 
     /// Publish a descriptor head contained by the retained DMA range.

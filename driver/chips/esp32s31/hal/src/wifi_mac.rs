@@ -719,10 +719,10 @@ impl<'registers> WifiMacHal<'registers> {
         self.pac_mut().mac_rx_reload_pending()
     }
 
-    pub fn set_rx_descriptor_high_window(&mut self, range: &StableDmaRange<'_>, address_high: u16) {
+    pub fn configure_rx_descriptor_window(&mut self, range: &StableDmaRange<'_>) {
         self.registers
             .pac_mut()
-            .set_mac_rx_descriptor_high_window(range, address_high);
+            .configure_mac_rx_descriptor_window(range);
     }
 
     pub fn write_rx_descriptor_base(&mut self, range: &StableDmaRange<'_>, address: u32) {

@@ -1246,7 +1246,7 @@ mod tests {
                 .then(|| settled(crate::rx_dma::RxDmaReloadSettled::validation()))
         }
 
-        fn set_descriptor_high_window(&mut self, _: &RxDmaBinding<'_>, _: u16) {}
+        fn configure_descriptor_window(&mut self, _: &RxDmaBinding<'_>) {}
 
         fn write_descriptor_base(&mut self, _: &RxDmaBinding<'_>, address: u32) {
             self.descriptor_base = address;

@@ -721,7 +721,7 @@ impl RxDma for MockRxDma {
             settled(open_esp_radio_esp32s31_wifi_mac::rx::RxDmaReloadSettled::validation())
         })
     }
-    fn set_descriptor_high_window(&mut self, _: &RxDmaBinding, _address_high: u16) {}
+    fn configure_descriptor_window(&mut self, _: &RxDmaBinding) {}
     fn write_descriptor_base(&mut self, _: &RxDmaBinding, address: u32) {
         self.descriptor_base = address;
     }

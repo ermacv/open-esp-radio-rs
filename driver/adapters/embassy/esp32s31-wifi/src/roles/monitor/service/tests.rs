@@ -113,7 +113,7 @@ impl RxDma for Hardware {
         })
     }
 
-    fn set_descriptor_high_window(&mut self, _: &RxDmaBinding, _: u16) {}
+    fn configure_descriptor_window(&mut self, _: &RxDmaBinding) {}
 
     fn write_descriptor_base(&mut self, _: &RxDmaBinding, _: u32) {
         self.base_writes = self.base_writes.saturating_add(1);

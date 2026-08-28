@@ -28,7 +28,7 @@ pub unsafe fn physical_address(virtual_address: usize) -> Option<u32> {
     registers
         .mmu_item_index()
         .write(|writer| unsafe { writer.mmu_item_index().bits(entry) });
-    let raw = registers.mmu_item_content().read().bits();
-    let physical_page = (raw & 0x7ff).checked_mul(u32::try_from(page_size).ok()?)?;
+    let physical_page = u32::from(registers.mmu_item_content().read().paddr().bits())
+        .checked_mul(u32::try_from(page_size).ok()?)?;
     physical_page.checked_add(within_page)
 }

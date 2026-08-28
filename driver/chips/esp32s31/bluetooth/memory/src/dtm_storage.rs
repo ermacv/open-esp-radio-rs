@@ -66,6 +66,10 @@ const LINK_STATE_RX_TAIL_OFFSET: usize = 0x70 / 4;
 const LINK_STATE_TX_TAIL_OFFSET: usize = 0x74 / 4;
 const LINK_STATE_RX_SWAP_RESERVE_OFFSET: usize = 0x78 / 4;
 const SCHEDULER_ITEM_LINK_STATE_OFFSET: usize = 0x08 / 4;
+const SCHEDULER_ITEM_STATUS_OFFSET: usize = 0x38 / 4;
+const SCHEDULER_ITEM_CONTROL_OFFSET: usize = 0x4c / 4;
+const SCHEDULER_ITEM_CONTROL_BYTE: usize = 2;
+const SCHEDULER_ITEM_COMPLETED_LINK_OFFSET: usize = 0x54 / 4;
 const LOW_TWENTY_MASK: u32 = 0x000f_ffff;
 
 /// Why a complete DTM TX packet extent cannot inhabit controller SRAM.
@@ -869,6 +873,37 @@ impl BluetoothDtmMemoryGraphPositionalEventPrepared {
         )
     }
 
+    /// Prepare the scheduler-owned bookkeeping fields that precede insertion.
+    ///
+    /// This consumes the event-word owner, clears the reviewed control byte
+    /// and software completed-item link, and installs the in-flight status
+    /// sentinel. The returned graph remains CPU-owned: the complete
+    /// hardware-consumed descriptor, release fence, private packet-engine
+    /// latch and scheduler-head publication are still separate prerequisites.
+    pub fn prepare_scheduler_bookkeeping(
+        mut self,
+    ) -> BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared {
+        let storage = self.storage.as_mut().project().scheduler_item;
+        let previous_control = storage.words[SCHEDULER_ITEM_CONTROL_OFFSET];
+        let previous_status = storage.words[SCHEDULER_ITEM_STATUS_OFFSET];
+        let previous_completed_link = storage.words[SCHEDULER_ITEM_COMPLETED_LINK_OFFSET];
+
+        let mut control = previous_control.to_le_bytes();
+        control[SCHEDULER_ITEM_CONTROL_BYTE] = 0;
+        storage.words[SCHEDULER_ITEM_CONTROL_OFFSET] = u32::from_le_bytes(control);
+        storage.words[SCHEDULER_ITEM_STATUS_OFFSET] = u32::MAX;
+        storage.words[SCHEDULER_ITEM_COMPLETED_LINK_OFFSET] = 0;
+
+        BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared {
+            storage: self.storage,
+            binding: self.binding,
+            previous: self.previous,
+            previous_control,
+            previous_status,
+            previous_completed_link,
+        }
+    }
+
     /// Cancel before publication and restore all seventeen prior words.
     ///
     /// This restoration is complete because this state never exposed mutable
@@ -886,6 +921,45 @@ impl BluetoothDtmMemoryGraphPositionalEventPrepared {
         BluetoothDtmMemoryGraphCpuOwned {
             storage: self.storage,
             binding: self.binding,
+        }
+    }
+}
+
+/// CPU-owned graph with the common scheduler bookkeeping prefix installed.
+///
+/// This state is deliberately not called published or hardware-owned. It has
+/// no operation that exposes packet storage or permits the controller to
+/// consume the graph before the remaining descriptor and visibility contract
+/// is proven.
+#[must_use = "the scheduler-prepared graph must remain owned or be cancelled"]
+pub struct BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared {
+    storage: Pin<&'static mut BluetoothDtmMemoryGraphStorage>,
+    binding: BluetoothDtmMemoryGraphBinding,
+    previous: BluetoothDtmPositionalEventWords,
+    previous_control: u32,
+    previous_status: u32,
+    previous_completed_link: u32,
+}
+
+impl BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared {
+    /// Return the typed identity of this graph's scheduler item.
+    ///
+    /// This value still carries no publication or CPU-access authority.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.binding.scheduler_item_address().controller_address()
+    }
+
+    /// Cancel before publication and recover the positional event owner.
+    pub fn cancel(mut self) -> BluetoothDtmMemoryGraphPositionalEventPrepared {
+        let storage = self.storage.as_mut().project().scheduler_item;
+        storage.words[SCHEDULER_ITEM_CONTROL_OFFSET] = self.previous_control;
+        storage.words[SCHEDULER_ITEM_STATUS_OFFSET] = self.previous_status;
+        storage.words[SCHEDULER_ITEM_COMPLETED_LINK_OFFSET] = self.previous_completed_link;
+
+        BluetoothDtmMemoryGraphPositionalEventPrepared {
+            storage: self.storage,
+            binding: self.binding,
+            previous: self.previous,
         }
     }
 }
@@ -1199,7 +1273,8 @@ mod tests {
         BluetoothDtmSchedulerItemReviewedWords, BluetoothDtmSchedulerItemStorage,
         BluetoothDtmTxBufferHeaderImage, BluetoothDtmTxPacketAddress,
         BluetoothDtmTxPacketAddressError, BluetoothDtmTxPacketStorage, LINK_STATE_RX_TAIL_OFFSET,
-        LINK_STATE_TX_HEAD_OFFSET, LOW_TWENTY_MASK,
+        LINK_STATE_TX_HEAD_OFFSET, LOW_TWENTY_MASK, SCHEDULER_ITEM_COMPLETED_LINK_OFFSET,
+        SCHEDULER_ITEM_CONTROL_BYTE, SCHEDULER_ITEM_CONTROL_OFFSET, SCHEDULER_ITEM_STATUS_OFFSET,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1421,6 +1496,35 @@ mod tests {
         let owner = prepared.cancel();
 
         assert_eq!(snapshot(owner.storage.as_ref().get_ref()), before);
+    }
+
+    #[test]
+    fn scheduler_bookkeeping_cancel_restores_the_prepared_event() {
+        let mut owner = model_owner(0x2f00_0900);
+        let storage = owner.storage.as_mut().project().scheduler_item;
+        storage.words[SCHEDULER_ITEM_STATUS_OFFSET] = 7;
+        storage.words[SCHEDULER_ITEM_COMPLETED_LINK_OFFSET] = 0x1234;
+
+        let prepared = owner
+            .try_prepare_positional_event(|seed| Ok::<_, Infallible>(candidate_words(seed)))
+            .expect("matching anchors prepare a CPU-owned image");
+        let before = snapshot(prepared.storage.as_ref().get_ref());
+        let scheduler_prepared = prepared.prepare_scheduler_bookkeeping();
+        let graph = scheduler_prepared.storage.as_ref().get_ref();
+        let control = graph.scheduler_item.words[SCHEDULER_ITEM_CONTROL_OFFSET].to_le_bytes();
+
+        assert_eq!(control[SCHEDULER_ITEM_CONTROL_BYTE], 0);
+        assert_eq!(
+            graph.scheduler_item.words[SCHEDULER_ITEM_STATUS_OFFSET],
+            u32::MAX
+        );
+        assert_eq!(
+            graph.scheduler_item.words[SCHEDULER_ITEM_COMPLETED_LINK_OFFSET],
+            0
+        );
+
+        let prepared = scheduler_prepared.cancel();
+        assert_eq!(snapshot(prepared.storage.as_ref().get_ref()), before);
     }
 
     #[test]

@@ -351,6 +351,58 @@ impl PacApiPack {
                 )));
             }
         }
+        for operation in &self.field_replace_modifies {
+            let binding = writable_register(
+                &device,
+                &operation.name,
+                &operation.peripheral,
+                &operation.register,
+            )?;
+            require_size_access(&operation.name, binding, Access::ReadWrite, "read-write")?;
+            require_ordinary(&operation.name, binding.info)?;
+            let mut source_mask = 0_u32;
+            for projection in &operation.fields {
+                let field = field(&operation.name, binding.info, &projection.field)?;
+                if field.access == Some(Access::ReadOnly) {
+                    return Err(Error::message(format!(
+                        "PAC API field-replace-modify {:?} field {:?} is read-only",
+                        operation.name, projection.field,
+                    )));
+                }
+                let width = field.bit_width();
+                if !(1..=32).contains(&width)
+                    || u32::from(projection.source_bit_offset) + width > 32
+                {
+                    return Err(Error::message(format!(
+                        "PAC API field-replace-modify {:?} field {:?} has invalid {}-bit projection at source offset {}",
+                        operation.name, projection.field, width, projection.source_bit_offset,
+                    )));
+                }
+                let field_mask = if width == 32 {
+                    u32::MAX
+                } else {
+                    (1_u32 << width) - 1
+                };
+                source_mask |= field_mask << projection.source_bit_offset;
+            }
+            let maximum_input = operation.value.unwrap_or_else(|| {
+                let domain_name = operation
+                    .domain
+                    .as_deref()
+                    .expect("pack validation requires a field-replace value or domain");
+                self.bounded_domains
+                    .iter()
+                    .find(|candidate| candidate.name == domain_name)
+                    .expect("pack validation requires a bounded field-replace-modify domain")
+                    .max
+            });
+            if maximum_input & !source_mask != 0 {
+                return Err(Error::message(format!(
+                    "PAC API field-replace-modify {:?} input 0x{maximum_input:08x} exceeds its projected source mask 0x{source_mask:08x}",
+                    operation.name,
+                )));
+            }
+        }
         for operation in &self.indexed_bit_set_modifies {
             let binding = writable_register(
                 &device,

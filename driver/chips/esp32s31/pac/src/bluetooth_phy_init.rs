@@ -158,13 +158,7 @@ impl BluetoothTaskRegisters {
             let preserved_bit_17 = init_control.read().init_preserve_17().bit();
             init_control.write_with_zero(|writer| writer.init_preserve_17().bit(preserved_bit_17));
             super::svd::fixed_register_image::fill_ble_phy_init_ones_00b8(btmac);
-            btmac.lc_tx_on_delay_config().modify(|_, writer| {
-                writer
-                    .lc_tx_on_delay()
-                    .bits(0)
-                    .init_duplicate_byte()
-                    .bits(0)
-            });
+            super::generated::clear_ble_phy_lc_tx_on_delay_fields(btmac);
             super::generated::or_ble_phy_init_tx_on_delay(
                 btmac,
                 super::generated::BluetoothPhyInitTimingByte::new(u32::from(timing_byte))
@@ -174,16 +168,13 @@ impl BluetoothTaskRegisters {
             // The vendor reaches this leaf through the registered external-BB
             // function table. The restricted transaction preserves its MMIO edge
             // at the same position without claiming a static call-table install.
-            bluetooth
-                .bt_v3_2_baseband
-                .le_tx_on_delay()
-                .modify(|_, writer| {
-                    writer
-                        .force_zero_bits_16_18()
-                        .bits(0)
-                        .encoded_value_minus_10()
-                        .bits(timing_byte.wrapping_sub(10))
-                });
+            super::generated::publish_ble_phy_le_tx_on_delay(
+                &bluetooth.bt_v3_2_baseband,
+                super::generated::BluetoothPhyInitTimingByte::new(u32::from(
+                    timing_byte.wrapping_sub(10),
+                ))
+                .expect("one byte always fits the reviewed BLE PHY timing domain"),
+            );
 
             super::svd::fixed_register_image::publish_ble_phy_init_value_0138(btmac);
             super::svd::fixed_register_image::publish_ble_phy_init_bytes_04a4(btmac);
@@ -197,10 +188,9 @@ impl BluetoothTaskRegisters {
             super::svd::fixed_register_image::publish_ble_phy_init_value_045c(btmac);
 
             // Four independent fresh-read updates at 0x20101654.
-            let init_bytes = btmac.init_bytes_0254();
-            init_bytes.modify(|_, writer| writer.init_byte_0().bits(0).init_byte_1().bits(0));
+            super::generated::clear_ble_phy_init_low_byte_pair(btmac);
             super::generated::or_ble_phy_init_low_byte_pair(btmac);
-            init_bytes.modify(|_, writer| writer.init_byte_2_low_7().bits(0));
+            super::generated::clear_ble_phy_init_byte_2_low_7(btmac);
             super::generated::or_ble_phy_init_byte_2(btmac);
 
             super::svd::zero_register_write::clear_ble_phy_init_zero_0074(btmac);
@@ -222,49 +212,37 @@ impl BluetoothTaskRegisters {
                 .write_with_zero(|writer| writer.compressed_sram_pointer().bits(resolving_list));
 
             super::svd::fixed_register_image::publish_ble_phy_init_control_0400(btmac);
-            btmac
-                .init_control_0400()
-                .modify(|_, writer| writer.init_enable_22().set_bit());
+            super::generated::enable_ble_phy_init_control_0400(btmac);
             super::svd::fixed_register_image::publish_ble_phy_init_value_0540(btmac);
 
             // Each byte replacement is a distinct fresh-read RMW in vendor order.
-            let bytes_0550 = btmac.init_bytes_0550();
-            bytes_0550.modify(|_, writer| writer.init_byte_0().bits(0x03));
-            bytes_0550.modify(|_, writer| writer.init_byte_1().bits(0x03));
-            bytes_0550.modify(|_, writer| writer.init_byte_2().bits(0x44));
+            super::generated::publish_ble_phy_init_0550_byte_0(btmac);
+            super::generated::publish_ble_phy_init_0550_byte_1(btmac);
+            super::generated::publish_ble_phy_init_0550_byte_2(btmac);
 
-            let bytes_0554 = btmac.init_bytes_0554();
-            bytes_0554.modify(|_, writer| writer.init_byte_0().bits(0x10));
-            bytes_0554.modify(|_, writer| writer.init_byte_1().bits(0x10));
-            bytes_0554.modify(|_, writer| writer.init_byte_2().bits(0x3c));
-            bytes_0554.modify(|_, writer| writer.init_byte_3().bits(0x28));
+            super::generated::publish_ble_phy_init_0554_byte_0(btmac);
+            super::generated::publish_ble_phy_init_0554_byte_1(btmac);
+            super::generated::publish_ble_phy_init_0554_byte_2(btmac);
+            super::generated::publish_ble_phy_init_0554_byte_3(btmac);
 
-            let bytes_055c = btmac.init_bytes_055c();
-            bytes_055c.modify(|_, writer| writer.init_byte_0().bits(0x08));
-            bytes_055c.modify(|_, writer| writer.init_byte_1().bits(0x08));
-            bytes_055c.modify(|_, writer| writer.init_byte_2().bits(0x08));
-            bytes_055c.modify(|_, writer| writer.init_byte_3().bits(0x08));
+            super::generated::publish_ble_phy_init_055c_byte_0(btmac);
+            super::generated::publish_ble_phy_init_055c_byte_1(btmac);
+            super::generated::publish_ble_phy_init_055c_byte_2(btmac);
+            super::generated::publish_ble_phy_init_055c_byte_3(btmac);
 
-            let bytes_0558 = btmac.init_bytes_0558();
-            bytes_0558.modify(|_, writer| writer.init_byte_0().bits(0x0c));
-            bytes_0558.modify(|_, writer| writer.init_byte_1().bits(0x08));
-            bytes_0558.modify(|_, writer| writer.init_byte_2().bits(0x0c));
-            bytes_0558.modify(|_, writer| writer.init_byte_3().bits(0x0c));
+            super::generated::publish_ble_phy_init_0558_byte_0(btmac);
+            super::generated::publish_ble_phy_init_0558_byte_1(btmac);
+            super::generated::publish_ble_phy_init_0558_byte_2(btmac);
+            super::generated::publish_ble_phy_init_0558_byte_3(btmac);
 
-            btmac
-                .init_high_half_0458()
-                .modify(|_, writer| writer.init_high_half().bits(0x000f));
-            btmac
-                .init_low_5_054c()
-                .modify(|_, writer| writer.init_low_5().bits(0x12));
+            super::generated::publish_ble_phy_init_high_half_0458(btmac);
+            super::generated::publish_ble_phy_init_low_5_054c(btmac);
             super::svd::fixed_register_image::publish_ble_phy_init_phase_40(
                 &bluetooth.ble_phy_init_phase,
             );
 
             if inputs.option_byte_0x55_nonzero {
-                btmac
-                    .init_branch_control_0470()
-                    .modify(|_, writer| writer.init_enable_18().set_bit());
+                super::generated::enable_ble_phy_init_branch_control_0470(btmac);
             }
 
             bluetooth
@@ -280,20 +258,8 @@ impl BluetoothTaskRegisters {
             super::svd::fixed_register_image::latch_ble_phy_runtime_configuration(
                 &bluetooth.ble_hw_runtime_control,
             );
-            btmac.init_control_00b4().modify(|_, writer| {
-                writer
-                    .init_set_11()
-                    .set_bit()
-                    .init_set_15()
-                    .set_bit()
-                    .init_set_20()
-                    .set_bit()
-                    .init_set_24()
-                    .set_bit()
-            });
-            btmac
-                .init_control_00c4()
-                .modify(|_, writer| writer.init_enable_9().set_bit());
+            super::generated::publish_ble_phy_init_control_00b4_tail(btmac);
+            super::generated::enable_ble_phy_init_control_00c4(btmac);
 
             let controller = &bluetooth.bluetooth_controller_core;
             super::svd::zero_register_write::clear_ble_phy_controller_value_0244(controller);

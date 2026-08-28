@@ -61163,6 +61163,318 @@ pub mod field_or_modify {
             }
         });
     }
+
+    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INIT_CONTROL_0400 fields [INIT_ENABLE_22] while preserving the fresh register observation.
+    #[inline]
+    pub fn enable_ble_phy_init_control_0400(registers: &crate::BtmacBlePhyInit) {
+        registers.init_control_0400().modify(|reader, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .init_enable_22()
+                .bit(reader.init_enable_22().bit() || (input & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INIT_BRANCH_CONTROL_0470 fields [INIT_ENABLE_18] while preserving the fresh register observation.
+    #[inline]
+    pub fn enable_ble_phy_init_branch_control_0470(registers: &crate::BtmacBlePhyInit) {
+        registers
+            .init_branch_control_0470()
+            .modify(|reader, writer| {
+                let input = 0x00000001_u32;
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                writer
+                    .init_enable_18()
+                    .bit(reader.init_enable_18().bit() || (input & 0x00000001) != 0)
+            });
+    }
+
+    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INIT_CONTROL_00B4 fields [INIT_SET_11, INIT_SET_15, INIT_SET_20, INIT_SET_24] while preserving the fresh register observation.
+    #[inline]
+    pub fn publish_ble_phy_init_control_00b4_tail(registers: &crate::BtmacBlePhyInit) {
+        registers.init_control_00b4().modify(|reader, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .init_set_11()
+                .bit(reader.init_set_11().bit() || (input & 0x00000001) != 0)
+                .init_set_15()
+                .bit(reader.init_set_15().bit() || (input & 0x00000001) != 0)
+                .init_set_20()
+                .bit(reader.init_set_20().bit() || (input & 0x00000001) != 0)
+                .init_set_24()
+                .bit(reader.init_set_24().bit() || (input & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INIT_CONTROL_00C4 fields [INIT_ENABLE_9] while preserving the fresh register observation.
+    #[inline]
+    pub fn enable_ble_phy_init_control_00c4(registers: &crate::BtmacBlePhyInit) {
+        registers.init_control_00c4().modify(|reader, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .init_enable_9()
+                .bit(reader.init_enable_9().bit() || (input & 0x00000001) != 0)
+        });
+    }
+}
+
+/// Safe, SVD-declared field-replacement read-modify-write transactions.
+pub mod field_replace_modify {
+
+    /// Replace BTMAC_BLE_PHY_INIT.LC_TX_ON_DELAY_CONFIG fields [LC_TX_ON_DELAY, INIT_DUPLICATE_BYTE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_ble_phy_lc_tx_on_delay_fields(registers: &crate::BtmacBlePhyInit) {
+        registers.lc_tx_on_delay_config().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .lc_tx_on_delay()
+                    .bits((input & 0x000000ff) as u8)
+                    .init_duplicate_byte()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.LE_TX_ON_DELAY fields [ENCODED_VALUE_MINUS_10, FORCE_ZERO_BITS_16_18] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_ble_phy_le_tx_on_delay(registers: &crate::BtV3_2Baseband, input: u32) {
+        registers.le_tx_on_delay().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .encoded_value_minus_10()
+                    .bits((input & 0x000000ff) as u8)
+                    .force_zero_bits_16_18()
+                    .bits(((input >> 8) & 0x00000007) as u8)
+            }
+        });
+    }
+
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0254 fields [INIT_BYTE_0, INIT_BYTE_1] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_ble_phy_init_low_byte_pair(registers: &crate::BtmacBlePhyInit) {
+        registers.init_bytes_0254().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .init_byte_0()
+                    .bits((input & 0x000000ff) as u8)
+                    .init_byte_1()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0254 fields [INIT_BYTE_2_LOW_7] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_ble_phy_init_byte_2_low_7(registers: &crate::BtmacBlePhyInit) {
+        registers.init_bytes_0254().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.init_byte_2_low_7().bits((input & 0x0000007f) as u8) }
+        });
+    }
+
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0550 fields [INIT_BYTE_0] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_ble_phy_init_0550_byte_0(registers: &crate::BtmacBlePhyInit) {
+        registers.init_bytes_0550().modify(|_, writer| {
+            let input = 0x00000003_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.init_byte_0().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0550 fields [INIT_BYTE_1] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_ble_phy_init_0550_byte_1(registers: &crate::BtmacBlePhyInit) {
+        registers.init_bytes_0550().modify(|_, writer| {
+            let input = 0x00000003_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.init_byte_1().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0550 fields [INIT_BYTE_2] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_ble_phy_init_0550_byte_2(registers: &crate::BtmacBlePhyInit) {
+        registers.init_bytes_0550().modify(|_, writer| {
+            let input = 0x00000044_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.init_byte_2().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0554 fields [INIT_BYTE_0] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_ble_phy_init_0554_byte_0(registers: &crate::BtmacBlePhyInit) {
+        registers.init_bytes_0554().modify(|_, writer| {
+            let input = 0x00000010_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.init_byte_0().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0554 fields [INIT_BYTE_1] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_ble_phy_init_0554_byte_1(registers: &crate::BtmacBlePhyInit) {
+        registers.init_bytes_0554().modify(|_, writer| {
+            let input = 0x00000010_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.init_byte_1().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0554 fields [INIT_BYTE_2] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_ble_phy_init_0554_byte_2(registers: &crate::BtmacBlePhyInit) {
+        registers.init_bytes_0554().modify(|_, writer| {
+            let input = 0x0000003c_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.init_byte_2().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0554 fields [INIT_BYTE_3] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_ble_phy_init_0554_byte_3(registers: &crate::BtmacBlePhyInit) {
+        registers.init_bytes_0554().modify(|_, writer| {
+            let input = 0x00000028_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.init_byte_3().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_055C fields [INIT_BYTE_0] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_ble_phy_init_055c_byte_0(registers: &crate::BtmacBlePhyInit) {
+        registers.init_bytes_055c().modify(|_, writer| {
+            let input = 0x00000008_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.init_byte_0().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_055C fields [INIT_BYTE_1] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_ble_phy_init_055c_byte_1(registers: &crate::BtmacBlePhyInit) {
+        registers.init_bytes_055c().modify(|_, writer| {
+            let input = 0x00000008_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.init_byte_1().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_055C fields [INIT_BYTE_2] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_ble_phy_init_055c_byte_2(registers: &crate::BtmacBlePhyInit) {
+        registers.init_bytes_055c().modify(|_, writer| {
+            let input = 0x00000008_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.init_byte_2().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_055C fields [INIT_BYTE_3] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_ble_phy_init_055c_byte_3(registers: &crate::BtmacBlePhyInit) {
+        registers.init_bytes_055c().modify(|_, writer| {
+            let input = 0x00000008_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.init_byte_3().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0558 fields [INIT_BYTE_0] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_ble_phy_init_0558_byte_0(registers: &crate::BtmacBlePhyInit) {
+        registers.init_bytes_0558().modify(|_, writer| {
+            let input = 0x0000000c_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.init_byte_0().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0558 fields [INIT_BYTE_1] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_ble_phy_init_0558_byte_1(registers: &crate::BtmacBlePhyInit) {
+        registers.init_bytes_0558().modify(|_, writer| {
+            let input = 0x00000008_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.init_byte_1().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0558 fields [INIT_BYTE_2] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_ble_phy_init_0558_byte_2(registers: &crate::BtmacBlePhyInit) {
+        registers.init_bytes_0558().modify(|_, writer| {
+            let input = 0x0000000c_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.init_byte_2().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0558 fields [INIT_BYTE_3] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_ble_phy_init_0558_byte_3(registers: &crate::BtmacBlePhyInit) {
+        registers.init_bytes_0558().modify(|_, writer| {
+            let input = 0x0000000c_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.init_byte_3().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_HIGH_HALF_0458 fields [INIT_HIGH_HALF] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_ble_phy_init_high_half_0458(registers: &crate::BtmacBlePhyInit) {
+        registers.init_high_half_0458().modify(|_, writer| {
+            let input = 0x0000000f_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.init_high_half().bits((input & 0x0000ffff) as u16) }
+        });
+    }
+
+    /// Replace BTMAC_BLE_PHY_INIT.INIT_LOW_5_054C fields [INIT_LOW_5] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_ble_phy_init_low_5_054c(registers: &crate::BtmacBlePhyInit) {
+        registers.init_low_5_054c().modify(|_, writer| {
+            let input = 0x00000012_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.init_low_5().bits((input & 0x0000001f) as u8) }
+        });
+    }
 }
 
 /// Safe, SVD-declared indexed bit-set read-modify-write transactions.

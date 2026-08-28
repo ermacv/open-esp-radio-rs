@@ -53,6 +53,8 @@ pub struct PacApiPack {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub field_or_modifies: Vec<FieldOrModify>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub field_replace_modifies: Vec<FieldReplaceModify>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub indexed_bit_set_modifies: Vec<IndexedBitSetModify>,
 }
 
@@ -347,6 +349,24 @@ pub struct FieldOrProjection {
     pub source_bit_offset: u8,
 }
 
+/// Read-modify-write transaction that replaces reviewed SVD fields while
+/// preserving every other bit from one fresh register observation.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct FieldReplaceModify {
+    pub name: String,
+    pub peripheral: String,
+    pub register: String,
+    /// Disjoint SVD fields replaced from one logical input image.
+    pub fields: Vec<FieldOrProjection>,
+    /// Zero-based bounded logical input for caller-controlled transactions.
+    pub domain: Option<String>,
+    /// Fixed logical input for argument-free initialization transactions.
+    pub value: Option<u32>,
+    pub exposure: PacApiExposure,
+    pub sources: Vec<String>,
+}
+
 /// Read-modify-write transaction that sets one bit selected by a reviewed
 /// bounded index domain.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -429,6 +449,7 @@ impl PacApiPack {
         validate_operations("zero-register-write", &self.zero_register_writes)?;
         validate_operations("masked-register-modify", &self.masked_register_modifies)?;
         validate_operations("field-or-modify", &self.field_or_modifies)?;
+        validate_operations("field-replace-modify", &self.field_replace_modifies)?;
         validate_operations("indexed-bit-set-modify", &self.indexed_bit_set_modifies)?;
 
         for operation in &self.field_or_modifies {
@@ -457,6 +478,36 @@ impl PacApiPack {
             if !operation.exposure.exposes_facade() && operation.value.is_some() {
                 return Err(Error::message(format!(
                     "PAC API fixed field-or-modify {:?} must expose its argument-free facade",
+                    operation.name
+                )));
+            }
+        }
+        for operation in &self.field_replace_modifies {
+            if operation.fields.is_empty() {
+                return Err(Error::message(format!(
+                    "PAC API field-replace-modify {:?} requires at least one field projection",
+                    operation.name
+                )));
+            }
+            let mut fields = BTreeSet::new();
+            for projection in &operation.fields {
+                validate_component("field", &operation.name, &projection.field)?;
+                if !fields.insert(projection.field.as_str()) {
+                    return Err(Error::message(format!(
+                        "PAC API field-replace-modify {:?} repeats field {:?}",
+                        operation.name, projection.field
+                    )));
+                }
+            }
+            if operation.domain.is_some() == operation.value.is_some() {
+                return Err(Error::message(format!(
+                    "PAC API field-replace-modify {:?} requires exactly one of domain or value",
+                    operation.name
+                )));
+            }
+            if !operation.exposure.exposes_facade() && operation.value.is_some() {
+                return Err(Error::message(format!(
+                    "PAC API fixed field-replace-modify {:?} must expose its argument-free facade",
                     operation.name
                 )));
             }
@@ -568,6 +619,34 @@ impl PacApiPack {
                 if domain.min != 0 {
                     return Err(Error::message(format!(
                         "PAC API field-or-modify {:?} domain must start at zero",
+                        operation.name
+                    )));
+                }
+            }
+        }
+        for operation in &self.field_replace_modifies {
+            if let Some(domain_name) = &operation.domain {
+                self.validate_operation_domain(
+                    "field-replace-modify",
+                    &operation.name,
+                    &operation.peripheral,
+                    &operation.register,
+                    domain_name,
+                    &domain_names,
+                )?;
+                let Some(domain) = self
+                    .bounded_domains
+                    .iter()
+                    .find(|candidate| candidate.name == *domain_name)
+                else {
+                    return Err(Error::message(format!(
+                        "PAC API field-replace-modify {:?} requires a bounded domain",
+                        operation.name
+                    )));
+                };
+                if domain.min != 0 {
+                    return Err(Error::message(format!(
+                        "PAC API field-replace-modify {:?} domain must start at zero",
                         operation.name
                     )));
                 }
@@ -756,6 +835,7 @@ impl PacApiPack {
             + self.zero_register_writes.len()
             + self.masked_register_modifies.len()
             + self.field_or_modifies.len()
+            + self.field_replace_modifies.len()
             + self.indexed_bit_set_modifies.len()
     }
 
@@ -818,6 +898,7 @@ impl PacApiPack {
                     .chain(self.zero_register_writes.iter().map(Operation::sources))
                     .chain(self.masked_register_modifies.iter().map(Operation::sources))
                     .chain(self.field_or_modifies.iter().map(Operation::sources))
+                    .chain(self.field_replace_modifies.iter().map(Operation::sources))
                     .chain(self.indexed_bit_set_modifies.iter().map(Operation::sources))
                     .flatten()
                     .map(String::as_str),
@@ -1124,6 +1205,7 @@ impl_register_operation!(ZeroBasedFieldWrite);
 impl_register_operation!(ZeroRegisterWrite);
 impl_register_operation!(MaskedRegisterModify);
 impl_register_operation!(FieldOrModify);
+impl_register_operation!(FieldReplaceModify);
 impl_register_operation!(IndexedBitSetModify);
 
 fn validate_operations<T: Operation>(kind: &str, operations: &[T]) -> Result<()> {
@@ -1294,6 +1376,7 @@ mod tests {
             zero_register_writes: Vec::new(),
             masked_register_modifies: Vec::new(),
             field_or_modifies: Vec::new(),
+            field_replace_modifies: Vec::new(),
             indexed_bit_set_modifies: Vec::new(),
         }
     }
@@ -1445,6 +1528,38 @@ mod tests {
         });
 
         assert!(pack.validate().is_ok());
+        pack.bounded_domains[0].min = 1;
+        assert!(pack.validate().is_err());
+    }
+
+    #[test]
+    fn field_replace_modify_requires_one_zero_based_input_mode() {
+        let mut pack = empty_pack();
+        pack.bounded_domains.push(BoundedDomain {
+            name: "FieldInput".to_owned(),
+            description: "Reviewed field replacement input.".to_owned(),
+            min: 0,
+            max: 0xff,
+            sources: vec!["REVIEW".to_owned()],
+        });
+        pack.field_replace_modifies.push(FieldReplaceModify {
+            name: "publish_field".to_owned(),
+            peripheral: "RADIO".to_owned(),
+            register: "CONTROL".to_owned(),
+            fields: vec![FieldOrProjection {
+                field: "VALUE".to_owned(),
+                source_bit_offset: 0,
+            }],
+            domain: Some("FieldInput".to_owned()),
+            value: None,
+            exposure: PacApiExposure::Facade,
+            sources: vec!["REVIEW".to_owned()],
+        });
+
+        assert!(pack.validate().is_ok());
+        pack.field_replace_modifies[0].value = Some(1);
+        assert!(pack.validate().is_err());
+        pack.field_replace_modifies[0].value = None;
         pack.bounded_domains[0].min = 1;
         assert!(pack.validate().is_err());
     }

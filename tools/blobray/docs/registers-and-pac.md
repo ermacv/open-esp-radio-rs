@@ -148,6 +148,19 @@ The ESP32-S31 project configures these outputs under `[registers.svd]`,
 `[registers.pac-raw]`, `[registers.bindings]` and `[registers.api]` in its
 project manifest.
 
+### Fresh-read field replacement
+
+`[[field-replace-modifies]]` declares one ordinary read-write register update
+that replaces named SVD fields and preserves every other bit from the same
+fresh read. Each field selects bits from either one zero-based bounded domain
+or one fixed logical value. Blobray derives destination masks, shifts and Rust
+field widths from the reviewed SVD and rejects duplicate/read-only fields,
+out-of-range source projections and values outside the projected source
+image. Generated code owns the required unsafe field-writer calls; handwritten
+PAC/HAL code receives only the typed or argument-free accessor. Separate
+declarations remain separate volatile reads, so an evidenced sequence of RMW
+operations is not silently collapsed into a software register image.
+
 ### Complete-word observations and raw-only leaves
 
 Schema-4 API packs may declare a reviewed 32-bit observation with

@@ -1668,6 +1668,159 @@ pub(crate) fn or_ble_phy_init_byte_2(registers: &crate::svd::BtmacBlePhyInit) {
     crate::svd::field_or_modify::or_ble_phy_init_byte_2(registers);
 }
 
+/// Typed bridge for the reviewed `enable_ble_phy_init_control_0400` fixed field-OR transaction.
+#[inline]
+pub(crate) fn enable_ble_phy_init_control_0400(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_or_modify::enable_ble_phy_init_control_0400(registers);
+}
+
+/// Typed bridge for the reviewed `enable_ble_phy_init_branch_control_0470` fixed field-OR transaction.
+#[inline]
+pub(crate) fn enable_ble_phy_init_branch_control_0470(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_or_modify::enable_ble_phy_init_branch_control_0470(registers);
+}
+
+/// Typed bridge for the reviewed `publish_ble_phy_init_control_00b4_tail` fixed field-OR transaction.
+#[inline]
+pub(crate) fn publish_ble_phy_init_control_00b4_tail(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_or_modify::publish_ble_phy_init_control_00b4_tail(registers);
+}
+
+/// Typed bridge for the reviewed `enable_ble_phy_init_control_00c4` fixed field-OR transaction.
+#[inline]
+pub(crate) fn enable_ble_phy_init_control_00c4(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_or_modify::enable_ble_phy_init_control_00c4(registers);
+}
+
+/// Typed bridge for the reviewed `clear_ble_phy_lc_tx_on_delay_fields` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_ble_phy_lc_tx_on_delay_fields(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_replace_modify::clear_ble_phy_lc_tx_on_delay_fields(registers);
+}
+
+/// Typed bridge for the reviewed `publish_ble_phy_le_tx_on_delay` field-replacement transaction.
+#[inline]
+pub(crate) fn publish_ble_phy_le_tx_on_delay(
+    registers: &crate::svd::BtV3_2Baseband,
+    value: BluetoothPhyInitTimingByte,
+) {
+    crate::svd::field_replace_modify::publish_ble_phy_le_tx_on_delay(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `clear_ble_phy_init_low_byte_pair` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_ble_phy_init_low_byte_pair(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_replace_modify::clear_ble_phy_init_low_byte_pair(registers);
+}
+
+/// Typed bridge for the reviewed `clear_ble_phy_init_byte_2_low_7` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_ble_phy_init_byte_2_low_7(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_replace_modify::clear_ble_phy_init_byte_2_low_7(registers);
+}
+
+/// Typed bridge for the reviewed `publish_ble_phy_init_0550_byte_0` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_ble_phy_init_0550_byte_0(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_replace_modify::publish_ble_phy_init_0550_byte_0(registers);
+}
+
+/// Typed bridge for the reviewed `publish_ble_phy_init_0550_byte_1` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_ble_phy_init_0550_byte_1(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_replace_modify::publish_ble_phy_init_0550_byte_1(registers);
+}
+
+/// Typed bridge for the reviewed `publish_ble_phy_init_0550_byte_2` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_ble_phy_init_0550_byte_2(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_replace_modify::publish_ble_phy_init_0550_byte_2(registers);
+}
+
+/// Typed bridge for the reviewed `publish_ble_phy_init_0554_byte_0` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_ble_phy_init_0554_byte_0(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_replace_modify::publish_ble_phy_init_0554_byte_0(registers);
+}
+
+/// Typed bridge for the reviewed `publish_ble_phy_init_0554_byte_1` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_ble_phy_init_0554_byte_1(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_replace_modify::publish_ble_phy_init_0554_byte_1(registers);
+}
+
+/// Typed bridge for the reviewed `publish_ble_phy_init_0554_byte_2` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_ble_phy_init_0554_byte_2(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_replace_modify::publish_ble_phy_init_0554_byte_2(registers);
+}
+
+/// Typed bridge for the reviewed `publish_ble_phy_init_0554_byte_3` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_ble_phy_init_0554_byte_3(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_replace_modify::publish_ble_phy_init_0554_byte_3(registers);
+}
+
+/// Typed bridge for the reviewed `publish_ble_phy_init_055c_byte_0` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_ble_phy_init_055c_byte_0(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_replace_modify::publish_ble_phy_init_055c_byte_0(registers);
+}
+
+/// Typed bridge for the reviewed `publish_ble_phy_init_055c_byte_1` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_ble_phy_init_055c_byte_1(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_replace_modify::publish_ble_phy_init_055c_byte_1(registers);
+}
+
+/// Typed bridge for the reviewed `publish_ble_phy_init_055c_byte_2` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_ble_phy_init_055c_byte_2(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_replace_modify::publish_ble_phy_init_055c_byte_2(registers);
+}
+
+/// Typed bridge for the reviewed `publish_ble_phy_init_055c_byte_3` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_ble_phy_init_055c_byte_3(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_replace_modify::publish_ble_phy_init_055c_byte_3(registers);
+}
+
+/// Typed bridge for the reviewed `publish_ble_phy_init_0558_byte_0` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_ble_phy_init_0558_byte_0(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_replace_modify::publish_ble_phy_init_0558_byte_0(registers);
+}
+
+/// Typed bridge for the reviewed `publish_ble_phy_init_0558_byte_1` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_ble_phy_init_0558_byte_1(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_replace_modify::publish_ble_phy_init_0558_byte_1(registers);
+}
+
+/// Typed bridge for the reviewed `publish_ble_phy_init_0558_byte_2` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_ble_phy_init_0558_byte_2(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_replace_modify::publish_ble_phy_init_0558_byte_2(registers);
+}
+
+/// Typed bridge for the reviewed `publish_ble_phy_init_0558_byte_3` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_ble_phy_init_0558_byte_3(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_replace_modify::publish_ble_phy_init_0558_byte_3(registers);
+}
+
+/// Typed bridge for the reviewed `publish_ble_phy_init_high_half_0458` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_ble_phy_init_high_half_0458(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_replace_modify::publish_ble_phy_init_high_half_0458(registers);
+}
+
+/// Typed bridge for the reviewed `publish_ble_phy_init_low_5_054c` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn publish_ble_phy_init_low_5_054c(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_replace_modify::publish_ble_phy_init_low_5_054c(registers);
+}
+
 /// Typed bridge for the reviewed `request_rx_block_ack_entry_update` indexed bit-set transaction.
 #[inline]
 pub(crate) fn request_rx_block_ack_entry_update(

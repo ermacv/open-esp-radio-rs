@@ -2636,6 +2636,245 @@ value = 0xb2
 exposure = "facade"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
+[[field-or-modifies]]
+name = "enable_ble_phy_init_control_0400"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_CONTROL_0400"
+fields = [{ field = "INIT_ENABLE_22", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-or-modifies]]
+name = "enable_ble_phy_init_branch_control_0470"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_BRANCH_CONTROL_0470"
+fields = [{ field = "INIT_ENABLE_18", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-or-modifies]]
+name = "publish_ble_phy_init_control_00b4_tail"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_CONTROL_00B4"
+fields = [
+    { field = "INIT_SET_11", source-bit-offset = 0 },
+    { field = "INIT_SET_15", source-bit-offset = 0 },
+    { field = "INIT_SET_20", source-bit-offset = 0 },
+    { field = "INIT_SET_24", source-bit-offset = 0 },
+]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-or-modifies]]
+name = "enable_ble_phy_init_control_00c4"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_CONTROL_00C4"
+fields = [{ field = "INIT_ENABLE_9", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-replace-modifies]]
+name = "clear_ble_phy_lc_tx_on_delay_fields"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "LC_TX_ON_DELAY_CONFIG"
+fields = [
+    { field = "LC_TX_ON_DELAY", source-bit-offset = 0 },
+    { field = "INIT_DUPLICATE_BYTE", source-bit-offset = 0 },
+]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-replace-modifies]]
+name = "publish_ble_phy_le_tx_on_delay"
+peripheral = "BT_V3_2_BASEBAND"
+register = "LE_TX_ON_DELAY"
+fields = [
+    { field = "ENCODED_VALUE_MINUS_10", source-bit-offset = 0 },
+    { field = "FORCE_ZERO_BITS_16_18", source-bit-offset = 8 },
+]
+domain = "BluetoothPhyInitTimingByte"
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-replace-modifies]]
+name = "clear_ble_phy_init_low_byte_pair"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_BYTES_0254"
+fields = [
+    { field = "INIT_BYTE_0", source-bit-offset = 0 },
+    { field = "INIT_BYTE_1", source-bit-offset = 0 },
+]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-replace-modifies]]
+name = "clear_ble_phy_init_byte_2_low_7"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_BYTES_0254"
+fields = [{ field = "INIT_BYTE_2_LOW_7", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-replace-modifies]]
+name = "publish_ble_phy_init_0550_byte_0"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_BYTES_0550"
+fields = [{ field = "INIT_BYTE_0", source-bit-offset = 0 }]
+value = 0x03
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-replace-modifies]]
+name = "publish_ble_phy_init_0550_byte_1"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_BYTES_0550"
+fields = [{ field = "INIT_BYTE_1", source-bit-offset = 0 }]
+value = 0x03
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-replace-modifies]]
+name = "publish_ble_phy_init_0550_byte_2"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_BYTES_0550"
+fields = [{ field = "INIT_BYTE_2", source-bit-offset = 0 }]
+value = 0x44
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-replace-modifies]]
+name = "publish_ble_phy_init_0554_byte_0"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_BYTES_0554"
+fields = [{ field = "INIT_BYTE_0", source-bit-offset = 0 }]
+value = 0x10
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-replace-modifies]]
+name = "publish_ble_phy_init_0554_byte_1"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_BYTES_0554"
+fields = [{ field = "INIT_BYTE_1", source-bit-offset = 0 }]
+value = 0x10
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-replace-modifies]]
+name = "publish_ble_phy_init_0554_byte_2"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_BYTES_0554"
+fields = [{ field = "INIT_BYTE_2", source-bit-offset = 0 }]
+value = 0x3c
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-replace-modifies]]
+name = "publish_ble_phy_init_0554_byte_3"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_BYTES_0554"
+fields = [{ field = "INIT_BYTE_3", source-bit-offset = 0 }]
+value = 0x28
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-replace-modifies]]
+name = "publish_ble_phy_init_055c_byte_0"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_BYTES_055C"
+fields = [{ field = "INIT_BYTE_0", source-bit-offset = 0 }]
+value = 0x08
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-replace-modifies]]
+name = "publish_ble_phy_init_055c_byte_1"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_BYTES_055C"
+fields = [{ field = "INIT_BYTE_1", source-bit-offset = 0 }]
+value = 0x08
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-replace-modifies]]
+name = "publish_ble_phy_init_055c_byte_2"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_BYTES_055C"
+fields = [{ field = "INIT_BYTE_2", source-bit-offset = 0 }]
+value = 0x08
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-replace-modifies]]
+name = "publish_ble_phy_init_055c_byte_3"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_BYTES_055C"
+fields = [{ field = "INIT_BYTE_3", source-bit-offset = 0 }]
+value = 0x08
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-replace-modifies]]
+name = "publish_ble_phy_init_0558_byte_0"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_BYTES_0558"
+fields = [{ field = "INIT_BYTE_0", source-bit-offset = 0 }]
+value = 0x0c
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-replace-modifies]]
+name = "publish_ble_phy_init_0558_byte_1"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_BYTES_0558"
+fields = [{ field = "INIT_BYTE_1", source-bit-offset = 0 }]
+value = 0x08
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-replace-modifies]]
+name = "publish_ble_phy_init_0558_byte_2"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_BYTES_0558"
+fields = [{ field = "INIT_BYTE_2", source-bit-offset = 0 }]
+value = 0x0c
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-replace-modifies]]
+name = "publish_ble_phy_init_0558_byte_3"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_BYTES_0558"
+fields = [{ field = "INIT_BYTE_3", source-bit-offset = 0 }]
+value = 0x0c
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-replace-modifies]]
+name = "publish_ble_phy_init_high_half_0458"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_HIGH_HALF_0458"
+fields = [{ field = "INIT_HIGH_HALF", source-bit-offset = 0 }]
+value = 0x000f
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-replace-modifies]]
+name = "publish_ble_phy_init_low_5_054c"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INIT_LOW_5_054C"
+fields = [{ field = "INIT_LOW_5", source-bit-offset = 0 }]
+value = 0x12
+exposure = "facade"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
 [[indexed-bit-set-modifies]]
 name = "request_rx_block_ack_entry_update"
 peripheral = "WIFI_MAC_RX_DMA"

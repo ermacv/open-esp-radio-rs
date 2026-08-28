@@ -65,7 +65,16 @@ const LINK_STATE_TX_HEAD_OFFSET: usize = 0x6c / 4;
 const LINK_STATE_RX_TAIL_OFFSET: usize = 0x70 / 4;
 const LINK_STATE_TX_TAIL_OFFSET: usize = 0x74 / 4;
 const LINK_STATE_RX_SWAP_RESERVE_OFFSET: usize = 0x78 / 4;
+const LINK_STATE_ALLOCATION_CONFIG_OFFSET: usize = 0x30 / 4;
+const LINK_STATE_ALLOCATION_CONFIG_IMAGE: u32 = 0x0000_1e00;
+const SCHEDULER_ITEM_ALLOCATION_PREFIX_OFFSET: usize = 0x00 / 4;
+const SCHEDULER_ITEM_ALLOCATION_PREFIX_IMAGE: u32 = 0x0030_0000;
+const SCHEDULER_ITEM_CONTEXT_OFFSET: usize = 0x04 / 4;
 const SCHEDULER_ITEM_LINK_STATE_OFFSET: usize = 0x08 / 4;
+const SCHEDULER_ITEM_ALLOCATION_FLAGS_OFFSET: usize = 0x1c / 4;
+const SCHEDULER_ITEM_ALLOCATION_FLAGS_IMAGE: u32 = 0x1800_0000;
+const SCHEDULER_ITEM_POSITIONAL_24_OFFSET: usize = 0x24 / 4;
+const SCHEDULER_ITEM_POSITIONAL_24_IMAGE: u32 = 0x0007_bdef;
 const SCHEDULER_ITEM_STATUS_OFFSET: usize = 0x38 / 4;
 const SCHEDULER_ITEM_CONTROL_OFFSET: usize = 0x4c / 4;
 const SCHEDULER_ITEM_CONTROL_BYTE: usize = 2;
@@ -1118,6 +1127,7 @@ impl BluetoothDtmMemoryGraphCpuOwned {
         let rx_swap_reserve = BluetoothDtmRxBufferHeaderImage::unbound_swap_reserve().words();
         let tx_header = BluetoothDtmTxBufferHeaderImage::new(self.binding.tx_packet).words();
         let link_state = self.binding.link_state.compressed_image();
+        let scheduler_context = self.binding.scheduler_context.compressed_image();
         let rx_header_link = self.binding.rx_header.compressed_image();
         let rx_swap_link = self.binding.rx_swap_reserve.compressed_image();
         let tx_header_link = self.binding.tx_header.compressed_image();
@@ -1137,7 +1147,16 @@ impl BluetoothDtmMemoryGraphCpuOwned {
         storage.link_state.words[LINK_STATE_RX_TAIL_OFFSET] = rx_header_link;
         storage.link_state.words[LINK_STATE_TX_TAIL_OFFSET] = tx_header_link;
         storage.link_state.words[LINK_STATE_RX_SWAP_RESERVE_OFFSET] = rx_swap_link;
+        storage.link_state.words[LINK_STATE_ALLOCATION_CONFIG_OFFSET] =
+            LINK_STATE_ALLOCATION_CONFIG_IMAGE;
+        storage.scheduler_item.words[SCHEDULER_ITEM_ALLOCATION_PREFIX_OFFSET] =
+            SCHEDULER_ITEM_ALLOCATION_PREFIX_IMAGE;
+        storage.scheduler_item.words[SCHEDULER_ITEM_CONTEXT_OFFSET] = scheduler_context;
         storage.scheduler_item.words[SCHEDULER_ITEM_LINK_STATE_OFFSET] = link_state;
+        storage.scheduler_item.words[SCHEDULER_ITEM_ALLOCATION_FLAGS_OFFSET] =
+            SCHEDULER_ITEM_ALLOCATION_FLAGS_IMAGE;
+        storage.scheduler_item.words[SCHEDULER_ITEM_POSITIONAL_24_OFFSET] =
+            SCHEDULER_ITEM_POSITIONAL_24_IMAGE;
     }
 }
 
@@ -1273,8 +1292,10 @@ mod tests {
         BluetoothDtmSchedulerItemReviewedWords, BluetoothDtmSchedulerItemStorage,
         BluetoothDtmTxBufferHeaderImage, BluetoothDtmTxPacketAddress,
         BluetoothDtmTxPacketAddressError, BluetoothDtmTxPacketStorage, LINK_STATE_RX_TAIL_OFFSET,
-        LINK_STATE_TX_HEAD_OFFSET, LOW_TWENTY_MASK, SCHEDULER_ITEM_COMPLETED_LINK_OFFSET,
-        SCHEDULER_ITEM_CONTROL_BYTE, SCHEDULER_ITEM_CONTROL_OFFSET, SCHEDULER_ITEM_STATUS_OFFSET,
+        LINK_STATE_TX_HEAD_OFFSET, LOW_TWENTY_MASK, SCHEDULER_ITEM_ALLOCATION_FLAGS_OFFSET,
+        SCHEDULER_ITEM_ALLOCATION_PREFIX_OFFSET, SCHEDULER_ITEM_COMPLETED_LINK_OFFSET,
+        SCHEDULER_ITEM_CONTEXT_OFFSET, SCHEDULER_ITEM_CONTROL_BYTE, SCHEDULER_ITEM_CONTROL_OFFSET,
+        SCHEDULER_ITEM_POSITIONAL_24_OFFSET, SCHEDULER_ITEM_STATUS_OFFSET,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1437,6 +1458,23 @@ mod tests {
             &[0x08b, 0x097, 0x08b, 0x097, 0x091]
         );
         assert_eq!(graph.scheduler_item.words[0x08 / 4], 0x040);
+        assert_eq!(graph.link_state.words[0x30 / 4], 0x0000_1e00);
+        assert_eq!(
+            graph.scheduler_item.words[SCHEDULER_ITEM_ALLOCATION_PREFIX_OFFSET],
+            0x0030_0000
+        );
+        assert_eq!(
+            graph.scheduler_item.words[SCHEDULER_ITEM_CONTEXT_OFFSET],
+            0x061
+        );
+        assert_eq!(
+            graph.scheduler_item.words[SCHEDULER_ITEM_ALLOCATION_FLAGS_OFFSET],
+            0x1800_0000
+        );
+        assert_eq!(
+            graph.scheduler_item.words[SCHEDULER_ITEM_POSITIONAL_24_OFFSET],
+            0x0007_bdef
+        );
         assert_eq!(graph.rx_packet.bytes[0x05], 1);
         assert_eq!(graph.rx_packet.bytes[0x06], 1);
         assert_eq!(graph.rx_packet.result_word(), 0x00ff_ffff);

@@ -3,9 +3,9 @@
 //! The restricted PAC below this crate owns positional MMIO transactions and
 //! compressed-address encoding. This crate owns controller-SRAM layouts and
 //! role-to-list routing that are consumed above the register boundary. It is
-//! intentionally sparse: static graph location and allocation-time links are
-//! bound, while hardware publication, device fences and affine reclamation
-//! still require independent proof.
+//! intentionally sparse: static graph location, allocation-time links and the
+//! fixed DTM allocator prefix are bound, while hardware publication, device
+//! fences and affine reclamation still require independent proof.
 
 #![no_std]
 #![forbid(unsafe_code)]

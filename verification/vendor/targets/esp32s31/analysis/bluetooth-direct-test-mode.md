@@ -254,6 +254,20 @@ installs the exact allocation headers and private-chain anchors. Native tests
 use a separate synthetic typed base, while a failed binding returns the
 unchanged static allocation.
 
+The allocation body also supplies a fixed prefix before any per-event reset.
+After zero-initialization it writes `0x1e00` to link-state halfword `+0x30`.
+The generic scheduler allocator sets item byte `+0x02` to include `0x30`, and
+the DTM body retains that prefix while setting its allocation bit; the resulting
+zero-based word `+0x00` is `0x00300000`. DTM additionally installs the
+compressed scheduler-context link at item `+0x04`, the compressed link-state
+link at `+0x08`, sets the fixed `0x18000000` allocation flags at `+0x1c`, and
+sets the positional low-twenty-bit image `0x0007bdef` at `+0x24`. The open
+static binding now installs these unconditional fields before returning the
+CPU owner. The configuration-derived low twelve bits at item `+0x20` remain
+deliberately absent until their source-owned open configuration is modeled.
+The vendor software kind and callback pointer are not copied into the graph;
+the open scheduler must replace them with typed dispatch and affine ownership.
+
 The RX allocator requests `capacity + 0x1e`, writes the two-byte
 `capacity + 2` image at packet offsets `+0x05/+0x06`, and starts its zeroed
 header as `[0, packet, 0x80800000, 0, 0, 0]`. Before reuse, the append path ORs

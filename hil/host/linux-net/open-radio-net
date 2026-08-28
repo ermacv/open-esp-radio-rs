@@ -15,7 +15,7 @@ WPA_CONFIG="$STATE_DIR/wpa-supplicant.conf"
 WPA_CTRL="$STATE_DIR/wpa-supplicant-control"
 
 usage() {
-    echo "usage: open-radio-net {capabilities|start-ht40|start-he20|client|monitor|monitor-1|monitor-6|monitor-11|observer-ht40-1|observer-ht40-6|observer-ht40-11|managed|stop|status|usb-reset|kernel-log}" >&2
+    echo "usage: open-radio-net {capabilities|start-ht40|start-he20|client|monitor|monitor-1|monitor-6|monitor-11|observer-ht40-1|observer-ht40-6|observer-ht40-11|observer-ht40-13|managed|stop|status|usb-reset|kernel-log}" >&2
     exit 64
 }
 
@@ -316,6 +316,9 @@ case "$1" in
         ;;
     observer-ht40-11)
         start_monitor 2462 HT40-
+        ;;
+    observer-ht40-13)
+        start_monitor 2472 HT40-
         ;;
     managed)
         restore_managed

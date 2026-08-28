@@ -173,6 +173,7 @@ fn resolve_observer_action_from_iw(info: &str) -> Result<&'static str> {
         Some(1) => Ok("observer-ht40-1"),
         Some(6) => Ok("observer-ht40-6"),
         Some(11) => Ok("observer-ht40-11"),
+        Some(13) => Ok("observer-ht40-13"),
         Some(channel) => Err(format!(
             "independent HT40 monitor does not support OpenWrt primary channel {channel}"
         )
@@ -461,6 +462,13 @@ mod tests {
             )
             .unwrap(),
             "observer-ht40-6"
+        );
+        assert_eq!(
+            resolve_observer_action_from_iw(
+                "type AP\n\tchannel 13 (2472 MHz), width: 40 MHz, center1: 2462 MHz\n"
+            )
+            .unwrap(),
+            "observer-ht40-13"
         );
         assert!(resolve_observer_action_from_iw("channel 3 (2422 MHz)").is_err());
     }

@@ -2663,6 +2663,54 @@ pub(crate) fn initialize_bluetooth_receive_rssi_threshold_00b8(
     crate::svd::field_replace_modify::initialize_bluetooth_receive_rssi_threshold_00b8(registers);
 }
 
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_target_cte` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_target_cte(registers: &crate::svd::PhyBtagcRecovered) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_target_cte(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_target_00b0` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_target_00b0(registers: &crate::svd::PhyBtagcRecovered) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_target_00b0(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_target_gain_force` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_target_gain_force(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_target_gain_force(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_target_008c_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_target_008c_low(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_target_008c_low(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_target_008c_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_target_008c_high(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_target_008c_high(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_target_cca` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_target_cca(registers: &crate::svd::PhyBtagcRecovered) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_target_cca(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_target_00b4` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_target_00b4(registers: &crate::svd::PhyBtagcRecovered) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_target_00b4(registers);
+}
+
 /// Typed bridge for the reviewed `clear_bluetooth_scheduler_lock_modify_argument` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_bluetooth_scheduler_lock_modify_argument(

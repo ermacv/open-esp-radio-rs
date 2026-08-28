@@ -290,27 +290,13 @@ impl BluetoothBasebandV2Transaction<'_> {
 
     fn initialize_receive_targets(&self) {
         let btagc = &self.radio_phy.phy_btagc_recovered;
-        btagc
-            .cte_agc_target()
-            .modify(|_, w| w.baseband_target_value().set(0x1d4));
-        btagc
-            .agc_recorrect_and_target_00b0()
-            .modify(|_, w| w.target_bits_23_31().set(0x1d4));
-        btagc
-            .rx_gain_force_opaque()
-            .modify(|_, w| w.target_bits_13_21().set(0x1d4));
-        btagc
-            .rx_config_008c()
-            .modify(|_, w| w.target_bits_0_8().set(0x1d4));
-        btagc
-            .rx_config_008c()
-            .modify(|_, w| w.target_bits_9_17().set(0x1dc));
-        btagc
-            .cca_config()
-            .modify(|_, w| w.target_bits_14_22().set(0x1ce));
-        btagc
-            .agc_recorrect_and_target_00b4()
-            .modify(|_, w| w.target_bits_23_31().set(0x1ce));
+        super::generated::initialize_bluetooth_receive_target_cte(btagc);
+        super::generated::initialize_bluetooth_receive_target_00b0(btagc);
+        super::generated::initialize_bluetooth_receive_target_gain_force(btagc);
+        super::generated::initialize_bluetooth_receive_target_008c_low(btagc);
+        super::generated::initialize_bluetooth_receive_target_008c_high(btagc);
+        super::generated::initialize_bluetooth_receive_target_cca(btagc);
+        super::generated::initialize_bluetooth_receive_target_00b4(btagc);
     }
 
     fn initialize_receive_restart(&self) {

@@ -3922,6 +3922,69 @@ value = 0x88
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_target_cte"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "CTE_AGC_TARGET"
+fields = [{ field = "BASEBAND_TARGET_VALUE", source-bit-offset = 0 }]
+value = 0x1d4
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_target_00b0"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RECORRECT_AND_TARGET_00B0"
+fields = [{ field = "TARGET_BITS_23_31", source-bit-offset = 0 }]
+value = 0x1d4
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_target_gain_force"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "RX_GAIN_FORCE_OPAQUE"
+fields = [{ field = "TARGET_BITS_13_21", source-bit-offset = 0 }]
+value = 0x1d4
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_target_008c_low"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "RX_CONFIG_008C"
+fields = [{ field = "TARGET_BITS_0_8", source-bit-offset = 0 }]
+value = 0x1d4
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_target_008c_high"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "RX_CONFIG_008C"
+fields = [{ field = "TARGET_BITS_9_17", source-bit-offset = 0 }]
+value = 0x1dc
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_target_cca"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "CCA_CONFIG"
+fields = [{ field = "TARGET_BITS_14_22", source-bit-offset = 0 }]
+value = 0x1ce
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_target_00b4"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RECORRECT_AND_TARGET_00B4"
+fields = [{ field = "TARGET_BITS_23_31", source-bit-offset = 0 }]
+value = 0x1ce
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

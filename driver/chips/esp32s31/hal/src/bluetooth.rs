@@ -29,9 +29,10 @@ pub use open_esp_radio_esp32s31_pac::{
     BluetoothControllerHalInitConfig, BluetoothControllerLatchedTime,
     BluetoothControllerTimeLatchBeginError, BluetoothControllerTimeLatchStep,
     BluetoothControllerTimeLatchStepError, BluetoothModemLpTimerCompareDisposition,
-    BluetoothModemLpTimerCounterObservation, BluetoothModemLpTimerEpoch,
-    BluetoothModemLpTimerHandlerRegisterObservation, BluetoothModemLpTimerInstant,
-    BluetoothModemLpTimerInterruptObservation, BluetoothNrtInterruptAcknowledged,
+    BluetoothModemLpTimerCounterObservation, BluetoothModemLpTimerCounterStarted,
+    BluetoothModemLpTimerEpoch, BluetoothModemLpTimerHandlerRegisterObservation,
+    BluetoothModemLpTimerInstant, BluetoothModemLpTimerInterruptObservation,
+    BluetoothNrtInterruptAcknowledged,
     BluetoothSchedulerDisableBeginError as BluetoothControllerSchedulerDisableBeginError,
     BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
     BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadError,
@@ -834,6 +835,18 @@ pub struct BluetoothControllerHal<'registers> {
 }
 
 impl BluetoothControllerHal<'_> {
+    /// Start the BTDM runtime timer through its generated PAC command
+    /// accessor and retain the completed-command token.
+    ///
+    /// This finite component performs no CPU-route setup and does not make the
+    /// controller runnable. The higher lifecycle must place it after the
+    /// completed controller hardware/output preparation and before primary
+    /// route allocation, exactly as established by the reviewed enable path.
+    #[doc(hidden)]
+    pub fn start_modem_lp_timer_counter(&mut self) -> BluetoothModemLpTimerCounterStarted {
+        self.registers.start_modem_lp_timer_counter()
+    }
+
     /// Remove every published scheduler hardware-list head.
     ///
     /// This is only the reviewed controller-initialization prefix. It does not

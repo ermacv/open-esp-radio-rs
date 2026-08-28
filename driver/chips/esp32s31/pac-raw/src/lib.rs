@@ -45587,19 +45587,19 @@ pub mod btdm_low_power_config {
         }
     }
 }
-#[doc = "Sparse BTDM low-level runtime and sleep-control window. Complete ESP32-S31 functions prove only the recorded access directions, finite images, low-24-bit publications and four isolated RMW controls. Positional names deliberately avoid assigning undocumented peripheral semantics."]
+#[doc = "Sparse BTDM low-level runtime and sleep-control window. Complete ESP32-S31 functions prove only the recorded access directions, finite images, low-24-bit publications and four isolated RMW controls. The independently role-mapped runtime-timer start command is named; all other positional names deliberately avoid assigning undocumented peripheral semantics."]
 pub type BtdmRuntimeControl = crate::Periph<btdm_runtime_control::RegisterBlock, 0x2010_d000>;
 impl core::fmt::Debug for BtdmRuntimeControl {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("BtdmRuntimeControl").finish()
     }
 }
-#[doc = "Sparse BTDM low-level runtime and sleep-control window. Complete ESP32-S31 functions prove only the recorded access directions, finite images, low-24-bit publications and four isolated RMW controls. Positional names deliberately avoid assigning undocumented peripheral semantics."]
+#[doc = "Sparse BTDM low-level runtime and sleep-control window. Complete ESP32-S31 functions prove only the recorded access directions, finite images, low-24-bit publications and four isolated RMW controls. The independently role-mapped runtime-timer start command is named; all other positional names deliberately avoid assigning undocumented peripheral semantics."]
 pub mod btdm_runtime_control {
     #[repr(C)]
     #[doc = "Register block"]
     pub struct RegisterBlock {
-        command_0000: Command0000,
+        runtime_timer_start_command: RuntimeTimerStartCommand,
         command_0004: Command0004,
         command_0008: Command0008,
         _reserved3: [u8; 0x04],
@@ -45629,10 +45629,10 @@ pub mod btdm_runtime_control {
         control_0078: Control0078,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - Complete leaf writes the finite image 1."]
+        #[doc = "0x00 - Complete current leaf writes finite image 1; an instruction-identical public same-chip predecessor identifies the operation as r_btdm_hal_rtc_start."]
         #[inline(always)]
-        pub const fn command_0000(&self) -> &Command0000 {
-            &self.command_0000
+        pub const fn runtime_timer_start_command(&self) -> &RuntimeTimerStartCommand {
+            &self.runtime_timer_start_command
         }
         #[doc = "0x04 - Complete runtime functions write the finite image 1."]
         #[inline(always)]
@@ -45730,29 +45730,58 @@ pub mod btdm_runtime_control {
             &self.control_0078
         }
     }
-    #[doc = "COMMAND_0000 (w) register accessor: Complete leaf writes the finite image 1.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_0000::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@command_0000`] module"]
-    #[doc(alias = "COMMAND_0000")]
-    pub type Command0000 = crate::Reg<command_0000::Command0000Spec>;
-    #[doc = "Complete leaf writes the finite image 1."]
-    pub mod command_0000 {
-        #[doc = "Register `COMMAND_0000` writer"]
-        pub type W = crate::W<Command0000Spec>;
-        #[doc = "Field `IMAGE` writer - "]
-        pub type ImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
-        impl W {
-            #[doc = "Bits 0:31"]
+    #[doc = "RUNTIME_TIMER_START_COMMAND (w) register accessor: Complete current leaf writes finite image 1; an instruction-identical public same-chip predecessor identifies the operation as r_btdm_hal_rtc_start.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`runtime_timer_start_command::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@runtime_timer_start_command`] module"]
+    #[doc(alias = "RUNTIME_TIMER_START_COMMAND")]
+    pub type RuntimeTimerStartCommand =
+        crate::Reg<runtime_timer_start_command::RuntimeTimerStartCommandSpec>;
+    #[doc = "Complete current leaf writes finite image 1; an instruction-identical public same-chip predecessor identifies the operation as r_btdm_hal_rtc_start."]
+    pub mod runtime_timer_start_command {
+        #[doc = "Register `RUNTIME_TIMER_START_COMMAND` writer"]
+        pub type W = crate::W<RuntimeTimerStartCommandSpec>;
+        #[doc = "Complete command image that starts the BTDM runtime timer."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u32)]
+        pub enum Command {
+            #[doc = "1: Start the runtime timer during controller hardware enable."]
+            Start = 1,
+        }
+        impl From<Command> for u32 {
             #[inline(always)]
-            pub fn image(&mut self) -> ImageW<'_, Command0000Spec> {
-                ImageW::new(self, 0)
+            fn from(variant: Command) -> Self {
+                variant as _
             }
         }
-        #[doc = "Complete leaf writes the finite image 1.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`command_0000::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct Command0000Spec;
-        impl crate::RegisterSpec for Command0000Spec {
+        impl crate::FieldSpec for Command {
             type Ux = u32;
         }
-        #[doc = "`write(|w| ..)` method takes [`command_0000::W`](W) writer structure"]
-        impl crate::Writable for Command0000Spec {
+        impl crate::IsEnum for Command {}
+        #[doc = "Field `COMMAND` writer - Complete command image that starts the BTDM runtime timer."]
+        pub type CommandW<'a, REG> = crate::FieldWriter<'a, REG, 32, Command>;
+        impl<'a, REG> CommandW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u32>,
+        {
+            #[doc = "Start the runtime timer during controller hardware enable."]
+            #[inline(always)]
+            pub fn start(self) -> &'a mut crate::W<REG> {
+                self.variant(Command::Start)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31 - Complete command image that starts the BTDM runtime timer."]
+            #[inline(always)]
+            pub fn command(&mut self) -> CommandW<'_, RuntimeTimerStartCommandSpec> {
+                CommandW::new(self, 0)
+            }
+        }
+        #[doc = "Complete current leaf writes finite image 1; an instruction-identical public same-chip predecessor identifies the operation as r_btdm_hal_rtc_start.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`runtime_timer_start_command::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct RuntimeTimerStartCommandSpec;
+        impl crate::RegisterSpec for RuntimeTimerStartCommandSpec {
+            type Ux = u32;
+        }
+        #[doc = "`write(|w| ..)` method takes [`runtime_timer_start_command::W`](W) writer structure"]
+        impl crate::Writable for RuntimeTimerStartCommandSpec {
             type Safety = crate::Unsafe;
         }
     }
@@ -58192,6 +58221,18 @@ pub mod fixed_register_write {
             registers
                 .scheduler_control()
                 .write_with_zero(|writer| writer.command().run());
+        }
+    }
+
+    /// Write the `START` variant to every bit of `BTDM_RUNTIME_CONTROL`.`RUNTIME_TIMER_START_COMMAND`.
+    #[inline]
+    pub fn start_bluetooth_runtime_timer(registers: &crate::BtdmRuntimeControl) {
+        // SAFETY: generator validation proves that the sole field covers
+        // all 32 bits and the named writable variant exists in the SVD.
+        unsafe {
+            registers
+                .runtime_timer_start_command()
+                .write_with_zero(|writer| writer.command().start());
         }
     }
 }

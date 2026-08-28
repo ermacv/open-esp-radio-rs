@@ -39945,16 +39945,16 @@ access = "read-write"
 address = 537972736
 width = 32
 access = "write-only"
-identity = "BTDM_RUNTIME_CONTROL.COMMAND_0000"
+identity = "BTDM_RUNTIME_CONTROL.RUNTIME_TIMER_START_COMMAND"
 peripheral = "BTDM_RUNTIME_CONTROL"
 peripheral-type = "BtdmRuntimeControl"
 peripheral-module = "btdm_runtime_control"
 scope = []
-register-method = "command_0000"
+register-method = "runtime_timer_start_command"
 
 [[registers.fields]]
-svd-name = "IMAGE"
-method = "image"
+svd-name = "COMMAND"
+method = "command"
 bit-offset = 0
 bit-width = 32
 access = "write-only"

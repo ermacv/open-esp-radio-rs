@@ -1378,6 +1378,17 @@ sources = [
     "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES",
 ]
 
+[[fixed-register-writes]]
+name = "start_bluetooth_runtime_timer"
+peripheral = "BTDM_RUNTIME_CONTROL"
+register = "RUNTIME_TIMER_START_COMMAND"
+field = "COMMAND"
+variant = "START"
+sources = [
+    "BLOB_LIBBTDM_RUNTIME_CONTROL",
+    "PUBLIC_ESP32S31_BT_RUNTIME_TIMER_ROLE",
+]
+
 [[fixed-register-images]]
 name = "clear_bluetooth_scheduler_run_interrupts_bank_0"
 peripheral = "BLUETOOTH_INTERRUPT_BANK"

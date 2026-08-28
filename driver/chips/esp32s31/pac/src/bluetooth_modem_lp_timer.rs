@@ -1,16 +1,29 @@
-//! Exact controller-register prefix for the modem low-power timer interrupt.
+//! Exact controller transactions for the modem low-power timer.
 //!
-//! The transactions in this module are the complete MMIO prefix immediately
-//! before the ESP32-S31 controller installs interrupt source 127 and the
-//! bounded register classifier and hardware-acknowledgement phase at the start
-//! of that source's handler. They do not initialize the vendor software
+//! The module contains the one-command runtime-counter start performed by the
+//! controller hardware-enable path, the complete MMIO prefix immediately
+//! before ESP32-S31 installs interrupt source 127, and the bounded register
+//! classifier and hardware-acknowledgement phase at the start of that source's
+//! handler. These transactions do not initialize the vendor software
 //! environment, publish ISR storage, install a CPU route, dispatch the
-//! software timer queue, or claim that the timer, controller, Link Layer, or
-//! HCI is live.
+//! software timer queue, or claim that the controller, Link Layer, or HCI is
+//! live.
 
 #![deny(unsafe_code)]
 
 use super::{BluetoothTaskRegisters, device_fence};
+
+/// Evidence that the exact BTDM runtime-timer start command and trailing
+/// device fence completed.
+///
+/// This token does not prove source-127 route setup, a working software timer
+/// queue, controller readiness, or a physical time unit. A future enable
+/// typestate must retain it across interrupt-output and CPU-route setup.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "the started runtime timer must feed controller-enable ownership"]
+pub struct BluetoothModemLpTimerCounterStarted {
+    _private: (),
+}
 
 /// Task ownership after the exact source-127 controller-register prefix.
 ///
@@ -355,6 +368,11 @@ trait ModemLpTimerTransaction {
     fn fence(&mut self);
 }
 
+trait ModemLpTimerStartTransaction {
+    fn start_counter(&mut self);
+    fn fence(&mut self);
+}
+
 trait ModemLpTimerInterruptTransaction {
     fn read_status_0038(&mut self) -> u32;
     fn read_value_006c(&mut self) -> u32;
@@ -517,8 +535,26 @@ fn execute_modem_lp_timer_prepare(transaction: &mut impl ModemLpTimerTransaction
     transaction.fence();
 }
 
+fn execute_modem_lp_timer_start(
+    transaction: &mut impl ModemLpTimerStartTransaction,
+) -> BluetoothModemLpTimerCounterStarted {
+    transaction.start_counter();
+    transaction.fence();
+    BluetoothModemLpTimerCounterStarted { _private: () }
+}
+
 struct HardwareModemLpTimerTransaction<'registers> {
     registers: &'registers super::svd::BtdmRuntimeControl,
+}
+
+impl ModemLpTimerStartTransaction for HardwareModemLpTimerTransaction<'_> {
+    fn start_counter(&mut self) {
+        super::svd::fixed_register_write::start_bluetooth_runtime_timer(self.registers);
+    }
+
+    fn fence(&mut self) {
+        device_fence();
+    }
 }
 
 impl ModemLpTimerTransaction for HardwareModemLpTimerTransaction<'_> {
@@ -730,6 +766,29 @@ impl ModemLpTimerRuntimeTransaction for HardwareModemLpTimerTransaction<'_> {
 }
 
 impl BluetoothTaskRegisters {
+    /// Start the BTDM runtime timer during controller hardware enable.
+    ///
+    /// SOURCE: complete current `libbtdm_common.a` member `9.o` symbol
+    /// `r_sym_bt_ymLPVGRY14FVW494j9ZD` writes the sole reviewed command and
+    /// returns. The instruction-identical public same-chip predecessor names
+    /// the operation `r_btdm_hal_rtc_start`; its complete caller places this
+    /// edge after controller hardware/output preparation and before primary
+    /// CPU-route allocation. The restricted PAC adds one device fence before
+    /// returning the completion token. The token proves this invocation completed;
+    /// it does not by itself enforce that the higher lifecycle invokes the command
+    /// exactly once.
+    ///
+    /// This component is hidden because the higher lifecycle must retain the
+    /// completed PHY, BTBB, BLE-engine, controller-output, software-runtime
+    /// and route prerequisites in their independently proven order.
+    #[doc(hidden)]
+    pub fn start_modem_lp_timer_counter(&mut self) -> BluetoothModemLpTimerCounterStarted {
+        let mut transaction = HardwareModemLpTimerTransaction {
+            registers: &self.bluetooth.btdm_runtime_control,
+        };
+        execute_modem_lp_timer_start(&mut transaction)
+    }
+
     /// Apply the exact controller-register prefix before source 127 is routed.
     ///
     /// SOURCE: public ESP32-S31 `libbtdm_common.a` member `9.o`, complete
@@ -809,10 +868,11 @@ mod tests {
         BluetoothModemLpTimerInterruptObservation, ModemLpTimerHandlerRegisterDisposition,
         ModemLpTimerHandlerRegisterTransaction, ModemLpTimerInterruptDisposition,
         ModemLpTimerInterruptTransaction, ModemLpTimerRegister, ModemLpTimerRuntimeTransaction,
-        ModemLpTimerTransaction, execute_modem_lp_timer_compare_disable,
-        execute_modem_lp_timer_compare_program, execute_modem_lp_timer_counter_sample,
-        execute_modem_lp_timer_handler_registers, execute_modem_lp_timer_interrupt,
-        execute_modem_lp_timer_prepare,
+        ModemLpTimerStartTransaction, ModemLpTimerTransaction,
+        execute_modem_lp_timer_compare_disable, execute_modem_lp_timer_compare_program,
+        execute_modem_lp_timer_counter_sample, execute_modem_lp_timer_handler_registers,
+        execute_modem_lp_timer_interrupt, execute_modem_lp_timer_prepare,
+        execute_modem_lp_timer_start,
     };
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -820,6 +880,40 @@ mod tests {
         WriteComplete(ModemLpTimerRegister, u32),
         SetControl0078Bit25FromFreshRead,
         Fence,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum StartOperation {
+        StartCounter,
+        DeviceFence,
+    }
+
+    struct StartRecorder {
+        operations: Vec<StartOperation>,
+    }
+
+    impl ModemLpTimerStartTransaction for StartRecorder {
+        fn start_counter(&mut self) {
+            self.operations.push(StartOperation::StartCounter);
+        }
+
+        fn fence(&mut self) {
+            self.operations.push(StartOperation::DeviceFence);
+        }
+    }
+
+    #[test]
+    fn runtime_counter_start_orders_the_command_before_publication() {
+        let mut recorder = StartRecorder {
+            operations: Vec::new(),
+        };
+
+        let _started = execute_modem_lp_timer_start(&mut recorder);
+
+        assert_eq!(
+            recorder.operations,
+            [StartOperation::StartCounter, StartOperation::DeviceFence]
+        );
     }
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]

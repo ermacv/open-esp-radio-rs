@@ -146,6 +146,10 @@ id = "BLOB_LIBBTDM_RUNTIME_CONTROL"
 description = "_oracles/libbtdm_common.a sha256 fa22a8a2aca48b807addda2bbad78868d6774c82bcdeb8090f9140f6cbccd099; complete direct MMIO users in the low-level member 9.o and btdm_sleep.c member 20.o. They prove the sparse 0x20108800/08/2c..48 and 0x2010d000..78 register set, all recorded access directions, finite complete images, dynamic low-24-bit publications and independent bit RMWs. The source establishes BTDM runtime/sleep ownership but not the undocumented meaning of positional words; no field name below is inferred from address adjacency."
 
 [[sources]]
+id = "PUBLIC_ESP32S31_BT_RUNTIME_TIMER_ROLE"
+description = "Current public espressif/esp32s31-bt-lib libbtdm_common.a sha256 fa22a8a2aca48b807addda2bbad78868d6774c82bcdeb8090f9140f6cbccd099 complete member 9.o symbol r_sym_bt_ymLPVGRY14FVW494j9ZD is a ten-byte leaf that writes complete image 1 to 0x2010d000 and returns. Public same-chip commit 31c30949541a5d3abd4043a1cb66d55aa55577dd complete unobfuscated btdm_hal_rtc.c.o symbol r_btdm_hal_rtc_start is instruction-identical. Its sole caller r_btdm_hal_enable invokes it after controller hardware initialization and controller-output preparation and before primary CPU-route allocation. The name is role evidence for the runtime-timer start command; the current body remains the address, value and order authority."
+
+[[sources]]
 id = "BLOB_LIBBLE_CONTROLLER_OPERATIONAL_GAPS"
 description = "_oracles/libble_app.a sha256 62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195; complete member 30.o symbols r_sym_ble_Lvdx6uFL4ttfphyryygo (origin size 0x1e6) and r_sym_ble_erAV4viTh2RgjlMINBm8 (size 0x122). The first performs two complete zero writes each to 0x2010108c and 0x201010b8. The second publishes complete dynamic images to 0x20108804. Function roles remain unnamed; the evidence proves only physical ownership, direction, values and complete-word geometry."
 

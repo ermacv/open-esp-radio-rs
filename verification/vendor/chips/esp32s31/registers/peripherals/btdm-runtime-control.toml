@@ -118,22 +118,32 @@ name = "BTDM_RUNTIME_CONTROL"
 description = """
 Sparse BTDM low-level runtime and sleep-control window. Complete ESP32-S31
 functions prove only the recorded access directions, finite images, low-24-bit
-publications and four isolated RMW controls. Positional names deliberately
+publications and four isolated RMW controls. The independently role-mapped
+runtime-timer start command is named; all other positional names deliberately
 avoid assigning undocumented peripheral semantics.
 """
 baseAddress = 0x2010D000
 
 [[peripherals.registers]]
 [peripherals.registers.register]
-name = "COMMAND_0000"
-description = "Complete leaf writes the finite image 1."
+name = "RUNTIME_TIMER_START_COMMAND"
+description = "Complete current leaf writes finite image 1; an instruction-identical public same-chip predecessor identifies the operation as r_btdm_hal_rtc_start."
 addressOffset = 0x0
 size = 32
 access = "write-only"
 [[peripherals.registers.register.fields]]
-name = "IMAGE"
+name = "COMMAND"
+description = "Complete command image that starts the BTDM runtime timer."
 bitOffset = 0
 bitWidth = 32
+[peripherals.registers.register.fields.writeConstraint]
+useEnumeratedValues = true
+[[peripherals.registers.register.fields.enumeratedValues]]
+usage = "write"
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "START"
+description = "Start the runtime timer during controller hardware enable."
+value = 1
 
 [[peripherals.registers]]
 [peripherals.registers.register]
@@ -383,14 +393,20 @@ accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.COMMAND_0000"
-sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
+entity = "BTDM_RUNTIME_CONTROL.RUNTIME_TIMER_START_COMMAND"
+sources = [
+    "BLOB_LIBBTDM_RUNTIME_CONTROL",
+    "PUBLIC_ESP32S31_BT_RUNTIME_TIMER_ROLE",
+]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 [[review]]
-entity = "BTDM_RUNTIME_CONTROL.COMMAND_0000.IMAGE"
-sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
+entity = "BTDM_RUNTIME_CONTROL.RUNTIME_TIMER_START_COMMAND.COMMAND"
+sources = [
+    "BLOB_LIBBTDM_RUNTIME_CONTROL",
+    "PUBLIC_ESP32S31_BT_RUNTIME_TIMER_ROLE",
+]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"

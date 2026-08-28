@@ -103,11 +103,12 @@ pub use bluetooth_memory_lists::{
 };
 pub use bluetooth_modem_lp_timer::{
     BluetoothModemLpTimerCompareDisposition, BluetoothModemLpTimerCounterObservation,
-    BluetoothModemLpTimerEpoch, BluetoothModemLpTimerHandlerPending,
-    BluetoothModemLpTimerHandlerRegisterObservation, BluetoothModemLpTimerHandlerRegisterStep,
-    BluetoothModemLpTimerInstant, BluetoothModemLpTimerInterruptObservation,
-    BluetoothModemLpTimerInterruptReady, BluetoothModemLpTimerInterruptStep,
-    BluetoothModemLpTimerRegistersPrepared, BluetoothModemLpTimerSoftwarePending,
+    BluetoothModemLpTimerCounterStarted, BluetoothModemLpTimerEpoch,
+    BluetoothModemLpTimerHandlerPending, BluetoothModemLpTimerHandlerRegisterObservation,
+    BluetoothModemLpTimerHandlerRegisterStep, BluetoothModemLpTimerInstant,
+    BluetoothModemLpTimerInterruptObservation, BluetoothModemLpTimerInterruptReady,
+    BluetoothModemLpTimerInterruptStep, BluetoothModemLpTimerRegistersPrepared,
+    BluetoothModemLpTimerSoftwarePending,
 };
 pub use bluetooth_scheduler::{
     BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadError,

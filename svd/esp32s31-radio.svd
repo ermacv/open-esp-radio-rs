@@ -19274,22 +19274,35 @@ and complete images without inventing clock, calibration or RTC semantics.
       <name>BTDM_RUNTIME_CONTROL</name>
       <description>Sparse BTDM low-level runtime and sleep-control window. Complete ESP32-S31
 functions prove only the recorded access directions, finite images, low-24-bit
-publications and four isolated RMW controls. Positional names deliberately
+publications and four isolated RMW controls. The independently role-mapped
+runtime-timer start command is named; all other positional names deliberately
 avoid assigning undocumented peripheral semantics.
 </description>
       <baseAddress>0x2010D000</baseAddress>
       <registers>
         <register>
-          <name>COMMAND_0000</name>
-          <description>Complete leaf writes the finite image 1.</description>
+          <name>RUNTIME_TIMER_START_COMMAND</name>
+          <description>Complete current leaf writes finite image 1; an instruction-identical public same-chip predecessor identifies the operation as r_btdm_hal_rtc_start.</description>
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
-              <name>IMAGE</name>
+              <name>COMMAND</name>
+              <description>Complete command image that starts the BTDM runtime timer.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
+              <writeConstraint>
+                <useEnumeratedValues>true</useEnumeratedValues>
+              </writeConstraint>
+              <enumeratedValues>
+                <usage>write</usage>
+                <enumeratedValue>
+                  <name>START</name>
+                  <description>Start the runtime timer during controller hardware enable.</description>
+                  <value>1</value>
+                </enumeratedValue>
+              </enumeratedValues>
             </field>
           </fields>
         </register>

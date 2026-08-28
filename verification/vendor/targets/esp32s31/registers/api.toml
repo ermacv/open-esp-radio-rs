@@ -2963,6 +2963,45 @@ register = "SCHEDULER_FINISHED_LIST_STATUS"
 field = "FINISHED_LIST_MASK"
 sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS", "PUBLIC_ESP32S31_BLE_COMPLETION_ROLES"]
 
+[[bounded-domains]]
+name = "BluetoothSchedulerLockModifyArgument"
+description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."
+min = 0
+max = 0x0f
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+
+[[field-replace-modifies]]
+name = "clear_bluetooth_scheduler_lock_modify_argument"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "OPERATIONAL_WORD_036C"
+fields = [{ field = "LOCK_MODIFY_ARGUMENT", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+
+[[field-replace-modifies]]
+name = "publish_bluetooth_scheduler_lock_modify_argument"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "OPERATIONAL_WORD_036C"
+fields = [{ field = "LOCK_MODIFY_ARGUMENT", source-bit-offset = 0 }]
+domain = "BluetoothSchedulerLockModifyArgument"
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+
+[[field-snapshot-reads]]
+name = "observe_bluetooth_scheduler_lock_modify_request"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SCHEDULER_LOCK_MODIFY_REQUEST"
+fields = ["START", "RESULT"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+
+[[field-reads]]
+name = "observe_bluetooth_scheduler_lock_modify_busy"
+peripheral = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME"
+register = "SCHEDULER_STATE"
+field = "BUSY"
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+
 [[indexed-bit-set-modifies]]
 name = "request_rx_block_ack_entry_update"
 peripheral = "WIFI_MAC_RX_DMA"

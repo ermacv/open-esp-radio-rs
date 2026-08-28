@@ -784,6 +784,29 @@ impl Ieee802154TxPowerCode {
     }
 }
 
+/// Four-bit positional argument accepted by the reviewed scheduler lock/modify publication.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct BluetoothSchedulerLockModifyArgument(u32);
+
+impl BluetoothSchedulerLockModifyArgument {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x0000000f;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x0000000f {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Register-specific complete TIMER0 threshold word accepted by the public common LL; no clock source, unit, or deadline policy is assigned at the PAC boundary.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Ieee802154Timer0ThresholdWord(u32);
@@ -1859,6 +1882,26 @@ pub(crate) fn publish_ble_phy_init_high_half_0458(registers: &crate::svd::BtmacB
 #[inline]
 pub(crate) fn publish_ble_phy_init_low_5_054c(registers: &crate::svd::BtmacBlePhyInit) {
     crate::svd::field_replace_modify::publish_ble_phy_init_low_5_054c(registers);
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_scheduler_lock_modify_argument` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_scheduler_lock_modify_argument(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_scheduler_lock_modify_argument(registers);
+}
+
+/// Typed bridge for the reviewed `publish_bluetooth_scheduler_lock_modify_argument` field-replacement transaction.
+#[inline]
+pub(crate) fn publish_bluetooth_scheduler_lock_modify_argument(
+    registers: &crate::svd::BluetoothControllerCore,
+    value: BluetoothSchedulerLockModifyArgument,
+) {
+    crate::svd::field_replace_modify::publish_bluetooth_scheduler_lock_modify_argument(
+        registers,
+        value.get(),
+    );
 }
 
 /// Typed bridge for the reviewed `request_rx_block_ack_entry_update` indexed bit-set transaction.

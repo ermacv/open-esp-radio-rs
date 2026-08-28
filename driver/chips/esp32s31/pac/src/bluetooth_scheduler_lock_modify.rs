@@ -188,15 +188,17 @@ struct HardwareBluetoothSchedulerLockModifyControl<'registers> {
 
 impl BluetoothSchedulerLockModifyControl for HardwareBluetoothSchedulerLockModifyControl<'_> {
     fn clear_operational_argument(&mut self) {
-        self.registers
-            .operational_word_036c()
-            .modify(|_, writer| writer.lock_modify_argument().set(0));
+        super::generated::clear_bluetooth_scheduler_lock_modify_argument(self.registers);
     }
 
     fn publish_operational_argument(&mut self, argument: u8) {
-        self.registers
-            .operational_word_036c()
-            .modify(|_, writer| writer.lock_modify_argument().set(argument));
+        let argument =
+            super::generated::BluetoothSchedulerLockModifyArgument::new(u32::from(argument))
+                .expect("validated scheduler lock/modify argument fits its generated PAC domain");
+        super::generated::publish_bluetooth_scheduler_lock_modify_argument(
+            self.registers,
+            argument,
+        );
     }
 
     fn publish_request(&mut self, address: BluetoothControllerSramAddress) {
@@ -248,15 +250,11 @@ impl BluetoothTaskRegisters {
     pub fn capture_scheduler_lock_modify_task(
         &mut self,
     ) -> BluetoothSchedulerLockModifyTaskObservation {
-        let request = self
-            .bluetooth
-            .bluetooth_controller_core
-            .scheduler_lock_modify_request()
-            .read();
-        BluetoothSchedulerLockModifyTaskObservation {
-            start: request.start().bit_is_set(),
-            result: request.result().bits(),
-        }
+        let (start, result) =
+            super::svd::field_snapshot_read::observe_bluetooth_scheduler_lock_modify_request(
+                &self.bluetooth.bluetooth_controller_core,
+            );
+        BluetoothSchedulerLockModifyTaskObservation { start, result }
     }
 }
 
@@ -266,13 +264,10 @@ impl BluetoothInterruptRegisters {
     pub fn capture_scheduler_lock_modify_interrupt(
         &mut self,
     ) -> BluetoothSchedulerLockModifyInterruptObservation {
-        let scheduler = self
-            .peripherals
-            .bluetooth_scheduler_interrupt_runtime
-            .scheduler_state()
-            .read();
         BluetoothSchedulerLockModifyInterruptObservation {
-            busy: scheduler.busy().bit_is_set(),
+            busy: super::svd::field_read::observe_bluetooth_scheduler_lock_modify_busy(
+                &self.peripherals.bluetooth_scheduler_interrupt_runtime,
+            ),
         }
     }
 }

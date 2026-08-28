@@ -58262,6 +58262,14 @@ pub mod field_read {
             .finished_list_mask()
             .bits()
     }
+
+    /// Read `BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME`.`SCHEDULER_STATE`.`BUSY` without exposing its register block.
+    #[inline]
+    pub fn observe_bluetooth_scheduler_lock_modify_busy(
+        registers: &crate::BluetoothSchedulerInterruptRuntime,
+    ) -> bool {
+        registers.scheduler_state().read().busy().bit()
+    }
 }
 
 /// Safe same-sample observations through reviewed SVD fields.
@@ -58274,6 +58282,15 @@ pub mod field_snapshot_read {
     ) -> (bool, bool) {
         let sample = registers.scheduler_state().read();
         (sample.busy().bit(), sample.reference_path_state().bit())
+    }
+
+    /// Read `START`, `RESULT` from one `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_LOCK_MODIFY_REQUEST` sample.
+    #[inline]
+    pub fn observe_bluetooth_scheduler_lock_modify_request(
+        registers: &crate::BluetoothControllerCore,
+    ) -> (bool, u8) {
+        let sample = registers.scheduler_lock_modify_request().read();
+        (sample.start().bit(), sample.result().bits())
     }
 }
 
@@ -61626,6 +61643,40 @@ pub mod field_replace_modify {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe { writer.init_low_5().bits((input & 0x0000001f) as u8) }
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields [LOCK_MODIFY_ARGUMENT] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_scheduler_lock_modify_argument(
+        registers: &crate::BluetoothControllerCore,
+    ) {
+        registers.operational_word_036c().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .lock_modify_argument()
+                    .bits((input & 0x0000000f) as u8)
+            }
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields [LOCK_MODIFY_ARGUMENT] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_bluetooth_scheduler_lock_modify_argument(
+        registers: &crate::BluetoothControllerCore,
+        input: u32,
+    ) {
+        registers.operational_word_036c().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .lock_modify_argument()
+                    .bits((input & 0x0000000f) as u8)
+            }
         });
     }
 }

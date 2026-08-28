@@ -4381,6 +4381,120 @@ value = 5
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_AGC_RESTART_SET"]
 
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_recorrection_00b4_bit_8"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RECORRECT_AND_TARGET_00B4"
+fields = [{ field = "RECORRECT_BIT_8", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_recorrection_00b4_bits_9_13"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RECORRECT_AND_TARGET_00B4"
+fields = [{ field = "RECORRECT_BITS_9_13", source-bit-offset = 0 }]
+value = 0x0a
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_recorrection_00bc_set_pair"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RECORRECT_AND_RESTART_00BC"
+fields = [
+    { field = "RECORRECT_BIT_5", source-bit-offset = 0 },
+    { field = "RECORRECT_BIT_7", source-bit-offset = 1 },
+]
+value = 3
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_recorrection_gain_bit_13"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "GAIN_OFFSET_WORD_1_OPAQUE"
+fields = [{ field = "POSITIONAL_BITS_13", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_recorrection_00bc_clear_pair"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RECORRECT_AND_RESTART_00BC"
+fields = [
+    { field = "RECORRECT_BIT_6", source-bit-offset = 0 },
+    { field = "RECORRECT_BIT_8", source-bit-offset = 1 },
+]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_recorrection_gain_bit_5"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "GAIN_OFFSET_WORD_1_OPAQUE"
+fields = [{ field = "POSITIONAL_BITS_5", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_recorrection_gain_bits_11_12"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "GAIN_OFFSET_WORD_1_OPAQUE"
+fields = [{ field = "POSITIONAL_BITS_11_12", source-bit-offset = 0 }]
+value = 3
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_recorrection_gain_bits_6_10"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "GAIN_OFFSET_WORD_1_OPAQUE"
+fields = [{ field = "POSITIONAL_BITS_6_10", source-bit-offset = 0 }]
+value = 20
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_recorrection_00b0_bits_18_22"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RECORRECT_AND_TARGET_00B0"
+fields = [{ field = "RECORRECT_BITS_18_22", source-bit-offset = 0 }]
+value = 0x18
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_recorrection_00b0_bits_13_17"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RECORRECT_AND_TARGET_00B0"
+fields = [{ field = "RECORRECT_BITS_13_17", source-bit-offset = 0 }]
+value = 0x18
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_recorrection_gain_bits_0_4"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "GAIN_OFFSET_WORD_1_OPAQUE"
+fields = [{ field = "POSITIONAL_BITS_0_4", source-bit-offset = 0 }]
+value = 20
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_recorrection_control_006c"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_RECORRECT_CONTROL_006C"
+fields = [{ field = "FINITE_BITS_24_31", source-bit-offset = 0 }]
+value = 0x0f
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

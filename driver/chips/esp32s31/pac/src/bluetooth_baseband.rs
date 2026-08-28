@@ -355,45 +355,18 @@ impl BluetoothBasebandV2Transaction<'_> {
 
     fn initialize_receive_recorrection(&self) {
         let btagc = &self.radio_phy.phy_btagc_recovered;
-        btagc
-            .agc_recorrect_and_target_00b4()
-            .modify(|_, w| w.recorrect_bit_8().set_bit());
-        btagc
-            .agc_recorrect_and_target_00b4()
-            .modify(|_, w| w.recorrect_bits_9_13().set(0x0a));
-        btagc
-            .agc_recorrect_and_restart_00bc()
-            .modify(|_, w| w.recorrect_bit_5().set_bit().recorrect_bit_7().set_bit());
-        btagc
-            .gain_offset_word_1_opaque()
-            .modify(|_, w| w.positional_bits_13().set_bit());
-        btagc.agc_recorrect_and_restart_00bc().modify(|_, w| {
-            w.recorrect_bit_6()
-                .clear_bit()
-                .recorrect_bit_8()
-                .clear_bit()
-        });
-        btagc
-            .gain_offset_word_1_opaque()
-            .modify(|_, w| w.positional_bits_5().set_bit());
-        btagc
-            .gain_offset_word_1_opaque()
-            .modify(|_, w| w.positional_bits_11_12().set(3));
-        btagc
-            .gain_offset_word_1_opaque()
-            .modify(|_, w| w.positional_bits_6_10().set(20));
-        btagc
-            .agc_recorrect_and_target_00b0()
-            .modify(|_, w| w.recorrect_bits_18_22().set(0x18));
-        btagc
-            .agc_recorrect_and_target_00b0()
-            .modify(|_, w| w.recorrect_bits_13_17().set(0x18));
-        btagc
-            .gain_offset_word_1_opaque()
-            .modify(|_, w| w.positional_bits_0_4().set(20));
-        btagc
-            .agc_recorrect_control_006c()
-            .modify(|_, w| w.finite_bits_24_31().set(0x0f));
+        super::generated::initialize_bluetooth_receive_recorrection_00b4_bit_8(btagc);
+        super::generated::initialize_bluetooth_receive_recorrection_00b4_bits_9_13(btagc);
+        super::generated::initialize_bluetooth_receive_recorrection_00bc_set_pair(btagc);
+        super::generated::initialize_bluetooth_receive_recorrection_gain_bit_13(btagc);
+        super::generated::initialize_bluetooth_receive_recorrection_00bc_clear_pair(btagc);
+        super::generated::initialize_bluetooth_receive_recorrection_gain_bit_5(btagc);
+        super::generated::initialize_bluetooth_receive_recorrection_gain_bits_11_12(btagc);
+        super::generated::initialize_bluetooth_receive_recorrection_gain_bits_6_10(btagc);
+        super::generated::initialize_bluetooth_receive_recorrection_00b0_bits_18_22(btagc);
+        super::generated::initialize_bluetooth_receive_recorrection_00b0_bits_13_17(btagc);
+        super::generated::initialize_bluetooth_receive_recorrection_gain_bits_0_4(btagc);
+        super::generated::initialize_bluetooth_receive_recorrection_control_006c(btagc);
     }
 
     fn initialize_receive_detection(&self) {

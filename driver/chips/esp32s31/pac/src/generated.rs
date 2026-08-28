@@ -1823,6 +1823,54 @@ pub(crate) fn clear_bluetooth_scheduler_insertion_command_1_start(
     );
 }
 
+/// Typed bridge for the reviewed `clear_bluetooth_memory_list_1_pointer_a` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_memory_list_1_pointer_a(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_memory_list_1_pointer_a(registers);
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_memory_list_1_pointer_b` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_memory_list_1_pointer_b(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_memory_list_1_pointer_b(registers);
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_memory_list_2_pointer_a` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_memory_list_2_pointer_a(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_memory_list_2_pointer_a(registers);
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_memory_list_2_pointer_b` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_memory_list_2_pointer_b(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_memory_list_2_pointer_b(registers);
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_memory_list_3_pointer_a` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_memory_list_3_pointer_a(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_memory_list_3_pointer_a(registers);
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_memory_list_3_pointer_b` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_memory_list_3_pointer_b(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_memory_list_3_pointer_b(registers);
+}
+
 /// Typed bridge for the reviewed `clear_ble_phy_lc_tx_on_delay_fields` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_ble_phy_lc_tx_on_delay_fields(registers: &crate::svd::BtmacBlePhyInit) {

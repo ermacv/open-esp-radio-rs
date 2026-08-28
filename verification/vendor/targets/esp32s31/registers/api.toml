@@ -2571,6 +2571,15 @@ domain = "BluetoothMemoryListPointerBits"
 exposure = "facade"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 
+[[field-replace-modifies]]
+name = "clear_bluetooth_memory_list_1_pointer_a"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "MMGMT_LIST_1_POINTER_A"
+fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+
 [[field-or-modifies]]
 name = "enable_bluetooth_scheduler_run_interrupts_bank_0"
 peripheral = "BLUETOOTH_INTERRUPT_BANK"
@@ -2628,12 +2637,30 @@ domain = "BluetoothMemoryListPointerBits"
 exposure = "facade"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 
+[[field-replace-modifies]]
+name = "clear_bluetooth_memory_list_1_pointer_b"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "MMGMT_LIST_1_POINTER_B"
+fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+
 [[field-or-modifies]]
 name = "or_bluetooth_memory_list_2_pointer_a"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "MMGMT_LIST_2_POINTER_A"
 fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
 domain = "BluetoothMemoryListPointerBits"
+exposure = "facade"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+
+[[field-replace-modifies]]
+name = "clear_bluetooth_memory_list_2_pointer_a"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "MMGMT_LIST_2_POINTER_A"
+fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
+value = 0
 exposure = "facade"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 
@@ -2646,6 +2673,15 @@ domain = "BluetoothMemoryListPointerBits"
 exposure = "facade"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 
+[[field-replace-modifies]]
+name = "clear_bluetooth_memory_list_2_pointer_b"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "MMGMT_LIST_2_POINTER_B"
+fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+
 [[field-or-modifies]]
 name = "or_bluetooth_memory_list_3_pointer_a"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
@@ -2655,12 +2691,30 @@ domain = "BluetoothMemoryListPointerBits"
 exposure = "facade"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 
+[[field-replace-modifies]]
+name = "clear_bluetooth_memory_list_3_pointer_a"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "MMGMT_LIST_3_POINTER_A"
+fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+
 [[field-or-modifies]]
 name = "or_bluetooth_memory_list_3_pointer_b"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "MMGMT_LIST_3_POINTER_B"
 fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
 domain = "BluetoothMemoryListPointerBits"
+exposure = "facade"
+sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
+
+[[field-replace-modifies]]
+name = "clear_bluetooth_memory_list_3_pointer_b"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "MMGMT_LIST_3_POINTER_B"
+fields = [{ field = "COMPRESSED_SRAM_POINTER", source-bit-offset = 0 }]
+value = 0
 exposure = "facade"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 

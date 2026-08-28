@@ -61461,6 +61461,72 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A fields [COMPRESSED_SRAM_POINTER] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_memory_list_1_pointer_a(registers: &crate::BluetoothControllerCore) {
+        registers.mmgmt_list_1_pointer_a().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.compressed_sram_pointer().bits(input & 0x000fffff) }
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_B fields [COMPRESSED_SRAM_POINTER] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_memory_list_1_pointer_b(registers: &crate::BluetoothControllerCore) {
+        registers.mmgmt_list_1_pointer_b().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.compressed_sram_pointer().bits(input & 0x000fffff) }
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_A fields [COMPRESSED_SRAM_POINTER] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_memory_list_2_pointer_a(registers: &crate::BluetoothControllerCore) {
+        registers.mmgmt_list_2_pointer_a().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.compressed_sram_pointer().bits(input & 0x000fffff) }
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_2_POINTER_B fields [COMPRESSED_SRAM_POINTER] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_memory_list_2_pointer_b(registers: &crate::BluetoothControllerCore) {
+        registers.mmgmt_list_2_pointer_b().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.compressed_sram_pointer().bits(input & 0x000fffff) }
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_A fields [COMPRESSED_SRAM_POINTER] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_memory_list_3_pointer_a(registers: &crate::BluetoothControllerCore) {
+        registers.mmgmt_list_3_pointer_a().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.compressed_sram_pointer().bits(input & 0x000fffff) }
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_3_POINTER_B fields [COMPRESSED_SRAM_POINTER] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_memory_list_3_pointer_b(registers: &crate::BluetoothControllerCore) {
+        registers.mmgmt_list_3_pointer_b().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.compressed_sram_pointer().bits(input & 0x000fffff) }
+        });
+    }
+
     /// Replace BTMAC_BLE_PHY_INIT.LC_TX_ON_DELAY_CONFIG fields [LC_TX_ON_DELAY, INIT_DUPLICATE_BYTE] from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_ble_phy_lc_tx_on_delay_fields(registers: &crate::BtmacBlePhyInit) {

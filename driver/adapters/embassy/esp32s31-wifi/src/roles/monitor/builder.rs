@@ -5,7 +5,7 @@
 use embassy_futures::select::{Either, select};
 use embassy_time::Timer;
 use open_esp_radio_embassy_net::RawMutex;
-use open_esp_radio_esp32s31_hal::{MacInterruptSetup, RadioRuntimeOwner};
+use open_esp_radio_esp32s31_hal::{MacInterruptEnableState, MacInterruptSetup, RadioRuntimeOwner};
 use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError};
 use open_esp_radio_esp32s31_wifi::{
     mac_start::Esp32s31WifiMacStartReport,
@@ -225,7 +225,7 @@ struct Esp32s31MonitorBuildFailure<
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31MonitorBuildReport {
     pub start: Esp32s31WifiMacStartReport,
-    pub cold_interrupt_mask: u32,
+    pub cold_interrupt_mask: MacInterruptEnableState,
     pub descriptor_base: u32,
 }
 

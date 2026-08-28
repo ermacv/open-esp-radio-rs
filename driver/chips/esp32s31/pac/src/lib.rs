@@ -187,8 +187,8 @@ pub use mac_he_ofdma::{
 pub use mac_he_peer::{MacHe20PeerConfig, MacHe20PeerError};
 pub use mac_he_tb::{MacHeTbStatistics, MacHeTbTxDiagnostics};
 pub use mac_interrupt::{
-    ConnectedStaWithoutPowerSavePrepared, MacInterruptRegisters, MacInterruptSetup,
-    MacPowerInterruptRegisters, MacPowerWakeCause, MacTsfTimerIndex,
+    ConnectedStaWithoutPowerSavePrepared, MacInterruptEnableState, MacInterruptRegisters,
+    MacInterruptSetup, MacPowerInterruptRegisters, MacPowerWakeCause, MacTsfTimerIndex,
 };
 pub use mac_modem_wakeup::{
     StaBeaconMissLimit, StaBeaconMissTimeoutRaw, StaModemSleepLimit, StaModemWakeConfig,
@@ -1102,19 +1102,14 @@ impl WifiColdRegisters {
     }
 
     /// Read the cold initializer's currently published interrupt mask.
-    pub fn mac_interrupt_enable(&self) -> u32 {
-        self.interrupts
-            .wifi_mac_interrupt
-            .enable()
-            .read()
-            .event_mask()
-            .bits()
+    pub fn mac_interrupt_enable(&self) -> MacInterruptEnableState {
+        mac_interrupt::observe_mac_interrupt_enable(&self.interrupts.wifi_mac_interrupt)
     }
 
     /// Mask every MAC event and acknowledge every stale cold event.
     pub fn mask_and_clear_all_mac_interrupts(&mut self) {
         let interrupt = &self.interrupts.wifi_mac_interrupt;
-        generated::mac_interrupt_enable(interrupt, MacInterruptMask::NONE);
+        mac_interrupt::publish_mac_interrupt_mask(interrupt, MacInterruptMask::NONE);
         generated::mac_interrupt_clear(interrupt, generated::MacInterruptClearImage::new(u32::MAX));
         device_fence();
     }

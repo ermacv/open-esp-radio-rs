@@ -1,6 +1,6 @@
 //! Role-neutral ownership after the one-way cold-MAC/runtime transition.
 
-use open_esp_radio_esp32s31_hal::{MacInterruptSetup, RadioRuntimeOwner};
+use open_esp_radio_esp32s31_hal::{MacInterruptEnableState, MacInterruptSetup, RadioRuntimeOwner};
 use open_esp_radio_esp32s31_phy::{PhyCalibrationCache, PhyState};
 use open_esp_radio_ieee80211::channel::WifiChannel;
 
@@ -10,7 +10,7 @@ use crate::mac_start::{Esp32s31WifiMacReady, Esp32s31WifiMacStartReport};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31WifiRuntimeTransitionReport {
     /// Mask published by the common MAC initializer before task-side routing.
-    pub cold_interrupt_mask: u32,
+    pub cold_interrupt_mask: MacInterruptEnableState,
 }
 
 /// Common stopped Wi-Fi owner after cold MAC initialization.

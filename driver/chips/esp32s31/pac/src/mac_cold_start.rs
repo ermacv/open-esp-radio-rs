@@ -29,7 +29,7 @@ impl WifiColdRegisters {
 
     /// Mask every MAC interrupt source.
     pub fn mask_all_mac_interrupts(&mut self) {
-        super::generated::mac_interrupt_enable(
+        super::mac_interrupt::publish_mac_interrupt_mask(
             &self.interrupts.wifi_mac_interrupt,
             MacInterruptMask::NONE,
         );

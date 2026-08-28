@@ -771,7 +771,7 @@ pub async fn new(
             .map_err(|_| Esp32s31NewError::TxDmaLayout)?;
     let tx_slot = Pin::static_mut(TX_SLOT_STORAGE.init_with(|| TxSlot::from_dma(tx_dma)));
     diagnostics_event!(
-        "open-radio: MAC ready handshake_samples={} interrupt_mask={:#010x}",
+        "open-radio: MAC ready handshake_samples={} interrupt_mask={:?}",
         initialization.start.mac.handshake_samples,
         initialization.transition.cold_interrupt_mask
     );

@@ -18,6 +18,9 @@ impl WifiColdRegisters {
             .wifi_mac_core_enable
             .control()
             .modify(|_, w| w.mac_disable_gates_unknown().enabled());
-        super::generated::mac_interrupt_enable(&self.interrupts.wifi_mac_interrupt, event_mask);
+        super::mac_interrupt::publish_mac_interrupt_mask(
+            &self.interrupts.wifi_mac_interrupt,
+            event_mask,
+        );
     }
 }

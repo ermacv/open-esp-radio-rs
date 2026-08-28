@@ -19,14 +19,136 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "EVENT_MASK"
-description = "One enable bit per MAC event; complete hal_init stores 0x19a879e0 and complete hal_enable_mac stores its full argument here. Event identities are documented on STATUS."
+name = "UNKNOWN_0_4"
+description = "Interrupt-enable bits whose event identities remain unknown."
 bitOffset = 0
-bitWidth = 32
+bitWidth = 5
 
-[peripherals.registers.register.fields.writeConstraint.range]
-minimum = 0x0
-maximum = 0xFFFFFFFF
+[[peripherals.registers.register.fields]]
+name = "RX_ASSOCIATED_AUXILIARY_5"
+description = "Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic."
+bitOffset = 5
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "COLD_RX_ENABLE_6_UNKNOWN"
+description = "Unknown event enabled by the complete cold receive mask."
+bitOffset = 6
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TX_COMPLETE"
+description = "Enable for the TX-complete event."
+bitOffset = 7
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "BSS_COLOR_COLLISION"
+description = "Enable for the HE BSS-color collision event."
+bitOffset = 8
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "UNKNOWN_9_10"
+description = "Interrupt-enable bits whose event identities remain unknown."
+bitOffset = 9
+bitWidth = 2
+
+[[peripherals.registers.register.fields]]
+name = "WATCHDOG"
+description = "Enable for the MAC watchdog event."
+bitOffset = 11
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "COLD_RX_ENABLE_12_UNKNOWN"
+description = "Unknown event enabled by the complete cold receive mask."
+bitOffset = 12
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "COLD_RX_ENABLE_13_UNKNOWN"
+description = "Unknown event enabled by the complete cold receive mask."
+bitOffset = 13
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "RX_SUCCESS"
+description = "Enable for successful receive completion."
+bitOffset = 14
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "STA_BEACON_FILTER"
+description = "Enable for the station beacon-filter event; the complete disable leaf clears this bit after disabling the filter hardware."
+bitOffset = 15
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "UNKNOWN_16_18"
+description = "Interrupt-enable bits whose event identities remain unknown."
+bitOffset = 16
+bitWidth = 3
+
+[[peripherals.registers.register.fields]]
+name = "TX_TIMEOUT"
+description = "Enable for the hardware TX queue timeout/abort event."
+bitOffset = 19
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "UNKNOWN_20"
+description = "Interrupt-enable bit whose event identity remains unknown."
+bitOffset = 20
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "COLD_RX_ENABLE_21_UNKNOWN"
+description = "Unknown event enabled by the complete cold receive mask."
+bitOffset = 21
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "UNKNOWN_22"
+description = "Interrupt-enable bit whose event identity remains unknown."
+bitOffset = 22
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "COLD_RX_ENABLE_23_UNKNOWN"
+description = "Unknown event enabled by the complete cold receive mask."
+bitOffset = 23
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "RX_ASSOCIATED_AUXILIARY_24"
+description = "Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic."
+bitOffset = 24
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "UNKNOWN_25_26"
+description = "Interrupt-enable bits whose event identities remain unknown."
+bitOffset = 25
+bitWidth = 2
+
+[[peripherals.registers.register.fields]]
+name = "COLD_RX_ENABLE_27_UNKNOWN"
+description = "Unknown event enabled by the complete cold receive mask."
+bitOffset = 27
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "COLD_RX_ENABLE_28_UNKNOWN"
+description = "Unknown event enabled by the complete cold receive mask."
+bitOffset = 28
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "UNKNOWN_29_31"
+description = "Interrupt-enable bits whose event identities remain unknown."
+bitOffset = 29
+bitWidth = 3
 
 [[peripherals.registers]]
 
@@ -142,14 +264,161 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "WIFI_MAC_INTERRUPT.ENABLE.EVENT_MASK"
+entity = "WIFI_MAC_INTERRUPT.ENABLE.UNKNOWN_0_4"
 sources = [
     "BLOB_LIBPP_HAL_ENABLE_MAC",
     "BLOB_LIBPP_HAL_INIT_TAIL",
 ]
 provenance = "observed"
 accuracy = "exact"
+completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.ENABLE.RX_ASSOCIATED_AUXILIARY_5"
+sources = ["BLOB_LIBPP_HAL_INIT_TAIL", "HIL_OPEN_MAC_IRQ_STATUS_CLASSIFICATION_2026_08_03"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.ENABLE.COLD_RX_ENABLE_6_UNKNOWN"
+sources = ["BLOB_LIBPP_HAL_INIT_TAIL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.ENABLE.TX_COMPLETE"
+sources = ["BLOB_LIBPP_WDEV_PROCESS_FIQ", "BLOB_LIBPP_HAL_INIT_TAIL"]
+provenance = "observed"
+accuracy = "exact"
 completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.ENABLE.BSS_COLOR_COLLISION"
+sources = ["BLOB_LIBPP_HAL_MAC_COLOR_COLLISION_ISR", "BLOB_LIBPP_HAL_INIT_TAIL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.ENABLE.UNKNOWN_9_10"
+sources = ["BLOB_LIBPP_HAL_ENABLE_MAC", "BLOB_LIBPP_HAL_INIT_TAIL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.ENABLE.WATCHDOG"
+sources = ["BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_WATCHDOG", "BLOB_LIBPP_HAL_INIT_TAIL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.ENABLE.COLD_RX_ENABLE_12_UNKNOWN"
+sources = ["BLOB_LIBPP_HAL_INIT_TAIL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.ENABLE.COLD_RX_ENABLE_13_UNKNOWN"
+sources = ["BLOB_LIBPP_HAL_INIT_TAIL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.ENABLE.RX_SUCCESS"
+sources = ["BLOB_LIBPP_WDEV_PROCESS_FIQ", "BLOB_LIBPP_HAL_INIT_TAIL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.ENABLE.STA_BEACON_FILTER"
+sources = ["BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.ENABLE.UNKNOWN_16_18"
+sources = ["BLOB_LIBPP_HAL_ENABLE_MAC", "BLOB_LIBPP_HAL_INIT_TAIL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.ENABLE.TX_TIMEOUT"
+sources = ["BLOB_LIBPP_WDEV_PROCESS_FIQ", "BLOB_LIBPP_HAL_INIT_TAIL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.ENABLE.UNKNOWN_20"
+sources = ["BLOB_LIBPP_HAL_ENABLE_MAC", "BLOB_LIBPP_HAL_INIT_TAIL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.ENABLE.COLD_RX_ENABLE_21_UNKNOWN"
+sources = ["BLOB_LIBPP_HAL_INIT_TAIL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.ENABLE.UNKNOWN_22"
+sources = ["BLOB_LIBPP_HAL_ENABLE_MAC", "BLOB_LIBPP_HAL_INIT_TAIL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.ENABLE.COLD_RX_ENABLE_23_UNKNOWN"
+sources = ["BLOB_LIBPP_HAL_INIT_TAIL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.ENABLE.RX_ASSOCIATED_AUXILIARY_24"
+sources = ["BLOB_LIBPP_HAL_INIT_TAIL", "HIL_OPEN_MAC_IRQ_STATUS_CLASSIFICATION_2026_08_03"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.ENABLE.UNKNOWN_25_26"
+sources = ["BLOB_LIBPP_HAL_ENABLE_MAC", "BLOB_LIBPP_HAL_INIT_TAIL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.ENABLE.COLD_RX_ENABLE_27_UNKNOWN"
+sources = ["BLOB_LIBPP_HAL_INIT_TAIL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.ENABLE.COLD_RX_ENABLE_28_UNKNOWN"
+sources = ["BLOB_LIBPP_HAL_INIT_TAIL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.ENABLE.UNKNOWN_29_31"
+sources = ["BLOB_LIBPP_HAL_ENABLE_MAC", "BLOB_LIBPP_HAL_INIT_TAIL"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_INTERRUPT.RAW"

@@ -209,6 +209,27 @@ impl MacRxBeaconClearRequest {
     }
 }
 
+/// Exact WDEVPWR clear images for the four guarded TSF timers.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum MacPowerTsfTimerClearImage {
+    /// Acknowledge TSF timer zero at WDEVPWR bit 7.
+    Timer0 = 0x00000080,
+    /// Acknowledge TSF timer one at WDEVPWR bit 6.
+    Timer1 = 0x00000040,
+    /// Acknowledge TSF timer two at WDEVPWR bit 5.
+    Timer2 = 0x00000020,
+    /// Acknowledge TSF timer three at WDEVPWR bit 4.
+    Timer3 = 0x00000010,
+}
+
+impl MacPowerTsfTimerClearImage {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
 /// One reviewed four-bit Wi-Fi packet-traffic-information value. Its scheduling policy remains outside the PAC.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MacPti(u32);
@@ -1048,15 +1069,6 @@ impl MacItwtControlMaskedInput {
     }
 }
 
-/// Typed bridge for the reviewed `mac_interrupt_enable` complete-register transaction.
-#[inline]
-pub(crate) fn mac_interrupt_enable(
-    registers: &crate::svd::WifiMacInterrupt,
-    value: MacInterruptMask,
-) {
-    crate::svd::full_register_write::mac_interrupt_enable(registers, value.bits());
-}
-
 /// Typed bridge for the reviewed `mac_interrupt_clear` complete-register transaction.
 #[inline]
 pub(crate) fn mac_interrupt_clear(
@@ -1073,6 +1085,15 @@ pub(crate) fn mac_power_interrupt_clear(
     value: MacPowerInterruptClearImage,
 ) {
     crate::svd::full_register_write::mac_power_interrupt_clear(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `acknowledge_mac_power_tsf_timer` complete-register transaction.
+#[inline]
+pub(crate) fn acknowledge_mac_power_tsf_timer(
+    registers: &crate::svd::WifiMacPowerInterrupt,
+    value: MacPowerTsfTimerClearImage,
+) {
+    crate::svd::full_register_write::acknowledge_mac_power_tsf_timer(registers, value.bits());
 }
 
 /// Typed bridge for the reviewed `station_tsf_value_low` complete-register transaction.

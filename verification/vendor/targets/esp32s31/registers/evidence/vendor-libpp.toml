@@ -59,7 +59,7 @@ description = "_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788
 
 [[sources]]
 id = "BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES"
-description = "_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_enable_sta_beacon_filter size 0x2c, hal_disable_sta_beacon_filter size 0x22 and hal_beacon_ie_crc_get size 0x0c; complete hal_mac_ctl.o hal_mac_interrupt_clr_bsscolor size 0x12, hal_he_set_hw_qos_null_ra_to_trans size 0x44 and hal_ifc_get_bb_err_bitmap size 0x30; complete hal_mac_rx.o hal_mac_rx_get_end_state size 0x0c and hal_mac_rx_get_end_info size 0x3c; complete hal_sniffer.o hal_sniffer_rx_clr_statistics size 0x1e."
+description = "_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_enable_sta_beacon_filter size 0x2c, hal_disable_sta_beacon_filter size 0x22 and hal_beacon_ie_crc_get size 0x0c. The disable leaf clears CONTROL bits 2:0 at 0x201042b4, then clears the station beacon-filter interrupt enable at 0x20104c40 bit 15 through an independent fresh-read RMW. Complete hal_mac_ctl.o hal_mac_interrupt_clr_bsscolor size 0x12, hal_he_set_hw_qos_null_ra_to_trans size 0x44 and hal_ifc_get_bb_err_bitmap size 0x30; complete hal_mac_rx.o hal_mac_rx_get_end_state size 0x0c and hal_mac_rx_get_end_info size 0x3c; complete hal_sniffer.o hal_sniffer_rx_clr_statistics size 0x1e."
 
 [[sources]]
 id = "BLOB_LIBPP_HAL_PWR"

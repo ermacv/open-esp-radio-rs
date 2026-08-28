@@ -126,8 +126,8 @@ pub use open_esp_radio_esp32s31_pac::{
 };
 pub use power::{PowerCheckpoint, PowerClockImages, PowerError};
 pub use types::{
-    CfrValue, ForcedRxGain, MacInterruptEvents, MacInterruptMask, MacInterruptObservation,
-    MacInterruptSnapshot, MacPowerInterruptSnapshot,
+    CfrValue, ForcedRxGain, MacInterruptEnableState, MacInterruptEvents, MacInterruptMask,
+    MacInterruptObservation, MacInterruptSnapshot, MacPowerInterruptSnapshot,
 };
 
 /// Powered-lifecycle PHY capability.
@@ -906,7 +906,7 @@ impl<P> Radio<P, state::Powered> {
 
     /// Close the cold polling interrupt phase before constructing disjoint
     /// task/ISR runtime capabilities.
-    pub fn close_cold_interrupt_phase(&mut self) -> u32 {
+    pub fn close_cold_interrupt_phase(&mut self) -> MacInterruptEnableState {
         let mask = self.state.registers.registers.mac_interrupt_enable();
         self.state
             .registers

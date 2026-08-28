@@ -8,9 +8,6 @@ use super::{
     svd::{self, interrupt_snapshot},
 };
 
-const STA_BEACON_FILTER_INTERRUPT: u32 = 1 << 15;
-const RX_DELIVERY_INTERRUPTS: u32 = (1 << 5) | (1 << 14) | (1 << 24);
-
 /// One of the four guarded generic TSF timers recovered from `hal_tsf.o`.
 ///
 /// This type deliberately does not identify any timer as the station timer:
@@ -21,17 +18,6 @@ pub enum MacTsfTimerIndex {
     Timer1,
     Timer2,
     Timer3,
-}
-
-impl MacTsfTimerIndex {
-    pub const fn get(self) -> u8 {
-        match self {
-            Self::Timer0 => 0,
-            Self::Timer1 => 1,
-            Self::Timer2 => 2,
-            Self::Timer3 => 3,
-        }
-    }
 }
 
 /// WDEVPWR causes whose bit identity is proven by complete TSF timer leaves.
@@ -46,13 +32,43 @@ pub enum MacPowerWakeCause {
 impl MacPowerWakeCause {
     pub const REVIEWED_MASK: u32 = 0x0000_00f0;
 
-    /// `hal_enable_tsf_timer(index)` uses WDEVPWR bit `7 - index` for guarded
-    /// indices zero through three.
-    pub const fn event_mask(self) -> u32 {
+    pub(crate) const fn event_mask(self) -> u32 {
         match self {
-            Self::TsfTimer(timer) => 1 << (7 - timer.get()),
+            Self::TsfTimer(MacTsfTimerIndex::Timer0) => {
+                super::generated::MacPowerTsfTimerClearImage::Timer0.bits()
+            }
+            Self::TsfTimer(MacTsfTimerIndex::Timer1) => {
+                super::generated::MacPowerTsfTimerClearImage::Timer1.bits()
+            }
+            Self::TsfTimer(MacTsfTimerIndex::Timer2) => {
+                super::generated::MacPowerTsfTimerClearImage::Timer2.bits()
+            }
+            Self::TsfTimer(MacTsfTimerIndex::Timer3) => {
+                super::generated::MacPowerTsfTimerClearImage::Timer3.bits()
+            }
         }
     }
+}
+
+fn acknowledge_mac_power_wake_cause(
+    peripheral: &svd::WifiMacPowerInterrupt,
+    cause: MacPowerWakeCause,
+) {
+    let image = match cause {
+        MacPowerWakeCause::TsfTimer(MacTsfTimerIndex::Timer0) => {
+            super::generated::MacPowerTsfTimerClearImage::Timer0
+        }
+        MacPowerWakeCause::TsfTimer(MacTsfTimerIndex::Timer1) => {
+            super::generated::MacPowerTsfTimerClearImage::Timer1
+        }
+        MacPowerWakeCause::TsfTimer(MacTsfTimerIndex::Timer2) => {
+            super::generated::MacPowerTsfTimerClearImage::Timer2
+        }
+        MacPowerWakeCause::TsfTimer(MacTsfTimerIndex::Timer3) => {
+            super::generated::MacPowerTsfTimerClearImage::Timer3
+        }
+    };
+    super::generated::acknowledge_mac_power_tsf_timer(peripheral, image);
 }
 
 /// Proof that the connected-STA hardware policy was applied before IRQ activation.
@@ -66,6 +82,96 @@ pub struct ConnectedStaWithoutPowerSavePrepared {
     _private: (),
 }
 
+/// Classified field-level readback of the MAC interrupt enable register.
+///
+/// Unknown images are retained as an explicit state instead of reconstructing
+/// a handwritten integer register image from the generated field accessors.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacInterruptEnableState {
+    /// Every interrupt-enable field is clear.
+    Disabled,
+    /// Exact complete mask published by the reviewed cold receive initializer.
+    ColdRx,
+    /// A field combination outside the two reviewed writable images.
+    Unknown,
+}
+
+pub(crate) fn publish_mac_interrupt_mask(
+    interrupt: &svd::WifiMacInterrupt,
+    event_mask: MacInterruptMask,
+) {
+    if event_mask == MacInterruptMask::NONE {
+        svd::fixed_register_image::mask_mac_interrupts(interrupt);
+        return;
+    }
+
+    assert_eq!(
+        event_mask,
+        MacInterruptMask::COLD_RX,
+        "MAC interrupt domain gained an unpublished register image"
+    );
+    svd::fixed_register_image::enable_cold_rx_mac_interrupts(interrupt);
+}
+
+pub(crate) fn observe_mac_interrupt_enable(
+    interrupt: &svd::WifiMacInterrupt,
+) -> MacInterruptEnableState {
+    let enable = interrupt.enable().read();
+    let disabled = enable.unknown_0_4().bits() == 0
+        && enable.rx_associated_auxiliary_5().bit_is_clear()
+        && enable.cold_rx_enable_6_unknown().bit_is_clear()
+        && enable.tx_complete().bit_is_clear()
+        && enable.bss_color_collision().bit_is_clear()
+        && enable.unknown_9_10().bits() == 0
+        && enable.watchdog().bit_is_clear()
+        && enable.cold_rx_enable_12_unknown().bit_is_clear()
+        && enable.cold_rx_enable_13_unknown().bit_is_clear()
+        && enable.rx_success().bit_is_clear()
+        && enable.sta_beacon_filter().bit_is_clear()
+        && enable.unknown_16_18().bits() == 0
+        && enable.tx_timeout().bit_is_clear()
+        && enable.unknown_20().bit_is_clear()
+        && enable.cold_rx_enable_21_unknown().bit_is_clear()
+        && enable.unknown_22().bit_is_clear()
+        && enable.cold_rx_enable_23_unknown().bit_is_clear()
+        && enable.rx_associated_auxiliary_24().bit_is_clear()
+        && enable.unknown_25_26().bits() == 0
+        && enable.cold_rx_enable_27_unknown().bit_is_clear()
+        && enable.cold_rx_enable_28_unknown().bit_is_clear()
+        && enable.unknown_29_31().bits() == 0;
+    if disabled {
+        return MacInterruptEnableState::Disabled;
+    }
+
+    let cold_rx = enable.unknown_0_4().bits() == 0
+        && enable.rx_associated_auxiliary_5().bit_is_set()
+        && enable.cold_rx_enable_6_unknown().bit_is_set()
+        && enable.tx_complete().bit_is_set()
+        && enable.bss_color_collision().bit_is_set()
+        && enable.unknown_9_10().bits() == 0
+        && enable.watchdog().bit_is_set()
+        && enable.cold_rx_enable_12_unknown().bit_is_set()
+        && enable.cold_rx_enable_13_unknown().bit_is_set()
+        && enable.rx_success().bit_is_set()
+        && enable.sta_beacon_filter().bit_is_clear()
+        && enable.unknown_16_18().bits() == 0
+        && enable.tx_timeout().bit_is_set()
+        && enable.unknown_20().bit_is_clear()
+        && enable.cold_rx_enable_21_unknown().bit_is_set()
+        && enable.unknown_22().bit_is_clear()
+        && enable.cold_rx_enable_23_unknown().bit_is_set()
+        && enable.rx_associated_auxiliary_24().bit_is_set()
+        && enable.unknown_25_26().bits() == 0
+        && enable.cold_rx_enable_27_unknown().bit_is_set()
+        && enable.cold_rx_enable_28_unknown().bit_is_set()
+        && enable.unknown_29_31().bits() == 0;
+    if cold_rx {
+        MacInterruptEnableState::ColdRx
+    } else {
+        MacInterruptEnableState::Unknown
+    }
+}
+
 #[inline(always)]
 fn disable_sta_beacon_filter(
     control: &svd::WifiMacStaBeaconFilter,
@@ -77,11 +183,9 @@ fn disable_sta_beacon_filter(
     control
         .control()
         .modify(|_, writer| writer.enables_unknown().set(0));
-    interrupt.enable().modify(|reader, writer| {
-        writer
-            .event_mask()
-            .set(reader.event_mask().bits() & !STA_BEACON_FILTER_INTERRUPT)
-    });
+    interrupt
+        .enable()
+        .modify(|_, writer| writer.sta_beacon_filter().clear_bit());
 }
 
 /// Task-side setup token for one MAC interrupt handoff epoch.
@@ -142,7 +246,7 @@ impl MacInterruptSetup {
         // mask, explicitly keep the still-unqualified WDEVPWR causes masked,
         // acknowledge every stale event, then order all MMIO writes before
         // the caller exposes either ISR capability.
-        super::generated::mac_interrupt_enable(&self.peripheral, event_mask);
+        publish_mac_interrupt_mask(&self.peripheral, event_mask);
         svd::fixed_register_write::mask_mac_power_interrupts(&self.power_peripheral);
         super::generated::mac_interrupt_clear(
             &self.peripheral,
@@ -182,19 +286,13 @@ impl MacPowerInterruptRegisters {
     /// that the selected cause can yet wake production firmware.
     pub fn mask_and_acknowledge_wake_cause(&mut self, cause: MacPowerWakeCause) {
         svd::fixed_register_write::mask_mac_power_interrupts(&self.peripheral);
-        super::generated::mac_power_interrupt_clear(
-            &self.peripheral,
-            super::generated::MacPowerInterruptClearImage::new(cause.event_mask()),
-        );
+        acknowledge_mac_power_wake_cause(&self.peripheral, cause);
         device_fence();
     }
 
     /// Acknowledge one reviewed cause without changing the active mask.
     pub fn acknowledge_wake_cause(&mut self, cause: MacPowerWakeCause) {
-        super::generated::mac_power_interrupt_clear(
-            &self.peripheral,
-            super::generated::MacPowerInterruptClearImage::new(cause.event_mask()),
-        );
+        acknowledge_mac_power_wake_cause(&self.peripheral, cause);
         device_fence();
     }
 
@@ -260,10 +358,14 @@ impl MacInterruptRegisters {
     /// RX_SUCCESS and the two auxiliary sources observed on every saturated
     /// RX edge; TX and unrelated sources remain independently live.
     pub fn mask_rx_delivery_interrupts(&mut self) {
-        self.peripheral.enable().modify(|reader, writer| {
+        self.peripheral.enable().modify(|_, writer| {
             writer
-                .event_mask()
-                .set(reader.event_mask().bits() & !RX_DELIVERY_INTERRUPTS)
+                .rx_associated_auxiliary_5()
+                .clear_bit()
+                .rx_success()
+                .clear_bit()
+                .rx_associated_auxiliary_24()
+                .clear_bit()
         });
         device_fence();
     }
@@ -274,10 +376,14 @@ impl MacInterruptRegisters {
     /// the level CPU route after this ordered write, so the task does not need
     /// to fabricate a hardware completion edge.
     pub fn unmask_rx_delivery_interrupts(&mut self) {
-        self.peripheral.enable().modify(|reader, writer| {
+        self.peripheral.enable().modify(|_, writer| {
             writer
-                .event_mask()
-                .set(reader.event_mask().bits() | RX_DELIVERY_INTERRUPTS)
+                .rx_associated_auxiliary_5()
+                .set_bit()
+                .rx_success()
+                .set_bit()
+                .rx_associated_auxiliary_24()
+                .set_bit()
         });
         device_fence();
     }
@@ -290,7 +396,7 @@ impl MacInterruptRegisters {
     /// [`MacInterruptSetup::activate`] transaction possible without stealing
     /// either PAC peripheral a second time.
     pub fn deactivate(self, power: MacPowerInterruptRegisters) -> MacInterruptSetup {
-        super::generated::mac_interrupt_enable(&self.peripheral, MacInterruptMask::NONE);
+        publish_mac_interrupt_mask(&self.peripheral, MacInterruptMask::NONE);
         svd::fixed_register_write::mask_mac_power_interrupts(&power.peripheral);
         super::generated::mac_interrupt_clear(
             &self.peripheral,

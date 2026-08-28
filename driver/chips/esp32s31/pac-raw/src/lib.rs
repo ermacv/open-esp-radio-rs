@@ -29749,22 +29749,318 @@ pub mod wifi_mac_interrupt {
         pub type R = crate::R<EnableSpec>;
         #[doc = "Register `ENABLE` writer"]
         pub type W = crate::W<EnableSpec>;
-        #[doc = "Field `EVENT_MASK` reader - One enable bit per MAC event; complete hal_init stores 0x19a879e0 and complete hal_enable_mac stores its full argument here. Event identities are documented on STATUS."]
-        pub type EventMaskR = crate::FieldReader<u32>;
-        #[doc = "Field `EVENT_MASK` writer - One enable bit per MAC event; complete hal_init stores 0x19a879e0 and complete hal_enable_mac stores its full argument here. Event identities are documented on STATUS."]
-        pub type EventMaskW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
+        #[doc = "Field `UNKNOWN_0_4` reader - Interrupt-enable bits whose event identities remain unknown."]
+        pub type Unknown0_4R = crate::FieldReader;
+        #[doc = "Field `UNKNOWN_0_4` writer - Interrupt-enable bits whose event identities remain unknown."]
+        pub type Unknown0_4W<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        #[doc = "Field `RX_ASSOCIATED_AUXILIARY_5` reader - Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic."]
+        pub type RxAssociatedAuxiliary5R = crate::BitReader;
+        #[doc = "Field `RX_ASSOCIATED_AUXILIARY_5` writer - Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic."]
+        pub type RxAssociatedAuxiliary5W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `COLD_RX_ENABLE_6_UNKNOWN` reader - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable6UnknownR = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_6_UNKNOWN` writer - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable6UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TX_COMPLETE` reader - Enable for the TX-complete event."]
+        pub type TxCompleteR = crate::BitReader;
+        #[doc = "Field `TX_COMPLETE` writer - Enable for the TX-complete event."]
+        pub type TxCompleteW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `BSS_COLOR_COLLISION` reader - Enable for the HE BSS-color collision event."]
+        pub type BssColorCollisionR = crate::BitReader;
+        #[doc = "Field `BSS_COLOR_COLLISION` writer - Enable for the HE BSS-color collision event."]
+        pub type BssColorCollisionW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UNKNOWN_9_10` reader - Interrupt-enable bits whose event identities remain unknown."]
+        pub type Unknown9_10R = crate::FieldReader;
+        #[doc = "Field `UNKNOWN_9_10` writer - Interrupt-enable bits whose event identities remain unknown."]
+        pub type Unknown9_10W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `WATCHDOG` reader - Enable for the MAC watchdog event."]
+        pub type WatchdogR = crate::BitReader;
+        #[doc = "Field `WATCHDOG` writer - Enable for the MAC watchdog event."]
+        pub type WatchdogW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `COLD_RX_ENABLE_12_UNKNOWN` reader - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable12UnknownR = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_12_UNKNOWN` writer - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable12UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `COLD_RX_ENABLE_13_UNKNOWN` reader - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable13UnknownR = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_13_UNKNOWN` writer - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable13UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RX_SUCCESS` reader - Enable for successful receive completion."]
+        pub type RxSuccessR = crate::BitReader;
+        #[doc = "Field `RX_SUCCESS` writer - Enable for successful receive completion."]
+        pub type RxSuccessW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `STA_BEACON_FILTER` reader - Enable for the station beacon-filter event; the complete disable leaf clears this bit after disabling the filter hardware."]
+        pub type StaBeaconFilterR = crate::BitReader;
+        #[doc = "Field `STA_BEACON_FILTER` writer - Enable for the station beacon-filter event; the complete disable leaf clears this bit after disabling the filter hardware."]
+        pub type StaBeaconFilterW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UNKNOWN_16_18` reader - Interrupt-enable bits whose event identities remain unknown."]
+        pub type Unknown16_18R = crate::FieldReader;
+        #[doc = "Field `UNKNOWN_16_18` writer - Interrupt-enable bits whose event identities remain unknown."]
+        pub type Unknown16_18W<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        #[doc = "Field `TX_TIMEOUT` reader - Enable for the hardware TX queue timeout/abort event."]
+        pub type TxTimeoutR = crate::BitReader;
+        #[doc = "Field `TX_TIMEOUT` writer - Enable for the hardware TX queue timeout/abort event."]
+        pub type TxTimeoutW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UNKNOWN_20` reader - Interrupt-enable bit whose event identity remains unknown."]
+        pub type Unknown20R = crate::BitReader;
+        #[doc = "Field `UNKNOWN_20` writer - Interrupt-enable bit whose event identity remains unknown."]
+        pub type Unknown20W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `COLD_RX_ENABLE_21_UNKNOWN` reader - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable21UnknownR = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_21_UNKNOWN` writer - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable21UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UNKNOWN_22` reader - Interrupt-enable bit whose event identity remains unknown."]
+        pub type Unknown22R = crate::BitReader;
+        #[doc = "Field `UNKNOWN_22` writer - Interrupt-enable bit whose event identity remains unknown."]
+        pub type Unknown22W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `COLD_RX_ENABLE_23_UNKNOWN` reader - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable23UnknownR = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_23_UNKNOWN` writer - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable23UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `RX_ASSOCIATED_AUXILIARY_24` reader - Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic."]
+        pub type RxAssociatedAuxiliary24R = crate::BitReader;
+        #[doc = "Field `RX_ASSOCIATED_AUXILIARY_24` writer - Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic."]
+        pub type RxAssociatedAuxiliary24W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UNKNOWN_25_26` reader - Interrupt-enable bits whose event identities remain unknown."]
+        pub type Unknown25_26R = crate::FieldReader;
+        #[doc = "Field `UNKNOWN_25_26` writer - Interrupt-enable bits whose event identities remain unknown."]
+        pub type Unknown25_26W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `COLD_RX_ENABLE_27_UNKNOWN` reader - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable27UnknownR = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_27_UNKNOWN` writer - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable27UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `COLD_RX_ENABLE_28_UNKNOWN` reader - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable28UnknownR = crate::BitReader;
+        #[doc = "Field `COLD_RX_ENABLE_28_UNKNOWN` writer - Unknown event enabled by the complete cold receive mask."]
+        pub type ColdRxEnable28UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UNKNOWN_29_31` reader - Interrupt-enable bits whose event identities remain unknown."]
+        pub type Unknown29_31R = crate::FieldReader;
+        #[doc = "Field `UNKNOWN_29_31` writer - Interrupt-enable bits whose event identities remain unknown."]
+        pub type Unknown29_31W<'a, REG> = crate::FieldWriter<'a, REG, 3>;
         impl R {
-            #[doc = "Bits 0:31 - One enable bit per MAC event; complete hal_init stores 0x19a879e0 and complete hal_enable_mac stores its full argument here. Event identities are documented on STATUS."]
+            #[doc = "Bits 0:4 - Interrupt-enable bits whose event identities remain unknown."]
             #[inline(always)]
-            pub fn event_mask(&self) -> EventMaskR {
-                EventMaskR::new(self.bits)
+            pub fn unknown_0_4(&self) -> Unknown0_4R {
+                Unknown0_4R::new((self.bits & 0x1f) as u8)
+            }
+            #[doc = "Bit 5 - Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic."]
+            #[inline(always)]
+            pub fn rx_associated_auxiliary_5(&self) -> RxAssociatedAuxiliary5R {
+                RxAssociatedAuxiliary5R::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bit 6 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_6_unknown(&self) -> ColdRxEnable6UnknownR {
+                ColdRxEnable6UnknownR::new(((self.bits >> 6) & 1) != 0)
+            }
+            #[doc = "Bit 7 - Enable for the TX-complete event."]
+            #[inline(always)]
+            pub fn tx_complete(&self) -> TxCompleteR {
+                TxCompleteR::new(((self.bits >> 7) & 1) != 0)
+            }
+            #[doc = "Bit 8 - Enable for the HE BSS-color collision event."]
+            #[inline(always)]
+            pub fn bss_color_collision(&self) -> BssColorCollisionR {
+                BssColorCollisionR::new(((self.bits >> 8) & 1) != 0)
+            }
+            #[doc = "Bits 9:10 - Interrupt-enable bits whose event identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_9_10(&self) -> Unknown9_10R {
+                Unknown9_10R::new(((self.bits >> 9) & 3) as u8)
+            }
+            #[doc = "Bit 11 - Enable for the MAC watchdog event."]
+            #[inline(always)]
+            pub fn watchdog(&self) -> WatchdogR {
+                WatchdogR::new(((self.bits >> 11) & 1) != 0)
+            }
+            #[doc = "Bit 12 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_12_unknown(&self) -> ColdRxEnable12UnknownR {
+                ColdRxEnable12UnknownR::new(((self.bits >> 12) & 1) != 0)
+            }
+            #[doc = "Bit 13 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_13_unknown(&self) -> ColdRxEnable13UnknownR {
+                ColdRxEnable13UnknownR::new(((self.bits >> 13) & 1) != 0)
+            }
+            #[doc = "Bit 14 - Enable for successful receive completion."]
+            #[inline(always)]
+            pub fn rx_success(&self) -> RxSuccessR {
+                RxSuccessR::new(((self.bits >> 14) & 1) != 0)
+            }
+            #[doc = "Bit 15 - Enable for the station beacon-filter event; the complete disable leaf clears this bit after disabling the filter hardware."]
+            #[inline(always)]
+            pub fn sta_beacon_filter(&self) -> StaBeaconFilterR {
+                StaBeaconFilterR::new(((self.bits >> 15) & 1) != 0)
+            }
+            #[doc = "Bits 16:18 - Interrupt-enable bits whose event identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_16_18(&self) -> Unknown16_18R {
+                Unknown16_18R::new(((self.bits >> 16) & 7) as u8)
+            }
+            #[doc = "Bit 19 - Enable for the hardware TX queue timeout/abort event."]
+            #[inline(always)]
+            pub fn tx_timeout(&self) -> TxTimeoutR {
+                TxTimeoutR::new(((self.bits >> 19) & 1) != 0)
+            }
+            #[doc = "Bit 20 - Interrupt-enable bit whose event identity remains unknown."]
+            #[inline(always)]
+            pub fn unknown_20(&self) -> Unknown20R {
+                Unknown20R::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bit 21 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_21_unknown(&self) -> ColdRxEnable21UnknownR {
+                ColdRxEnable21UnknownR::new(((self.bits >> 21) & 1) != 0)
+            }
+            #[doc = "Bit 22 - Interrupt-enable bit whose event identity remains unknown."]
+            #[inline(always)]
+            pub fn unknown_22(&self) -> Unknown22R {
+                Unknown22R::new(((self.bits >> 22) & 1) != 0)
+            }
+            #[doc = "Bit 23 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_23_unknown(&self) -> ColdRxEnable23UnknownR {
+                ColdRxEnable23UnknownR::new(((self.bits >> 23) & 1) != 0)
+            }
+            #[doc = "Bit 24 - Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic."]
+            #[inline(always)]
+            pub fn rx_associated_auxiliary_24(&self) -> RxAssociatedAuxiliary24R {
+                RxAssociatedAuxiliary24R::new(((self.bits >> 24) & 1) != 0)
+            }
+            #[doc = "Bits 25:26 - Interrupt-enable bits whose event identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_25_26(&self) -> Unknown25_26R {
+                Unknown25_26R::new(((self.bits >> 25) & 3) as u8)
+            }
+            #[doc = "Bit 27 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_27_unknown(&self) -> ColdRxEnable27UnknownR {
+                ColdRxEnable27UnknownR::new(((self.bits >> 27) & 1) != 0)
+            }
+            #[doc = "Bit 28 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_28_unknown(&self) -> ColdRxEnable28UnknownR {
+                ColdRxEnable28UnknownR::new(((self.bits >> 28) & 1) != 0)
+            }
+            #[doc = "Bits 29:31 - Interrupt-enable bits whose event identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_29_31(&self) -> Unknown29_31R {
+                Unknown29_31R::new(((self.bits >> 29) & 7) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 0:31 - One enable bit per MAC event; complete hal_init stores 0x19a879e0 and complete hal_enable_mac stores its full argument here. Event identities are documented on STATUS."]
+            #[doc = "Bits 0:4 - Interrupt-enable bits whose event identities remain unknown."]
             #[inline(always)]
-            pub fn event_mask(&mut self) -> EventMaskW<'_, EnableSpec> {
-                EventMaskW::new(self, 0)
+            pub fn unknown_0_4(&mut self) -> Unknown0_4W<'_, EnableSpec> {
+                Unknown0_4W::new(self, 0)
+            }
+            #[doc = "Bit 5 - Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic."]
+            #[inline(always)]
+            pub fn rx_associated_auxiliary_5(&mut self) -> RxAssociatedAuxiliary5W<'_, EnableSpec> {
+                RxAssociatedAuxiliary5W::new(self, 5)
+            }
+            #[doc = "Bit 6 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_6_unknown(&mut self) -> ColdRxEnable6UnknownW<'_, EnableSpec> {
+                ColdRxEnable6UnknownW::new(self, 6)
+            }
+            #[doc = "Bit 7 - Enable for the TX-complete event."]
+            #[inline(always)]
+            pub fn tx_complete(&mut self) -> TxCompleteW<'_, EnableSpec> {
+                TxCompleteW::new(self, 7)
+            }
+            #[doc = "Bit 8 - Enable for the HE BSS-color collision event."]
+            #[inline(always)]
+            pub fn bss_color_collision(&mut self) -> BssColorCollisionW<'_, EnableSpec> {
+                BssColorCollisionW::new(self, 8)
+            }
+            #[doc = "Bits 9:10 - Interrupt-enable bits whose event identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_9_10(&mut self) -> Unknown9_10W<'_, EnableSpec> {
+                Unknown9_10W::new(self, 9)
+            }
+            #[doc = "Bit 11 - Enable for the MAC watchdog event."]
+            #[inline(always)]
+            pub fn watchdog(&mut self) -> WatchdogW<'_, EnableSpec> {
+                WatchdogW::new(self, 11)
+            }
+            #[doc = "Bit 12 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_12_unknown(&mut self) -> ColdRxEnable12UnknownW<'_, EnableSpec> {
+                ColdRxEnable12UnknownW::new(self, 12)
+            }
+            #[doc = "Bit 13 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_13_unknown(&mut self) -> ColdRxEnable13UnknownW<'_, EnableSpec> {
+                ColdRxEnable13UnknownW::new(self, 13)
+            }
+            #[doc = "Bit 14 - Enable for successful receive completion."]
+            #[inline(always)]
+            pub fn rx_success(&mut self) -> RxSuccessW<'_, EnableSpec> {
+                RxSuccessW::new(self, 14)
+            }
+            #[doc = "Bit 15 - Enable for the station beacon-filter event; the complete disable leaf clears this bit after disabling the filter hardware."]
+            #[inline(always)]
+            pub fn sta_beacon_filter(&mut self) -> StaBeaconFilterW<'_, EnableSpec> {
+                StaBeaconFilterW::new(self, 15)
+            }
+            #[doc = "Bits 16:18 - Interrupt-enable bits whose event identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_16_18(&mut self) -> Unknown16_18W<'_, EnableSpec> {
+                Unknown16_18W::new(self, 16)
+            }
+            #[doc = "Bit 19 - Enable for the hardware TX queue timeout/abort event."]
+            #[inline(always)]
+            pub fn tx_timeout(&mut self) -> TxTimeoutW<'_, EnableSpec> {
+                TxTimeoutW::new(self, 19)
+            }
+            #[doc = "Bit 20 - Interrupt-enable bit whose event identity remains unknown."]
+            #[inline(always)]
+            pub fn unknown_20(&mut self) -> Unknown20W<'_, EnableSpec> {
+                Unknown20W::new(self, 20)
+            }
+            #[doc = "Bit 21 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_21_unknown(&mut self) -> ColdRxEnable21UnknownW<'_, EnableSpec> {
+                ColdRxEnable21UnknownW::new(self, 21)
+            }
+            #[doc = "Bit 22 - Interrupt-enable bit whose event identity remains unknown."]
+            #[inline(always)]
+            pub fn unknown_22(&mut self) -> Unknown22W<'_, EnableSpec> {
+                Unknown22W::new(self, 22)
+            }
+            #[doc = "Bit 23 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_23_unknown(&mut self) -> ColdRxEnable23UnknownW<'_, EnableSpec> {
+                ColdRxEnable23UnknownW::new(self, 23)
+            }
+            #[doc = "Bit 24 - Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic."]
+            #[inline(always)]
+            pub fn rx_associated_auxiliary_24(
+                &mut self,
+            ) -> RxAssociatedAuxiliary24W<'_, EnableSpec> {
+                RxAssociatedAuxiliary24W::new(self, 24)
+            }
+            #[doc = "Bits 25:26 - Interrupt-enable bits whose event identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_25_26(&mut self) -> Unknown25_26W<'_, EnableSpec> {
+                Unknown25_26W::new(self, 25)
+            }
+            #[doc = "Bit 27 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_27_unknown(&mut self) -> ColdRxEnable27UnknownW<'_, EnableSpec> {
+                ColdRxEnable27UnknownW::new(self, 27)
+            }
+            #[doc = "Bit 28 - Unknown event enabled by the complete cold receive mask."]
+            #[inline(always)]
+            pub fn cold_rx_enable_28_unknown(&mut self) -> ColdRxEnable28UnknownW<'_, EnableSpec> {
+                ColdRxEnable28UnknownW::new(self, 28)
+            }
+            #[doc = "Bits 29:31 - Interrupt-enable bits whose event identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_29_31(&mut self) -> Unknown29_31W<'_, EnableSpec> {
+                Unknown29_31W::new(self, 29)
             }
         }
         #[doc = "Complete hal_init first publishes 0x19a879e0 here before its remaining tail. Complete hal_enable_mac independently publishes its argument after clearing the shared MAC disable gates. The common FIQ samples it with each interrupt status snapshot.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -29776,7 +30072,7 @@ pub mod wifi_mac_interrupt {
         impl crate::Readable for EnableSpec {}
         #[doc = "`write(|w| ..)` method takes [`enable::W`](W) writer structure"]
         impl crate::Writable for EnableSpec {
-            type Safety = crate::Safe;
+            type Safety = crate::Unsafe;
         }
     }
     #[doc = "RAW (rw) register accessor: Unmasked WDEV interrupt snapshot read by print_isr_regs. Complete hal_disable_mac writes zero after masking ENABLE.\n\nYou can [`read`](crate::Reg::read) this register and get [`raw::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`raw::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@raw`] module"]
@@ -55577,19 +55873,6 @@ pub mod peripheral_ownership {
 /// Safe, SVD-declared writes which cover a complete register.
 pub mod full_register_write {
 
-    /// Write every bit of `WIFI_MAC_INTERRUPT`.`ENABLE` through its full-width field.
-    #[inline]
-    pub fn mac_interrupt_enable(registers: &crate::WifiMacInterrupt, value: u32) {
-        // SAFETY: generator validation proves that this is the only field,
-        // it covers all 32 bits and accepts every `u32`; no zero-filled
-        // reserved or partially described bits remain.
-        unsafe {
-            registers
-                .enable()
-                .write_with_zero(|writer| writer.event_mask().set(value));
-        }
-    }
-
     /// Write every bit of `WIFI_MAC_INTERRUPT`.`CLEAR` through its full-width field.
     #[inline]
     pub fn mac_interrupt_clear(registers: &crate::WifiMacInterrupt, value: u32) {
@@ -55606,6 +55889,19 @@ pub mod full_register_write {
     /// Write every bit of `WIFI_MAC_POWER_INTERRUPT`.`CLEAR` through its full-width field.
     #[inline]
     pub fn mac_power_interrupt_clear(registers: &crate::WifiMacPowerInterrupt, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .clear()
+                .write_with_zero(|writer| writer.events().set(value));
+        }
+    }
+
+    /// Write every bit of `WIFI_MAC_POWER_INTERRUPT`.`CLEAR` through its full-width field.
+    #[inline]
+    pub fn acknowledge_mac_power_tsf_timer(registers: &crate::WifiMacPowerInterrupt, value: u32) {
         // SAFETY: generator validation proves that this is the only field,
         // it covers all 32 bits and accepts every `u32`; no zero-filled
         // reserved or partially described bits remain.
@@ -55868,6 +56164,32 @@ pub mod fixed_register_write {
 
 /// Safe, SVD-declared writes of fixed complete-register images.
 pub mod fixed_register_image {
+
+    /// Publish the SVD-qualified image `0x00000000` to `WIFI_MAC_INTERRUPT`.`ENABLE`.
+    #[inline]
+    pub fn mask_mac_interrupts(registers: &crate::WifiMacInterrupt) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .enable()
+                .write_with_zero(|writer| writer.bits(0x00000000));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x19a879e0` to `WIFI_MAC_INTERRUPT`.`ENABLE`.
+    #[inline]
+    pub fn enable_cold_rx_mac_interrupts(registers: &crate::WifiMacInterrupt) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .enable()
+                .write_with_zero(|writer| writer.bits(0x19a879e0));
+        }
+    }
 
     /// Publish the SVD-qualified image `0x00000001` to `BLUETOOTH_INTERRUPT_BANK`.`IRQ_CONTROL_0`.
     #[inline]

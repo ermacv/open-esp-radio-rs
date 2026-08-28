@@ -12569,16 +12569,136 @@
           <access>read-write</access>
           <fields>
             <field>
-              <name>EVENT_MASK</name>
-              <description>One enable bit per MAC event; complete hal_init stores 0x19a879e0 and complete hal_enable_mac stores its full argument here. Event identities are documented on STATUS.</description>
+              <name>UNKNOWN_0_4</name>
+              <description>Interrupt-enable bits whose event identities remain unknown.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
-              <writeConstraint>
-                <range>
-                  <minimum>0</minimum>
-                  <maximum>4294967295</maximum>
-                </range>
-              </writeConstraint>
+              <bitWidth>5</bitWidth>
+            </field>
+            <field>
+              <name>RX_ASSOCIATED_AUXILIARY_5</name>
+              <description>Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic.</description>
+              <bitOffset>5</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_6_UNKNOWN</name>
+              <description>Unknown event enabled by the complete cold receive mask.</description>
+              <bitOffset>6</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TX_COMPLETE</name>
+              <description>Enable for the TX-complete event.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>BSS_COLOR_COLLISION</name>
+              <description>Enable for the HE BSS-color collision event.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_9_10</name>
+              <description>Interrupt-enable bits whose event identities remain unknown.</description>
+              <bitOffset>9</bitOffset>
+              <bitWidth>2</bitWidth>
+            </field>
+            <field>
+              <name>WATCHDOG</name>
+              <description>Enable for the MAC watchdog event.</description>
+              <bitOffset>11</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_12_UNKNOWN</name>
+              <description>Unknown event enabled by the complete cold receive mask.</description>
+              <bitOffset>12</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_13_UNKNOWN</name>
+              <description>Unknown event enabled by the complete cold receive mask.</description>
+              <bitOffset>13</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>RX_SUCCESS</name>
+              <description>Enable for successful receive completion.</description>
+              <bitOffset>14</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>STA_BEACON_FILTER</name>
+              <description>Enable for the station beacon-filter event; the complete disable leaf clears this bit after disabling the filter hardware.</description>
+              <bitOffset>15</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_16_18</name>
+              <description>Interrupt-enable bits whose event identities remain unknown.</description>
+              <bitOffset>16</bitOffset>
+              <bitWidth>3</bitWidth>
+            </field>
+            <field>
+              <name>TX_TIMEOUT</name>
+              <description>Enable for the hardware TX queue timeout/abort event.</description>
+              <bitOffset>19</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_20</name>
+              <description>Interrupt-enable bit whose event identity remains unknown.</description>
+              <bitOffset>20</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_21_UNKNOWN</name>
+              <description>Unknown event enabled by the complete cold receive mask.</description>
+              <bitOffset>21</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_22</name>
+              <description>Interrupt-enable bit whose event identity remains unknown.</description>
+              <bitOffset>22</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_23_UNKNOWN</name>
+              <description>Unknown event enabled by the complete cold receive mask.</description>
+              <bitOffset>23</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>RX_ASSOCIATED_AUXILIARY_24</name>
+              <description>Enable for the status bit observed together with RX_SUCCESS during sustained receive traffic.</description>
+              <bitOffset>24</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_25_26</name>
+              <description>Interrupt-enable bits whose event identities remain unknown.</description>
+              <bitOffset>25</bitOffset>
+              <bitWidth>2</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_27_UNKNOWN</name>
+              <description>Unknown event enabled by the complete cold receive mask.</description>
+              <bitOffset>27</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>COLD_RX_ENABLE_28_UNKNOWN</name>
+              <description>Unknown event enabled by the complete cold receive mask.</description>
+              <bitOffset>28</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_29_31</name>
+              <description>Interrupt-enable bits whose event identities remain unknown.</description>
+              <bitOffset>29</bitOffset>
+              <bitWidth>3</bitWidth>
             </field>
           </fields>
         </register>

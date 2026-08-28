@@ -11,20 +11,9 @@
 #![forbid(unsafe_code)]
 
 use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmBoundSramLinkAddress;
-pub use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmLinkStateReviewedWords;
-
-const LOW_TWENTY_MASK: u32 = 0x000f_ffff;
-const WORD_04_POWER_MASK: u32 = 0x0f80_0000;
-const WORD_50_CONFIG_MASK: u32 = 0x3f00_0000;
-
-/// DTM role selected by the complete event constructor.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothDtmRole {
-    /// Repeated transmitter-test events use role image one.
-    Transmitter,
-    /// Repeated receiver-test events use role image two.
-    Receiver,
-}
+pub use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothDtmLinkStateReviewedWords, BluetoothDtmRole,
+};
 
 /// Why one reviewed DTM reset input cannot be represented exactly.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -79,25 +68,13 @@ impl BluetoothDtmLinkStateReset {
         self,
         current: BluetoothDtmLinkStateReviewedWords,
     ) -> BluetoothDtmLinkStateReviewedWords {
-        let tx_head = compressed_or_zero(self.tx_head);
-        let rx_tail = compressed_or_zero(self.rx_tail);
-
-        let word_00_with_link = (current.word_00 & !LOW_TWENTY_MASK) | tx_head;
-        let transformed_high_half = (((word_00_with_link >> 16) as u16 & 0x600f) | 0x8ff0) as u32;
-
-        BluetoothDtmLinkStateReviewedWords {
-            word_00: (word_00_with_link & 0x0000_ffff) | (transformed_high_half << 16),
-            word_04: (current.word_04 & !WORD_04_POWER_MASK) | ((self.rounded_power as u32) << 23),
-            word_08: (current.word_08 & 0xf000_0000) | 0x0ff0_0000 | rx_tail,
-            word_14: current.word_14 | 0xc000_0000,
-            word_2c: (current.word_2c & 0xff00_0000) | 0x0055_5555,
-            word_34: match self.role {
-                BluetoothDtmRole::Transmitter => current.word_34,
-                BluetoothDtmRole::Receiver => 0,
-            },
-            word_38: 0x7176_4129,
-            word_50: (current.word_50 & !WORD_50_CONFIG_MASK) | ((self.config as u32) << 24),
-        }
+        current.apply_reset(
+            self.tx_head,
+            self.rx_tail,
+            self.rounded_power,
+            self.config,
+            self.role,
+        )
     }
 
     /// Return the DTM role encoded by this validated reset.
@@ -120,13 +97,6 @@ impl BluetoothDtmLinkStateReset {
             rx_tail: Some(rx_tail),
             ..self
         }
-    }
-}
-
-const fn compressed_or_zero(address: Option<BluetoothDtmBoundSramLinkAddress>) -> u32 {
-    match address {
-        Some(address) => address.compressed_image(),
-        None => 0,
     }
 }
 
@@ -185,10 +155,10 @@ mod tests {
         let reset_words = reset.apply(CURRENT);
 
         assert_eq!(reset_words.word_00, 0x8ff0_0000);
-        assert_eq!(reset_words.word_04, CURRENT.word_04 & !0x0f80_0000);
+        assert_eq!(reset_words.rounded_power(), 0);
         assert_eq!(reset_words.word_08, 0xbff0_0000);
         assert_eq!(reset_words.word_34, CURRENT.word_34);
-        assert_eq!(reset_words.word_50, CURRENT.word_50 & !0x3f00_0000);
+        assert_eq!(reset_words.word_50, 0x8023_4567);
     }
 
     #[test]

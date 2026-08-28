@@ -293,10 +293,9 @@ mod tests {
         let prepared = scheduler_prepared.cancel();
         let words = prepared.words();
         assert_eq!(words.link_state().word_00, 0x8ff1_c057);
-        assert_eq!(words.link_state().word_00 & 0x000f_ffff, 0x1c057);
+        assert_eq!(words.link_state().tx_head_link_image(), 0x1c057);
         assert_eq!(words.link_state().word_08, 0x0ff1_c04b);
-        assert_eq!(words.scheduler_item().word_08 & 0x000f_ffff, 0x1c000);
-        assert_eq!(words.scheduler_item().word_00 & 0x0050_0000, 0x0010_0000);
+        assert_eq!(words.scheduler_item().link_state_link_image(), 0x1c000);
         assert_eq!(words.scheduler_item().word_14, 0x5150_0000);
         assert_eq!(words.scheduler_item().word_2c, 0);
 
@@ -325,10 +324,9 @@ mod tests {
             .expect("current graph anchors satisfy the generated RX image");
         assert_eq!(prepared.role(), BluetoothDtmRole::Receiver);
         let words = prepared.words();
-        assert_eq!(words.link_state().word_00 & 0x000f_ffff, 0x097);
-        assert_eq!(words.link_state().word_08 & 0x000f_ffff, 0x08b);
-        assert_eq!(words.scheduler_item().word_08 & 0x000f_ffff, 0x040);
-        assert_eq!(words.scheduler_item().word_00 & 0x0050_0000, 0x0040_0000);
+        assert_eq!(words.link_state().tx_head_link_image(), 0x097);
+        assert_eq!(words.link_state().rx_tail_link_image(), 0x08b);
+        assert_eq!(words.scheduler_item().link_state_link_image(), 0x040);
         assert_eq!(words.scheduler_item().word_14, 0xf000_0000);
         assert_eq!(words.scheduler_item().word_2c, 0x000f_0001);
         assert_eq!(words.scheduler_item().word_44, 103);

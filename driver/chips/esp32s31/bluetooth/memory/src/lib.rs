@@ -20,7 +20,7 @@ mod rx_memory_list;
 mod sram_link;
 
 pub use dtm_event_image::{
-    BluetoothDtmLinkStateReviewedWords, BluetoothDtmPositionalEventWords,
+    BluetoothDtmLinkStateReviewedWords, BluetoothDtmPositionalEventWords, BluetoothDtmRole,
     BluetoothDtmSchedulerItemReviewedWords,
 };
 pub use dtm_rx_result::{BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError};

@@ -16,11 +16,6 @@ use crate::{
     BluetoothDtmTxEventWindow,
 };
 
-const FREQUENCY_MASK: u32 = 0x0000_7f00;
-const LINK_STATE_ROUNDED_POWER_MASK: u32 = 0x0f80_0000;
-const RATE_LANES_MASK: u32 = 0xf000_0000;
-const SCHEDULER_ITEM_ROUNDED_POWER_REGION_MASK: u32 = 0x0ff0_0000;
-
 /// Why one DTM scheduler-item event cannot be represented exactly.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothDtmSchedulerItemEventError {
@@ -83,30 +78,13 @@ impl BluetoothDtmSchedulerItemEvent {
         current: BluetoothDtmSchedulerItemReviewedWords,
         epoch: BluetoothControllerSchedulerEpoch,
     ) -> BluetoothDtmSchedulerItemReviewedWords {
-        let current_role_byte = ((current.word_00 >> 16) & 0xff) as u8;
-        let role_byte = (current_role_byte & 0xaf)
-            | match self.role {
-                BluetoothDtmRole::Transmitter => 0x10,
-                BluetoothDtmRole::Receiver => 0x40,
-            };
-        let rate = self.rate as u32;
-
-        BluetoothDtmSchedulerItemReviewedWords {
-            word_00: (current.word_00 & 0xff00_ffff) | ((role_byte as u32) << 16),
-            word_04: current.word_04 | 0x8000_0000,
-            word_08: current.word_08 & 0xff0f_ffff,
-            word_14: (current.word_14 & !RATE_LANES_MASK) | (rate << 28) | (rate << 30),
-            word_18: (current.word_18 & !(FREQUENCY_MASK | 0x0f))
-                | ((self.frequency as u32) << 8)
-                | 0x03,
-            word_2c: match self.role {
-                BluetoothDtmRole::Transmitter => current.word_2c,
-                BluetoothDtmRole::Receiver => 0x000f_0001,
-            },
-            word_44: epoch.raw_time_for_scheduler_time(self.scheduler_start),
-            word_48: epoch.raw_time_for_scheduler_time(self.scheduler_end),
-            word_4c: current.word_4c & 0xffff_ff00,
-        }
+        current.apply_event(
+            self.frequency,
+            self.rate,
+            self.role,
+            epoch.raw_time_for_scheduler_time(self.scheduler_start),
+            epoch.raw_time_for_scheduler_time(self.scheduler_end),
+        )
     }
 
     /// Return the DTM role encoded by this validated scheduler item event.
@@ -123,13 +101,10 @@ impl BluetoothDtmSchedulerItemEvent {
 /// Both arguments remain CPU-owned controller-SRAM descriptor images; this
 /// transform performs no MMIO and grants no publication ownership.
 pub(crate) const fn apply_overlap_insertion_power(
-    mut scheduler_item: BluetoothDtmSchedulerItemReviewedWords,
+    scheduler_item: BluetoothDtmSchedulerItemReviewedWords,
     link_state: BluetoothDtmLinkStateReviewedWords,
 ) -> BluetoothDtmSchedulerItemReviewedWords {
-    let rounded_power = (link_state.word_04 & LINK_STATE_ROUNDED_POWER_MASK) >> 23;
-    scheduler_item.word_14 = (scheduler_item.word_14 & !SCHEDULER_ITEM_ROUNDED_POWER_REGION_MASK)
-        | (rounded_power << 20);
-    scheduler_item
+    scheduler_item.apply_overlap_insertion_power(link_state)
 }
 
 #[cfg(test)]

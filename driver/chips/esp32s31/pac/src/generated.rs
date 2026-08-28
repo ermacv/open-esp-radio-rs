@@ -3705,6 +3705,12 @@ pub(crate) fn initialize_bluetooth_shared_receive_final_image(
     crate::svd::field_replace_modify::initialize_bluetooth_shared_receive_final_image(registers);
 }
 
+/// Typed bridge for the reviewed `enable_wifi_mac_core` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_wifi_mac_core(registers: &crate::svd::WifiMacCoreEnable) {
+    crate::svd::field_replace_modify::enable_wifi_mac_core(registers);
+}
+
 /// Typed bridge for the reviewed `clear_bluetooth_scheduler_lock_modify_argument` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_bluetooth_scheduler_lock_modify_argument(

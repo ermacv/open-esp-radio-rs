@@ -64604,6 +64604,21 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace WIFI_MAC_CORE_ENABLE.CONTROL fields [MAC_DISABLE_GATES_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_wifi_mac_core(registers: &crate::WifiMacCoreEnable) {
+        registers.control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .mac_disable_gates_unknown()
+                    .bits((input & 0x0000000f) as u8)
+            }
+        });
+    }
+
     /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields [LOCK_MODIFY_ARGUMENT] from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_scheduler_lock_modify_argument(

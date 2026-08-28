@@ -5120,6 +5120,15 @@ register = "CTRL"
 field = "OUT"
 sources = ["S31_ESP_PACS_SVD", "ROM_REV0_PHY_TSENS"]
 
+[[field-replace-modifies]]
+name = "enable_wifi_mac_core"
+peripheral = "WIFI_MAC_CORE_ENABLE"
+register = "CONTROL"
+fields = [{ field = "MAC_DISABLE_GATES_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBPP_HAL_ENABLE_MAC"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

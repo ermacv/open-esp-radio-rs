@@ -12,12 +12,9 @@ impl WifiColdRegisters {
     /// It clears all four disable gates in one fresh-read RMW, then stores its
     /// complete argument into the interrupt-enable register.
     pub fn enable_mac_with_interrupt_mask(&mut self, event_mask: MacInterruptMask) {
-        self.registers
-            .peripherals
-            .wifi_mac
-            .wifi_mac_core_enable
-            .control()
-            .modify(|_, w| w.mac_disable_gates_unknown().enabled());
+        crate::generated::enable_wifi_mac_core(
+            &self.registers.peripherals.wifi_mac.wifi_mac_core_enable,
+        );
         super::mac_interrupt::publish_mac_interrupt_mask(
             &self.interrupts.wifi_mac_interrupt,
             event_mask,

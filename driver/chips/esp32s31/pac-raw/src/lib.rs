@@ -58350,6 +58350,12 @@ pub mod field_read {
         registers.status_0048().read().image().bits()
     }
 
+    /// Read `LP_TSENS`.`CTRL`.`OUT` without exposing its register block.
+    #[inline]
+    pub fn read_lp_temperature_sensor_code(registers: &crate::LpTsens) -> u8 {
+        registers.ctrl().read().out().bits()
+    }
+
     /// Read `BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME`.`SCHEDULER_STATE`.`BUSY` without exposing its register block.
     #[inline]
     pub fn observe_bluetooth_scheduler_lock_modify_busy(

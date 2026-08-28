@@ -75,6 +75,6 @@ impl RadioPhyRegisters {
 
     /// Sample and return the unsigned temperature code exactly once.
     pub fn read_temperature_sensor_code(&self) -> u8 {
-        self.peripherals.lp_tsens.ctrl().read().out().bits()
+        crate::svd::field_read::read_lp_temperature_sensor_code(&self.peripherals.lp_tsens)
     }
 }

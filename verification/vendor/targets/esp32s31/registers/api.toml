@@ -5113,6 +5113,13 @@ value = 0x0019f
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_INIT"]
 
+[[field-reads]]
+name = "read_lp_temperature_sensor_code"
+peripheral = "LP_TSENS"
+register = "CTRL"
+field = "OUT"
+sources = ["S31_ESP_PACS_SVD", "ROM_REV0_PHY_TSENS"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

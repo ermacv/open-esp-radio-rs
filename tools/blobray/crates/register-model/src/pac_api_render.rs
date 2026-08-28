@@ -1040,17 +1040,32 @@ impl PacApiPack {
                 &binding.peripheral,
                 &binding.register,
             )?;
+            let field_binding =
+                pac_api_svd::field(&binding.name, register_binding.info, &binding.field)?;
             let (index_parameter, index_argument) = if register_binding.is_array {
                 ("register_index: usize, ", "register_index")
             } else {
                 ("", "")
+            };
+            let update = match field_binding.bit_width() {
+                1 => format!("writer.{field}().set_bit()"),
+                2..=8 => format!(
+                    "writer.{field}().set((u32::from(reader.{field}().bits()) | (1_u32 << bit_index)) as u8)"
+                ),
+                9..=16 => format!(
+                    "writer.{field}().set((u32::from(reader.{field}().bits()) | (1_u32 << bit_index)) as u16)"
+                ),
+                17..=32 => {
+                    format!("writer.{field}().set(reader.{field}().bits() | (1_u32 << bit_index))")
+                }
+                _ => unreachable!("SVD validation rejects invalid field widths"),
             };
             output.push_str(&format!(
                 "\n    /// Set one bit selected by the reviewed `{}` domain in {}.{}.\n\
                  #[inline]\n\
                  pub fn {}(registers: &crate::{peripheral_type}, {index_parameter}bit_index: u32) {{\n\
                      registers.{register}({index_argument}).modify(|reader, writer| {{\n\
-                         writer.{field}().set(reader.bits() | (1_u32 << bit_index))\n\
+                         {update}\n\
                      }});\n\
                  }}\n",
                 binding.domain, binding.peripheral, binding.register, binding.name,

@@ -874,10 +874,8 @@ fn log_sta_receive_policy(
 ) {
     let bssid = policy.bssid;
     diagnostics_event!(
-        "open-radio: sta-rx-policy edge={} q0={:08x} q3={:08x} bssid={:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} aid={} spacing={} check={} ap={} rx={} beacon={:02x}",
+        "open-radio: sta-rx-policy edge={} bssid={:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} aid={} spacing={} check={} ap={} rx={} beacon={:02x}",
         edge,
-        policy.queue_zero_policy,
-        policy.queue_three_policy,
         bssid[0],
         bssid[1],
         bssid[2],

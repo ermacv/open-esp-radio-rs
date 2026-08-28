@@ -235,8 +235,11 @@ pub fn program(
                 .expect("validated receive BlockAck hardware index"),
         )
         .expect("validated receive BlockAck hardware index has one direct bank");
-    let expected_control = 0xc000_0001 | (u32::from(agreement.tid) << 12);
-    if snapshot.control != expected_control
+    if !snapshot.enabled
+        || snapshot.tid != agreement.tid
+        || !snapshot.write_enabled
+        || !snapshot.valid
+        || !snapshot.control_unknown_clear
         || snapshot.peer != agreement.peer
         || snapshot.interface != agreement.interface
         || u16::from(snapshot.window) != agreement.window

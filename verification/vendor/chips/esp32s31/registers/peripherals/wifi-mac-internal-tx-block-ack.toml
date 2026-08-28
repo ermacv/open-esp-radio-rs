@@ -13,6 +13,12 @@ addressOffset = 0x0
 size = 32
 access = "read-only"
 
+[[peripherals.registers.register.fields]]
+name = "BITMAP"
+description = "High 32 bits of the internal transmit BlockAck acknowledgement bitmap."
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -20,6 +26,12 @@ name = "BITMAP_LOW"
 addressOffset = 0x4
 size = 32
 access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "BITMAP"
+description = "Low 32 bits of the internal transmit BlockAck acknowledgement bitmap."
+bitOffset = 0
+bitWidth = 32
 
 [[peripherals.registers]]
 

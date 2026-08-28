@@ -927,9 +927,13 @@ pub mod wifi_mac_internal_tx_block_ack {
     pub mod bitmap_high {
         #[doc = "Register `BITMAP_HIGH` reader"]
         pub type R = crate::R<BitmapHighSpec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `BITMAP` reader - High 32 bits of the internal transmit BlockAck acknowledgement bitmap."]
+        pub type BitmapR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31 - High 32 bits of the internal transmit BlockAck acknowledgement bitmap."]
+            #[inline(always)]
+            pub fn bitmap(&self) -> BitmapR {
+                BitmapR::new(self.bits)
             }
         }
         #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`bitmap_high::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -947,9 +951,13 @@ pub mod wifi_mac_internal_tx_block_ack {
     pub mod bitmap_low {
         #[doc = "Register `BITMAP_LOW` reader"]
         pub type R = crate::R<BitmapLowSpec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `BITMAP` reader - Low 32 bits of the internal transmit BlockAck acknowledgement bitmap."]
+        pub type BitmapR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31 - Low 32 bits of the internal transmit BlockAck acknowledgement bitmap."]
+            #[inline(always)]
+            pub fn bitmap(&self) -> BitmapR {
+                BitmapR::new(self.bits)
             }
         }
         #[doc = "\n\nYou can [`read`](crate::Reg::read) this register and get [`bitmap_low::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -33436,9 +33444,13 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_bitmap_high_q7 {
         #[doc = "Register `TX_BLOCK_ACK_BITMAP_HIGH_Q7` reader"]
         pub type R = crate::R<TxBlockAckBitmapHighQ7Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `BITMAP` reader - "]
+        pub type BitmapR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn bitmap(&self) -> BitmapR {
+                BitmapR::new(self.bits)
             }
         }
         #[doc = "WDEVTXQBA_BMHI for reverse-addressed hardware queue 7.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q7::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -33457,9 +33469,13 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_bitmap_low_q7 {
         #[doc = "Register `TX_BLOCK_ACK_BITMAP_LOW_Q7` reader"]
         pub type R = crate::R<TxBlockAckBitmapLowQ7Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `BITMAP` reader - "]
+        pub type BitmapR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn bitmap(&self) -> BitmapR {
+                BitmapR::new(self.bits)
             }
         }
         #[doc = "WDEVTXQBA_BMLO for reverse-addressed hardware queue 7.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q7::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -33564,9 +33580,13 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_transmitter_address_low_q7 {
         #[doc = "Register `TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q7` reader"]
         pub type R = crate::R<TxBlockAckTransmitterAddressLowQ7Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `ADDRESS_BYTES_0_3` reader - "]
+        pub type AddressBytes0_3R = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn address_bytes_0_3(&self) -> AddressBytes0_3R {
+                AddressBytes0_3R::new(self.bits)
             }
         }
         #[doc = "WDEVTXQBA_TALO; low four transmitter-address bytes.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_low_q7::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -33630,9 +33650,13 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_bitmap_high_q6 {
         #[doc = "Register `TX_BLOCK_ACK_BITMAP_HIGH_Q6` reader"]
         pub type R = crate::R<TxBlockAckBitmapHighQ6Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `BITMAP` reader - "]
+        pub type BitmapR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn bitmap(&self) -> BitmapR {
+                BitmapR::new(self.bits)
             }
         }
         #[doc = "WDEVTXQBA_BMHI for reverse-addressed hardware queue 6.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q6::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -33651,9 +33675,13 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_bitmap_low_q6 {
         #[doc = "Register `TX_BLOCK_ACK_BITMAP_LOW_Q6` reader"]
         pub type R = crate::R<TxBlockAckBitmapLowQ6Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `BITMAP` reader - "]
+        pub type BitmapR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn bitmap(&self) -> BitmapR {
+                BitmapR::new(self.bits)
             }
         }
         #[doc = "WDEVTXQBA_BMLO for reverse-addressed hardware queue 6.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q6::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -33758,9 +33786,13 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_transmitter_address_low_q6 {
         #[doc = "Register `TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q6` reader"]
         pub type R = crate::R<TxBlockAckTransmitterAddressLowQ6Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `ADDRESS_BYTES_0_3` reader - "]
+        pub type AddressBytes0_3R = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn address_bytes_0_3(&self) -> AddressBytes0_3R {
+                AddressBytes0_3R::new(self.bits)
             }
         }
         #[doc = "WDEVTXQBA_TALO; low four transmitter-address bytes.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_low_q6::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -33824,9 +33856,13 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_bitmap_high_q5 {
         #[doc = "Register `TX_BLOCK_ACK_BITMAP_HIGH_Q5` reader"]
         pub type R = crate::R<TxBlockAckBitmapHighQ5Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `BITMAP` reader - "]
+        pub type BitmapR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn bitmap(&self) -> BitmapR {
+                BitmapR::new(self.bits)
             }
         }
         #[doc = "WDEVTXQBA_BMHI for reverse-addressed hardware queue 5.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q5::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -33845,9 +33881,13 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_bitmap_low_q5 {
         #[doc = "Register `TX_BLOCK_ACK_BITMAP_LOW_Q5` reader"]
         pub type R = crate::R<TxBlockAckBitmapLowQ5Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `BITMAP` reader - "]
+        pub type BitmapR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn bitmap(&self) -> BitmapR {
+                BitmapR::new(self.bits)
             }
         }
         #[doc = "WDEVTXQBA_BMLO for reverse-addressed hardware queue 5.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q5::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -33952,9 +33992,13 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_transmitter_address_low_q5 {
         #[doc = "Register `TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q5` reader"]
         pub type R = crate::R<TxBlockAckTransmitterAddressLowQ5Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `ADDRESS_BYTES_0_3` reader - "]
+        pub type AddressBytes0_3R = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn address_bytes_0_3(&self) -> AddressBytes0_3R {
+                AddressBytes0_3R::new(self.bits)
             }
         }
         #[doc = "WDEVTXQBA_TALO; low four transmitter-address bytes.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_low_q5::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -34018,9 +34062,13 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_bitmap_high_q4 {
         #[doc = "Register `TX_BLOCK_ACK_BITMAP_HIGH_Q4` reader"]
         pub type R = crate::R<TxBlockAckBitmapHighQ4Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `BITMAP` reader - "]
+        pub type BitmapR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn bitmap(&self) -> BitmapR {
+                BitmapR::new(self.bits)
             }
         }
         #[doc = "WDEVTXQBA_BMHI for reverse-addressed hardware queue 4.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q4::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -34039,9 +34087,13 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_bitmap_low_q4 {
         #[doc = "Register `TX_BLOCK_ACK_BITMAP_LOW_Q4` reader"]
         pub type R = crate::R<TxBlockAckBitmapLowQ4Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `BITMAP` reader - "]
+        pub type BitmapR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn bitmap(&self) -> BitmapR {
+                BitmapR::new(self.bits)
             }
         }
         #[doc = "WDEVTXQBA_BMLO for reverse-addressed hardware queue 4.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q4::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -34146,9 +34198,13 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_transmitter_address_low_q4 {
         #[doc = "Register `TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q4` reader"]
         pub type R = crate::R<TxBlockAckTransmitterAddressLowQ4Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `ADDRESS_BYTES_0_3` reader - "]
+        pub type AddressBytes0_3R = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn address_bytes_0_3(&self) -> AddressBytes0_3R {
+                AddressBytes0_3R::new(self.bits)
             }
         }
         #[doc = "WDEVTXQBA_TALO; low four transmitter-address bytes.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_low_q4::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -34212,9 +34268,13 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_bitmap_high_q3 {
         #[doc = "Register `TX_BLOCK_ACK_BITMAP_HIGH_Q3` reader"]
         pub type R = crate::R<TxBlockAckBitmapHighQ3Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `BITMAP` reader - "]
+        pub type BitmapR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn bitmap(&self) -> BitmapR {
+                BitmapR::new(self.bits)
             }
         }
         #[doc = "High 32 acknowledgement bits for completed hardware queue 3.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q3::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -34233,9 +34293,13 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_bitmap_low_q3 {
         #[doc = "Register `TX_BLOCK_ACK_BITMAP_LOW_Q3` reader"]
         pub type R = crate::R<TxBlockAckBitmapLowQ3Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `BITMAP` reader - "]
+        pub type BitmapR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn bitmap(&self) -> BitmapR {
+                BitmapR::new(self.bits)
             }
         }
         #[doc = "Low 32 acknowledgement bits for completed hardware queue 3.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q3::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -34340,9 +34404,13 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_transmitter_address_low_q3 {
         #[doc = "Register `TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q3` reader"]
         pub type R = crate::R<TxBlockAckTransmitterAddressLowQ3Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `ADDRESS_BYTES_0_3` reader - "]
+        pub type AddressBytes0_3R = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn address_bytes_0_3(&self) -> AddressBytes0_3R {
+                AddressBytes0_3R::new(self.bits)
             }
         }
         #[doc = "WDEVTXQBA_TALO; low four transmitter-address bytes.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_low_q3::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -34406,9 +34474,13 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_bitmap_high_q2 {
         #[doc = "Register `TX_BLOCK_ACK_BITMAP_HIGH_Q2` reader"]
         pub type R = crate::R<TxBlockAckBitmapHighQ2Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `BITMAP` reader - "]
+        pub type BitmapR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn bitmap(&self) -> BitmapR {
+                BitmapR::new(self.bits)
             }
         }
         #[doc = "High 32 acknowledgement bits for completed hardware queue 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q2::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -34427,9 +34499,13 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_bitmap_low_q2 {
         #[doc = "Register `TX_BLOCK_ACK_BITMAP_LOW_Q2` reader"]
         pub type R = crate::R<TxBlockAckBitmapLowQ2Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `BITMAP` reader - "]
+        pub type BitmapR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn bitmap(&self) -> BitmapR {
+                BitmapR::new(self.bits)
             }
         }
         #[doc = "Low 32 acknowledgement bits for completed hardware queue 2.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q2::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -34534,9 +34610,13 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_transmitter_address_low_q2 {
         #[doc = "Register `TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q2` reader"]
         pub type R = crate::R<TxBlockAckTransmitterAddressLowQ2Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `ADDRESS_BYTES_0_3` reader - "]
+        pub type AddressBytes0_3R = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn address_bytes_0_3(&self) -> AddressBytes0_3R {
+                AddressBytes0_3R::new(self.bits)
             }
         }
         #[doc = "WDEVTXQBA_TALO; low four transmitter-address bytes.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_low_q2::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -34600,9 +34680,13 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_bitmap_high_q1 {
         #[doc = "Register `TX_BLOCK_ACK_BITMAP_HIGH_Q1` reader"]
         pub type R = crate::R<TxBlockAckBitmapHighQ1Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `BITMAP` reader - "]
+        pub type BitmapR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn bitmap(&self) -> BitmapR {
+                BitmapR::new(self.bits)
             }
         }
         #[doc = "High 32 acknowledgement bits for completed hardware queue 1.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -34621,9 +34705,13 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_bitmap_low_q1 {
         #[doc = "Register `TX_BLOCK_ACK_BITMAP_LOW_Q1` reader"]
         pub type R = crate::R<TxBlockAckBitmapLowQ1Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `BITMAP` reader - "]
+        pub type BitmapR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn bitmap(&self) -> BitmapR {
+                BitmapR::new(self.bits)
             }
         }
         #[doc = "Low 32 acknowledgement bits for completed hardware queue 1.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -34728,9 +34816,13 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_transmitter_address_low_q1 {
         #[doc = "Register `TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q1` reader"]
         pub type R = crate::R<TxBlockAckTransmitterAddressLowQ1Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `ADDRESS_BYTES_0_3` reader - "]
+        pub type AddressBytes0_3R = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn address_bytes_0_3(&self) -> AddressBytes0_3R {
+                AddressBytes0_3R::new(self.bits)
             }
         }
         #[doc = "WDEVTXQBA_TALO; low four transmitter-address bytes.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_low_q1::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -34794,9 +34886,13 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_bitmap_high_q0 {
         #[doc = "Register `TX_BLOCK_ACK_BITMAP_HIGH_Q0` reader"]
         pub type R = crate::R<TxBlockAckBitmapHighQ0Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `BITMAP` reader - "]
+        pub type BitmapR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn bitmap(&self) -> BitmapR {
+                BitmapR::new(self.bits)
             }
         }
         #[doc = "High 32 acknowledgement bits for completed hardware queue 0, sampled before acknowledging the completion edge.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_high_q0::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -34815,9 +34911,13 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_bitmap_low_q0 {
         #[doc = "Register `TX_BLOCK_ACK_BITMAP_LOW_Q0` reader"]
         pub type R = crate::R<TxBlockAckBitmapLowQ0Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `BITMAP` reader - "]
+        pub type BitmapR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn bitmap(&self) -> BitmapR {
+                BitmapR::new(self.bits)
             }
         }
         #[doc = "Low 32 acknowledgement bits for completed hardware queue 0, sampled before acknowledging the completion edge.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_bitmap_low_q0::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -34922,9 +35022,13 @@ pub mod wifi_mac_rx_dma {
     pub mod tx_block_ack_transmitter_address_low_q0 {
         #[doc = "Register `TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q0` reader"]
         pub type R = crate::R<TxBlockAckTransmitterAddressLowQ0Spec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `ADDRESS_BYTES_0_3` reader - "]
+        pub type AddressBytes0_3R = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn address_bytes_0_3(&self) -> AddressBytes0_3R {
+                AddressBytes0_3R::new(self.bits)
             }
         }
         #[doc = "WDEVTXQBA_TALO; low four transmitter-address bytes for completed queue 0.\n\nYou can [`read`](crate::Reg::read) this register and get [`tx_block_ack_transmitter_address_low_q0::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -34949,10 +35053,18 @@ pub mod wifi_mac_rx_dma {
         pub type EnableR = crate::BitReader;
         #[doc = "Field `ENABLE` writer - Complete add sets this bit in every installed ordinary receive BlockAck entry."]
         pub type EnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CONTROL_UNKNOWN_1_11` reader - Bits preserved by reads but cleared by every reviewed zero-based ordinary-entry publication."]
+        pub type ControlUnknown1_11R = crate::FieldReader<u16>;
+        #[doc = "Field `CONTROL_UNKNOWN_1_11` writer - Bits preserved by reads but cleared by every reviewed zero-based ordinary-entry publication."]
+        pub type ControlUnknown1_11W<'a, REG> = crate::FieldWriter<'a, REG, 11, u16>;
         #[doc = "Field `TID` reader - Traffic identifier passed to complete hal_agreement_add_rx_ba without the extra staging path's index transform. The field is four bits wide, while complete ht_recv_action_ba_addba_request rejects values with bit three set and therefore admits TIDs zero through seven."]
         pub type TidR = crate::FieldReader;
         #[doc = "Field `TID` writer - Traffic identifier passed to complete hal_agreement_add_rx_ba without the extra staging path's index transform. The field is four bits wide, while complete ht_recv_action_ba_addba_request rejects values with bit three set and therefore admits TIDs zero through seven."]
         pub type TidW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        #[doc = "Field `CONTROL_UNKNOWN_16_29` reader - Bits preserved by reads but cleared by every reviewed zero-based ordinary-entry publication."]
+        pub type ControlUnknown16_29R = crate::FieldReader<u16>;
+        #[doc = "Field `CONTROL_UNKNOWN_16_29` writer - Bits preserved by reads but cleared by every reviewed zero-based ordinary-entry publication."]
+        pub type ControlUnknown16_29W<'a, REG> = crate::FieldWriter<'a, REG, 14, u16>;
         #[doc = "Field `WRITE` reader - Complete add sets this bit together with ENABLE and VALID when publishing the entry configuration."]
         pub type WriteR = crate::BitReader;
         #[doc = "Field `WRITE` writer - Complete add sets this bit together with ENABLE and VALID when publishing the entry configuration."]
@@ -34967,10 +35079,20 @@ pub mod wifi_mac_rx_dma {
             pub fn enable(&self) -> EnableR {
                 EnableR::new((self.bits & 1) != 0)
             }
+            #[doc = "Bits 1:11 - Bits preserved by reads but cleared by every reviewed zero-based ordinary-entry publication."]
+            #[inline(always)]
+            pub fn control_unknown_1_11(&self) -> ControlUnknown1_11R {
+                ControlUnknown1_11R::new(((self.bits >> 1) & 0x07ff) as u16)
+            }
             #[doc = "Bits 12:15 - Traffic identifier passed to complete hal_agreement_add_rx_ba without the extra staging path's index transform. The field is four bits wide, while complete ht_recv_action_ba_addba_request rejects values with bit three set and therefore admits TIDs zero through seven."]
             #[inline(always)]
             pub fn tid(&self) -> TidR {
                 TidR::new(((self.bits >> 12) & 0x0f) as u8)
+            }
+            #[doc = "Bits 16:29 - Bits preserved by reads but cleared by every reviewed zero-based ordinary-entry publication."]
+            #[inline(always)]
+            pub fn control_unknown_16_29(&self) -> ControlUnknown16_29R {
+                ControlUnknown16_29R::new(((self.bits >> 16) & 0x3fff) as u16)
             }
             #[doc = "Bit 30 - Complete add sets this bit together with ENABLE and VALID when publishing the entry configuration."]
             #[inline(always)]
@@ -34989,10 +35111,24 @@ pub mod wifi_mac_rx_dma {
             pub fn enable(&mut self) -> EnableW<'_, RxBlockAckEntryControlSpec> {
                 EnableW::new(self, 0)
             }
+            #[doc = "Bits 1:11 - Bits preserved by reads but cleared by every reviewed zero-based ordinary-entry publication."]
+            #[inline(always)]
+            pub fn control_unknown_1_11(
+                &mut self,
+            ) -> ControlUnknown1_11W<'_, RxBlockAckEntryControlSpec> {
+                ControlUnknown1_11W::new(self, 1)
+            }
             #[doc = "Bits 12:15 - Traffic identifier passed to complete hal_agreement_add_rx_ba without the extra staging path's index transform. The field is four bits wide, while complete ht_recv_action_ba_addba_request rejects values with bit three set and therefore admits TIDs zero through seven."]
             #[inline(always)]
             pub fn tid(&mut self) -> TidW<'_, RxBlockAckEntryControlSpec> {
                 TidW::new(self, 12)
+            }
+            #[doc = "Bits 16:29 - Bits preserved by reads but cleared by every reviewed zero-based ordinary-entry publication."]
+            #[inline(always)]
+            pub fn control_unknown_16_29(
+                &mut self,
+            ) -> ControlUnknown16_29W<'_, RxBlockAckEntryControlSpec> {
+                ControlUnknown16_29W::new(self, 16)
             }
             #[doc = "Bit 30 - Complete add sets this bit together with ENABLE and VALID when publishing the entry configuration."]
             #[inline(always)]
@@ -35039,6 +35175,10 @@ pub mod wifi_mac_rx_dma {
         pub type WindowR = crate::FieldReader;
         #[doc = "Field `WINDOW` writer - Seven-bit hardware receive BlockAck window. The normal vendor ordinary-STA activation path publishes 64."]
         pub type WindowW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
+        #[doc = "Field `POLICY_UNKNOWN_25_31` reader - Bits cleared by every reviewed zero-based ordinary-entry policy publication."]
+        pub type PolicyUnknown25_31R = crate::FieldReader;
+        #[doc = "Field `POLICY_UNKNOWN_25_31` writer - Bits cleared by every reviewed zero-based ordinary-entry policy publication."]
+        pub type PolicyUnknown25_31W<'a, REG> = crate::FieldWriter<'a, REG, 7>;
         impl R {
             #[doc = "Bits 0:15"]
             #[inline(always)]
@@ -35054,6 +35194,11 @@ pub mod wifi_mac_rx_dma {
             #[inline(always)]
             pub fn window(&self) -> WindowR {
                 WindowR::new(((self.bits >> 18) & 0x7f) as u8)
+            }
+            #[doc = "Bits 25:31 - Bits cleared by every reviewed zero-based ordinary-entry policy publication."]
+            #[inline(always)]
+            pub fn policy_unknown_25_31(&self) -> PolicyUnknown25_31R {
+                PolicyUnknown25_31R::new(((self.bits >> 25) & 0x7f) as u8)
             }
         }
         impl W {
@@ -35073,6 +35218,13 @@ pub mod wifi_mac_rx_dma {
             #[inline(always)]
             pub fn window(&mut self) -> WindowW<'_, RxBlockAckEntryPeerTailAndPolicySpec> {
                 WindowW::new(self, 18)
+            }
+            #[doc = "Bits 25:31 - Bits cleared by every reviewed zero-based ordinary-entry policy publication."]
+            #[inline(always)]
+            pub fn policy_unknown_25_31(
+                &mut self,
+            ) -> PolicyUnknown25_31W<'_, RxBlockAckEntryPeerTailAndPolicySpec> {
+                PolicyUnknown25_31W::new(self, 25)
             }
         }
         #[doc = "Peer MAC bytes four and five, interface number and receive reorder-window size in one reverse-addressed ordinary receive BlockAck bank. Complete vendor ampdu_rx_start limits the protocol agreement by the peer request and configured receive window; its ordinary hardware-activation branch independently passes the constant 64 to ic_add_rx_ba. Complete hal_agreement_add_rx_ba then stores that value in WINDOW.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_peer_tail_and_policy::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_entry_peer_tail_and_policy::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -35202,9 +35354,13 @@ pub mod wifi_mac_rx_dma {
     pub mod rx_block_ack_entry_bitmap_low_status {
         #[doc = "Register `RX_BLOCK_ACK_ENTRY%s_BITMAP_LOW_STATUS` reader"]
         pub type R = crate::R<RxBlockAckEntryBitmapLowStatusSpec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `BITMAP` reader - Low 32 bits of the hardware-maintained receive reorder bitmap."]
+        pub type BitmapR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31 - Low 32 bits of the hardware-maintained receive reorder bitmap."]
+            #[inline(always)]
+            pub fn bitmap(&self) -> BitmapR {
+                BitmapR::new(self.bits)
             }
         }
         #[doc = "Hardware-maintained low reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_LOW_LOAD while VALID is clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_bitmap_low_status::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -35225,12 +35381,24 @@ pub mod wifi_mac_rx_dma {
         pub type R = crate::R<RxBlockAckEntryBitmapLowLoadSpec>;
         #[doc = "Register `RX_BLOCK_ACK_ENTRY%s_BITMAP_LOW_LOAD` writer"]
         pub type W = crate::W<RxBlockAckEntryBitmapLowLoadSpec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `BITMAP` reader - Low 32 bits of the software-loaded receive reorder bitmap."]
+        pub type BitmapR = crate::FieldReader<u32>;
+        #[doc = "Field `BITMAP` writer - Low 32 bits of the software-loaded receive reorder bitmap."]
+        pub type BitmapW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl R {
+            #[doc = "Bits 0:31 - Low 32 bits of the software-loaded receive reorder bitmap."]
+            #[inline(always)]
+            pub fn bitmap(&self) -> BitmapR {
+                BitmapR::new(self.bits)
             }
         }
-        impl W {}
+        impl W {
+            #[doc = "Bits 0:31 - Low 32 bits of the software-loaded receive reorder bitmap."]
+            #[inline(always)]
+            pub fn bitmap(&mut self) -> BitmapW<'_, RxBlockAckEntryBitmapLowLoadSpec> {
+                BitmapW::new(self, 0)
+            }
+        }
         #[doc = "Software load word for the low reorder bitmap. Complete add and delete clear it; complete session restore writes the saved low status bitmap here while VALID is clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_bitmap_low_load::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_entry_bitmap_low_load::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxBlockAckEntryBitmapLowLoadSpec;
         impl crate::RegisterSpec for RxBlockAckEntryBitmapLowLoadSpec {
@@ -35251,9 +35419,13 @@ pub mod wifi_mac_rx_dma {
     pub mod rx_block_ack_entry_bitmap_high_status {
         #[doc = "Register `RX_BLOCK_ACK_ENTRY%s_BITMAP_HIGH_STATUS` reader"]
         pub type R = crate::R<RxBlockAckEntryBitmapHighStatusSpec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `BITMAP` reader - High 32 bits of the hardware-maintained receive reorder bitmap."]
+        pub type BitmapR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31 - High 32 bits of the hardware-maintained receive reorder bitmap."]
+            #[inline(always)]
+            pub fn bitmap(&self) -> BitmapR {
+                BitmapR::new(self.bits)
             }
         }
         #[doc = "Hardware-maintained high reorder bitmap. Complete hal_ba_session_store snapshots this word and restore copies it into BITMAP_HIGH_LOAD while VALID is clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_bitmap_high_status::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -35274,12 +35446,24 @@ pub mod wifi_mac_rx_dma {
         pub type R = crate::R<RxBlockAckEntryBitmapHighLoadSpec>;
         #[doc = "Register `RX_BLOCK_ACK_ENTRY%s_BITMAP_HIGH_LOAD` writer"]
         pub type W = crate::W<RxBlockAckEntryBitmapHighLoadSpec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `BITMAP` reader - High 32 bits of the software-loaded receive reorder bitmap."]
+        pub type BitmapR = crate::FieldReader<u32>;
+        #[doc = "Field `BITMAP` writer - High 32 bits of the software-loaded receive reorder bitmap."]
+        pub type BitmapW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl R {
+            #[doc = "Bits 0:31 - High 32 bits of the software-loaded receive reorder bitmap."]
+            #[inline(always)]
+            pub fn bitmap(&self) -> BitmapR {
+                BitmapR::new(self.bits)
             }
         }
-        impl W {}
+        impl W {
+            #[doc = "Bits 0:31 - High 32 bits of the software-loaded receive reorder bitmap."]
+            #[inline(always)]
+            pub fn bitmap(&mut self) -> BitmapW<'_, RxBlockAckEntryBitmapHighLoadSpec> {
+                BitmapW::new(self, 0)
+            }
+        }
         #[doc = "Software load word for the high reorder bitmap. Complete add and delete clear it; complete session restore writes the saved high status bitmap here while VALID is clear.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_bitmap_high_load::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_entry_bitmap_high_load::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxBlockAckEntryBitmapHighLoadSpec;
         impl crate::RegisterSpec for RxBlockAckEntryBitmapHighLoadSpec {
@@ -35380,14 +35564,26 @@ pub mod wifi_mac_rx_dma {
         pub type EnableR = crate::BitReader;
         #[doc = "Field `ENABLE` writer - "]
         pub type EnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `CONTROL_UNKNOWN_1_4` reader - Bits cleared by every reviewed zero-based extra-SoftAP control publication."]
+        pub type ControlUnknown1_4R = crate::FieldReader;
+        #[doc = "Field `CONTROL_UNKNOWN_1_4` writer - Bits cleared by every reviewed zero-based extra-SoftAP control publication."]
+        pub type ControlUnknown1_4W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
         #[doc = "Field `INDEX` reader - "]
         pub type IndexR = crate::FieldReader;
         #[doc = "Field `INDEX` writer - "]
         pub type IndexW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
+        #[doc = "Field `CONTROL_UNKNOWN_10_11` reader - Bits cleared by every reviewed zero-based extra-SoftAP control publication."]
+        pub type ControlUnknown10_11R = crate::FieldReader;
+        #[doc = "Field `CONTROL_UNKNOWN_10_11` writer - Bits cleared by every reviewed zero-based extra-SoftAP control publication."]
+        pub type ControlUnknown10_11W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
         #[doc = "Field `TID` reader - "]
         pub type TidR = crate::FieldReader;
         #[doc = "Field `TID` writer - "]
         pub type TidW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        #[doc = "Field `CONTROL_UNKNOWN_16_29` reader - Bits cleared by every reviewed zero-based extra-SoftAP control publication."]
+        pub type ControlUnknown16_29R = crate::FieldReader<u16>;
+        #[doc = "Field `CONTROL_UNKNOWN_16_29` writer - Bits cleared by every reviewed zero-based extra-SoftAP control publication."]
+        pub type ControlUnknown16_29W<'a, REG> = crate::FieldWriter<'a, REG, 14, u16>;
         #[doc = "Field `WRITE` reader - "]
         pub type WriteR = crate::BitReader;
         #[doc = "Field `WRITE` writer - "]
@@ -35402,15 +35598,30 @@ pub mod wifi_mac_rx_dma {
             pub fn enable(&self) -> EnableR {
                 EnableR::new((self.bits & 1) != 0)
             }
+            #[doc = "Bits 1:4 - Bits cleared by every reviewed zero-based extra-SoftAP control publication."]
+            #[inline(always)]
+            pub fn control_unknown_1_4(&self) -> ControlUnknown1_4R {
+                ControlUnknown1_4R::new(((self.bits >> 1) & 0x0f) as u8)
+            }
             #[doc = "Bits 5:9"]
             #[inline(always)]
             pub fn index(&self) -> IndexR {
                 IndexR::new(((self.bits >> 5) & 0x1f) as u8)
             }
+            #[doc = "Bits 10:11 - Bits cleared by every reviewed zero-based extra-SoftAP control publication."]
+            #[inline(always)]
+            pub fn control_unknown_10_11(&self) -> ControlUnknown10_11R {
+                ControlUnknown10_11R::new(((self.bits >> 10) & 3) as u8)
+            }
             #[doc = "Bits 12:15"]
             #[inline(always)]
             pub fn tid(&self) -> TidR {
                 TidR::new(((self.bits >> 12) & 0x0f) as u8)
+            }
+            #[doc = "Bits 16:29 - Bits cleared by every reviewed zero-based extra-SoftAP control publication."]
+            #[inline(always)]
+            pub fn control_unknown_16_29(&self) -> ControlUnknown16_29R {
+                ControlUnknown16_29R::new(((self.bits >> 16) & 0x3fff) as u16)
             }
             #[doc = "Bit 30"]
             #[inline(always)]
@@ -35429,15 +35640,36 @@ pub mod wifi_mac_rx_dma {
             pub fn enable(&mut self) -> EnableW<'_, ExtraSoftapRxBlockAckControlSpec> {
                 EnableW::new(self, 0)
             }
+            #[doc = "Bits 1:4 - Bits cleared by every reviewed zero-based extra-SoftAP control publication."]
+            #[inline(always)]
+            pub fn control_unknown_1_4(
+                &mut self,
+            ) -> ControlUnknown1_4W<'_, ExtraSoftapRxBlockAckControlSpec> {
+                ControlUnknown1_4W::new(self, 1)
+            }
             #[doc = "Bits 5:9"]
             #[inline(always)]
             pub fn index(&mut self) -> IndexW<'_, ExtraSoftapRxBlockAckControlSpec> {
                 IndexW::new(self, 5)
             }
+            #[doc = "Bits 10:11 - Bits cleared by every reviewed zero-based extra-SoftAP control publication."]
+            #[inline(always)]
+            pub fn control_unknown_10_11(
+                &mut self,
+            ) -> ControlUnknown10_11W<'_, ExtraSoftapRxBlockAckControlSpec> {
+                ControlUnknown10_11W::new(self, 10)
+            }
             #[doc = "Bits 12:15"]
             #[inline(always)]
             pub fn tid(&mut self) -> TidW<'_, ExtraSoftapRxBlockAckControlSpec> {
                 TidW::new(self, 12)
+            }
+            #[doc = "Bits 16:29 - Bits cleared by every reviewed zero-based extra-SoftAP control publication."]
+            #[inline(always)]
+            pub fn control_unknown_16_29(
+                &mut self,
+            ) -> ControlUnknown16_29W<'_, ExtraSoftapRxBlockAckControlSpec> {
+                ControlUnknown16_29W::new(self, 16)
             }
             #[doc = "Bit 30"]
             #[inline(always)]
@@ -35485,6 +35717,10 @@ pub mod wifi_mac_rx_dma {
         pub type WindowR = crate::FieldReader;
         #[doc = "Field `WINDOW` writer - "]
         pub type WindowW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
+        #[doc = "Field `POLICY_UNKNOWN_25_31` reader - Bits cleared by every reviewed zero-based extra-SoftAP policy publication."]
+        pub type PolicyUnknown25_31R = crate::FieldReader;
+        #[doc = "Field `POLICY_UNKNOWN_25_31` writer - Bits cleared by every reviewed zero-based extra-SoftAP policy publication."]
+        pub type PolicyUnknown25_31W<'a, REG> = crate::FieldWriter<'a, REG, 7>;
         impl R {
             #[doc = "Bits 0:15"]
             #[inline(always)]
@@ -35500,6 +35736,11 @@ pub mod wifi_mac_rx_dma {
             #[inline(always)]
             pub fn window(&self) -> WindowR {
                 WindowR::new(((self.bits >> 18) & 0x7f) as u8)
+            }
+            #[doc = "Bits 25:31 - Bits cleared by every reviewed zero-based extra-SoftAP policy publication."]
+            #[inline(always)]
+            pub fn policy_unknown_25_31(&self) -> PolicyUnknown25_31R {
+                PolicyUnknown25_31R::new(((self.bits >> 25) & 0x7f) as u8)
             }
         }
         impl W {
@@ -35521,6 +35762,13 @@ pub mod wifi_mac_rx_dma {
             #[inline(always)]
             pub fn window(&mut self) -> WindowW<'_, ExtraSoftapRxBlockAckPeerTailAndPolicySpec> {
                 WindowW::new(self, 18)
+            }
+            #[doc = "Bits 25:31 - Bits cleared by every reviewed zero-based extra-SoftAP policy publication."]
+            #[inline(always)]
+            pub fn policy_unknown_25_31(
+                &mut self,
+            ) -> PolicyUnknown25_31W<'_, ExtraSoftapRxBlockAckPeerTailAndPolicySpec> {
+                PolicyUnknown25_31W::new(self, 25)
             }
         }
         #[doc = "Shared extra-SoftAP staging word carrying peer MAC bytes four and five, interface and reorder-window size.\n\nYou can [`read`](crate::Reg::read) this register and get [`extra_softap_rx_block_ack_peer_tail_and_policy::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`extra_softap_rx_block_ack_peer_tail_and_policy::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -35628,12 +35876,24 @@ pub mod wifi_mac_rx_dma {
         pub type R = crate::R<ExtraSoftapRxBlockAckBitmapLowSpec>;
         #[doc = "Register `EXTRA_SOFTAP_RX_BLOCK_ACK_BITMAP_LOW` writer"]
         pub type W = crate::W<ExtraSoftapRxBlockAckBitmapLowSpec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `BITMAP` reader - Low 32 bits of the selected extra-SoftAP receive reorder bitmap."]
+        pub type BitmapR = crate::FieldReader<u32>;
+        #[doc = "Field `BITMAP` writer - Low 32 bits of the selected extra-SoftAP receive reorder bitmap."]
+        pub type BitmapW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl R {
+            #[doc = "Bits 0:31 - Low 32 bits of the selected extra-SoftAP receive reorder bitmap."]
+            #[inline(always)]
+            pub fn bitmap(&self) -> BitmapR {
+                BitmapR::new(self.bits)
             }
         }
-        impl W {}
+        impl W {
+            #[doc = "Bits 0:31 - Low 32 bits of the selected extra-SoftAP receive reorder bitmap."]
+            #[inline(always)]
+            pub fn bitmap(&mut self) -> BitmapW<'_, ExtraSoftapRxBlockAckBitmapLowSpec> {
+                BitmapW::new(self, 0)
+            }
+        }
         #[doc = "Shared extra-SoftAP low receive/reorder bitmap staging word, cleared when installing or removing an entry.\n\nYou can [`read`](crate::Reg::read) this register and get [`extra_softap_rx_block_ack_bitmap_low::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`extra_softap_rx_block_ack_bitmap_low::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ExtraSoftapRxBlockAckBitmapLowSpec;
         impl crate::RegisterSpec for ExtraSoftapRxBlockAckBitmapLowSpec {
@@ -35656,12 +35916,24 @@ pub mod wifi_mac_rx_dma {
         pub type R = crate::R<ExtraSoftapRxBlockAckBitmapHighSpec>;
         #[doc = "Register `EXTRA_SOFTAP_RX_BLOCK_ACK_BITMAP_HIGH` writer"]
         pub type W = crate::W<ExtraSoftapRxBlockAckBitmapHighSpec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `BITMAP` reader - High 32 bits of the selected extra-SoftAP receive reorder bitmap."]
+        pub type BitmapR = crate::FieldReader<u32>;
+        #[doc = "Field `BITMAP` writer - High 32 bits of the selected extra-SoftAP receive reorder bitmap."]
+        pub type BitmapW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        impl R {
+            #[doc = "Bits 0:31 - High 32 bits of the selected extra-SoftAP receive reorder bitmap."]
+            #[inline(always)]
+            pub fn bitmap(&self) -> BitmapR {
+                BitmapR::new(self.bits)
             }
         }
-        impl W {}
+        impl W {
+            #[doc = "Bits 0:31 - High 32 bits of the selected extra-SoftAP receive reorder bitmap."]
+            #[inline(always)]
+            pub fn bitmap(&mut self) -> BitmapW<'_, ExtraSoftapRxBlockAckBitmapHighSpec> {
+                BitmapW::new(self, 0)
+            }
+        }
         #[doc = "Shared extra-SoftAP high receive/reorder bitmap staging word, cleared when installing or removing an entry.\n\nYou can [`read`](crate::Reg::read) this register and get [`extra_softap_rx_block_ack_bitmap_high::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`extra_softap_rx_block_ack_bitmap_high::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ExtraSoftapRxBlockAckBitmapHighSpec;
         impl crate::RegisterSpec for ExtraSoftapRxBlockAckBitmapHighSpec {
@@ -58862,13 +59134,25 @@ pub mod field_or_modify {
 /// Safe, SVD-declared indexed bit-set read-modify-write transactions.
 pub mod indexed_bit_set_modify {
 
+    /// Set one bit selected by the reviewed `MacRxBlockAckEntryIndex` domain in WIFI_MAC_RX_DMA.RX_BLOCK_ACK_AGREEMENT_UPDATE.
+    #[inline]
+    pub fn request_rx_block_ack_entry_update(registers: &crate::WifiMacRxDma, bit_index: u32) {
+        registers
+            .rx_block_ack_agreement_update()
+            .modify(|reader, writer| {
+                writer.ordinary_entry_update().set(
+                    (u32::from(reader.ordinary_entry_update().bits()) | (1_u32 << bit_index)) as u8,
+                )
+            });
+    }
+
     /// Set one bit selected by the reviewed `MacRxBeaconClearRequest` domain in WIFI_MAC_COEX_RUNTIME.CLEAR_REQUEST.
     #[inline]
     pub fn request_mac_rx_beacon_clear(registers: &crate::WifiMacCoexRuntime, bit_index: u32) {
         registers.clear_request().modify(|reader, writer| {
             writer
                 .requests_unknown()
-                .set(reader.bits() | (1_u32 << bit_index))
+                .set(reader.requests_unknown().bits() | (1_u32 << bit_index))
         });
     }
 
@@ -58878,7 +59162,7 @@ pub mod indexed_bit_set_modify {
         registers.clear_request().modify(|reader, writer| {
             writer
                 .requests_unknown()
-                .set(reader.bits() | (1_u32 << bit_index))
+                .set(reader.requests_unknown().bits() | (1_u32 << bit_index))
         });
     }
 }

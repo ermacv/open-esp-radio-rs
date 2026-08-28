@@ -263,6 +263,11 @@ addressOffset = 0x11C4
 size = 32
 access = "read-only"
 
+[[peripherals.registers.register.fields]]
+name = "BITMAP"
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -271,6 +276,11 @@ description = "WDEVTXQBA_BMLO for reverse-addressed hardware queue 7."
 addressOffset = 0x11C8
 size = 32
 access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "BITMAP"
+bitOffset = 0
+bitWidth = 32
 
 [[peripherals.registers]]
 
@@ -334,6 +344,11 @@ addressOffset = 0x11D4
 size = 32
 access = "read-only"
 
+[[peripherals.registers.register.fields]]
+name = "ADDRESS_BYTES_0_3"
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -372,6 +387,11 @@ addressOffset = 0x1240
 size = 32
 access = "read-only"
 
+[[peripherals.registers.register.fields]]
+name = "BITMAP"
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -380,6 +400,11 @@ description = "WDEVTXQBA_BMLO for reverse-addressed hardware queue 6."
 addressOffset = 0x1244
 size = 32
 access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "BITMAP"
+bitOffset = 0
+bitWidth = 32
 
 [[peripherals.registers]]
 
@@ -443,6 +468,11 @@ addressOffset = 0x1250
 size = 32
 access = "read-only"
 
+[[peripherals.registers.register.fields]]
+name = "ADDRESS_BYTES_0_3"
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -481,6 +511,11 @@ addressOffset = 0x12BC
 size = 32
 access = "read-only"
 
+[[peripherals.registers.register.fields]]
+name = "BITMAP"
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -489,6 +524,11 @@ description = "WDEVTXQBA_BMLO for reverse-addressed hardware queue 5."
 addressOffset = 0x12C0
 size = 32
 access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "BITMAP"
+bitOffset = 0
+bitWidth = 32
 
 [[peripherals.registers]]
 
@@ -552,6 +592,11 @@ addressOffset = 0x12CC
 size = 32
 access = "read-only"
 
+[[peripherals.registers.register.fields]]
+name = "ADDRESS_BYTES_0_3"
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -590,6 +635,11 @@ addressOffset = 0x1338
 size = 32
 access = "read-only"
 
+[[peripherals.registers.register.fields]]
+name = "BITMAP"
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -598,6 +648,11 @@ description = "WDEVTXQBA_BMLO for reverse-addressed hardware queue 4."
 addressOffset = 0x133C
 size = 32
 access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "BITMAP"
+bitOffset = 0
+bitWidth = 32
 
 [[peripherals.registers]]
 
@@ -661,6 +716,11 @@ addressOffset = 0x1348
 size = 32
 access = "read-only"
 
+[[peripherals.registers.register.fields]]
+name = "ADDRESS_BYTES_0_3"
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -699,6 +759,11 @@ addressOffset = 0x13B4
 size = 32
 access = "read-only"
 
+[[peripherals.registers.register.fields]]
+name = "BITMAP"
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -707,6 +772,11 @@ description = "Low 32 acknowledgement bits for completed hardware queue 3."
 addressOffset = 0x13B8
 size = 32
 access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "BITMAP"
+bitOffset = 0
+bitWidth = 32
 
 [[peripherals.registers]]
 
@@ -770,6 +840,11 @@ addressOffset = 0x13C4
 size = 32
 access = "read-only"
 
+[[peripherals.registers.register.fields]]
+name = "ADDRESS_BYTES_0_3"
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -808,6 +883,11 @@ addressOffset = 0x1430
 size = 32
 access = "read-only"
 
+[[peripherals.registers.register.fields]]
+name = "BITMAP"
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -816,6 +896,11 @@ description = "Low 32 acknowledgement bits for completed hardware queue 2."
 addressOffset = 0x1434
 size = 32
 access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "BITMAP"
+bitOffset = 0
+bitWidth = 32
 
 [[peripherals.registers]]
 
@@ -879,6 +964,11 @@ addressOffset = 0x1440
 size = 32
 access = "read-only"
 
+[[peripherals.registers.register.fields]]
+name = "ADDRESS_BYTES_0_3"
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -917,6 +1007,11 @@ addressOffset = 0x14AC
 size = 32
 access = "read-only"
 
+[[peripherals.registers.register.fields]]
+name = "BITMAP"
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -925,6 +1020,11 @@ description = "Low 32 acknowledgement bits for completed hardware queue 1."
 addressOffset = 0x14B0
 size = 32
 access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "BITMAP"
+bitOffset = 0
+bitWidth = 32
 
 [[peripherals.registers]]
 
@@ -988,6 +1088,11 @@ addressOffset = 0x14BC
 size = 32
 access = "read-only"
 
+[[peripherals.registers.register.fields]]
+name = "ADDRESS_BYTES_0_3"
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -1026,6 +1131,11 @@ addressOffset = 0x1528
 size = 32
 access = "read-only"
 
+[[peripherals.registers.register.fields]]
+name = "BITMAP"
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -1034,6 +1144,11 @@ description = "Low 32 acknowledgement bits for completed hardware queue 0, sampl
 addressOffset = 0x152C
 size = 32
 access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "BITMAP"
+bitOffset = 0
+bitWidth = 32
 
 [[peripherals.registers]]
 
@@ -1097,6 +1212,11 @@ addressOffset = 0x1538
 size = 32
 access = "read-only"
 
+[[peripherals.registers.register.fields]]
+name = "ADDRESS_BYTES_0_3"
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -1116,6 +1236,12 @@ bitOffset = 0
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
+name = "CONTROL_UNKNOWN_1_11"
+description = "Bits preserved by reads but cleared by every reviewed zero-based ordinary-entry publication."
+bitOffset = 1
+bitWidth = 11
+
+[[peripherals.registers.register.fields]]
 name = "TID"
 description = "Traffic identifier passed to complete hal_agreement_add_rx_ba without the extra staging path's index transform. The field is four bits wide, while complete ht_recv_action_ba_addba_request rejects values with bit three set and therefore admits TIDs zero through seven."
 bitOffset = 12
@@ -1124,6 +1250,12 @@ bitWidth = 4
 [peripherals.registers.register.fields.writeConstraint.range]
 minimum = 0x0
 maximum = 0xF
+
+[[peripherals.registers.register.fields]]
+name = "CONTROL_UNKNOWN_16_29"
+description = "Bits preserved by reads but cleared by every reviewed zero-based ordinary-entry publication."
+bitOffset = 16
+bitWidth = 14
 
 [[peripherals.registers.register.fields]]
 name = "WRITE"
@@ -1176,6 +1308,12 @@ bitWidth = 7
 [peripherals.registers.register.fields.writeConstraint.range]
 minimum = 0x0
 maximum = 0x7F
+
+[[peripherals.registers.register.fields]]
+name = "POLICY_UNKNOWN_25_31"
+description = "Bits cleared by every reviewed zero-based ordinary-entry policy publication."
+bitOffset = 25
+bitWidth = 7
 
 [[peripherals.registers]]
 
@@ -1252,6 +1390,12 @@ addressOffset = 0x18C
 size = 32
 access = "read-only"
 
+[[peripherals.registers.register.fields]]
+name = "BITMAP"
+description = "Low 32 bits of the hardware-maintained receive reorder bitmap."
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -1263,6 +1407,12 @@ description = "Software load word for the low reorder bitmap. Complete add and d
 addressOffset = 0x190
 size = 32
 access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "BITMAP"
+description = "Low 32 bits of the software-loaded receive reorder bitmap."
+bitOffset = 0
+bitWidth = 32
 
 [[peripherals.registers]]
 
@@ -1276,6 +1426,12 @@ addressOffset = 0x194
 size = 32
 access = "read-only"
 
+[[peripherals.registers.register.fields]]
+name = "BITMAP"
+description = "High 32 bits of the hardware-maintained receive reorder bitmap."
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -1287,6 +1443,12 @@ description = "Software load word for the high reorder bitmap. Complete add and 
 addressOffset = 0x198
 size = 32
 access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "BITMAP"
+description = "High 32 bits of the software-loaded receive reorder bitmap."
+bitOffset = 0
+bitWidth = 32
 
 [[peripherals.registers]]
 
@@ -1334,6 +1496,12 @@ bitOffset = 0
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
+name = "CONTROL_UNKNOWN_1_4"
+description = "Bits cleared by every reviewed zero-based extra-SoftAP control publication."
+bitOffset = 1
+bitWidth = 4
+
+[[peripherals.registers.register.fields]]
 name = "INDEX"
 bitOffset = 5
 bitWidth = 5
@@ -1343,6 +1511,12 @@ minimum = 0x0
 maximum = 0x1F
 
 [[peripherals.registers.register.fields]]
+name = "CONTROL_UNKNOWN_10_11"
+description = "Bits cleared by every reviewed zero-based extra-SoftAP control publication."
+bitOffset = 10
+bitWidth = 2
+
+[[peripherals.registers.register.fields]]
 name = "TID"
 bitOffset = 12
 bitWidth = 4
@@ -1350,6 +1524,12 @@ bitWidth = 4
 [peripherals.registers.register.fields.writeConstraint.range]
 minimum = 0x0
 maximum = 0xF
+
+[[peripherals.registers.register.fields]]
+name = "CONTROL_UNKNOWN_16_29"
+description = "Bits cleared by every reviewed zero-based extra-SoftAP control publication."
+bitOffset = 16
+bitWidth = 14
 
 [[peripherals.registers.register.fields]]
 name = "WRITE"
@@ -1397,6 +1577,12 @@ bitWidth = 7
 minimum = 0x0
 maximum = 0x7F
 
+[[peripherals.registers.register.fields]]
+name = "POLICY_UNKNOWN_25_31"
+description = "Bits cleared by every reviewed zero-based extra-SoftAP policy publication."
+bitOffset = 25
+bitWidth = 7
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -1443,6 +1629,12 @@ addressOffset = 0xEB4
 size = 32
 access = "read-write"
 
+[[peripherals.registers.register.fields]]
+name = "BITMAP"
+description = "Low 32 bits of the selected extra-SoftAP receive reorder bitmap."
+bitOffset = 0
+bitWidth = 32
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -1451,6 +1643,12 @@ description = "Shared extra-SoftAP high receive/reorder bitmap staging word, cle
 addressOffset = 0xEB8
 size = 32
 access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "BITMAP"
+description = "High 32 bits of the selected extra-SoftAP receive reorder bitmap."
+bitOffset = 0
+bitWidth = 32
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA"

@@ -335,8 +335,32 @@ impl PacApiPack {
             require_size_access(&operation.name, binding, Access::ReadWrite, "read-write")?;
             require_ordinary(&operation.name, binding.info)?;
             let field = field(&operation.name, binding.info, &operation.field)?;
-            require_full_field(&operation.name, field)?;
-            require_full_range(&operation.name, field, 32)?;
+            let width = field.bit_width();
+            if !(1..=32).contains(&width) {
+                return Err(Error::message(format!(
+                    "PAC API indexed-bit-set-modify {:?} field has invalid width {width}",
+                    operation.name
+                )));
+            }
+            let maximum_index = self
+                .bounded_domains
+                .iter()
+                .find(|candidate| candidate.name == operation.domain)
+                .map(|domain| domain.max)
+                .or_else(|| {
+                    self.enum_domains
+                        .iter()
+                        .find(|candidate| candidate.name == operation.domain)
+                        .and_then(|domain| domain.values.iter().map(|value| value.value).max())
+                })
+                .expect("pack validation requires a bounded or enum index domain");
+            if maximum_index >= width {
+                return Err(Error::message(format!(
+                    "PAC API indexed-bit-set-modify {:?} domain index {maximum_index} exceeds its {width}-bit field",
+                    operation.name
+                )));
+            }
+            require_full_range(&operation.name, field, width)?;
         }
         for domain in &self.opaque_domains {
             // A register-specific opaque value domain is a type boundary, not

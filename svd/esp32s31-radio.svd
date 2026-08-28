@@ -30,12 +30,28 @@
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>BITMAP</name>
+              <description>High 32 bits of the internal transmit BlockAck acknowledgement bitmap.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>BITMAP_LOW</name>
           <addressOffset>0x4</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>BITMAP</name>
+              <description>Low 32 bits of the internal transmit BlockAck acknowledgement bitmap.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TRANSMITTER_ADDRESS_WORD_0</name>
@@ -13728,6 +13744,13 @@
           <addressOffset>0x11C4</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>BITMAP</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TX_BLOCK_ACK_BITMAP_LOW_Q7</name>
@@ -13735,6 +13758,13 @@
           <addressOffset>0x11C8</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>BITMAP</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TX_BLOCK_ACK_CONTROL_SEQUENCE_Q7</name>
@@ -13795,6 +13825,13 @@
           <addressOffset>0x11D4</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>ADDRESS_BYTES_0_3</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TX_QUEUE_INFORMATION_Q6</name>
@@ -13831,6 +13868,13 @@
           <addressOffset>0x1240</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>BITMAP</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TX_BLOCK_ACK_BITMAP_LOW_Q6</name>
@@ -13838,6 +13882,13 @@
           <addressOffset>0x1244</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>BITMAP</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TX_BLOCK_ACK_CONTROL_SEQUENCE_Q6</name>
@@ -13898,6 +13949,13 @@
           <addressOffset>0x1250</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>ADDRESS_BYTES_0_3</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TX_QUEUE_INFORMATION_Q5</name>
@@ -13934,6 +13992,13 @@
           <addressOffset>0x12BC</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>BITMAP</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TX_BLOCK_ACK_BITMAP_LOW_Q5</name>
@@ -13941,6 +14006,13 @@
           <addressOffset>0x12C0</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>BITMAP</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TX_BLOCK_ACK_CONTROL_SEQUENCE_Q5</name>
@@ -14001,6 +14073,13 @@
           <addressOffset>0x12CC</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>ADDRESS_BYTES_0_3</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TX_QUEUE_INFORMATION_Q4</name>
@@ -14037,6 +14116,13 @@
           <addressOffset>0x1338</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>BITMAP</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TX_BLOCK_ACK_BITMAP_LOW_Q4</name>
@@ -14044,6 +14130,13 @@
           <addressOffset>0x133C</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>BITMAP</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TX_BLOCK_ACK_CONTROL_SEQUENCE_Q4</name>
@@ -14104,6 +14197,13 @@
           <addressOffset>0x1348</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>ADDRESS_BYTES_0_3</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TX_QUEUE_INFORMATION_Q3</name>
@@ -14140,6 +14240,13 @@
           <addressOffset>0x13B4</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>BITMAP</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TX_BLOCK_ACK_BITMAP_LOW_Q3</name>
@@ -14147,6 +14254,13 @@
           <addressOffset>0x13B8</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>BITMAP</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TX_BLOCK_ACK_CONTROL_SEQUENCE_Q3</name>
@@ -14207,6 +14321,13 @@
           <addressOffset>0x13C4</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>ADDRESS_BYTES_0_3</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TX_QUEUE_INFORMATION_Q2</name>
@@ -14243,6 +14364,13 @@
           <addressOffset>0x1430</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>BITMAP</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TX_BLOCK_ACK_BITMAP_LOW_Q2</name>
@@ -14250,6 +14378,13 @@
           <addressOffset>0x1434</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>BITMAP</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TX_BLOCK_ACK_CONTROL_SEQUENCE_Q2</name>
@@ -14310,6 +14445,13 @@
           <addressOffset>0x1440</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>ADDRESS_BYTES_0_3</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TX_QUEUE_INFORMATION_Q1</name>
@@ -14346,6 +14488,13 @@
           <addressOffset>0x14AC</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>BITMAP</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TX_BLOCK_ACK_BITMAP_LOW_Q1</name>
@@ -14353,6 +14502,13 @@
           <addressOffset>0x14B0</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>BITMAP</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TX_BLOCK_ACK_CONTROL_SEQUENCE_Q1</name>
@@ -14413,6 +14569,13 @@
           <addressOffset>0x14BC</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>ADDRESS_BYTES_0_3</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TX_QUEUE_INFORMATION_Q0</name>
@@ -14449,6 +14612,13 @@
           <addressOffset>0x1528</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>BITMAP</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TX_BLOCK_ACK_BITMAP_LOW_Q0</name>
@@ -14456,6 +14626,13 @@
           <addressOffset>0x152C</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>BITMAP</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TX_BLOCK_ACK_CONTROL_SEQUENCE_Q0</name>
@@ -14516,6 +14693,13 @@
           <addressOffset>0x1538</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>ADDRESS_BYTES_0_3</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <dim>8</dim>
@@ -14534,6 +14718,12 @@
               <bitWidth>1</bitWidth>
             </field>
             <field>
+              <name>CONTROL_UNKNOWN_1_11</name>
+              <description>Bits preserved by reads but cleared by every reviewed zero-based ordinary-entry publication.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>11</bitWidth>
+            </field>
+            <field>
               <name>TID</name>
               <description>Traffic identifier passed to complete hal_agreement_add_rx_ba without the extra staging path's index transform. The field is four bits wide, while complete ht_recv_action_ba_addba_request rejects values with bit three set and therefore admits TIDs zero through seven.</description>
               <bitOffset>12</bitOffset>
@@ -14544,6 +14734,12 @@
                   <maximum>15</maximum>
                 </range>
               </writeConstraint>
+            </field>
+            <field>
+              <name>CONTROL_UNKNOWN_16_29</name>
+              <description>Bits preserved by reads but cleared by every reviewed zero-based ordinary-entry publication.</description>
+              <bitOffset>16</bitOffset>
+              <bitWidth>14</bitWidth>
             </field>
             <field>
               <name>WRITE</name>
@@ -14602,6 +14798,12 @@
                   <maximum>127</maximum>
                 </range>
               </writeConstraint>
+            </field>
+            <field>
+              <name>POLICY_UNKNOWN_25_31</name>
+              <description>Bits cleared by every reviewed zero-based ordinary-entry policy publication.</description>
+              <bitOffset>25</bitOffset>
+              <bitWidth>7</bitWidth>
             </field>
           </fields>
         </register>
@@ -14683,6 +14885,14 @@
           <addressOffset>0x18C</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>BITMAP</name>
+              <description>Low 32 bits of the hardware-maintained receive reorder bitmap.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <dim>8</dim>
@@ -14693,6 +14903,14 @@
           <addressOffset>0x190</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
+          <fields>
+            <field>
+              <name>BITMAP</name>
+              <description>Low 32 bits of the software-loaded receive reorder bitmap.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <dim>8</dim>
@@ -14703,6 +14921,14 @@
           <addressOffset>0x194</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>BITMAP</name>
+              <description>High 32 bits of the hardware-maintained receive reorder bitmap.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <dim>8</dim>
@@ -14713,6 +14939,14 @@
           <addressOffset>0x198</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
+          <fields>
+            <field>
+              <name>BITMAP</name>
+              <description>High 32 bits of the software-loaded receive reorder bitmap.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>RX_BLOCK_ACK_AGREEMENT_UPDATE</name>
@@ -14760,6 +14994,12 @@
               <bitWidth>1</bitWidth>
             </field>
             <field>
+              <name>CONTROL_UNKNOWN_1_4</name>
+              <description>Bits cleared by every reviewed zero-based extra-SoftAP control publication.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+            <field>
               <name>INDEX</name>
               <bitOffset>5</bitOffset>
               <bitWidth>5</bitWidth>
@@ -14771,6 +15011,12 @@
               </writeConstraint>
             </field>
             <field>
+              <name>CONTROL_UNKNOWN_10_11</name>
+              <description>Bits cleared by every reviewed zero-based extra-SoftAP control publication.</description>
+              <bitOffset>10</bitOffset>
+              <bitWidth>2</bitWidth>
+            </field>
+            <field>
               <name>TID</name>
               <bitOffset>12</bitOffset>
               <bitWidth>4</bitWidth>
@@ -14780,6 +15026,12 @@
                   <maximum>15</maximum>
                 </range>
               </writeConstraint>
+            </field>
+            <field>
+              <name>CONTROL_UNKNOWN_16_29</name>
+              <description>Bits cleared by every reviewed zero-based extra-SoftAP control publication.</description>
+              <bitOffset>16</bitOffset>
+              <bitWidth>14</bitWidth>
             </field>
             <field>
               <name>WRITE</name>
@@ -14833,6 +15085,12 @@
                 </range>
               </writeConstraint>
             </field>
+            <field>
+              <name>POLICY_UNKNOWN_25_31</name>
+              <description>Bits cleared by every reviewed zero-based extra-SoftAP policy publication.</description>
+              <bitOffset>25</bitOffset>
+              <bitWidth>7</bitWidth>
+            </field>
           </fields>
         </register>
         <register>
@@ -14882,6 +15140,14 @@
           <addressOffset>0xEB4</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
+          <fields>
+            <field>
+              <name>BITMAP</name>
+              <description>Low 32 bits of the selected extra-SoftAP receive reorder bitmap.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>EXTRA_SOFTAP_RX_BLOCK_ACK_BITMAP_HIGH</name>
@@ -14889,6 +15155,14 @@
           <addressOffset>0xEB8</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
+          <fields>
+            <field>
+              <name>BITMAP</name>
+              <description>High 32 bits of the selected extra-SoftAP receive reorder bitmap.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
       </registers>
     </peripheral>

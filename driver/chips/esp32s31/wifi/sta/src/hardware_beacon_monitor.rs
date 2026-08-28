@@ -269,8 +269,6 @@ mod tests {
 
     fn snapshot() -> MacStaReceivePolicySnapshot {
         MacStaReceivePolicySnapshot {
-            queue_zero_policy: 0,
-            queue_three_policy: 0,
             bssid: BSSID,
             association_id: 7,
             minimum_mpdu_start_spacing: 0,

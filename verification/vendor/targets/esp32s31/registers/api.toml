@@ -1870,6 +1870,15 @@ exposure = "facade"
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 
 [[indexed-bit-set-modifies]]
+name = "request_rx_block_ack_entry_update"
+peripheral = "WIFI_MAC_RX_DMA"
+register = "RX_BLOCK_ACK_AGREEMENT_UPDATE"
+field = "ORDINARY_ENTRY_UPDATE"
+domain = "MacRxBlockAckEntryIndex"
+exposure = "facade"
+sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
+
+[[indexed-bit-set-modifies]]
 name = "request_mac_rx_beacon_clear"
 peripheral = "WIFI_MAC_COEX_RUNTIME"
 register = "CLEAR_REQUEST"

@@ -13036,10 +13036,24 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
+svd-name = "CONTROL_UNKNOWN_1_11"
+method = "control_unknown_1_11"
+bit-offset = 1
+bit-width = 11
+access = "read-write"
+
+[[registers.fields]]
 svd-name = "TID"
 method = "tid"
 bit-offset = 12
 bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_UNKNOWN_16_29"
+method = "control_unknown_16_29"
+bit-offset = 16
+bit-width = 14
 access = "read-write"
 
 [[registers.fields]]
@@ -13086,6 +13100,13 @@ access = "read-write"
 svd-name = "WINDOW"
 method = "window"
 bit-offset = 18
+bit-width = 7
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POLICY_UNKNOWN_25_31"
+method = "policy_unknown_25_31"
+bit-offset = 25
 bit-width = 7
 access = "read-write"
 
@@ -13157,7 +13178,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_low_status"
 register-index = 0
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537936272
@@ -13170,7 +13197,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_low_load"
 register-index = 0
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
 
 [[registers]]
 address = 537936276
@@ -13183,7 +13216,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_high_status"
 register-index = 0
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537936280
@@ -13196,7 +13235,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_high_load"
 register-index = 0
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
 
 [[registers]]
 address = 537936284
@@ -13218,10 +13263,24 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
+svd-name = "CONTROL_UNKNOWN_1_11"
+method = "control_unknown_1_11"
+bit-offset = 1
+bit-width = 11
+access = "read-write"
+
+[[registers.fields]]
 svd-name = "TID"
 method = "tid"
 bit-offset = 12
 bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_UNKNOWN_16_29"
+method = "control_unknown_16_29"
+bit-offset = 16
+bit-width = 14
 access = "read-write"
 
 [[registers.fields]]
@@ -13268,6 +13327,13 @@ access = "read-write"
 svd-name = "WINDOW"
 method = "window"
 bit-offset = 18
+bit-width = 7
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POLICY_UNKNOWN_25_31"
+method = "policy_unknown_25_31"
+bit-offset = 25
 bit-width = 7
 access = "read-write"
 
@@ -13339,7 +13405,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_low_status"
 register-index = 1
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537936308
@@ -13352,7 +13424,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_low_load"
 register-index = 1
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
 
 [[registers]]
 address = 537936312
@@ -13365,7 +13443,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_high_status"
 register-index = 1
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537936316
@@ -13378,7 +13462,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_high_load"
 register-index = 1
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
 
 [[registers]]
 address = 537936320
@@ -13400,10 +13490,24 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
+svd-name = "CONTROL_UNKNOWN_1_11"
+method = "control_unknown_1_11"
+bit-offset = 1
+bit-width = 11
+access = "read-write"
+
+[[registers.fields]]
 svd-name = "TID"
 method = "tid"
 bit-offset = 12
 bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_UNKNOWN_16_29"
+method = "control_unknown_16_29"
+bit-offset = 16
+bit-width = 14
 access = "read-write"
 
 [[registers.fields]]
@@ -13450,6 +13554,13 @@ access = "read-write"
 svd-name = "WINDOW"
 method = "window"
 bit-offset = 18
+bit-width = 7
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POLICY_UNKNOWN_25_31"
+method = "policy_unknown_25_31"
+bit-offset = 25
 bit-width = 7
 access = "read-write"
 
@@ -13521,7 +13632,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_low_status"
 register-index = 2
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537936344
@@ -13534,7 +13651,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_low_load"
 register-index = 2
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
 
 [[registers]]
 address = 537936348
@@ -13547,7 +13670,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_high_status"
 register-index = 2
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537936352
@@ -13560,7 +13689,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_high_load"
 register-index = 2
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
 
 [[registers]]
 address = 537936356
@@ -13582,10 +13717,24 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
+svd-name = "CONTROL_UNKNOWN_1_11"
+method = "control_unknown_1_11"
+bit-offset = 1
+bit-width = 11
+access = "read-write"
+
+[[registers.fields]]
 svd-name = "TID"
 method = "tid"
 bit-offset = 12
 bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_UNKNOWN_16_29"
+method = "control_unknown_16_29"
+bit-offset = 16
+bit-width = 14
 access = "read-write"
 
 [[registers.fields]]
@@ -13632,6 +13781,13 @@ access = "read-write"
 svd-name = "WINDOW"
 method = "window"
 bit-offset = 18
+bit-width = 7
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POLICY_UNKNOWN_25_31"
+method = "policy_unknown_25_31"
+bit-offset = 25
 bit-width = 7
 access = "read-write"
 
@@ -13703,7 +13859,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_low_status"
 register-index = 3
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537936380
@@ -13716,7 +13878,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_low_load"
 register-index = 3
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
 
 [[registers]]
 address = 537936384
@@ -13729,7 +13897,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_high_status"
 register-index = 3
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537936388
@@ -13742,7 +13916,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_high_load"
 register-index = 3
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
 
 [[registers]]
 address = 537936392
@@ -13764,10 +13944,24 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
+svd-name = "CONTROL_UNKNOWN_1_11"
+method = "control_unknown_1_11"
+bit-offset = 1
+bit-width = 11
+access = "read-write"
+
+[[registers.fields]]
 svd-name = "TID"
 method = "tid"
 bit-offset = 12
 bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_UNKNOWN_16_29"
+method = "control_unknown_16_29"
+bit-offset = 16
+bit-width = 14
 access = "read-write"
 
 [[registers.fields]]
@@ -13814,6 +14008,13 @@ access = "read-write"
 svd-name = "WINDOW"
 method = "window"
 bit-offset = 18
+bit-width = 7
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POLICY_UNKNOWN_25_31"
+method = "policy_unknown_25_31"
+bit-offset = 25
 bit-width = 7
 access = "read-write"
 
@@ -13885,7 +14086,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_low_status"
 register-index = 4
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537936416
@@ -13898,7 +14105,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_low_load"
 register-index = 4
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
 
 [[registers]]
 address = 537936420
@@ -13911,7 +14124,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_high_status"
 register-index = 4
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537936424
@@ -13924,7 +14143,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_high_load"
 register-index = 4
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
 
 [[registers]]
 address = 537936428
@@ -13946,10 +14171,24 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
+svd-name = "CONTROL_UNKNOWN_1_11"
+method = "control_unknown_1_11"
+bit-offset = 1
+bit-width = 11
+access = "read-write"
+
+[[registers.fields]]
 svd-name = "TID"
 method = "tid"
 bit-offset = 12
 bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_UNKNOWN_16_29"
+method = "control_unknown_16_29"
+bit-offset = 16
+bit-width = 14
 access = "read-write"
 
 [[registers.fields]]
@@ -13996,6 +14235,13 @@ access = "read-write"
 svd-name = "WINDOW"
 method = "window"
 bit-offset = 18
+bit-width = 7
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POLICY_UNKNOWN_25_31"
+method = "policy_unknown_25_31"
+bit-offset = 25
 bit-width = 7
 access = "read-write"
 
@@ -14067,7 +14313,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_low_status"
 register-index = 5
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537936452
@@ -14080,7 +14332,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_low_load"
 register-index = 5
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
 
 [[registers]]
 address = 537936456
@@ -14093,7 +14351,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_high_status"
 register-index = 5
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537936460
@@ -14106,7 +14370,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_high_load"
 register-index = 5
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
 
 [[registers]]
 address = 537936464
@@ -14128,10 +14398,24 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
+svd-name = "CONTROL_UNKNOWN_1_11"
+method = "control_unknown_1_11"
+bit-offset = 1
+bit-width = 11
+access = "read-write"
+
+[[registers.fields]]
 svd-name = "TID"
 method = "tid"
 bit-offset = 12
 bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_UNKNOWN_16_29"
+method = "control_unknown_16_29"
+bit-offset = 16
+bit-width = 14
 access = "read-write"
 
 [[registers.fields]]
@@ -14178,6 +14462,13 @@ access = "read-write"
 svd-name = "WINDOW"
 method = "window"
 bit-offset = 18
+bit-width = 7
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POLICY_UNKNOWN_25_31"
+method = "policy_unknown_25_31"
+bit-offset = 25
 bit-width = 7
 access = "read-write"
 
@@ -14249,7 +14540,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_low_status"
 register-index = 6
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537936488
@@ -14262,7 +14559,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_low_load"
 register-index = 6
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
 
 [[registers]]
 address = 537936492
@@ -14275,7 +14578,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_high_status"
 register-index = 6
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537936496
@@ -14288,7 +14597,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_high_load"
 register-index = 6
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
 
 [[registers]]
 address = 537936500
@@ -14310,10 +14625,24 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
+svd-name = "CONTROL_UNKNOWN_1_11"
+method = "control_unknown_1_11"
+bit-offset = 1
+bit-width = 11
+access = "read-write"
+
+[[registers.fields]]
 svd-name = "TID"
 method = "tid"
 bit-offset = 12
 bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_UNKNOWN_16_29"
+method = "control_unknown_16_29"
+bit-offset = 16
+bit-width = 14
 access = "read-write"
 
 [[registers.fields]]
@@ -14360,6 +14689,13 @@ access = "read-write"
 svd-name = "WINDOW"
 method = "window"
 bit-offset = 18
+bit-width = 7
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POLICY_UNKNOWN_25_31"
+method = "policy_unknown_25_31"
+bit-offset = 25
 bit-width = 7
 access = "read-write"
 
@@ -14431,7 +14767,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_low_status"
 register-index = 7
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537936524
@@ -14444,7 +14786,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_low_load"
 register-index = 7
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
 
 [[registers]]
 address = 537936528
@@ -14457,7 +14805,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_high_status"
 register-index = 7
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537936532
@@ -14470,7 +14824,13 @@ peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "rx_block_ack_entry_bitmap_high_load"
 register-index = 7
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
 
 [[registers]]
 address = 537936536
@@ -14514,7 +14874,13 @@ peripheral-type = "WifiMacInternalTxBlockAck"
 peripheral-module = "wifi_mac_internal_tx_block_ack"
 scope = []
 register-method = "bitmap_high"
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537936544
@@ -14526,7 +14892,13 @@ peripheral-type = "WifiMacInternalTxBlockAck"
 peripheral-module = "wifi_mac_internal_tx_block_ack"
 scope = []
 register-method = "bitmap_low"
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537936548
@@ -22133,6 +22505,13 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
+svd-name = "CONTROL_UNKNOWN_1_4"
+method = "control_unknown_1_4"
+bit-offset = 1
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
 svd-name = "INDEX"
 method = "index"
 bit-offset = 5
@@ -22140,10 +22519,24 @@ bit-width = 5
 access = "read-write"
 
 [[registers.fields]]
+svd-name = "CONTROL_UNKNOWN_10_11"
+method = "control_unknown_10_11"
+bit-offset = 10
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
 svd-name = "TID"
 method = "tid"
 bit-offset = 12
 bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "CONTROL_UNKNOWN_16_29"
+method = "control_unknown_16_29"
+bit-offset = 16
+bit-width = 14
 access = "read-write"
 
 [[registers.fields]]
@@ -22189,6 +22582,13 @@ access = "read-write"
 svd-name = "WINDOW"
 method = "window"
 bit-offset = 18
+bit-width = 7
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "POLICY_UNKNOWN_25_31"
+method = "policy_unknown_25_31"
+bit-offset = 25
 bit-width = 7
 access = "read-write"
 
@@ -22238,7 +22638,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "extra_softap_rx_block_ack_bitmap_low"
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
 
 [[registers]]
 address = 537939640
@@ -22250,7 +22656,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "extra_softap_rx_block_ack_bitmap_high"
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
 
 [[registers]]
 address = 537940396
@@ -22341,7 +22753,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "tx_block_ack_bitmap_high_q7"
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537940424
@@ -22353,7 +22771,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "tx_block_ack_bitmap_low_q7"
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537940428
@@ -22436,7 +22860,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "tx_block_ack_transmitter_address_low_q7"
-fields = []
+
+[[registers.fields]]
+svd-name = "ADDRESS_BYTES_0_3"
+method = "address_bytes_0_3"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537940520
@@ -22527,7 +22957,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "tx_block_ack_bitmap_high_q6"
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537940548
@@ -22539,7 +22975,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "tx_block_ack_bitmap_low_q6"
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537940552
@@ -22622,7 +23064,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "tx_block_ack_transmitter_address_low_q6"
-fields = []
+
+[[registers.fields]]
+svd-name = "ADDRESS_BYTES_0_3"
+method = "address_bytes_0_3"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537940644
@@ -22713,7 +23161,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "tx_block_ack_bitmap_high_q5"
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537940672
@@ -22725,7 +23179,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "tx_block_ack_bitmap_low_q5"
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537940676
@@ -22808,7 +23268,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "tx_block_ack_transmitter_address_low_q5"
-fields = []
+
+[[registers.fields]]
+svd-name = "ADDRESS_BYTES_0_3"
+method = "address_bytes_0_3"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537940768
@@ -22899,7 +23365,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "tx_block_ack_bitmap_high_q4"
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537940796
@@ -22911,7 +23383,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "tx_block_ack_bitmap_low_q4"
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537940800
@@ -22994,7 +23472,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "tx_block_ack_transmitter_address_low_q4"
-fields = []
+
+[[registers.fields]]
+svd-name = "ADDRESS_BYTES_0_3"
+method = "address_bytes_0_3"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537940836
@@ -23841,7 +24325,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "tx_block_ack_bitmap_high_q3"
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537940920
@@ -23853,7 +24343,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "tx_block_ack_bitmap_low_q3"
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537940924
@@ -23936,7 +24432,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "tx_block_ack_transmitter_address_low_q3"
-fields = []
+
+[[registers.fields]]
+svd-name = "ADDRESS_BYTES_0_3"
+method = "address_bytes_0_3"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537940936
@@ -24861,7 +25363,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "tx_block_ack_bitmap_high_q2"
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537941044
@@ -24873,7 +25381,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "tx_block_ack_bitmap_low_q2"
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537941048
@@ -24956,7 +25470,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "tx_block_ack_transmitter_address_low_q2"
-fields = []
+
+[[registers.fields]]
+svd-name = "ADDRESS_BYTES_0_3"
+method = "address_bytes_0_3"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537941060
@@ -25881,7 +26401,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "tx_block_ack_bitmap_high_q1"
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537941168
@@ -25893,7 +26419,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "tx_block_ack_bitmap_low_q1"
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537941172
@@ -25976,7 +26508,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "tx_block_ack_transmitter_address_low_q1"
-fields = []
+
+[[registers.fields]]
+svd-name = "ADDRESS_BYTES_0_3"
+method = "address_bytes_0_3"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537941184
@@ -26901,7 +27439,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "tx_block_ack_bitmap_high_q0"
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537941292
@@ -26913,7 +27457,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "tx_block_ack_bitmap_low_q0"
-fields = []
+
+[[registers.fields]]
+svd-name = "BITMAP"
+method = "bitmap"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537941296
@@ -26996,7 +27546,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "tx_block_ack_transmitter_address_low_q0"
-fields = []
+
+[[registers.fields]]
+svd-name = "ADDRESS_BYTES_0_3"
+method = "address_bytes_0_3"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537941308

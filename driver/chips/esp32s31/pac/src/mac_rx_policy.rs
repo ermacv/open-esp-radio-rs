@@ -6,14 +6,11 @@ use super::{MacInterface, WifiRadioRegisters};
 
 /// Read-only associated-STA receive-policy evidence.
 ///
-/// The two policy words are retained as exact register images because several
-/// still-undocumented bits participate in the vendor transaction. All known
-/// address and enable fields are decoded through the PAC so qualification
-/// code does not need raw MMIO access.
+/// Only reviewed semantic fields cross the PAC boundary. Complete policy
+/// register images remain private to the generated PAC because several bits
+/// are still undocumented and no production decision consumes them.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacStaReceivePolicySnapshot {
-    pub queue_zero_policy: u32,
-    pub queue_three_policy: u32,
     pub bssid: [u8; 6],
     pub association_id: u16,
     pub minimum_mpdu_start_spacing: u8,
@@ -25,7 +22,6 @@ pub struct MacStaReceivePolicySnapshot {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacApReceivePolicySnapshot {
-    pub queue_one_policy: u32,
     pub bssid: [u8; 6],
     pub bssid_address_check_enabled: bool,
     pub interface_is_soft_ap: bool,
@@ -143,13 +139,6 @@ impl WifiRadioRegisters {
         let bssid_high = bssids.bssid_high(1).read();
         let high = bssid_high.bssid_high().bits().to_le_bytes();
         MacApReceivePolicySnapshot {
-            queue_one_policy: self
-                .peripherals
-                .wifi_mac
-                .wifi_mac_rx_filter
-                .policy(1)
-                .read()
-                .bits(),
             bssid: [
                 bssid_low[0],
                 bssid_low[1],
@@ -174,7 +163,6 @@ impl WifiRadioRegisters {
     /// Snapshot every register frontier that can suppress associated-STA
     /// beacons while still admitting directed management traffic.
     pub fn sta_receive_policy_snapshot(&self) -> MacStaReceivePolicySnapshot {
-        let filters = &self.peripherals.wifi_mac.wifi_mac_rx_filter;
         let bssids = &self.peripherals.wifi_mac.wifi_mac_bssid_policy;
         let bssid_low = bssids.bssid_low(0).read().bytes_0_3().bits();
         let bssid_high = bssids.bssid_high(0).read();
@@ -188,8 +176,6 @@ impl WifiRadioRegisters {
         let high = bssid_high.bssid_high().bits().to_le_bytes();
 
         MacStaReceivePolicySnapshot {
-            queue_zero_policy: filters.policy(0).read().bits(),
-            queue_three_policy: filters.policy(3).read().bits(),
             bssid: [low[0], low[1], low[2], low[3], high[0], high[1]],
             association_id: bssid_high.association_id().bits(),
             minimum_mpdu_start_spacing: bssid_high.minimum_mpdu_start_spacing().bits(),

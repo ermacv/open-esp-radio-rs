@@ -546,8 +546,6 @@ fn connected_runtime_binds_beacon_frontier_but_retains_software_monitor() {
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
         station_policy: Some(MacStaReceivePolicySnapshot {
-            queue_zero_policy: 0,
-            queue_three_policy: 0,
             bssid: BSSID,
             association_id: 7,
             minimum_mpdu_start_spacing: 0,

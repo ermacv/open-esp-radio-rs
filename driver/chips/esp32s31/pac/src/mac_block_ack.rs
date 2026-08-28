@@ -138,13 +138,6 @@ impl InternalTxBlockAckSnapshot {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct RxBlockAckImages {
-    peer_head: u32,
-    peer_tail_and_policy: u32,
-    active_control: u32,
-}
-
 /// Live image of one ordinary receive BlockAck hardware bank.
 ///
 /// SOURCE: complete `libpp.a[hal_ampdu.o]::hal_ba_session_store`.
@@ -153,7 +146,11 @@ struct RxBlockAckImages {
 /// adjacent software-load words.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RxBlockAckEntrySnapshot {
-    pub control: u32,
+    pub enabled: bool,
+    pub tid: u8,
+    pub write_enabled: bool,
+    pub valid: bool,
+    pub control_unknown_clear: bool,
     pub peer: [u8; 6],
     pub interface: MacInterface,
     pub window: u8,
@@ -174,28 +171,34 @@ pub struct RxBlockAckEntrySnapshot {
 /// than a claimed protocol interpretation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ExtraSoftApRxBlockAckEntrySnapshot {
-    pub control: u32,
+    pub enabled: bool,
+    pub index: u8,
+    pub tid: u8,
+    pub write_enabled: bool,
+    pub valid: bool,
+    pub control_unknown_clear: bool,
     pub peer: [u8; 6],
     pub interface: MacInterface,
     pub window: u8,
     pub starting_sequence: u16,
-    pub bitmap_staging_words: [u32; 2],
+    pub bitmap: u64,
 }
 
-const fn rx_block_ack_images(
-    interface: MacInterface,
-    peer: [u8; 6],
-    tid: MacRxBlockAckTid,
-    window: MacRxBlockAckWindow,
-) -> RxBlockAckImages {
-    let peer_head = u32::from_le_bytes([peer[0], peer[1], peer[2], peer[3]]);
-    let peer_tail = u16::from_le_bytes([peer[4], peer[5]]) as u32;
-    let peer_tail_and_policy = peer_tail | (interface.bits() << 16) | (window.get() << 18);
-    let active_control = 0xc000_0001 | (tid.get() << 12);
-    RxBlockAckImages {
-        peer_head,
-        peer_tail_and_policy,
-        active_control,
+const fn block_ack_bitmap(bitmap_low: u32, bitmap_high: u32) -> u64 {
+    let low = bitmap_low.to_le_bytes();
+    let high = bitmap_high.to_le_bytes();
+    u64::from_le_bytes([
+        low[0], low[1], low[2], low[3], high[0], high[1], high[2], high[3],
+    ])
+}
+
+const fn mac_interface_from_field(value: u8) -> MacInterface {
+    match value {
+        0 => MacInterface::Station,
+        1 => MacInterface::AccessPoint,
+        2 => MacInterface::Context2,
+        3 => MacInterface::Context3,
+        _ => unreachable!(),
     }
 }
 
@@ -213,8 +216,8 @@ impl WifiRadioRegisters {
                 (
                     control.tid_or_control().bits(),
                     control.starting_sequence().bits(),
-                    block.tx_block_ack_bitmap_low_q0().read().bits(),
-                    block.tx_block_ack_bitmap_high_q0().read().bits(),
+                    block.tx_block_ack_bitmap_low_q0().read().bitmap().bits(),
+                    block.tx_block_ack_bitmap_high_q0().read().bitmap().bits(),
                 )
             }
             1 => {
@@ -222,8 +225,8 @@ impl WifiRadioRegisters {
                 (
                     control.tid_or_control().bits(),
                     control.starting_sequence().bits(),
-                    block.tx_block_ack_bitmap_low_q1().read().bits(),
-                    block.tx_block_ack_bitmap_high_q1().read().bits(),
+                    block.tx_block_ack_bitmap_low_q1().read().bitmap().bits(),
+                    block.tx_block_ack_bitmap_high_q1().read().bitmap().bits(),
                 )
             }
             2 => {
@@ -231,8 +234,8 @@ impl WifiRadioRegisters {
                 (
                     control.tid_or_control().bits(),
                     control.starting_sequence().bits(),
-                    block.tx_block_ack_bitmap_low_q2().read().bits(),
-                    block.tx_block_ack_bitmap_high_q2().read().bits(),
+                    block.tx_block_ack_bitmap_low_q2().read().bitmap().bits(),
+                    block.tx_block_ack_bitmap_high_q2().read().bitmap().bits(),
                 )
             }
             3 => {
@@ -240,8 +243,8 @@ impl WifiRadioRegisters {
                 (
                     control.tid_or_control().bits(),
                     control.starting_sequence().bits(),
-                    block.tx_block_ack_bitmap_low_q3().read().bits(),
-                    block.tx_block_ack_bitmap_high_q3().read().bits(),
+                    block.tx_block_ack_bitmap_low_q3().read().bitmap().bits(),
+                    block.tx_block_ack_bitmap_high_q3().read().bitmap().bits(),
                 )
             }
             _ => return None,
@@ -249,7 +252,7 @@ impl WifiRadioRegisters {
         Some(TxBlockAckPayload {
             control,
             starting_sequence,
-            bitmap: u64::from(bitmap_low) | (u64::from(bitmap_high) << 32),
+            bitmap: block_ack_bitmap(bitmap_low, bitmap_high),
         })
     }
 
@@ -272,13 +275,13 @@ impl WifiRadioRegisters {
     ) {
         let block = &self.peripherals.wifi_mac.wifi_mac_rx_dma;
         let register_index = rx_block_ack_register_index(hardware_index);
-        let images = rx_block_ack_images(interface, peer, tid, window);
-        let peer_tail = images.peer_tail_and_policy as u16;
+        let peer_head = u32::from_le_bytes([peer[0], peer[1], peer[2], peer[3]]);
+        let peer_tail = u16::from_le_bytes([peer[4], peer[5]]);
 
         super::svd::zero_based_field_write::rx_block_ack_peer_head(
             block,
             register_index,
-            images.peer_head,
+            peer_head,
         );
         super::svd::zero_based_field_write::rx_block_ack_peer_tail_and_policy(
             block,
@@ -295,13 +298,7 @@ impl WifiRadioRegisters {
             .modify(|_, w| w.valid().clear_bit());
         super::svd::zero_register_write::clear_rx_block_ack_bitmap_low_load(block, register_index);
         super::svd::zero_register_write::clear_rx_block_ack_bitmap_high_load(block, register_index);
-        let update_bit = 1_u8 << hardware_index.get();
-        // The checked index keeps the OR result inside the eight-bit field.
-        // This preserves the blob's fresh-read OR operation.
-        block.rx_block_ack_agreement_update().modify(|r, w| {
-            w.ordinary_entry_update()
-                .set(r.ordinary_entry_update().bits() | update_bit)
-        });
+        super::generated::request_rx_block_ack_entry_update(block, hardware_index);
         super::svd::zero_based_field_write::rx_block_ack_active_control(
             block,
             register_index,
@@ -359,11 +356,7 @@ impl WifiRadioRegisters {
             .modify(|_, w| w.window().set(window.get() as u8));
         super::svd::zero_register_write::clear_rx_block_ack_bitmap_low_load(block, register_index);
         super::svd::zero_register_write::clear_rx_block_ack_bitmap_high_load(block, register_index);
-        let update_bit = 1_u8 << hardware_index.get();
-        block.rx_block_ack_agreement_update().modify(|r, w| {
-            w.ordinary_entry_update()
-                .set(r.ordinary_entry_update().bits() | update_bit)
-        });
+        super::generated::request_rx_block_ack_entry_update(block, hardware_index);
         super::svd::zero_based_field_write::rx_block_ack_active_control(
             block,
             register_index,
@@ -396,18 +389,16 @@ impl WifiRadioRegisters {
     ) -> bool {
         let block = &self.peripherals.wifi_mac.wifi_mac_rx_dma;
         let index = hardware_index.get() as u8;
-        let images = rx_block_ack_images(interface, peer, tid, window);
+        let peer_head = u32::from_le_bytes([peer[0], peer[1], peer[2], peer[3]]);
+        let peer_tail = u16::from_le_bytes([peer[4], peer[5]]);
 
         block
             .extra_softap_rx_block_ack_control()
             .modify(|_, w| w.index().set(index));
-        super::svd::zero_based_field_write::extra_softap_rx_block_ack_peer_head(
-            block,
-            images.peer_head,
-        );
+        super::svd::zero_based_field_write::extra_softap_rx_block_ack_peer_head(block, peer_head);
         super::svd::zero_based_field_write::extra_softap_rx_block_ack_peer_tail_and_policy(
             block,
-            images.peer_tail_and_policy as u16,
+            peer_tail,
             interface.bits() as u8,
             window.get() as u8,
         );
@@ -439,9 +430,12 @@ impl WifiRadioRegisters {
         // wifi_log in the blob and therefore do not cross this PAC boundary.
         let peer_tail_and_policy = block
             .extra_softap_rx_block_ack_peer_tail_and_policy()
+            .read();
+        let observed_peer_head = block
+            .extra_softap_rx_block_ack_peer_head()
             .read()
+            .peer_address_head()
             .bits();
-        let peer_head = block.extra_softap_rx_block_ack_peer_head().read().bits();
         let observed_starting_sequence = block
             .extra_softap_rx_block_ack_start_sequence()
             .read()
@@ -450,16 +444,26 @@ impl WifiRadioRegisters {
         let _ = block
             .extra_softap_rx_block_ack_peer_tail_and_policy()
             .read();
-        let control = block.extra_softap_rx_block_ack_control().read().bits();
+        let control = block.extra_softap_rx_block_ack_control().read();
 
         block
             .rx_block_ack_agreement_update()
             .modify(|_, w| w.extra_softap_readback_latch().clear_bit());
 
-        peer_head == images.peer_head
-            && peer_tail_and_policy == images.peer_tail_and_policy
+        observed_peer_head == peer_head
+            && peer_tail_and_policy.peer_address_tail().bits() == peer_tail
+            && peer_tail_and_policy.interface().bits() == interface.bits() as u8
+            && peer_tail_and_policy.window().bits() == window.get() as u8
+            && peer_tail_and_policy.policy_unknown_25_31().bits() == 0
             && observed_starting_sequence == starting_sequence.get() as u16
-            && control == (images.active_control | (u32::from(index) << 5))
+            && control.enable().bit_is_set()
+            && control.control_unknown_1_4().bits() == 0
+            && control.index().bits() == index
+            && control.control_unknown_10_11().bits() == 0
+            && control.tid().bits() == tid.get() as u8
+            && control.control_unknown_16_29().bits() == 0
+            && control.write().bit_is_set()
+            && control.valid().bit_is_set()
     }
 
     /// Move one live extra-SoftAP receive BlockAck entry to a new window.
@@ -524,8 +528,12 @@ impl WifiRadioRegisters {
 
         // Preserve the complete vendor diagnostic read order before sampling
         // the two adjacent staging words.
-        let control = block.extra_softap_rx_block_ack_control().read().bits();
-        let peer_head = block.extra_softap_rx_block_ack_peer_head().read().bits();
+        let control = block.extra_softap_rx_block_ack_control().read();
+        let peer_head = block
+            .extra_softap_rx_block_ack_peer_head()
+            .read()
+            .peer_address_head()
+            .bits();
         let peer_tail_and_policy = block
             .extra_softap_rx_block_ack_peer_tail_and_policy()
             .read();
@@ -534,37 +542,46 @@ impl WifiRadioRegisters {
             .read()
             .sequence()
             .bits();
-        let peer_head_again = block.extra_softap_rx_block_ack_peer_head().read().bits();
-        let control_again = block.extra_softap_rx_block_ack_control().read().bits();
-        let bitmap_staging_words = [
-            block.extra_softap_rx_block_ack_bitmap_low().read().bits(),
-            block.extra_softap_rx_block_ack_bitmap_high().read().bits(),
-        ];
+        let _ = block
+            .extra_softap_rx_block_ack_peer_head()
+            .read()
+            .peer_address_head()
+            .bits();
+        let _ = block.extra_softap_rx_block_ack_control().read();
+        let bitmap_low = block
+            .extra_softap_rx_block_ack_bitmap_low()
+            .read()
+            .bitmap()
+            .bits();
+        let bitmap_high = block
+            .extra_softap_rx_block_ack_bitmap_high()
+            .read()
+            .bitmap()
+            .bits();
 
         block
             .rx_block_ack_agreement_update()
             .modify(|_, w| w.extra_softap_readback_latch().clear_bit());
 
-        debug_assert_eq!(peer_head, peer_head_again);
-        debug_assert_eq!(control, control_again);
         let head = peer_head.to_le_bytes();
         let tail = peer_tail_and_policy
             .peer_address_tail()
             .bits()
             .to_le_bytes();
         ExtraSoftApRxBlockAckEntrySnapshot {
-            control,
+            enabled: control.enable().bit(),
+            index: control.index().bits(),
+            tid: control.tid().bits(),
+            write_enabled: control.write().bit(),
+            valid: control.valid().bit(),
+            control_unknown_clear: control.control_unknown_1_4().bits() == 0
+                && control.control_unknown_10_11().bits() == 0
+                && control.control_unknown_16_29().bits() == 0,
             peer: [head[0], head[1], head[2], head[3], tail[0], tail[1]],
-            interface: match peer_tail_and_policy.interface().bits() {
-                0 => MacInterface::Station,
-                1 => MacInterface::AccessPoint,
-                2 => MacInterface::Context2,
-                3 => MacInterface::Context3,
-                _ => unreachable!("two-bit interface field cannot exceed three"),
-            },
+            interface: mac_interface_from_field(peer_tail_and_policy.interface().bits()),
             window: peer_tail_and_policy.window().bits(),
             starting_sequence,
-            bitmap_staging_words,
+            bitmap: block_ack_bitmap(bitmap_low, bitmap_high),
         }
     }
 
@@ -609,13 +626,11 @@ impl WifiRadioRegisters {
     ) -> Option<RxBlockAckEntrySnapshot> {
         let block = &self.peripherals.wifi_mac.wifi_mac_rx_dma;
         let register_index = rx_block_ack_register_index(hardware_index);
-        let control = block
-            .rx_block_ack_entry_control(register_index)
-            .read()
-            .bits();
+        let control = block.rx_block_ack_entry_control(register_index).read();
         let peer_head = block
             .rx_block_ack_entry_peer_head(register_index)
             .read()
+            .peer_address_head()
             .bits()
             .to_le_bytes();
         let peer_tail_and_policy = block
@@ -625,30 +640,37 @@ impl WifiRadioRegisters {
             .peer_address_tail()
             .bits()
             .to_le_bytes();
-        let bitmap_status = u64::from(
+        let bitmap_status = block_ack_bitmap(
             block
                 .rx_block_ack_entry_bitmap_low_status(register_index)
                 .read()
+                .bitmap()
                 .bits(),
-        ) | (u64::from(
             block
                 .rx_block_ack_entry_bitmap_high_status(register_index)
                 .read()
+                .bitmap()
                 .bits(),
-        ) << 32);
-        let bitmap_load = u64::from(
+        );
+        let bitmap_load = block_ack_bitmap(
             block
                 .rx_block_ack_entry_bitmap_low_load(register_index)
                 .read()
+                .bitmap()
                 .bits(),
-        ) | (u64::from(
             block
                 .rx_block_ack_entry_bitmap_high_load(register_index)
                 .read()
+                .bitmap()
                 .bits(),
-        ) << 32);
+        );
         Some(RxBlockAckEntrySnapshot {
-            control,
+            enabled: control.enable().bit(),
+            tid: control.tid().bits(),
+            write_enabled: control.write().bit(),
+            valid: control.valid().bit(),
+            control_unknown_clear: control.control_unknown_1_11().bits() == 0
+                && control.control_unknown_16_29().bits() == 0,
             peer: [
                 peer_head[0],
                 peer_head[1],
@@ -657,13 +679,7 @@ impl WifiRadioRegisters {
                 peer_tail[0],
                 peer_tail[1],
             ],
-            interface: match peer_tail_and_policy.interface().bits() {
-                0 => MacInterface::Station,
-                1 => MacInterface::AccessPoint,
-                2 => MacInterface::Context2,
-                3 => MacInterface::Context3,
-                _ => unreachable!("two-bit interface field cannot exceed three"),
-            },
+            interface: mac_interface_from_field(peer_tail_and_policy.interface().bits()),
             window: peer_tail_and_policy.window().bits(),
             current_sequence: block
                 .rx_block_ack_entry_current_sequence(register_index)
@@ -731,16 +747,21 @@ impl WifiRadioRegisters {
         macro_rules! snapshot {
             ($control:ident, $bitmap_low:ident, $bitmap_high:ident, $address_high:ident, $address_low:ident, $information:ident) => {{
                 let control = block.$control().read();
-                let bitmap_low = block.$bitmap_low().read().bits();
-                let bitmap_high = block.$bitmap_high().read().bits();
+                let bitmap_low = block.$bitmap_low().read().bitmap().bits();
+                let bitmap_high = block.$bitmap_high().read().bitmap().bits();
                 let address_high = block.$address_high().read();
-                let address_low = block.$address_low().read().bits().to_le_bytes();
+                let address_low = block
+                    .$address_low()
+                    .read()
+                    .address_bytes_0_3()
+                    .bits()
+                    .to_le_bytes();
                 let address_tail = address_high.address_bytes_4_5().bits().to_le_bytes();
                 let information = block.$information().read();
                 TxBlockAckDiagnosticSnapshot {
                     control: control.tid_or_control().bits(),
                     starting_sequence: control.starting_sequence().bits(),
-                    bitmap: u64::from(bitmap_low) | (u64::from(bitmap_high) << 32),
+                    bitmap: block_ack_bitmap(bitmap_low, bitmap_high),
                     transmitter_address: [
                         address_low[0],
                         address_low[1],
@@ -837,8 +858,10 @@ impl WifiRadioRegisters {
         let block = &self.peripherals.wifi_mac.wifi_mac_internal_tx_block_ack;
         let control = block.control_sequence().read();
         InternalTxBlockAckSnapshot {
-            bitmap: u64::from(block.bitmap_low().read().bits())
-                | (u64::from(block.bitmap_high().read().bits()) << 32),
+            bitmap: block_ack_bitmap(
+                block.bitmap_low().read().bitmap().bits(),
+                block.bitmap_high().read().bitmap().bits(),
+            ),
             fragment_number: control.fragment_number().bits(),
             starting_sequence: control.starting_sequence().bits(),
             tid: control.tid().bits(),

@@ -1428,6 +1428,15 @@ pub(crate) fn or_bluetooth_memory_list_3_pointer_b(
     crate::svd::field_or_modify::or_bluetooth_memory_list_3_pointer_b(registers, value.get());
 }
 
+/// Typed bridge for the reviewed `request_rx_block_ack_entry_update` indexed bit-set transaction.
+#[inline]
+pub(crate) fn request_rx_block_ack_entry_update(
+    registers: &crate::svd::WifiMacRxDma,
+    index: MacRxBlockAckEntryIndex,
+) {
+    crate::svd::indexed_bit_set_modify::request_rx_block_ack_entry_update(registers, index.get());
+}
+
 /// Typed bridge for the reviewed `request_mac_rx_beacon_clear` indexed bit-set transaction.
 #[inline]
 pub(crate) fn request_mac_rx_beacon_clear(

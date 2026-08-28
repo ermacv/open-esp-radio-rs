@@ -1538,12 +1538,16 @@ impl ProductionWifiEpochRunner {
             let rx_match_after = task.registers.he_trigger_receive_diagnostics();
             for index in 0..8 {
                 if let Some(snapshot) = task.registers.rx_block_ack_entry_snapshot(index)
-                    && snapshot.control & (1 << 30) != 0
+                    && snapshot.write_enabled
                 {
                     diagnostics_event!(
-                        "open-radio: access-point RX BA bank={} control={:#010x} peer={:02x?} interface={:?} window={} current={} loaded_start={} bitmap_status={:016x} bitmap_load={:016x}",
+                        "open-radio: access-point RX BA bank={} enabled={} tid={} write={} valid={} control_clean={} peer={:02x?} interface={:?} window={} current={} loaded_start={} bitmap_status={:016x} bitmap_load={:016x}",
                         index,
-                        snapshot.control,
+                        snapshot.enabled,
+                        snapshot.tid,
+                        snapshot.write_enabled,
+                        snapshot.valid,
+                        snapshot.control_unknown_clear,
                         snapshot.peer,
                         snapshot.interface,
                         snapshot.window,

@@ -126,8 +126,8 @@ pub use open_esp_radio_esp32s31_pac::{
 };
 pub use power::{PowerCheckpoint, PowerClockImages, PowerError};
 pub use types::{
-    CfrValue, ForcedRxGain, MacInterruptEvents, MacInterruptMask, MacInterruptSnapshot,
-    MacPowerInterruptSnapshot,
+    CfrValue, ForcedRxGain, MacInterruptEvents, MacInterruptMask, MacInterruptObservation,
+    MacInterruptSnapshot, MacPowerInterruptSnapshot,
 };
 
 /// Powered-lifecycle PHY capability.

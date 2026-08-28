@@ -554,6 +554,13 @@ impl MacInterruptEvents {
     pub const RX_ASSOCIATED_AUXILIARY_5: Self = Self(1 << 5);
     pub const RX_ASSOCIATED_AUXILIARY_24: Self = Self(1 << 24);
 
+    const WORK: Self = Self::TX_COMPLETE
+        .union(Self::COLLISION)
+        .union(Self::RX_SUCCESS)
+        .union(Self::TX_TIMEOUT);
+    const RX_ASSOCIATED_AUXILIARY: Self =
+        Self::RX_ASSOCIATED_AUXILIARY_5.union(Self::RX_ASSOCIATED_AUXILIARY_24);
+
     pub const fn empty() -> Self {
         Self(0)
     }
@@ -586,16 +593,64 @@ impl core::ops::BitOr for MacInterruptEvents {
     }
 }
 
+/// PAC-owned semantic partition of one sampled MAC interrupt image.
+///
+/// The raw W1C geometry stays private to this crate. Higher layers can route
+/// qualified work, acknowledge-only auxiliary events, and opaque evidence
+/// without applying masks to the sampled register themselves.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct MacInterruptObservation {
+    raw_evidence: u32,
+    work_events: MacInterruptEvents,
+    auxiliary_events: MacInterruptEvents,
+    unknown_bits: u32,
+}
+
+impl MacInterruptObservation {
+    /// Classify a read-only status image supplied by a platform test double.
+    ///
+    /// This does not create a writable register image or MMIO authority. It
+    /// exists so host ports exercise the same PAC-owned classification as the
+    /// generated peripheral owner.
+    pub const fn classify_evidence(raw_evidence: u32) -> Self {
+        let work_events = raw_evidence & MacInterruptEvents::WORK.0;
+        let auxiliary_events = raw_evidence & MacInterruptEvents::RX_ASSOCIATED_AUXILIARY.0;
+        let classified = MacInterruptEvents::WORK.0 | MacInterruptEvents::RX_ASSOCIATED_AUXILIARY.0;
+        Self {
+            raw_evidence,
+            work_events: MacInterruptEvents::from_observation(work_events),
+            auxiliary_events: MacInterruptEvents::from_observation(auxiliary_events),
+            unknown_bits: raw_evidence & !classified,
+        }
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.raw_evidence == 0
+    }
+
+    pub const fn raw_evidence(self) -> u32 {
+        self.raw_evidence
+    }
+
+    pub const fn work_events(self) -> MacInterruptEvents {
+        self.work_events
+    }
+
+    pub const fn auxiliary_events(self) -> MacInterruptEvents {
+        self.auxiliary_events
+    }
+
+    pub const fn unknown_bits(self) -> u32 {
+        self.unknown_bits
+    }
+}
+
 /// One sampled MAC interrupt image which can be acknowledged exactly once.
 pub struct MacInterruptSnapshot(svd::interrupt_snapshot::MacInterruptSnapshot);
 
 impl MacInterruptSnapshot {
-    pub fn events(&self) -> MacInterruptEvents {
-        MacInterruptEvents::from_observation(self.0.bits())
-    }
-
-    pub fn bits(&self) -> u32 {
-        self.events().bits()
+    pub fn observation(&self) -> MacInterruptObservation {
+        MacInterruptObservation::classify_evidence(self.0.bits())
     }
 
     #[cfg(feature = "validation-probes")]

@@ -3,8 +3,8 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use open_esp_radio_esp32s31_hal::{
-    MacInterruptEvents, MacInterruptMask, MacInterruptRegisters, MacInterruptSnapshot,
-    MacPowerInterruptRegisters, MacPowerInterruptSnapshot,
+    MacInterruptEvents, MacInterruptMask, MacInterruptObservation, MacInterruptRegisters,
+    MacInterruptSnapshot, MacPowerInterruptRegisters, MacPowerInterruptSnapshot,
 };
 
 /// Platform route which lends both interrupt-register capabilities to hard
@@ -31,23 +31,19 @@ pub trait MacInterruptRoute {
     fn quiesce(&mut self, platform: &Self::Platform) -> Result<Self::Setup, Self::Error>;
 }
 
-pub const MAC_INT_TX_COMPLETE: u32 = 0x0000_0080;
-pub const MAC_INT_COLLISION: u32 = 0x0000_0100;
-pub const MAC_INT_WATCHDOG: u32 = 0x0000_0800;
-pub const MAC_INT_RX_SUCCESS: u32 = 0x0000_4000;
-pub const MAC_INT_TX_TIMEOUT: u32 = 0x0008_0000;
+pub const MAC_INT_TX_COMPLETE: u32 = MacInterruptEvents::TX_COMPLETE.bits();
+pub const MAC_INT_COLLISION: u32 = MacInterruptEvents::COLLISION.bits();
+pub const MAC_INT_RX_SUCCESS: u32 = MacInterruptEvents::RX_SUCCESS.bits();
+pub const MAC_INT_TX_TIMEOUT: u32 = MacInterruptEvents::TX_TIMEOUT.bits();
 
 /// Status bits observed alongside [`MAC_INT_RX_SUCCESS`] during sustained
 /// HE20 receive traffic. The vendor FIQ acknowledges both in its full-image
 /// W1C but does not dispatch either as an independent work item. Their
 /// hardware semantics remain unknown, so they intentionally stay outside
-/// [`HANDLED_MAC_MASK`].
-pub const MAC_INT_RX_ASSOCIATED_AUXILIARY_5: u32 =
-    MacInterruptEvents::RX_ASSOCIATED_AUXILIARY_5.bits();
-pub const MAC_INT_RX_ASSOCIATED_AUXILIARY_24: u32 =
-    MacInterruptEvents::RX_ASSOCIATED_AUXILIARY_24.bits();
-pub const MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK: u32 =
-    MAC_INT_RX_ASSOCIATED_AUXILIARY_5 | MAC_INT_RX_ASSOCIATED_AUXILIARY_24;
+/// the PAC's qualified work-event set.
+pub const MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK: u32 = MacInterruptEvents::RX_ASSOCIATED_AUXILIARY_5
+    .union(MacInterruptEvents::RX_ASSOCIATED_AUXILIARY_24)
+    .bits();
 
 /// Finite MAC interrupt capability used by the hard ISR.
 ///
@@ -56,6 +52,10 @@ pub const MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK: u32 =
 /// can model the same ordering with a plain value and no MMIO identity.
 pub trait InterruptStatusSnapshot {
     fn bits(&self) -> u32;
+
+    fn observation(&self) -> MacInterruptObservation {
+        MacInterruptObservation::classify_evidence(self.bits())
+    }
 }
 
 impl InterruptStatusSnapshot for u32 {
@@ -66,7 +66,11 @@ impl InterruptStatusSnapshot for u32 {
 
 impl InterruptStatusSnapshot for MacInterruptSnapshot {
     fn bits(&self) -> u32 {
-        MacInterruptSnapshot::bits(self)
+        self.observation().raw_evidence()
+    }
+
+    fn observation(&self) -> MacInterruptObservation {
+        MacInterruptSnapshot::observation(self)
     }
 }
 
@@ -130,9 +134,6 @@ pub const EVENT_TX_TIMEOUT: u32 = 0x02;
 pub const EVENT_COLLISION: u32 = 0x04;
 pub const EVENT_RX_SUCCESS: u32 = 0x08;
 pub const EVENT_KNOWN_MASK: u32 = 0x0f;
-
-pub const HANDLED_MAC_MASK: u32 =
-    MAC_INT_TX_COMPLETE | MAC_INT_TX_TIMEOUT | MAC_INT_COLLISION | MAC_INT_RX_SUCCESS;
 
 /// One run-to-completion MAC action in the order used by the vendor ISR.
 ///
@@ -346,10 +347,12 @@ pub fn handle_mac_irq<M: MacInterrupt, S: IrqSink>(
     sink: &S,
 ) -> (IrqDisposition, IrqSnapshot) {
     let status_snapshot = interrupt.status();
-    let status = status_snapshot.bits();
-    let handled = status & HANDLED_MAC_MASK;
-    let auxiliary = status & MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK;
-    let unhandled = status & !(HANDLED_MAC_MASK | MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK);
+    let observation = status_snapshot.observation();
+    let status = observation.raw_evidence();
+    let work_events = observation.work_events();
+    let handled = work_events.bits();
+    let auxiliary = observation.auxiliary_events().bits();
+    let unhandled = observation.unknown_bits();
     let snapshot = IrqSnapshot {
         status,
         pending: status,
@@ -358,11 +361,11 @@ pub fn handle_mac_irq<M: MacInterrupt, S: IrqSink>(
         unhandled,
     };
 
-    if status == 0 {
+    if observation.is_empty() {
         return (IrqDisposition::Spurious, snapshot);
     }
 
-    if handled & MAC_INT_RX_SUCCESS != 0 && sink.moderate_rx_success() {
+    if work_events.contains(MacInterruptEvents::RX_SUCCESS) && sink.moderate_rx_success() {
         // Mask before W1C. A completion racing this edge remains latched and
         // becomes visible when the bottom half restores RX delivery.
         interrupt.mask_rx_delivery();

@@ -29,7 +29,8 @@ pub fn hal_get_sta_tsf(low: Option<&mut u32>, high: Option<&mut u32>) {
 pub fn hal_mac_interrupt_get_event() -> u32 {
     validation_mac_interrupt_registers()
         .mac_interrupt_status()
-        .bits()
+        .observation()
+        .raw_evidence()
 }
 
 #[inline(always)]

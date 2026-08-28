@@ -30,7 +30,7 @@ pub extern "C" fn open_ble_interrupt_trace_r_sym_ble_ywjh0f9yj_t_be_i7_xg_s5da()
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_ble_scheduler_trace_r_sym_bt_x_puq_thli_eo5_v9xp_r7a_jr() {
-    open_esp_radio_esp32s31_bluetooth::validation::clear_scheduler_table_low_bits();
+    open_esp_radio_esp32s31_bluetooth::validation::clear_scheduler_hardware_list_heads();
 }
 
 /// Compiled production entry for the complete 50-operation BTDM controller

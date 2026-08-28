@@ -83,9 +83,14 @@ pub struct BluetoothSchedulerFinishedListObservation(u16);
 
 /// One of the sixteen scheduler hardware-list indices.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothSchedulerFinishedListIndex(u8);
+pub struct BluetoothSchedulerHardwareListIndex(u8);
 
-impl BluetoothSchedulerFinishedListIndex {
+impl BluetoothSchedulerHardwareListIndex {
+    /// Validate one positional hardware-list index.
+    pub const fn new(index: u8) -> Option<Self> {
+        if index < 16 { Some(Self(index)) } else { None }
+    }
+
     /// Return the zero-based hardware-list index in `0..16`.
     pub const fn get(self) -> u8 {
         self.0
@@ -101,7 +106,7 @@ pub enum BluetoothSchedulerFinishedListPop {
     /// The lowest-numbered finished list was selected.
     List {
         /// Positional hardware-list index selected in this step.
-        index: BluetoothSchedulerFinishedListIndex,
+        index: BluetoothSchedulerHardwareListIndex,
         /// Remaining captured lists after consuming `index`.
         remaining: BluetoothSchedulerFinishedListObservation,
     },
@@ -139,7 +144,7 @@ impl BluetoothSchedulerFinishedListObservation {
         } else {
             let index = self.0.trailing_zeros() as u8;
             BluetoothSchedulerFinishedListPop::List {
-                index: BluetoothSchedulerFinishedListIndex(index),
+                index: BluetoothSchedulerHardwareListIndex(index),
                 remaining: Self(self.0 & !(1u16 << index)),
             }
         }
@@ -288,11 +293,21 @@ mod tests {
     use std::vec::Vec;
 
     use super::{
-        BluetoothSchedulerFinishedListControl, BluetoothSchedulerInterruptControl,
-        SchedulerStateObservation, execute_clear_scheduler_reference,
-        execute_finished_list_transfer, execute_reference_gate_observation,
-        execute_work_observation,
+        BluetoothSchedulerFinishedListControl, BluetoothSchedulerHardwareListIndex,
+        BluetoothSchedulerInterruptControl, SchedulerStateObservation,
+        execute_clear_scheduler_reference, execute_finished_list_transfer,
+        execute_reference_gate_observation, execute_work_observation,
     };
+
+    #[test]
+    fn hardware_list_index_rejects_values_outside_the_scheduler_domain() {
+        assert_eq!(
+            BluetoothSchedulerHardwareListIndex::new(15).unwrap().get(),
+            15
+        );
+        assert_eq!(BluetoothSchedulerHardwareListIndex::new(16), None);
+    }
+
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum InterruptOperation {
         ReadState,

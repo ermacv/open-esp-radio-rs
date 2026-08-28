@@ -108,14 +108,19 @@ pub use bluetooth_modem_lp_timer::{
     BluetoothModemLpTimerInterruptReady, BluetoothModemLpTimerInterruptStep,
     BluetoothModemLpTimerRegistersPrepared, BluetoothModemLpTimerSoftwarePending,
 };
+pub use bluetooth_scheduler::{
+    BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadError,
+    BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerInsertionCommand,
+    BluetoothSchedulerInsertionCommandStartCleared, BluetoothSchedulerRunPublished,
+};
 pub use bluetooth_scheduler_lock_modify::{
     BluetoothSchedulerLockModifyInterruptObservation, BluetoothSchedulerLockModifyObservation,
     BluetoothSchedulerLockModifyPublished, BluetoothSchedulerLockModifyRequest,
     BluetoothSchedulerLockModifyRequestError, BluetoothSchedulerLockModifyTaskObservation,
 };
 pub use bluetooth_scheduler_runtime::{
-    BluetoothSchedulerFinishedListIndex, BluetoothSchedulerFinishedListObservation,
-    BluetoothSchedulerFinishedListPop, BluetoothSchedulerReferenceCleared,
+    BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
+    BluetoothSchedulerHardwareListIndex, BluetoothSchedulerReferenceCleared,
     BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerWorkObservation,
 };
 pub use bluetooth_scheduler_stop::{

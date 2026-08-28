@@ -150,11 +150,11 @@ pub use runtime_resources::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use scheduler::{
-    BluetoothSchedulerRuntimeResourcesBound, BluetoothSchedulerTableLowBitsCleared,
+    BluetoothSchedulerHardwareListHeadsCleared, BluetoothSchedulerRuntimeResourcesBound,
 };
 pub use scheduler_finished_lists::{
-    BluetoothSchedulerFinishedListCaptureError, BluetoothSchedulerFinishedListIndex,
-    BluetoothSchedulerFinishedListWorker, BluetoothSchedulerFinishedListWorkerStep,
+    BluetoothSchedulerFinishedListCaptureError, BluetoothSchedulerFinishedListWorker,
+    BluetoothSchedulerFinishedListWorkerStep, BluetoothSchedulerHardwareListIndex,
 };
 pub use scheduler_lock_modify::{
     BluetoothSchedulerLockModifyAwaitingPublication, BluetoothSchedulerLockModifyBeginError,

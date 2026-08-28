@@ -17319,15 +17319,27 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
       <registers>
         <register>
           <name>SCHEDULER_CONTROL</name>
-          <description>A complete btdm_sched.c leaf writes the finite complete image 1 when its reviewed predicate succeeds. Inner action remains unknown.</description>
+          <description>Scheduler run command. The complete current leaf writes finite complete image 1 when its reviewed predicate succeeds; the same-chip named predecessor identifies the leaf as r_btdm_sched_run.</description>
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>write-only</access>
           <fields>
             <field>
               <name>COMMAND</name>
+              <description>Complete scheduler run command image.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
+              <writeConstraint>
+                <useEnumeratedValues>true</useEnumeratedValues>
+              </writeConstraint>
+              <enumeratedValues>
+                <usage>write</usage>
+                <enumeratedValue>
+                  <name>RUN</name>
+                  <description>Request scheduler execution after a hardware-list head publication.</description>
+                  <value>1</value>
+                </enumeratedValue>
+              </enumeratedValues>
             </field>
           </fields>
         </register>
@@ -19162,10 +19174,11 @@ grant protocol-exclusive ownership.</description>
     </peripheral>
     <peripheral>
       <name>BTDM_SCHEDULER_TABLE</name>
-      <description>Sparse sixteen-entry hardware table initialized by the standalone BTDM task
-lifecycle. A complete btdm_sched.c function proves the finite entry count,
-0x10-byte stride and low-20-bit RMW shape. The entry payload meaning and the
-unobserved words inside each stride remain unknown.
+      <description>Sixteen-entry scheduler hardware-list table. Complete current insertion-begin,
+insertion-end and lifecycle bodies prove the finite entry count, 0x10-byte
+stride and low-20-bit compressed SRAM head. Same-chip public named header
+accessors independently establish the hardware-list role. The upper twelve
+bits and the unobserved words inside each stride remain unknown.
 </description>
       <baseAddress>0x2010B000</baseAddress>
       <registers>
@@ -19174,27 +19187,22 @@ unobserved words inside each stride remain unknown.
           <dimIncrement>0x10</dimIncrement>
           <dimIndex>0-15</dimIndex>
           <name>ENTRY%s</name>
-          <description>BTDM scheduler initialization clears bits 0..19 while preserving bits 20..31. No semantic meaning is assigned to either region.</description>
+          <description>Scheduler hardware-list entry. Bits 0..19 hold a compressed SRAM head and bits 20..31 remain unassigned.</description>
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>STATE_LOW_20</name>
-              <description>Low twenty bits cleared independently in every observed entry.</description>
+              <name>HEAD_POINTER</name>
+              <description>Compressed four-byte-aligned 0x2f-prefixed SRAM hardware-list head. Zero denotes no published head.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>20</bitWidth>
               <writeConstraint>
-                <useEnumeratedValues>true</useEnumeratedValues>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>1048575</maximum>
+                </range>
               </writeConstraint>
-              <enumeratedValues>
-                <usage>write</usage>
-                <enumeratedValue>
-                  <name>CLEARED</name>
-                  <description>The only reviewed image written by the recovered scheduler-table transaction.</description>
-                  <value>0</value>
-                </enumeratedValue>
-              </enumeratedValues>
             </field>
           </fields>
         </register>

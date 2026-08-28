@@ -33,11 +33,14 @@ pub use open_esp_radio_esp32s31_pac::{
     BluetoothModemLpTimerHandlerRegisterObservation, BluetoothModemLpTimerInstant,
     BluetoothModemLpTimerInterruptObservation, BluetoothNrtInterruptAcknowledged,
     BluetoothSchedulerDisableBeginError as BluetoothControllerSchedulerDisableBeginError,
-    BluetoothSchedulerFinishedListIndex, BluetoothSchedulerFinishedListObservation,
-    BluetoothSchedulerFinishedListPop, BluetoothSchedulerLockModifyInterruptObservation,
-    BluetoothSchedulerLockModifyObservation, BluetoothSchedulerLockModifyPublished,
-    BluetoothSchedulerLockModifyRequest, BluetoothSchedulerLockModifyTaskObservation,
-    BluetoothSchedulerReferenceCleared, BluetoothSchedulerReferenceGateObservation,
+    BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
+    BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadError,
+    BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHardwareListIndex,
+    BluetoothSchedulerInsertionCommand, BluetoothSchedulerInsertionCommandStartCleared,
+    BluetoothSchedulerLockModifyInterruptObservation, BluetoothSchedulerLockModifyObservation,
+    BluetoothSchedulerLockModifyPublished, BluetoothSchedulerLockModifyRequest,
+    BluetoothSchedulerLockModifyTaskObservation, BluetoothSchedulerReferenceCleared,
+    BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerRunPublished,
     BluetoothSchedulerWorkObservation,
 };
 
@@ -824,14 +827,82 @@ pub struct BluetoothControllerHal<'registers> {
 }
 
 impl BluetoothControllerHal<'_> {
-    /// Clear the low twenty state bits of all sixteen scheduler entries.
+    /// Remove every published scheduler hardware-list head.
     ///
     /// This is only the reviewed controller-initialization prefix. It does not
     /// establish scheduler, Link Layer or HCI readiness. The borrow proves
     /// exclusive register access, not powered lifecycle state; the caller must
     /// retain the independently established clock/reset prerequisite.
-    pub fn clear_scheduler_table_low_bits(&mut self) {
-        self.registers.clear_scheduler_table_low_bits();
+    pub fn clear_scheduler_hardware_list_heads(&mut self) {
+        self.registers.clear_scheduler_hardware_list_heads();
+    }
+
+    /// Read the currently published head of one scheduler hardware list.
+    #[doc(hidden)]
+    pub fn scheduler_hardware_list_head(
+        &mut self,
+        index: BluetoothSchedulerHardwareListIndex,
+    ) -> BluetoothSchedulerHardwareListHead {
+        self.registers.scheduler_hardware_list_head(index)
+    }
+
+    /// Publish one scheduler hardware-list head through the restricted PAC.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the scheduler insertion epoch, descriptor
+    /// initialization/lifetime and task/interrupt serialization required by
+    /// the underlying PAC transaction.
+    #[doc(hidden)]
+    #[allow(
+        unsafe_code,
+        reason = "the caller retains descriptor lifetime and scheduler-epoch prerequisites"
+    )]
+    pub unsafe fn publish_scheduler_hardware_list_head(
+        &mut self,
+        index: BluetoothSchedulerHardwareListIndex,
+        head: BluetoothSchedulerHardwareListHead,
+    ) -> BluetoothSchedulerHardwareListHeadPublished {
+        unsafe {
+            self.registers
+                .publish_scheduler_hardware_list_head(index, head)
+        }
+    }
+
+    /// Clear START in the insertion command selected by the Controller.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the matching insertion-begin result and must
+    /// serialize the command RMW with every producer and interrupt owner.
+    #[doc(hidden)]
+    #[allow(
+        unsafe_code,
+        reason = "the caller retains the insertion result and command serialization"
+    )]
+    pub unsafe fn clear_scheduler_insertion_command_start(
+        &mut self,
+        command: BluetoothSchedulerInsertionCommand,
+    ) -> BluetoothSchedulerInsertionCommandStartCleared {
+        unsafe {
+            self.registers
+                .clear_scheduler_insertion_command_start(command)
+        }
+    }
+
+    /// Publish the finite scheduler RUN command through the restricted PAC.
+    ///
+    /// # Safety
+    ///
+    /// The caller must establish the current run predicate after the required
+    /// hardware-list publication.
+    #[doc(hidden)]
+    #[allow(
+        unsafe_code,
+        reason = "the caller retains the scheduler-run predicate and insertion ownership"
+    )]
+    pub unsafe fn publish_scheduler_run(&mut self) -> BluetoothSchedulerRunPublished {
+        unsafe { self.registers.publish_scheduler_run() }
     }
 
     /// Capture task-owned START and RESULT fields for one scheduler

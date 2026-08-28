@@ -64,13 +64,16 @@ pub use bluetooth::{
     BluetoothModemLpTimerInstant, BluetoothModemLpTimerInterruptObservation,
     BluetoothModemLpTimerInterruptReadyOwner, BluetoothModemLpTimerInterruptStep,
     BluetoothModemLpTimerRegistersPreparedOwner, BluetoothModemLpTimerSoftwarePendingOwner,
-    BluetoothNrtInterruptAcknowledged, BluetoothSchedulerFinishedListIndex,
-    BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
+    BluetoothNrtInterruptAcknowledged, BluetoothSchedulerFinishedListObservation,
+    BluetoothSchedulerFinishedListPop, BluetoothSchedulerHardwareListHead,
+    BluetoothSchedulerHardwareListHeadError, BluetoothSchedulerHardwareListHeadPublished,
+    BluetoothSchedulerHardwareListIndex, BluetoothSchedulerInsertionCommand,
+    BluetoothSchedulerInsertionCommandStartCleared,
     BluetoothSchedulerLockModifyInterruptObservation, BluetoothSchedulerLockModifyObservation,
     BluetoothSchedulerLockModifyPublished, BluetoothSchedulerLockModifyRequest,
     BluetoothSchedulerLockModifyTaskObservation, BluetoothSchedulerReferenceGateObservation,
-    BluetoothSchedulerWorkObservation, BluetoothTaskOwner, BluetoothTaskOwnerReuniteError,
-    BluetoothTaskOwnerReuniteFailure,
+    BluetoothSchedulerRunPublished, BluetoothSchedulerWorkObservation, BluetoothTaskOwner,
+    BluetoothTaskOwnerReuniteError, BluetoothTaskOwnerReuniteFailure,
 };
 #[cfg(feature = "validation-probes")]
 pub use ieee802154_ed_event_probe::{

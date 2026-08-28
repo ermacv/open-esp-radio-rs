@@ -6,7 +6,7 @@
 
 #![forbid(unsafe_code)]
 
-pub use open_esp_radio_esp32s31_hal::BluetoothSchedulerFinishedListIndex;
+pub use open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareListIndex;
 use open_esp_radio_esp32s31_hal::{
     BluetoothControllerHal, BluetoothSchedulerFinishedListObservation,
     BluetoothSchedulerFinishedListPop,
@@ -40,7 +40,7 @@ pub enum BluetoothSchedulerFinishedListWorkerStep {
     /// One hardware list requires a separately proven item-selection step.
     List {
         /// Positional hardware list observed in the transferred set.
-        index: BluetoothSchedulerFinishedListIndex,
+        index: BluetoothSchedulerHardwareListIndex,
         /// Whether another captured list requires a later bounded step.
         more: bool,
     },

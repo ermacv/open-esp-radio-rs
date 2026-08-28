@@ -40853,7 +40853,7 @@ pub mod bluetooth_controller_core {
         operational_word_036c: OperationalWord036c,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - A complete btdm_sched.c leaf writes the finite complete image 1 when its reviewed predicate succeeds. Inner action remains unknown."]
+        #[doc = "0x00 - Scheduler run command. The complete current leaf writes finite complete image 1 when its reviewed predicate succeeds; the same-chip named predecessor identifies the leaf as r_btdm_sched_run."]
         #[inline(always)]
         pub const fn scheduler_control(&self) -> &SchedulerControl {
             &self.scheduler_control
@@ -41130,23 +41130,51 @@ pub mod bluetooth_controller_core {
             &self.operational_word_036c
         }
     }
-    #[doc = "SCHEDULER_CONTROL (w) register accessor: A complete btdm_sched.c leaf writes the finite complete image 1 when its reviewed predicate succeeds. Inner action remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_control::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_control`] module"]
+    #[doc = "SCHEDULER_CONTROL (w) register accessor: Scheduler run command. The complete current leaf writes finite complete image 1 when its reviewed predicate succeeds; the same-chip named predecessor identifies the leaf as r_btdm_sched_run.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_control::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_control`] module"]
     #[doc(alias = "SCHEDULER_CONTROL")]
     pub type SchedulerControl = crate::Reg<scheduler_control::SchedulerControlSpec>;
-    #[doc = "A complete btdm_sched.c leaf writes the finite complete image 1 when its reviewed predicate succeeds. Inner action remains unknown."]
+    #[doc = "Scheduler run command. The complete current leaf writes finite complete image 1 when its reviewed predicate succeeds; the same-chip named predecessor identifies the leaf as r_btdm_sched_run."]
     pub mod scheduler_control {
         #[doc = "Register `SCHEDULER_CONTROL` writer"]
         pub type W = crate::W<SchedulerControlSpec>;
-        #[doc = "Field `COMMAND` writer - "]
-        pub type CommandW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Complete scheduler run command image."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u32)]
+        pub enum Command {
+            #[doc = "1: Request scheduler execution after a hardware-list head publication."]
+            Run = 1,
+        }
+        impl From<Command> for u32 {
+            #[inline(always)]
+            fn from(variant: Command) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for Command {
+            type Ux = u32;
+        }
+        impl crate::IsEnum for Command {}
+        #[doc = "Field `COMMAND` writer - Complete scheduler run command image."]
+        pub type CommandW<'a, REG> = crate::FieldWriter<'a, REG, 32, Command>;
+        impl<'a, REG> CommandW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u32>,
+        {
+            #[doc = "Request scheduler execution after a hardware-list head publication."]
+            #[inline(always)]
+            pub fn run(self) -> &'a mut crate::W<REG> {
+                self.variant(Command::Run)
+            }
+        }
         impl W {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:31 - Complete scheduler run command image."]
             #[inline(always)]
             pub fn command(&mut self) -> CommandW<'_, SchedulerControlSpec> {
                 CommandW::new(self, 0)
             }
         }
-        #[doc = "A complete btdm_sched.c leaf writes the finite complete image 1 when its reviewed predicate succeeds. Inner action remains unknown.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_control::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Scheduler run command. The complete current leaf writes finite complete image 1 when its reviewed predicate succeeds; the same-chip named predecessor identifies the leaf as r_btdm_sched_run.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_control::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct SchedulerControlSpec;
         impl crate::RegisterSpec for SchedulerControlSpec {
             type Ux = u32;
@@ -45329,14 +45357,14 @@ pub mod shared_baseband_tx_timing {
         }
     }
 }
-#[doc = "Sparse sixteen-entry hardware table initialized by the standalone BTDM task lifecycle. A complete btdm_sched.c function proves the finite entry count, 0x10-byte stride and low-20-bit RMW shape. The entry payload meaning and the unobserved words inside each stride remain unknown."]
+#[doc = "Sixteen-entry scheduler hardware-list table. Complete current insertion-begin, insertion-end and lifecycle bodies prove the finite entry count, 0x10-byte stride and low-20-bit compressed SRAM head. Same-chip public named header accessors independently establish the hardware-list role. The upper twelve bits and the unobserved words inside each stride remain unknown."]
 pub type BtdmSchedulerTable = crate::Periph<btdm_scheduler_table::RegisterBlock, 0x2010_b000>;
 impl core::fmt::Debug for BtdmSchedulerTable {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("BtdmSchedulerTable").finish()
     }
 }
-#[doc = "Sparse sixteen-entry hardware table initialized by the standalone BTDM task lifecycle. A complete btdm_sched.c function proves the finite entry count, 0x10-byte stride and low-20-bit RMW shape. The entry payload meaning and the unobserved words inside each stride remain unknown."]
+#[doc = "Sixteen-entry scheduler hardware-list table. Complete current insertion-begin, insertion-end and lifecycle bodies prove the finite entry count, 0x10-byte stride and low-20-bit compressed SRAM head. Same-chip public named header accessors independently establish the hardware-list role. The upper twelve bits and the unobserved words inside each stride remain unknown."]
 pub mod btdm_scheduler_table {
     #[repr(C)]
     #[doc = "Register block"]
@@ -45344,7 +45372,7 @@ pub mod btdm_scheduler_table {
         entry: (),
     }
     impl RegisterBlock {
-        #[doc = "0x00..0x40 - BTDM scheduler initialization clears bits 0..19 while preserving bits 20..31. No semantic meaning is assigned to either region."]
+        #[doc = "0x00..0x40 - Scheduler hardware-list entry. Bits 0..19 hold a compressed SRAM head and bits 20..31 remain unassigned."]
         #[inline(always)]
         pub const fn entry(&self, n: usize) -> &Entry {
             #[allow(clippy::no_effect)]
@@ -45352,7 +45380,7 @@ pub mod btdm_scheduler_table {
             unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(16 * n).cast() }
         }
         #[doc = "Iterator for array of:"]
-        #[doc = "0x00..0x40 - BTDM scheduler initialization clears bits 0..19 while preserving bits 20..31. No semantic meaning is assigned to either region."]
+        #[doc = "0x00..0x40 - Scheduler hardware-list entry. Bits 0..19 hold a compressed SRAM head and bits 20..31 remain unassigned."]
         #[inline(always)]
         pub fn entry_iter(&self) -> impl Iterator<Item = &Entry> {
             (0..16).map(move |n| unsafe {
@@ -45360,77 +45388,34 @@ pub mod btdm_scheduler_table {
             })
         }
     }
-    #[doc = "ENTRY (rw) register accessor: BTDM scheduler initialization clears bits 0..19 while preserving bits 20..31. No semantic meaning is assigned to either region.\n\nYou can [`read`](crate::Reg::read) this register and get [`entry::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`entry::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@entry`] module"]
+    #[doc = "ENTRY (rw) register accessor: Scheduler hardware-list entry. Bits 0..19 hold a compressed SRAM head and bits 20..31 remain unassigned.\n\nYou can [`read`](crate::Reg::read) this register and get [`entry::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`entry::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@entry`] module"]
     #[doc(alias = "ENTRY")]
     pub type Entry = crate::Reg<entry::EntrySpec>;
-    #[doc = "BTDM scheduler initialization clears bits 0..19 while preserving bits 20..31. No semantic meaning is assigned to either region."]
+    #[doc = "Scheduler hardware-list entry. Bits 0..19 hold a compressed SRAM head and bits 20..31 remain unassigned."]
     pub mod entry {
         #[doc = "Register `ENTRY%s` reader"]
         pub type R = crate::R<EntrySpec>;
         #[doc = "Register `ENTRY%s` writer"]
         pub type W = crate::W<EntrySpec>;
-        #[doc = "Low twenty bits cleared independently in every observed entry."]
-        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-        #[repr(u32)]
-        pub enum StateLow20 {
-            #[doc = "0: The only reviewed image written by the recovered scheduler-table transaction."]
-            Cleared = 0,
-        }
-        impl From<StateLow20> for u32 {
-            #[inline(always)]
-            fn from(variant: StateLow20) -> Self {
-                variant as _
-            }
-        }
-        impl crate::FieldSpec for StateLow20 {
-            type Ux = u32;
-        }
-        impl crate::IsEnum for StateLow20 {}
-        #[doc = "Field `STATE_LOW_20` reader - Low twenty bits cleared independently in every observed entry."]
-        pub type StateLow20R = crate::FieldReader<StateLow20>;
-        impl StateLow20R {
-            #[doc = "Get enumerated values variant"]
-            #[inline(always)]
-            pub const fn variant(&self) -> Option<StateLow20> {
-                match self.bits {
-                    0 => Some(StateLow20::Cleared),
-                    _ => None,
-                }
-            }
-            #[doc = "The only reviewed image written by the recovered scheduler-table transaction."]
-            #[inline(always)]
-            pub fn is_cleared(&self) -> bool {
-                *self == StateLow20::Cleared
-            }
-        }
-        #[doc = "Field `STATE_LOW_20` writer - Low twenty bits cleared independently in every observed entry."]
-        pub type StateLow20W<'a, REG> = crate::FieldWriter<'a, REG, 20, StateLow20>;
-        impl<'a, REG> StateLow20W<'a, REG>
-        where
-            REG: crate::Writable + crate::RegisterSpec,
-            REG::Ux: From<u32>,
-        {
-            #[doc = "The only reviewed image written by the recovered scheduler-table transaction."]
-            #[inline(always)]
-            pub fn cleared(self) -> &'a mut crate::W<REG> {
-                self.variant(StateLow20::Cleared)
-            }
-        }
+        #[doc = "Field `HEAD_POINTER` reader - Compressed four-byte-aligned 0x2f-prefixed SRAM hardware-list head. Zero denotes no published head."]
+        pub type HeadPointerR = crate::FieldReader<u32>;
+        #[doc = "Field `HEAD_POINTER` writer - Compressed four-byte-aligned 0x2f-prefixed SRAM hardware-list head. Zero denotes no published head."]
+        pub type HeadPointerW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:19 - Low twenty bits cleared independently in every observed entry."]
+            #[doc = "Bits 0:19 - Compressed four-byte-aligned 0x2f-prefixed SRAM hardware-list head. Zero denotes no published head."]
             #[inline(always)]
-            pub fn state_low_20(&self) -> StateLow20R {
-                StateLow20R::new(self.bits & 0x000f_ffff)
+            pub fn head_pointer(&self) -> HeadPointerR {
+                HeadPointerR::new(self.bits & 0x000f_ffff)
             }
         }
         impl W {
-            #[doc = "Bits 0:19 - Low twenty bits cleared independently in every observed entry."]
+            #[doc = "Bits 0:19 - Compressed four-byte-aligned 0x2f-prefixed SRAM hardware-list head. Zero denotes no published head."]
             #[inline(always)]
-            pub fn state_low_20(&mut self) -> StateLow20W<'_, EntrySpec> {
-                StateLow20W::new(self, 0)
+            pub fn head_pointer(&mut self) -> HeadPointerW<'_, EntrySpec> {
+                HeadPointerW::new(self, 0)
             }
         }
-        #[doc = "BTDM scheduler initialization clears bits 0..19 while preserving bits 20..31. No semantic meaning is assigned to either region.\n\nYou can [`read`](crate::Reg::read) this register and get [`entry::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`entry::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Scheduler hardware-list entry. Bits 0..19 hold a compressed SRAM head and bits 20..31 remain unassigned.\n\nYou can [`read`](crate::Reg::read) this register and get [`entry::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`entry::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct EntrySpec;
         impl crate::RegisterSpec for EntrySpec {
             type Ux = u32;
@@ -58193,6 +58178,18 @@ pub mod fixed_register_write {
             registers
                 .bb_clock_gate_opaque()
                 .write_with_zero(|writer| writer.state().closed());
+        }
+    }
+
+    /// Write the `RUN` variant to every bit of `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_CONTROL`.
+    #[inline]
+    pub fn run_bluetooth_scheduler(registers: &crate::BluetoothControllerCore) {
+        // SAFETY: generator validation proves that the sole field covers
+        // all 32 bits and the named writable variant exists in the SVD.
+        unsafe {
+            registers
+                .scheduler_control()
+                .write_with_zero(|writer| writer.command().run());
         }
     }
 }

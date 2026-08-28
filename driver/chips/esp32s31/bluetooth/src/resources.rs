@@ -174,12 +174,12 @@ pub(crate) struct BluetoothTaskResources {
 
 #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 impl BluetoothTaskResources {
-    /// Clear the reviewed scheduler-table prefix through one finite HAL borrow.
+    /// Remove every scheduler hardware-list head through one finite HAL borrow.
     #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
-    pub(crate) fn clear_scheduler_table_low_bits(&mut self) {
+    pub(crate) fn clear_scheduler_hardware_list_heads(&mut self) {
         self.registers
             .borrow_bluetooth_controller()
-            .clear_scheduler_table_low_bits();
+            .clear_scheduler_hardware_list_heads();
     }
 
     /// Durable logical phase paired with this unique task owner.

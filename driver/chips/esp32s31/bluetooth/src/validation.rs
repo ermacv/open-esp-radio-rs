@@ -20,14 +20,14 @@ pub fn capture_and_acknowledge_interrupts() {
     let _acknowledged = registers.capture_nrt_and_acknowledge();
 }
 
-/// Execute the exact production scheduler-table low-bit clear transaction.
+/// Execute the exact production scheduler hardware-list head clear transaction.
 #[inline(always)]
-pub fn clear_scheduler_table_low_bits() {
+pub fn clear_scheduler_hardware_list_heads() {
     let cold = open_esp_radio_esp32s31_hal::BluetoothColdOwner::from_radio_hardware(
         open_esp_radio_esp32s31_pac::RadioHardware::for_validation(),
     );
     let (mut task, interrupts) = crate::resources::separate_interrupt_owner(cold);
-    task.clear_scheduler_table_low_bits();
+    task.clear_scheduler_hardware_list_heads();
     // The comparison image deliberately retains the mutated partitions; it
     // must not reconstruct cold ownership without the missing rollback.
     let _powered_owners = (task, interrupts);

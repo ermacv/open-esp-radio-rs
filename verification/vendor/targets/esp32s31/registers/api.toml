@@ -1367,6 +1367,17 @@ field = "STATE"
 variant = "CLOSED"
 sources = ["BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK"]
 
+[[fixed-register-writes]]
+name = "run_bluetooth_scheduler"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SCHEDULER_CONTROL"
+field = "COMMAND"
+variant = "RUN"
+sources = [
+    "BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION",
+    "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES",
+]
+
 [[fixed-register-images]]
 name = "mask_mac_power_interrupts"
 peripheral = "WIFI_MAC_POWER_INTERRUPT"

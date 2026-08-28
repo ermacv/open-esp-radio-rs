@@ -71,6 +71,14 @@ impl BluetoothControllerSramAddress {
         self.0
     }
 
+    /// Reconstruct one address read from a reviewed controller pointer field.
+    ///
+    /// The field width itself guarantees the encodable window. Callers must
+    /// keep any zero/null interpretation in the owning register transaction.
+    pub(crate) const fn from_compressed_image(image: u32) -> Self {
+        Self(CONTROLLER_SRAM_ADDRESS_PREFIX | (image << 2))
+    }
+
     /// Return the exact low-twenty-bit positional controller image.
     ///
     /// This does not grant dereference or publication authority. It is shared

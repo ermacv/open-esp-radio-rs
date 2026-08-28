@@ -39650,8 +39650,8 @@ register-method = "entry"
 register-index = 0
 
 [[registers.fields]]
-svd-name = "STATE_LOW_20"
-method = "state_low_20"
+svd-name = "HEAD_POINTER"
+method = "head_pointer"
 bit-offset = 0
 bit-width = 20
 access = "read-write"
@@ -39669,8 +39669,8 @@ register-method = "entry"
 register-index = 1
 
 [[registers.fields]]
-svd-name = "STATE_LOW_20"
-method = "state_low_20"
+svd-name = "HEAD_POINTER"
+method = "head_pointer"
 bit-offset = 0
 bit-width = 20
 access = "read-write"
@@ -39688,8 +39688,8 @@ register-method = "entry"
 register-index = 2
 
 [[registers.fields]]
-svd-name = "STATE_LOW_20"
-method = "state_low_20"
+svd-name = "HEAD_POINTER"
+method = "head_pointer"
 bit-offset = 0
 bit-width = 20
 access = "read-write"
@@ -39707,8 +39707,8 @@ register-method = "entry"
 register-index = 3
 
 [[registers.fields]]
-svd-name = "STATE_LOW_20"
-method = "state_low_20"
+svd-name = "HEAD_POINTER"
+method = "head_pointer"
 bit-offset = 0
 bit-width = 20
 access = "read-write"
@@ -39726,8 +39726,8 @@ register-method = "entry"
 register-index = 4
 
 [[registers.fields]]
-svd-name = "STATE_LOW_20"
-method = "state_low_20"
+svd-name = "HEAD_POINTER"
+method = "head_pointer"
 bit-offset = 0
 bit-width = 20
 access = "read-write"
@@ -39745,8 +39745,8 @@ register-method = "entry"
 register-index = 5
 
 [[registers.fields]]
-svd-name = "STATE_LOW_20"
-method = "state_low_20"
+svd-name = "HEAD_POINTER"
+method = "head_pointer"
 bit-offset = 0
 bit-width = 20
 access = "read-write"
@@ -39764,8 +39764,8 @@ register-method = "entry"
 register-index = 6
 
 [[registers.fields]]
-svd-name = "STATE_LOW_20"
-method = "state_low_20"
+svd-name = "HEAD_POINTER"
+method = "head_pointer"
 bit-offset = 0
 bit-width = 20
 access = "read-write"
@@ -39783,8 +39783,8 @@ register-method = "entry"
 register-index = 7
 
 [[registers.fields]]
-svd-name = "STATE_LOW_20"
-method = "state_low_20"
+svd-name = "HEAD_POINTER"
+method = "head_pointer"
 bit-offset = 0
 bit-width = 20
 access = "read-write"
@@ -39802,8 +39802,8 @@ register-method = "entry"
 register-index = 8
 
 [[registers.fields]]
-svd-name = "STATE_LOW_20"
-method = "state_low_20"
+svd-name = "HEAD_POINTER"
+method = "head_pointer"
 bit-offset = 0
 bit-width = 20
 access = "read-write"
@@ -39821,8 +39821,8 @@ register-method = "entry"
 register-index = 9
 
 [[registers.fields]]
-svd-name = "STATE_LOW_20"
-method = "state_low_20"
+svd-name = "HEAD_POINTER"
+method = "head_pointer"
 bit-offset = 0
 bit-width = 20
 access = "read-write"
@@ -39840,8 +39840,8 @@ register-method = "entry"
 register-index = 10
 
 [[registers.fields]]
-svd-name = "STATE_LOW_20"
-method = "state_low_20"
+svd-name = "HEAD_POINTER"
+method = "head_pointer"
 bit-offset = 0
 bit-width = 20
 access = "read-write"
@@ -39859,8 +39859,8 @@ register-method = "entry"
 register-index = 11
 
 [[registers.fields]]
-svd-name = "STATE_LOW_20"
-method = "state_low_20"
+svd-name = "HEAD_POINTER"
+method = "head_pointer"
 bit-offset = 0
 bit-width = 20
 access = "read-write"
@@ -39878,8 +39878,8 @@ register-method = "entry"
 register-index = 12
 
 [[registers.fields]]
-svd-name = "STATE_LOW_20"
-method = "state_low_20"
+svd-name = "HEAD_POINTER"
+method = "head_pointer"
 bit-offset = 0
 bit-width = 20
 access = "read-write"
@@ -39897,8 +39897,8 @@ register-method = "entry"
 register-index = 13
 
 [[registers.fields]]
-svd-name = "STATE_LOW_20"
-method = "state_low_20"
+svd-name = "HEAD_POINTER"
+method = "head_pointer"
 bit-offset = 0
 bit-width = 20
 access = "read-write"
@@ -39916,8 +39916,8 @@ register-method = "entry"
 register-index = 14
 
 [[registers.fields]]
-svd-name = "STATE_LOW_20"
-method = "state_low_20"
+svd-name = "HEAD_POINTER"
+method = "head_pointer"
 bit-offset = 0
 bit-width = 20
 access = "read-write"
@@ -39935,8 +39935,8 @@ register-method = "entry"
 register-index = 15
 
 [[registers.fields]]
-svd-name = "STATE_LOW_20"
-method = "state_low_20"
+svd-name = "HEAD_POINTER"
+method = "head_pointer"
 bit-offset = 0
 bit-width = 20
 access = "read-write"

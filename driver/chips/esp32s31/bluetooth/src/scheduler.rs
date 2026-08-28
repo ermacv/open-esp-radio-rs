@@ -10,8 +10,8 @@ use crate::{
 };
 use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
 
-/// Bluetooth hardware after only the sixteen scheduler-table low fields were
-/// cleared.
+/// Bluetooth hardware after all sixteen scheduler hardware-list heads were
+/// removed.
 ///
 /// This is a deliberately terminal research frontier. The vendor function
 /// continues with software event/list initialization, and the outer
@@ -20,7 +20,7 @@ use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
 /// HCI, controller or Link-Layer readiness. Dropping it is fail-stop because
 /// no verified rollback exists after the scheduler MMIO mutation.
 #[must_use = "the scheduler-prefix state retains every powered Bluetooth owner"]
-pub struct BluetoothSchedulerTableLowBitsCleared<P> {
+pub struct BluetoothSchedulerHardwareListHeadsCleared<P> {
     task: BluetoothTaskResources,
     interrupts: BluetoothInterruptBankOwner,
     platform: BluetoothTeardownPendingPlatform<P>,
@@ -42,7 +42,7 @@ pub struct BluetoothSchedulerRuntimeResourcesBound<P, const MODEM_TIMER_CAPACITY
     runtime: BluetoothControllerRuntimeResources<MODEM_TIMER_CAPACITY>,
 }
 
-impl<P> BluetoothSchedulerTableLowBitsCleared<P> {
+impl<P> BluetoothSchedulerHardwareListHeadsCleared<P> {
     /// Return the scheduler scale established by the preceding HAL component.
     pub const fn controller_time_scale(&self) -> BluetoothControllerTimeScale {
         self.time_scale
@@ -107,24 +107,25 @@ impl<P, const MODEM_TIMER_CAPACITY: usize>
 }
 
 impl<P> BluetoothControllerHalInitialized<P> {
-    /// Clear bits 19:0 of all sixteen scheduler-table entries in ascending
-    /// address order.
+    /// Remove all sixteen scheduler hardware-list heads in positional order.
     ///
     /// This consumes the completed controller HAL state before the first
     /// scheduler-table write. The result intentionally has no next hardware
     /// transition until the remaining scheduler lifecycle has independent
     /// evidence and production owners.
     #[cfg(target_arch = "riscv32")]
-    pub fn clear_scheduler_table_low_bits(self) -> BluetoothSchedulerTableLowBitsCleared<P> {
-        self.clear_scheduler_table_low_bits_with(|task| {
-            task.clear_scheduler_table_low_bits();
+    pub fn clear_scheduler_hardware_list_heads(
+        self,
+    ) -> BluetoothSchedulerHardwareListHeadsCleared<P> {
+        self.clear_scheduler_hardware_list_heads_with(|task| {
+            task.clear_scheduler_hardware_list_heads();
         })
     }
 
-    fn clear_scheduler_table_low_bits_with(
+    fn clear_scheduler_hardware_list_heads_with(
         self,
         clear: impl FnOnce(&mut BluetoothTaskResources),
-    ) -> BluetoothSchedulerTableLowBitsCleared<P> {
+    ) -> BluetoothSchedulerHardwareListHeadsCleared<P> {
         let Self {
             mut task,
             interrupts,
@@ -132,7 +133,7 @@ impl<P> BluetoothControllerHalInitialized<P> {
             time_scale,
         } = self;
         clear(&mut task);
-        BluetoothSchedulerTableLowBitsCleared {
+        BluetoothSchedulerHardwareListHeadsCleared {
             task,
             interrupts,
             platform,
@@ -175,7 +176,7 @@ mod tests {
         });
         let time_scale = initialized.controller_time_scale();
         let scheduler_operations = Rc::clone(&operations);
-        let scheduler = initialized.clear_scheduler_table_low_bits_with(|_| {
+        let scheduler = initialized.clear_scheduler_hardware_list_heads_with(|_| {
             scheduler_operations.borrow_mut().push("scheduler-prefix");
         });
         assert_eq!(

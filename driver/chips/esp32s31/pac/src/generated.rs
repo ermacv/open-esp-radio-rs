@@ -393,6 +393,29 @@ impl BluetoothMemoryListPointerBits {
     }
 }
 
+/// Low-twenty-bit compressed SRAM head accepted by one reviewed Bluetooth scheduler hardware-list entry.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct BluetoothSchedulerListHeadBits(u32);
+
+impl BluetoothSchedulerListHeadBits {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x000fffff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x000fffff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Runtime-derived byte ORed into both BLE link-controller transmit-delay fields by one fresh-read transaction.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct BluetoothPhyInitTimingByte(u32);
@@ -1753,6 +1776,51 @@ pub(crate) fn request_bluetooth_controller_time_latch(
     registers: &crate::svd::BluetoothControllerCore,
 ) {
     crate::svd::field_or_modify::request_bluetooth_controller_time_latch(registers);
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_scheduler_hardware_list_head` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_scheduler_hardware_list_head(
+    registers: &crate::svd::BtdmSchedulerTable,
+    index: usize,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_scheduler_hardware_list_head(
+        registers, index,
+    );
+}
+
+/// Typed bridge for the reviewed `publish_bluetooth_scheduler_hardware_list_head` field-replacement transaction.
+#[inline]
+pub(crate) fn publish_bluetooth_scheduler_hardware_list_head(
+    registers: &crate::svd::BtdmSchedulerTable,
+    index: usize,
+    value: BluetoothSchedulerListHeadBits,
+) {
+    crate::svd::field_replace_modify::publish_bluetooth_scheduler_hardware_list_head(
+        registers,
+        index,
+        value.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_scheduler_insertion_command_0_start` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_scheduler_insertion_command_0_start(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_scheduler_insertion_command_0_start(
+        registers,
+    );
+}
+
+/// Typed bridge for the reviewed `clear_bluetooth_scheduler_insertion_command_1_start` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_scheduler_insertion_command_1_start(
+    registers: &crate::svd::BluetoothControllerCore,
+) {
+    crate::svd::field_replace_modify::clear_bluetooth_scheduler_insertion_command_1_start(
+        registers,
+    );
 }
 
 /// Typed bridge for the reviewed `clear_ble_phy_lc_tx_on_delay_fields` fixed field-replacement transaction.

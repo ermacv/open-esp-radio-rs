@@ -58235,6 +58235,15 @@ pub mod full_register_read {
 /// Safe observations through reviewed SVD fields.
 pub mod field_read {
 
+    /// Read `BTDM_SCHEDULER_TABLE`.`ENTRY%s`.`HEAD_POINTER` without exposing its register block.
+    #[inline]
+    pub fn observe_bluetooth_scheduler_hardware_list_head(
+        registers: &crate::BtdmSchedulerTable,
+        index: usize,
+    ) -> u32 {
+        registers.entry(index).read().head_pointer().bits()
+    }
+
     /// Read `BLUETOOTH_CONTROLLER_CORE`.`SLEEP_TIMER_CONTROL`.`LATCH_REQUEST` without exposing its register block.
     #[inline]
     pub fn observe_bluetooth_controller_time_latch_request(
@@ -61397,6 +61406,60 @@ pub mod field_or_modify {
 
 /// Safe, SVD-declared field-replacement read-modify-write transactions.
 pub mod field_replace_modify {
+
+    /// Replace BTDM_SCHEDULER_TABLE.ENTRY%s fields [HEAD_POINTER] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_scheduler_hardware_list_head(
+        registers: &crate::BtdmSchedulerTable,
+        index: usize,
+    ) {
+        registers.entry(index).modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.head_pointer().bits(input & 0x000fffff) }
+        });
+    }
+
+    /// Replace BTDM_SCHEDULER_TABLE.ENTRY%s fields [HEAD_POINTER] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_bluetooth_scheduler_hardware_list_head(
+        registers: &crate::BtdmSchedulerTable,
+        index: usize,
+        input: u32,
+    ) {
+        registers.entry(index).modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.head_pointer().bits(input & 0x000fffff) }
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_0 fields [START] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_scheduler_insertion_command_0_start(
+        registers: &crate::BluetoothControllerCore,
+    ) {
+        registers.scheduler_command_0().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.start().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BLUETOOTH_CONTROLLER_CORE.SCHEDULER_COMMAND_1 fields [START] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_scheduler_insertion_command_1_start(
+        registers: &crate::BluetoothControllerCore,
+    ) {
+        registers.scheduler_command_1().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.start().bit((input & 0x00000001) != 0)
+        });
+    }
 
     /// Replace BTMAC_BLE_PHY_INIT.LC_TX_ON_DELAY_CONFIG fields [LC_TX_ON_DELAY, INIT_DUPLICATE_BYTE] from one reviewed logical image while preserving every other bit.
     #[inline]

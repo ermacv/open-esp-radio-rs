@@ -132,8 +132,11 @@ impl BluetoothTaskRegisters {
     /// list initialization performed by the vendor function, and therefore
     /// does not claim that the complete controller or scheduler is running.
     pub fn clear_scheduler_hardware_list_heads(&mut self) {
-        for entry in self.bluetooth.btdm_scheduler_table.entry_iter() {
-            entry.modify(|_, writer| writer.head_pointer().set(0));
+        for index in 0..16 {
+            super::generated::clear_bluetooth_scheduler_hardware_list_head(
+                &self.bluetooth.btdm_scheduler_table,
+                index,
+            );
         }
         device_fence();
     }
@@ -149,13 +152,10 @@ impl BluetoothTaskRegisters {
         &mut self,
         index: BluetoothSchedulerHardwareListIndex,
     ) -> BluetoothSchedulerHardwareListHead {
-        let image = self
-            .bluetooth
-            .btdm_scheduler_table
-            .entry(index.get() as usize)
-            .read()
-            .head_pointer()
-            .bits();
+        let image = super::svd::field_read::observe_bluetooth_scheduler_hardware_list_head(
+            &self.bluetooth.btdm_scheduler_table,
+            index.get() as usize,
+        );
         BluetoothSchedulerHardwareListHead::from_compressed_image(image)
     }
 
@@ -182,10 +182,14 @@ impl BluetoothTaskRegisters {
         index: BluetoothSchedulerHardwareListIndex,
         head: BluetoothSchedulerHardwareListHead,
     ) -> BluetoothSchedulerHardwareListHeadPublished {
-        self.bluetooth
-            .btdm_scheduler_table
-            .entry(index.get() as usize)
-            .modify(|_, writer| writer.head_pointer().set(head.compressed_image()));
+        let head_bits =
+            super::generated::BluetoothSchedulerListHeadBits::new(head.compressed_image())
+                .expect("validated scheduler head fits its generated PAC domain");
+        super::generated::publish_bluetooth_scheduler_hardware_list_head(
+            &self.bluetooth.btdm_scheduler_table,
+            index.get() as usize,
+            head_bits,
+        );
         device_fence();
         BluetoothSchedulerHardwareListHeadPublished { index, head }
     }
@@ -206,17 +210,17 @@ impl BluetoothTaskRegisters {
         command: BluetoothSchedulerInsertionCommand,
     ) -> BluetoothSchedulerInsertionCommandStartCleared {
         match command {
-            BluetoothSchedulerInsertionCommand::Zero => self
-                .bluetooth
-                .bluetooth_controller_core
-                .scheduler_command_0()
-                .modify(|_, writer| writer.start().clear_bit()),
-            BluetoothSchedulerInsertionCommand::One => self
-                .bluetooth
-                .bluetooth_controller_core
-                .scheduler_command_1()
-                .modify(|_, writer| writer.start().clear_bit()),
-        };
+            BluetoothSchedulerInsertionCommand::Zero => {
+                super::generated::clear_bluetooth_scheduler_insertion_command_0_start(
+                    &self.bluetooth.bluetooth_controller_core,
+                );
+            }
+            BluetoothSchedulerInsertionCommand::One => {
+                super::generated::clear_bluetooth_scheduler_insertion_command_1_start(
+                    &self.bluetooth.bluetooth_controller_core,
+                );
+            }
+        }
         device_fence();
         BluetoothSchedulerInsertionCommandStartCleared { command }
     }

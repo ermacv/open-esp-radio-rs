@@ -371,6 +371,13 @@ max = 0x000f_ffff
 sources = ["BLOB_LIBBLE_MMGMT_HW_LISTS"]
 
 [[bounded-domains]]
+name = "BluetoothSchedulerListHeadBits"
+description = "Low-twenty-bit compressed SRAM head accepted by one reviewed Bluetooth scheduler hardware-list entry."
+min = 0
+max = 0x000f_ffff
+sources = ["BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+
+[[bounded-domains]]
 name = "BluetoothPhyInitTimingByte"
 description = "Runtime-derived byte ORed into both BLE link-controller transmit-delay fields by one fresh-read transaction."
 min = 0
@@ -1437,6 +1444,49 @@ sources = [
     "BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION",
     "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES",
 ]
+
+[[field-reads]]
+name = "observe_bluetooth_scheduler_hardware_list_head"
+peripheral = "BTDM_SCHEDULER_TABLE"
+register = "ENTRY%s"
+field = "HEAD_POINTER"
+sources = ["BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+
+[[field-replace-modifies]]
+name = "clear_bluetooth_scheduler_hardware_list_head"
+peripheral = "BTDM_SCHEDULER_TABLE"
+register = "ENTRY%s"
+fields = [{ field = "HEAD_POINTER", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+
+[[field-replace-modifies]]
+name = "publish_bluetooth_scheduler_hardware_list_head"
+peripheral = "BTDM_SCHEDULER_TABLE"
+register = "ENTRY%s"
+fields = [{ field = "HEAD_POINTER", source-bit-offset = 0 }]
+domain = "BluetoothSchedulerListHeadBits"
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+
+[[field-replace-modifies]]
+name = "clear_bluetooth_scheduler_insertion_command_0_start"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SCHEDULER_COMMAND_0"
+fields = [{ field = "START", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+
+[[field-replace-modifies]]
+name = "clear_bluetooth_scheduler_insertion_command_1_start"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SCHEDULER_COMMAND_1"
+fields = [{ field = "START", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 
 [[fixed-register-writes]]
 name = "publish_bluetooth_scheduler_stop_command"

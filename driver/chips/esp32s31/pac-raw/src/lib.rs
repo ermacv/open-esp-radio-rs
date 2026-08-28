@@ -64861,6 +64861,39 @@ pub mod field_replace_modify {
     }
 }
 
+/// Safe, SVD-declared multi-argument field-replacement transactions.
+pub mod field_argument_modify {
+
+    /// Replace MODEM_LPCON_SHARED_CLOCK.LP_TIMER_CONF fields [slow_oscillator_selected -> CLK_LP_TIMER_SEL_OSC_SLOW, fast_oscillator_selected -> CLK_LP_TIMER_SEL_OSC_FAST, crystal_selected -> CLK_LP_TIMER_SEL_XTAL, crystal_32khz_selected -> CLK_LP_TIMER_SEL_XTAL32K, divider_minus_one -> CLK_LP_TIMER_DIV_NUM] from independently typed arguments while preserving every other bit.
+    #[inline]
+    pub fn configure_shared_modem_low_power_timer(
+        registers: &crate::ModemLpconSharedClock,
+        slow_oscillator_selected: bool,
+        fast_oscillator_selected: bool,
+        crystal_selected: bool,
+        crystal_32khz_selected: bool,
+        divider_minus_one: u32,
+    ) {
+        registers.lp_timer_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every typed argument fits its named SVD field;
+            // no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .clk_lp_timer_sel_osc_slow()
+                    .bit(slow_oscillator_selected)
+                    .clk_lp_timer_sel_osc_fast()
+                    .bit(fast_oscillator_selected)
+                    .clk_lp_timer_sel_xtal()
+                    .bit(crystal_selected)
+                    .clk_lp_timer_sel_xtal32k()
+                    .bit(crystal_32khz_selected)
+                    .clk_lp_timer_div_num()
+                    .bits(divider_minus_one as u16)
+            }
+        });
+    }
+}
+
 /// Safe, SVD-declared indexed bit-set read-modify-write transactions.
 pub mod indexed_bit_set_modify {
 

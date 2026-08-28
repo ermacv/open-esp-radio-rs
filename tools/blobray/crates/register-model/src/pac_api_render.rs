@@ -282,6 +282,44 @@ impl PacApiPack {
                 ));
             }
         }
+        for operation in &self.field_argument_modifies {
+            if !operation.exposure.exposes_facade() {
+                continue;
+            }
+            let (index_parameter, index_argument) = if operation.register.contains("%s") {
+                ("index: usize, ", "index, ")
+            } else {
+                ("", "")
+            };
+            let parameters = operation
+                .arguments
+                .iter()
+                .map(|argument| {
+                    let argument_type = argument.domain.as_deref().unwrap_or("bool");
+                    format!("{}: {argument_type}", argument.name)
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            let arguments = operation
+                .arguments
+                .iter()
+                .map(|argument| match &argument.domain {
+                    None => argument.name.clone(),
+                    Some(domain) if flag_or_enum_domains.contains(domain.as_str()) => {
+                        format!("{}.bits()", argument.name)
+                    }
+                    Some(_) => format!("{}.get()", argument.name),
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            output.push_str(&format!(
+                "/// Typed bridge for the reviewed `{}` multi-argument field-replacement transaction.\n#[inline]\npub(crate) fn {}(registers: &crate::svd::{}, {index_parameter}{parameters}) {{\n    crate::svd::field_argument_modify::{}(registers, {index_argument}{arguments});\n}}\n\n",
+                operation.name,
+                operation.name,
+                type_binding_name(&operation.peripheral),
+                operation.name,
+            ));
+        }
         for operation in &self.indexed_bit_set_modifies {
             if !operation.exposure.exposes_facade() {
                 continue;
@@ -410,6 +448,7 @@ impl PacApiPack {
         output.push_str(&self.render_masked_register_modifies(&device)?);
         output.push_str(&self.render_field_or_modifies(&device)?);
         output.push_str(&self.render_field_replace_modifies(&device)?);
+        output.push_str(&self.render_field_argument_modifies(&device)?);
         output.push_str(&self.render_indexed_bit_set_modifies(&device)?);
         if self.options.device_access {
             output.push_str(device_access_api());
@@ -1478,6 +1517,104 @@ impl PacApiPack {
                      registers.{register}({index_argument}).modify(|_, writer| {{\n\
                          {fixed_input}// SAFETY: generator validation proves every logical input projection\n\
                          // fits its named SVD field; no whole-register image crosses this API.\n\
+                         {update}\n\
+                     }});\n\
+                 }}\n",
+                binding.peripheral, binding.register, fields, binding.name,
+            ));
+        }
+        output.push_str("}\n");
+        Ok(output)
+    }
+
+    fn render_field_argument_modifies(&self, device: &Device) -> Result<String> {
+        if self.field_argument_modifies.is_empty() {
+            return Ok(String::new());
+        }
+        let mut output = String::from(
+            "\n/// Safe, SVD-declared multi-argument field-replacement transactions.\n\
+             pub mod field_argument_modify {\n",
+        );
+        for binding in &self.field_argument_modifies {
+            let peripheral_type = type_binding_name(&binding.peripheral);
+            let register = member_binding_name(&binding.register);
+            let register_binding = pac_api_svd::register(
+                device,
+                &binding.name,
+                &binding.peripheral,
+                &binding.register,
+            )?;
+            let (index_parameter, index_argument) = if register_binding.is_array {
+                ("index: usize, ", "index")
+            } else {
+                ("", "")
+            };
+            let parameters = binding
+                .arguments
+                .iter()
+                .map(|argument| {
+                    format!(
+                        "{}: {}",
+                        argument.name,
+                        if argument.domain.is_some() {
+                            "u32"
+                        } else {
+                            "bool"
+                        }
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            let mut update = String::from("writer");
+            let mut requires_unsafe = false;
+            for argument in &binding.arguments {
+                let selected_field =
+                    pac_api_svd::field(&binding.name, register_binding.info, &argument.field)?;
+                let field = member_binding_name(&argument.field);
+                let width = selected_field.bit_width();
+                if argument.domain.is_none() {
+                    update.push_str(&format!(
+                        "\n                             .{field}().bit({})",
+                        argument.name
+                    ));
+                } else if width == 1 {
+                    update.push_str(&format!(
+                        "\n                             .{field}().bit({} != 0)",
+                        argument.name
+                    ));
+                } else {
+                    requires_unsafe = true;
+                    let value = match width {
+                        2..=8 => format!("{} as u8", argument.name),
+                        9..=16 => format!("{} as u16", argument.name),
+                        17..=32 => argument.name.clone(),
+                        _ => unreachable!("SVD validation rejects invalid field widths"),
+                    };
+                    update.push_str(&format!(
+                        "\n                             .{field}().bits({value})"
+                    ));
+                }
+            }
+            let update = if requires_unsafe {
+                format!("unsafe {{ {update} }}")
+            } else {
+                update
+            };
+            let fields = binding
+                .arguments
+                .iter()
+                .map(|argument| format!("{} -> {}", argument.name, argument.field))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let too_many_arguments =
+                too_many_arguments_attribute(binding.arguments.len(), register_binding.is_array);
+            output.push_str(&format!(
+                "\n    /// Replace {}.{} fields [{}] from independently typed arguments while preserving every other bit.\n\
+                 {too_many_arguments}#[inline]\n\
+                 pub fn {}(registers: &crate::{peripheral_type}, {index_parameter}{parameters}) {{\n\
+                     registers.{register}({index_argument}).modify(|_, writer| {{\n\
+                         // SAFETY: generator validation proves every typed argument fits its named SVD field;\n\
+                         // no whole-register image crosses this API.\n\
                          {update}\n\
                      }});\n\
                  }}\n",

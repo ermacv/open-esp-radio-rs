@@ -3794,6 +3794,26 @@ pub(crate) fn publish_bluetooth_scheduler_lock_modify_argument(
     );
 }
 
+/// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
+#[inline]
+pub(crate) fn configure_shared_modem_low_power_timer(
+    registers: &crate::svd::ModemLpconSharedClock,
+    slow_oscillator_selected: bool,
+    fast_oscillator_selected: bool,
+    crystal_selected: bool,
+    crystal_32khz_selected: bool,
+    divider_minus_one: ModemLowPowerClockDivider,
+) {
+    crate::svd::field_argument_modify::configure_shared_modem_low_power_timer(
+        registers,
+        slow_oscillator_selected,
+        fast_oscillator_selected,
+        crystal_selected,
+        crystal_32khz_selected,
+        divider_minus_one.get(),
+    );
+}
+
 /// Typed bridge for the reviewed `request_rx_block_ack_entry_update` indexed bit-set transaction.
 #[inline]
 pub(crate) fn request_rx_block_ack_entry_update(

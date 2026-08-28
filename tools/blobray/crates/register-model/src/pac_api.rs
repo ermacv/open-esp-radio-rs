@@ -61,6 +61,8 @@ pub struct PacApiPack {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub field_replace_modifies: Vec<FieldReplaceModify>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub field_argument_modifies: Vec<FieldArgumentModify>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub indexed_bit_set_modifies: Vec<IndexedBitSetModify>,
 }
 
@@ -398,6 +400,30 @@ pub struct FieldInputTransform {
     pub retain_mask: u32,
 }
 
+/// One fresh-read RMW that replaces disjoint fields from independently typed
+/// logical arguments.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct FieldArgumentModify {
+    pub name: String,
+    pub peripheral: String,
+    pub register: String,
+    /// Each argument owns one complete SVD field. An omitted domain denotes a
+    /// Boolean argument and is valid only for a one-bit field.
+    pub arguments: Vec<FieldModifyArgument>,
+    pub exposure: PacApiExposure,
+    pub sources: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct FieldModifyArgument {
+    pub name: String,
+    pub field: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
+}
+
 /// Read-modify-write transaction that sets one bit selected by a reviewed
 /// bounded index domain.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -484,6 +510,7 @@ impl PacApiPack {
         validate_operations("masked-register-modify", &self.masked_register_modifies)?;
         validate_operations("field-or-modify", &self.field_or_modifies)?;
         validate_operations("field-replace-modify", &self.field_replace_modifies)?;
+        validate_operations("field-argument-modify", &self.field_argument_modifies)?;
         validate_operations("indexed-bit-set-modify", &self.indexed_bit_set_modifies)?;
 
         for operation in &self.field_or_modifies {
@@ -559,6 +586,37 @@ impl PacApiPack {
                     "PAC API fixed field-replace-modify {:?} must expose its argument-free facade",
                     operation.name
                 )));
+            }
+        }
+        for operation in &self.field_argument_modifies {
+            if operation.arguments.len() < 2 {
+                return Err(Error::message(format!(
+                    "PAC API field-argument-modify {:?} requires at least two arguments",
+                    operation.name
+                )));
+            }
+            let mut names = BTreeSet::new();
+            let mut fields = BTreeSet::new();
+            for argument in &operation.arguments {
+                if !is_lower_snake_case(&argument.name) {
+                    return Err(Error::message(format!(
+                        "PAC API field-argument-modify {:?} argument {:?} is not lower snake case",
+                        operation.name, argument.name
+                    )));
+                }
+                validate_component("field", &operation.name, &argument.field)?;
+                if !names.insert(argument.name.as_str()) {
+                    return Err(Error::message(format!(
+                        "PAC API field-argument-modify {:?} repeats argument {:?}",
+                        operation.name, argument.name
+                    )));
+                }
+                if !fields.insert(argument.field.as_str()) {
+                    return Err(Error::message(format!(
+                        "PAC API field-argument-modify {:?} repeats field {:?}",
+                        operation.name, argument.field
+                    )));
+                }
             }
         }
         for operation in &self.indexed_bit_set_modifies {
@@ -728,6 +786,39 @@ impl PacApiPack {
                     return Err(Error::message(format!(
                         "PAC API field-replace-modify {:?} requires a bounded or enum domain",
                         operation.name
+                    )));
+                }
+            }
+        }
+        for operation in &self.field_argument_modifies {
+            for argument in &operation.arguments {
+                let Some(domain_name) = &argument.domain else {
+                    continue;
+                };
+                self.validate_operation_domain(
+                    "field-argument-modify",
+                    &operation.name,
+                    &operation.peripheral,
+                    &operation.register,
+                    domain_name,
+                    &domain_names,
+                )?;
+                if !self
+                    .flag_domains
+                    .iter()
+                    .any(|candidate| candidate.name == *domain_name)
+                    && !self
+                        .enum_domains
+                        .iter()
+                        .any(|candidate| candidate.name == *domain_name)
+                    && !self
+                        .bounded_domains
+                        .iter()
+                        .any(|candidate| candidate.name == *domain_name)
+                {
+                    return Err(Error::message(format!(
+                        "PAC API field-argument-modify {:?} argument {:?} requires a flag, enum or bounded domain",
+                        operation.name, argument.name
                     )));
                 }
             }
@@ -922,6 +1013,7 @@ impl PacApiPack {
             + self.masked_register_modifies.len()
             + self.field_or_modifies.len()
             + self.field_replace_modifies.len()
+            + self.field_argument_modifies.len()
             + self.indexed_bit_set_modifies.len()
     }
 
@@ -988,6 +1080,7 @@ impl PacApiPack {
                     .chain(self.masked_register_modifies.iter().map(Operation::sources))
                     .chain(self.field_or_modifies.iter().map(Operation::sources))
                     .chain(self.field_replace_modifies.iter().map(Operation::sources))
+                    .chain(self.field_argument_modifies.iter().map(Operation::sources))
                     .chain(self.indexed_bit_set_modifies.iter().map(Operation::sources))
                     .flatten()
                     .map(String::as_str),
@@ -1298,6 +1391,7 @@ impl_register_operation!(ZeroRegisterWrite);
 impl_register_operation!(MaskedRegisterModify);
 impl_register_operation!(FieldOrModify);
 impl_register_operation!(FieldReplaceModify);
+impl_register_operation!(FieldArgumentModify);
 impl_register_operation!(IndexedBitSetModify);
 
 fn validate_operations<T: Operation>(kind: &str, operations: &[T]) -> Result<()> {
@@ -1472,6 +1566,7 @@ mod tests {
             masked_register_modifies: Vec::new(),
             field_or_modifies: Vec::new(),
             field_replace_modifies: Vec::new(),
+            field_argument_modifies: Vec::new(),
             indexed_bit_set_modifies: Vec::new(),
         }
     }
@@ -1697,6 +1792,41 @@ mod tests {
         });
 
         assert!(pack.validate().is_ok());
+    }
+
+    #[test]
+    fn field_argument_modify_requires_distinct_typed_arguments() {
+        let mut pack = empty_pack();
+        pack.bounded_domains.push(BoundedDomain {
+            name: "Divider".to_owned(),
+            description: "Reviewed divider field value.".to_owned(),
+            min: 0,
+            max: 0x0fff,
+            sources: vec!["REVIEW".to_owned()],
+        });
+        pack.field_argument_modifies.push(FieldArgumentModify {
+            name: "configure_clock".to_owned(),
+            peripheral: "RADIO".to_owned(),
+            register: "CONTROL".to_owned(),
+            arguments: vec![
+                FieldModifyArgument {
+                    name: "enabled".to_owned(),
+                    field: "ENABLE".to_owned(),
+                    domain: None,
+                },
+                FieldModifyArgument {
+                    name: "divider".to_owned(),
+                    field: "DIVIDER".to_owned(),
+                    domain: Some("Divider".to_owned()),
+                },
+            ],
+            exposure: PacApiExposure::Facade,
+            sources: vec!["REVIEW".to_owned()],
+        });
+
+        assert!(pack.validate().is_ok());
+        pack.field_argument_modifies[0].arguments[1].name = "enabled".to_owned();
+        assert!(pack.validate().is_err());
     }
 
     #[test]

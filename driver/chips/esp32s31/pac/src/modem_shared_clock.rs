@@ -292,18 +292,14 @@ impl RadioPhyRegisters {
             crystal_32khz_selected,
             divider_minus_one,
         };
-        registers.lp_timer_conf().modify(|_, w| {
-            w.clk_lp_timer_sel_osc_slow()
-                .bit(source == ModemLowPowerClockSource::SlowOscillator)
-                .clk_lp_timer_sel_osc_fast()
-                .bit(source == ModemLowPowerClockSource::FastOscillator)
-                .clk_lp_timer_sel_xtal()
-                .bit(source == ModemLowPowerClockSource::Crystal)
-                .clk_lp_timer_sel_xtal32k()
-                .bit(source == ModemLowPowerClockSource::Crystal32Khz)
-                .clk_lp_timer_div_num()
-                .set(divider.get() as u16)
-        });
+        crate::generated::configure_shared_modem_low_power_timer(
+            registers,
+            source == ModemLowPowerClockSource::SlowOscillator,
+            source == ModemLowPowerClockSource::FastOscillator,
+            source == ModemLowPowerClockSource::Crystal,
+            source == ModemLowPowerClockSource::Crystal32Khz,
+            divider,
+        );
 
         BluetoothLowPowerTimerLease(self.retain_requirement(requirement))
     }
@@ -311,21 +307,16 @@ impl RadioPhyRegisters {
     pub(crate) fn release_bluetooth_low_power_timer(&mut self, lease: BluetoothLowPowerTimerLease) {
         let BluetoothLowPowerTimerLease(lease) = lease;
         let baseline = core::mem::take(&mut self.shared_clock.low_power_timer_baseline);
-        self.peripherals
-            .modem_lpcon_shared_clock
-            .lp_timer_conf()
-            .modify(|_, w| {
-                w.clk_lp_timer_sel_osc_slow()
-                    .bit(baseline.slow_oscillator_selected)
-                    .clk_lp_timer_sel_osc_fast()
-                    .bit(baseline.fast_oscillator_selected)
-                    .clk_lp_timer_sel_xtal()
-                    .bit(baseline.crystal_selected)
-                    .clk_lp_timer_sel_xtal32k()
-                    .bit(baseline.crystal_32khz_selected)
-                    .clk_lp_timer_div_num()
-                    .set(baseline.divider_minus_one)
-            });
+        let divider = ModemLowPowerClockDivider::new(u32::from(baseline.divider_minus_one))
+            .expect("generated twelve-bit LP timer readback must fit its write domain");
+        crate::generated::configure_shared_modem_low_power_timer(
+            &self.peripherals.modem_lpcon_shared_clock,
+            baseline.slow_oscillator_selected,
+            baseline.fast_oscillator_selected,
+            baseline.crystal_selected,
+            baseline.crystal_32khz_selected,
+            divider,
+        );
         self.release_shared_modem_clock(lease);
     }
 

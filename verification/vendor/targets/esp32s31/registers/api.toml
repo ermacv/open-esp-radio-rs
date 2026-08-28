@@ -5279,6 +5279,20 @@ value = 0
 exposure = "facade"
 sources = ["S31_MODEM_LPCON_STRUCT"]
 
+[[field-argument-modifies]]
+name = "configure_shared_modem_low_power_timer"
+peripheral = "MODEM_LPCON_SHARED_CLOCK"
+register = "LP_TIMER_CONF"
+arguments = [
+    { name = "slow_oscillator_selected", field = "CLK_LP_TIMER_SEL_OSC_SLOW" },
+    { name = "fast_oscillator_selected", field = "CLK_LP_TIMER_SEL_OSC_FAST" },
+    { name = "crystal_selected", field = "CLK_LP_TIMER_SEL_XTAL" },
+    { name = "crystal_32khz_selected", field = "CLK_LP_TIMER_SEL_XTAL32K" },
+    { name = "divider_minus_one", field = "CLK_LP_TIMER_DIV_NUM", domain = "ModemLowPowerClockDivider" },
+]
+exposure = "facade"
+sources = ["S31_MODEM_LPCON_STRUCT"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

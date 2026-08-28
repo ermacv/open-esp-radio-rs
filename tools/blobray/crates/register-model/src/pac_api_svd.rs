@@ -514,6 +514,73 @@ impl PacApiPack {
                 )));
             }
         }
+        for operation in &self.field_argument_modifies {
+            let binding = writable_register(
+                &device,
+                &operation.name,
+                &operation.peripheral,
+                &operation.register,
+            )?;
+            require_size_access(&operation.name, binding, Access::ReadWrite, "read-write")?;
+            require_ordinary(&operation.name, binding.info)?;
+            for argument in &operation.arguments {
+                let selected_field = field(&operation.name, binding.info, &argument.field)?;
+                if selected_field.access == Some(Access::ReadOnly) {
+                    return Err(Error::message(format!(
+                        "PAC API field-argument-modify {:?} field {:?} is read-only",
+                        operation.name, argument.field,
+                    )));
+                }
+                let width = selected_field.bit_width();
+                if argument.domain.is_none() {
+                    if width != 1 {
+                        return Err(Error::message(format!(
+                            "PAC API field-argument-modify {:?} Boolean argument {:?} requires a one-bit field",
+                            operation.name, argument.name,
+                        )));
+                    }
+                    continue;
+                }
+                let domain_name = argument
+                    .domain
+                    .as_deref()
+                    .expect("pack validation requires a typed argument domain");
+                let maximum = self
+                    .bounded_domains
+                    .iter()
+                    .find(|candidate| candidate.name == domain_name)
+                    .map(|domain| domain.max)
+                    .or_else(|| {
+                        self.enum_domains
+                            .iter()
+                            .find(|candidate| candidate.name == domain_name)
+                            .and_then(|domain| domain.values.iter().map(|value| value.value).max())
+                    })
+                    .or_else(|| {
+                        self.flag_domains
+                            .iter()
+                            .find(|candidate| candidate.name == domain_name)
+                            .map(|domain| {
+                                domain
+                                    .values
+                                    .iter()
+                                    .fold(0_u32, |mask, value| mask | value.value)
+                            })
+                    })
+                    .expect("pack validation requires a flag, enum or bounded argument domain");
+                let field_maximum = if width == 32 {
+                    u32::MAX
+                } else {
+                    (1_u32 << width) - 1
+                };
+                if maximum > field_maximum {
+                    return Err(Error::message(format!(
+                        "PAC API field-argument-modify {:?} argument {:?} maximum 0x{maximum:08x} exceeds its {width}-bit field",
+                        operation.name, argument.name,
+                    )));
+                }
+            }
+        }
         for operation in &self.indexed_bit_set_modifies {
             let binding = writable_register(
                 &device,
@@ -1249,7 +1316,10 @@ mod tests {
           <addressOffset>4</addressOffset>
           <size>32</size>
           <access>read-write</access>
-          <fields><field><name>VALUE</name><description>value</description><bitOffset>4</bitOffset><bitWidth>2</bitWidth></field></fields>
+          <fields>
+            <field><name>VALUE</name><description>value</description><bitOffset>4</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>OTHER</name><description>other value</description><bitOffset>8</bitOffset><bitWidth>1</bitWidth></field>
+          </fields>
         </register>
       </registers>
     </peripheral>
@@ -1362,6 +1432,32 @@ exposure = "facade"
 sources = ["REVIEW"]
 "#
         ))
+        .unwrap()
+    }
+
+    fn field_argument_modify_pack() -> PacApiPack {
+        toml_edit::de::from_str(
+            r#"schema = 5
+
+[[bounded-domains]]
+name = "TwoBitValue"
+description = "One complete two-bit field value."
+min = 0
+max = 3
+sources = ["REVIEW"]
+
+[[field-argument-modifies]]
+name = "configure_control"
+peripheral = "RADIO"
+register = "WIDE"
+arguments = [
+    { name = "value", field = "VALUE", domain = "TwoBitValue" },
+    { name = "other", field = "OTHER" },
+]
+exposure = "facade"
+sources = ["REVIEW"]
+"#,
+        )
         .unwrap()
     }
 
@@ -1525,6 +1621,22 @@ peripherals = ["INTERRUPT"]
             .validate_against_svd(SAMPLED_BIT_ZERO_WRITE_SVD)
             .is_ok()
         );
+    }
+
+    #[test]
+    fn field_argument_modify_keeps_boolean_arguments_on_one_bit_fields() {
+        let mut pack = field_argument_modify_pack();
+        assert!(
+            pack.validate_against_svd(SAMPLED_BIT_ZERO_WRITE_SVD)
+                .is_ok()
+        );
+
+        pack.field_argument_modifies[0].arguments[0].domain = None;
+        let error = pack
+            .validate_against_svd(SAMPLED_BIT_ZERO_WRITE_SVD)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("Boolean argument") && error.contains("one-bit field"));
     }
 
     #[test]

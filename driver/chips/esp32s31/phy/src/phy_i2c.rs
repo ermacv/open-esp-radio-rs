@@ -993,9 +993,7 @@ pub enum PhyRfInitPrefixAction {
     ConfigureBiasRegisters,
     OpenI2cXpd(OpenI2cXpdAction),
     PbusClear(PhyPbusClearAction),
-    ConfigureI2cClockSelection {
-        selection: u32,
-    },
+    ConfigureI2cClockSelection,
     ConfigureI2cBbpll,
     AdcRate(AdcRateAction),
     ConfigureI2cMasterRegisters,
@@ -1187,7 +1185,7 @@ impl PhyRfInitPrefixTransition {
             PhyRfInitPrefixStep::PostI2cDelay => PhyRfInitPrefixAction::DelayMicros(10),
             PhyRfInitPrefixStep::PbusClear(transition) => match transition.action() {
                 PhyPbusClearAction::Complete(PhyPbusClearOutcome::Cleared) => {
-                    PhyRfInitPrefixAction::ConfigureI2cClockSelection { selection: 8 }
+                    PhyRfInitPrefixAction::ConfigureI2cClockSelection
                 }
                 PhyPbusClearAction::Complete(PhyPbusClearOutcome::ForceTestTimedOut(
                     transaction,
@@ -1197,7 +1195,7 @@ impl PhyRfInitPrefixTransition {
                 action => PhyRfInitPrefixAction::PbusClear(action),
             },
             PhyRfInitPrefixStep::I2cClockSelection => {
-                PhyRfInitPrefixAction::ConfigureI2cClockSelection { selection: 8 }
+                PhyRfInitPrefixAction::ConfigureI2cClockSelection
             }
             PhyRfInitPrefixStep::I2cBbpll => PhyRfInitPrefixAction::ConfigureI2cBbpll,
             PhyRfInitPrefixStep::AdcRate(transition) => match transition.action() {
@@ -2607,7 +2605,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             transition.action(),
-            PhyRfInitPrefixAction::ConfigureI2cClockSelection { selection: 8 }
+            PhyRfInitPrefixAction::ConfigureI2cClockSelection
         );
         transition
             .advance(PhyRfInitPrefixCompletion::I2cClockSelectionConfigured)

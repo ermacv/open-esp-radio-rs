@@ -106,8 +106,8 @@ pub fn sample_master_reset_busy(registers: &impl SharedPhyAccess, host: PhyI2cHo
 /// Each of three registers receives a high-field update followed by a fresh
 /// read and low-field update, preserving all instruction-evidenced
 /// intermediate states.
-pub fn configure_clock_selection(registers: &mut impl SharedPhyAccess, selection: u32) {
-    phy_pac_mut(registers).configure_phy_i2c_clock_selection(selection);
+pub fn configure_clock_selection(registers: &mut impl SharedPhyAccess) {
+    phy_pac_mut(registers).configure_phy_i2c_clock_selection();
 }
 
 /// Configure the PHY-I2C master register mode and enable bit.

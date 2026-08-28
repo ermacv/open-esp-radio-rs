@@ -893,10 +893,8 @@ impl PhyColdMmioBinding {
                 );
                 return self.into_completion();
             }
-            PhyRfInitPrefixAction::ConfigureI2cClockSelection { selection } => {
-                open_esp_radio_esp32s31_hal::phy_i2c::configure_clock_selection(
-                    registers, selection,
-                );
+            PhyRfInitPrefixAction::ConfigureI2cClockSelection => {
+                open_esp_radio_esp32s31_hal::phy_i2c::configure_clock_selection(registers);
                 return self.into_completion();
             }
             PhyRfInitPrefixAction::ConfigureI2cMasterRegisters => {
@@ -1076,7 +1074,7 @@ fn lower_prefix_mmio_completion(
         PhyRfInitPrefixAction::PbusClear(PhyPbusClearAction::ClearWorkModePulse) => Some(
             PhyRfInitPrefixCompletion::PbusClear(PhyPbusClearCompletion::WorkModePulseCleared),
         ),
-        PhyRfInitPrefixAction::ConfigureI2cClockSelection { .. } => {
+        PhyRfInitPrefixAction::ConfigureI2cClockSelection => {
             Some(PhyRfInitPrefixCompletion::I2cClockSelectionConfigured)
         }
         PhyRfInitPrefixAction::AdcRate(AdcRateAction::ConfigureMmio { .. }) => Some(

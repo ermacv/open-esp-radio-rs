@@ -1746,7 +1746,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
             PhyColdExternalBinding::Mmio(binding) => {
                 let boundary = match binding.outer_action() {
                     PhyRfInitPrefixAction::ConfigureFeBbClock => Some(PhyRfBoundary::BeforeRfInit),
-                    PhyRfInitPrefixAction::ConfigureI2cClockSelection { .. } => {
+                    PhyRfInitPrefixAction::ConfigureI2cClockSelection => {
                         Some(PhyRfBoundary::AfterPbusClear)
                     }
                     PhyRfInitPrefixAction::ConfigureI2cMasterRegisters => {

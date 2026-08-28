@@ -27,6 +27,8 @@ pub struct PacApiPack {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub opaque_domains: Vec<OpaqueDomain>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub indirect_register_field_domains: Vec<IndirectRegisterFieldDomain>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub interrupt_snapshots: Vec<InterruptSnapshot>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub full_register_writes: Vec<FullRegisterWrite>,
@@ -153,6 +155,35 @@ pub struct OpaqueDomain {
     pub description: String,
     pub peripheral: String,
     pub register: String,
+    pub sources: Vec<String>,
+}
+
+/// Generated accessors for fields in registers reached through an indirect
+/// command bus rather than the CPU MMIO address space.
+///
+/// The reviewed pack owns the bank/register identity and field geometry. The
+/// generated accessor is the only place that masks or shifts a sampled
+/// indirect-register value; handwritten code receives named constants and
+/// calls `extract` or `replace`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct IndirectRegisterFieldDomain {
+    pub name: String,
+    pub module: String,
+    pub description: String,
+    pub value_bits: u8,
+    pub fields: Vec<IndirectRegisterField>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct IndirectRegisterField {
+    pub name: String,
+    pub description: String,
+    pub bank: u8,
+    pub register: u8,
+    pub bit_offset: u8,
+    pub bit_width: u8,
     pub sources: Vec<String>,
 }
 
@@ -351,6 +382,7 @@ impl PacApiPack {
         self.validate_ownership_partitions()?;
         self.validate_domains()?;
         let domain_names = self.domain_names();
+        self.validate_indirect_register_field_domains(&domain_names)?;
         let mut module_names = BTreeSet::new();
         for module in &self.feature_modules {
             if !is_lower_snake_case(&module.name) {
@@ -736,6 +768,7 @@ impl PacApiPack {
             + self.enum_domains.len()
             + self.bounded_domains.len()
             + self.opaque_domains.len()
+            + self.indirect_register_field_domains.len()
     }
 
     pub fn ownership_partition_count(&self) -> usize {
@@ -765,6 +798,13 @@ impl PacApiPack {
                 self.opaque_domains
                     .iter()
                     .flat_map(|domain| &domain.sources)
+                    .map(String::as_str),
+            )
+            .chain(
+                self.indirect_register_field_domains
+                    .iter()
+                    .flat_map(|domain| &domain.fields)
+                    .flat_map(|field| &field.sources)
                     .map(String::as_str),
             )
             .chain(
@@ -889,6 +929,74 @@ impl PacApiPack {
             validate_component("peripheral", &domain.name, &domain.peripheral)?;
             validate_component("register", &domain.name, &domain.register)?;
             validate_sources("opaque domain", &domain.name, &domain.sources)?;
+        }
+        Ok(())
+    }
+
+    fn validate_indirect_register_field_domains(
+        &self,
+        existing_type_names: &BTreeSet<&str>,
+    ) -> Result<()> {
+        let mut type_names = existing_type_names.clone();
+        let mut module_names = BTreeSet::new();
+        for domain in &self.indirect_register_field_domains {
+            if !is_upper_camel_case(&domain.name) || is_rust_keyword(&domain.name) {
+                return Err(Error::message(format!(
+                    "PAC API indirect-register field domain name {:?} is not an available UpperCamelCase Rust type",
+                    domain.name
+                )));
+            }
+            if !type_names.insert(domain.name.as_str()) {
+                return Err(Error::message(format!(
+                    "PAC API repeats or collides with indirect-register field domain {:?}",
+                    domain.name
+                )));
+            }
+            if !is_lower_snake_case(&domain.module)
+                || is_rust_keyword(&domain.module)
+                || !module_names.insert(domain.module.as_str())
+            {
+                return Err(Error::message(format!(
+                    "PAC API indirect-register field domain {} has invalid or duplicate module {:?}",
+                    domain.name, domain.module
+                )));
+            }
+            if domain.description.trim().is_empty() || domain.fields.is_empty() {
+                return Err(Error::message(format!(
+                    "PAC API indirect-register field domain {:?} requires a description and at least one field",
+                    domain.name
+                )));
+            }
+            if !matches!(domain.value_bits, 8 | 16 | 32) {
+                return Err(Error::message(format!(
+                    "PAC API indirect-register field domain {:?} value-bits must be 8, 16, or 32",
+                    domain.name
+                )));
+            }
+            let mut field_names = BTreeSet::new();
+            for field in &domain.fields {
+                if !is_upper_snake_case(&field.name) || !field_names.insert(field.name.as_str()) {
+                    return Err(Error::message(format!(
+                        "PAC API indirect-register field {}::{:?} is not a unique UPPER_SNAKE_CASE name",
+                        domain.name, field.name
+                    )));
+                }
+                if field.bit_width == 0
+                    || u16::from(field.bit_offset) + u16::from(field.bit_width)
+                        > u16::from(domain.value_bits)
+                {
+                    return Err(Error::message(format!(
+                        "PAC API indirect-register field {}::{} lies outside its {}-bit register value",
+                        domain.name, field.name, domain.value_bits
+                    )));
+                }
+                validate_domain_evidence(
+                    "indirect-register field",
+                    &format!("{}::{}", domain.name, field.name),
+                    &field.description,
+                    &field.sources,
+                )?;
+            }
         }
         Ok(())
     }
@@ -1177,6 +1285,7 @@ mod tests {
             enum_domains: Vec::new(),
             bounded_domains: Vec::new(),
             opaque_domains: Vec::new(),
+            indirect_register_field_domains: Vec::new(),
             interrupt_snapshots: Vec::new(),
             full_register_writes: Vec::new(),
             full_register_reads: Vec::new(),
@@ -1240,6 +1349,54 @@ mod tests {
         assert_eq!(pack.domain_count(), 1);
         assert!(pack.validate().is_ok());
         assert_eq!(pack.source_ids(), BTreeSet::from(["VENDOR_IRQ_ENABLE"]));
+    }
+
+    #[test]
+    fn validates_and_renders_indirect_register_field_accessors() {
+        let mut pack = empty_pack();
+        pack.indirect_register_field_domains
+            .push(IndirectRegisterFieldDomain {
+                name: "AnalogField".to_owned(),
+                module: "analog_fields".to_owned(),
+                description: "Reviewed fields on an indirect analog bus.".to_owned(),
+                value_bits: 8,
+                fields: vec![IndirectRegisterField {
+                    name: "GAIN".to_owned(),
+                    description: "Analog gain field.".to_owned(),
+                    bank: 0x67,
+                    register: 3,
+                    bit_offset: 2,
+                    bit_width: 3,
+                    sources: vec!["VENDOR_ANALOG_GAIN".to_owned()],
+                }],
+            });
+
+        assert_eq!(pack.domain_count(), 1);
+        assert!(pack.validate().is_ok());
+        assert_eq!(pack.source_ids(), BTreeSet::from(["VENDOR_ANALOG_GAIN"]));
+        let rendered = pack.render_facade_rust().unwrap();
+        assert!(rendered.contains("pub struct AnalogField"));
+        assert!(rendered.contains("pub mod analog_fields"));
+        assert!(rendered.contains("pub const GAIN: AnalogField"));
+
+        pack.indirect_register_field_domains[0].fields[0].bit_width = 7;
+        assert!(pack.validate().is_err());
+
+        let mut colliding_pack = empty_pack();
+        colliding_pack.flag_domains.push(FlagDomain {
+            name: "AnalogField".to_owned(),
+            description: "Reviewed writable values.".to_owned(),
+            values: vec![FlagValue {
+                name: "ENABLED".to_owned(),
+                value: 1,
+                description: "Enable the reviewed behavior.".to_owned(),
+                sources: vec!["VENDOR_ENABLE".to_owned()],
+            }],
+        });
+        colliding_pack.indirect_register_field_domains =
+            pack.indirect_register_field_domains.clone();
+        colliding_pack.indirect_register_field_domains[0].fields[0].bit_width = 3;
+        assert!(colliding_pack.validate().is_err());
     }
 
     #[test]

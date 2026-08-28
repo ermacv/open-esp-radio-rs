@@ -2400,6 +2400,78 @@ pub(crate) fn initialize_bluetooth_baseband_cca_default(registers: &crate::svd::
     crate::svd::field_replace_modify::initialize_bluetooth_baseband_cca_default(registers);
 }
 
+/// Typed bridge for the reviewed `initialize_shared_receive_image_0_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_shared_receive_image_0_high(registers: &crate::svd::ZbbbRadioControl) {
+    crate::svd::field_replace_modify::initialize_shared_receive_image_0_high(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_shared_receive_control_image` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_shared_receive_control_image(registers: &crate::svd::ZbbbRadioControl) {
+    crate::svd::field_replace_modify::initialize_shared_receive_control_image(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_shared_receive_image_1_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_shared_receive_image_1_low(registers: &crate::svd::ZbbbRadioControl) {
+    crate::svd::field_replace_modify::initialize_shared_receive_image_1_low(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_shared_receive_image_0_middle` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_shared_receive_image_0_middle(registers: &crate::svd::ZbbbRadioControl) {
+    crate::svd::field_replace_modify::initialize_shared_receive_image_0_middle(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_shared_receive_image_4_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_shared_receive_image_4_high(registers: &crate::svd::ZbbbRadioControl) {
+    crate::svd::field_replace_modify::initialize_shared_receive_image_4_high(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_shared_receive_image_4_middle` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_shared_receive_image_4_middle(registers: &crate::svd::ZbbbRadioControl) {
+    crate::svd::field_replace_modify::initialize_shared_receive_image_4_middle(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_shared_receive_image_2_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_shared_receive_image_2_high(registers: &crate::svd::ZbbbRadioControl) {
+    crate::svd::field_replace_modify::initialize_shared_receive_image_2_high(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_shared_receive_image_3_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_shared_receive_image_3_high(registers: &crate::svd::ZbbbRadioControl) {
+    crate::svd::field_replace_modify::initialize_shared_receive_image_3_high(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_shared_receive_control_0` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_shared_receive_control_0(registers: &crate::svd::ZbbbRadioControl) {
+    crate::svd::field_replace_modify::initialize_shared_receive_control_0(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_shared_receive_control_1` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_shared_receive_control_1(registers: &crate::svd::ZbbbRadioControl) {
+    crate::svd::field_replace_modify::initialize_shared_receive_control_1(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_shared_receive_image_2_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_shared_receive_image_2_low(registers: &crate::svd::ZbbbRadioControl) {
+    crate::svd::field_replace_modify::initialize_shared_receive_image_2_low(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_shared_receive_image_4_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_shared_receive_image_4_low(registers: &crate::svd::ZbbbRadioControl) {
+    crate::svd::field_replace_modify::initialize_shared_receive_image_4_low(registers);
+}
+
 /// Typed bridge for the reviewed `clear_bluetooth_scheduler_lock_modify_argument` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_bluetooth_scheduler_lock_modify_argument(

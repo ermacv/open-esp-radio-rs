@@ -62527,6 +62527,172 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_0 fields [POSITIONAL_IMAGE_21_31] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_shared_receive_image_0_high(registers: &crate::ZbbbRadioControl) {
+        registers.shared_rx_init_image_0().modify(|_, writer| {
+            let input = 0x00000792_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .positional_image_21_31()
+                    .bits((input & 0x000007ff) as u16)
+            }
+        });
+    }
+
+    /// Replace ZBBB_RADIO_CONTROL.RX_SETUP_CONTROL fields [SHARED_INIT_IMAGE_10_20] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_shared_receive_control_image(registers: &crate::ZbbbRadioControl) {
+        registers.rx_setup_control().modify(|_, writer| {
+            let input = 0x0000079c_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .shared_init_image_10_20()
+                    .bits((input & 0x000007ff) as u16)
+            }
+        });
+    }
+
+    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_1 fields [POSITIONAL_IMAGE_0_10] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_shared_receive_image_1_low(registers: &crate::ZbbbRadioControl) {
+        registers.shared_rx_init_image_1().modify(|_, writer| {
+            let input = 0x000007a6_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .positional_image_0_10()
+                    .bits((input & 0x000007ff) as u16)
+            }
+        });
+    }
+
+    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_0 fields [POSITIONAL_IMAGE_13_20] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_shared_receive_image_0_middle(registers: &crate::ZbbbRadioControl) {
+        registers.shared_rx_init_image_0().modify(|_, writer| {
+            let input = 0x000000a6_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .positional_image_13_20()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_4 fields [POSITIONAL_IMAGE_20_30] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_shared_receive_image_4_high(registers: &crate::ZbbbRadioControl) {
+        registers.shared_rx_init_image_4().modify(|_, writer| {
+            let input = 0x000007e1_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .positional_image_20_30()
+                    .bits((input & 0x000007ff) as u16)
+            }
+        });
+    }
+
+    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_4 fields [POSITIONAL_IMAGE_9_19] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_shared_receive_image_4_middle(registers: &crate::ZbbbRadioControl) {
+        registers.shared_rx_init_image_4().modify(|_, writer| {
+            let input = 0x000007ed_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .positional_image_9_19()
+                    .bits((input & 0x000007ff) as u16)
+            }
+        });
+    }
+
+    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_2 fields [POSITIONAL_IMAGE_8_31] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_shared_receive_image_2_high(registers: &crate::ZbbbRadioControl) {
+        registers.shared_rx_init_image_2().modify(|_, writer| {
+            let input = 0x0007a120_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.positional_image_8_31().bits(input & 0x00ffffff) }
+        });
+    }
+
+    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_3 fields [POSITIONAL_IMAGE_8_31] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_shared_receive_image_3_high(registers: &crate::ZbbbRadioControl) {
+        registers.shared_rx_init_image_3().modify(|_, writer| {
+            let input = 0x00f85edf_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.positional_image_8_31().bits(input & 0x00ffffff) }
+        });
+    }
+
+    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_CONTROL_0 fields [POSITIONAL_FORCE_ZERO_1] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_shared_receive_control_0(registers: &crate::ZbbbRadioControl) {
+        registers.shared_rx_init_control_0().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .positional_force_zero_1()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_CONTROL_1 fields [POSITIONAL_FORCE_ONE_30] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_shared_receive_control_1(registers: &crate::ZbbbRadioControl) {
+        registers.shared_rx_init_control_1().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .positional_force_one_30()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_2 fields [POSITIONAL_IMAGE_0_7] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_shared_receive_image_2_low(registers: &crate::ZbbbRadioControl) {
+        registers.shared_rx_init_image_2().modify(|_, writer| {
+            let input = 0x000000f1_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .positional_image_0_7()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace ZBBB_RADIO_CONTROL.SHARED_RX_INIT_IMAGE_4 fields [POSITIONAL_FORCE_ONE_0] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_shared_receive_image_4_low(registers: &crate::ZbbbRadioControl) {
+        registers.shared_rx_init_image_4().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .positional_force_one_0()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
     /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields [LOCK_MODIFY_ARGUMENT] from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_scheduler_lock_modify_argument(

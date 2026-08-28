@@ -3637,6 +3637,114 @@ value = 5
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 
+[[field-replace-modifies]]
+name = "initialize_shared_receive_image_0_high"
+peripheral = "ZBBB_RADIO_CONTROL"
+register = "SHARED_RX_INIT_IMAGE_0"
+fields = [{ field = "POSITIONAL_IMAGE_21_31", source-bit-offset = 0 }]
+value = 0x792
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
+
+[[field-replace-modifies]]
+name = "initialize_shared_receive_control_image"
+peripheral = "ZBBB_RADIO_CONTROL"
+register = "RX_SETUP_CONTROL"
+fields = [{ field = "SHARED_INIT_IMAGE_10_20", source-bit-offset = 0 }]
+value = 0x79c
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
+
+[[field-replace-modifies]]
+name = "initialize_shared_receive_image_1_low"
+peripheral = "ZBBB_RADIO_CONTROL"
+register = "SHARED_RX_INIT_IMAGE_1"
+fields = [{ field = "POSITIONAL_IMAGE_0_10", source-bit-offset = 0 }]
+value = 0x7a6
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
+
+[[field-replace-modifies]]
+name = "initialize_shared_receive_image_0_middle"
+peripheral = "ZBBB_RADIO_CONTROL"
+register = "SHARED_RX_INIT_IMAGE_0"
+fields = [{ field = "POSITIONAL_IMAGE_13_20", source-bit-offset = 0 }]
+value = 0xa6
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
+
+[[field-replace-modifies]]
+name = "initialize_shared_receive_image_4_high"
+peripheral = "ZBBB_RADIO_CONTROL"
+register = "SHARED_RX_INIT_IMAGE_4"
+fields = [{ field = "POSITIONAL_IMAGE_20_30", source-bit-offset = 0 }]
+value = 0x7e1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
+
+[[field-replace-modifies]]
+name = "initialize_shared_receive_image_4_middle"
+peripheral = "ZBBB_RADIO_CONTROL"
+register = "SHARED_RX_INIT_IMAGE_4"
+fields = [{ field = "POSITIONAL_IMAGE_9_19", source-bit-offset = 0 }]
+value = 0x7ed
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
+
+[[field-replace-modifies]]
+name = "initialize_shared_receive_image_2_high"
+peripheral = "ZBBB_RADIO_CONTROL"
+register = "SHARED_RX_INIT_IMAGE_2"
+fields = [{ field = "POSITIONAL_IMAGE_8_31", source-bit-offset = 0 }]
+value = 0x07a120
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
+
+[[field-replace-modifies]]
+name = "initialize_shared_receive_image_3_high"
+peripheral = "ZBBB_RADIO_CONTROL"
+register = "SHARED_RX_INIT_IMAGE_3"
+fields = [{ field = "POSITIONAL_IMAGE_8_31", source-bit-offset = 0 }]
+value = 0xf85edf
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
+
+[[field-replace-modifies]]
+name = "initialize_shared_receive_control_0"
+peripheral = "ZBBB_RADIO_CONTROL"
+register = "SHARED_RX_INIT_CONTROL_0"
+fields = [{ field = "POSITIONAL_FORCE_ZERO_1", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
+
+[[field-replace-modifies]]
+name = "initialize_shared_receive_control_1"
+peripheral = "ZBBB_RADIO_CONTROL"
+register = "SHARED_RX_INIT_CONTROL_1"
+fields = [{ field = "POSITIONAL_FORCE_ONE_30", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
+
+[[field-replace-modifies]]
+name = "initialize_shared_receive_image_2_low"
+peripheral = "ZBBB_RADIO_CONTROL"
+register = "SHARED_RX_INIT_IMAGE_2"
+fields = [{ field = "POSITIONAL_IMAGE_0_7", source-bit-offset = 0 }]
+value = 0xf1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
+
+[[field-replace-modifies]]
+name = "initialize_shared_receive_image_4_low"
+peripheral = "ZBBB_RADIO_CONTROL"
+register = "SHARED_RX_INIT_IMAGE_4"
+fields = [{ field = "POSITIONAL_FORCE_ONE_0", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_SHARED_RX_INIT"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

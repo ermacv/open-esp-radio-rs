@@ -568,42 +568,18 @@ impl BluetoothBasebandV2Transaction<'_> {
 
     fn initialize_shared_receive_prefix(&self) {
         let shared = &self.shared_radio.zbbb_radio_control;
-        shared
-            .shared_rx_init_image_0()
-            .modify(|_, w| w.positional_image_21_31().set(0x792));
-        shared
-            .rx_setup_control()
-            .modify(|_, w| w.shared_init_image_10_20().set(0x79c));
-        shared
-            .shared_rx_init_image_1()
-            .modify(|_, w| w.positional_image_0_10().set(0x7a6));
-        shared
-            .shared_rx_init_image_0()
-            .modify(|_, w| w.positional_image_13_20().set(0xa6));
-        shared
-            .shared_rx_init_image_4()
-            .modify(|_, w| w.positional_image_20_30().set(0x7e1));
-        shared
-            .shared_rx_init_image_4()
-            .modify(|_, w| w.positional_image_9_19().set(0x7ed));
-        shared
-            .shared_rx_init_image_2()
-            .modify(|_, w| w.positional_image_8_31().set(0x07a120));
-        shared
-            .shared_rx_init_image_3()
-            .modify(|_, w| w.positional_image_8_31().set(0xf85edf));
-        shared
-            .shared_rx_init_control_0()
-            .modify(|_, w| w.positional_force_zero_1().clear_bit());
-        shared
-            .shared_rx_init_control_1()
-            .modify(|_, w| w.positional_force_one_30().set_bit());
-        shared
-            .shared_rx_init_image_2()
-            .modify(|_, w| w.positional_image_0_7().set(0xf1));
-        shared
-            .shared_rx_init_image_4()
-            .modify(|_, w| w.positional_force_one_0().set_bit());
+        super::generated::initialize_shared_receive_image_0_high(shared);
+        super::generated::initialize_shared_receive_control_image(shared);
+        super::generated::initialize_shared_receive_image_1_low(shared);
+        super::generated::initialize_shared_receive_image_0_middle(shared);
+        super::generated::initialize_shared_receive_image_4_high(shared);
+        super::generated::initialize_shared_receive_image_4_middle(shared);
+        super::generated::initialize_shared_receive_image_2_high(shared);
+        super::generated::initialize_shared_receive_image_3_high(shared);
+        super::generated::initialize_shared_receive_control_0(shared);
+        super::generated::initialize_shared_receive_control_1(shared);
+        super::generated::initialize_shared_receive_image_2_low(shared);
+        super::generated::initialize_shared_receive_image_4_low(shared);
     }
 
     fn initialize_shared_receive_image(&self) {

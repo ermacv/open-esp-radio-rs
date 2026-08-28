@@ -70,7 +70,7 @@ pub use clock::{
 pub use controller_time::{BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample};
 pub use dtm_event_prepare::{
     BluetoothDtmReviewedEventWordsPlan, BluetoothDtmReviewedEventWordsPlanError,
-    BluetoothDtmReviewedEventWordsPrepared,
+    BluetoothDtmReviewedEventWordsPrepared, BluetoothDtmSchedulerBookkeepingPrepared,
 };
 pub use dtm_event_timing::{
     BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerMargin, BluetoothDtmTxEventAdvance,

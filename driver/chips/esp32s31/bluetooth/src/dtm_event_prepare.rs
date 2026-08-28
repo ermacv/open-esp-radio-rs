@@ -11,7 +11,8 @@ use core::convert::Infallible;
 
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphPositionalEventPrepared,
-    BluetoothDtmMemoryGraphPrepareFailure, BluetoothDtmPositionalEventWords,
+    BluetoothDtmMemoryGraphPrepareFailure, BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared,
+    BluetoothDtmPositionalEventWords,
 };
 use open_esp_radio_esp32s31_hal::{
     BluetoothControllerSramAddress, BluetoothSchedulerLockModifyRequest,
@@ -126,11 +127,56 @@ impl BluetoothDtmReviewedEventWordsPrepared {
         self.memory.scheduler_item_address()
     }
 
-    /// Form the reviewed DTM insertion request for this exact prepared item.
+    /// Read back the exact seventeen CPU-owned positional words.
+    pub fn words(&self) -> BluetoothDtmPositionalEventWords {
+        self.memory.words()
+    }
+
+    /// Install the common scheduler bookkeeping prefix for this exact graph.
+    ///
+    /// The resulting state remains CPU-owned and cancellable. Only that later
+    /// state may form a scheduler request; this prevents event words without
+    /// the in-flight sentinel and cleared completion link from being admitted.
+    pub fn prepare_scheduler_bookkeeping(self) -> BluetoothDtmSchedulerBookkeepingPrepared {
+        BluetoothDtmSchedulerBookkeepingPrepared {
+            memory: self.memory.prepare_scheduler_bookkeeping(),
+            role: self.role,
+        }
+    }
+
+    /// Cancel before publication and recover the exact prior CPU-owned graph.
+    pub fn cancel(self) -> BluetoothDtmMemoryGraphCpuOwned {
+        self.memory.cancel()
+    }
+}
+
+/// CPU-owned DTM graph after the reviewed scheduler bookkeeping prefix.
+///
+/// Forming its lock/modify request is still not hardware publication. The
+/// complete descriptor, private packet-engine latch and visibility fence are
+/// deliberately absent from this state.
+#[must_use = "the scheduler-prepared DTM graph must remain owned or be cancelled"]
+pub struct BluetoothDtmSchedulerBookkeepingPrepared {
+    memory: BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared,
+    role: BluetoothDtmRole,
+}
+
+impl BluetoothDtmSchedulerBookkeepingPrepared {
+    /// Return the role shared by the retained DTM transforms.
+    pub const fn role(&self) -> BluetoothDtmRole {
+        self.role
+    }
+
+    /// Return the typed controller-SRAM identity of the retained item.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.memory.scheduler_item_address()
+    }
+
+    /// Form the reviewed argument-zero DTM insertion request for this graph.
     ///
     /// Complete DTM call-path evidence supplies positional argument zero to
-    /// the common forced-insertion path. Forming the request performs no MMIO
-    /// and leaves this graph CPU-owned.
+    /// the common forced-insertion path. This method performs no MMIO and does
+    /// not change CPU ownership.
     pub const fn scheduler_lock_modify_request(&self) -> BluetoothSchedulerLockModifyRequest {
         match BluetoothSchedulerLockModifyRequest::new(self.scheduler_item_address(), 0) {
             Ok(request) => request,
@@ -138,14 +184,12 @@ impl BluetoothDtmReviewedEventWordsPrepared {
         }
     }
 
-    /// Read back the exact seventeen CPU-owned positional words.
-    pub fn words(&self) -> BluetoothDtmPositionalEventWords {
-        self.memory.words()
-    }
-
-    /// Cancel before publication and recover the exact prior CPU-owned graph.
-    pub fn cancel(self) -> BluetoothDtmMemoryGraphCpuOwned {
-        self.memory.cancel()
+    /// Cancel before publication and recover the prepared event words.
+    pub fn cancel(self) -> BluetoothDtmReviewedEventWordsPrepared {
+        BluetoothDtmReviewedEventWordsPrepared {
+            memory: self.memory.cancel(),
+            role: self.role,
+        }
     }
 }
 
@@ -227,9 +271,14 @@ mod tests {
             .prepare(owner)
             .expect("fresh private links replace both stale plan links");
         assert_eq!(prepared.role(), BluetoothDtmRole::Transmitter);
-        let request = prepared.scheduler_lock_modify_request();
-        assert_eq!(request.address(), prepared.scheduler_item_address());
+        let scheduler_prepared = prepared.prepare_scheduler_bookkeeping();
+        let request = scheduler_prepared.scheduler_lock_modify_request();
+        assert_eq!(
+            request.address(),
+            scheduler_prepared.scheduler_item_address()
+        );
         assert_eq!(request.argument(), 0);
+        let prepared = scheduler_prepared.cancel();
         let words = prepared.words();
         assert_eq!(words.link_state().word_00, 0x8ff1_c057);
         assert_eq!(words.link_state().word_00 & 0x000f_ffff, 0x1c057);

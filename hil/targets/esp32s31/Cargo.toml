@@ -41,6 +41,7 @@ open-esp-radio-esp32s31-hal = { path = "../../../driver/chips/esp32s31/hal" }
 open-esp-radio-esp32s31-embassy-runtime = { path = "../../../driver/adapters/embassy/esp32s31-platform", features = ["esp32s31"] }
 open-esp-radio-esp32s31-embassy-wifi = { path = "../../../driver/integration/esp32s31/embassy-wifi" }
 open-esp-radio-esp32s31-pac = { path = "../../../driver/chips/esp32s31/pac", features = ["validation-probes"] }
+open-esp-radio-esp32s31-platform-pac = { path = "../../../driver/chips/esp32s31/platform-pac", features = ["esp32s31"] }
 open-esp-radio-esp32s31-phy = { path = "../../../driver/chips/esp32s31/phy" }
 open-esp-radio-esp32s31-wifi-mac = { path = "../../../driver/chips/esp32s31/wifi/mac" }
 open-esp-radio-esp32s31-wifi-embassy = { path = "../../../driver/adapters/embassy/esp32s31-wifi" }

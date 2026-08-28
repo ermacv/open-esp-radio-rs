@@ -5,6 +5,7 @@ use embassy_net::{Stack, udp::PacketMetadata};
 use embassy_sync::channel::Channel;
 use embassy_time::Duration;
 use static_cell::{ConstStaticCell, StaticCell};
+use open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters;
 
 use super::{
     BidirectionalResultChannel, BidirectionalSessionChannel, SessionChannel, TcpBenchmarkConfig,
@@ -130,7 +131,11 @@ async fn udp_session_coordinator_task(network_interface: WifiNetworkInterface) {
     large_assignments,
     reason = "the bounded UDP RX owner future is constructed in its final PSRAM-backed Embassy task arena"
 )]
-async fn udp_rx_task(stack: Stack<'static>, network_interface: WifiNetworkInterface) {
+async fn udp_rx_task(
+    stack: Stack<'static>,
+    network_interface: WifiNetworkInterface,
+    _l1_cache: &'static L1CachePerformanceCounters,
+) {
     let resources = resources(network_interface);
     let rx_metadata = resources
         .udp_sink_rx_metadata
@@ -163,6 +168,8 @@ async fn udp_rx_task(stack: Stack<'static>, network_interface: WifiNetworkInterf
             UdpRxTelemetry {
                 pipeline: &RX_PIPELINE,
                 task_polls: &TASK_POLLS,
+                #[cfg(feature = "core0-rx-cycle-telemetry")]
+                l1_cache: _l1_cache,
             },
         ),
         TASK_POLLS.udp_rx(),
@@ -278,13 +285,15 @@ pub(in crate::product_hil) fn start_connected_traffic(
     spawner: Spawner,
     stack: Stack<'static>,
     network_interface: WifiNetworkInterface,
+    l1_cache: &'static L1CachePerformanceCounters,
 ) {
     spawner.spawn(
         udp_session_coordinator_task(network_interface)
             .expect("UDP coordinator task pool must fit both roles"),
     );
     spawner.spawn(
-        udp_rx_task(stack, network_interface).expect("UDP RX task pool must fit both roles"),
+        udp_rx_task(stack, network_interface, l1_cache)
+            .expect("UDP RX task pool must fit both roles"),
     );
     spawner.spawn(
         udp_tx_task(stack, network_interface).expect("UDP TX task pool must fit both roles"),

@@ -124,6 +124,10 @@ static APP_EXECUTOR: StaticCell<Executor<1>> = StaticCell::new();
 #[cfg(feature = "open-radio-hil")]
 static TRNG_SOURCE: StaticCell<esp_hal::rng::TrngSource<'static>> = StaticCell::new();
 #[cfg(feature = "open-radio-hil")]
+static L1_CACHE_PERFORMANCE: StaticCell<
+    open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters,
+> = StaticCell::new();
+#[cfg(feature = "open-radio-hil")]
 static APP_SEND_SPAWNER: StaticCell<SendSpawner> = StaticCell::new();
 #[cfg(feature = "open-radio-hil")]
 static APP_SEND_SPAWNER_PTR: AtomicPtr<SendSpawner> = AtomicPtr::new(ptr::null_mut());
@@ -344,6 +348,10 @@ extern "C" fn runtime_main() -> ! {
 
     let peripherals =
         esp_hal::init(esp_hal::Config::default().with_cpu_clock(esp_hal::clock::CpuClock::max()));
+    #[cfg(feature = "open-radio-hil")]
+    let l1_cache = L1_CACHE_PERFORMANCE.init(
+        open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters::new(peripherals.CACHE),
+    );
     unsafe { esp_hal::interrupt::reinitialize_vectoring_after_handoff() };
     #[cfg(feature = "psram-task-stack")]
     unsafe {
@@ -436,7 +444,7 @@ extern "C" fn runtime_main() -> ! {
                 fail(c"OPEN_RADIO_HIL runtime=FAIL reason=protocol-allocation\r\n");
             };
             spawner.spawn(protocol);
-            let Ok(hil) = open_radio_hil_task(spawner, app_spawner, radio, trng) else {
+            let Ok(hil) = open_radio_hil_task(spawner, app_spawner, radio, trng, l1_cache) else {
                 fail(c"OPEN_RADIO_HIL runtime=FAIL reason=radio-task-allocation\r\n");
             };
             spawner.spawn(hil);
@@ -498,8 +506,9 @@ async fn open_radio_hil_task(
     protocol_spawner: SendSpawner,
     radio: open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral,
     trng: esp_hal::rng::Trng,
+    l1_cache: &'static open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters,
 ) {
-    product_hil::run(spawner, protocol_spawner, radio, trng).await;
+    product_hil::run(spawner, protocol_spawner, radio, trng, l1_cache).await;
 }
 
 fn validate_runtime_layout() {

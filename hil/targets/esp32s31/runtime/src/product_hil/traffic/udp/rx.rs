@@ -28,6 +28,8 @@ use open_esp_radio_hil_protocol::{
     Direction as HilDirection, Event as HilEvent, RadioEvidence, RxRadioEvidence, ServiceInfo,
     SessionReady, Transport as HilTransport, TransportEvidence,
 };
+#[cfg(feature = "core0-rx-cycle-telemetry")]
+use open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters;
 
 use super::UdpSocketBuffers;
 use crate::{
@@ -44,8 +46,7 @@ use crate::{
 };
 #[cfg(feature = "core0-rx-cycle-telemetry")]
 use crate::product_hil::traffic::{
-    L1CachePerformanceSnapshot, enable_l1_cache_counters, log_open_radio_core0_rx_cycles,
-    log_open_radio_core0_rx_service_histogram,
+    log_open_radio_core0_rx_cycles, log_open_radio_core0_rx_service_histogram,
 };
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 use crate::product_hil::traffic::log_open_radio_core0_rx_coarse;
@@ -72,6 +73,8 @@ pub(in crate::product_hil) struct UdpRxBenchmarkConfig {
 pub(in crate::product_hil) struct UdpRxTelemetry {
     pub pipeline: &'static RxPipelineCounters,
     pub task_polls: &'static TaskPollSet,
+    #[cfg(feature = "core0-rx-cycle-telemetry")]
+    pub l1_cache: &'static L1CachePerformanceCounters,
 }
 
 pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
@@ -153,10 +156,10 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
 
         #[cfg(feature = "core0-rx-cycle-telemetry")]
         if crate::product_hil::L1_CACHE_COUNTERS_ENABLED.load(Ordering::Relaxed) {
-            enable_l1_cache_counters();
+            telemetry.l1_cache.enable();
         }
         #[cfg(feature = "core0-rx-cycle-telemetry")]
-        let cache_start = L1CachePerformanceSnapshot::read();
+        let cache_start = telemetry.l1_cache.snapshot();
         let qualification_start = qualification_sample(QualificationRequester::UdpRx).await;
         let hardware_start = qualification_start.rx_primary;
         let irq_start = qualification_start.rx_interrupt_posts;
@@ -270,7 +273,10 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         let elapsed_us = last_packet.duration_since(started).as_micros().max(1);
         let qualification_end = qualification_sample(QualificationRequester::UdpRx).await;
         #[cfg(feature = "core0-rx-cycle-telemetry")]
-        let cache_interval = L1CachePerformanceSnapshot::read().wrapping_delta_since(cache_start);
+        let cache_interval = telemetry
+            .l1_cache
+            .snapshot()
+            .wrapping_delta_since(cache_start);
         let hardware = qualification_end
             .rx_primary
             .zip(hardware_start)

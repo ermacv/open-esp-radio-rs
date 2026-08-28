@@ -36,6 +36,7 @@ members = [
     "driver/chips/esp32s31/phy",
     "driver/chips/esp32s31/pac-raw",
     "driver/chips/esp32s31/pac",
+    "driver/chips/esp32s31/platform-pac",
     "driver/integration/esp32s31/bluetooth",
     "hil/host/runner",
     "tools/qualification-check",

@@ -72,8 +72,6 @@ pub(super) use bidirectional::{
     OpenRadioBidirectionalResult, complete_open_radio_bidirectional_direction,
     run_open_radio_bidirectional_session_coordinator,
 };
-#[cfg(feature = "core0-rx-cycle-telemetry")]
-pub(super) use cache_performance::{L1CachePerformanceSnapshot, enable_l1_cache_counters};
 pub(super) use evidence::{UdpSequenceEvidence, iperf2_udp_sequence};
 pub(super) use reporting::{
     aggregate_tx_evidence, log_open_radio_ampdu_interval, log_open_radio_rx_pipeline_interval,

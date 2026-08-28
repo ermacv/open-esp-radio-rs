@@ -139,6 +139,7 @@ use crate::console::{
     receive_wifi_control_request, runtime_log, set_wifi_role,
 };
 use open_esp_radio_hil_protocol::StationLifecycleEvent;
+use open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters;
 
 mod rx_qualification;
 mod traffic;
@@ -165,6 +166,7 @@ struct AppNetworkStart {
     access_point_device: Esp32s31WifiDevice,
     station_ipv4: NetworkIpv4Configuration,
     seed: u64,
+    l1_cache: &'static L1CachePerformanceCounters,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1345,6 +1347,7 @@ async fn run_network_composition(spawner: Spawner, start: AppNetworkStart) -> ! 
         STATION_NETWORK_RESOURCES.take(),
         start.seed,
         WifiNetworkInterface::Station,
+        start.l1_cache,
     );
     start_network_endpoint(
         spawner,
@@ -1353,6 +1356,7 @@ async fn run_network_composition(spawner: Spawner, start: AppNetworkStart) -> ! 
         ACCESS_POINT_NETWORK_RESOURCES.take(),
         start.seed ^ (1_u64 << 63),
         WifiNetworkInterface::AccessPoint,
+        start.l1_cache,
     );
     APP_NETWORK_READY.signal(());
     core::future::pending().await
@@ -1365,6 +1369,7 @@ fn start_network_endpoint(
     resources: &'static mut StackResources<NETWORK_SOCKET_COUNT>,
     seed: u64,
     network_interface: WifiNetworkInterface,
+    l1_cache: &'static L1CachePerformanceCounters,
 ) {
     let (stack, network_runner) = Esp32s31WifiNetworkRunner::new(device, config, resources, seed);
     spawner.spawn(
@@ -1375,7 +1380,7 @@ fn start_network_endpoint(
             .expect("network config task pool must fit both roles"),
     );
     spawner.spawn(
-        network_services_start_task(spawner, stack, network_interface)
+        network_services_start_task(spawner, stack, network_interface, l1_cache)
             .expect("network service gate task pool must fit both roles"),
     );
 }
@@ -1393,13 +1398,14 @@ async fn network_services_start_task(
     spawner: Spawner,
     stack: Stack<'static>,
     network_interface: WifiNetworkInterface,
+    l1_cache: &'static L1CachePerformanceCounters,
 ) {
     stack.wait_config_up().await;
     spawner.spawn(
         network_report_task(stack, network_interface)
             .expect("network report task pool must fit both roles"),
     );
-    start_connected_traffic(spawner, stack, network_interface);
+    start_connected_traffic(spawner, stack, network_interface, l1_cache);
 }
 
 fn network_config_channels(
@@ -2241,6 +2247,7 @@ pub async fn run(
     _secondary_core_spawner: SendSpawner,
     platform: EspHalRadioPeripheral,
     trng: Trng,
+    l1_cache: &'static L1CachePerformanceCounters,
 ) {
     DIAGNOSTIC_STAGE.store(10, Ordering::Release);
     #[cfg(not(any(
@@ -2493,6 +2500,7 @@ pub async fn run(
             .with_software_ipv4_udp_rx_checksum_validation(validate_ipv4_udp_rx_checksums),
         station_ipv4: startup_ipv4,
         seed,
+        l1_cache,
     };
     match data_plane {
         WifiDataPlanePlacement::SingleCore => {

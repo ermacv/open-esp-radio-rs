@@ -13,11 +13,10 @@ esp_bootloader_esp_idf::esp_app_desc!(
     0
 );
 
-mod flash_mapping;
-
 use core::{arch::asm, ffi::CStr, mem::size_of, ptr};
 
 use open_esp_radio_hil_esp32s31_board as board;
+use open_esp_radio_esp32s31_platform_pac::{FLASH_XIP_END, FLASH_XIP_START, FlashMmu};
 use static_cell::ConstStaticCell;
 
 const RUNTIME_MAGIC: u32 = 0x3247_5453;
@@ -89,6 +88,7 @@ fn main() -> ! {
     print(c"OPEN_RADIO_HIL bootstrap=START\r\n");
 
     let peripherals = esp_hal::init(esp_hal::Config::default());
+    let mut flash_mmu = FlashMmu::new(peripherals.SPI0);
     let mut flash = match esp_hal::flash::Flash::from_bootloader(peripherals.FLASH) {
         Ok(flash) => flash,
         Err(_) => fail(c"OPEN_RADIO_HIL bootstrap=FAIL reason=flash-init\r\n"),
@@ -106,8 +106,8 @@ fn main() -> ! {
     let source_end = source_address
         .checked_add(RUNTIME_PAYLOAD.len())
         .unwrap_or_else(|| fail(c"OPEN_RADIO_HIL bootstrap=FAIL reason=source-overflow\r\n"));
-    if !(flash_mapping::XIP_START..flash_mapping::XIP_END).contains(&source_address)
-        || source_end > flash_mapping::XIP_END
+    if !(FLASH_XIP_START..FLASH_XIP_END).contains(&source_address)
+        || source_end > FLASH_XIP_END
     {
         fail(c"OPEN_RADIO_HIL bootstrap=FAIL reason=source-not-xip\r\n");
     }
@@ -144,7 +144,8 @@ fn main() -> ! {
     }
 
     let tuning_address = FLASH_TUNING_REFERENCE.as_ptr() as usize;
-    let tuning_physical_start = unsafe { flash_mapping::physical_address(tuning_address) }
+    let tuning_physical_start = flash_mmu
+        .physical_address(tuning_address)
         .unwrap_or_else(|| fail(c"OPEN_RADIO_HIL bootstrap=FAIL reason=tuning-physical\r\n"));
     if unsafe {
         flash.tune_120mhz(
@@ -227,7 +228,7 @@ fn validate_header(
     let code_end_valid = if code_in_psram {
         payload_end <= psram_end
     } else {
-        code_in_flash && payload_end <= flash_mapping::XIP_END
+        code_in_flash && payload_end <= FLASH_XIP_END
     };
 
     if header.magic != RUNTIME_MAGIC

@@ -19,6 +19,7 @@ audited_unsafe_packages=(
     open-esp-radio-esp32s31-bluetooth
     open-esp-radio-esp32s31-hal
     open-esp-radio-esp32s31-pac
+    open-esp-radio-esp32s31-platform-pac
     open-esp-radio-esp32s31-phy
     open-esp-radio-esp32s31-ieee802154-dma
     open-esp-radio-esp32s31-ieee802154-runtime
@@ -32,6 +33,7 @@ audited_unsafe_packages=(
 pac_dependency_allowed_packages=(
     open-esp-radio-esp32s31-pac-raw
     open-esp-radio-esp32s31-pac
+    open-esp-radio-esp32s31-platform-pac
     open-esp-radio-esp32s31-hal
     open-esp-radio-esp32s31-bluetooth
     open-esp-radio-esp32s31-ieee802154-irq

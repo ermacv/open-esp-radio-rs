@@ -263,8 +263,16 @@ compressed scheduler-context link at item `+0x04`, the compressed link-state
 link at `+0x08`, sets the fixed `0x18000000` allocation flags at `+0x1c`, and
 sets the positional low-twenty-bit image `0x0007bdef` at `+0x24`. The open
 static binding now installs these unconditional fields before returning the
-CPU owner. The configuration-derived low twelve bits at item `+0x20` remain
-deliberately absent until their source-owned open configuration is modeled.
+CPU owner. The configuration-derived low twelve bits at item `+0x20` are
+`(ble_multi_adv_instances + 1 + nimble_max_connections +
+private_options_halfword_14 + 4 + ble_ll_sync_cnt) & 0x0fff`. The three named
+inputs and their exact structure positions are public in the pinned ESP-IDF
+`esp_bt_controller_config_t::ble`; the current private `0x2e`-byte table
+independently confirms halfword `+0x14` as `5`, but its semantic name is still
+unproven. Static binding therefore requires all four source-owned values,
+retains the private value as an explicit positional fact and has no implicit
+vendor-build default. The resulting allocation image is installed before the
+CPU owner is returned.
 The vendor software kind and callback pointer are not copied into the graph;
 the open scheduler must replace them with typed dispatch and affine ownership.
 

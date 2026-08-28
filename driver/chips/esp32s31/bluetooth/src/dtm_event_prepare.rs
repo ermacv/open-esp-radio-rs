@@ -204,7 +204,7 @@ impl BluetoothDtmSchedulerBookkeepingPrepared {
 mod tests {
     use open_esp_radio_esp32s31_bluetooth_memory::{
         BluetoothDtmBoundSramLinkAddress, BluetoothDtmMemoryGraphModelAddress,
-        BluetoothDtmMemoryGraphStorage,
+        BluetoothDtmMemoryGraphStorage, BluetoothDtmSchedulerAllocationConfig,
     };
     use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
 
@@ -221,8 +221,12 @@ mod tests {
             std::boxed::Box::leak(std::boxed::Box::new(BluetoothDtmMemoryGraphStorage::new()));
         let base = BluetoothDtmMemoryGraphModelAddress::new(base)
             .expect("test base has valid compressed-pointer syntax");
-        BluetoothDtmMemoryGraphStorage::pin_static_model(storage, base)
-            .expect("test graph fits physical controller SRAM")
+        BluetoothDtmMemoryGraphStorage::pin_static_model(
+            storage,
+            base,
+            BluetoothDtmSchedulerAllocationConfig::new(2, 3, 5, 4),
+        )
+        .expect("test graph fits physical controller SRAM")
     }
 
     fn epoch() -> BluetoothControllerSchedulerEpoch {

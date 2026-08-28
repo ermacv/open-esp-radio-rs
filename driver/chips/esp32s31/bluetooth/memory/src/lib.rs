@@ -41,9 +41,9 @@ pub use dtm_storage::{
     BluetoothDtmPositionalEventSeed, BluetoothDtmPreparedTxPacketStorage,
     BluetoothDtmRxBufferHeaderImage, BluetoothDtmRxBufferStorage, BluetoothDtmRxPacketAddress,
     BluetoothDtmRxPacketAddressError, BluetoothDtmRxPacketStorage, BluetoothDtmRxRearmError,
-    BluetoothDtmSchedulerContextStorage, BluetoothDtmSchedulerItemStorage,
-    BluetoothDtmTxBufferHeaderImage, BluetoothDtmTxPacketAddress, BluetoothDtmTxPacketAddressError,
-    BluetoothDtmTxPacketPreparation, BluetoothDtmTxPacketStorage,
+    BluetoothDtmSchedulerAllocationConfig, BluetoothDtmSchedulerContextStorage,
+    BluetoothDtmSchedulerItemStorage, BluetoothDtmTxBufferHeaderImage, BluetoothDtmTxPacketAddress,
+    BluetoothDtmTxPacketAddressError, BluetoothDtmTxPacketPreparation, BluetoothDtmTxPacketStorage,
 };
 pub use rx_memory_list::BluetoothRxMemoryListClass;
 pub use sram_link::{BluetoothDtmBoundSramLinkAddress, BluetoothDtmBoundSramLinkAddressError};

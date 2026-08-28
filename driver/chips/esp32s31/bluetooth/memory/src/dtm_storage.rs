@@ -72,7 +72,8 @@ const SCHEDULER_ITEM_ALLOCATION_PREFIX_IMAGE: u32 = 0x0030_0000;
 const SCHEDULER_ITEM_CONTEXT_OFFSET: usize = 0x04 / 4;
 const SCHEDULER_ITEM_LINK_STATE_OFFSET: usize = 0x08 / 4;
 const SCHEDULER_ITEM_ALLOCATION_FLAGS_OFFSET: usize = 0x1c / 4;
-const SCHEDULER_ITEM_ALLOCATION_FLAGS_IMAGE: u32 = 0x1800_0000;
+const SCHEDULER_ITEM_ALLOCATION_FIXED_FLAGS_IMAGE: u32 = 0x1800_0000;
+const SCHEDULER_ITEM_ALLOCATION_CONFIG_OFFSET: usize = 0x20 / 4;
 const SCHEDULER_ITEM_POSITIONAL_24_OFFSET: usize = 0x24 / 4;
 const SCHEDULER_ITEM_POSITIONAL_24_IMAGE: u32 = 0x0007_bdef;
 const SCHEDULER_ITEM_STATUS_OFFSET: usize = 0x38 / 4;
@@ -80,6 +81,48 @@ const SCHEDULER_ITEM_CONTROL_OFFSET: usize = 0x4c / 4;
 const SCHEDULER_ITEM_CONTROL_BYTE: usize = 2;
 const SCHEDULER_ITEM_COMPLETED_LINK_OFFSET: usize = 0x54 / 4;
 const LOW_TWENTY_MASK: u32 = 0x000f_ffff;
+
+/// Source-owned inputs to the DTM scheduler allocation field.
+///
+/// The current allocator forms scheduler-item `+0x20[11:0]` from three public
+/// ESP-IDF controller limits, two fixed additions and one private-options
+/// halfword. The private field remains positional because its semantic name is
+/// not yet proven. Requiring it here prevents a target from silently inheriting
+/// a value from one reviewed vendor build.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothDtmSchedulerAllocationConfig {
+    extended_advertising_instances: u16,
+    connections: u16,
+    private_options_halfword_14: u16,
+    periodic_syncs: u8,
+}
+
+impl BluetoothDtmSchedulerAllocationConfig {
+    /// Capture the exact source-owned inputs used by the S31 DTM allocator.
+    pub const fn new(
+        extended_advertising_instances: u16,
+        connections: u16,
+        private_options_halfword_14: u16,
+        periodic_syncs: u8,
+    ) -> Self {
+        Self {
+            extended_advertising_instances,
+            connections,
+            private_options_halfword_14,
+            periodic_syncs,
+        }
+    }
+
+    const fn allocation_image(self) -> u32 {
+        ((self.extended_advertising_instances as u32)
+            .wrapping_add(1)
+            .wrapping_add(self.connections as u32)
+            .wrapping_add(self.private_options_halfword_14 as u32)
+            .wrapping_add(4)
+            .wrapping_add(self.periodic_syncs as u32))
+            & 0x0fff
+    }
+}
 
 /// Why a complete DTM TX packet extent cannot inhabit controller SRAM.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -986,7 +1029,9 @@ impl BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared {
 ///
 /// let storage = Box::leak(Box::new(BluetoothDtmMemoryGraphStorage::new()));
 /// let base = BluetoothDtmMemoryGraphModelAddress::new(0x2f00_0100).unwrap();
-/// let owner = BluetoothDtmMemoryGraphStorage::pin_static_model(storage, base).unwrap();
+/// let config = open_esp_radio_esp32s31_bluetooth_memory::
+///     BluetoothDtmSchedulerAllocationConfig::new(1, 1, 5, 1);
+/// let owner = BluetoothDtmMemoryGraphStorage::pin_static_model(storage, base, config).unwrap();
 /// let moved = owner;
 /// let _binding = owner.binding();
 /// drop(moved);
@@ -1122,7 +1167,7 @@ impl BluetoothDtmMemoryGraphCpuOwned {
         })
     }
 
-    fn initialize_reviewed_allocation(&mut self) {
+    fn initialize_reviewed_allocation(&mut self, config: BluetoothDtmSchedulerAllocationConfig) {
         let rx_header = BluetoothDtmRxBufferHeaderImage::new(self.binding.rx_packet).words();
         let rx_swap_reserve = BluetoothDtmRxBufferHeaderImage::unbound_swap_reserve().words();
         let tx_header = BluetoothDtmTxBufferHeaderImage::new(self.binding.tx_packet).words();
@@ -1154,7 +1199,9 @@ impl BluetoothDtmMemoryGraphCpuOwned {
         storage.scheduler_item.words[SCHEDULER_ITEM_CONTEXT_OFFSET] = scheduler_context;
         storage.scheduler_item.words[SCHEDULER_ITEM_LINK_STATE_OFFSET] = link_state;
         storage.scheduler_item.words[SCHEDULER_ITEM_ALLOCATION_FLAGS_OFFSET] =
-            SCHEDULER_ITEM_ALLOCATION_FLAGS_IMAGE;
+            SCHEDULER_ITEM_ALLOCATION_FIXED_FLAGS_IMAGE;
+        storage.scheduler_item.words[SCHEDULER_ITEM_ALLOCATION_CONFIG_OFFSET] =
+            config.allocation_image();
         storage.scheduler_item.words[SCHEDULER_ITEM_POSITIONAL_24_OFFSET] =
             SCHEDULER_ITEM_POSITIONAL_24_IMAGE;
     }
@@ -1196,6 +1243,7 @@ impl BluetoothDtmMemoryGraphStorage {
     #[cfg(target_arch = "riscv32")]
     pub fn pin_static(
         storage: &'static mut Self,
+        config: BluetoothDtmSchedulerAllocationConfig,
     ) -> Result<BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphBindFailure> {
         let base = match u32::try_from(core::ptr::addr_of!(*storage).addr()) {
             Ok(base) => base,
@@ -1206,7 +1254,7 @@ impl BluetoothDtmMemoryGraphStorage {
                 ));
             }
         };
-        Self::pin_static_inner(storage, base)
+        Self::pin_static_inner(storage, base, config)
     }
 
     /// Bind a deterministic physical-SRAM address to a native ownership model.
@@ -1218,19 +1266,27 @@ impl BluetoothDtmMemoryGraphStorage {
     /// use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmMemoryGraphStorage;
     ///
     /// let storage = Box::leak(Box::new(BluetoothDtmMemoryGraphStorage::new()));
-    /// let _ = BluetoothDtmMemoryGraphStorage::pin_static_model(storage, 0x2f00_0100);
+    /// let config = open_esp_radio_esp32s31_bluetooth_memory::
+    ///     BluetoothDtmSchedulerAllocationConfig::new(1, 1, 5, 1);
+    /// let _ = BluetoothDtmMemoryGraphStorage::pin_static_model(
+    ///     storage,
+    ///     0x2f00_0100,
+    ///     config,
+    /// );
     /// ```
     #[cfg(not(target_arch = "riscv32"))]
     pub fn pin_static_model(
         storage: &'static mut Self,
         base: BluetoothDtmMemoryGraphModelAddress,
+        config: BluetoothDtmSchedulerAllocationConfig,
     ) -> Result<BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphBindFailure> {
-        Self::pin_static_inner(storage, base.address())
+        Self::pin_static_inner(storage, base.address(), config)
     }
 
     fn pin_static_inner(
         storage: &'static mut Self,
         base: u32,
+        config: BluetoothDtmSchedulerAllocationConfig,
     ) -> Result<BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphBindFailure> {
         let binding = match BluetoothDtmMemoryGraphBinding::new(base) {
             Ok(binding) => binding,
@@ -1240,7 +1296,7 @@ impl BluetoothDtmMemoryGraphStorage {
             storage: Pin::static_mut(storage),
             binding,
         };
-        owner.initialize_reviewed_allocation();
+        owner.initialize_reviewed_allocation(config);
         Ok(owner)
     }
 
@@ -1288,13 +1344,15 @@ mod tests {
         BluetoothDtmMemoryGraphStorage, BluetoothDtmPositionalEventSeed,
         BluetoothDtmPositionalEventWords, BluetoothDtmRxBufferHeaderImage,
         BluetoothDtmRxBufferStorage, BluetoothDtmRxPacketAddress, BluetoothDtmRxPacketAddressError,
-        BluetoothDtmRxPacketStorage, BluetoothDtmRxRearmError, BluetoothDtmSchedulerContextStorage,
+        BluetoothDtmRxPacketStorage, BluetoothDtmRxRearmError,
+        BluetoothDtmSchedulerAllocationConfig, BluetoothDtmSchedulerContextStorage,
         BluetoothDtmSchedulerItemReviewedWords, BluetoothDtmSchedulerItemStorage,
         BluetoothDtmTxBufferHeaderImage, BluetoothDtmTxPacketAddress,
         BluetoothDtmTxPacketAddressError, BluetoothDtmTxPacketStorage, LINK_STATE_RX_TAIL_OFFSET,
-        LINK_STATE_TX_HEAD_OFFSET, LOW_TWENTY_MASK, SCHEDULER_ITEM_ALLOCATION_FLAGS_OFFSET,
-        SCHEDULER_ITEM_ALLOCATION_PREFIX_OFFSET, SCHEDULER_ITEM_COMPLETED_LINK_OFFSET,
-        SCHEDULER_ITEM_CONTEXT_OFFSET, SCHEDULER_ITEM_CONTROL_BYTE, SCHEDULER_ITEM_CONTROL_OFFSET,
+        LINK_STATE_TX_HEAD_OFFSET, LOW_TWENTY_MASK, SCHEDULER_ITEM_ALLOCATION_CONFIG_OFFSET,
+        SCHEDULER_ITEM_ALLOCATION_FLAGS_OFFSET, SCHEDULER_ITEM_ALLOCATION_PREFIX_OFFSET,
+        SCHEDULER_ITEM_COMPLETED_LINK_OFFSET, SCHEDULER_ITEM_CONTEXT_OFFSET,
+        SCHEDULER_ITEM_CONTROL_BYTE, SCHEDULER_ITEM_CONTROL_OFFSET,
         SCHEDULER_ITEM_POSITIONAL_24_OFFSET, SCHEDULER_ITEM_STATUS_OFFSET,
     };
 
@@ -1328,8 +1386,12 @@ mod tests {
             std::boxed::Box::leak(std::boxed::Box::new(BluetoothDtmMemoryGraphStorage::new()));
         let base = BluetoothDtmMemoryGraphModelAddress::new(base)
             .expect("test base has valid compressed-pointer syntax");
-        BluetoothDtmMemoryGraphStorage::pin_static_model(storage, base)
+        BluetoothDtmMemoryGraphStorage::pin_static_model(storage, base, allocation_config())
             .expect("test graph fits physical controller SRAM")
+    }
+
+    const fn allocation_config() -> BluetoothDtmSchedulerAllocationConfig {
+        BluetoothDtmSchedulerAllocationConfig::new(2, 3, 5, 4)
     }
 
     fn candidate_words(seed: BluetoothDtmPositionalEventSeed) -> BluetoothDtmPositionalEventWords {
@@ -1430,8 +1492,9 @@ mod tests {
             std::boxed::Box::leak(std::boxed::Box::new(BluetoothDtmMemoryGraphStorage::new()));
         let base = BluetoothDtmMemoryGraphModelAddress::new(0x2f00_0100)
             .expect("model base has valid compressed-pointer syntax");
-        let owner = BluetoothDtmMemoryGraphStorage::pin_static_model(storage, base)
-            .expect("complete model graph fits physical controller SRAM");
+        let owner =
+            BluetoothDtmMemoryGraphStorage::pin_static_model(storage, base, allocation_config())
+                .expect("complete model graph fits physical controller SRAM");
         assert_eq!(owner.binding().range(), (0x2f00_0100, 0x2f00_04a8));
         assert_eq!(
             owner.binding().link_state_address().compressed_image(),
@@ -1470,6 +1533,10 @@ mod tests {
         assert_eq!(
             graph.scheduler_item.words[SCHEDULER_ITEM_ALLOCATION_FLAGS_OFFSET],
             0x1800_0000
+        );
+        assert_eq!(
+            graph.scheduler_item.words[SCHEDULER_ITEM_ALLOCATION_CONFIG_OFFSET],
+            19
         );
         assert_eq!(
             graph.scheduler_item.words[SCHEDULER_ITEM_POSITIONAL_24_OFFSET],
@@ -1687,7 +1754,11 @@ mod tests {
         )
         .expect("crossing base still has valid compressed-pointer syntax");
 
-        let failure = match BluetoothDtmMemoryGraphStorage::pin_static_model(storage, crossing) {
+        let failure = match BluetoothDtmMemoryGraphStorage::pin_static_model(
+            storage,
+            crossing,
+            allocation_config(),
+        ) {
             Ok(_) => panic!("a graph crossing physical SRAM must be rejected"),
             Err(failure) => failure,
         };
@@ -1709,8 +1780,9 @@ mod tests {
 
         let valid = BluetoothDtmMemoryGraphModelAddress::new(0x2f00_0100)
             .expect("retry base has valid compressed-pointer syntax");
-        let owner = BluetoothDtmMemoryGraphStorage::pin_static_model(storage, valid)
-            .expect("returned allocation can be bound exactly once");
+        let owner =
+            BluetoothDtmMemoryGraphStorage::pin_static_model(storage, valid, allocation_config())
+                .expect("returned allocation can be bound exactly once");
         assert_eq!(owner.binding().range().0, 0x2f00_0100);
         assert_eq!(owner.storage.as_ref().get_ref().tx_packet.bytes, [0; 0x111]);
     }
@@ -1726,11 +1798,14 @@ mod tests {
             std::boxed::Box::leak(std::boxed::Box::new(BluetoothDtmMemoryGraphStorage::new()));
         let zero = BluetoothDtmMemoryGraphModelAddress::new(0x2f00_0000)
             .expect("physical base has valid encoding syntax");
-        let zero_failure =
-            match BluetoothDtmMemoryGraphStorage::pin_static_model(zero_storage, zero) {
-                Ok(_) => panic!("link state must not collapse onto the unbound zero image"),
-                Err(failure) => failure,
-            };
+        let zero_failure = match BluetoothDtmMemoryGraphStorage::pin_static_model(
+            zero_storage,
+            zero,
+            allocation_config(),
+        ) {
+            Ok(_) => panic!("link state must not collapse onto the unbound zero image"),
+            Err(failure) => failure,
+        };
         assert_eq!(
             zero_failure.error(),
             BluetoothDtmMemoryGraphBindError::ZeroCompressedLink
@@ -1742,8 +1817,12 @@ mod tests {
             BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH - 0x3a8,
         )
         .expect("tail base has valid compressed-pointer syntax");
-        let owner = BluetoothDtmMemoryGraphStorage::pin_static_model(tail_storage, tail)
-            .expect("graph whose exclusive end equals SRAM high is valid");
+        let owner = BluetoothDtmMemoryGraphStorage::pin_static_model(
+            tail_storage,
+            tail,
+            allocation_config(),
+        )
+        .expect("graph whose exclusive end equals SRAM high is valid");
         assert_eq!(
             owner.binding().range(),
             (

@@ -146,6 +146,35 @@ impl PacApiPack {
                 value,
             ));
         }
+        for operation in &self.register_image_reads {
+            if !operation.exposure.exposes_facade() {
+                continue;
+            }
+            let domain = operation.domain.as_str();
+            let raw = format!(
+                "crate::svd::register_image_read::{}(registers)",
+                operation.name
+            );
+            let value = if self
+                .opaque_domains
+                .iter()
+                .any(|candidate| candidate.name == operation.domain)
+            {
+                format!("{domain}::new({raw})")
+            } else {
+                format!(
+                    "{domain}::new({raw}).expect(\"register-image read domain represents every u32\")"
+                )
+            };
+            output.push_str(&format!(
+                "/// Typed bridge for the reviewed `{}` complete-image observation.\n#[inline]\npub(crate) fn {}(registers: &crate::svd::{}) -> {} {{\n    {}\n}}\n\n",
+                operation.name,
+                operation.name,
+                type_binding_name(&operation.peripheral),
+                domain,
+                value,
+            ));
+        }
         for operation in &self.register_image_writes {
             if !operation.exposure.exposes_facade() {
                 continue;
@@ -251,6 +280,7 @@ impl PacApiPack {
         output.push_str(&self.render_fixed_register_writes());
         output.push_str(&self.render_fixed_register_images(&device)?);
         output.push_str(&self.render_w1c_register_snapshots(&device)?);
+        output.push_str(&self.render_register_image_reads(&device)?);
         output.push_str(&self.render_register_image_writes(&device)?);
         output.push_str(&self.render_zero_based_field_writes(&device)?);
         output.push_str(&self.render_zero_register_writes(&device)?);
@@ -685,6 +715,37 @@ impl PacApiPack {
                 binding.field,
                 binding.name,
                 binding.name,
+            ));
+        }
+        output.push_str("}\n");
+        Ok(output)
+    }
+
+    fn render_register_image_reads(&self, device: &Device) -> Result<String> {
+        if self.register_image_reads.is_empty() {
+            return Ok(String::new());
+        }
+        let mut output = String::from(
+            "\n/// Safe, SVD-declared observations of complete ordinary-register images.\n\
+             pub mod register_image_read {\n",
+        );
+        for binding in &self.register_image_reads {
+            let peripheral_type = type_binding_name(&binding.peripheral);
+            let register = member_binding_name(&binding.register);
+            let register_binding = pac_api_svd::register(
+                device,
+                &binding.name,
+                &binding.peripheral,
+                &binding.register,
+            )?;
+            debug_assert!(!register_binding.is_array);
+            output.push_str(&format!(
+                "\n    /// Capture the complete image of `{}`.`{}`.\n\
+                 #[inline]\n\
+                 pub fn {}(registers: &crate::{peripheral_type}) -> u32 {{\n\
+                     registers.{register}().read().bits()\n\
+                 }}\n",
+                binding.peripheral, binding.register, binding.name,
             ));
         }
         output.push_str("}\n");

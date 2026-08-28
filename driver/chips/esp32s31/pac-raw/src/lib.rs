@@ -57039,6 +57039,16 @@ pub mod w1c_register_snapshot {
     }
 }
 
+/// Safe, SVD-declared observations of complete ordinary-register images.
+pub mod register_image_read {
+
+    /// Capture the complete image of `PHY_BASEBAND_CONFIG_ORACLE`.`TONE_PATH_0_CONTROL`.
+    #[inline]
+    pub fn snapshot_txiq_tone_control(registers: &crate::PhyBasebandConfigOracle) -> u32 {
+        registers.tone_path_0_control().read().bits()
+    }
+}
+
 /// Safe, SVD-declared writes of dynamic complete-register images.
 pub mod register_image_write {
 

@@ -215,6 +215,27 @@ impl PacApiPack {
                 )));
             }
         }
+        for operation in &self.register_image_reads {
+            let binding = readable_register(
+                &device,
+                &operation.name,
+                &operation.peripheral,
+                &operation.register,
+            )?;
+            require_ordinary(&operation.name, binding.info)?;
+            if binding.is_array {
+                return Err(Error::message(format!(
+                    "PAC API register-image-read {:?} requires one exact non-array register",
+                    operation.name
+                )));
+            }
+            if binding.info.read_action.is_some() {
+                return Err(Error::message(format!(
+                    "PAC API register-image-read {:?} cannot target read-side-effect semantics",
+                    operation.name
+                )));
+            }
+        }
         for operation in &self.register_image_writes {
             ordinary_writable_register(
                 &device,

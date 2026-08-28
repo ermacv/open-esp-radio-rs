@@ -39,6 +39,8 @@ pub struct PacApiPack {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub w1c_register_snapshots: Vec<W1cRegisterSnapshot>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub register_image_reads: Vec<RegisterImageRead>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub register_image_writes: Vec<RegisterImageWrite>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub zero_based_field_writes: Vec<ZeroBasedFieldWrite>,
@@ -256,6 +258,18 @@ pub struct RegisterImageWrite {
     pub exposure: PacApiExposure,
     pub sources: Vec<String>,
 }
+/// One complete ordinary-register image captured into a reviewed opaque or
+/// otherwise full-width value domain.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct RegisterImageRead {
+    pub name: String,
+    pub peripheral: String,
+    pub register: String,
+    pub domain: String,
+    pub exposure: PacApiExposure,
+    pub sources: Vec<String>,
+}
 common_operation!(ZeroBasedFieldWrite {
     register: String,
     fields: Vec<String>,
@@ -366,6 +380,7 @@ impl PacApiPack {
         validate_operations("fixed-register-write", &self.fixed_register_writes)?;
         validate_operations("fixed-register-image", &self.fixed_register_images)?;
         validate_operations("w1c-register-snapshot", &self.w1c_register_snapshots)?;
+        validate_operations("register-image-read", &self.register_image_reads)?;
         validate_operations("register-image-write", &self.register_image_writes)?;
         validate_operations("zero-based-field-write", &self.zero_based_field_writes)?;
         validate_operations("zero-register-write", &self.zero_register_writes)?;
@@ -417,6 +432,28 @@ impl PacApiPack {
             if !covers_every_word {
                 return Err(Error::message(format!(
                     "PAC API full-register-read {:?} domain must represent every u32",
+                    operation.name
+                )));
+            }
+        }
+        for operation in &self.register_image_reads {
+            self.validate_operation_domain(
+                "register-image-read",
+                &operation.name,
+                &operation.peripheral,
+                &operation.register,
+                &operation.domain,
+                &domain_names,
+            )?;
+            let covers_every_word = self.bounded_domains.iter().any(|domain| {
+                domain.name == operation.domain && domain.min == 0 && domain.max == u32::MAX
+            }) || self
+                .opaque_domains
+                .iter()
+                .any(|domain| domain.name == operation.domain);
+            if !covers_every_word {
+                return Err(Error::message(format!(
+                    "PAC API register-image-read {:?} domain must represent every u32",
                     operation.name
                 )));
             }
@@ -644,6 +681,7 @@ impl PacApiPack {
             + self.fixed_register_writes.len()
             + self.fixed_register_images.len()
             + self.w1c_register_snapshots.len()
+            + self.register_image_reads.len()
             + self.register_image_writes.len()
             + self.zero_based_field_writes.len()
             + self.zero_register_writes.len()
@@ -697,6 +735,7 @@ impl PacApiPack {
                     .chain(self.fixed_register_writes.iter().map(Operation::sources))
                     .chain(self.fixed_register_images.iter().map(Operation::sources))
                     .chain(self.w1c_register_snapshots.iter().map(Operation::sources))
+                    .chain(self.register_image_reads.iter().map(Operation::sources))
                     .chain(self.register_image_writes.iter().map(Operation::sources))
                     .chain(self.zero_based_field_writes.iter().map(Operation::sources))
                     .chain(self.zero_register_writes.iter().map(Operation::sources))
@@ -934,6 +973,7 @@ impl_register_operation!(FullRegisterRead);
 impl_register_operation!(FixedRegisterWrite);
 impl_register_operation!(FixedRegisterImage);
 impl_register_operation!(W1cRegisterSnapshot);
+impl_register_operation!(RegisterImageRead);
 impl_register_operation!(RegisterImageWrite);
 impl_register_operation!(ZeroBasedFieldWrite);
 impl_register_operation!(ZeroRegisterWrite);
@@ -1102,6 +1142,7 @@ mod tests {
             fixed_register_writes: Vec::new(),
             fixed_register_images: Vec::new(),
             w1c_register_snapshots: Vec::new(),
+            register_image_reads: Vec::new(),
             register_image_writes: Vec::new(),
             zero_based_field_writes: Vec::new(),
             zero_register_writes: Vec::new(),
@@ -1207,6 +1248,30 @@ mod tests {
 
         assert!(pack.validate().is_ok());
         pack.bounded_domains[0].min = 1;
+        assert!(pack.validate().is_err());
+    }
+
+    #[test]
+    fn register_image_read_requires_a_complete_value_domain() {
+        let mut pack = empty_pack();
+        pack.opaque_domains.push(OpaqueDomain {
+            name: "SavedImage".to_owned(),
+            description: "Register-specific saved image.".to_owned(),
+            peripheral: "RADIO".to_owned(),
+            register: "CONTROL".to_owned(),
+            sources: vec!["REVIEW".to_owned()],
+        });
+        pack.register_image_reads.push(RegisterImageRead {
+            name: "save_control".to_owned(),
+            peripheral: "RADIO".to_owned(),
+            register: "CONTROL".to_owned(),
+            domain: "SavedImage".to_owned(),
+            exposure: PacApiExposure::Facade,
+            sources: vec!["REVIEW".to_owned()],
+        });
+
+        assert!(pack.validate().is_ok());
+        pack.register_image_reads[0].register = "OTHER".to_owned();
         assert!(pack.validate().is_err());
     }
 

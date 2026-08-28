@@ -573,11 +573,11 @@ impl ModemLpTimerTransaction for HardwareModemLpTimerTransaction<'_> {
 
 impl ModemLpTimerInterruptTransaction for HardwareModemLpTimerTransaction<'_> {
     fn read_status_0038(&mut self) -> u32 {
-        self.registers.status_0038().read().bits()
+        self.registers.status_0038().read().image().bits()
     }
 
     fn read_value_006c(&mut self) -> u32 {
-        self.registers.value_006c().read().bits()
+        self.registers.value_006c().read().image().bits()
     }
 
     fn control_0058_bit_2_is_set(&mut self) -> bool {

@@ -1267,6 +1267,14 @@ domain = "PowerDetectorControlImage"
 exposure = "facade"
 sources = ["BLOB_LIBPHY_PHY_TXDC_PWDET"]
 
+[[register-image-reads]]
+name = "snapshot_txiq_tone_control"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TONE_PATH_0_CONTROL"
+domain = "TxiqToneControlImage"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
+
 [[register-image-writes]]
 name = "restore_txiq_tone_control"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"

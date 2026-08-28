@@ -1013,9 +1013,8 @@ impl RadioPhyRegisters {
     /// cannot replace another calibration's restore authority.
     pub fn prepare_txiq_tone_control_restore(&mut self) -> Result<(), TxIqToneControlPrepareError> {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        self.restore_slot.prepare_txiq_with(|| {
-            super::generated::TxiqToneControlImage::new(bb.tone_path_0_control().read().bits())
-        })
+        self.restore_slot
+            .prepare_txiq_with(|| super::generated::snapshot_txiq_tone_control(bb))
     }
 
     /// Restore and consume the private TX-IQ tone-control image.

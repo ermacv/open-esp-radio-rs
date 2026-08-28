@@ -1154,6 +1154,16 @@ pub(crate) fn publish_ieee802154_rx_dma_address(
     crate::svd::full_register_write::publish_ieee802154_rx_dma_address(registers, value.get());
 }
 
+/// Typed bridge for the reviewed `snapshot_txiq_tone_control` complete-image observation.
+#[inline]
+pub(crate) fn snapshot_txiq_tone_control(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) -> TxiqToneControlImage {
+    TxiqToneControlImage::new(crate::svd::register_image_read::snapshot_txiq_tone_control(
+        registers,
+    ))
+}
+
 /// Typed bridge for the reviewed `publish_power_detector_table_1_image` complete-image transaction.
 #[inline]
 pub(crate) fn publish_power_detector_table_1_image(

@@ -29,8 +29,8 @@ pub use pac_api::{
     BoundedDomain, EnumDomain, EnumValue, FeatureModule, FieldOrModify, FixedRegisterImage,
     FixedRegisterWrite, FlagDomain, FlagValue, FullRegisterRead, FullRegisterWrite,
     InterruptSnapshot, MaskedRegisterModify, OpaqueDomain, OwnershipPartition, PacApiExposure,
-    PacApiOptions, PacApiPack, RegisterImageWrite, SidecarModule, W1cRegisterSnapshot,
-    ZeroBasedFieldWrite, ZeroRegisterWrite,
+    PacApiOptions, PacApiPack, RegisterImageRead, RegisterImageWrite, SidecarModule,
+    W1cRegisterSnapshot, ZeroBasedFieldWrite, ZeroRegisterWrite,
 };
 pub use pac_bindings::{generate_pac_binding_index, validate_pac_crate_name};
 pub use register_evidence::{

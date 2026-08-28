@@ -43051,7 +43051,8 @@ pub mod bluetooth_controller_core {
         #[doc = "Field `COMPRESSED_SRAM_POINTER` reader - "]
         pub type CompressedSramPointerR = crate::FieldReader<u32>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` writer - "]
-        pub type CompressedSramPointerW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        pub type CompressedSramPointerW<'a, REG> =
+            crate::FieldWriter<'a, REG, 20, u32, crate::Safe>;
         #[doc = "Field `CONTROL_20` reader - "]
         pub type Control20R = crate::BitReader;
         #[doc = "Field `CONTROL_20` writer - "]
@@ -43106,7 +43107,8 @@ pub mod bluetooth_controller_core {
         #[doc = "Field `COMPRESSED_SRAM_POINTER` reader - "]
         pub type CompressedSramPointerR = crate::FieldReader<u32>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` writer - "]
-        pub type CompressedSramPointerW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        pub type CompressedSramPointerW<'a, REG> =
+            crate::FieldWriter<'a, REG, 20, u32, crate::Safe>;
         impl R {
             #[doc = "Bits 0:19"]
             #[inline(always)]
@@ -43147,7 +43149,8 @@ pub mod bluetooth_controller_core {
         #[doc = "Field `COMPRESSED_SRAM_POINTER` reader - "]
         pub type CompressedSramPointerR = crate::FieldReader<u32>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` writer - "]
-        pub type CompressedSramPointerW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        pub type CompressedSramPointerW<'a, REG> =
+            crate::FieldWriter<'a, REG, 20, u32, crate::Safe>;
         #[doc = "Field `CONTROL_20` reader - "]
         pub type Control20R = crate::BitReader;
         #[doc = "Field `CONTROL_20` writer - "]
@@ -43202,7 +43205,8 @@ pub mod bluetooth_controller_core {
         #[doc = "Field `COMPRESSED_SRAM_POINTER` reader - "]
         pub type CompressedSramPointerR = crate::FieldReader<u32>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` writer - "]
-        pub type CompressedSramPointerW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        pub type CompressedSramPointerW<'a, REG> =
+            crate::FieldWriter<'a, REG, 20, u32, crate::Safe>;
         impl R {
             #[doc = "Bits 0:19"]
             #[inline(always)]
@@ -43243,7 +43247,8 @@ pub mod bluetooth_controller_core {
         #[doc = "Field `COMPRESSED_SRAM_POINTER` reader - "]
         pub type CompressedSramPointerR = crate::FieldReader<u32>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` writer - "]
-        pub type CompressedSramPointerW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        pub type CompressedSramPointerW<'a, REG> =
+            crate::FieldWriter<'a, REG, 20, u32, crate::Safe>;
         #[doc = "Field `CONTROL_20` reader - "]
         pub type Control20R = crate::BitReader;
         #[doc = "Field `CONTROL_20` writer - "]
@@ -43298,7 +43303,8 @@ pub mod bluetooth_controller_core {
         #[doc = "Field `COMPRESSED_SRAM_POINTER` reader - "]
         pub type CompressedSramPointerR = crate::FieldReader<u32>;
         #[doc = "Field `COMPRESSED_SRAM_POINTER` writer - "]
-        pub type CompressedSramPointerW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        pub type CompressedSramPointerW<'a, REG> =
+            crate::FieldWriter<'a, REG, 20, u32, crate::Safe>;
         impl R {
             #[doc = "Bits 0:19"]
             #[inline(always)]

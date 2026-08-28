@@ -665,6 +665,9 @@ access = "read-write"
 name = "COMPRESSED_SRAM_POINTER"
 bitOffset = 0
 bitWidth = 20
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xFFFFF
 [[peripherals.registers.register.fields]]
 name = "CONTROL_20"
 bitOffset = 20
@@ -680,6 +683,9 @@ access = "read-write"
 name = "COMPRESSED_SRAM_POINTER"
 bitOffset = 0
 bitWidth = 20
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xFFFFF
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "MMGMT_LIST_2_POINTER_A"
@@ -691,6 +697,9 @@ access = "read-write"
 name = "COMPRESSED_SRAM_POINTER"
 bitOffset = 0
 bitWidth = 20
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xFFFFF
 [[peripherals.registers.register.fields]]
 name = "CONTROL_20"
 bitOffset = 20
@@ -706,6 +715,9 @@ access = "read-write"
 name = "COMPRESSED_SRAM_POINTER"
 bitOffset = 0
 bitWidth = 20
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xFFFFF
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "MMGMT_LIST_3_POINTER_A"
@@ -717,6 +729,9 @@ access = "read-write"
 name = "COMPRESSED_SRAM_POINTER"
 bitOffset = 0
 bitWidth = 20
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xFFFFF
 [[peripherals.registers.register.fields]]
 name = "CONTROL_20"
 bitOffset = 20
@@ -732,6 +747,9 @@ access = "read-write"
 name = "COMPRESSED_SRAM_POINTER"
 bitOffset = 0
 bitWidth = 20
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xFFFFF
 [[peripherals.registers]]
 [peripherals.registers.register]
 name = "SCAN_HW_SNAPSHOT"

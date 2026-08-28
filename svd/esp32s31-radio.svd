@@ -18168,6 +18168,12 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
               <name>COMPRESSED_SRAM_POINTER</name>
               <bitOffset>0</bitOffset>
               <bitWidth>20</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>1048575</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>CONTROL_20</name>
@@ -18187,6 +18193,12 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
               <name>COMPRESSED_SRAM_POINTER</name>
               <bitOffset>0</bitOffset>
               <bitWidth>20</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>1048575</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -18201,6 +18213,12 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
               <name>COMPRESSED_SRAM_POINTER</name>
               <bitOffset>0</bitOffset>
               <bitWidth>20</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>1048575</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>CONTROL_20</name>
@@ -18220,6 +18238,12 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
               <name>COMPRESSED_SRAM_POINTER</name>
               <bitOffset>0</bitOffset>
               <bitWidth>20</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>1048575</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -18234,6 +18258,12 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
               <name>COMPRESSED_SRAM_POINTER</name>
               <bitOffset>0</bitOffset>
               <bitWidth>20</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>1048575</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>CONTROL_20</name>
@@ -18253,6 +18283,12 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
               <name>COMPRESSED_SRAM_POINTER</name>
               <bitOffset>0</bitOffset>
               <bitWidth>20</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>1048575</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>

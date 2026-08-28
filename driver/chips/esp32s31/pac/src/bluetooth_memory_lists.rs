@@ -145,7 +145,7 @@ impl BluetoothTaskRegisters {
         macro_rules! program {
             ($controller:expr, $register:expr, $publish:path) => {{
                 let register = $register;
-                register.modify(|_, writer| unsafe { writer.compressed_sram_pointer().bits(0) });
+                register.modify(|_, writer| writer.compressed_sram_pointer().set(0));
                 $publish($controller, compressed);
             }};
         }

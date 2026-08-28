@@ -423,6 +423,15 @@ not a target-processing ceiling: the AP emitted only about 150.6 thousand
 unique MPDUs in those intervals, and the target delivered essentially all of
 them.
 
+The same temporary checksum candidate also passed the other production data
+planes with runtime CRC `a8a6d235`. Run `1787928573235-00013f6a` produced
+103.237, 103.145, and 103.123 Mbit/s host-observed TX across three repetitions.
+Run `1787928808201-00016705` produced 79.980--80.034 Mbit/s combined across
+five 40/40 Mbit/s split-core bidirectional repetitions. All repetitions passed
+their gates. These controls exclude an evident TX or full-duplex throughput
+regression from the candidate; they do not replace durable dependency
+integration or the final exact-revision qualification.
+
 Placing the 170-byte scalar `u32` checksum function in internal hot text did
 not improve its cost: Core1 network residence was 70.53% from PSRAM and
 70.52% from IRAM. The hot loop already fits in instruction cache; packet-data

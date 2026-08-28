@@ -169,6 +169,7 @@ impl BluetoothSchedulerLockModifyPublication {
     ) -> BluetoothSchedulerLockModifyInFlight {
         BluetoothSchedulerLockModifyInFlight {
             _publication: backend.publish(self.request),
+            request: self.request,
         }
     }
 }
@@ -199,6 +200,7 @@ impl BluetoothSchedulerLockModifyBackend for BluetoothControllerHal<'_> {
 #[must_use = "the in-flight scheduler request still owns its publication result"]
 pub struct BluetoothSchedulerLockModifyInFlight {
     _publication: BluetoothSchedulerLockModifyPublished,
+    request: BluetoothSchedulerLockModifyRequest,
 }
 
 impl BluetoothSchedulerLockModifyInFlight {
@@ -214,6 +216,7 @@ impl BluetoothSchedulerLockModifyInFlight {
             BluetoothSchedulerLockModifyProgress::Ready(
                 BluetoothSchedulerLockModifyPublicationResult {
                     code: observation.result_code_after_publication(),
+                    request: self.request,
                 },
             )
         }
@@ -228,9 +231,20 @@ impl BluetoothSchedulerLockModifyInFlight {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothSchedulerLockModifyPublicationResult {
     code: u8,
+    request: BluetoothSchedulerLockModifyRequest,
 }
 
 impl BluetoothSchedulerLockModifyPublicationResult {
+    /// Return the exact item identity and argument carried by this completed
+    /// publication transaction.
+    ///
+    /// Retaining the request prevents a later scheduler stage from combining
+    /// a result with a different prepared graph. It does not turn the
+    /// publication result into radio completion.
+    pub const fn request(self) -> BluetoothSchedulerLockModifyRequest {
+        self.request
+    }
+
     /// Return zero for an idle scheduler or the reviewed request bits 30:27.
     ///
     /// The value remains positional: its higher-level success/error meanings
@@ -453,8 +467,10 @@ mod tests {
 
     #[test]
     fn published_request_yields_once_per_busy_event_before_result() {
+        let request = request();
         let in_flight = BluetoothSchedulerLockModifyInFlight {
             _publication: BluetoothSchedulerLockModifyPublished::for_validation(),
+            request,
         };
         let in_flight = match in_flight.observe(
             BluetoothSchedulerLockModifyObservation::from_fields_for_validation(true, true, 0),
@@ -470,6 +486,7 @@ mod tests {
         };
 
         assert_eq!(result.code(), 5);
+        assert_eq!(result.request(), request);
     }
 
     #[test]
@@ -590,7 +607,9 @@ mod tests {
             worker.begin(request()),
             Err(BluetoothSchedulerLockModifyBeginError::ResultPending)
         );
-        assert_eq!(worker.take_result().expect("result is durable").code(), 5);
+        let result = worker.take_result().expect("result is durable");
+        assert_eq!(result.code(), 5);
+        assert_eq!(result.request(), request());
         assert!(!worker.is_active());
         assert_eq!(backend.published, 1);
     }

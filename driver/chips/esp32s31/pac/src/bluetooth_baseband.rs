@@ -371,29 +371,19 @@ impl BluetoothBasebandV2Transaction<'_> {
 
     fn initialize_receive_detection(&self) {
         let btagc = &self.radio_phy.phy_btagc_recovered;
-        btagc
-            .shared_rx_sense_and_detect_00a0()
-            .modify(|_, w| w.positional_bits_24_27().set(4));
-        let c0 = btagc.agc_detect_config_00c0();
-        c0.modify(|_, w| w.bits_5_9().set(0x0a));
-        btagc
-            .shared_rx_sense_and_detect_00a8()
-            .modify(|_, w| w.positional_bits_12_16().set(4));
-        btagc
-            .shared_rx_sense_and_detect_00a8()
-            .modify(|_, w| w.positional_bits_0_3().set(7));
-        c0.modify(|_, w| w.bits_10_14().set(0x0a));
-        btagc
-            .shared_rx_sense_and_detect_00b8()
-            .modify(|_, w| w.positional_bits_8_11().set(7));
-        let c4 = btagc.agc_detect_config_00c4();
-        c4.modify(|_, w| w.bits_10_14().set(0x0f));
-        c0.modify(|_, w| w.bits_24_31().set(0x9c));
-        c0.modify(|_, w| w.bits_20_23().set(7));
-        c0.modify(|_, w| w.bits_15_19().set(0x0a));
-        c4.modify(|_, w| w.bits_24_31().set(0x9c));
-        c4.modify(|_, w| w.bits_20_23().set(0x0a));
-        c4.modify(|_, w| w.bits_15_19().set(0x0f));
+        super::generated::initialize_bluetooth_receive_detection_00a0(btagc);
+        super::generated::initialize_bluetooth_receive_detection_00c0_bits_5_9(btagc);
+        super::generated::initialize_bluetooth_receive_detection_00a8_middle(btagc);
+        super::generated::initialize_bluetooth_receive_detection_00a8_low(btagc);
+        super::generated::initialize_bluetooth_receive_detection_00c0_bits_10_14(btagc);
+        super::generated::initialize_bluetooth_receive_detection_00b8(btagc);
+        super::generated::initialize_bluetooth_receive_detection_00c4_bits_10_14(btagc);
+        super::generated::initialize_bluetooth_receive_detection_00c0_bits_24_31(btagc);
+        super::generated::initialize_bluetooth_receive_detection_00c0_bits_20_23(btagc);
+        super::generated::initialize_bluetooth_receive_detection_00c0_bits_15_19(btagc);
+        super::generated::initialize_bluetooth_receive_detection_00c4_bits_24_31(btagc);
+        super::generated::initialize_bluetooth_receive_detection_00c4_bits_20_23(btagc);
+        super::generated::initialize_bluetooth_receive_detection_00c4_bits_15_19(btagc);
     }
 
     fn initialize_gaussian_1m_coefficients(&self) {

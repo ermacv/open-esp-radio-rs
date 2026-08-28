@@ -4495,6 +4495,123 @@ value = 0x0f
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
 
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_detection_00a0"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "SHARED_RX_SENSE_AND_DETECT_00A0"
+fields = [{ field = "POSITIONAL_BITS_24_27", source-bit-offset = 0 }]
+value = 4
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_detection_00c0_bits_5_9"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_DETECT_CONFIG_00C0"
+fields = [{ field = "BITS_5_9", source-bit-offset = 0 }]
+value = 0x0a
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_detection_00a8_middle"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "SHARED_RX_SENSE_AND_DETECT_00A8"
+fields = [{ field = "POSITIONAL_BITS_12_16", source-bit-offset = 0 }]
+value = 4
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_detection_00a8_low"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "SHARED_RX_SENSE_AND_DETECT_00A8"
+fields = [{ field = "POSITIONAL_BITS_0_3", source-bit-offset = 0 }]
+value = 7
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_detection_00c0_bits_10_14"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_DETECT_CONFIG_00C0"
+fields = [{ field = "BITS_10_14", source-bit-offset = 0 }]
+value = 0x0a
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_detection_00b8"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "SHARED_RX_SENSE_AND_DETECT_00B8"
+fields = [{ field = "POSITIONAL_BITS_8_11", source-bit-offset = 0 }]
+value = 7
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_detection_00c4_bits_10_14"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_DETECT_CONFIG_00C4"
+fields = [{ field = "BITS_10_14", source-bit-offset = 0 }]
+value = 0x0f
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_detection_00c0_bits_24_31"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_DETECT_CONFIG_00C0"
+fields = [{ field = "BITS_24_31", source-bit-offset = 0 }]
+value = 0x9c
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_detection_00c0_bits_20_23"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_DETECT_CONFIG_00C0"
+fields = [{ field = "BITS_20_23", source-bit-offset = 0 }]
+value = 7
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_detection_00c0_bits_15_19"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_DETECT_CONFIG_00C0"
+fields = [{ field = "BITS_15_19", source-bit-offset = 0 }]
+value = 0x0a
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_detection_00c4_bits_24_31"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_DETECT_CONFIG_00C4"
+fields = [{ field = "BITS_24_31", source-bit-offset = 0 }]
+value = 0x9c
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_detection_00c4_bits_20_23"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_DETECT_CONFIG_00C4"
+fields = [{ field = "BITS_20_23", source-bit-offset = 0 }]
+value = 0x0a
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_detection_00c4_bits_15_19"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_DETECT_CONFIG_00C4"
+fields = [{ field = "BITS_15_19", source-bit-offset = 0 }]
+value = 0x0f
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

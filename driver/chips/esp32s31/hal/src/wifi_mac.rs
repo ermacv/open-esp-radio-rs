@@ -465,35 +465,36 @@ impl<'registers> WifiMacHal<'registers> {
         self.pac().mac_rx_dma_snapshot()
     }
 
-    /// Install one reviewed station key-table image. Slot selection and key
-    /// lifetime remain driver policy; this method owns only the finite MMIO
-    /// transaction and rejects indices outside the generated table.
+    /// Install one reviewed semantic station CCMP key. Slot selection and key
+    /// lifetime remain driver policy; register encoding is owned by the PAC.
     pub fn install_station_ccmp_entry(
         &mut self,
         index: u8,
-        words: &[u32; 6],
+        identity: crate::types::MacCcmpKeyIdentity,
+        temporal_key: &[u8; 16],
     ) -> MacKeyInstallOutcome {
         let Some(index) = MacKeyEntryIndex::new(u32::from(index)) else {
             return MacKeyInstallOutcome::Rejected;
         };
         self.registers
             .pac_mut()
-            .install_sta_ccmp_key_entry(index, words)
+            .install_sta_ccmp_key_entry(index, identity, temporal_key)
     }
 
-    /// Install one reviewed access-point key-table image. Association/key-ID
-    /// mapping remains driver policy above this finite transaction.
+    /// Install one reviewed semantic access-point CCMP key. Association/key-ID
+    /// mapping remains driver policy; register encoding is owned by the PAC.
     pub fn install_access_point_ccmp_entry(
         &mut self,
         index: u8,
-        words: &[u32; 6],
+        identity: crate::types::MacCcmpKeyIdentity,
+        temporal_key: &[u8; 16],
     ) -> MacKeyInstallOutcome {
         let Some(index) = MacKeyEntryIndex::new(u32::from(index)) else {
             return MacKeyInstallOutcome::Rejected;
         };
         self.registers
             .pac_mut()
-            .install_ap_ccmp_key_entry(index, words)
+            .install_ap_ccmp_key_entry(index, identity, temporal_key)
     }
 
     /// Clear one key-table entry when its generated index is valid.

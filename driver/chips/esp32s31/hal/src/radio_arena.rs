@@ -297,19 +297,23 @@ impl Esp32s31RadioOwnerArena {
         self.try_with_ref(|registers| registers.radio_phy().read_noise_floor_dbm())
     }
 
-    /// Install one station CCMP image under the runtime serialization owner.
+    /// Install one semantic station CCMP key under the runtime owner.
     pub fn try_install_station_ccmp_entry(
         &self,
         index: u8,
-        words: &[u32; 6],
+        identity: crate::types::MacCcmpKeyIdentity,
+        temporal_key: &[u8; 16],
     ) -> Result<crate::wifi_mac::MacKeyInstallOutcome, Esp32s31RadioOwnerArenaError> {
         self.try_with_mut(|registers| {
-            crate::wifi_mac::WifiMacHal::from_owned(registers)
-                .install_station_ccmp_entry(index, words)
+            crate::wifi_mac::WifiMacHal::from_owned(registers).install_station_ccmp_entry(
+                index,
+                identity,
+                temporal_key,
+            )
         })
     }
 
-    /// Install one access-point CCMP image under the runtime serialization
+    /// Install one semantic access-point CCMP key under runtime serialization
     /// owner. This is deliberately distinct from the station transaction:
     /// the vendor leaf enables the crypto engine for the selected MAC
     /// interface, so substituting interface zero corrupts simultaneous
@@ -318,11 +322,15 @@ impl Esp32s31RadioOwnerArena {
     pub fn try_install_access_point_ccmp_entry(
         &self,
         index: u8,
-        words: &[u32; 6],
+        identity: crate::types::MacCcmpKeyIdentity,
+        temporal_key: &[u8; 16],
     ) -> Result<crate::wifi_mac::MacKeyInstallOutcome, Esp32s31RadioOwnerArenaError> {
         self.try_with_mut(|registers| {
-            crate::wifi_mac::WifiMacHal::from_owned(registers)
-                .install_access_point_ccmp_entry(index, words)
+            crate::wifi_mac::WifiMacHal::from_owned(registers).install_access_point_ccmp_entry(
+                index,
+                identity,
+                temporal_key,
+            )
         })
     }
 
@@ -517,23 +525,27 @@ impl<'arena> Esp32s31RadioAccess<'arena> {
         self.arena.try_noise_floor_dbm()
     }
 
-    /// Install one station CCMP image without exposing the key-table owner.
+    /// Install one semantic station CCMP key without exposing the table owner.
     pub fn try_install_station_ccmp_entry(
         &self,
         index: u8,
-        words: &[u32; 6],
+        identity: crate::types::MacCcmpKeyIdentity,
+        temporal_key: &[u8; 16],
     ) -> Result<crate::wifi_mac::MacKeyInstallOutcome, Esp32s31RadioOwnerArenaError> {
-        self.arena.try_install_station_ccmp_entry(index, words)
+        self.arena
+            .try_install_station_ccmp_entry(index, identity, temporal_key)
     }
 
-    /// Install one access-point CCMP image without exposing the key-table
+    /// Install one semantic access-point CCMP key without exposing the table
     /// owner or erasing the role-specific crypto-interface transaction.
     pub fn try_install_access_point_ccmp_entry(
         &self,
         index: u8,
-        words: &[u32; 6],
+        identity: crate::types::MacCcmpKeyIdentity,
+        temporal_key: &[u8; 16],
     ) -> Result<crate::wifi_mac::MacKeyInstallOutcome, Esp32s31RadioOwnerArenaError> {
-        self.arena.try_install_access_point_ccmp_entry(index, words)
+        self.arena
+            .try_install_access_point_ccmp_entry(index, identity, temporal_key)
     }
 
     /// Clear one CCMP table entry without exposing the key-table owner.

@@ -5,8 +5,20 @@
 use super::{MacInterface, MacKeyEntryIndex, WifiRadioRegisters, device_fence, svd};
 
 const KEY_ENTRY_WORDS: usize = 10;
-const PROGRAMMED_CCMP_WORDS: usize = 6;
 const KEY_ENTRY_COUNT: usize = 25;
+const CCMP_ALGORITHM: u32 = 3;
+const PAIRWISE_LOGICAL_KEY_INDEX: u32 = 0;
+const MAX_GROUP_KEY_ID: u8 = 3;
+
+/// Semantic identity encoded into one CCMP hardware key-table entry.
+///
+/// The register image is deliberately not exposed. Peer/control word layout
+/// and key-byte packing are private PAC implementation details.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacCcmpKeyIdentity {
+    Pairwise { peer: [u8; 6] },
+    Group { key_id: u8 },
+}
 
 fn key_entry_validity(control: &svd::WifiMacCryptoControl) -> [bool; KEY_ENTRY_COUNT] {
     let validity = control.key_valid_bitmap().read();
@@ -109,7 +121,7 @@ impl WifiRadioRegisters {
         super::svd::zero_register_write::clear_mac_crypto_policy(control);
     }
 
-    /// Install one six-word STA CCMP image into an invalid hardware entry.
+    /// Encode and install one semantic STA CCMP key into an invalid entry.
     ///
     /// SOURCE: complete `libpp.a::hal_crypto_clr_key_entry`,
     /// `hal_crypto_set_key_entry`, `hal_crypto_is_key_valid`, and the reachable
@@ -117,12 +129,13 @@ impl WifiRadioRegisters {
     pub fn install_sta_ccmp_key_entry(
         &mut self,
         index: MacKeyEntryIndex,
-        words: &[u32; PROGRAMMED_CCMP_WORDS],
+        identity: MacCcmpKeyIdentity,
+        temporal_key: &[u8; 16],
     ) -> MacKeyInstallOutcome {
-        self.install_ccmp_key_entry(MacInterface::Station, index, words)
+        self.install_ccmp_key_entry(MacInterface::Station, index, identity, temporal_key)
     }
 
-    /// Install one six-word AP CCMP image into an invalid hardware entry.
+    /// Encode and install one semantic AP CCMP key into an invalid entry.
     ///
     /// SOURCE: complete `wDev_Insert_KeyEntry` passes interface one to the
     /// same `hal_crypto_enable` transaction. AP group keys occupy logical
@@ -130,19 +143,29 @@ impl WifiRadioRegisters {
     pub fn install_ap_ccmp_key_entry(
         &mut self,
         index: MacKeyEntryIndex,
-        words: &[u32; PROGRAMMED_CCMP_WORDS],
+        identity: MacCcmpKeyIdentity,
+        temporal_key: &[u8; 16],
     ) -> MacKeyInstallOutcome {
-        self.install_ccmp_key_entry(MacInterface::AccessPoint, index, words)
+        self.install_ccmp_key_entry(MacInterface::AccessPoint, index, identity, temporal_key)
     }
 
     fn install_ccmp_key_entry(
         &mut self,
         interface: MacInterface,
         index: MacKeyEntryIndex,
-        words: &[u32; PROGRAMMED_CCMP_WORDS],
+        identity: MacCcmpKeyIdentity,
+        temporal_key: &[u8; 16],
     ) -> MacKeyInstallOutcome {
+        let (peer, direction, logical_key_index) = match identity {
+            MacCcmpKeyIdentity::Pairwise { peer } => (peer, 3_u32, PAIRWISE_LOGICAL_KEY_INDEX),
+            MacCcmpKeyIdentity::Group { key_id } if key_id <= MAX_GROUP_KEY_ID => {
+                ([u8::MAX; 6], 6_u32, u32::from(key_id))
+            }
+            MacCcmpKeyIdentity::Group { .. } => return MacKeyInstallOutcome::Rejected,
+        };
         let index = index.get();
-        let interface = interface.bits() as usize;
+        let interface_bits = interface.bits();
+        let interface_index = interface_bits as usize;
         let mut validity = key_entry_validity(&self.peripherals.wifi_mac.wifi_mac_crypto_control);
         if validity[index as usize] {
             return MacKeyInstallOutcome::Occupied;
@@ -150,11 +173,29 @@ impl WifiRadioRegisters {
 
         self.clear_mac_key_entry_words(index);
         let table = &self.peripherals.wifi_mac.wifi_mac_key_table;
-        for (word, value) in words.iter().copied().enumerate() {
+        let peer_low = u32::from_le_bytes(peer[..4].try_into().expect("fixed peer low word"));
+        let peer_high = u16::from_le_bytes(peer[4..].try_into().expect("fixed peer high word"));
+        let cipher = CCMP_ALGORITHM << 18;
+        let control = (direction << 5)
+            | (interface_bits << 8)
+            | (u32::from(logical_key_index != 3) << 11)
+            | (logical_key_index << 14)
+            | ((cipher >> 16) & 0x341f);
+        super::svd::zero_based_field_write::mac_key_table_entry_word(
+            table,
+            index as usize * KEY_ENTRY_WORDS,
+            peer_low,
+        );
+        super::svd::zero_based_field_write::mac_key_table_entry_word(
+            table,
+            index as usize * KEY_ENTRY_WORDS + 1,
+            u32::from(peer_high) | (control << 16),
+        );
+        for (word, bytes) in temporal_key.chunks_exact(4).enumerate() {
             super::svd::zero_based_field_write::mac_key_table_entry_word(
                 table,
-                index as usize * KEY_ENTRY_WORDS + word,
-                value,
+                index as usize * KEY_ENTRY_WORDS + word + 2,
+                u32::from_le_bytes(bytes.try_into().expect("four-byte CCMP word")),
             );
         }
 
@@ -163,7 +204,7 @@ impl WifiRadioRegisters {
         publish_key_entry_validity(control, validity);
         super::svd::zero_based_field_write::mac_crypto_interface_control(
             control,
-            interface,
+            interface_index,
             0x0003_0103,
             0,
         );
@@ -171,7 +212,7 @@ impl WifiRadioRegisters {
             .policy_control()
             .modify(|_, w| w.ordinary_enable_clear_unknown().set(0));
         control
-            .interface_control(interface)
+            .interface_control(interface_index)
             .modify(|_, w| w.mode_high_unknown().set(0));
         device_fence();
 

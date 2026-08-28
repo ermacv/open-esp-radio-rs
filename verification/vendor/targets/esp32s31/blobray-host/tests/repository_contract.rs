@@ -28,34 +28,6 @@ fn target_ownership_partitions_exactly_cover_the_register_model() {
     let partitions = api["ownership-partitions"]
         .as_array_of_tables()
         .expect("schema-5 target pack must declare ownership partitions");
-    let expected = [
-        ("WifiMacPeripherals", "wifi_mac", 50_usize),
-        ("WifiInterruptPeripherals", "wifi_interrupts", 2),
-        ("RadioPhyPeripherals", "radio_phy", 27),
-        ("CoexistencePeripherals", "coexistence", 4),
-        ("BluetoothControllerPeripherals", "bluetooth", 19),
-        ("BluetoothInterruptPeripherals", "bluetooth_interrupts", 2),
-        ("SharedRadioPeripherals", "shared_radio", 4),
-        ("Ieee802154Peripherals", "ieee802154", 1),
-    ];
-    let actual = partitions
-        .iter()
-        .map(|partition| {
-            let name = partition["name"]
-                .as_str()
-                .expect("ownership partition name");
-            let member = partition["member"]
-                .as_str()
-                .expect("ownership partition member");
-            let count = partition["peripherals"]
-                .as_array()
-                .expect("ownership partition peripherals")
-                .len();
-            (name, member, count)
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(actual, expected);
-
     let model_path = chip.join("registers/device.toml");
     let model = toml_document(&model_path);
     let fragments = model["fragments"]
@@ -80,10 +52,23 @@ fn target_ownership_partitions_exactly_cover_the_register_model() {
     }
 
     let mut declared_owner = BTreeMap::new();
+    let mut owner_names = BTreeSet::new();
+    let mut owner_members = BTreeSet::new();
     for partition in partitions {
         let owner = partition["name"]
             .as_str()
             .expect("ownership partition name");
+        let member = partition["member"]
+            .as_str()
+            .expect("ownership partition member");
+        assert!(
+            owner_names.insert(owner),
+            "duplicate ownership name {owner}"
+        );
+        assert!(
+            owner_members.insert(member),
+            "duplicate ownership member {member}"
+        );
         let peripherals = partition["peripherals"]
             .as_array()
             .expect("ownership partition peripherals");

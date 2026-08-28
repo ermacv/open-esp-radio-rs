@@ -2,9 +2,9 @@ use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 
 use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
 use open_esp_radio_esp32s31_hal::types::{
-    MacHtTxProgram, MacInterface, MacInterruptEvents, MacInterruptMask, MacInterruptObservation,
-    MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionObservation, MacTxDetachOutcome,
-    MacTxDetachReason, MacTxQueueDetached,
+    MacCcmpKeyIdentity, MacHtTxProgram, MacInterface, MacInterruptEvents, MacInterruptMask,
+    MacInterruptObservation, MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionObservation,
+    MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
 };
 use open_esp_radio_esp32s31_wifi_dma::descriptor::{
     BIT_30, BIT_31, DESCRIPTOR_BYTES, DMA_LOW, Descriptor, LENGTH_SHIFT, descriptor_address_valid,
@@ -70,7 +70,6 @@ use open_esp_radio_wifi_softmac::{MacRxEvidence, MacRxMetadata};
 enum TestRegister {
     Named(&'static str),
     Indexed(&'static str, u8),
-    CryptoKeyWord(u8, u8),
 }
 
 const fn named(name: &'static str) -> TestRegister {
@@ -93,15 +92,6 @@ impl TestField {
 mod mac {
     use super::{TestField, TestRegister, indexed, named};
 
-    pub const CRYPTO_KEY_VALID_BITMAP: TestRegister = named("CRYPTO_KEY_VALID_BITMAP");
-    pub const CRYPTO_POLICY_CONTROL: TestRegister = named("CRYPTO_POLICY_CONTROL");
-    pub const CRYPTO_INTERFACE_CONTROL: [TestRegister; 3] = [
-        indexed("CRYPTO_INTERFACE_CONTROL", 0),
-        indexed("CRYPTO_INTERFACE_CONTROL", 1),
-        indexed("CRYPTO_INTERFACE_CONTROL", 2),
-    ];
-    pub const CRYPTO_KEY_ENTRY_WORDS: u8 = 10;
-
     pub const TX_Q_CONTROL: [TestRegister; 4] = queue("TX_Q_CONTROL");
     pub const TX_Q0_CONTROL: TestRegister = TX_Q_CONTROL[0];
     pub const TX_STATE_CLEAR: TestRegister = named("TX_STATE_CLEAR");
@@ -115,14 +105,6 @@ mod mac {
             indexed(name, 2),
             indexed(name, 3),
         ]
-    }
-
-    pub const fn crypto_key_entry_word(index: u8, word: u8) -> Option<TestRegister> {
-        if index < 25 && word < CRYPTO_KEY_ENTRY_WORDS {
-            Some(TestRegister::CryptoKeyWord(index, word))
-        } else {
-            None
-        }
     }
 
     pub mod tx_state {
@@ -168,6 +150,8 @@ enum Operation {
     EnableMacInterrupts(MacInterruptMask),
     ProgramInterfaceAddress(MacInterface, [u8; 6]),
     ApplyStaLinkPolicy([u8; 6]),
+    InstallCcmp(MacInterface, u8, MacCcmpKeyIdentity),
+    ClearCcmp(u8),
     InitializeHePrefix,
     InitializeTxPower(MacTxPowerTable),
     InitializeHeSuffix,
@@ -214,6 +198,7 @@ struct MockMmio {
     rx_walker_enabled: bool,
     rx_reload_pending: bool,
     rx_descriptor_base: u32,
+    ccmp_valid: [bool; 25],
 }
 
 impl MockMmio {
@@ -453,42 +438,57 @@ impl MacInterrupt for MockMmio {
 }
 
 impl CcmpKeyHardware for MockMmio {
-    fn install_sta_ccmp_entry(&mut self, index: u8, words: &[u32; 6]) -> MacKeyInstallOutcome {
-        let validity = self.read32(mac::CRYPTO_KEY_VALID_BITMAP);
-        let valid_bit = 1_u32 << index;
-        if validity & valid_bit != 0 {
+    fn install_sta_ccmp_entry(
+        &mut self,
+        index: u8,
+        identity: MacCcmpKeyIdentity,
+        _temporal_key: &[u8; 16],
+    ) -> MacKeyInstallOutcome {
+        let Some(valid) = self.ccmp_valid.get_mut(usize::from(index)) else {
+            return MacKeyInstallOutcome::Rejected;
+        };
+        if *valid {
             return MacKeyInstallOutcome::Occupied;
         }
-        for word in 0..mac::CRYPTO_KEY_ENTRY_WORDS {
-            self.write32(mac::crypto_key_entry_word(index, word).unwrap(), 0);
+        *valid = true;
+        self.operations.push(Operation::InstallCcmp(
+            MacInterface::Station,
+            index,
+            identity,
+        ));
+        MacKeyInstallOutcome::Installed
+    }
+
+    fn install_ap_ccmp_entry(
+        &mut self,
+        index: u8,
+        identity: MacCcmpKeyIdentity,
+        _temporal_key: &[u8; 16],
+    ) -> MacKeyInstallOutcome {
+        let Some(valid) = self.ccmp_valid.get_mut(usize::from(index)) else {
+            return MacKeyInstallOutcome::Rejected;
+        };
+        if *valid {
+            return MacKeyInstallOutcome::Occupied;
         }
-        for (word, value) in words.iter().copied().enumerate() {
-            self.write32(
-                mac::crypto_key_entry_word(index, word as u8).unwrap(),
-                value,
-            );
-        }
-        self.write32(mac::CRYPTO_KEY_VALID_BITMAP, validity | valid_bit);
-        self.write32(mac::CRYPTO_INTERFACE_CONTROL[0], 0x0003_0103);
-        let policy = self.read32(mac::CRYPTO_POLICY_CONTROL);
-        self.write32(mac::CRYPTO_POLICY_CONTROL, policy & 0xffc0_003f);
-        let control = self.read32(mac::CRYPTO_INTERFACE_CONTROL[0]);
-        self.write32(mac::CRYPTO_INTERFACE_CONTROL[0], control & 0x3fff_ffff);
-        Mmio::fence(self);
-        if self.read32(mac::CRYPTO_KEY_VALID_BITMAP) & valid_bit == 0 {
-            MacKeyInstallOutcome::Rejected
-        } else {
-            MacKeyInstallOutcome::Installed
-        }
+        *valid = true;
+        self.operations.push(Operation::InstallCcmp(
+            MacInterface::AccessPoint,
+            index,
+            identity,
+        ));
+        MacKeyInstallOutcome::Installed
     }
 
     fn clear_ccmp_entry(&mut self, index: u8) {
-        let validity = self.read32(mac::CRYPTO_KEY_VALID_BITMAP);
-        self.write32(mac::CRYPTO_KEY_VALID_BITMAP, validity & !(1_u32 << index));
-        for word in 0..mac::CRYPTO_KEY_ENTRY_WORDS {
-            self.write32(mac::crypto_key_entry_word(index, word).unwrap(), 0);
+        if let Some(valid) = self.ccmp_valid.get_mut(usize::from(index)) {
+            *valid = false;
+            self.operations.push(Operation::ClearCcmp(index));
         }
-        Mmio::fence(self);
+    }
+
+    fn ccmp_entry_is_valid(&self, index: u8) -> Option<bool> {
+        self.ccmp_valid.get(usize::from(index)).copied()
     }
 }
 
@@ -2045,7 +2045,6 @@ fn receive_enable_is_a_separate_confirmed_hardware_edge() {
 #[test]
 fn sta_pairwise_ccmp_install_owns_one_bounded_hardware_slot() {
     let mut mmio = MockMmio::default();
-    mmio.set(mac::CRYPTO_POLICY_CONTROL, u32::MAX);
     let peer = [0xdc, 0x15, 0xc8, 0x54, 0xbc, 0x1e];
     let temporal_key = core::array::from_fn(|index| index as u8);
 
@@ -2053,51 +2052,21 @@ fn sta_pairwise_ccmp_install_owns_one_bounded_hardware_slot() {
     assert_eq!(slot.hardware_index(), 4);
     assert_eq!(slot.peer(), &peer);
     assert_eq!(
-        mmio.words.get(&mac::CRYPTO_KEY_VALID_BITMAP),
-        Some(&(1 << 4))
-    );
-    assert_eq!(
-        mmio.words.get(&mac::crypto_key_entry_word(4, 0).unwrap()),
-        Some(&0x54c8_15dc)
-    );
-    assert_eq!(
-        mmio.words.get(&mac::crypto_key_entry_word(4, 1).unwrap()),
-        Some(&0x086c_1ebc)
-    );
-    assert_eq!(
-        mmio.words.get(&mac::crypto_key_entry_word(4, 2).unwrap()),
-        Some(&0x0302_0100)
-    );
-    assert_eq!(
-        mmio.words.get(&mac::crypto_key_entry_word(4, 5).unwrap()),
-        Some(&0x0f0e_0d0c)
-    );
-    assert_eq!(
-        mmio.words.get(&mac::crypto_key_entry_word(4, 6).unwrap()),
-        Some(&0)
-    );
-    assert_eq!(
-        mmio.words.get(&mac::CRYPTO_INTERFACE_CONTROL[0]),
-        Some(&0x0003_0103)
-    );
-    assert_eq!(
-        mmio.words.get(&mac::CRYPTO_POLICY_CONTROL),
-        Some(&0xffc0_003f)
+        mmio.operations(),
+        &[Operation::InstallCcmp(
+            MacInterface::Station,
+            4,
+            MacCcmpKeyIdentity::Pairwise { peer },
+        )]
     );
     assert_eq!(slot.next_tx_ccmp_header(), Ok([3, 0, 0, 0x20, 0, 0, 0, 0]));
     assert_eq!(slot.next_tx_ccmp_header(), Ok([6, 0, 0, 0x20, 0, 0, 0, 0]));
 
     slot.clear(&mut mmio);
-    assert_eq!(mmio.words.get(&mac::CRYPTO_KEY_VALID_BITMAP), Some(&0));
-    for word in 0..mac::CRYPTO_KEY_ENTRY_WORDS {
-        assert_eq!(
-            mmio.words
-                .get(&mac::crypto_key_entry_word(4, word).unwrap()),
-            Some(&0)
-        );
-    }
+    assert!(!mmio.ccmp_valid[4]);
+    assert_eq!(mmio.operations().last(), Some(&Operation::ClearCcmp(4)));
 
-    mmio.set(mac::CRYPTO_KEY_VALID_BITMAP, 1 << 4);
+    mmio.ccmp_valid[4] = true;
     assert_eq!(
         install_sta_pairwise_ccmp(&mut mmio, peer, &temporal_key).err(),
         Some(CryptoKeyError::Occupied)
@@ -2105,37 +2074,24 @@ fn sta_pairwise_ccmp_install_owns_one_bounded_hardware_slot() {
 }
 
 #[test]
-fn sta_group_ccmp_install_matches_the_migration_slot_and_control_word() {
+fn sta_group_ccmp_install_uses_the_owned_semantic_slot() {
     let mut mmio = MockMmio::default();
-    mmio.set(mac::CRYPTO_POLICY_CONTROL, u32::MAX);
     let temporal_key = core::array::from_fn(|index| 0xf0 | index as u8);
 
     let slot = install_sta_group_ccmp(&mut mmio, 1, &temporal_key).unwrap();
     assert_eq!(slot.hardware_index(), 1);
     assert_eq!(slot.key_id(), 1);
     assert_eq!(
-        mmio.words.get(&mac::CRYPTO_KEY_VALID_BITMAP),
-        Some(&(1 << 1))
-    );
-    assert_eq!(
-        mmio.words.get(&mac::crypto_key_entry_word(1, 0).unwrap()),
-        Some(&u32::MAX)
-    );
-    assert_eq!(
-        mmio.words.get(&mac::crypto_key_entry_word(1, 1).unwrap()),
-        Some(&0x48cc_ffff)
-    );
-    assert_eq!(
-        mmio.words.get(&mac::crypto_key_entry_word(1, 2).unwrap()),
-        Some(&0xf3f2_f1f0)
-    );
-    assert_eq!(
-        mmio.words.get(&mac::crypto_key_entry_word(1, 5).unwrap()),
-        Some(&0xfffe_fdfc)
+        mmio.operations(),
+        &[Operation::InstallCcmp(
+            MacInterface::Station,
+            1,
+            MacCcmpKeyIdentity::Group { key_id: 1 },
+        )]
     );
 
     slot.clear(&mut mmio);
-    assert_eq!(mmio.words.get(&mac::CRYPTO_KEY_VALID_BITMAP), Some(&0));
+    assert!(!mmio.ccmp_valid[1]);
     assert_eq!(
         install_sta_group_ccmp(&mut mmio, 4, &temporal_key).err(),
         Some(CryptoKeyError::InvalidGroupKeyId)
@@ -2145,29 +2101,20 @@ fn sta_group_ccmp_install_matches_the_migration_slot_and_control_word() {
 #[test]
 fn station_key_teardown_consumes_and_clears_both_hardware_slots() {
     let mut mmio = MockMmio::default();
-    mmio.set(mac::CRYPTO_POLICY_CONTROL, u32::MAX);
     let pairwise = install_sta_pairwise_ccmp(&mut mmio, [1, 2, 3, 4, 5, 6], &[0x55; 16]).unwrap();
     let group = install_sta_group_ccmp(&mut mmio, 2, &[0xaa; 16]).unwrap();
-    assert_eq!(
-        mmio.words.get(&mac::CRYPTO_KEY_VALID_BITMAP),
-        Some(&((1 << 4) | (1 << 1)))
-    );
+    assert!(mmio.ccmp_valid[4]);
+    assert!(mmio.ccmp_valid[1]);
 
     let report = clear_sta_ccmp_slots(&mut mmio, pairwise, group);
     assert_eq!(report.pairwise_hardware_index, 4);
     assert_eq!(report.group_hardware_index, 1);
-    assert_eq!(mmio.words.get(&mac::CRYPTO_KEY_VALID_BITMAP), Some(&0));
-    let clears: std::vec::Vec<_> = mmio
-        .operations()
-        .iter()
-        .filter_map(|operation| match operation {
-            Operation::Write(address, value) if *address == mac::CRYPTO_KEY_VALID_BITMAP => {
-                Some(*value)
-            }
-            _ => None,
-        })
-        .collect();
-    assert!(clears.ends_with(&[1 << 4, 0]));
+    assert!(!mmio.ccmp_valid[4]);
+    assert!(!mmio.ccmp_valid[1]);
+    assert!(
+        mmio.operations()
+            .ends_with(&[Operation::ClearCcmp(1), Operation::ClearCcmp(4)])
+    );
 }
 
 fn single_frame_segment<'a>(storage: &'a mut [u8; 128], frame_control_low: u8) -> RxSegment<'a> {

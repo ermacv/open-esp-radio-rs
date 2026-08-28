@@ -143,6 +143,7 @@ pub use generated::{
     MacRxBlockAckTid, MacRxBlockAckWindow, MacTxPtiCount, MacTxQueueIndex,
     ModemLowPowerClockDivider, PhyForcedPowerIndex, PhyFtmEnableVendorArgument,
 };
+pub use mac_crypto::MacCcmpKeyIdentity;
 
 const BLUETOOTH_MAIN_XTAL_LOW_POWER_DIVIDER: ModemLowPowerClockDivider =
     match ModemLowPowerClockDivider::new(399) {

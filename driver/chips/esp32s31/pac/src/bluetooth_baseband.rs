@@ -284,7 +284,18 @@ impl BluetoothBasebandV2Transaction<'_> {
         self.radio_phy
             .phy_baseband_config_oracle
             .baseband_init_7cd0()
-            .modify(|_, w| w.init_low_unknown().set(0x0f).init_high_unknown().set(0x0f));
+            .modify(|_, w| {
+                w.init_low_unknown()
+                    .set_bit()
+                    .init_low_unknown_1()
+                    .set_bit()
+                    .init_low_bit_2_unknown()
+                    .set_bit()
+                    .init_low_unknown_3()
+                    .set_bit()
+                    .init_high_unknown()
+                    .set(0x0f)
+            });
 
         let btagc = &self.radio_phy.phy_btagc_recovered;
         btagc

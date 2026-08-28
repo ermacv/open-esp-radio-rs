@@ -31,10 +31,6 @@ const fn txiq_second_mismatch_image(previous: u32, polarity: bool) -> u32 {
     (previous & 0xf0ff_ffff) | ((((!polarity) & 1) | ((polarity & 1) << 3)) << 24)
 }
 
-const fn clear_power_detector_enable_field(field: u8, bit: u8) -> u8 {
-    field & !bit
-}
-
 const fn low_bit(input: u32) -> bool {
     input & 1 != 0
 }
@@ -363,14 +359,6 @@ impl RadioPhyRestoreSlot {
     }
 }
 
-const fn clear_baseband_tail_low(value: u8) -> u8 {
-    value & !3
-}
-
-const fn clear_baseband_tail_high(value: u8) -> u8 {
-    value & !4
-}
-
 const fn decode_noise_floor_quarter_db(raw_low_twelve: u16) -> i32 {
     // Complete ROM `phy_read_hw_noisefloor` subtracts 0x1000 from the
     // masked field unconditionally, sign-extends and shifts by two.
@@ -512,14 +500,10 @@ impl RadioPhyRegisters {
             .modify(|_, w| w.init_set_unknown().set(0x1f));
 
         // The complete body clears the adjacent bits through separate reads.
-        bb.tx_power_track_control_1().modify(|r, w| {
-            w.init_clear_unknown()
-                .set(r.init_clear_unknown().bits() & !1)
-        });
-        bb.tx_power_track_control_1().modify(|r, w| {
-            w.init_clear_unknown()
-                .set(r.init_clear_unknown().bits() & !2)
-        });
+        bb.tx_power_track_control_1()
+            .modify(|_, w| w.init_clear_low_unknown().clear_bit());
+        bb.tx_power_track_control_1()
+            .modify(|_, w| w.init_clear_high_unknown().clear_bit());
 
         bb.tx_power_track_control_3()
             .modify(|_, w| w.track_value_1_unknown().set(0x79));
@@ -546,9 +530,13 @@ impl RadioPhyRegisters {
         self.peripherals
             .phy_baseband_config_oracle
             .baseband_init_7cd0()
-            .modify(|r, w| {
+            .modify(|_, w| {
                 w.init_low_unknown()
-                    .set(r.init_low_unknown().bits() | 0x0b)
+                    .set_bit()
+                    .init_low_unknown_1()
+                    .set_bit()
+                    .init_low_unknown_3()
+                    .set_bit()
                     .init_high_unknown()
                     .set(0x0f)
             });
@@ -772,8 +760,18 @@ impl RadioPhyRegisters {
             .modify(|_, w| w.he_ru26_good_response_enable().set_bit());
         bb.baseband_init_7a28()
             .modify(|_, w| w.init_clear_unknown().clear_bit());
-        bb.baseband_init_7cd0()
-            .modify(|_, w| w.init_low_unknown().set(0x0f).init_high_unknown().set(0x0f));
+        bb.baseband_init_7cd0().modify(|_, w| {
+            w.init_low_unknown()
+                .set_bit()
+                .init_low_unknown_1()
+                .set_bit()
+                .init_low_bit_2_unknown()
+                .set_bit()
+                .init_low_unknown_3()
+                .set_bit()
+                .init_high_unknown()
+                .set(0x0f)
+        });
         bb.baseband_tx_pa_control()
             .modify(|_, w| w.baseband_init_enable_unknown().set_bit());
     }
@@ -782,23 +780,25 @@ impl RadioPhyRegisters {
     pub fn initialize_baseband_tail(&mut self) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
         // Complete ROM clears bits 7:6 and bit 8 through separate reads.
-        bb.baseband_init_743c().modify(|r, w| {
-            w.init_clear_unknown()
-                .set(clear_baseband_tail_low(r.init_clear_unknown().bits()))
-        });
-        bb.baseband_init_743c().modify(|r, w| {
-            w.init_clear_unknown()
-                .set(clear_baseband_tail_high(r.init_clear_unknown().bits()))
-        });
+        bb.baseband_init_743c()
+            .modify(|_, w| w.init_clear_low_unknown().set(0));
+        bb.baseband_init_743c()
+            .modify(|_, w| w.init_clear_high_unknown().clear_bit());
         bb.baseband_init_7428()
             .modify(|_, w| w.init_enable_unknown().set_bit());
         bb.baseband_init_7428()
             .modify(|_, w| w.init_value_unknown().set(0x15));
-        bb.baseband_init_7cd0().modify(|r, w| {
+        bb.baseband_init_7cd0().modify(|_, w| {
             w.init_low_unknown()
-                .set(r.init_low_unknown().bits() | 0x0b)
+                .set_bit()
+                .init_low_unknown_1()
+                .set_bit()
+                .init_low_bit_2_unknown()
+                .set_bit()
+                .init_low_unknown_3()
+                .set_bit()
                 .init_high_unknown()
-                .set(r.init_high_unknown().bits() | 0x0f)
+                .set(0x0f)
         });
     }
 
@@ -822,12 +822,9 @@ impl RadioPhyRegisters {
     pub fn configure_power_detector_enabled(&mut self) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
         let control = bb.power_detector_control();
-        for bit in [2_u8, 1, 4] {
-            control.modify(|r, w| {
-                let field = clear_power_detector_enable_field(r.enable_clear_unknown().bits(), bit);
-                w.enable_clear_unknown().set(field)
-            });
-        }
+        control.modify(|_, w| w.enable_clear_middle_unknown().clear_bit());
+        control.modify(|_, w| w.enable_clear_low_unknown().clear_bit());
+        control.modify(|_, w| w.enable_clear_high_unknown().clear_bit());
         bb.power_detector_sar_control_status()
             .modify(|_, w| w.sar_mode_unknown().set(3));
         bb.power_detector_sar_control_status()

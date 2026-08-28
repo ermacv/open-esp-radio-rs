@@ -369,13 +369,19 @@ bitOffset = 0
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "ENABLE_CLEAR_UNKNOWN"
+name = "ENABLE_CLEAR_LOW_UNKNOWN"
 bitOffset = 1
-bitWidth = 3
+bitWidth = 1
 
-[peripherals.registers.register.fields.writeConstraint.range]
-minimum = 0x0
-maximum = 0x7
+[[peripherals.registers.register.fields]]
+name = "ENABLE_CLEAR_MIDDLE_UNKNOWN"
+bitOffset = 2
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ENABLE_CLEAR_HIGH_UNKNOWN"
+bitOffset = 3
+bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "CALIBRATION_FIELD_UNKNOWN"
@@ -839,13 +845,18 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "INIT_CLEAR_UNKNOWN"
+name = "INIT_CLEAR_LOW_UNKNOWN"
 bitOffset = 6
-bitWidth = 3
+bitWidth = 2
 
 [peripherals.registers.register.fields.writeConstraint.range]
 minimum = 0x0
-maximum = 0x7
+maximum = 0x3
+
+[[peripherals.registers.register.fields]]
+name = "INIT_CLEAR_HIGH_UNKNOWN"
+bitOffset = 8
+bitWidth = 1
 
 [[peripherals.registers]]
 
@@ -913,13 +924,14 @@ size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "INIT_CLEAR_UNKNOWN"
+name = "INIT_CLEAR_LOW_UNKNOWN"
 bitOffset = 0
-bitWidth = 2
+bitWidth = 1
 
-[peripherals.registers.register.fields.writeConstraint.range]
-minimum = 0x0
-maximum = 0x3
+[[peripherals.registers.register.fields]]
+name = "INIT_CLEAR_HIGH_UNKNOWN"
+bitOffset = 1
+bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "TRACK_VALUE_0_UNKNOWN"
@@ -1472,11 +1484,23 @@ access = "read-write"
 [[peripherals.registers.register.fields]]
 name = "INIT_LOW_UNKNOWN"
 bitOffset = 0
-bitWidth = 4
+bitWidth = 1
 
-[peripherals.registers.register.fields.writeConstraint.range]
-minimum = 0x0
-maximum = 0xF
+[[peripherals.registers.register.fields]]
+name = "INIT_LOW_UNKNOWN_1"
+bitOffset = 1
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "INIT_LOW_BIT_2_UNKNOWN"
+description = "Complete phy_btbb_wifi_bb_cfg2 preserves this bit while setting the other low-nibble bits."
+bitOffset = 2
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "INIT_LOW_UNKNOWN_3"
+bitOffset = 3
+bitWidth = 1
 
 [[peripherals.registers.register.fields]]
 name = "INIT_HIGH_UNKNOWN"

@@ -3603,15 +3603,19 @@
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>ENABLE_CLEAR_UNKNOWN</name>
+              <name>ENABLE_CLEAR_LOW_UNKNOWN</name>
               <bitOffset>1</bitOffset>
-              <bitWidth>3</bitWidth>
-              <writeConstraint>
-                <range>
-                  <minimum>0</minimum>
-                  <maximum>7</maximum>
-                </range>
-              </writeConstraint>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENABLE_CLEAR_MIDDLE_UNKNOWN</name>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>ENABLE_CLEAR_HIGH_UNKNOWN</name>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>CALIBRATION_FIELD_UNKNOWN</name>
@@ -4109,15 +4113,20 @@
           <access>read-write</access>
           <fields>
             <field>
-              <name>INIT_CLEAR_UNKNOWN</name>
+              <name>INIT_CLEAR_LOW_UNKNOWN</name>
               <bitOffset>6</bitOffset>
-              <bitWidth>3</bitWidth>
+              <bitWidth>2</bitWidth>
               <writeConstraint>
                 <range>
                   <minimum>0</minimum>
-                  <maximum>7</maximum>
+                  <maximum>3</maximum>
                 </range>
               </writeConstraint>
+            </field>
+            <field>
+              <name>INIT_CLEAR_HIGH_UNKNOWN</name>
+              <bitOffset>8</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>
@@ -4189,15 +4198,14 @@
           <access>read-write</access>
           <fields>
             <field>
-              <name>INIT_CLEAR_UNKNOWN</name>
+              <name>INIT_CLEAR_LOW_UNKNOWN</name>
               <bitOffset>0</bitOffset>
-              <bitWidth>2</bitWidth>
-              <writeConstraint>
-                <range>
-                  <minimum>0</minimum>
-                  <maximum>3</maximum>
-                </range>
-              </writeConstraint>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>INIT_CLEAR_HIGH_UNKNOWN</name>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>TRACK_VALUE_0_UNKNOWN</name>
@@ -4784,13 +4792,23 @@
             <field>
               <name>INIT_LOW_UNKNOWN</name>
               <bitOffset>0</bitOffset>
-              <bitWidth>4</bitWidth>
-              <writeConstraint>
-                <range>
-                  <minimum>0</minimum>
-                  <maximum>15</maximum>
-                </range>
-              </writeConstraint>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>INIT_LOW_UNKNOWN_1</name>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>INIT_LOW_BIT_2_UNKNOWN</name>
+              <description>Complete phy_btbb_wifi_bb_cfg2 preserves this bit while setting the other low-nibble bits.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>INIT_LOW_UNKNOWN_3</name>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>INIT_HIGH_UNKNOWN</name>

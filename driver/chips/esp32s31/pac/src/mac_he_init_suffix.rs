@@ -189,7 +189,7 @@ impl WifiRadioRegisters {
         // the same bit.
         if multi.read().co_hosted_enable().bit_is_clear() {
             multi.modify(|_, w| w.multi_bssid_enable().clear_bit());
-            multi.modify(|r, w| w.multi_bssid_mask().set(r.multi_bssid_mask().bits() | 0xff));
+            multi.modify(|_, w| w.multi_bssid_mask().set(0xff));
             multi.modify(|_, w| w.bssid_byte_5().set(0));
             init.multi_bssid_high()
                 .modify(|_, w| w.high_address_unknown().set(0));
@@ -203,7 +203,7 @@ impl WifiRadioRegisters {
         // guard read and the repeated hosted-mask OR.
         if multi.read().multi_bssid_enable().bit_is_clear() {
             multi.modify(|_, w| w.co_hosted_enable().clear_bit());
-            multi.modify(|r, w| w.multi_bssid_mask().set(r.multi_bssid_mask().bits() | 0xff));
+            multi.modify(|_, w| w.multi_bssid_mask().set(0xff));
         }
     }
 }

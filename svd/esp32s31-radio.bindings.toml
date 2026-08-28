@@ -1136,10 +1136,24 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "ENABLE_CLEAR_UNKNOWN"
-method = "enable_clear_unknown"
+svd-name = "ENABLE_CLEAR_LOW_UNKNOWN"
+method = "enable_clear_low_unknown"
 bit-offset = 1
-bit-width = 3
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENABLE_CLEAR_MIDDLE_UNKNOWN"
+method = "enable_clear_middle_unknown"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "ENABLE_CLEAR_HIGH_UNKNOWN"
+method = "enable_clear_high_unknown"
+bit-offset = 3
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
@@ -37074,10 +37088,17 @@ scope = []
 register-method = "baseband_init_743c"
 
 [[registers.fields]]
-svd-name = "INIT_CLEAR_UNKNOWN"
-method = "init_clear_unknown"
+svd-name = "INIT_CLEAR_LOW_UNKNOWN"
+method = "init_clear_low_unknown"
 bit-offset = 6
-bit-width = 3
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_CLEAR_HIGH_UNKNOWN"
+method = "init_clear_high_unknown"
+bit-offset = 8
+bit-width = 1
 access = "read-write"
 
 [[registers]]
@@ -37156,10 +37177,17 @@ scope = []
 register-method = "tx_power_track_control_1"
 
 [[registers.fields]]
-svd-name = "INIT_CLEAR_UNKNOWN"
-method = "init_clear_unknown"
+svd-name = "INIT_CLEAR_LOW_UNKNOWN"
+method = "init_clear_low_unknown"
 bit-offset = 0
-bit-width = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_CLEAR_HIGH_UNKNOWN"
+method = "init_clear_high_unknown"
+bit-offset = 1
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
@@ -37933,7 +37961,28 @@ register-method = "baseband_init_7cd0"
 svd-name = "INIT_LOW_UNKNOWN"
 method = "init_low_unknown"
 bit-offset = 0
-bit-width = 4
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_LOW_UNKNOWN_1"
+method = "init_low_unknown_1"
+bit-offset = 1
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_LOW_BIT_2_UNKNOWN"
+method = "init_low_bit_2_unknown"
+bit-offset = 2
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "INIT_LOW_UNKNOWN_3"
+method = "init_low_unknown_3"
+bit-offset = 3
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]

@@ -9278,10 +9278,18 @@ pub mod phy_baseband_config_oracle {
         pub type SarTriggerR = crate::BitReader;
         #[doc = "Field `SAR_TRIGGER` writer - "]
         pub type SarTriggerW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `ENABLE_CLEAR_UNKNOWN` reader - "]
-        pub type EnableClearUnknownR = crate::FieldReader;
-        #[doc = "Field `ENABLE_CLEAR_UNKNOWN` writer - "]
-        pub type EnableClearUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
+        #[doc = "Field `ENABLE_CLEAR_LOW_UNKNOWN` reader - "]
+        pub type EnableClearLowUnknownR = crate::BitReader;
+        #[doc = "Field `ENABLE_CLEAR_LOW_UNKNOWN` writer - "]
+        pub type EnableClearLowUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENABLE_CLEAR_MIDDLE_UNKNOWN` reader - "]
+        pub type EnableClearMiddleUnknownR = crate::BitReader;
+        #[doc = "Field `ENABLE_CLEAR_MIDDLE_UNKNOWN` writer - "]
+        pub type EnableClearMiddleUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `ENABLE_CLEAR_HIGH_UNKNOWN` reader - "]
+        pub type EnableClearHighUnknownR = crate::BitReader;
+        #[doc = "Field `ENABLE_CLEAR_HIGH_UNKNOWN` writer - "]
+        pub type EnableClearHighUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `CALIBRATION_FIELD_UNKNOWN` reader - "]
         pub type CalibrationFieldUnknownR = crate::FieldReader;
         #[doc = "Field `CALIBRATION_FIELD_UNKNOWN` writer - "]
@@ -9302,10 +9310,20 @@ pub mod phy_baseband_config_oracle {
             pub fn sar_trigger(&self) -> SarTriggerR {
                 SarTriggerR::new((self.bits & 1) != 0)
             }
-            #[doc = "Bits 1:3"]
+            #[doc = "Bit 1"]
             #[inline(always)]
-            pub fn enable_clear_unknown(&self) -> EnableClearUnknownR {
-                EnableClearUnknownR::new(((self.bits >> 1) & 7) as u8)
+            pub fn enable_clear_low_unknown(&self) -> EnableClearLowUnknownR {
+                EnableClearLowUnknownR::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn enable_clear_middle_unknown(&self) -> EnableClearMiddleUnknownR {
+                EnableClearMiddleUnknownR::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn enable_clear_high_unknown(&self) -> EnableClearHighUnknownR {
+                EnableClearHighUnknownR::new(((self.bits >> 3) & 1) != 0)
             }
             #[doc = "Bits 4:11"]
             #[inline(always)]
@@ -9329,12 +9347,26 @@ pub mod phy_baseband_config_oracle {
             pub fn sar_trigger(&mut self) -> SarTriggerW<'_, PowerDetectorControlSpec> {
                 SarTriggerW::new(self, 0)
             }
-            #[doc = "Bits 1:3"]
+            #[doc = "Bit 1"]
             #[inline(always)]
-            pub fn enable_clear_unknown(
+            pub fn enable_clear_low_unknown(
                 &mut self,
-            ) -> EnableClearUnknownW<'_, PowerDetectorControlSpec> {
-                EnableClearUnknownW::new(self, 1)
+            ) -> EnableClearLowUnknownW<'_, PowerDetectorControlSpec> {
+                EnableClearLowUnknownW::new(self, 1)
+            }
+            #[doc = "Bit 2"]
+            #[inline(always)]
+            pub fn enable_clear_middle_unknown(
+                &mut self,
+            ) -> EnableClearMiddleUnknownW<'_, PowerDetectorControlSpec> {
+                EnableClearMiddleUnknownW::new(self, 2)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn enable_clear_high_unknown(
+                &mut self,
+            ) -> EnableClearHighUnknownW<'_, PowerDetectorControlSpec> {
+                EnableClearHighUnknownW::new(self, 3)
             }
             #[doc = "Bits 4:11"]
             #[inline(always)]
@@ -10281,22 +10313,40 @@ pub mod phy_baseband_config_oracle {
         pub type R = crate::R<BasebandInit743cSpec>;
         #[doc = "Register `BASEBAND_INIT_743C` writer"]
         pub type W = crate::W<BasebandInit743cSpec>;
-        #[doc = "Field `INIT_CLEAR_UNKNOWN` reader - "]
-        pub type InitClearUnknownR = crate::FieldReader;
-        #[doc = "Field `INIT_CLEAR_UNKNOWN` writer - "]
-        pub type InitClearUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
+        #[doc = "Field `INIT_CLEAR_LOW_UNKNOWN` reader - "]
+        pub type InitClearLowUnknownR = crate::FieldReader;
+        #[doc = "Field `INIT_CLEAR_LOW_UNKNOWN` writer - "]
+        pub type InitClearLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
+        #[doc = "Field `INIT_CLEAR_HIGH_UNKNOWN` reader - "]
+        pub type InitClearHighUnknownR = crate::BitReader;
+        #[doc = "Field `INIT_CLEAR_HIGH_UNKNOWN` writer - "]
+        pub type InitClearHighUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bits 6:8"]
+            #[doc = "Bits 6:7"]
             #[inline(always)]
-            pub fn init_clear_unknown(&self) -> InitClearUnknownR {
-                InitClearUnknownR::new(((self.bits >> 6) & 7) as u8)
+            pub fn init_clear_low_unknown(&self) -> InitClearLowUnknownR {
+                InitClearLowUnknownR::new(((self.bits >> 6) & 3) as u8)
+            }
+            #[doc = "Bit 8"]
+            #[inline(always)]
+            pub fn init_clear_high_unknown(&self) -> InitClearHighUnknownR {
+                InitClearHighUnknownR::new(((self.bits >> 8) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bits 6:8"]
+            #[doc = "Bits 6:7"]
             #[inline(always)]
-            pub fn init_clear_unknown(&mut self) -> InitClearUnknownW<'_, BasebandInit743cSpec> {
-                InitClearUnknownW::new(self, 6)
+            pub fn init_clear_low_unknown(
+                &mut self,
+            ) -> InitClearLowUnknownW<'_, BasebandInit743cSpec> {
+                InitClearLowUnknownW::new(self, 6)
+            }
+            #[doc = "Bit 8"]
+            #[inline(always)]
+            pub fn init_clear_high_unknown(
+                &mut self,
+            ) -> InitClearHighUnknownW<'_, BasebandInit743cSpec> {
+                InitClearHighUnknownW::new(self, 8)
             }
         }
         #[doc = "Complete phy_bb_reg_init clears bits 8:6 through two fresh-read updates.\n\nYou can [`read`](crate::Reg::read) this register and get [`baseband_init_743c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`baseband_init_743c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -10457,10 +10507,14 @@ pub mod phy_baseband_config_oracle {
         pub type R = crate::R<TxPowerTrackControl1Spec>;
         #[doc = "Register `TX_POWER_TRACK_CONTROL_1` writer"]
         pub type W = crate::W<TxPowerTrackControl1Spec>;
-        #[doc = "Field `INIT_CLEAR_UNKNOWN` reader - "]
-        pub type InitClearUnknownR = crate::FieldReader;
-        #[doc = "Field `INIT_CLEAR_UNKNOWN` writer - "]
-        pub type InitClearUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
+        #[doc = "Field `INIT_CLEAR_LOW_UNKNOWN` reader - "]
+        pub type InitClearLowUnknownR = crate::BitReader;
+        #[doc = "Field `INIT_CLEAR_LOW_UNKNOWN` writer - "]
+        pub type InitClearLowUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `INIT_CLEAR_HIGH_UNKNOWN` reader - "]
+        pub type InitClearHighUnknownR = crate::BitReader;
+        #[doc = "Field `INIT_CLEAR_HIGH_UNKNOWN` writer - "]
+        pub type InitClearHighUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `TRACK_VALUE_0_UNKNOWN` reader - "]
         pub type TrackValue0UnknownR = crate::FieldReader;
         #[doc = "Field `TRACK_VALUE_0_UNKNOWN` writer - "]
@@ -10474,10 +10528,15 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `TRACK_VALUE_2_UNKNOWN` writer - "]
         pub type TrackValue2UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:1"]
+            #[doc = "Bit 0"]
             #[inline(always)]
-            pub fn init_clear_unknown(&self) -> InitClearUnknownR {
-                InitClearUnknownR::new((self.bits & 3) as u8)
+            pub fn init_clear_low_unknown(&self) -> InitClearLowUnknownR {
+                InitClearLowUnknownR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn init_clear_high_unknown(&self) -> InitClearHighUnknownR {
+                InitClearHighUnknownR::new(((self.bits >> 1) & 1) != 0)
             }
             #[doc = "Bits 7:14"]
             #[inline(always)]
@@ -10496,12 +10555,19 @@ pub mod phy_baseband_config_oracle {
             }
         }
         impl W {
-            #[doc = "Bits 0:1"]
+            #[doc = "Bit 0"]
             #[inline(always)]
-            pub fn init_clear_unknown(
+            pub fn init_clear_low_unknown(
                 &mut self,
-            ) -> InitClearUnknownW<'_, TxPowerTrackControl1Spec> {
-                InitClearUnknownW::new(self, 0)
+            ) -> InitClearLowUnknownW<'_, TxPowerTrackControl1Spec> {
+                InitClearLowUnknownW::new(self, 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn init_clear_high_unknown(
+                &mut self,
+            ) -> InitClearHighUnknownW<'_, TxPowerTrackControl1Spec> {
+                InitClearHighUnknownW::new(self, 1)
             }
             #[doc = "Bits 7:14"]
             #[inline(always)]
@@ -11822,18 +11888,45 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Register `BASEBAND_INIT_7CD0` writer"]
         pub type W = crate::W<BasebandInit7cd0Spec>;
         #[doc = "Field `INIT_LOW_UNKNOWN` reader - "]
-        pub type InitLowUnknownR = crate::FieldReader;
+        pub type InitLowUnknownR = crate::BitReader;
         #[doc = "Field `INIT_LOW_UNKNOWN` writer - "]
-        pub type InitLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        pub type InitLowUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `INIT_LOW_UNKNOWN_1` reader - "]
+        pub type InitLowUnknown1R = crate::BitReader;
+        #[doc = "Field `INIT_LOW_UNKNOWN_1` writer - "]
+        pub type InitLowUnknown1W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `INIT_LOW_BIT_2_UNKNOWN` reader - Complete phy_btbb_wifi_bb_cfg2 preserves this bit while setting the other low-nibble bits."]
+        pub type InitLowBit2UnknownR = crate::BitReader;
+        #[doc = "Field `INIT_LOW_BIT_2_UNKNOWN` writer - Complete phy_btbb_wifi_bb_cfg2 preserves this bit while setting the other low-nibble bits."]
+        pub type InitLowBit2UnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `INIT_LOW_UNKNOWN_3` reader - "]
+        pub type InitLowUnknown3R = crate::BitReader;
+        #[doc = "Field `INIT_LOW_UNKNOWN_3` writer - "]
+        pub type InitLowUnknown3W<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `INIT_HIGH_UNKNOWN` reader - "]
         pub type InitHighUnknownR = crate::FieldReader;
         #[doc = "Field `INIT_HIGH_UNKNOWN` writer - "]
         pub type InitHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:3"]
+            #[doc = "Bit 0"]
             #[inline(always)]
             pub fn init_low_unknown(&self) -> InitLowUnknownR {
-                InitLowUnknownR::new((self.bits & 0x0f) as u8)
+                InitLowUnknownR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn init_low_unknown_1(&self) -> InitLowUnknown1R {
+                InitLowUnknown1R::new(((self.bits >> 1) & 1) != 0)
+            }
+            #[doc = "Bit 2 - Complete phy_btbb_wifi_bb_cfg2 preserves this bit while setting the other low-nibble bits."]
+            #[inline(always)]
+            pub fn init_low_bit_2_unknown(&self) -> InitLowBit2UnknownR {
+                InitLowBit2UnknownR::new(((self.bits >> 2) & 1) != 0)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn init_low_unknown_3(&self) -> InitLowUnknown3R {
+                InitLowUnknown3R::new(((self.bits >> 3) & 1) != 0)
             }
             #[doc = "Bits 16:19"]
             #[inline(always)]
@@ -11842,10 +11935,27 @@ pub mod phy_baseband_config_oracle {
             }
         }
         impl W {
-            #[doc = "Bits 0:3"]
+            #[doc = "Bit 0"]
             #[inline(always)]
             pub fn init_low_unknown(&mut self) -> InitLowUnknownW<'_, BasebandInit7cd0Spec> {
                 InitLowUnknownW::new(self, 0)
+            }
+            #[doc = "Bit 1"]
+            #[inline(always)]
+            pub fn init_low_unknown_1(&mut self) -> InitLowUnknown1W<'_, BasebandInit7cd0Spec> {
+                InitLowUnknown1W::new(self, 1)
+            }
+            #[doc = "Bit 2 - Complete phy_btbb_wifi_bb_cfg2 preserves this bit while setting the other low-nibble bits."]
+            #[inline(always)]
+            pub fn init_low_bit_2_unknown(
+                &mut self,
+            ) -> InitLowBit2UnknownW<'_, BasebandInit7cd0Spec> {
+                InitLowBit2UnknownW::new(self, 2)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn init_low_unknown_3(&mut self) -> InitLowUnknown3W<'_, BasebandInit7cd0Spec> {
+                InitLowUnknown3W::new(self, 3)
             }
             #[doc = "Bits 16:19"]
             #[inline(always)]

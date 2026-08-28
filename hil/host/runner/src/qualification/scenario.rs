@@ -1550,6 +1550,36 @@ mod tests {
     }
 
     #[test]
+    fn checksum_control_changes_only_the_runtime_checksum_policy() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+        let catalog = Catalog::load(&root).unwrap();
+        let software = catalog
+            .get("udp-rx-ht40-task-poll-software-checksum-diagnostic")
+            .unwrap();
+        let assume_valid = catalog
+            .get("udp-rx-ht40-task-poll-no-rx-checksum-diagnostic")
+            .unwrap();
+
+        assert_eq!(software.rx_checksum, WifiRxChecksumPolicy::Software);
+        assert_eq!(
+            assume_valid.rx_checksum,
+            WifiRxChecksumPolicy::AssumeValidDiagnostic
+        );
+        assert_eq!(software.image, assume_valid.image);
+        assert_eq!(software.isolation, assume_valid.isolation);
+        assert_eq!(software.data_plane, assume_valid.data_plane);
+        assert_eq!(software.rx_admission, assume_valid.rx_admission);
+        assert_eq!(software.rx_dispatch, assume_valid.rx_dispatch);
+        assert_eq!(software.rx_continuation, assume_valid.rx_continuation);
+        assert_eq!(software.l1_cache_counters, assume_valid.l1_cache_counters);
+        assert_eq!(software.workload, assume_valid.workload);
+        assert_eq!(software.link, assume_valid.link);
+        assert_eq!(software.criteria, assume_valid.criteria);
+        assert_eq!(software.evidence, assume_valid.evidence);
+        assert_eq!(software.fixture_mutation, assume_valid.fixture_mutation);
+    }
+
+    #[test]
     fn ap_ht40_ceiling_separates_performance_from_observed_correctness() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
         let catalog = Catalog::load(&root).unwrap();

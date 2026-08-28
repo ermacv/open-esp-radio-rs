@@ -1577,6 +1577,14 @@
           <addressOffset>0x40</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
+          <fields>
+            <field>
+              <name>VALUE</name>
+              <description>Complete phy_read_rf_freq_mem returns this full read-only result to its caller.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+            </field>
+          </fields>
         </register>
         <register>
           <name>FBW_BT_FILTER_CONTROL</name>
@@ -1648,7 +1656,7 @@
           <access>read-write</access>
           <fields>
             <field>
-              <name>CHANNEL_OFFSET_UNKNOWN</name>
+              <name>CHANNEL_OFFSET_LOW_UNKNOWN</name>
               <bitOffset>0</bitOffset>
               <bitWidth>4</bitWidth>
               <writeConstraint>
@@ -1659,14 +1667,26 @@
               </writeConstraint>
             </field>
             <field>
-              <name>MINIMUM_POWER_INDEX</name>
-              <description>Complete hal_set_tx_min_pwr(-11) writes signed six-bit value 0x35.</description>
+              <name>CHANNEL_OFFSET_HIGH_OR_MINIMUM_POWER_LOW_UNKNOWN</name>
+              <description>Complete phy_bb_cbw_chan_cfg clears this shared nibble as the high half of its normalized channel-offset byte. Complete hal_set_tx_min_pwr(-11) independently writes the low nibble of signed six-bit value 0x35 here.</description>
               <bitOffset>4</bitOffset>
-              <bitWidth>6</bitWidth>
+              <bitWidth>4</bitWidth>
               <writeConstraint>
                 <range>
                   <minimum>0</minimum>
-                  <maximum>63</maximum>
+                  <maximum>15</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>MINIMUM_POWER_HIGH</name>
+              <description>High two bits of the signed six-bit minimum-power value. Complete hal_set_tx_min_pwr(-11) writes three.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>2</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>3</maximum>
                 </range>
               </writeConstraint>
             </field>

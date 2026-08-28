@@ -4262,9 +4262,13 @@ pub mod phy_frequency_channel_oracle {
     pub mod frequency_memory_read_result {
         #[doc = "Register `FREQUENCY_MEMORY_READ_RESULT` reader"]
         pub type R = crate::R<FrequencyMemoryReadResultSpec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `VALUE` reader - Complete phy_read_rf_freq_mem returns this full read-only result to its caller."]
+        pub type ValueR = crate::FieldReader<u32>;
+        impl R {
+            #[doc = "Bits 0:31 - Complete phy_read_rf_freq_mem returns this full read-only result to its caller."]
+            #[inline(always)]
+            pub fn value(&self) -> ValueR {
+                ValueR::new(self.bits)
             }
         }
         #[doc = "Complete phy_read_rf_freq_mem returns this full word after the read pulse; individual result fields are interpreted by the caller.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_memory_read_result::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -4422,14 +4426,20 @@ pub mod phy_frequency_channel_oracle {
         pub type R = crate::R<ChannelTxOffsetControlSpec>;
         #[doc = "Register `CHANNEL_TX_OFFSET_CONTROL` writer"]
         pub type W = crate::W<ChannelTxOffsetControlSpec>;
-        #[doc = "Field `CHANNEL_OFFSET_UNKNOWN` reader - "]
-        pub type ChannelOffsetUnknownR = crate::FieldReader;
-        #[doc = "Field `CHANNEL_OFFSET_UNKNOWN` writer - "]
-        pub type ChannelOffsetUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
-        #[doc = "Field `MINIMUM_POWER_INDEX` reader - Complete hal_set_tx_min_pwr(-11) writes signed six-bit value 0x35."]
-        pub type MinimumPowerIndexR = crate::FieldReader;
-        #[doc = "Field `MINIMUM_POWER_INDEX` writer - Complete hal_set_tx_min_pwr(-11) writes signed six-bit value 0x35."]
-        pub type MinimumPowerIndexW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
+        #[doc = "Field `CHANNEL_OFFSET_LOW_UNKNOWN` reader - "]
+        pub type ChannelOffsetLowUnknownR = crate::FieldReader;
+        #[doc = "Field `CHANNEL_OFFSET_LOW_UNKNOWN` writer - "]
+        pub type ChannelOffsetLowUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        #[doc = "Field `CHANNEL_OFFSET_HIGH_OR_MINIMUM_POWER_LOW_UNKNOWN` reader - Complete phy_bb_cbw_chan_cfg clears this shared nibble as the high half of its normalized channel-offset byte. Complete hal_set_tx_min_pwr(-11) independently writes the low nibble of signed six-bit value 0x35 here."]
+        pub type ChannelOffsetHighOrMinimumPowerLowUnknownR = crate::FieldReader;
+        #[doc = "Field `CHANNEL_OFFSET_HIGH_OR_MINIMUM_POWER_LOW_UNKNOWN` writer - Complete phy_bb_cbw_chan_cfg clears this shared nibble as the high half of its normalized channel-offset byte. Complete hal_set_tx_min_pwr(-11) independently writes the low nibble of signed six-bit value 0x35 here."]
+        pub type ChannelOffsetHighOrMinimumPowerLowUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        #[doc = "Field `MINIMUM_POWER_HIGH` reader - High two bits of the signed six-bit minimum-power value. Complete hal_set_tx_min_pwr(-11) writes three."]
+        pub type MinimumPowerHighR = crate::FieldReader;
+        #[doc = "Field `MINIMUM_POWER_HIGH` writer - High two bits of the signed six-bit minimum-power value. Complete hal_set_tx_min_pwr(-11) writes three."]
+        pub type MinimumPowerHighW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `HE_PARENT_ENABLE_UNKNOWN` reader - The complete HE init parent sets bit 17 through a separate fresh-read RMW."]
         pub type HeParentEnableUnknownR = crate::BitReader;
         #[doc = "Field `HE_PARENT_ENABLE_UNKNOWN` writer - The complete HE init parent sets bit 17 through a separate fresh-read RMW."]
@@ -4437,13 +4447,20 @@ pub mod phy_frequency_channel_oracle {
         impl R {
             #[doc = "Bits 0:3"]
             #[inline(always)]
-            pub fn channel_offset_unknown(&self) -> ChannelOffsetUnknownR {
-                ChannelOffsetUnknownR::new((self.bits & 0x0f) as u8)
+            pub fn channel_offset_low_unknown(&self) -> ChannelOffsetLowUnknownR {
+                ChannelOffsetLowUnknownR::new((self.bits & 0x0f) as u8)
             }
-            #[doc = "Bits 4:9 - Complete hal_set_tx_min_pwr(-11) writes signed six-bit value 0x35."]
+            #[doc = "Bits 4:7 - Complete phy_bb_cbw_chan_cfg clears this shared nibble as the high half of its normalized channel-offset byte. Complete hal_set_tx_min_pwr(-11) independently writes the low nibble of signed six-bit value 0x35 here."]
             #[inline(always)]
-            pub fn minimum_power_index(&self) -> MinimumPowerIndexR {
-                MinimumPowerIndexR::new(((self.bits >> 4) & 0x3f) as u8)
+            pub fn channel_offset_high_or_minimum_power_low_unknown(
+                &self,
+            ) -> ChannelOffsetHighOrMinimumPowerLowUnknownR {
+                ChannelOffsetHighOrMinimumPowerLowUnknownR::new(((self.bits >> 4) & 0x0f) as u8)
+            }
+            #[doc = "Bits 8:9 - High two bits of the signed six-bit minimum-power value. Complete hal_set_tx_min_pwr(-11) writes three."]
+            #[inline(always)]
+            pub fn minimum_power_high(&self) -> MinimumPowerHighR {
+                MinimumPowerHighR::new(((self.bits >> 8) & 3) as u8)
             }
             #[doc = "Bit 17 - The complete HE init parent sets bit 17 through a separate fresh-read RMW."]
             #[inline(always)]
@@ -4454,17 +4471,25 @@ pub mod phy_frequency_channel_oracle {
         impl W {
             #[doc = "Bits 0:3"]
             #[inline(always)]
-            pub fn channel_offset_unknown(
+            pub fn channel_offset_low_unknown(
                 &mut self,
-            ) -> ChannelOffsetUnknownW<'_, ChannelTxOffsetControlSpec> {
-                ChannelOffsetUnknownW::new(self, 0)
+            ) -> ChannelOffsetLowUnknownW<'_, ChannelTxOffsetControlSpec> {
+                ChannelOffsetLowUnknownW::new(self, 0)
             }
-            #[doc = "Bits 4:9 - Complete hal_set_tx_min_pwr(-11) writes signed six-bit value 0x35."]
+            #[doc = "Bits 4:7 - Complete phy_bb_cbw_chan_cfg clears this shared nibble as the high half of its normalized channel-offset byte. Complete hal_set_tx_min_pwr(-11) independently writes the low nibble of signed six-bit value 0x35 here."]
             #[inline(always)]
-            pub fn minimum_power_index(
+            pub fn channel_offset_high_or_minimum_power_low_unknown(
                 &mut self,
-            ) -> MinimumPowerIndexW<'_, ChannelTxOffsetControlSpec> {
-                MinimumPowerIndexW::new(self, 4)
+            ) -> ChannelOffsetHighOrMinimumPowerLowUnknownW<'_, ChannelTxOffsetControlSpec>
+            {
+                ChannelOffsetHighOrMinimumPowerLowUnknownW::new(self, 4)
+            }
+            #[doc = "Bits 8:9 - High two bits of the signed six-bit minimum-power value. Complete hal_set_tx_min_pwr(-11) writes three."]
+            #[inline(always)]
+            pub fn minimum_power_high(
+                &mut self,
+            ) -> MinimumPowerHighW<'_, ChannelTxOffsetControlSpec> {
+                MinimumPowerHighW::new(self, 8)
             }
             #[doc = "Bit 17 - The complete HE init parent sets bit 17 through a separate fresh-read RMW."]
             #[inline(always)]
@@ -57015,7 +57040,7 @@ pub mod zero_based_field_write {
 
     /// Write `FREQUENCY_QUOTIENT_OR_INIT_LOW_UNKNOWN`, `SHIFT_LOW_OR_INIT_HIGH_UNKNOWN`, `SHIFT_HIGH_UNKNOWN` in `PHY_FREQUENCY_CHANNEL_ORACLE`.`NRX_FREQUENCY_CONTROL` while publishing zero to every other register bit.
     #[inline]
-    pub fn nrx_frequency_image(
+    pub fn publish_nrx_frequency_fields(
         registers: &crate::PhyFrequencyChannelOracle,
         frequency_quotient_or_init_low_unknown_value: u32,
         shift_low_or_init_high_unknown_value: u8,

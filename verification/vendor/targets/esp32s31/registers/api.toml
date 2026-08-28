@@ -1493,7 +1493,7 @@ fields = ["NUMBER_ADDRESS_0_UNKNOWN", "NUMBER_ADDRESS_1_UNKNOWN", "NUMBER_ADDRES
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 
 [[zero-based-field-writes]]
-name = "nrx_frequency_image"
+name = "publish_nrx_frequency_fields"
 peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
 register = "NRX_FREQUENCY_CONTROL"
 fields = ["FREQUENCY_QUOTIENT_OR_INIT_LOW_UNKNOWN", "SHIFT_LOW_OR_INIT_HIGH_UNKNOWN", "SHIFT_HIGH_UNKNOWN"]

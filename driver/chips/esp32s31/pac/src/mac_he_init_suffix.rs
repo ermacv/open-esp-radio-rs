@@ -118,7 +118,12 @@ impl WifiRadioRegisters {
             .peripherals
             .phy_frequency_channel_oracle
             .channel_tx_offset_control()
-            .modify(|_, w| w.minimum_power_index().set(0x35));
+            .modify(|_, w| {
+                w.channel_offset_high_or_minimum_power_low_unknown()
+                    .set(5)
+                    .minimum_power_high()
+                    .set(3)
+            });
         init.he_default_control()
             .modify(|_, w| w.mpdu_length_offset().set(0x17c));
 

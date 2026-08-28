@@ -418,7 +418,13 @@ peripheral-type = "PhyFrequencyChannelOracle"
 peripheral-module = "phy_frequency_channel_oracle"
 scope = []
 register-method = "frequency_memory_read_result"
-fields = []
+
+[[registers.fields]]
+svd-name = "VALUE"
+method = "value"
+bit-offset = 0
+bit-width = 32
+access = "read-only"
 
 [[registers]]
 address = 537920512
@@ -15087,17 +15093,24 @@ scope = []
 register-method = "channel_tx_offset_control"
 
 [[registers.fields]]
-svd-name = "CHANNEL_OFFSET_UNKNOWN"
-method = "channel_offset_unknown"
+svd-name = "CHANNEL_OFFSET_LOW_UNKNOWN"
+method = "channel_offset_low_unknown"
 bit-offset = 0
 bit-width = 4
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "MINIMUM_POWER_INDEX"
-method = "minimum_power_index"
+svd-name = "CHANNEL_OFFSET_HIGH_OR_MINIMUM_POWER_LOW_UNKNOWN"
+method = "channel_offset_high_or_minimum_power_low_unknown"
 bit-offset = 4
-bit-width = 6
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "MINIMUM_POWER_HIGH"
+method = "minimum_power_high"
+bit-offset = 8
+bit-width = 2
 access = "read-write"
 
 [[registers.fields]]

@@ -4864,6 +4864,195 @@ value = 0
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_setup_argument"
+peripheral = "BT_V3_2_BASEBAND"
+register = "RX_SETUP_ARGUMENT"
+fields = [{ field = "ARGUMENT_0", source-bit-offset = 0 }]
+value = 4
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_setup_image"
+peripheral = "BT_V3_2_BASEBAND"
+register = "RX_SETUP_IMAGE_0"
+fields = [{ field = "CONFIG_IMAGE", source-bit-offset = 0 }]
+value = 0x0199a
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_setup_shared_control"
+peripheral = "SHARED_RADIO_INIT_CONTROL"
+register = "CONTROL"
+fields = [{ field = "BT_RX_SETUP_BIT_31_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_setup_control_1"
+peripheral = "BT_V3_2_BASEBAND"
+register = "RX_SETUP_CONTROL_1"
+fields = [{ field = "ENABLE", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_setup_agc_00d0_high"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_CONFIG_00D0"
+fields = [{ field = "CONFIG_VALUE_HIGH", source-bit-offset = 0 }]
+value = 20
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_setup_agc_00d0_low"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_CONFIG_00D0"
+fields = [{ field = "CONFIG_VALUE_LOW", source-bit-offset = 0 }]
+value = 20
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_setup_agc_00d4"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_CONFIG_00D4"
+fields = [{ field = "CONFIG_VALUE", source-bit-offset = 0 }]
+value = 0x3c0
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_setup_008c_bit_29_initial"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "RX_CONFIG_008C"
+fields = [{ field = "CONFIG_FORCE_ZERO_29", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_setup_0088_bit_29"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "RX_CONFIG_0088"
+fields = [{ field = "CONFIG_FORCE_ZERO_29", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_setup_0088_bit_18"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "RX_CONFIG_0088"
+fields = [{ field = "CONFIG_FORCE_ONE_18", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_setup_cca_1"
+peripheral = "BT_V3_2_BASEBAND"
+register = "TX_CCA_CONTROL_1"
+fields = [{ field = "RX_SETUP_ENABLE", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_setup_cca_2_disable"
+peripheral = "BT_V3_2_BASEBAND"
+register = "TX_CCA_CONTROL_2"
+fields = [{ field = "RX_SETUP_DISABLE", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_setup_cte_value"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "CTE_DC_SHIFT"
+fields = [{ field = "RX_CONFIG_VALUE", source-bit-offset = 0 }]
+value = 7
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_setup_cte_max"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "CTE_DC_SHIFT"
+fields = [{ field = "DC_SHIFT_MAX", source-bit-offset = 0 }]
+value = 7
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_setup_cca_2_enable"
+peripheral = "BT_V3_2_BASEBAND"
+register = "TX_CCA_CONTROL_2"
+fields = [{ field = "RX_SETUP_ENABLE", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_setup_004c_bit_26"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "RX_CONFIG_004C"
+fields = [{ field = "CONFIG_FORCE_ZERO_26", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_setup_008c_bit_29_final"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "RX_CONFIG_008C"
+fields = [{ field = "CONFIG_FORCE_ZERO_29", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_setup_control_0"
+peripheral = "BT_V3_2_BASEBAND"
+register = "RX_SETUP_CONTROL_0"
+fields = [{ field = "ENABLE", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_setup_zbbb_bit_8"
+peripheral = "ZBBB_RADIO_CONTROL"
+register = "RX_SETUP_CONTROL"
+fields = [{ field = "CONFIG_FORCE_ZERO_8", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_setup_zbbb_image"
+peripheral = "ZBBB_RADIO_CONTROL"
+register = "RX_SETUP_IMAGE"
+fields = [{ field = "CONFIG_IMAGE", source-bit-offset = 0 }]
+value = 0x001cb
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_setup_zbbb_low"
+peripheral = "ZBBB_RADIO_CONTROL"
+register = "RX_SETUP_CONTROL"
+fields = [{ field = "CONFIG_FORCE_ZERO_LOW", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_RX_SETUP"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

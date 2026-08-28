@@ -3503,6 +3503,168 @@ pub(crate) fn initialize_bluetooth_receive_correlator_final(
     crate::svd::field_replace_modify::initialize_bluetooth_receive_correlator_final(registers);
 }
 
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_setup_argument` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_setup_argument(registers: &crate::svd::BtV3_2Baseband) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_setup_argument(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_setup_image` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_setup_image(registers: &crate::svd::BtV3_2Baseband) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_setup_image(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_setup_shared_control` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_setup_shared_control(
+    registers: &crate::svd::SharedRadioInitControl,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_setup_shared_control(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_setup_control_1` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_setup_control_1(registers: &crate::svd::BtV3_2Baseband) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_setup_control_1(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_setup_agc_00d0_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_setup_agc_00d0_high(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_setup_agc_00d0_high(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_setup_agc_00d0_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_setup_agc_00d0_low(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_setup_agc_00d0_low(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_setup_agc_00d4` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_setup_agc_00d4(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_setup_agc_00d4(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_setup_008c_bit_29_initial` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_setup_008c_bit_29_initial(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_setup_008c_bit_29_initial(
+        registers,
+    );
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_setup_0088_bit_29` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_setup_0088_bit_29(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_setup_0088_bit_29(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_setup_0088_bit_18` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_setup_0088_bit_18(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_setup_0088_bit_18(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_setup_cca_1` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_setup_cca_1(registers: &crate::svd::BtV3_2Baseband) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_setup_cca_1(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_setup_cca_2_disable` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_setup_cca_2_disable(
+    registers: &crate::svd::BtV3_2Baseband,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_setup_cca_2_disable(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_setup_cte_value` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_setup_cte_value(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_setup_cte_value(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_setup_cte_max` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_setup_cte_max(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_setup_cte_max(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_setup_cca_2_enable` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_setup_cca_2_enable(
+    registers: &crate::svd::BtV3_2Baseband,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_setup_cca_2_enable(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_setup_004c_bit_26` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_setup_004c_bit_26(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_setup_004c_bit_26(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_setup_008c_bit_29_final` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_setup_008c_bit_29_final(
+    registers: &crate::svd::PhyBtagcRecovered,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_setup_008c_bit_29_final(
+        registers,
+    );
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_setup_control_0` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_setup_control_0(registers: &crate::svd::BtV3_2Baseband) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_setup_control_0(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_setup_zbbb_bit_8` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_setup_zbbb_bit_8(
+    registers: &crate::svd::ZbbbRadioControl,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_setup_zbbb_bit_8(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_setup_zbbb_image` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_setup_zbbb_image(
+    registers: &crate::svd::ZbbbRadioControl,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_setup_zbbb_image(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_setup_zbbb_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_setup_zbbb_low(
+    registers: &crate::svd::ZbbbRadioControl,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_setup_zbbb_low(registers);
+}
+
 /// Typed bridge for the reviewed `clear_bluetooth_scheduler_lock_modify_argument` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_bluetooth_scheduler_lock_modify_argument(

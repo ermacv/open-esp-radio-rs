@@ -150,77 +150,34 @@ impl BluetoothBasebandV2Transaction<'_> {
     }
 
     fn initialize_baseband_rx_setup(&self) {
-        self.bluetooth
-            .bt_v3_2_baseband
-            .rx_setup_argument()
-            .modify(|_, w| w.argument_0().set(4));
-        self.bluetooth
-            .bt_v3_2_baseband
-            .rx_setup_image_0()
-            .modify(|_, w| w.config_image().set(0x0199a));
-        self.shared_radio
-            .shared_radio_init_control
-            .control()
-            .modify(|_, w| w.bt_rx_setup_bit_31_unknown().clear_bit());
-        self.bluetooth
-            .bt_v3_2_baseband
-            .rx_setup_control_1()
-            .modify(|_, w| w.enable().set_bit());
+        let baseband = &self.bluetooth.bt_v3_2_baseband;
+        super::generated::initialize_bluetooth_receive_setup_argument(baseband);
+        super::generated::initialize_bluetooth_receive_setup_image(baseband);
+        super::generated::initialize_bluetooth_receive_setup_shared_control(
+            &self.shared_radio.shared_radio_init_control,
+        );
+        super::generated::initialize_bluetooth_receive_setup_control_1(baseband);
 
         let btagc = &self.radio_phy.phy_btagc_recovered;
-        btagc
-            .agc_config_00d0()
-            .modify(|_, w| w.config_value_high().set(20));
-        btagc
-            .agc_config_00d0()
-            .modify(|_, w| w.config_value_low().set(20));
-        btagc
-            .agc_config_00d4()
-            .modify(|_, w| w.config_value().set(0x3c0));
-        btagc
-            .rx_config_008c()
-            .modify(|_, w| w.config_force_zero_29().clear_bit());
-        btagc
-            .rx_config_0088()
-            .modify(|_, w| w.config_force_zero_29().clear_bit());
-        btagc
-            .rx_config_0088()
-            .modify(|_, w| w.config_force_one_18().set_bit());
-
-        let baseband = &self.bluetooth.bt_v3_2_baseband;
-        baseband
-            .tx_cca_control_1()
-            .modify(|_, w| w.rx_setup_enable().set_bit());
-        baseband
-            .tx_cca_control_2()
-            .modify(|_, w| w.rx_setup_disable().clear_bit());
-        btagc
-            .cte_dc_shift()
-            .modify(|_, w| w.rx_config_value().set(7));
-        btagc.cte_dc_shift().modify(|_, w| w.dc_shift_max().set(7));
-        baseband
-            .tx_cca_control_2()
-            .modify(|_, w| w.rx_setup_enable().set_bit());
-        btagc
-            .rx_config_004c()
-            .modify(|_, w| w.config_force_zero_26().clear_bit());
-        btagc
-            .rx_config_008c()
-            .modify(|_, w| w.config_force_zero_29().clear_bit());
-        baseband
-            .rx_setup_control_0()
-            .modify(|_, w| w.enable().set_bit());
+        super::generated::initialize_bluetooth_receive_setup_agc_00d0_high(btagc);
+        super::generated::initialize_bluetooth_receive_setup_agc_00d0_low(btagc);
+        super::generated::initialize_bluetooth_receive_setup_agc_00d4(btagc);
+        super::generated::initialize_bluetooth_receive_setup_008c_bit_29_initial(btagc);
+        super::generated::initialize_bluetooth_receive_setup_0088_bit_29(btagc);
+        super::generated::initialize_bluetooth_receive_setup_0088_bit_18(btagc);
+        super::generated::initialize_bluetooth_receive_setup_cca_1(baseband);
+        super::generated::initialize_bluetooth_receive_setup_cca_2_disable(baseband);
+        super::generated::initialize_bluetooth_receive_setup_cte_value(btagc);
+        super::generated::initialize_bluetooth_receive_setup_cte_max(btagc);
+        super::generated::initialize_bluetooth_receive_setup_cca_2_enable(baseband);
+        super::generated::initialize_bluetooth_receive_setup_004c_bit_26(btagc);
+        super::generated::initialize_bluetooth_receive_setup_008c_bit_29_final(btagc);
+        super::generated::initialize_bluetooth_receive_setup_control_0(baseband);
 
         let shared = &self.shared_radio.zbbb_radio_control;
-        shared
-            .rx_setup_control()
-            .modify(|_, w| w.config_force_zero_8().clear_bit());
-        shared
-            .rx_setup_image()
-            .modify(|_, w| w.config_image().set(0x001cb));
-        shared
-            .rx_setup_control()
-            .modify(|_, w| w.config_force_zero_low().set(0));
+        super::generated::initialize_bluetooth_receive_setup_zbbb_bit_8(shared);
+        super::generated::initialize_bluetooth_receive_setup_zbbb_image(shared);
+        super::generated::initialize_bluetooth_receive_setup_zbbb_low(shared);
     }
 
     fn initialize_receive_compensation(&self) {

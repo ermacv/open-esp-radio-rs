@@ -255,6 +255,121 @@ impl PhyForcedPowerIndex {
     }
 }
 
+/// Non-zero eleven-bit association identifier accepted by the reviewed HE association transaction.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacAssociationId(u32);
+
+impl MacAssociationId {
+    pub const MIN: u32 = 0x00000001;
+    pub const MAX: u32 = 0x000007ff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value >= 0x00000001 && value <= 0x000007ff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Three-bit minimum MPDU start-spacing value accepted by the reviewed HE association transaction.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacMinimumMpduStartSpacing(u32);
+
+impl MacMinimumMpduStartSpacing {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x00000007;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x00000007 {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Six-bit BSS color accepted by the reviewed HE BSSID lifecycle transaction.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacHeBssColor(u32);
+
+impl MacHeBssColor {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x0000003f;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x0000003f {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Three-bit Default PE Duration accepted by complete hal_he_set_default_pe.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacHeDefaultPacketExtensionDuration(u32);
+
+impl MacHeDefaultPacketExtensionDuration {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x00000007;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x00000007 {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Five-bit nominal packet-padding duration accepted by the reviewed HE peer transaction.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacHePacketPaddingDuration(u32);
+
+impl MacHePacketPaddingDuration {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x0000001f;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x0000001f {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Zero-based low-twenty-bit compressed SRAM pointer image ORed into one Bluetooth memory-list field after its separate clear transaction.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct BluetoothMemoryListPointerBits(u32);

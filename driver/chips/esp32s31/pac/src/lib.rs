@@ -136,10 +136,12 @@ pub use coex::{COEX_TIMER_COUNT, CoexTimerRegister};
 /// ```
 pub use generated::MacInterruptMask;
 pub use generated::{
-    CoexTimerClientValue, CoexTimerPtiValue, CoexTimerTickImage,
-    MacExtraSoftApRxBlockAckEntryIndex, MacInterface, MacItwtClearIndex, MacKeyEntryIndex, MacPti,
-    MacRxBlockAckEntryIndex, MacRxBlockAckStartingSequence, MacRxBlockAckTid, MacRxBlockAckWindow,
-    MacTxPtiCount, MacTxQueueIndex, ModemLowPowerClockDivider, PhyForcedPowerIndex,
+    CoexTimerClientValue, CoexTimerPtiValue, CoexTimerTickImage, MacAssociationId,
+    MacExtraSoftApRxBlockAckEntryIndex, MacHeBssColor, MacHeDefaultPacketExtensionDuration,
+    MacHePacketPaddingDuration, MacInterface, MacItwtClearIndex, MacKeyEntryIndex,
+    MacMinimumMpduStartSpacing, MacPti, MacRxBlockAckEntryIndex, MacRxBlockAckStartingSequence,
+    MacRxBlockAckTid, MacRxBlockAckWindow, MacTxPtiCount, MacTxQueueIndex,
+    ModemLowPowerClockDivider, PhyForcedPowerIndex,
 };
 
 const BLUETOOTH_MAIN_XTAL_LOW_POWER_DIVIDER: ModemLowPowerClockDivider =

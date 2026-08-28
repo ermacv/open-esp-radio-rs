@@ -15,13 +15,13 @@ pub use crate::types::{
     MacTxPtiCount, MacTxPtiProgram, MacTxQueueIndex, RxBlockAckEntrySnapshot,
 };
 use crate::types::{
-    MacExtraSoftApRxBlockAckEntryIndex, MacHe20PeerConfig, MacHe20PeerError,
+    MacAssociationId, MacExtraSoftApRxBlockAckEntryIndex, MacHe20PeerConfig, MacHe20PeerError,
     MacHeBeamformingReportProfile, MacHeErSuAckRateProfile, MacHeTbLinkReservation,
     MacHeTbProgramError, MacHeTbTidLimit, MacHeTid, MacHeTriggerRxDiagnostics,
     MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHtAmpduCompletionObservation, MacHtTxProgram,
-    MacKeyEntryIndex, MacLegacyTxProgram, MacRxBlockAckEntryIndex, MacRxBlockAckStartingSequence,
-    MacRxBlockAckTid, MacRxBlockAckWindow, MacTxCompletionObservation, MacTxDetachOutcome,
-    MacTxDetachReason, MacTxQueueDetached,
+    MacKeyEntryIndex, MacLegacyTxProgram, MacMinimumMpduStartSpacing, MacRxBlockAckEntryIndex,
+    MacRxBlockAckStartingSequence, MacRxBlockAckTid, MacRxBlockAckWindow,
+    MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
 };
 use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma, StableDmaRange};
 use open_esp_radio_esp32s31_coex::{
@@ -561,10 +561,10 @@ impl<'registers> WifiMacHal<'registers> {
     /// Program the reviewed HE20 association fields.
     pub fn program_he20_association(
         &mut self,
-        association_id: u16,
-        minimum_mpdu_start_spacing: u8,
+        association_id: MacAssociationId,
+        minimum_mpdu_start_spacing: MacMinimumMpduStartSpacing,
         bssid_index: u8,
-    ) -> Result<(), MacHe20PeerError> {
+    ) {
         self.pac_mut().program_he20_association(
             association_id,
             minimum_mpdu_start_spacing,

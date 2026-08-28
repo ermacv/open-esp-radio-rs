@@ -329,6 +329,41 @@ max = 63
 sources = ["ROM_REV0_PHY_FORCE_PWR_INDEX"]
 
 [[bounded-domains]]
+name = "MacAssociationId"
+description = "Non-zero eleven-bit association identifier accepted by the reviewed HE association transaction."
+min = 1
+max = 0x07ff
+sources = ["BLOB_LIBPP_HAL_HE_SET_MMSS_AND_AID"]
+
+[[bounded-domains]]
+name = "MacMinimumMpduStartSpacing"
+description = "Three-bit minimum MPDU start-spacing value accepted by the reviewed HE association transaction."
+min = 0
+max = 7
+sources = ["BLOB_LIBPP_HAL_HE_SET_MMSS_AND_AID"]
+
+[[bounded-domains]]
+name = "MacHeBssColor"
+description = "Six-bit BSS color accepted by the reviewed HE BSSID lifecycle transaction."
+min = 0
+max = 63
+sources = ["BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE"]
+
+[[bounded-domains]]
+name = "MacHeDefaultPacketExtensionDuration"
+description = "Three-bit Default PE Duration accepted by complete hal_he_set_default_pe."
+min = 0
+max = 7
+sources = ["BLOB_LIBPP_HAL_HE_SET_DEFAULT_PE"]
+
+[[bounded-domains]]
+name = "MacHePacketPaddingDuration"
+description = "Five-bit nominal packet-padding duration accepted by the reviewed HE peer transaction."
+min = 0
+max = 31
+sources = ["PROMOTED_HE20_PEER"]
+
+[[bounded-domains]]
 name = "BluetoothMemoryListPointerBits"
 description = "Zero-based low-twenty-bit compressed SRAM pointer image ORed into one Bluetooth memory-list field after its separate clear transaction."
 min = 0

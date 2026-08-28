@@ -902,8 +902,10 @@ pub struct He20PeerState {
     pub capability_prefix: [u8; HE_CAPABILITIES_IE_MIN_LEN],
     pub max_rate_code: u8,
     pub packet_padding_eight_us: u8,
-    pub operation_parameters: u32,
-    pub bss_color_information: u8,
+    pub default_packet_extension_duration: u8,
+    pub bss_color: u8,
+    pub bss_color_enabled: bool,
+    pub partial_bss_color: bool,
     pub basic_mcs_nss_map: u16,
     pub rts_threshold: Option<u16>,
     /// Raw HE Operation `ER-SU-Disable` bit.
@@ -1028,8 +1030,6 @@ pub fn parse_he20_peer_state(
         }
     };
 
-    let operation_parameters =
-        u32::from(operation[3]) | (u32::from(operation[4]) << 8) | (u32::from(operation[5]) << 16);
     let encoded_rts_threshold =
         (u16::from(operation[4] & 0x3f) << 4) | u16::from(operation[3] >> 4);
     let rts_threshold =
@@ -1039,8 +1039,10 @@ pub fn parse_he20_peer_state(
         capability_prefix,
         max_rate_code,
         packet_padding_eight_us,
-        operation_parameters,
-        bss_color_information: operation[6],
+        default_packet_extension_duration: operation[3] & 0x07,
+        bss_color: operation[6] & 0x3f,
+        bss_color_enabled: operation[6] & 0x80 == 0,
+        partial_bss_color: operation[6] & 0x40 != 0,
         basic_mcs_nss_map: u16::from_le_bytes([operation[7], operation[8]]),
         rts_threshold,
         extended_range_single_user_disabled: operation[5] & 0x01 != 0,
@@ -1471,8 +1473,10 @@ mod tests {
         let state = parse_he20_peer_state(&capability, &operation).unwrap();
         assert_eq!(state.max_rate_code, 229);
         assert_eq!(state.packet_padding_eight_us, 2);
-        assert_eq!(state.operation_parameters, 0x01_0004);
-        assert_eq!(state.bss_color_information, 27);
+        assert_eq!(state.default_packet_extension_duration, 4);
+        assert_eq!(state.bss_color, 27);
+        assert!(state.bss_color_enabled);
+        assert!(!state.partial_bss_color);
         assert_eq!(state.basic_mcs_nss_map, 0xfffc);
         assert_eq!(state.rts_threshold, None);
         assert!(state.extended_range_single_user_disabled);

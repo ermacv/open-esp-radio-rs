@@ -2,7 +2,10 @@
 
 #![forbid(unsafe_code)]
 
-use super::WifiRadioRegisters;
+use super::{
+    MacAssociationId, MacHeBssColor, MacHeDefaultPacketExtensionDuration,
+    MacHePacketPaddingDuration, MacMinimumMpduStartSpacing, WifiRadioRegisters,
+};
 
 /// Hardware-visible subset of one parsed HE20 peer.
 ///
@@ -12,15 +15,16 @@ use super::WifiRadioRegisters;
 /// this type keeps the chip-specific register transform inside the PAC.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacHe20PeerConfig {
-    pub packet_padding_eight_us: u8,
-    pub operation_parameters: u32,
-    pub bss_color_information: u8,
+    pub packet_padding_duration: MacHePacketPaddingDuration,
+    pub default_packet_extension_duration: MacHeDefaultPacketExtensionDuration,
+    pub bss_color: MacHeBssColor,
+    pub bss_color_enabled: bool,
+    pub partial_bss_color: bool,
     pub extended_range_single_user_disabled: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MacHe20PeerError {
-    InvalidAssociationId,
     UnsupportedRtsThreshold,
 }
 
@@ -64,19 +68,19 @@ impl WifiRadioRegisters {
 
         self.initialize_interface_zero_he_bssid();
         let init = &self.peripherals.wifi_mac.wifi_mac_he_init_suffix;
-        let color_information = config.bss_color_information;
-        if color_information & 0xbf != 0 {
-            let color = color_information & 0x3f;
-            let partial = color_information & 0x40 != 0;
-            let disabled = color_information & 0x80 != 0;
+        if config.bss_color.get() != 0 || !config.bss_color_enabled {
             let register = init.multi_bssid_control();
             register.modify(|_, w| {
                 w.bss_color()
-                    .set(if disabled { 0 } else { color })
+                    .set(if config.bss_color_enabled {
+                        config.bss_color.get() as u8
+                    } else {
+                        0
+                    })
                     .bss_color_enable()
-                    .bit(!disabled)
+                    .bit(config.bss_color_enabled)
                     .partial_bss_color_enable()
-                    .bit(partial)
+                    .bit(config.partial_bss_color)
             });
         }
 
@@ -87,10 +91,10 @@ impl WifiRadioRegisters {
             .modify(|_, w| w.color_bitmap_clear().set_bit());
         init.he_default_control().modify(|_, w| {
             w.default_pe_duration()
-                .set((config.operation_parameters & 0x07) as u8)
+                .set(config.default_packet_extension_duration.get() as u8)
         });
 
-        let duration = (config.packet_padding_eight_us << 3) & 0x1f;
+        let duration = config.packet_padding_duration.get() as u8;
         init.he_packet_padding().modify(|_, w| {
             w.bpsk_duration()
                 .set(duration)
@@ -129,30 +133,26 @@ impl WifiRadioRegisters {
     /// Association Response.
     pub fn program_he20_association(
         &mut self,
-        association_id: u16,
-        minimum_mpdu_start_spacing: u8,
+        association_id: MacAssociationId,
+        minimum_mpdu_start_spacing: MacMinimumMpduStartSpacing,
         bssid_index: u8,
-    ) -> Result<(), MacHe20PeerError> {
-        if association_id == 0 || association_id > 0x07ff {
-            return Err(MacHe20PeerError::InvalidAssociationId);
-        }
-
+    ) {
         self.peripherals
             .wifi_mac
             .wifi_mac_bssid_policy
             .bssid_high(0)
             .modify(|_, w| {
                 w.minimum_mpdu_start_spacing()
-                    .set(minimum_mpdu_start_spacing & 0x07)
+                    .set(minimum_mpdu_start_spacing.get() as u8)
                     .association_id()
-                    .set(association_id)
+                    .set(association_id.get() as u16)
             });
 
         let init = &self.peripherals.wifi_mac.wifi_mac_he_init_suffix;
         let broadcast_low = init.broadcast_ru_low();
         broadcast_low.modify(|_, w| {
             w.association_id()
-                .set(association_id)
+                .set(association_id.get() as u16)
                 .enable()
                 .set_bit()
                 .value()
@@ -170,6 +170,5 @@ impl WifiRadioRegisters {
                 .high_value()
                 .set(0)
         });
-        Ok(())
     }
 }

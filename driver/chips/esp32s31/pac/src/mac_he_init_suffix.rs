@@ -73,25 +73,6 @@ impl WifiRadioRegisters {
             .modify(|_, w| w.auto_ack_allow_ersu().bit(!disabled));
     }
 
-    /// Publish the associated BSS's HE Default PE Duration.
-    ///
-    /// SOURCE: complete pinned `libpp.a[hal_mac_ctl.o]`
-    /// `hal_he_set_default_pe` and
-    /// `libnet80211.a[ieee80211_he.o]`
-    /// `ieee80211_parse_heopr`. The first leaf replaces
-    /// `0x2010_4c80[2:0]`; the second passes HE Operation Parameters byte
-    /// zero bits 2:0. Vendor auth HIL for the target BSS consequently has
-    /// low bits `4`, while the old open path incorrectly left the reset
-    /// value `0`.
-    pub fn set_he_default_packet_extension_duration(&mut self, duration: u8) {
-        debug_assert!(duration < 8);
-        self.peripherals
-            .wifi_mac
-            .wifi_mac_he_init_suffix
-            .he_default_control()
-            .modify(|_, w| w.default_pe_duration().set(duration & 0x07));
-    }
-
     /// Apply the complete hardware-visible `hal_he_init` suffix.
     ///
     /// SOURCE: complete pinned `libpp.a[hal_mac_ctl.o]` parent and

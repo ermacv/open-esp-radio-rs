@@ -11,11 +11,12 @@ use open_esp_radio_esp32s31_hal::radio_arena::{
     Esp32s31ReclaimedRadioOwner,
 };
 use open_esp_radio_esp32s31_hal::types::{
-    MacHe20PeerConfig, MacHe20PeerError, MacHeBeamformingReportProfile, MacHeErSuAckRateProfile,
-    MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
-    MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHtAmpduCompletionObservation, MacHtTxProgram,
-    MacKeyInstallOutcome, MacLegacyTxProgram, MacRxDmaSnapshot, MacStaReceivePolicySnapshot,
-    MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
+    MacAssociationId, MacHe20PeerConfig, MacHe20PeerError, MacHeBeamformingReportProfile,
+    MacHeErSuAckRateProfile, MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit,
+    MacHeTid, MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHtAmpduCompletionObservation,
+    MacHtTxProgram, MacKeyInstallOutcome, MacLegacyTxProgram, MacMinimumMpduStartSpacing,
+    MacRxDmaSnapshot, MacStaReceivePolicySnapshot, MacTxCompletionObservation, MacTxDetachOutcome,
+    MacTxDetachReason, MacTxQueueDetached,
 };
 use open_esp_radio_esp32s31_hal::wifi_mac::WifiMacHal;
 use open_esp_radio_esp32s31_wifi_mac::sta_ap_registers::StaApRegisterHardware;
@@ -205,10 +206,10 @@ impl He20PeerHardware for CooperativeRadioHardware<'_> {
 
     fn program_he20_association(
         &mut self,
-        association_id: u16,
-        minimum_mpdu_start_spacing: u8,
+        association_id: MacAssociationId,
+        minimum_mpdu_start_spacing: MacMinimumMpduStartSpacing,
         bssid_index: u8,
-    ) -> Result<(), MacHe20PeerError> {
+    ) {
         He20PeerHardware::program_he20_association(
             &mut self.wifi_mac_hal(),
             association_id,

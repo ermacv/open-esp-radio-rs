@@ -272,7 +272,8 @@ impl Esp32s31StaPeerPort {
 mod tests {
     use super::*;
     use open_esp_radio_esp32s31_hal::types::{
-        MacHe20PeerConfig, MacHe20PeerError, MacHeBeamformingReportProfile, MacHeErSuAckRateProfile,
+        MacAssociationId, MacHe20PeerConfig, MacHe20PeerError, MacHeBeamformingReportProfile,
+        MacHeErSuAckRateProfile, MacMinimumMpduStartSpacing,
     };
     use open_esp_radio_esp32s31_wifi_mac::{
         rate_schedule::RateScheduleKind,
@@ -348,12 +349,11 @@ mod tests {
 
         fn program_he20_association(
             &mut self,
-            association_id: u16,
-            _minimum_mpdu_start_spacing: u8,
+            association_id: MacAssociationId,
+            _minimum_mpdu_start_spacing: MacMinimumMpduStartSpacing,
             _bssid_index: u8,
-        ) -> Result<(), MacHe20PeerError> {
-            self.push(Event::HeAssociation(association_id));
-            Ok(())
+        ) {
+            self.push(Event::HeAssociation(association_id.get() as u16));
         }
 
         fn initialize_he_buffer_status_report(&mut self) {

@@ -664,6 +664,13 @@ bit-offset = 24
 bit-width = 4
 access = "read-write"
 
+[[registers.fields]]
+svd-name = "HIGH_NIBBLE_UNKNOWN"
+method = "high_nibble_unknown"
+bit-offset = 28
+bit-width = 4
+access = "read-write"
+
 [[registers]]
 address = 537920544
 width = 32
@@ -708,6 +715,13 @@ svd-name = "LOW_IMAGE_REMAINDER_UNKNOWN"
 method = "low_image_remainder_unknown"
 bit-offset = 19
 bit-width = 9
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HIGH_NIBBLE_UNKNOWN"
+method = "high_nibble_unknown"
+bit-offset = 28
+bit-width = 4
 access = "read-write"
 
 [[registers]]

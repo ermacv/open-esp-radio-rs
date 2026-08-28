@@ -8664,15 +8664,17 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `SELECTOR_HIGH` reader - Upper eight bits of the evidenced ten-bit selector; bits 1:0 are in TONE_SELECTOR_CONTROL."]
         pub type SelectorHighR = crate::FieldReader;
         #[doc = "Field `SELECTOR_HIGH` writer - Upper eight bits of the evidenced ten-bit selector; bits 1:0 are in TONE_SELECTOR_CONTROL."]
-        pub type SelectorHighW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type SelectorHighW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `LOW_RESERVED_CLEAR_UNKNOWN` reader - Complete tone writers clear these bits; their hardware meaning is unknown."]
         pub type LowReservedClearUnknownR = crate::FieldReader;
         #[doc = "Field `LOW_RESERVED_CLEAR_UNKNOWN` writer - Complete tone writers clear these bits; their hardware meaning is unknown."]
-        pub type LowReservedClearUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type LowReservedClearUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `NEGATED_STEP_OR_ATTENUATION` reader - Two's-complement negated eight-bit tone step or attenuation."]
         pub type NegatedStepOrAttenuationR = crate::FieldReader;
         #[doc = "Field `NEGATED_STEP_OR_ATTENUATION` writer - Two's-complement negated eight-bit tone step or attenuation."]
-        pub type NegatedStepOrAttenuationW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type NegatedStepOrAttenuationW<'a, REG> =
+            crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `TONE_ENABLE_OR_ARM` reader - Set by tone start and by each PWDET sample-arm edge; cleared by stop and sample cleanup."]
         pub type ToneEnableOrArmR = crate::BitReader;
         #[doc = "Field `TONE_ENABLE_OR_ARM` writer - Set by tone start and by each PWDET sample-arm edge; cleared by stop and sample cleanup."]
@@ -8680,15 +8682,21 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `TXIQ_MISMATCH_MODE_UNKNOWN` reader - Three-bit image set to binary 101 for the first mismatch-power polarity and otherwise cleared by general tone setup."]
         pub type TxiqMismatchModeUnknownR = crate::FieldReader;
         #[doc = "Field `TXIQ_MISMATCH_MODE_UNKNOWN` writer - Three-bit image set to binary 101 for the first mismatch-power polarity and otherwise cleared by general tone setup."]
-        pub type TxiqMismatchModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        pub type TxiqMismatchModeUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
         #[doc = "Field `MIDDLE_RESERVED_CLEAR_UNKNOWN` reader - Complete general and first-polarity tone writers clear these bits."]
         pub type MiddleReservedClearUnknownR = crate::FieldReader;
         #[doc = "Field `MIDDLE_RESERVED_CLEAR_UNKNOWN` writer - Complete general and first-polarity tone writers clear these bits."]
-        pub type MiddleReservedClearUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type MiddleReservedClearUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `TXIQ_POLARITY_IMAGE` reader - Four-bit mismatch polarity image: first configuration writes bit 26, while the second phase writes nibble 1 or 8."]
         pub type TxiqPolarityImageR = crate::FieldReader;
         #[doc = "Field `TXIQ_POLARITY_IMAGE` writer - Four-bit mismatch polarity image: first configuration writes bit 26, while the second phase writes nibble 1 or 8."]
-        pub type TxiqPolarityImageW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type TxiqPolarityImageW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        #[doc = "Field `HIGH_NIBBLE_UNKNOWN` reader - High nibble preserved by all recovered tone updates and retained by the TX-IQ save/restore transaction."]
+        pub type HighNibbleUnknownR = crate::FieldReader;
+        #[doc = "Field `HIGH_NIBBLE_UNKNOWN` writer - High nibble preserved by all recovered tone updates and retained by the TX-IQ save/restore transaction."]
+        pub type HighNibbleUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:7 - Upper eight bits of the evidenced ten-bit selector; bits 1:0 are in TONE_SELECTOR_CONTROL."]
             #[inline(always)]
@@ -8724,6 +8732,11 @@ pub mod phy_baseband_config_oracle {
             #[inline(always)]
             pub fn txiq_polarity_image(&self) -> TxiqPolarityImageR {
                 TxiqPolarityImageR::new(((self.bits >> 24) & 0x0f) as u8)
+            }
+            #[doc = "Bits 28:31 - High nibble preserved by all recovered tone updates and retained by the TX-IQ save/restore transaction."]
+            #[inline(always)]
+            pub fn high_nibble_unknown(&self) -> HighNibbleUnknownR {
+                HighNibbleUnknownR::new(((self.bits >> 28) & 0x0f) as u8)
             }
         }
         impl W {
@@ -8770,6 +8783,11 @@ pub mod phy_baseband_config_oracle {
             pub fn txiq_polarity_image(&mut self) -> TxiqPolarityImageW<'_, TonePath0ControlSpec> {
                 TxiqPolarityImageW::new(self, 24)
             }
+            #[doc = "Bits 28:31 - High nibble preserved by all recovered tone updates and retained by the TX-IQ save/restore transaction."]
+            #[inline(always)]
+            pub fn high_nibble_unknown(&mut self) -> HighNibbleUnknownW<'_, TonePath0ControlSpec> {
+                HighNibbleUnknownW::new(self, 28)
+            }
         }
         #[doc = "First calibration-tone path word. Complete source bodies prove the packed selector, negated step or attenuation, enable/arm bit and TX-IQ mismatch images; the high nibble is preserved and remains electrically unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`tone_path_0_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tone_path_0_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct TonePath0ControlSpec;
@@ -8792,26 +8810,205 @@ pub mod phy_baseband_config_oracle {
         pub type R = crate::R<TonePath1ControlSpec>;
         #[doc = "Register `TONE_PATH_1_CONTROL` writer"]
         pub type W = crate::W<TonePath1ControlSpec>;
+        #[doc = ""]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum SecondToneSelectorHigh {
+            #[doc = "0: `0`"]
+            Cleared = 0,
+        }
+        impl From<SecondToneSelectorHigh> for u8 {
+            #[inline(always)]
+            fn from(variant: SecondToneSelectorHigh) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for SecondToneSelectorHigh {
+            type Ux = u8;
+        }
+        impl crate::IsEnum for SecondToneSelectorHigh {}
         #[doc = "Field `SELECTOR_HIGH` reader - "]
-        pub type SelectorHighR = crate::FieldReader;
+        pub type SelectorHighR = crate::FieldReader<SecondToneSelectorHigh>;
+        impl SelectorHighR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<SecondToneSelectorHigh> {
+                match self.bits {
+                    0 => Some(SecondToneSelectorHigh::Cleared),
+                    _ => None,
+                }
+            }
+            #[doc = "`0`"]
+            #[inline(always)]
+            pub fn is_cleared(&self) -> bool {
+                *self == SecondToneSelectorHigh::Cleared
+            }
+        }
         #[doc = "Field `SELECTOR_HIGH` writer - "]
-        pub type SelectorHighW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type SelectorHighW<'a, REG> = crate::FieldWriter<'a, REG, 8, SecondToneSelectorHigh>;
+        impl<'a, REG> SelectorHighW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u8>,
+        {
+            #[doc = "`0`"]
+            #[inline(always)]
+            pub fn cleared(self) -> &'a mut crate::W<REG> {
+                self.variant(SecondToneSelectorHigh::Cleared)
+            }
+        }
+        #[doc = ""]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum SecondToneLowReserved {
+            #[doc = "0: `0`"]
+            Cleared = 0,
+        }
+        impl From<SecondToneLowReserved> for u8 {
+            #[inline(always)]
+            fn from(variant: SecondToneLowReserved) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for SecondToneLowReserved {
+            type Ux = u8;
+        }
+        impl crate::IsEnum for SecondToneLowReserved {}
         #[doc = "Field `LOW_RESERVED_CLEAR_UNKNOWN` reader - "]
-        pub type LowReservedClearUnknownR = crate::FieldReader;
+        pub type LowReservedClearUnknownR = crate::FieldReader<SecondToneLowReserved>;
+        impl LowReservedClearUnknownR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<SecondToneLowReserved> {
+                match self.bits {
+                    0 => Some(SecondToneLowReserved::Cleared),
+                    _ => None,
+                }
+            }
+            #[doc = "`0`"]
+            #[inline(always)]
+            pub fn is_cleared(&self) -> bool {
+                *self == SecondToneLowReserved::Cleared
+            }
+        }
         #[doc = "Field `LOW_RESERVED_CLEAR_UNKNOWN` writer - "]
-        pub type LowReservedClearUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type LowReservedClearUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 2, SecondToneLowReserved>;
+        impl<'a, REG> LowReservedClearUnknownW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u8>,
+        {
+            #[doc = "`0`"]
+            #[inline(always)]
+            pub fn cleared(self) -> &'a mut crate::W<REG> {
+                self.variant(SecondToneLowReserved::Cleared)
+            }
+        }
+        #[doc = ""]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum SecondToneNegatedStep {
+            #[doc = "0: `0`"]
+            Cleared = 0,
+        }
+        impl From<SecondToneNegatedStep> for u8 {
+            #[inline(always)]
+            fn from(variant: SecondToneNegatedStep) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for SecondToneNegatedStep {
+            type Ux = u8;
+        }
+        impl crate::IsEnum for SecondToneNegatedStep {}
         #[doc = "Field `NEGATED_STEP_OR_ATTENUATION` reader - "]
-        pub type NegatedStepOrAttenuationR = crate::FieldReader;
+        pub type NegatedStepOrAttenuationR = crate::FieldReader<SecondToneNegatedStep>;
+        impl NegatedStepOrAttenuationR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<SecondToneNegatedStep> {
+                match self.bits {
+                    0 => Some(SecondToneNegatedStep::Cleared),
+                    _ => None,
+                }
+            }
+            #[doc = "`0`"]
+            #[inline(always)]
+            pub fn is_cleared(&self) -> bool {
+                *self == SecondToneNegatedStep::Cleared
+            }
+        }
         #[doc = "Field `NEGATED_STEP_OR_ATTENUATION` writer - "]
-        pub type NegatedStepOrAttenuationW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type NegatedStepOrAttenuationW<'a, REG> =
+            crate::FieldWriter<'a, REG, 8, SecondToneNegatedStep>;
+        impl<'a, REG> NegatedStepOrAttenuationW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u8>,
+        {
+            #[doc = "`0`"]
+            #[inline(always)]
+            pub fn cleared(self) -> &'a mut crate::W<REG> {
+                self.variant(SecondToneNegatedStep::Cleared)
+            }
+        }
         #[doc = "Field `TONE_ENABLE_OR_ARM` reader - "]
         pub type ToneEnableOrArmR = crate::BitReader;
         #[doc = "Field `TONE_ENABLE_OR_ARM` writer - "]
         pub type ToneEnableOrArmW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = ""]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u16)]
+        pub enum SecondToneLowImageRemainder {
+            #[doc = "0: `0`"]
+            Cleared = 0,
+        }
+        impl From<SecondToneLowImageRemainder> for u16 {
+            #[inline(always)]
+            fn from(variant: SecondToneLowImageRemainder) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for SecondToneLowImageRemainder {
+            type Ux = u16;
+        }
+        impl crate::IsEnum for SecondToneLowImageRemainder {}
         #[doc = "Field `LOW_IMAGE_REMAINDER_UNKNOWN` reader - "]
-        pub type LowImageRemainderUnknownR = crate::FieldReader<u16>;
+        pub type LowImageRemainderUnknownR = crate::FieldReader<SecondToneLowImageRemainder>;
+        impl LowImageRemainderUnknownR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<SecondToneLowImageRemainder> {
+                match self.bits {
+                    0 => Some(SecondToneLowImageRemainder::Cleared),
+                    _ => None,
+                }
+            }
+            #[doc = "`0`"]
+            #[inline(always)]
+            pub fn is_cleared(&self) -> bool {
+                *self == SecondToneLowImageRemainder::Cleared
+            }
+        }
         #[doc = "Field `LOW_IMAGE_REMAINDER_UNKNOWN` writer - "]
-        pub type LowImageRemainderUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 9, u16>;
+        pub type LowImageRemainderUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 9, SecondToneLowImageRemainder>;
+        impl<'a, REG> LowImageRemainderUnknownW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u16>,
+        {
+            #[doc = "`0`"]
+            #[inline(always)]
+            pub fn cleared(self) -> &'a mut crate::W<REG> {
+                self.variant(SecondToneLowImageRemainder::Cleared)
+            }
+        }
+        #[doc = "Field `HIGH_NIBBLE_UNKNOWN` reader - High nibble preserved by all recovered second-path tone updates."]
+        pub type HighNibbleUnknownR = crate::FieldReader;
+        #[doc = "Field `HIGH_NIBBLE_UNKNOWN` writer - High nibble preserved by all recovered second-path tone updates."]
+        pub type HighNibbleUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:7"]
             #[inline(always)]
@@ -8837,6 +9034,11 @@ pub mod phy_baseband_config_oracle {
             #[inline(always)]
             pub fn low_image_remainder_unknown(&self) -> LowImageRemainderUnknownR {
                 LowImageRemainderUnknownR::new(((self.bits >> 19) & 0x01ff) as u16)
+            }
+            #[doc = "Bits 28:31 - High nibble preserved by all recovered second-path tone updates."]
+            #[inline(always)]
+            pub fn high_nibble_unknown(&self) -> HighNibbleUnknownR {
+                HighNibbleUnknownR::new(((self.bits >> 28) & 0x0f) as u8)
             }
         }
         impl W {
@@ -8870,6 +9072,11 @@ pub mod phy_baseband_config_oracle {
                 &mut self,
             ) -> LowImageRemainderUnknownW<'_, TonePath1ControlSpec> {
                 LowImageRemainderUnknownW::new(self, 19)
+            }
+            #[doc = "Bits 28:31 - High nibble preserved by all recovered second-path tone updates."]
+            #[inline(always)]
+            pub fn high_nibble_unknown(&mut self) -> HighNibbleUnknownW<'_, TonePath1ControlSpec> {
+                HighNibbleUnknownW::new(self, 28)
             }
         }
         #[doc = "Second calibration-tone path word. All currently evidenced calls publish a disabled zero low image while preserving the high nibble.\n\nYou can [`read`](crate::Reg::read) this register and get [`tone_path_1_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`tone_path_1_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -57467,65 +57674,6 @@ pub mod w1c_register_snapshot {
     }
 }
 
-/// Safe, SVD-declared observations of complete ordinary-register images.
-pub mod register_image_read {
-
-    /// Capture the complete image of `PHY_BASEBAND_CONFIG_ORACLE`.`TONE_PATH_0_CONTROL`.
-    #[inline]
-    pub fn snapshot_txiq_tone_control(registers: &crate::PhyBasebandConfigOracle) -> u32 {
-        registers.tone_path_0_control().read().bits()
-    }
-}
-
-/// Safe, SVD-declared writes of dynamic complete-register images.
-pub mod register_image_write {
-
-    /// Publish a caller-built complete image to `PHY_BASEBAND_CONFIG_ORACLE`.`POWER_DETECTOR_TABLE_1`.
-    #[inline]
-    pub fn publish_power_detector_table_1_image(
-        registers: &crate::PhyBasebandConfigOracle,
-        image: u32,
-    ) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register. The SVD extension and
-        // its provenance qualify this semantic whole-image operation.
-        unsafe {
-            registers
-                .power_detector_table_1()
-                .write_with_zero(|writer| writer.bits(image));
-        }
-    }
-
-    /// Publish a caller-built complete image to `PHY_BASEBAND_CONFIG_ORACLE`.`POWER_DETECTOR_CONTROL`.
-    #[inline]
-    pub fn publish_power_detector_control_image(
-        registers: &crate::PhyBasebandConfigOracle,
-        image: u32,
-    ) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register. The SVD extension and
-        // its provenance qualify this semantic whole-image operation.
-        unsafe {
-            registers
-                .power_detector_control()
-                .write_with_zero(|writer| writer.bits(image));
-        }
-    }
-
-    /// Publish a caller-built complete image to `PHY_BASEBAND_CONFIG_ORACLE`.`TONE_PATH_0_CONTROL`.
-    #[inline]
-    pub fn restore_txiq_tone_control(registers: &crate::PhyBasebandConfigOracle, image: u32) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register. The SVD extension and
-        // its provenance qualify this semantic whole-image operation.
-        unsafe {
-            registers
-                .tone_path_0_control()
-                .write_with_zero(|writer| writer.bits(image));
-        }
-    }
-}
-
 /// Safe, SVD-declared field writes based on an all-zero register image.
 pub mod zero_based_field_write {
 
@@ -59115,56 +59263,6 @@ pub mod masked_register_modify {
     pub fn publish_pbus_force_test(registers: &crate::PhyPbus, input: u32) {
         registers.command().modify(|reader, writer| {
             let image = (reader.bits() & 0xfffe0001) | (input & 0x0001fffc) | 0x00000002;
-            // SAFETY: generator validation proves the three masks are
-            // disjoint and partition every bit of this ordinary register.
-            unsafe { writer.bits(image) }
-        });
-    }
-
-    /// Preserve mask 0xf0000000, accept input mask 0x0fffffff, and set 0x00000000 in PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_0_CONTROL.
-    #[inline]
-    pub fn publish_tone_path_0_image(registers: &crate::PhyBasebandConfigOracle, input: u32) {
-        registers.tone_path_0_control().modify(|reader, writer| {
-            let image = (reader.bits() & 0xf0000000) | (input & 0x0fffffff);
-            // SAFETY: generator validation proves the three masks are
-            // disjoint and partition every bit of this ordinary register.
-            unsafe { writer.bits(image) }
-        });
-    }
-
-    /// Preserve mask 0xf0000000, accept input mask 0x0fffffff, and set 0x00000000 in PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_1_CONTROL.
-    #[inline]
-    pub fn publish_tone_path_1_image(registers: &crate::PhyBasebandConfigOracle, input: u32) {
-        registers.tone_path_1_control().modify(|reader, writer| {
-            let image = (reader.bits() & 0xf0000000) | (input & 0x0fffffff);
-            // SAFETY: generator validation proves the three masks are
-            // disjoint and partition every bit of this ordinary register.
-            unsafe { writer.bits(image) }
-        });
-    }
-
-    /// Preserve mask 0xf0000000, accept input mask 0x0fffffff, and set 0x00000000 in PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_0_CONTROL.
-    #[inline]
-    pub fn publish_txiq_first_mismatch_image(
-        registers: &crate::PhyBasebandConfigOracle,
-        input: u32,
-    ) {
-        registers.tone_path_0_control().modify(|reader, writer| {
-            let image = (reader.bits() & 0xf0000000) | (input & 0x0fffffff);
-            // SAFETY: generator validation proves the three masks are
-            // disjoint and partition every bit of this ordinary register.
-            unsafe { writer.bits(image) }
-        });
-    }
-
-    /// Preserve mask 0xf0ffffff, accept input mask 0x0f000000, and set 0x00000000 in PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_0_CONTROL.
-    #[inline]
-    pub fn publish_txiq_second_mismatch_image(
-        registers: &crate::PhyBasebandConfigOracle,
-        input: u32,
-    ) {
-        registers.tone_path_0_control().modify(|reader, writer| {
-            let image = (reader.bits() & 0xf0ffffff) | (input & 0x0f000000);
             // SAFETY: generator validation proves the three masks are
             // disjoint and partition every bit of this ordinary register.
             unsafe { writer.bits(image) }

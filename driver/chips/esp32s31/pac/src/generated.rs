@@ -902,123 +902,11 @@ impl AgcSaturationGainHigh {
     }
 }
 
-/// Register-specific power-detector table image preserved and restored by calibration.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct PowerDetectorTable1Image(u32);
-
-impl PowerDetectorTable1Image {
-    /// Wrap one register-specific opaque value.
-    pub const fn new(value: u32) -> Self {
-        Self(value)
-    }
-
-    /// Return the opaque numeric image.
-    pub const fn get(self) -> u32 {
-        self.0
-    }
-}
-
-/// Register-specific power-detector control image preserved and restored by calibration.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct PowerDetectorControlImage(u32);
-
-impl PowerDetectorControlImage {
-    /// Wrap one register-specific opaque value.
-    pub const fn new(value: u32) -> Self {
-        Self(value)
-    }
-
-    /// Return the opaque numeric image.
-    pub const fn get(self) -> u32 {
-        self.0
-    }
-}
-
-/// Register-specific TXIQ tone-control snapshot restored by the calibration capability.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct TxiqToneControlImage(u32);
-
-impl TxiqToneControlImage {
-    /// Wrap one register-specific opaque value.
-    pub const fn new(value: u32) -> Self {
-        Self(value)
-    }
-
-    /// Return the opaque numeric image.
-    pub const fn get(self) -> u32 {
-        self.0
-    }
-}
-
 /// Register-specific caller-controlled portion of one recovered PBus force-test command.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct PbusForceTestInput(u32);
 
 impl PbusForceTestInput {
-    /// Wrap one register-specific opaque value.
-    pub const fn new(value: u32) -> Self {
-        Self(value)
-    }
-
-    /// Return the opaque numeric image.
-    pub const fn get(self) -> u32 {
-        self.0
-    }
-}
-
-/// Register-specific low 28-bit tone-path zero input before preserved high control bits are merged.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct TonePath0MaskedInput(u32);
-
-impl TonePath0MaskedInput {
-    /// Wrap one register-specific opaque value.
-    pub const fn new(value: u32) -> Self {
-        Self(value)
-    }
-
-    /// Return the opaque numeric image.
-    pub const fn get(self) -> u32 {
-        self.0
-    }
-}
-
-/// Register-specific low 28-bit second tone-path input before preserved high control bits are merged.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct TonePath1MaskedInput(u32);
-
-impl TonePath1MaskedInput {
-    /// Wrap one register-specific opaque value.
-    pub const fn new(value: u32) -> Self {
-        Self(value)
-    }
-
-    /// Return the opaque numeric image.
-    pub const fn get(self) -> u32 {
-        self.0
-    }
-}
-
-/// Register-specific low 28-bit input for the first TXIQ mismatch measurement edge.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct TxiqFirstMismatchInput(u32);
-
-impl TxiqFirstMismatchInput {
-    /// Wrap one register-specific opaque value.
-    pub const fn new(value: u32) -> Self {
-        Self(value)
-    }
-
-    /// Return the opaque numeric image.
-    pub const fn get(self) -> u32 {
-        self.0
-    }
-}
-
-/// Register-specific bits 27:24 input for the second TXIQ mismatch measurement edge.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct TxiqSecondMismatchInput(u32);
-
-impl TxiqSecondMismatchInput {
     /// Wrap one register-specific opaque value.
     pub const fn new(value: u32) -> Self {
         Self(value)
@@ -1177,43 +1065,6 @@ pub(crate) fn publish_ieee802154_rx_dma_address(
     crate::svd::full_register_write::publish_ieee802154_rx_dma_address(registers, value.get());
 }
 
-/// Typed bridge for the reviewed `snapshot_txiq_tone_control` complete-image observation.
-#[inline]
-pub(crate) fn snapshot_txiq_tone_control(
-    registers: &crate::svd::PhyBasebandConfigOracle,
-) -> TxiqToneControlImage {
-    TxiqToneControlImage::new(crate::svd::register_image_read::snapshot_txiq_tone_control(
-        registers,
-    ))
-}
-
-/// Typed bridge for the reviewed `publish_power_detector_table_1_image` complete-image transaction.
-#[inline]
-pub(crate) fn publish_power_detector_table_1_image(
-    registers: &crate::svd::PhyBasebandConfigOracle,
-    value: PowerDetectorTable1Image,
-) {
-    crate::svd::register_image_write::publish_power_detector_table_1_image(registers, value.get());
-}
-
-/// Typed bridge for the reviewed `publish_power_detector_control_image` complete-image transaction.
-#[inline]
-pub(crate) fn publish_power_detector_control_image(
-    registers: &crate::svd::PhyBasebandConfigOracle,
-    value: PowerDetectorControlImage,
-) {
-    crate::svd::register_image_write::publish_power_detector_control_image(registers, value.get());
-}
-
-/// Typed bridge for the reviewed `restore_txiq_tone_control` complete-image transaction.
-#[inline]
-pub(crate) fn restore_txiq_tone_control(
-    registers: &crate::svd::PhyBasebandConfigOracle,
-    value: TxiqToneControlImage,
-) {
-    crate::svd::register_image_write::restore_txiq_tone_control(registers, value.get());
-}
-
 /// Typed bridge for the reviewed `publish_station_tbtt_target` masked transaction.
 #[inline]
 pub(crate) fn publish_station_tbtt_target(
@@ -1332,42 +1183,6 @@ pub(crate) fn set_ieee802154_rx_on_delay(
 #[inline]
 pub(crate) fn publish_pbus_force_test(registers: &crate::svd::PhyPbus, value: PbusForceTestInput) {
     crate::svd::masked_register_modify::publish_pbus_force_test(registers, value.get());
-}
-
-/// Typed bridge for the reviewed `publish_tone_path_0_image` masked transaction.
-#[inline]
-pub(crate) fn publish_tone_path_0_image(
-    registers: &crate::svd::PhyBasebandConfigOracle,
-    value: TonePath0MaskedInput,
-) {
-    crate::svd::masked_register_modify::publish_tone_path_0_image(registers, value.get());
-}
-
-/// Typed bridge for the reviewed `publish_tone_path_1_image` masked transaction.
-#[inline]
-pub(crate) fn publish_tone_path_1_image(
-    registers: &crate::svd::PhyBasebandConfigOracle,
-    value: TonePath1MaskedInput,
-) {
-    crate::svd::masked_register_modify::publish_tone_path_1_image(registers, value.get());
-}
-
-/// Typed bridge for the reviewed `publish_txiq_first_mismatch_image` masked transaction.
-#[inline]
-pub(crate) fn publish_txiq_first_mismatch_image(
-    registers: &crate::svd::PhyBasebandConfigOracle,
-    value: TxiqFirstMismatchInput,
-) {
-    crate::svd::masked_register_modify::publish_txiq_first_mismatch_image(registers, value.get());
-}
-
-/// Typed bridge for the reviewed `publish_txiq_second_mismatch_image` masked transaction.
-#[inline]
-pub(crate) fn publish_txiq_second_mismatch_image(
-    registers: &crate::svd::PhyBasebandConfigOracle,
-    value: TxiqSecondMismatchInput,
-) {
-    crate::svd::masked_register_modify::publish_txiq_second_mismatch_image(registers, value.get());
 }
 
 /// Typed bridge for the reviewed `publish_mac_rx_beacon_pti` masked transaction.

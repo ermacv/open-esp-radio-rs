@@ -3370,18 +3370,36 @@
               <description>Upper eight bits of the evidenced ten-bit selector; bits 1:0 are in TONE_SELECTOR_CONTROL.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>8</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>255</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>LOW_RESERVED_CLEAR_UNKNOWN</name>
               <description>Complete tone writers clear these bits; their hardware meaning is unknown.</description>
               <bitOffset>8</bitOffset>
               <bitWidth>2</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>3</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>NEGATED_STEP_OR_ATTENUATION</name>
               <description>Two's-complement negated eight-bit tone step or attenuation.</description>
               <bitOffset>10</bitOffset>
               <bitWidth>8</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>255</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>TONE_ENABLE_OR_ARM</name>
@@ -3394,18 +3412,48 @@
               <description>Three-bit image set to binary 101 for the first mismatch-power polarity and otherwise cleared by general tone setup.</description>
               <bitOffset>19</bitOffset>
               <bitWidth>3</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>7</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>MIDDLE_RESERVED_CLEAR_UNKNOWN</name>
               <description>Complete general and first-polarity tone writers clear these bits.</description>
               <bitOffset>22</bitOffset>
               <bitWidth>2</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>3</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>TXIQ_POLARITY_IMAGE</name>
               <description>Four-bit mismatch polarity image: first configuration writes bit 26, while the second phase writes nibble 1 or 8.</description>
               <bitOffset>24</bitOffset>
               <bitWidth>4</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>15</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>HIGH_NIBBLE_UNKNOWN</name>
+              <description>High nibble preserved by all recovered tone updates and retained by the TX-IQ save/restore transaction.</description>
+              <bitOffset>28</bitOffset>
+              <bitWidth>4</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>15</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -3420,16 +3468,49 @@
               <name>SELECTOR_HIGH</name>
               <bitOffset>0</bitOffset>
               <bitWidth>8</bitWidth>
+              <writeConstraint>
+                <useEnumeratedValues>true</useEnumeratedValues>
+              </writeConstraint>
+              <enumeratedValues>
+                <name>SecondToneSelectorHigh</name>
+                <usage>read-write</usage>
+                <enumeratedValue>
+                  <name>CLEARED</name>
+                  <value>0</value>
+                </enumeratedValue>
+              </enumeratedValues>
             </field>
             <field>
               <name>LOW_RESERVED_CLEAR_UNKNOWN</name>
               <bitOffset>8</bitOffset>
               <bitWidth>2</bitWidth>
+              <writeConstraint>
+                <useEnumeratedValues>true</useEnumeratedValues>
+              </writeConstraint>
+              <enumeratedValues>
+                <name>SecondToneLowReserved</name>
+                <usage>read-write</usage>
+                <enumeratedValue>
+                  <name>CLEARED</name>
+                  <value>0</value>
+                </enumeratedValue>
+              </enumeratedValues>
             </field>
             <field>
               <name>NEGATED_STEP_OR_ATTENUATION</name>
               <bitOffset>10</bitOffset>
               <bitWidth>8</bitWidth>
+              <writeConstraint>
+                <useEnumeratedValues>true</useEnumeratedValues>
+              </writeConstraint>
+              <enumeratedValues>
+                <name>SecondToneNegatedStep</name>
+                <usage>read-write</usage>
+                <enumeratedValue>
+                  <name>CLEARED</name>
+                  <value>0</value>
+                </enumeratedValue>
+              </enumeratedValues>
             </field>
             <field>
               <name>TONE_ENABLE_OR_ARM</name>
@@ -3440,6 +3521,29 @@
               <name>LOW_IMAGE_REMAINDER_UNKNOWN</name>
               <bitOffset>19</bitOffset>
               <bitWidth>9</bitWidth>
+              <writeConstraint>
+                <useEnumeratedValues>true</useEnumeratedValues>
+              </writeConstraint>
+              <enumeratedValues>
+                <name>SecondToneLowImageRemainder</name>
+                <usage>read-write</usage>
+                <enumeratedValue>
+                  <name>CLEARED</name>
+                  <value>0</value>
+                </enumeratedValue>
+              </enumeratedValues>
+            </field>
+            <field>
+              <name>HIGH_NIBBLE_UNKNOWN</name>
+              <description>High nibble preserved by all recovered second-path tone updates.</description>
+              <bitOffset>28</bitOffset>
+              <bitWidth>4</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>15</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>

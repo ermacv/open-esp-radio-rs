@@ -144,17 +144,29 @@ description = "Upper eight bits of the evidenced ten-bit selector; bits 1:0 are 
 bitOffset = 0
 bitWidth = 8
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFF
+
 [[peripherals.registers.register.fields]]
 name = "LOW_RESERVED_CLEAR_UNKNOWN"
 description = "Complete tone writers clear these bits; their hardware meaning is unknown."
 bitOffset = 8
 bitWidth = 2
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x3
+
 [[peripherals.registers.register.fields]]
 name = "NEGATED_STEP_OR_ATTENUATION"
 description = "Two's-complement negated eight-bit tone step or attenuation."
 bitOffset = 10
 bitWidth = 8
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFF
 
 [[peripherals.registers.register.fields]]
 name = "TONE_ENABLE_OR_ARM"
@@ -168,17 +180,39 @@ description = "Three-bit image set to binary 101 for the first mismatch-power po
 bitOffset = 19
 bitWidth = 3
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x7
+
 [[peripherals.registers.register.fields]]
 name = "MIDDLE_RESERVED_CLEAR_UNKNOWN"
 description = "Complete general and first-polarity tone writers clear these bits."
 bitOffset = 22
 bitWidth = 2
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x3
+
 [[peripherals.registers.register.fields]]
 name = "TXIQ_POLARITY_IMAGE"
 description = "Four-bit mismatch polarity image: first configuration writes bit 26, while the second phase writes nibble 1 or 8."
 bitOffset = 24
 bitWidth = 4
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xF
+
+[[peripherals.registers.register.fields]]
+name = "HIGH_NIBBLE_UNKNOWN"
+description = "High nibble preserved by all recovered tone updates and retained by the TX-IQ save/restore transaction."
+bitOffset = 28
+bitWidth = 4
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xF
 
 [[peripherals.registers]]
 
@@ -194,15 +228,48 @@ name = "SELECTOR_HIGH"
 bitOffset = 0
 bitWidth = 8
 
+[peripherals.registers.register.fields.writeConstraint]
+useEnumeratedValues = true
+
+[[peripherals.registers.register.fields.enumeratedValues]]
+name = "SecondToneSelectorHigh"
+usage = "read-write"
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "CLEARED"
+value = 0
+
 [[peripherals.registers.register.fields]]
 name = "LOW_RESERVED_CLEAR_UNKNOWN"
 bitOffset = 8
 bitWidth = 2
 
+[peripherals.registers.register.fields.writeConstraint]
+useEnumeratedValues = true
+
+[[peripherals.registers.register.fields.enumeratedValues]]
+name = "SecondToneLowReserved"
+usage = "read-write"
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "CLEARED"
+value = 0
+
 [[peripherals.registers.register.fields]]
 name = "NEGATED_STEP_OR_ATTENUATION"
 bitOffset = 10
 bitWidth = 8
+
+[peripherals.registers.register.fields.writeConstraint]
+useEnumeratedValues = true
+
+[[peripherals.registers.register.fields.enumeratedValues]]
+name = "SecondToneNegatedStep"
+usage = "read-write"
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "CLEARED"
+value = 0
 
 [[peripherals.registers.register.fields]]
 name = "TONE_ENABLE_OR_ARM"
@@ -213,6 +280,28 @@ bitWidth = 1
 name = "LOW_IMAGE_REMAINDER_UNKNOWN"
 bitOffset = 19
 bitWidth = 9
+
+[peripherals.registers.register.fields.writeConstraint]
+useEnumeratedValues = true
+
+[[peripherals.registers.register.fields.enumeratedValues]]
+name = "SecondToneLowImageRemainder"
+usage = "read-write"
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "CLEARED"
+value = 0
+
+[[peripherals.registers.register.fields]]
+name = "HIGH_NIBBLE_UNKNOWN"
+description = "High nibble preserved by all recovered second-path tone updates."
+bitOffset = 28
+bitWidth = 4
+
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xF
 
 [[peripherals.registers]]
 
@@ -1587,6 +1676,17 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
+entity = "PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_0_CONTROL.HIGH_NIBBLE_UNKNOWN"
+sources = [
+    "ROM_REV0_PHY_START_STOP_TX_TONE",
+    "ROM_REV0_PHY_TXIQ_GET_MIS_PWR",
+    "BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW",
+]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_1_CONTROL"
 sources = [
     "ROM_REV0_PHY_START_STOP_TX_TONE",
@@ -1595,6 +1695,16 @@ sources = [
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
+
+[[review]]
+entity = "PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_1_CONTROL.HIGH_NIBBLE_UNKNOWN"
+sources = [
+    "ROM_REV0_PHY_START_STOP_TX_TONE",
+    "BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW",
+]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.RX_GAIN_DC_CONTROL"

@@ -589,60 +589,11 @@ register = "SATURATION_GAIN_HIGH"
 sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
 
 [[opaque-domains]]
-name = "PowerDetectorTable1Image"
-description = "Register-specific power-detector table image preserved and restored by calibration."
-peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "POWER_DETECTOR_TABLE_1"
-sources = ["BLOB_LIBPHY_PHY_TXDC_PWDET"]
-
-[[opaque-domains]]
-name = "PowerDetectorControlImage"
-description = "Register-specific power-detector control image preserved and restored by calibration."
-peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "POWER_DETECTOR_CONTROL"
-sources = ["BLOB_LIBPHY_PHY_TXDC_PWDET"]
-
-[[opaque-domains]]
-name = "TxiqToneControlImage"
-description = "Register-specific TXIQ tone-control snapshot restored by the calibration capability."
-peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "TONE_PATH_0_CONTROL"
-sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
-
-[[opaque-domains]]
 name = "PbusForceTestInput"
 description = "Register-specific caller-controlled portion of one recovered PBus force-test command."
 peripheral = "PHY_PBUS"
 register = "COMMAND"
 sources = ["ROM_REV0_PHY_PBUS", "ROM_REV0_PHY_RX_DCO"]
-
-[[opaque-domains]]
-name = "TonePath0MaskedInput"
-description = "Register-specific low 28-bit tone-path zero input before preserved high control bits are merged."
-peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "TONE_PATH_0_CONTROL"
-sources = ["ROM_REV0_PHY_START_STOP_TX_TONE", "BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW"]
-
-[[opaque-domains]]
-name = "TonePath1MaskedInput"
-description = "Register-specific low 28-bit second tone-path input before preserved high control bits are merged."
-peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "TONE_PATH_1_CONTROL"
-sources = ["ROM_REV0_PHY_START_STOP_TX_TONE", "BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW"]
-
-[[opaque-domains]]
-name = "TxiqFirstMismatchInput"
-description = "Register-specific low 28-bit input for the first TXIQ mismatch measurement edge."
-peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "TONE_PATH_0_CONTROL"
-sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
-
-[[opaque-domains]]
-name = "TxiqSecondMismatchInput"
-description = "Register-specific bits 27:24 input for the second TXIQ mismatch measurement edge."
-peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "TONE_PATH_0_CONTROL"
-sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
 
 [[opaque-domains]]
 name = "MacRxBeaconPtiMaskedInput"
@@ -1258,37 +1209,6 @@ register = "LENGTH_CONTROL%s"
 fields = ["TXRX_QUEUE_ANTENNA_ENABLE", "RTS_RATE", "HT20_EOF_COUNT"]
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
 
-[[register-image-writes]]
-name = "publish_power_detector_table_1_image"
-peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "POWER_DETECTOR_TABLE_1"
-domain = "PowerDetectorTable1Image"
-exposure = "facade"
-sources = ["BLOB_LIBPHY_PHY_TXDC_PWDET"]
-
-[[register-image-writes]]
-name = "publish_power_detector_control_image"
-peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "POWER_DETECTOR_CONTROL"
-domain = "PowerDetectorControlImage"
-exposure = "facade"
-sources = ["BLOB_LIBPHY_PHY_TXDC_PWDET"]
-
-[[register-image-reads]]
-name = "snapshot_txiq_tone_control"
-peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "TONE_PATH_0_CONTROL"
-domain = "TxiqToneControlImage"
-exposure = "facade"
-sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
-
-[[register-image-writes]]
-name = "restore_txiq_tone_control"
-peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "TONE_PATH_0_CONTROL"
-domain = "TxiqToneControlImage"
-exposure = "facade"
-sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
 [[zero-based-field-writes]]
 name = "ersu_ack_rate_baseline"
 peripheral = "WIFI_MAC_HE_INIT_SUFFIX"
@@ -1744,50 +1664,6 @@ input-mask = 0x0001fffc
 set-mask = 0x00000002
 exposure = "facade"
 sources = ["ROM_REV0_PHY_PBUS", "ROM_REV0_PHY_RX_DCO"]
-
-[[masked-register-modifies]]
-name = "publish_tone_path_0_image"
-peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "TONE_PATH_0_CONTROL"
-domain = "TonePath0MaskedInput"
-preserve-mask = 0xf0000000
-input-mask = 0x0fffffff
-set-mask = 0x00000000
-exposure = "facade"
-sources = ["ROM_REV0_PHY_START_STOP_TX_TONE", "BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW"]
-
-[[masked-register-modifies]]
-name = "publish_tone_path_1_image"
-peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "TONE_PATH_1_CONTROL"
-domain = "TonePath1MaskedInput"
-preserve-mask = 0xf0000000
-input-mask = 0x0fffffff
-set-mask = 0x00000000
-exposure = "facade"
-sources = ["ROM_REV0_PHY_START_STOP_TX_TONE", "BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW"]
-
-[[masked-register-modifies]]
-name = "publish_txiq_first_mismatch_image"
-peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "TONE_PATH_0_CONTROL"
-domain = "TxiqFirstMismatchInput"
-preserve-mask = 0xf0000000
-input-mask = 0x0fffffff
-set-mask = 0x00000000
-exposure = "facade"
-sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
-
-[[masked-register-modifies]]
-name = "publish_txiq_second_mismatch_image"
-peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
-register = "TONE_PATH_0_CONTROL"
-domain = "TxiqSecondMismatchInput"
-preserve-mask = 0xf0ffffff
-input-mask = 0x0f000000
-set-mask = 0x00000000
-exposure = "facade"
-sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
 
 [[masked-register-modifies]]
 name = "publish_mac_rx_beacon_pti"

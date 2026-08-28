@@ -4,32 +4,9 @@
 //! `svd/esp32s31-radio.svd`. Complete ROM/blob bodies cited there define the
 //! finite operation order.
 
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 use super::RadioPhyRegisters;
-
-const fn tone_path_image(previous: u32, enabled: bool, selector: u16, step: u8) -> u32 {
-    let encoded =
-        ((enabled as u32) << 18) | ((selector as u32) >> 2) | ((step.wrapping_neg() as u32) << 10);
-    (previous & 0xf000_0000) | (encoded & 0x0fff_ffff)
-}
-
-const fn txiq_first_mismatch_image(
-    previous: u32,
-    polarity: bool,
-    attenuation: u8,
-    selector: u16,
-) -> u32 {
-    let encoded = ((attenuation.wrapping_neg() as u32) << 10)
-        | ((selector as u32) >> 2)
-        | ((polarity as u32) << 26);
-    (previous & 0xf000_0000) | (encoded & 0x0fff_ffff) | 0x002c_0000
-}
-
-const fn txiq_second_mismatch_image(previous: u32, polarity: bool) -> u32 {
-    let polarity = polarity as u32;
-    (previous & 0xf0ff_ffff) | ((((!polarity) & 1) | ((polarity & 1) << 3)) << 24)
-}
 
 const fn low_bit(input: u32) -> bool {
     input & 1 != 0
@@ -41,25 +18,16 @@ struct TxDcPwdetRestoreFields {
     calibration: u8,
 }
 
-struct TxDcPwdetTemporaryImages {
-    table: super::generated::PowerDetectorTable1Image,
-    control: super::generated::PowerDetectorControlImage,
-}
-
-fn txdc_power_detector_capture(
-    table: u32,
-    control: u32,
-    fields: TxDcPwdetRestoreFields,
-) -> (TxDcPwdetRestoreFields, TxDcPwdetTemporaryImages) {
-    let next_table = (table & !0x0000_00ff) | 0x0000_00f0;
-    let next_control = (control & !0x0000_0ff0) | 0x0000_0780;
-    (
-        fields,
-        TxDcPwdetTemporaryImages {
-            table: super::generated::PowerDetectorTable1Image::new(next_table),
-            control: super::generated::PowerDetectorControlImage::new(next_control),
-        },
-    )
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct TxIqToneControlFields {
+    selector_high: u8,
+    low_reserved_clear_unknown: u8,
+    negated_step_or_attenuation: u8,
+    tone_enable_or_arm: bool,
+    txiq_mismatch_mode_unknown: u8,
+    middle_reserved_clear_unknown: u8,
+    txiq_polarity_image: u8,
+    high_nibble_unknown: u8,
 }
 
 /// Preparing TX-DC PWDET was rejected before any register access.
@@ -92,7 +60,7 @@ pub enum TxIqToneControlPrepareError {
 /// Restoring TX-IQ tone control was rejected before register access.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TxIqToneControlRestoreError {
-    /// No successful prepare operation owns a saved register image.
+    /// No successful prepare operation owns saved field state.
     RestoreNotPending,
 }
 
@@ -139,20 +107,19 @@ enum RadioPhyRestoreKind {
 
 /// One private restore authority shared by mutually exclusive PHY calibrations.
 ///
-/// Byte storage keeps the complete TX-IQ image without imposing `u32`
-/// alignment on the radio owner. That owner crosses many async suspension
-/// points, so its layout must not grow merely because PAC retains an opaque
-/// register image.
+/// Byte storage keeps only named accessor values and does not retain a raw
+/// register image. The owner crosses async suspension points, so the private
+/// slot remains byte-aligned.
 pub(super) struct RadioPhyRestoreSlot {
     kind: RadioPhyRestoreKind,
-    payload: [u8; 4],
+    payload: [u8; 8],
 }
 
 impl RadioPhyRestoreSlot {
     pub(super) const fn new() -> Self {
         Self {
             kind: RadioPhyRestoreKind::Empty,
-            payload: [0; 4],
+            payload: [0; 8],
         }
     }
 
@@ -188,7 +155,7 @@ impl RadioPhyRestoreSlot {
             return Err(TxDcPwdetPrepareError::RestorePending);
         }
         let (fields, captured) = capture();
-        self.payload = [fields.table_low, fields.calibration, 0, 0];
+        self.payload = [fields.table_low, fields.calibration, 0, 0, 0, 0, 0, 0];
         self.kind = RadioPhyRestoreKind::TxDcPwdet;
         prepare(captured);
         Ok(())
@@ -207,7 +174,7 @@ impl RadioPhyRestoreSlot {
         };
         restore(fields);
         self.kind = RadioPhyRestoreKind::Empty;
-        self.payload = [0; 4];
+        self.payload = [0; 8];
         Ok(())
     }
 
@@ -216,12 +183,22 @@ impl RadioPhyRestoreSlot {
         capture: Capture,
     ) -> Result<(), TxIqToneControlPrepareError>
     where
-        Capture: FnOnce() -> super::generated::TxiqToneControlImage,
+        Capture: FnOnce() -> TxIqToneControlFields,
     {
         if !matches!(self.kind, RadioPhyRestoreKind::Empty) {
             return Err(TxIqToneControlPrepareError::RestorePending);
         }
-        self.payload = capture().get().to_ne_bytes();
+        let fields = capture();
+        self.payload = [
+            fields.selector_high,
+            fields.low_reserved_clear_unknown,
+            fields.negated_step_or_attenuation,
+            u8::from(fields.tone_enable_or_arm),
+            fields.txiq_mismatch_mode_unknown,
+            fields.middle_reserved_clear_unknown,
+            fields.txiq_polarity_image,
+            fields.high_nibble_unknown,
+        ];
         self.kind = RadioPhyRestoreKind::TxIqToneControl;
         Ok(())
     }
@@ -231,15 +208,23 @@ impl RadioPhyRestoreSlot {
         restore: Restore,
     ) -> Result<(), TxIqToneControlRestoreError>
     where
-        Restore: FnOnce(super::generated::TxiqToneControlImage),
+        Restore: FnOnce(TxIqToneControlFields),
     {
         if !matches!(self.kind, RadioPhyRestoreKind::TxIqToneControl) {
             return Err(TxIqToneControlRestoreError::RestoreNotPending);
         }
-        let image = super::generated::TxiqToneControlImage::new(u32::from_ne_bytes(self.payload));
-        restore(image);
+        restore(TxIqToneControlFields {
+            selector_high: self.payload[0],
+            low_reserved_clear_unknown: self.payload[1],
+            negated_step_or_attenuation: self.payload[2],
+            tone_enable_or_arm: self.payload[3] != 0,
+            txiq_mismatch_mode_unknown: self.payload[4],
+            middle_reserved_clear_unknown: self.payload[5],
+            txiq_polarity_image: self.payload[6],
+            high_nibble_unknown: self.payload[7],
+        });
         self.kind = RadioPhyRestoreKind::Empty;
-        self.payload = [0; 4];
+        self.payload = [0; 8];
         Ok(())
     }
 
@@ -287,7 +272,7 @@ impl RadioPhyRestoreSlot {
         if !matches!(self.kind, RadioPhyRestoreKind::Empty) {
             return Err(BluetoothTxPowerControlPrepareError::RestorePending);
         }
-        self.payload = [0; 4];
+        self.payload = [0; 8];
         self.kind = RadioPhyRestoreKind::BluetoothTxPowerControl;
         Ok(())
     }
@@ -330,32 +315,32 @@ impl RadioPhyRestoreSlot {
             return Err(BluetoothTxPowerControlRestoreError::RestoreNotPending);
         }
         self.kind = RadioPhyRestoreKind::Empty;
-        self.payload = [0; 4];
+        self.payload = [0; 8];
         Ok(())
     }
 
     #[cfg(test)]
     pub(super) fn occupy_txdc_for_test(&mut self) {
         self.kind = RadioPhyRestoreKind::TxDcPwdet;
-        self.payload = [0; 4];
+        self.payload = [0; 8];
     }
 
     #[cfg(test)]
     pub(super) fn occupy_txiq_for_test(&mut self) {
         self.kind = RadioPhyRestoreKind::TxIqToneControl;
-        self.payload = [0; 4];
+        self.payload = [0; 8];
     }
 
     #[cfg(test)]
     pub(super) fn occupy_rx_dco_for_test(&mut self) {
         self.kind = RadioPhyRestoreKind::RxDcoControlOne;
-        self.payload = [0; 4];
+        self.payload = [0; 8];
     }
 
     #[cfg(test)]
     pub(super) fn occupy_bluetooth_tx_power_control_for_test(&mut self) {
         self.kind = RadioPhyRestoreKind::BluetoothTxPowerControl;
-        self.payload = [0; 4];
+        self.payload = [0; 8];
     }
 }
 
@@ -851,18 +836,19 @@ impl RadioPhyRegisters {
             || {
                 let table = bb.power_detector_table_1().read();
                 let control = bb.power_detector_control().read();
-                txdc_power_detector_capture(
-                    table.bits(),
-                    control.bits(),
+                (
                     TxDcPwdetRestoreFields {
                         table_low: table.tx_dc_temporary_low_unknown().bits(),
                         calibration: control.calibration_field_unknown().bits(),
                     },
+                    (),
                 )
             },
-            |images| {
-                super::generated::publish_power_detector_table_1_image(bb, images.table);
-                super::generated::publish_power_detector_control_image(bb, images.control);
+            |()| {
+                bb.power_detector_table_1()
+                    .modify(|_, w| w.tx_dc_temporary_low_unknown().set(0xf0));
+                bb.power_detector_control()
+                    .modify(|_, w| w.calibration_field_unknown().set(0x78));
             },
         )
     }
@@ -964,19 +950,34 @@ impl RadioPhyRegisters {
     fn configure_tone_paths(&mut self, enabled: bool, path_0_selector: u16, path_0_step: u8) {
         debug_assert!(path_0_selector <= 0x03ff);
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        super::generated::publish_tone_path_0_image(
-            bb,
-            super::generated::TonePath0MaskedInput::new(tone_path_image(
-                0,
-                enabled,
-                path_0_selector,
-                path_0_step,
-            )),
-        );
-        super::generated::publish_tone_path_1_image(
-            bb,
-            super::generated::TonePath1MaskedInput::new(tone_path_image(0, false, 0, 0)),
-        );
+        bb.tone_path_0_control().modify(|_, w| {
+            w.selector_high()
+                .set((path_0_selector >> 2) as u8)
+                .low_reserved_clear_unknown()
+                .set(0)
+                .negated_step_or_attenuation()
+                .set(path_0_step.wrapping_neg())
+                .tone_enable_or_arm()
+                .bit(enabled)
+                .txiq_mismatch_mode_unknown()
+                .set(0)
+                .middle_reserved_clear_unknown()
+                .set(0)
+                .txiq_polarity_image()
+                .set(0)
+        });
+        bb.tone_path_1_control().modify(|_, w| {
+            w.selector_high()
+                .cleared()
+                .low_reserved_clear_unknown()
+                .cleared()
+                .negated_step_or_attenuation()
+                .cleared()
+                .tone_enable_or_arm()
+                .clear_bit()
+                .low_image_remainder_unknown()
+                .cleared()
+        });
     }
 
     /// Program the complete archive calibration-tone leaf and restore TX gain.
@@ -1011,18 +1012,54 @@ impl RadioPhyRegisters {
     /// cannot replace another calibration's restore authority.
     pub fn prepare_txiq_tone_control_restore(&mut self) -> Result<(), TxIqToneControlPrepareError> {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        self.restore_slot
-            .prepare_txiq_with(|| super::generated::snapshot_txiq_tone_control(bb))
+        self.restore_slot.prepare_txiq_with(|| {
+            let control = bb.tone_path_0_control().read();
+            TxIqToneControlFields {
+                selector_high: control.selector_high().bits(),
+                low_reserved_clear_unknown: control.low_reserved_clear_unknown().bits(),
+                negated_step_or_attenuation: control.negated_step_or_attenuation().bits(),
+                tone_enable_or_arm: control.tone_enable_or_arm().bit(),
+                txiq_mismatch_mode_unknown: control.txiq_mismatch_mode_unknown().bits(),
+                middle_reserved_clear_unknown: control.middle_reserved_clear_unknown().bits(),
+                txiq_polarity_image: control.txiq_polarity_image().bits(),
+                high_nibble_unknown: control.high_nibble_unknown().bits(),
+            }
+        })
     }
 
-    /// Restore and consume the private TX-IQ tone-control image.
+    /// Restore and consume the private TX-IQ tone-control field state.
     ///
     /// A caller without a successful prepare operation is rejected before
-    /// MMIO. The slot is cleared only after the complete-image write.
+    /// MMIO. The slot is cleared only after the complete accessor write.
+    #[allow(
+        unsafe_code,
+        reason = "the complete accessor write covers every modeled bit without assuming a reset image"
+    )]
     pub fn restore_txiq_tone_control(&mut self) -> Result<(), TxIqToneControlRestoreError> {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        self.restore_slot.restore_txiq_with(|image| {
-            super::generated::restore_txiq_tone_control(bb, image);
+        self.restore_slot.restore_txiq_with(|fields| {
+            // SAFETY: every one of the 32 bits is supplied through its named
+            // SVD field accessor from the single earlier register sample.
+            unsafe {
+                bb.tone_path_0_control().write_with_zero(|w| {
+                    w.selector_high()
+                        .set(fields.selector_high)
+                        .low_reserved_clear_unknown()
+                        .set(fields.low_reserved_clear_unknown)
+                        .negated_step_or_attenuation()
+                        .set(fields.negated_step_or_attenuation)
+                        .tone_enable_or_arm()
+                        .bit(fields.tone_enable_or_arm)
+                        .txiq_mismatch_mode_unknown()
+                        .set(fields.txiq_mismatch_mode_unknown)
+                        .middle_reserved_clear_unknown()
+                        .set(fields.middle_reserved_clear_unknown)
+                        .txiq_polarity_image()
+                        .set(fields.txiq_polarity_image)
+                        .high_nibble_unknown()
+                        .set(fields.high_nibble_unknown)
+                });
+            }
         })
     }
 
@@ -1037,24 +1074,29 @@ impl RadioPhyRegisters {
         debug_assert!(selector <= 0x03ff);
         let bb = &self.peripherals.phy_baseband_config_oracle;
         if first {
-            super::generated::publish_txiq_first_mismatch_image(
-                bb,
-                super::generated::TxiqFirstMismatchInput::new(txiq_first_mismatch_image(
-                    0,
-                    polarity,
-                    attenuation,
-                    selector,
-                )),
-            );
+            bb.tone_path_0_control().modify(|_, w| {
+                w.selector_high()
+                    .set((selector >> 2) as u8)
+                    .low_reserved_clear_unknown()
+                    .set(0)
+                    .negated_step_or_attenuation()
+                    .set(attenuation.wrapping_neg())
+                    .tone_enable_or_arm()
+                    .set_bit()
+                    .txiq_mismatch_mode_unknown()
+                    .set(0b101)
+                    .middle_reserved_clear_unknown()
+                    .set(0)
+                    .txiq_polarity_image()
+                    .set(if polarity { 0b0100 } else { 0 })
+            });
             bb.tone_selector_control()
                 .modify(|_, w| w.path_0_selector_low().set((selector & 3) as u8));
         } else {
-            super::generated::publish_txiq_second_mismatch_image(
-                bb,
-                super::generated::TxiqSecondMismatchInput::new(txiq_second_mismatch_image(
-                    0, polarity,
-                )),
-            );
+            bb.tone_path_0_control().modify(|_, w| {
+                w.txiq_polarity_image()
+                    .set(if polarity { 0b1000 } else { 0b0001 })
+            });
         }
     }
 
@@ -1388,7 +1430,7 @@ mod tests {
         let events = RefCell::new(Vec::new());
         slot.prepare_txiq_with(|| {
             events.borrow_mut().push(RestoreEvent::Capture);
-            super::super::generated::TxiqToneControlImage::new(0)
+            super::TxIqToneControlFields::default()
         })
         .unwrap();
 

@@ -62479,6 +62479,54 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace PHY_BTAGC_RECOVERED.CCA_CONFIG fields [CONFIG_VALUE_0] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_baseband_cca_value_0(registers: &crate::PhyBtagcRecovered) {
+        registers.cca_config().modify(|_, writer| {
+            let input = 0x000001ce_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.config_value_0().bits((input & 0x000001ff) as u16) }
+        });
+    }
+
+    /// Replace PHY_BTAGC_RECOVERED.CCA_CONFIG fields [CONFIG_VALUE_1] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_baseband_cca_value_1(registers: &crate::PhyBtagcRecovered) {
+        registers.cca_config().modify(|_, writer| {
+            let input = 0x0000001e_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.config_value_1().bits((input & 0x0000001f) as u8) }
+        });
+    }
+
+    /// Replace PHY_BTAGC_RECOVERED.CCA_CONFIG fields [CONFIG_FORCE_ONE_23] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_baseband_cca_bit_23(registers: &crate::PhyBtagcRecovered) {
+        registers.cca_config().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.config_force_one_23().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BT_V3_2_BASEBAND.TX_CCA_CONTROL_1 fields [DEFAULT_CONFIG_VALUE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_baseband_cca_default(registers: &crate::BtV3_2Baseband) {
+        registers.tx_cca_control_1().modify(|_, writer| {
+            let input = 0x00000005_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .default_config_value()
+                    .bits((input & 0x0000001f) as u8)
+            }
+        });
+    }
+
     /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields [LOCK_MODIFY_ARGUMENT] from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_scheduler_lock_modify_argument(

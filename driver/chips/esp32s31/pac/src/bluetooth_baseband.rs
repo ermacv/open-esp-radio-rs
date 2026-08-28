@@ -552,15 +552,18 @@ impl BluetoothBasebandV2Transaction<'_> {
     }
 
     fn initialize_baseband_cca_defaults(&self) {
-        let btagc = &self.radio_phy.phy_btagc_recovered;
-        let cca = btagc.cca_config();
-        cca.modify(|_, w| w.config_value_0().set(0x1ce));
-        cca.modify(|_, w| w.config_value_1().set(0x1e));
-        cca.modify(|_, w| w.config_force_one_23().set_bit());
-        self.bluetooth
-            .bt_v3_2_baseband
-            .tx_cca_control_1()
-            .modify(|_, w| w.default_config_value().set(5));
+        super::generated::initialize_bluetooth_baseband_cca_value_0(
+            &self.radio_phy.phy_btagc_recovered,
+        );
+        super::generated::initialize_bluetooth_baseband_cca_value_1(
+            &self.radio_phy.phy_btagc_recovered,
+        );
+        super::generated::initialize_bluetooth_baseband_cca_bit_23(
+            &self.radio_phy.phy_btagc_recovered,
+        );
+        super::generated::initialize_bluetooth_baseband_cca_default(
+            &self.bluetooth.bt_v3_2_baseband,
+        );
     }
 
     fn initialize_shared_receive_prefix(&self) {

@@ -3601,6 +3601,42 @@ value = 1
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
 
+[[field-replace-modifies]]
+name = "initialize_bluetooth_baseband_cca_value_0"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "CCA_CONFIG"
+fields = [{ field = "CONFIG_VALUE_0", source-bit-offset = 0 }]
+value = 0x1ce
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_baseband_cca_value_1"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "CCA_CONFIG"
+fields = [{ field = "CONFIG_VALUE_1", source-bit-offset = 0 }]
+value = 0x1e
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_baseband_cca_bit_23"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "CCA_CONFIG"
+fields = [{ field = "CONFIG_FORCE_ONE_23", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_baseband_cca_default"
+peripheral = "BT_V3_2_BASEBAND"
+register = "TX_CCA_CONTROL_1"
+fields = [{ field = "DEFAULT_CONFIG_VALUE", source-bit-offset = 0 }]
+value = 5
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_ACCESSORS"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

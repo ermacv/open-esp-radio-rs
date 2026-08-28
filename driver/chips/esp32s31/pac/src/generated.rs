@@ -2376,6 +2376,30 @@ pub(crate) fn initialize_bluetooth_baseband_coexistence_20(registers: &crate::sv
     crate::svd::field_replace_modify::initialize_bluetooth_baseband_coexistence_20(registers);
 }
 
+/// Typed bridge for the reviewed `initialize_bluetooth_baseband_cca_value_0` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_baseband_cca_value_0(registers: &crate::svd::PhyBtagcRecovered) {
+    crate::svd::field_replace_modify::initialize_bluetooth_baseband_cca_value_0(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_baseband_cca_value_1` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_baseband_cca_value_1(registers: &crate::svd::PhyBtagcRecovered) {
+    crate::svd::field_replace_modify::initialize_bluetooth_baseband_cca_value_1(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_baseband_cca_bit_23` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_baseband_cca_bit_23(registers: &crate::svd::PhyBtagcRecovered) {
+    crate::svd::field_replace_modify::initialize_bluetooth_baseband_cca_bit_23(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_baseband_cca_default` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_baseband_cca_default(registers: &crate::svd::BtV3_2Baseband) {
+    crate::svd::field_replace_modify::initialize_bluetooth_baseband_cca_default(registers);
+}
+
 /// Typed bridge for the reviewed `clear_bluetooth_scheduler_lock_modify_argument` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_bluetooth_scheduler_lock_modify_argument(

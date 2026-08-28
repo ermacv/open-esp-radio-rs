@@ -30985,98 +30985,125 @@ pub mod wifi_mac_power_interrupt {
         clear: Clear,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - WDEVPWR_ENABLE diagnostic snapshot and writable event mask. hal_enable_tsf_timer sets bit 7-index and hal_disable_tsf_timer clears the same bit for guarded timer indices zero through three."]
+        #[doc = "0x00 - WDEVPWR_ENABLE diagnostic snapshot and writable event mask. Complete guarded TSF-timer leaves independently identify bits 7 through 4."]
         #[inline(always)]
         pub const fn enable(&self) -> &Enable {
             &self.enable
         }
-        #[doc = "0x04 - WDEVPWR_RAW diagnostic snapshot."]
+        #[doc = "0x04 - WDEVPWR_RAW diagnostic snapshot with the same event geometry as ENABLE, STATUS and CLEAR."]
         #[inline(always)]
         pub const fn raw(&self) -> &Raw {
             &self.raw
         }
-        #[doc = "0x08 - Masked WDEVPWR event image returned by complete hal_pwr_interrupt_get_event."]
+        #[doc = "0x08 - Masked WDEVPWR event image returned by complete hal_pwr_interrupt_get_event, with TSF timer causes identified by the guarded timer leaves."]
         #[inline(always)]
         pub const fn status(&self) -> &Status {
             &self.status
         }
-        #[doc = "0x0c - Full event image stored by complete hal_pwr_interrupt_clr_event to acknowledge WDEVPWR events. hal_enable_tsf_timer performs a fresh-read RMW which asserts bit 7-index here before enabling the selected timer."]
+        #[doc = "0x0c - Write-one-to-clear event bank used by complete hal_pwr_interrupt_clr_event. Complete guarded TSF-timer leaves independently identify bits 7 through 4."]
         #[inline(always)]
         pub const fn clear(&self) -> &Clear {
             &self.clear
         }
     }
-    #[doc = "ENABLE (rw) register accessor: WDEVPWR_ENABLE diagnostic snapshot and writable event mask. hal_enable_tsf_timer sets bit 7-index and hal_disable_tsf_timer clears the same bit for guarded timer indices zero through three.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@enable`] module"]
+    #[doc = "ENABLE (rw) register accessor: WDEVPWR_ENABLE diagnostic snapshot and writable event mask. Complete guarded TSF-timer leaves independently identify bits 7 through 4.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@enable`] module"]
     #[doc(alias = "ENABLE")]
     pub type Enable = crate::Reg<enable::EnableSpec>;
-    #[doc = "WDEVPWR_ENABLE diagnostic snapshot and writable event mask. hal_enable_tsf_timer sets bit 7-index and hal_disable_tsf_timer clears the same bit for guarded timer indices zero through three."]
+    #[doc = "WDEVPWR_ENABLE diagnostic snapshot and writable event mask. Complete guarded TSF-timer leaves independently identify bits 7 through 4."]
     pub mod enable {
         #[doc = "Register `ENABLE` reader"]
         pub type R = crate::R<EnableSpec>;
         #[doc = "Register `ENABLE` writer"]
         pub type W = crate::W<EnableSpec>;
-        #[doc = ""]
-        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-        #[repr(u32)]
-        pub enum EventMask {
-            #[doc = "0: Mask every qualified WDEVPWR event during ownership handoff."]
-            Masked = 0,
-        }
-        impl From<EventMask> for u32 {
-            #[inline(always)]
-            fn from(variant: EventMask) -> Self {
-                variant as _
-            }
-        }
-        impl crate::FieldSpec for EventMask {
-            type Ux = u32;
-        }
-        impl crate::IsEnum for EventMask {}
-        #[doc = "Field `EVENT_MASK` reader - "]
-        pub type EventMaskR = crate::FieldReader<EventMask>;
-        impl EventMaskR {
-            #[doc = "Get enumerated values variant"]
-            #[inline(always)]
-            pub const fn variant(&self) -> Option<EventMask> {
-                match self.bits {
-                    0 => Some(EventMask::Masked),
-                    _ => None,
-                }
-            }
-            #[doc = "Mask every qualified WDEVPWR event during ownership handoff."]
-            #[inline(always)]
-            pub fn is_masked(&self) -> bool {
-                *self == EventMask::Masked
-            }
-        }
-        #[doc = "Field `EVENT_MASK` writer - "]
-        pub type EventMaskW<'a, REG> = crate::FieldWriter<'a, REG, 32, EventMask>;
-        impl<'a, REG> EventMaskW<'a, REG>
-        where
-            REG: crate::Writable + crate::RegisterSpec,
-            REG::Ux: From<u32>,
-        {
-            #[doc = "Mask every qualified WDEVPWR event during ownership handoff."]
-            #[inline(always)]
-            pub fn masked(self) -> &'a mut crate::W<REG> {
-                self.variant(EventMask::Masked)
-            }
-        }
+        #[doc = "Field `UNKNOWN_0_3` reader - Enable bits whose event identities remain unknown."]
+        pub type Unknown0_3R = crate::FieldReader;
+        #[doc = "Field `UNKNOWN_0_3` writer - Enable bits whose event identities remain unknown."]
+        pub type Unknown0_3W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        #[doc = "Field `TSF_TIMER_3` reader - Enable the guarded TSF timer-three event."]
+        pub type TsfTimer3R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_3` writer - Enable the guarded TSF timer-three event."]
+        pub type TsfTimer3W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TSF_TIMER_2` reader - Enable the guarded TSF timer-two event."]
+        pub type TsfTimer2R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_2` writer - Enable the guarded TSF timer-two event."]
+        pub type TsfTimer2W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TSF_TIMER_1` reader - Enable the guarded TSF timer-one event."]
+        pub type TsfTimer1R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_1` writer - Enable the guarded TSF timer-one event."]
+        pub type TsfTimer1W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `TSF_TIMER_0` reader - Enable the guarded TSF timer-zero event."]
+        pub type TsfTimer0R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_0` writer - Enable the guarded TSF timer-zero event."]
+        pub type TsfTimer0W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UNKNOWN_8_31` reader - Enable bits whose event identities remain unknown."]
+        pub type Unknown8_31R = crate::FieldReader<u32>;
+        #[doc = "Field `UNKNOWN_8_31` writer - Enable bits whose event identities remain unknown."]
+        pub type Unknown8_31W<'a, REG> = crate::FieldWriter<'a, REG, 24, u32, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:3 - Enable bits whose event identities remain unknown."]
             #[inline(always)]
-            pub fn event_mask(&self) -> EventMaskR {
-                EventMaskR::new(self.bits)
+            pub fn unknown_0_3(&self) -> Unknown0_3R {
+                Unknown0_3R::new((self.bits & 0x0f) as u8)
+            }
+            #[doc = "Bit 4 - Enable the guarded TSF timer-three event."]
+            #[inline(always)]
+            pub fn tsf_timer_3(&self) -> TsfTimer3R {
+                TsfTimer3R::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bit 5 - Enable the guarded TSF timer-two event."]
+            #[inline(always)]
+            pub fn tsf_timer_2(&self) -> TsfTimer2R {
+                TsfTimer2R::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bit 6 - Enable the guarded TSF timer-one event."]
+            #[inline(always)]
+            pub fn tsf_timer_1(&self) -> TsfTimer1R {
+                TsfTimer1R::new(((self.bits >> 6) & 1) != 0)
+            }
+            #[doc = "Bit 7 - Enable the guarded TSF timer-zero event."]
+            #[inline(always)]
+            pub fn tsf_timer_0(&self) -> TsfTimer0R {
+                TsfTimer0R::new(((self.bits >> 7) & 1) != 0)
+            }
+            #[doc = "Bits 8:31 - Enable bits whose event identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_8_31(&self) -> Unknown8_31R {
+                Unknown8_31R::new((self.bits >> 8) & 0x00ff_ffff)
             }
         }
         impl W {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:3 - Enable bits whose event identities remain unknown."]
             #[inline(always)]
-            pub fn event_mask(&mut self) -> EventMaskW<'_, EnableSpec> {
-                EventMaskW::new(self, 0)
+            pub fn unknown_0_3(&mut self) -> Unknown0_3W<'_, EnableSpec> {
+                Unknown0_3W::new(self, 0)
+            }
+            #[doc = "Bit 4 - Enable the guarded TSF timer-three event."]
+            #[inline(always)]
+            pub fn tsf_timer_3(&mut self) -> TsfTimer3W<'_, EnableSpec> {
+                TsfTimer3W::new(self, 4)
+            }
+            #[doc = "Bit 5 - Enable the guarded TSF timer-two event."]
+            #[inline(always)]
+            pub fn tsf_timer_2(&mut self) -> TsfTimer2W<'_, EnableSpec> {
+                TsfTimer2W::new(self, 5)
+            }
+            #[doc = "Bit 6 - Enable the guarded TSF timer-one event."]
+            #[inline(always)]
+            pub fn tsf_timer_1(&mut self) -> TsfTimer1W<'_, EnableSpec> {
+                TsfTimer1W::new(self, 6)
+            }
+            #[doc = "Bit 7 - Enable the guarded TSF timer-zero event."]
+            #[inline(always)]
+            pub fn tsf_timer_0(&mut self) -> TsfTimer0W<'_, EnableSpec> {
+                TsfTimer0W::new(self, 7)
+            }
+            #[doc = "Bits 8:31 - Enable bits whose event identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_8_31(&mut self) -> Unknown8_31W<'_, EnableSpec> {
+                Unknown8_31W::new(self, 8)
             }
         }
-        #[doc = "WDEVPWR_ENABLE diagnostic snapshot and writable event mask. hal_enable_tsf_timer sets bit 7-index and hal_disable_tsf_timer clears the same bit for guarded timer indices zero through three.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "WDEVPWR_ENABLE diagnostic snapshot and writable event mask. Complete guarded TSF-timer leaves independently identify bits 7 through 4.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct EnableSpec;
         impl crate::RegisterSpec for EnableSpec {
             type Ux = u32;
@@ -31088,23 +31115,58 @@ pub mod wifi_mac_power_interrupt {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RAW (r) register accessor: WDEVPWR_RAW diagnostic snapshot.\n\nYou can [`read`](crate::Reg::read) this register and get [`raw::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@raw`] module"]
+    #[doc = "RAW (r) register accessor: WDEVPWR_RAW diagnostic snapshot with the same event geometry as ENABLE, STATUS and CLEAR.\n\nYou can [`read`](crate::Reg::read) this register and get [`raw::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@raw`] module"]
     #[doc(alias = "RAW")]
     pub type Raw = crate::Reg<raw::RawSpec>;
-    #[doc = "WDEVPWR_RAW diagnostic snapshot."]
+    #[doc = "WDEVPWR_RAW diagnostic snapshot with the same event geometry as ENABLE, STATUS and CLEAR."]
     pub mod raw {
         #[doc = "Register `RAW` reader"]
         pub type R = crate::R<RawSpec>;
-        #[doc = "Field `EVENTS` reader - "]
-        pub type EventsR = crate::FieldReader<u32>;
+        #[doc = "Field `UNKNOWN_0_3` reader - Raw event bits whose identities remain unknown."]
+        pub type Unknown0_3R = crate::FieldReader;
+        #[doc = "Field `TSF_TIMER_3` reader - Raw guarded TSF timer-three event."]
+        pub type TsfTimer3R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_2` reader - Raw guarded TSF timer-two event."]
+        pub type TsfTimer2R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_1` reader - Raw guarded TSF timer-one event."]
+        pub type TsfTimer1R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_0` reader - Raw guarded TSF timer-zero event."]
+        pub type TsfTimer0R = crate::BitReader;
+        #[doc = "Field `UNKNOWN_8_31` reader - Raw event bits whose identities remain unknown."]
+        pub type Unknown8_31R = crate::FieldReader<u32>;
         impl R {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:3 - Raw event bits whose identities remain unknown."]
             #[inline(always)]
-            pub fn events(&self) -> EventsR {
-                EventsR::new(self.bits)
+            pub fn unknown_0_3(&self) -> Unknown0_3R {
+                Unknown0_3R::new((self.bits & 0x0f) as u8)
+            }
+            #[doc = "Bit 4 - Raw guarded TSF timer-three event."]
+            #[inline(always)]
+            pub fn tsf_timer_3(&self) -> TsfTimer3R {
+                TsfTimer3R::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bit 5 - Raw guarded TSF timer-two event."]
+            #[inline(always)]
+            pub fn tsf_timer_2(&self) -> TsfTimer2R {
+                TsfTimer2R::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bit 6 - Raw guarded TSF timer-one event."]
+            #[inline(always)]
+            pub fn tsf_timer_1(&self) -> TsfTimer1R {
+                TsfTimer1R::new(((self.bits >> 6) & 1) != 0)
+            }
+            #[doc = "Bit 7 - Raw guarded TSF timer-zero event."]
+            #[inline(always)]
+            pub fn tsf_timer_0(&self) -> TsfTimer0R {
+                TsfTimer0R::new(((self.bits >> 7) & 1) != 0)
+            }
+            #[doc = "Bits 8:31 - Raw event bits whose identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_8_31(&self) -> Unknown8_31R {
+                Unknown8_31R::new((self.bits >> 8) & 0x00ff_ffff)
             }
         }
-        #[doc = "WDEVPWR_RAW diagnostic snapshot.\n\nYou can [`read`](crate::Reg::read) this register and get [`raw::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "WDEVPWR_RAW diagnostic snapshot with the same event geometry as ENABLE, STATUS and CLEAR.\n\nYou can [`read`](crate::Reg::read) this register and get [`raw::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RawSpec;
         impl crate::RegisterSpec for RawSpec {
             type Ux = u32;
@@ -31112,23 +31174,58 @@ pub mod wifi_mac_power_interrupt {
         #[doc = "`read()` method returns [`raw::R`](R) reader structure"]
         impl crate::Readable for RawSpec {}
     }
-    #[doc = "STATUS (r) register accessor: Masked WDEVPWR event image returned by complete hal_pwr_interrupt_get_event.\n\nYou can [`read`](crate::Reg::read) this register and get [`status::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@status`] module"]
+    #[doc = "STATUS (r) register accessor: Masked WDEVPWR event image returned by complete hal_pwr_interrupt_get_event, with TSF timer causes identified by the guarded timer leaves.\n\nYou can [`read`](crate::Reg::read) this register and get [`status::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@status`] module"]
     #[doc(alias = "STATUS")]
     pub type Status = crate::Reg<status::StatusSpec>;
-    #[doc = "Masked WDEVPWR event image returned by complete hal_pwr_interrupt_get_event."]
+    #[doc = "Masked WDEVPWR event image returned by complete hal_pwr_interrupt_get_event, with TSF timer causes identified by the guarded timer leaves."]
     pub mod status {
         #[doc = "Register `STATUS` reader"]
         pub type R = crate::R<StatusSpec>;
-        #[doc = "Field `EVENTS` reader - "]
-        pub type EventsR = crate::FieldReader<u32>;
+        #[doc = "Field `UNKNOWN_0_3` reader - Masked event bits whose identities remain unknown."]
+        pub type Unknown0_3R = crate::FieldReader;
+        #[doc = "Field `TSF_TIMER_3` reader - Masked guarded TSF timer-three event."]
+        pub type TsfTimer3R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_2` reader - Masked guarded TSF timer-two event."]
+        pub type TsfTimer2R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_1` reader - Masked guarded TSF timer-one event."]
+        pub type TsfTimer1R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_0` reader - Masked guarded TSF timer-zero event."]
+        pub type TsfTimer0R = crate::BitReader;
+        #[doc = "Field `UNKNOWN_8_31` reader - Masked event bits whose identities remain unknown."]
+        pub type Unknown8_31R = crate::FieldReader<u32>;
         impl R {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:3 - Masked event bits whose identities remain unknown."]
             #[inline(always)]
-            pub fn events(&self) -> EventsR {
-                EventsR::new(self.bits)
+            pub fn unknown_0_3(&self) -> Unknown0_3R {
+                Unknown0_3R::new((self.bits & 0x0f) as u8)
+            }
+            #[doc = "Bit 4 - Masked guarded TSF timer-three event."]
+            #[inline(always)]
+            pub fn tsf_timer_3(&self) -> TsfTimer3R {
+                TsfTimer3R::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bit 5 - Masked guarded TSF timer-two event."]
+            #[inline(always)]
+            pub fn tsf_timer_2(&self) -> TsfTimer2R {
+                TsfTimer2R::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bit 6 - Masked guarded TSF timer-one event."]
+            #[inline(always)]
+            pub fn tsf_timer_1(&self) -> TsfTimer1R {
+                TsfTimer1R::new(((self.bits >> 6) & 1) != 0)
+            }
+            #[doc = "Bit 7 - Masked guarded TSF timer-zero event."]
+            #[inline(always)]
+            pub fn tsf_timer_0(&self) -> TsfTimer0R {
+                TsfTimer0R::new(((self.bits >> 7) & 1) != 0)
+            }
+            #[doc = "Bits 8:31 - Masked event bits whose identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_8_31(&self) -> Unknown8_31R {
+                Unknown8_31R::new((self.bits >> 8) & 0x00ff_ffff)
             }
         }
-        #[doc = "Masked WDEVPWR event image returned by complete hal_pwr_interrupt_get_event.\n\nYou can [`read`](crate::Reg::read) this register and get [`status::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Masked WDEVPWR event image returned by complete hal_pwr_interrupt_get_event, with TSF timer causes identified by the guarded timer leaves.\n\nYou can [`read`](crate::Reg::read) this register and get [`status::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct StatusSpec;
         impl crate::RegisterSpec for StatusSpec {
             type Ux = u32;
@@ -31136,34 +31233,104 @@ pub mod wifi_mac_power_interrupt {
         #[doc = "`read()` method returns [`status::R`](R) reader structure"]
         impl crate::Readable for StatusSpec {}
     }
-    #[doc = "CLEAR (rw) register accessor: Full event image stored by complete hal_pwr_interrupt_clr_event to acknowledge WDEVPWR events. hal_enable_tsf_timer performs a fresh-read RMW which asserts bit 7-index here before enabling the selected timer.\n\nYou can [`read`](crate::Reg::read) this register and get [`clear::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clear::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@clear`] module"]
+    #[doc = "CLEAR (rw) register accessor: Write-one-to-clear event bank used by complete hal_pwr_interrupt_clr_event. Complete guarded TSF-timer leaves independently identify bits 7 through 4.\n\nYou can [`read`](crate::Reg::read) this register and get [`clear::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clear::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@clear`] module"]
     #[doc(alias = "CLEAR")]
     pub type Clear = crate::Reg<clear::ClearSpec>;
-    #[doc = "Full event image stored by complete hal_pwr_interrupt_clr_event to acknowledge WDEVPWR events. hal_enable_tsf_timer performs a fresh-read RMW which asserts bit 7-index here before enabling the selected timer."]
+    #[doc = "Write-one-to-clear event bank used by complete hal_pwr_interrupt_clr_event. Complete guarded TSF-timer leaves independently identify bits 7 through 4."]
     pub mod clear {
         #[doc = "Register `CLEAR` reader"]
         pub type R = crate::R<ClearSpec>;
         #[doc = "Register `CLEAR` writer"]
         pub type W = crate::W<ClearSpec>;
-        #[doc = "Field `EVENTS` reader - "]
-        pub type EventsR = crate::FieldReader<u32>;
-        #[doc = "Field `EVENTS` writer - "]
-        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
+        #[doc = "Field `UNKNOWN_0_3` reader - Acknowledge event bits whose identities remain unknown."]
+        pub type Unknown0_3R = crate::FieldReader;
+        #[doc = "Field `UNKNOWN_0_3` writer - Acknowledge event bits whose identities remain unknown."]
+        pub type Unknown0_3W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        #[doc = "Field `TSF_TIMER_3` reader - Acknowledge the guarded TSF timer-three event."]
+        pub type TsfTimer3R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_3` writer - Acknowledge the guarded TSF timer-three event."]
+        pub type TsfTimer3W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `TSF_TIMER_2` reader - Acknowledge the guarded TSF timer-two event."]
+        pub type TsfTimer2R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_2` writer - Acknowledge the guarded TSF timer-two event."]
+        pub type TsfTimer2W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `TSF_TIMER_1` reader - Acknowledge the guarded TSF timer-one event."]
+        pub type TsfTimer1R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_1` writer - Acknowledge the guarded TSF timer-one event."]
+        pub type TsfTimer1W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `TSF_TIMER_0` reader - Acknowledge the guarded TSF timer-zero event."]
+        pub type TsfTimer0R = crate::BitReader;
+        #[doc = "Field `TSF_TIMER_0` writer - Acknowledge the guarded TSF timer-zero event."]
+        pub type TsfTimer0W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `UNKNOWN_8_31` reader - Acknowledge event bits whose identities remain unknown."]
+        pub type Unknown8_31R = crate::FieldReader<u32>;
+        #[doc = "Field `UNKNOWN_8_31` writer - Acknowledge event bits whose identities remain unknown."]
+        pub type Unknown8_31W<'a, REG> = crate::FieldWriter<'a, REG, 24, u32, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:3 - Acknowledge event bits whose identities remain unknown."]
             #[inline(always)]
-            pub fn events(&self) -> EventsR {
-                EventsR::new(self.bits)
+            pub fn unknown_0_3(&self) -> Unknown0_3R {
+                Unknown0_3R::new((self.bits & 0x0f) as u8)
+            }
+            #[doc = "Bit 4 - Acknowledge the guarded TSF timer-three event."]
+            #[inline(always)]
+            pub fn tsf_timer_3(&self) -> TsfTimer3R {
+                TsfTimer3R::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bit 5 - Acknowledge the guarded TSF timer-two event."]
+            #[inline(always)]
+            pub fn tsf_timer_2(&self) -> TsfTimer2R {
+                TsfTimer2R::new(((self.bits >> 5) & 1) != 0)
+            }
+            #[doc = "Bit 6 - Acknowledge the guarded TSF timer-one event."]
+            #[inline(always)]
+            pub fn tsf_timer_1(&self) -> TsfTimer1R {
+                TsfTimer1R::new(((self.bits >> 6) & 1) != 0)
+            }
+            #[doc = "Bit 7 - Acknowledge the guarded TSF timer-zero event."]
+            #[inline(always)]
+            pub fn tsf_timer_0(&self) -> TsfTimer0R {
+                TsfTimer0R::new(((self.bits >> 7) & 1) != 0)
+            }
+            #[doc = "Bits 8:31 - Acknowledge event bits whose identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_8_31(&self) -> Unknown8_31R {
+                Unknown8_31R::new((self.bits >> 8) & 0x00ff_ffff)
             }
         }
         impl W {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:3 - Acknowledge event bits whose identities remain unknown."]
             #[inline(always)]
-            pub fn events(&mut self) -> EventsW<'_, ClearSpec> {
-                EventsW::new(self, 0)
+            pub fn unknown_0_3(&mut self) -> Unknown0_3W<'_, ClearSpec> {
+                Unknown0_3W::new(self, 0)
+            }
+            #[doc = "Bit 4 - Acknowledge the guarded TSF timer-three event."]
+            #[inline(always)]
+            pub fn tsf_timer_3(&mut self) -> TsfTimer3W<'_, ClearSpec> {
+                TsfTimer3W::new(self, 4)
+            }
+            #[doc = "Bit 5 - Acknowledge the guarded TSF timer-two event."]
+            #[inline(always)]
+            pub fn tsf_timer_2(&mut self) -> TsfTimer2W<'_, ClearSpec> {
+                TsfTimer2W::new(self, 5)
+            }
+            #[doc = "Bit 6 - Acknowledge the guarded TSF timer-one event."]
+            #[inline(always)]
+            pub fn tsf_timer_1(&mut self) -> TsfTimer1W<'_, ClearSpec> {
+                TsfTimer1W::new(self, 6)
+            }
+            #[doc = "Bit 7 - Acknowledge the guarded TSF timer-zero event."]
+            #[inline(always)]
+            pub fn tsf_timer_0(&mut self) -> TsfTimer0W<'_, ClearSpec> {
+                TsfTimer0W::new(self, 7)
+            }
+            #[doc = "Bits 8:31 - Acknowledge event bits whose identities remain unknown."]
+            #[inline(always)]
+            pub fn unknown_8_31(&mut self) -> Unknown8_31W<'_, ClearSpec> {
+                Unknown8_31W::new(self, 8)
             }
         }
-        #[doc = "Full event image stored by complete hal_pwr_interrupt_clr_event to acknowledge WDEVPWR events. hal_enable_tsf_timer performs a fresh-read RMW which asserts bit 7-index here before enabling the selected timer.\n\nYou can [`read`](crate::Reg::read) this register and get [`clear::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clear::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Write-one-to-clear event bank used by complete hal_pwr_interrupt_clr_event. Complete guarded TSF-timer leaves independently identify bits 7 through 4.\n\nYou can [`read`](crate::Reg::read) this register and get [`clear::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`clear::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ClearSpec;
         impl crate::RegisterSpec for ClearSpec {
             type Ux = u32;
@@ -31172,7 +31339,7 @@ pub mod wifi_mac_power_interrupt {
         impl crate::Readable for ClearSpec {}
         #[doc = "`write(|w| ..)` method takes [`clear::W`](W) writer structure"]
         impl crate::Writable for ClearSpec {
-            type Safety = crate::Safe;
+            type Safety = crate::Unsafe;
             const ONE_TO_MODIFY_FIELDS_BITMAP: u32 = 0xffff_ffff;
         }
     }
@@ -55324,7 +55491,7 @@ pub mod interrupt_snapshot {
         unsafe {
             registers
                 .clear()
-                .write_with_zero(|writer| writer.events().bits(snapshot.0));
+                .write_with_zero(|writer| writer.bits(snapshot.0));
         }
     }
     #[cfg(feature = "validation-probes")]
@@ -55363,7 +55530,7 @@ pub mod interrupt_snapshot {
         unsafe {
             registers
                 .clear()
-                .write_with_zero(|writer| writer.events().bits(snapshot.0));
+                .write_with_zero(|writer| writer.bits(snapshot.0));
         }
     }
     #[cfg(feature = "validation-probes")]
@@ -55402,7 +55569,7 @@ pub mod interrupt_snapshot {
         unsafe {
             registers
                 .irq_clear_0()
-                .write_with_zero(|writer| writer.pending_bits().bits(snapshot.0));
+                .write_with_zero(|writer| writer.bits(snapshot.0));
         }
     }
     #[cfg(feature = "validation-probes")]
@@ -55443,7 +55610,7 @@ pub mod interrupt_snapshot {
         unsafe {
             registers
                 .irq_clear_1()
-                .write_with_zero(|writer| writer.pending_bits().bits(snapshot.0));
+                .write_with_zero(|writer| writer.bits(snapshot.0));
         }
     }
     #[cfg(feature = "validation-probes")]
@@ -55886,32 +56053,6 @@ pub mod full_register_write {
         }
     }
 
-    /// Write every bit of `WIFI_MAC_POWER_INTERRUPT`.`CLEAR` through its full-width field.
-    #[inline]
-    pub fn mac_power_interrupt_clear(registers: &crate::WifiMacPowerInterrupt, value: u32) {
-        // SAFETY: generator validation proves that this is the only field,
-        // it covers all 32 bits and accepts every `u32`; no zero-filled
-        // reserved or partially described bits remain.
-        unsafe {
-            registers
-                .clear()
-                .write_with_zero(|writer| writer.events().set(value));
-        }
-    }
-
-    /// Write every bit of `WIFI_MAC_POWER_INTERRUPT`.`CLEAR` through its full-width field.
-    #[inline]
-    pub fn acknowledge_mac_power_tsf_timer(registers: &crate::WifiMacPowerInterrupt, value: u32) {
-        // SAFETY: generator validation proves that this is the only field,
-        // it covers all 32 bits and accepts every `u32`; no zero-filled
-        // reserved or partially described bits remain.
-        unsafe {
-            registers
-                .clear()
-                .write_with_zero(|writer| writer.events().set(value));
-        }
-    }
-
     /// Write every bit of `WIFI_MAC_STA_TSF_LOAD`.`VALUE_LOW` through its full-width field.
     #[inline]
     pub fn station_tsf_value_low(registers: &crate::WifiMacStaTsfLoad, value: u32) {
@@ -56148,29 +56289,43 @@ pub mod fixed_register_write {
                 .write_with_zero(|writer| writer.state().closed());
         }
     }
-
-    /// Write the `MASKED` variant to every bit of `WIFI_MAC_POWER_INTERRUPT`.`ENABLE`.
-    #[inline]
-    pub fn mask_mac_power_interrupts(registers: &crate::WifiMacPowerInterrupt) {
-        // SAFETY: generator validation proves that the sole field covers
-        // all 32 bits and the named writable variant exists in the SVD.
-        unsafe {
-            registers
-                .enable()
-                .write_with_zero(|writer| writer.event_mask().masked());
-        }
-    }
 }
 
 /// Safe, SVD-declared writes of fixed complete-register images.
 pub mod fixed_register_image {
 
+    /// Publish the SVD-qualified image `0xffffffff` to `WIFI_MAC_POWER_INTERRUPT`.`CLEAR`.
+    #[inline]
+    pub fn clear_all_mac_power_interrupts(registers: &crate::WifiMacPowerInterrupt) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .clear()
+                .write_with_zero(|writer| writer.bits(0xffffffff));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000000` to `WIFI_MAC_POWER_INTERRUPT`.`ENABLE`.
+    #[inline]
+    pub fn mask_mac_power_interrupts(registers: &crate::WifiMacPowerInterrupt) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .enable()
+                .write_with_zero(|writer| writer.bits(0x00000000));
+        }
+    }
+
     /// Publish the SVD-qualified image `0x00000000` to `WIFI_MAC_INTERRUPT`.`ENABLE`.
     #[inline]
     pub fn mask_mac_interrupts(registers: &crate::WifiMacInterrupt) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .enable()
@@ -56181,9 +56336,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x19a879e0` to `WIFI_MAC_INTERRUPT`.`ENABLE`.
     #[inline]
     pub fn enable_cold_rx_mac_interrupts(registers: &crate::WifiMacInterrupt) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .enable()
@@ -56194,9 +56349,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x00000001` to `BLUETOOTH_INTERRUPT_BANK`.`IRQ_CONTROL_0`.
     #[inline]
     pub fn prepare_bluetooth_interrupt_output(registers: &crate::BluetoothInterruptBank) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .irq_control_0()
@@ -56207,9 +56362,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x00000041` to `IEEE802154_MAC`.`COMMAND`.
     #[inline]
     pub fn issue_ieee802154_tx_start(registers: &crate::Ieee802154Mac) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .command()
@@ -56220,9 +56375,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x00000042` to `IEEE802154_MAC`.`COMMAND`.
     #[inline]
     pub fn issue_ieee802154_rx_start(registers: &crate::Ieee802154Mac) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .command()
@@ -56233,9 +56388,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x00000043` to `IEEE802154_MAC`.`COMMAND`.
     #[inline]
     pub fn issue_ieee802154_cca_tx_start(registers: &crate::Ieee802154Mac) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .command()
@@ -56246,9 +56401,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x00000044` to `IEEE802154_MAC`.`COMMAND`.
     #[inline]
     pub fn issue_ieee802154_ed_start(registers: &crate::Ieee802154Mac) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .command()
@@ -56259,9 +56414,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x00000045` to `IEEE802154_MAC`.`COMMAND`.
     #[inline]
     pub fn issue_ieee802154_stop(registers: &crate::Ieee802154Mac) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .command()
@@ -56272,9 +56427,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x0000004c` to `IEEE802154_MAC`.`COMMAND`.
     #[inline]
     pub fn issue_ieee802154_timer0_start(registers: &crate::Ieee802154Mac) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .command()
@@ -56285,9 +56440,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x0000004d` to `IEEE802154_MAC`.`COMMAND`.
     #[inline]
     pub fn issue_ieee802154_timer0_stop(registers: &crate::Ieee802154Mac) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .command()
@@ -56298,9 +56453,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x0000004e` to `IEEE802154_MAC`.`COMMAND`.
     #[inline]
     pub fn issue_ieee802154_timer1_start(registers: &crate::Ieee802154Mac) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .command()
@@ -56311,9 +56466,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x0000004f` to `IEEE802154_MAC`.`COMMAND`.
     #[inline]
     pub fn issue_ieee802154_timer1_stop(registers: &crate::Ieee802154Mac) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .command()
@@ -56324,9 +56479,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x00000001` to `IEEE802154_MAC`.`ENHANCED_ACK_NOTIFY`.
     #[inline]
     pub fn notify_ieee802154_enhanced_ack_generated(registers: &crate::Ieee802154Mac) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .enhanced_ack_notify()
@@ -56337,9 +56492,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x00000001` to `BLUETOOTH_INTERRUPT_BANK`.`IRQ_CONTROL_1`.
     #[inline]
     pub fn release_bluetooth_interrupt_output_0(registers: &crate::BluetoothInterruptBank) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .irq_control_1()
@@ -56350,9 +56505,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x00000001` to `BLUETOOTH_INTERRUPT_BANK`.`IRQ_CONTROL_2`.
     #[inline]
     pub fn release_bluetooth_interrupt_output_1(registers: &crate::BluetoothInterruptBank) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .irq_control_2()
@@ -56363,9 +56518,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x000008c7` to `PHY_AGC_ORACLE`.`AGC_UPDATE_8070_OPAQUE`.
     #[inline]
     pub fn initialize_agc_update_8070(registers: &crate::PhyAgcOracle) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .agc_update_8070_opaque()
@@ -56376,9 +56531,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x0001721f` to `PHY_AGC_ORACLE`.`AGC_UPDATE_78A4_OPAQUE`.
     #[inline]
     pub fn initialize_agc_update_78a4(registers: &crate::PhyAgcOracle) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .agc_update_78a4_opaque()
@@ -56389,9 +56544,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x000852a1` to `PHY_AGC_ORACLE`.`AGC_UPDATE_8010_OPAQUE`.
     #[inline]
     pub fn initialize_agc_update_8010(registers: &crate::PhyAgcOracle) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .agc_update_8010_opaque()
@@ -56402,9 +56557,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x00600030` to `PHY_AGC_ORACLE`.`AGC_UPDATE_8018_OPAQUE`.
     #[inline]
     pub fn initialize_agc_update_8018(registers: &crate::PhyAgcOracle) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .agc_update_8018_opaque()
@@ -56415,9 +56570,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x010000a0` to `PHY_AGC_ORACLE`.`AGC_UPDATE_801C_OPAQUE`.
     #[inline]
     pub fn initialize_agc_update_801c(registers: &crate::PhyAgcOracle) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .agc_update_801c_opaque()
@@ -56428,9 +56583,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x00000180` to `PHY_AGC_ORACLE`.`AGC_UPDATE_8020_OPAQUE`.
     #[inline]
     pub fn initialize_agc_update_8020(registers: &crate::PhyAgcOracle) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .agc_update_8020_opaque()
@@ -56441,9 +56596,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0xc0403020` to `PHY_AGC_ORACLE`.`AGC_UPDATE_8028_OPAQUE`.
     #[inline]
     pub fn initialize_agc_update_8028(registers: &crate::PhyAgcOracle) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .agc_update_8028_opaque()
@@ -56454,9 +56609,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x01000080` to `PHY_AGC_ORACLE`.`AGC_UPDATE_802C_OPAQUE`.
     #[inline]
     pub fn initialize_agc_update_802c(registers: &crate::PhyAgcOracle) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .agc_update_802c_opaque()
@@ -56467,9 +56622,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0xfe3fe1fe` to `PHY_AGC_ORACLE`.`RX_11B_PATH_CONTROL_0`.
     #[inline]
     pub fn initialize_rx_11b_path_control_0(registers: &crate::PhyAgcOracle) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .rx_11b_path_control_0()
@@ -56480,9 +56635,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0xff7da4f3` to `PHY_AGC_ORACLE`.`AGC_UPDATE_7048_OPAQUE`.
     #[inline]
     pub fn initialize_agc_update_7048(registers: &crate::PhyAgcOracle) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .agc_update_7048_opaque()
@@ -56493,9 +56648,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x06acc7c8` to `PHY_AGC_ORACLE`.`RX_11B_WINDOW_CONTROL`.
     #[inline]
     pub fn initialize_rx_11b_window_control(registers: &crate::PhyAgcOracle) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .rx_11b_window_control()
@@ -56506,9 +56661,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0xb2208553` to `PHY_AGC_ORACLE`.`RX_11B_PATH_CONTROL_1`.
     #[inline]
     pub fn initialize_rx_11b_path_control_1(registers: &crate::PhyAgcOracle) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .rx_11b_path_control_1()
@@ -56519,9 +56674,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x00000404` to `PHY_AGC_ORACLE`.`RF_RX_SATURATION_CONFIG`.
     #[inline]
     pub fn initialize_rf_rx_saturation_config(registers: &crate::PhyAgcOracle) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .rf_rx_saturation_config()
@@ -56532,9 +56687,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x0661a45f` to `PHY_BASEBAND_CONFIG_ORACLE`.`TX_PA_TABLE_OPAQUE`.
     #[inline]
     pub fn initialize_tx_pa_table(registers: &crate::PhyBasebandConfigOracle) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .tx_pa_table_opaque()
@@ -56545,9 +56700,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x0f0f0fff` to `PHY_BASEBAND_CONFIG_ORACLE`.`POWER_DETECTOR_TABLE_0_OPAQUE`.
     #[inline]
     pub fn initialize_power_detector_table_0(registers: &crate::PhyBasebandConfigOracle) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .power_detector_table_0_opaque()
@@ -56558,9 +56713,9 @@ pub mod fixed_register_image {
     /// Publish the SVD-qualified image `0x00ff0f64` to `PHY_BASEBAND_CONFIG_ORACLE`.`POWER_DETECTOR_TABLE_1`.
     #[inline]
     pub fn initialize_power_detector_table_1(registers: &crate::PhyBasebandConfigOracle) {
-        // SAFETY: generator validation proves that the target is an
-        // ordinary writable 32-bit register, while the SVD extension
-        // and its provenance qualify this exact complete image.
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
                 .power_detector_table_1()
@@ -56712,6 +56867,33 @@ pub mod zero_based_field_write {
             registers
                 .scheduler_finished_list_report()
                 .write_with_zero(|writer| writer.finished_list_mask().set(value));
+        }
+    }
+
+    /// Write `TSF_TIMER_0`, `TSF_TIMER_1`, `TSF_TIMER_2`, `TSF_TIMER_3` in `WIFI_MAC_POWER_INTERRUPT`.`CLEAR` while publishing zero to every other register bit.
+    #[inline]
+    pub fn acknowledge_mac_power_tsf_timer(
+        registers: &crate::WifiMacPowerInterrupt,
+        tsf_timer_0_value: bool,
+        tsf_timer_1_value: bool,
+        tsf_timer_2_value: bool,
+        tsf_timer_3_value: bool,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.clear().write_with_zero(|writer| {
+                writer
+                    .tsf_timer_0()
+                    .bit(tsf_timer_0_value)
+                    .tsf_timer_1()
+                    .bit(tsf_timer_1_value)
+                    .tsf_timer_2()
+                    .bit(tsf_timer_2_value)
+                    .tsf_timer_3()
+                    .bit(tsf_timer_3_value)
+            });
         }
     }
 

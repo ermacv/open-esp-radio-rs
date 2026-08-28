@@ -504,47 +504,12 @@ value = 0x19a879e0
 description = "Complete mask published by the qualified cold receive initializer."
 sources = ["BLOB_LIBPP_HAL_INIT_TAIL"]
 
-[[enum-domains]]
-name = "MacPowerTsfTimerClearImage"
-description = "Exact WDEVPWR clear images for the four guarded TSF timers."
-
-[[enum-domains.values]]
-name = "Timer0"
-value = 0x00000080
-description = "Acknowledge TSF timer zero at WDEVPWR bit 7."
-sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
-
-[[enum-domains.values]]
-name = "Timer1"
-value = 0x00000040
-description = "Acknowledge TSF timer one at WDEVPWR bit 6."
-sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
-
-[[enum-domains.values]]
-name = "Timer2"
-value = 0x00000020
-description = "Acknowledge TSF timer two at WDEVPWR bit 5."
-sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
-
-[[enum-domains.values]]
-name = "Timer3"
-value = 0x00000010
-description = "Acknowledge TSF timer three at WDEVPWR bit 4."
-sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
-
 [[opaque-domains]]
 name = "MacInterruptClearImage"
 description = "Register-specific event image written to the MAC interrupt clear register."
 peripheral = "WIFI_MAC_INTERRUPT"
 register = "CLEAR"
 sources = ["BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT"]
-
-[[opaque-domains]]
-name = "MacPowerInterruptClearImage"
-description = "Register-specific event image written to the MAC power-interrupt clear register."
-peripheral = "WIFI_MAC_POWER_INTERRUPT"
-register = "CLEAR"
-sources = ["BLOB_LIBPP_HAL_PWR_INTERRUPT"]
 
 [[opaque-domains]]
 name = "StationTsfLowWord"
@@ -707,12 +672,18 @@ register = "SCHEDULER_FINISHED_LIST_REPORT"
 fields = ["FINISHED_LIST_MASK"]
 sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS", "PUBLIC_ESP32S31_BLE_COMPLETION_ROLES"]
 
+[[zero-based-field-writes]]
+name = "acknowledge_mac_power_tsf_timer"
+peripheral = "WIFI_MAC_POWER_INTERRUPT"
+register = "CLEAR"
+fields = ["TSF_TIMER_0", "TSF_TIMER_1", "TSF_TIMER_2", "TSF_TIMER_3"]
+sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
+
 [[interrupt-snapshots]]
 name = "mac_interrupt"
 peripheral = "WIFI_MAC_INTERRUPT"
 status-register = "STATUS"
 clear-register = "CLEAR"
-clear-field = "EVENTS"
 sources = ["BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT", "BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT"]
 
 [[interrupt-snapshots]]
@@ -720,7 +691,6 @@ name = "mac_power_interrupt"
 peripheral = "WIFI_MAC_POWER_INTERRUPT"
 status-register = "STATUS"
 clear-register = "CLEAR"
-clear-field = "EVENTS"
 sources = ["BLOB_LIBPP_HAL_PWR_INTERRUPT"]
 
 [[interrupt-snapshots]]
@@ -728,7 +698,6 @@ name = "bluetooth_interrupt_bank_0"
 peripheral = "BLUETOOTH_INTERRUPT_BANK"
 status-register = "IRQ_STATUS_SNAPSHOT_0"
 clear-register = "IRQ_CLEAR_0"
-clear-field = "PENDING_BITS"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 
 [[interrupt-snapshots]]
@@ -736,7 +705,6 @@ name = "bluetooth_interrupt_bank_1"
 peripheral = "BLUETOOTH_INTERRUPT_BANK"
 status-register = "IRQ_STATUS_SNAPSHOT_1"
 clear-register = "IRQ_CLEAR_1"
-clear-field = "PENDING_BITS"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 
 [[full-register-writes]]
@@ -766,23 +734,12 @@ peripheral = "WIFI_MAC_HE_INIT_PREFIX"
 register = "INTERRUPT_1_RAW"
 sources = ["BLOB_LIBPP_HAL_DISABLE_MAC"]
 
-[[full-register-writes]]
-name = "mac_power_interrupt_clear"
+[[fixed-register-images]]
+name = "clear_all_mac_power_interrupts"
 peripheral = "WIFI_MAC_POWER_INTERRUPT"
 register = "CLEAR"
-field = "EVENTS"
-domain = "MacPowerInterruptClearImage"
-exposure = "facade"
+value = 0xFFFFFFFF
 sources = ["BLOB_LIBPP_HAL_PWR_INTERRUPT"]
-
-[[full-register-writes]]
-name = "acknowledge_mac_power_tsf_timer"
-peripheral = "WIFI_MAC_POWER_INTERRUPT"
-register = "CLEAR"
-field = "EVENTS"
-domain = "MacPowerTsfTimerClearImage"
-exposure = "facade"
-sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
 
 [[full-register-writes]]
 name = "station_tsf_value_low"
@@ -951,12 +908,11 @@ field = "STATE"
 variant = "CLOSED"
 sources = ["BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK"]
 
-[[fixed-register-writes]]
+[[fixed-register-images]]
 name = "mask_mac_power_interrupts"
 peripheral = "WIFI_MAC_POWER_INTERRUPT"
 register = "ENABLE"
-field = "EVENT_MASK"
-variant = "MASKED"
+value = 0x00000000
 sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
 
 [[fixed-register-images]]

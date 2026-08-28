@@ -64,13 +64,6 @@ impl PacApiPack {
                     operation.name
                 )));
             }
-            let field = field(&operation.name, clear.info, &operation.clear_field)?;
-            if field.bit_offset() != 0 || field.bit_width() != 32 {
-                return Err(Error::message(format!(
-                    "PAC API interrupt snapshot {:?} clear field must cover all 32 bits",
-                    operation.name
-                )));
-            }
         }
 
         for operation in &self.full_register_writes {
@@ -177,12 +170,21 @@ impl PacApiPack {
         }
 
         for operation in &self.fixed_register_images {
-            ordinary_writable_register(
+            let binding = writable_register(
                 &device,
                 &operation.name,
                 &operation.peripheral,
                 &operation.register,
             )?;
+            if !matches!(
+                binding.info.modified_write_values,
+                None | Some(ModifiedWriteValues::OneToClear)
+            ) {
+                return Err(Error::message(format!(
+                    "PAC API fixed-register-image {:?} only supports ordinary or one-to-clear registers",
+                    operation.name
+                )));
+            }
         }
         for operation in &self.w1c_register_snapshots {
             let binding = register(
@@ -964,6 +966,21 @@ sources = ["PUBLIC_EVENT_STATUS_W1C"]
         .unwrap()
     }
 
+    fn fixed_register_image_pack(register: &str) -> PacApiPack {
+        toml_edit::de::from_str(&format!(
+            r#"schema = 4
+
+[[fixed-register-images]]
+name = "publish_image"
+peripheral = "RADIO"
+register = "{register}"
+value = 0xffffffff
+sources = ["PUBLIC_FIXED_IMAGE"]
+"#
+        ))
+        .unwrap()
+    }
+
     fn full_register_read_pack(register: &str) -> PacApiPack {
         toml_edit::de::from_str(&format!(
             r#"schema = 4
@@ -1046,6 +1063,18 @@ peripherals = ["INTERRUPT"]
                     || error.contains("32-bit")
                     || error.contains("non-array"),
                 "unexpected rejection for {register}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn fixed_register_image_accepts_ordinary_and_one_to_clear_targets() {
+        for register in ["CONTROL", "EVENT_STATUS"] {
+            assert!(
+                fixed_register_image_pack(register)
+                    .validate_against_svd(W1C_REGISTER_SNAPSHOT_SVD)
+                    .is_ok(),
+                "fixed reviewed image should support {register}"
             );
         }
     }

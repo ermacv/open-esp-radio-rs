@@ -186,7 +186,6 @@ macro_rules! common_operation {
 common_operation!(InterruptSnapshot {
     status_register: String,
     clear_register: String,
-    clear_field: String,
 });
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -468,7 +467,6 @@ impl PacApiPack {
                 &operation.status_register,
             )?;
             validate_component("clear-register", &operation.name, &operation.clear_register)?;
-            validate_component("clear-field", &operation.name, &operation.clear_field)?;
         }
         for operation in &self.zero_based_field_writes {
             if operation.fields.is_empty() {

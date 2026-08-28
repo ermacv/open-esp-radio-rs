@@ -13074,73 +13074,204 @@
       <registers>
         <register>
           <name>ENABLE</name>
-          <description>WDEVPWR_ENABLE diagnostic snapshot and writable event mask. hal_enable_tsf_timer sets bit 7-index and hal_disable_tsf_timer clears the same bit for guarded timer indices zero through three.</description>
+          <description>WDEVPWR_ENABLE diagnostic snapshot and writable event mask. Complete guarded TSF-timer leaves independently identify bits 7 through 4.</description>
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>EVENT_MASK</name>
+              <name>UNKNOWN_0_3</name>
+              <description>Enable bits whose event identities remain unknown.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
+              <bitWidth>4</bitWidth>
               <writeConstraint>
-                <useEnumeratedValues>true</useEnumeratedValues>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>15</maximum>
+                </range>
               </writeConstraint>
-              <enumeratedValues>
-                <usage>write</usage>
-                <enumeratedValue>
-                  <name>MASKED</name>
-                  <description>Mask every qualified WDEVPWR event during ownership handoff.</description>
-                  <value>0</value>
-                </enumeratedValue>
-              </enumeratedValues>
+            </field>
+            <field>
+              <name>TSF_TIMER_3</name>
+              <description>Enable the guarded TSF timer-three event.</description>
+              <bitOffset>4</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_2</name>
+              <description>Enable the guarded TSF timer-two event.</description>
+              <bitOffset>5</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_1</name>
+              <description>Enable the guarded TSF timer-one event.</description>
+              <bitOffset>6</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_0</name>
+              <description>Enable the guarded TSF timer-zero event.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_8_31</name>
+              <description>Enable bits whose event identities remain unknown.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>24</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>16777215</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
         <register>
           <name>RAW</name>
-          <description>WDEVPWR_RAW diagnostic snapshot.</description>
+          <description>WDEVPWR_RAW diagnostic snapshot with the same event geometry as ENABLE, STATUS and CLEAR.</description>
           <addressOffset>0x4</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
-              <name>EVENTS</name>
+              <name>UNKNOWN_0_3</name>
+              <description>Raw event bits whose identities remain unknown.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
+              <bitWidth>4</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_3</name>
+              <description>Raw guarded TSF timer-three event.</description>
+              <bitOffset>4</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_2</name>
+              <description>Raw guarded TSF timer-two event.</description>
+              <bitOffset>5</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_1</name>
+              <description>Raw guarded TSF timer-one event.</description>
+              <bitOffset>6</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_0</name>
+              <description>Raw guarded TSF timer-zero event.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_8_31</name>
+              <description>Raw event bits whose identities remain unknown.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>24</bitWidth>
             </field>
           </fields>
         </register>
         <register>
           <name>STATUS</name>
-          <description>Masked WDEVPWR event image returned by complete hal_pwr_interrupt_get_event.</description>
+          <description>Masked WDEVPWR event image returned by complete hal_pwr_interrupt_get_event, with TSF timer causes identified by the guarded timer leaves.</description>
           <addressOffset>0x8</addressOffset>
           <size>0x20</size>
           <access>read-only</access>
           <fields>
             <field>
-              <name>EVENTS</name>
+              <name>UNKNOWN_0_3</name>
+              <description>Masked event bits whose identities remain unknown.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
+              <bitWidth>4</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_3</name>
+              <description>Masked guarded TSF timer-three event.</description>
+              <bitOffset>4</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_2</name>
+              <description>Masked guarded TSF timer-two event.</description>
+              <bitOffset>5</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_1</name>
+              <description>Masked guarded TSF timer-one event.</description>
+              <bitOffset>6</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_0</name>
+              <description>Masked guarded TSF timer-zero event.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_8_31</name>
+              <description>Masked event bits whose identities remain unknown.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>24</bitWidth>
             </field>
           </fields>
         </register>
         <register>
           <name>CLEAR</name>
-          <description>Full event image stored by complete hal_pwr_interrupt_clr_event to acknowledge WDEVPWR events. hal_enable_tsf_timer performs a fresh-read RMW which asserts bit 7-index here before enabling the selected timer.</description>
+          <description>Write-one-to-clear event bank used by complete hal_pwr_interrupt_clr_event. Complete guarded TSF-timer leaves independently identify bits 7 through 4.</description>
           <addressOffset>0xC</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <modifiedWriteValues>oneToClear</modifiedWriteValues>
           <fields>
             <field>
-              <name>EVENTS</name>
+              <name>UNKNOWN_0_3</name>
+              <description>Acknowledge event bits whose identities remain unknown.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
+              <bitWidth>4</bitWidth>
               <writeConstraint>
                 <range>
                   <minimum>0</minimum>
-                  <maximum>4294967295</maximum>
+                  <maximum>15</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>TSF_TIMER_3</name>
+              <description>Acknowledge the guarded TSF timer-three event.</description>
+              <bitOffset>4</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_2</name>
+              <description>Acknowledge the guarded TSF timer-two event.</description>
+              <bitOffset>5</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_1</name>
+              <description>Acknowledge the guarded TSF timer-one event.</description>
+              <bitOffset>6</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>TSF_TIMER_0</name>
+              <description>Acknowledge the guarded TSF timer-zero event.</description>
+              <bitOffset>7</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN_8_31</name>
+              <description>Acknowledge event bits whose identities remain unknown.</description>
+              <bitOffset>8</bitOffset>
+              <bitWidth>24</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>16777215</maximum>
                 </range>
               </writeConstraint>
             </field>

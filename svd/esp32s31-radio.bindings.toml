@@ -40163,10 +40163,45 @@ scope = []
 register-method = "enable"
 
 [[registers.fields]]
-svd-name = "EVENT_MASK"
-method = "event_mask"
+svd-name = "UNKNOWN_0_3"
+method = "unknown_0_3"
 bit-offset = 0
-bit-width = 32
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_3"
+method = "tsf_timer_3"
+bit-offset = 4
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_2"
+method = "tsf_timer_2"
+bit-offset = 5
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_1"
+method = "tsf_timer_1"
+bit-offset = 6
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_0"
+method = "tsf_timer_0"
+bit-offset = 7
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_8_31"
+method = "unknown_8_31"
+bit-offset = 8
+bit-width = 24
 access = "read-write"
 
 [[registers]]
@@ -40181,10 +40216,45 @@ scope = []
 register-method = "raw"
 
 [[registers.fields]]
-svd-name = "EVENTS"
-method = "events"
+svd-name = "UNKNOWN_0_3"
+method = "unknown_0_3"
 bit-offset = 0
-bit-width = 32
+bit-width = 4
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_3"
+method = "tsf_timer_3"
+bit-offset = 4
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_2"
+method = "tsf_timer_2"
+bit-offset = 5
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_1"
+method = "tsf_timer_1"
+bit-offset = 6
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_0"
+method = "tsf_timer_0"
+bit-offset = 7
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_8_31"
+method = "unknown_8_31"
+bit-offset = 8
+bit-width = 24
 access = "read-only"
 
 [[registers]]
@@ -40199,10 +40269,45 @@ scope = []
 register-method = "status"
 
 [[registers.fields]]
-svd-name = "EVENTS"
-method = "events"
+svd-name = "UNKNOWN_0_3"
+method = "unknown_0_3"
 bit-offset = 0
-bit-width = 32
+bit-width = 4
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_3"
+method = "tsf_timer_3"
+bit-offset = 4
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_2"
+method = "tsf_timer_2"
+bit-offset = 5
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_1"
+method = "tsf_timer_1"
+bit-offset = 6
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_0"
+method = "tsf_timer_0"
+bit-offset = 7
+bit-width = 1
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_8_31"
+method = "unknown_8_31"
+bit-offset = 8
+bit-width = 24
 access = "read-only"
 
 [[registers]]
@@ -40217,10 +40322,45 @@ scope = []
 register-method = "clear"
 
 [[registers.fields]]
-svd-name = "EVENTS"
-method = "events"
+svd-name = "UNKNOWN_0_3"
+method = "unknown_0_3"
 bit-offset = 0
-bit-width = 32
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_3"
+method = "tsf_timer_3"
+bit-offset = 4
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_2"
+method = "tsf_timer_2"
+bit-offset = 5
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_1"
+method = "tsf_timer_1"
+bit-offset = 6
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "TSF_TIMER_0"
+method = "tsf_timer_0"
+bit-offset = 7
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNKNOWN_8_31"
+method = "unknown_8_31"
+bit-offset = 8
+bit-width = 24
 access = "read-write"
 
 [[registers]]

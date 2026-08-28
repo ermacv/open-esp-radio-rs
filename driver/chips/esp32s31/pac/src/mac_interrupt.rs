@@ -29,46 +29,32 @@ pub enum MacPowerWakeCause {
     TsfTimer(MacTsfTimerIndex),
 }
 
-impl MacPowerWakeCause {
-    pub const REVIEWED_MASK: u32 = 0x0000_00f0;
-
-    pub(crate) const fn event_mask(self) -> u32 {
-        match self {
-            Self::TsfTimer(MacTsfTimerIndex::Timer0) => {
-                super::generated::MacPowerTsfTimerClearImage::Timer0.bits()
-            }
-            Self::TsfTimer(MacTsfTimerIndex::Timer1) => {
-                super::generated::MacPowerTsfTimerClearImage::Timer1.bits()
-            }
-            Self::TsfTimer(MacTsfTimerIndex::Timer2) => {
-                super::generated::MacPowerTsfTimerClearImage::Timer2.bits()
-            }
-            Self::TsfTimer(MacTsfTimerIndex::Timer3) => {
-                super::generated::MacPowerTsfTimerClearImage::Timer3.bits()
-            }
-        }
-    }
-}
-
 fn acknowledge_mac_power_wake_cause(
     peripheral: &svd::WifiMacPowerInterrupt,
     cause: MacPowerWakeCause,
 ) {
-    let image = match cause {
+    match cause {
         MacPowerWakeCause::TsfTimer(MacTsfTimerIndex::Timer0) => {
-            super::generated::MacPowerTsfTimerClearImage::Timer0
+            svd::zero_based_field_write::acknowledge_mac_power_tsf_timer(
+                peripheral, true, false, false, false,
+            );
         }
         MacPowerWakeCause::TsfTimer(MacTsfTimerIndex::Timer1) => {
-            super::generated::MacPowerTsfTimerClearImage::Timer1
+            svd::zero_based_field_write::acknowledge_mac_power_tsf_timer(
+                peripheral, false, true, false, false,
+            );
         }
         MacPowerWakeCause::TsfTimer(MacTsfTimerIndex::Timer2) => {
-            super::generated::MacPowerTsfTimerClearImage::Timer2
+            svd::zero_based_field_write::acknowledge_mac_power_tsf_timer(
+                peripheral, false, false, true, false,
+            );
         }
         MacPowerWakeCause::TsfTimer(MacTsfTimerIndex::Timer3) => {
-            super::generated::MacPowerTsfTimerClearImage::Timer3
+            svd::zero_based_field_write::acknowledge_mac_power_tsf_timer(
+                peripheral, false, false, false, true,
+            );
         }
-    };
-    super::generated::acknowledge_mac_power_tsf_timer(peripheral, image);
+    }
 }
 
 /// Proof that the connected-STA hardware policy was applied before IRQ activation.
@@ -247,15 +233,12 @@ impl MacInterruptSetup {
         // acknowledge every stale event, then order all MMIO writes before
         // the caller exposes either ISR capability.
         publish_mac_interrupt_mask(&self.peripheral, event_mask);
-        svd::fixed_register_write::mask_mac_power_interrupts(&self.power_peripheral);
+        svd::fixed_register_image::mask_mac_power_interrupts(&self.power_peripheral);
         super::generated::mac_interrupt_clear(
             &self.peripheral,
             super::generated::MacInterruptClearImage::new(u32::MAX),
         );
-        super::generated::mac_power_interrupt_clear(
-            &self.power_peripheral,
-            super::generated::MacPowerInterruptClearImage::new(u32::MAX),
-        );
+        svd::fixed_register_image::clear_all_mac_power_interrupts(&self.power_peripheral);
         device_fence();
         (
             MacInterruptRegisters {
@@ -285,7 +268,7 @@ impl MacPowerInterruptRegisters {
     /// image. Consequently this is a rollback/handoff operation, not a claim
     /// that the selected cause can yet wake production firmware.
     pub fn mask_and_acknowledge_wake_cause(&mut self, cause: MacPowerWakeCause) {
-        svd::fixed_register_write::mask_mac_power_interrupts(&self.peripheral);
+        svd::fixed_register_image::mask_mac_power_interrupts(&self.peripheral);
         acknowledge_mac_power_wake_cause(&self.peripheral, cause);
         device_fence();
     }
@@ -397,15 +380,12 @@ impl MacInterruptRegisters {
     /// either PAC peripheral a second time.
     pub fn deactivate(self, power: MacPowerInterruptRegisters) -> MacInterruptSetup {
         publish_mac_interrupt_mask(&self.peripheral, MacInterruptMask::NONE);
-        svd::fixed_register_write::mask_mac_power_interrupts(&power.peripheral);
+        svd::fixed_register_image::mask_mac_power_interrupts(&power.peripheral);
         super::generated::mac_interrupt_clear(
             &self.peripheral,
             super::generated::MacInterruptClearImage::new(u32::MAX),
         );
-        super::generated::mac_power_interrupt_clear(
-            &power.peripheral,
-            super::generated::MacPowerInterruptClearImage::new(u32::MAX),
-        );
+        svd::fixed_register_image::clear_all_mac_power_interrupts(&power.peripheral);
         device_fence();
         MacInterruptSetup {
             peripheral: self.peripheral,

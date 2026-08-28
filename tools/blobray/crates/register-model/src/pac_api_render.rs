@@ -275,7 +275,6 @@ impl PacApiPack {
             let peripheral_type = type_binding_name(&binding.peripheral);
             let status = member_binding_name(&binding.status_register);
             let clear = member_binding_name(&binding.clear_register);
-            let clear_field = member_binding_name(&binding.clear_field);
             output.push_str(&format!(
                 "\n    /// Opaque event image sampled from `{}`.`{}`.\n\
                  #[must_use = \"an interrupt snapshot must be inspected and acknowledged\"]\n\
@@ -301,9 +300,7 @@ impl PacApiPack {
                      // STATUS read (or in a validation-only build) and CLEAR is an\n\
                      // SVD-validated full-width write-one-to-clear register.\n\
                      unsafe {{\n\
-                         registers.{clear}().write_with_zero(|writer|\n\
-                             writer.{clear_field}().bits(snapshot.0)\n\
-                         );\n\
+                         registers.{clear}().write_with_zero(|writer| writer.bits(snapshot.0));\n\
                      }}\n\
                  }}\n\
                  #[cfg(feature = \"validation-probes\")]\n\
@@ -535,9 +532,9 @@ impl PacApiPack {
                 "\n    /// Publish the SVD-qualified image `0x{:08x}` to `{}`.`{}`.\n\
                  #[inline]\n\
                  pub fn {}(registers: &crate::{peripheral_type}{index_parameter}) {{\n\
-                     // SAFETY: generator validation proves that the target is an\n\
-                     // ordinary writable 32-bit register, while the SVD extension\n\
-                     // and its provenance qualify this exact complete image.\n\
+                     // SAFETY: generator validation proves that the target is a\n\
+                     // writable 32-bit ordinary or write-one-to-clear register,\n\
+                     // while reviewed provenance qualifies this exact image.\n\
                      unsafe {{\n\
                          registers.{register}({index_argument}).write_with_zero(|writer|\n\
                              writer.bits(0x{:08x})\n\

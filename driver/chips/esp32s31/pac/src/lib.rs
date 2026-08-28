@@ -671,18 +671,6 @@ impl MacPowerInterruptSnapshot {
         self.0.bits()
     }
 
-    /// Test one reviewed WDEVPWR cause without assigning names to any other
-    /// bit in the opaque status image.
-    pub const fn contains(&self, cause: MacPowerWakeCause) -> bool {
-        self.0.bits() & cause.event_mask() != 0
-    }
-
-    /// Preserve every cause outside the four reviewed TSF-timer sources as
-    /// opaque evidence for a later qualification slice.
-    pub const fn unknown_bits(&self) -> u32 {
-        self.0.bits() & !MacPowerWakeCause::REVIEWED_MASK
-    }
-
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
     pub fn for_validation(bits: u32) -> Self {

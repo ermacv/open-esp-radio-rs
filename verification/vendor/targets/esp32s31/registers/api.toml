@@ -402,6 +402,13 @@ max = 0xff
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[bounded-domains]]
+name = "BluetoothBasebandGainParameterByte"
+description = "Complete linked phy_param byte consumed by the reviewed Bluetooth baseband gain initialization; physical units remain unknown."
+min = 0
+max = 0xff
+sources = ["BLOB_LIBBTBB_BT_BB_V2_INIT"]
+
+[[bounded-domains]]
 name = "ModemLowPowerClockDivider"
 description = "Twelve-bit divider accepted by the canonical MODEM_LPCON low-power timer selector."
 min = 0
@@ -3843,6 +3850,41 @@ fields = [{ field = "POSITIONAL_BITS_16_23", source-bit-offset = 0 }]
 value = 0x50
 exposure = "facade"
 sources = ["BLOB_LIBBTBB_BT_BB_V2_RX_SET_SLICE"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_gain_baseband"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_INIT_7CD0"
+fields = [
+    { field = "INIT_LOW_UNKNOWN", source-bit-offset = 0 },
+    { field = "INIT_LOW_UNKNOWN_1", source-bit-offset = 1 },
+    { field = "INIT_LOW_BIT_2_UNKNOWN", source-bit-offset = 2 },
+    { field = "INIT_LOW_UNKNOWN_3", source-bit-offset = 3 },
+    { field = "INIT_HIGH_UNKNOWN", source-bit-offset = 4 },
+]
+value = 0xff
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_INIT"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_gain_force"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "RX_GAIN_FORCE_OPAQUE"
+fields = [{ field = "DYNAMIC_BITS_0_6", source-bit-offset = 0 }]
+domain = "BluetoothBasebandGainParameterByte"
+input-transform = { wrapping-subtract = 0, retain-mask = 0x7f }
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_INIT"]
+
+[[field-replace-modifies]]
+name = "initialize_bluetooth_receive_gain_image"
+peripheral = "PHY_BTAGC_RECOVERED"
+register = "AGC_GAIN_IMAGE"
+fields = [{ field = "DYNAMIC_BITS_2_8", source-bit-offset = 0 }]
+domain = "BluetoothBasebandGainParameterByte"
+input-transform = { wrapping-subtract = 5, retain-mask = 0x7f }
+exposure = "facade"
+sources = ["BLOB_LIBBTBB_BT_BB_V2_INIT"]
 
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"

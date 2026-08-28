@@ -62850,6 +62850,57 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CD0 fields [INIT_LOW_UNKNOWN, INIT_LOW_UNKNOWN_1, INIT_LOW_BIT_2_UNKNOWN, INIT_LOW_UNKNOWN_3, INIT_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_gain_baseband(registers: &crate::PhyBasebandConfigOracle) {
+        registers.baseband_init_7cd0().modify(|_, writer| {
+            let input = 0x000000ff_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .init_low_unknown()
+                    .bit((input & 0x00000001) != 0)
+                    .init_low_unknown_1()
+                    .bit(((input >> 1) & 0x00000001) != 0)
+                    .init_low_bit_2_unknown()
+                    .bit(((input >> 2) & 0x00000001) != 0)
+                    .init_low_unknown_3()
+                    .bit(((input >> 3) & 0x00000001) != 0)
+                    .init_high_unknown()
+                    .bits(((input >> 4) & 0x0000000f) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_BTAGC_RECOVERED.RX_GAIN_FORCE_OPAQUE fields [DYNAMIC_BITS_0_6] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_gain_force(
+        registers: &crate::PhyBtagcRecovered,
+        input: u32,
+    ) {
+        registers.rx_gain_force_opaque().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x0000007f;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.dynamic_bits_0_6().bits((input & 0x0000007f) as u8) }
+        });
+    }
+
+    /// Replace PHY_BTAGC_RECOVERED.AGC_GAIN_IMAGE fields [DYNAMIC_BITS_2_8] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_bluetooth_receive_gain_image(
+        registers: &crate::PhyBtagcRecovered,
+        input: u32,
+    ) {
+        registers.agc_gain_image().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000005) & 0x0000007f;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.dynamic_bits_2_8().bits((input & 0x0000007f) as u8) }
+        });
+    }
+
     /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields [LOCK_MODIFY_ARGUMENT] from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_scheduler_lock_modify_argument(

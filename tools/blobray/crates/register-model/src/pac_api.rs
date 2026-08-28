@@ -384,8 +384,18 @@ pub struct FieldReplaceModify {
     pub domain: Option<String>,
     /// Fixed logical input for argument-free initialization transactions.
     pub value: Option<u32>,
+    /// Reviewed arithmetic and truncation applied before field projection.
+    /// This keeps register-width transforms inside generated PAC code.
+    pub input_transform: Option<FieldInputTransform>,
     pub exposure: PacApiExposure,
     pub sources: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct FieldInputTransform {
+    pub wrapping_subtract: u32,
+    pub retain_mask: u32,
 }
 
 /// Read-modify-write transaction that sets one bit selected by a reviewed
@@ -526,6 +536,21 @@ impl PacApiPack {
             if operation.domain.is_some() == operation.value.is_some() {
                 return Err(Error::message(format!(
                     "PAC API field-replace-modify {:?} requires exactly one of domain or value",
+                    operation.name
+                )));
+            }
+            if operation.input_transform.is_some() && operation.domain.is_none() {
+                return Err(Error::message(format!(
+                    "PAC API field-replace-modify {:?} input transform requires a domain",
+                    operation.name
+                )));
+            }
+            if operation
+                .input_transform
+                .is_some_and(|transform| transform.retain_mask == 0)
+            {
+                return Err(Error::message(format!(
+                    "PAC API field-replace-modify {:?} input transform requires a non-zero retain mask",
                     operation.name
                 )));
             }
@@ -1622,6 +1647,7 @@ mod tests {
             }],
             domain: Some("FieldInput".to_owned()),
             value: None,
+            input_transform: None,
             exposure: PacApiExposure::Facade,
             sources: vec!["REVIEW".to_owned()],
         });
@@ -1665,6 +1691,7 @@ mod tests {
             }],
             domain: Some("ReviewedMode".to_owned()),
             value: None,
+            input_transform: None,
             exposure: PacApiExposure::Facade,
             sources: vec!["REVIEW".to_owned()],
         });

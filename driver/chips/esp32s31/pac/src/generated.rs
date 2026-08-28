@@ -483,6 +483,29 @@ impl BluetoothPhyInitTimingByte {
     }
 }
 
+/// Complete linked phy_param byte consumed by the reviewed Bluetooth baseband gain initialization; physical units remain unknown.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct BluetoothBasebandGainParameterByte(u32);
+
+impl BluetoothBasebandGainParameterByte {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x000000ff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x000000ff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Twelve-bit divider accepted by the canonical MODEM_LPCON low-power timer selector.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ModemLowPowerClockDivider(u32);
@@ -2569,6 +2592,38 @@ pub(crate) fn initialize_bluetooth_receive_gain_offset_1_bits_16_23(
 ) {
     crate::svd::field_replace_modify::initialize_bluetooth_receive_gain_offset_1_bits_16_23(
         registers,
+    );
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_gain_baseband` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_gain_baseband(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_gain_baseband(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_gain_force` field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_gain_force(
+    registers: &crate::svd::PhyBtagcRecovered,
+    value: BluetoothBasebandGainParameterByte,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_gain_force(
+        registers,
+        value.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `initialize_bluetooth_receive_gain_image` field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_bluetooth_receive_gain_image(
+    registers: &crate::svd::PhyBtagcRecovered,
+    value: BluetoothBasebandGainParameterByte,
+) {
+    crate::svd::field_replace_modify::initialize_bluetooth_receive_gain_image(
+        registers,
+        value.get(),
     );
 }
 

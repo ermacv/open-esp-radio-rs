@@ -484,12 +484,15 @@ impl PacApiPack {
                 };
                 source_mask |= field_mask << projection.source_bit_offset;
             }
-            let maximum_input = operation.value.unwrap_or_else(|| {
-                let domain_name = operation
-                    .domain
-                    .as_deref()
-                    .expect("pack validation requires a field-replace value or domain");
-                self.bounded_domains
+            let maximum_input = if let Some(transform) = operation.input_transform {
+                transform.retain_mask
+            } else {
+                operation.value.unwrap_or_else(|| {
+                    let domain_name = operation
+                        .domain
+                        .as_deref()
+                        .expect("pack validation requires a field-replace value or domain");
+                    self.bounded_domains
                     .iter()
                     .find(|candidate| candidate.name == domain_name)
                     .map(|domain| domain.max)
@@ -502,10 +505,11 @@ impl PacApiPack {
                     .expect(
                         "pack validation requires a bounded or enum field-replace-modify domain",
                     )
-            });
+                })
+            };
             if maximum_input & !source_mask != 0 {
                 return Err(Error::message(format!(
-                    "PAC API field-replace-modify {:?} input 0x{maximum_input:08x} exceeds its projected source mask 0x{source_mask:08x}",
+                    "PAC API field-replace-modify {:?} projected input 0x{maximum_input:08x} exceeds its source mask 0x{source_mask:08x}",
                     operation.name,
                 )));
             }
@@ -1336,6 +1340,31 @@ sources = ["PUBLIC_CONTROL"]
         .unwrap()
     }
 
+    fn transformed_field_replace_pack(input_transform: &str) -> PacApiPack {
+        toml_edit::de::from_str(&format!(
+            r#"schema = 5
+
+[[bounded-domains]]
+name = "InputByte"
+description = "One reviewed input byte."
+min = 0
+max = 255
+sources = ["REVIEW"]
+
+[[field-replace-modifies]]
+name = "publish_transformed_value"
+peripheral = "RADIO"
+register = "WIDE"
+fields = [{{ field = "VALUE", source-bit-offset = 0 }}]
+domain = "InputByte"
+{input_transform}
+exposure = "facade"
+sources = ["REVIEW"]
+"#
+        ))
+        .unwrap()
+    }
+
     fn field_snapshot_read_pack() -> PacApiPack {
         toml_edit::de::from_str(
             r#"schema = 5
@@ -1479,6 +1508,23 @@ peripherals = ["INTERRUPT"]
             .unwrap_err()
             .to_string();
         assert!(error.contains("one-bit field"));
+    }
+
+    #[test]
+    fn field_replace_requires_an_explicit_reviewed_truncation() {
+        let direct_error = transformed_field_replace_pack("")
+            .validate_against_svd(SAMPLED_BIT_ZERO_WRITE_SVD)
+            .unwrap_err()
+            .to_string();
+        assert!(direct_error.contains("exceeds its source mask"));
+
+        assert!(
+            transformed_field_replace_pack(
+                "input-transform = { wrapping-subtract = 5, retain-mask = 3 }"
+            )
+            .validate_against_svd(SAMPLED_BIT_ZERO_WRITE_SVD)
+            .is_ok()
+        );
     }
 
     #[test]

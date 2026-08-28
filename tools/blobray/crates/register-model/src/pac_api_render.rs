@@ -1408,7 +1408,13 @@ impl PacApiPack {
                 ("", "")
             };
             let (input_parameter, fixed_input) = if binding.domain.is_some() {
-                ("input: u32", String::new())
+                let input_transform = binding.input_transform.map_or_else(String::new, |transform| {
+                    format!(
+                        "let input = input.wrapping_sub(0x{:08x}) & 0x{:08x};\n                         ",
+                        transform.wrapping_subtract, transform.retain_mask,
+                    )
+                });
+                ("input: u32", input_transform)
             } else {
                 (
                     "",

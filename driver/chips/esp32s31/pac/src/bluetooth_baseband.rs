@@ -11,14 +11,6 @@
 
 use super::{BluetoothTaskRegisters, Ieee802154TaskRegisters, device_fence, svd};
 
-const fn gain_force_low(parameter: u8) -> u8 {
-    parameter & 0x7f
-}
-
-const fn gain_image(parameter: u8) -> u8 {
-    parameter.wrapping_sub(5) & 0x7f
-}
-
 impl BluetoothTaskRegisters {
     /// Execute only the exact MMIO path of vendor `bt_bb_v2_init_cmplx(1)`.
     ///
@@ -272,29 +264,20 @@ impl BluetoothBasebandV2Transaction<'_> {
     }
 
     fn initialize_receive_gain(&self, parameter: u8) {
-        self.radio_phy
-            .phy_baseband_config_oracle
-            .baseband_init_7cd0()
-            .modify(|_, w| {
-                w.init_low_unknown()
-                    .set_bit()
-                    .init_low_unknown_1()
-                    .set_bit()
-                    .init_low_bit_2_unknown()
-                    .set_bit()
-                    .init_low_unknown_3()
-                    .set_bit()
-                    .init_high_unknown()
-                    .set(0x0f)
-            });
-
-        let btagc = &self.radio_phy.phy_btagc_recovered;
-        btagc
-            .rx_gain_force_opaque()
-            .modify(|_, w| w.dynamic_bits_0_6().set(gain_force_low(parameter)));
-        btagc
-            .agc_gain_image()
-            .modify(|_, w| w.dynamic_bits_2_8().set(gain_image(parameter)));
+        super::generated::initialize_bluetooth_receive_gain_baseband(
+            &self.radio_phy.phy_baseband_config_oracle,
+        );
+        let parameter =
+            super::generated::BluetoothBasebandGainParameterByte::new(u32::from(parameter))
+                .expect("every byte belongs to the complete reviewed domain");
+        super::generated::initialize_bluetooth_receive_gain_force(
+            &self.radio_phy.phy_btagc_recovered,
+            parameter,
+        );
+        super::generated::initialize_bluetooth_receive_gain_image(
+            &self.radio_phy.phy_btagc_recovered,
+            parameter,
+        );
     }
 
     fn initialize_receive_rssi_thresholds(&self) {
@@ -592,7 +575,7 @@ impl BluetoothBasebandV2Transaction<'_> {
 mod tests {
     use super::{
         BluetoothBasebandV2TransitionPort, execute_ieee802154_baseband_body,
-        execute_standalone_bluetooth_transition, gain_force_low, gain_image,
+        execute_standalone_bluetooth_transition,
     };
     use std::vec::Vec;
 
@@ -615,16 +598,6 @@ mod tests {
         fn order_device_accesses(&mut self) {
             self.steps.push(BoundaryStep::DeviceFence);
         }
-    }
-
-    #[test]
-    fn linked_parameter_byte_uses_the_exact_vendor_transforms() {
-        assert_eq!(gain_force_low(0), 0);
-        assert_eq!(gain_image(0), 0x7b);
-        assert_eq!(gain_force_low(0x7f), 0x7f);
-        assert_eq!(gain_image(0x7f), 0x7a);
-        assert_eq!(gain_force_low(0xff), 0x7f);
-        assert_eq!(gain_image(0xff), 0x7a);
     }
 
     #[test]

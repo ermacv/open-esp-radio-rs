@@ -5138,6 +5138,20 @@ value = 1
 exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_MAC_SET_ADDR"]
 
+[[field-snapshot-reads]]
+name = "observe_ieee802154_core0_route"
+peripheral = "IEEE802154_INTERRUPT_ROUTE"
+register = "CORE0_ROUTE"
+fields = ["MAP", "UNCLASSIFIED_6_7", "PASS_LEVEL", "UNCLASSIFIED_10_31"]
+sources = ["ESP_PACS_AAA5C2EA_S31_INTERRUPT_MATRIX"]
+
+[[field-snapshot-reads]]
+name = "observe_ieee802154_core1_route"
+peripheral = "IEEE802154_INTERRUPT_ROUTE"
+register = "CORE1_ROUTE"
+fields = ["MAP", "UNCLASSIFIED_6_7", "PASS_LEVEL", "UNCLASSIFIED_10_31"]
+sources = ["ESP_PACS_AAA5C2EA_S31_INTERRUPT_MATRIX"]
+
 [[bounded-domains]]
 name = "BluetoothSchedulerLockModifyArgument"
 description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."

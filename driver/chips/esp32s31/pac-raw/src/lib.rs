@@ -58377,6 +58377,34 @@ pub mod field_snapshot_read {
         (sample.busy().bit(), sample.reference_path_state().bit())
     }
 
+    /// Read `MAP`, `UNCLASSIFIED_6_7`, `PASS_LEVEL`, `UNCLASSIFIED_10_31` from one `IEEE802154_INTERRUPT_ROUTE`.`CORE0_ROUTE` sample.
+    #[inline]
+    pub fn observe_ieee802154_core0_route(
+        registers: &crate::Ieee802154InterruptRoute,
+    ) -> (u8, u8, u8, u32) {
+        let sample = registers.core0_route().read();
+        (
+            sample.map().bits(),
+            sample.unclassified_6_7().bits(),
+            sample.pass_level().bits(),
+            sample.unclassified_10_31().bits(),
+        )
+    }
+
+    /// Read `MAP`, `UNCLASSIFIED_6_7`, `PASS_LEVEL`, `UNCLASSIFIED_10_31` from one `IEEE802154_INTERRUPT_ROUTE`.`CORE1_ROUTE` sample.
+    #[inline]
+    pub fn observe_ieee802154_core1_route(
+        registers: &crate::Ieee802154InterruptRoute,
+    ) -> (u8, u8, u8, u32) {
+        let sample = registers.core1_route().read();
+        (
+            sample.map().bits(),
+            sample.unclassified_6_7().bits(),
+            sample.pass_level().bits(),
+            sample.unclassified_10_31().bits(),
+        )
+    }
+
     /// Read `START`, `RESULT` from one `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_LOCK_MODIFY_REQUEST` sample.
     #[inline]
     pub fn observe_bluetooth_scheduler_lock_modify_request(

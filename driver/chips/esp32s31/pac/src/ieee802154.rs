@@ -2248,19 +2248,25 @@ impl Ieee802154PolledRegisterLease<'_> {
     /// Classify both source-132 routes without exposing register images.
     #[doc(hidden)]
     pub fn interrupt_route_state(&self) -> Ieee802154RouteState {
-        let core0 = self.task.interrupt_route.core0_route().read();
-        let core1 = self.task.interrupt_route.core1_route().read();
+        let (core0_map, core0_unclassified_6_7, core0_pass_level, core0_unclassified_10_31) =
+            crate::svd::field_snapshot_read::observe_ieee802154_core0_route(
+                self.task.interrupt_route,
+            );
+        let (core1_map, core1_unclassified_6_7, core1_pass_level, core1_unclassified_10_31) =
+            crate::svd::field_snapshot_read::observe_ieee802154_core1_route(
+                self.task.interrupt_route,
+            );
         Ieee802154RouteState::from_observation(
-            core0.map().bits() == 0
-                && core0.unclassified_6_7().bits() == 0
-                && core0.pass_level().bits() == 0
-                && core0.unclassified_10_31().bits() == 0
-                && core1.map().bits() == 0
-                && core1.unclassified_6_7().bits() == 0
-                && core1.pass_level().bits() == 0
-                && core1.unclassified_10_31().bits() == 0,
-            core0.map().bits() != 0 || core1.map().bits() != 0,
-            core0.pass_level().bits() != 0 || core1.pass_level().bits() != 0,
+            core0_map == 0
+                && core0_unclassified_6_7 == 0
+                && core0_pass_level == 0
+                && core0_unclassified_10_31 == 0
+                && core1_map == 0
+                && core1_unclassified_6_7 == 0
+                && core1_pass_level == 0
+                && core1_unclassified_10_31 == 0,
+            core0_map != 0 || core1_map != 0,
+            core0_pass_level != 0 || core1_pass_level != 0,
         )
     }
 

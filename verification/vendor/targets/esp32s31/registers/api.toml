@@ -1089,6 +1089,20 @@ status-register = "IRQ_STATUS_SNAPSHOT_1"
 clear-register = "IRQ_CLEAR_1"
 sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 
+[[interrupt-snapshots]]
+name = "bluetooth_primary_interrupt_bank_0"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+status-register = "IRQ_STATUS_0"
+clear-register = "IRQ_CLEAR_0"
+sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
+
+[[interrupt-snapshots]]
+name = "bluetooth_primary_interrupt_bank_1"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+status-register = "IRQ_STATUS_1"
+clear-register = "IRQ_CLEAR_1"
+sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
+
 [[full-register-writes]]
 name = "mac_interrupt_clear"
 peripheral = "WIFI_MAC_INTERRUPT"
@@ -1122,6 +1136,20 @@ peripheral = "WIFI_MAC_POWER_INTERRUPT"
 register = "CLEAR"
 value = 0xFFFFFFFF
 sources = ["BLOB_LIBPP_HAL_PWR_INTERRUPT"]
+
+[[fixed-register-images]]
+name = "clear_bluetooth_primary_baseline_bank_0"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+register = "IRQ_CLEAR_0"
+value = 0x00008000
+sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
+
+[[fixed-register-images]]
+name = "clear_bluetooth_primary_baseline_bank_1"
+peripheral = "BLUETOOTH_INTERRUPT_BANK"
+register = "IRQ_CLEAR_1"
+value = 0x00001300
+sources = ["BLOB_LIBBTDM_CONTROLLER_IRQ"]
 
 [[full-register-writes]]
 name = "station_tsf_value_low"

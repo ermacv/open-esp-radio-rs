@@ -44453,13 +44453,55 @@ pub mod bluetooth_interrupt_bank {
     pub mod irq_clear_0 {
         #[doc = "Register `IRQ_CLEAR_0` writer"]
         pub type W = crate::W<IrqClear0Spec>;
-        #[doc = "Field `PENDING_BITS` writer - "]
-        pub type PendingBitsW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `UNCLASSIFIED_0_14` writer - "]
+        pub type Unclassified0_14W<'a, REG> = crate::FieldWriter<'a, REG, 15, u16>;
+        #[doc = "Field `SOURCE_15` writer - "]
+        pub type Source15W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `UNCLASSIFIED_16_20` writer - "]
+        pub type Unclassified16_20W<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        #[doc = "Field `SOURCE_21` writer - "]
+        pub type Source21W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `UNCLASSIFIED_22_26` writer - "]
+        pub type Unclassified22_26W<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        #[doc = "Field `SOURCES_27_28` writer - "]
+        pub type Sources27_28W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `UNCLASSIFIED_29_31` writer - "]
+        pub type Unclassified29_31W<'a, REG> = crate::FieldWriter<'a, REG, 3>;
         impl W {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:14"]
             #[inline(always)]
-            pub fn pending_bits(&mut self) -> PendingBitsW<'_, IrqClear0Spec> {
-                PendingBitsW::new(self, 0)
+            pub fn unclassified_0_14(&mut self) -> Unclassified0_14W<'_, IrqClear0Spec> {
+                Unclassified0_14W::new(self, 0)
+            }
+            #[doc = "Bit 15"]
+            #[inline(always)]
+            pub fn source_15(&mut self) -> Source15W<'_, IrqClear0Spec> {
+                Source15W::new(self, 15)
+            }
+            #[doc = "Bits 16:20"]
+            #[inline(always)]
+            pub fn unclassified_16_20(&mut self) -> Unclassified16_20W<'_, IrqClear0Spec> {
+                Unclassified16_20W::new(self, 16)
+            }
+            #[doc = "Bit 21"]
+            #[inline(always)]
+            pub fn source_21(&mut self) -> Source21W<'_, IrqClear0Spec> {
+                Source21W::new(self, 21)
+            }
+            #[doc = "Bits 22:26"]
+            #[inline(always)]
+            pub fn unclassified_22_26(&mut self) -> Unclassified22_26W<'_, IrqClear0Spec> {
+                Unclassified22_26W::new(self, 22)
+            }
+            #[doc = "Bits 27:28"]
+            #[inline(always)]
+            pub fn sources_27_28(&mut self) -> Sources27_28W<'_, IrqClear0Spec> {
+                Sources27_28W::new(self, 27)
+            }
+            #[doc = "Bits 29:31"]
+            #[inline(always)]
+            pub fn unclassified_29_31(&mut self) -> Unclassified29_31W<'_, IrqClear0Spec> {
+                Unclassified29_31W::new(self, 29)
             }
         }
         #[doc = "First controller interrupt-clear bank. Primary and NRT handlers copy their respective first-bank status images here as complete words.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`irq_clear_0::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -44683,13 +44725,62 @@ pub mod bluetooth_interrupt_bank {
     pub mod irq_clear_1 {
         #[doc = "Register `IRQ_CLEAR_1` writer"]
         pub type W = crate::W<IrqClear1Spec>;
-        #[doc = "Field `PENDING_BITS` writer - "]
-        pub type PendingBitsW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        #[doc = "Field `UNCLASSIFIED_0_2` writer - "]
+        pub type Unclassified0_2W<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        #[doc = "Field `SOURCE_3` writer - "]
+        pub type Source3W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `UNCLASSIFIED_4_7` writer - "]
+        pub type Unclassified4_7W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `SOURCE_8` writer - "]
+        pub type Source8W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `SOURCE_9` writer - "]
+        pub type Source9W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `UNCLASSIFIED_10_11` writer - "]
+        pub type Unclassified10_11W<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "Field `SOURCE_12` writer - "]
+        pub type Source12W<'a, REG> = crate::BitWriter1C<'a, REG>;
+        #[doc = "Field `UNCLASSIFIED_13_31` writer - "]
+        pub type Unclassified13_31W<'a, REG> = crate::FieldWriter<'a, REG, 19, u32>;
         impl W {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bits 0:2"]
             #[inline(always)]
-            pub fn pending_bits(&mut self) -> PendingBitsW<'_, IrqClear1Spec> {
-                PendingBitsW::new(self, 0)
+            pub fn unclassified_0_2(&mut self) -> Unclassified0_2W<'_, IrqClear1Spec> {
+                Unclassified0_2W::new(self, 0)
+            }
+            #[doc = "Bit 3"]
+            #[inline(always)]
+            pub fn source_3(&mut self) -> Source3W<'_, IrqClear1Spec> {
+                Source3W::new(self, 3)
+            }
+            #[doc = "Bits 4:7"]
+            #[inline(always)]
+            pub fn unclassified_4_7(&mut self) -> Unclassified4_7W<'_, IrqClear1Spec> {
+                Unclassified4_7W::new(self, 4)
+            }
+            #[doc = "Bit 8"]
+            #[inline(always)]
+            pub fn source_8(&mut self) -> Source8W<'_, IrqClear1Spec> {
+                Source8W::new(self, 8)
+            }
+            #[doc = "Bit 9"]
+            #[inline(always)]
+            pub fn source_9(&mut self) -> Source9W<'_, IrqClear1Spec> {
+                Source9W::new(self, 9)
+            }
+            #[doc = "Bits 10:11"]
+            #[inline(always)]
+            pub fn unclassified_10_11(&mut self) -> Unclassified10_11W<'_, IrqClear1Spec> {
+                Unclassified10_11W::new(self, 10)
+            }
+            #[doc = "Bit 12"]
+            #[inline(always)]
+            pub fn source_12(&mut self) -> Source12W<'_, IrqClear1Spec> {
+                Source12W::new(self, 12)
+            }
+            #[doc = "Bits 13:31"]
+            #[inline(always)]
+            pub fn unclassified_13_31(&mut self) -> Unclassified13_31W<'_, IrqClear1Spec> {
+                Unclassified13_31W::new(self, 13)
             }
         }
         #[doc = "Second controller interrupt-clear bank. Primary and NRT handlers copy their respective second-bank status images here as complete words.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`irq_clear_1::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -57257,6 +57348,173 @@ pub mod interrupt_snapshot {
     ) -> BluetoothInterruptBank1Snapshot {
         BluetoothInterruptBank1Snapshot(bits)
     }
+
+    /// Opaque event image sampled from `BLUETOOTH_INTERRUPT_BANK`.`IRQ_STATUS_0`.
+    #[must_use = "an interrupt snapshot must be inspected and acknowledged"]
+    #[derive(Debug)]
+    pub struct BluetoothPrimaryInterruptBank0Snapshot(u32);
+    impl BluetoothPrimaryInterruptBank0Snapshot {
+        /// Complete masked event image observed by the status read.
+        #[inline]
+        pub const fn bits(&self) -> u32 {
+            self.0
+        }
+        /// Whether the sampled register contained no asserted event.
+        #[inline]
+        pub const fn is_empty(&self) -> bool {
+            self.0 == 0
+        }
+        /// Sampled value of SVD field `UNCLASSIFIED_0_14`.
+        #[inline]
+        pub const fn unclassified_0_14(&self) -> u16 {
+            (self.0 & 0x7fff) as u16
+        }
+        /// Sampled value of SVD field `SOURCE_15`.
+        #[inline]
+        pub const fn source_15(&self) -> bool {
+            self.0 & 0x00008000 != 0
+        }
+        /// Sampled value of SVD field `UNCLASSIFIED_16_20`.
+        #[inline]
+        pub const fn unclassified_16_20(&self) -> u8 {
+            (self.0 >> 16 & 0x1f) as u8
+        }
+        /// Sampled value of SVD field `SOURCE_21`.
+        #[inline]
+        pub const fn source_21(&self) -> bool {
+            self.0 & 0x00200000 != 0
+        }
+        /// Sampled value of SVD field `UNCLASSIFIED_22_26`.
+        #[inline]
+        pub const fn unclassified_22_26(&self) -> u8 {
+            (self.0 >> 22 & 0x1f) as u8
+        }
+        /// Sampled value of SVD field `SOURCES_27_28`.
+        #[inline]
+        pub const fn sources_27_28(&self) -> u8 {
+            (self.0 >> 27 & 0x3) as u8
+        }
+        /// Sampled value of SVD field `UNCLASSIFIED_29_31`.
+        #[inline]
+        pub const fn unclassified_29_31(&self) -> u8 {
+            (self.0 >> 29 & 0x7) as u8
+        }
+    }
+    /// Sample the complete masked event image.
+    #[inline]
+    pub fn sample_bluetooth_primary_interrupt_bank_0(
+        registers: &crate::BluetoothInterruptBank,
+    ) -> BluetoothPrimaryInterruptBank0Snapshot {
+        BluetoothPrimaryInterruptBank0Snapshot(registers.irq_status_0().read().bits())
+    }
+    /// Acknowledge exactly the event image returned by the paired sample.
+    #[inline]
+    pub fn acknowledge_bluetooth_primary_interrupt_bank_0(
+        registers: &crate::BluetoothInterruptBank,
+        snapshot: BluetoothPrimaryInterruptBank0Snapshot,
+    ) {
+        // SAFETY: the opaque value can only be constructed by the paired
+        // STATUS read (or in a validation-only build) and CLEAR is an
+        // SVD-validated full-width write-one-to-clear register.
+        unsafe {
+            registers
+                .irq_clear_0()
+                .write_with_zero(|writer| writer.bits(snapshot.0));
+        }
+    }
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub const fn bluetooth_primary_interrupt_bank_0_for_validation(
+        bits: u32,
+    ) -> BluetoothPrimaryInterruptBank0Snapshot {
+        BluetoothPrimaryInterruptBank0Snapshot(bits)
+    }
+
+    /// Opaque event image sampled from `BLUETOOTH_INTERRUPT_BANK`.`IRQ_STATUS_1`.
+    #[must_use = "an interrupt snapshot must be inspected and acknowledged"]
+    #[derive(Debug)]
+    pub struct BluetoothPrimaryInterruptBank1Snapshot(u32);
+    impl BluetoothPrimaryInterruptBank1Snapshot {
+        /// Complete masked event image observed by the status read.
+        #[inline]
+        pub const fn bits(&self) -> u32 {
+            self.0
+        }
+        /// Whether the sampled register contained no asserted event.
+        #[inline]
+        pub const fn is_empty(&self) -> bool {
+            self.0 == 0
+        }
+        /// Sampled value of SVD field `UNCLASSIFIED_0_2`.
+        #[inline]
+        pub const fn unclassified_0_2(&self) -> u8 {
+            (self.0 & 0x7) as u8
+        }
+        /// Sampled value of SVD field `SOURCE_3`.
+        #[inline]
+        pub const fn source_3(&self) -> bool {
+            self.0 & 0x00000008 != 0
+        }
+        /// Sampled value of SVD field `UNCLASSIFIED_4_7`.
+        #[inline]
+        pub const fn unclassified_4_7(&self) -> u8 {
+            (self.0 >> 4 & 0xf) as u8
+        }
+        /// Sampled value of SVD field `SOURCE_8`.
+        #[inline]
+        pub const fn source_8(&self) -> bool {
+            self.0 & 0x00000100 != 0
+        }
+        /// Sampled value of SVD field `SOURCE_9`.
+        #[inline]
+        pub const fn source_9(&self) -> bool {
+            self.0 & 0x00000200 != 0
+        }
+        /// Sampled value of SVD field `UNCLASSIFIED_10_11`.
+        #[inline]
+        pub const fn unclassified_10_11(&self) -> u8 {
+            (self.0 >> 10 & 0x3) as u8
+        }
+        /// Sampled value of SVD field `SOURCE_12`.
+        #[inline]
+        pub const fn source_12(&self) -> bool {
+            self.0 & 0x00001000 != 0
+        }
+        /// Sampled value of SVD field `UNCLASSIFIED_13_31`.
+        #[inline]
+        pub const fn unclassified_13_31(&self) -> u32 {
+            self.0 >> 13 & 0x7ffff
+        }
+    }
+    /// Sample the complete masked event image.
+    #[inline]
+    pub fn sample_bluetooth_primary_interrupt_bank_1(
+        registers: &crate::BluetoothInterruptBank,
+    ) -> BluetoothPrimaryInterruptBank1Snapshot {
+        BluetoothPrimaryInterruptBank1Snapshot(registers.irq_status_1().read().bits())
+    }
+    /// Acknowledge exactly the event image returned by the paired sample.
+    #[inline]
+    pub fn acknowledge_bluetooth_primary_interrupt_bank_1(
+        registers: &crate::BluetoothInterruptBank,
+        snapshot: BluetoothPrimaryInterruptBank1Snapshot,
+    ) {
+        // SAFETY: the opaque value can only be constructed by the paired
+        // STATUS read (or in a validation-only build) and CLEAR is an
+        // SVD-validated full-width write-one-to-clear register.
+        unsafe {
+            registers
+                .irq_clear_1()
+                .write_with_zero(|writer| writer.bits(snapshot.0));
+        }
+    }
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub const fn bluetooth_primary_interrupt_bank_1_for_validation(
+        bits: u32,
+    ) -> BluetoothPrimaryInterruptBank1Snapshot {
+        BluetoothPrimaryInterruptBank1Snapshot(bits)
+    }
 }
 
 /// Target-declared exhaustive ownership partitions of the raw SVD singleton.
@@ -57946,6 +58204,32 @@ pub mod fixed_register_image {
             registers
                 .clear()
                 .write_with_zero(|writer| writer.bits(0xffffffff));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00008000` to `BLUETOOTH_INTERRUPT_BANK`.`IRQ_CLEAR_0`.
+    #[inline]
+    pub fn clear_bluetooth_primary_baseline_bank_0(registers: &crate::BluetoothInterruptBank) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .irq_clear_0()
+                .write_with_zero(|writer| writer.bits(0x00008000));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00001300` to `BLUETOOTH_INTERRUPT_BANK`.`IRQ_CLEAR_1`.
+    #[inline]
+    pub fn clear_bluetooth_primary_baseline_bank_1(registers: &crate::BluetoothInterruptBank) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .irq_clear_1()
+                .write_with_zero(|writer| writer.bits(0x00001300));
         }
     }
 

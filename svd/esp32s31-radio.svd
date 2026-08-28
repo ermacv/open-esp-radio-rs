@@ -18679,9 +18679,39 @@ also exposing scheduler, sleep or memory-management state.
           <modifiedWriteValues>oneToClear</modifiedWriteValues>
           <fields>
             <field>
-              <name>PENDING_BITS</name>
+              <name>UNCLASSIFIED_0_14</name>
               <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
+              <bitWidth>15</bitWidth>
+            </field>
+            <field>
+              <name>SOURCE_15</name>
+              <bitOffset>15</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNCLASSIFIED_16_20</name>
+              <bitOffset>16</bitOffset>
+              <bitWidth>5</bitWidth>
+            </field>
+            <field>
+              <name>SOURCE_21</name>
+              <bitOffset>21</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNCLASSIFIED_22_26</name>
+              <bitOffset>22</bitOffset>
+              <bitWidth>5</bitWidth>
+            </field>
+            <field>
+              <name>SOURCES_27_28</name>
+              <bitOffset>27</bitOffset>
+              <bitWidth>2</bitWidth>
+            </field>
+            <field>
+              <name>UNCLASSIFIED_29_31</name>
+              <bitOffset>29</bitOffset>
+              <bitWidth>3</bitWidth>
             </field>
           </fields>
         </register>
@@ -18787,9 +18817,44 @@ also exposing scheduler, sleep or memory-management state.
           <modifiedWriteValues>oneToClear</modifiedWriteValues>
           <fields>
             <field>
-              <name>PENDING_BITS</name>
+              <name>UNCLASSIFIED_0_2</name>
               <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
+              <bitWidth>3</bitWidth>
+            </field>
+            <field>
+              <name>SOURCE_3</name>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNCLASSIFIED_4_7</name>
+              <bitOffset>4</bitOffset>
+              <bitWidth>4</bitWidth>
+            </field>
+            <field>
+              <name>SOURCE_8</name>
+              <bitOffset>8</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>SOURCE_9</name>
+              <bitOffset>9</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNCLASSIFIED_10_11</name>
+              <bitOffset>10</bitOffset>
+              <bitWidth>2</bitWidth>
+            </field>
+            <field>
+              <name>SOURCE_12</name>
+              <bitOffset>12</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNCLASSIFIED_13_31</name>
+              <bitOffset>13</bitOffset>
+              <bitWidth>19</bitWidth>
             </field>
           </fields>
         </register>

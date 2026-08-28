@@ -7,12 +7,6 @@ use super::{
     svd::{fixed_register_image, interrupt_snapshot},
 };
 
-/// First-bank sources enabled by the complete primary BTDM IRQ setup helper.
-const BLUETOOTH_PRIMARY_BASELINE_BANK_0_MASK: u32 = 0x0000_8000;
-
-/// Second-bank sources enabled by the complete primary BTDM IRQ setup helper.
-const BLUETOOTH_PRIMARY_BASELINE_BANK_1_MASK: u32 = 0x0000_1300;
-
 trait BluetoothInterruptControl {
     fn clear_primary_baseline_bank_0(&mut self);
     fn clear_primary_baseline_bank_1(&mut self);
@@ -30,32 +24,12 @@ struct HardwareInterruptControl<'a> {
 }
 
 impl BluetoothInterruptControl for HardwareInterruptControl<'_> {
-    #[allow(
-        unsafe_code,
-        reason = "the complete vendor helper qualifies this exact W1C image"
-    )]
     fn clear_primary_baseline_bank_0(&mut self) {
-        unsafe {
-            self.bank.irq_clear_0().write_with_zero(|writer| {
-                writer
-                    .pending_bits()
-                    .bits(BLUETOOTH_PRIMARY_BASELINE_BANK_0_MASK)
-            });
-        }
+        fixed_register_image::clear_bluetooth_primary_baseline_bank_0(self.bank);
     }
 
-    #[allow(
-        unsafe_code,
-        reason = "the complete vendor helper qualifies this exact W1C image"
-    )]
     fn clear_primary_baseline_bank_1(&mut self) {
-        unsafe {
-            self.bank.irq_clear_1().write_with_zero(|writer| {
-                writer
-                    .pending_bits()
-                    .bits(BLUETOOTH_PRIMARY_BASELINE_BANK_1_MASK)
-            });
-        }
+        fixed_register_image::clear_bluetooth_primary_baseline_bank_1(self.bank);
     }
 
     fn enable_primary_baseline_bank_0(&mut self) {
@@ -124,16 +98,6 @@ struct BluetoothPrimaryBank1Status {
     unclassified_pending: bool,
 }
 
-struct HardwarePrimaryBank0Snapshot {
-    image: u32,
-    status: BluetoothPrimaryBank0Status,
-}
-
-struct HardwarePrimaryBank1Snapshot {
-    image: u32,
-    status: BluetoothPrimaryBank1Status,
-}
-
 trait BluetoothPrimaryInterruptControl {
     type Bank0Snapshot;
     type Bank1Snapshot;
@@ -150,72 +114,48 @@ trait BluetoothPrimaryInterruptControl {
 }
 
 impl BluetoothPrimaryInterruptControl for HardwareInterruptControl<'_> {
-    type Bank0Snapshot = HardwarePrimaryBank0Snapshot;
-    type Bank1Snapshot = HardwarePrimaryBank1Snapshot;
+    type Bank0Snapshot = interrupt_snapshot::BluetoothPrimaryInterruptBank0Snapshot;
+    type Bank1Snapshot = interrupt_snapshot::BluetoothPrimaryInterruptBank1Snapshot;
 
     fn sample_bank_0(&mut self) -> Self::Bank0Snapshot {
-        let status = self.bank.irq_status_0().read();
-        HardwarePrimaryBank0Snapshot {
-            image: status.bits(),
-            status: BluetoothPrimaryBank0Status {
-                source_15_pending: status.source_15().bit_is_set(),
-                source_21_pending: status.source_21().bit_is_set(),
-                sources_27_or_28_pending: status.sources_27_28().bits() != 0,
-                unclassified_pending: status.unclassified_0_14().bits() != 0
-                    || status.unclassified_16_20().bits() != 0
-                    || status.unclassified_22_26().bits() != 0
-                    || status.unclassified_29_31().bits() != 0,
-            },
-        }
+        interrupt_snapshot::sample_bluetooth_primary_interrupt_bank_0(self.bank)
     }
 
     fn sample_bank_1(&mut self) -> Self::Bank1Snapshot {
-        let status = self.bank.irq_status_1().read();
-        HardwarePrimaryBank1Snapshot {
-            image: status.bits(),
-            status: BluetoothPrimaryBank1Status {
-                source_3_pending: status.source_3().bit_is_set(),
-                source_8_pending: status.source_8().bit_is_set(),
-                source_9_pending: status.source_9().bit_is_set(),
-                source_12_pending: status.source_12().bit_is_set(),
-                unclassified_pending: status.unclassified_0_2().bits() != 0
-                    || status.unclassified_4_7().bits() != 0
-                    || status.unclassified_10_11().bits() != 0
-                    || status.unclassified_13_31().bits() != 0,
-            },
-        }
+        interrupt_snapshot::sample_bluetooth_primary_interrupt_bank_1(self.bank)
     }
 
     fn bank_0_status(&self, snapshot: &Self::Bank0Snapshot) -> BluetoothPrimaryBank0Status {
-        snapshot.status
+        BluetoothPrimaryBank0Status {
+            source_15_pending: snapshot.source_15(),
+            source_21_pending: snapshot.source_21(),
+            sources_27_or_28_pending: snapshot.sources_27_28() != 0,
+            unclassified_pending: snapshot.unclassified_0_14() != 0
+                || snapshot.unclassified_16_20() != 0
+                || snapshot.unclassified_22_26() != 0
+                || snapshot.unclassified_29_31() != 0,
+        }
     }
 
     fn bank_1_status(&self, snapshot: &Self::Bank1Snapshot) -> BluetoothPrimaryBank1Status {
-        snapshot.status
+        BluetoothPrimaryBank1Status {
+            source_3_pending: snapshot.source_3(),
+            source_8_pending: snapshot.source_8(),
+            source_9_pending: snapshot.source_9(),
+            source_12_pending: snapshot.source_12(),
+            unclassified_pending: snapshot.unclassified_0_2() != 0
+                || snapshot.unclassified_4_7() != 0
+                || snapshot.unclassified_10_11() != 0
+                || snapshot.unclassified_13_31() != 0,
+        }
     }
 
-    #[allow(
-        unsafe_code,
-        reason = "the image was sampled from the paired full-width status register"
-    )]
     fn acknowledge_bank_0(&mut self, snapshot: Self::Bank0Snapshot) {
-        unsafe {
-            self.bank
-                .irq_clear_0()
-                .write_with_zero(|writer| writer.pending_bits().bits(snapshot.image));
-        }
+        interrupt_snapshot::acknowledge_bluetooth_primary_interrupt_bank_0(self.bank, snapshot);
     }
 
-    #[allow(
-        unsafe_code,
-        reason = "the image was sampled from the paired full-width status register"
-    )]
     fn acknowledge_bank_1(&mut self, snapshot: Self::Bank1Snapshot) {
-        unsafe {
-            self.bank
-                .irq_clear_1()
-                .write_with_zero(|writer| writer.pending_bits().bits(snapshot.image));
-        }
+        interrupt_snapshot::acknowledge_bluetooth_primary_interrupt_bank_1(self.bank, snapshot);
     }
 
     fn capture_diagnostic_detail_0(&mut self) {

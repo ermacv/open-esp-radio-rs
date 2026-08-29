@@ -126,13 +126,16 @@ impl BluetoothDtmSchedulerItemEvent {
         current: BluetoothDtmSchedulerItemReviewedWords,
         epoch: BluetoothControllerSchedulerEpoch,
     ) -> BluetoothDtmSchedulerItemReviewedWords {
-        current.apply_event(
-            self.frequency,
-            self.rate,
-            self.role,
-            epoch.raw_time_for_scheduler_time(self.scheduler_start),
-            epoch.raw_time_for_scheduler_time(self.scheduler_end),
-        )
+        self.apply_raw_window(current, self.raw_start(epoch), self.raw_end(epoch))
+    }
+
+    pub(crate) const fn apply_raw_window(
+        self,
+        current: BluetoothDtmSchedulerItemReviewedWords,
+        raw_start: u32,
+        raw_end: u32,
+    ) -> BluetoothDtmSchedulerItemReviewedWords {
+        current.apply_event(self.frequency, self.rate, self.role, raw_start, raw_end)
     }
 
     /// Return the DTM role encoded by this validated scheduler item event.

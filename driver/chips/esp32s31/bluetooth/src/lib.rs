@@ -113,8 +113,9 @@ pub use controller_time::{
     BluetoothControllerTimeWorkerPhase,
 };
 pub use dtm_event_prepare::{
-    BluetoothDtmReceiverEvent, BluetoothDtmReviewedEventWordsPlan,
-    BluetoothDtmReviewedEventWordsPlanError, BluetoothDtmReviewedEventWordsPrepared,
+    BluetoothDtmReceiverEvent, BluetoothDtmReviewedEventPrepareFailure,
+    BluetoothDtmReviewedEventWordsPlan, BluetoothDtmReviewedEventWordsPlanError,
+    BluetoothDtmReviewedEventWordsPlanFailure, BluetoothDtmReviewedEventWordsPrepared,
     BluetoothDtmSchedulerBookkeepingPrepared, BluetoothDtmTransmitterEvent,
 };
 pub use dtm_event_timing::{
@@ -219,6 +220,8 @@ pub use scheduler_lock_modify::{
     BluetoothSchedulerLockModifyWorker, BluetoothSchedulerLockModifyWorkerStep,
 };
 pub use scheduler_timeline::{
-    BluetoothSchedulerRawWindow, BluetoothSchedulerReservation, BluetoothSchedulerReservationError,
+    BluetoothSchedulerOverlapResolved, BluetoothSchedulerRawWindow, BluetoothSchedulerReservation,
+    BluetoothSchedulerReservationError, BluetoothSchedulerSequenceAuthorizationError,
+    BluetoothSchedulerSequenceAuthorizationFailure, BluetoothSchedulerSequenceReady,
     BluetoothSchedulerTimeline,
 };

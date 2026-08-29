@@ -8,6 +8,8 @@
 
 #![forbid(unsafe_code)]
 
+use core::marker::PhantomData;
+
 use crate::{
     BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample,
     BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerTimingPolicy,
@@ -84,27 +86,129 @@ pub enum BluetoothSchedulerReservationError {
     GenerationExhausted,
 }
 
+/// Reservation state after strict overlap resolution.
+#[derive(Debug)]
+pub enum BluetoothSchedulerOverlapResolved {}
+
+/// Reservation state after the post-overlap deadline remains open.
+#[derive(Debug)]
+pub enum BluetoothSchedulerSequenceReady {}
+
+/// Why a resolved reservation cannot authorize sequence-time formation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothSchedulerSequenceAuthorizationError {
+    /// The second fresh sample reached the guarded resolved start.
+    DeadlineExpired,
+}
+
 /// Affine identity of one source-owned scheduler reservation.
 ///
 /// Dropping this value does not silently remove the occupied interval. The
 /// scheduler lifecycle must return it to the same timeline on cancellation or
 /// completion.
 #[must_use = "the scheduler reservation must be retained until cancellation or completion"]
-pub struct BluetoothSchedulerReservation {
+pub struct BluetoothSchedulerReservation<State = BluetoothSchedulerOverlapResolved> {
     slot: usize,
     generation: u32,
     window: BluetoothSchedulerRawWindow,
+    event: BluetoothDtmSchedulerItemEvent,
+    epoch: BluetoothControllerSchedulerEpoch,
+    timing_policy: BluetoothDtmSchedulerTimingPolicy,
+    _state: PhantomData<State>,
 }
 
-impl BluetoothSchedulerReservation {
+impl<State> BluetoothSchedulerReservation<State> {
     /// Return the resolved raw-time window retained by this reservation.
     pub const fn window(&self) -> BluetoothSchedulerRawWindow {
         self.window
     }
 
+    pub(crate) const fn event(&self) -> BluetoothDtmSchedulerItemEvent {
+        self.event
+    }
+
+    pub(crate) const fn epoch(&self) -> BluetoothControllerSchedulerEpoch {
+        self.epoch
+    }
+
+    pub(crate) const fn timing_policy(&self) -> BluetoothDtmSchedulerTimingPolicy {
+        self.timing_policy
+    }
+
     #[cfg(test)]
     const fn generation(&self) -> u32 {
         self.generation
+    }
+}
+
+impl<State> core::fmt::Debug for BluetoothSchedulerReservation<State> {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothSchedulerReservation")
+            .field("slot", &self.slot)
+            .field("generation", &self.generation)
+            .field("window", &self.window)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Rejected second deadline retaining the exact overlap reservation.
+pub struct BluetoothSchedulerSequenceAuthorizationFailure {
+    reservation: BluetoothSchedulerReservation<BluetoothSchedulerOverlapResolved>,
+    error: BluetoothSchedulerSequenceAuthorizationError,
+}
+
+impl BluetoothSchedulerSequenceAuthorizationFailure {
+    /// Borrow the finite authorization failure reason.
+    pub const fn error(&self) -> BluetoothSchedulerSequenceAuthorizationError {
+        self.error
+    }
+
+    /// Recover the unchanged overlap reservation for explicit release.
+    pub fn into_reservation(
+        self,
+    ) -> BluetoothSchedulerReservation<BluetoothSchedulerOverlapResolved> {
+        self.reservation
+    }
+}
+
+impl core::fmt::Debug for BluetoothSchedulerSequenceAuthorizationFailure {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothSchedulerSequenceAuthorizationFailure")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
+impl BluetoothSchedulerReservation<BluetoothSchedulerOverlapResolved> {
+    /// Consume the second fresh time sample required after overlap traversal.
+    pub fn authorize_sequence(
+        self,
+        sample: BluetoothControllerTimeSample,
+    ) -> Result<
+        BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+        BluetoothSchedulerSequenceAuthorizationFailure,
+    > {
+        if !self
+            .timing_policy
+            .initial_deadline_is_open(sample, self.window.start)
+        {
+            return Err(BluetoothSchedulerSequenceAuthorizationFailure {
+                reservation: self,
+                error: BluetoothSchedulerSequenceAuthorizationError::DeadlineExpired,
+            });
+        }
+
+        Ok(BluetoothSchedulerReservation {
+            slot: self.slot,
+            generation: self.generation,
+            window: self.window,
+            event: self.event,
+            epoch: self.epoch,
+            timing_policy: self.timing_policy,
+            _state: PhantomData,
+        })
     }
 }
 
@@ -141,6 +245,8 @@ impl<const CAPACITY: usize> BluetoothSchedulerTimeline<CAPACITY> {
         self.reserve_raw_window(
             event.raw_start(epoch),
             event.raw_end(epoch),
+            event,
+            epoch,
             timing_policy,
             admission_sample,
         )
@@ -150,6 +256,8 @@ impl<const CAPACITY: usize> BluetoothSchedulerTimeline<CAPACITY> {
         &mut self,
         raw_start: u32,
         raw_end: u32,
+        event: BluetoothDtmSchedulerItemEvent,
+        epoch: BluetoothControllerSchedulerEpoch,
         timing_policy: BluetoothDtmSchedulerTimingPolicy,
         admission_sample: BluetoothControllerTimeSample,
     ) -> Result<BluetoothSchedulerReservation, BluetoothSchedulerReservationError> {
@@ -201,6 +309,10 @@ impl<const CAPACITY: usize> BluetoothSchedulerTimeline<CAPACITY> {
                 slot: slot_index,
                 generation,
                 window: candidate,
+                event,
+                epoch,
+                timing_policy,
+                _state: PhantomData,
             });
         }
 
@@ -215,7 +327,7 @@ impl<const CAPACITY: usize> BluetoothSchedulerTimeline<CAPACITY> {
     ///
     /// `false` means the reservation was already removed. A stale generation
     /// can never release a later occupant of the same slot.
-    pub fn release(&mut self, reservation: BluetoothSchedulerReservation) -> bool {
+    pub fn release<State>(&mut self, reservation: BluetoothSchedulerReservation<State>) -> bool {
         let Some(slot) = self.slots.get_mut(reservation.slot) else {
             return false;
         };
@@ -275,7 +387,16 @@ mod tests {
         end: u32,
         now: u32,
     ) -> Result<super::BluetoothSchedulerReservation, BluetoothSchedulerReservationError> {
-        timeline.reserve_raw_window(start, end, timing_policy(), sample(now))
+        let epoch = BluetoothControllerSchedulerEpoch::new(sample(0), 0, scale());
+        let event = BluetoothDtmSchedulerItemEvent::new(
+            BluetoothDtmChannel::new(0).expect("channel zero is valid"),
+            BluetoothDtmPhy::Le1M,
+            BluetoothDtmRole::Receiver,
+            0,
+            0,
+        )
+        .expect("placeholder event is valid");
+        timeline.reserve_raw_window(start, end, event, epoch, timing_policy(), sample(now))
     }
 
     #[test]

@@ -12,18 +12,17 @@ use core::{convert::Infallible, marker::PhantomData};
 
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphPositionalEventPrepared,
-    BluetoothDtmMemoryGraphPrepareFailure, BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared,
-    BluetoothDtmPositionalEventWords,
+    BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphPrepareFailure,
+    BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared, BluetoothDtmPositionalEventWords,
 };
 use open_esp_radio_esp32s31_hal::{
     BluetoothControllerSramAddress, BluetoothSchedulerLockModifyRequest,
 };
 
 use crate::{
-    BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample, BluetoothDtmLinkStateReset,
-    BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern, BluetoothDtmPreparedTxGraph,
-    BluetoothDtmRole, BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerTimingPolicy,
-    dtm_scheduler_item::apply_overlap_insertion_power,
+    BluetoothDtmLinkStateReset, BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern,
+    BluetoothDtmPreparedTxGraph, BluetoothDtmRole, BluetoothSchedulerReservation,
+    BluetoothSchedulerSequenceReady, dtm_scheduler_item::apply_overlap_insertion_power,
 };
 
 /// Type marker for a transmitter event with a prepared packet prerequisite.
@@ -46,54 +45,72 @@ pub enum BluetoothDtmReviewedEventWordsPlanError {
         /// Role selected by the scheduler-item transform.
         scheduler_item: BluetoothDtmRole,
     },
-    /// The first common-scheduler deadline gate rejected the item.
-    InitialDeadlineExpired,
+}
+
+/// Rejected role composition retaining the exact sequence-ready reservation.
+pub struct BluetoothDtmReviewedEventWordsPlanFailure {
+    error: BluetoothDtmReviewedEventWordsPlanError,
+    reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+}
+
+impl BluetoothDtmReviewedEventWordsPlanFailure {
+    /// Borrow the finite composition failure reason.
+    pub const fn error(&self) -> BluetoothDtmReviewedEventWordsPlanError {
+        self.error
+    }
+
+    /// Recover the reservation for explicit scheduler release.
+    pub fn into_reservation(
+        self,
+    ) -> BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady> {
+        self.reservation
+    }
+}
+
+impl core::fmt::Debug for BluetoothDtmReviewedEventWordsPlanFailure {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothDtmReviewedEventWordsPlanFailure")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Validated role-consistent plan for the nineteen reviewed event words.
 ///
 /// Private chain links are deliberately absent from plan identity. They are
 /// replaced inside `prepare` with fresh links sampled from the consumed graph.
-/// Construction also consumes the fresh Controller-time sample used by the
-/// first common-scheduler late-start gate. The later post-overlap gate remains
-/// a separate scheduler-list responsibility.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Construction consumes an affine reservation that already passed strict
+/// overlap resolution and both fresh Controller-time deadline gates. Sequence
+/// timing can therefore only be formed from the resolved window retained by
+/// that reservation.
 pub struct BluetoothDtmReviewedEventWordsPlan<Role> {
     link_state: BluetoothDtmLinkStateReset,
-    scheduler_item: BluetoothDtmSchedulerItemEvent,
-    timing_policy: BluetoothDtmSchedulerTimingPolicy,
-    epoch: BluetoothControllerSchedulerEpoch,
+    reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
     _role: PhantomData<Role>,
 }
 
 impl<Role> BluetoothDtmReviewedEventWordsPlan<Role> {
     fn new_for_role(
         link_state: BluetoothDtmLinkStateReset,
-        scheduler_item: BluetoothDtmSchedulerItemEvent,
-        timing_policy: BluetoothDtmSchedulerTimingPolicy,
-        admission_sample: BluetoothControllerTimeSample,
-        epoch: BluetoothControllerSchedulerEpoch,
+        reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
         expected: BluetoothDtmRole,
-    ) -> Result<Self, BluetoothDtmReviewedEventWordsPlanError> {
+    ) -> Result<Self, BluetoothDtmReviewedEventWordsPlanFailure> {
         let link_role = link_state.role();
-        let scheduler_role = scheduler_item.role();
+        let scheduler_role = reservation.event().role();
         if link_role != expected || scheduler_role != expected {
-            return Err(BluetoothDtmReviewedEventWordsPlanError::RoleMismatch {
-                expected,
-                link_state: link_role,
-                scheduler_item: scheduler_role,
+            return Err(BluetoothDtmReviewedEventWordsPlanFailure {
+                error: BluetoothDtmReviewedEventWordsPlanError::RoleMismatch {
+                    expected,
+                    link_state: link_role,
+                    scheduler_item: scheduler_role,
+                },
+                reservation,
             });
-        }
-        if !timing_policy
-            .initial_deadline_is_open(admission_sample, scheduler_item.raw_start(epoch))
-        {
-            return Err(BluetoothDtmReviewedEventWordsPlanError::InitialDeadlineExpired);
         }
         Ok(Self {
             link_state,
-            scheduler_item,
-            timing_policy,
-            epoch,
+            reservation,
             _role: PhantomData,
         })
     }
@@ -103,99 +120,136 @@ impl<Role> BluetoothDtmReviewedEventWordsPlan<Role> {
         seed: open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmPositionalEventSeed,
     ) -> BluetoothDtmPositionalEventWords {
         let current = seed.words();
+        let event = self.reservation.event();
+        let epoch = self.reservation.epoch();
+        let resolved_window = self.reservation.window();
         let link_state = self
             .link_state
             .with_private_links(seed.tx_head(), seed.rx_tail())
             .apply(current.link_state())
-            .apply_event_context(
-                self.link_state.role(),
-                self.epoch.raw_time_for_scheduler_time(0),
-            );
-        let scheduler_item = self
-            .scheduler_item
-            .apply(current.scheduler_item(), self.epoch);
-        let scheduler_item =
-            scheduler_item.apply_sequence_timing(self.timing_policy.sequence_lead_raw_delta());
-        let scheduler_item = apply_overlap_insertion_power(scheduler_item, link_state);
+            .apply_event_context(self.link_state.role(), epoch.raw_time_for_scheduler_time(0));
+        let scheduler_item = event.apply_raw_window(
+            current.scheduler_item(),
+            resolved_window.start(),
+            resolved_window.end(),
+        );
+        let scheduler_item = apply_overlap_insertion_power(scheduler_item, link_state)
+            .apply_sequence_timing(self.reservation.timing_policy().sequence_lead_raw_delta());
         BluetoothDtmPositionalEventWords::new(link_state, scheduler_item)
     }
 }
 
+/// Failed graph preparation retaining the sequence-ready scheduler plan.
+pub struct BluetoothDtmReviewedEventPrepareFailure<Role> {
+    memory: BluetoothDtmMemoryGraphPrepareFailure,
+    plan: BluetoothDtmReviewedEventWordsPlan<Role>,
+}
+
+impl<Role> BluetoothDtmReviewedEventPrepareFailure<Role> {
+    /// Borrow the lower graph-preparation reason.
+    pub const fn error(&self) -> &BluetoothDtmMemoryGraphPrepareError {
+        self.memory.error()
+    }
+
+    /// Recover both the unchanged graph failure and the reusable plan.
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothDtmMemoryGraphPrepareFailure,
+        BluetoothDtmReviewedEventWordsPlan<Role>,
+    ) {
+        (self.memory, self.plan)
+    }
+}
+
+impl<Role> core::fmt::Debug for BluetoothDtmReviewedEventPrepareFailure<Role> {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothDtmReviewedEventPrepareFailure")
+            .field("error", self.memory.error())
+            .finish_non_exhaustive()
+    }
+}
+
 impl BluetoothDtmReviewedEventWordsPlan<BluetoothDtmTransmitterEvent> {
-    /// Pair two transmitter transforms and one fresh deadline sample.
+    /// Pair a transmitter reset with its sequence-ready scheduler reservation.
     pub fn new_transmitter(
         link_state: BluetoothDtmLinkStateReset,
-        scheduler_item: BluetoothDtmSchedulerItemEvent,
-        timing_policy: BluetoothDtmSchedulerTimingPolicy,
-        admission_sample: BluetoothControllerTimeSample,
-        epoch: BluetoothControllerSchedulerEpoch,
-    ) -> Result<Self, BluetoothDtmReviewedEventWordsPlanError> {
-        Self::new_for_role(
-            link_state,
-            scheduler_item,
-            timing_policy,
-            admission_sample,
-            epoch,
-            BluetoothDtmRole::Transmitter,
-        )
+        reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+    ) -> Result<Self, BluetoothDtmReviewedEventWordsPlanFailure> {
+        Self::new_for_role(link_state, reservation, BluetoothDtmRole::Transmitter)
     }
 
     /// Apply this TX plan only to a graph carrying a complete standard packet.
     ///
     /// Any lower validation failure returns an ordinary CPU owner. A retry
     /// must deliberately prepare a fresh packet-readiness proof.
+    #[expect(
+        clippy::result_large_err,
+        reason = "no-alloc failure retains both the unchanged SRAM graph and affine reservation"
+    )]
     pub fn prepare(
         self,
         owner: BluetoothDtmPreparedTxGraph,
     ) -> Result<
         BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmTransmitterEvent>,
-        BluetoothDtmMemoryGraphPrepareFailure,
+        BluetoothDtmReviewedEventPrepareFailure<BluetoothDtmTransmitterEvent>,
     > {
+        let plan = self;
         let (memory, pattern, length) = owner.into_parts();
-        let prepared = memory
-            .try_prepare_positional_event(|seed| Ok::<_, Infallible>(self.apply_to_seed(seed)))?;
+        let prepared = match memory
+            .try_prepare_positional_event(|seed| Ok::<_, Infallible>(plan.apply_to_seed(seed)))
+        {
+            Ok(prepared) => prepared,
+            Err(memory) => {
+                return Err(BluetoothDtmReviewedEventPrepareFailure { memory, plan });
+            }
+        };
 
         Ok(BluetoothDtmReviewedEventWordsPrepared {
             memory: prepared,
             packet: BluetoothDtmEventPacket::Transmitter { pattern, length },
+            reservation: plan.reservation,
             _role: PhantomData,
         })
     }
 }
 
 impl BluetoothDtmReviewedEventWordsPlan<BluetoothDtmReceiverEvent> {
-    /// Pair two receiver transforms and one fresh deadline sample.
+    /// Pair a receiver reset with its sequence-ready scheduler reservation.
     pub fn new_receiver(
         link_state: BluetoothDtmLinkStateReset,
-        scheduler_item: BluetoothDtmSchedulerItemEvent,
-        timing_policy: BluetoothDtmSchedulerTimingPolicy,
-        admission_sample: BluetoothControllerTimeSample,
-        epoch: BluetoothControllerSchedulerEpoch,
-    ) -> Result<Self, BluetoothDtmReviewedEventWordsPlanError> {
-        Self::new_for_role(
-            link_state,
-            scheduler_item,
-            timing_policy,
-            admission_sample,
-            epoch,
-            BluetoothDtmRole::Receiver,
-        )
+        reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+    ) -> Result<Self, BluetoothDtmReviewedEventWordsPlanFailure> {
+        Self::new_for_role(link_state, reservation, BluetoothDtmRole::Receiver)
     }
 
     /// Apply this RX plan to one exact ordinary CPU-owned graph.
+    #[expect(
+        clippy::result_large_err,
+        reason = "no-alloc failure retains both the unchanged SRAM graph and affine reservation"
+    )]
     pub fn prepare(
         self,
         owner: BluetoothDtmMemoryGraphCpuOwned,
     ) -> Result<
         BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmReceiverEvent>,
-        BluetoothDtmMemoryGraphPrepareFailure,
+        BluetoothDtmReviewedEventPrepareFailure<BluetoothDtmReceiverEvent>,
     > {
-        let prepared = owner
-            .try_prepare_positional_event(|seed| Ok::<_, Infallible>(self.apply_to_seed(seed)))?;
+        let plan = self;
+        let prepared = match owner
+            .try_prepare_positional_event(|seed| Ok::<_, Infallible>(plan.apply_to_seed(seed)))
+        {
+            Ok(prepared) => prepared,
+            Err(memory) => {
+                return Err(BluetoothDtmReviewedEventPrepareFailure { memory, plan });
+            }
+        };
 
         Ok(BluetoothDtmReviewedEventWordsPrepared {
             memory: prepared,
             packet: BluetoothDtmEventPacket::Receiver,
+            reservation: plan.reservation,
             _role: PhantomData,
         })
     }
@@ -217,6 +271,7 @@ enum BluetoothDtmEventPacket {
 pub struct BluetoothDtmReviewedEventWordsPrepared<Role> {
     memory: BluetoothDtmMemoryGraphPositionalEventPrepared,
     packet: BluetoothDtmEventPacket,
+    reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
     _role: PhantomData<Role>,
 }
 
@@ -251,13 +306,19 @@ impl<Role> BluetoothDtmReviewedEventWordsPrepared<Role> {
         BluetoothDtmSchedulerBookkeepingPrepared {
             memory: self.memory.prepare_scheduler_bookkeeping(),
             packet: self.packet,
+            reservation: self.reservation,
             _role: PhantomData,
         }
     }
 
-    /// Cancel before publication and recover the exact prior CPU-owned graph.
-    pub fn cancel(self) -> BluetoothDtmMemoryGraphCpuOwned {
-        self.memory.cancel()
+    /// Cancel before publication and recover both CPU-owned resources.
+    pub fn cancel(
+        self,
+    ) -> (
+        BluetoothDtmMemoryGraphCpuOwned,
+        BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+    ) {
+        (self.memory.cancel(), self.reservation)
     }
 }
 
@@ -288,6 +349,7 @@ impl BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmTransmitterEvent> {
 pub struct BluetoothDtmSchedulerBookkeepingPrepared<Role> {
     memory: BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared,
     packet: BluetoothDtmEventPacket,
+    reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
     _role: PhantomData<Role>,
 }
 
@@ -333,6 +395,7 @@ impl<Role> BluetoothDtmSchedulerBookkeepingPrepared<Role> {
         BluetoothDtmReviewedEventWordsPrepared {
             memory: self.memory.cancel(),
             packet: self.packet,
+            reservation: self.reservation,
             _role: PhantomData,
         }
     }
@@ -370,6 +433,8 @@ mod tests {
         BluetoothDtmLinkStateReset, BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern,
         BluetoothDtmPhy, BluetoothDtmRole, BluetoothDtmSchedulerItemEvent,
         BluetoothDtmSchedulerTimingPolicy, BluetoothDtmTxGraphPrepare,
+        BluetoothSchedulerReservation, BluetoothSchedulerSequenceAuthorizationError,
+        BluetoothSchedulerSequenceReady, BluetoothSchedulerTimeline,
     };
 
     fn owner(base: u32) -> crate::BluetoothDtmMemoryGraphCpuOwned {
@@ -418,8 +483,20 @@ mod tests {
         BluetoothControllerTimeSample::for_validation(92)
     }
 
+    fn reservation<const CAPACITY: usize>(
+        timeline: &mut BluetoothSchedulerTimeline<CAPACITY>,
+        role: BluetoothDtmRole,
+    ) -> BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady> {
+        timeline
+            .reserve_dtm_event(item(role), epoch(), timing_policy(), admission_sample())
+            .expect("the first guarded deadline is open")
+            .authorize_sequence(admission_sample())
+            .expect("the second guarded deadline is open")
+    }
+
     #[test]
     fn tx_plan_requires_and_retains_the_prepared_packet_identity() {
+        let mut timeline = BluetoothSchedulerTimeline::<1>::new();
         let stale = BluetoothDtmBoundSramLinkAddress::new(0x2f00_0400)
             .expect("stale model link remains syntactically valid");
         let reset = BluetoothDtmLinkStateReset::new(
@@ -432,10 +509,7 @@ mod tests {
         .expect("bounded reset fields are valid");
         let plan = BluetoothDtmReviewedEventWordsPlan::new_transmitter(
             reset,
-            item(BluetoothDtmRole::Transmitter),
-            timing_policy(),
-            admission_sample(),
-            epoch(),
+            reservation(&mut timeline, BluetoothDtmRole::Transmitter),
         )
         .expect("both transforms encode TX");
 
@@ -474,19 +548,19 @@ mod tests {
         assert_eq!(words.scheduler_item().link_state_link_image(), 0x1c000);
         assert_eq!(words.scheduler_item().word_14, 0x5150_0000);
         assert_eq!(words.scheduler_item().word_2c, 0);
-        let _owner = prepared.cancel();
+        let (_owner, reservation) = prepared.cancel();
+        assert!(timeline.release(reservation));
+        assert!(timeline.is_empty());
     }
 
     #[test]
     fn rx_plan_applies_both_role_specific_transforms_to_the_bound_graph() {
+        let mut timeline = BluetoothSchedulerTimeline::<1>::new();
         let reset = BluetoothDtmLinkStateReset::new(None, None, 0, 0, BluetoothDtmRole::Receiver)
             .expect("zero dynamic fields are valid");
         let plan = BluetoothDtmReviewedEventWordsPlan::new_receiver(
             reset,
-            item(BluetoothDtmRole::Receiver),
-            timing_policy(),
-            admission_sample(),
-            epoch(),
+            reservation(&mut timeline, BluetoothDtmRole::Receiver),
         )
         .expect("both transforms encode RX");
 
@@ -508,43 +582,86 @@ mod tests {
             words.link_state().word_34,
             epoch().raw_time_for_scheduler_time(0)
         );
+        let (_owner, reservation) = prepared.cancel();
+        assert!(timeline.release(reservation));
+    }
+
+    #[test]
+    fn plan_forms_sequence_timing_from_the_overlap_resolved_window() {
+        let mut timeline = BluetoothSchedulerTimeline::<2>::new();
+        let occupied = timeline
+            .reserve_dtm_event(
+                item(BluetoothDtmRole::Receiver),
+                epoch(),
+                timing_policy(),
+                admission_sample(),
+            )
+            .expect("the first window is admissible");
+        let resolved = reservation(&mut timeline, BluetoothDtmRole::Receiver);
+        assert_eq!(resolved.window().start(), occupied.window().end());
+
+        let reset = BluetoothDtmLinkStateReset::new(None, None, 0, 0, BluetoothDtmRole::Receiver)
+            .expect("zero dynamic fields are valid");
+        let plan = BluetoothDtmReviewedEventWordsPlan::new_receiver(reset, resolved)
+            .expect("the resolved event and reset share the RX role");
+        let prepared = plan
+            .prepare(owner(0x2f00_1100))
+            .expect("the bound graph accepts the resolved event");
+        let scheduler_words = prepared.words().scheduler_item();
+
+        assert_eq!(scheduler_words.word_44, 105);
+        assert_eq!(scheduler_words.word_48, 107);
+        assert_eq!(scheduler_words.word_0c, 116);
+        assert_eq!(scheduler_words.word_10, 2);
+
+        let (_owner, resolved) = prepared.cancel();
+        assert!(timeline.release(resolved));
+        assert!(timeline.release(occupied));
+        assert!(timeline.is_empty());
     }
 
     #[test]
     fn plan_rejects_mixed_roles_before_it_can_consume_memory() {
+        let mut timeline = BluetoothSchedulerTimeline::<1>::new();
         let reset =
             BluetoothDtmLinkStateReset::new(None, None, 0, 0, BluetoothDtmRole::Transmitter)
                 .expect("zero dynamic fields are valid");
+        let failure = match BluetoothDtmReviewedEventWordsPlan::new_transmitter(
+            reset,
+            reservation(&mut timeline, BluetoothDtmRole::Receiver),
+        ) {
+            Ok(_) => panic!("a receiver reservation cannot form a transmitter plan"),
+            Err(failure) => failure,
+        };
         assert_eq!(
-            BluetoothDtmReviewedEventWordsPlan::new_transmitter(
-                reset,
-                item(BluetoothDtmRole::Receiver),
-                timing_policy(),
-                admission_sample(),
-                epoch(),
-            ),
-            Err(BluetoothDtmReviewedEventWordsPlanError::RoleMismatch {
+            failure.error(),
+            BluetoothDtmReviewedEventWordsPlanError::RoleMismatch {
                 expected: BluetoothDtmRole::Transmitter,
                 link_state: BluetoothDtmRole::Transmitter,
                 scheduler_item: BluetoothDtmRole::Receiver,
-            })
+            }
         );
+        assert!(timeline.release(failure.into_reservation()));
     }
 
     #[test]
-    fn plan_rejects_an_item_at_the_first_guarded_deadline() {
-        let reset = BluetoothDtmLinkStateReset::new(None, None, 0, 0, BluetoothDtmRole::Receiver)
-            .expect("zero dynamic fields are valid");
-
-        assert_eq!(
-            BluetoothDtmReviewedEventWordsPlan::new_receiver(
-                reset,
+    fn sequence_authorization_rejects_the_second_guarded_deadline() {
+        let mut timeline = BluetoothSchedulerTimeline::<1>::new();
+        let reservation = timeline
+            .reserve_dtm_event(
                 item(BluetoothDtmRole::Receiver),
-                timing_policy(),
-                BluetoothControllerTimeSample::for_validation(93),
                 epoch(),
-            ),
-            Err(BluetoothDtmReviewedEventWordsPlanError::InitialDeadlineExpired)
+                timing_policy(),
+                admission_sample(),
+            )
+            .expect("the first guarded deadline is open");
+        let failure = reservation
+            .authorize_sequence(BluetoothControllerTimeSample::for_validation(93))
+            .expect_err("the second sample reaches the guarded start");
+        assert_eq!(
+            failure.error(),
+            BluetoothSchedulerSequenceAuthorizationError::DeadlineExpired
         );
+        assert!(timeline.release(failure.into_reservation()));
     }
 }

@@ -669,7 +669,7 @@ pub(crate) struct BluetoothDtmRecycleTimelineReleasedEvent<Role> {
 #[cfg(target_arch = "riscv32")]
 impl<Role> BluetoothDtmRecycleTimelineReleasedEvent<Role> {
     pub(crate) fn finish_source_list_release(self) -> BluetoothDtmRecycledEvent<Role> {
-        let (memory, status) = self.memory.finish_after_scheduler_release().into_parts();
+        let (memory, status) = self.memory.into_cpu_owned().into_parts();
         BluetoothDtmRecycledEvent {
             memory,
             packet: self.packet,

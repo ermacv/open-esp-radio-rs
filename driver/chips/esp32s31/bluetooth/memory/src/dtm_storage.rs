@@ -1352,13 +1352,13 @@ impl BluetoothDtmMemoryGraphRecyclePrepared {
     }
 }
 
-/// Graph whose reviewed SRAM recycle suffix is complete while upper scheduler
-/// ownership is still being released.
+/// Graph whose reviewed hardware-release and SRAM recycle suffix is complete.
 ///
-/// This state deliberately exposes no CPU-owned graph. The composing
-/// scheduler must release the exact timeline reservation and source-list epoch
-/// before converting it into [`BluetoothDtmMemoryGraphRecycled`].
-#[must_use = "the cleaned graph must wait for complete scheduler release"]
+/// At this lower memory boundary the consumed empty-head/removal proof already
+/// establishes that hardware can no longer reach the graph. The production
+/// Controller deliberately keeps this intermediate opaque while it releases
+/// its separate software timeline and source-list bookkeeping.
+#[must_use = "the cleaned graph must return to its memory owner"]
 pub struct BluetoothDtmMemoryGraphRecycleCleaned {
     storage: Pin<&'static mut BluetoothDtmMemoryGraphStorage>,
     binding: BluetoothDtmMemoryGraphBinding,
@@ -1366,10 +1366,12 @@ pub struct BluetoothDtmMemoryGraphRecycleCleaned {
 }
 
 impl BluetoothDtmMemoryGraphRecycleCleaned {
-    /// Complete the lower memory transition after the upper scheduler has
-    /// released both its timeline reservation and source-list epoch.
+    /// Recover lower-layer CPU memory ownership after hardware release.
+    ///
+    /// This does not claim that any upper scheduler timeline or source-list
+    /// bookkeeping has been released.
     #[doc(hidden)]
-    pub fn finish_after_scheduler_release(self) -> BluetoothDtmMemoryGraphRecycled {
+    pub fn into_cpu_owned(self) -> BluetoothDtmMemoryGraphRecycled {
         BluetoothDtmMemoryGraphRecycled {
             owner: BluetoothDtmMemoryGraphCpuOwned {
                 storage: self.storage,
@@ -2316,7 +2318,7 @@ mod tests {
             Err(_) => panic!("the bound removal proof must authorize the exact completed graph"),
         };
         let cleaned = prepared.commit();
-        let (owner, status) = cleaned.finish_after_scheduler_release().into_parts();
+        let (owner, status) = cleaned.into_cpu_owned().into_parts();
         assert_eq!(
             status,
             BluetoothDtmSchedulerItemCompletionStatus::NonSuccess(

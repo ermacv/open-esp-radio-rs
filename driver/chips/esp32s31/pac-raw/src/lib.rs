@@ -58461,6 +58461,132 @@ pub mod field_read {
     pub fn observe_phy_i2c_host1_data(registers: &crate::I2cAnaMst) -> u8 {
         registers.i2c1_ctrl().read().data().bits()
     }
+
+    /// Read `PHY_PBUS`.`STATUS_CLOCK_FORCE`.`BUSY` without exposing its register block.
+    #[inline]
+    pub fn observe_pbus_busy(registers: &crate::PhyPbus) -> bool {
+        registers.status_clock_force().read().busy().bit()
+    }
+
+    /// Read `PHY_PBUS`.`READ_RESULT_3`.`RESULT_WINDOW_2_UNKNOWN` without exposing its register block.
+    #[inline]
+    pub fn observe_pbus_selector0_path1_result(registers: &crate::PhyPbus) -> u16 {
+        registers
+            .read_result_3()
+            .read()
+            .result_window_2_unknown()
+            .bits()
+    }
+
+    /// Read `PHY_PBUS`.`READ_RESULT_3`.`RESULT_WINDOW_1_UNKNOWN` without exposing its register block.
+    #[inline]
+    pub fn observe_pbus_selector0_other_path_result(registers: &crate::PhyPbus) -> u16 {
+        registers
+            .read_result_3()
+            .read()
+            .result_window_1_unknown()
+            .bits()
+    }
+
+    /// Read `PHY_PBUS`.`READ_RESULT_0`.`RESULT_WINDOW_1_UNKNOWN` without exposing its register block.
+    #[inline]
+    pub fn observe_pbus_selector1_path1_result(registers: &crate::PhyPbus) -> u16 {
+        registers
+            .read_result_0()
+            .read()
+            .result_window_1_unknown()
+            .bits()
+    }
+
+    /// Read `PHY_PBUS`.`READ_RESULT_0`.`RESULT_WINDOW_0_RX_DCO` without exposing its register block.
+    #[inline]
+    pub fn observe_pbus_selector1_other_path_result(registers: &crate::PhyPbus) -> u16 {
+        registers
+            .read_result_0()
+            .read()
+            .result_window_0_rx_dco()
+            .bits()
+    }
+
+    /// Read `PHY_PBUS`.`READ_RESULT_1`.`RESULT_WINDOW_0_UNKNOWN` without exposing its register block.
+    #[inline]
+    pub fn observe_pbus_selector2_path1_result(registers: &crate::PhyPbus) -> u16 {
+        registers
+            .read_result_1()
+            .read()
+            .result_window_0_unknown()
+            .bits()
+    }
+
+    /// Read `PHY_PBUS`.`READ_RESULT_2`.`RESULT_WINDOW_2_UNKNOWN` without exposing its register block.
+    #[inline]
+    pub fn observe_pbus_selector2_other_path_result(registers: &crate::PhyPbus) -> u16 {
+        registers
+            .read_result_2()
+            .read()
+            .result_window_2_unknown()
+            .bits()
+    }
+
+    /// Read `PHY_PBUS`.`READ_RESULT_2`.`RESULT_WINDOW_1_UNKNOWN` without exposing its register block.
+    #[inline]
+    pub fn observe_pbus_selector3_path1_result(registers: &crate::PhyPbus) -> u16 {
+        registers
+            .read_result_2()
+            .read()
+            .result_window_1_unknown()
+            .bits()
+    }
+
+    /// Read `PHY_PBUS`.`READ_RESULT_2`.`RESULT_WINDOW_0_UNKNOWN` without exposing its register block.
+    #[inline]
+    pub fn observe_pbus_selector3_other_path_result(registers: &crate::PhyPbus) -> u16 {
+        registers
+            .read_result_2()
+            .read()
+            .result_window_0_unknown()
+            .bits()
+    }
+
+    /// Read `PHY_PBUS`.`READ_RESULT_3`.`RESULT_WINDOW_0_UNKNOWN` without exposing its register block.
+    #[inline]
+    pub fn observe_pbus_selector4_path1_result(registers: &crate::PhyPbus) -> u16 {
+        registers
+            .read_result_3()
+            .read()
+            .result_window_0_unknown()
+            .bits()
+    }
+
+    /// Read `PHY_PBUS`.`READ_RESULT_4`.`RESULT_WINDOW_2_UNKNOWN` without exposing its register block.
+    #[inline]
+    pub fn observe_pbus_selector4_other_path_result(registers: &crate::PhyPbus) -> u16 {
+        registers
+            .read_result_4()
+            .read()
+            .result_window_2_unknown()
+            .bits()
+    }
+
+    /// Read `PHY_PBUS`.`READ_RESULT_4`.`RESULT_WINDOW_1_UNKNOWN` without exposing its register block.
+    #[inline]
+    pub fn observe_pbus_selector5_result(registers: &crate::PhyPbus) -> u16 {
+        registers
+            .read_result_4()
+            .read()
+            .result_window_1_unknown()
+            .bits()
+    }
+
+    /// Read `PHY_PBUS`.`READ_RESULT_4`.`RESULT_WINDOW_0_UNKNOWN` without exposing its register block.
+    #[inline]
+    pub fn observe_pbus_fallback_result(registers: &crate::PhyPbus) -> u16 {
+        registers
+            .read_result_4()
+            .read()
+            .result_window_0_unknown()
+            .bits()
+    }
 }
 
 /// Safe same-sample observations through reviewed SVD fields.
@@ -66183,6 +66309,79 @@ pub mod field_replace_modify {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe { writer.bbpll_cal_mode().bits((input & 0x00000003) as u8) }
+        });
+    }
+
+    /// Replace PHY_PBUS.STATUS_CLOCK_FORCE fields [FORCE_TXRX_MODE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_pbus_force_txrx_state(registers: &crate::PhyPbus, input: u32) {
+        registers.status_clock_force().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .force_txrx_mode_unknown()
+                    .bits((input & 0x0000000f) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_PBUS.MODE fields [WORK_MODE_ENABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_pbus_work_mode(registers: &crate::PhyPbus, input: u32) {
+        registers.mode().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.work_mode_enable().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_PBUS.COMMAND fields [DEBUG_MODE_ENABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_pbus_debug_mode(registers: &crate::PhyPbus, input: u32) {
+        registers.command().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.debug_mode_enable().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_PBUS.COMMAND fields [TRANSACTION_START] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_pbus_transaction(registers: &crate::PhyPbus) {
+        registers.command().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.transaction_start().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_PBUS.STATUS_CLOCK_FORCE fields [RX_CLOCK_LOW_OR_RXIQ_STATUS_FIRST_UNKNOWN, RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_pbus_rx_clock_pair(registers: &crate::PhyPbus, input: u32) {
+        registers.status_clock_force().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .rx_clock_low_or_rxiq_status_first_unknown()
+                .bit((input & 0x00000001) != 0)
+                .rx_clock_high_or_rxiq_status_second_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_PBUS.STATUS_CLOCK_FORCE fields [TX_CLOCK_ENABLE_PAIR] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_pbus_tx_clock_pair(registers: &crate::PhyPbus, input: u32) {
+        registers.status_clock_force().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .tx_clock_enable_pair()
+                    .bits((input & 0x00000003) as u8)
+            }
         });
     }
 }

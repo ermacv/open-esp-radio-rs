@@ -1085,11 +1085,17 @@ peripheral = "PHY_AGC_ORACLE"
 register = "SATURATION_GAIN_HIGH"
 sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
 
-[[opaque-domains]]
+[[bitwise-composed-domains]]
 name = "PbusForceTestInput"
-description = "Register-specific caller-controlled portion of one recovered PBus force-test command."
+description = "Register-specific caller-controlled portion of one recovered PBus force-test command, composed in the complete ROM order before the final mask."
 peripheral = "PHY_PBUS"
 register = "COMMAND"
+arguments = [
+    { name = "selector", value-type = "u8", left-shift = 2 },
+    { name = "path", value-type = "u8", left-shift = 15 },
+    { name = "test_value", value-type = "u16", left-shift = 6 },
+]
+output-mask = 0x0001fffc
 sources = ["ROM_REV0_PHY_PBUS", "ROM_REV0_PHY_RX_DCO"]
 
 [[opaque-domains]]
@@ -6466,3 +6472,211 @@ fields = [{ field = "BBPLL_CAL_MODE", source-bit-offset = 0 }]
 domain = "PhyI2cBbpllCalibrationState"
 exposure = "facade"
 sources = ["ROM_REV0_PHY_I2C", "S31_ESP_PACS_SVD"]
+
+[[enum-domains]]
+name = "PbusForceTxRxState"
+description = "Four complete-ROM force-TX/RX phase encodings."
+
+[[enum-domains.values]]
+name = "DisabledFinal"
+value = 0
+description = "Publish the final force-TX/RX disable phase."
+sources = ["ROM_REV0_PHY_CLOCK_FORCE", "S31_ESP_PACS_SVD"]
+
+[[enum-domains.values]]
+name = "DisabledInitial"
+value = 2
+description = "Publish the initial force-TX/RX disable phase."
+sources = ["ROM_REV0_PHY_CLOCK_FORCE", "S31_ESP_PACS_SVD"]
+
+[[enum-domains.values]]
+name = "EnabledInitial"
+value = 8
+description = "Publish the initial force-TX/RX enable phase."
+sources = ["ROM_REV0_PHY_CLOCK_FORCE", "S31_ESP_PACS_SVD"]
+
+[[enum-domains.values]]
+name = "EnabledFinal"
+value = 10
+description = "Publish the final force-TX/RX enable phase."
+sources = ["ROM_REV0_PHY_CLOCK_FORCE", "S31_ESP_PACS_SVD"]
+
+[[enum-domains]]
+name = "PbusEnableState"
+description = "Boolean state shared by reviewed one-bit PBus control transactions."
+
+[[enum-domains.values]]
+name = "Disabled"
+value = 0
+description = "Disable the selected PBus control."
+sources = ["ROM_REV0_PHY_PBUS", "ROM_REV0_PHY_CLOCK_FORCE", "S31_ESP_PACS_SVD"]
+
+[[enum-domains.values]]
+name = "Enabled"
+value = 1
+description = "Enable the selected PBus control."
+sources = ["ROM_REV0_PHY_PBUS", "ROM_REV0_PHY_CLOCK_FORCE", "S31_ESP_PACS_SVD"]
+
+[[enum-domains]]
+name = "PbusTxClockPairState"
+description = "Complete two-bit PBus TX clock-pair encodings."
+
+[[enum-domains.values]]
+name = "Disabled"
+value = 0
+description = "Disable both recovered PBus TX clock bits."
+sources = ["ROM_REV0_PHY_CLOCK_FORCE", "S31_ESP_PACS_SVD"]
+
+[[enum-domains.values]]
+name = "Enabled"
+value = 3
+description = "Enable both recovered PBus TX clock bits."
+sources = ["ROM_REV0_PHY_CLOCK_FORCE", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_pbus_force_txrx_state"
+peripheral = "PHY_PBUS"
+register = "STATUS_CLOCK_FORCE"
+fields = [{ field = "FORCE_TXRX_MODE_UNKNOWN", source-bit-offset = 0 }]
+domain = "PbusForceTxRxState"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_CLOCK_FORCE", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_pbus_work_mode"
+peripheral = "PHY_PBUS"
+register = "MODE"
+fields = [{ field = "WORK_MODE_ENABLE", source-bit-offset = 0 }]
+domain = "PbusEnableState"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_PBUS", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_pbus_debug_mode"
+peripheral = "PHY_PBUS"
+register = "COMMAND"
+fields = [{ field = "DEBUG_MODE_ENABLE", source-bit-offset = 0 }]
+domain = "PbusEnableState"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_PBUS", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_pbus_busy"
+peripheral = "PHY_PBUS"
+register = "STATUS_CLOCK_FORCE"
+field = "BUSY"
+sources = ["ROM_REV0_PHY_PBUS", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_pbus_transaction"
+peripheral = "PHY_PBUS"
+register = "COMMAND"
+fields = [{ field = "TRANSACTION_START", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_PBUS", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_pbus_selector0_path1_result"
+peripheral = "PHY_PBUS"
+register = "READ_RESULT_3"
+field = "RESULT_WINDOW_2_UNKNOWN"
+sources = ["ROM_REV0_PHY_PBUS", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_pbus_selector0_other_path_result"
+peripheral = "PHY_PBUS"
+register = "READ_RESULT_3"
+field = "RESULT_WINDOW_1_UNKNOWN"
+sources = ["ROM_REV0_PHY_PBUS", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_pbus_selector1_path1_result"
+peripheral = "PHY_PBUS"
+register = "READ_RESULT_0"
+field = "RESULT_WINDOW_1_UNKNOWN"
+sources = ["ROM_REV0_PHY_PBUS", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_pbus_selector1_other_path_result"
+peripheral = "PHY_PBUS"
+register = "READ_RESULT_0"
+field = "RESULT_WINDOW_0_RX_DCO"
+sources = ["ROM_REV0_PHY_PBUS", "ROM_REV0_PHY_RX_DCO", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_pbus_selector2_path1_result"
+peripheral = "PHY_PBUS"
+register = "READ_RESULT_1"
+field = "RESULT_WINDOW_0_UNKNOWN"
+sources = ["ROM_REV0_PHY_PBUS", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_pbus_selector2_other_path_result"
+peripheral = "PHY_PBUS"
+register = "READ_RESULT_2"
+field = "RESULT_WINDOW_2_UNKNOWN"
+sources = ["ROM_REV0_PHY_PBUS", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_pbus_selector3_path1_result"
+peripheral = "PHY_PBUS"
+register = "READ_RESULT_2"
+field = "RESULT_WINDOW_1_UNKNOWN"
+sources = ["ROM_REV0_PHY_PBUS", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_pbus_selector3_other_path_result"
+peripheral = "PHY_PBUS"
+register = "READ_RESULT_2"
+field = "RESULT_WINDOW_0_UNKNOWN"
+sources = ["ROM_REV0_PHY_PBUS", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_pbus_selector4_path1_result"
+peripheral = "PHY_PBUS"
+register = "READ_RESULT_3"
+field = "RESULT_WINDOW_0_UNKNOWN"
+sources = ["ROM_REV0_PHY_PBUS", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_pbus_selector4_other_path_result"
+peripheral = "PHY_PBUS"
+register = "READ_RESULT_4"
+field = "RESULT_WINDOW_2_UNKNOWN"
+sources = ["ROM_REV0_PHY_PBUS", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_pbus_selector5_result"
+peripheral = "PHY_PBUS"
+register = "READ_RESULT_4"
+field = "RESULT_WINDOW_1_UNKNOWN"
+sources = ["ROM_REV0_PHY_PBUS", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_pbus_fallback_result"
+peripheral = "PHY_PBUS"
+register = "READ_RESULT_4"
+field = "RESULT_WINDOW_0_UNKNOWN"
+sources = ["ROM_REV0_PHY_PBUS", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_pbus_rx_clock_pair"
+peripheral = "PHY_PBUS"
+register = "STATUS_CLOCK_FORCE"
+fields = [
+    { field = "RX_CLOCK_LOW_OR_RXIQ_STATUS_FIRST_UNKNOWN", source-bit-offset = 0 },
+    { field = "RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_UNKNOWN", source-bit-offset = 0 },
+]
+domain = "PbusEnableState"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_CLOCK_FORCE", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_pbus_tx_clock_pair"
+peripheral = "PHY_PBUS"
+register = "STATUS_CLOCK_FORCE"
+fields = [{ field = "TX_CLOCK_ENABLE_PAIR", source-bit-offset = 0 }]
+domain = "PbusTxClockPairState"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_CLOCK_FORCE", "S31_ESP_PACS_SVD"]

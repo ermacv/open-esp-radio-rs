@@ -95,6 +95,36 @@ impl PacApiPack {
                 domain.name, domain.name,
             ));
         }
+        for domain in &self.bitwise_composed_domains {
+            push_doc(&mut output, &domain.description, "");
+            let parameters = domain
+                .arguments
+                .iter()
+                .map(|argument| format!("{}: {}", argument.name, argument.value_type.rust_name()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let composition = domain
+                .arguments
+                .iter()
+                .map(|argument| {
+                    let value = if argument.value_type.requires_u32_cast() {
+                        format!("{} as u32", argument.name)
+                    } else {
+                        argument.name.clone()
+                    };
+                    if argument.left_shift == 0 {
+                        format!("({value})")
+                    } else {
+                        format!("(({value}) << {})", argument.left_shift)
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" | ");
+            output.push_str(&format!(
+                "#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]\npub struct {}(u32);\n\nimpl {} {{\n    /// Compose one register-specific image from typed logical arguments.\n    pub(crate) const fn compose({parameters}) -> Self {{\n        Self(({composition}) & 0x{:08x})\n    }}\n\n    /// Return the generated numeric image to its private raw-PAC bridge.\n    pub(crate) const fn get(self) -> u32 {{ self.0 }}\n}}\n\n",
+                domain.name, domain.name, domain.output_mask,
+            ));
+        }
         output.push_str(&self.render_indirect_register_field_domains());
         let flag_or_enum_domains = self
             .flag_domains

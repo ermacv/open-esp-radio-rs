@@ -636,6 +636,22 @@ impl PacApiPack {
                 )));
             }
         }
+        for domain in &self.bitwise_composed_domains {
+            // The generated composer is a register-specific type boundary;
+            // the bound operation still owns the exact access semantic.
+            let binding = register(&device, &domain.name, &domain.peripheral, &domain.register)?;
+            if binding.properties.size != Some(32)
+                || !matches!(
+                    binding.properties.access,
+                    Some(Access::ReadOnly | Access::WriteOnly | Access::ReadWrite)
+                )
+            {
+                return Err(Error::message(format!(
+                    "PAC API bitwise-composed domain {:?} requires an accessible 32-bit register",
+                    domain.name
+                )));
+            }
+        }
         Ok(())
     }
 

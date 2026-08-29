@@ -332,6 +332,61 @@ impl PhyI2cBbpllCalibrationState {
     }
 }
 
+/// Four complete-ROM force-TX/RX phase encodings.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PbusForceTxRxState {
+    /// Publish the final force-TX/RX disable phase.
+    DisabledFinal = 0x00000000,
+    /// Publish the initial force-TX/RX disable phase.
+    DisabledInitial = 0x00000002,
+    /// Publish the initial force-TX/RX enable phase.
+    EnabledInitial = 0x00000008,
+    /// Publish the final force-TX/RX enable phase.
+    EnabledFinal = 0x0000000a,
+}
+
+impl PbusForceTxRxState {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
+/// Boolean state shared by reviewed one-bit PBus control transactions.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PbusEnableState {
+    /// Disable the selected PBus control.
+    Disabled = 0x00000000,
+    /// Enable the selected PBus control.
+    Enabled = 0x00000001,
+}
+
+impl PbusEnableState {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
+/// Complete two-bit PBus TX clock-pair encodings.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PbusTxClockPairState {
+    /// Disable both recovered PBus TX clock bits.
+    Disabled = 0x00000000,
+    /// Enable both recovered PBus TX clock bits.
+    Enabled = 0x00000003,
+}
+
+impl PbusTxClockPairState {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
 /// One reviewed four-bit Wi-Fi packet-traffic-information value. Its scheduling policy remains outside the PAC.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MacPti(u32);
@@ -1294,22 +1349,6 @@ impl AgcSaturationGainHigh {
     }
 }
 
-/// Register-specific caller-controlled portion of one recovered PBus force-test command.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct PbusForceTestInput(u32);
-
-impl PbusForceTestInput {
-    /// Wrap one register-specific opaque value.
-    pub const fn new(value: u32) -> Self {
-        Self(value)
-    }
-
-    /// Return the opaque numeric image.
-    pub const fn get(self) -> u32 {
-        self.0
-    }
-}
-
 /// Register-positioned receive-beacon PTI nibble accepted only by the reviewed masked RMW helper.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MacRxBeaconPtiMaskedInput(u32);
@@ -1402,6 +1441,25 @@ impl BluetoothPhyControllerEnvironmentTailImage {
 
     /// Return the opaque numeric image.
     pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Register-specific caller-controlled portion of one recovered PBus force-test command, composed in the complete ROM order before the final mask.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PbusForceTestInput(u32);
+
+impl PbusForceTestInput {
+    /// Compose one register-specific image from typed logical arguments.
+    pub(crate) const fn compose(selector: u8, path: u8, test_value: u16) -> Self {
+        Self(
+            (((selector as u32) << 2) | ((path as u32) << 15) | ((test_value as u32) << 6))
+                & 0x0001fffc,
+        )
+    }
+
+    /// Return the generated numeric image to its private raw-PAC bridge.
+    pub(crate) const fn get(self) -> u32 {
         self.0
     }
 }
@@ -4423,6 +4481,45 @@ pub(crate) fn set_phy_i2c_bbpll_calibration(
     value: PhyI2cBbpllCalibrationState,
 ) {
     crate::svd::field_replace_modify::set_phy_i2c_bbpll_calibration(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_pbus_force_txrx_state` field-replacement transaction.
+#[inline]
+pub(crate) fn set_pbus_force_txrx_state(
+    registers: &crate::svd::PhyPbus,
+    value: PbusForceTxRxState,
+) {
+    crate::svd::field_replace_modify::set_pbus_force_txrx_state(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_pbus_work_mode` field-replacement transaction.
+#[inline]
+pub(crate) fn set_pbus_work_mode(registers: &crate::svd::PhyPbus, value: PbusEnableState) {
+    crate::svd::field_replace_modify::set_pbus_work_mode(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_pbus_debug_mode` field-replacement transaction.
+#[inline]
+pub(crate) fn set_pbus_debug_mode(registers: &crate::svd::PhyPbus, value: PbusEnableState) {
+    crate::svd::field_replace_modify::set_pbus_debug_mode(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `clear_pbus_transaction` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_pbus_transaction(registers: &crate::svd::PhyPbus) {
+    crate::svd::field_replace_modify::clear_pbus_transaction(registers);
+}
+
+/// Typed bridge for the reviewed `set_pbus_rx_clock_pair` field-replacement transaction.
+#[inline]
+pub(crate) fn set_pbus_rx_clock_pair(registers: &crate::svd::PhyPbus, value: PbusEnableState) {
+    crate::svd::field_replace_modify::set_pbus_rx_clock_pair(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_pbus_tx_clock_pair` field-replacement transaction.
+#[inline]
+pub(crate) fn set_pbus_tx_clock_pair(registers: &crate::svd::PhyPbus, value: PbusTxClockPairState) {
+    crate::svd::field_replace_modify::set_pbus_tx_clock_pair(registers, value.bits());
 }
 
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.

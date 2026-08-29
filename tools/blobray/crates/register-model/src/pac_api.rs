@@ -27,6 +27,8 @@ pub struct PacApiPack {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub opaque_domains: Vec<OpaqueDomain>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bitwise_composed_domains: Vec<BitwiseComposedDomain>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub indirect_register_field_domains: Vec<IndirectRegisterFieldDomain>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub interrupt_snapshots: Vec<InterruptSnapshot>,
@@ -166,6 +168,54 @@ pub struct OpaqueDomain {
     pub peripheral: String,
     pub register: String,
     pub sources: Vec<String>,
+}
+
+/// Register-specific value composed from typed logical arguments.
+///
+/// Vendor encoders sometimes OR shifted arguments before applying one final
+/// mask, so high bits from one logical argument deliberately contribute to an
+/// adjacent physical field. This domain keeps that register-shaped transform
+/// generated instead of requiring handwritten PAC code to pack bit images.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct BitwiseComposedDomain {
+    pub name: String,
+    pub description: String,
+    pub peripheral: String,
+    pub register: String,
+    pub arguments: Vec<BitwiseComposedDomainArgument>,
+    pub output_mask: u32,
+    pub sources: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct BitwiseComposedDomainArgument {
+    pub name: String,
+    pub value_type: BitwiseComposedValueType,
+    pub left_shift: u8,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BitwiseComposedValueType {
+    U8,
+    U16,
+    U32,
+}
+
+impl BitwiseComposedValueType {
+    pub(crate) const fn rust_name(self) -> &'static str {
+        match self {
+            Self::U8 => "u8",
+            Self::U16 => "u16",
+            Self::U32 => "u32",
+        }
+    }
+
+    pub(crate) const fn requires_u32_cast(self) -> bool {
+        !matches!(self, Self::U32)
+    }
 }
 
 /// Generated accessors for fields in registers reached through an indirect
@@ -908,6 +958,17 @@ impl PacApiPack {
                     operation.name
                 )));
             }
+            if let Some(domain) = self
+                .bitwise_composed_domains
+                .iter()
+                .find(|domain| domain.name == operation.domain)
+                && domain.output_mask & !operation.input_mask != 0
+            {
+                return Err(Error::message(format!(
+                    "PAC API masked-register-modify {:?} truncates bits admitted by bitwise-composed domain {:?}",
+                    operation.name, domain.name
+                )));
+            }
         }
         Ok(())
     }
@@ -993,6 +1054,17 @@ impl PacApiPack {
                 opaque.peripheral, opaque.register
             )));
         }
+        if let Some(composed) = self
+            .bitwise_composed_domains
+            .iter()
+            .find(|candidate| candidate.name == domain)
+            && (composed.peripheral != peripheral || composed.register != register)
+        {
+            return Err(Error::message(format!(
+                "PAC API {kind} {operation:?} uses bitwise-composed domain {domain:?} outside its register {}.{}",
+                composed.peripheral, composed.register
+            )));
+        }
         Ok(())
     }
 
@@ -1022,6 +1094,7 @@ impl PacApiPack {
             + self.enum_domains.len()
             + self.bounded_domains.len()
             + self.opaque_domains.len()
+            + self.bitwise_composed_domains.len()
             + self.indirect_register_field_domains.len()
     }
 
@@ -1050,6 +1123,12 @@ impl PacApiPack {
             )
             .chain(
                 self.opaque_domains
+                    .iter()
+                    .flat_map(|domain| &domain.sources)
+                    .map(String::as_str),
+            )
+            .chain(
+                self.bitwise_composed_domains
                     .iter()
                     .flat_map(|domain| &domain.sources)
                     .map(String::as_str),
@@ -1189,6 +1268,50 @@ impl PacApiPack {
             validate_component("register", &domain.name, &domain.register)?;
             validate_sources("opaque domain", &domain.name, &domain.sources)?;
         }
+        for domain in &self.bitwise_composed_domains {
+            validate_domain_header(
+                "bitwise-composed",
+                &domain.name,
+                &domain.description,
+                &mut domain_names,
+            )?;
+            validate_component("peripheral", &domain.name, &domain.peripheral)?;
+            validate_component("register", &domain.name, &domain.register)?;
+            if domain.arguments.len() < 2 {
+                return Err(Error::message(format!(
+                    "PAC API bitwise-composed domain {:?} requires at least two arguments",
+                    domain.name
+                )));
+            }
+            if domain.output_mask == 0 {
+                return Err(Error::message(format!(
+                    "PAC API bitwise-composed domain {:?} requires a non-zero output mask",
+                    domain.name
+                )));
+            }
+            let mut argument_names = BTreeSet::new();
+            for argument in &domain.arguments {
+                if !is_lower_snake_case(&argument.name) || is_rust_keyword(&argument.name) {
+                    return Err(Error::message(format!(
+                        "PAC API bitwise-composed domain {:?} argument {:?} is not an available lower snake case name",
+                        domain.name, argument.name
+                    )));
+                }
+                if !argument_names.insert(argument.name.as_str()) {
+                    return Err(Error::message(format!(
+                        "PAC API bitwise-composed domain {:?} repeats argument {:?}",
+                        domain.name, argument.name
+                    )));
+                }
+                if argument.left_shift >= 32 {
+                    return Err(Error::message(format!(
+                        "PAC API bitwise-composed domain {:?} argument {:?} shifts outside u32",
+                        domain.name, argument.name
+                    )));
+                }
+            }
+            validate_sources("bitwise-composed domain", &domain.name, &domain.sources)?;
+        }
         Ok(())
     }
 
@@ -1272,6 +1395,11 @@ impl PacApiPack {
             )
             .chain(
                 self.opaque_domains
+                    .iter()
+                    .map(|domain| domain.name.as_str()),
+            )
+            .chain(
+                self.bitwise_composed_domains
                     .iter()
                     .map(|domain| domain.name.as_str()),
             )
@@ -1549,6 +1677,7 @@ mod tests {
             enum_domains: Vec::new(),
             bounded_domains: Vec::new(),
             opaque_domains: Vec::new(),
+            bitwise_composed_domains: Vec::new(),
             indirect_register_field_domains: Vec::new(),
             interrupt_snapshots: Vec::new(),
             full_register_writes: Vec::new(),
@@ -1691,6 +1820,35 @@ mod tests {
         });
         assert_eq!(pack.operation_count(), 1);
         assert!(pack.validate().is_ok());
+    }
+
+    #[test]
+    fn bitwise_composed_domain_rejects_a_shift_outside_u32() {
+        let mut pack = empty_pack();
+        pack.bitwise_composed_domains.push(BitwiseComposedDomain {
+            name: "CommandInput".to_owned(),
+            description: "Reviewed command composed from typed arguments.".to_owned(),
+            peripheral: "RADIO".to_owned(),
+            register: "COMMAND".to_owned(),
+            arguments: vec![
+                BitwiseComposedDomainArgument {
+                    name: "selector".to_owned(),
+                    value_type: BitwiseComposedValueType::U8,
+                    left_shift: 2,
+                },
+                BitwiseComposedDomainArgument {
+                    name: "value".to_owned(),
+                    value_type: BitwiseComposedValueType::U16,
+                    left_shift: 6,
+                },
+            ],
+            output_mask: 0x0001_fffc,
+            sources: vec!["REVIEW".to_owned()],
+        });
+        assert!(pack.validate().is_ok());
+
+        pack.bitwise_composed_domains[0].arguments[1].left_shift = 32;
+        assert!(pack.validate().is_err());
     }
 
     #[test]

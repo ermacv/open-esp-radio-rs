@@ -161,6 +161,19 @@ PAC/HAL code receives only the typed or argument-free accessor. Separate
 declarations remain separate volatile reads, so an evidenced sequence of RMW
 operations is not silently collapsed into a software register image.
 
+### Bitwise-composed register inputs
+
+`[[bitwise-composed-domains]]` declares a register-specific logical input when
+the reviewed vendor encoder shifts and ORs typed arguments before applying one
+final mask. This is intentionally distinct from independent field projection:
+overlapping contributions are preserved, including high argument bits that
+reach an adjacent physical field. Blobray validates the argument types, names,
+shift bounds, register binding and output mask, then emits a crate-private
+composer. Handwritten PAC code supplies only the logical arguments and cannot
+construct or inspect the packed register image. When the domain feeds a
+`[[masked-register-modifies]]` transaction, publication also rejects any
+composed bit that the transaction would silently truncate.
+
 ### Sample-and-zero bit publication
 
 `[[sampled-bit-zero-writes]]` declares the non-RMW transaction used when the

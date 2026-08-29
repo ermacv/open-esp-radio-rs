@@ -532,6 +532,19 @@ or the memory fence required before callback reads. The per-buffer drain,
 append-entry and ordinary re-arm rules are now exact; the swap ownership,
 visibility and real ownership transition remain prerequisites for a live path.
 
+The later current-revision software-list removal return gate is now exact as
+well. The historical same-chip body names the caller
+`r_sched_txn_removeSwList`; the current body replaces its old busy-state
+assertion tail with `r_sym_bt_FCfM3hAXphsk1qERleGZ`. One attempt returns only
+after an idle scheduler observation, positional command-zero status 26 and
+positional command-one status 18, with the two command reads short-circuited in
+that order. The vendor repeats this attempt and diagnoses every 10,000 misses.
+The restricted PAC and HAL instead expose one split-owner finite observation:
+`Pending` returns control to the executor and `Ready` permits the future
+software-list removal state machine to advance. This is not yet a descriptor
+ownership return; no current controller worker composes the predicate with
+the finished-list-to-item mapping or an acquire fence.
+
 The reviewed register model consequently promotes `0x2010_125c` to
 `SCHEDULER_FINISHED_LIST_STATUS.FINISHED_LIST_MASK` and retains `0x2010_1260`
 as the positional `SCHEDULER_FINISHED_LIST_REPORT`; it does not invent W1C
@@ -569,7 +582,7 @@ this is not yet a deadline-ready production time source.
 
 | Layer | DTM responsibility | Current publication gate |
 | --- | --- | --- |
-| SVD / restricted PAC | Typed controller-window fields, complete publication/ack order, controller-time reads and the SRAM compression domain | Lock/modify and always-awake time-latch fields, exact images, wait predicates and finite live MMIO are present. The remaining scheduler commands are absent. |
+| SVD / restricted PAC | Typed controller-window fields, complete publication/ack order, controller-time reads and the SRAM compression domain | Lock/modify, always-awake time-latch and software-list-removal fields, exact images, wait predicates and finite live MMIO are present. The removal gate preserves the current short-circuit read order without a polling loop. The remaining scheduler commands are absent. |
 | HAL | Powered controller epoch, common RF wake, cache/device fences, timer conversion, same-core IRQ routing and bounded stop/quiesce | The powered Controller retains the unique live latch owner and exposes finite request/recheck operations with generation-safe cancellation drain. A proven wake/recheck source, physical counter contract and powered rollback remain absent. |
 | Scheduler core | Affine event item, ordered deadline queue, insert/abort/complete states, hardware-head replacement and consistency check | One head lock/modify operation has affine event-driven phases; eleven DTM scheduler-item words and their typed channel/role/PHY/sequence-lead inputs have exact pre-insert transforms. A bounded source-owned timeline resolves strict wrapping overlaps, retains affine generations and applies fixed-capacity backpressure without exposing the vendor list ABI. The powered runtime retains that timeline for the whole epoch, and its powered task endpoint joins the sole mutable software workers to the matching task-side HAL owner. One lock/modify event step can therefore reach the typed PAC transaction without exporting MMIO authority. The overlap-resolved reservation requires the second fresh deadline sample before the DTM event typestate can form sequence words and survives graph/bookkeeping preparation and cancellation. Broker notification, hardware publication, raw status source, fences and abort/completion composition remain absent. |
 | Packet memory | Static aligned TX/RX/link-state slots with `CPU -> prepared -> hardware -> completed -> CPU` ownership | A separate no-heap controller-memory crate reserves every reviewed per-event DTM link-graph allocation with four-byte alignment: link state, scheduler item/context, three role-specific headers and complete TX/RX packet slots. The separate `0x28`-byte DTM environment remains LLL state. Target binding gives a movable CPU owner one non-movable static allocation, validates the complete physical SRAM extent before mutation and installs the bound headers, five private-chain anchors and scheduler-item link. TX preparation consumes that owner and yields packet readiness only after a total declared-byte copy; mutable TX-slot access is unavailable after binding. TX/RX re-arm sentinels, list routing and positional result parsing are also exact CPU-owned components. Production placement ownership, the packet-engine latch/consumer, cacheability/fences and affine hardware completion/reclaim states are absent. |

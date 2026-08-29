@@ -47,7 +47,9 @@ pub use open_esp_radio_esp32s31_pac::{
     BluetoothSchedulerLockModifyPublished, BluetoothSchedulerLockModifyRequest,
     BluetoothSchedulerLockModifyTaskObservation, BluetoothSchedulerReferenceCleared,
     BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerRunInterruptsPrepared,
-    BluetoothSchedulerWorkObservation,
+    BluetoothSchedulerSoftwareListRemovalDisposition,
+    BluetoothSchedulerSoftwareListRemovalObservation,
+    BluetoothSchedulerSoftwareListRemovalTaskObservation, BluetoothSchedulerWorkObservation,
 };
 
 /// Opaque HAL owner for the exclusive Bluetooth route before task/IRQ split.
@@ -1007,6 +1009,15 @@ impl BluetoothControllerHal<'_> {
         &mut self,
     ) -> BluetoothSchedulerLockModifyTaskObservation {
         self.registers.capture_scheduler_lock_modify_task()
+    }
+
+    /// Capture the task-owned positional command statuses for one finite
+    /// software-list removal observation.
+    pub fn capture_scheduler_software_list_removal_task(
+        &mut self,
+    ) -> BluetoothSchedulerSoftwareListRemovalTaskObservation {
+        self.registers
+            .capture_scheduler_software_list_removal_task()
     }
 
     /// Transfer one fresh hardware finished-list observation to its reviewed

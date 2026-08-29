@@ -3499,6 +3499,20 @@ fields = ["BUSY", "REFERENCE_PATH_STATE"]
 sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
 
 [[field-reads]]
+name = "observe_bluetooth_scheduler_software_list_command_0_status_26"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SCHEDULER_COMMAND_0"
+field = "STATUS_26"
+sources = ["BLOB_LIBBTDM_SCHEDULER_SOFTWARE_LIST_REMOVAL"]
+
+[[field-reads]]
+name = "observe_bluetooth_scheduler_software_list_command_1_status_18"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SCHEDULER_COMMAND_1"
+field = "STATUS_18"
+sources = ["BLOB_LIBBTDM_SCHEDULER_SOFTWARE_LIST_REMOVAL"]
+
+[[field-reads]]
 name = "observe_bluetooth_scheduler_finished_lists"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "SCHEDULER_FINISHED_LIST_STATUS"

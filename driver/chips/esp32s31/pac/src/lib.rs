@@ -129,7 +129,9 @@ pub use bluetooth_scheduler_lock_modify::{
 pub use bluetooth_scheduler_runtime::{
     BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
     BluetoothSchedulerHardwareListIndex, BluetoothSchedulerReferenceCleared,
-    BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerWorkObservation,
+    BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerSoftwareListRemovalDisposition,
+    BluetoothSchedulerSoftwareListRemovalObservation,
+    BluetoothSchedulerSoftwareListRemovalTaskObservation, BluetoothSchedulerWorkObservation,
 };
 pub use bluetooth_scheduler_stop::{
     BluetoothSchedulerDisableBeginError, BluetoothSchedulerDisableBeginFailure,

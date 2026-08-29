@@ -58378,6 +58378,22 @@ pub mod field_read {
         registers.sleep_timer_latched_time_0().read().image().bits()
     }
 
+    /// Read `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_COMMAND_0`.`STATUS_26` without exposing its register block.
+    #[inline]
+    pub fn observe_bluetooth_scheduler_software_list_command_0_status_26(
+        registers: &crate::BluetoothControllerCore,
+    ) -> bool {
+        registers.scheduler_command_0().read().status_26().bit()
+    }
+
+    /// Read `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_COMMAND_1`.`STATUS_18` without exposing its register block.
+    #[inline]
+    pub fn observe_bluetooth_scheduler_software_list_command_1_status_18(
+        registers: &crate::BluetoothControllerCore,
+    ) -> bool {
+        registers.scheduler_command_1().read().status_18().bit()
+    }
+
     /// Read `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_FINISHED_LIST_STATUS`.`FINISHED_LIST_MASK` without exposing its register block.
     #[inline]
     pub fn observe_bluetooth_scheduler_finished_lists(

@@ -6513,6 +6513,84 @@ pub(crate) fn start_phy_tx_dc_measurement(registers: &crate::svd::PhyBasebandCon
     crate::svd::field_replace_modify::start_phy_tx_dc_measurement(registers);
 }
 
+/// Typed bridge for the reviewed `initialize_phy_front_end_pbus` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_phy_front_end_pbus(registers: &crate::svd::PhyPbus) {
+    crate::svd::field_replace_modify::initialize_phy_front_end_pbus(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_phy_front_end_first` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_phy_front_end_first(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::initialize_phy_front_end_first(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_phy_front_end_second` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_phy_front_end_second(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::initialize_phy_front_end_second(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_front_end_first` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_front_end_first(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::clear_phy_front_end_first(registers);
+}
+
+/// Typed bridge for the reviewed `enable_phy_front_end_init` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_phy_front_end_init(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::enable_phy_front_end_init(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_front_end_second` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_front_end_second(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::clear_phy_front_end_second(registers);
+}
+
+/// Typed bridge for the reviewed `enable_phy_front_end_adc_rate_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_phy_front_end_adc_rate_high(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::enable_phy_front_end_adc_rate_high(registers);
+}
+
+/// Typed bridge for the reviewed `enable_phy_front_end_adc_rate_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_phy_front_end_adc_rate_low(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::enable_phy_front_end_adc_rate_low(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_front_end_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_front_end_low(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::configure_phy_front_end_low(registers);
+}
+
+/// Typed bridge for the reviewed `enable_phy_rx_iq_front_end_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_phy_rx_iq_front_end_high(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::enable_phy_rx_iq_front_end_high(registers);
+}
+
+/// Typed bridge for the reviewed `enable_phy_tx_iq_front_end_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_phy_tx_iq_front_end_high(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::enable_phy_tx_iq_front_end_high(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_phy_front_end_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_phy_front_end_low(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::initialize_phy_front_end_low(registers);
+}
+
+/// Typed bridge for the reviewed `enable_phy_front_end_adc_rates` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_phy_front_end_adc_rates(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::enable_phy_front_end_adc_rates(registers);
+}
+
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
 #[inline]
 pub(crate) fn configure_shared_modem_low_power_timer(

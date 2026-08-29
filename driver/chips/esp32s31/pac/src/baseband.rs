@@ -1127,17 +1127,11 @@ impl RadioPhyRegisters {
     /// `0x2f82_7740`, size `0xf6`. The table-memory edge remains between this
     /// method and [`Self::initialize_front_end_suffix`].
     pub fn initialize_front_end_prefix(&mut self) {
-        self.peripherals
-            .phy_pbus
-            .read_result_0()
-            .modify(|_, w| w.fe_init_enable_unknown().set_bit());
+        super::generated::initialize_phy_front_end_pbus(&self.peripherals.phy_pbus);
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        bb.front_end_init_0c08()
-            .modify(|_, w| w.init_first_unknown().set_bit());
-        bb.front_end_init_0c08()
-            .modify(|_, w| w.init_second_unknown().set_bit());
-        bb.front_end_clear_control()
-            .modify(|_, w| w.init_clear_first_unknown().clear_bit());
+        super::generated::initialize_phy_front_end_first(bb);
+        super::generated::initialize_phy_front_end_second(bb);
+        super::generated::clear_phy_front_end_first(bb);
     }
 
     /// Apply the twelve front-end initialization edges after table-memory setup.
@@ -1147,38 +1141,18 @@ impl RadioPhyRegisters {
     /// states are observable hardware behavior.
     pub fn initialize_front_end_suffix(&mut self) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        bb.front_end_and_tone_stop_control()
-            .modify(|_, w| w.front_end_init_enable_unknown().set_bit());
-        bb.iq_correction_control().modify(|_, w| {
-            w.rx_iq_correction_mode_low()
-                .set_bit()
-                .rx_iq_correction_mode_high()
-                .set_bit()
-        });
-        bb.iq_correction_aux().modify(|_, w| {
-            w.tx_iq_correction_mode_low()
-                .set_bit()
-                .tx_iq_correction_mode_high()
-                .set_bit()
-        });
-        bb.front_end_clear_control()
-            .modify(|_, w| w.init_clear_second_unknown().clear_bit());
-        bb.adc_rate_and_front_end_control()
-            .modify(|_, w| w.adc_rate_high_or_front_end_control_unknown().set_bit());
-        bb.adc_rate_and_front_end_control()
-            .modify(|_, w| w.adc_rate_low_or_front_end_control_unknown().set_bit());
-        bb.tx_pa_control_0()
-            .modify(|_, w| w.front_end_low_unknown().set(4));
-        bb.adc_rate_and_front_end_control()
-            .modify(|_, w| w.adc_rate_low_or_front_end_control_unknown().set_bit());
-        bb.adc_rate_and_front_end_control()
-            .modify(|_, w| w.adc_rate_high_or_front_end_control_unknown().set_bit());
-        bb.iq_correction_control()
-            .modify(|_, w| w.front_end_init_high_unknown().set_bit());
-        bb.iq_correction_aux()
-            .modify(|_, w| w.front_end_init_high_unknown().set_bit());
-        bb.front_end_init_0c20()
-            .modify(|_, w| w.init_low_unknown().set(0x57));
+        super::generated::enable_phy_front_end_init(bb);
+        super::generated::enable_rx_iq_correction_modes(bb);
+        super::generated::enable_tx_iq_correction_modes(bb);
+        super::generated::clear_phy_front_end_second(bb);
+        super::generated::enable_phy_front_end_adc_rate_high(bb);
+        super::generated::enable_phy_front_end_adc_rate_low(bb);
+        super::generated::configure_phy_front_end_low(bb);
+        super::generated::enable_phy_front_end_adc_rate_low(bb);
+        super::generated::enable_phy_front_end_adc_rate_high(bb);
+        super::generated::enable_phy_rx_iq_front_end_high(bb);
+        super::generated::enable_phy_tx_iq_front_end_high(bb);
+        super::generated::initialize_phy_front_end_low(bb);
     }
 
     /// Apply complete pinned `libphy.a[phy_reg.o]::phy_fe_reg_update`.
@@ -1187,16 +1161,9 @@ impl RadioPhyRegisters {
     /// has no ROM-only DAC-scale tail.
     pub fn update_front_end(&mut self) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        bb.front_end_init_0c08()
-            .modify(|_, w| w.init_first_unknown().set_bit());
-        bb.front_end_init_0c08()
-            .modify(|_, w| w.init_second_unknown().set_bit());
-        bb.adc_rate_and_front_end_control().modify(|_, w| {
-            w.adc_rate_low_or_front_end_control_unknown()
-                .set_bit()
-                .adc_rate_high_or_front_end_control_unknown()
-                .set_bit()
-        });
+        super::generated::initialize_phy_front_end_first(bb);
+        super::generated::initialize_phy_front_end_second(bb);
+        super::generated::enable_phy_front_end_adc_rates(bb);
     }
 
     /// Select the direct-register prefix or cleanup state of RX-gain DC calibration.

@@ -8030,7 +8030,7 @@ fields = [
 ]
 value = 3
 exposure = "facade"
-sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+sources = ["ROM_REV0_PHY_FE_REG_INIT", "ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
 
 [[field-replace-modifies]]
 name = "enable_tx_iq_correction_modes"
@@ -8042,7 +8042,7 @@ fields = [
 ]
 value = 3
 exposure = "facade"
-sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+sources = ["ROM_REV0_PHY_FE_REG_INIT", "ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
 
 [[field-replace-modifies]]
 name = "set_pbus_rxiq_status_first"
@@ -8948,3 +8948,123 @@ peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 register = "TX_DC_MEASUREMENT_CONTROL_STATUS"
 field = "Q_COMPARATOR_HIGH"
 sources = ["ROM_REV0_PHY_TXDC_CAL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "initialize_phy_front_end_pbus"
+peripheral = "PHY_PBUS"
+register = "READ_RESULT_0"
+fields = [{ field = "FE_INIT_ENABLE_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FE_REG_INIT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "initialize_phy_front_end_first"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "FRONT_END_INIT_0C08"
+fields = [{ field = "INIT_FIRST_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_FE_REG_UPDATE", "ROM_REV0_PHY_FE_REG_INIT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "initialize_phy_front_end_second"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "FRONT_END_INIT_0C08"
+fields = [{ field = "INIT_SECOND_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_FE_REG_UPDATE", "ROM_REV0_PHY_FE_REG_INIT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_phy_front_end_first"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "FRONT_END_CLEAR_CONTROL"
+fields = [{ field = "INIT_CLEAR_FIRST_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FE_REG_INIT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_phy_front_end_init"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "FRONT_END_AND_TONE_STOP_CONTROL"
+fields = [{ field = "FRONT_END_INIT_ENABLE_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FE_REG_INIT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_phy_front_end_second"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "FRONT_END_CLEAR_CONTROL"
+fields = [{ field = "INIT_CLEAR_SECOND_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FE_REG_INIT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_phy_front_end_adc_rate_high"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "ADC_RATE_AND_FRONT_END_CONTROL"
+fields = [{ field = "ADC_RATE_HIGH_OR_FRONT_END_CONTROL_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FE_REG_INIT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_phy_front_end_adc_rate_low"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "ADC_RATE_AND_FRONT_END_CONTROL"
+fields = [{ field = "ADC_RATE_LOW_OR_FRONT_END_CONTROL_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FE_REG_INIT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_front_end_low"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_PA_CONTROL_0"
+fields = [{ field = "FRONT_END_LOW_UNKNOWN", source-bit-offset = 0 }]
+value = 4
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FE_REG_INIT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_phy_rx_iq_front_end_high"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "IQ_CORRECTION_CONTROL"
+fields = [{ field = "FRONT_END_INIT_HIGH_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FE_REG_INIT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_phy_tx_iq_front_end_high"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "IQ_CORRECTION_AUX"
+fields = [{ field = "FRONT_END_INIT_HIGH_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FE_REG_INIT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "initialize_phy_front_end_low"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "FRONT_END_INIT_0C20"
+fields = [{ field = "INIT_LOW_UNKNOWN", source-bit-offset = 0 }]
+value = 0x57
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FE_REG_INIT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_phy_front_end_adc_rates"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "ADC_RATE_AND_FRONT_END_CONTROL"
+fields = [
+    { field = "ADC_RATE_LOW_OR_FRONT_END_CONTROL_UNKNOWN", source-bit-offset = 0 },
+    { field = "ADC_RATE_HIGH_OR_FRONT_END_CONTROL_UNKNOWN", source-bit-offset = 1 },
+]
+value = 3
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_FE_REG_UPDATE", "S31_ESP_PACS_SVD"]

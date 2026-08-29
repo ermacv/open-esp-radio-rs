@@ -11,7 +11,32 @@
 
 #![deny(unsafe_code)]
 
-use super::{BluetoothTaskRegisters, device_fence};
+use super::{BluetoothTaskRegisters, device_fence, svd};
+
+/// Disjoint register owner for the Bluetooth modem low-power timer.
+///
+/// The generated ownership partition contains only `BTDM_RUNTIME_CONTROL`.
+/// Keeping it outside the controller partition lets source 127 retain its
+/// hardware authority while ordinary task code continues to own scheduler,
+/// baseband and Link-Layer registers.
+#[must_use = "the modem LP-timer owner must remain paired with the Bluetooth lifecycle"]
+pub struct BluetoothModemLpTimerRegisters {
+    peripherals: svd::peripheral_ownership::BluetoothModemLpTimerPeripherals,
+}
+
+impl BluetoothModemLpTimerRegisters {
+    pub(crate) const fn new(
+        peripherals: svd::peripheral_ownership::BluetoothModemLpTimerPeripherals,
+    ) -> Self {
+        Self { peripherals }
+    }
+
+    pub(crate) fn into_peripherals(
+        self,
+    ) -> svd::peripheral_ownership::BluetoothModemLpTimerPeripherals {
+        self.peripherals
+    }
+}
 
 /// Evidence that the exact BTDM runtime-timer start command and trailing
 /// device fence completed.
@@ -25,7 +50,14 @@ pub struct BluetoothModemLpTimerCounterStarted {
     _private: (),
 }
 
-/// Task ownership after the exact source-127 controller-register prefix.
+/// Why task context cannot perform a modem LP-timer transition.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothModemLpTimerOwnerError {
+    /// The disjoint timer partition has already moved to source-127 storage.
+    OwnerSeparated,
+}
+
+/// Timer-register ownership after the exact source-127 register prefix.
 ///
 /// This state proves only that the eight reviewed MMIO operations completed
 /// and were followed by a device fence. The vendor path still publishes a RAM
@@ -54,17 +86,17 @@ pub struct BluetoothModemLpTimerCounterStarted {
 /// ```
 #[must_use = "the prepared modem LP-timer registers must continue through route setup"]
 pub struct BluetoothModemLpTimerRegistersPrepared {
-    task: BluetoothTaskRegisters,
+    timer: BluetoothModemLpTimerRegisters,
 }
 
-/// Source-127 registers staged for exclusive placement in stable ISR storage.
+/// Source-127 timer registers staged for exclusive placement in stable ISR storage.
 ///
-/// The task owner remains private and cannot concurrently escape back to task
-/// context. A spurious hardware entry returns this state unchanged; a real
-/// timer dispatch consumes it into the next common-handler register phase.
+/// Controller task ownership is disjoint and may continue ordinary scheduler
+/// work. A spurious hardware entry returns this state unchanged; a real timer
+/// dispatch consumes it into the next common-handler register phase.
 #[must_use = "the source-127 owner must remain in stable ISR storage"]
 pub struct BluetoothModemLpTimerInterruptReady {
-    task: BluetoothTaskRegisters,
+    timer: BluetoothModemLpTimerRegisters,
 }
 
 /// Exact positional path by which source 127 reached its software handler.
@@ -113,7 +145,7 @@ impl BluetoothModemLpTimerHandlerPending {
     pub fn step_registers(self) -> BluetoothModemLpTimerHandlerRegisterStep {
         let disposition = {
             let mut transaction = HardwareModemLpTimerTransaction {
-                registers: &self.ready.task.bluetooth.btdm_runtime_control,
+                registers: &self.ready.timer.peripherals.btdm_runtime_control,
             };
             execute_modem_lp_timer_handler_registers(&mut transaction)
         };
@@ -195,7 +227,7 @@ impl BluetoothModemLpTimerSoftwarePending {
         epoch: &mut BluetoothModemLpTimerEpoch,
     ) -> BluetoothModemLpTimerCounterObservation {
         let mut transaction = HardwareModemLpTimerTransaction {
-            registers: &self.ready.task.bluetooth.btdm_runtime_control,
+            registers: &self.ready.timer.peripherals.btdm_runtime_control,
         };
         execute_modem_lp_timer_counter_sample(&mut transaction, epoch)
     }
@@ -203,7 +235,7 @@ impl BluetoothModemLpTimerSoftwarePending {
     /// Disable the currently programmed positional compare.
     pub fn disable_compare(&mut self) {
         let mut transaction = HardwareModemLpTimerTransaction {
-            registers: &self.ready.task.bluetooth.btdm_runtime_control,
+            registers: &self.ready.timer.peripherals.btdm_runtime_control,
         };
         execute_modem_lp_timer_compare_disable(&mut transaction);
     }
@@ -220,7 +252,7 @@ impl BluetoothModemLpTimerSoftwarePending {
         epoch: BluetoothModemLpTimerEpoch,
     ) -> BluetoothModemLpTimerCompareDisposition {
         let mut transaction = HardwareModemLpTimerTransaction {
-            registers: &self.ready.task.bluetooth.btdm_runtime_control,
+            registers: &self.ready.timer.peripherals.btdm_runtime_control,
         };
         execute_modem_lp_timer_compare_program(&mut transaction, deadline, epoch)
     }
@@ -234,7 +266,7 @@ impl BluetoothModemLpTimerSoftwarePending {
     pub fn complete_software(self) -> BluetoothModemLpTimerInterruptReady {
         {
             let mut transaction = HardwareModemLpTimerTransaction {
-                registers: &self.ready.task.bluetooth.btdm_runtime_control,
+                registers: &self.ready.timer.peripherals.btdm_runtime_control,
             };
             transaction.sample_final_state_0024();
         }
@@ -671,11 +703,17 @@ impl BluetoothTaskRegisters {
     /// completed PHY, BTBB, BLE-engine, controller-output, software-runtime
     /// and route prerequisites in their independently proven order.
     #[doc(hidden)]
-    pub fn start_modem_lp_timer_counter(&mut self) -> BluetoothModemLpTimerCounterStarted {
+    pub fn start_modem_lp_timer_counter(
+        &mut self,
+    ) -> Result<BluetoothModemLpTimerCounterStarted, BluetoothModemLpTimerOwnerError> {
+        let timer = self
+            .modem_lp_timer
+            .as_mut()
+            .ok_or(BluetoothModemLpTimerOwnerError::OwnerSeparated)?;
         let mut transaction = HardwareModemLpTimerTransaction {
-            registers: &self.bluetooth.btdm_runtime_control,
+            registers: &timer.peripherals.btdm_runtime_control,
         };
-        execute_modem_lp_timer_start(&mut transaction)
+        Ok(execute_modem_lp_timer_start(&mut transaction))
     }
 
     /// Apply the exact controller-register prefix before source 127 is routed.
@@ -686,31 +724,37 @@ impl BluetoothTaskRegisters {
     /// writes and one fresh read in the exact order encoded by this module.
     /// A single device fence follows the last write.
     ///
-    /// This transition consumes the ordinary task owner before the first MMIO
-    /// effect. Cancellation or panic can therefore only lose authority
-    /// fail-stop; it cannot recover an apparently cold owner after a partial
-    /// transaction. The returned state exposes no rollback because the
-    /// reviewed source-127 teardown does not reverse these eight operations.
+    /// This transition extracts the timer partition before the first MMIO
+    /// effect while leaving the disjoint controller task owner in place.
+    /// Cancellation or panic can therefore only lose timer authority
+    /// fail-stop. The returned state exposes no rollback because the reviewed
+    /// source-127 teardown does not reverse these eight operations.
     #[doc(hidden)]
-    pub fn prepare_modem_lp_timer_registers(self) -> BluetoothModemLpTimerRegistersPrepared {
+    pub fn prepare_modem_lp_timer_registers(
+        &mut self,
+    ) -> Result<BluetoothModemLpTimerRegistersPrepared, BluetoothModemLpTimerOwnerError> {
+        let timer = self
+            .modem_lp_timer
+            .take()
+            .ok_or(BluetoothModemLpTimerOwnerError::OwnerSeparated)?;
         {
             let mut transaction = HardwareModemLpTimerTransaction {
-                registers: &self.bluetooth.btdm_runtime_control,
+                registers: &timer.peripherals.btdm_runtime_control,
             };
             execute_modem_lp_timer_prepare(&mut transaction);
         }
-        BluetoothModemLpTimerRegistersPrepared { task: self }
+        Ok(BluetoothModemLpTimerRegistersPrepared { timer })
     }
 }
 
 impl BluetoothModemLpTimerRegistersPrepared {
-    /// Move the unique task-side register owner into source-127 ISR storage.
+    /// Move the unique timer-register owner into source-127 ISR storage.
     ///
     /// This transition performs no MMIO. The platform must store the returned
     /// value before enabling the CPU route and recover it only after that route
     /// is disabled and no hard handler remains in flight.
     pub fn stage_for_interrupt(self) -> BluetoothModemLpTimerInterruptReady {
-        BluetoothModemLpTimerInterruptReady { task: self.task }
+        BluetoothModemLpTimerInterruptReady { timer: self.timer }
     }
 }
 
@@ -725,7 +769,7 @@ impl BluetoothModemLpTimerInterruptReady {
     pub fn step(self) -> BluetoothModemLpTimerInterruptStep {
         let disposition = {
             let mut transaction = HardwareModemLpTimerTransaction {
-                registers: &self.task.bluetooth.btdm_runtime_control,
+                registers: &self.timer.peripherals.btdm_runtime_control,
             };
             execute_modem_lp_timer_interrupt(&mut transaction)
         };

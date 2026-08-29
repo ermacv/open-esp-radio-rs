@@ -32,7 +32,7 @@ pub use open_esp_radio_esp32s31_pac::{
     BluetoothModemLpTimerCounterObservation, BluetoothModemLpTimerCounterStarted,
     BluetoothModemLpTimerEpoch, BluetoothModemLpTimerHandlerRegisterObservation,
     BluetoothModemLpTimerInstant, BluetoothModemLpTimerInterruptObservation,
-    BluetoothNrtInterruptAcknowledged,
+    BluetoothModemLpTimerOwnerError, BluetoothNrtInterruptAcknowledged,
     BluetoothSchedulerDisableBeginError as BluetoothControllerSchedulerDisableBeginError,
     BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
     BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadError,
@@ -257,6 +257,9 @@ impl BluetoothTaskOwner {
                         PacBluetoothTaskReuniteError::ControllerTimeLatchInFlight => {
                             BluetoothTaskOwnerReuniteError::ControllerTimeLatchInFlight
                         }
+                        PacBluetoothTaskReuniteError::ModemLpTimerOwnerSeparated => {
+                            BluetoothTaskOwnerReuniteError::ModemLpTimerOwnerSeparated
+                        }
                     },
                 })
             }
@@ -310,9 +313,9 @@ impl BluetoothTaskOwner {
     /// Apply the exact modem low-power timer register prefix before source 127
     /// is installed.
     ///
-    /// This consumes task ownership. The returned state is terminal until the
-    /// missing scheduler/HCI software stages, ISR storage and route lifecycle
-    /// are implemented; the reviewed teardown cannot restore the cold images.
+    /// This extracts only the generated timer partition. Controller task
+    /// ownership remains available for scheduler and Link-Layer progress while
+    /// source 127 retains exclusive timer-register authority.
     ///
     /// # Safety
     ///
@@ -324,11 +327,12 @@ impl BluetoothTaskOwner {
         reason = "the caller must retain the initialized timer software and inactive source-127 route"
     )]
     pub unsafe fn prepare_modem_lp_timer_registers(
-        self,
-    ) -> BluetoothModemLpTimerRegistersPreparedOwner {
-        BluetoothModemLpTimerRegistersPreparedOwner {
-            registers: self.registers.prepare_modem_lp_timer_registers(),
-        }
+        &mut self,
+    ) -> Result<BluetoothModemLpTimerRegistersPreparedOwner, BluetoothModemLpTimerOwnerError> {
+        self.reunitable = false;
+        self.registers
+            .prepare_modem_lp_timer_registers()
+            .map(|registers| BluetoothModemLpTimerRegistersPreparedOwner { registers })
     }
 }
 
@@ -508,6 +512,8 @@ pub enum BluetoothTaskOwnerReuniteError {
     InterruptLifecycleNotRestored,
     /// A controller-time request still belongs to the task-side worker.
     ControllerTimeLatchInFlight,
+    /// Source 127 still retains the disjoint modem LP-timer owner.
+    ModemLpTimerOwnerSeparated,
 }
 
 /// Failed task/IRQ reunion retaining both opaque HAL owners unchanged.
@@ -843,7 +849,9 @@ impl BluetoothControllerHal<'_> {
     /// completed controller hardware/output preparation and before primary
     /// route allocation, exactly as established by the reviewed enable path.
     #[doc(hidden)]
-    pub fn start_modem_lp_timer_counter(&mut self) -> BluetoothModemLpTimerCounterStarted {
+    pub fn start_modem_lp_timer_counter(
+        &mut self,
+    ) -> Result<BluetoothModemLpTimerCounterStarted, BluetoothModemLpTimerOwnerError> {
         self.registers.start_modem_lp_timer_counter()
     }
 

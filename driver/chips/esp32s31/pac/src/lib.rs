@@ -107,7 +107,8 @@ pub use bluetooth_modem_lp_timer::{
     BluetoothModemLpTimerHandlerPending, BluetoothModemLpTimerHandlerRegisterObservation,
     BluetoothModemLpTimerHandlerRegisterStep, BluetoothModemLpTimerInstant,
     BluetoothModemLpTimerInterruptObservation, BluetoothModemLpTimerInterruptReady,
-    BluetoothModemLpTimerInterruptStep, BluetoothModemLpTimerRegistersPrepared,
+    BluetoothModemLpTimerInterruptStep, BluetoothModemLpTimerOwnerError,
+    BluetoothModemLpTimerRegisters, BluetoothModemLpTimerRegistersPrepared,
     BluetoothModemLpTimerSoftwarePending,
 };
 pub use bluetooth_scheduler::{
@@ -343,6 +344,7 @@ impl<Owner> core::fmt::Debug for RadioPhyReleaseFailure<Owner> {
 /// Bluetooth owners retained, but not exposed, while Wi-Fi is exclusive.
 struct RetainedBluetoothPeripheralOwners {
     bluetooth: svd::peripheral_ownership::BluetoothControllerPeripherals,
+    bluetooth_modem_lp_timer: svd::peripheral_ownership::BluetoothModemLpTimerPeripherals,
     bluetooth_interrupts: svd::peripheral_ownership::BluetoothInterruptPeripherals,
 }
 
@@ -357,6 +359,7 @@ struct RetainedWifiPeripheralOwners {
 struct RetainedIeee802154PeripheralOwners {
     wifi_mac: svd::peripheral_ownership::WifiMacPeripherals,
     wifi_interrupts: svd::peripheral_ownership::WifiInterruptPeripherals,
+    bluetooth_modem_lp_timer: svd::peripheral_ownership::BluetoothModemLpTimerPeripherals,
     bluetooth_interrupts: svd::peripheral_ownership::BluetoothInterruptPeripherals,
 }
 
@@ -383,6 +386,7 @@ pub struct RadioHardware {
     radio_phy: RadioPhyRegisters,
     coexistence: svd::peripheral_ownership::CoexistencePeripherals,
     bluetooth: svd::peripheral_ownership::BluetoothControllerPeripherals,
+    bluetooth_modem_lp_timer: svd::peripheral_ownership::BluetoothModemLpTimerPeripherals,
     bluetooth_interrupts: svd::peripheral_ownership::BluetoothInterruptPeripherals,
     shared_radio: svd::peripheral_ownership::SharedRadioPeripherals,
     ieee802154: svd::peripheral_ownership::Ieee802154Peripherals,
@@ -402,6 +406,7 @@ impl RadioHardware {
             radio_phy,
             coexistence,
             bluetooth,
+            bluetooth_modem_lp_timer,
             bluetooth_interrupts,
             shared_radio,
             ieee802154,
@@ -417,6 +422,7 @@ impl RadioHardware {
             },
             coexistence,
             bluetooth,
+            bluetooth_modem_lp_timer,
             bluetooth_interrupts,
             shared_radio,
             ieee802154,
@@ -438,6 +444,7 @@ impl RadioHardware {
             radio_phy,
             coexistence,
             bluetooth,
+            bluetooth_modem_lp_timer,
             bluetooth_interrupts,
             shared_radio,
             ieee802154,
@@ -453,6 +460,7 @@ impl RadioHardware {
                 },
                 retained_bluetooth: RetainedBluetoothPeripheralOwners {
                     bluetooth,
+                    bluetooth_modem_lp_timer,
                     bluetooth_interrupts,
                 },
                 phy_i2c_clock: None,
@@ -475,6 +483,7 @@ impl RadioHardware {
             radio_phy,
             coexistence,
             bluetooth,
+            bluetooth_modem_lp_timer,
             bluetooth_interrupts,
             shared_radio,
             ieee802154,
@@ -482,6 +491,9 @@ impl RadioHardware {
         BluetoothColdRegisters {
             task: BluetoothTaskRegisters {
                 bluetooth,
+                modem_lp_timer: Some(BluetoothModemLpTimerRegisters::new(
+                    bluetooth_modem_lp_timer,
+                )),
                 radio_phy,
                 coexistence,
                 shared_radio,
@@ -521,6 +533,7 @@ impl RadioHardware {
             radio_phy,
             coexistence,
             bluetooth,
+            bluetooth_modem_lp_timer,
             bluetooth_interrupts,
             shared_radio,
             ieee802154,
@@ -545,6 +558,7 @@ impl RadioHardware {
                 retained: RetainedIeee802154PeripheralOwners {
                     wifi_mac,
                     wifi_interrupts,
+                    bluetooth_modem_lp_timer,
                     bluetooth_interrupts,
                 },
                 phy_i2c_clock: None,
@@ -1051,6 +1065,7 @@ impl WifiColdRegisters {
                     retained_bluetooth:
                         RetainedBluetoothPeripheralOwners {
                             bluetooth,
+                            bluetooth_modem_lp_timer,
                             bluetooth_interrupts,
                         },
                     phy_i2c_clock: _,
@@ -1066,6 +1081,7 @@ impl WifiColdRegisters {
             radio_phy,
             coexistence,
             bluetooth,
+            bluetooth_modem_lp_timer,
             bluetooth_interrupts,
             shared_radio,
             ieee802154,
@@ -1370,6 +1386,7 @@ impl Ieee802154TaskRegisters {
                 RetainedIeee802154PeripheralOwners {
                     wifi_mac,
                     wifi_interrupts,
+                    bluetooth_modem_lp_timer,
                     bluetooth_interrupts,
                 },
             phy_i2c_clock: _,
@@ -1382,6 +1399,7 @@ impl Ieee802154TaskRegisters {
             radio_phy,
             coexistence,
             bluetooth,
+            bluetooth_modem_lp_timer,
             bluetooth_interrupts,
             shared_radio,
             ieee802154: svd::peripheral_ownership::Ieee802154Peripherals {
@@ -1760,6 +1778,7 @@ impl BluetoothColdRegisters {
 #[must_use = "the Bluetooth task owner must be reunited before release"]
 pub struct BluetoothTaskRegisters {
     bluetooth: svd::peripheral_ownership::BluetoothControllerPeripherals,
+    modem_lp_timer: Option<BluetoothModemLpTimerRegisters>,
     radio_phy: RadioPhyRegisters,
     coexistence: svd::peripheral_ownership::CoexistencePeripherals,
     shared_radio: svd::peripheral_ownership::SharedRadioPeripherals,
@@ -1778,6 +1797,8 @@ pub struct BluetoothTaskRegisters {
 pub enum BluetoothTaskReuniteError {
     /// A controller-time request still belongs to the task-side worker.
     ControllerTimeLatchInFlight,
+    /// Source-127 still owns the disjoint modem low-power timer partition.
+    ModemLpTimerOwnerSeparated,
 }
 
 /// Failed Bluetooth owner reunion retaining both unique owners.
@@ -1912,8 +1933,14 @@ impl BluetoothTaskRegisters {
         self.release_modem_syscon_bluetooth_apb_clocks();
         self.release_modem_syscon_bluetooth_controller_clocks();
         self.release_platform_pll_source();
+        let bluetooth_modem_lp_timer = self
+            .modem_lp_timer
+            .take()
+            .expect("a cold Bluetooth owner retains its modem LP-timer partition")
+            .into_peripherals();
         let Self {
             bluetooth,
+            modem_lp_timer: _,
             radio_phy,
             coexistence,
             shared_radio,
@@ -1937,6 +1964,7 @@ impl BluetoothTaskRegisters {
             radio_phy,
             coexistence,
             bluetooth,
+            bluetooth_modem_lp_timer,
             bluetooth_interrupts: interrupts.peripherals,
             shared_radio,
             ieee802154,
@@ -1956,6 +1984,13 @@ impl BluetoothTaskRegisters {
                 task: self,
                 interrupts,
                 error: BluetoothTaskReuniteError::ControllerTimeLatchInFlight,
+            });
+        }
+        if self.modem_lp_timer.is_none() {
+            return Err(BluetoothTaskReuniteFailure {
+                task: self,
+                interrupts,
+                error: BluetoothTaskReuniteError::ModemLpTimerOwnerSeparated,
             });
         }
         Ok(BluetoothColdRegisters {

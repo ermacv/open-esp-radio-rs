@@ -57712,11 +57712,15 @@ pub mod peripheral_ownership {
         pub bluetooth_controller_core: crate::BluetoothControllerCore,
         pub bluetooth_reset_idle_status_0: crate::BluetoothResetIdleStatus0,
         pub btdm_low_power_config: crate::BtdmLowPowerConfig,
-        pub btdm_runtime_control: crate::BtdmRuntimeControl,
         pub btdm_scheduler_table: crate::BtdmSchedulerTable,
         pub btmac_ble_phy_init: crate::BtmacBlePhyInit,
         pub bt_v3_2_baseband: crate::BtV3_2Baseband,
         pub bt_v3_2_cte: crate::BtV3_2Cte,
+    }
+
+    /// Bluetooth modem low-power timer registers transferred independently from controller task ownership to the source-127 ISR.
+    pub struct BluetoothModemLpTimerPeripherals {
+        pub btdm_runtime_control: crate::BtdmRuntimeControl,
     }
 
     /// Bluetooth controller interrupt registers transferred independently from task lifecycle ownership to the hard ISR.
@@ -57751,6 +57755,8 @@ pub mod peripheral_ownership {
         pub coexistence: CoexistencePeripherals,
         /// Bluetooth controller, baseband, accelerator and feature register views retained by the Bluetooth hardware lifecycle.
         pub bluetooth: BluetoothControllerPeripherals,
+        /// Bluetooth modem low-power timer registers transferred independently from controller task ownership to the source-127 ISR.
+        pub bluetooth_modem_lp_timer: BluetoothModemLpTimerPeripherals,
         /// Bluetooth controller interrupt registers transferred independently from task lifecycle ownership to the hard ISR.
         pub bluetooth_interrupts: BluetoothInterruptPeripherals,
         /// Protocol-neutral physical register words touched by more than one radio lifecycle and serialized before either protocol receives a narrow capability.
@@ -57981,11 +57987,13 @@ pub mod peripheral_ownership {
                 bluetooth_controller_core,
                 bluetooth_reset_idle_status_0,
                 btdm_low_power_config,
-                btdm_runtime_control,
                 btdm_scheduler_table,
                 btmac_ble_phy_init,
                 bt_v3_2_baseband,
                 bt_v3_2_cte,
+            },
+            bluetooth_modem_lp_timer: BluetoothModemLpTimerPeripherals {
+                btdm_runtime_control,
             },
             bluetooth_interrupts: BluetoothInterruptPeripherals {
                 bluetooth_interrupt_bank,

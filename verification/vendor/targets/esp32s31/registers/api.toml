@@ -135,12 +135,17 @@ peripherals = [
     "BLUETOOTH_CONTROLLER_CORE",
     "BLUETOOTH_RESET_IDLE_STATUS_0",
     "BTDM_LOW_POWER_CONFIG",
-    "BTDM_RUNTIME_CONTROL",
     "BTDM_SCHEDULER_TABLE",
     "BTMAC_BLE_PHY_INIT",
     "BT_V3_2_BASEBAND",
     "BT_V3_2_CTE",
 ]
+
+[[ownership-partitions]]
+name = "BluetoothModemLpTimerPeripherals"
+member = "bluetooth_modem_lp_timer"
+description = "Bluetooth modem low-power timer registers transferred independently from controller task ownership to the source-127 ISR."
+peripherals = ["BTDM_RUNTIME_CONTROL"]
 
 [[ownership-partitions]]
 name = "BluetoothInterruptPeripherals"

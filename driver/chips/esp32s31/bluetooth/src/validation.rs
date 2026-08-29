@@ -126,9 +126,10 @@ pub unsafe fn prepare_modem_lp_timer_registers() {
     let cold = open_esp_radio_esp32s31_hal::BluetoothColdOwner::from_radio_hardware(
         open_esp_radio_esp32s31_pac::RadioHardware::for_validation(),
     );
-    let (task, interrupts) = cold.separate_interrupt_owner();
-    let prepared = unsafe { task.prepare_modem_lp_timer_registers() };
-    let _terminal_owners = (prepared, interrupts);
+    let (mut task, interrupts) = cold.separate_interrupt_owner();
+    let prepared = unsafe { task.prepare_modem_lp_timer_registers() }
+        .expect("a fresh Bluetooth task retains the modem LP-timer partition");
+    let _terminal_owners = (task, prepared, interrupts);
 }
 
 /// Publish the scheduler-disable command and perform one bounded BUSY sample

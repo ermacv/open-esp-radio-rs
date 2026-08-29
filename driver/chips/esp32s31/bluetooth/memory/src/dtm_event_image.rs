@@ -117,7 +117,7 @@ impl BluetoothDtmLinkStateReviewedWords {
     }
 }
 
-/// The nine scheduler-item words whose DTM event transform is complete.
+/// The eleven scheduler-item words whose DTM event transform is complete.
 ///
 /// Names are byte offsets. This is not the complete scheduler object and has
 /// no list-linkage or hardware-ownership authority.
@@ -129,6 +129,10 @@ pub struct BluetoothDtmSchedulerItemReviewedWords {
     pub word_04: u32,
     /// Complete word at byte offset `+0x08`; low 20 bits retain link-state.
     pub word_08: u32,
+    /// Complete sequence-start word at byte offset `+0x0c`.
+    pub word_0c: u32,
+    /// Complete sequence-duration word at byte offset `+0x10`.
+    pub word_10: u32,
     /// Complete word at byte offset `+0x14`.
     pub word_14: u32,
     /// Complete word at byte offset `+0x18`.
@@ -168,6 +172,8 @@ impl BluetoothDtmSchedulerItemReviewedWords {
             word_00: (self.word_00 & 0xff00_ffff) | ((role_byte as u32) << 16),
             word_04: self.word_04 | 0x8000_0000,
             word_08: self.word_08 & 0xff0f_ffff,
+            word_0c: self.word_0c,
+            word_10: self.word_10,
             word_14: (self.word_14 & !SCHEDULER_RATE_LANES_MASK) | (rate << 28) | (rate << 30),
             word_18: (self.word_18 & !(SCHEDULER_FREQUENCY_MASK | 0x0f))
                 | ((frequency as u32) << 8)
@@ -180,6 +186,18 @@ impl BluetoothDtmSchedulerItemReviewedWords {
             word_48: scheduler_end,
             word_4c: self.word_4c & 0xffff_ff00,
         }
+    }
+
+    /// Apply the complete per-item sequence-time projection.
+    ///
+    /// The common scheduler adds its configured raw-time lead to the already
+    /// projected start and stores the wrapping window length separately. The
+    /// broker notification performed between these two writes belongs to the
+    /// scheduler runtime, not this CPU-owned memory codec.
+    pub const fn apply_sequence_timing(mut self, raw_sequence_lead: u32) -> Self {
+        self.word_0c = self.word_44.wrapping_add(raw_sequence_lead);
+        self.word_10 = self.word_48.wrapping_sub(self.word_44);
+        self
     }
 
     /// Apply the common overlap-insertion rounded-power projection.

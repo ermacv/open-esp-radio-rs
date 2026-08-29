@@ -95,7 +95,11 @@ It reproduces the role byte at `+0x02`, bit-31 publication prerequisite at
 `+0x04`, four-bit clear at `+0x08`, repeated two-bit rate image at `+0x14`,
 seven-bit frequency plus low-nibble image at `+0x18`, RX-only complete
 `0x000f0001` at `+0x2c`, two epoch-projected raw-time words at `+0x44/+0x48`
-and the low-byte clear at `+0x4c`. Before common scheduler bookkeeping,
+and the low-byte clear at `+0x4c`. Complete common
+`r_btdm_sched_calc_seq_time` additionally stores raw start plus its dynamic
+scheduler-environment lead at `+0x0c` and the wrapping raw window length at
+`+0x10`; the Rust plan therefore requires that lead as an explicit typed
+input instead of inheriting a vendor default. Before common scheduler bookkeeping,
 complete current `r_sym_ble_iHRqSCIgChmgSHj5W8W3` and named same-chip
 `r_sched_txn_rmOverlapInsert` copy the link-state five-bit rounded-power image
 into scheduler-item bits 24:20 while clearing bits 27:25; the composed Rust
@@ -527,7 +531,7 @@ this is not yet a deadline-ready production time source.
 | --- | --- | --- |
 | SVD / restricted PAC | Typed controller-window fields, complete publication/ack order, controller-time reads and the SRAM compression domain | Lock/modify and always-awake time-latch fields, exact images, wait predicates and finite live MMIO are present. The remaining scheduler commands are absent. |
 | HAL | Powered controller epoch, common RF wake, cache/device fences, timer conversion, same-core IRQ routing and bounded stop/quiesce | The powered Controller retains the unique live latch owner and exposes finite request/recheck operations with generation-safe cancellation drain. A proven wake/recheck source, physical counter contract and powered rollback remain absent. |
-| Scheduler core | Affine event item, ordered deadline queue, insert/abort/complete states, hardware-head replacement and consistency check | One head lock/modify operation has affine event-driven phases; nine DTM scheduler-item words and their typed channel/role/PHY inputs have exact pre-insert transforms. The finished-item/recycle call chain and DTM callback edge are mapped; the open queue, raw status source, fences and abort path are absent. |
+| Scheduler core | Affine event item, ordered deadline queue, insert/abort/complete states, hardware-head replacement and consistency check | One head lock/modify operation has affine event-driven phases; eleven DTM scheduler-item words and their typed channel/role/PHY/sequence-lead inputs have exact pre-insert transforms. The finished-item/recycle call chain and DTM callback edge are mapped; the open queue, broker notification, raw status source, fences and abort path are absent. |
 | Packet memory | Static aligned TX/RX/link-state slots with `CPU -> prepared -> hardware -> completed -> CPU` ownership | A separate no-heap controller-memory crate reserves every reviewed per-event DTM link-graph allocation with four-byte alignment: link state, scheduler item/context, three role-specific headers and complete TX/RX packet slots. The separate `0x28`-byte DTM environment remains LLL state. Target binding gives a movable CPU owner one non-movable static allocation, validates the complete physical SRAM extent before mutation and installs the bound headers, five private-chain anchors and scheduler-item link. TX preparation consumes that owner and yields packet readiness only after a total declared-byte copy; mutable TX-slot access is unavailable after binding. TX/RX re-arm sentinels, list routing and positional result parsing are also exact CPU-owned components. Production placement ownership, the packet-engine latch/consumer, cacheability/fences and affine hardware completion/reclaim states are absent. |
 | LLL DTM | Parameter validation, channel/PHY/pattern image, TX/RX event state machine and receive counter | The complete channel domain, composed frequency lookup, role-dependent PHY/rate mapping, all eight bounded TX payload patterns, packet-duration/minimum-interval/tick arithmetic, constant-time event catch-up and one-word RX accounting transition are typed. TX and RX event plans are distinct states: TX requires a prepared graph and retains its exact pattern/length through scheduler bookkeeping, while RX accepts an ordinary bound graph. Exact command roles, allocation rollback, descriptor chain anchors, wrapping received-packet count and unconditional handoff to the append decision are mapped. The ordinary re-arm is fail-closed on the swap bit; remaining field meanings, swap ownership, live item/buffer ownership, abort and quiescence are incomplete. |
 | HCI | LE Receiver Test, LE Transmitter Test and LE Test End command/event semantics for only the implemented variants | Bootstrap transport exists; operational DTM opcodes must remain unsupported until the physical owner is live. |
@@ -574,7 +578,7 @@ The remaining work should proceed in narrow, testable increments:
    microsecond interval with the recovered environment remainder only after
    that value has a source-owned initialization path.
 3. **Close the hardware-consumed descriptor.** Eight link-state reset words,
-   nine scheduler-item event words, every allocation footprint, chain anchor,
+   eleven scheduler-item event words, every allocation footprint, chain anchor,
    TX/RX header image and RX re-arm transform are now exact. Trace every
    additional word read by hardware for one TX-role event and prove the
    complete field masks for access address, CRC, whitening, power and next

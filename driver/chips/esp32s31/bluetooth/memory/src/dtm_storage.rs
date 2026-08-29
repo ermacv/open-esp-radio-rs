@@ -333,6 +333,8 @@ impl BluetoothDtmSchedulerItemStorage {
             word_00: self.words[0],
             word_04: self.words[1],
             word_08: self.words[2],
+            word_0c: self.words[3],
+            word_10: self.words[4],
             word_14: self.words[5],
             word_18: self.words[6],
             word_2c: self.words[11],
@@ -346,6 +348,8 @@ impl BluetoothDtmSchedulerItemStorage {
         self.words[0] = words.word_00;
         self.words[1] = words.word_04;
         self.words[2] = words.word_08;
+        self.words[3] = words.word_0c;
+        self.words[4] = words.word_10;
         self.words[5] = words.word_14;
         self.words[6] = words.word_18;
         self.words[11] = words.word_2c;
@@ -800,7 +804,7 @@ pub struct BluetoothDtmPositionalEventSeed {
 }
 
 impl BluetoothDtmPositionalEventSeed {
-    /// Return the current values of exactly the seventeen writable words.
+    /// Return the current values of exactly the nineteen writable words.
     pub const fn words(self) -> BluetoothDtmPositionalEventWords {
         self.words
     }
@@ -886,7 +890,7 @@ impl<BuildError: core::fmt::Debug> core::fmt::Debug
     }
 }
 
-/// CPU-owned graph after exactly seventeen positional event words were stored.
+/// CPU-owned graph after exactly nineteen positional event words were stored.
 ///
 /// The public input images remain forgeable, so this state proves only that
 /// the candidate retained this graph's three current links and that no omitted
@@ -956,7 +960,7 @@ impl BluetoothDtmMemoryGraphPositionalEventPrepared {
         }
     }
 
-    /// Cancel before publication and restore all seventeen prior words.
+    /// Cancel before publication and restore all nineteen prior words.
     ///
     /// This restoration is complete because this state never exposed mutable
     /// storage and the preparing transition wrote no other graph offset.
@@ -1150,7 +1154,7 @@ impl BluetoothDtmMemoryGraphCpuOwned {
     /// The consuming closure receives current words and current private links
     /// from this exact owner. Builder failure and every anchor mismatch return
     /// the byte-unchanged owner. Once validation succeeds, committing all
-    /// seventeen offsets is infallible and remains entirely CPU-owned.
+    /// nineteen offsets is infallible and remains entirely CPU-owned.
     pub fn try_prepare_positional_event<BuildError>(
         mut self,
         build: impl FnOnce(
@@ -1497,6 +1501,8 @@ mod tests {
                 word_00: 0x7777_7777,
                 word_04: 0x8888_8888,
                 word_08: 0x9990_0000 | link_state,
+                word_0c: 0x1212_1212,
+                word_10: 0x3434_3434,
                 word_14: 0xaaaa_aaaa,
                 word_18: 0xbbbb_bbbb,
                 word_2c: 0xcccc_cccc,
@@ -1631,7 +1637,7 @@ mod tests {
     }
 
     #[test]
-    fn positional_commit_writes_only_the_seventeen_reviewed_offsets() {
+    fn positional_commit_writes_only_the_nineteen_reviewed_offsets() {
         let owner = model_owner(0x2f00_0100);
         let before = snapshot(owner.storage.as_ref().get_ref());
         let mut expected = None;
@@ -1647,7 +1653,7 @@ mod tests {
 
         let after = snapshot(prepared.storage.as_ref().get_ref());
         let link_state_offsets = [0, 1, 2, 5, 11, 13, 14, 20];
-        let scheduler_item_offsets = [0, 1, 2, 5, 6, 11, 17, 18, 19];
+        let scheduler_item_offsets = [0, 1, 2, 3, 4, 5, 6, 11, 17, 18, 19];
         for index in 0..before.link_state.len() {
             if !link_state_offsets.contains(&index) {
                 assert_eq!(after.link_state[index], before.link_state[index]);

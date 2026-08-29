@@ -23,6 +23,27 @@ pub enum BluetoothDtmSchedulerItemEventError {
     LeCodedS2RequiresTransmitter,
 }
 
+/// Raw controller-time lead configured by the common scheduler.
+///
+/// Complete `r_btdm_sched_calc_seq_time` consumes this dynamic environment
+/// value for every item. The physical unit remains intentionally unnamed;
+/// the value belongs to the same raw domain as the epoch-projected item
+/// window.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothDtmSchedulerSequenceLead(u32);
+
+impl BluetoothDtmSchedulerSequenceLead {
+    /// Preserve one complete scheduler-environment lead image.
+    pub const fn from_raw_image(image: u32) -> Self {
+        Self(image)
+    }
+
+    /// Return the complete raw-domain lead image.
+    pub const fn raw_image(self) -> u32 {
+        self.0
+    }
+}
+
 /// Validated dynamic inputs to one DTM scheduler item.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothDtmSchedulerItemEvent {
@@ -126,6 +147,8 @@ mod tests {
             word_00: 0x12ff_5678,
             word_04: 0x0123_4567,
             word_08: 0xdead_beef,
+            word_0c: 0x1357_9bdf,
+            word_10: 0x2468_ace0,
             word_14: 0x0123_4567,
             word_18: 0xabcd_ef12,
             word_2c: 0x7654_3210,

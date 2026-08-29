@@ -22,7 +22,8 @@ use open_esp_radio_esp32s31_hal::{
 use crate::{
     BluetoothControllerSchedulerEpoch, BluetoothDtmLinkStateReset, BluetoothDtmPayloadLength,
     BluetoothDtmPayloadPattern, BluetoothDtmPreparedTxGraph, BluetoothDtmRole,
-    BluetoothDtmSchedulerItemEvent, dtm_scheduler_item::apply_overlap_insertion_power,
+    BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerSequenceLead,
+    dtm_scheduler_item::apply_overlap_insertion_power,
 };
 
 /// Type marker for a transmitter event with a prepared packet prerequisite.
@@ -47,7 +48,7 @@ pub enum BluetoothDtmReviewedEventWordsPlanError {
     },
 }
 
-/// Validated role-consistent plan for the seventeen reviewed event words.
+/// Validated role-consistent plan for the nineteen reviewed event words.
 ///
 /// Private chain links are deliberately absent from plan identity. They are
 /// replaced inside `prepare` with fresh links sampled from the consumed graph.
@@ -55,6 +56,7 @@ pub enum BluetoothDtmReviewedEventWordsPlanError {
 pub struct BluetoothDtmReviewedEventWordsPlan<Role> {
     link_state: BluetoothDtmLinkStateReset,
     scheduler_item: BluetoothDtmSchedulerItemEvent,
+    sequence_lead: BluetoothDtmSchedulerSequenceLead,
     epoch: BluetoothControllerSchedulerEpoch,
     _role: PhantomData<Role>,
 }
@@ -63,6 +65,7 @@ impl<Role> BluetoothDtmReviewedEventWordsPlan<Role> {
     fn new_for_role(
         link_state: BluetoothDtmLinkStateReset,
         scheduler_item: BluetoothDtmSchedulerItemEvent,
+        sequence_lead: BluetoothDtmSchedulerSequenceLead,
         epoch: BluetoothControllerSchedulerEpoch,
         expected: BluetoothDtmRole,
     ) -> Result<Self, BluetoothDtmReviewedEventWordsPlanError> {
@@ -78,6 +81,7 @@ impl<Role> BluetoothDtmReviewedEventWordsPlan<Role> {
         Ok(Self {
             link_state,
             scheduler_item,
+            sequence_lead,
             epoch,
             _role: PhantomData,
         })
@@ -99,6 +103,7 @@ impl<Role> BluetoothDtmReviewedEventWordsPlan<Role> {
         let scheduler_item = self
             .scheduler_item
             .apply(current.scheduler_item(), self.epoch);
+        let scheduler_item = scheduler_item.apply_sequence_timing(self.sequence_lead.raw_image());
         let scheduler_item = apply_overlap_insertion_power(scheduler_item, link_state);
         BluetoothDtmPositionalEventWords::new(link_state, scheduler_item)
     }
@@ -109,11 +114,13 @@ impl BluetoothDtmReviewedEventWordsPlan<BluetoothDtmTransmitterEvent> {
     pub fn new_transmitter(
         link_state: BluetoothDtmLinkStateReset,
         scheduler_item: BluetoothDtmSchedulerItemEvent,
+        sequence_lead: BluetoothDtmSchedulerSequenceLead,
         epoch: BluetoothControllerSchedulerEpoch,
     ) -> Result<Self, BluetoothDtmReviewedEventWordsPlanError> {
         Self::new_for_role(
             link_state,
             scheduler_item,
+            sequence_lead,
             epoch,
             BluetoothDtmRole::Transmitter,
         )
@@ -147,11 +154,13 @@ impl BluetoothDtmReviewedEventWordsPlan<BluetoothDtmReceiverEvent> {
     pub fn new_receiver(
         link_state: BluetoothDtmLinkStateReset,
         scheduler_item: BluetoothDtmSchedulerItemEvent,
+        sequence_lead: BluetoothDtmSchedulerSequenceLead,
         epoch: BluetoothControllerSchedulerEpoch,
     ) -> Result<Self, BluetoothDtmReviewedEventWordsPlanError> {
         Self::new_for_role(
             link_state,
             scheduler_item,
+            sequence_lead,
             epoch,
             BluetoothDtmRole::Receiver,
         )
@@ -212,7 +221,7 @@ impl<Role> BluetoothDtmReviewedEventWordsPrepared<Role> {
         self.memory.scheduler_item_address()
     }
 
-    /// Read back the exact seventeen CPU-owned positional words.
+    /// Read back the exact nineteen CPU-owned positional words.
     pub fn words(&self) -> BluetoothDtmPositionalEventWords {
         self.memory.words()
     }
@@ -344,7 +353,7 @@ mod tests {
         BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample, BluetoothDtmChannel,
         BluetoothDtmLinkStateReset, BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern,
         BluetoothDtmPhy, BluetoothDtmRole, BluetoothDtmSchedulerItemEvent,
-        BluetoothDtmTxGraphPrepare,
+        BluetoothDtmSchedulerSequenceLead, BluetoothDtmTxGraphPrepare,
     };
 
     fn owner(base: u32) -> crate::BluetoothDtmMemoryGraphCpuOwned {
@@ -382,6 +391,10 @@ mod tests {
         .expect("selected PHY is valid for its role")
     }
 
+    fn sequence_lead() -> BluetoothDtmSchedulerSequenceLead {
+        BluetoothDtmSchedulerSequenceLead::from_raw_image(7)
+    }
+
     #[test]
     fn tx_plan_requires_and_retains_the_prepared_packet_identity() {
         let stale = BluetoothDtmBoundSramLinkAddress::new(0x2f00_0400)
@@ -397,6 +410,7 @@ mod tests {
         let plan = BluetoothDtmReviewedEventWordsPlan::new_transmitter(
             reset,
             item(BluetoothDtmRole::Transmitter),
+            sequence_lead(),
             epoch(),
         )
         .expect("both transforms encode TX");
@@ -446,6 +460,7 @@ mod tests {
         let plan = BluetoothDtmReviewedEventWordsPlan::new_receiver(
             reset,
             item(BluetoothDtmRole::Receiver),
+            sequence_lead(),
             epoch(),
         )
         .expect("both transforms encode RX");
@@ -462,6 +477,8 @@ mod tests {
         assert_eq!(words.scheduler_item().word_2c, 0x000f_0001);
         assert_eq!(words.scheduler_item().word_44, 103);
         assert_eq!(words.scheduler_item().word_48, 105);
+        assert_eq!(words.scheduler_item().word_0c, 110);
+        assert_eq!(words.scheduler_item().word_10, 2);
         assert_eq!(
             words.link_state().word_34,
             epoch().raw_time_for_scheduler_time(0)
@@ -477,6 +494,7 @@ mod tests {
             BluetoothDtmReviewedEventWordsPlan::new_transmitter(
                 reset,
                 item(BluetoothDtmRole::Receiver),
+                sequence_lead(),
                 epoch(),
             ),
             Err(BluetoothDtmReviewedEventWordsPlanError::RoleMismatch {

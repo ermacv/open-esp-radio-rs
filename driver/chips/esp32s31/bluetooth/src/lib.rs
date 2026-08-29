@@ -137,7 +137,7 @@ pub use dtm_rx_completion::{
 };
 pub use dtm_scheduler_item::{
     BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerItemEventError,
-    BluetoothDtmSchedulerItemReviewedWords,
+    BluetoothDtmSchedulerItemReviewedWords, BluetoothDtmSchedulerSequenceLead,
 };
 pub use dtm_timing::{BluetoothDtmTxSchedulerTiming, BluetoothDtmTxTimingMicros};
 pub use dtm_tx_packet::{

@@ -70031,6 +70031,105 @@ pub mod field_replace_modify {
             writer.channel_switch_pulse().bit((input & 0x00000001) != 0)
         });
     }
+
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_TX_OFFSET_CONTROL fields [CHANNEL_OFFSET_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_bss_channel_offset(
+        registers: &crate::PhyFrequencyChannelOracle,
+        input: u32,
+    ) {
+        registers.channel_tx_offset_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .channel_offset_low_unknown()
+                    .bits((input & 0x0000000f) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL fields [FBW_CLEAR_LOW_UNKNOWN, FBW_CLEAR_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_phy_fbw_control(registers: &crate::PhyFrequencyChannelOracle) {
+        registers.fbw_bt_filter_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .fbw_clear_low_unknown()
+                .bit((input & 0x00000001) != 0)
+                .fbw_clear_high_unknown()
+                .bit(((input >> 1) & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL fields [FBW_SELECT_MID_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_fbw_select_mid(registers: &crate::PhyFrequencyChannelOracle, input: u32) {
+        registers.fbw_bt_filter_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .fbw_select_mid_unknown()
+                    .bits((input & 0x00000003) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL fields [FBW_SELECT_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_fbw_select_high(registers: &crate::PhyFrequencyChannelOracle, input: u32) {
+        registers.fbw_bt_filter_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .fbw_select_high_unknown()
+                    .bits((input & 0x00000003) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_CBW_CONTROL_0 fields [CBW_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_channel_cbw_control_0(
+        registers: &crate::PhyFrequencyChannelOracle,
+        input: u32,
+    ) {
+        registers.channel_cbw_control_0().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.cbw_low_unknown().bits((input & 0x00000003) as u8) }
+        });
+    }
+
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_CBW_CONTROL_1 fields [CBW_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_channel_cbw_control_1_high(
+        registers: &crate::PhyFrequencyChannelOracle,
+        input: u32,
+    ) {
+        registers.channel_cbw_control_1().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.cbw_high_unknown().bits((input & 0x00000007) as u8) }
+        });
+    }
+
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_CBW_CONTROL_1 fields [CBW_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_channel_cbw_control_1_low(
+        registers: &crate::PhyFrequencyChannelOracle,
+        input: u32,
+    ) {
+        registers.channel_cbw_control_1().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.cbw_low_unknown().bits((input & 0x00000003) as u8) }
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.
@@ -70177,6 +70276,26 @@ pub mod field_argument_modify {
                     .bits(address_0 as u8)
                     .number_address_1_unknown()
                     .bits(address_1 as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_TX_OFFSET_CONTROL fields [offset -> CHANNEL_OFFSET_LOW_UNKNOWN, high_clear -> CHANNEL_OFFSET_HIGH_OR_MINIMUM_POWER_LOW_UNKNOWN] from independently typed arguments while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_channel_cbw_offset(
+        registers: &crate::PhyFrequencyChannelOracle,
+        offset: u32,
+        high_clear: u32,
+    ) {
+        registers.channel_tx_offset_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every typed argument fits its named SVD field;
+            // no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .channel_offset_low_unknown()
+                    .bits(offset as u8)
+                    .channel_offset_high_or_minimum_power_low_unknown()
+                    .bits(high_clear as u8)
             }
         });
     }

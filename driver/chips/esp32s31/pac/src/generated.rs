@@ -300,6 +300,23 @@ impl PhyFrequencyRegisterMode {
     }
 }
 
+/// Semantic zero/nonzero FBW selection derived by the reviewed BSS-CBW transaction.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PhyFbwSelectionState {
+    /// Publish the zero-CBW FBW selection.
+    Unselected = 0x00000000,
+    /// Publish the nonzero-CBW FBW selection.
+    Selected = 0x00000001,
+}
+
+impl PhyFbwSelectionState {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
 /// Reviewed receive-beacon clear requests. The type cannot select an unknown request bit.
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1121,6 +1138,75 @@ impl PhyFrequencyI2cNumberAddress {
     /// Construct a value only when it lies in the reviewed inclusive range.
     pub const fn new(value: u32) -> Option<Self> {
         if value <= 0x0000001f {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Complete low channel-offset nibble produced by reviewed CBW derivation.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyChannelOffsetNibble(u32);
+
+impl PhyChannelOffsetNibble {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x0000000f;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x0000000f {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Complete two-bit CBW control image produced by reviewed CBW derivation.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyChannelCbwTwoBitImage(u32);
+
+impl PhyChannelCbwTwoBitImage {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x00000003;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x00000003 {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Complete three-bit CBW control image produced by reviewed CBW derivation.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyChannelCbwThreeBitImage(u32);
+
+impl PhyChannelCbwThreeBitImage {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x00000007;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x00000007 {
             Some(Self(value))
         } else {
             None
@@ -7300,6 +7386,72 @@ pub(crate) fn lower_phy_frequency_channel_switch_pulse(
     crate::svd::field_replace_modify::lower_phy_frequency_channel_switch_pulse(registers);
 }
 
+/// Typed bridge for the reviewed `configure_phy_bss_channel_offset` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_bss_channel_offset(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+    value: PhyChannelOffsetNibble,
+) {
+    crate::svd::field_replace_modify::configure_phy_bss_channel_offset(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `clear_phy_fbw_control` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_fbw_control(registers: &crate::svd::PhyFrequencyChannelOracle) {
+    crate::svd::field_replace_modify::clear_phy_fbw_control(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_fbw_select_mid` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_fbw_select_mid(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+    value: PhyFbwSelectionState,
+) {
+    crate::svd::field_replace_modify::configure_phy_fbw_select_mid(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `configure_phy_fbw_select_high` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_fbw_select_high(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+    value: PhyFbwSelectionState,
+) {
+    crate::svd::field_replace_modify::configure_phy_fbw_select_high(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `configure_phy_channel_cbw_control_0` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_channel_cbw_control_0(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+    value: PhyChannelCbwTwoBitImage,
+) {
+    crate::svd::field_replace_modify::configure_phy_channel_cbw_control_0(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_phy_channel_cbw_control_1_high` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_channel_cbw_control_1_high(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+    value: PhyChannelCbwThreeBitImage,
+) {
+    crate::svd::field_replace_modify::configure_phy_channel_cbw_control_1_high(
+        registers,
+        value.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `configure_phy_channel_cbw_control_1_low` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_channel_cbw_control_1_low(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+    value: PhyChannelCbwTwoBitImage,
+) {
+    crate::svd::field_replace_modify::configure_phy_channel_cbw_control_1_low(
+        registers,
+        value.get(),
+    );
+}
+
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
 #[inline]
 pub(crate) fn configure_shared_modem_low_power_timer(
@@ -7401,6 +7553,20 @@ pub(crate) fn configure_phy_frequency_i2c_number_prefix(
         registers,
         address_0.get(),
         address_1.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `configure_phy_channel_cbw_offset` multi-argument field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_channel_cbw_offset(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+    offset: PhyChannelOffsetNibble,
+    high_clear: PhyChannelCbwTwoBitImage,
+) {
+    crate::svd::field_argument_modify::configure_phy_channel_cbw_offset(
+        registers,
+        offset.get(),
+        high_clear.get(),
     );
 }
 

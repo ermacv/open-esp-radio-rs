@@ -566,6 +566,43 @@ max = 0x1f
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 
 [[bounded-domains]]
+name = "PhyChannelOffsetNibble"
+description = "Complete low channel-offset nibble produced by reviewed CBW derivation."
+min = 0
+max = 0x0f
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
+
+[[bounded-domains]]
+name = "PhyChannelCbwTwoBitImage"
+description = "Complete two-bit CBW control image produced by reviewed CBW derivation."
+min = 0
+max = 3
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
+
+[[bounded-domains]]
+name = "PhyChannelCbwThreeBitImage"
+description = "Complete three-bit CBW control image produced by reviewed CBW derivation."
+min = 0
+max = 7
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
+
+[[enum-domains]]
+name = "PhyFbwSelectionState"
+description = "Semantic zero/nonzero FBW selection derived by the reviewed BSS-CBW transaction."
+
+[[enum-domains.values]]
+name = "Unselected"
+value = 0
+description = "Publish the zero-CBW FBW selection."
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
+
+[[enum-domains.values]]
+name = "Selected"
+value = 1
+description = "Publish the nonzero-CBW FBW selection."
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
+
+[[bounded-domains]]
 name = "BluetoothPhyInitTimingByte"
 description = "Runtime-derived byte ORed into both BLE link-controller transmit-delay fields by one fresh-read transaction."
 min = 0
@@ -9736,5 +9773,82 @@ peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
 register = "FREQUENCY_CONTROL"
 fields = [{ field = "CHANNEL_SWITCH_PULSE", source-bit-offset = 0 }]
 value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_bss_channel_offset"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "CHANNEL_TX_OFFSET_CONTROL"
+fields = [{ field = "CHANNEL_OFFSET_LOW_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyChannelOffsetNibble"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_phy_fbw_control"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FBW_BT_FILTER_CONTROL"
+fields = [
+    { field = "FBW_CLEAR_LOW_UNKNOWN", source-bit-offset = 0 },
+    { field = "FBW_CLEAR_HIGH_UNKNOWN", source-bit-offset = 1 },
+]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_fbw_select_mid"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FBW_BT_FILTER_CONTROL"
+fields = [{ field = "FBW_SELECT_MID_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyFbwSelectionState"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_fbw_select_high"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FBW_BT_FILTER_CONTROL"
+fields = [{ field = "FBW_SELECT_HIGH_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyFbwSelectionState"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-argument-modifies]]
+name = "configure_phy_channel_cbw_offset"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "CHANNEL_TX_OFFSET_CONTROL"
+arguments = [
+    { name = "offset", field = "CHANNEL_OFFSET_LOW_UNKNOWN", domain = "PhyChannelOffsetNibble" },
+    { name = "high_clear", field = "CHANNEL_OFFSET_HIGH_OR_MINIMUM_POWER_LOW_UNKNOWN", domain = "PhyChannelCbwTwoBitImage" },
+]
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_channel_cbw_control_0"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "CHANNEL_CBW_CONTROL_0"
+fields = [{ field = "CBW_LOW_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyChannelCbwTwoBitImage"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_channel_cbw_control_1_high"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "CHANNEL_CBW_CONTROL_1"
+fields = [{ field = "CBW_HIGH_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyChannelCbwThreeBitImage"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_channel_cbw_control_1_low"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "CHANNEL_CBW_CONTROL_1"
+fields = [{ field = "CBW_LOW_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyChannelCbwTwoBitImage"
 exposure = "facade"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]

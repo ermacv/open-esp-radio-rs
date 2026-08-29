@@ -49,24 +49,24 @@ const fn bss_tx_offset(cbw: u8) -> u8 {
 }
 
 const fn channel_cbw_fields(cbw: u32) -> ChannelCbwFields {
-    let high = cbw >> 4;
+    let high = cbw / 16;
     if high != 0 {
         let normalized = high.wrapping_sub(1) as u8;
-        let low = cbw as u8 & 0x0f;
+        let low = (cbw % 16) as u8;
         ChannelCbwFields {
             tx_offset: low,
-            control_0: low & 3,
-            control_1_high: normalized & 7,
-            control_1_low: normalized & 3,
+            control_0: low % 4,
+            control_1_high: normalized % 8,
+            control_1_low: normalized % 4,
         }
     } else {
-        let low = cbw as u8 & 0x0f;
+        let low = (cbw % 16) as u8;
         let normalized = low.saturating_sub(2);
         ChannelCbwFields {
             tx_offset: normalized,
-            control_0: normalized & 3,
+            control_0: normalized % 4,
             control_1_high: if low != 0 { 1 } else { 0 },
-            control_1_low: if cbw & 0x0e != 0 { 1 } else { 0 },
+            control_1_low: if low >= 2 { 1 } else { 0 },
         }
     }
 }
@@ -82,7 +82,7 @@ const fn rv32_signed_div(dividend: i32, divisor: i32) -> i32 {
 }
 
 fn nrx_frequency_quotient(shift: u32, frequency: u32) -> u32 {
-    let numerator = 0x50_u32.wrapping_shl(shift) as i32;
+    let numerator = 0x50_u32.wrapping_mul(2_u32.wrapping_pow(shift % 32)) as i32;
     let quotient = rv32_signed_div(numerator, frequency as i32) as u32;
     quotient % 0x0100_0000
 }
@@ -272,26 +272,25 @@ impl RadioPhyRegisters {
     /// Publish the channel-offset prefix of complete `phy_bb_bss_cbw40`.
     pub fn configure_bss_cbw_prefix(&mut self, cbw: u8) {
         let value = bss_tx_offset(cbw);
-        self.peripherals
-            .phy_frequency_channel_oracle
-            .channel_tx_offset_control()
-            .modify(|_, w| w.channel_offset_low_unknown().set(value));
+        let value = super::generated::PhyChannelOffsetNibble::new(u32::from(value))
+            .expect("reviewed BSS-CBW offset fits its generated nibble domain");
+        super::generated::configure_phy_bss_channel_offset(
+            &self.peripherals.phy_frequency_channel_oracle,
+            value,
+        );
     }
 
     /// Publish the three FBW suffix edges of complete `phy_bb_bss_cbw40`.
     pub fn configure_bss_cbw_suffix(&mut self, cbw: u8) {
-        let register = self
-            .peripherals
-            .phy_frequency_channel_oracle
-            .fbw_bt_filter_control();
-        register.modify(|_, w| {
-            w.fbw_clear_low_unknown()
-                .clear_bit()
-                .fbw_clear_high_unknown()
-                .clear_bit()
-        });
-        register.modify(|_, w| w.fbw_select_mid_unknown().set(u8::from(cbw != 0)));
-        register.modify(|_, w| w.fbw_select_high_unknown().set(u8::from(cbw != 0)));
+        let frequency = &self.peripherals.phy_frequency_channel_oracle;
+        let selection = if cbw == 0 {
+            super::generated::PhyFbwSelectionState::Unselected
+        } else {
+            super::generated::PhyFbwSelectionState::Selected
+        };
+        super::generated::clear_phy_fbw_control(frequency);
+        super::generated::configure_phy_fbw_select_mid(frequency, selection);
+        super::generated::configure_phy_fbw_select_high(frequency, selection);
     }
 
     /// Apply the four fresh-read replacements of complete `phy_bb_cbw_chan_cfg`.
@@ -301,21 +300,23 @@ impl RadioPhyRegisters {
         // The ROM clears the shared bits 7:4 before publishing the bounded
         // low channel-offset nibble. The independently named upper two
         // minimum-power bits remain untouched by these field accessors.
-        frequency.channel_tx_offset_control().modify(|_, w| {
-            w.channel_offset_low_unknown()
-                .set(fields.tx_offset)
-                .channel_offset_high_or_minimum_power_low_unknown()
-                .set(0)
-        });
-        frequency
-            .channel_cbw_control_0()
-            .modify(|_, w| w.cbw_low_unknown().set(fields.control_0));
-        frequency
-            .channel_cbw_control_1()
-            .modify(|_, w| w.cbw_high_unknown().set(fields.control_1_high));
-        frequency
-            .channel_cbw_control_1()
-            .modify(|_, w| w.cbw_low_unknown().set(fields.control_1_low));
+        let tx_offset = super::generated::PhyChannelOffsetNibble::new(u32::from(fields.tx_offset))
+            .expect("reviewed channel offset fits its generated nibble domain");
+        let high_clear = super::generated::PhyChannelCbwTwoBitImage::new(0)
+            .expect("zero fits the generated two-bit CBW domain");
+        let control_0 =
+            super::generated::PhyChannelCbwTwoBitImage::new(u32::from(fields.control_0))
+                .expect("reviewed CBW control fits its generated two-bit domain");
+        let control_1_high =
+            super::generated::PhyChannelCbwThreeBitImage::new(u32::from(fields.control_1_high))
+                .expect("reviewed CBW control fits its generated three-bit domain");
+        let control_1_low =
+            super::generated::PhyChannelCbwTwoBitImage::new(u32::from(fields.control_1_low))
+                .expect("reviewed CBW control fits its generated two-bit domain");
+        super::generated::configure_phy_channel_cbw_offset(frequency, tx_offset, high_clear);
+        super::generated::configure_phy_channel_cbw_control_0(frequency, control_0);
+        super::generated::configure_phy_channel_cbw_control_1_high(frequency, control_1_high);
+        super::generated::configure_phy_channel_cbw_control_1_low(frequency, control_1_low);
     }
 
     /// Apply the three fresh-read updates of complete `phy_bt_filter_reg`.

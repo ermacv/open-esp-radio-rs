@@ -2024,6 +2024,24 @@ value = 0xed
 exposure = "facade"
 sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
 
+[[field-replace-modifies]]
+name = "raise_phy_agc_dc_memory_clear_pulse"
+peripheral = "PHY_AGC_ORACLE"
+register = "DC_MEMORY_CONTROL"
+fields = [{ field = "CLEAR_PULSE_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_DC_MEM_CLR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "lower_phy_agc_dc_memory_clear_pulse"
+peripheral = "PHY_AGC_ORACLE"
+register = "DC_MEMORY_CONTROL"
+fields = [{ field = "CLEAR_PULSE_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_DC_MEM_CLR", "S31_ESP_PACS_SVD"]
+
 [[fixed-register-images]]
 name = "initialize_rf_rx_saturation_config"
 peripheral = "PHY_AGC_ORACLE"

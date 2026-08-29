@@ -85,9 +85,9 @@ impl RadioPhyRegisters {
 
     /// Pulse the generated DC-memory clear field through two fresh RMWs.
     pub fn clear_agc_dc_memory(&mut self) {
-        let control = self.peripherals.phy_agc_oracle.dc_memory_control();
-        control.modify(|_, w| w.clear_pulse_unknown().set_bit());
-        control.modify(|_, w| w.clear_pulse_unknown().clear_bit());
+        let agc = &self.peripherals.phy_agc_oracle;
+        super::generated::raise_phy_agc_dc_memory_clear_pulse(agc);
+        super::generated::lower_phy_agc_dc_memory_clear_pulse(agc);
     }
 
     /// Apply the two MMIO edges after the PBus work-mode 1 µs delay.

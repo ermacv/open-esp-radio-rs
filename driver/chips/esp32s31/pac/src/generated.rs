@@ -2647,6 +2647,18 @@ pub(crate) fn configure_phy_rx_compensation_high(registers: &crate::svd::PhyAgcO
     crate::svd::field_replace_modify::configure_phy_rx_compensation_high(registers);
 }
 
+/// Typed bridge for the reviewed `raise_phy_agc_dc_memory_clear_pulse` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn raise_phy_agc_dc_memory_clear_pulse(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::raise_phy_agc_dc_memory_clear_pulse(registers);
+}
+
+/// Typed bridge for the reviewed `lower_phy_agc_dc_memory_clear_pulse` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn lower_phy_agc_dc_memory_clear_pulse(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::lower_phy_agc_dc_memory_clear_pulse(registers);
+}
+
 /// Typed bridge for the reviewed `clear_bluetooth_memory_list_1_pointer_a` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_bluetooth_memory_list_1_pointer_a(

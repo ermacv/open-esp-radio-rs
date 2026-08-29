@@ -62522,6 +62522,28 @@ pub mod field_replace_modify {
             });
     }
 
+    /// Replace PHY_AGC_ORACLE.DC_MEMORY_CONTROL fields [CLEAR_PULSE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn raise_phy_agc_dc_memory_clear_pulse(registers: &crate::PhyAgcOracle) {
+        registers.dc_memory_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clear_pulse_unknown().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.DC_MEMORY_CONTROL fields [CLEAR_PULSE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn lower_phy_agc_dc_memory_clear_pulse(registers: &crate::PhyAgcOracle) {
+        registers.dc_memory_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clear_pulse_unknown().bit((input & 0x00000001) != 0)
+        });
+    }
+
     /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A fields [COMPRESSED_SRAM_POINTER] from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_memory_list_1_pointer_a(registers: &crate::BluetoothControllerCore) {

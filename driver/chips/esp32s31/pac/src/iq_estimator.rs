@@ -3,9 +3,14 @@
 #![forbid(unsafe_code)]
 
 use super::RadioPhyRegisters;
+use super::generated::{IqEstimatorControlWord, IqEstimatorEnableState};
 
-const fn truncate_control_window(control: u16) -> u16 {
-    control & 0x7fff
+const fn iq_estimator_enable_state(enabled: bool) -> IqEstimatorEnableState {
+    if enabled {
+        IqEstimatorEnableState::Enabled
+    } else {
+        IqEstimatorEnableState::Disabled
+    }
 }
 
 impl RadioPhyRegisters {
@@ -13,39 +18,32 @@ impl RadioPhyRegisters {
     ///
     /// Complete `phy_iq_est_enable` performs three separate fresh-read RMW
     /// operations in this order. Bit 15 of `control` is discarded by the ROM
-    /// shift/mask sequence and therefore is deliberately truncated here.
+    /// shift/mask sequence and therefore by the reviewed generated transform.
     pub fn configure_iq_estimator(&mut self, control: u16) {
-        self.peripherals
-            .phy_iq_estimator_oracle
-            .estimator_config()
-            .modify(|_, w| w.config_mode_unknown().set(1));
-        self.peripherals
-            .phy_iq_estimator_oracle
-            .estimator_control()
-            .modify(|_, w| w.mode_unknown().set(2));
-        self.peripherals
-            .phy_iq_estimator_oracle
-            .estimator_control()
-            .modify(|_, w| {
-                w.control_window_unknown()
-                    .set(truncate_control_window(control))
-            });
+        let registers = &self.peripherals.phy_iq_estimator_oracle;
+        super::generated::configure_iq_estimator_config_mode(registers);
+        super::generated::configure_iq_estimator_mode(registers);
+        super::generated::configure_iq_estimator_control_window(
+            registers,
+            IqEstimatorControlWord::new(u32::from(control))
+                .expect("u16 always fits the reviewed estimator-control domain"),
+        );
     }
 
     /// Set or clear the first estimator-enable phase through one fresh RMW.
     pub fn set_iq_estimator_start_enabled(&mut self, enabled: bool) {
-        self.peripherals
-            .phy_iq_estimator_oracle
-            .estimator_control()
-            .modify(|_, w| w.start_enable().bit(enabled));
+        super::generated::set_iq_estimator_start_state(
+            &self.peripherals.phy_iq_estimator_oracle,
+            iq_estimator_enable_state(enabled),
+        );
     }
 
     /// Set or clear the second estimator-enable phase through one fresh RMW.
     pub fn set_iq_estimator_measurement_enabled(&mut self, enabled: bool) {
-        self.peripherals
-            .phy_iq_estimator_oracle
-            .estimator_control()
-            .modify(|_, w| w.measurement_enable().bit(enabled));
+        super::generated::set_iq_estimator_measurement_state(
+            &self.peripherals.phy_iq_estimator_oracle,
+            iq_estimator_enable_state(enabled),
+        );
     }
 
     /// Sample readiness, and sample activity only while readiness is clear.
@@ -53,59 +51,27 @@ impl RadioPhyRegisters {
     /// Complete ROM `phy_iq_est_enable` returns immediately from a ready
     /// observation. Its activity read belongs only to the not-ready branch.
     pub fn sample_iq_estimator_readiness(&mut self) -> (bool, bool) {
-        let ready = self
-            .peripherals
-            .phy_iq_estimator_oracle
-            .estimator_ready_status()
-            .read()
-            .ready()
-            .bit_is_set();
-        let activity = !ready
-            && self
-                .peripherals
-                .phy_iq_estimator_oracle
-                .estimator_activity_status()
-                .read()
-                .activity_unknown()
-                .bits()
-                != 0;
+        let registers = &self.peripherals.phy_iq_estimator_oracle;
+        let ready = super::svd::field_read::observe_iq_estimator_ready(registers);
+        let activity =
+            !ready && super::svd::field_read::observe_iq_estimator_activity(registers) != 0;
         (ready, activity)
     }
 
     /// Read I, Q and power accumulators in complete `phy_dc_iq_est` order.
     pub fn read_iq_estimator_dc_accumulators(&mut self) -> [i32; 3] {
-        let i = self
-            .peripherals
-            .phy_iq_estimator_oracle
-            .dc_i_accumulator()
-            .read()
-            .value()
-            .bits() as i32;
-        let q = self
-            .peripherals
-            .phy_iq_estimator_oracle
-            .dc_q_accumulator()
-            .read()
-            .value()
-            .bits() as i32;
-        let power = self
-            .peripherals
-            .phy_iq_estimator_oracle
-            .power_accumulator()
-            .read()
-            .value()
-            .bits() as i32;
+        let registers = &self.peripherals.phy_iq_estimator_oracle;
+        let i = super::svd::field_read::observe_iq_estimator_dc_i_accumulator(registers);
+        let q = super::svd::field_read::observe_iq_estimator_dc_q_accumulator(registers);
+        let power = super::svd::field_read::observe_iq_estimator_power_accumulator(registers);
         [i, q, power]
     }
 
     /// Read the signed total-power accumulator exactly once.
     pub fn read_iq_estimator_total_power(&mut self) -> i32 {
-        self.peripherals
-            .phy_iq_estimator_oracle
-            .power_accumulator()
-            .read()
-            .value()
-            .bits() as i32
+        super::svd::field_read::observe_iq_estimator_power_accumulator(
+            &self.peripherals.phy_iq_estimator_oracle,
+        )
     }
 
     /// Read signal words in complete `phy_rxiq_get_mis` physical order.
@@ -114,34 +80,13 @@ impl RadioPhyRegisters {
     /// sum-Q. The hardware reads remain sum-I, sum-Q, difference-Q,
     /// difference-I as proved by the complete rev0 ROM body.
     pub fn read_iq_estimator_rxiq_mismatch(&mut self) -> [i32; 4] {
-        let sum_i = self
-            .peripherals
-            .phy_iq_estimator_oracle
-            .signal_power_sum_i()
-            .read()
-            .value()
-            .bits() as i32;
-        let sum_q = self
-            .peripherals
-            .phy_iq_estimator_oracle
-            .signal_power_sum_q()
-            .read()
-            .value()
-            .bits() as i32;
-        let difference_q = self
-            .peripherals
-            .phy_iq_estimator_oracle
-            .signal_power_difference_q()
-            .read()
-            .value()
-            .bits() as i32;
-        let difference_i = self
-            .peripherals
-            .phy_iq_estimator_oracle
-            .signal_power_difference_i()
-            .read()
-            .value()
-            .bits() as i32;
+        let registers = &self.peripherals.phy_iq_estimator_oracle;
+        let sum_i = super::svd::field_read::observe_iq_estimator_signal_power_sum_i(registers);
+        let sum_q = super::svd::field_read::observe_iq_estimator_signal_power_sum_q(registers);
+        let difference_q =
+            super::svd::field_read::observe_iq_estimator_signal_power_difference_q(registers);
+        let difference_i =
+            super::svd::field_read::observe_iq_estimator_signal_power_difference_i(registers);
         [sum_i, difference_i, difference_q, sum_q]
     }
 
@@ -151,34 +96,13 @@ impl RadioPhyRegisters {
     /// returned common semantic order is sum-I, difference-I, difference-Q,
     /// sum-Q.
     pub fn read_iq_estimator_signal_power(&mut self) -> [i32; 4] {
-        let sum_i = self
-            .peripherals
-            .phy_iq_estimator_oracle
-            .signal_power_sum_i()
-            .read()
-            .value()
-            .bits() as i32;
-        let sum_q = self
-            .peripherals
-            .phy_iq_estimator_oracle
-            .signal_power_sum_q()
-            .read()
-            .value()
-            .bits() as i32;
-        let difference_i = self
-            .peripherals
-            .phy_iq_estimator_oracle
-            .signal_power_difference_i()
-            .read()
-            .value()
-            .bits() as i32;
-        let difference_q = self
-            .peripherals
-            .phy_iq_estimator_oracle
-            .signal_power_difference_q()
-            .read()
-            .value()
-            .bits() as i32;
+        let registers = &self.peripherals.phy_iq_estimator_oracle;
+        let sum_i = super::svd::field_read::observe_iq_estimator_signal_power_sum_i(registers);
+        let sum_q = super::svd::field_read::observe_iq_estimator_signal_power_sum_q(registers);
+        let difference_i =
+            super::svd::field_read::observe_iq_estimator_signal_power_difference_i(registers);
+        let difference_q =
+            super::svd::field_read::observe_iq_estimator_signal_power_difference_q(registers);
         [sum_i, difference_i, difference_q, sum_q]
     }
 
@@ -187,12 +111,8 @@ impl RadioPhyRegisters {
     /// The bounded 100-sample policy remains in the upper PHY transition;
     /// physical register identity and field extraction remain in the PAC.
     pub fn iq_estimator_active(&mut self) -> bool {
-        self.peripherals
-            .phy_iq_estimator_oracle
-            .estimator_activity_status()
-            .read()
-            .activity_unknown()
-            .bits()
-            != 0
+        super::svd::field_read::observe_iq_estimator_activity(
+            &self.peripherals.phy_iq_estimator_oracle,
+        ) != 0
     }
 }

@@ -58587,6 +58587,68 @@ pub mod field_read {
             .result_window_0_unknown()
             .bits()
     }
+
+    /// Read `PHY_IQ_ESTIMATOR_ORACLE`.`ESTIMATOR_READY_STATUS`.`READY` without exposing its register block.
+    #[inline]
+    pub fn observe_iq_estimator_ready(registers: &crate::PhyIqEstimatorOracle) -> bool {
+        registers.estimator_ready_status().read().ready().bit()
+    }
+
+    /// Read `PHY_IQ_ESTIMATOR_ORACLE`.`ESTIMATOR_ACTIVITY_STATUS`.`ACTIVITY_UNKNOWN` without exposing its register block.
+    #[inline]
+    pub fn observe_iq_estimator_activity(registers: &crate::PhyIqEstimatorOracle) -> u8 {
+        registers
+            .estimator_activity_status()
+            .read()
+            .activity_unknown()
+            .bits()
+    }
+
+    /// Read `PHY_IQ_ESTIMATOR_ORACLE`.`DC_I_ACCUMULATOR`.`VALUE` without exposing its register block.
+    #[inline]
+    pub fn observe_iq_estimator_dc_i_accumulator(registers: &crate::PhyIqEstimatorOracle) -> i32 {
+        registers.dc_i_accumulator().read().value().bits() as i32
+    }
+
+    /// Read `PHY_IQ_ESTIMATOR_ORACLE`.`DC_Q_ACCUMULATOR`.`VALUE` without exposing its register block.
+    #[inline]
+    pub fn observe_iq_estimator_dc_q_accumulator(registers: &crate::PhyIqEstimatorOracle) -> i32 {
+        registers.dc_q_accumulator().read().value().bits() as i32
+    }
+
+    /// Read `PHY_IQ_ESTIMATOR_ORACLE`.`POWER_ACCUMULATOR`.`VALUE` without exposing its register block.
+    #[inline]
+    pub fn observe_iq_estimator_power_accumulator(registers: &crate::PhyIqEstimatorOracle) -> i32 {
+        registers.power_accumulator().read().value().bits() as i32
+    }
+
+    /// Read `PHY_IQ_ESTIMATOR_ORACLE`.`SIGNAL_POWER_SUM_I`.`VALUE` without exposing its register block.
+    #[inline]
+    pub fn observe_iq_estimator_signal_power_sum_i(registers: &crate::PhyIqEstimatorOracle) -> i32 {
+        registers.signal_power_sum_i().read().value().bits() as i32
+    }
+
+    /// Read `PHY_IQ_ESTIMATOR_ORACLE`.`SIGNAL_POWER_SUM_Q`.`VALUE` without exposing its register block.
+    #[inline]
+    pub fn observe_iq_estimator_signal_power_sum_q(registers: &crate::PhyIqEstimatorOracle) -> i32 {
+        registers.signal_power_sum_q().read().value().bits() as i32
+    }
+
+    /// Read `PHY_IQ_ESTIMATOR_ORACLE`.`SIGNAL_POWER_DIFFERENCE_I`.`VALUE` without exposing its register block.
+    #[inline]
+    pub fn observe_iq_estimator_signal_power_difference_i(
+        registers: &crate::PhyIqEstimatorOracle,
+    ) -> i32 {
+        registers.signal_power_difference_i().read().value().bits() as i32
+    }
+
+    /// Read `PHY_IQ_ESTIMATOR_ORACLE`.`SIGNAL_POWER_DIFFERENCE_Q`.`VALUE` without exposing its register block.
+    #[inline]
+    pub fn observe_iq_estimator_signal_power_difference_q(
+        registers: &crate::PhyIqEstimatorOracle,
+    ) -> i32 {
+        registers.signal_power_difference_q().read().value().bits() as i32
+    }
 }
 
 /// Safe same-sample observations through reviewed SVD fields.
@@ -66382,6 +66444,70 @@ pub mod field_replace_modify {
                     .tx_clock_enable_pair()
                     .bits((input & 0x00000003) as u8)
             }
+        });
+    }
+
+    /// Replace PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONFIG fields [CONFIG_MODE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_iq_estimator_config_mode(registers: &crate::PhyIqEstimatorOracle) {
+        registers.estimator_config().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .config_mode_unknown()
+                    .bits((input & 0x00000003) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONTROL fields [MODE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_iq_estimator_mode(registers: &crate::PhyIqEstimatorOracle) {
+        registers.estimator_control().modify(|_, writer| {
+            let input = 0x00000002_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.mode_unknown().bits((input & 0x00000003) as u8) }
+        });
+    }
+
+    /// Replace PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONTROL fields [CONTROL_WINDOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_iq_estimator_control_window(
+        registers: &crate::PhyIqEstimatorOracle,
+        input: u32,
+    ) {
+        registers.estimator_control().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x00007fff;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .control_window_unknown()
+                    .bits((input & 0x00007fff) as u16)
+            }
+        });
+    }
+
+    /// Replace PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONTROL fields [START_ENABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_iq_estimator_start_state(registers: &crate::PhyIqEstimatorOracle, input: u32) {
+        registers.estimator_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.start_enable().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONTROL fields [MEASUREMENT_ENABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_iq_estimator_measurement_state(registers: &crate::PhyIqEstimatorOracle, input: u32) {
+        registers.estimator_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.measurement_enable().bit((input & 0x00000001) != 0)
         });
     }
 }

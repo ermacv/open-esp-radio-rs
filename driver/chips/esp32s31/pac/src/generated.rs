@@ -387,6 +387,23 @@ impl PbusTxClockPairState {
     }
 }
 
+/// Boolean state accepted by reviewed IQ-estimator enable transactions.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum IqEstimatorEnableState {
+    /// Disable the selected IQ-estimator phase.
+    Disabled = 0x00000000,
+    /// Enable the selected IQ-estimator phase.
+    Enabled = 0x00000001,
+}
+
+impl IqEstimatorEnableState {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
 /// One reviewed four-bit Wi-Fi packet-traffic-information value. Its scheduling policy remains outside the PAC.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MacPti(u32);
@@ -1065,6 +1082,29 @@ impl BluetoothSchedulerLockModifyArgument {
     /// Construct a value only when it lies in the reviewed inclusive range.
     pub const fn new(value: u32) -> Option<Self> {
         if value <= 0x0000000f {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Complete sixteen-bit caller control accepted by the rev0 ROM IQ-estimator enable path.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct IqEstimatorControlWord(u32);
+
+impl IqEstimatorControlWord {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x0000ffff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x0000ffff {
             Some(Self(value))
         } else {
             None
@@ -4520,6 +4560,45 @@ pub(crate) fn set_pbus_rx_clock_pair(registers: &crate::svd::PhyPbus, value: Pbu
 #[inline]
 pub(crate) fn set_pbus_tx_clock_pair(registers: &crate::svd::PhyPbus, value: PbusTxClockPairState) {
     crate::svd::field_replace_modify::set_pbus_tx_clock_pair(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `configure_iq_estimator_config_mode` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_iq_estimator_config_mode(registers: &crate::svd::PhyIqEstimatorOracle) {
+    crate::svd::field_replace_modify::configure_iq_estimator_config_mode(registers);
+}
+
+/// Typed bridge for the reviewed `configure_iq_estimator_mode` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_iq_estimator_mode(registers: &crate::svd::PhyIqEstimatorOracle) {
+    crate::svd::field_replace_modify::configure_iq_estimator_mode(registers);
+}
+
+/// Typed bridge for the reviewed `configure_iq_estimator_control_window` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_iq_estimator_control_window(
+    registers: &crate::svd::PhyIqEstimatorOracle,
+    value: IqEstimatorControlWord,
+) {
+    crate::svd::field_replace_modify::configure_iq_estimator_control_window(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `set_iq_estimator_start_state` field-replacement transaction.
+#[inline]
+pub(crate) fn set_iq_estimator_start_state(
+    registers: &crate::svd::PhyIqEstimatorOracle,
+    value: IqEstimatorEnableState,
+) {
+    crate::svd::field_replace_modify::set_iq_estimator_start_state(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_iq_estimator_measurement_state` field-replacement transaction.
+#[inline]
+pub(crate) fn set_iq_estimator_measurement_state(
+    registers: &crate::svd::PhyIqEstimatorOracle,
+    value: IqEstimatorEnableState,
+) {
+    crate::svd::field_replace_modify::set_iq_estimator_measurement_state(registers, value.bits());
 }
 
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.

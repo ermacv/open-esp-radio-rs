@@ -6680,3 +6680,142 @@ fields = [{ field = "TX_CLOCK_ENABLE_PAIR", source-bit-offset = 0 }]
 domain = "PbusTxClockPairState"
 exposure = "facade"
 sources = ["ROM_REV0_PHY_CLOCK_FORCE", "S31_ESP_PACS_SVD"]
+
+[[bounded-domains]]
+name = "IqEstimatorControlWord"
+description = "Complete sixteen-bit caller control accepted by the rev0 ROM IQ-estimator enable path."
+min = 0
+max = 0xffff
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
+
+[[enum-domains]]
+name = "IqEstimatorEnableState"
+description = "Boolean state accepted by reviewed IQ-estimator enable transactions."
+
+[[enum-domains.values]]
+name = "Disabled"
+value = 0
+description = "Disable the selected IQ-estimator phase."
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR", "S31_ESP_PACS_SVD"]
+
+[[enum-domains.values]]
+name = "Enabled"
+value = 1
+description = "Enable the selected IQ-estimator phase."
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_iq_estimator_config_mode"
+peripheral = "PHY_IQ_ESTIMATOR_ORACLE"
+register = "ESTIMATOR_CONFIG"
+fields = [{ field = "CONFIG_MODE_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_iq_estimator_mode"
+peripheral = "PHY_IQ_ESTIMATOR_ORACLE"
+register = "ESTIMATOR_CONTROL"
+fields = [{ field = "MODE_UNKNOWN", source-bit-offset = 0 }]
+value = 2
+exposure = "facade"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_iq_estimator_control_window"
+peripheral = "PHY_IQ_ESTIMATOR_ORACLE"
+register = "ESTIMATOR_CONTROL"
+fields = [{ field = "CONTROL_WINDOW_UNKNOWN", source-bit-offset = 0 }]
+domain = "IqEstimatorControlWord"
+input-transform = { wrapping-subtract = 0, retain-mask = 0x7fff }
+exposure = "facade"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_iq_estimator_start_state"
+peripheral = "PHY_IQ_ESTIMATOR_ORACLE"
+register = "ESTIMATOR_CONTROL"
+fields = [{ field = "START_ENABLE", source-bit-offset = 0 }]
+domain = "IqEstimatorEnableState"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_iq_estimator_measurement_state"
+peripheral = "PHY_IQ_ESTIMATOR_ORACLE"
+register = "ESTIMATOR_CONTROL"
+fields = [{ field = "MEASUREMENT_ENABLE", source-bit-offset = 0 }]
+domain = "IqEstimatorEnableState"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_iq_estimator_ready"
+peripheral = "PHY_IQ_ESTIMATOR_ORACLE"
+register = "ESTIMATOR_READY_STATUS"
+field = "READY"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_iq_estimator_activity"
+peripheral = "PHY_IQ_ESTIMATOR_ORACLE"
+register = "ESTIMATOR_ACTIVITY_STATUS"
+field = "ACTIVITY_UNKNOWN"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_iq_estimator_dc_i_accumulator"
+peripheral = "PHY_IQ_ESTIMATOR_ORACLE"
+register = "DC_I_ACCUMULATOR"
+field = "VALUE"
+signed = true
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_iq_estimator_dc_q_accumulator"
+peripheral = "PHY_IQ_ESTIMATOR_ORACLE"
+register = "DC_Q_ACCUMULATOR"
+field = "VALUE"
+signed = true
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_iq_estimator_power_accumulator"
+peripheral = "PHY_IQ_ESTIMATOR_ORACLE"
+register = "POWER_ACCUMULATOR"
+field = "VALUE"
+signed = true
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_iq_estimator_signal_power_sum_i"
+peripheral = "PHY_IQ_ESTIMATOR_ORACLE"
+register = "SIGNAL_POWER_SUM_I"
+field = "VALUE"
+signed = true
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_iq_estimator_signal_power_sum_q"
+peripheral = "PHY_IQ_ESTIMATOR_ORACLE"
+register = "SIGNAL_POWER_SUM_Q"
+field = "VALUE"
+signed = true
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_iq_estimator_signal_power_difference_i"
+peripheral = "PHY_IQ_ESTIMATOR_ORACLE"
+register = "SIGNAL_POWER_DIFFERENCE_I"
+field = "VALUE"
+signed = true
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_iq_estimator_signal_power_difference_q"
+peripheral = "PHY_IQ_ESTIMATOR_ORACLE"
+register = "SIGNAL_POWER_DIFFERENCE_Q"
+field = "VALUE"
+signed = true
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR", "S31_ESP_PACS_SVD"]

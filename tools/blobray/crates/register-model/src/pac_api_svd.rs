@@ -158,6 +158,12 @@ impl PacApiPack {
                     operation.name
                 )));
             }
+            if operation.signed && !matches!(selected.bit_width(), 8 | 16 | 32) {
+                return Err(Error::message(format!(
+                    "PAC API signed field-read {:?} requires a complete 8-, 16-, or 32-bit field",
+                    operation.name
+                )));
+            }
         }
 
         for operation in &self.field_snapshot_reads {
@@ -1411,6 +1417,22 @@ sources = ["PUBLIC_READ"]
         .unwrap()
     }
 
+    fn signed_field_read_pack(register: &str, field: &str) -> PacApiPack {
+        toml_edit::de::from_str(&format!(
+            r#"schema = 5
+
+[[field-reads]]
+name = "observe_signed_word"
+peripheral = "RADIO"
+register = "{register}"
+field = "{field}"
+signed = true
+sources = ["PUBLIC_READ"]
+"#
+        ))
+        .unwrap()
+    }
+
     fn sampled_bit_zero_write_pack(register: &str) -> PacApiPack {
         toml_edit::de::from_str(&format!(
             r#"schema = 5
@@ -1606,6 +1628,21 @@ peripherals = ["INTERRUPT"]
                 "unexpected rejection for {register}: {error}"
             );
         }
+    }
+
+    #[test]
+    fn signed_field_read_requires_a_complete_primitive_integer_width() {
+        assert!(
+            signed_field_read_pack("GOOD", "WORD")
+                .validate_against_svd(FULL_REGISTER_READ_SVD)
+                .is_ok()
+        );
+
+        let error = signed_field_read_pack("EVENT_STATUS", "EVENTS")
+            .validate_against_svd(W1C_REGISTER_SNAPSHOT_SVD)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("complete 8-, 16-, or 32-bit field"));
     }
 
     #[test]

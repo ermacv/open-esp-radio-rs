@@ -795,18 +795,27 @@ impl PacApiPack {
             };
             let selected =
                 pac_api_svd::field(&binding.name, register_binding.info, &binding.field)?;
-            let (value_type, reader) = match selected.bit_width() {
-                1 => ("bool", "bit"),
-                2..=8 => ("u8", "bits"),
-                9..=16 => ("u16", "bits"),
-                17..=32 => ("u32", "bits"),
-                _ => unreachable!("SVD validation rejects invalid field widths"),
+            let (value_type, reader, signed_cast) = match (binding.signed, selected.bit_width()) {
+                (true, 8) => ("i8", "bits", " as i8"),
+                (true, 16) => ("i16", "bits", " as i16"),
+                (true, 32) => ("i32", "bits", " as i32"),
+                (true, _) => {
+                    return Err(Error::message(format!(
+                        "PAC API signed field-read {:?} requires a complete 8-, 16-, or 32-bit field",
+                        binding.name
+                    )));
+                }
+                (false, 1) => ("bool", "bit", ""),
+                (false, 2..=8) => ("u8", "bits", ""),
+                (false, 9..=16) => ("u16", "bits", ""),
+                (false, 17..=32) => ("u32", "bits", ""),
+                (false, _) => unreachable!("SVD validation rejects invalid field widths"),
             };
             output.push_str(&format!(
                 "\n    /// Read `{}`.`{}`.`{}` without exposing its register block.\n\
                  #[inline]\n\
                  pub fn {}(registers: &crate::{peripheral_type}{index_parameter}) -> {value_type} {{\n\
-                     registers.{register}({index_argument}).read().{field_name}().{reader}()\n\
+                     registers.{register}({index_argument}).read().{field_name}().{reader}(){signed_cast}\n\
                  }}\n",
                 binding.peripheral, binding.register, binding.field, binding.name,
             ));

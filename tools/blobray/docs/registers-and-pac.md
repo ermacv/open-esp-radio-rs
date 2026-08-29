@@ -191,7 +191,9 @@ derives the smallest ordinary Rust return type from the reviewed field width,
 supports explicitly indexed register arrays, and rejects write-only fields or
 register/field read actions. The generated restricted-PAC leaf owns the
 register lookup and read, while handwritten code receives only the field
-value needed by its state machine.
+value needed by its state machine. `signed = true` is accepted only for a
+complete 8-, 16-, or 32-bit field and moves the reviewed two's-complement
+reinterpretation into the generated accessor.
 
 When several fields must come from the same volatile observation,
 `[[field-snapshot-reads]]` lists them in return order. Blobray validates every

@@ -314,10 +314,17 @@ pub struct FullRegisterRead {
     pub exposure: PacApiExposure,
     pub sources: Vec<String>,
 }
-common_operation!(FieldRead {
-    register: String,
-    field: String,
-});
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct FieldRead {
+    pub name: String,
+    pub peripheral: String,
+    pub register: String,
+    pub field: String,
+    #[serde(default)]
+    pub signed: bool,
+    pub sources: Vec<String>,
+}
 common_operation!(FieldSnapshotRead {
     register: String,
     fields: Vec<String>,

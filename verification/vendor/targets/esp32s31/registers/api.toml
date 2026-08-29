@@ -8288,7 +8288,7 @@ register = "BASEBAND_INIT_7890"
 fields = [{ field = "HE_RU26_GOOD_RESPONSE_ENABLE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
-sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "S31_ESP_PACS_SVD"]
+sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
 
 [[field-replace-modifies]]
 name = "clear_phy_he_ru26_good_response_disable"
@@ -8297,7 +8297,7 @@ register = "BASEBAND_INIT_7890"
 fields = [{ field = "HE_RU26_GOOD_RESPONSE_DISABLE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
-sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "S31_ESP_PACS_SVD"]
+sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
 
 [[field-replace-modifies]]
 name = "enable_noise_floor_auto_control_low"
@@ -8395,5 +8395,146 @@ peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 register = "TX_PA_CONTROL_1"
 fields = [{ field = "PA_ON_BT_DELAY", source-bit-offset = 0 }]
 value = 0xc8
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "initialize_phy_baseband_prefix"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_INIT_7400"
+fields = [{ field = "INIT_UNKNOWN", source-bit-offset = 0 }]
+value = 3
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "initialize_phy_baseband_7808"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_INIT_7808"
+fields = [{ field = "INIT_VALUE_UNKNOWN", source-bit-offset = 0 }]
+value = 0x60
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "initialize_phy_baseband_78dc"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_INIT_78DC"
+fields = [{ field = "INIT_VALUE_UNKNOWN", source-bit-offset = 0 }]
+value = 2
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_phy_baseband_78e4"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_INIT_78E4"
+fields = [{ field = "INIT_CLEAR_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_phy_baseband_tx_pa_timing_init"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_TX_PA_TIMING"
+fields = [{ field = "BASEBAND_INIT_CLEAR_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_phy_baseband_790c_init"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_INIT_790C"
+fields = [{ field = "INIT_CLEAR_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_phy_baseband_7ca8_init"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_INIT_7CA8"
+fields = [{ field = "INIT_ENABLE_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_phy_baseband_7980_init"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_INIT_7980"
+fields = [{ field = "INIT_CLEAR_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_phy_baseband_7a28_init"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_INIT_7A28"
+fields = [{ field = "INIT_CLEAR_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "initialize_phy_baseband_mode_fields"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_INIT_7CD0"
+fields = [
+    { field = "INIT_LOW_UNKNOWN", source-bit-offset = 0 },
+    { field = "INIT_LOW_UNKNOWN_1", source-bit-offset = 1 },
+    { field = "INIT_LOW_BIT_2_UNKNOWN", source-bit-offset = 2 },
+    { field = "INIT_LOW_UNKNOWN_3", source-bit-offset = 3 },
+    { field = "INIT_HIGH_UNKNOWN", source-bit-offset = 4 },
+]
+value = 0xff
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_phy_baseband_tx_pa_init"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_TX_PA_CONTROL"
+fields = [{ field = "BASEBAND_INIT_ENABLE_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_phy_baseband_743c_low"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_INIT_743C"
+fields = [{ field = "INIT_CLEAR_LOW_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_phy_baseband_743c_high"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_INIT_743C"
+fields = [{ field = "INIT_CLEAR_HIGH_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_phy_baseband_7428_init"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_INIT_7428"
+fields = [{ field = "INIT_ENABLE_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "initialize_phy_baseband_7428_value"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_INIT_7428"
+fields = [{ field = "INIT_VALUE_UNKNOWN", source-bit-offset = 0 }]
+value = 0x15
 exposure = "facade"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]

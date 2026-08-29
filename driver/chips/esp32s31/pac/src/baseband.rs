@@ -654,77 +654,39 @@ impl RadioPhyRegisters {
 
     /// Apply the local prefix of complete rev0 ROM `phy_bb_reg_init`.
     pub fn initialize_baseband_prefix(&mut self) {
-        self.peripherals
-            .phy_baseband_config_oracle
-            .baseband_init_7400()
-            .modify(|_, w| w.init_unknown().set(3));
+        super::generated::initialize_phy_baseband_prefix(
+            &self.peripherals.phy_baseband_config_oracle,
+        );
     }
 
     /// Apply the twelve local middle edges of complete `phy_bb_reg_init`.
     pub fn initialize_baseband_middle(&mut self) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        bb.baseband_init_7808()
-            .modify(|_, w| w.init_value_unknown().set(0x60));
-        bb.baseband_init_78dc()
-            .modify(|_, w| w.init_value_unknown().set(2));
-        bb.baseband_init_78e4()
-            .modify(|_, w| w.init_clear_unknown().clear_bit());
-        bb.baseband_tx_pa_timing()
-            .modify(|_, w| w.baseband_init_clear_unknown().set(0));
-        bb.baseband_init_790c()
-            .modify(|_, w| w.init_clear_unknown().clear_bit());
-        bb.baseband_init_7ca8()
-            .modify(|_, w| w.init_enable_unknown().set_bit());
-        bb.baseband_init_7980()
-            .modify(|_, w| w.init_clear_unknown().clear_bit());
+        super::generated::initialize_phy_baseband_7808(bb);
+        super::generated::initialize_phy_baseband_78dc(bb);
+        super::generated::clear_phy_baseband_78e4(bb);
+        super::generated::clear_phy_baseband_tx_pa_timing_init(bb);
+        super::generated::clear_phy_baseband_790c_init(bb);
+        super::generated::enable_phy_baseband_7ca8_init(bb);
+        super::generated::clear_phy_baseband_7980_init(bb);
 
         // Complete ROM updates the adjacent mode bits through separate reads.
-        bb.baseband_init_7890()
-            .modify(|_, w| w.he_ru26_good_response_disable().clear_bit());
-        bb.baseband_init_7890()
-            .modify(|_, w| w.he_ru26_good_response_enable().set_bit());
-        bb.baseband_init_7a28()
-            .modify(|_, w| w.init_clear_unknown().clear_bit());
-        bb.baseband_init_7cd0().modify(|_, w| {
-            w.init_low_unknown()
-                .set_bit()
-                .init_low_unknown_1()
-                .set_bit()
-                .init_low_bit_2_unknown()
-                .set_bit()
-                .init_low_unknown_3()
-                .set_bit()
-                .init_high_unknown()
-                .set(0x0f)
-        });
-        bb.baseband_tx_pa_control()
-            .modify(|_, w| w.baseband_init_enable_unknown().set_bit());
+        super::generated::clear_phy_he_ru26_good_response_disable(bb);
+        super::generated::enable_phy_he_ru26_good_response(bb);
+        super::generated::clear_phy_baseband_7a28_init(bb);
+        super::generated::initialize_phy_baseband_mode_fields(bb);
+        super::generated::enable_phy_baseband_tx_pa_init(bb);
     }
 
     /// Apply the five local tail edges of complete `phy_bb_reg_init`.
     pub fn initialize_baseband_tail(&mut self) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
         // Complete ROM clears bits 7:6 and bit 8 through separate reads.
-        bb.baseband_init_743c()
-            .modify(|_, w| w.init_clear_low_unknown().set(0));
-        bb.baseband_init_743c()
-            .modify(|_, w| w.init_clear_high_unknown().clear_bit());
-        bb.baseband_init_7428()
-            .modify(|_, w| w.init_enable_unknown().set_bit());
-        bb.baseband_init_7428()
-            .modify(|_, w| w.init_value_unknown().set(0x15));
-        bb.baseband_init_7cd0().modify(|_, w| {
-            w.init_low_unknown()
-                .set_bit()
-                .init_low_unknown_1()
-                .set_bit()
-                .init_low_bit_2_unknown()
-                .set_bit()
-                .init_low_unknown_3()
-                .set_bit()
-                .init_high_unknown()
-                .set(0x0f)
-        });
+        super::generated::clear_phy_baseband_743c_low(bb);
+        super::generated::clear_phy_baseband_743c_high(bb);
+        super::generated::enable_phy_baseband_7428_init(bb);
+        super::generated::initialize_phy_baseband_7428_value(bb);
+        super::generated::initialize_phy_baseband_mode_fields(bb);
     }
 
     /// Apply the five internal-MMIO stores of complete ROM `phy_pwdet_reg_init`.

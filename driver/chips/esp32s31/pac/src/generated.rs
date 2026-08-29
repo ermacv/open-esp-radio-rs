@@ -6095,6 +6095,98 @@ pub(crate) fn configure_phy_tx_pa_on_bt_delay(registers: &crate::svd::PhyBaseban
     crate::svd::field_replace_modify::configure_phy_tx_pa_on_bt_delay(registers);
 }
 
+/// Typed bridge for the reviewed `initialize_phy_baseband_prefix` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_phy_baseband_prefix(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::initialize_phy_baseband_prefix(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_phy_baseband_7808` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_phy_baseband_7808(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::initialize_phy_baseband_7808(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_phy_baseband_78dc` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_phy_baseband_78dc(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::initialize_phy_baseband_78dc(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_baseband_78e4` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_baseband_78e4(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::clear_phy_baseband_78e4(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_baseband_tx_pa_timing_init` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_baseband_tx_pa_timing_init(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::clear_phy_baseband_tx_pa_timing_init(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_baseband_790c_init` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_baseband_790c_init(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::clear_phy_baseband_790c_init(registers);
+}
+
+/// Typed bridge for the reviewed `enable_phy_baseband_7ca8_init` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_phy_baseband_7ca8_init(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::enable_phy_baseband_7ca8_init(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_baseband_7980_init` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_baseband_7980_init(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::clear_phy_baseband_7980_init(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_baseband_7a28_init` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_baseband_7a28_init(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::clear_phy_baseband_7a28_init(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_phy_baseband_mode_fields` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_phy_baseband_mode_fields(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::initialize_phy_baseband_mode_fields(registers);
+}
+
+/// Typed bridge for the reviewed `enable_phy_baseband_tx_pa_init` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_phy_baseband_tx_pa_init(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::enable_phy_baseband_tx_pa_init(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_baseband_743c_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_baseband_743c_low(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::clear_phy_baseband_743c_low(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_baseband_743c_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_baseband_743c_high(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::clear_phy_baseband_743c_high(registers);
+}
+
+/// Typed bridge for the reviewed `enable_phy_baseband_7428_init` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_phy_baseband_7428_init(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::enable_phy_baseband_7428_init(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_phy_baseband_7428_value` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_phy_baseband_7428_value(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::initialize_phy_baseband_7428_value(registers);
+}
+
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
 #[inline]
 pub(crate) fn configure_shared_modem_low_power_timer(

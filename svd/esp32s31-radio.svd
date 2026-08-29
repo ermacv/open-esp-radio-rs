@@ -18609,14 +18609,14 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
         </register>
         <register>
           <name>OPERATIONAL_WORD_036C</name>
-          <description>Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the low four-bit argument through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Other fields remain unassigned.</description>
+          <description>Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Other fields remain unassigned.</description>
           <addressOffset>0x36C</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>LOCK_MODIFY_ARGUMENT</name>
-              <description>Four-bit positional argument cleared and then published by scheduler insert-with-lock-modify.</description>
+              <name>LOCK_MODIFY_HARDWARE_LIST_INDEX</name>
+              <description>Zero-based hardware-list index cleared and then published by scheduler insert-with-lock-modify.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>4</bitWidth>
               <writeConstraint>

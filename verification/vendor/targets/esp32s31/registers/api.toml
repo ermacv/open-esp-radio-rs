@@ -5763,29 +5763,29 @@ exposure = "facade"
 sources = ["BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK"]
 
 [[bounded-domains]]
-name = "BluetoothSchedulerLockModifyArgument"
-description = "Four-bit positional argument accepted by the reviewed scheduler lock/modify publication."
+name = "BluetoothSchedulerLockModifyHardwareListIndex"
+description = "Zero-based hardware-list index accepted by the reviewed scheduler lock/modify publication."
 min = 0
 max = 0x0f
-sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_LIST_INDEX"]
 
 [[field-replace-modifies]]
-name = "clear_bluetooth_scheduler_lock_modify_argument"
+name = "clear_bluetooth_scheduler_lock_modify_hardware_list_index"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "OPERATIONAL_WORD_036C"
-fields = [{ field = "LOCK_MODIFY_ARGUMENT", source-bit-offset = 0 }]
+fields = [{ field = "LOCK_MODIFY_HARDWARE_LIST_INDEX", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
-sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_LIST_INDEX"]
 
 [[field-replace-modifies]]
-name = "publish_bluetooth_scheduler_lock_modify_argument"
+name = "publish_bluetooth_scheduler_lock_modify_hardware_list_index"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "OPERATIONAL_WORD_036C"
-fields = [{ field = "LOCK_MODIFY_ARGUMENT", source-bit-offset = 0 }]
-domain = "BluetoothSchedulerLockModifyArgument"
+fields = [{ field = "LOCK_MODIFY_HARDWARE_LIST_INDEX", source-bit-offset = 0 }]
+domain = "BluetoothSchedulerLockModifyHardwareListIndex"
 exposure = "facade"
-sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_LIST_INDEX"]
 
 [[field-snapshot-reads]]
 name = "observe_bluetooth_scheduler_lock_modify_request"

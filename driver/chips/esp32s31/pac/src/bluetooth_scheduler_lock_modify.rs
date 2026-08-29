@@ -9,34 +9,27 @@
 #![deny(unsafe_code)]
 
 use super::{
-    BluetoothControllerSramAddress, BluetoothInterruptRegisters, BluetoothTaskRegisters,
-    device_fence,
+    BluetoothControllerSramAddress, BluetoothInterruptRegisters,
+    BluetoothSchedulerHardwareListIndex, BluetoothTaskRegisters, device_fence,
 };
 
 /// One validated scheduler insert-with-lock-modify request.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothSchedulerLockModifyRequest {
     address: BluetoothControllerSramAddress,
-    argument: u8,
-}
-
-/// Why a scheduler lock/modify request cannot be represented.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothSchedulerLockModifyRequestError {
-    /// The reviewed argument field is only four bits wide.
-    ArgumentOutsideLowNibble,
+    hardware_list_index: BluetoothSchedulerHardwareListIndex,
 }
 
 impl BluetoothSchedulerLockModifyRequest {
-    /// Validate the four-bit argument associated with one controller address.
+    /// Bind one controller address to its scheduler hardware list.
     pub const fn new(
         address: BluetoothControllerSramAddress,
-        argument: u8,
-    ) -> Result<Self, BluetoothSchedulerLockModifyRequestError> {
-        if argument > 0x0f {
-            return Err(BluetoothSchedulerLockModifyRequestError::ArgumentOutsideLowNibble);
+        hardware_list_index: BluetoothSchedulerHardwareListIndex,
+    ) -> Self {
+        Self {
+            address,
+            hardware_list_index,
         }
-        Ok(Self { address, argument })
     }
 
     /// Return the validated CPU address without granting dereference access.
@@ -44,9 +37,9 @@ impl BluetoothSchedulerLockModifyRequest {
         self.address
     }
 
-    /// Return the validated positional four-bit argument.
-    pub const fn argument(self) -> u8 {
-        self.argument
+    /// Return the hardware list selected for this item publication.
+    pub const fn hardware_list_index(self) -> BluetoothSchedulerHardwareListIndex {
+        self.hardware_list_index
     }
 }
 
@@ -176,8 +169,8 @@ impl BluetoothSchedulerLockModifyPublished {
 }
 
 trait BluetoothSchedulerLockModifyControl {
-    fn clear_operational_argument(&mut self);
-    fn publish_operational_argument(&mut self, argument: u8);
+    fn clear_hardware_list_index(&mut self);
+    fn publish_hardware_list_index(&mut self, index: BluetoothSchedulerHardwareListIndex);
     fn publish_request(&mut self, address: BluetoothControllerSramAddress);
     fn order_after_publication(&mut self);
 }
@@ -187,17 +180,18 @@ struct HardwareBluetoothSchedulerLockModifyControl<'registers> {
 }
 
 impl BluetoothSchedulerLockModifyControl for HardwareBluetoothSchedulerLockModifyControl<'_> {
-    fn clear_operational_argument(&mut self) {
-        super::generated::clear_bluetooth_scheduler_lock_modify_argument(self.registers);
+    fn clear_hardware_list_index(&mut self) {
+        super::generated::clear_bluetooth_scheduler_lock_modify_hardware_list_index(self.registers);
     }
 
-    fn publish_operational_argument(&mut self, argument: u8) {
-        let argument =
-            super::generated::BluetoothSchedulerLockModifyArgument::new(u32::from(argument))
-                .expect("validated scheduler lock/modify argument fits its generated PAC domain");
-        super::generated::publish_bluetooth_scheduler_lock_modify_argument(
+    fn publish_hardware_list_index(&mut self, index: BluetoothSchedulerHardwareListIndex) {
+        let index = super::generated::BluetoothSchedulerLockModifyHardwareListIndex::new(
+            u32::from(index.get()),
+        )
+        .expect("typed scheduler hardware-list index fits its generated PAC domain");
+        super::generated::publish_bluetooth_scheduler_lock_modify_hardware_list_index(
             self.registers,
-            argument,
+            index,
         );
     }
 
@@ -218,8 +212,8 @@ fn execute_scheduler_lock_modify_publication(
     control: &mut impl BluetoothSchedulerLockModifyControl,
     request: BluetoothSchedulerLockModifyRequest,
 ) -> BluetoothSchedulerLockModifyPublished {
-    control.clear_operational_argument();
-    control.publish_operational_argument(request.argument());
+    control.clear_hardware_list_index();
+    control.publish_hardware_list_index(request.hardware_list_index());
 
     control.publish_request(request.address());
     control.order_after_publication();
@@ -278,20 +272,9 @@ mod tests {
 
     use super::{
         BluetoothSchedulerLockModifyControl, BluetoothSchedulerLockModifyObservation,
-        BluetoothSchedulerLockModifyRequest, BluetoothSchedulerLockModifyRequestError,
-        execute_scheduler_lock_modify_publication,
+        BluetoothSchedulerLockModifyRequest, execute_scheduler_lock_modify_publication,
     };
-    use crate::BluetoothControllerSramAddress;
-
-    #[test]
-    fn request_validation_rejects_an_argument_outside_the_protocol_field() {
-        let address = BluetoothControllerSramAddress::new(0x2f12_3454)
-            .expect("test address is representable");
-        assert_eq!(
-            BluetoothSchedulerLockModifyRequest::new(address, 0x10),
-            Err(BluetoothSchedulerLockModifyRequestError::ArgumentOutsideLowNibble)
-        );
-    }
+    use crate::{BluetoothControllerSramAddress, BluetoothSchedulerHardwareListIndex};
 
     #[test]
     fn wait_requires_busy_and_start_simultaneously() {
@@ -327,8 +310,8 @@ mod tests {
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum Operation {
-        ClearOperationalArgument,
-        PublishOperationalArgument(u8),
+        ClearHardwareListIndex,
+        PublishHardwareListIndex(BluetoothSchedulerHardwareListIndex),
         PublishRequest(BluetoothControllerSramAddress),
         DeviceFence,
     }
@@ -338,13 +321,13 @@ mod tests {
     }
 
     impl BluetoothSchedulerLockModifyControl for Recorder {
-        fn clear_operational_argument(&mut self) {
-            self.operations.push(Operation::ClearOperationalArgument);
+        fn clear_hardware_list_index(&mut self) {
+            self.operations.push(Operation::ClearHardwareListIndex);
         }
 
-        fn publish_operational_argument(&mut self, argument: u8) {
+        fn publish_hardware_list_index(&mut self, index: BluetoothSchedulerHardwareListIndex) {
             self.operations
-                .push(Operation::PublishOperationalArgument(argument));
+                .push(Operation::PublishHardwareListIndex(index));
         }
 
         fn publish_request(&mut self, address: BluetoothControllerSramAddress) {
@@ -360,8 +343,9 @@ mod tests {
     fn publication_uses_two_fresh_rmw_edges_before_request_and_fence() {
         let address = BluetoothControllerSramAddress::new(0x2f00_0040)
             .expect("test address is representable");
-        let request = BluetoothSchedulerLockModifyRequest::new(address, 6)
-            .expect("test argument is representable");
+        let index =
+            BluetoothSchedulerHardwareListIndex::new(6).expect("test list index is representable");
+        let request = BluetoothSchedulerLockModifyRequest::new(address, index);
         let mut recorder = Recorder {
             operations: Vec::new(),
         };
@@ -371,8 +355,8 @@ mod tests {
         assert_eq!(
             recorder.operations,
             [
-                Operation::ClearOperationalArgument,
-                Operation::PublishOperationalArgument(6),
+                Operation::ClearHardwareListIndex,
+                Operation::PublishHardwareListIndex(index),
                 Operation::PublishRequest(address),
                 Operation::DeviceFence,
             ]

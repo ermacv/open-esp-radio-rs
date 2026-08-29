@@ -41124,7 +41124,7 @@ pub mod bluetooth_controller_core {
         pub fn hal_init_slot_map_iter(&self) -> impl Iterator<Item = &HalInitSlotMap> {
             self.hal_init_slot_map.iter()
         }
-        #[doc = "0x36c - Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the low four-bit argument through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Other fields remain unassigned."]
+        #[doc = "0x36c - Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Other fields remain unassigned."]
         #[inline(always)]
         pub const fn operational_word_036c(&self) -> &OperationalWord036c {
             &self.operational_word_036c
@@ -44145,36 +44145,37 @@ pub mod bluetooth_controller_core {
         #[doc = "`read()` method returns [`operational_status_0324::R`](R) reader structure"]
         impl crate::Readable for OperationalStatus0324Spec {}
     }
-    #[doc = "OPERATIONAL_WORD_036C (rw) register accessor: Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the low four-bit argument through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Other fields remain unassigned.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_word_036c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_word_036c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@operational_word_036c`] module"]
+    #[doc = "OPERATIONAL_WORD_036C (rw) register accessor: Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Other fields remain unassigned.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_word_036c::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_word_036c::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@operational_word_036c`] module"]
     #[doc(alias = "OPERATIONAL_WORD_036C")]
     pub type OperationalWord036c = crate::Reg<operational_word_036c::OperationalWord036cSpec>;
-    #[doc = "Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the low four-bit argument through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Other fields remain unassigned."]
+    #[doc = "Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Other fields remain unassigned."]
     pub mod operational_word_036c {
         #[doc = "Register `OPERATIONAL_WORD_036C` reader"]
         pub type R = crate::R<OperationalWord036cSpec>;
         #[doc = "Register `OPERATIONAL_WORD_036C` writer"]
         pub type W = crate::W<OperationalWord036cSpec>;
-        #[doc = "Field `LOCK_MODIFY_ARGUMENT` reader - Four-bit positional argument cleared and then published by scheduler insert-with-lock-modify."]
-        pub type LockModifyArgumentR = crate::FieldReader;
-        #[doc = "Field `LOCK_MODIFY_ARGUMENT` writer - Four-bit positional argument cleared and then published by scheduler insert-with-lock-modify."]
-        pub type LockModifyArgumentW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        #[doc = "Field `LOCK_MODIFY_HARDWARE_LIST_INDEX` reader - Zero-based hardware-list index cleared and then published by scheduler insert-with-lock-modify."]
+        pub type LockModifyHardwareListIndexR = crate::FieldReader;
+        #[doc = "Field `LOCK_MODIFY_HARDWARE_LIST_INDEX` writer - Zero-based hardware-list index cleared and then published by scheduler insert-with-lock-modify."]
+        pub type LockModifyHardwareListIndexW<'a, REG> =
+            crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:3 - Four-bit positional argument cleared and then published by scheduler insert-with-lock-modify."]
+            #[doc = "Bits 0:3 - Zero-based hardware-list index cleared and then published by scheduler insert-with-lock-modify."]
             #[inline(always)]
-            pub fn lock_modify_argument(&self) -> LockModifyArgumentR {
-                LockModifyArgumentR::new((self.bits & 0x0f) as u8)
+            pub fn lock_modify_hardware_list_index(&self) -> LockModifyHardwareListIndexR {
+                LockModifyHardwareListIndexR::new((self.bits & 0x0f) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 0:3 - Four-bit positional argument cleared and then published by scheduler insert-with-lock-modify."]
+            #[doc = "Bits 0:3 - Zero-based hardware-list index cleared and then published by scheduler insert-with-lock-modify."]
             #[inline(always)]
-            pub fn lock_modify_argument(
+            pub fn lock_modify_hardware_list_index(
                 &mut self,
-            ) -> LockModifyArgumentW<'_, OperationalWord036cSpec> {
-                LockModifyArgumentW::new(self, 0)
+            ) -> LockModifyHardwareListIndexW<'_, OperationalWord036cSpec> {
+                LockModifyHardwareListIndexW::new(self, 0)
             }
         }
-        #[doc = "Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the low four-bit argument through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Other fields remain unassigned.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_word_036c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_word_036c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Scheduler operational word shared by several controller paths. The scheduler insert-with-lock-modify path clears, then publishes, the zero-based hardware-list index through two distinct fresh-read field updates before publishing SCHEDULER_LOCK_MODIFY_REQUEST. Other fields remain unassigned.\n\nYou can [`read`](crate::Reg::read) this register and get [`operational_word_036c::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`operational_word_036c::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct OperationalWord036cSpec;
         impl crate::RegisterSpec for OperationalWord036cSpec {
             type Ux = u32;
@@ -66124,9 +66125,9 @@ pub mod field_replace_modify {
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields [LOCK_MODIFY_ARGUMENT] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields [LOCK_MODIFY_HARDWARE_LIST_INDEX] from one reviewed logical image while preserving every other bit.
     #[inline]
-    pub fn clear_bluetooth_scheduler_lock_modify_argument(
+    pub fn clear_bluetooth_scheduler_lock_modify_hardware_list_index(
         registers: &crate::BluetoothControllerCore,
     ) {
         registers.operational_word_036c().modify(|_, writer| {
@@ -66135,15 +66136,15 @@ pub mod field_replace_modify {
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe {
                 writer
-                    .lock_modify_argument()
+                    .lock_modify_hardware_list_index()
                     .bits((input & 0x0000000f) as u8)
             }
         });
     }
 
-    /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields [LOCK_MODIFY_ARGUMENT] from one reviewed logical image while preserving every other bit.
+    /// Replace BLUETOOTH_CONTROLLER_CORE.OPERATIONAL_WORD_036C fields [LOCK_MODIFY_HARDWARE_LIST_INDEX] from one reviewed logical image while preserving every other bit.
     #[inline]
-    pub fn publish_bluetooth_scheduler_lock_modify_argument(
+    pub fn publish_bluetooth_scheduler_lock_modify_hardware_list_index(
         registers: &crate::BluetoothControllerCore,
         input: u32,
     ) {
@@ -66152,7 +66153,7 @@ pub mod field_replace_modify {
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe {
                 writer
-                    .lock_modify_argument()
+                    .lock_modify_hardware_list_index()
                     .bits((input & 0x0000000f) as u8)
             }
         });

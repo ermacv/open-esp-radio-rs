@@ -1652,11 +1652,11 @@ impl PhyRxDcoCalibrationControl {
     }
 }
 
-/// Four-bit positional argument accepted by the reviewed scheduler lock/modify publication.
+/// Zero-based hardware-list index accepted by the reviewed scheduler lock/modify publication.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct BluetoothSchedulerLockModifyArgument(u32);
+pub struct BluetoothSchedulerLockModifyHardwareListIndex(u32);
 
-impl BluetoothSchedulerLockModifyArgument {
+impl BluetoothSchedulerLockModifyHardwareListIndex {
     pub const MIN: u32 = 0x00000000;
     pub const MAX: u32 = 0x0000000f;
 
@@ -5141,21 +5141,23 @@ pub(crate) fn close_frontend_baseband_control(registers: &crate::svd::PhyClockOr
     crate::svd::field_replace_modify::close_frontend_baseband_control(registers);
 }
 
-/// Typed bridge for the reviewed `clear_bluetooth_scheduler_lock_modify_argument` fixed field-replacement transaction.
+/// Typed bridge for the reviewed `clear_bluetooth_scheduler_lock_modify_hardware_list_index` fixed field-replacement transaction.
 #[inline]
-pub(crate) fn clear_bluetooth_scheduler_lock_modify_argument(
+pub(crate) fn clear_bluetooth_scheduler_lock_modify_hardware_list_index(
     registers: &crate::svd::BluetoothControllerCore,
 ) {
-    crate::svd::field_replace_modify::clear_bluetooth_scheduler_lock_modify_argument(registers);
+    crate::svd::field_replace_modify::clear_bluetooth_scheduler_lock_modify_hardware_list_index(
+        registers,
+    );
 }
 
-/// Typed bridge for the reviewed `publish_bluetooth_scheduler_lock_modify_argument` field-replacement transaction.
+/// Typed bridge for the reviewed `publish_bluetooth_scheduler_lock_modify_hardware_list_index` field-replacement transaction.
 #[inline]
-pub(crate) fn publish_bluetooth_scheduler_lock_modify_argument(
+pub(crate) fn publish_bluetooth_scheduler_lock_modify_hardware_list_index(
     registers: &crate::svd::BluetoothControllerCore,
-    value: BluetoothSchedulerLockModifyArgument,
+    value: BluetoothSchedulerLockModifyHardwareListIndex,
 ) {
-    crate::svd::field_replace_modify::publish_bluetooth_scheduler_lock_modify_argument(
+    crate::svd::field_replace_modify::publish_bluetooth_scheduler_lock_modify_hardware_list_index(
         registers,
         value.get(),
     );

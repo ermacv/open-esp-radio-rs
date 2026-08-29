@@ -16,7 +16,8 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared, BluetoothDtmPositionalEventWords,
 };
 use open_esp_radio_esp32s31_hal::{
-    BluetoothControllerSramAddress, BluetoothSchedulerLockModifyRequest,
+    BluetoothControllerSramAddress, BluetoothSchedulerHardwareListIndex,
+    BluetoothSchedulerLockModifyRequest,
 };
 
 use crate::{
@@ -367,11 +368,17 @@ impl<Role> BluetoothDtmSchedulerBookkeepingPrepared<Role> {
         self.memory.scheduler_item_address()
     }
 
-    /// Form the reviewed argument-zero DTM insertion request for this graph.
+    /// Hardware list assigned to the zeroed DTM scheduler context.
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        BluetoothSchedulerHardwareListIndex::ZERO
+    }
+
+    /// Form the reviewed list-zero DTM insertion request for this graph.
     ///
-    /// Complete DTM call-path evidence supplies positional argument zero to
-    /// the common forced-insertion path. This method performs no MMIO and does
-    /// not change CPU ownership.
+    /// The separately allocated 0x48-byte DTM scheduler context is zeroed and
+    /// embeds its scheduler manager at +0x2c. The manager hardware-list index
+    /// at context +0x44 is therefore zero. This method performs no MMIO and
+    /// does not change CPU ownership.
     ///
     /// This remains crate-private until the lower memory layer represents the
     /// complete hardware-consumed descriptor and publication boundary. It is
@@ -384,10 +391,10 @@ impl<Role> BluetoothDtmSchedulerBookkeepingPrepared<Role> {
     pub(crate) const fn scheduler_lock_modify_request(
         &self,
     ) -> BluetoothSchedulerLockModifyRequest {
-        match BluetoothSchedulerLockModifyRequest::new(self.scheduler_item_address(), 0) {
-            Ok(request) => request,
-            Err(_) => unreachable!(),
-        }
+        BluetoothSchedulerLockModifyRequest::new(
+            self.scheduler_item_address(),
+            self.hardware_list_index(),
+        )
     }
 
     /// Cancel before publication and recover the prepared event words.
@@ -425,6 +432,7 @@ mod tests {
         BluetoothDtmBoundSramLinkAddress, BluetoothDtmMemoryGraphModelAddress,
         BluetoothDtmMemoryGraphStorage, BluetoothDtmSchedulerAllocationConfig,
     };
+    use open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareListIndex;
     use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
 
     use super::{BluetoothDtmReviewedEventWordsPlan, BluetoothDtmReviewedEventWordsPlanError};
@@ -539,7 +547,14 @@ mod tests {
             request.address(),
             scheduler_prepared.scheduler_item_address()
         );
-        assert_eq!(request.argument(), 0);
+        assert_eq!(
+            request.hardware_list_index(),
+            scheduler_prepared.hardware_list_index()
+        );
+        assert_eq!(
+            request.hardware_list_index(),
+            BluetoothSchedulerHardwareListIndex::ZERO
+        );
         let prepared = scheduler_prepared.cancel();
         let words = prepared.words();
         assert_eq!(words.link_state().word_00, 0x8ff1_c057);

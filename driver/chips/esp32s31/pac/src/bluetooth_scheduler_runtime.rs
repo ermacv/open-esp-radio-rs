@@ -178,7 +178,10 @@ impl BluetoothSchedulerSoftwareListRemovalObservation {
 pub struct BluetoothSchedulerHardwareListIndex(u8);
 
 impl BluetoothSchedulerHardwareListIndex {
-    /// Validate one positional hardware-list index.
+    /// The first scheduler hardware list.
+    pub const ZERO: Self = Self(0);
+
+    /// Validate one zero-based hardware-list index.
     pub const fn new(index: u8) -> Option<Self> {
         if index < 16 { Some(Self(index)) } else { None }
     }

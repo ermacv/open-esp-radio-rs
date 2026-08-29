@@ -235,8 +235,8 @@ pub struct BluetoothSchedulerLockModifyPublicationResult {
 }
 
 impl BluetoothSchedulerLockModifyPublicationResult {
-    /// Return the exact item identity and argument carried by this completed
-    /// publication transaction.
+    /// Return the exact item identity and hardware-list index carried by this
+    /// completed publication transaction.
     ///
     /// Retaining the request prevents a later scheduler stage from combining
     /// a result with a different prepared graph. It does not turn the
@@ -441,9 +441,9 @@ mod tests {
         BluetoothSchedulerLockModifyRequest::new(
             BluetoothControllerSramAddress::new(0x2f00_0040)
                 .expect("test address is representable"),
-            6,
+            open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareListIndex::new(6)
+                .expect("test list index is representable"),
         )
-        .expect("test argument fits")
     }
 
     #[test]

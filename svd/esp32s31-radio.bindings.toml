@@ -4670,8 +4670,8 @@ scope = []
 register-method = "operational_word_036c"
 
 [[registers.fields]]
-svd-name = "LOCK_MODIFY_ARGUMENT"
-method = "lock_modify_argument"
+svd-name = "LOCK_MODIFY_HARDWARE_LIST_INDEX"
+method = "lock_modify_hardware_list_index"
 bit-offset = 0
 bit-width = 4
 access = "read-write"

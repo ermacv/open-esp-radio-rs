@@ -124,7 +124,7 @@ pub use bluetooth_scheduler::{
 pub use bluetooth_scheduler_lock_modify::{
     BluetoothSchedulerLockModifyInterruptObservation, BluetoothSchedulerLockModifyObservation,
     BluetoothSchedulerLockModifyPublished, BluetoothSchedulerLockModifyRequest,
-    BluetoothSchedulerLockModifyRequestError, BluetoothSchedulerLockModifyTaskObservation,
+    BluetoothSchedulerLockModifyTaskObservation,
 };
 pub use bluetooth_scheduler_runtime::{
     BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,

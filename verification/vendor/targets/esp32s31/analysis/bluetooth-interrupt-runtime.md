@@ -165,8 +165,9 @@ the exact 16-bit `SCHEDULER_FINISHED_LIST_STATUS` mask while keeping the
 destination word positional as `SCHEDULER_FINISHED_LIST_REPORT`. The Bluetooth
 core can drain one list bit per bounded event step; it does not yet map a bit
 to an affine item or callback. The separately retained current hardware-list
-index narrows that mapping problem but is not a completion token and is not
-joined to a finished-list bit without further evidence.
+index and every finished-list bit use the same `0..16` hardware-list domain.
+A finished bit identifies a list, while the current index identifies the
+active list at a distinct temporal point; neither selects an affine item.
 
 Complete default BLE registration review found exactly three manager-0
 consumers. `r_sym_ble_uwrf0kLZsRbzFJ7u8SEr` owns selector 6,
@@ -215,9 +216,8 @@ them.
   selector-4 reference-state-driven scheduler retry;
 - an affine scheduler item lifecycle and bounded completion queue that replace
   the recovered software intrusive list, including the semantic
-  relation among the current hardware-list index, finished-list bits and
-  affine items, plus the status-to-finished-list edge, memory fence, abort and
-  shutdown drain;
+  item ordering/selection within each hardware list, plus the status-to-
+  finished-list edge, memory fence, abort and shutdown drain;
 - executor-neutral waker registration with a register-then-recheck poll
   protocol and a quiescent teardown barrier;
 - live same-core composition of the staged interrupt-bank, scheduler runtime

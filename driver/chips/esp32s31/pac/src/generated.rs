@@ -2611,6 +2611,30 @@ pub(crate) fn complete_agc_baseband_update_mode(registers: &crate::svd::PhyAgcOr
     crate::svd::field_replace_modify::complete_agc_baseband_update_mode(registers);
 }
 
+/// Typed bridge for the reviewed `disable_phy_agc` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn disable_phy_agc(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::disable_phy_agc(registers);
+}
+
+/// Typed bridge for the reviewed `enable_phy_agc` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_phy_agc(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::enable_phy_agc(registers);
+}
+
+/// Typed bridge for the reviewed `raise_phy_agc_enable_pulse` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn raise_phy_agc_enable_pulse(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::raise_phy_agc_enable_pulse(registers);
+}
+
+/// Typed bridge for the reviewed `lower_phy_agc_enable_pulse` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn lower_phy_agc_enable_pulse(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::lower_phy_agc_enable_pulse(registers);
+}
+
 /// Typed bridge for the reviewed `clear_bluetooth_memory_list_1_pointer_a` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_bluetooth_memory_list_1_pointer_a(

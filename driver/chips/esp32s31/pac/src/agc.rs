@@ -67,17 +67,13 @@ impl RadioPhyRegisters {
     pub fn set_agc_enabled(&mut self, enabled: bool) {
         let agc = &self.peripherals.phy_agc_oracle;
         if !enabled {
-            agc.agc_antenna_control()
-                .modify(|_, w| w.agc_disable_unknown().set_bit());
+            super::generated::disable_phy_agc(agc);
             return;
         }
 
-        agc.agc_antenna_control()
-            .modify(|_, w| w.agc_disable_unknown().clear_bit());
-        agc.agc_shared_control()
-            .modify(|_, w| w.pulse_unknown().set_bit());
-        agc.agc_shared_control()
-            .modify(|_, w| w.pulse_unknown().clear_bit());
+        super::generated::enable_phy_agc(agc);
+        super::generated::raise_phy_agc_enable_pulse(agc);
+        super::generated::lower_phy_agc_enable_pulse(agc);
     }
 
     /// Publish both complete pinned RX-compensation fields in order.

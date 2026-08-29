@@ -1970,6 +1970,42 @@ register = "RX_11B_PATH_CONTROL_1"
 value = 0xb2208553
 sources = ["ROM_REV0_PHY_AGC"]
 
+[[field-replace-modifies]]
+name = "disable_phy_agc"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_ANTENNA_CONTROL"
+fields = [{ field = "AGC_DISABLE_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_phy_agc"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_ANTENNA_CONTROL"
+fields = [{ field = "AGC_DISABLE_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "raise_phy_agc_enable_pulse"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_SHARED_CONTROL"
+fields = [{ field = "PULSE_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "lower_phy_agc_enable_pulse"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_SHARED_CONTROL"
+fields = [{ field = "PULSE_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
 [[fixed-register-images]]
 name = "initialize_rf_rx_saturation_config"
 peripheral = "PHY_AGC_ORACLE"

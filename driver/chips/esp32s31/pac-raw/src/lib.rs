@@ -68499,6 +68499,118 @@ pub mod field_replace_modify {
             unsafe { writer.init_value_unknown().bits((input & 0x0000003f) as u8) }
         });
     }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields [CALIBRATION_FIELD_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_phy_power_detector_calibration(registers: &crate::PhyBasebandConfigOracle) {
+        registers.power_detector_control().modify(|_, writer| {
+            let input = 0x00000050_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .calibration_field_unknown()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields [INITIALIZATION_MODE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_phy_power_detector_mode(registers: &crate::PhyBasebandConfigOracle) {
+        registers.power_detector_control().modify(|_, writer| {
+            let input = 0x00000002_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .initialization_mode_unknown()
+                    .bits((input & 0x00000007) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields [ENABLE_CLEAR_MIDDLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_phy_power_detector_enable_middle(registers: &crate::PhyBasebandConfigOracle) {
+        registers.power_detector_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .enable_clear_middle_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields [ENABLE_CLEAR_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_phy_power_detector_enable_low(registers: &crate::PhyBasebandConfigOracle) {
+        registers.power_detector_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .enable_clear_low_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields [ENABLE_CLEAR_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_phy_power_detector_enable_high(registers: &crate::PhyBasebandConfigOracle) {
+        registers.power_detector_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .enable_clear_high_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_SAR_CONTROL_STATUS fields [SAR_MODE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_phy_power_detector_sar_mode(registers: &crate::PhyBasebandConfigOracle) {
+        registers
+            .power_detector_sar_control_status()
+            .modify(|_, writer| {
+                let input = 0x00000003_u32;
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                unsafe { writer.sar_mode_unknown().bits((input & 0x00000003) as u8) }
+            });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_SAR_CONTROL_STATUS fields [SAR_CONFIG_CLEAR_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_phy_power_detector_sar_config(registers: &crate::PhyBasebandConfigOracle) {
+        registers
+            .power_detector_sar_control_status()
+            .modify(|_, writer| {
+                let input = 0x00000000_u32;
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                writer
+                    .sar_config_clear_unknown()
+                    .bit((input & 0x00000001) != 0)
+            });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields [BACKGROUND_CONTROL_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_phy_power_detector_background_control(
+        registers: &crate::PhyBasebandConfigOracle,
+    ) {
+        registers.power_detector_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .background_control_enable_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.

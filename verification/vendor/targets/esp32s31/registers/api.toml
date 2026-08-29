@@ -8538,3 +8538,75 @@ fields = [{ field = "INIT_VALUE_UNKNOWN", source-bit-offset = 0 }]
 value = 0x15
 exposure = "facade"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "initialize_phy_power_detector_calibration"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_CONTROL"
+fields = [{ field = "CALIBRATION_FIELD_UNKNOWN", source-bit-offset = 0 }]
+value = 0x50
+exposure = "facade"
+sources = ["ROM_REV0_PHY_POWER_DETECTOR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "initialize_phy_power_detector_mode"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_CONTROL"
+fields = [{ field = "INITIALIZATION_MODE_UNKNOWN", source-bit-offset = 0 }]
+value = 2
+exposure = "facade"
+sources = ["ROM_REV0_PHY_POWER_DETECTOR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_phy_power_detector_enable_middle"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_CONTROL"
+fields = [{ field = "ENABLE_CLEAR_MIDDLE_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_POWER_DETECTOR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_phy_power_detector_enable_low"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_CONTROL"
+fields = [{ field = "ENABLE_CLEAR_LOW_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_POWER_DETECTOR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_phy_power_detector_enable_high"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_CONTROL"
+fields = [{ field = "ENABLE_CLEAR_HIGH_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_POWER_DETECTOR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_phy_power_detector_sar_mode"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_SAR_CONTROL_STATUS"
+fields = [{ field = "SAR_MODE_UNKNOWN", source-bit-offset = 0 }]
+value = 3
+exposure = "facade"
+sources = ["ROM_REV0_PHY_POWER_DETECTOR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_phy_power_detector_sar_config"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_SAR_CONTROL_STATUS"
+fields = [{ field = "SAR_CONFIG_CLEAR_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_POWER_DETECTOR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_phy_power_detector_background_control"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_CONTROL"
+fields = [{ field = "BACKGROUND_CONTROL_ENABLE_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_POWER_DETECTOR", "S31_ESP_PACS_SVD"]

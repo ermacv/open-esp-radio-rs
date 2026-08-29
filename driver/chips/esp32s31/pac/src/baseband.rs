@@ -697,34 +697,28 @@ impl RadioPhyRegisters {
         let bb = &self.peripherals.phy_baseband_config_oracle;
         super::svd::fixed_register_image::initialize_power_detector_table_0(bb);
         super::svd::fixed_register_image::initialize_power_detector_table_1(bb);
-        bb.power_detector_control()
-            .modify(|_, w| w.calibration_field_unknown().set(0x50));
+        super::generated::initialize_phy_power_detector_calibration(bb);
         super::svd::zero_based_field_write::power_detector_reference(bb, 0xaaaa);
-        bb.power_detector_control()
-            .modify(|_, w| w.initialization_mode_unknown().set(2));
+        super::generated::initialize_phy_power_detector_mode(bb);
         Ok(())
     }
 
     /// Apply the internal-MMIO portion of complete ROM `phy_en_pwdet`.
     pub fn configure_power_detector_enabled(&mut self) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        let control = bb.power_detector_control();
-        control.modify(|_, w| w.enable_clear_middle_unknown().clear_bit());
-        control.modify(|_, w| w.enable_clear_low_unknown().clear_bit());
-        control.modify(|_, w| w.enable_clear_high_unknown().clear_bit());
-        bb.power_detector_sar_control_status()
-            .modify(|_, w| w.sar_mode_unknown().set(3));
-        bb.power_detector_sar_control_status()
-            .modify(|_, w| w.sar_config_clear_unknown().clear_bit());
+        super::generated::clear_phy_power_detector_enable_middle(bb);
+        super::generated::clear_phy_power_detector_enable_low(bb);
+        super::generated::clear_phy_power_detector_enable_high(bb);
+        super::generated::enable_phy_power_detector_sar_mode(bb);
+        super::generated::clear_phy_power_detector_sar_config(bb);
         super::svd::zero_based_field_write::power_detector_reference(bb, 0x016a);
     }
 
     /// Set the final background-control bit after PWDET enable.
     pub fn enable_power_detector_background_control(&mut self) {
-        self.peripherals
-            .phy_baseband_config_oracle
-            .power_detector_control()
-            .modify(|_, w| w.background_control_enable_unknown().set_bit());
+        super::generated::enable_phy_power_detector_background_control(
+            &self.peripherals.phy_baseband_config_oracle,
+        );
     }
 
     /// Save and replace the two fields owned by TX-DC PWDET calibration.

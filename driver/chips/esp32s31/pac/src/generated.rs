@@ -6187,6 +6187,62 @@ pub(crate) fn initialize_phy_baseband_7428_value(registers: &crate::svd::PhyBase
     crate::svd::field_replace_modify::initialize_phy_baseband_7428_value(registers);
 }
 
+/// Typed bridge for the reviewed `initialize_phy_power_detector_calibration` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_phy_power_detector_calibration(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::initialize_phy_power_detector_calibration(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_phy_power_detector_mode` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_phy_power_detector_mode(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::initialize_phy_power_detector_mode(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_power_detector_enable_middle` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_power_detector_enable_middle(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::clear_phy_power_detector_enable_middle(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_power_detector_enable_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_power_detector_enable_low(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::clear_phy_power_detector_enable_low(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_power_detector_enable_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_power_detector_enable_high(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::clear_phy_power_detector_enable_high(registers);
+}
+
+/// Typed bridge for the reviewed `enable_phy_power_detector_sar_mode` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_phy_power_detector_sar_mode(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::enable_phy_power_detector_sar_mode(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_power_detector_sar_config` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_power_detector_sar_config(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::clear_phy_power_detector_sar_config(registers);
+}
+
+/// Typed bridge for the reviewed `enable_phy_power_detector_background_control` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_phy_power_detector_background_control(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::enable_phy_power_detector_background_control(registers);
+}
+
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
 #[inline]
 pub(crate) fn configure_shared_modem_low_power_timer(

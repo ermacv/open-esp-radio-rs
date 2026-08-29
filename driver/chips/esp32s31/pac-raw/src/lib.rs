@@ -58843,6 +58843,36 @@ pub mod field_read {
             .calibration_field_unknown()
             .bits()
     }
+
+    /// Read `PHY_BASEBAND_CONFIG_ORACLE`.`TX_DC_MEASUREMENT_CONTROL_STATUS`.`MEASUREMENT_READY` without exposing its register block.
+    #[inline]
+    pub fn observe_phy_tx_dc_measurement_ready(registers: &crate::PhyBasebandConfigOracle) -> bool {
+        registers
+            .tx_dc_measurement_control_status()
+            .read()
+            .measurement_ready()
+            .bit()
+    }
+
+    /// Read `PHY_BASEBAND_CONFIG_ORACLE`.`TX_DC_MEASUREMENT_CONTROL_STATUS`.`I_COMPARATOR_HIGH` without exposing its register block.
+    #[inline]
+    pub fn observe_phy_tx_dc_i_comparator_high(registers: &crate::PhyBasebandConfigOracle) -> bool {
+        registers
+            .tx_dc_measurement_control_status()
+            .read()
+            .i_comparator_high()
+            .bit()
+    }
+
+    /// Read `PHY_BASEBAND_CONFIG_ORACLE`.`TX_DC_MEASUREMENT_CONTROL_STATUS`.`Q_COMPARATOR_HIGH` without exposing its register block.
+    #[inline]
+    pub fn observe_phy_tx_dc_q_comparator_high(registers: &crate::PhyBasebandConfigOracle) -> bool {
+        registers
+            .tx_dc_measurement_control_status()
+            .read()
+            .q_comparator_high()
+            .bit()
+    }
 }
 
 /// Safe same-sample observations through reviewed SVD fields.
@@ -69011,6 +69041,58 @@ pub mod field_replace_modify {
             // fits its named SVD field; no whole-register image crosses this API.
             writer.tone_enable_or_arm().bit((input & 0x00000001) != 0)
         });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_DC_MEASUREMENT_CONTROL_STATUS fields [MEASUREMENT_ENABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_phy_tx_dc_measurement(registers: &crate::PhyBasebandConfigOracle) {
+        registers
+            .tx_dc_measurement_control_status()
+            .modify(|_, writer| {
+                let input = 0x00000001_u32;
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                writer.measurement_enable().bit((input & 0x00000001) != 0)
+            });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_DC_MEASUREMENT_CONTROL_STATUS fields [MEASUREMENT_ENABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn disable_phy_tx_dc_measurement(registers: &crate::PhyBasebandConfigOracle) {
+        registers
+            .tx_dc_measurement_control_status()
+            .modify(|_, writer| {
+                let input = 0x00000000_u32;
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                writer.measurement_enable().bit((input & 0x00000001) != 0)
+            });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_DC_MEASUREMENT_CONTROL_STATUS fields [MEASUREMENT_START] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_phy_tx_dc_measurement_start(registers: &crate::PhyBasebandConfigOracle) {
+        registers
+            .tx_dc_measurement_control_status()
+            .modify(|_, writer| {
+                let input = 0x00000000_u32;
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                writer.measurement_start().bit((input & 0x00000001) != 0)
+            });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_DC_MEASUREMENT_CONTROL_STATUS fields [MEASUREMENT_START] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn start_phy_tx_dc_measurement(registers: &crate::PhyBasebandConfigOracle) {
+        registers
+            .tx_dc_measurement_control_status()
+            .modify(|_, writer| {
+                let input = 0x00000001_u32;
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                writer.measurement_start().bit((input & 0x00000001) != 0)
+            });
     }
 }
 

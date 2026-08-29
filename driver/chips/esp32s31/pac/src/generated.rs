@@ -6489,6 +6489,30 @@ pub(crate) fn set_phy_power_detector_tone_armed(
     crate::svd::field_replace_modify::set_phy_power_detector_tone_armed(registers, value.bits());
 }
 
+/// Typed bridge for the reviewed `enable_phy_tx_dc_measurement` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_phy_tx_dc_measurement(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::enable_phy_tx_dc_measurement(registers);
+}
+
+/// Typed bridge for the reviewed `disable_phy_tx_dc_measurement` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn disable_phy_tx_dc_measurement(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::disable_phy_tx_dc_measurement(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_tx_dc_measurement_start` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_tx_dc_measurement_start(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::clear_phy_tx_dc_measurement_start(registers);
+}
+
+/// Typed bridge for the reviewed `start_phy_tx_dc_measurement` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn start_phy_tx_dc_measurement(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::start_phy_tx_dc_measurement(registers);
+}
+
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
 #[inline]
 pub(crate) fn configure_shared_modem_low_power_timer(

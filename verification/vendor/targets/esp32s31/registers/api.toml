@@ -8891,3 +8891,60 @@ fields = [{ field = "TONE_ENABLE_OR_ARM", source-bit-offset = 0 }]
 domain = "PhyPowerDetectorToneArmState"
 exposure = "facade"
 sources = ["ROM_REV0_PHY_POWER_DETECTOR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_phy_tx_dc_measurement"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_DC_MEASUREMENT_CONTROL_STATUS"
+fields = [{ field = "MEASUREMENT_ENABLE", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_TXDC_CAL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "disable_phy_tx_dc_measurement"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_DC_MEASUREMENT_CONTROL_STATUS"
+fields = [{ field = "MEASUREMENT_ENABLE", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_TXDC_CAL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_phy_tx_dc_measurement_start"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_DC_MEASUREMENT_CONTROL_STATUS"
+fields = [{ field = "MEASUREMENT_START", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_TXDC_CAL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "start_phy_tx_dc_measurement"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_DC_MEASUREMENT_CONTROL_STATUS"
+fields = [{ field = "MEASUREMENT_START", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_TXDC_CAL", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_phy_tx_dc_measurement_ready"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_DC_MEASUREMENT_CONTROL_STATUS"
+field = "MEASUREMENT_READY"
+sources = ["ROM_REV0_PHY_TXDC_CAL", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_phy_tx_dc_i_comparator_high"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_DC_MEASUREMENT_CONTROL_STATUS"
+field = "I_COMPARATOR_HIGH"
+sources = ["ROM_REV0_PHY_TXDC_CAL", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_phy_tx_dc_q_comparator_high"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_DC_MEASUREMENT_CONTROL_STATUS"
+field = "Q_COMPARATOR_HIGH"
+sources = ["ROM_REV0_PHY_TXDC_CAL", "S31_ESP_PACS_SVD"]

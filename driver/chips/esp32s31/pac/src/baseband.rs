@@ -1078,45 +1078,33 @@ impl RadioPhyRegisters {
 
     /// Trigger one TX-DC comparator measurement using three fresh RMW edges.
     pub fn trigger_tx_dc_measurement(&mut self) {
-        let control = self
-            .peripherals
-            .phy_baseband_config_oracle
-            .tx_dc_measurement_control_status();
-        control.modify(|_, w| w.measurement_enable().set_bit());
-        control.modify(|_, w| w.measurement_start().clear_bit());
-        control.modify(|_, w| w.measurement_start().set_bit());
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        super::generated::enable_phy_tx_dc_measurement(bb);
+        super::generated::clear_phy_tx_dc_measurement_start(bb);
+        super::generated::start_phy_tx_dc_measurement(bb);
     }
 
     /// Sample the TX-DC ready bit exactly once.
     pub fn tx_dc_measurement_is_ready(&mut self) -> bool {
-        self.peripherals
-            .phy_baseband_config_oracle
-            .tx_dc_measurement_control_status()
-            .read()
-            .measurement_ready()
-            .bit_is_set()
+        super::svd::field_read::observe_phy_tx_dc_measurement_ready(
+            &self.peripherals.phy_baseband_config_oracle,
+        )
     }
 
     /// Preserve the complete ROM's independent I and Q comparator reads.
     pub fn sample_tx_dc_comparators(&mut self) -> [bool; 2] {
-        let control = self
-            .peripherals
-            .phy_baseband_config_oracle
-            .tx_dc_measurement_control_status();
+        let bb = &self.peripherals.phy_baseband_config_oracle;
         [
-            control.read().i_comparator_high().bit_is_set(),
-            control.read().q_comparator_high().bit_is_set(),
+            super::svd::field_read::observe_phy_tx_dc_i_comparator_high(bb),
+            super::svd::field_read::observe_phy_tx_dc_q_comparator_high(bb),
         ]
     }
 
     /// Clear TX-DC enable and start through two fresh RMW edges.
     pub fn clear_tx_dc_measurement(&mut self) {
-        let control = self
-            .peripherals
-            .phy_baseband_config_oracle
-            .tx_dc_measurement_control_status();
-        control.modify(|_, w| w.measurement_enable().clear_bit());
-        control.modify(|_, w| w.measurement_start().clear_bit());
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        super::generated::disable_phy_tx_dc_measurement(bb);
+        super::generated::clear_phy_tx_dc_measurement_start(bb);
     }
 
     /// Publish the two-register suffix of complete ROM `phy_adc_rate_set`.

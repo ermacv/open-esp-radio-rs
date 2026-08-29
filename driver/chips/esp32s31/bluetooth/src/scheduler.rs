@@ -1,5 +1,6 @@
 //! Fact-bounded scheduler initialization after the controller HAL component.
 
+use crate::BluetoothSchedulerSoftwareConfig;
 use crate::{
     BluetoothControllerInterruptRuntime, BluetoothControllerRuntimeResources,
     BluetoothControllerTaskRuntime,
@@ -9,38 +10,6 @@ use crate::{
     },
 };
 use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
-
-/// Source-owned scheduler policy copied by the reviewed controller init path.
-///
-/// The current archive proves two complete integer values but does not expose
-/// their physical units or independent field meanings. Keeping them in a
-/// software type prevents the vendor's private eight-byte structure layout
-/// from becoming part of the open Controller ABI.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothSchedulerSoftwareConfig {
-    value_0: u32,
-    value_1: u32,
-}
-
-impl BluetoothSchedulerSoftwareConfig {
-    /// Configuration constructed by the complete ESP32-S31 standalone task.
-    pub const fn reviewed_standalone() -> Self {
-        Self {
-            value_0: 40,
-            value_1: 46,
-        }
-    }
-
-    /// First positional scheduler policy value.
-    pub const fn value_0(self) -> u32 {
-        self.value_0
-    }
-
-    /// Second positional scheduler policy value.
-    pub const fn value_1(self) -> u32 {
-        self.value_1
-    }
-}
 
 /// Hardware and source-owned software state after scheduler initialization.
 ///

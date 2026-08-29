@@ -98,8 +98,12 @@ seven-bit frequency plus low-nibble image at `+0x18`, RX-only complete
 and the low-byte clear at `+0x4c`. Complete common
 `r_btdm_sched_calc_seq_time` additionally stores raw start plus its dynamic
 scheduler-environment lead at `+0x0c` and the wrapping raw window length at
-`+0x10`; the Rust plan therefore requires that lead as an explicit typed
-input instead of inheriting a vendor default. Before common scheduler bookkeeping,
+`+0x10`. Complete scheduler initialization copies the reviewed two-word policy
+to environment `+0x0c/+0x10`; the first word feeds both late-start checks and
+the second feeds this sequence lead through `r_btdm_hal_util_us_to_ticks`.
+The Rust plan therefore derives its typed raw lead from the source-owned
+scheduler config and retained Controller time scale instead of accepting an
+unrelated raw image. Before common scheduler bookkeeping,
 complete current `r_sym_ble_iHRqSCIgChmgSHj5W8W3` and named same-chip
 `r_sched_txn_rmOverlapInsert` copy the link-state five-bit rounded-power image
 into scheduler-item bits 24:20 while clearing bits 27:25; the composed Rust

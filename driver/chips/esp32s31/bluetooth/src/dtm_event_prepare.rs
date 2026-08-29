@@ -392,7 +392,10 @@ mod tests {
     }
 
     fn sequence_lead() -> BluetoothDtmSchedulerSequenceLead {
-        BluetoothDtmSchedulerSequenceLead::from_raw_image(7)
+        BluetoothDtmSchedulerSequenceLead::from_scheduler_config(
+            crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
+            BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale(),
+        )
     }
 
     #[test]
@@ -477,7 +480,7 @@ mod tests {
         assert_eq!(words.scheduler_item().word_2c, 0x000f_0001);
         assert_eq!(words.scheduler_item().word_44, 103);
         assert_eq!(words.scheduler_item().word_48, 105);
-        assert_eq!(words.scheduler_item().word_0c, 110);
+        assert_eq!(words.scheduler_item().word_0c, 114);
         assert_eq!(words.scheduler_item().word_10, 2);
         assert_eq!(
             words.link_state().word_34,

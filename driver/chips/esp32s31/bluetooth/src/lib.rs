@@ -75,6 +75,7 @@ mod resources;
 mod runtime_resources;
 #[cfg(any(target_arch = "riscv32", test))]
 mod scheduler;
+mod scheduler_config;
 mod scheduler_finished_lists;
 mod scheduler_lock_modify;
 #[cfg(feature = "validation-probes")]
@@ -202,7 +203,8 @@ pub use runtime_resources::{
     BluetoothControllerTaskRuntime,
 };
 #[cfg(any(target_arch = "riscv32", test))]
-pub use scheduler::{BluetoothSchedulerInitialized, BluetoothSchedulerSoftwareConfig};
+pub use scheduler::BluetoothSchedulerInitialized;
+pub use scheduler_config::BluetoothSchedulerSoftwareConfig;
 pub use scheduler_finished_lists::{
     BluetoothSchedulerFinishedListCaptureError, BluetoothSchedulerFinishedListWorker,
     BluetoothSchedulerFinishedListWorkerStep, BluetoothSchedulerHardwareListIndex,

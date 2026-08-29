@@ -10,10 +10,11 @@
 pub use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmSchedulerItemReviewedWords;
 
 use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmLinkStateReviewedWords;
+use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
 
 use crate::{
     BluetoothControllerSchedulerEpoch, BluetoothDtmChannel, BluetoothDtmPhy, BluetoothDtmRole,
-    BluetoothDtmTxEventWindow,
+    BluetoothDtmTxEventWindow, BluetoothSchedulerSoftwareConfig,
 };
 
 /// Why one DTM scheduler-item event cannot be represented exactly.
@@ -23,19 +24,26 @@ pub enum BluetoothDtmSchedulerItemEventError {
     LeCodedS2RequiresTransmitter,
 }
 
-/// Raw controller-time lead configured by the common scheduler.
+/// Raw controller-time lead derived from the common scheduler epoch.
 ///
-/// Complete `r_btdm_sched_calc_seq_time` consumes this dynamic environment
-/// value for every item. The physical unit remains intentionally unnamed;
-/// the value belongs to the same raw domain as the epoch-projected item
-/// window.
+/// Complete `r_btdm_sched_calc_seq_time` converts the scheduler environment's
+/// second policy delta through the live Controller time scale before adding it
+/// to every item. Construction therefore requires both source-owned values;
+/// callers cannot supply an unrelated raw image.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothDtmSchedulerSequenceLead(u32);
 
 impl BluetoothDtmSchedulerSequenceLead {
-    /// Preserve one complete scheduler-environment lead image.
-    pub const fn from_raw_image(image: u32) -> Self {
-        Self(image)
+    /// Derive the raw lead for one initialized scheduler epoch.
+    pub const fn from_scheduler_config(
+        config: BluetoothSchedulerSoftwareConfig,
+        scale: BluetoothControllerTimeScale,
+    ) -> Self {
+        Self(
+            scale
+                .raw_delta_from_scheduler(config.sequence_lead_scheduler_delta())
+                .whole,
+        )
     }
 
     /// Return the complete raw-domain lead image.
@@ -134,11 +142,12 @@ mod tests {
 
     use super::{
         BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerItemEventError,
-        BluetoothDtmSchedulerItemReviewedWords, apply_overlap_insertion_power,
+        BluetoothDtmSchedulerItemReviewedWords, BluetoothDtmSchedulerSequenceLead,
+        apply_overlap_insertion_power,
     };
     use crate::{
         BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample, BluetoothDtmChannel,
-        BluetoothDtmPhy, BluetoothDtmRole,
+        BluetoothDtmPhy, BluetoothDtmRole, BluetoothSchedulerSoftwareConfig,
     };
     use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmLinkStateReviewedWords;
 
@@ -163,6 +172,16 @@ mod tests {
             1_000,
             BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale(),
         )
+    }
+
+    #[test]
+    fn sequence_lead_uses_the_initialized_scheduler_epoch_scale() {
+        let lead = BluetoothDtmSchedulerSequenceLead::from_scheduler_config(
+            BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
+            BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale(),
+        );
+
+        assert_eq!(lead.raw_image(), 11);
     }
 
     #[test]

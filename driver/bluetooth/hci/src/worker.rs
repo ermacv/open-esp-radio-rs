@@ -67,6 +67,17 @@ pub trait HciCommandDispatcher {
     fn dispatch(&mut self, command: HciCommandPacket<'_>) -> Self::Response;
 }
 
+impl<D> HciCommandDispatcher for &mut D
+where
+    D: HciCommandDispatcher,
+{
+    type Response = D::Response;
+
+    fn dispatch(&mut self, command: HciCommandPacket<'_>) -> Self::Response {
+        D::dispatch(self, command)
+    }
+}
+
 impl HciControllerResponse for BootstrapCommandCompleteEvent {
     fn kind(&self) -> PacketKind {
         PacketKind::Event

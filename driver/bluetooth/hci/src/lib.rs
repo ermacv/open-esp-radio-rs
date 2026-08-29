@@ -13,6 +13,9 @@
 //! subset for Host initialization and rejects Link-Layer commands.
 //! [`LeControllerBootstrapWorker`] is its sole executor-neutral endpoint owner;
 //! it preserves accepted responses across shutdown and backpressure. This crate
+//! also provides [`LeControllerHciResources`], which binds the transport storage
+//! and bootstrap dispatcher to one affine Controller epoch and rejects profiles
+//! whose advertised ACL capacity exceeds that storage. This crate
 //! contains no Link Layer, radio, MMIO, interrupt, executor, allocator, or
 //! readiness substitute.
 
@@ -21,6 +24,7 @@ extern crate std;
 
 mod bootstrap;
 mod channel;
+mod resources;
 mod worker;
 
 pub use bootstrap::{
@@ -32,6 +36,9 @@ pub use bt_hci;
 pub use channel::{
     HciChannelError, HciCommandPacket, HostToControllerFrame, InProcessHciChannel,
     InProcessHciControllerEndpoint, InProcessHciHostTransport,
+};
+pub use resources::{
+    LeControllerHciResources, LeControllerHciResourcesError, LeControllerHciRuntimeWorker,
 };
 pub use worker::{
     BootstrapWorkerError, BootstrapWorkerExit, HciCommandDispatcher, HciCommandWorker,

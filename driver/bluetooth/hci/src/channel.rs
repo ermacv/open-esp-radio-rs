@@ -185,6 +185,10 @@ where
             .lock(|state| state.borrow_mut().try_receive().ok_or(()))
     }
 
+    fn is_empty(&self) -> bool {
+        self.state.lock(|state| state.borrow().length == 0)
+    }
+
     #[cfg(test)]
     fn vacant_storage_is_zeroed(&self) -> bool {
         self.state.lock(|state| {
@@ -333,6 +337,14 @@ where
                 controller_to_host: &self.controller_to_host,
             },
         )
+    }
+
+    /// Whether neither direction retains a packet.
+    ///
+    /// This observation is intended for an owning lifecycle before endpoints
+    /// are published. It does not reserve the channel against concurrent use.
+    pub fn is_empty(&self) -> bool {
+        self.host_to_controller.is_empty() && self.controller_to_host.is_empty()
     }
 }
 

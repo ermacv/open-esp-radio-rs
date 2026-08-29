@@ -265,6 +265,15 @@ impl LeControllerBootstrap {
         self.phase
     }
 
+    /// Whether no successful Reset has opened this bootstrap epoch.
+    ///
+    /// Every mutating command is rejected before Reset, so this phase also
+    /// proves that no event mask, random address, Host buffer declaration or
+    /// flow-control request has been accepted.
+    pub const fn is_pristine(&self) -> bool {
+        matches!(self.phase, BootstrapPhase::AwaitingReset)
+    }
+
     /// Requested base HCI event mask in the current epoch.
     pub const fn event_mask(&self) -> EventMask {
         self.event_mask

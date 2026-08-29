@@ -530,12 +530,13 @@ gaps = [
 [[capabilities]]
 id = "hci-handoff-storage"
 title = "Bounded bidirectional HCI handoff"
-scope = "Affine allocation-free bidirectional transport with validation backpressure wake and cancellation-safe caller-buffer retry at the direct in-process HCI boundary"
+scope = "Affine allocation-free bidirectional transport with validation backpressure wake cancellation-safe caller-buffer retry and one storage-checked bootstrap resource epoch at the direct in-process HCI boundary"
 owners = [
   { path = "driver/bluetooth/hci/src/lib.rs", token = "ControllerToHostQueue" },
   { path = "driver/bluetooth/hci/src/channel.rs", token = "InProcessHciChannel" },
   { path = "driver/bluetooth/hci/src/channel.rs", token = "InProcessHciHostTransport" },
   { path = "driver/bluetooth/hci/src/channel.rs", token = "InProcessHciControllerEndpoint" },
+  { path = "driver/bluetooth/hci/src/resources.rs", token = "LeControllerHciResources" },
 ]
 tests = [
   { path = "driver/bluetooth/hci/src/lib.rs", token = "queue_preserves_fifo_and_decodes_through_bt_hci" },
@@ -547,6 +548,8 @@ tests = [
   { path = "driver/bluetooth/hci/src/channel.rs", token = "external_controller_completes_a_command_via_the_same_event_loop" },
   { path = "driver/bluetooth/hci/src/channel.rs", token = "async_queue_preserves_fifo_across_ring_wrap" },
   { path = "driver/bluetooth/hci/src/channel.rs", token = "every_host_packet_header_rejects_declared_length_mismatch" },
+  { path = "driver/bluetooth/hci/src/resources.rs", token = "advertised_acl_profile_must_fit_owned_storage_and_credits" },
+  { path = "driver/bluetooth/hci/src/resources.rs", token = "one_split_joins_the_host_to_the_same_pristine_bootstrap_epoch" },
 ]
 async-contracts = [
   { path = "driver/bluetooth/hci/src/channel.rs", token = "both_async_directions_wake_without_polling_or_an_rtos" },

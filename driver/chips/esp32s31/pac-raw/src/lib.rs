@@ -58873,6 +58873,28 @@ pub mod field_read {
             .q_comparator_high()
             .bit()
     }
+
+    /// Read `PHY_FREQUENCY_CHANNEL_ORACLE`.`FREQUENCY_MEMORY_READ_RESULT`.`VALUE` without exposing its register block.
+    #[inline]
+    pub fn observe_phy_frequency_memory_result(
+        registers: &crate::PhyFrequencyChannelOracle,
+    ) -> u32 {
+        registers
+            .frequency_memory_read_result()
+            .read()
+            .value()
+            .bits()
+    }
+
+    /// Read `PHY_FREQUENCY_CHANNEL_ORACLE`.`FREQUENCY_PARAMETER_1_STATUS`.`FREQUENCY_READY` without exposing its register block.
+    #[inline]
+    pub fn observe_phy_frequency_ready(registers: &crate::PhyFrequencyChannelOracle) -> bool {
+        registers
+            .frequency_parameter_1_status()
+            .read()
+            .frequency_ready()
+            .bit()
+    }
 }
 
 /// Safe same-sample observations through reviewed SVD fields.
@@ -59189,6 +59211,19 @@ pub mod field_snapshot_read {
             sample.middle_reserved_clear_unknown().bits(),
             sample.txiq_polarity_image().bits(),
             sample.high_nibble_unknown().bits(),
+        )
+    }
+
+    /// Read `SHIFT_LOW_OR_INIT_HIGH_UNKNOWN`, `SHIFT_HIGH_UNKNOWN` from one `PHY_FREQUENCY_CHANNEL_ORACLE`.`NRX_FREQUENCY_CONTROL` sample.
+    #[allow(clippy::type_complexity)]
+    #[inline]
+    pub fn capture_phy_nrx_frequency_shift(
+        registers: &crate::PhyFrequencyChannelOracle,
+    ) -> (u8, u8) {
+        let sample = registers.nrx_frequency_control().read();
+        (
+            sample.shift_low_or_init_high_unknown().bits(),
+            sample.shift_high_unknown().bits(),
         )
     }
 }
@@ -69703,6 +69738,182 @@ pub mod field_replace_modify {
             writer
                 .tx_iq_correction_mode_high()
                 .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_PARAMETER_1_STATUS fields [BASEBAND_MODE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_frequency_baseband_mode(
+        registers: &crate::PhyFrequencyChannelOracle,
+        input: u32,
+    ) {
+        registers
+            .frequency_parameter_1_status()
+            .modify(|_, writer| {
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                unsafe {
+                    writer
+                        .baseband_mode_unknown()
+                        .bits((input & 0x00000003) as u8)
+                }
+            });
+    }
+
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields [MEMORY_ADDRESS_HIGH_OR_MODULE_RESET_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn assert_phy_frequency_module_reset(registers: &crate::PhyFrequencyChannelOracle) {
+        registers.frequency_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .memory_address_high_or_module_reset_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields [MEMORY_ADDRESS_HIGH_OR_MODULE_RESET_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn release_phy_frequency_module_reset(registers: &crate::PhyFrequencyChannelOracle) {
+        registers.frequency_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .memory_address_high_or_module_reset_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields [HARDWARE_FREQUENCY_DISABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_hardware_frequency_control(
+        registers: &crate::PhyFrequencyChannelOracle,
+        input: u32,
+    ) {
+        registers.frequency_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .hardware_frequency_disable()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields [CHANNEL_SWITCH_PULSE, HARDWARE_FREQUENCY_DISABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_phy_frequency_control(registers: &crate::PhyFrequencyChannelOracle) {
+        registers.frequency_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .channel_switch_pulse()
+                .bit((input & 0x00000001) != 0)
+                .hardware_frequency_disable()
+                .bit(((input >> 1) & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields [MODULE_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_phy_frequency_module(registers: &crate::PhyFrequencyChannelOracle) {
+        registers.frequency_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .module_enable_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL fields [REGISTER_MODE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_frequency_register_mode(
+        registers: &crate::PhyFrequencyChannelOracle,
+        input: u32,
+    ) {
+        registers.frequency_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .register_mode_unknown()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.NRX_FREQUENCY_CONTROL fields [FREQUENCY_QUOTIENT_OR_INIT_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_phy_nrx_frequency_quotient(registers: &crate::PhyFrequencyChannelOracle) {
+        registers.nrx_frequency_control().modify(|_, writer| {
+            let input = 0x000433af_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .frequency_quotient_or_init_low_unknown()
+                    .bits(input & 0x00ffffff)
+            }
+        });
+    }
+
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.NRX_FREQUENCY_CONTROL fields [SHIFT_LOW_OR_INIT_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn initialize_phy_nrx_frequency_shift(registers: &crate::PhyFrequencyChannelOracle) {
+        registers.nrx_frequency_control().modify(|_, writer| {
+            let input = 0x00000017_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .shift_low_or_init_high_unknown()
+                    .bits((input & 0x0000001f) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL fields [BT_FILTER_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_phy_bt_filter(registers: &crate::PhyFrequencyChannelOracle) {
+        registers.fbw_bt_filter_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .bt_filter_enable_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL fields [BT_FILTER_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_phy_bt_filter_low(registers: &crate::PhyFrequencyChannelOracle) {
+        registers.fbw_bt_filter_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .bt_filter_low_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL fields [BT_FILTER_MODE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_phy_bt_filter_mode(registers: &crate::PhyFrequencyChannelOracle) {
+        registers.fbw_bt_filter_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .bt_filter_mode_unknown()
+                    .bits((input & 0x00000003) as u8)
+            }
         });
     }
 }

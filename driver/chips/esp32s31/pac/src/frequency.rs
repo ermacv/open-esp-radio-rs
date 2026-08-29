@@ -90,47 +90,45 @@ fn nrx_frequency_quotient(shift: u32, frequency: u32) -> u32 {
 impl RadioPhyRegisters {
     /// Select the recovered two-bit baseband mode.
     pub fn set_frequency_baseband_mode(&mut self, mode: u8) {
-        assert!(mode <= 3, "baseband mode must fit two bits");
-        self.peripherals
-            .phy_frequency_channel_oracle
-            .frequency_parameter_1_status()
-            .modify(|_, w| w.baseband_mode_unknown().set(mode));
+        let mode = super::generated::PhyFrequencyBasebandMode::new(u32::from(mode))
+            .expect("baseband mode must fit its generated two-bit domain");
+        super::generated::configure_phy_frequency_baseband_mode(
+            &self.peripherals.phy_frequency_channel_oracle,
+            mode,
+        );
     }
 
     /// Pulse the frequency-module reset/release bit through two fresh RMWs.
     pub fn reset_frequency_module(&mut self) {
-        let control = self
-            .peripherals
-            .phy_frequency_channel_oracle
-            .frequency_control();
-        control.modify(|_, w| w.memory_address_high_or_module_reset_unknown().clear_bit());
-        control.modify(|_, w| w.memory_address_high_or_module_reset_unknown().set_bit());
+        let frequency = &self.peripherals.phy_frequency_channel_oracle;
+        super::generated::assert_phy_frequency_module_reset(frequency);
+        super::generated::release_phy_frequency_module_reset(frequency);
     }
 
     /// Select whether hardware owns frequency updates.
     pub fn set_hardware_frequency_control(&mut self, enabled: bool) {
-        self.peripherals
-            .phy_frequency_channel_oracle
-            .frequency_control()
-            .modify(|_, w| w.hardware_frequency_disable().bit(!enabled));
+        let state = if enabled {
+            super::generated::PhyHardwareFrequencyControlState::Hardware
+        } else {
+            super::generated::PhyHardwareFrequencyControlState::Software
+        };
+        super::generated::configure_phy_hardware_frequency_control(
+            &self.peripherals.phy_frequency_channel_oracle,
+            state,
+        );
     }
 
     /// Apply complete rev0 ROM `phy_freq_reg_init(2, 4)`.
     pub fn initialize_frequency_registers(&mut self, parameter_override: bool) {
         let frequency = &self.peripherals.phy_frequency_channel_oracle;
-        frequency.frequency_control().modify(|_, w| {
-            w.channel_switch_pulse()
-                .clear_bit()
-                .hardware_frequency_disable()
-                .clear_bit()
-        });
-        frequency
-            .frequency_control()
-            .modify(|_, w| w.module_enable_unknown().set_bit());
-        frequency.frequency_control().modify(|_, w| {
-            w.register_mode_unknown()
-                .set(if parameter_override { 0x20 } else { 0x42 })
-        });
+        super::generated::initialize_phy_frequency_control(frequency);
+        super::generated::enable_phy_frequency_module(frequency);
+        let mode = if parameter_override {
+            super::generated::PhyFrequencyRegisterMode::ParameterOverride
+        } else {
+            super::generated::PhyFrequencyRegisterMode::Default
+        };
+        super::generated::configure_phy_frequency_register_mode(frequency, mode);
         super::generated::frequency_parameter_0(
             frequency,
             super::generated::FrequencyParameter0Image::new(0x1980_0249),
@@ -189,11 +187,7 @@ impl RadioPhyRegisters {
         frequency
             .frequency_memory_read_control()
             .modify(|_, w| w.read_pulse().clear_bit());
-        frequency
-            .frequency_memory_read_result()
-            .read()
-            .value()
-            .bits()
+        super::svd::field_read::observe_phy_frequency_memory_result(frequency)
     }
 
     /// Restore the low frequency-control channel index without pulsing a switch.
@@ -263,45 +257,37 @@ impl RadioPhyRegisters {
 
     /// Sample the generated frequency-ready field exactly once.
     pub fn frequency_ready(&mut self) -> bool {
-        self.peripherals
-            .phy_frequency_channel_oracle
-            .frequency_parameter_1_status()
-            .read()
-            .frequency_ready()
-            .bit_is_set()
+        super::svd::field_read::observe_phy_frequency_ready(
+            &self.peripherals.phy_frequency_channel_oracle,
+        )
     }
 
     /// Apply complete rev0 ROM `phy_nrx_freq_set`.
     pub fn configure_nrx_frequency(&mut self, frequency: u32) {
-        let register = self
-            .peripherals
-            .phy_frequency_channel_oracle
-            .nrx_frequency_control();
+        let frequency_registers = &self.peripherals.phy_frequency_channel_oracle;
         // The ROM intentionally samples this word twice. The first sample
         // supplies the complete eight-bit shift selector; the second supplies
         // both high fields preserved by the final publication.
-        let shift_source = register.read();
-        let shift = u32::from(shift_source.shift_low_or_init_high_unknown().bits())
-            + u32::from(shift_source.shift_high_unknown().bits()) * 0x20;
-        let previous = register.read();
+        let (shift_low, shift_high) =
+            super::svd::field_snapshot_read::capture_phy_nrx_frequency_shift(frequency_registers);
+        let shift = u32::from(shift_low) + u32::from(shift_high) * 0x20;
+        let (previous_shift_low, previous_shift_high) =
+            super::svd::field_snapshot_read::capture_phy_nrx_frequency_shift(frequency_registers);
         super::svd::zero_based_field_write::publish_nrx_frequency_fields(
-            &self.peripherals.phy_frequency_channel_oracle,
+            frequency_registers,
             nrx_frequency_quotient(shift, frequency),
-            previous.shift_low_or_init_high_unknown().bits(),
-            previous.shift_high_unknown().bits(),
+            previous_shift_low,
+            previous_shift_high,
         );
     }
 
     /// Apply the two NRX writes inside complete rev0 ROM `phy_bb_reg_init`.
     pub fn initialize_nrx_baseband(&mut self) {
-        let register = self
-            .peripherals
-            .phy_frequency_channel_oracle
-            .nrx_frequency_control();
+        let frequency = &self.peripherals.phy_frequency_channel_oracle;
         // The complete ROM body replaces the generated twenty-four-bit
         // multifunction field with this bounded initialization image.
-        register.modify(|_, w| w.frequency_quotient_or_init_low_unknown().set(0x0004_33af));
-        register.modify(|_, w| w.shift_low_or_init_high_unknown().set(0x17));
+        super::generated::initialize_phy_nrx_frequency_quotient(frequency);
+        super::generated::initialize_phy_nrx_frequency_shift(frequency);
     }
 
     /// Publish the channel-offset prefix of complete `phy_bb_bss_cbw40`.
@@ -355,13 +341,10 @@ impl RadioPhyRegisters {
 
     /// Apply the three fresh-read updates of complete `phy_bt_filter_reg`.
     pub fn configure_bt_filter(&mut self) {
-        let register = self
-            .peripherals
-            .phy_frequency_channel_oracle
-            .fbw_bt_filter_control();
-        register.modify(|_, w| w.bt_filter_enable_unknown().set_bit());
-        register.modify(|_, w| w.bt_filter_low_unknown().clear_bit());
-        register.modify(|_, w| w.bt_filter_mode_unknown().set(0));
+        let frequency = &self.peripherals.phy_frequency_channel_oracle;
+        super::generated::enable_phy_bt_filter(frequency);
+        super::generated::clear_phy_bt_filter_low(frequency);
+        super::generated::clear_phy_bt_filter_mode(frequency);
     }
 
     /// Publish the TX-cap readback into command-memory entry one.

@@ -499,6 +499,45 @@ max = 0x0f
 sources = ["BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW", "ROM_REV0_PHY_START_STOP_TX_TONE", "ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
 
 [[bounded-domains]]
+name = "PhyFrequencyBasebandMode"
+description = "Complete two-bit baseband mode accepted by the reviewed frequency helper."
+min = 0
+max = 3
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
+
+[[enum-domains]]
+name = "PhyHardwareFrequencyControlState"
+description = "Semantic owner of PHY frequency updates, encoded through the inverse hardware-disable field."
+
+[[enum-domains.values]]
+name = "Hardware"
+value = 0
+description = "Permit hardware-owned frequency updates."
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
+
+[[enum-domains.values]]
+name = "Software"
+value = 1
+description = "Disable hardware-owned frequency updates."
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
+
+[[enum-domains]]
+name = "PhyFrequencyRegisterMode"
+description = "One of the two complete phy_freq_reg_init register-mode images."
+
+[[enum-domains.values]]
+name = "Default"
+value = 0x42
+description = "Default register-mode image used without a parameter override."
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
+
+[[enum-domains.values]]
+name = "ParameterOverride"
+value = 0x20
+description = "Register-mode image selected by the parameter override."
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
+
+[[bounded-domains]]
 name = "BluetoothPhyInitTimingByte"
 description = "Runtime-derived byte ORed into both BLE link-controller transmit-delay fields by one fresh-read transaction."
 min = 0
@@ -9444,3 +9483,135 @@ fields = [{ field = "TX_IQ_CORRECTION_MODE_HIGH", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["ROM_REV0_PHY_RFCAL_TXIQ", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_frequency_baseband_mode"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FREQUENCY_PARAMETER_1_STATUS"
+fields = [{ field = "BASEBAND_MODE_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyFrequencyBasebandMode"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "assert_phy_frequency_module_reset"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FREQUENCY_CONTROL"
+fields = [{ field = "MEMORY_ADDRESS_HIGH_OR_MODULE_RESET_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "release_phy_frequency_module_reset"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FREQUENCY_CONTROL"
+fields = [{ field = "MEMORY_ADDRESS_HIGH_OR_MODULE_RESET_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_hardware_frequency_control"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FREQUENCY_CONTROL"
+fields = [{ field = "HARDWARE_FREQUENCY_DISABLE", source-bit-offset = 0 }]
+domain = "PhyHardwareFrequencyControlState"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "initialize_phy_frequency_control"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FREQUENCY_CONTROL"
+fields = [
+    { field = "CHANNEL_SWITCH_PULSE", source-bit-offset = 0 },
+    { field = "HARDWARE_FREQUENCY_DISABLE", source-bit-offset = 1 },
+]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_phy_frequency_module"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FREQUENCY_CONTROL"
+fields = [{ field = "MODULE_ENABLE_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_frequency_register_mode"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FREQUENCY_CONTROL"
+fields = [{ field = "REGISTER_MODE_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyFrequencyRegisterMode"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_phy_frequency_memory_result"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FREQUENCY_MEMORY_READ_RESULT"
+field = "VALUE"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_phy_frequency_ready"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FREQUENCY_PARAMETER_1_STATUS"
+field = "FREQUENCY_READY"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-snapshot-reads]]
+name = "capture_phy_nrx_frequency_shift"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "NRX_FREQUENCY_CONTROL"
+fields = ["SHIFT_LOW_OR_INIT_HIGH_UNKNOWN", "SHIFT_HIGH_UNKNOWN"]
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "initialize_phy_nrx_frequency_quotient"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "NRX_FREQUENCY_CONTROL"
+fields = [{ field = "FREQUENCY_QUOTIENT_OR_INIT_LOW_UNKNOWN", source-bit-offset = 0 }]
+value = 0x0004_33af
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "initialize_phy_nrx_frequency_shift"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "NRX_FREQUENCY_CONTROL"
+fields = [{ field = "SHIFT_LOW_OR_INIT_HIGH_UNKNOWN", source-bit-offset = 0 }]
+value = 0x17
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_phy_bt_filter"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FBW_BT_FILTER_CONTROL"
+fields = [{ field = "BT_FILTER_ENABLE_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_phy_bt_filter_low"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FBW_BT_FILTER_CONTROL"
+fields = [{ field = "BT_FILTER_LOW_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_phy_bt_filter_mode"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FBW_BT_FILTER_CONTROL"
+fields = [{ field = "BT_FILTER_MODE_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]

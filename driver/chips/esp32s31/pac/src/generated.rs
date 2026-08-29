@@ -266,6 +266,40 @@ impl PhyRxGainDcCalibrationState {
     }
 }
 
+/// Semantic owner of PHY frequency updates, encoded through the inverse hardware-disable field.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PhyHardwareFrequencyControlState {
+    /// Permit hardware-owned frequency updates.
+    Hardware = 0x00000000,
+    /// Disable hardware-owned frequency updates.
+    Software = 0x00000001,
+}
+
+impl PhyHardwareFrequencyControlState {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
+/// One of the two complete phy_freq_reg_init register-mode images.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PhyFrequencyRegisterMode {
+    /// Default register-mode image used without a parameter override.
+    Default = 0x00000042,
+    /// Register-mode image selected by the parameter override.
+    ParameterOverride = 0x00000020,
+}
+
+impl PhyFrequencyRegisterMode {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
 /// Reviewed receive-beacon clear requests. The type cannot select an unknown request bit.
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -972,6 +1006,29 @@ impl PhyToneFourBitImage {
     /// Construct a value only when it lies in the reviewed inclusive range.
     pub const fn new(value: u32) -> Option<Self> {
         if value <= 0x0000000f {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Complete two-bit baseband mode accepted by the reviewed frequency helper.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyFrequencyBasebandMode(u32);
+
+impl PhyFrequencyBasebandMode {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x00000003;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x00000003 {
             Some(Self(value))
         } else {
             None
@@ -6975,6 +7032,99 @@ pub(crate) fn begin_phy_tx_iq_correction(registers: &crate::svd::PhyBasebandConf
 #[inline]
 pub(crate) fn complete_phy_tx_iq_correction(registers: &crate::svd::PhyBasebandConfigOracle) {
     crate::svd::field_replace_modify::complete_phy_tx_iq_correction(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_frequency_baseband_mode` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_frequency_baseband_mode(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+    value: PhyFrequencyBasebandMode,
+) {
+    crate::svd::field_replace_modify::configure_phy_frequency_baseband_mode(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `assert_phy_frequency_module_reset` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn assert_phy_frequency_module_reset(registers: &crate::svd::PhyFrequencyChannelOracle) {
+    crate::svd::field_replace_modify::assert_phy_frequency_module_reset(registers);
+}
+
+/// Typed bridge for the reviewed `release_phy_frequency_module_reset` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn release_phy_frequency_module_reset(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+) {
+    crate::svd::field_replace_modify::release_phy_frequency_module_reset(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_hardware_frequency_control` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_hardware_frequency_control(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+    value: PhyHardwareFrequencyControlState,
+) {
+    crate::svd::field_replace_modify::configure_phy_hardware_frequency_control(
+        registers,
+        value.bits(),
+    );
+}
+
+/// Typed bridge for the reviewed `initialize_phy_frequency_control` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_phy_frequency_control(registers: &crate::svd::PhyFrequencyChannelOracle) {
+    crate::svd::field_replace_modify::initialize_phy_frequency_control(registers);
+}
+
+/// Typed bridge for the reviewed `enable_phy_frequency_module` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_phy_frequency_module(registers: &crate::svd::PhyFrequencyChannelOracle) {
+    crate::svd::field_replace_modify::enable_phy_frequency_module(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_frequency_register_mode` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_frequency_register_mode(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+    value: PhyFrequencyRegisterMode,
+) {
+    crate::svd::field_replace_modify::configure_phy_frequency_register_mode(
+        registers,
+        value.bits(),
+    );
+}
+
+/// Typed bridge for the reviewed `initialize_phy_nrx_frequency_quotient` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_phy_nrx_frequency_quotient(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+) {
+    crate::svd::field_replace_modify::initialize_phy_nrx_frequency_quotient(registers);
+}
+
+/// Typed bridge for the reviewed `initialize_phy_nrx_frequency_shift` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn initialize_phy_nrx_frequency_shift(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+) {
+    crate::svd::field_replace_modify::initialize_phy_nrx_frequency_shift(registers);
+}
+
+/// Typed bridge for the reviewed `enable_phy_bt_filter` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_phy_bt_filter(registers: &crate::svd::PhyFrequencyChannelOracle) {
+    crate::svd::field_replace_modify::enable_phy_bt_filter(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_bt_filter_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_bt_filter_low(registers: &crate::svd::PhyFrequencyChannelOracle) {
+    crate::svd::field_replace_modify::clear_phy_bt_filter_low(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_bt_filter_mode` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_bt_filter_mode(registers: &crate::svd::PhyFrequencyChannelOracle) {
+    crate::svd::field_replace_modify::clear_phy_bt_filter_mode(registers);
 }
 
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.

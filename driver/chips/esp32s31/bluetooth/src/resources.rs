@@ -17,6 +17,7 @@ use open_esp_radio_esp32s31_hal::{
     BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadPublished,
     BluetoothSchedulerHardwareListIndex, BluetoothSchedulerHardwareRunCommandPublished,
     BluetoothSchedulerRunEventPublished, BluetoothSchedulerRunInterruptsPrepared,
+    BluetoothSchedulerSoftwareListRemovalIdle, BluetoothSchedulerSoftwareListRemovalJoin,
 };
 #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 use open_esp_radio_esp32s31_hal::{
@@ -345,6 +346,18 @@ impl BluetoothTaskResources {
         self.registers
             .borrow_bluetooth_controller()
             .observe_scheduler_hardware_list_head_retirement(run)
+    }
+
+    /// Finish one post-idle software-list removal observation through the sole
+    /// task-side register owner.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn finish_scheduler_software_list_removal(
+        &mut self,
+        idle: BluetoothSchedulerSoftwareListRemovalIdle,
+    ) -> BluetoothSchedulerSoftwareListRemovalJoin {
+        self.registers
+            .borrow_bluetooth_controller()
+            .finish_scheduler_software_list_removal(idle)
     }
 
     /// Execute the complete reviewed controller HAL-init component.

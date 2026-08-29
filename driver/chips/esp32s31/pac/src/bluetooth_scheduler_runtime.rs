@@ -44,7 +44,8 @@ pub struct BluetoothSchedulerReferenceCleared {
 }
 
 /// Later field-level `SCHEDULER_STATE` observation used for deferred work.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "the scheduler work observation must be consumed by one controller path"]
 pub struct BluetoothSchedulerWorkObservation {
     busy: bool,
     reference_path_state: bool,
@@ -81,17 +82,17 @@ impl BluetoothSchedulerWorkObservation {
     }
 
     /// Whether the scheduler was busy at the deferred-work temporal point.
-    pub const fn is_busy(self) -> bool {
+    pub const fn is_busy(&self) -> bool {
         self.busy
     }
 
     /// Whether the reviewed reference path was active at this temporal point.
-    pub const fn reference_path_active(self) -> bool {
+    pub const fn reference_path_active(&self) -> bool {
         self.busy && self.reference_path_state
     }
 
     /// Hardware-list index captured from the same scheduler-state sample.
-    pub const fn current_hardware_list(self) -> BluetoothSchedulerHardwareListIndex {
+    pub const fn current_hardware_list(&self) -> BluetoothSchedulerHardwareListIndex {
         self.current_hardware_list
     }
 

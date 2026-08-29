@@ -229,6 +229,29 @@ where
             .observe_dtm_hardware_head_retirement(completed)
     }
 
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn unlink_dtm_software_list<Role>(
+        &mut self,
+        observed: crate::BluetoothDtmSchedulerHardwareHeadEmptyObserved<Role>,
+    ) -> crate::BluetoothDtmSchedulerSoftwareListUnlinkStep<Role> {
+        self.initialized
+            .initialized
+            .controller
+            .unlink_dtm_software_list(observed)
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn join_dtm_software_list_removal<Role>(
+        &mut self,
+        unlinked: crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
+        event: crate::BluetoothPrimarySchedulerEvent,
+    ) -> crate::scheduler::BluetoothDtmSchedulerSoftwareListRemovalJoin<Role> {
+        self.initialized
+            .initialized
+            .controller
+            .join_dtm_software_list_removal(unlinked, event)
+    }
+
     pub(crate) fn request_controller_time(
         &mut self,
     ) -> Result<crate::BluetoothControllerTimeRequest, crate::BluetoothControllerTimeRequestError>

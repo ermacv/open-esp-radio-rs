@@ -28,6 +28,10 @@
 //! running DTM epoch; a non-sentinel status advances to a hardware-owned
 //! completion observation. A second affine operation performs the mandatory
 //! fresh post-picker head read and advances only after list zero is empty.
+//! The exact item can then leave the source-owned software list once and a
+//! fresh primary scheduler event drives the finite post-unlink return gate;
+//! busy or command-pending events retain ownership without polling, while
+//! ready still grants no descriptor reclamation.
 //! Controller-SRAM allocation geometry and result parsing live in the separate
 //! `open-esp-radio-esp32s31-bluetooth-memory` layer below this LLL boundary;
 //! one bounded DTM RX transition accounts a result word without claiming its
@@ -35,8 +39,8 @@
 //! The initialized scheduler now joins its software task endpoint to the exact
 //! task-side HAL owner, so one lock/modify event step can reach the restricted
 //! PAC without exporting register authority. The remaining components are not
-//! connected across the missing selector-6 invariant, software-list removal
-//! and recycle owner, live primary-ISR/executor composition,
+//! connected across the missing selector-6 invariant, recycle owner,
+//! live primary-ISR/executor composition,
 //! feature-specific NRT classification and live-route
 //! prerequisites. Stable two-owner ISR publication is connected, but no
 //! current finite state
@@ -113,7 +117,8 @@ pub use controller_start::{
     BluetoothControllerInterruptOwnersPublished, BluetoothControllerInterruptOwnersReady,
     BluetoothControllerModemLpTimerRestoreFailure, BluetoothControllerModemLpTimerSoftwareStep,
     BluetoothControllerModemLpTimerSoftwareWork, BluetoothControllerOutputTimerStarted,
-    BluetoothDtmSchedulerStartFailure, BluetoothInterruptOwnerStorage,
+    BluetoothDtmSchedulerStartFailure, BluetoothDtmSoftwareListRemovalObservationFailure,
+    BluetoothDtmSoftwareListRemovalObservationStep, BluetoothInterruptOwnerStorage,
     BluetoothModemLpTimerInterruptDispatchStorage, BluetoothModemLpTimerSoftwareOwnerStorage,
     BluetoothSchedulerRunInterruptStorage, BluetoothSharedInterruptDispatchStorage,
 };
@@ -231,7 +236,9 @@ pub use scheduler::{
 pub use scheduler::{BluetoothDtmSchedulerCompletionObserved, BluetoothDtmSchedulerCompletionStep};
 #[cfg(target_arch = "riscv32")]
 pub use scheduler::{
-    BluetoothDtmSchedulerHardwareHeadEmptyObserved, BluetoothDtmSchedulerHardwareHeadRetirementStep,
+    BluetoothDtmSchedulerHardwareHeadEmptyObserved,
+    BluetoothDtmSchedulerHardwareHeadRetirementStep, BluetoothDtmSchedulerSoftwareListRemovalReady,
+    BluetoothDtmSchedulerSoftwareListUnlinkStep, BluetoothDtmSchedulerSoftwareListUnlinked,
 };
 pub use scheduler_config::BluetoothSchedulerSoftwareConfig;
 pub use scheduler_finished_lists::{

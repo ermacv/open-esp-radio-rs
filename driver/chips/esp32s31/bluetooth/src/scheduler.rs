@@ -27,6 +27,8 @@ use open_esp_radio_esp32s31_hal::{
     BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListHead,
     BluetoothSchedulerHardwareListHeadEmptyObserved,
     BluetoothSchedulerHardwareListHeadRetirementObservation,
+    BluetoothSchedulerSoftwareListRemovalInterruptStep, BluetoothSchedulerSoftwareListRemovalJoin,
+    BluetoothSchedulerSoftwareListRemovalReady,
 };
 use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
 
@@ -56,6 +58,12 @@ enum BluetoothSchedulerExclusiveListState {
         address: BluetoothControllerSramAddress,
     },
     FirstItemHardwareHeadEmptyObserved {
+        address: BluetoothControllerSramAddress,
+    },
+    FirstItemSoftwareListUnlinkedAwaitingRemovalGate {
+        address: BluetoothControllerSramAddress,
+    },
+    FirstItemSoftwareListRemovalReady {
         address: BluetoothControllerSramAddress,
     },
 }
@@ -139,6 +147,44 @@ impl BluetoothSchedulerExclusiveListEpoch {
         );
         self.state =
             BluetoothSchedulerExclusiveListState::FirstItemHardwareHeadEmptyObserved { address };
+    }
+
+    fn retains_hardware_head_empty_first_item(
+        &self,
+        address: BluetoothControllerSramAddress,
+    ) -> bool {
+        self.state
+            == BluetoothSchedulerExclusiveListState::FirstItemHardwareHeadEmptyObserved { address }
+    }
+
+    fn unlink_software_list_first_item(&mut self, address: BluetoothControllerSramAddress) -> bool {
+        if !self.retains_hardware_head_empty_first_item(address) {
+            return false;
+        }
+        self.state =
+            BluetoothSchedulerExclusiveListState::FirstItemSoftwareListUnlinkedAwaitingRemovalGate {
+                address,
+            };
+        true
+    }
+
+    fn retains_unlinked_first_item(&self, address: BluetoothControllerSramAddress) -> bool {
+        self.state
+            == BluetoothSchedulerExclusiveListState::FirstItemSoftwareListUnlinkedAwaitingRemovalGate {
+                address,
+            }
+    }
+
+    fn retain_software_list_removal_ready_first_item(
+        &mut self,
+        address: BluetoothControllerSramAddress,
+    ) {
+        assert!(
+            self.retains_unlinked_first_item(address),
+            "only the already-unlinked first item can pass the removal return gate"
+        );
+        self.state =
+            BluetoothSchedulerExclusiveListState::FirstItemSoftwareListRemovalReady { address };
     }
 }
 
@@ -408,6 +454,97 @@ impl<Role> BluetoothDtmSchedulerHardwareHeadEmptyObserved<Role> {
     pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
         self.head.index()
     }
+}
+
+/// Completed DTM graph removed from the source-owned software list.
+///
+/// The open scheduler does not reproduce the vendor intrusive list container:
+/// this affine state is the sole-item removal itself. The graph and reservation
+/// remain retained, and no descriptor or packet memory is returned to callers.
+#[must_use = "the unlinked graph must pass the finite removal return gate"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothDtmSchedulerSoftwareListUnlinked<Role> {
+    item: BluetoothDtmCompletionObservedEvent<Role>,
+    head: BluetoothSchedulerHardwareListHeadEmptyObserved,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<Role> BluetoothDtmSchedulerSoftwareListUnlinked<Role> {
+    /// Role retained by the already-unlinked event.
+    pub const fn role(&self) -> BluetoothDtmRole {
+        self.item.role()
+    }
+
+    /// Exact scheduler item removed from the source-owned software list.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.item.scheduler_item_address()
+    }
+
+    /// Semantic completion status retained while awaiting the return gate.
+    pub const fn status(&self) -> BluetoothDtmSchedulerItemCompletionStatus {
+        self.item.status()
+    }
+
+    /// Hardware list retained through the empty-head and unlink states.
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.head.index()
+    }
+}
+
+/// Result of removing the sole DTM item from the source-owned software list.
+#[must_use = "identity mismatch must retain the empty-head graph; success must continue"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothDtmSchedulerSoftwareListUnlinkStep<Role> {
+    /// The supplied empty-head graph belongs to another scheduler epoch.
+    SchedulerIdentityMismatch(BluetoothDtmSchedulerHardwareHeadEmptyObserved<Role>),
+    /// The sole source-owned list item was removed exactly once.
+    Unlinked(BluetoothDtmSchedulerSoftwareListUnlinked<Role>),
+}
+
+/// DTM graph after the post-unlink scheduler return predicate became ready.
+///
+/// This state proves only the reviewed `idle + command statuses` predicate for
+/// the exact already-unlinked item. It does not return CPU ownership, recycle
+/// memory, or release the scheduler timeline reservation.
+#[must_use = "the removal-ready graph must advance through recycle"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothDtmSchedulerSoftwareListRemovalReady<Role> {
+    item: BluetoothDtmCompletionObservedEvent<Role>,
+    head: BluetoothSchedulerHardwareListHeadEmptyObserved,
+    _removal: BluetoothSchedulerSoftwareListRemovalReady,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<Role> BluetoothDtmSchedulerSoftwareListRemovalReady<Role> {
+    /// Role retained by the removal-ready event.
+    pub const fn role(&self) -> BluetoothDtmRole {
+        self.item.role()
+    }
+
+    /// Exact scheduler item retained through the removal return gate.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.item.scheduler_item_address()
+    }
+
+    /// Semantic completion status retained through the removal return gate.
+    pub const fn status(&self) -> BluetoothDtmSchedulerItemCompletionStatus {
+        self.item.status()
+    }
+
+    /// Hardware list retained by the exact empty-head observation.
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.head.index()
+    }
+}
+
+/// Internal result of joining one fresh primary scheduler event to an already
+/// unlinked DTM graph.
+#[must_use = "the unlinked or removal-ready graph must remain owned"]
+#[cfg(target_arch = "riscv32")]
+pub(crate) enum BluetoothDtmSchedulerSoftwareListRemovalJoin<Role> {
+    SchedulerIdentityMismatch(BluetoothDtmSchedulerSoftwareListUnlinked<Role>),
+    Pending(BluetoothDtmSchedulerSoftwareListUnlinked<Role>),
+    Ready(BluetoothDtmSchedulerSoftwareListRemovalReady<Role>),
 }
 
 /// One bounded post-completion hardware-head retirement attempt.
@@ -742,6 +879,77 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         }
     }
 
+    /// Remove the exact empty-head DTM item from the source-owned software
+    /// list without recreating the vendor intrusive container.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn unlink_dtm_software_list<Role>(
+        &mut self,
+        observed: BluetoothDtmSchedulerHardwareHeadEmptyObserved<Role>,
+    ) -> BluetoothDtmSchedulerSoftwareListUnlinkStep<Role> {
+        let address = observed.scheduler_item_address();
+        if observed.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || self.runtime.scheduler_finished_lists_mut().is_active()
+            || !self
+                ._scheduler_list
+                .unlink_software_list_first_item(address)
+        {
+            return BluetoothDtmSchedulerSoftwareListUnlinkStep::SchedulerIdentityMismatch(
+                observed,
+            );
+        }
+
+        let BluetoothDtmSchedulerHardwareHeadEmptyObserved { item, head } = observed;
+        BluetoothDtmSchedulerSoftwareListUnlinkStep::Unlinked(
+            BluetoothDtmSchedulerSoftwareListUnlinked { item, head },
+        )
+    }
+
+    /// Join one freshly serviced primary scheduler event to the exact
+    /// already-unlinked DTM item.
+    ///
+    /// A busy event performs no task-side command read. Any pending result
+    /// consumes that event and retains the unlinked graph for a later event.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn join_dtm_software_list_removal<Role>(
+        &mut self,
+        unlinked: BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
+        event: crate::BluetoothPrimarySchedulerEvent,
+    ) -> BluetoothDtmSchedulerSoftwareListRemovalJoin<Role> {
+        let address = unlinked.scheduler_item_address();
+        if unlinked.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || self.runtime.scheduler_finished_lists_mut().is_active()
+            || !self._scheduler_list.retains_unlinked_first_item(address)
+        {
+            return BluetoothDtmSchedulerSoftwareListRemovalJoin::SchedulerIdentityMismatch(
+                unlinked,
+            );
+        }
+
+        let idle = match event.into_software_list_removal_gate() {
+            BluetoothSchedulerSoftwareListRemovalInterruptStep::Pending => {
+                return BluetoothDtmSchedulerSoftwareListRemovalJoin::Pending(unlinked);
+            }
+            BluetoothSchedulerSoftwareListRemovalInterruptStep::Idle(idle) => idle,
+        };
+        match self.task.finish_scheduler_software_list_removal(idle) {
+            BluetoothSchedulerSoftwareListRemovalJoin::Pending => {
+                BluetoothDtmSchedulerSoftwareListRemovalJoin::Pending(unlinked)
+            }
+            BluetoothSchedulerSoftwareListRemovalJoin::Ready(removal) => {
+                self._scheduler_list
+                    .retain_software_list_removal_ready_first_item(address);
+                let BluetoothDtmSchedulerSoftwareListUnlinked { item, head } = unlinked;
+                BluetoothDtmSchedulerSoftwareListRemovalJoin::Ready(
+                    BluetoothDtmSchedulerSoftwareListRemovalReady {
+                        item,
+                        head,
+                        _removal: removal,
+                    },
+                )
+            }
+        }
+    }
+
     /// Borrow the matching interrupt and task runtime endpoints from this
     /// initialized hardware epoch.
     ///
@@ -933,6 +1141,15 @@ mod tests {
         );
         list.retain_hardware_head_empty_first_item(first);
         assert!(!list.retains_completion_observed_first_item(first));
+        assert!(list.retains_hardware_head_empty_first_item(first));
+        assert!(list.unlink_software_list_first_item(first));
+        assert!(!list.unlink_software_list_first_item(first));
+        assert!(list.retains_unlinked_first_item(first));
+        assert_eq!(
+            list.prepare_first_item(other),
+            Err(BluetoothDtmEmptySchedulerMergeError::ListNotEmpty)
+        );
+        list.retain_software_list_removal_ready_first_item(first);
         assert_eq!(
             list.prepare_first_item(other),
             Err(BluetoothDtmEmptySchedulerMergeError::ListNotEmpty)

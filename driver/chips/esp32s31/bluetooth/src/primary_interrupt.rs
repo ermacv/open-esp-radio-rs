@@ -7,6 +7,8 @@
 
 #![forbid(unsafe_code)]
 
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_esp32s31_hal::BluetoothSchedulerSoftwareListRemovalInterruptStep;
 use open_esp_radio_esp32s31_hal::{
     BluetoothInterruptRegistersOwner, BluetoothSchedulerLockModifyInterruptObservation,
     BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerWorkObservation,
@@ -52,8 +54,7 @@ pub struct BluetoothPrimaryNoSchedulerWork {
 pub struct BluetoothPrimarySchedulerEvent {
     classification: BluetoothPrimaryInterruptClassification,
     wake: BluetoothSchedulerWorkerWake,
-    lock_modify: BluetoothSchedulerLockModifyInterruptObservation,
-    current_hardware_list: BluetoothSchedulerHardwareListIndex,
+    work: BluetoothSchedulerWorkObservation,
 }
 
 /// Durable Controller disposition of one acknowledged primary epoch.
@@ -120,12 +121,21 @@ impl BluetoothPrimarySchedulerEvent {
     pub const fn lock_modify_observation(
         &self,
     ) -> BluetoothSchedulerLockModifyInterruptObservation {
-        self.lock_modify
+        BluetoothSchedulerLockModifyInterruptObservation::from_busy(self.work.is_busy())
     }
 
     /// Hardware-list index captured by the same scheduler-state read.
     pub const fn current_hardware_list(&self) -> BluetoothSchedulerHardwareListIndex {
-        self.current_hardware_list
+        self.work.current_hardware_list()
+    }
+
+    /// Consume this exact primary-event scheduler sample at the interrupt-side
+    /// software-list removal gate.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn into_software_list_removal_gate(
+        self,
+    ) -> BluetoothSchedulerSoftwareListRemovalInterruptStep {
+        self.work.into_software_list_removal_gate()
     }
 }
 
@@ -199,12 +209,11 @@ fn execute_primary_interrupt_step(
         });
     };
     let work = backend.capture_scheduler_work();
-    let wake = work_classifier.classify(work);
+    let wake = work_classifier.classify(&work);
     BluetoothPrimaryInterruptStep::Scheduler(BluetoothPrimarySchedulerEvent {
         classification,
         wake,
-        lock_modify: BluetoothSchedulerLockModifyInterruptObservation::from_busy(work.is_busy()),
-        current_hardware_list: work.current_hardware_list(),
+        work,
     })
 }
 
@@ -238,7 +247,7 @@ mod tests {
     struct Backend {
         epoch: Option<BluetoothPrimaryInterruptEpoch>,
         gate: BluetoothSchedulerReferenceGateObservation,
-        work: BluetoothSchedulerWorkObservation,
+        work: Option<BluetoothSchedulerWorkObservation>,
         operations: Vec<Operation>,
     }
 
@@ -260,10 +269,12 @@ mod tests {
                 gate: BluetoothSchedulerReferenceGateObservation::from_busy_for_validation(
                     gate_busy,
                 ),
-                work: BluetoothSchedulerWorkObservation::from_fields_for_validation(
-                    work_busy,
-                    work_reference_state_29,
-                    7,
+                work: Some(
+                    BluetoothSchedulerWorkObservation::from_fields_for_validation(
+                        work_busy,
+                        work_reference_state_29,
+                        7,
+                    ),
                 ),
                 operations: Vec::new(),
             }
@@ -297,7 +308,7 @@ mod tests {
 
         fn capture_scheduler_work(&mut self) -> BluetoothSchedulerWorkObservation {
             self.operations.push(Operation::Work);
-            self.work
+            self.work.take().expect("one scheduler work observation")
         }
     }
 

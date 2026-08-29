@@ -213,7 +213,7 @@ impl BluetoothSchedulerWorkClassifier {
     /// Classify the second scheduler-state observation into one worker wake.
     pub const fn classify(
         self,
-        observation: BluetoothSchedulerWorkObservation,
+        observation: &BluetoothSchedulerWorkObservation,
     ) -> BluetoothSchedulerWorkerWake {
         let reference_state = observation.reference_path_active();
         BluetoothSchedulerWorkerWake {
@@ -298,7 +298,7 @@ mod tests {
                     state_publication_requested,
                 }
                 .classify(
-                    BluetoothSchedulerWorkObservation::from_fields_for_validation(
+                    &BluetoothSchedulerWorkObservation::from_fields_for_validation(
                         busy,
                         reference_state_29,
                         0,

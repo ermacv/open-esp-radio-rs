@@ -217,6 +217,81 @@ impl<Role, E> BluetoothDtmSchedulerStartFailure<Role, E> {
     }
 }
 
+/// Stable-dispatch failure retaining the already-unlinked DTM graph.
+#[must_use = "a dispatch failure must retain the unlinked graph for a later event"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothDtmSoftwareListRemovalObservationFailure<Role, E> {
+    error: E,
+    unlinked: crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<Role, E> BluetoothDtmSoftwareListRemovalObservationFailure<Role, E> {
+    /// Inspect the exact stable-dispatch rejection.
+    pub const fn error(&self) -> &E {
+        &self.error
+    }
+
+    /// Recover the error and unchanged unlinked DTM graph.
+    pub fn into_parts(self) -> (E, crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>) {
+        (self.error, self.unlinked)
+    }
+}
+
+/// Controller result of one fresh post-unlink primary-event observation.
+#[must_use = "every outcome retains the exact unlinked or removal-ready graph"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothDtmSoftwareListRemovalObservationStep<Role> {
+    /// The primary epoch reported a baseline or unclassified fault.
+    Fault {
+        /// Already-unlinked graph retained for fail-stop handling.
+        unlinked: crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
+        /// Exact primary controller fault.
+        fault: crate::BluetoothPrimaryControllerFault,
+    },
+    /// The acknowledged epoch contained no reviewed scheduler work.
+    NoSchedulerWork {
+        /// Already-unlinked graph retained for a later event.
+        unlinked: crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
+        /// Exact acknowledged empty primary epoch.
+        epoch: crate::BluetoothPrimaryNoSchedulerWork,
+    },
+    /// Selector-6 recovery blocked the later fresh scheduler-state read.
+    ReferenceRecoveryRequired {
+        /// Already-unlinked graph retained while recovery remains blocked.
+        unlinked: crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
+        /// Exact affine selector-6 recovery requirement.
+        required: crate::BluetoothPrimaryReferenceRecoveryRequired,
+    },
+    /// The fresh scheduler sample or task command statuses were not ready.
+    Pending {
+        /// Already-unlinked graph retained for another external event.
+        unlinked: crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
+        /// Durable scheduler-wake publication from this exact event.
+        scheduler: crate::BluetoothSchedulerWakePublication,
+        /// Durable lock/modify publication from this exact event.
+        lock_modify: crate::BluetoothSchedulerLockModifyEventPublication,
+    },
+    /// The graph belongs to another Controller scheduler epoch.
+    SchedulerIdentityMismatch {
+        /// Unchanged already-unlinked graph.
+        unlinked: crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
+        /// Durable scheduler-wake publication from this exact event.
+        scheduler: crate::BluetoothSchedulerWakePublication,
+        /// Durable lock/modify publication from this exact event.
+        lock_modify: crate::BluetoothSchedulerLockModifyEventPublication,
+    },
+    /// The complete post-unlink return predicate became ready.
+    Ready {
+        /// Exact removal-ready graph; CPU ownership is still not returned.
+        ready: crate::BluetoothDtmSchedulerSoftwareListRemovalReady<Role>,
+        /// Durable scheduler-wake publication from this exact event.
+        scheduler: crate::BluetoothSchedulerWakePublication,
+        /// Durable lock/modify publication from this exact event.
+        lock_modify: crate::BluetoothSchedulerLockModifyEventPublication,
+    },
+}
+
 #[cfg(target_arch = "riscv32")]
 enum BluetoothControllerModemLpTimerSoftwarePhase<'runtime, const CAPACITY: usize> {
     Work(BluetoothModemLpTimerSoftwareWork<'runtime, CAPACITY>),
@@ -642,6 +717,100 @@ where
     ) -> crate::BluetoothDtmSchedulerHardwareHeadRetirementStep<Role> {
         self.initialized
             .observe_dtm_hardware_head_retirement(completed)
+    }
+
+    /// Remove the sole empty-head DTM item from the source-owned software
+    /// list exactly once.
+    ///
+    /// This is an ownership-only transition for the open scheduler; it does
+    /// not recreate the vendor intrusive list or return descriptor access.
+    pub fn unlink_dtm_software_list<Role>(
+        &mut self,
+        observed: crate::BluetoothDtmSchedulerHardwareHeadEmptyObserved<Role>,
+    ) -> crate::BluetoothDtmSchedulerSoftwareListUnlinkStep<Role> {
+        self.initialized.unlink_dtm_software_list(observed)
+    }
+
+    /// Service one fresh primary epoch after software-list unlink and join its
+    /// exact scheduler-state sample to the finite task-side return gate.
+    ///
+    /// Busy and command-pending outcomes consume the event and return the
+    /// already-unlinked graph. Retry therefore requires another external
+    /// event; this method never polls. Selector-6 recovery remains fail-closed.
+    pub fn observe_dtm_software_list_removal<Role>(
+        &mut self,
+        unlinked: crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
+    ) -> Result<
+        BluetoothDtmSoftwareListRemovalObservationStep<Role>,
+        BluetoothDtmSoftwareListRemovalObservationFailure<Role, S::Error>,
+    >
+    where
+        S: BluetoothSharedInterruptDispatchStorage,
+    {
+        let step = match self._storage.service_primary_interrupt() {
+            Ok(step) => step,
+            Err(error) => {
+                return Err(BluetoothDtmSoftwareListRemovalObservationFailure { error, unlinked });
+            }
+        };
+        let (scheduler_wake, lock_modify_events) =
+            self.initialized.primary_interrupt_publications();
+        match step.publish(scheduler_wake, lock_modify_events) {
+            BluetoothPrimaryPublishedInterruptStep::Fault(fault) => {
+                Ok(BluetoothDtmSoftwareListRemovalObservationStep::Fault {
+                    unlinked,
+                    fault,
+                })
+            }
+            BluetoothPrimaryPublishedInterruptStep::NoSchedulerWork(epoch) => {
+                Ok(
+                    BluetoothDtmSoftwareListRemovalObservationStep::NoSchedulerWork {
+                        unlinked,
+                        epoch,
+                    },
+                )
+            }
+            BluetoothPrimaryPublishedInterruptStep::ReferenceRecoveryRequired(required) => {
+                Ok(
+                    BluetoothDtmSoftwareListRemovalObservationStep::ReferenceRecoveryRequired {
+                        unlinked,
+                        required,
+                    },
+                )
+            }
+            BluetoothPrimaryPublishedInterruptStep::Scheduler {
+                event,
+                scheduler,
+                lock_modify,
+            } => match self
+                .initialized
+                .join_dtm_software_list_removal(unlinked, event)
+            {
+                crate::scheduler::BluetoothDtmSchedulerSoftwareListRemovalJoin::SchedulerIdentityMismatch(
+                    unlinked,
+                ) => Ok(
+                    BluetoothDtmSoftwareListRemovalObservationStep::SchedulerIdentityMismatch {
+                        unlinked,
+                        scheduler,
+                        lock_modify,
+                    },
+                ),
+                crate::scheduler::BluetoothDtmSchedulerSoftwareListRemovalJoin::Pending(
+                    unlinked,
+                ) => Ok(BluetoothDtmSoftwareListRemovalObservationStep::Pending {
+                    unlinked,
+                    scheduler,
+                    lock_modify,
+                }),
+                crate::scheduler::BluetoothDtmSchedulerSoftwareListRemovalJoin::Ready(ready) => {
+                    Ok(BluetoothDtmSoftwareListRemovalObservationStep::Ready {
+                        ready,
+                        scheduler,
+                        lock_modify,
+                    })
+                }
+            },
+        }
     }
 
     /// Service and durably publish one primary source-124 epoch.

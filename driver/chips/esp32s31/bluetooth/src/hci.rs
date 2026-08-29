@@ -509,6 +509,25 @@ where
     }
 
     #[cfg(target_arch = "riscv32")]
+    pub(crate) fn unlink_dtm_software_list<Role>(
+        &mut self,
+        observed: crate::BluetoothDtmSchedulerHardwareHeadEmptyObserved<Role>,
+    ) -> crate::BluetoothDtmSchedulerSoftwareListUnlinkStep<Role> {
+        self.controller.scheduler.unlink_dtm_software_list(observed)
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn join_dtm_software_list_removal<Role>(
+        &mut self,
+        unlinked: crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
+        event: crate::BluetoothPrimarySchedulerEvent,
+    ) -> crate::scheduler::BluetoothDtmSchedulerSoftwareListRemovalJoin<Role> {
+        self.controller
+            .scheduler
+            .join_dtm_software_list_removal(unlinked, event)
+    }
+
+    #[cfg(target_arch = "riscv32")]
     #[expect(
         clippy::result_large_err,
         reason = "the internal no-alloc delegation preserves the complete rejected graph"

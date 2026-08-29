@@ -346,8 +346,8 @@ impl RadioPhyRestoreSlot {
 
 const fn decode_noise_floor_quarter_db(raw_low_twelve: u16) -> i32 {
     // Complete ROM `phy_read_hw_noisefloor` subtracts 0x1000 from the
-    // masked field unconditionally, sign-extends and shifts by two.
-    let signed_sixteenth_db = (raw_low_twelve & 0x0fff) as i32 - 0x1000;
+    // generated twelve-bit field unconditionally and shifts by two.
+    let signed_sixteenth_db = raw_low_twelve as i32 - 0x1000;
     signed_sixteenth_db >> 2
 }
 
@@ -581,20 +581,16 @@ impl RadioPhyRegisters {
 
     /// Set the baseband watchdog timeout-clear bit through one fresh RMW.
     pub fn clear_baseband_watchdog_timeout(&mut self) {
-        self.peripherals
-            .phy_baseband_config_oracle
-            .baseband_watchdog_enable()
-            .modify(|_, w| w.watchdog_timeout_clear().set_bit());
+        super::generated::clear_phy_baseband_watchdog_timeout(
+            &self.peripherals.phy_baseband_config_oracle,
+        );
     }
 
     /// Return the complete standalone baseband watchdog status word.
     pub fn baseband_watchdog_status(&mut self) -> u32 {
-        self.peripherals
-            .phy_baseband_config_oracle
-            .baseband_watchdog_status()
-            .read()
-            .status()
-            .bits()
+        super::svd::field_read::observe_phy_baseband_watchdog_status(
+            &self.peripherals.phy_baseband_config_oracle,
+        )
     }
 
     /// Apply both fresh RMWs of complete ROM `phy_lltf_mask_en`.
@@ -631,13 +627,9 @@ impl RadioPhyRegisters {
     /// Read the exact signed quarter-dB result returned by complete rev0 ROM
     /// `phy_read_hw_noisefloor`.
     pub fn read_noise_floor_quarter_db(&self) -> i32 {
-        let raw = self
-            .peripherals
-            .phy_baseband_config_oracle
-            .noise_floor_measurement()
-            .read()
-            .signed_sixteenth_db_code()
-            .bits();
+        let raw = super::svd::field_read::observe_phy_noise_floor_sixteenth_db_code(
+            &self.peripherals.phy_baseband_config_oracle,
+        );
         decode_noise_floor_quarter_db(raw)
     }
 
@@ -751,10 +743,9 @@ impl RadioPhyRegisters {
 
     /// Select TX-DC SAR mode one after the initial PBus setup.
     pub fn configure_txdc_power_detector_sar(&mut self) {
-        self.peripherals
-            .phy_baseband_config_oracle
-            .power_detector_sar_control_status()
-            .modify(|_, w| w.sar_mode_unknown().set(1));
+        super::generated::select_phy_txdc_power_detector_sar_mode(
+            &self.peripherals.phy_baseband_config_oracle,
+        );
     }
 
     /// Restore the privately saved TX-DC fields and select final SAR mode.
@@ -769,8 +760,7 @@ impl RadioPhyRegisters {
                 .modify(|_, w| w.tx_dc_temporary_low_unknown().set(fields.table_low));
             bb.power_detector_control()
                 .modify(|_, w| w.calibration_field_unknown().set(fields.calibration));
-            bb.power_detector_sar_control_status()
-                .modify(|_, w| w.sar_mode_unknown().set(3));
+            super::generated::enable_phy_power_detector_sar_mode(bb);
         })
     }
 
@@ -784,33 +774,23 @@ impl RadioPhyRegisters {
 
     /// Pulse the power-detector SAR trigger through two fresh RMW edges.
     pub fn trigger_power_detector_sar(&mut self) {
-        let control = self
-            .peripherals
-            .phy_baseband_config_oracle
-            .power_detector_control();
-        control.modify(|_, w| w.sar_trigger().clear_bit());
-        control.modify(|_, w| w.sar_trigger().set_bit());
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        super::generated::lower_phy_power_detector_sar_trigger(bb);
+        super::generated::raise_phy_power_detector_sar_trigger(bb);
     }
 
     /// Read the SVD-described power-detector readiness field.
     pub fn power_detector_ready(&mut self) -> bool {
-        self.peripherals
-            .phy_baseband_config_oracle
-            .power_detector_sar_control_status()
-            .read()
-            .sar_ready()
-            .bits()
-            == 0b111
+        super::svd::field_read::observe_phy_power_detector_ready(
+            &self.peripherals.phy_baseband_config_oracle,
+        ) == 0b111
     }
 
     /// Read the SVD-described power-detector SAR sample field.
     pub fn power_detector_sar_sample(&mut self) -> u16 {
-        self.peripherals
-            .phy_baseband_config_oracle
-            .power_detector_sar_result()
-            .read()
-            .sar_sample()
-            .bits()
+        super::svd::field_read::observe_phy_power_detector_sar_sample(
+            &self.peripherals.phy_baseband_config_oracle,
+        )
     }
 
     fn clear_tx_gain_compensation(&mut self) {

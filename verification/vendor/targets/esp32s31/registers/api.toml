@@ -8610,3 +8610,67 @@ fields = [{ field = "BACKGROUND_CONTROL_ENABLE_UNKNOWN", source-bit-offset = 0 }
 value = 1
 exposure = "facade"
 sources = ["ROM_REV0_PHY_POWER_DETECTOR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "select_phy_txdc_power_detector_sar_mode"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_SAR_CONTROL_STATUS"
+fields = [{ field = "SAR_MODE_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_POWER_DETECTOR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "lower_phy_power_detector_sar_trigger"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_CONTROL"
+fields = [{ field = "SAR_TRIGGER", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_POWER_DETECTOR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "raise_phy_power_detector_sar_trigger"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_CONTROL"
+fields = [{ field = "SAR_TRIGGER", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_POWER_DETECTOR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_phy_baseband_watchdog_timeout"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_WATCHDOG_ENABLE"
+fields = [{ field = "WATCHDOG_TIMEOUT_CLEAR", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_phy_baseband_watchdog_status"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_WATCHDOG_STATUS"
+field = "STATUS"
+sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_phy_noise_floor_sixteenth_db_code"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "NOISE_FLOOR_MEASUREMENT"
+field = "SIGNED_SIXTEENTH_DB_CODE"
+sources = ["ROM_REV0_PHY_READ_NOISE_FLOOR", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_phy_power_detector_ready"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_SAR_CONTROL_STATUS"
+field = "SAR_READY"
+sources = ["ROM_REV0_PHY_POWER_DETECTOR", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_phy_power_detector_sar_sample"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_SAR_RESULT"
+field = "SAR_SAMPLE"
+sources = ["ROM_REV0_PHY_POWER_DETECTOR", "S31_ESP_PACS_SVD"]

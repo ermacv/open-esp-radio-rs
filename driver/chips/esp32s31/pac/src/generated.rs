@@ -6243,6 +6243,36 @@ pub(crate) fn enable_phy_power_detector_background_control(
     crate::svd::field_replace_modify::enable_phy_power_detector_background_control(registers);
 }
 
+/// Typed bridge for the reviewed `select_phy_txdc_power_detector_sar_mode` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn select_phy_txdc_power_detector_sar_mode(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::select_phy_txdc_power_detector_sar_mode(registers);
+}
+
+/// Typed bridge for the reviewed `lower_phy_power_detector_sar_trigger` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn lower_phy_power_detector_sar_trigger(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::lower_phy_power_detector_sar_trigger(registers);
+}
+
+/// Typed bridge for the reviewed `raise_phy_power_detector_sar_trigger` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn raise_phy_power_detector_sar_trigger(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::raise_phy_power_detector_sar_trigger(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_baseband_watchdog_timeout` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_baseband_watchdog_timeout(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::clear_phy_baseband_watchdog_timeout(registers);
+}
+
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
 #[inline]
 pub(crate) fn configure_shared_modem_low_power_timer(

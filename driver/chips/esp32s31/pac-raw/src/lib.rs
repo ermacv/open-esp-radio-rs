@@ -58779,6 +58779,46 @@ pub mod field_read {
             .low_rate_enable_first()
             .bit()
     }
+
+    /// Read `PHY_BASEBAND_CONFIG_ORACLE`.`BASEBAND_WATCHDOG_STATUS`.`STATUS` without exposing its register block.
+    #[inline]
+    pub fn observe_phy_baseband_watchdog_status(registers: &crate::PhyBasebandConfigOracle) -> u32 {
+        registers.baseband_watchdog_status().read().status().bits()
+    }
+
+    /// Read `PHY_BASEBAND_CONFIG_ORACLE`.`NOISE_FLOOR_MEASUREMENT`.`SIGNED_SIXTEENTH_DB_CODE` without exposing its register block.
+    #[inline]
+    pub fn observe_phy_noise_floor_sixteenth_db_code(
+        registers: &crate::PhyBasebandConfigOracle,
+    ) -> u16 {
+        registers
+            .noise_floor_measurement()
+            .read()
+            .signed_sixteenth_db_code()
+            .bits()
+    }
+
+    /// Read `PHY_BASEBAND_CONFIG_ORACLE`.`POWER_DETECTOR_SAR_CONTROL_STATUS`.`SAR_READY` without exposing its register block.
+    #[inline]
+    pub fn observe_phy_power_detector_ready(registers: &crate::PhyBasebandConfigOracle) -> u8 {
+        registers
+            .power_detector_sar_control_status()
+            .read()
+            .sar_ready()
+            .bits()
+    }
+
+    /// Read `PHY_BASEBAND_CONFIG_ORACLE`.`POWER_DETECTOR_SAR_RESULT`.`SAR_SAMPLE` without exposing its register block.
+    #[inline]
+    pub fn observe_phy_power_detector_sar_sample(
+        registers: &crate::PhyBasebandConfigOracle,
+    ) -> u16 {
+        registers
+            .power_detector_sar_result()
+            .read()
+            .sar_sample()
+            .bits()
+    }
 }
 
 /// Safe same-sample observations through reviewed SVD fields.
@@ -68608,6 +68648,54 @@ pub mod field_replace_modify {
             // fits its named SVD field; no whole-register image crosses this API.
             writer
                 .background_control_enable_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_SAR_CONTROL_STATUS fields [SAR_MODE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn select_phy_txdc_power_detector_sar_mode(registers: &crate::PhyBasebandConfigOracle) {
+        registers
+            .power_detector_sar_control_status()
+            .modify(|_, writer| {
+                let input = 0x00000001_u32;
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                unsafe { writer.sar_mode_unknown().bits((input & 0x00000003) as u8) }
+            });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields [SAR_TRIGGER] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn lower_phy_power_detector_sar_trigger(registers: &crate::PhyBasebandConfigOracle) {
+        registers.power_detector_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.sar_trigger().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields [SAR_TRIGGER] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn raise_phy_power_detector_sar_trigger(registers: &crate::PhyBasebandConfigOracle) {
+        registers.power_detector_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.sar_trigger().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_WATCHDOG_ENABLE fields [WATCHDOG_TIMEOUT_CLEAR] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_phy_baseband_watchdog_timeout(registers: &crate::PhyBasebandConfigOracle) {
+        registers.baseband_watchdog_enable().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .watchdog_timeout_clear()
                 .bit((input & 0x00000001) != 0)
         });
     }

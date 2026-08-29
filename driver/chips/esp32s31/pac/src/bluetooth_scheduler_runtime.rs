@@ -65,7 +65,7 @@ impl BluetoothSchedulerWorkObservation {
     }
 
     /// Construct semantic deferred-work fields for upper-layer validation.
-    #[cfg(feature = "validation-probes")]
+    #[cfg(any(feature = "validation-probes", test))]
     #[doc(hidden)]
     pub const fn from_fields_for_validation(
         busy: bool,

@@ -3837,10 +3837,17 @@ scope = []
 register-method = "scheduler_command_0"
 
 [[registers.fields]]
-svd-name = "PAYLOAD_LOW_24"
-method = "payload_low_24"
+svd-name = "COMPRESSED_SRAM_POINTER"
+method = "compressed_sram_pointer"
 bit-offset = 0
-bit-width = 24
+bit-width = 20
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HARDWARE_LIST_INDEX"
+method = "hardware_list_index"
+bit-offset = 20
+bit-width = 4
 access = "read-write"
 
 [[registers.fields]]
@@ -3865,10 +3872,17 @@ bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "PAYLOAD_HIGH_27_30"
-method = "payload_high_27_30"
+svd-name = "EXECUTION_LOCK_RESULT"
+method = "execution_lock_result"
 bit-offset = 27
-bit-width = 4
+bit-width = 3
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "OPAQUE_30"
+method = "opaque_30"
+bit-offset = 30
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
@@ -3890,10 +3904,17 @@ scope = []
 register-method = "scheduler_command_1"
 
 [[registers.fields]]
-svd-name = "PAYLOAD_LOW_17"
-method = "payload_low_17"
+svd-name = "HARDWARE_LIST_MASK"
+method = "hardware_list_mask"
 bit-offset = 0
-bit-width = 17
+bit-width = 16
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "OPAQUE_16"
+method = "opaque_16"
+bit-offset = 16
+bit-width = 1
 access = "read-write"
 
 [[registers.fields]]

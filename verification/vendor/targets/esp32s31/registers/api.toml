@@ -1721,7 +1721,7 @@ register = "SCHEDULER_COMMAND_0"
 fields = [{ field = "START", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
-sources = ["BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION", "BLOB_LIBBTDM_SCHEDULER_INSERTION_END_BRANCH", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION", "BLOB_LIBBTDM_SCHEDULER_INSERTION_END_BRANCH", "BLOB_LIBBTDM_SCHEDULER_INSERTION_EXECUTION_COMMANDS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 
 [[field-replace-modifies]]
 name = "clear_bluetooth_scheduler_insertion_command_1_start"
@@ -1730,7 +1730,7 @@ register = "SCHEDULER_COMMAND_1"
 fields = [{ field = "START", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
-sources = ["BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION", "BLOB_LIBBTDM_SCHEDULER_INSERTION_END_BRANCH", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION", "BLOB_LIBBTDM_SCHEDULER_INSERTION_END_BRANCH", "BLOB_LIBBTDM_SCHEDULER_INSERTION_EXECUTION_COMMANDS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 
 [[fixed-register-writes]]
 name = "publish_bluetooth_scheduler_stop_command"
@@ -3498,6 +3498,48 @@ peripheral = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME"
 register = "SCHEDULER_STATE"
 fields = ["BUSY", "REFERENCE_PATH_STATE", "CURRENT_LINK_INDEX"]
 sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+
+[[zero-based-field-writes]]
+name = "publish_bluetooth_scheduler_execution_lock_request"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SCHEDULER_COMMAND_0"
+fields = ["COMPRESSED_SRAM_POINTER", "HARDWARE_LIST_INDEX", "START"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_INSERTION_EXECUTION_COMMANDS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+
+[[field-reads]]
+name = "observe_bluetooth_scheduler_execution_lock_ready"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SCHEDULER_COMMAND_0"
+field = "STATUS_24"
+sources = ["BLOB_LIBBTDM_SCHEDULER_INSERTION_EXECUTION_COMMANDS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+
+[[field-reads]]
+name = "observe_bluetooth_scheduler_execution_lock_result"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SCHEDULER_COMMAND_0"
+field = "EXECUTION_LOCK_RESULT"
+sources = ["BLOB_LIBBTDM_SCHEDULER_INSERTION_EXECUTION_COMMANDS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+
+[[zero-based-field-writes]]
+name = "publish_bluetooth_scheduler_execution_modify_request"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SCHEDULER_COMMAND_1"
+fields = ["HARDWARE_LIST_MASK", "START"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_INSERTION_EXECUTION_COMMANDS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+
+[[field-reads]]
+name = "observe_bluetooth_scheduler_execution_modify_ready"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SCHEDULER_COMMAND_1"
+field = "STATUS_17"
+sources = ["BLOB_LIBBTDM_SCHEDULER_INSERTION_EXECUTION_COMMANDS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+
+[[field-reads]]
+name = "observe_bluetooth_scheduler_execution_modify_rejected"
+peripheral = "BLUETOOTH_CONTROLLER_CORE"
+register = "SCHEDULER_COMMAND_1"
+field = "STATUS_19"
+sources = ["BLOB_LIBBTDM_SCHEDULER_INSERTION_EXECUTION_COMMANDS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 
 [[field-reads]]
 name = "observe_bluetooth_scheduler_software_list_command_0_status_26"

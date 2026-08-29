@@ -18051,15 +18051,32 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
         </register>
         <register>
           <name>SCHEDULER_COMMAND_0</name>
-          <description>First scheduler command/status transaction. Writers publish a complete payload with START bit 31; complete wait/check paths inspect status bits 24 and 26.</description>
+          <description>First scheduler command/status transaction. The insertion execution-lock request publishes a compressed item pointer, hardware-list index and START; its finite wait observes positional status 24 and a three-bit result. Other complete paths inspect positional status 26.</description>
           <addressOffset>0x254</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>PAYLOAD_LOW_24</name>
+              <name>COMPRESSED_SRAM_POINTER</name>
               <bitOffset>0</bitOffset>
-              <bitWidth>24</bitWidth>
+              <bitWidth>20</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>1048575</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>HARDWARE_LIST_INDEX</name>
+              <bitOffset>20</bitOffset>
+              <bitWidth>4</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>15</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>STATUS_24</name>
@@ -18077,9 +18094,14 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>PAYLOAD_HIGH_27_30</name>
+              <name>EXECUTION_LOCK_RESULT</name>
               <bitOffset>27</bitOffset>
-              <bitWidth>4</bitWidth>
+              <bitWidth>3</bitWidth>
+            </field>
+            <field>
+              <name>OPAQUE_30</name>
+              <bitOffset>30</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>START</name>
@@ -18090,15 +18112,26 @@ belong exclusively to BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME.
         </register>
         <register>
           <name>SCHEDULER_COMMAND_1</name>
-          <description>Second scheduler command/status transaction. Writers publish payload with START bit 31; complete wait/check paths inspect status bits 17, 18 and 19.</description>
+          <description>Second scheduler command/status transaction. The insertion execution-modify request publishes a sixteen-list selection mask and START; its finite wait observes positional status bits 17 and 19. Other complete paths inspect positional status 18.</description>
           <addressOffset>0x258</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>PAYLOAD_LOW_17</name>
+              <name>HARDWARE_LIST_MASK</name>
               <bitOffset>0</bitOffset>
-              <bitWidth>17</bitWidth>
+              <bitWidth>16</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>65535</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>OPAQUE_16</name>
+              <bitOffset>16</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
             <field>
               <name>STATUS_17</name>

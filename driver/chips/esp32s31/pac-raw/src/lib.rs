@@ -41048,12 +41048,12 @@ pub mod bluetooth_controller_core {
         pub const fn hal_init_scheduler_control(&self) -> &HalInitSchedulerControl {
             &self.hal_init_scheduler_control
         }
-        #[doc = "0x254 - First scheduler command/status transaction. Writers publish a complete payload with START bit 31; complete wait/check paths inspect status bits 24 and 26."]
+        #[doc = "0x254 - First scheduler command/status transaction. The insertion execution-lock request publishes a compressed item pointer, hardware-list index and START; its finite wait observes positional status 24 and a three-bit result. Other complete paths inspect positional status 26."]
         #[inline(always)]
         pub const fn scheduler_command_0(&self) -> &SchedulerCommand0 {
             &self.scheduler_command_0
         }
-        #[doc = "0x258 - Second scheduler command/status transaction. Writers publish payload with START bit 31; complete wait/check paths inspect status bits 17, 18 and 19."]
+        #[doc = "0x258 - Second scheduler command/status transaction. The insertion execution-modify request publishes a sixteen-list selection mask and START; its finite wait observes positional status bits 17 and 19. Other complete paths inspect positional status 18."]
         #[inline(always)]
         pub const fn scheduler_command_1(&self) -> &SchedulerCommand1 {
             &self.scheduler_command_1
@@ -42771,19 +42771,24 @@ pub mod bluetooth_controller_core {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "SCHEDULER_COMMAND_0 (rw) register accessor: First scheduler command/status transaction. Writers publish a complete payload with START bit 31; complete wait/check paths inspect status bits 24 and 26.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_command_0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_command_0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_command_0`] module"]
+    #[doc = "SCHEDULER_COMMAND_0 (rw) register accessor: First scheduler command/status transaction. The insertion execution-lock request publishes a compressed item pointer, hardware-list index and START; its finite wait observes positional status 24 and a three-bit result. Other complete paths inspect positional status 26.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_command_0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_command_0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_command_0`] module"]
     #[doc(alias = "SCHEDULER_COMMAND_0")]
     pub type SchedulerCommand0 = crate::Reg<scheduler_command_0::SchedulerCommand0Spec>;
-    #[doc = "First scheduler command/status transaction. Writers publish a complete payload with START bit 31; complete wait/check paths inspect status bits 24 and 26."]
+    #[doc = "First scheduler command/status transaction. The insertion execution-lock request publishes a compressed item pointer, hardware-list index and START; its finite wait observes positional status 24 and a three-bit result. Other complete paths inspect positional status 26."]
     pub mod scheduler_command_0 {
         #[doc = "Register `SCHEDULER_COMMAND_0` reader"]
         pub type R = crate::R<SchedulerCommand0Spec>;
         #[doc = "Register `SCHEDULER_COMMAND_0` writer"]
         pub type W = crate::W<SchedulerCommand0Spec>;
-        #[doc = "Field `PAYLOAD_LOW_24` reader - "]
-        pub type PayloadLow24R = crate::FieldReader<u32>;
-        #[doc = "Field `PAYLOAD_LOW_24` writer - "]
-        pub type PayloadLow24W<'a, REG> = crate::FieldWriter<'a, REG, 24, u32>;
+        #[doc = "Field `COMPRESSED_SRAM_POINTER` reader - "]
+        pub type CompressedSramPointerR = crate::FieldReader<u32>;
+        #[doc = "Field `COMPRESSED_SRAM_POINTER` writer - "]
+        pub type CompressedSramPointerW<'a, REG> =
+            crate::FieldWriter<'a, REG, 20, u32, crate::Safe>;
+        #[doc = "Field `HARDWARE_LIST_INDEX` reader - "]
+        pub type HardwareListIndexR = crate::FieldReader;
+        #[doc = "Field `HARDWARE_LIST_INDEX` writer - "]
+        pub type HardwareListIndexW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `STATUS_24` reader - "]
         pub type Status24R = crate::BitReader;
         #[doc = "Field `STATUS_24` writer - "]
@@ -42796,19 +42801,28 @@ pub mod bluetooth_controller_core {
         pub type Status26R = crate::BitReader;
         #[doc = "Field `STATUS_26` writer - "]
         pub type Status26W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `PAYLOAD_HIGH_27_30` reader - "]
-        pub type PayloadHigh27_30R = crate::FieldReader;
-        #[doc = "Field `PAYLOAD_HIGH_27_30` writer - "]
-        pub type PayloadHigh27_30W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `EXECUTION_LOCK_RESULT` reader - "]
+        pub type ExecutionLockResultR = crate::FieldReader;
+        #[doc = "Field `EXECUTION_LOCK_RESULT` writer - "]
+        pub type ExecutionLockResultW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        #[doc = "Field `OPAQUE_30` reader - "]
+        pub type Opaque30R = crate::BitReader;
+        #[doc = "Field `OPAQUE_30` writer - "]
+        pub type Opaque30W<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `START` reader - "]
         pub type StartR = crate::BitReader;
         #[doc = "Field `START` writer - "]
         pub type StartW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bits 0:23"]
+            #[doc = "Bits 0:19"]
             #[inline(always)]
-            pub fn payload_low_24(&self) -> PayloadLow24R {
-                PayloadLow24R::new(self.bits & 0x00ff_ffff)
+            pub fn compressed_sram_pointer(&self) -> CompressedSramPointerR {
+                CompressedSramPointerR::new(self.bits & 0x000f_ffff)
+            }
+            #[doc = "Bits 20:23"]
+            #[inline(always)]
+            pub fn hardware_list_index(&self) -> HardwareListIndexR {
+                HardwareListIndexR::new(((self.bits >> 20) & 0x0f) as u8)
             }
             #[doc = "Bit 24"]
             #[inline(always)]
@@ -42825,10 +42839,15 @@ pub mod bluetooth_controller_core {
             pub fn status_26(&self) -> Status26R {
                 Status26R::new(((self.bits >> 26) & 1) != 0)
             }
-            #[doc = "Bits 27:30"]
+            #[doc = "Bits 27:29"]
             #[inline(always)]
-            pub fn payload_high_27_30(&self) -> PayloadHigh27_30R {
-                PayloadHigh27_30R::new(((self.bits >> 27) & 0x0f) as u8)
+            pub fn execution_lock_result(&self) -> ExecutionLockResultR {
+                ExecutionLockResultR::new(((self.bits >> 27) & 7) as u8)
+            }
+            #[doc = "Bit 30"]
+            #[inline(always)]
+            pub fn opaque_30(&self) -> Opaque30R {
+                Opaque30R::new(((self.bits >> 30) & 1) != 0)
             }
             #[doc = "Bit 31"]
             #[inline(always)]
@@ -42837,10 +42856,17 @@ pub mod bluetooth_controller_core {
             }
         }
         impl W {
-            #[doc = "Bits 0:23"]
+            #[doc = "Bits 0:19"]
             #[inline(always)]
-            pub fn payload_low_24(&mut self) -> PayloadLow24W<'_, SchedulerCommand0Spec> {
-                PayloadLow24W::new(self, 0)
+            pub fn compressed_sram_pointer(
+                &mut self,
+            ) -> CompressedSramPointerW<'_, SchedulerCommand0Spec> {
+                CompressedSramPointerW::new(self, 0)
+            }
+            #[doc = "Bits 20:23"]
+            #[inline(always)]
+            pub fn hardware_list_index(&mut self) -> HardwareListIndexW<'_, SchedulerCommand0Spec> {
+                HardwareListIndexW::new(self, 20)
             }
             #[doc = "Bit 24"]
             #[inline(always)]
@@ -42857,10 +42883,17 @@ pub mod bluetooth_controller_core {
             pub fn status_26(&mut self) -> Status26W<'_, SchedulerCommand0Spec> {
                 Status26W::new(self, 26)
             }
-            #[doc = "Bits 27:30"]
+            #[doc = "Bits 27:29"]
             #[inline(always)]
-            pub fn payload_high_27_30(&mut self) -> PayloadHigh27_30W<'_, SchedulerCommand0Spec> {
-                PayloadHigh27_30W::new(self, 27)
+            pub fn execution_lock_result(
+                &mut self,
+            ) -> ExecutionLockResultW<'_, SchedulerCommand0Spec> {
+                ExecutionLockResultW::new(self, 27)
+            }
+            #[doc = "Bit 30"]
+            #[inline(always)]
+            pub fn opaque_30(&mut self) -> Opaque30W<'_, SchedulerCommand0Spec> {
+                Opaque30W::new(self, 30)
             }
             #[doc = "Bit 31"]
             #[inline(always)]
@@ -42868,7 +42901,7 @@ pub mod bluetooth_controller_core {
                 StartW::new(self, 31)
             }
         }
-        #[doc = "First scheduler command/status transaction. Writers publish a complete payload with START bit 31; complete wait/check paths inspect status bits 24 and 26.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_command_0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_command_0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "First scheduler command/status transaction. The insertion execution-lock request publishes a compressed item pointer, hardware-list index and START; its finite wait observes positional status 24 and a three-bit result. Other complete paths inspect positional status 26.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_command_0::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_command_0::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct SchedulerCommand0Spec;
         impl crate::RegisterSpec for SchedulerCommand0Spec {
             type Ux = u32;
@@ -42880,19 +42913,23 @@ pub mod bluetooth_controller_core {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "SCHEDULER_COMMAND_1 (rw) register accessor: Second scheduler command/status transaction. Writers publish payload with START bit 31; complete wait/check paths inspect status bits 17, 18 and 19.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_command_1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_command_1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_command_1`] module"]
+    #[doc = "SCHEDULER_COMMAND_1 (rw) register accessor: Second scheduler command/status transaction. The insertion execution-modify request publishes a sixteen-list selection mask and START; its finite wait observes positional status bits 17 and 19. Other complete paths inspect positional status 18.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_command_1::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_command_1::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_command_1`] module"]
     #[doc(alias = "SCHEDULER_COMMAND_1")]
     pub type SchedulerCommand1 = crate::Reg<scheduler_command_1::SchedulerCommand1Spec>;
-    #[doc = "Second scheduler command/status transaction. Writers publish payload with START bit 31; complete wait/check paths inspect status bits 17, 18 and 19."]
+    #[doc = "Second scheduler command/status transaction. The insertion execution-modify request publishes a sixteen-list selection mask and START; its finite wait observes positional status bits 17 and 19. Other complete paths inspect positional status 18."]
     pub mod scheduler_command_1 {
         #[doc = "Register `SCHEDULER_COMMAND_1` reader"]
         pub type R = crate::R<SchedulerCommand1Spec>;
         #[doc = "Register `SCHEDULER_COMMAND_1` writer"]
         pub type W = crate::W<SchedulerCommand1Spec>;
-        #[doc = "Field `PAYLOAD_LOW_17` reader - "]
-        pub type PayloadLow17R = crate::FieldReader<u32>;
-        #[doc = "Field `PAYLOAD_LOW_17` writer - "]
-        pub type PayloadLow17W<'a, REG> = crate::FieldWriter<'a, REG, 17, u32>;
+        #[doc = "Field `HARDWARE_LIST_MASK` reader - "]
+        pub type HardwareListMaskR = crate::FieldReader<u16>;
+        #[doc = "Field `HARDWARE_LIST_MASK` writer - "]
+        pub type HardwareListMaskW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
+        #[doc = "Field `OPAQUE_16` reader - "]
+        pub type Opaque16R = crate::BitReader;
+        #[doc = "Field `OPAQUE_16` writer - "]
+        pub type Opaque16W<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `STATUS_17` reader - "]
         pub type Status17R = crate::BitReader;
         #[doc = "Field `STATUS_17` writer - "]
@@ -42914,10 +42951,15 @@ pub mod bluetooth_controller_core {
         #[doc = "Field `START` writer - "]
         pub type StartW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bits 0:16"]
+            #[doc = "Bits 0:15"]
             #[inline(always)]
-            pub fn payload_low_17(&self) -> PayloadLow17R {
-                PayloadLow17R::new(self.bits & 0x0001_ffff)
+            pub fn hardware_list_mask(&self) -> HardwareListMaskR {
+                HardwareListMaskR::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bit 16"]
+            #[inline(always)]
+            pub fn opaque_16(&self) -> Opaque16R {
+                Opaque16R::new(((self.bits >> 16) & 1) != 0)
             }
             #[doc = "Bit 17"]
             #[inline(always)]
@@ -42946,10 +42988,15 @@ pub mod bluetooth_controller_core {
             }
         }
         impl W {
-            #[doc = "Bits 0:16"]
+            #[doc = "Bits 0:15"]
             #[inline(always)]
-            pub fn payload_low_17(&mut self) -> PayloadLow17W<'_, SchedulerCommand1Spec> {
-                PayloadLow17W::new(self, 0)
+            pub fn hardware_list_mask(&mut self) -> HardwareListMaskW<'_, SchedulerCommand1Spec> {
+                HardwareListMaskW::new(self, 0)
+            }
+            #[doc = "Bit 16"]
+            #[inline(always)]
+            pub fn opaque_16(&mut self) -> Opaque16W<'_, SchedulerCommand1Spec> {
+                Opaque16W::new(self, 16)
             }
             #[doc = "Bit 17"]
             #[inline(always)]
@@ -42977,7 +43024,7 @@ pub mod bluetooth_controller_core {
                 StartW::new(self, 31)
             }
         }
-        #[doc = "Second scheduler command/status transaction. Writers publish payload with START bit 31; complete wait/check paths inspect status bits 17, 18 and 19.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_command_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_command_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Second scheduler command/status transaction. The insertion execution-modify request publishes a sixteen-list selection mask and START; its finite wait observes positional status bits 17 and 19. Other complete paths inspect positional status 18.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_command_1::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_command_1::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct SchedulerCommand1Spec;
         impl crate::RegisterSpec for SchedulerCommand1Spec {
             type Ux = u32;
@@ -58393,6 +58440,42 @@ pub mod field_read {
         registers.sleep_timer_latched_time_0().read().image().bits()
     }
 
+    /// Read `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_COMMAND_0`.`STATUS_24` without exposing its register block.
+    #[inline]
+    pub fn observe_bluetooth_scheduler_execution_lock_ready(
+        registers: &crate::BluetoothControllerCore,
+    ) -> bool {
+        registers.scheduler_command_0().read().status_24().bit()
+    }
+
+    /// Read `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_COMMAND_0`.`EXECUTION_LOCK_RESULT` without exposing its register block.
+    #[inline]
+    pub fn observe_bluetooth_scheduler_execution_lock_result(
+        registers: &crate::BluetoothControllerCore,
+    ) -> u8 {
+        registers
+            .scheduler_command_0()
+            .read()
+            .execution_lock_result()
+            .bits()
+    }
+
+    /// Read `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_COMMAND_1`.`STATUS_17` without exposing its register block.
+    #[inline]
+    pub fn observe_bluetooth_scheduler_execution_modify_ready(
+        registers: &crate::BluetoothControllerCore,
+    ) -> bool {
+        registers.scheduler_command_1().read().status_17().bit()
+    }
+
+    /// Read `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_COMMAND_1`.`STATUS_19` without exposing its register block.
+    #[inline]
+    pub fn observe_bluetooth_scheduler_execution_modify_rejected(
+        registers: &crate::BluetoothControllerCore,
+    ) -> bool {
+        registers.scheduler_command_1().read().status_19().bit()
+    }
+
     /// Read `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_COMMAND_0`.`STATUS_26` without exposing its register block.
     #[inline]
     pub fn observe_bluetooth_scheduler_software_list_command_0_status_26(
@@ -61759,6 +61842,51 @@ pub mod zero_based_field_write {
                         .config_8()
                         .bit(config_8_value)
                 });
+        }
+    }
+
+    /// Write `COMPRESSED_SRAM_POINTER`, `HARDWARE_LIST_INDEX`, `START` in `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_COMMAND_0` while publishing zero to every other register bit.
+    #[inline]
+    pub fn publish_bluetooth_scheduler_execution_lock_request(
+        registers: &crate::BluetoothControllerCore,
+        compressed_sram_pointer_value: u32,
+        hardware_list_index_value: u8,
+        start_value: bool,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.scheduler_command_0().write_with_zero(|writer| {
+                writer
+                    .compressed_sram_pointer()
+                    .set(compressed_sram_pointer_value)
+                    .hardware_list_index()
+                    .set(hardware_list_index_value)
+                    .start()
+                    .bit(start_value)
+            });
+        }
+    }
+
+    /// Write `HARDWARE_LIST_MASK`, `START` in `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_COMMAND_1` while publishing zero to every other register bit.
+    #[inline]
+    pub fn publish_bluetooth_scheduler_execution_modify_request(
+        registers: &crate::BluetoothControllerCore,
+        hardware_list_mask_value: u16,
+        start_value: bool,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.scheduler_command_1().write_with_zero(|writer| {
+                writer
+                    .hardware_list_mask()
+                    .set(hardware_list_mask_value)
+                    .start()
+                    .bit(start_value)
+            });
         }
     }
 

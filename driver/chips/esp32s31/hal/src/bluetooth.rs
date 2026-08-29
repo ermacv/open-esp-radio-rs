@@ -38,11 +38,13 @@ pub use open_esp_radio_esp32s31_pac::{
     BluetoothPhyEnvironmentAddress, BluetoothPhyEnvironmentAddressError,
     BluetoothPhyRegisterInitInputs,
     BluetoothSchedulerDisableBeginError as BluetoothControllerSchedulerDisableBeginError,
-    BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
-    BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadError,
-    BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHardwareListIndex,
-    BluetoothSchedulerHardwareRunCommandPublished, BluetoothSchedulerInsertionCommand,
-    BluetoothSchedulerInsertionCommandStartCleared,
+    BluetoothSchedulerExecutionLockDisposition, BluetoothSchedulerExecutionLockPublished,
+    BluetoothSchedulerExecutionLockRequest, BluetoothSchedulerExecutionModifyDisposition,
+    BluetoothSchedulerExecutionModifyPublished, BluetoothSchedulerFinishedListObservation,
+    BluetoothSchedulerFinishedListPop, BluetoothSchedulerHardwareListHead,
+    BluetoothSchedulerHardwareListHeadError, BluetoothSchedulerHardwareListHeadPublished,
+    BluetoothSchedulerHardwareListIndex, BluetoothSchedulerHardwareRunCommandPublished,
+    BluetoothSchedulerInsertionCommand, BluetoothSchedulerInsertionCommandStartCleared,
     BluetoothSchedulerLockModifyInterruptObservation, BluetoothSchedulerLockModifyObservation,
     BluetoothSchedulerLockModifyPublished, BluetoothSchedulerLockModifyRequest,
     BluetoothSchedulerLockModifyTaskObservation, BluetoothSchedulerReferenceCleared,
@@ -983,6 +985,63 @@ impl BluetoothControllerHal<'_> {
             self.registers
                 .clear_scheduler_insertion_command_start(command)
         }
+    }
+
+    /// Publish the insertion-begin execution-lock command through the
+    /// restricted PAC.
+    ///
+    /// # Safety
+    ///
+    /// The request must identify the exact merge-selected initialized item.
+    /// The caller must retain that pinned item and exclusive list ownership
+    /// through the complete insertion transaction.
+    #[doc(hidden)]
+    #[allow(
+        unsafe_code,
+        reason = "the caller retains merge-selected item lifetime and list serialization"
+    )]
+    pub unsafe fn publish_scheduler_execution_lock(
+        &mut self,
+        request: BluetoothSchedulerExecutionLockRequest,
+    ) -> BluetoothSchedulerExecutionLockPublished {
+        unsafe { self.registers.publish_scheduler_execution_lock(request) }
+    }
+
+    /// Perform one finite typed command-zero observation in its reviewed
+    /// short-circuit order.
+    pub fn observe_scheduler_execution_lock(
+        &mut self,
+        scheduler: BluetoothSchedulerWorkObservation,
+    ) -> BluetoothSchedulerExecutionLockDisposition {
+        self.registers.observe_scheduler_execution_lock(scheduler)
+    }
+
+    /// Publish the insertion-begin execution-modify command through the
+    /// restricted PAC.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the insertion reconciliation epoch and
+    /// exclusive ownership of `index` through insertion-end.
+    #[doc(hidden)]
+    #[allow(
+        unsafe_code,
+        reason = "the caller retains insertion reconciliation and list serialization"
+    )]
+    pub unsafe fn publish_scheduler_execution_modify(
+        &mut self,
+        index: BluetoothSchedulerHardwareListIndex,
+    ) -> BluetoothSchedulerExecutionModifyPublished {
+        unsafe { self.registers.publish_scheduler_execution_modify(index) }
+    }
+
+    /// Perform one finite typed command-one observation in its reviewed
+    /// short-circuit order.
+    pub fn observe_scheduler_execution_modify(
+        &mut self,
+        scheduler: BluetoothSchedulerWorkObservation,
+    ) -> BluetoothSchedulerExecutionModifyDisposition {
+        self.registers.observe_scheduler_execution_modify(scheduler)
     }
 
     /// Publish the finite scheduler hardware RUN command through the

@@ -598,6 +598,7 @@ name = "p256_generate_key_pair"
 arguments = ["out-ptr", "out-ptr"]
 return = "i32"
 semantic = "crypto.p256.key-pair.generate"
+execution-model = "p256-generate-key-pair"
 
 [[anchors.slots]]
 offset = 0x18
@@ -608,6 +609,7 @@ name = "p256_diffie_hellman"
 arguments = ["const-ptr", "const-ptr", "const-ptr", "out-ptr"]
 return = "i32"
 semantic = "crypto.p256.diffie-hellman.calculate"
+execution-model = "p256-diffie-hellman"
 
 [[anchors.slots]]
 offset = 0x20
@@ -618,6 +620,7 @@ name = "aes_cmac"
 arguments = ["const-ptr", "const-ptr", "usize", "out-ptr"]
 return = "i32"
 semantic = "crypto.aes-cmac.calculate"
+execution-model = "aes-cmac"
 
 # `net80211_funcs` is a pointer cell, not a static function table image.
 # `net80211_funcs_init` allocates 0x14c bytes and

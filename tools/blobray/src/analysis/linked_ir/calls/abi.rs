@@ -104,6 +104,17 @@ pub(super) fn linked_external_execution_model(
                 } => LinkedExternalOutputModel {
                     kind: "private-stack",
                     pointer_argument: *pointer_argument,
+                    byte_offset: 0,
+                    width: *width,
+                },
+                ExternalOutputModel::Memory {
+                    pointer_argument,
+                    byte_offset,
+                    width,
+                } => LinkedExternalOutputModel {
+                    kind: "memory",
+                    pointer_argument: *pointer_argument,
+                    byte_offset: *byte_offset,
                     width: *width,
                 },
             })

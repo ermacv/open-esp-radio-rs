@@ -411,6 +411,12 @@ enum CallOutputInput {
         width: u8,
         value: u32,
     },
+    Memory {
+        pointer_argument: u8,
+        byte_offset: u16,
+        width: u8,
+        value: u32,
+    },
 }
 
 impl CallResponseInput {
@@ -440,23 +446,25 @@ impl CallResponseInput {
         for (index, value) in self.return_words.into_iter().enumerate() {
             return_words[index] = Some(value);
         }
-        let mut output_arguments = BTreeSet::new();
+        let mut output_ranges = BTreeMap::<u8, Vec<(u16, u16)>>::new();
         let mut outputs = Vec::with_capacity(self.outputs.len());
         for output in self.outputs {
-            let CallOutputInput::PrivateStack {
-                pointer_argument,
-                width,
-                value,
-            } = output;
+            let (pointer_argument, byte_offset, width, value, private_stack_only) = match output {
+                CallOutputInput::PrivateStack {
+                    pointer_argument,
+                    width,
+                    value,
+                } => (pointer_argument, 0, width, value, true),
+                CallOutputInput::Memory {
+                    pointer_argument,
+                    byte_offset,
+                    width,
+                    value,
+                } => (pointer_argument, byte_offset, width, value, false),
+            };
             if pointer_argument >= 8 {
                 return Err(crate::Error::invalid(format!(
                     "scenario {scenario} {side} call {} output argument a{pointer_argument} exceeds RV32 a0..a7",
-                    self.symbol
-                )));
-            }
-            if !output_arguments.insert(pointer_argument) {
-                return Err(crate::Error::invalid(format!(
-                    "scenario {scenario} {side} call {} repeats output argument a{pointer_argument}",
                     self.symbol
                 )));
             }
@@ -474,10 +482,36 @@ impl CallResponseInput {
                     self.symbol
                 )));
             }
-            outputs.push(crate::execution::ModeledCallOutput::PrivateStack {
-                pointer_argument,
-                width,
-                value,
+            let byte_width = u16::from(width / 8);
+            let Some(end) = byte_offset.checked_add(byte_width) else {
+                return Err(crate::Error::invalid(format!(
+                    "scenario {scenario} {side} call {} output range for argument a{pointer_argument} overflows",
+                    self.symbol
+                )));
+            };
+            let ranges = output_ranges.entry(pointer_argument).or_default();
+            if ranges.iter().any(|(existing_start, existing_end)| {
+                byte_offset < *existing_end && *existing_start < end
+            }) {
+                return Err(crate::Error::invalid(format!(
+                    "scenario {scenario} {side} call {} has overlapping outputs through argument a{pointer_argument}",
+                    self.symbol
+                )));
+            }
+            ranges.push((byte_offset, end));
+            outputs.push(if private_stack_only {
+                crate::execution::ModeledCallOutput::PrivateStack {
+                    pointer_argument,
+                    width,
+                    value,
+                }
+            } else {
+                crate::execution::ModeledCallOutput::Memory {
+                    pointer_argument,
+                    byte_offset,
+                    width,
+                    value,
+                }
             });
         }
         Ok((

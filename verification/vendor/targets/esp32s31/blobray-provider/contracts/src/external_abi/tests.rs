@@ -206,10 +206,25 @@ fn wifi_runtime_callback_model_preserves_an_uninterpreted_esp_err_result() {
 }
 
 #[test]
-fn ble_random_provider_returns_a_fresh_symbolic_word() {
+fn ble_random_and_crypto_providers_keep_their_effects_explicit() {
     let random = BLE_EXTERNAL_FUNCTION_MODELS_20250819
         .model("random-u32")
         .unwrap();
     assert_eq!(random.spec().return_model, ExternalReturnModel::SymbolicU32);
     assert!(random.spec().outputs.is_empty());
+
+    for model_id in ["p256-generate-key-pair", "p256-diffie-hellman", "aes-cmac"] {
+        let crypto = BLE_EXTERNAL_FUNCTION_MODELS_20250819
+            .model(model_id)
+            .unwrap();
+        assert_eq!(crypto.spec().return_model, ExternalReturnModel::SymbolicU32);
+        assert!(!crypto.spec().outputs.is_empty());
+        assert!(
+            crypto
+                .spec()
+                .outputs
+                .iter()
+                .all(|output| matches!(output, ExternalOutputModel::Memory { .. }))
+        );
+    }
 }

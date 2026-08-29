@@ -209,6 +209,15 @@ pub enum ModeledCallOutput {
         width: u8,
         value: u32,
     },
+    /// Write through a pointer argument into declared normal memory. The
+    /// target may be private stack, linked writable RAM, or scenario-owned
+    /// memory, but never MMIO.
+    Memory {
+        pointer_argument: u8,
+        byte_offset: u16,
+        width: u8,
+        value: u32,
+    },
 }
 
 /// One deterministic arena consumed by a reviewed allocator call.

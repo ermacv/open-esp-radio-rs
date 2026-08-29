@@ -99,10 +99,99 @@ fn common_reviewed_execution_model(
         .then_some(model)
 }
 
+fn model_reviewed_memory_output(
+    symbol: &artifact::ArtifactSymbolDefinition,
+    memory_read_sources: &BTreeMap<u32, MemoryObjectLocation>,
+    base: SymbolicValue,
+    byte_offset: u16,
+    width: u8,
+    value: SymbolicValue,
+    stack: &mut SymbolicStack,
+    events: &mut Vec<DraftReferenceEvent>,
+) -> std::result::Result<(), String> {
+    let address = base.add_constant(u32::from(byte_offset));
+    let event = match structural_value_address_with_reads(&address, memory_read_sources) {
+        Some(StructuralAddress::PrivateStack(offset)) => {
+            stack.store(offset, width, &value);
+            DraftReferenceEvent::PrivateStackStore {
+                offset,
+                width,
+                value,
+            }
+        }
+        Some(StructuralAddress::CallerMemory(address)) => DraftReferenceEvent::Memory {
+            access: MemoryAccess::Write,
+            width,
+            address,
+            region: "caller-owned ABI argument RAM".to_owned(),
+            value: Some(value),
+        },
+        Some(StructuralAddress::SymbolMemory(address)) => DraftReferenceEvent::Memory {
+            access: MemoryAccess::Write,
+            width,
+            region: address.canonical(),
+            address,
+            value: Some(value),
+        },
+        Some(StructuralAddress::DereferencedMemory(address)) => DraftReferenceEvent::Memory {
+            access: MemoryAccess::Write,
+            width,
+            address,
+            region: "dereferenced known pointer RAM".to_owned(),
+            value: Some(value),
+        },
+        Some(StructuralAddress::IndexedMemory(address)) => DraftReferenceEvent::Memory {
+            access: MemoryAccess::Write,
+            width,
+            address,
+            region: "indexed RAM object".to_owned(),
+            value: Some(value),
+        },
+        Some(StructuralAddress::DynamicMemory(address)) => DraftReferenceEvent::Memory {
+            access: MemoryAccess::Write,
+            width,
+            address,
+            region: "dynamic RAM address".to_owned(),
+            value: Some(value),
+        },
+        Some(StructuralAddress::Absolute(address)) => {
+            let region = symbol.memory_region(address, width).ok_or_else(|| {
+                format!("destination {address:#010x} is not mapped normal ELF RAM")
+            })?;
+            if !region.writable {
+                return Err(format!(
+                    "destination {address:#010x} is in read-only region {}",
+                    region.name
+                ));
+            }
+            DraftReferenceEvent::Memory {
+                access: MemoryAccess::Write,
+                width,
+                address: SymbolicValue::Constant(address),
+                region: region.name.clone(),
+                value: Some(value),
+            }
+        }
+        Some(
+            StructuralAddress::ReviewedExternalTableSlot(..)
+            | StructuralAddress::FunctionTableSlot(..),
+        )
+        | None => {
+            return Err(format!(
+                "destination {} has no writable normal-memory provenance",
+                address.canonical()
+            ));
+        }
+    };
+    events.push(event);
+    Ok(())
+}
+
 fn apply_reviewed_external_call(
     pc: u32,
     width: u8,
     instruction: Inst,
+    symbol: &artifact::ArtifactSymbolDefinition,
     offset: u32,
     dest: Reg,
     mut candidates: Vec<ReviewedExternalCall>,
@@ -205,13 +294,21 @@ fn apply_reviewed_external_call(
             SymbolicValue::ExternalResult(state.next_external_call_token)
         }
     };
-    let mut private_stack_outputs = Vec::new();
+    let mut pending_stack = (*state.stack).clone();
+    let mut pending_output_events = Vec::new();
     if let Some(model) = execution_model {
         for (output_index, output) in model.outputs.iter().enumerate() {
-            let ExternalOutputModel::PrivateStack {
-                pointer_argument,
-                width,
-            } = output;
+            let (pointer_argument, byte_offset, width, private_stack_only) = match output {
+                ExternalOutputModel::PrivateStack {
+                    pointer_argument,
+                    width,
+                } => (*pointer_argument, 0, *width, true),
+                ExternalOutputModel::Memory {
+                    pointer_argument,
+                    byte_offset,
+                    width,
+                } => (*pointer_argument, *byte_offset, *width, false),
+            };
             let Ok(output_index) = u8::try_from(output_index) else {
                 state.reference_blockers.push(format!(
                     "unsupported-reviewed-external-output-count at {pc:#x}: {} ({}) has more than 256 outputs",
@@ -228,9 +325,10 @@ fn apply_reviewed_external_call(
                 state.next_external_call_token += 1;
                 return StructuralCallControl::Stop;
             };
-            let Some(SymbolicValue::StackAddress(offset)) =
-                arguments.get(usize::from(*pointer_argument))
-            else {
+            let Some(pointer) = arguments.get(usize::from(pointer_argument)).cloned() else {
+                unreachable!("validated execution model refers to an existing ABI argument")
+            };
+            if private_stack_only && !matches!(pointer, SymbolicValue::StackAddress(_)) {
                 state.reference_blockers.push(format!(
                     "unsupported-reviewed-external-output-pointer at {pc:#x}: {} ({}) argument a{pointer_argument} is not private stack",
                     candidates[0].id, candidates[0].name
@@ -245,7 +343,7 @@ fn apply_reviewed_external_call(
                     });
                 state.next_external_call_token += 1;
                 return StructuralCallControl::Stop;
-            };
+            }
             let output = SymbolicValue::ExternalOutput {
                 call_token: state.next_external_call_token,
                 output_index,
@@ -255,9 +353,34 @@ fn apply_reviewed_external_call(
                 16 => 0xffff,
                 _ => u32::MAX,
             });
-            std::sync::Arc::make_mut(&mut state.stack).store(*offset, *width, &output);
-            private_stack_outputs.push((*offset, *width, output));
-            arguments[usize::from(*pointer_argument)] = SymbolicValue::Constant(0);
+            if let Err(error) = model_reviewed_memory_output(
+                symbol,
+                &state.memory_read_sources,
+                pointer,
+                byte_offset,
+                width,
+                output,
+                &mut pending_stack,
+                &mut pending_output_events,
+            ) {
+                state.reference_blockers.push(format!(
+                    "unsupported-reviewed-external-output-pointer at {pc:#x}: {} ({}) argument a{pointer_argument}: {error}",
+                    candidates[0].id, candidates[0].name
+                ));
+                state
+                    .reference_events
+                    .push(DraftReferenceEvent::ReviewedExternalCall {
+                        token: state.next_external_call_token,
+                        site: pc,
+                        candidates,
+                        arguments,
+                    });
+                state.next_external_call_token += 1;
+                return StructuralCallControl::Stop;
+            }
+            if private_stack_only {
+                arguments[usize::from(pointer_argument)] = SymbolicValue::Constant(0);
+            }
         }
     }
     state
@@ -268,14 +391,9 @@ fn apply_reviewed_external_call(
             candidates,
             arguments,
         });
-    for (offset, width, value) in private_stack_outputs {
-        state
-            .reference_events
-            .push(DraftReferenceEvent::PrivateStackStore {
-                offset,
-                width,
-                value,
-            });
+    state.stack = std::sync::Arc::new(pending_stack);
+    for event in pending_output_events {
+        state.push_reference_event(pc, event);
     }
     state.next_external_call_token += 1;
     if dest == Reg::ZERO {
@@ -822,6 +940,7 @@ pub(super) fn apply_call_instruction(
                 pc as u32,
                 width,
                 instruction,
+                symbol,
                 offset.as_u32(),
                 dest,
                 candidates,
@@ -862,6 +981,7 @@ pub(super) fn apply_call_instruction(
                 pc as u32,
                 width,
                 instruction,
+                symbol,
                 offset.as_u32(),
                 dest,
                 candidates,

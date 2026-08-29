@@ -69,7 +69,10 @@ pub(super) fn structural_effective_address(
     }
 }
 
-pub(super) fn structural_value_address(value: &SymbolicValue) -> Option<StructuralAddress> {
+pub(super) fn structural_value_address_with_reads(
+    value: &SymbolicValue,
+    memory_read_sources: &BTreeMap<u32, MemoryObjectLocation>,
+) -> Option<StructuralAddress> {
     match value {
         SymbolicValue::Constant(address) => Some(StructuralAddress::Absolute(*address)),
         SymbolicValue::StackAddress(offset) => Some(StructuralAddress::PrivateStack(*offset)),
@@ -83,22 +86,28 @@ pub(super) fn structural_value_address(value: &SymbolicValue) -> Option<Structur
             lo_addend: Some(_), ..
         } => Some(StructuralAddress::SymbolMemory(value.clone())),
         _ if value.caller_memory_address() => Some(StructuralAddress::CallerMemory(value.clone())),
-        _ if matches!(
-            value
-                .memory_object_location_with_reads(&BTreeMap::new())
-                .map(|location| location.root),
-            Some(
-                MemoryObjectRoot::Indexed { .. }
-                    | MemoryObjectRoot::Allocation { .. }
-                    | MemoryObjectRoot::ZeroedAllocation { .. }
-                    | MemoryObjectRoot::OpaqueExternalObject { .. }
-            )
-        ) =>
+        _ => match value
+            .memory_object_location_with_reads(memory_read_sources)
+            .map(|location| location.root)
         {
-            Some(StructuralAddress::IndexedMemory(value.clone()))
-        }
-        _ => None,
+            Some(MemoryObjectRoot::Dereferenced { .. }) => {
+                Some(StructuralAddress::DereferencedMemory(value.clone()))
+            }
+            Some(MemoryObjectRoot::Indexed { .. }) => {
+                Some(StructuralAddress::IndexedMemory(value.clone()))
+            }
+            Some(
+                MemoryObjectRoot::Allocation { .. }
+                | MemoryObjectRoot::ZeroedAllocation { .. }
+                | MemoryObjectRoot::OpaqueExternalObject { .. },
+            ) => Some(StructuralAddress::DynamicMemory(value.clone())),
+            _ => None,
+        },
     }
+}
+
+pub(super) fn structural_value_address(value: &SymbolicValue) -> Option<StructuralAddress> {
+    structural_value_address_with_reads(value, &BTreeMap::new())
 }
 
 pub(super) fn memory_intrinsic_load_byte(

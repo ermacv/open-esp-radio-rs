@@ -16,10 +16,10 @@ static KNOWLEDGE_PROVIDERS: &[KnowledgeProviderDescriptor] = &[
     KnowledgeProviderDescriptor {
         id: PROJECT_PROVIDER_ID,
         extends: Some(CHIP_PROVIDER_ID),
-        // Revision 7 adds the reviewed BLE random-provider execution model.
+        // Revision 8 adds caller-memory models for reviewed BLE crypto outputs.
         // The overlay harness is precomposed and its contracts are a checked
         // superset of the rev0 chip provider.
-        analysis_cache_revision: 7,
+        analysis_cache_revision: 8,
         contracts: &esp32s31_knowledge::CONTRACTS,
         riscv: Some(&esp32s31_knowledge::RISCV_HARNESS),
     },

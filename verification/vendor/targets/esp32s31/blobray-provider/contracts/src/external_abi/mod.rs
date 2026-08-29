@@ -23,6 +23,54 @@ const QUEUE_RECEIVE_OUTPUTS: &[ExternalOutputModel] = &[ExternalOutputModel::Pri
     width: 32,
 }];
 
+const fn memory_word_outputs<const N: usize>(pointer_argument: u8) -> [ExternalOutputModel; N] {
+    let mut outputs = [ExternalOutputModel::Memory {
+        pointer_argument,
+        byte_offset: 0,
+        width: 32,
+    }; N];
+    let mut index = 0;
+    while index < N {
+        outputs[index] = ExternalOutputModel::Memory {
+            pointer_argument,
+            byte_offset: (index as u16) * 4,
+            width: 32,
+        };
+        index += 1;
+    }
+    outputs
+}
+
+const fn p256_key_pair_outputs() -> [ExternalOutputModel; 24] {
+    let mut outputs = [ExternalOutputModel::Memory {
+        pointer_argument: 0,
+        byte_offset: 0,
+        width: 32,
+    }; 24];
+    let mut index = 0;
+    while index < 16 {
+        outputs[index] = ExternalOutputModel::Memory {
+            pointer_argument: 0,
+            byte_offset: (index as u16) * 4,
+            width: 32,
+        };
+        index += 1;
+    }
+    while index < 24 {
+        outputs[index] = ExternalOutputModel::Memory {
+            pointer_argument: 1,
+            byte_offset: ((index - 16) as u16) * 4,
+            width: 32,
+        };
+        index += 1;
+    }
+    outputs
+}
+
+const P256_KEY_PAIR_OUTPUTS: &[ExternalOutputModel] = &p256_key_pair_outputs();
+const P256_DH_OUTPUTS: &[ExternalOutputModel] = &memory_word_outputs::<8>(3);
+const AES_CMAC_OUTPUTS: &[ExternalOutputModel] = &memory_word_outputs::<4>(3);
+
 const ESP32S31_WIFI_OSI_MODELS: &[ExternalCallModelSpec] = &[
     ExternalCallModelSpec {
         id: "env-is-chip",
@@ -359,6 +407,21 @@ const ESP32S31_BLE_EXTERNAL_FUNCTION_MODELS: &[ExternalCallModelSpec] = &[
         id: "random-u32",
         return_model: ExternalReturnModel::SymbolicU32,
         outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "p256-generate-key-pair",
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: P256_KEY_PAIR_OUTPUTS,
+    },
+    ExternalCallModelSpec {
+        id: "p256-diffie-hellman",
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: P256_DH_OUTPUTS,
+    },
+    ExternalCallModelSpec {
+        id: "aes-cmac",
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: AES_CMAC_OUTPUTS,
     },
 ];
 

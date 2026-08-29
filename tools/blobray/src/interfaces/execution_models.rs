@@ -53,13 +53,13 @@ pub(super) fn resolve(
                     )
                 })?;
                 let model = model.spec();
-                if model.outputs.len() > 8 {
+                if model.outputs.len() > usize::from(u8::MAX) + 1 {
                     return Err(super::validation::ValidationError::slot(
                         anchor,
                         slot,
                         "execution-model",
                         format!(
-                            "call model {model_id:?} declares {} outputs; RV32 supports at most eight argument-bound outputs",
+                            "call model {model_id:?} declares {} outputs; one call model supports at most 256 independently identified writes",
                             model.outputs.len()
                         ),
                     ));
@@ -101,12 +101,19 @@ pub(super) fn resolve(
                         ));
                     }
                 }
-                let mut output_arguments = std::collections::BTreeSet::new();
+                let mut output_ranges = std::collections::BTreeMap::<u8, Vec<(u16, u16)>>::new();
                 for output in model.outputs {
-                    let ExternalOutputModel::PrivateStack {
-                        pointer_argument,
-                        width,
-                    } = output;
+                    let (pointer_argument, byte_offset, width, private_stack_only) = match output {
+                        ExternalOutputModel::PrivateStack {
+                            pointer_argument,
+                            width,
+                        } => (*pointer_argument, 0, *width, true),
+                        ExternalOutputModel::Memory {
+                            pointer_argument,
+                            byte_offset,
+                            width,
+                        } => (*pointer_argument, *byte_offset, *width, false),
+                    };
                     if !matches!(width, 8 | 16 | 32) {
                         return Err(super::validation::ValidationError::slot(
                             anchor,
@@ -117,7 +124,7 @@ pub(super) fn resolve(
                             ),
                         ));
                     }
-                    let Some(argument_type) = arguments.get(usize::from(*pointer_argument)) else {
+                    let Some(argument_type) = arguments.get(usize::from(pointer_argument)) else {
                         return Err(super::validation::ValidationError::slot(
                             anchor,
                             slot,
@@ -137,16 +144,35 @@ pub(super) fn resolve(
                             ),
                         ));
                     }
-                    if !output_arguments.insert(*pointer_argument) {
+                    let byte_width = u16::from(width / 8);
+                    let Some(end) = byte_offset.checked_add(byte_width) else {
                         return Err(super::validation::ValidationError::slot(
                             anchor,
                             slot,
                             "execution-model",
                             format!(
-                                "call model {model_id:?} declares more than one output for argument a{pointer_argument}"
+                                "call model {model_id:?} output range for argument a{pointer_argument} overflows"
+                            ),
+                        ));
+                    };
+                    let ranges = output_ranges.entry(pointer_argument).or_default();
+                    if private_stack_only && !ranges.is_empty()
+                        || ranges
+                            .iter()
+                            .any(|(existing_start, existing_end)| {
+                                byte_offset < *existing_end && *existing_start < end
+                            })
+                    {
+                        return Err(super::validation::ValidationError::slot(
+                            anchor,
+                            slot,
+                            "execution-model",
+                            format!(
+                                "call model {model_id:?} declares overlapping outputs for argument a{pointer_argument}"
                             ),
                         ));
                     }
+                    ranges.push((byte_offset, end));
                 }
             }
             Ok(Some(model_set))

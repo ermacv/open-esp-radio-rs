@@ -375,43 +375,76 @@ impl Machine<'_> {
             }
             self.registers[usize::from(Reg::A0.0)] = allocation.address;
         }
-        let mut output_arguments = std::collections::BTreeSet::new();
+        let mut output_ranges = std::collections::BTreeMap::<u8, Vec<(u32, u32)>>::new();
         for output in response.outputs {
-            match output {
+            let (pointer_argument, byte_offset, width, value, private_stack_only) = match output {
                 ModeledCallOutput::PrivateStack {
                     pointer_argument,
                     width,
                     value,
-                } => {
-                    if pointer_argument >= 8 {
-                        return Err(format!(
-                            "modeled call {symbol} at {site:#010x} output argument a{pointer_argument} exceeds RV32 a0..a7"
-                        )
-                        .into());
-                    }
-                    if !output_arguments.insert(pointer_argument) {
-                        return Err(format!(
-                            "modeled call {symbol} at {site:#010x} repeats output argument a{pointer_argument}"
-                        )
-                        .into());
-                    }
-                    if !matches!(width, 8 | 16 | 32) || value & !MmioValue::mask(width) != 0 {
-                        return Err(format!(
-                            "modeled call {symbol} at {site:#010x} has invalid {width}-bit output value {value:#010x}"
-                        )
-                        .into());
-                    }
-                    let address =
-                        self.registers[usize::from(Reg::A0.0) + usize::from(pointer_argument)];
-                    if !execution_stack_contains(address) {
-                        return Err(format!(
-                            "modeled call {symbol} at {site:#010x} output argument a{pointer_argument} points outside private stack: {address:#010x}"
-                        )
-                        .into());
-                    }
-                    self.write(address, width, value)?;
-                }
+                } => (pointer_argument, 0, width, value, true),
+                ModeledCallOutput::Memory {
+                    pointer_argument,
+                    byte_offset,
+                    width,
+                    value,
+                } => (
+                    pointer_argument,
+                    u32::from(byte_offset),
+                    width,
+                    value,
+                    false,
+                ),
+            };
+            if pointer_argument >= 8 {
+                return Err(format!(
+                    "modeled call {symbol} at {site:#010x} output argument a{pointer_argument} exceeds RV32 a0..a7"
+                )
+                .into());
             }
+            if !matches!(width, 8 | 16 | 32) || value & !MmioValue::mask(width) != 0 {
+                return Err(format!(
+                    "modeled call {symbol} at {site:#010x} has invalid {width}-bit output value {value:#010x}"
+                )
+                .into());
+            }
+            let Some(address) = self.registers
+                [usize::from(Reg::A0.0) + usize::from(pointer_argument)]
+            .checked_add(byte_offset) else {
+                return Err(format!(
+                    "modeled call {symbol} at {site:#010x} output argument a{pointer_argument} address overflows"
+                )
+                .into());
+            };
+            let Some(end) = address.checked_add(u32::from(width / 8)) else {
+                return Err(format!(
+                    "modeled call {symbol} at {site:#010x} output argument a{pointer_argument} range overflows"
+                )
+                .into());
+            };
+            let ranges = output_ranges.entry(pointer_argument).or_default();
+            if ranges.iter().any(|(existing_start, existing_end)| {
+                address < *existing_end && *existing_start < end
+            }) {
+                return Err(format!(
+                    "modeled call {symbol} at {site:#010x} has overlapping outputs through argument a{pointer_argument}"
+                )
+                .into());
+            }
+            ranges.push((address, end));
+            if private_stack_only && !execution_stack_contains(address) {
+                return Err(format!(
+                    "modeled call {symbol} at {site:#010x} output argument a{pointer_argument} points outside private stack: {address:#010x}"
+                )
+                .into());
+            }
+            if !private_stack_only && self.svd.intersects_mmio(address, width) {
+                return Err(format!(
+                    "modeled call {symbol} at {site:#010x} output argument a{pointer_argument} targets MMIO at {address:#010x}"
+                )
+                .into());
+            }
+            self.write(address, width, value)?;
         }
         for (index, value) in response.return_words.into_iter().enumerate() {
             if let Some(value) = value {

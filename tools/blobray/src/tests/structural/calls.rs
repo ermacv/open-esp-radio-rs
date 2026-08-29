@@ -1844,6 +1844,106 @@ fn reviewed_external_call_keeps_return_and_private_stack_output_independent() {
 }
 
 #[test]
+fn reviewed_memory_output_populates_a_nonzero_stack_range() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "reviewed_memory_output".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x13, 0x01, 0x01, 0xff, // addi sp, sp, -16
+            0x93, 0x06, 0x01, 0x00, // mv a3, sp
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x03, 0x25, 0x41, 0x00, // lw a0, 4(sp)
+            0x13, 0x01, 0x01, 0x01, // addi sp, sp, 16
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let mut context = StructuralPointerContext::default();
+    context.reviewed_external_calls.insert(
+        StructuralCallSite::new(&parent, 0x1008),
+        vec![ReviewedExternalCall {
+            id: "pack::crypto@+0x20".to_owned(),
+            contract: "pack::crypto".to_owned(),
+            name: "aes_cmac".to_owned(),
+            argument_types: vec![
+                "const-ptr".to_owned(),
+                "const-ptr".to_owned(),
+                "usize".to_owned(),
+                "out-ptr".to_owned(),
+            ],
+            return_type: "i32".to_owned(),
+            variadic: false,
+            semantic_operation: Some("crypto.aes-cmac.calculate".to_owned()),
+            replacement_hint: None,
+            execution_model: Some(ReviewedExternalCallExecutionModel {
+                id: "aes-cmac".to_owned(),
+                return_model: ExternalReturnModel::SymbolicU32,
+                outputs: vec![ExternalOutputModel::Memory {
+                    pointer_argument: 3,
+                    byte_offset: 4,
+                    width: 32,
+                }],
+            }),
+            tail: false,
+            evidence: ReviewedExternalCallEvidence::ObservedCallSite,
+            slot_load_site: None,
+        }],
+    );
+
+    let trace = trace_binary_symbol(
+        &parent,
+        &map(),
+        &direct::StructuralRelocatedCalls::new(),
+        &context,
+        None,
+    )
+    .unwrap();
+
+    assert!(trace.blockers.is_empty(), "{trace:#?}");
+    assert!(trace.reference_blockers.is_empty(), "{trace:#?}");
+    assert!(matches!(
+        trace.return_value.bits()[0],
+        BitSource::PrivateStack {
+            read_token: 0,
+            bit: 0,
+            inverted: false,
+            ..
+        }
+    ));
+    assert!(matches!(
+        trace.reference_events.as_slice(),
+        [
+            DraftReferenceEvent::ReviewedExternalCall { token: 0, .. },
+            DraftReferenceEvent::PrivateStackStore {
+                offset: -12,
+                width: 32,
+                ..
+            },
+            DraftReferenceEvent::PrivateStackLoad {
+                offset: -12,
+                width: 32,
+                ..
+            },
+        ]
+    ));
+    let DraftReferenceEvent::PrivateStackStore { value, .. } = &trace.reference_events[1] else {
+        unreachable!("event shape was asserted above")
+    };
+    assert!(matches!(
+        value.bits()[0],
+        BitSource::ExternalOutput {
+            call_token: 0,
+            output_index: 0,
+            bit: 0,
+            inverted: false,
+        }
+    ));
+}
+
+#[test]
 fn reviewed_external_u64_result_keeps_a0_and_a1_independent() {
     let parent = artifact::ArtifactSymbolDefinition {
         member: None,

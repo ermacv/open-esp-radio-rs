@@ -163,6 +163,7 @@ pub(crate) struct LinkedCallGuardScope {
 pub(crate) struct LinkedExternalOutputModel {
     pub(crate) kind: &'static str,
     pub(crate) pointer_argument: u8,
+    pub(crate) byte_offset: u16,
     pub(crate) width: u8,
 }
 

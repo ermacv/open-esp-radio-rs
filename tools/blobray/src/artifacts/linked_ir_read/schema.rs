@@ -1,4 +1,4 @@
-//! Complete owned DTO for linked-IR schema v61.
+//! Complete owned DTO for linked-IR schema v62.
 
 #![allow(
     dead_code,
@@ -735,6 +735,7 @@ struct StoredExternalExecutionModel {
 struct StoredExternalOutputModel {
     kind: String,
     pointer_argument: u8,
+    byte_offset: u16,
     width: u8,
 }
 
@@ -790,7 +791,9 @@ impl StoredCall {
     pub(crate) fn models_output(&self, pointer_argument: usize, width: u8) -> bool {
         self.execution_model.as_ref().is_some_and(|model| {
             model.outputs.iter().any(|output| {
-                usize::from(output.pointer_argument) == pointer_argument && output.width == width
+                usize::from(output.pointer_argument) == pointer_argument
+                    && output.byte_offset == 0
+                    && output.width == width
             })
         })
     }

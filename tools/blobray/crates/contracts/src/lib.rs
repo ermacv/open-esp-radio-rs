@@ -87,11 +87,23 @@ pub enum ExternalReturnModel {
 
 /// One independently modeled write through a call argument.
 ///
-/// The structural layer currently authorizes only private-stack destinations;
-/// allocator and arbitrary caller-memory ownership require separate models.
+/// Each variant states the memory-provenance boundary the backend must prove
+/// before it may apply the write.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ExternalOutputModel {
-    PrivateStack { pointer_argument: u8, width: u8 },
+    PrivateStack {
+        pointer_argument: u8,
+        width: u8,
+    },
+    /// Write one little-endian word through an RV32 pointer argument at a
+    /// fixed byte offset. The backend accepts only addresses with proven
+    /// writable normal-memory provenance; MMIO and opaque integers fail
+    /// closed.
+    Memory {
+        pointer_argument: u8,
+        byte_offset: u16,
+        width: u8,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

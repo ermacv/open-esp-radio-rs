@@ -529,6 +529,42 @@ fn modeled_call_response_rejects_non_stack_output_pointer() {
 }
 
 #[test]
+fn modeled_call_response_writes_an_offset_in_declared_normal_memory() {
+    let image = tiny_image(vec![0x67, 0x80, 0x00, 0x00], 4);
+    let svd = empty_svd();
+    let base = 0x2000;
+    let mut machine = Machine::new(
+        &image,
+        &svd,
+        0x1000,
+        Scenario {
+            memory_initial: (base..base + 8).map(|address| (address, 0)).collect(),
+            ..Scenario::default()
+        },
+    );
+    machine.set_register(rv_asm::Reg::A3, base);
+
+    machine
+        .apply_modeled_call_response(
+            "crypto_provider",
+            0x1000,
+            ModeledCallResponse {
+                return_words: [Some(0), None],
+                outputs: vec![ModeledCallOutput::Memory {
+                    pointer_argument: 3,
+                    byte_offset: 4,
+                    width: 32,
+                    value: 0x4433_2211,
+                }],
+                allocation: None,
+            },
+        )
+        .unwrap();
+
+    assert_eq!(machine.read(base + 4, 32).unwrap(), 0x4433_2211);
+}
+
+#[test]
 fn modeled_call_response_writes_a_little_endian_stack_word() {
     let image = tiny_image(vec![0x67, 0x80, 0x00, 0x00], 4);
     let svd = empty_svd();

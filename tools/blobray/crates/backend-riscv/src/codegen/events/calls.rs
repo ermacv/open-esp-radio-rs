@@ -86,7 +86,8 @@ pub(super) fn render_event(
             }
             for (output_index, output_model) in model.outputs.iter().enumerate() {
                 match output_model {
-                    ExternalOutputModel::PrivateStack { width, .. } => {
+                    ExternalOutputModel::PrivateStack { width, .. }
+                    | ExternalOutputModel::Memory { width, .. } => {
                         let mask = match width {
                             8 => 0xff,
                             16 => 0xffff,

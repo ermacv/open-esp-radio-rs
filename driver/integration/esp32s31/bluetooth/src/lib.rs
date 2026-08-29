@@ -1,21 +1,120 @@
 //! Production ownership of ESP32-S31 Bluetooth controller storage.
 //!
-//! This crate owns placement and one-time acquisition. Controller-memory
-//! layout and address validation remain in the chip memory crate; a future
-//! async runner will aggregate the returned CPU owner with HAL and IRQ owners.
+//! This crate owns placement and one-time acquisition for both the BLE PHY
+//! environment and one DTM event graph. Controller-memory layout and address
+//! validation remain in the chip memory crate; a future async runner will
+//! aggregate the returned CPU owners with HAL and IRQ owners.
 
 #![no_std]
 #![deny(unsafe_code)]
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-#[cfg(not(target_arch = "riscv32"))]
-use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmMemoryGraphModelAddress;
 use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothBlePhyEngineBindFailure, BluetoothBlePhyEngineCpuOwned, BluetoothBlePhyEngineStorage,
     BluetoothDtmMemoryGraphBindFailure, BluetoothDtmMemoryGraphCpuOwned,
     BluetoothDtmMemoryGraphStorage, BluetoothDtmSchedulerAllocationConfig,
 };
+#[cfg(not(target_arch = "riscv32"))]
+use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothBlePhyEngineModelAddress, BluetoothDtmMemoryGraphModelAddress,
+};
 use static_cell::ConstStaticCell;
+
+/// One statically placed BLE PHY environment and resolving-list arena.
+///
+/// Claiming is permanent because the initialized BLE PHY engine retains both
+/// published addresses until a future verified controller teardown.
+pub struct Esp32s31BluetoothBlePhyMemory {
+    claimed: AtomicBool,
+    storage: ConstStaticCell<BluetoothBlePhyEngineStorage>,
+}
+
+impl Esp32s31BluetoothBlePhyMemory {
+    /// Reserve one fresh arena without touching controller memory or MMIO.
+    pub const fn new() -> Self {
+        Self {
+            claimed: AtomicBool::new(false),
+            storage: ConstStaticCell::new(BluetoothBlePhyEngineStorage::new()),
+        }
+    }
+
+    fn begin_claim(
+        &'static self,
+    ) -> Result<&'static mut BluetoothBlePhyEngineStorage, Esp32s31BluetoothBlePhyMemoryClaimError>
+    {
+        if self
+            .claimed
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return Err(Esp32s31BluetoothBlePhyMemoryClaimError::InUse);
+        }
+        Ok(self.storage.take())
+    }
+
+    /// Claim and bind this arena using its real ESP32-S31 address.
+    ///
+    /// The returned owner is still CPU-owned. The Controller lifecycle must
+    /// consume and retain it before publishing either contained address.
+    #[cfg(target_arch = "riscv32")]
+    pub fn claim(
+        &'static self,
+    ) -> Result<BluetoothBlePhyEngineCpuOwned, Esp32s31BluetoothBlePhyMemoryClaimError> {
+        let storage = self.begin_claim()?;
+        BluetoothBlePhyEngineStorage::pin_static(storage)
+            .map_err(Esp32s31BluetoothBlePhyMemoryClaimError::Placement)
+    }
+
+    /// Claim this arena with one deterministic native model address.
+    #[cfg(not(target_arch = "riscv32"))]
+    pub fn claim_model(
+        &'static self,
+        base: BluetoothBlePhyEngineModelAddress,
+    ) -> Result<BluetoothBlePhyEngineCpuOwned, Esp32s31BluetoothBlePhyMemoryClaimError> {
+        let storage = self.begin_claim()?;
+        BluetoothBlePhyEngineStorage::pin_static_model(storage, base)
+            .map_err(Esp32s31BluetoothBlePhyMemoryClaimError::Placement)
+    }
+}
+
+impl Default for Esp32s31BluetoothBlePhyMemory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Why the production BLE PHY arena could not become a CPU-owned graph.
+#[derive(Debug)]
+pub enum Esp32s31BluetoothBlePhyMemoryClaimError {
+    /// The unique static allocation was already claimed.
+    InUse,
+    /// Linker placement failed the complete BLE PHY storage contract.
+    ///
+    /// This retains the exact allocation and does not reopen the one-shot
+    /// production claim after a placement failure.
+    Placement(BluetoothBlePhyEngineBindFailure),
+}
+
+/// Claim the sole production BLE PHY environment and resolving-list graph.
+///
+/// The board linker places `.dma.bss.*` inputs in internal SRAM. Runtime
+/// validation still checks the complete extent before any reviewed pointer is
+/// installed in the storage graph.
+#[cfg(target_arch = "riscv32")]
+pub fn claim_production_ble_phy_memory()
+-> Result<BluetoothBlePhyEngineCpuOwned, Esp32s31BluetoothBlePhyMemoryClaimError> {
+    PRODUCTION_BLE_PHY_MEMORY.claim()
+}
+
+#[cfg(target_arch = "riscv32")]
+#[allow(
+    unsafe_code,
+    reason = "the production linker must retain controller storage in internal SRAM"
+)]
+#[unsafe(link_section = ".dma.bss.open_radio_bluetooth_ble_phy")]
+static PRODUCTION_BLE_PHY_MEMORY: Esp32s31BluetoothBlePhyMemory =
+    Esp32s31BluetoothBlePhyMemory::new();
 
 /// One statically placed DTM allocation arena.
 ///
@@ -119,14 +218,75 @@ static PRODUCTION_DTM_MEMORY: Esp32s31BluetoothDtmMemory = Esp32s31BluetoothDtmM
 #[cfg(test)]
 mod tests {
     use open_esp_radio_esp32s31_bluetooth_memory::{
-        BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BluetoothDtmMemoryGraphBindError,
-        BluetoothDtmMemoryGraphModelAddress, BluetoothDtmSchedulerAllocationConfig,
+        BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BluetoothBlePhyEngineBindError,
+        BluetoothBlePhyEngineModelAddress, BluetoothBlePhyEngineStorage,
+        BluetoothDtmMemoryGraphBindError, BluetoothDtmMemoryGraphModelAddress,
+        BluetoothDtmSchedulerAllocationConfig,
     };
 
-    use super::{Esp32s31BluetoothDtmMemory, Esp32s31BluetoothDtmMemoryClaimError};
+    use super::{
+        Esp32s31BluetoothBlePhyMemory, Esp32s31BluetoothBlePhyMemoryClaimError,
+        Esp32s31BluetoothDtmMemory, Esp32s31BluetoothDtmMemoryClaimError,
+    };
 
     const fn allocation_config() -> BluetoothDtmSchedulerAllocationConfig {
         BluetoothDtmSchedulerAllocationConfig::new(2, 3, 5, 4)
+    }
+
+    #[test]
+    fn model_ble_phy_arena_is_claimed_once_as_one_bound_graph() {
+        static MEMORY: Esp32s31BluetoothBlePhyMemory = Esp32s31BluetoothBlePhyMemory::new();
+
+        let base =
+            BluetoothBlePhyEngineModelAddress::new(0x2f00_2000).expect("model base is encodable");
+        let owner = MEMORY
+            .claim_model(base)
+            .expect("fresh model arena binds once");
+        let (start, end) = owner.binding().range();
+        assert_eq!(start, 0x2f00_2000);
+        assert_eq!(
+            end - start,
+            size_of::<BluetoothBlePhyEngineStorage>() as u32
+        );
+        assert!(matches!(
+            MEMORY.claim_model(base),
+            Err(Esp32s31BluetoothBlePhyMemoryClaimError::InUse)
+        ));
+    }
+
+    #[test]
+    fn ble_phy_placement_failure_is_sticky_and_retains_the_allocation() {
+        static MEMORY: Esp32s31BluetoothBlePhyMemory = Esp32s31BluetoothBlePhyMemory::new();
+
+        let crossing = BluetoothBlePhyEngineModelAddress::new(
+            BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH
+                - size_of::<BluetoothBlePhyEngineStorage>() as u32
+                + 4,
+        )
+        .expect("crossing model base is still encodable");
+        let failure = match MEMORY.claim_model(crossing) {
+            Err(Esp32s31BluetoothBlePhyMemoryClaimError::Placement(failure)) => failure,
+            Err(Esp32s31BluetoothBlePhyMemoryClaimError::InUse) => {
+                panic!("fresh arena cannot already be in use")
+            }
+            Ok(_) => panic!("crossing placement must fail closed"),
+        };
+        assert_eq!(
+            failure.error(),
+            BluetoothBlePhyEngineBindError::ExtentOutsidePhysicalSram
+        );
+        let (_storage, error) = failure.into_parts();
+        assert_eq!(
+            error,
+            BluetoothBlePhyEngineBindError::ExtentOutsidePhysicalSram
+        );
+
+        let valid = BluetoothBlePhyEngineModelAddress::new(0x2f00_2000)
+            .expect("valid retry address is encodable");
+        assert!(matches!(
+            MEMORY.claim_model(valid),
+            Err(Esp32s31BluetoothBlePhyMemoryClaimError::InUse)
+        ));
     }
 
     #[test]

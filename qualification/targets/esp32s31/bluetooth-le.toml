@@ -224,10 +224,12 @@ owners = [
   { path = "driver/chips/esp32s31/bluetooth/memory/src/ble_phy_engine.rs", token = "BluetoothBlePhyEngineCpuOwned" },
   { path = "driver/chips/esp32s31/pac/src/bluetooth_phy_init.rs", token = "BluetoothPhyRegisterInitInputs" },
   { path = "driver/chips/esp32s31/bluetooth/src/ble_phy.rs", token = "BluetoothControllerBlePhyEngineInitialized" },
+  { path = "driver/integration/esp32s31/bluetooth/src/lib.rs", token = "claim_production_ble_phy_memory" },
 ]
 tests = [
   { path = "driver/chips/esp32s31/bluetooth/memory/src/ble_phy_engine.rs", token = "failed_binding_returns_the_same_opaque_allocation" },
   { path = "driver/chips/esp32s31/bluetooth/src/ble_phy.rs", token = "register_transition_consumes_one_complete_input_set" },
+  { path = "driver/integration/esp32s31/bluetooth/src/lib.rs", token = "ble_phy_placement_failure_is_sticky_and_retains_the_allocation" },
 ]
 vendor-anchors = [
   { path = "verification/vendor/targets/esp32s31/verification-policy.toml", token = "ble-phy-register-init-ordered-mmio" },

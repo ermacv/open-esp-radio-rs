@@ -8334,3 +8334,21 @@ fields = [{ field = "AUTO_ENABLE_UNKNOWN", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_i2c_tx_rate_high"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "I2C_TX_RATE_CONTROL"
+fields = [{ field = "TX_RATE_HIGH_UNKNOWN", source-bit-offset = 0 }]
+value = 0x55
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_i2c_tx_rate_low"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "I2C_TX_RATE_CONTROL"
+fields = [{ field = "TX_RATE_LOW_UNKNOWN", source-bit-offset = 0 }]
+value = 2
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]

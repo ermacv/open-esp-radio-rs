@@ -68213,6 +68213,36 @@ pub mod field_replace_modify {
             writer.auto_enable_unknown().bit((input & 0x00000001) != 0)
         });
     }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.I2C_TX_RATE_CONTROL fields [TX_RATE_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_i2c_tx_rate_high(registers: &crate::PhyBasebandConfigOracle) {
+        registers.i2c_tx_rate_control().modify(|_, writer| {
+            let input = 0x00000055_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .tx_rate_high_unknown()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.I2C_TX_RATE_CONTROL fields [TX_RATE_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_i2c_tx_rate_low(registers: &crate::PhyBasebandConfigOracle) {
+        registers.i2c_tx_rate_control().modify(|_, writer| {
+            let input = 0x00000002_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .tx_rate_low_unknown()
+                    .bits((input & 0x00000003) as u8)
+            }
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.

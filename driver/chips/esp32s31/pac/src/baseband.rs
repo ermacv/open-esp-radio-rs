@@ -506,12 +506,9 @@ impl RadioPhyRegisters {
 
     /// Configure both I²C TX-rate fields and the four gain-compensation bytes.
     pub fn configure_i2c_tx_rate(&mut self) {
-        let rate = self
-            .peripherals
-            .phy_baseband_config_oracle
-            .i2c_tx_rate_control();
-        rate.modify(|_, w| w.tx_rate_high_unknown().set(0x55));
-        rate.modify(|_, w| w.tx_rate_low_unknown().set(2));
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        super::generated::configure_phy_i2c_tx_rate_high(bb);
+        super::generated::configure_phy_i2c_tx_rate_low(bb);
         self.restore_tx_gain_compensation();
     }
 

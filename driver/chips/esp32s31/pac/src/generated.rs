@@ -6053,6 +6053,18 @@ pub(crate) fn enable_noise_floor_auto_path_1(registers: &crate::svd::PhyBaseband
     crate::svd::field_replace_modify::enable_noise_floor_auto_path_1(registers);
 }
 
+/// Typed bridge for the reviewed `configure_phy_i2c_tx_rate_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_i2c_tx_rate_high(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::configure_phy_i2c_tx_rate_high(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_i2c_tx_rate_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_i2c_tx_rate_low(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::configure_phy_i2c_tx_rate_low(registers);
+}
+
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
 #[inline]
 pub(crate) fn configure_shared_modem_low_power_timer(

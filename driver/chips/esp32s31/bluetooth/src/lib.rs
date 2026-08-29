@@ -80,6 +80,7 @@ mod runtime_resources;
 mod scheduler;
 mod scheduler_config;
 mod scheduler_finished_lists;
+mod scheduler_insertion;
 mod scheduler_lock_modify;
 mod scheduler_timeline;
 #[cfg(feature = "validation-probes")]
@@ -215,6 +216,12 @@ pub use scheduler_config::BluetoothSchedulerSoftwareConfig;
 pub use scheduler_finished_lists::{
     BluetoothSchedulerFinishedListCaptureError, BluetoothSchedulerFinishedListWorker,
     BluetoothSchedulerFinishedListWorkerStep, BluetoothSchedulerHardwareListIndex,
+};
+pub use scheduler_insertion::{
+    BluetoothSchedulerInsertionBeginOutcome, BluetoothSchedulerInsertionBusyDecision,
+    BluetoothSchedulerInsertionBusyGate, BluetoothSchedulerInsertionEndPrelude,
+    BluetoothSchedulerInsertionFinalAction, BluetoothSchedulerInsertionItemStatusGate,
+    BluetoothSchedulerInsertionLockModifyGate, BluetoothSchedulerInsertionSleepDecision,
 };
 pub use scheduler_lock_modify::{
     BluetoothSchedulerLockModifyBeginError, BluetoothSchedulerLockModifyEvent,

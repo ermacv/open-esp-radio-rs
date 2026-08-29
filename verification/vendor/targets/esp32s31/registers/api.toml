@@ -1685,6 +1685,7 @@ field = "COMMAND"
 variant = "RUN"
 sources = [
     "BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION",
+    "BLOB_LIBBTDM_SCHEDULER_INSERTION_END_BRANCH",
     "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES",
 ]
 
@@ -1711,7 +1712,7 @@ register = "ENTRY%s"
 fields = [{ field = "HEAD_POINTER", source-bit-offset = 0 }]
 domain = "BluetoothSchedulerListHeadBits"
 exposure = "facade"
-sources = ["BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION", "BLOB_LIBBTDM_SCHEDULER_INSERTION_END_BRANCH", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 
 [[field-replace-modifies]]
 name = "clear_bluetooth_scheduler_insertion_command_0_start"
@@ -1720,7 +1721,7 @@ register = "SCHEDULER_COMMAND_0"
 fields = [{ field = "START", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
-sources = ["BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION", "BLOB_LIBBTDM_SCHEDULER_INSERTION_END_BRANCH", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 
 [[field-replace-modifies]]
 name = "clear_bluetooth_scheduler_insertion_command_1_start"
@@ -1729,7 +1730,7 @@ register = "SCHEDULER_COMMAND_1"
 fields = [{ field = "START", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
-sources = ["BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_HEAD_PUBLICATION", "BLOB_LIBBTDM_SCHEDULER_INSERTION_END_BRANCH", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 
 [[fixed-register-writes]]
 name = "publish_bluetooth_scheduler_stop_command"

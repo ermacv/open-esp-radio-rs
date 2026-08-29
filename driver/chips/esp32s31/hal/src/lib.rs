@@ -64,7 +64,7 @@ pub use bluetooth::{
     BluetoothModemLpTimerHandlerRegisterObservation, BluetoothModemLpTimerHandlerRegisterStep,
     BluetoothModemLpTimerInstant, BluetoothModemLpTimerInterruptObservation,
     BluetoothModemLpTimerInterruptReadyOwner, BluetoothModemLpTimerInterruptStep,
-    BluetoothModemLpTimerLowPowerHardwareInitializedOwner,
+    BluetoothModemLpTimerLowPowerHardwareInitializedOwner, BluetoothModemLpTimerOwnerError,
     BluetoothModemLpTimerRegistersPreparedOwner, BluetoothModemLpTimerSoftwarePendingOwner,
     BluetoothNrtInterruptAcknowledged, BluetoothSchedulerFinishedListObservation,
     BluetoothSchedulerFinishedListPop, BluetoothSchedulerHardwareListHead,

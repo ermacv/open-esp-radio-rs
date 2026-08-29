@@ -120,7 +120,8 @@ pub use dtm_tx_packet::{
 #[cfg(any(target_arch = "riscv32", test))]
 pub use hci::{
     BluetoothControllerHciInitializationError, BluetoothControllerHciInitializationFailure,
-    BluetoothControllerHciInitialized, BluetoothControllerRuntimeEndpoints,
+    BluetoothControllerHciInitialized, BluetoothControllerLowPowerHardwareInitializationFailure,
+    BluetoothControllerLowPowerHardwareInitialized, BluetoothControllerRuntimeEndpoints,
 };
 pub use interrupt::{
     BluetoothCpuInterruptRoutePolicy, BluetoothCpuInterruptSource,

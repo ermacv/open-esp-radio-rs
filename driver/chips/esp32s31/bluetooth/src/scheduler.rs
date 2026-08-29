@@ -59,7 +59,7 @@ impl BluetoothSchedulerSoftwareConfig {
 /// no verified rollback exists after scheduler MMIO mutation.
 #[must_use = "the initialized scheduler retains every powered Bluetooth owner"]
 pub struct BluetoothSchedulerInitialized<P, const MODEM_TIMER_CAPACITY: usize> {
-    _task: BluetoothTaskResources,
+    task: BluetoothTaskResources,
     _interrupts: BluetoothInterruptBankOwner,
     _platform: BluetoothTeardownPendingPlatform<P>,
     time_scale: BluetoothControllerTimeScale,
@@ -68,6 +68,10 @@ pub struct BluetoothSchedulerInitialized<P, const MODEM_TIMER_CAPACITY: usize> {
 }
 
 impl<P, const MODEM_TIMER_CAPACITY: usize> BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY> {
+    pub(crate) fn task_mut(&mut self) -> &mut BluetoothTaskResources {
+        &mut self.task
+    }
+
     /// Number of fixed modem timer slots retained by the initialized epoch.
     pub const fn modem_timer_capacity(&self) -> usize {
         self.runtime.modem_timer_capacity()
@@ -146,7 +150,7 @@ impl<P> BluetoothControllerHalInitialized<P> {
         } = self;
         initialize_hardware(&mut task);
         BluetoothSchedulerInitialized {
-            _task: task,
+            task,
             _interrupts: interrupts,
             _platform: platform,
             time_scale,

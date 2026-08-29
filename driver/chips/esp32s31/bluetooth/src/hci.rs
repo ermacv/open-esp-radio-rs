@@ -10,6 +10,10 @@ use crate::{
     BluetoothControllerInterruptRuntime, BluetoothControllerTaskRuntime,
     BluetoothSchedulerInitialized, BluetoothSchedulerSoftwareConfig,
 };
+use open_esp_radio_esp32s31_hal::{
+    BluetoothLowPowerRuntimeControlObservation,
+    BluetoothModemLpTimerLowPowerHardwareInitializedOwner, BluetoothModemLpTimerOwnerError,
+};
 use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
 
 /// Why a scheduler epoch could not acquire an HCI resource epoch.
@@ -107,6 +111,96 @@ pub struct BluetoothControllerHciInitialized<
         CONTROLLER_TO_HOST_DEPTH,
         PACKET_CAPACITY,
     >,
+}
+
+/// Powered Controller ownership after the complete modem low-power hardware
+/// component and before source 127 is installed.
+///
+/// The disjoint timer owner stays inside this state. It is not yet in stable
+/// ISR storage, no CPU route is enabled, and this state therefore exposes no
+/// live timer interrupt or operational Link-Layer capability.
+#[must_use = "the initialized low-power hardware retains every powered Bluetooth owner"]
+pub struct BluetoothControllerLowPowerHardwareInitialized<
+    P,
+    M,
+    const MODEM_TIMER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+> where
+    M: RawMutex,
+{
+    controller: BluetoothControllerHciInitialized<
+        P,
+        M,
+        MODEM_TIMER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >,
+    timer_hardware: BluetoothModemLpTimerLowPowerHardwareInitializedOwner,
+}
+
+/// Lossless failure to initialize the disjoint modem low-power timer owner.
+#[must_use = "the powered HCI Controller remains owned after a rejected transition"]
+pub struct BluetoothControllerLowPowerHardwareInitializationFailure<
+    P,
+    M,
+    const MODEM_TIMER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+> where
+    M: RawMutex,
+{
+    controller: BluetoothControllerHciInitialized<
+        P,
+        M,
+        MODEM_TIMER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >,
+    error: BluetoothModemLpTimerOwnerError,
+}
+
+impl<
+    P,
+    M,
+    const MODEM_TIMER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+>
+    BluetoothControllerLowPowerHardwareInitializationFailure<
+        P,
+        M,
+        MODEM_TIMER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >
+where
+    M: RawMutex,
+{
+    /// Exact lower ownership error.
+    pub const fn error(&self) -> BluetoothModemLpTimerOwnerError {
+        self.error
+    }
+
+    /// Recover the complete powered Controller owner.
+    pub fn into_controller(
+        self,
+    ) -> BluetoothControllerHciInitialized<
+        P,
+        M,
+        MODEM_TIMER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    > {
+        self.controller
+    }
 }
 
 /// All borrowed runtime endpoints from one powered Controller epoch.
@@ -207,6 +301,140 @@ where
             hci_host,
             hci_worker,
         }
+    }
+
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc test seam returns the complete affine powered owner"
+    )]
+    fn try_initialize_low_power_hardware_with<TimerHardware, Error>(
+        mut self,
+        initialize: impl FnOnce(
+            &mut crate::resources::BluetoothTaskResources,
+        ) -> Result<TimerHardware, Error>,
+    ) -> Result<(Self, TimerHardware), (Self, Error)> {
+        match initialize(self.scheduler.task_mut()) {
+            Ok(timer_hardware) => Ok((self, timer_hardware)),
+            Err(error) => Err((self, error)),
+        }
+    }
+
+    /// Execute the source-127 register prefix and complete modem low-power
+    /// hardware initialization while the CPU route remains inactive.
+    ///
+    /// The safe Controller typestate discharges the lower HAL prerequisites:
+    /// clocks, scheduler/HCI software and both disjoint register owners belong
+    /// to this exact powered epoch, while the only route installer remains
+    /// private and cannot have run yet.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        reason = "the consuming Controller state proves the lower HAL prerequisites"
+    )]
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc failure returns the complete affine powered owner"
+    )]
+    pub fn initialize_modem_lp_timer_hardware(
+        self,
+    ) -> Result<
+        BluetoothControllerLowPowerHardwareInitialized<
+            P,
+            M,
+            MODEM_TIMER_CAPACITY,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+        BluetoothControllerLowPowerHardwareInitializationFailure<
+            P,
+            M,
+            MODEM_TIMER_CAPACITY,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    > {
+        match self.try_initialize_low_power_hardware_with(|task| {
+            // SAFETY: this consuming state owns the powered scheduler/HCI
+            // epoch and no public transition can have installed source 127.
+            unsafe { task.initialize_modem_lp_timer_hardware() }
+        }) {
+            Ok((controller, timer_hardware)) => {
+                Ok(BluetoothControllerLowPowerHardwareInitialized {
+                    controller,
+                    timer_hardware,
+                })
+            }
+            Err((controller, error)) => {
+                Err(BluetoothControllerLowPowerHardwareInitializationFailure { controller, error })
+            }
+        }
+    }
+}
+
+impl<
+    P,
+    M,
+    const MODEM_TIMER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+>
+    BluetoothControllerLowPowerHardwareInitialized<
+        P,
+        M,
+        MODEM_TIMER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >
+where
+    M: RawMutex,
+{
+    /// Number of scheduler modem-timer slots retained by this exact epoch.
+    pub const fn modem_timer_capacity(&self) -> usize {
+        self.controller.modem_timer_capacity()
+    }
+
+    /// Scheduler time scale retained by this exact powered epoch.
+    pub const fn controller_time_scale(&self) -> BluetoothControllerTimeScale {
+        self.controller.controller_time_scale()
+    }
+
+    /// Source-owned scheduler policy retained by this exact powered epoch.
+    pub const fn scheduler_config(&self) -> BluetoothSchedulerSoftwareConfig {
+        self.controller.scheduler_config()
+    }
+
+    /// Immutable HCI values reported to the Host during bootstrap.
+    pub const fn hci_config(&self) -> LeControllerBootstrapConfig {
+        self.controller.hci_config()
+    }
+
+    /// Whether no scheduler or HCI software work entered this epoch.
+    pub fn runtime_is_pristine(&self) -> bool {
+        self.controller.runtime_is_pristine()
+    }
+
+    /// Borrow all matching scheduler and HCI endpoints without releasing the
+    /// retained timer-hardware owner.
+    pub fn split_runtime(
+        &mut self,
+    ) -> BluetoothControllerRuntimeEndpoints<
+        '_,
+        M,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    > {
+        self.controller.split_runtime()
+    }
+
+    /// Conditional runtime-control branch observed by the exact hardware
+    /// component.
+    pub const fn runtime_control_observation(&self) -> BluetoothLowPowerRuntimeControlObservation {
+        self.timer_hardware.runtime_control_observation()
     }
 }
 
@@ -354,5 +582,44 @@ mod tests {
         let (scheduler, hci) = failure.into_parts();
         assert!(scheduler.runtime_is_pristine());
         assert!(!hci.is_pristine());
+    }
+
+    #[test]
+    fn low_power_hardware_stays_in_the_same_pristine_controller_epoch() {
+        let controller = scheduler()
+            .initialize_hci(hci())
+            .unwrap_or_else(|_| panic!("pristine HCI resources must bind"));
+        let (mut controller, timer_hardware) = match controller
+            .try_initialize_low_power_hardware_with(|_| Ok::<_, ()>("timer-hardware"))
+        {
+            Ok(initialized) => initialized,
+            Err(_) => panic!("the injected low-power component must complete"),
+        };
+
+        assert_eq!(timer_hardware, "timer-hardware");
+        assert!(controller.runtime_is_pristine());
+        assert_eq!(controller.modem_timer_capacity(), 4);
+        let endpoints = controller.split_runtime();
+        assert!(core::ptr::eq(
+            endpoints.interrupt.scheduler_wake(),
+            endpoints.task.scheduler_wake()
+        ));
+    }
+
+    #[test]
+    fn low_power_hardware_failure_returns_the_complete_hci_epoch() {
+        let controller = scheduler()
+            .initialize_hci(hci())
+            .unwrap_or_else(|_| panic!("pristine HCI resources must bind"));
+        let (controller, error) = match controller
+            .try_initialize_low_power_hardware_with(|_| Err::<(), _>("timer-owner-separated"))
+        {
+            Ok(_) => panic!("the injected lower failure must remain visible"),
+            Err(failure) => failure,
+        };
+
+        assert_eq!(error, "timer-owner-separated");
+        assert!(controller.runtime_is_pristine());
+        assert_eq!(controller.hci_config(), hci().config());
     }
 }

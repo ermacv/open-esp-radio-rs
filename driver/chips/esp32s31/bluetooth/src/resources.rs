@@ -11,6 +11,10 @@ use open_esp_radio_esp32s31_hal::{
     BluetoothControllerHalBorrow, BluetoothInterruptSetupOwner as HalBluetoothInterruptSetupOwner,
     BluetoothTaskOwner as HalBluetoothTaskOwner,
 };
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_esp32s31_hal::{
+    BluetoothModemLpTimerLowPowerHardwareInitializedOwner, BluetoothModemLpTimerOwnerError,
+};
 #[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_esp32s31_hal::{BluetoothSharedPhyBorrow, SharedPhyHal};
 #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
@@ -174,6 +178,30 @@ pub(crate) struct BluetoothTaskResources {
 
 #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 impl BluetoothTaskResources {
+    /// Execute the source-127 register prefix and following complete low-power
+    /// hardware component while the upper lifecycle retains initialized
+    /// Controller software and an inactive route.
+    ///
+    /// # Safety
+    ///
+    /// The caller must own the matching powered scheduler/HCI epoch, must not
+    /// have installed source 127, and must retain the returned disjoint timer
+    /// owner until verified route teardown.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        reason = "the upper lifecycle proves the powered software and inactive-route prerequisites"
+    )]
+    pub(crate) unsafe fn initialize_modem_lp_timer_hardware(
+        &mut self,
+    ) -> Result<
+        BluetoothModemLpTimerLowPowerHardwareInitializedOwner,
+        BluetoothModemLpTimerOwnerError,
+    > {
+        let prepared = unsafe { self.registers.prepare_modem_lp_timer_registers()? };
+        Ok(unsafe { prepared.initialize_low_power_hardware(&mut self.registers) })
+    }
+
     /// Remove every scheduler hardware-list head through one finite HAL borrow.
     #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
     pub(crate) fn clear_scheduler_hardware_list_heads(&mut self) {

@@ -8,8 +8,10 @@
 //! bound. A matching affine PAC head-publication token can then consume every
 //! rollback image into a hardware-owned graph. An affine fenced finished-list
 //! observation can then drive one volatile semantic item-status read without
-//! granting CPU ownership. Hardware/software unlink and affine reclamation
-//! still require independent proof.
+//! granting CPU ownership. Matching empty-head and post-unlink removal proofs
+//! authorize the reviewed cleanup and return TX or RX-non-success graphs to
+//! CPU ownership. RX-success header/swap ownership and recurring re-arm remain
+//! deliberately outside this lower memory boundary.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -52,6 +54,8 @@ pub use dtm_storage::{
     BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphEmptyListLinkPrepared,
     BluetoothDtmMemoryGraphHardwareOwned, BluetoothDtmMemoryGraphPositionalEventPrepared,
     BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphPrepareFailure,
+    BluetoothDtmMemoryGraphRecycleError, BluetoothDtmMemoryGraphRecycleFailure,
+    BluetoothDtmMemoryGraphRecyclePrepared, BluetoothDtmMemoryGraphRecycled,
     BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared, BluetoothDtmMemoryGraphStorage,
     BluetoothDtmMemoryGraphTxPacketPrepared, BluetoothDtmPositionalEventSeed,
     BluetoothDtmPreparedTxPacketStorage, BluetoothDtmRxBufferHeaderImage,

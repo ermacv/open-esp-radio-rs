@@ -3,7 +3,8 @@
 #![deny(unsafe_code)]
 
 use super::{
-    BluetoothInterruptRegisters, BluetoothTaskRegisters, device_fence,
+    BluetoothInterruptRegisters, BluetoothSchedulerHardwareListHead,
+    BluetoothSchedulerHardwareListHeadEmptyObserved, BluetoothTaskRegisters, device_fence,
     svd::{zero_based_field_write, zero_register_write},
 };
 
@@ -155,7 +156,30 @@ pub enum BluetoothSchedulerSoftwareListRemovalInterruptStep {
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "the ready removal proof must advance the exact retained scheduler item"]
 pub struct BluetoothSchedulerSoftwareListRemovalReady {
-    _private: (),
+    head: BluetoothSchedulerHardwareListHeadEmptyObserved,
+}
+
+impl BluetoothSchedulerSoftwareListRemovalReady {
+    /// Hardware list retained by the exact post-completion empty-head proof.
+    pub const fn index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.head.index()
+    }
+
+    /// Originally published head retained by the completed RUN epoch.
+    pub const fn completed_head(&self) -> BluetoothSchedulerHardwareListHead {
+        self.head.completed_head()
+    }
+}
+
+#[cfg(feature = "validation-probes")]
+impl BluetoothSchedulerSoftwareListRemovalReady {
+    /// Bind host-only semantic empty-head evidence to a simulated ready gate.
+    #[doc(hidden)]
+    pub const fn from_head_for_validation(
+        head: BluetoothSchedulerHardwareListHeadEmptyObserved,
+    ) -> Self {
+        Self { head }
+    }
 }
 
 /// Result of consuming one finite scheduler software-list removal observation.
@@ -163,7 +187,10 @@ pub struct BluetoothSchedulerSoftwareListRemovalReady {
 #[must_use = "pending requires a new scheduler event; ready must advance ownership"]
 pub enum BluetoothSchedulerSoftwareListRemovalJoin {
     /// At least one task-owned command status was not ready.
-    Pending,
+    Pending {
+        /// Unchanged empty-head proof for a later fresh scheduler event.
+        head: BluetoothSchedulerHardwareListHeadEmptyObserved,
+    },
     /// Both task-owned command statuses were set after the idle observation.
     Ready(BluetoothSchedulerSoftwareListRemovalReady),
 }
@@ -382,17 +409,21 @@ fn execute_finished_list_transfer(
     BluetoothSchedulerFinishedListObservation(value)
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BluetoothSchedulerSoftwareListRemovalDisposition {
+    Pending,
+    Ready,
+}
+
 fn execute_software_list_removal_finish(
     control: &mut impl BluetoothSchedulerSoftwareListRemovalControl,
-) -> BluetoothSchedulerSoftwareListRemovalJoin {
+) -> BluetoothSchedulerSoftwareListRemovalDisposition {
     let command_0_status_26 = control.read_command_0_status_26();
     let command_1_status_18 = command_0_status_26 && control.read_command_1_status_18();
     if command_0_status_26 && command_1_status_18 {
-        BluetoothSchedulerSoftwareListRemovalJoin::Ready(
-            BluetoothSchedulerSoftwareListRemovalReady { _private: () },
-        )
+        BluetoothSchedulerSoftwareListRemovalDisposition::Ready
     } else {
-        BluetoothSchedulerSoftwareListRemovalJoin::Pending
+        BluetoothSchedulerSoftwareListRemovalDisposition::Pending
     }
 }
 
@@ -445,11 +476,21 @@ impl BluetoothTaskRegisters {
     pub fn finish_scheduler_software_list_removal(
         &mut self,
         _idle: BluetoothSchedulerSoftwareListRemovalIdle,
+        head: BluetoothSchedulerHardwareListHeadEmptyObserved,
     ) -> BluetoothSchedulerSoftwareListRemovalJoin {
         let mut control = HardwareSchedulerSoftwareListRemovalControl {
             registers: &self.bluetooth.bluetooth_controller_core,
         };
-        execute_software_list_removal_finish(&mut control)
+        match execute_software_list_removal_finish(&mut control) {
+            BluetoothSchedulerSoftwareListRemovalDisposition::Pending => {
+                BluetoothSchedulerSoftwareListRemovalJoin::Pending { head }
+            }
+            BluetoothSchedulerSoftwareListRemovalDisposition::Ready => {
+                BluetoothSchedulerSoftwareListRemovalJoin::Ready(
+                    BluetoothSchedulerSoftwareListRemovalReady { head },
+                )
+            }
+        }
     }
 }
 
@@ -481,8 +522,8 @@ mod tests {
     use super::{
         BluetoothSchedulerFinishedListControl, BluetoothSchedulerHardwareListIndex,
         BluetoothSchedulerInterruptControl, BluetoothSchedulerSoftwareListRemovalControl,
-        BluetoothSchedulerSoftwareListRemovalInterruptStep,
-        BluetoothSchedulerSoftwareListRemovalJoin, SchedulerStateObservation,
+        BluetoothSchedulerSoftwareListRemovalDisposition,
+        BluetoothSchedulerSoftwareListRemovalInterruptStep, SchedulerStateObservation,
         execute_clear_scheduler_reference, execute_finished_list_transfer,
         execute_reference_gate_observation, execute_software_list_removal_finish,
         execute_work_observation,
@@ -635,7 +676,10 @@ mod tests {
             blocked_at_zero.operations,
             [RemovalOperation::ReadCommandZero]
         );
-        assert_eq!(blocked, BluetoothSchedulerSoftwareListRemovalJoin::Pending);
+        assert_eq!(
+            blocked,
+            BluetoothSchedulerSoftwareListRemovalDisposition::Pending
+        );
 
         let mut blocked_at_one = RemovalRecorder {
             command_zero: true,
@@ -650,7 +694,10 @@ mod tests {
                 RemovalOperation::ReadCommandOne,
             ]
         );
-        assert_eq!(blocked, BluetoothSchedulerSoftwareListRemovalJoin::Pending);
+        assert_eq!(
+            blocked,
+            BluetoothSchedulerSoftwareListRemovalDisposition::Pending
+        );
 
         let mut ready = RemovalRecorder {
             command_zero: true,
@@ -665,10 +712,10 @@ mod tests {
                 RemovalOperation::ReadCommandOne,
             ]
         );
-        assert!(matches!(
+        assert_eq!(
             ready_observation,
-            BluetoothSchedulerSoftwareListRemovalJoin::Ready(_)
-        ));
+            BluetoothSchedulerSoftwareListRemovalDisposition::Ready
+        );
     }
 
     #[test]

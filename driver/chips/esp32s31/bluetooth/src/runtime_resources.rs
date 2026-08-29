@@ -247,6 +247,13 @@ impl<const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         SCHEDULER_CAPACITY
     }
 
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn scheduler_timeline_mut(
+        &mut self,
+    ) -> &mut BluetoothSchedulerTimeline<SCHEDULER_CAPACITY> {
+        &mut self.scheduler_timeline
+    }
+
     /// Whether no event, request, completion drain or timer has entered this
     /// epoch yet.
     pub fn is_pristine(&self) -> bool {

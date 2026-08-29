@@ -252,6 +252,17 @@ where
             .join_dtm_software_list_removal(unlinked, event)
     }
 
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn recycle_dtm_completed<Role>(
+        &mut self,
+        ready: crate::BluetoothDtmSchedulerSoftwareListRemovalReady<Role>,
+    ) -> crate::BluetoothDtmSchedulerRecycleStep<Role> {
+        self.initialized
+            .initialized
+            .controller
+            .recycle_dtm_completed(ready)
+    }
+
     pub(crate) fn request_controller_time(
         &mut self,
     ) -> Result<crate::BluetoothControllerTimeRequest, crate::BluetoothControllerTimeRequestError>

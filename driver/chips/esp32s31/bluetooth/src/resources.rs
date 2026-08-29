@@ -354,10 +354,11 @@ impl BluetoothTaskResources {
     pub(crate) fn finish_scheduler_software_list_removal(
         &mut self,
         idle: BluetoothSchedulerSoftwareListRemovalIdle,
+        head: open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareListHeadEmptyObserved,
     ) -> BluetoothSchedulerSoftwareListRemovalJoin {
         self.registers
             .borrow_bluetooth_controller()
-            .finish_scheduler_software_list_removal(idle)
+            .finish_scheduler_software_list_removal(idle, head)
     }
 
     /// Execute the complete reviewed controller HAL-init component.

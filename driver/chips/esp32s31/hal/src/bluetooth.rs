@@ -1085,8 +1085,10 @@ impl BluetoothControllerHal<'_> {
     pub fn finish_scheduler_software_list_removal(
         &mut self,
         idle: BluetoothSchedulerSoftwareListRemovalIdle,
+        head: BluetoothSchedulerHardwareListHeadEmptyObserved,
     ) -> BluetoothSchedulerSoftwareListRemovalJoin {
-        self.registers.finish_scheduler_software_list_removal(idle)
+        self.registers
+            .finish_scheduler_software_list_removal(idle, head)
     }
 
     /// Transfer one fresh hardware finished-list observation to its reviewed

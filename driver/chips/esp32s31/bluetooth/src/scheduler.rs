@@ -186,6 +186,18 @@ impl BluetoothSchedulerExclusiveListEpoch {
         self.state =
             BluetoothSchedulerExclusiveListState::FirstItemSoftwareListRemovalReady { address };
     }
+
+    fn retains_software_list_removal_ready_first_item(
+        &self,
+        address: BluetoothControllerSramAddress,
+    ) -> bool {
+        self.state
+            == BluetoothSchedulerExclusiveListState::FirstItemSoftwareListRemovalReady { address }
+    }
+
+    fn commit_recycled_first_item(&mut self) {
+        self.state = BluetoothSchedulerExclusiveListState::Empty;
+    }
 }
 
 /// Why the first DTM item could not consume the exclusive empty-list epoch.
@@ -510,7 +522,6 @@ pub enum BluetoothDtmSchedulerSoftwareListUnlinkStep<Role> {
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothDtmSchedulerSoftwareListRemovalReady<Role> {
     item: BluetoothDtmCompletionObservedEvent<Role>,
-    head: BluetoothSchedulerHardwareListHeadEmptyObserved,
     _removal: BluetoothSchedulerSoftwareListRemovalReady,
 }
 
@@ -533,8 +544,31 @@ impl<Role> BluetoothDtmSchedulerSoftwareListRemovalReady<Role> {
 
     /// Hardware list retained by the exact empty-head observation.
     pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
-        self.head.index()
+        self._removal.index()
     }
+}
+
+/// Result of returning one removal-ready DTM graph to source-owned CPU state.
+#[must_use = "failure retains the removal-ready graph; success retains the CPU graph"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothDtmSchedulerRecycleStep<Role> {
+    /// The supplied graph belongs to another scheduler epoch.
+    SchedulerIdentityMismatch(BluetoothDtmSchedulerSoftwareListRemovalReady<Role>),
+    /// A prior finished-list transfer still retains an unhandled list.
+    FinishedListDrainStillActive(BluetoothDtmSchedulerSoftwareListRemovalReady<Role>),
+    /// The lower memory graph rejected the retained typed head identity.
+    MemoryIdentityMismatch {
+        /// Unchanged removal-ready graph.
+        ready: BluetoothDtmSchedulerSoftwareListRemovalReady<Role>,
+        /// Exact lower identity mismatch.
+        error: open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmMemoryGraphRecycleError,
+    },
+    /// The affine reservation does not belong to this Controller timeline.
+    ReservationIdentityMismatch(BluetoothDtmSchedulerSoftwareListRemovalReady<Role>),
+    /// Successful RX requires returned-header and swap-reserve ownership first.
+    ReceiverSuccessRequiresReturnedHeader(BluetoothDtmSchedulerSoftwareListRemovalReady<Role>),
+    /// Memory and timeline ownership returned to the source role.
+    Recycled(crate::BluetoothDtmRecycledEvent<Role>),
 }
 
 /// Internal result of joining one fresh primary scheduler event to an already
@@ -931,21 +965,77 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
             }
             BluetoothSchedulerSoftwareListRemovalInterruptStep::Idle(idle) => idle,
         };
-        match self.task.finish_scheduler_software_list_removal(idle) {
-            BluetoothSchedulerSoftwareListRemovalJoin::Pending => {
-                BluetoothDtmSchedulerSoftwareListRemovalJoin::Pending(unlinked)
+        let BluetoothDtmSchedulerSoftwareListUnlinked { item, head } = unlinked;
+        match self.task.finish_scheduler_software_list_removal(idle, head) {
+            BluetoothSchedulerSoftwareListRemovalJoin::Pending { head } => {
+                BluetoothDtmSchedulerSoftwareListRemovalJoin::Pending(
+                    BluetoothDtmSchedulerSoftwareListUnlinked { item, head },
+                )
             }
             BluetoothSchedulerSoftwareListRemovalJoin::Ready(removal) => {
                 self._scheduler_list
                     .retain_software_list_removal_ready_first_item(address);
-                let BluetoothDtmSchedulerSoftwareListUnlinked { item, head } = unlinked;
                 BluetoothDtmSchedulerSoftwareListRemovalJoin::Ready(
                     BluetoothDtmSchedulerSoftwareListRemovalReady {
                         item,
-                        head,
                         _removal: removal,
                     },
                 )
+            }
+        }
+    }
+
+    /// Return one removal-ready DTM graph to source-owned CPU state.
+    ///
+    /// TX and RX non-success outcomes may recycle directly. RX success remains
+    /// blocked because the returned-header and swap-reserve ownership branch
+    /// is not yet affine. The timeline reservation and reviewed descriptor
+    /// links are released in one bounded transaction.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn recycle_dtm_completed<Role>(
+        &mut self,
+        ready: BluetoothDtmSchedulerSoftwareListRemovalReady<Role>,
+    ) -> BluetoothDtmSchedulerRecycleStep<Role> {
+        let address = ready.scheduler_item_address();
+        if ready.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || !self
+                ._scheduler_list
+                .retains_software_list_removal_ready_first_item(address)
+        {
+            return BluetoothDtmSchedulerRecycleStep::SchedulerIdentityMismatch(ready);
+        }
+        if self.runtime.scheduler_finished_lists_mut().is_active() {
+            return BluetoothDtmSchedulerRecycleStep::FinishedListDrainStillActive(ready);
+        }
+        if ready.role() == BluetoothDtmRole::Receiver
+            && ready.status() == BluetoothDtmSchedulerItemCompletionStatus::Success
+        {
+            return BluetoothDtmSchedulerRecycleStep::ReceiverSuccessRequiresReturnedHeader(ready);
+        }
+
+        let BluetoothDtmSchedulerSoftwareListRemovalReady { item, _removal } = ready;
+        match item.recycle(self.runtime.scheduler_timeline_mut(), _removal) {
+            Ok(recycled) => {
+                self._scheduler_list.commit_recycled_first_item();
+                BluetoothDtmSchedulerRecycleStep::Recycled(recycled)
+            }
+            Err(failure) => {
+                let (error, item, removal) = failure.into_parts();
+                let ready = BluetoothDtmSchedulerSoftwareListRemovalReady {
+                    item,
+                    _removal: removal,
+                };
+                match error {
+                    crate::dtm_event_prepare::BluetoothDtmCompletionRecycleError::MemoryIdentity(
+                        error,
+                    ) => BluetoothDtmSchedulerRecycleStep::MemoryIdentityMismatch {
+                        ready,
+                        error,
+                    },
+                    crate::dtm_event_prepare::BluetoothDtmCompletionRecycleError::ReservationIdentityMismatch => {
+                        BluetoothDtmSchedulerRecycleStep::ReservationIdentityMismatch(ready)
+                    }
+                }
             }
         }
     }
@@ -1150,10 +1240,13 @@ mod tests {
             Err(BluetoothDtmEmptySchedulerMergeError::ListNotEmpty)
         );
         list.retain_software_list_removal_ready_first_item(first);
+        assert!(list.retains_software_list_removal_ready_first_item(first));
         assert_eq!(
             list.prepare_first_item(other),
             Err(BluetoothDtmEmptySchedulerMergeError::ListNotEmpty)
         );
+        list.commit_recycled_first_item();
+        assert_eq!(list.prepare_first_item(other), Ok(()));
     }
 
     #[test]

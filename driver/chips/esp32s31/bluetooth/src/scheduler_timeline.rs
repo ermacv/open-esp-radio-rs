@@ -168,6 +168,22 @@ pub struct BluetoothSchedulerReservationReleaseFailure<State> {
     reservation: BluetoothSchedulerReservation<State>,
 }
 
+/// Validated exact reservation release retaining an exclusive borrow of its
+/// occupied slot until the caller commits.
+#[must_use = "the prepared reservation release must be committed"]
+pub(crate) struct BluetoothSchedulerReservationReleasePrepared<'timeline, State> {
+    window: &'timeline mut Option<BluetoothSchedulerRawWindow>,
+    _reservation: BluetoothSchedulerReservation<State>,
+}
+
+impl<State> BluetoothSchedulerReservationReleasePrepared<'_, State> {
+    /// Clear the already-validated slot without another fallible identity
+    /// check.
+    pub(crate) fn commit(self) {
+        *self.window = None;
+    }
+}
+
 impl<State> BluetoothSchedulerReservationReleaseFailure<State> {
     /// Exact reason the timeline rejected this reservation.
     pub const fn error(&self) -> BluetoothSchedulerReservationReleaseError {
@@ -370,6 +386,23 @@ impl<const CAPACITY: usize> BluetoothSchedulerTimeline<CAPACITY> {
         &mut self,
         reservation: BluetoothSchedulerReservation<State>,
     ) -> Result<(), BluetoothSchedulerReservationReleaseFailure<State>> {
+        self.prepare_release(reservation).map(|prepared| {
+            prepared.commit();
+        })
+    }
+
+    /// Validate one exact release and retain the matching slot exclusively.
+    ///
+    /// The prepared release lets a composed owner finish earlier memory
+    /// cleanup before the timeline becomes reusable, without repeating an
+    /// identity check or introducing a post-cleanup failure path.
+    pub(crate) fn prepare_release<State>(
+        &mut self,
+        reservation: BluetoothSchedulerReservation<State>,
+    ) -> Result<
+        BluetoothSchedulerReservationReleasePrepared<'_, State>,
+        BluetoothSchedulerReservationReleaseFailure<State>,
+    > {
         let Some(slot) = self.slots.get_mut(reservation.slot) else {
             return Err(BluetoothSchedulerReservationReleaseFailure {
                 error: BluetoothSchedulerReservationReleaseError::SlotOutOfRange,
@@ -382,8 +415,10 @@ impl<const CAPACITY: usize> BluetoothSchedulerTimeline<CAPACITY> {
                 reservation,
             });
         }
-        slot.window = None;
-        Ok(())
+        Ok(BluetoothSchedulerReservationReleasePrepared {
+            window: &mut slot.window,
+            _reservation: reservation,
+        })
     }
 
     /// Whether no scheduler window remains reserved.

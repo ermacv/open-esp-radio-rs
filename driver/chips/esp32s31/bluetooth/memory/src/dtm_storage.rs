@@ -17,7 +17,7 @@ use core::{convert::Infallible, marker::PhantomPinned, num::NonZeroU32, pin::Pin
 use open_esp_radio_esp32s31_hal::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
     BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListHeadPublished,
-    BluetoothSchedulerHardwareListIndex,
+    BluetoothSchedulerHardwareListIndex, BluetoothSchedulerSoftwareListRemovalReady,
 };
 use pin_project::pin_project;
 use vcell::VolatileCell;
@@ -1263,6 +1263,145 @@ impl BluetoothDtmMemoryGraphCompletionObserved {
     ) {
         (self.owner, self.status)
     }
+
+    /// Prepare reclamation after exact hardware-head retirement and the
+    /// post-unlink software-list removal gate without mutating SRAM.
+    ///
+    /// The two affine lower tokens are consumed together and the retained RUN
+    /// head must name this graph on list zero. Success binds them into one
+    /// affine prepared transaction; its later infallible commit performs the
+    /// reviewed SRAM cleanup and returns the retained status with CPU ownership.
+    #[doc(hidden)]
+    pub fn prepare_recycle_after_software_list_removal(
+        self,
+        removal: BluetoothSchedulerSoftwareListRemovalReady,
+    ) -> Result<BluetoothDtmMemoryGraphRecyclePrepared, BluetoothDtmMemoryGraphRecycleFailure> {
+        let error = if removal.index() != BluetoothSchedulerHardwareListIndex::ZERO {
+            Some(BluetoothDtmMemoryGraphRecycleError::HardwareListMismatch)
+        } else if removal.completed_head().address() != Some(self.scheduler_item_address()) {
+            Some(BluetoothDtmMemoryGraphRecycleError::SchedulerItemMismatch)
+        } else {
+            None
+        };
+        if let Some(error) = error {
+            return Err(BluetoothDtmMemoryGraphRecycleFailure {
+                error,
+                completed: self,
+                removal,
+            });
+        }
+
+        Ok(BluetoothDtmMemoryGraphRecyclePrepared {
+            completed: self,
+            removal,
+        })
+    }
+}
+
+/// Validated but not yet mutated completed-graph recycle transaction.
+///
+/// This affine owner binds the exact completed graph, retired head and
+/// post-unlink removal proof. It can be rolled back losslessly until
+/// [`Self::commit`] performs the reviewed SRAM cleanup.
+#[must_use = "the prepared recycle must be committed or returned to its owners"]
+pub struct BluetoothDtmMemoryGraphRecyclePrepared {
+    completed: BluetoothDtmMemoryGraphCompletionObserved,
+    removal: BluetoothSchedulerSoftwareListRemovalReady,
+}
+
+impl BluetoothDtmMemoryGraphRecyclePrepared {
+    /// Recover every unchanged owner before the first SRAM mutation.
+    #[doc(hidden)]
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothDtmMemoryGraphCompletionObserved,
+        BluetoothSchedulerSoftwareListRemovalReady,
+    ) {
+        (self.completed, self.removal)
+    }
+
+    /// Perform the infallible reviewed recycle suffix.
+    ///
+    /// Vendor order removes the completed-queue link first and then clears the
+    /// compressed hardware-next link while preserving its non-link prefix.
+    #[doc(hidden)]
+    pub fn commit(self) -> BluetoothDtmMemoryGraphRecycled {
+        let Self {
+            completed,
+            removal: _,
+        } = self;
+        let BluetoothDtmMemoryGraphCompletionObserved { owner, status } = completed;
+        let BluetoothDtmMemoryGraphHardwareOwned {
+            mut storage,
+            binding,
+        } = owner;
+        let scheduler_item = storage.as_mut().project().scheduler_item;
+        scheduler_item.write_word(SCHEDULER_ITEM_COMPLETED_LINK_OFFSET, 0);
+        let hardware_next = scheduler_item.read_word(SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET);
+        scheduler_item.write_word(
+            SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET,
+            hardware_next & !LOW_TWENTY_MASK,
+        );
+
+        BluetoothDtmMemoryGraphRecycled {
+            owner: BluetoothDtmMemoryGraphCpuOwned { storage, binding },
+            status,
+        }
+    }
+}
+
+/// Why the completed memory graph rejected recycle authorization.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothDtmMemoryGraphRecycleError {
+    /// The empty-head proof belongs to a hardware list other than DTM list zero.
+    HardwareListMismatch,
+    /// The retained RUN head names a different scheduler item.
+    SchedulerItemMismatch,
+}
+
+/// Lossless rejection of one completed-graph recycle attempt.
+#[must_use = "recycle rejection retains the graph and both affine authorizations"]
+pub struct BluetoothDtmMemoryGraphRecycleFailure {
+    error: BluetoothDtmMemoryGraphRecycleError,
+    completed: BluetoothDtmMemoryGraphCompletionObserved,
+    removal: BluetoothSchedulerSoftwareListRemovalReady,
+}
+
+impl BluetoothDtmMemoryGraphRecycleFailure {
+    /// Exact identity mismatch that prevented CPU ownership return.
+    pub const fn error(&self) -> BluetoothDtmMemoryGraphRecycleError {
+        self.error
+    }
+
+    /// Recover the unchanged completion and both affine authorizations.
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothDtmMemoryGraphCompletionObserved,
+        BluetoothSchedulerSoftwareListRemovalReady,
+    ) {
+        (self.completed, self.removal)
+    }
+}
+
+/// CPU-owned graph after the reviewed scheduler-item recycle suffix.
+#[must_use = "the recycled graph and completion status must reach the role owner"]
+pub struct BluetoothDtmMemoryGraphRecycled {
+    owner: BluetoothDtmMemoryGraphCpuOwned,
+    status: BluetoothDtmSchedulerItemCompletionStatus,
+}
+
+impl BluetoothDtmMemoryGraphRecycled {
+    /// Recover the ordinary CPU graph and its retained completion status.
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothDtmMemoryGraphCpuOwned,
+        BluetoothDtmSchedulerItemCompletionStatus,
+    ) {
+        (self.owner, self.status)
+    }
 }
 
 /// Result of matching one fenced finished-list observation to the DTM graph.
@@ -1691,8 +1830,10 @@ mod tests {
     };
 
     use open_esp_radio_esp32s31_hal::{
-        BluetoothControllerSramAddressError, BluetoothSchedulerFinishedListObservation,
-        BluetoothSchedulerFinishedListPop,
+        BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
+        BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
+        BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadEmptyObserved,
+        BluetoothSchedulerHardwareListIndex, BluetoothSchedulerSoftwareListRemovalReady,
     };
 
     use super::{
@@ -1704,10 +1845,11 @@ mod tests {
         BluetoothDtmLinkStateStorage, BluetoothDtmMemoryGraphBindError,
         BluetoothDtmMemoryGraphCompletionObservation, BluetoothDtmMemoryGraphCpuOwned,
         BluetoothDtmMemoryGraphHardwareOwned, BluetoothDtmMemoryGraphModelAddress,
-        BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphStorage,
-        BluetoothDtmPositionalEventSeed, BluetoothDtmPositionalEventWords,
-        BluetoothDtmRxBufferHeaderImage, BluetoothDtmRxBufferStorage, BluetoothDtmRxPacketAddress,
-        BluetoothDtmRxPacketAddressError, BluetoothDtmRxPacketStorage, BluetoothDtmRxRearmError,
+        BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphRecycleError,
+        BluetoothDtmMemoryGraphStorage, BluetoothDtmPositionalEventSeed,
+        BluetoothDtmPositionalEventWords, BluetoothDtmRxBufferHeaderImage,
+        BluetoothDtmRxBufferStorage, BluetoothDtmRxPacketAddress, BluetoothDtmRxPacketAddressError,
+        BluetoothDtmRxPacketStorage, BluetoothDtmRxRearmError,
         BluetoothDtmSchedulerAllocationConfig, BluetoothDtmSchedulerContextStorage,
         BluetoothDtmSchedulerItemCompletionStatus, BluetoothDtmSchedulerItemReviewedWords,
         BluetoothDtmSchedulerItemStorage, BluetoothDtmTxBufferHeaderImage,
@@ -1791,6 +1933,18 @@ mod tests {
                 unreachable!("one scripted list cannot be empty")
             }
         }
+    }
+
+    fn removal_ready_for(
+        index: BluetoothSchedulerHardwareListIndex,
+        address: BluetoothControllerSramAddress,
+    ) -> BluetoothSchedulerSoftwareListRemovalReady {
+        let head = BluetoothSchedulerHardwareListHead::from_address(address)
+            .expect("test identity is a nonempty controller head");
+        let head = BluetoothSchedulerHardwareListHeadEmptyObserved::from_identity_for_validation(
+            index, head,
+        );
+        BluetoothSchedulerSoftwareListRemovalReady::from_head_for_validation(head)
     }
 
     const fn allocation_config() -> BluetoothDtmSchedulerAllocationConfig {
@@ -2093,6 +2247,55 @@ mod tests {
                 core::num::NonZeroU32::new(7).expect("seven is nonzero")
             )
         );
+    }
+
+    #[test]
+    fn recycle_is_lossless_before_commit_and_returns_a_reusable_cpu_graph() {
+        let owner = hardware_owner_with_status(0x2f00_2500, 7);
+        let completed = match owner.observe_completion(observed_list(0)) {
+            BluetoothDtmMemoryGraphCompletionObservation::CompletionObserved(completed) => {
+                completed
+            }
+            _ => panic!("non-sentinel status must produce a completion observation"),
+        };
+        let wrong_address =
+            BluetoothControllerSramAddress::new(completed.scheduler_item_address().address() + 4)
+                .expect("adjacent aligned model identity stays in controller SRAM");
+        let failure = match completed.prepare_recycle_after_software_list_removal(
+            removal_ready_for(BluetoothSchedulerHardwareListIndex::ZERO, wrong_address),
+        ) {
+            Ok(_) => panic!("a removal proof for another item must reject before mutation"),
+            Err(failure) => failure,
+        };
+        assert_eq!(
+            failure.error(),
+            BluetoothDtmMemoryGraphRecycleError::SchedulerItemMismatch
+        );
+        let (completed, _wrong_removal) = failure.into_parts();
+        assert_eq!(
+            completed.status(),
+            BluetoothDtmSchedulerItemCompletionStatus::NonSuccess(
+                core::num::NonZeroU32::new(7).expect("seven is nonzero")
+            )
+        );
+
+        let address = completed.scheduler_item_address();
+        let prepared = match completed.prepare_recycle_after_software_list_removal(
+            removal_ready_for(BluetoothSchedulerHardwareListIndex::ZERO, address),
+        ) {
+            Ok(prepared) => prepared,
+            Err(_) => panic!("the bound removal proof must authorize the exact completed graph"),
+        };
+        let (owner, status) = prepared.commit().into_parts();
+        assert_eq!(
+            status,
+            BluetoothDtmSchedulerItemCompletionStatus::NonSuccess(
+                core::num::NonZeroU32::new(7).expect("seven is nonzero")
+            )
+        );
+        let _prepared = owner
+            .try_prepare_positional_event(|seed| Ok::<_, Infallible>(candidate_words(seed)))
+            .expect("the recycled CPU graph can prepare a later event");
     }
 
     #[test]

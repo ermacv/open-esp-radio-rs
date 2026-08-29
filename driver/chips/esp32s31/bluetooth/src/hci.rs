@@ -528,6 +528,14 @@ where
     }
 
     #[cfg(target_arch = "riscv32")]
+    pub(crate) fn recycle_dtm_completed<Role>(
+        &mut self,
+        ready: crate::BluetoothDtmSchedulerSoftwareListRemovalReady<Role>,
+    ) -> crate::BluetoothDtmSchedulerRecycleStep<Role> {
+        self.controller.scheduler.recycle_dtm_completed(ready)
+    }
+
+    #[cfg(target_arch = "riscv32")]
     #[expect(
         clippy::result_large_err,
         reason = "the internal no-alloc delegation preserves the complete rejected graph"

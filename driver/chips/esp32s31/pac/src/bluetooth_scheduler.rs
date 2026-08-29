@@ -290,26 +290,43 @@ pub struct BluetoothSchedulerHardwareRunCommandPublished {
     event: BluetoothSchedulerRunEventPublished,
 }
 
-/// RUN provenance after one fresh fenced observation found its list empty.
+/// Affine identity after one fresh fenced observation found its list empty.
 ///
-/// The token is affine and retains the complete run prologue. It proves only
-/// that the hardware head was empty at this post-completion observation; the
-/// software-list removal predicate and descriptor reclamation remain separate.
+/// The token consumes the complete RUN prologue and retains its exact list and
+/// originally published head. It proves only that the hardware head was empty
+/// at this post-completion observation; the software-list removal predicate
+/// and descriptor reclamation remain separate.
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "the empty hardware-head observation must feed software-list removal"]
 pub struct BluetoothSchedulerHardwareListHeadEmptyObserved {
-    run: BluetoothSchedulerHardwareRunCommandPublished,
+    index: BluetoothSchedulerHardwareListIndex,
+    completed_head: BluetoothSchedulerHardwareListHead,
 }
 
 impl BluetoothSchedulerHardwareListHeadEmptyObserved {
     /// Hardware list whose head was freshly observed empty.
     pub const fn index(&self) -> BluetoothSchedulerHardwareListIndex {
-        self.run.index()
+        self.index
     }
 
     /// Originally published head retained by the completed RUN epoch.
     pub const fn completed_head(&self) -> BluetoothSchedulerHardwareListHead {
-        self.run.head()
+        self.completed_head
+    }
+}
+
+#[cfg(feature = "validation-probes")]
+impl BluetoothSchedulerHardwareListHeadEmptyObserved {
+    /// Construct semantic empty-head evidence for host-only ownership tests.
+    #[doc(hidden)]
+    pub const fn from_identity_for_validation(
+        index: BluetoothSchedulerHardwareListIndex,
+        completed_head: BluetoothSchedulerHardwareListHead,
+    ) -> Self {
+        Self {
+            index,
+            completed_head,
+        }
     }
 }
 
@@ -405,11 +422,16 @@ impl BluetoothTaskRegisters {
         &mut self,
         run: BluetoothSchedulerHardwareRunCommandPublished,
     ) -> BluetoothSchedulerHardwareListHeadRetirementObservation {
-        let observed = execute_scheduler_hardware_list_head_observation(self, run.index());
-        match classify_scheduler_hardware_list_head_retirement(run.head(), observed) {
+        let index = run.index();
+        let completed_head = run.head();
+        let observed = execute_scheduler_hardware_list_head_observation(self, index);
+        match classify_scheduler_hardware_list_head_retirement(completed_head, observed) {
             BluetoothSchedulerHardwareListHeadRetirementDisposition::Empty => {
                 BluetoothSchedulerHardwareListHeadRetirementObservation::EmptyObserved(
-                    BluetoothSchedulerHardwareListHeadEmptyObserved { run },
+                    BluetoothSchedulerHardwareListHeadEmptyObserved {
+                        index,
+                        completed_head,
+                    },
                 )
             }
             BluetoothSchedulerHardwareListHeadRetirementDisposition::ExpectedHeadStillPublished => {

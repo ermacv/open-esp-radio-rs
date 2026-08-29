@@ -13,7 +13,7 @@ use core::{convert::Infallible, marker::PhantomData};
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmMemoryGraphCompletionObservation, BluetoothDtmMemoryGraphCompletionObserved,
-    BluetoothDtmSchedulerItemCompletionStatus,
+    BluetoothDtmMemoryGraphRecycleError, BluetoothDtmSchedulerItemCompletionStatus,
 };
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphPositionalEventPrepared,
@@ -30,6 +30,7 @@ use open_esp_radio_esp32s31_hal::{
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::{
     BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListHeadPublished,
+    BluetoothSchedulerSoftwareListRemovalReady,
 };
 
 use crate::{
@@ -564,6 +565,141 @@ impl<Role> BluetoothDtmCompletionObservedEvent<Role> {
 
     pub(crate) const fn status(&self) -> BluetoothDtmSchedulerItemCompletionStatus {
         self.memory.status()
+    }
+
+    pub(crate) fn recycle<const CAPACITY: usize>(
+        self,
+        timeline: &mut crate::BluetoothSchedulerTimeline<CAPACITY>,
+        removal: BluetoothSchedulerSoftwareListRemovalReady,
+    ) -> Result<BluetoothDtmRecycledEvent<Role>, BluetoothDtmCompletionRecycleFailure<Role>> {
+        let Self {
+            memory,
+            packet,
+            _reservation: reservation,
+            _role: _,
+        } = self;
+        let prepared = match memory.prepare_recycle_after_software_list_removal(removal) {
+            Ok(prepared) => prepared,
+            Err(failure) => {
+                let error = failure.error();
+                let (memory, removal) = failure.into_parts();
+                return Err(BluetoothDtmCompletionRecycleFailure {
+                    error: BluetoothDtmCompletionRecycleError::MemoryIdentity(error),
+                    item: BluetoothDtmCompletionObservedEvent {
+                        memory,
+                        packet,
+                        _reservation: reservation,
+                        _role: PhantomData,
+                    },
+                    removal,
+                });
+            }
+        };
+        let release = match timeline.prepare_release(reservation) {
+            Ok(release) => release,
+            Err(failure) => {
+                let reservation = failure.into_reservation();
+                let (memory, removal) = prepared.into_parts();
+                return Err(BluetoothDtmCompletionRecycleFailure {
+                    error: BluetoothDtmCompletionRecycleError::ReservationIdentityMismatch,
+                    item: BluetoothDtmCompletionObservedEvent {
+                        memory,
+                        packet,
+                        _reservation: reservation,
+                        _role: PhantomData,
+                    },
+                    removal,
+                });
+            }
+        };
+        let recycled = prepared.commit();
+        release.commit();
+        let (memory, status) = recycled.into_parts();
+        Ok(BluetoothDtmRecycledEvent {
+            memory,
+            packet,
+            status,
+            _role: PhantomData,
+        })
+    }
+}
+
+/// Internal reason the complete DTM recycle transaction rejected ownership.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(target_arch = "riscv32")]
+pub(crate) enum BluetoothDtmCompletionRecycleError {
+    MemoryIdentity(BluetoothDtmMemoryGraphRecycleError),
+    ReservationIdentityMismatch,
+}
+
+/// Lossless rejection before either memory or timeline ownership changed.
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct BluetoothDtmCompletionRecycleFailure<Role> {
+    error: BluetoothDtmCompletionRecycleError,
+    item: BluetoothDtmCompletionObservedEvent<Role>,
+    removal: BluetoothSchedulerSoftwareListRemovalReady,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<Role> BluetoothDtmCompletionRecycleFailure<Role> {
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        BluetoothDtmCompletionRecycleError,
+        BluetoothDtmCompletionObservedEvent<Role>,
+        BluetoothSchedulerSoftwareListRemovalReady,
+    ) {
+        (self.error, self.item, self.removal)
+    }
+}
+
+/// CPU-owned graph after one exact completion/removal/recycle transaction.
+#[must_use = "the recycled DTM graph must be retained by the role owner"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothDtmRecycledEvent<Role> {
+    memory: BluetoothDtmMemoryGraphCpuOwned,
+    packet: BluetoothDtmEventPacket,
+    status: BluetoothDtmSchedulerItemCompletionStatus,
+    _role: PhantomData<Role>,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<Role> BluetoothDtmRecycledEvent<Role> {
+    /// Role retained by the recycled event.
+    pub const fn role(&self) -> BluetoothDtmRole {
+        match self.packet {
+            BluetoothDtmEventPacket::Transmitter { .. } => BluetoothDtmRole::Transmitter,
+            BluetoothDtmEventPacket::Receiver => BluetoothDtmRole::Receiver,
+        }
+    }
+
+    /// Completion status retained across recycle.
+    pub const fn status(&self) -> BluetoothDtmSchedulerItemCompletionStatus {
+        self.status
+    }
+
+    /// Recover the ordinary CPU-owned graph for a later event or shutdown.
+    pub fn into_memory(self) -> BluetoothDtmMemoryGraphCpuOwned {
+        self.memory
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothDtmRecycledEvent<BluetoothDtmTransmitterEvent> {
+    /// Transmitter packet pattern retained by the recycled event.
+    pub const fn packet_pattern(&self) -> BluetoothDtmPayloadPattern {
+        match self.packet {
+            BluetoothDtmEventPacket::Transmitter { pattern, .. } => pattern,
+            BluetoothDtmEventPacket::Receiver => unreachable!(),
+        }
+    }
+
+    /// Transmitter payload length retained by the recycled event.
+    pub const fn packet_length(&self) -> BluetoothDtmPayloadLength {
+        match self.packet {
+            BluetoothDtmEventPacket::Transmitter { length, .. } => length,
+            BluetoothDtmEventPacket::Receiver => unreachable!(),
+        }
     }
 }
 

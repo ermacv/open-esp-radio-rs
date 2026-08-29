@@ -813,6 +813,18 @@ where
         }
     }
 
+    /// Return TX or RX-non-success completion ownership to source-owned CPU
+    /// state after the exact removal-ready transition.
+    ///
+    /// RX success remains retained because its returned buffer header and
+    /// swap-reserve branch are not yet represented by affine owners.
+    pub fn recycle_dtm_completed<Role>(
+        &mut self,
+        ready: crate::BluetoothDtmSchedulerSoftwareListRemovalReady<Role>,
+    ) -> crate::BluetoothDtmSchedulerRecycleStep<Role> {
+        self.initialized.recycle_dtm_completed(ready)
+    }
+
     /// Service and durably publish one primary source-124 epoch.
     ///
     /// Both Controller cells are selected from this exact powered runtime.

@@ -58425,12 +58425,25 @@ pub mod field_read {
     pub fn observe_analog_i2c_reset_release(registers: &crate::PmuRadio) -> bool {
         registers.ana_peri_pwr_ctrl().read().rstb_perif_i2c().bit()
     }
+
+    /// Read `MODEM_SYSCON_RADIO`.`CLK_CONF`.`CLK_I2C_MST_SEL_160M` without exposing its register block.
+    #[inline]
+    pub fn observe_phy_i2c_160mhz_source(registers: &crate::ModemSysconRadio) -> bool {
+        registers.clk_conf().read().clk_i2c_mst_sel_160m().bit()
+    }
+
+    /// Read `MODEM_SYSCON_RADIO`.`WIFI_BB_CFG`.`WIFI_ENABLE` without exposing its register block.
+    #[inline]
+    pub fn observe_wifi_baseband_enable(registers: &crate::ModemSysconRadio) -> bool {
+        registers.wifi_bb_cfg().read().wifi_enable().bit()
+    }
 }
 
 /// Safe same-sample observations through reviewed SVD fields.
 pub mod field_snapshot_read {
 
     /// Read `BUSY`, `REFERENCE_PATH_STATE` from one `BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME`.`SCHEDULER_STATE` sample.
+    #[allow(clippy::type_complexity)]
     #[inline]
     pub fn observe_bluetooth_scheduler_interrupt_state(
         registers: &crate::BluetoothSchedulerInterruptRuntime,
@@ -58440,6 +58453,7 @@ pub mod field_snapshot_read {
     }
 
     /// Read `MAP`, `UNCLASSIFIED_6_7`, `PASS_LEVEL`, `UNCLASSIFIED_10_31` from one `IEEE802154_INTERRUPT_ROUTE`.`CORE0_ROUTE` sample.
+    #[allow(clippy::type_complexity)]
     #[inline]
     pub fn observe_ieee802154_core0_route(
         registers: &crate::Ieee802154InterruptRoute,
@@ -58454,6 +58468,7 @@ pub mod field_snapshot_read {
     }
 
     /// Read `MAP`, `UNCLASSIFIED_6_7`, `PASS_LEVEL`, `UNCLASSIFIED_10_31` from one `IEEE802154_INTERRUPT_ROUTE`.`CORE1_ROUTE` sample.
+    #[allow(clippy::type_complexity)]
     #[inline]
     pub fn observe_ieee802154_core1_route(
         registers: &crate::Ieee802154InterruptRoute,
@@ -58468,6 +58483,7 @@ pub mod field_snapshot_read {
     }
 
     /// Read `CLK_COEX_EN`, `CLK_I2C_MST_EN`, `CLK_LP_TIMER_EN` from one `MODEM_LPCON_SHARED_CLOCK`.`CLK_CONF` sample.
+    #[allow(clippy::type_complexity)]
     #[inline]
     pub fn observe_shared_modem_clock_gates(
         registers: &crate::ModemLpconSharedClock,
@@ -58481,6 +58497,7 @@ pub mod field_snapshot_read {
     }
 
     /// Read `CLK_WIFIPWR_ST_MAP_BIT_ONE`, `CLK_WIFIPWR_ST_MAP_BIT_TWO`, `CLK_COEX_ST_MAP_BIT_ONE`, `CLK_COEX_ST_MAP_BIT_TWO`, `CLK_I2C_MST_ST_MAP_BIT_ONE`, `CLK_I2C_MST_ST_MAP_BIT_TWO`, `CLK_LP_APB_ST_MAP_BIT_ONE`, `CLK_LP_APB_ST_MAP_BIT_TWO` from one `MODEM_LPCON_SHARED_CLOCK`.`CLK_CONF_POWER_ST` sample.
+    #[allow(clippy::type_complexity)]
     #[inline]
     pub fn observe_shared_modem_power_state_map(
         registers: &crate::ModemLpconSharedClock,
@@ -58499,6 +58516,7 @@ pub mod field_snapshot_read {
     }
 
     /// Read `CLK_COEX_LP_SEL_OSC_SLOW`, `CLK_COEX_LP_SEL_OSC_FAST`, `CLK_COEX_LP_SEL_XTAL`, `CLK_COEX_LP_SEL_XTAL32K` from one `MODEM_LPCON_SHARED_CLOCK`.`COEX_LP_CLK_CONF` sample.
+    #[allow(clippy::type_complexity)]
     #[inline]
     pub fn observe_coexistence_low_power_clock_source(
         registers: &crate::ModemLpconSharedClock,
@@ -58513,6 +58531,7 @@ pub mod field_snapshot_read {
     }
 
     /// Read `CLK_LP_TIMER_SEL_OSC_SLOW`, `CLK_LP_TIMER_SEL_OSC_FAST`, `CLK_LP_TIMER_SEL_XTAL`, `CLK_LP_TIMER_SEL_XTAL32K`, `CLK_LP_TIMER_DIV_NUM` from one `MODEM_LPCON_SHARED_CLOCK`.`LP_TIMER_CONF` sample.
+    #[allow(clippy::type_complexity)]
     #[inline]
     pub fn observe_bluetooth_low_power_timer_configuration(
         registers: &crate::ModemLpconSharedClock,
@@ -58528,6 +58547,7 @@ pub mod field_snapshot_read {
     }
 
     /// Read `START`, `RESULT` from one `BLUETOOTH_CONTROLLER_CORE`.`SCHEDULER_LOCK_MODIFY_REQUEST` sample.
+    #[allow(clippy::type_complexity)]
     #[inline]
     pub fn observe_bluetooth_scheduler_lock_modify_request(
         registers: &crate::BluetoothControllerCore,
@@ -58537,6 +58557,7 @@ pub mod field_snapshot_read {
     }
 
     /// Read `MODEM_APB_CLK_EN`, `MODEM_RST_EN`, `MODEM_CLK_EN`, `MODEM_CLK_SOURCE_SEL`, `MODEM_PLL_CLK_EN`, `MODEM_XTAL_CLK_EN` from one `HP_SYS_CLKRST_RADIO`.`MODEM_CONF` sample.
+    #[allow(clippy::type_complexity)]
     #[inline]
     pub fn observe_modem_source_clocks(
         registers: &crate::HpSysClkrstRadio,
@@ -58552,7 +58573,101 @@ pub mod field_snapshot_read {
         )
     }
 
+    /// Read `RST_WIFIBB`, `RST_WIFIMAC` from one `MODEM_SYSCON_RADIO`.`MODEM_RST_CONF` sample.
+    #[allow(clippy::type_complexity)]
+    #[inline]
+    pub fn observe_wifi_modem_resets(registers: &crate::ModemSysconRadio) -> (bool, bool) {
+        let sample = registers.modem_rst_conf().read();
+        (sample.rst_wifibb().bit(), sample.rst_wifimac().bit())
+    }
+
+    /// Read `CLK_WIFIBB_22M_EN`, `CLK_WIFIBB_40M_EN`, `CLK_WIFIBB_44M_EN`, `CLK_WIFIBB_80M_EN`, `CLK_WIFIBB_40X_EN`, `CLK_WIFIBB_80X_EN`, `CLK_WIFIBB_40X1_EN`, `CLK_WIFIBB_80X1_EN`, `CLK_WIFIBB_160X1_EN`, `CLK_WIFI_APB_EN`, `CLK_FE_80M_EN`, `CLK_FE_160M_EN`, `CLK_FE_APB_EN`, `CLK_BT_APB_EN`, `CLK_BTBB_EN`, `CLK_FE_PWDET_ADC_EN`, `CLK_FE_ADC_EN`, `CLK_FE_DAC_EN` from one `MODEM_SYSCON_RADIO`.`CLK_CONF1` sample.
+    #[allow(clippy::type_complexity)]
+    #[inline]
+    pub fn observe_phy_calibration_clocks(
+        registers: &crate::ModemSysconRadio,
+    ) -> (
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+    ) {
+        let sample = registers.clk_conf1().read();
+        (
+            sample.clk_wifibb_22m_en().bit(),
+            sample.clk_wifibb_40m_en().bit(),
+            sample.clk_wifibb_44m_en().bit(),
+            sample.clk_wifibb_80m_en().bit(),
+            sample.clk_wifibb_40x_en().bit(),
+            sample.clk_wifibb_80x_en().bit(),
+            sample.clk_wifibb_40x1_en().bit(),
+            sample.clk_wifibb_80x1_en().bit(),
+            sample.clk_wifibb_160x1_en().bit(),
+            sample.clk_wifi_apb_en().bit(),
+            sample.clk_fe_80m_en().bit(),
+            sample.clk_fe_160m_en().bit(),
+            sample.clk_fe_apb_en().bit(),
+            sample.clk_bt_apb_en().bit(),
+            sample.clk_btbb_en().bit(),
+            sample.clk_fe_pwdet_adc_en().bit(),
+            sample.clk_fe_adc_en().bit(),
+            sample.clk_fe_dac_en().bit(),
+        )
+    }
+
+    /// Read `CLK_ETM_EN`, `CLK_MODEM_SEC_APB_EN`, `CLK_ZB_APB_EN`, `CLK_ZBMAC_EN` from one `MODEM_SYSCON_RADIO`.`CLK_CONF` sample.
+    #[allow(clippy::type_complexity)]
+    #[inline]
+    pub fn observe_ieee802154_modem_clock_conf(
+        registers: &crate::ModemSysconRadio,
+    ) -> (bool, bool, bool, bool) {
+        let sample = registers.clk_conf().read();
+        (
+            sample.clk_etm_en().bit(),
+            sample.clk_modem_sec_apb_en().bit(),
+            sample.clk_zb_apb_en().bit(),
+            sample.clk_zbmac_en().bit(),
+        )
+    }
+
+    /// Read `CLK_WIFIBB_80X1_EN`, `CLK_BT_APB_EN`, `CLK_BTBB_EN` from one `MODEM_SYSCON_RADIO`.`CLK_CONF1` sample.
+    #[allow(clippy::type_complexity)]
+    #[inline]
+    pub fn observe_ieee802154_modem_clock_conf1(
+        registers: &crate::ModemSysconRadio,
+    ) -> (bool, bool, bool) {
+        let sample = registers.clk_conf1().read();
+        (
+            sample.clk_wifibb_80x1_en().bit(),
+            sample.clk_bt_apb_en().bit(),
+            sample.clk_btbb_en().bit(),
+        )
+    }
+
+    /// Read `RST_ZBMAC`, `RST_ZBMAC_APB` from one `MODEM_SYSCON_RADIO`.`MODEM_RST_CONF` sample.
+    #[allow(clippy::type_complexity)]
+    #[inline]
+    pub fn observe_ieee802154_modem_resets(registers: &crate::ModemSysconRadio) -> (bool, bool) {
+        let sample = registers.modem_rst_conf().read();
+        (sample.rst_zbmac().bit(), sample.rst_zbmac_apb().bit())
+    }
+
     /// Read `CLK_ZB_ST_MAP_BIT_TWO`, `CLK_FE_ST_MAP_BIT_ONE`, `CLK_FE_ST_MAP_BIT_TWO`, `CLK_BT_ST_MAP_BIT_TWO`, `CLK_WIFI_ST_MAP_BIT_ONE`, `CLK_WIFI_ST_MAP_BIT_TWO`, `CLK_MODEM_PERI_ST_MAP_BIT_TWO`, `CLK_MODEM_APB_ST_MAP_BIT_ONE`, `CLK_MODEM_APB_ST_MAP_BIT_TWO` from one `MODEM_SYSCON_RADIO`.`CLK_CONF_POWER_ST` sample.
+    #[allow(clippy::type_complexity)]
     #[inline]
     pub fn observe_modem_syscon_clock_map(
         registers: &crate::ModemSysconRadio,
@@ -58572,6 +58687,7 @@ pub mod field_snapshot_read {
     }
 
     /// Read `CLK_ETM_EN`, `CLK_MODEM_SEC_EN`, `CLK_MODEM_SEC_ECB_EN`, `CLK_MODEM_SEC_CCM_EN`, `CLK_MODEM_SEC_BAH_EN`, `CLK_BLE_TIMER_EN`, `CLK_MODEM_SEC_APB_EN` from one `MODEM_SYSCON_RADIO`.`CLK_CONF` sample.
+    #[allow(clippy::type_complexity)]
     #[inline]
     pub fn observe_bluetooth_modem_clock_conf(
         registers: &crate::ModemSysconRadio,
@@ -58589,6 +58705,7 @@ pub mod field_snapshot_read {
     }
 
     /// Read `CLK_WIFIBB_80X1_EN`, `CLK_BTMAC_EN`, `CLK_BT_APB_EN`, `CLK_BTBB_EN` from one `MODEM_SYSCON_RADIO`.`CLK_CONF1` sample.
+    #[allow(clippy::type_complexity)]
     #[inline]
     pub fn observe_bluetooth_modem_clock_conf1(
         registers: &crate::ModemSysconRadio,
@@ -58603,6 +58720,7 @@ pub mod field_snapshot_read {
     }
 
     /// Read `RST_BTMAC`, `RST_BTMAC_APB`, `RST_BLE_TIMER`, `RST_MODEM_ECB`, `RST_MODEM_CCM`, `RST_MODEM_BAH`, `RST_MODEM_SEC` from one `MODEM_SYSCON_RADIO`.`MODEM_RST_CONF` sample.
+    #[allow(clippy::type_complexity)]
     #[inline]
     pub fn observe_bluetooth_controller_resets(
         registers: &crate::ModemSysconRadio,
@@ -65275,6 +65393,377 @@ pub mod field_replace_modify {
                     .hp_active_xpd_bb_i2c()
                     .bit(((input >> 4) & 0x00000001) != 0)
             }
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields [RST_WIFIBB, RST_WIFIMAC] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_wifi_baseband_and_mac_reset(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.modem_rst_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .rst_wifibb()
+                .bit((input & 0x00000001) != 0)
+                .rst_wifimac()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields [RST_WIFIBB] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_wifi_baseband_reset(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.modem_rst_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.rst_wifibb().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields [CLK_WIFIBB_22M_EN, CLK_WIFIBB_40M_EN, CLK_WIFIBB_44M_EN, CLK_WIFIBB_80M_EN, CLK_WIFIBB_40X_EN, CLK_WIFIBB_80X_EN, CLK_WIFIBB_40X1_EN, CLK_WIFIBB_80X1_EN, CLK_WIFIBB_160X1_EN, CLK_WIFI_APB_EN, CLK_FE_80M_EN, CLK_FE_160M_EN, CLK_FE_APB_EN, CLK_BT_APB_EN, CLK_BTBB_EN, CLK_FE_PWDET_ADC_EN, CLK_FE_ADC_EN, CLK_FE_DAC_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_phy_calibration_clocks(registers: &crate::ModemSysconRadio) {
+        registers.clk_conf1().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .clk_wifibb_22m_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifibb_40m_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifibb_44m_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifibb_80m_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifibb_40x_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifibb_80x_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifibb_40x1_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifibb_80x1_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifibb_160x1_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifi_apb_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_fe_80m_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_fe_160m_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_fe_apb_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_bt_apb_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_btbb_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_fe_pwdet_adc_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_fe_adc_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_fe_dac_en()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields [CLK_I2C_MST_SEL_160M] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn select_phy_i2c_160mhz_source(registers: &crate::ModemSysconRadio) {
+        registers.clk_conf().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_i2c_mst_sel_160m().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields [CLK_WIFIBB_22M_EN, CLK_WIFIBB_40M_EN, CLK_WIFIBB_44M_EN, CLK_WIFIBB_80M_EN, CLK_WIFIBB_40X_EN, CLK_WIFIBB_80X_EN, CLK_WIFIBB_40X1_EN, CLK_WIFIBB_80X1_EN, CLK_WIFIBB_160X1_EN, CLK_WIFIMAC_EN, CLK_WIFI_APB_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_wifi_mac_clocks(registers: &crate::ModemSysconRadio) {
+        registers.clk_conf1().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .clk_wifibb_22m_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifibb_40m_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifibb_44m_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifibb_80m_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifibb_40x_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifibb_80x_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifibb_40x1_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifibb_80x1_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifibb_160x1_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifimac_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifi_apb_en()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields [RST_WIFIMAC] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_wifi_mac_reset(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.modem_rst_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.rst_wifimac().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.WIFI_BB_CFG fields [COLD_START_CLEAR_UNKNOWN, WIFI_ENABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_cold_start_wifi_control(registers: &crate::ModemSysconRadio) {
+        registers.wifi_bb_cfg().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .cold_start_clear_unknown()
+                .bit((input & 0x00000001) != 0)
+                .wifi_enable()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.WIFI_BB_CFG fields [WIFI_ENABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_wifi_baseband_enable(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.wifi_bb_cfg().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.wifi_enable().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.WIFI_BB_CFG fields [BSS_CBW_40_DIGITAL_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_wifi_baseband_40mhz_state(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.wifi_bb_cfg().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .bss_cbw_40_digital_unknown()
+                    .bits((input & 0x00000003) as u8)
+            }
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.WIFI_BB_CFG fields [BB_AGC_UPDATE_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_wifi_baseband_agc_update_mode(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.wifi_bb_cfg().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .bb_agc_update_enable_unknown()
+                    .bits((input & 0x00000007) as u8)
+            }
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.WIFI_BB_CFG fields [MAC_BASEBAND_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_mac_baseband_enable(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.wifi_bb_cfg().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .mac_baseband_enable_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF_POWER_ST fields [CLK_MODEM_APB_ST_MAP_BIT_ONE, CLK_MODEM_APB_ST_MAP_BIT_TWO] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn prepare_ieee802154_modem_apb_clock_map(registers: &crate::ModemSysconRadio) {
+        registers.clk_conf_power_st().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .clk_modem_apb_st_map_bit_one()
+                .bit((input & 0x00000001) != 0)
+                .clk_modem_apb_st_map_bit_two()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF_POWER_ST fields [CLK_MODEM_PERI_ST_MAP_BIT_TWO] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn prepare_ieee802154_modem_peripheral_clock_map(registers: &crate::ModemSysconRadio) {
+        registers.clk_conf_power_st().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .clk_modem_peri_st_map_bit_two()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF_POWER_ST fields [CLK_WIFI_ST_MAP_BIT_ONE, CLK_WIFI_ST_MAP_BIT_TWO] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn prepare_ieee802154_wifi_clock_map(registers: &crate::ModemSysconRadio) {
+        registers.clk_conf_power_st().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .clk_wifi_st_map_bit_one()
+                .bit((input & 0x00000001) != 0)
+                .clk_wifi_st_map_bit_two()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF_POWER_ST fields [CLK_BT_ST_MAP_BIT_TWO] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn prepare_ieee802154_bluetooth_clock_map(registers: &crate::ModemSysconRadio) {
+        registers.clk_conf_power_st().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .clk_bt_st_map_bit_two()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF_POWER_ST fields [CLK_FE_ST_MAP_BIT_ONE, CLK_FE_ST_MAP_BIT_TWO] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn prepare_ieee802154_frontend_clock_map(registers: &crate::ModemSysconRadio) {
+        registers.clk_conf_power_st().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .clk_fe_st_map_bit_one()
+                .bit((input & 0x00000001) != 0)
+                .clk_fe_st_map_bit_two()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF_POWER_ST fields [CLK_ZB_ST_MAP_BIT_TWO] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn prepare_ieee802154_clock_map(registers: &crate::ModemSysconRadio) {
+        registers.clk_conf_power_st().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .clk_zb_st_map_bit_two()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields [CLK_WIFIBB_80X1_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_ieee802154_wifi_baseband_clock(registers: &crate::ModemSysconRadio) {
+        registers.clk_conf1().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_wifibb_80x1_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields [CLK_ETM_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_ieee802154_etm_clock(registers: &crate::ModemSysconRadio) {
+        registers.clk_conf().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_etm_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields [CLK_BT_APB_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_ieee802154_bluetooth_apb_clock(registers: &crate::ModemSysconRadio) {
+        registers.clk_conf1().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_bt_apb_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields [CLK_MODEM_SEC_APB_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_ieee802154_modem_security_apb_clock(registers: &crate::ModemSysconRadio) {
+        registers.clk_conf().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_modem_sec_apb_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields [CLK_BTBB_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_ieee802154_common_baseband_clock(registers: &crate::ModemSysconRadio) {
+        registers.clk_conf1().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_btbb_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields [CLK_ZB_APB_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_ieee802154_apb_clock(registers: &crate::ModemSysconRadio) {
+        registers.clk_conf().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_zb_apb_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields [CLK_ZBMAC_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_ieee802154_mac_clock(registers: &crate::ModemSysconRadio) {
+        registers.clk_conf().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_zbmac_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields [RST_ZBMAC] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_ieee802154_mac_reset(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.modem_rst_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.rst_zbmac().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields [RST_ZBMAC_APB] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_ieee802154_apb_reset(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.modem_rst_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.rst_zbmac_apb().bit((input & 0x00000001) != 0)
         });
     }
 

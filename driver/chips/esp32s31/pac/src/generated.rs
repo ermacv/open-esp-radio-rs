@@ -230,7 +230,7 @@ impl MacRxBeaconClearRequest {
     }
 }
 
-/// Boolean state accepted by reviewed MODEM_SYSCON Bluetooth clock-gate transactions.
+/// Boolean state accepted by reviewed MODEM_SYSCON clock-gate transactions.
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ModemSysconClockGateState {
@@ -247,7 +247,7 @@ impl ModemSysconClockGateState {
     }
 }
 
-/// Boolean state accepted by reviewed MODEM_SYSCON Bluetooth reset transactions.
+/// Boolean state accepted by reviewed MODEM_SYSCON reset transactions.
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ModemSysconResetState {
@@ -258,6 +258,57 @@ pub enum ModemSysconResetState {
 }
 
 impl ModemSysconResetState {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
+/// Boolean state accepted by reviewed MODEM_SYSCON functional enable fields.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ModemSysconEnableState {
+    /// The selected MODEM_SYSCON function is disabled.
+    Disabled = 0x00000000,
+    /// The selected MODEM_SYSCON function is enabled.
+    Enabled = 0x00000001,
+}
+
+impl ModemSysconEnableState {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
+/// Reviewed MODEM_SYSCON Wi-Fi digital baseband 40 MHz selection.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum WifiBaseband40MhzState {
+    /// Select the reviewed non-40-MHz digital baseband state.
+    Disabled = 0x00000000,
+    /// Select the reviewed 40 MHz digital baseband state.
+    Enabled = 0x00000001,
+}
+
+impl WifiBaseband40MhzState {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
+/// Reviewed MODEM_SYSCON Wi-Fi baseband AGC update modes.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum WifiBasebandAgcUpdateMode {
+    /// Select the initialization update mode.
+    Initialization = 0x00000001,
+    /// Enable subsequent baseband register updates.
+    RegisterUpdatesEnabled = 0x00000007,
+}
+
+impl WifiBasebandAgcUpdateMode {
     /// Numeric image for diagnostics and the private raw-PAC bridge.
     pub const fn bits(self) -> u32 {
         self as u32
@@ -3969,6 +4020,191 @@ pub(crate) fn assert_analog_i2c_reset(registers: &crate::svd::PmuRadio) {
 #[inline]
 pub(crate) fn enable_frontend_baseband_power(registers: &crate::svd::PmuRadio) {
     crate::svd::field_replace_modify::enable_frontend_baseband_power(registers);
+}
+
+/// Typed bridge for the reviewed `set_wifi_baseband_and_mac_reset` field-replacement transaction.
+#[inline]
+pub(crate) fn set_wifi_baseband_and_mac_reset(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconResetState,
+) {
+    crate::svd::field_replace_modify::set_wifi_baseband_and_mac_reset(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_wifi_baseband_reset` field-replacement transaction.
+#[inline]
+pub(crate) fn set_wifi_baseband_reset(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconResetState,
+) {
+    crate::svd::field_replace_modify::set_wifi_baseband_reset(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `enable_phy_calibration_clocks` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_phy_calibration_clocks(registers: &crate::svd::ModemSysconRadio) {
+    crate::svd::field_replace_modify::enable_phy_calibration_clocks(registers);
+}
+
+/// Typed bridge for the reviewed `select_phy_i2c_160mhz_source` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn select_phy_i2c_160mhz_source(registers: &crate::svd::ModemSysconRadio) {
+    crate::svd::field_replace_modify::select_phy_i2c_160mhz_source(registers);
+}
+
+/// Typed bridge for the reviewed `enable_wifi_mac_clocks` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_wifi_mac_clocks(registers: &crate::svd::ModemSysconRadio) {
+    crate::svd::field_replace_modify::enable_wifi_mac_clocks(registers);
+}
+
+/// Typed bridge for the reviewed `set_wifi_mac_reset` field-replacement transaction.
+#[inline]
+pub(crate) fn set_wifi_mac_reset(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconResetState,
+) {
+    crate::svd::field_replace_modify::set_wifi_mac_reset(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `clear_cold_start_wifi_control` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_cold_start_wifi_control(registers: &crate::svd::ModemSysconRadio) {
+    crate::svd::field_replace_modify::clear_cold_start_wifi_control(registers);
+}
+
+/// Typed bridge for the reviewed `set_wifi_baseband_enable` field-replacement transaction.
+#[inline]
+pub(crate) fn set_wifi_baseband_enable(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconEnableState,
+) {
+    crate::svd::field_replace_modify::set_wifi_baseband_enable(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_wifi_baseband_40mhz_state` field-replacement transaction.
+#[inline]
+pub(crate) fn set_wifi_baseband_40mhz_state(
+    registers: &crate::svd::ModemSysconRadio,
+    value: WifiBaseband40MhzState,
+) {
+    crate::svd::field_replace_modify::set_wifi_baseband_40mhz_state(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_wifi_baseband_agc_update_mode` field-replacement transaction.
+#[inline]
+pub(crate) fn set_wifi_baseband_agc_update_mode(
+    registers: &crate::svd::ModemSysconRadio,
+    value: WifiBasebandAgcUpdateMode,
+) {
+    crate::svd::field_replace_modify::set_wifi_baseband_agc_update_mode(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_mac_baseband_enable` field-replacement transaction.
+#[inline]
+pub(crate) fn set_mac_baseband_enable(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconEnableState,
+) {
+    crate::svd::field_replace_modify::set_mac_baseband_enable(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `prepare_ieee802154_modem_apb_clock_map` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn prepare_ieee802154_modem_apb_clock_map(registers: &crate::svd::ModemSysconRadio) {
+    crate::svd::field_replace_modify::prepare_ieee802154_modem_apb_clock_map(registers);
+}
+
+/// Typed bridge for the reviewed `prepare_ieee802154_modem_peripheral_clock_map` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn prepare_ieee802154_modem_peripheral_clock_map(
+    registers: &crate::svd::ModemSysconRadio,
+) {
+    crate::svd::field_replace_modify::prepare_ieee802154_modem_peripheral_clock_map(registers);
+}
+
+/// Typed bridge for the reviewed `prepare_ieee802154_wifi_clock_map` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn prepare_ieee802154_wifi_clock_map(registers: &crate::svd::ModemSysconRadio) {
+    crate::svd::field_replace_modify::prepare_ieee802154_wifi_clock_map(registers);
+}
+
+/// Typed bridge for the reviewed `prepare_ieee802154_bluetooth_clock_map` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn prepare_ieee802154_bluetooth_clock_map(registers: &crate::svd::ModemSysconRadio) {
+    crate::svd::field_replace_modify::prepare_ieee802154_bluetooth_clock_map(registers);
+}
+
+/// Typed bridge for the reviewed `prepare_ieee802154_frontend_clock_map` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn prepare_ieee802154_frontend_clock_map(registers: &crate::svd::ModemSysconRadio) {
+    crate::svd::field_replace_modify::prepare_ieee802154_frontend_clock_map(registers);
+}
+
+/// Typed bridge for the reviewed `prepare_ieee802154_clock_map` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn prepare_ieee802154_clock_map(registers: &crate::svd::ModemSysconRadio) {
+    crate::svd::field_replace_modify::prepare_ieee802154_clock_map(registers);
+}
+
+/// Typed bridge for the reviewed `enable_ieee802154_wifi_baseband_clock` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_ieee802154_wifi_baseband_clock(registers: &crate::svd::ModemSysconRadio) {
+    crate::svd::field_replace_modify::enable_ieee802154_wifi_baseband_clock(registers);
+}
+
+/// Typed bridge for the reviewed `enable_ieee802154_etm_clock` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_ieee802154_etm_clock(registers: &crate::svd::ModemSysconRadio) {
+    crate::svd::field_replace_modify::enable_ieee802154_etm_clock(registers);
+}
+
+/// Typed bridge for the reviewed `enable_ieee802154_bluetooth_apb_clock` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_ieee802154_bluetooth_apb_clock(registers: &crate::svd::ModemSysconRadio) {
+    crate::svd::field_replace_modify::enable_ieee802154_bluetooth_apb_clock(registers);
+}
+
+/// Typed bridge for the reviewed `enable_ieee802154_modem_security_apb_clock` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_ieee802154_modem_security_apb_clock(registers: &crate::svd::ModemSysconRadio) {
+    crate::svd::field_replace_modify::enable_ieee802154_modem_security_apb_clock(registers);
+}
+
+/// Typed bridge for the reviewed `enable_ieee802154_common_baseband_clock` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_ieee802154_common_baseband_clock(registers: &crate::svd::ModemSysconRadio) {
+    crate::svd::field_replace_modify::enable_ieee802154_common_baseband_clock(registers);
+}
+
+/// Typed bridge for the reviewed `enable_ieee802154_apb_clock` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_ieee802154_apb_clock(registers: &crate::svd::ModemSysconRadio) {
+    crate::svd::field_replace_modify::enable_ieee802154_apb_clock(registers);
+}
+
+/// Typed bridge for the reviewed `enable_ieee802154_mac_clock` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_ieee802154_mac_clock(registers: &crate::svd::ModemSysconRadio) {
+    crate::svd::field_replace_modify::enable_ieee802154_mac_clock(registers);
+}
+
+/// Typed bridge for the reviewed `set_ieee802154_mac_reset` field-replacement transaction.
+#[inline]
+pub(crate) fn set_ieee802154_mac_reset(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconResetState,
+) {
+    crate::svd::field_replace_modify::set_ieee802154_mac_reset(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_ieee802154_apb_reset` field-replacement transaction.
+#[inline]
+pub(crate) fn set_ieee802154_apb_reset(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconResetState,
+) {
+    crate::svd::field_replace_modify::set_ieee802154_apb_reset(registers, value.bits());
 }
 
 /// Typed bridge for the reviewed `prepare_modem_syscon_clock_map` fixed field-replacement transaction.

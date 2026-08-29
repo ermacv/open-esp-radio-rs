@@ -842,6 +842,7 @@ impl PacApiPack {
                 .join(", ");
             output.push_str(&format!(
                 "\n    /// Read {field_list} from one `{}`.`{}` sample.\n\
+                 #[allow(clippy::type_complexity)]\n\
                  #[inline]\n\
                  pub fn {}(registers: &crate::{peripheral_type}{index_parameter}) -> ({return_type}) {{\n\
                      let sample = registers.{register}({index_argument}).read();\n\

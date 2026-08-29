@@ -8,7 +8,10 @@
 
 use crate::{
     RadioPhyRegisters,
-    generated::{ModemSysconClockGateState, ModemSysconResetState},
+    generated::{
+        ModemSysconClockGateState, ModemSysconEnableState, ModemSysconResetState,
+        WifiBaseband40MhzState, WifiBasebandAgcUpdateMode,
+    },
 };
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -68,6 +71,22 @@ const fn bluetooth_clock_gate_state(enabled: bool) -> ModemSysconClockGateState 
         ModemSysconClockGateState::Enabled
     } else {
         ModemSysconClockGateState::Disabled
+    }
+}
+
+const fn modem_syscon_enable_state(enabled: bool) -> ModemSysconEnableState {
+    if enabled {
+        ModemSysconEnableState::Enabled
+    } else {
+        ModemSysconEnableState::Disabled
+    }
+}
+
+const fn modem_syscon_reset_state(asserted: bool) -> ModemSysconResetState {
+    if asserted {
+        ModemSysconResetState::Asserted
+    } else {
+        ModemSysconResetState::Released
     }
 }
 
@@ -333,197 +352,137 @@ impl RadioPhyRegisters {
     }
 
     pub(crate) fn set_wifi_baseband_and_mac_reset(&mut self, asserted: bool) {
-        self.peripherals
-            .modem_syscon_radio
-            .modem_rst_conf()
-            .modify(|_, w| w.rst_wifibb().bit(asserted).rst_wifimac().bit(asserted));
+        crate::generated::set_wifi_baseband_and_mac_reset(
+            &self.peripherals.modem_syscon_radio,
+            modem_syscon_reset_state(asserted),
+        );
     }
 
     pub(crate) fn set_wifi_baseband_reset(&mut self, asserted: bool) {
-        self.peripherals
-            .modem_syscon_radio
-            .modem_rst_conf()
-            .modify(|_, w| w.rst_wifibb().bit(asserted));
+        crate::generated::set_wifi_baseband_reset(
+            &self.peripherals.modem_syscon_radio,
+            modem_syscon_reset_state(asserted),
+        );
     }
 
     pub(crate) fn enable_phy_calibration_clocks(&mut self) {
-        self.peripherals
-            .modem_syscon_radio
-            .clk_conf1()
-            .modify(|_, w| {
-                w.clk_wifibb_22m_en()
-                    .set_bit()
-                    .clk_wifibb_40m_en()
-                    .set_bit()
-                    .clk_wifibb_44m_en()
-                    .set_bit()
-                    .clk_wifibb_80m_en()
-                    .set_bit()
-                    .clk_wifibb_40x_en()
-                    .set_bit()
-                    .clk_wifibb_80x_en()
-                    .set_bit()
-                    .clk_wifibb_40x1_en()
-                    .set_bit()
-                    .clk_wifibb_80x1_en()
-                    .set_bit()
-                    .clk_wifibb_160x1_en()
-                    .set_bit()
-                    .clk_wifi_apb_en()
-                    .set_bit()
-                    .clk_fe_80m_en()
-                    .set_bit()
-                    .clk_fe_160m_en()
-                    .set_bit()
-                    .clk_fe_apb_en()
-                    .set_bit()
-                    .clk_bt_apb_en()
-                    .set_bit()
-                    .clk_btbb_en()
-                    .set_bit()
-                    .clk_fe_pwdet_adc_en()
-                    .set_bit()
-                    .clk_fe_adc_en()
-                    .set_bit()
-                    .clk_fe_dac_en()
-                    .set_bit()
-            });
+        crate::generated::enable_phy_calibration_clocks(&self.peripherals.modem_syscon_radio);
     }
 
     pub(crate) fn select_phy_i2c_160mhz_source(&mut self) {
-        self.peripherals
-            .modem_syscon_radio
-            .clk_conf()
-            .modify(|_, w| w.clk_i2c_mst_sel_160m().set_bit());
+        crate::generated::select_phy_i2c_160mhz_source(&self.peripherals.modem_syscon_radio);
     }
 
     pub(crate) fn modem_syscon_power_observation(&self) -> ModemSysconPowerObservation {
-        let reset = self.peripherals.modem_syscon_radio.modem_rst_conf().read();
-        let clocks = self.peripherals.modem_syscon_radio.clk_conf1().read();
-        let selectors = self.peripherals.modem_syscon_radio.clk_conf().read();
+        let (wifi_baseband_reset, wifi_mac_reset) =
+            crate::svd::field_snapshot_read::observe_wifi_modem_resets(
+                &self.peripherals.modem_syscon_radio,
+            );
+        let (
+            wifi_bb_22m,
+            wifi_bb_40m,
+            wifi_bb_44m,
+            wifi_bb_80m,
+            wifi_bb_40x,
+            wifi_bb_80x,
+            wifi_bb_40x1,
+            wifi_bb_80x1,
+            wifi_bb_160x1,
+            wifi_apb,
+            frontend_80m,
+            frontend_160m,
+            frontend_apb,
+            bluetooth_apb,
+            bluetooth_baseband,
+            frontend_power_detector_adc,
+            frontend_adc,
+            frontend_dac,
+        ) = crate::svd::field_snapshot_read::observe_phy_calibration_clocks(
+            &self.peripherals.modem_syscon_radio,
+        );
         ModemSysconPowerObservation {
-            wifi_reset_released: reset.rst_wifibb().bit_is_clear()
-                && reset.rst_wifimac().bit_is_clear(),
+            wifi_reset_released: !wifi_baseband_reset && !wifi_mac_reset,
             active_clock_map_configured: self.modem_syscon_clock_map_configured(),
-            phy_calibration_clocks_enabled: clocks.clk_wifibb_22m_en().bit_is_set()
-                && clocks.clk_wifibb_40m_en().bit_is_set()
-                && clocks.clk_wifibb_44m_en().bit_is_set()
-                && clocks.clk_wifibb_80m_en().bit_is_set()
-                && clocks.clk_wifibb_40x_en().bit_is_set()
-                && clocks.clk_wifibb_80x_en().bit_is_set()
-                && clocks.clk_wifibb_40x1_en().bit_is_set()
-                && clocks.clk_wifibb_80x1_en().bit_is_set()
-                && clocks.clk_wifibb_160x1_en().bit_is_set()
-                && clocks.clk_wifi_apb_en().bit_is_set()
-                && clocks.clk_fe_80m_en().bit_is_set()
-                && clocks.clk_fe_160m_en().bit_is_set()
-                && clocks.clk_fe_apb_en().bit_is_set()
-                && clocks.clk_bt_apb_en().bit_is_set()
-                && clocks.clk_btbb_en().bit_is_set()
-                && clocks.clk_fe_pwdet_adc_en().bit_is_set()
-                && clocks.clk_fe_adc_en().bit_is_set()
-                && clocks.clk_fe_dac_en().bit_is_set(),
-            phy_i2c_160mhz_selected: selectors.clk_i2c_mst_sel_160m().bit_is_set(),
+            phy_calibration_clocks_enabled: wifi_bb_22m
+                && wifi_bb_40m
+                && wifi_bb_44m
+                && wifi_bb_80m
+                && wifi_bb_40x
+                && wifi_bb_80x
+                && wifi_bb_40x1
+                && wifi_bb_80x1
+                && wifi_bb_160x1
+                && wifi_apb
+                && frontend_80m
+                && frontend_160m
+                && frontend_apb
+                && bluetooth_apb
+                && bluetooth_baseband
+                && frontend_power_detector_adc
+                && frontend_adc
+                && frontend_dac,
+            phy_i2c_160mhz_selected: crate::svd::field_read::observe_phy_i2c_160mhz_source(
+                &self.peripherals.modem_syscon_radio,
+            ),
         }
     }
 
     pub(crate) fn enable_wifi_mac_clocks(&mut self) {
-        self.peripherals
-            .modem_syscon_radio
-            .clk_conf1()
-            .modify(|_, w| {
-                w.clk_wifibb_22m_en()
-                    .set_bit()
-                    .clk_wifibb_40m_en()
-                    .set_bit()
-                    .clk_wifibb_44m_en()
-                    .set_bit()
-                    .clk_wifibb_80m_en()
-                    .set_bit()
-                    .clk_wifibb_40x_en()
-                    .set_bit()
-                    .clk_wifibb_80x_en()
-                    .set_bit()
-                    .clk_wifibb_40x1_en()
-                    .set_bit()
-                    .clk_wifibb_80x1_en()
-                    .set_bit()
-                    .clk_wifibb_160x1_en()
-                    .set_bit()
-                    .clk_wifimac_en()
-                    .set_bit()
-                    .clk_wifi_apb_en()
-                    .set_bit()
-            });
+        crate::generated::enable_wifi_mac_clocks(&self.peripherals.modem_syscon_radio);
     }
 
     pub(crate) fn set_wifi_mac_reset(&mut self, asserted: bool) {
-        self.peripherals
-            .modem_syscon_radio
-            .modem_rst_conf()
-            .modify(|_, w| w.rst_wifimac().bit(asserted));
+        crate::generated::set_wifi_mac_reset(
+            &self.peripherals.modem_syscon_radio,
+            modem_syscon_reset_state(asserted),
+        );
     }
 
     pub fn clear_cold_start_wifi_control(&mut self) {
-        self.peripherals
-            .modem_syscon_radio
-            .wifi_bb_cfg()
-            .modify(|_, w| {
-                w.cold_start_clear_unknown()
-                    .clear_bit()
-                    .wifi_enable()
-                    .clear_bit()
-            });
+        crate::generated::clear_cold_start_wifi_control(&self.peripherals.modem_syscon_radio);
     }
 
     pub fn wifi_baseband_is_enabled(&self) -> bool {
-        self.peripherals
-            .modem_syscon_radio
-            .wifi_bb_cfg()
-            .read()
-            .wifi_enable()
-            .bit_is_set()
+        crate::svd::field_read::observe_wifi_baseband_enable(&self.peripherals.modem_syscon_radio)
     }
 
     pub fn set_wifi_baseband_enabled(&mut self, enabled: bool) {
-        self.peripherals
-            .modem_syscon_radio
-            .wifi_bb_cfg()
-            .modify(|_, w| w.wifi_enable().bit(enabled));
+        crate::generated::set_wifi_baseband_enable(
+            &self.peripherals.modem_syscon_radio,
+            modem_syscon_enable_state(enabled),
+        );
     }
 
     pub fn set_bss_cbw_40_digital(&mut self, enabled: bool) {
-        self.peripherals
-            .modem_syscon_radio
-            .wifi_bb_cfg()
-            .modify(|_, w| {
-                if enabled {
-                    w.bss_cbw_40_digital_unknown().enabled()
-                } else {
-                    w.bss_cbw_40_digital_unknown().disabled()
-                }
-            });
+        let state = if enabled {
+            WifiBaseband40MhzState::Enabled
+        } else {
+            WifiBaseband40MhzState::Disabled
+        };
+        crate::generated::set_wifi_baseband_40mhz_state(
+            &self.peripherals.modem_syscon_radio,
+            state,
+        );
     }
 
     pub fn set_bb_agc_update_mode(&mut self, mode: WifiBasebandAgcUpdate) {
-        self.peripherals
-            .modem_syscon_radio
-            .wifi_bb_cfg()
-            .modify(|_, w| match mode {
-                WifiBasebandAgcUpdate::Initialization => {
-                    w.bb_agc_update_enable_unknown().initialization()
-                }
-                WifiBasebandAgcUpdate::RegisterUpdatesEnabled => {
-                    w.bb_agc_update_enable_unknown().register_updates_enabled()
-                }
-            });
+        let mode = match mode {
+            WifiBasebandAgcUpdate::Initialization => WifiBasebandAgcUpdateMode::Initialization,
+            WifiBasebandAgcUpdate::RegisterUpdatesEnabled => {
+                WifiBasebandAgcUpdateMode::RegisterUpdatesEnabled
+            }
+        };
+        crate::generated::set_wifi_baseband_agc_update_mode(
+            &self.peripherals.modem_syscon_radio,
+            mode,
+        );
     }
 
     pub fn set_mac_baseband_enabled(&mut self, enabled: bool) {
-        self.peripherals
-            .modem_syscon_radio
-            .wifi_bb_cfg()
-            .modify(|_, w| w.mac_baseband_enable_unknown().bit(enabled));
+        crate::generated::set_mac_baseband_enable(
+            &self.peripherals.modem_syscon_radio,
+            modem_syscon_enable_state(enabled),
+        );
     }
 
     pub fn enable_mac_baseband(&mut self) {
@@ -533,104 +492,89 @@ impl RadioPhyRegisters {
     }
 
     pub(crate) fn configure_ieee802154_modem_clock_maps(&mut self) {
-        let map = self.peripherals.modem_syscon_radio.clk_conf_power_st();
-        map.modify(|_, w| {
-            w.clk_modem_apb_st_map_bit_one()
-                .set_bit()
-                .clk_modem_apb_st_map_bit_two()
-                .set_bit()
-        });
-        map.modify(|_, w| w.clk_modem_peri_st_map_bit_two().set_bit());
-        map.modify(|_, w| {
-            w.clk_wifi_st_map_bit_one()
-                .set_bit()
-                .clk_wifi_st_map_bit_two()
-                .set_bit()
-        });
-        map.modify(|_, w| w.clk_bt_st_map_bit_two().set_bit());
-        map.modify(|_, w| {
-            w.clk_fe_st_map_bit_one()
-                .set_bit()
-                .clk_fe_st_map_bit_two()
-                .set_bit()
-        });
-        map.modify(|_, w| w.clk_bt_st_map_bit_two().set_bit());
-        map.modify(|_, w| w.clk_zb_st_map_bit_two().set_bit());
+        let registers = &self.peripherals.modem_syscon_radio;
+        crate::generated::prepare_ieee802154_modem_apb_clock_map(registers);
+        crate::generated::prepare_ieee802154_modem_peripheral_clock_map(registers);
+        crate::generated::prepare_ieee802154_wifi_clock_map(registers);
+        crate::generated::prepare_ieee802154_bluetooth_clock_map(registers);
+        crate::generated::prepare_ieee802154_frontend_clock_map(registers);
+        crate::generated::prepare_ieee802154_bluetooth_clock_map(registers);
+        crate::generated::prepare_ieee802154_clock_map(registers);
     }
 
     pub(crate) fn enable_ieee802154_wifi_bb_clock(&mut self) {
-        self.peripherals
-            .modem_syscon_radio
-            .clk_conf1()
-            .modify(|_, w| w.clk_wifibb_80x1_en().set_bit());
+        crate::generated::enable_ieee802154_wifi_baseband_clock(
+            &self.peripherals.modem_syscon_radio,
+        );
     }
     pub(crate) fn enable_ieee802154_etm_clock(&mut self) {
-        self.peripherals
-            .modem_syscon_radio
-            .clk_conf()
-            .modify(|_, w| w.clk_etm_en().set_bit());
+        crate::generated::enable_ieee802154_etm_clock(&self.peripherals.modem_syscon_radio);
     }
     pub(crate) fn enable_ieee802154_bt_apb_clocks(&mut self) {
-        self.peripherals
-            .modem_syscon_radio
-            .clk_conf1()
-            .modify(|_, w| w.clk_bt_apb_en().set_bit());
-        self.peripherals
-            .modem_syscon_radio
-            .clk_conf()
-            .modify(|_, w| w.clk_modem_sec_apb_en().set_bit());
+        crate::generated::enable_ieee802154_bluetooth_apb_clock(
+            &self.peripherals.modem_syscon_radio,
+        );
+        crate::generated::enable_ieee802154_modem_security_apb_clock(
+            &self.peripherals.modem_syscon_radio,
+        );
     }
     pub(crate) fn enable_ieee802154_common_baseband_clock(&mut self) {
-        self.peripherals
-            .modem_syscon_radio
-            .clk_conf1()
-            .modify(|_, w| w.clk_btbb_en().set_bit());
+        crate::generated::enable_ieee802154_common_baseband_clock(
+            &self.peripherals.modem_syscon_radio,
+        );
     }
     pub(crate) fn enable_ieee802154_mac_clocks(&mut self) {
-        self.peripherals
-            .modem_syscon_radio
-            .clk_conf()
-            .modify(|_, w| w.clk_zb_apb_en().set_bit());
-        self.peripherals
-            .modem_syscon_radio
-            .clk_conf()
-            .modify(|_, w| w.clk_zbmac_en().set_bit());
+        crate::generated::enable_ieee802154_apb_clock(&self.peripherals.modem_syscon_radio);
+        crate::generated::enable_ieee802154_mac_clock(&self.peripherals.modem_syscon_radio);
     }
 
     pub(crate) fn ieee802154_clock_observation(&self) -> ModemSysconIeee802154ClockObservation {
-        let clock = self.peripherals.modem_syscon_radio.clk_conf().read();
-        let clock1 = self.peripherals.modem_syscon_radio.clk_conf1().read();
+        let (
+            etm_clock_enabled,
+            modem_security_apb_clock_enabled,
+            ieee802154_apb_clock_enabled,
+            ieee802154_mac_clock_enabled,
+        ) = crate::svd::field_snapshot_read::observe_ieee802154_modem_clock_conf(
+            &self.peripherals.modem_syscon_radio,
+        );
+        let (wifi_bb_80x1_clock_enabled, bt_apb_clock_enabled, common_baseband_clock_enabled) =
+            crate::svd::field_snapshot_read::observe_ieee802154_modem_clock_conf1(
+                &self.peripherals.modem_syscon_radio,
+            );
         ModemSysconIeee802154ClockObservation {
             active_clock_map_configured: self.modem_syscon_clock_map_configured(),
-            wifi_bb_80x1_clock_enabled: clock1.clk_wifibb_80x1_en().bit_is_set(),
-            etm_clock_enabled: clock.clk_etm_en().bit_is_set(),
-            bt_apb_clock_enabled: clock1.clk_bt_apb_en().bit_is_set(),
-            modem_security_apb_clock_enabled: clock.clk_modem_sec_apb_en().bit_is_set(),
-            common_baseband_clock_enabled: clock1.clk_btbb_en().bit_is_set(),
-            ieee802154_apb_clock_enabled: clock.clk_zb_apb_en().bit_is_set(),
-            ieee802154_mac_clock_enabled: clock.clk_zbmac_en().bit_is_set(),
+            wifi_bb_80x1_clock_enabled,
+            etm_clock_enabled,
+            bt_apb_clock_enabled,
+            modem_security_apb_clock_enabled,
+            common_baseband_clock_enabled,
+            ieee802154_apb_clock_enabled,
+            ieee802154_mac_clock_enabled,
         }
     }
 
     pub(crate) fn set_ieee802154_mac_reset(&mut self, asserted: bool) {
-        self.peripherals
-            .modem_syscon_radio
-            .modem_rst_conf()
-            .modify(|_, w| w.rst_zbmac().bit(asserted));
+        crate::generated::set_ieee802154_mac_reset(
+            &self.peripherals.modem_syscon_radio,
+            modem_syscon_reset_state(asserted),
+        );
     }
 
     pub(crate) fn set_ieee802154_apb_reset(&mut self, asserted: bool) {
-        self.peripherals
-            .modem_syscon_radio
-            .modem_rst_conf()
-            .modify(|_, w| w.rst_zbmac_apb().bit(asserted));
+        crate::generated::set_ieee802154_apb_reset(
+            &self.peripherals.modem_syscon_radio,
+            modem_syscon_reset_state(asserted),
+        );
     }
 
     pub(crate) fn ieee802154_reset_observation(&self) -> ModemSysconIeee802154ResetObservation {
-        let reset = self.peripherals.modem_syscon_radio.modem_rst_conf().read();
+        let (mac_reset, apb_reset) =
+            crate::svd::field_snapshot_read::observe_ieee802154_modem_resets(
+                &self.peripherals.modem_syscon_radio,
+            );
         ModemSysconIeee802154ResetObservation {
-            mac_reset_released: reset.rst_zbmac().bit_is_clear(),
-            apb_reset_released: reset.rst_zbmac_apb().bit_is_clear(),
+            mac_reset_released: !mac_reset,
+            apb_reset_released: !apb_reset,
         }
     }
 

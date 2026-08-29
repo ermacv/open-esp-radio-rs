@@ -1080,14 +1080,14 @@ fn stage_artifact_schema(stage: &str) -> Option<crate::artifacts::ArtifactSchema
 /// hashes continue to protect project and caller-owned state.
 fn stage_revision(stage: &str) -> Result<u32> {
     if stage.starts_with("linked-ir:") {
-        return Ok(47);
+        return Ok(49);
     }
     match stage {
         "symbol-inventory" => Ok(2),
-        "mmio-discovery" => Ok(4),
+        "mmio-discovery" => Ok(6),
         "interface-discovery" => Ok(7),
         "interface-capability-context" => Ok(1),
-        "linked-ir" => Ok(47),
+        "linked-ir" => Ok(49),
         "event-replays" => Ok(1),
         "review-scopes" => Ok(5),
         "navigation-index" => Ok(2),
@@ -1792,8 +1792,8 @@ mod tests {
             assert!(stage_revision(stage).unwrap() > 0);
         }
         assert!(stage_revision("new-unversioned-stage").is_err());
-        assert_eq!(stage_revision("linked-ir").unwrap(), 47);
-        assert_eq!(stage_revision("linked-ir:any-profile").unwrap(), 47);
+        assert_eq!(stage_revision("linked-ir").unwrap(), 49);
+        assert_eq!(stage_revision("linked-ir:any-profile").unwrap(), 49);
     }
 
     #[test]

@@ -876,6 +876,23 @@ fn run_bound_structural_program_with_branches_bounded(
                         state.unresolved_branch = Some(condition);
                         break;
                     };
+                    // Address order alone does not prove recurrence: a backward
+                    // edge can enter an unvisited block, while a visited forward
+                    // target can be a loop-invariant choice inside a counted loop.
+                    if taken
+                        && branch_target <= pc as u32
+                        && instruction_visits.contains_key(&branch_target)
+                    {
+                        if emitted_branch_decisions.insert(pc as u32) {
+                            state
+                                .reference_events
+                                .push(DraftReferenceEvent::BranchDecision { condition, taken });
+                        }
+                        state.blockers.push(format!(
+                            "input-dependent loop recurrence at {pc:#x}: {instruction}; per-iteration branch outcomes are not modeled"
+                        ));
+                        break;
+                    }
                     if emitted_branch_decisions.insert(pc as u32) {
                         state
                             .reference_events
@@ -1050,5 +1067,59 @@ mod exploration_tests {
         // prefixes plus the two actual suffixes, while preserving all paths.
         assert_eq!(summary.executed_instruction_steps, 16);
         assert!(summary.limits.is_empty());
+    }
+
+    #[test]
+    fn symbolic_list_loop_stops_at_the_first_recurrent_backedge() {
+        let symbol = artifact::ArtifactSymbolDefinition {
+            member: None,
+            name: "symbolic_list_loop".to_owned(),
+            address: 0x1000,
+            bytes: vec![
+                0x83, 0x25, 0x05, 0x00, // lw a1, 0(a0)
+                0x13, 0x05, 0x45, 0x00, // addi a0, a0, 4
+                0xe3, 0x9c, 0x05, 0xfe, // bne a1, zero, 0x1000
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: true,
+            memory_regions: Default::default(),
+            relocations: Vec::new(),
+        };
+        let program = StructuralProgram::decode(&symbol).unwrap();
+        let mut traces = Vec::new();
+        let summary = explore_structural_program_bounded(
+            &symbol,
+            &program,
+            &MmioMap {
+                registers: Vec::new(),
+                regions: Vec::new(),
+            },
+            &StructuralRelocatedCalls::new(),
+            &StructuralPointerContext::default(),
+            None,
+            StructuralTraceBudget {
+                max_instruction_steps: 64,
+                max_events: 64,
+            },
+            127,
+            12,
+            |trace| traces.push(trace.unwrap()),
+        );
+
+        assert_eq!(summary.explored_states, 3);
+        assert_eq!(summary.executed_instruction_steps, 6);
+        assert!(summary.limits.is_empty());
+        assert!(traces.iter().any(|trace| {
+            trace
+                .blockers
+                .iter()
+                .any(|blocker| blocker.contains("input-dependent loop recurrence at 0x1008"))
+        }));
+        assert!(traces.iter().all(|trace| {
+            trace
+                .blockers
+                .iter()
+                .all(|blocker| !blocker.contains("structural trace exceeds"))
+        }));
     }
 }

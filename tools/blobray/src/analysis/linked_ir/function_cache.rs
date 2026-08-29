@@ -21,7 +21,7 @@ use super::*;
 
 // Hard-cut whenever direct structural exploration or its projection changes.
 // Project-stage revisions do not invalidate these content-addressed facts.
-const FUNCTION_FACT_DOMAIN: &[u8] = b"blobray/direct-function-facts/v13\0";
+const FUNCTION_FACT_DOMAIN: &[u8] = b"blobray/direct-function-facts/v15\0";
 const MAX_CACHED_CALL_VARIANTS: usize = 1_024;
 const MAX_COMPRESSED_FACT_BYTES: usize = 4 * 1024 * 1024;
 

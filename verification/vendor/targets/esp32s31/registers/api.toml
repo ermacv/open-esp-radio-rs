@@ -8280,3 +8280,21 @@ fields = [{ field = "WATCHDOG_ENABLE", source-bit-offset = 0 }]
 value = 1
 exposure = "facade"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_phy_he_ru26_good_response"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_INIT_7890"
+fields = [{ field = "HE_RU26_GOOD_RESPONSE_ENABLE", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_phy_he_ru26_good_response_disable"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_INIT_7890"
+fields = [{ field = "HE_RU26_GOOD_RESPONSE_DISABLE", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "S31_ESP_PACS_SVD"]

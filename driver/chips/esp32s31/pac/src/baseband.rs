@@ -540,12 +540,9 @@ impl RadioPhyRegisters {
 
     /// Apply complete ROM `phy_hemu_ru26_good_res`.
     pub fn configure_he_ru26_good_response(&mut self) {
-        let control = self
-            .peripherals
-            .phy_baseband_config_oracle
-            .baseband_init_7890();
-        control.modify(|_, w| w.he_ru26_good_response_enable().set_bit());
-        control.modify(|_, w| w.he_ru26_good_response_disable().clear_bit());
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        super::generated::enable_phy_he_ru26_good_response(bb);
+        super::generated::clear_phy_he_ru26_good_response_disable(bb);
     }
 
     /// Apply complete ROM `phy_freq_band_reg_set` and its VHT tail.

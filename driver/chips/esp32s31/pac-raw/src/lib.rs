@@ -68139,6 +68139,32 @@ pub mod field_replace_modify {
             writer.watchdog_enable().bit((input & 0x00000001) != 0)
         });
     }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7890 fields [HE_RU26_GOOD_RESPONSE_ENABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_phy_he_ru26_good_response(registers: &crate::PhyBasebandConfigOracle) {
+        registers.baseband_init_7890().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .he_ru26_good_response_enable()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7890 fields [HE_RU26_GOOD_RESPONSE_DISABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_phy_he_ru26_good_response_disable(registers: &crate::PhyBasebandConfigOracle) {
+        registers.baseband_init_7890().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .he_ru26_good_response_disable()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.

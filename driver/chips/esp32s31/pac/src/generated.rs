@@ -6013,6 +6013,20 @@ pub(crate) fn enable_phy_baseband_watchdog(registers: &crate::svd::PhyBasebandCo
     crate::svd::field_replace_modify::enable_phy_baseband_watchdog(registers);
 }
 
+/// Typed bridge for the reviewed `enable_phy_he_ru26_good_response` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_phy_he_ru26_good_response(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::enable_phy_he_ru26_good_response(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_he_ru26_good_response_disable` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_he_ru26_good_response_disable(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::clear_phy_he_ru26_good_response_disable(registers);
+}
+
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
 #[inline]
 pub(crate) fn configure_shared_modem_low_power_timer(

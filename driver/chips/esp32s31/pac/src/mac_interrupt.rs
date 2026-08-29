@@ -184,6 +184,62 @@ pub struct MacInterruptSetup {
     power_peripheral: svd::WifiMacPowerInterrupt,
 }
 
+trait MacInterruptActivationBackend {
+    fn mask_mac_events(&mut self);
+    fn mask_power_events(&mut self);
+    fn clear_mac_events(&mut self);
+    fn clear_power_events(&mut self);
+    fn publish_mac_events(&mut self, event_mask: MacInterruptMask);
+    fn fence(&mut self);
+}
+
+fn activate_mac_interrupt_epoch(
+    backend: &mut impl MacInterruptActivationBackend,
+    event_mask: MacInterruptMask,
+) {
+    // A previous role may leave a level event latched after its CPU route has
+    // been detached. Keep both banks masked until every stale event is
+    // acknowledged. Publishing the runtime mask before CLEAR creates a real
+    // preemption window in which the regular level route can enter before
+    // setup returns.
+    backend.mask_mac_events();
+    backend.mask_power_events();
+    backend.clear_mac_events();
+    backend.clear_power_events();
+    backend.fence();
+    backend.publish_mac_events(event_mask);
+    backend.fence();
+}
+
+impl MacInterruptActivationBackend for MacInterruptSetup {
+    fn mask_mac_events(&mut self) {
+        publish_mac_interrupt_mask(&self.peripheral, MacInterruptMask::NONE);
+    }
+
+    fn mask_power_events(&mut self) {
+        svd::fixed_register_image::mask_mac_power_interrupts(&self.power_peripheral);
+    }
+
+    fn clear_mac_events(&mut self) {
+        super::generated::mac_interrupt_clear(
+            &self.peripheral,
+            super::generated::MacInterruptClearImage::new(u32::MAX),
+        );
+    }
+
+    fn clear_power_events(&mut self) {
+        svd::fixed_register_image::clear_all_mac_power_interrupts(&self.power_peripheral);
+    }
+
+    fn publish_mac_events(&mut self, event_mask: MacInterruptMask) {
+        publish_mac_interrupt_mask(&self.peripheral, event_mask);
+    }
+
+    fn fence(&mut self) {
+        device_fence();
+    }
+}
+
 impl MacInterruptSetup {
     pub(super) fn from_peripherals(
         peripherals: svd::peripheral_ownership::WifiInterruptPeripherals,
@@ -225,21 +281,13 @@ impl MacInterruptSetup {
     /// executes. The returned value should be installed in its final static
     /// storage before the platform route is enabled.
     pub fn activate(
-        self,
+        mut self,
         event_mask: MacInterruptMask,
     ) -> (MacInterruptRegisters, MacPowerInterruptRegisters) {
-        // Preserve the HIL-qualified task order: publish the complete MAC
-        // mask, explicitly keep the still-unqualified WDEVPWR causes masked,
-        // acknowledge every stale event, then order all MMIO writes before
-        // the caller exposes either ISR capability.
-        publish_mac_interrupt_mask(&self.peripheral, event_mask);
-        svd::fixed_register_image::mask_mac_power_interrupts(&self.power_peripheral);
-        super::generated::mac_interrupt_clear(
-            &self.peripheral,
-            super::generated::MacInterruptClearImage::new(u32::MAX),
-        );
-        svd::fixed_register_image::clear_all_mac_power_interrupts(&self.power_peripheral);
-        device_fence();
+        // Clear stale level events while masked, then publish the complete MAC
+        // mask as the last interrupt-producing edge before the caller exposes
+        // either ISR capability.
+        activate_mac_interrupt_epoch(&mut self, event_mask);
         (
             MacInterruptRegisters {
                 peripheral: self.peripheral,
@@ -314,6 +362,24 @@ pub struct MacInterruptRegisters {
 }
 
 impl MacInterruptRegisters {
+    /// Disable vendor hardware beacon filtering while the MAC route is live.
+    ///
+    /// The caller must exclude the hard ISR for the complete transaction. The
+    /// active interrupt capability owns the interrupt-enable register while
+    /// `registers` owns the disjoint beacon-filter control register, so this
+    /// is the live-epoch counterpart of
+    /// [`MacInterruptSetup::prepare_connected_sta_without_power_save`].
+    pub fn prepare_connected_sta_without_power_save(
+        &mut self,
+        registers: &mut WifiRadioRegisters,
+    ) -> ConnectedStaWithoutPowerSavePrepared {
+        disable_sta_beacon_filter(
+            &registers.peripherals.wifi_mac.wifi_mac_sta_beacon_filter,
+            &self.peripheral,
+        );
+        ConnectedStaWithoutPowerSavePrepared { _private: () }
+    }
+
     /// Sample the complete MAC interrupt status image.
     ///
     /// SOURCE: complete `libpp.a::hal_mac_interrupt_get_event` proves the
@@ -396,5 +462,71 @@ impl MacInterruptRegisters {
     #[cfg(feature = "validation-probes")]
     pub(crate) fn from_peripheral_for_validation(peripheral: svd::WifiMacInterrupt) -> Self {
         Self { peripheral }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MacInterruptActivationBackend, MacInterruptMask, activate_mac_interrupt_epoch};
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum Event {
+        MaskMac,
+        MaskPower,
+        ClearMac,
+        ClearPower,
+        Fence,
+        PublishMac(MacInterruptMask),
+    }
+
+    #[derive(Default)]
+    struct Backend {
+        events: std::vec::Vec<Event>,
+    }
+
+    impl MacInterruptActivationBackend for Backend {
+        fn mask_mac_events(&mut self) {
+            self.events.push(Event::MaskMac);
+        }
+
+        fn mask_power_events(&mut self) {
+            self.events.push(Event::MaskPower);
+        }
+
+        fn clear_mac_events(&mut self) {
+            self.events.push(Event::ClearMac);
+        }
+
+        fn clear_power_events(&mut self) {
+            self.events.push(Event::ClearPower);
+        }
+
+        fn publish_mac_events(&mut self, event_mask: MacInterruptMask) {
+            self.events.push(Event::PublishMac(event_mask));
+        }
+
+        fn fence(&mut self) {
+            self.events.push(Event::Fence);
+        }
+    }
+
+    #[test]
+    fn activation_clears_stale_events_before_publishing_runtime_mask() {
+        let mut backend = Backend::default();
+
+        activate_mac_interrupt_epoch(&mut backend, MacInterruptMask::COLD_RX);
+
+        assert_eq!(
+            backend.events,
+            [
+                Event::MaskMac,
+                Event::MaskPower,
+                Event::ClearMac,
+                Event::ClearPower,
+                Event::Fence,
+                Event::PublishMac(MacInterruptMask::COLD_RX),
+                Event::Fence,
+            ]
+        );
     }
 }

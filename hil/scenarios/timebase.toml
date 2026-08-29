@@ -3,6 +3,7 @@ id = "timebase"
 description = "Alarm and monotonic-clock agreement before radio initialization"
 image = "correctness"
 isolation = "reset"
+data_plane = "split-radio-network"
 tags = ["qualification", "timebase"]
 
 [workload]

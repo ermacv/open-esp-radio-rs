@@ -3,7 +3,7 @@ id = "station-access-point-load"
 description = "Simultaneous same-channel STA+AP UDP bidirectional load with per-interface fairness, beacon timing, and RX hardware health"
 image = "correctness"
 isolation = "reset"
-data_plane = "single-core"
+data_plane = "split-radio-network"
 tags = ["wifi", "sta-ap", "udp", "fairness", "beacon", "psram-stack"]
 
 [link]

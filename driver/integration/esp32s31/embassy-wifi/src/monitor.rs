@@ -13,7 +13,7 @@ pub use open_esp_radio::{
     MonitorChannelSequence, MonitorChannelSequenceError, MonitorRequest,
 };
 use open_esp_radio_esp32s31_wifi_embassy::roles::monitor::{
-    Esp32s31MonitorControlResources, Esp32s31MonitorInterrupts, Esp32s31MonitorMemory,
+    Esp32s31MonitorControlResources, Esp32s31MonitorMemory, Esp32s31MonitorRxRing,
     Esp32s31MonitorStoppedResources, Esp32s31MonitorTask, Esp32s31MonitorTaskBuildFailure,
     Esp32s31MonitorTaskResources,
 };
@@ -32,7 +32,7 @@ use open_esp_radio_wifi_softmac::{
 };
 use static_cell::{ConstStaticCell, StaticCell};
 
-use crate::supervisor::station::monitor_interrupts;
+use crate::supervisor::ProductionRxRing;
 use open_esp_radio_esp32s31_wifi_embassy::composition::resources::{
     ESP32S31_DEFAULT_RX_BUFFER_SIZE as RX_BUFFER_SIZE,
     ESP32S31_DEFAULT_RX_BUFFER_STORAGE_SIZE as RX_STORAGE_SIZE,
@@ -186,7 +186,6 @@ type CaptureReceiver = MonitorCaptureReceiver<
 
 pub(super) type MonitorTaskResources = Esp32s31MonitorTaskResources<
     'static,
-    EspHalMacInterruptRoute,
     CriticalSectionRawMutex,
     CaptureSink,
     RX_DESCRIPTOR_COUNT,
@@ -195,11 +194,8 @@ pub(super) type MonitorTaskResources = Esp32s31MonitorTaskResources<
 >;
 pub(super) type MonitorMemory =
     Esp32s31MonitorMemory<RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE, RX_STORAGE_SIZE>;
-type MonitorInterrupts =
-    Esp32s31MonitorInterrupts<'static, EspHalMacInterruptRoute, CriticalSectionRawMutex>;
 pub(super) type MonitorStoppedResources = Esp32s31MonitorStoppedResources<
     'static,
-    EspHalMacInterruptRoute,
     CriticalSectionRawMutex,
     CaptureSink,
     RX_DESCRIPTOR_COUNT,
@@ -256,7 +252,6 @@ impl Esp32s31MonitorFrames {
 pub(super) struct ProductionMonitorResources {
     memory: MonitorMemory,
     sink: CaptureSink,
-    interrupts: MonitorInterrupts,
     control: &'static Esp32s31MonitorControlResources<CriticalSectionRawMutex>,
 }
 
@@ -265,37 +260,31 @@ impl ProductionMonitorResources {
         mut self,
         generation: RadioSubsystemGeneration,
         snapshot_length: Option<u16>,
-        halted_ring: Option<
-            open_esp_radio_esp32s31_wifi_mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>,
-        >,
+        rx_ring: Option<ProductionRxRing>,
     ) -> MonitorTaskResources {
         CAPTURE_COUNTERS.begin_epoch(generation.value());
         self.sink
             .configure(generation.value(), snapshot_length.map(usize::from));
         Esp32s31MonitorTaskResources::new(
             self.memory,
-            halted_ring,
+            rx_ring.map(|ring| match ring {
+                ProductionRxRing::Halted(ring) => Esp32s31MonitorRxRing::Halted(ring),
+                ProductionRxRing::Live(ring) => Esp32s31MonitorRxRing::Live(ring),
+            }),
             self.sink,
-            self.interrupts,
             self.control,
         )
     }
 
-    pub(super) fn from_stopped(
-        resources: MonitorStoppedResources,
-    ) -> (
-        Self,
-        open_esp_radio_esp32s31_wifi_mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>,
-    ) {
+    pub(super) fn from_stopped(resources: MonitorStoppedResources) -> (Self, ProductionRxRing) {
         let parts = resources.into_parts();
         (
             Self {
                 memory: parts.memory,
                 sink: parts.sink,
-                interrupts: parts.interrupts,
                 control: parts.control,
             },
-            parts.halted_ring,
+            ProductionRxRing::Live(parts.live_ring),
         )
     }
 }
@@ -322,7 +311,6 @@ pub(super) fn initialize_monitor_resources(
         role: ProductionMonitorResources {
             memory,
             sink: CaptureSink { inner: sink },
-            interrupts: monitor_interrupts(),
             control: MONITOR_CONTROL.take(),
         },
         capture,

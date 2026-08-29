@@ -38,6 +38,18 @@ pub fn disable_access_point_receive_registers<H: StaApRegisterHardware>(hardware
     hardware.disable_access_point_receive_registers();
 }
 
+/// Enter the role-neutral suffix of vendor `wifi_set_rx_policy(0)` after the
+/// cold transaction has already published both interface addresses.
+///
+/// The interface-zero disable includes the final unicast-BSSID-check edge;
+/// interface one follows in vendor order. Keeping the pair as one operation
+/// prevents a stopped runtime from accidentally retaining admission for the
+/// role which was not active in the preceding epoch.
+pub fn disable_all_role_receive_registers<H: StaApRegisterHardware>(hardware: &mut H) {
+    disable_station_receive_registers(hardware);
+    disable_access_point_receive_registers(hardware);
+}
+
 /// Apply both reviewed MAC receive contexts as one LMAC operation.
 ///
 /// The caller must separately prove that STA and SoftAP share one physical
@@ -107,6 +119,22 @@ mod tests {
 
         disable_station_receive_registers(&mut hardware);
         disable_access_point_receive_registers(&mut hardware);
+
+        assert!(hardware.plans.is_empty());
+        assert_eq!(
+            hardware.disabled,
+            [
+                crate::MacInterface::Station,
+                crate::MacInterface::AccessPoint
+            ]
+        );
+    }
+
+    #[test]
+    fn role_neutral_policy_disables_station_then_access_point() {
+        let mut hardware = Hardware::default();
+
+        disable_all_role_receive_registers(&mut hardware);
 
         assert!(hardware.plans.is_empty());
         assert_eq!(

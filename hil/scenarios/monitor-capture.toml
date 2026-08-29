@@ -3,6 +3,7 @@ id = "monitor-capture"
 description = "Finite typed monitor capture exported as PCAPNG"
 image = "correctness"
 isolation = "reset"
+data_plane = "split-radio-network"
 tags = ["qualification", "wifi", "monitor"]
 
 [link]

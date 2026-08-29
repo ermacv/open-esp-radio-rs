@@ -15,8 +15,9 @@ use open_esp_radio_esp32s31_embassy_wifi::{
 };
 #[cfg(feature = "core0-rx-cycle-telemetry")]
 use open_esp_radio_esp32s31_embassy_wifi::{
-    CORE0_REORDER_CYCLES, CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM, Core0ReorderSnapshot,
-    Core0RxCycleSnapshot, Core0RxServiceHistogramSnapshot,
+    CORE0_AP_RX_CYCLES, CORE0_REORDER_CYCLES, CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM,
+    Core0ApRxCycleSnapshot, Core0ReorderSnapshot, Core0RxCycleSnapshot,
+    Core0RxServiceHistogramSnapshot,
 };
 use open_esp_radio_hil_esp32s31_telemetry::{
     aggregate_tx::{AggregateTxCounterSnapshot, AggregateTxCounters},
@@ -511,17 +512,40 @@ pub(in crate::product_hil) async fn log_open_radio_task_poll_interval(
 #[cfg(feature = "core0-rx-cycle-telemetry")]
 pub(in crate::product_hil) async fn log_open_radio_core0_rx_cycles(
     earlier: Core0RxCycleSnapshot,
+    ap_earlier: Core0ApRxCycleSnapshot,
     performance_earlier: Core0PerformanceSnapshot,
     reorder_earlier: Core0ReorderSnapshot,
     cache: L1CachePerformanceSnapshot,
 ) {
     let cycles = CORE0_RX_CYCLES.snapshot().wrapping_delta_since(earlier);
+    let ap = CORE0_AP_RX_CYCLES
+        .snapshot()
+        .wrapping_delta_since(ap_earlier);
     let performance = CORE0_PERFORMANCE
         .snapshot()
         .wrapping_delta_since(performance_earlier);
     let reorder = CORE0_REORDER_CYCLES
         .snapshot()
         .wrapping_delta_since(reorder_earlier);
+    runtime_log_reliably(format_args!(
+        "ORC0A calls={} total={} view={} dispatch={} dispatch_leaf={} reorder_key={} leaf_peer={} leaf_publish_check={} leaf_body={} leaf_admission={} leaf_observe={} publication={} activity_tail={} telemetry={}",
+        ap.calls,
+        ap.total,
+        ap.view,
+        ap.dispatch,
+        ap.dispatch_leaf,
+        ap.reorder_key,
+        ap.leaf_peer,
+        ap.leaf_publish_check,
+        ap.leaf_body,
+        ap.leaf_admission,
+        ap.leaf_observe,
+        ap.publication,
+        ap.activity_tail,
+        ap.telemetry,
+    ))
+    .await;
+    yield_now().await;
     runtime_log_reliably(format_args!(
         "ORC0 services={} units={} total={} setup={} frontier={} admission={} \
          stage_total={} stage_take={} stage_pool={} recycle={} reload={} publish={} tail={}",
@@ -567,6 +591,27 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_cycles(
         cycles.radio_polls_with_rx,
         cycles.poll_to_runner_cycles,
         cycles.runner_to_poll_exit_cycles,
+    ))
+    .await;
+    yield_now().await;
+    // Accepted-list exhaustion distinguishes a physical descriptor-list stop
+    // from the similarly named MAC RX statistics counter. Keep this line
+    // ahead of the optional fine-grained phase dump so diagnostic UART loss
+    // cannot remove the primary BUFFER_FULL correlation.
+    runtime_log_reliably(format_args!(
+        "ORC0R exhausted={} remaining1_8={} remaining9_16={} remaining17_32={} remaining33_48={} remaining49_plus={} unknown={} episodes={} resolved_le64us={} resolved_le256us={} resolved_le1024us={} resolved_gt1024us={}",
+        performance.dma_entry_remaining_exhausted,
+        performance.dma_entry_remaining_1_8,
+        performance.dma_entry_remaining_9_16,
+        performance.dma_entry_remaining_17_32,
+        performance.dma_entry_remaining_33_48,
+        performance.dma_entry_remaining_49_plus,
+        performance.dma_entry_remaining_unknown,
+        performance.dma_exhaustion_episodes,
+        performance.dma_exhaustion_resolved_le_64us,
+        performance.dma_exhaustion_resolved_le_256us,
+        performance.dma_exhaustion_resolved_le_1024us,
+        performance.dma_exhaustion_resolved_gt_1024us,
     ))
     .await;
     yield_now().await;
@@ -856,9 +901,10 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_coarse(
     .await;
     yield_now().await;
     runtime_log_reliably(format_args!(
-        "ORC0P drained={} probe={} recycled_append={} budget={} stage_blocked={} network_blocked={} droppable={}",
+        "ORC0P drained={} probe={} protocol_tx_blocked={} recycled_append={} budget={} stage_blocked={} network_blocked={} droppable={}",
         performance.rx_progress_drained,
         performance.rx_progress_probe_pending,
+        performance.rx_progress_protocol_tx_blocked,
         performance.rx_progress_recycled_append_pending,
         performance.rx_progress_budget_exhausted,
         performance.rx_progress_stage_blocked,
@@ -894,22 +940,6 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_coarse(
     ))
     .await;
     yield_now().await;
-    runtime_log_reliably(format_args!(
-        "ORC0R exhausted={} remaining1_8={} remaining9_16={} remaining17_32={} remaining33_48={} remaining49_plus={} unknown={} episodes={} resolved_le64us={} resolved_le256us={} resolved_le1024us={} resolved_gt1024us={}",
-        performance.dma_entry_remaining_exhausted,
-        performance.dma_entry_remaining_1_8,
-        performance.dma_entry_remaining_9_16,
-        performance.dma_entry_remaining_17_32,
-        performance.dma_entry_remaining_33_48,
-        performance.dma_entry_remaining_49_plus,
-        performance.dma_entry_remaining_unknown,
-        performance.dma_exhaustion_episodes,
-        performance.dma_exhaustion_resolved_le_64us,
-        performance.dma_exhaustion_resolved_le_256us,
-        performance.dma_exhaustion_resolved_le_1024us,
-        performance.dma_exhaustion_resolved_gt_1024us,
-    ))
-    .await;
 }
 
 /// Emit Core1 packet-emission and driver-publication phase costs for TX.

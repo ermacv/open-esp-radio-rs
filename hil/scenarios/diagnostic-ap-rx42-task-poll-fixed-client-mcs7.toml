@@ -1,0 +1,36 @@
+schema = 3
+id = "diagnostic-ap-rx42-task-poll-fixed-client-mcs7"
+description = "AP 42 Mbit/s fixed-MCS7 uplink control with Core0 task-poll telemetry"
+repetitions = 1
+image = "diagnostic-core0-rx-cycles"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic", "wifi", "access-point", "ht40", "rx", "task-poll", "fixed-client-mcs"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "access-point"
+cycles = 2
+boots = 1
+timeout_seconds = 180
+client = "open-wrt"
+
+[workload.traffic]
+kind = "udp"
+direction = "rx"
+duration_seconds = 10
+rx_rate_bps = 42000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = false
+minimum_rx_bps = 1
+minimum_concurrent_ap_clients = 1
+
+[evidence]
+independent_laptop_monitor_rx = true
+
+[fixture_mutation]
+openwrt_client_fixed_ht_mcs = 7

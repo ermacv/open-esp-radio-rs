@@ -17,6 +17,11 @@ command -v llvm-cxxfilt >/dev/null
 # private vendor inputs.
 tools/audit-cargo-metadata.sh
 
+# The public ESP32-S31 examples are independent workspaces so the root
+# workspace check cannot detect a stale composition API. Build every shipping
+# example against the real target before accepting a source-only checkout.
+tools/check-esp32s31-examples.sh
+
 # Research resumes only from a warning-free workspace. Keep this fail-closed:
 # adding a new target or crate automatically subjects it to the same budget.
 # The driver-only disallowed-method policy is compiled separately below because

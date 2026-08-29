@@ -3,6 +3,7 @@ id = "wifi-role-roundtrip"
 description = "Station, idle, scan and monitor ownership roundtrip"
 image = "correctness"
 isolation = "reset"
+data_plane = "split-radio-network"
 tags = ["qualification", "wifi", "lifecycle"]
 
 [link]

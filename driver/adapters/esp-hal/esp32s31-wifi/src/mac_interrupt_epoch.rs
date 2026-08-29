@@ -8,8 +8,9 @@ use crate::EspHalRadioPeripheral;
 use critical_section::Mutex;
 use esp_hal::interrupt::InterruptHandler;
 use open_esp_radio_esp32s31_hal::{
-    MacInterruptMask, MacInterruptRegisters, MacInterruptSetup, MacPowerInterruptObservation,
-    MacPowerInterruptRegisters, MacPowerWakeCause,
+    ConnectedStaInterruptPrepared, MacInterruptMask, MacInterruptRegisters, MacInterruptSetup,
+    MacPowerInterruptObservation, MacPowerInterruptRegisters, MacPowerWakeCause, RadioRuntimeOwner,
+    radio_arena::{Esp32s31RadioAccess, Esp32s31RadioOwnerArenaError},
 };
 use open_esp_radio_esp32s31_wifi_mac::irq::{
     IrqSink, MacInterruptRoute, PowerIrqSink, handle_mac_irq, handle_power_irq,
@@ -32,6 +33,14 @@ pub enum EspHalMacInterruptRouteError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EspHalActivePowerInterruptError {
     Inactive,
+}
+
+/// Failure to apply role policy through the MAC register capability currently
+/// installed in the hard ISR slot.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EspHalActiveMacInterruptError {
+    Inactive,
+    RadioOwner(Esp32s31RadioOwnerArenaError),
 }
 
 /// Summary of one bounded hard-MAC handler run.
@@ -95,6 +104,38 @@ pub fn unmask_active_mac_rx_delivery_interrupts() {
             interrupt.unmask_rx_delivery_interrupts();
         }
     });
+}
+
+/// Prepare a connected STA role without tearing down the physical IRQ route.
+///
+/// The critical section lends the unique ISR-owned register capability only
+/// for this synchronous transaction; it cannot cross a scheduling boundary.
+pub fn prepare_active_connected_sta_without_power_save(
+    radio: &mut RadioRuntimeOwner,
+) -> Result<ConnectedStaInterruptPrepared, EspHalActiveMacInterruptError> {
+    critical_section::with(|critical_section| {
+        let mut interrupt = MAC_INTERRUPT_REGISTERS.borrow_ref_mut(critical_section);
+        let Some(interrupt) = interrupt.as_mut() else {
+            return Err(EspHalActiveMacInterruptError::Inactive);
+        };
+        Ok(interrupt.prepare_connected_sta_without_power_save(radio))
+    })
+}
+
+/// Arena-backed form of
+/// [`prepare_active_connected_sta_without_power_save`].
+pub fn prepare_active_connected_sta_without_power_save_with_access(
+    access: &Esp32s31RadioAccess<'_>,
+) -> Result<ConnectedStaInterruptPrepared, EspHalActiveMacInterruptError> {
+    critical_section::with(|critical_section| {
+        let mut interrupt = MAC_INTERRUPT_REGISTERS.borrow_ref_mut(critical_section);
+        let Some(interrupt) = interrupt.as_mut() else {
+            return Err(EspHalActiveMacInterruptError::Inactive);
+        };
+        access
+            .try_prepare_active_connected_sta_without_power_save(interrupt)
+            .map_err(EspHalActiveMacInterruptError::RadioOwner)
+    })
 }
 
 /// Mask WDEVPWR and acknowledge one reviewed TSF-timer cause while the same

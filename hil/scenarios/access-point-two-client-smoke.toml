@@ -3,6 +3,7 @@ id = "access-point-two-client-smoke"
 description = "Two simultaneous WPA2 clients across two access-point ownership epochs"
 image = "correctness"
 isolation = "reset"
+data_plane = "split-radio-network"
 tags = ["qualification", "wifi", "access-point", "lifecycle", "multi-client"]
 
 [workload]

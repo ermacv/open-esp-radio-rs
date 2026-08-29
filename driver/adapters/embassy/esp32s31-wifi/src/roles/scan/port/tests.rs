@@ -15,15 +15,42 @@ use open_esp_radio_esp32s31_wifi_sta::scan::{Esp32s31StaScanBackend, Esp32s31Sta
 enum Action {
     Prepare,
     Switch(u8),
+    AdmissionOn,
     Start,
+    ResumeMac,
     Probe(u8),
     Observe,
-    Stop,
+    AdmissionOff,
+    StopMac,
 }
 
 #[derive(Default)]
 struct Hardware {
     actions: Vec<Action>,
+}
+
+impl open_esp_radio_esp32s31_wifi_mac::init::MacSnifferHardware for Hardware {
+    fn configure_open_promiscuous_receive(&mut self) {
+        self.actions.push(Action::AdmissionOn);
+    }
+
+    fn disable_open_promiscuous_receive(&mut self) {
+        self.actions.push(Action::AdmissionOff);
+    }
+}
+
+impl open_esp_radio_esp32s31_wifi_mac::init::MacRuntimeStopHardware for Hardware {
+    fn request_mac_runtime_stop(&mut self) {
+        self.actions.push(Action::StopMac);
+    }
+
+    fn mac_runtime_active_state(&mut self) -> u8 {
+        0
+    }
+
+    fn resume_mac_runtime(&mut self) {
+        self.actions.push(Action::ResumeMac);
+    }
 }
 
 struct Phy(u32);
@@ -67,7 +94,11 @@ impl Esp32s31ScanReceivePort<Hardware> for Receive {
     where
         O: Esp32s31ScanFrameObserver,
     {
+        let mac_stopped = hardware.actions.last() == Some(&Action::StopMac);
         hardware.actions.push(Action::Observe);
+        if mac_stopped {
+            return Ok(Esp32s31ScanRxProgress::default());
+        }
         let mut beacon = [0_u8; 47];
         beacon[0] = 0x80;
         beacon[34] = 0x10;
@@ -87,12 +118,11 @@ impl Esp32s31ScanReceivePort<Hardware> for Receive {
         })
     }
 
-    fn stop(&mut self, hardware: &mut Hardware) -> Result<(), Self::Error> {
-        hardware.actions.push(Action::Stop);
+    fn park(&mut self) -> Result<(), Self::Error> {
         Ok(())
     }
 
-    fn prepare_next(&mut self, hardware: &mut Hardware) -> Result<(), Self::Error> {
+    fn prepare_next_channel(&mut self, hardware: &mut Hardware) -> Result<(), Self::Error> {
         hardware.actions.push(Action::Prepare);
         Ok(())
     }
@@ -189,12 +219,12 @@ fn concrete_port_returns_every_owner_after_selected_candidate() {
     assert_eq!(parts.rx.0, 22);
     assert_eq!(parts.tx.0, 33);
     assert_eq!(parts.timer.0, 2);
-    assert_eq!(parts.observer.0, 3);
+    assert_eq!(parts.observer.0, 2);
     assert_eq!(
         parts.telemetry,
         Esp32s31ScanTelemetry {
-            raw_frames: 3,
-            ring_epochs: 3,
+            raw_frames: 2,
+            ring_epochs: 2,
         }
     );
     assert_eq!(
@@ -202,12 +232,15 @@ fn concrete_port_returns_every_owner_after_selected_candidate() {
         [
             Action::Prepare,
             Action::Switch(11),
+            Action::AdmissionOn,
             Action::Start,
+            Action::ResumeMac,
             Action::Probe(11),
             Action::Observe,
             Action::Observe,
+            Action::AdmissionOff,
+            Action::StopMac,
             Action::Observe,
-            Action::Stop,
         ]
     );
     assert_eq!(parts.sequence.peek(), 8);
@@ -256,5 +289,12 @@ fn standalone_scan_records_matching_bss_without_selecting_it() {
     assert_eq!(&record.ssid[..usize::from(record.ssid_len)], b"test");
     assert_eq!(parts.table.records()[0].channel, 11);
     assert_eq!(parts.sequence.peek(), 8);
-    assert_eq!(parts.hardware.actions.last(), Some(&Action::Stop));
+    assert_eq!(parts.hardware.actions.last(), Some(&Action::Observe));
+    assert!(
+        parts
+            .hardware
+            .actions
+            .windows(2)
+            .any(|actions| actions == [Action::AdmissionOff, Action::StopMac])
+    );
 }

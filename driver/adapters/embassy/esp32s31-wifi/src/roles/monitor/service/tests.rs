@@ -35,13 +35,36 @@ const RX_STORAGE_SIZE: usize = RX_BUFFER_SIZE + 4;
 const RX_BASE: u32 = 0x2f00_1000;
 const RX_BUFFERS: [u32; RX_COUNT] = [0x2f00_2000, 0x2f00_2080];
 
+fn restore_test_rx_delivery() {}
+
 #[derive(Default)]
 struct Hardware {
     walker: bool,
+    promiscuous: bool,
     reloads: u32,
     base_writes: u32,
     disable_busy_count: u8,
     walker_when_dropped: Option<Rc<Cell<Option<bool>>>>,
+}
+
+impl MacSnifferHardware for Hardware {
+    fn configure_open_promiscuous_receive(&mut self) {
+        self.promiscuous = true;
+    }
+
+    fn disable_open_promiscuous_receive(&mut self) {
+        self.promiscuous = false;
+    }
+}
+
+impl MacRuntimeStopHardware for Hardware {
+    fn request_mac_runtime_stop(&mut self) {}
+
+    fn mac_runtime_active_state(&mut self) -> u8 {
+        0
+    }
+
+    fn resume_mac_runtime(&mut self) {}
 }
 
 impl Drop for Hardware {
@@ -182,7 +205,7 @@ impl RuntimeFixture {
     fn new() -> Self {
         Self {
             platform: (),
-            irq: EmbassyMacIrqRuntime::new(),
+            irq: EmbassyMacIrqRuntime::new_with_rx_moderation(restore_test_rx_delivery),
             power: EmbassyPowerIrqRuntime::new(),
             active: Cell::new(false),
             event_mask: Cell::new(0),
@@ -366,6 +389,7 @@ fn one_irq_epoch_services_durable_rx_then_returns_every_owner() {
     let stop = poll_fn(|context| {
         let poll = stop_polls.get();
         if poll == 0 {
+            assert!(runtime.irq.is_rx_moderation_active());
             stop_polls.set(1);
             complete_beacon(&storage, 0);
             runtime.irq.publish(EVENT_RX_SUCCESS);
@@ -392,16 +416,25 @@ fn one_irq_epoch_services_durable_rx_then_returns_every_owner() {
         runtime.event_mask.get(),
         ESP32S31_STANDALONE_MONITOR_INTERRUPT_MASK.bits()
     );
-    assert!(!runtime.active.get());
-    assert_eq!(owner.receive_phase(), Esp32s31RxFrontierPhase::Halted);
-    assert!(!owner.interrupt_active());
-    let (hardware, _, sink, _, _) = match owner.try_into_parts() {
+    assert!(runtime.active.get());
+    assert!(runtime.irq.is_rx_moderation_active());
+    assert_eq!(owner.receive_phase(), Esp32s31RxFrontierPhase::Live);
+    assert!(owner.interrupt_active());
+    let (mut hardware, receive, sink, _, _) = match owner.try_into_parts() {
         Ok(parts) => parts,
         Err(_) => panic!("stopped monitor owners must be extractable"),
     };
-    assert!(!hardware.walker);
+    assert!(hardware.walker);
+    assert!(!hardware.promiscuous);
     assert_eq!(hardware.reloads, 0);
     assert_eq!(sink.frames, 1);
+    let live = receive
+        .into_live()
+        .unwrap_or_else(|_| panic!("stopped monitor must return the live physical ring"));
+    match live.try_stop(&mut hardware) {
+        Ok(_halted) => {}
+        Err(_) => panic!("test cleanup must stop the extracted physical ring"),
+    }
 }
 
 #[test]
@@ -499,7 +532,7 @@ fn bounded_filter_runs_before_the_sink_and_stop_recovers_current_last() {
 }
 
 #[test]
-fn activation_failure_rolls_the_started_ring_back_to_halted() {
+fn activation_failure_quiesces_the_route_but_preserves_the_live_ring() {
     let storage = Esp32s31RxDmaStorage::new();
     let runtime = RuntimeFixture::new();
     let mut owner = service(
@@ -516,7 +549,7 @@ fn activation_failure_rolls_the_started_ring_back_to_halted() {
         Ok(_) => panic!("route activation must fail"),
         Err(failure) => failure,
     };
-    assert_eq!(owner.receive_phase(), Esp32s31RxFrontierPhase::Halted);
+    assert_eq!(owner.receive_phase(), Esp32s31RxFrontierPhase::Live);
     assert!(!owner.interrupt_active());
     assert!(matches!(
         failure.error,
@@ -526,12 +559,12 @@ fn activation_failure_rolls_the_started_ring_back_to_halted() {
     ));
     block_on(owner.stop())
         .unwrap_or_else(|_| panic!("caller can retry a transient quiesce failure"));
-    assert_eq!(owner.receive_phase(), Esp32s31RxFrontierPhase::Halted);
+    assert_eq!(owner.receive_phase(), Esp32s31RxFrontierPhase::Live);
     assert!(!owner.interrupt_active());
 }
 
 #[test]
-fn failed_irq_quiesce_keeps_the_rx_owner_live() {
+fn logical_stop_does_not_call_physical_irq_quiesce() {
     let storage = Esp32s31RxDmaStorage::new();
     let runtime = RuntimeFixture::new();
     let mut owner = service(
@@ -544,18 +577,11 @@ fn failed_irq_quiesce_keeps_the_rx_owner_live() {
         },
     );
 
-    let failure = match block_on(owner.run_until_stopped(ready(()))) {
-        Ok(_) => panic!("route quiesce must fail"),
-        Err(failure) => failure,
-    };
+    block_on(owner.run_until_stopped(ready(())))
+        .unwrap_or_else(|_| panic!("logical stop must not call route quiesce"));
     assert_eq!(owner.receive_phase(), Esp32s31RxFrontierPhase::Live);
     assert!(owner.interrupt_active());
-    assert!(matches!(
-        failure.error,
-        Esp32s31MonitorRunError::Stop(Esp32s31MonitorStopError::Interrupt(
-            Esp32s31MacInterruptEpochQuiesceError::Route(RouteError::Quiesce)
-        ))
-    ));
+    assert!(runtime.irq.is_rx_moderation_active());
 }
 
 #[test]
@@ -579,16 +605,17 @@ fn cancelled_run_keeps_owner_available_for_explicit_shutdown() {
     assert!(owner.interrupt_active());
     assert_eq!(
         owner.stopped_radio_mut().map(|_| ()),
-        Err(Esp32s31MonitorStoppedAccessError::InterruptActive)
+        Err(Esp32s31MonitorStoppedAccessError::RoleActive)
     );
     block_on(owner.stop()).unwrap_or_else(|_| panic!("cancelled monitor must remain recoverable"));
-    assert_eq!(owner.receive_phase(), Esp32s31RxFrontierPhase::Halted);
-    assert!(!owner.interrupt_active());
+    assert_eq!(owner.receive_phase(), Esp32s31RxFrontierPhase::Live);
+    assert!(owner.interrupt_active());
+    assert!(runtime.irq.is_rx_moderation_active());
     assert!(owner.stopped_radio_mut().is_ok());
 }
 
 #[test]
-fn stop_waits_for_a_transient_dma_busy_edge() {
+fn logical_stop_does_not_request_a_physical_walker_stop() {
     let storage = Esp32s31RxDmaStorage::new();
     let runtime = RuntimeFixture::new();
     let mut owner = service(
@@ -608,14 +635,23 @@ fn stop_waits_for_a_transient_dma_busy_edge() {
         .expect("monitor hardware owner exists")
         .disable_busy_count = 1;
 
-    block_on(owner.stop()).unwrap_or_else(|_| panic!("transient DMA busy is not a failure"));
+    block_on(owner.stop()).unwrap_or_else(|_| panic!("logical monitor stop must succeed"));
 
-    assert_eq!(owner.receive_phase(), Esp32s31RxFrontierPhase::Halted);
-    assert!(!owner.interrupt_active());
+    assert_eq!(owner.receive_phase(), Esp32s31RxFrontierPhase::Live);
+    assert!(owner.interrupt_active());
+    assert_eq!(
+        owner
+            .hardware
+            .as_ref()
+            .expect("monitor hardware owner exists")
+            .disable_busy_count,
+        1,
+        "logical stop must not call the physical walker-stop primitive"
+    );
 }
 
 #[test]
-fn dropping_a_cancelled_live_service_stops_the_interrupt_route() {
+fn dropping_a_cancelled_live_service_retains_irq_and_dma_owners() {
     let storage = Esp32s31RxDmaStorage::new();
     let runtime = RuntimeFixture::new();
     {
@@ -633,32 +669,6 @@ fn dropping_a_cancelled_live_service_stops_the_interrupt_route() {
         assert!(runtime.active.get());
         drop(owner);
     }
-    assert!(!runtime.active.get());
-    assert_eq!(runtime.walker_when_dropped.get(), Some(false));
-}
-
-#[test]
-fn failed_drop_quiescence_retains_every_hardware_visible_owner_for_reset() {
-    let storage = Esp32s31RxDmaStorage::new();
-    let runtime = RuntimeFixture::new();
-    {
-        let mut owner = service(
-            &storage,
-            &runtime,
-            Sink::default(),
-            RouteBehavior {
-                fail_quiesce_permanently: true,
-                ..RouteBehavior::default()
-            },
-        );
-        {
-            let mut run = pin!(owner.run_until_stopped(pending()));
-            let mut context = Context::from_waker(Waker::noop());
-            assert!(matches!(run.as_mut().poll(&mut context), Poll::Pending));
-        }
-        drop(owner);
-    }
-
     assert!(runtime.active.get());
     assert_eq!(runtime.walker_when_dropped.get(), None);
     assert_eq!(storage.lifecycle_state(), RxDmaArenaState::ResetRequired);
@@ -688,7 +698,7 @@ fn busy_drop_does_not_spin_or_release_hardware_visible_owners() {
         drop(owner);
     }
 
-    assert!(!runtime.active.get());
+    assert!(runtime.active.get());
     assert_eq!(runtime.walker_when_dropped.get(), None);
     assert_eq!(storage.lifecycle_state(), RxDmaArenaState::ResetRequired);
 }

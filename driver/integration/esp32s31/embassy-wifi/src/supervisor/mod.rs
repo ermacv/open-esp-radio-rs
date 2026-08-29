@@ -48,7 +48,7 @@ use open_esp_radio_esp32s31_hal::{Radio, RadioRuntimeOwner};
 use open_esp_radio_esp32s31_phy::{NoopPhyTargetObserver, PhyTxTargetPowerProfile};
 use open_esp_radio_esp32s31_wifi::lower_wifi_channel;
 use open_esp_radio_esp32s31_wifi::runtime::{
-    Esp32s31WifiRoleOwner, Esp32s31WifiRoleStopped, materialize_esp32s31_wifi_role,
+    Esp32s31WifiRoleOwner, Esp32s31WifiStopped, materialize_esp32s31_wifi_role,
 };
 use open_esp_radio_esp32s31_wifi::tx::ControlTxConfig;
 use open_esp_radio_esp32s31_wifi::{
@@ -62,11 +62,9 @@ pub(super) use open_esp_radio_esp32s31_wifi_embassy::composition::resources::{
     ESP32S31_DEFAULT_RX_BUFFER_SIZE as RX_BUFFER_SIZE,
     ESP32S31_DEFAULT_RX_DESCRIPTOR_COUNT as RX_DESCRIPTOR_COUNT,
 };
-use open_esp_radio_esp32s31_wifi_embassy::datapath::irq::{
-    EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime,
-};
 use open_esp_radio_esp32s31_wifi_embassy::roles::monitor::{
-    Esp32s31MonitorChannelSwitchError, Esp32s31MonitorTaskExit, prepare_esp32s31_monitor_task,
+    Esp32s31MonitorChannelSwitchError, Esp32s31MonitorRadio, Esp32s31MonitorTaskExit,
+    prepare_esp32s31_monitor_task,
 };
 #[cfg(feature = "diagnostics")]
 use open_esp_radio_esp32s31_wifi_embassy::roles::station::Esp32s31StationEngineObserver;
@@ -109,9 +107,7 @@ use open_esp_radio_esp32s31_wifi_embassy::{
         try_reclaim_esp32s31_station_runtime, try_restore_esp32s31_station_phase,
     },
 };
-use open_esp_radio_esp32s31_wifi_esp_hal::{
-    EspHalRadioPeripheral, mac_interrupt_epoch::EspHalMacInterruptRoute,
-};
+use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use open_esp_radio_esp32s31_wifi_mac::{
     init::activate_promiscuous_receive,
     rx::{RxDmaBufferAddresses, RxRingError},
@@ -151,15 +147,15 @@ use crate::radio_resources::{
 #[cfg(feature = "mac-irq-diagnostics")]
 use crate::supervisor::station::configure_mac_irq_observer;
 use crate::supervisor::station::{
-    ConnectedDisconnectedEpoch, ConnectedReconnectedEpoch, ConnectedRxEpochResources,
-    ConnectedRxProtocolStorage, ConnectedStationEpoch, ConnectedStationFault,
-    ConnectedStationOutcome, ConnectedStationResources, ConnectedStationRunExit,
-    ConnectedStoppedRx, ControlResources,
-    InitialConnectedStaticResources, MacInterruptEpoch, ProductionAccessPointRxConsumer,
-    ProductionAccessPointRxProducer, access_point_rx_pipeline, connected_config,
-    initialize_connected_rx_protocol_runtime, initialize_connected_static_resources,
-    initialize_ethernet_frame, initialize_sta_ap_station_rx_batch, initialize_station_network,
-    mac_interrupt_epoch, publish_access_point_shared_network_rx, run_connected,
+    ConnectedDisconnectedEpoch, ConnectedParkedRx, ConnectedReconnectedEpoch,
+    ConnectedRxEpochResources, ConnectedRxProtocolStorage, ConnectedStationEpoch,
+    ConnectedStationFault, ConnectedStationOutcome, ConnectedStationResources,
+    ConnectedStationRunExit, ControlResources, InitialConnectedStaticResources, MacInterruptEpoch,
+    ProductionAccessPointRxConsumer, ProductionAccessPointRxProducer, access_point_rx_pipeline,
+    connected_config, initialize_connected_rx_protocol_runtime,
+    initialize_connected_static_resources, initialize_ethernet_frame,
+    initialize_sta_ap_station_rx_batch, initialize_station_network, mac_interrupt_epoch,
+    publish_access_point_shared_network_rx, run_connected,
 };
 use crate::{
     Esp32s31NewError, Esp32s31Radio, Esp32s31RadioError, Esp32s31RadioInitialization, Esp32s31Wifi,
@@ -169,6 +165,7 @@ mod access_point;
 mod concurrent;
 pub(crate) mod station;
 
+pub(crate) use access_point::ProductionRxRing;
 use access_point::{
     ProductionAccessPointPreparationFault, ProductionAccessPointResources,
     ProductionAccessPointTask, ProductionAccessPointTeardownFault, ProductionStationRoleResources,
@@ -343,7 +340,7 @@ type ProductionStationStoppedPhase = Esp32s31StationStoppedPhaseResources<
     >,
     WifiNetworkResources,
     RunningWifiNetwork,
-    ConnectedStoppedRx,
+    ConnectedParkedRx,
     RadioAmpduStorage,
     &'static ControlResources,
     ConnectedRxEpochResources,
@@ -360,18 +357,98 @@ struct ProductionWifiReusableResources<'security> {
     board: ProductionStationBoardResources,
     phase: ProductionStationStoppedPhase,
     security: Esp32s31StaAttemptSecurity<'security>,
-    interrupt_route: EspHalMacInterruptRoute,
-    mac_runtime: &'static EmbassyMacIrqRuntime<CriticalSectionRawMutex>,
-    power_runtime: &'static EmbassyPowerIrqRuntime<CriticalSectionRawMutex>,
 }
 
-type ProductionStationStopped<'security> =
-    Esp32s31WifiRoleStopped<EspHalRadioPeripheral, ProductionWifiReusableResources<'security>>;
+/// Physical radio frontier between logical Wi-Fi roles.
+///
+/// `Cold` exists only until the first IRQ-driven role activates the MAC
+/// route. `Live` then carries that exact route, register owner and runtime
+/// context across STA/AP/monitor/scan cutovers. A logical role stop therefore
+/// cannot accidentally mask a still-running MAC or remap its interrupt.
+enum ProductionWifiOwner {
+    Cold(Esp32s31WifiStopped<EspHalRadioPeripheral>),
+    Live {
+        owner: Esp32s31WifiRoleOwner<EspHalRadioPeripheral>,
+        registers: RadioRuntimeOwner,
+        interrupts: MacInterruptEpoch,
+    },
+}
+
+impl ProductionWifiOwner {
+    fn current_channel(&self) -> WifiChannel {
+        match self {
+            Self::Cold(wifi) => wifi.current_channel(),
+            Self::Live { owner, .. } => owner.current_channel(),
+        }
+    }
+}
+
+struct ProductionWifiMaterialized<L> {
+    owner: Esp32s31WifiRoleOwner<EspHalRadioPeripheral>,
+    registers: RadioRuntimeOwner,
+    interrupts: MacInterruptEpoch,
+    resources: L,
+}
+
+fn materialize_production_wifi<L>(
+    wifi: ProductionWifiOwner,
+    resources: L,
+) -> ProductionWifiMaterialized<L> {
+    match wifi {
+        ProductionWifiOwner::Cold(wifi) => {
+            let materialized = materialize_esp32s31_wifi_role(wifi, resources);
+            ProductionWifiMaterialized {
+                owner: materialized.owner,
+                registers: materialized.registers,
+                interrupts: mac_interrupt_epoch(materialized.interrupt_setup),
+                resources: materialized.resources,
+            }
+        }
+        ProductionWifiOwner::Live {
+            owner,
+            registers,
+            interrupts,
+        } => ProductionWifiMaterialized {
+            owner,
+            registers,
+            interrupts,
+            resources,
+        },
+    }
+}
+
+fn park_production_wifi(
+    owner: Esp32s31WifiRoleOwner<EspHalRadioPeripheral>,
+    registers: RadioRuntimeOwner,
+    interrupts: MacInterruptEpoch,
+) -> ProductionWifiOwner {
+    if interrupts.is_active() {
+        return ProductionWifiOwner::Live {
+            owner,
+            registers,
+            interrupts,
+        };
+    }
+    match interrupts.try_into_inactive_parts() {
+        Ok((_route, setup, _mac_runtime, _power_runtime)) => {
+            ProductionWifiOwner::Cold(owner.into_stopped(registers, setup, ()).wifi)
+        }
+        Err(interrupts) => ProductionWifiOwner::Live {
+            owner,
+            registers,
+            interrupts,
+        },
+    }
+}
+
+struct ProductionStationStopped<'security> {
+    wifi: ProductionWifiOwner,
+    resources: ProductionWifiReusableResources<'security>,
+}
 
 struct ProductionWifiFreshResources {
     dma: Esp32s31StationDmaResources<'static, RxStorage, RX_DESCRIPTOR_COUNT>,
-    rx_ring:
-        Option<open_esp_radio_esp32s31_wifi_mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>>,
+    rx_ring: Option<ProductionRxRing>,
     tx: ProductionOrdinaryTxResources,
     scan_table: &'static mut ScanTable,
     scan_frame: &'static mut [u8],
@@ -399,7 +476,7 @@ enum ProductionWifiStoppedResources {
 /// storage represented by independent owners.
 #[allow(clippy::result_large_err)]
 type ProductionSupervisorStopped = Esp32s31WifiSupervisorStopped<
-    EspHalRadioPeripheral,
+    ProductionWifiOwner,
     ProductionWifiPhysicalResources,
     ProductionStationRoleResources,
     ProductionAccessPointResources,
@@ -492,7 +569,7 @@ enum ProductionWifiFault {
     StandaloneScanInitialRx {
         _owner: Esp32s31WifiRoleOwner<EspHalRadioPeripheral>,
         _registers: RadioRuntimeOwner,
-        _interrupt_setup: open_esp_radio_esp32s31_hal::MacInterruptSetup,
+        _interrupts: MacInterruptEpoch,
         _physical: ProductionWifiPhysicalResources,
         _station: ProductionStationRoleResources,
         _access_point: ProductionAccessPointResources,
@@ -548,7 +625,7 @@ enum ProductionWifiFault {
         _station: ProductionStationRoleResources,
     },
     StoppedOwner {
-        _wifi: open_esp_radio_esp32s31_wifi::runtime::Esp32s31WifiStopped<EspHalRadioPeripheral>,
+        _wifi: ProductionWifiOwner,
         _resources: ProductionWifiStoppedResources,
         _access_point: ProductionAccessPointResources,
         _monitor: ProductionMonitorResources,
@@ -559,7 +636,7 @@ enum ProductionStandaloneScanReturnFault {
     TxRestore {
         _owner: Esp32s31WifiRoleOwner<EspHalRadioPeripheral>,
         _registers: RadioRuntimeOwner,
-        _interrupt_setup: open_esp_radio_esp32s31_hal::MacInterruptSetup,
+        _interrupts: MacInterruptEpoch,
         _dma: Esp32s31StationDmaResources<'static, RxStorage, RX_DESCRIPTOR_COUNT>,
         _receive:
             Esp32s31ScanRx<'static, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE, RX_BUFFER_STORAGE_SIZE>,
@@ -571,10 +648,10 @@ enum ProductionStandaloneScanReturnFault {
         _error: open_esp_radio_esp32s31_wifi_sta::tx_epoch::Esp32s31StaTxEpochError,
         _returned_control: ControlTx,
     },
-    ReceiveStillActive {
+    ReceiveNotLive {
         _owner: Esp32s31WifiRoleOwner<EspHalRadioPeripheral>,
         _registers: RadioRuntimeOwner,
-        _interrupt_setup: open_esp_radio_esp32s31_hal::MacInterruptSetup,
+        _interrupts: MacInterruptEpoch,
         _dma: Esp32s31StationDmaResources<'static, RxStorage, RX_DESCRIPTOR_COUNT>,
         _receive:
             Esp32s31ScanRx<'static, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE, RX_BUFFER_STORAGE_SIZE>,
@@ -590,7 +667,7 @@ struct ProductionInitialRxFault {
     _error: RxRingError,
     _owner: Esp32s31WifiRoleOwner<EspHalRadioPeripheral>,
     _registers: RadioRuntimeOwner,
-    _interrupt_setup: open_esp_radio_esp32s31_hal::MacInterruptSetup,
+    _interrupts: MacInterruptEpoch,
     _dma: Esp32s31StationDmaResources<'static, RxStorage, RX_DESCRIPTOR_COUNT>,
     _tx_storage: &'static mut TxStorage,
     _scan_table: &'static mut ScanTable,
@@ -605,15 +682,12 @@ struct ProductionInitialRxFault {
 struct ProductionStationResumeFault {
     _owner: Esp32s31WifiRoleOwner<EspHalRadioPeripheral>,
     _registers: RadioRuntimeOwner,
-    _interrupt_setup: open_esp_radio_esp32s31_hal::MacInterruptSetup,
+    _interrupts: MacInterruptEpoch,
     _storage: ProductionStationStorage,
     _board: ProductionStationBoardResources,
     _phase: ProductionStationStoppedPhase,
     _previous_security: Esp32s31StaAttemptSecurity<'static>,
     _requested_security: Esp32s31StaAttemptSecurity<'static>,
-    _interrupt_route: EspHalMacInterruptRoute,
-    _mac_runtime: &'static EmbassyMacIrqRuntime<CriticalSectionRawMutex>,
-    _power_runtime: &'static EmbassyPowerIrqRuntime<CriticalSectionRawMutex>,
 }
 
 /// Recover role-neutral Wi-Fi only from a clean finite station exit.
@@ -632,38 +706,43 @@ fn try_reclaim_production_station<'security>(
     let (registers, mut role, interrupt, storage, board, phase, security, primary_channel) =
         reclaimed.into_parts();
     let selected_channel = primary_channel;
-    let (interrupt_route, interrupt_setup, mac_runtime, power_runtime) =
-        match interrupt.try_into_inactive_parts() {
-            Ok(parts) => parts,
-            Err(interrupt) => {
-                return Err(ProductionStationReclaimFault::InterruptInvariant {
-                    _registers: registers,
-                    _role: role,
-                    _interrupt: interrupt,
-                    _storage: storage,
-                    _board: board,
-                    _phase: phase,
-                    _security: security,
-                    _selected_channel: selected_channel,
-                });
-            }
-        };
     if let Some(channel) = selected_channel {
         role.set_current_channel(channel);
     }
-    Ok(role.into_stopped(
-        registers,
-        interrupt_setup,
-        ProductionWifiReusableResources {
+    let wifi = if interrupt.is_active() {
+        ProductionWifiOwner::Live {
+            owner: role,
+            registers,
+            interrupts: interrupt,
+        }
+    } else {
+        let (_route, interrupt_setup, _mac_runtime, _power_runtime) =
+            match interrupt.try_into_inactive_parts() {
+                Ok(parts) => parts,
+                Err(interrupt) => {
+                    return Err(ProductionStationReclaimFault::InterruptInvariant {
+                        _registers: registers,
+                        _role: role,
+                        _interrupt: interrupt,
+                        _storage: storage,
+                        _board: board,
+                        _phase: phase,
+                        _security: security,
+                        _selected_channel: selected_channel,
+                    });
+                }
+            };
+        ProductionWifiOwner::Cold(role.into_stopped(registers, interrupt_setup, ()).wifi)
+    };
+    Ok(ProductionStationStopped {
+        wifi,
+        resources: ProductionWifiReusableResources {
             storage,
             board,
             phase,
             security,
-            interrupt_route,
-            mac_runtime,
-            power_runtime,
         },
-    ))
+    })
 }
 
 pub(super) struct ProductionStationBoardResources {
@@ -818,7 +897,7 @@ pub async fn new(
         Err(_) => unreachable!("fresh Wi-Fi resources are always splittable"),
     };
     let stopped = Esp32s31WifiSupervisorStopped::new(
-        wifi,
+        ProductionWifiOwner::Cold(wifi),
         physical,
         station,
         ProductionAccessPointResources {

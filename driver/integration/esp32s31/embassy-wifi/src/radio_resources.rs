@@ -31,8 +31,8 @@ use open_esp_radio_wifi_embassy::station_network::{
 };
 use static_cell::{ConstStaticCell, StaticCell};
 
-pub(super) const NETWORK_TX_HEADROOM: usize = TX_AMPDU_METADATA_SIZE
-    + open_esp_radio_ieee80211::station::STA_PROTECTED_QOS_ETHERNET_HEADROOM;
+pub(super) const NETWORK_TX_HEADROOM: usize =
+    TX_AMPDU_METADATA_SIZE + open_esp_radio_ieee80211::station::STA_PROTECTED_QOS_ETHERNET_HEADROOM;
 // The protected MPDU starts immediately after the aggregate metadata and must
 // remain naturally aligned for the hardware TX path.
 const _: () = assert!(TX_AMPDU_METADATA_SIZE.is_multiple_of(core::mem::align_of::<u32>()));

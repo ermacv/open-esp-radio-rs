@@ -133,11 +133,30 @@ fn observe_aggregate_rate(observer: &dyn AggregateTxObserver, rate: HtRate) {
     });
 }
 
-/// Avoid per-frame MMIO polling while preserving a batched producer refill.
-/// The DATAPATH owner explicitly services DMA again at each protocol-quantum
-/// boundary before yielding.
-const fn should_observe_ap_rx_dma(protocol_blocked: bool, queued_frames: usize) -> bool {
-    protocol_blocked || queued_frames == 0
+/// Preserve a real DMA continuation, but do not report an ordered AP protocol
+/// head as a descriptor-writeback probe once the physical frontier is drained.
+const fn ap_rx_progress_while_protocol_tx_blocked(dma: DatapathRxProgress) -> DatapathRxProgress {
+    match dma {
+        DatapathRxProgress::Drained | DatapathRxProgress::UpperLayerBlockedButDroppable => {
+            DatapathRxProgress::ProtocolBlockedByTx
+        }
+        pending => pending,
+    }
+}
+
+/// Preserve software-runnable staged work after the active-TX quantum's
+/// mandatory DMA refill. In particular, a capacity-blocked DMA observation
+/// cannot make the scheduler wait for a future credit when protocol work
+/// already retained by this same owner can advance the frontier.
+const fn ap_active_rx_turn_completion(
+    dma: DatapathRxProgress,
+    queued_frames: usize,
+) -> DatapathRxProgress {
+    if queued_frames != 0 {
+        DatapathRxProgress::BudgetExhausted
+    } else {
+        dma
+    }
 }
 
 /// An active TX keeps hardware out of the protocol consumer. The enclosing
@@ -191,9 +210,9 @@ use datapath::BlockAckObservationState;
 use datapath::Esp32s31AccessPointDatapathServices;
 use network_tx::Esp32s31AccessPointNetworkTx;
 pub use protocol_mailbox::{
-    Esp32s31AccessPointControlAction, Esp32s31AccessPointHardwareAction,
-    Esp32s31AccessPointProtocolAction, Esp32s31AccessPointProtocolMailbox,
-    Esp32s31AccessPointProtocolPublisher, Esp32s31AccessPointProtocolReceiver,
+    Esp32s31AccessPointHardwareAction, Esp32s31AccessPointProtocolAction,
+    Esp32s31AccessPointProtocolMailbox, Esp32s31AccessPointProtocolPublisher,
+    Esp32s31AccessPointProtocolReceiver,
 };
 #[doc(hidden)]
 pub use rx_pipeline::{
@@ -205,7 +224,10 @@ pub use rx_pipeline::{
 // activity update. The active-TX protocol quantum owns four frames, so the
 // mailbox covers exactly one complete bounded turn.
 const AP_PROTOCOL_ACTION_CAPACITY: usize = 8;
-const AP_PROTOCOL_ACTIONS_PER_RX_FRAME: usize = 2;
+// Only a reorder-window reset crosses the protocol-to-PAC boundary. Peer
+// activity and power-save state are role-local values and are committed
+// directly by the AP protocol owner.
+const AP_PROTOCOL_ACTIONS_PER_RX_FRAME: usize = 1;
 
 include!("access_point/control_types.rs");
 include!("access_point/rx_dispatch.rs");

@@ -206,6 +206,7 @@ mod tests {
         );
         assert_eq!(Esp32s31DefaultWifiResourceProfile::RX_REORDER_WINDOW, 16);
         assert_eq!(Esp32s31DefaultWifiResourceProfile::RX_STAGE_SLOT_COUNT, 32);
+        assert_eq!(Esp32s31DefaultWifiResourceProfile::RX_DESCRIPTOR_COUNT, 96);
         assert_eq!(ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH, 67);
         assert_eq!(
             ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH

@@ -9,14 +9,15 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::rx::{
-    RxDma, RxDmaBufferAddresses, RxIngressConfig, RxRingError, RxRingHalted, extract_management,
+    RxDma, RxDmaBufferAddresses, RxIngressConfig, RxRingError, RxRingHalted, RxRingLive,
+    extract_management,
 };
 use open_esp_radio_ieee80211::scan::{ScanObservation, ScanTable};
 
 use crate::{
     datapath::rx::dma::{
         ESP32S31_RX_WALKER_ENABLE_SETTLE_US, Esp32s31RxDmaStorage, Esp32s31RxEpochResources,
-        Esp32s31StoppedRx,
+        Esp32s31StagedRxProducer,
     },
     datapath::rx::frontier::{
         EmbassyEsp32s31RxFrontierDelay, Esp32s31RxFrontier, Esp32s31RxFrontierError,
@@ -127,6 +128,16 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         }
     }
 
+    pub const fn from_live(
+        ring: RxRingLive<'storage, COUNT>,
+        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    ) -> Self {
+        Self {
+            receive: Esp32s31RxFrontier::from_live(ring),
+            storage,
+        }
+    }
+
     pub const fn phase(&self) -> Esp32s31RxFrontierPhase {
         self.receive.phase()
     }
@@ -135,12 +146,20 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         &mut self,
         hardware: &mut H,
     ) -> Result<(), Esp32s31RxFrontierError> {
-        self.receive
-            .prepare_initial_or_retry(hardware, self.storage)
+        if self.phase() == Esp32s31RxFrontierPhase::Live {
+            Ok(())
+        } else {
+            self.receive
+                .prepare_initial_or_retry(hardware, self.storage)
+        }
     }
 
     pub fn start<H: RxDma>(&mut self, hardware: &mut H) -> Result<(), Esp32s31RxFrontierError> {
-        self.receive.start_prepared(hardware)
+        if self.phase() == Esp32s31RxFrontierPhase::Live {
+            Ok(())
+        } else {
+            self.receive.start_prepared(hardware)
+        }
     }
 
     pub fn observe_management<H, O, const RECORDS: usize>(
@@ -200,15 +219,23 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         Ok(progress)
     }
 
-    pub fn stop<H: RxDma>(&mut self, hardware: &mut H) -> Result<(), Esp32s31RxFrontierError> {
-        self.receive.stop(hardware)
+    pub fn park(&self) -> Result<(), Esp32s31RxFrontierError> {
+        if self.phase() == Esp32s31RxFrontierPhase::Live {
+            Ok(())
+        } else {
+            Err(Esp32s31RxFrontierError::OwnerUnavailable)
+        }
     }
 
     pub fn prepare_next<H: RxDma>(
         &mut self,
         hardware: &mut H,
     ) -> Result<(), Esp32s31RxFrontierError> {
-        self.receive.prepare_next(hardware, self.storage)
+        if self.phase() == Esp32s31RxFrontierPhase::Live {
+            Ok(())
+        } else {
+            self.receive.prepare_next(hardware, self.storage)
+        }
     }
 
     pub fn into_halted(self) -> Result<RxRingHalted<'storage, COUNT>, Self> {
@@ -216,6 +243,14 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         receive
             .try_into_halted()
             .map_err(|receive| Self { receive, storage })
+    }
+
+    pub fn into_live(self) -> Result<RxRingLive<'storage, COUNT>, Self> {
+        let Self {
+            mut receive,
+            storage,
+        } = self;
+        receive.take_live().map_err(|_| Self { receive, storage })
     }
 }
 

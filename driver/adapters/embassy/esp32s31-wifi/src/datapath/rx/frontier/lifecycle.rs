@@ -64,6 +64,14 @@ where
         }
     }
 
+    /// Adopt the continuously running physical frontier of a preceding role.
+    pub const fn from_live(ring: RxRingLive<'storage, COUNT>) -> Self {
+        Self {
+            state: Esp32s31RxFrontierState::Live(ring),
+            _delay: PhantomData,
+        }
+    }
+
     pub const fn phase(&self) -> Esp32s31RxFrontierPhase {
         self.state.phase()
     }
@@ -468,14 +476,20 @@ where
         }
     }
 
+    /// Consume a live frontier without changing hardware state.
+    pub fn try_into_live(mut self) -> Result<RxRingLive<'storage, COUNT>, Self> {
+        match self.take_live() {
+            Ok(ring) => Ok(ring),
+            Err(_) => Err(self),
+        }
+    }
+
     /// Consume the finite protocol owner and materialize a connected RX epoch.
     ///
-    /// The pre-connected port deliberately stops and republishes the walker
-    /// between finite authentication/WPA2 receive phases. Connected RX cannot
-    /// inherit that port's partial completion frontier as though it were the
-    /// vendor's continuously owned `wDevCtrl` list. Confirming walker stop and
-    /// rebuilding the complete static ring makes the connected publication a
-    /// new, explicit DMA ownership epoch; this is not a MAC or software reset.
+    /// A live pre-connected frontier is transferred without touching the
+    /// walker, NEXT/LAST or descriptor contents. Only a cold halted/prepared
+    /// frontier is started here. This keeps physical descriptor credit
+    /// continuous while logical scan/join/WPA2 ownership changes.
     ///
     /// The complete pre-connected owner is returned on every failure. The
     /// application/HIL therefore cannot strand a halted or prepared ring
@@ -492,10 +506,11 @@ where
     where
         M: RxDma,
     {
-        if self.phase() == Esp32s31RxFrontierPhase::Live
-            && let Err(error) = self.stop(hardware)
-        {
-            return Err(Esp32s31RxFrontierIntoLiveFailure { owner: self, error });
+        if self.phase() == Esp32s31RxFrontierPhase::Live {
+            return match self.take_live() {
+                Ok(ring) => Ok(ring),
+                Err(error) => Err(Esp32s31RxFrontierIntoLiveFailure { owner: self, error }),
+            };
         }
         if let Err(error) = self.start_with_storage(hardware, storage).await {
             return Err(Esp32s31RxFrontierIntoLiveFailure { owner: self, error });

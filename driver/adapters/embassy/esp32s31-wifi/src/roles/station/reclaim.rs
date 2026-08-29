@@ -24,7 +24,7 @@ use open_esp_radio_wifi_embassy::station_network::{
 
 use crate::{
     datapath::irq::Esp32s31MacInterruptEpoch,
-    datapath::rx::dma::{Esp32s31RxDmaStorage, Esp32s31RxEpochResources, Esp32s31StoppedRx},
+    datapath::rx::dma::{Esp32s31RxDmaStorage, Esp32s31RxEpochResources, Esp32s31StagedRxProducer},
     datapath::rx::frontier::{Esp32s31RxFrontier, Esp32s31RxFrontierDelay},
     roles::scan::rx::Esp32s31ScanRx,
     roles::station::epoch::{Esp32s31DisconnectedStaEpoch, Esp32s31ReconnectedStaEpoch},
@@ -142,7 +142,7 @@ type Esp32s31RebindableStationPhase<
     Esp32s31RxFrontier<'storage, PD, COUNT, DMA_BUFFER_SIZE>,
     StationNetworkResources<ND, NR, NS>,
     RunningStationNetwork<NS, NR>,
-    Esp32s31StoppedRx<
+    Esp32s31StagedRxProducer<
         'storage,
         'pool,
         'queue,
@@ -249,9 +249,6 @@ impl<'storage, 'security, P, I, D, T, B, S, const RECORDS: usize>
 
 /// Exact lifecycle owner retained when runtime reclaim cannot prove safety.
 pub enum Esp32s31StationRuntimeReclaimFailure<O> {
-    InterruptActive {
-        owner: O,
-    },
     Phase {
         error: Esp32s31StationPhaseReclaimError,
         owner: O,
@@ -262,7 +259,8 @@ pub enum Esp32s31StationRuntimeReclaimFailure<O> {
 ///
 /// The returned channel is absent only when stop occurred during initial scan,
 /// before a peer had been selected. The caller updates the role-neutral radio
-/// context only after independently proving that its IRQ epoch is inactive.
+/// context after the logical role returns its phase owners. The physical IRQ
+/// epoch may remain installed and moves unchanged into the next role.
 #[allow(clippy::type_complexity)]
 pub fn try_reclaim_esp32s31_station_phase<'arena, S, J, N, DN, DR, A, C, E, K>(
     phase: Esp32s31StationServicePhase<
@@ -650,20 +648,28 @@ where
         Esp32s31StationStoppedPhaseResources::InitialJoin {
             receive,
             network,
-            station,
-        } => match receive.try_into_halted() {
-            Ok(ring) => Ok(Esp32s31StationStoppedPhaseResources::InitialScan {
-                receive: Esp32s31ScanRx::from_halted(ring, storage),
-                network,
-                identity,
-            }),
-            Err(receive) => Err(Esp32s31StationPhaseRebindFailure {
-                resources: Esp32s31StationStoppedPhaseResources::InitialJoin {
-                    receive,
+            station: _,
+        } => match receive.phase() {
+            crate::datapath::rx::frontier::Esp32s31RxFrontierPhase::Live => {
+                let ring = receive.try_into_live().unwrap_or_else(|_| {
+                    unreachable!("live initial-join phase owns a live RX ring")
+                });
+                Ok(Esp32s31StationStoppedPhaseResources::InitialScan {
+                    receive: Esp32s31ScanRx::from_live(ring, storage),
                     network,
-                    station,
-                },
-            }),
+                    identity,
+                })
+            }
+            _ => {
+                let ring = receive.try_into_halted().unwrap_or_else(|_| {
+                    unreachable!("quiescent initial-join phase owns a halted RX ring")
+                });
+                Ok(Esp32s31StationStoppedPhaseResources::InitialScan {
+                    receive: Esp32s31ScanRx::from_halted(ring, storage),
+                    network,
+                    identity,
+                })
+            }
         },
         Esp32s31StationStoppedPhaseResources::Disconnected {
             network,
@@ -709,9 +715,11 @@ where
                     });
                 }
             };
-            let ring = match receive.try_into_halted() {
-                Ok(ring) => ring,
-                Err(receive) => {
+            let live = match receive.phase() {
+                crate::datapath::rx::frontier::Esp32s31RxFrontierPhase::Live => receive
+                    .try_into_live()
+                    .unwrap_or_else(|_| unreachable!("live reconnect phase owns a live RX ring")),
+                _ => {
                     return Err(Esp32s31StationPhaseRebindFailure {
                         resources: Esp32s31StationStoppedPhaseResources::Reconnected {
                             network: StationNetworkResources::Running(network),
@@ -729,7 +737,7 @@ where
             station.association_preference = identity.association_preference;
             Ok(Esp32s31StationStoppedPhaseResources::Disconnected {
                 network,
-                receive: rx.with_halted_ring(ring),
+                receive: rx.with_live_ring(live),
                 aggregate_tx,
                 control,
                 station,
@@ -830,9 +838,6 @@ pub fn try_reclaim_esp32s31_station_runtime<
 where
     I: Esp32s31StationInterruptEpochState,
 {
-    if owner.runtime.radio().interrupt().is_active() {
-        return Err(Esp32s31StationRuntimeReclaimFailure::InterruptActive { owner });
-    }
     let (runtime, phase, security) = owner.into_parts();
     let reclaimed = match try_reclaim_esp32s31_station_phase(phase) {
         Ok(reclaimed) => reclaimed,

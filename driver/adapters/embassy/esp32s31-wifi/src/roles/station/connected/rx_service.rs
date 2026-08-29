@@ -20,7 +20,7 @@ use crate::{
             ConnectedRxProtocolSink, Esp32s31ConnectedRxProtocol,
             Esp32s31ConnectedRxProtocolStopped,
         },
-        teardown::Esp32s31ConnectedStaRxTeardown,
+        teardown::Esp32s31ConnectedStaRxPark,
     },
 };
 
@@ -34,12 +34,12 @@ pub struct Esp32s31ConnectedStaRxService<R, P> {
 }
 
 /// Reusable owners returned only after both DMA and protocol state stop.
-pub struct Esp32s31ConnectedStaRxStopped<R, P> {
+pub struct Esp32s31ConnectedStaRxParked<R, P> {
     dma: R,
     protocol: P,
 }
 
-impl<R, P> Esp32s31ConnectedStaRxStopped<R, P> {
+impl<R, P> Esp32s31ConnectedStaRxParked<R, P> {
     pub fn into_parts(self) -> (R, P) {
         (self.dma, self.protocol)
     }
@@ -92,7 +92,7 @@ impl<
     const CAPACITY: usize,
     const SLOTS: usize,
     const REORDER_SLOTS: usize,
-> Esp32s31ConnectedStaRxTeardown<H>
+> Esp32s31ConnectedStaRxPark<H>
     for Esp32s31ConnectedStaRxService<
         R,
         Esp32s31ConnectedRxProtocol<
@@ -110,23 +110,23 @@ impl<
     >
 where
     M: RawMutex,
-    R: Esp32s31ConnectedStaRxTeardown<H>,
+    R: Esp32s31ConnectedStaRxPark<H>,
     S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
 {
-    type Stopped = Esp32s31ConnectedStaRxStopped<
-        R::Stopped,
+    type Parked = Esp32s31ConnectedStaRxParked<
+        R::Parked,
         Esp32s31ConnectedRxProtocolStopped<'scratch, 'pool, CAPACITY, SLOTS, REORDER_SLOTS>,
     >;
     type Error = R::Error;
 
-    fn try_stop(self, hardware: &mut H) -> Result<Self::Stopped, (Self, Self::Error)> {
+    fn try_park(self, hardware: &mut H) -> Result<Self::Parked, (Self, Self::Error)> {
         let Self {
             dma,
             protocol,
             serviced_frames,
         } = self;
-        match dma.try_stop(hardware) {
-            Ok(dma) => Ok(Esp32s31ConnectedStaRxStopped {
+        match dma.try_park(hardware) {
+            Ok(dma) => Ok(Esp32s31ConnectedStaRxParked {
                 dma,
                 protocol: protocol.into_stopped(),
             }),

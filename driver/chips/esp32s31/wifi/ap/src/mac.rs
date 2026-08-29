@@ -61,6 +61,33 @@ enum PendingPublication {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31ApPendingPublicationKind {
+    Beacon,
+    Authentication,
+    Association,
+    Eapol,
+    Data,
+    BlockAckRequest,
+    RxBlockAckResponse,
+    PeerDisconnect,
+}
+
+impl PendingPublication {
+    const fn kind(self) -> Esp32s31ApPendingPublicationKind {
+        match self {
+            Self::Beacon { .. } => Esp32s31ApPendingPublicationKind::Beacon,
+            Self::Authentication => Esp32s31ApPendingPublicationKind::Authentication,
+            Self::Association { .. } => Esp32s31ApPendingPublicationKind::Association,
+            Self::Eapol { .. } => Esp32s31ApPendingPublicationKind::Eapol,
+            Self::Data { .. } => Esp32s31ApPendingPublicationKind::Data,
+            Self::BlockAckRequest { .. } => Esp32s31ApPendingPublicationKind::BlockAckRequest,
+            Self::RxBlockAckResponse => Esp32s31ApPendingPublicationKind::RxBlockAckResponse,
+            Self::PeerDisconnect { .. } => Esp32s31ApPendingPublicationKind::PeerDisconnect,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31ApPeerDisconnectStage {
     Disassociation,
     Deauthentication,
@@ -183,7 +210,14 @@ pub enum Esp32s31ApTxCompletionAction {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31ApMacError {
-    Busy,
+    /// A caller attempted to publish another AP frame while the MAC still
+    /// owns one ordinary publication.
+    PublicationActive(Esp32s31ApPendingPublicationKind),
+    /// The retained A-MPDU path attempted to borrow the ordinary descriptor
+    /// while an AP publication still owned it.
+    AggregateAdapterUnavailable(Esp32s31ApPendingPublicationKind),
+    /// TX service was invoked without a corresponding AP publication.
+    ServiceWithoutPublication,
     Engine(Esp32s31ApEngineError),
     Transmit(Esp32s31ApTxError),
 }
@@ -312,7 +346,11 @@ where
         ),
         Esp32s31ApMacError,
     > {
-        self.require_idle()?;
+        if let Some(pending) = self.pending {
+            return Err(Esp32s31ApMacError::AggregateAdapterUnavailable(
+                pending.kind(),
+            ));
+        }
         self.transmit
             .install_tx_protection_policy(self.engine.tx_protection_policy());
         Ok((&mut self.engine, &mut self.transmit))
@@ -760,7 +798,7 @@ where
         now_micros: u64,
     ) -> Result<(WifiTxProgress, Esp32s31ApTxCompletionAction), Esp32s31ApMacError> {
         if self.pending.is_none() {
-            return Err(Esp32s31ApMacError::Busy);
+            return Err(Esp32s31ApMacError::ServiceWithoutPublication);
         }
         let progress = self.transmit.service(hardware, wake).await?;
         if progress == WifiTxProgress::Pending {
@@ -956,8 +994,8 @@ where
     }
 
     fn require_idle(&self) -> Result<(), Esp32s31ApMacError> {
-        if self.pending.is_some() {
-            Err(Esp32s31ApMacError::Busy)
+        if let Some(pending) = self.pending {
+            Err(Esp32s31ApMacError::PublicationActive(pending.kind()))
         } else {
             Ok(())
         }
@@ -1102,6 +1140,8 @@ mod tests {
 
     impl ApRxPolicyHardware for Hardware {
         fn apply_ap_link_policy(&mut self, _address: [u8; 6]) {}
+
+        fn disable_ap_link_policy(&mut self) {}
     }
 
     impl CcmpKeyHardware for Hardware {

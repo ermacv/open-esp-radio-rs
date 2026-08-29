@@ -9,7 +9,7 @@
 use open_esp_radio_esp32s31_hal::RadioRuntimeOwner;
 use open_esp_radio_esp32s31_hal::types::{
     MacExtraSoftApRxBlockAckEntryIndex, MacInterface, MacRxBlockAckEntryIndex,
-    MacRxBlockAckStartingSequence, MacRxBlockAckTid, MacRxBlockAckWindow,
+    MacRxBlockAckStartingSequence, MacRxBlockAckTid, MacRxBlockAckWindow, RxBlockAckEntrySnapshot,
 };
 use open_esp_radio_esp32s31_hal::wifi_mac::WifiMacHal;
 
@@ -47,6 +47,18 @@ pub enum S31RxBlockAckAgreementError {
 /// BlockAck control. It owns only one bank transaction at a time; agreement
 /// lifecycle and retained frames remain above this leaf.
 pub trait RxBlockAckHardware {
+    /// Read-only diagnostic projection of one ordinary direct bank.
+    ///
+    /// Test doubles and integrations that do not expose live readback may
+    /// return `None`; production ESP32-S31 owners override this method.
+    fn diagnostic_rx_block_ack_entry_snapshot(
+        &mut self,
+        hardware_index: u8,
+    ) -> Option<RxBlockAckEntrySnapshot> {
+        let _ = hardware_index;
+        None
+    }
+
     fn program_rx_block_ack(
         &mut self,
         agreement: S31RxBlockAckAgreement,
@@ -81,6 +93,16 @@ pub trait RxBlockAckHardware {
 }
 
 impl RxBlockAckHardware for WifiMacHal<'_> {
+    fn diagnostic_rx_block_ack_entry_snapshot(
+        &mut self,
+        hardware_index: u8,
+    ) -> Option<RxBlockAckEntrySnapshot> {
+        WifiMacHal::rx_block_ack_entry_snapshot(
+            self,
+            MacRxBlockAckEntryIndex::new(u32::from(hardware_index))?,
+        )
+    }
+
     fn program_rx_block_ack(
         &mut self,
         agreement: S31RxBlockAckAgreement,
@@ -129,6 +151,13 @@ impl RxBlockAckHardware for WifiMacHal<'_> {
 }
 
 impl RxBlockAckHardware for RadioRuntimeOwner {
+    fn diagnostic_rx_block_ack_entry_snapshot(
+        &mut self,
+        hardware_index: u8,
+    ) -> Option<RxBlockAckEntrySnapshot> {
+        RadioRuntimeOwner::rx_block_ack_entry_snapshot(self, hardware_index)
+    }
+
     fn program_rx_block_ack(
         &mut self,
         agreement: S31RxBlockAckAgreement,

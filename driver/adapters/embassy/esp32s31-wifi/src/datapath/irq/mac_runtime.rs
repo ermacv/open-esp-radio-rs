@@ -84,6 +84,11 @@ impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
         self.rx_moderation_active.store(false, Ordering::Release);
     }
 
+    /// Whether one active interrupt epoch currently owns RX source moderation.
+    pub fn is_rx_moderation_active(&self) -> bool {
+        self.rx_moderation_active.load(Ordering::Acquire)
+    }
+
     /// Restore RX delivery after the bottom half proved the durable frontier
     /// drained. Returns whether moderation was active for this epoch.
     pub fn unmask_rx_after_drain(&self) -> bool {

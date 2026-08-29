@@ -402,6 +402,7 @@ fn execute_workload_inner(
             boots,
             timeout_seconds,
             client,
+            security,
             traffic,
         } => qualification::access_point::run(
             qualification::access_point::Config {
@@ -409,12 +410,20 @@ fn execute_workload_inner(
                 boots: *boots,
                 timeout: std::time::Duration::from_secs(u64::from(*timeout_seconds)),
                 client: *client,
+                security: *security,
                 traffic: traffic.clone(),
                 criteria: selected.criteria.clone(),
                 expected_link: selected.link,
                 require_driver_observation: selected.image.requires_driver_observation(),
                 require_rx_delivery_evidence: selected.image
                     == qualification::scenario::ImageClass::DiagnosticRxDelivery,
+                capture_independent_laptop_monitor_rx: selected
+                    .evidence
+                    .independent_laptop_monitor_rx,
+                openwrt_client_fixed_ht_mcs: selected.fixture_mutation.openwrt_client_fixed_ht_mcs,
+                openwrt_client_fixed_guard_interval: selected
+                    .fixture_mutation
+                    .openwrt_client_fixed_guard_interval,
             },
             output,
             lab,

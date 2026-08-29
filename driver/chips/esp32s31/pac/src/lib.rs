@@ -63,6 +63,7 @@ mod mac_tsf;
 mod mac_tx;
 mod mac_tx_power_init;
 mod mac_tx_queue;
+mod mac_tx_statistics;
 mod mac_txrx_init;
 mod modem_lpcon_phy;
 mod modem_shared_clock;
@@ -175,6 +176,7 @@ pub use mac_block_ack::{
     ExtraSoftApRxBlockAckEntrySnapshot, InternalTxBlockAckSnapshot, RxBlockAckEntrySnapshot,
     TxBlockAckDiagnosticSnapshot, TxBlockAckPayload,
 };
+pub use mac_coex_init::MacCoexPrioritySnapshot;
 pub use mac_crypto::MacKeyInstallOutcome;
 pub use mac_he_beamforming::{
     MacHeBeamformingReportProfile, MacHeBeamformingReportProfileError, MacHeErSuAckRateProfile,
@@ -217,13 +219,14 @@ pub use mac_tx::{
     MacHeTxParameters, MacHeTxProgram, MacHtAmpduCompletionObservation, MacHtChannelWidth,
     MacHtGuardInterval, MacHtMcs, MacHtProtectionSpacing, MacHtRate, MacHtTxFormat,
     MacHtTxParameters, MacHtTxProgram, MacLegacyRate, MacLegacyTxParameters, MacLegacyTxProgram,
-    MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason, MacTxPtiProgram,
-    MacTxQueueDetached,
+    MacOrdinaryTxQueueSnapshot, MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason,
+    MacTxPtiProgram, MacTxQueueDetached,
 };
 pub use mac_tx_power_init::{
     MAC_TX_POWER_RATE_COUNT, MacPartialRuPowerSelector, MacTxPowerIndex, MacTxPowerPair,
     MacTxPowerTable,
 };
+pub use mac_tx_statistics::MacTxStatisticsSnapshot;
 pub use modem_shared_clock::{
     BluetoothLowPowerClockObservation, CoexistenceLowPowerClockObservation,
     CoexistenceLowPowerClockSource, ModemLowPowerClockSource, SharedModemClockObservation,

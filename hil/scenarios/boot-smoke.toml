@@ -3,7 +3,7 @@ id = "boot-smoke"
 description = "Bootstrap, PSRAM mapping, PSRAM task stack, SRAM IRQ stack and runtime startup"
 image = "boot-smoke"
 isolation = "reset"
-data_plane = "single-core"
+data_plane = "split-radio-network"
 tags = ["smoke", "psram-stack"]
 
 [workload]

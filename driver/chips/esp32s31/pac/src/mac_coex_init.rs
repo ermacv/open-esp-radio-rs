@@ -4,7 +4,27 @@
 
 use super::WifiRadioRegisters;
 
+/// Live value-only projection of the cold MAC coexistence priorities.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacCoexPrioritySnapshot {
+    pub rx_active: u8,
+    pub rx_ack: u8,
+    pub wifi_default: u8,
+}
+
 impl WifiRadioRegisters {
+    /// Read back the priorities that arbitrate ordinary Wi-Fi work and the
+    /// immediate RX response transaction.
+    pub fn mac_coex_priority_snapshot(&self) -> MacCoexPrioritySnapshot {
+        let coex = &self.peripherals.coexistence.wifi_mac_coex_init;
+        let rx = coex.rx_pti().read();
+        MacCoexPrioritySnapshot {
+            rx_active: rx.rx_active().bits(),
+            rx_ack: rx.rx_ack().bits(),
+            wifi_default: coex.default_control().read().wifi_default_pti().bits(),
+        }
+    }
+
     /// Apply all seventeen fresh-read RMW edges at the COEX tail of `hal_init`.
     ///
     /// SOURCE: complete pinned `libpp.a[hal_mac.o]::hal_init`,

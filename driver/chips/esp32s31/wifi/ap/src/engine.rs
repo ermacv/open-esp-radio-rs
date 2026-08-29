@@ -13,7 +13,7 @@ use crate::{
     },
 };
 use open_esp_radio_esp32s31_wifi_mac::{
-    ap_policy::{ApRxPolicyHardware, configure_ap_receive_policy},
+    ap_policy::{ApRxPolicyHardware, configure_ap_receive_policy, disable_ap_receive_policy},
     ap_tsf::{ApTsfHardware, reset_and_start_access_point_tsf, stop_access_point_tsf},
     crypto::{CcmpKeyHardware, CryptoKeyError},
     tx_protection::{ErpProtectionMode, HtProtectionMode, WifiTxProtectionPolicy},
@@ -423,6 +423,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         let security = match security {
             Ok(security) => security,
             Err(failure) => {
+                disable_ap_receive_policy(hardware);
                 return Err(Esp32s31ApEngineStartFailure {
                     service,
                     beacon_storage: beacon.into_storage(),
@@ -1694,6 +1695,10 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         self,
         hardware: &mut H,
     ) -> Esp32s31ApEngineStop<'storage> {
+        // RX admission closes before the outer descriptor epoch is allowed
+        // to stop. A composition may have already performed this idempotent
+        // pre-quiesce leaf while it still owned the live runner.
+        disable_ap_receive_policy(hardware);
         let (security, pairwise_storage) = self.security.stop(hardware);
         stop_access_point_tsf(hardware);
         Esp32s31ApEngineStop {
@@ -1727,6 +1732,10 @@ mod tests {
     impl ApRxPolicyHardware for Hardware {
         fn apply_ap_link_policy(&mut self, address: [u8; 6]) {
             self.policy = Some(address);
+        }
+
+        fn disable_ap_link_policy(&mut self) {
+            self.policy = None;
         }
     }
 
@@ -1811,7 +1820,7 @@ mod tests {
 
         let observation = engine.observation();
         let _stopped = engine.stop(&mut hardware);
-        assert_eq!(hardware.policy, Some(ap));
+        assert_eq!(hardware.policy, None);
         assert_eq!(hardware.installed, [2]);
         assert_eq!(hardware.cleared, [2]);
         assert!(hardware.tsf_started);

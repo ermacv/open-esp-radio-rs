@@ -14,7 +14,7 @@ phy = "ht40"
 kind = "udp"
 direction = "rx"
 duration_seconds = 16
-rx_rate_bps = 120000000
+rx_rate_bps = 130000000
 payload_bytes = 1472
 
 [criteria]

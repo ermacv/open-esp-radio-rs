@@ -1,9 +1,10 @@
 schema = 3
 id = "access-point-single-client-load-bidirectional"
-description = "Observer-free sustained balanced single-client AP performance baseline"
+description = "Observer-free station-level balanced single-client AP performance baseline"
 repetitions = 1
 image = "performance"
 isolation = "reset"
+data_plane = "split-radio-network"
 tags = ["characterization", "wifi", "access-point", "network", "single-client", "load", "bidirectional"]
 
 [workload]
@@ -17,12 +18,13 @@ client = "open-wrt"
 kind = "udp"
 direction = "bidirectional"
 duration_seconds = 60
-rx_rate_bps = 8000000
-tx_rate_bps = 8000000
-payload_bytes = 1400
+rx_rate_bps = 40000000
+tx_rate_bps = 40000000
+payload_bytes = 1472
 
 [criteria]
 exact_delivery = false
-minimum_rx_bps = 7600000
-minimum_tx_bps = 7600000
+minimum_rx_bps = 35000000
+minimum_tx_bps = 35000000
+minimum_combined_bps = 72000000
 minimum_concurrent_ap_clients = 1

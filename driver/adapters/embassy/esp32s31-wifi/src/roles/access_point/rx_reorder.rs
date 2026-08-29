@@ -189,6 +189,32 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
                 });
             }
         }
+        // Match connected-station RX for the common case: an in-order MPDU
+        // with no retained successor does not need the generic release-list
+        // owner graph. The state transition is complete before dispatch and
+        // the current staging owner remains borrowed throughout. Gaps,
+        // duplicates, window advances and a frontier with a retained
+        // successor still fall through to the full reorder path below.
+        let immediate = RxAmpduMpdu {
+            sequence: key.sequence,
+            slot: RX_REORDER_CURRENT_SLOT as u8,
+        };
+        if self
+            .banks
+            .state_mut(bank)
+            .expect("one bank identity owns one reorder state")
+            .try_ingest_immediate(immediate)?
+            .is_some()
+        {
+            self.update_deadline(bank, now_micros);
+            dispatch(segment);
+            return Ok(Esp32s31AccessPointRxReorderProgress {
+                active: true,
+                dispatched: resync_dispatched.saturating_add(1),
+                hardware_window_reset,
+                ..Default::default()
+            });
+        }
         let retain = self
             .banks
             .state(bank)
@@ -569,6 +595,39 @@ mod tests {
         assert_eq!(released, [10, 11]);
         assert!(!reorder.has_pending_release());
         assert_eq!(storage.available_slots(), RX_REORDER_BACKING_SLOT_COUNT);
+        assert_eq!(reorder.next_deadline(), None);
+    }
+
+    #[test]
+    fn in_order_mpdu_dispatches_without_reorder_backing_or_pending_release() {
+        let storage = RxReorderFrameStorage::<32>::new();
+        let mut reorder = Esp32s31AccessPointRxReorder::<32>::new();
+        reorder.start(agreement(0, PEER_A, 10), |_| {}).unwrap();
+        let bytes = [10];
+        let mut released = std::vec::Vec::new();
+
+        let progress = reorder
+            .ingest(
+                &storage,
+                segment(10, &bytes),
+                RxBlockAckMpduKey {
+                    peer: PEER_A,
+                    tid: 6,
+                    sequence: 10,
+                    retry: false,
+                },
+                None,
+                1_000,
+                |segment| released.push(segment.descriptor_address),
+            )
+            .unwrap();
+
+        assert!(progress.active);
+        assert!(!progress.buffered);
+        assert_eq!(progress.dispatched, 1);
+        assert_eq!(released, [10]);
+        assert_eq!(storage.available_slots(), RX_REORDER_BACKING_SLOT_COUNT);
+        assert!(!reorder.has_pending_release());
         assert_eq!(reorder.next_deadline(), None);
     }
 

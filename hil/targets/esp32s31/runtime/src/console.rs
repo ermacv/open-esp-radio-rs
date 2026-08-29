@@ -349,6 +349,8 @@ fn discard_session_result(session_id: u64) -> bool {
 
 unsafe extern "C" {
     fn ets_printf(format: *const u8, ...) -> i32;
+    fn EspDefaultHandler();
+    static __EXTERNAL_INTERRUPTS: u8;
 }
 
 struct TextBuffer<const N: usize> {
@@ -409,12 +411,279 @@ pub fn panic_report(mcause: usize, mepc: usize, mtval: usize) {
     }
 }
 
+/// Reports one peripheral source still pending when the default interrupt
+/// handler escalated into the panic path.
+///
+/// The CLIC `mcause` value identifies only the shared CPU priority vector.
+/// Retaining the matrix source number is therefore required to distinguish a
+/// stale radio route from an unrelated peripheral interrupt.
+#[unsafe(link_section = ".rwtext.logging")]
+pub fn panic_interrupt_source(interrupt: u8) {
+    unsafe {
+        ets_printf(
+            c"panic pending_interrupt=%u\r\n".as_ptr().cast(),
+            u32::from(interrupt),
+        );
+    }
+}
+
+/// Reports the interrupt-matrix route for one pending source.
+///
+/// This is panic-only evidence, so direct volatile MMIO avoids attempting to
+/// borrow a platform singleton while the runtime is already unwinding.
+#[unsafe(link_section = ".rwtext.logging")]
+pub fn panic_interrupt_route(interrupt: u8) {
+    const CORE0_INTERRUPT_MAP: usize = 0x2058_5000;
+    const CORE1_INTERRUPT_MAP: usize = 0x2058_5800;
+    let offset = usize::from(interrupt) * 4;
+    // SAFETY: both addresses are read-only observations of the reviewed S31
+    // interrupt-matrix map words and `interrupt` came from InterruptStatus.
+    let core0 = unsafe { ((CORE0_INTERRUPT_MAP + offset) as *const u32).read_volatile() };
+    // SAFETY: Core1 uses the same register geometry at the documented stride.
+    let core1 = unsafe { ((CORE1_INTERRUPT_MAP + offset) as *const u32).read_volatile() };
+    unsafe {
+        ets_printf(
+            c"panic interrupt_route source=%u core0=%08x core1=%08x\r\n"
+                .as_ptr()
+                .cast(),
+            u32::from(interrupt),
+            core0,
+            core1,
+        );
+    }
+}
+
+/// Reports the complete interrupt-dispatch context visible from the panic.
+///
+/// `InterruptStatus` is sampled after the default handler has been entered,
+/// so it cannot by itself identify an edge source that has already
+/// deasserted.  The mapped masks retain every peripheral source routed to the
+/// CLIC vector in `mcause`; the `default` masks further retain only sources
+/// whose vector-table entry still names `EspDefaultHandler`.  Together these
+/// masks bound the actual unhandled-source candidates without mistaking an
+/// unrelated, disabled pending source for the interrupt that dispatched.
+#[unsafe(link_section = ".rwtext.logging")]
+pub fn panic_interrupt_dispatch_context(
+    mcause: usize,
+    hart_id: usize,
+    pending: [u32; 6],
+) {
+    const CORE0_INTERRUPT_MAP: usize = 0x2058_5000;
+    const CORE_STRIDE: usize = 0x800;
+    const INTERRUPT_COUNT: usize = 168;
+    const CLIC_BASE: usize = 0x1080_0000;
+    const CLIC_VECTOR_CONFIG: usize = 0x1000;
+
+    let cpu_vector = mcause & 0x0fff;
+    let route_base = CORE0_INTERRUPT_MAP + hart_id * CORE_STRIDE;
+    let default_handler = EspDefaultHandler as *const () as usize;
+    let vector_table = (&raw const __EXTERNAL_INTERRUPTS).cast::<usize>();
+    let mut mapped = [0_u32; 6];
+    let mut mapped_default = [0_u32; 6];
+
+    for source in 0..INTERRUPT_COUNT {
+        // SAFETY: panic-only observation of the reviewed interrupt-matrix
+        // route array for the current core.
+        let route = unsafe {
+            ((route_base + source * size_of::<u32>()) as *const u32).read_volatile()
+        } & 0x3f;
+        if route as usize != cpu_vector {
+            continue;
+        }
+        mapped[source / 32] |= 1 << (source % 32);
+        // SAFETY: `__EXTERNAL_INTERRUPTS` is the PAC's 168-entry, pointer-sized
+        // runtime vector table.  Reading it does not invoke a handler.
+        let handler = unsafe { vector_table.add(source).read_volatile() };
+        if handler == default_handler {
+            mapped_default[source / 32] |= 1 << (source % 32);
+        }
+    }
+
+    let clic_vector = CLIC_BASE + CLIC_VECTOR_CONFIG + cpu_vector * 4;
+    // SAFETY: each CLIC vector has four byte-wide IP/IE/ATTR/CTL registers at
+    // the reviewed S31 CLIC register stride.
+    let clic_ip = unsafe { (clic_vector as *const u8).read_volatile() };
+    let clic_ie = unsafe { ((clic_vector + 1) as *const u8).read_volatile() };
+    let clic_attr = unsafe { ((clic_vector + 2) as *const u8).read_volatile() };
+    let clic_ctl = unsafe { ((clic_vector + 3) as *const u8).read_volatile() };
+    let mtvec: usize;
+    let mtvt: usize;
+    unsafe {
+        core::arch::asm!("csrr {0}, 0x305", out(reg) mtvec, options(nomem, nostack));
+        core::arch::asm!("csrr {0}, 0x307", out(reg) mtvt, options(nomem, nostack));
+    }
+    // SAFETY: MTVT is the active 32-bit CLIC hardware-vector table and the
+    // mcause vector is bounded by the controller's 48 entries.
+    let mtvt_handler = unsafe {
+        ((mtvt + cpu_vector * size_of::<u32>()) as *const u32).read_volatile()
+    };
+
+    unsafe {
+        ets_printf(
+            c"panic irq_context hart=%u vector=%u clic_ip=%02x clic_ie=%02x clic_attr=%02x clic_ctl=%02x\r\n"
+                .as_ptr()
+                .cast(),
+            hart_id as u32,
+            cpu_vector as u32,
+            u32::from(clic_ip),
+            u32::from(clic_ie),
+            u32::from(clic_attr),
+            u32::from(clic_ctl),
+        );
+        ets_printf(
+            c"panic irq_vector mtvec=%08x mtvt=%08x slot=%08x\r\n"
+                .as_ptr()
+                .cast(),
+            mtvec as u32,
+            mtvt as u32,
+            mtvt_handler,
+        );
+        ets_printf(
+            c"panic irq_pending words=%08x,%08x,%08x,%08x,%08x,%08x\r\n"
+                .as_ptr()
+                .cast(),
+            pending[0],
+            pending[1],
+            pending[2],
+            pending[3],
+            pending[4],
+            pending[5],
+        );
+        ets_printf(
+            c"panic irq_mapped words=%08x,%08x,%08x,%08x,%08x,%08x\r\n"
+                .as_ptr()
+                .cast(),
+            mapped[0],
+            mapped[1],
+            mapped[2],
+            mapped[3],
+            mapped[4],
+            mapped[5],
+        );
+        ets_printf(
+            c"panic irq_mapped_default words=%08x,%08x,%08x,%08x,%08x,%08x\r\n"
+                .as_ptr()
+                .cast(),
+            mapped_default[0],
+            mapped_default[1],
+            mapped_default[2],
+            mapped_default[3],
+            mapped_default[4],
+            mapped_default[5],
+        );
+
+        let core0_120 = ((CORE0_INTERRUPT_MAP + 120 * 4) as *const u32).read_volatile();
+        let core0_121 = ((CORE0_INTERRUPT_MAP + 121 * 4) as *const u32).read_volatile();
+        let core0_122 = ((CORE0_INTERRUPT_MAP + 122 * 4) as *const u32).read_volatile();
+        let core1_base = CORE0_INTERRUPT_MAP + CORE_STRIDE;
+        let core1_120 = ((core1_base + 120 * 4) as *const u32).read_volatile();
+        let core1_121 = ((core1_base + 121 * 4) as *const u32).read_volatile();
+        let core1_122 = ((core1_base + 122 * 4) as *const u32).read_volatile();
+        ets_printf(
+            c"panic wifi_routes c0_120=%08x c0_121=%08x c0_122=%08x c1_120=%08x c1_121=%08x c1_122=%08x\r\n"
+                .as_ptr()
+                .cast(),
+            core0_120,
+            core0_121,
+            core0_122,
+            core1_120,
+            core1_121,
+            core1_122,
+        );
+    }
+}
+
+/// Reports the RX hardware frontier associated with a Wi-Fi MAC NMI.
+#[unsafe(link_section = ".rwtext.logging")]
+pub fn panic_wifi_rx_frontier() {
+    // SAFETY: panic-only readback of reviewed read/read-write S31 registers;
+    // this path never mutates the radio or attempts to recover ownership.
+    let read = |address: usize| unsafe { (address as *const u32).read_volatile() };
+    let control = read(0x2010_4080);
+    let base = read(0x2010_4084);
+    let next = read(0x2010_4088);
+    let last = read(0x2010_408c);
+    let fifo_overflow = read(0x2010_4368);
+    let buffer_full = read(0x2010_436c);
+    let hang = read(0x2010_4c64);
+    let rx_tx_hang = read(0x2010_4e18);
+    let rx_tx_panic = read(0x2010_4e1c);
+    let mac_channel_control = read(0x2010_4cac);
+    let mac_core_enable = read(0x2010_4c00);
+    let interrupt_1_enable = read(0x2010_4c2c);
+    let interrupt_1_raw = read(0x2010_4c30);
+    let interrupt_1_status = read(0x2010_4c34);
+    let interrupt_enable = read(0x2010_4c40);
+    let interrupt_raw = read(0x2010_4c44);
+    let interrupt_status = read(0x2010_4c48);
+    unsafe {
+        ets_printf(
+            c"panic wifi_rx control=%08x base=%08x next=%08x last=%08x fifo=%08x full=%08x hang=%08x rx_tx_hang=%08x rx_tx_panic=%08x\r\n"
+                .as_ptr()
+                .cast(),
+            control,
+            base,
+            next,
+            last,
+            fifo_overflow,
+            buffer_full,
+            hang,
+            rx_tx_hang,
+            rx_tx_panic,
+        );
+    }
+    unsafe {
+        ets_printf(
+            c"panic wifi_mac gate=%08x channel_control=%08x int1_enable=%08x int1_raw=%08x int1_status=%08x int_enable=%08x int_raw=%08x int_status=%08x\r\n"
+                .as_ptr()
+                .cast(),
+            mac_core_enable,
+            mac_channel_control,
+            interrupt_1_enable,
+            interrupt_1_raw,
+            interrupt_1_status,
+            interrupt_enable,
+            interrupt_raw,
+            interrupt_status,
+        );
+    }
+}
+
 /// Formats and writes one emergency line immediately.
 ///
 /// This bypasses the queue and is intended only for early boot, panic, and
 /// last-resort diagnostics.
 pub fn emergency_log(args: Arguments<'_>) {
     write_line_immediate(args);
+}
+
+/// Writes the panic source without acquiring the normal transport writer.
+///
+/// A panic raised by a USB interrupt can preempt the async logger while its
+/// writer guard is held.  The ordinary emergency path must then fail closed to
+/// avoid corrupting a binary protocol frame, but losing the panic location
+/// makes the interrupt source impossible to identify.  This panic-only ROM
+/// write deliberately bypasses that serialization and emits no protocol data.
+#[unsafe(link_section = ".rwtext.logging")]
+pub fn panic_origin(info: &core::panic::PanicInfo<'_>) {
+    let Some(location) = info.location() else {
+        unsafe {
+            ets_printf(c"panic origin unavailable\r\n".as_ptr().cast());
+        }
+        return;
+    };
+    let file = location.file();
+    unsafe {
+        ets_printf(
+            c"panic origin file_ptr=%08x file_len=%u line=%u column=%u\r\n"
+                .as_ptr()
+                .cast(),
+            file.as_ptr() as usize as u32,
+            file.len() as u32,
+            location.line(),
+            location.column(),
+        );
+    }
 }
 
 /// Queues one best-effort diagnostic line on the runtime USB transport.

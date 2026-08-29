@@ -1,0 +1,35 @@
+schema = 3
+id = "diagnostic-ap-45-45-cold-epoch"
+description = "Temporary AP 45+45 Mbit/s cold-epoch control for role-transition leakage"
+repetitions = 2
+image = "correctness"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic-ap-lifecycle", "diagnostic-ap-rx-disposition"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "access-point"
+cycles = 2
+boots = 1
+timeout_seconds = 120
+client = "open-wrt"
+
+[workload.traffic]
+kind = "udp"
+direction = "bidirectional"
+duration_seconds = 10
+rx_rate_bps = 45000000
+tx_rate_bps = 45000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = false
+minimum_rx_bps = 1
+minimum_tx_bps = 1
+minimum_concurrent_ap_clients = 1
+
+[evidence]
+independent_laptop_monitor_rx = true

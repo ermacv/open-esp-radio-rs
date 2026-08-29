@@ -64,7 +64,7 @@ impl<'resources, 'sequence, 'ssid, 'rates, P, H, R, T, W, O, const RECORDS: usiz
     pub(super) fn observe_scan_rx(
         &mut self,
         channel: u8,
-    ) -> Result<(), Esp32s31ScanPortError<P::Error, R::Error, T::Error>>
+    ) -> Result<Esp32s31ScanRxProgress, Esp32s31ScanPortError<P::Error, R::Error, T::Error>>
     where
         P: Esp32s31ScanPhyPort<H>,
         R: Esp32s31ScanReceivePort<H>,
@@ -89,6 +89,6 @@ impl<'resources, 'sequence, 'ssid, 'rates, P, H, R, T, W, O, const RECORDS: usiz
         if progress.recycled_descriptors != 0 {
             self.telemetry.ring_epochs = self.telemetry.ring_epochs.saturating_add(1);
         }
-        Ok(())
+        Ok(progress)
     }
 }

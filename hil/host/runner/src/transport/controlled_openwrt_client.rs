@@ -10,8 +10,11 @@ use std::{
 
 use zeroize::{Zeroize, Zeroizing};
 
+use open_esp_radio_hil_protocol::WifiAccessPointSecurity;
+
 use crate::{
     Result,
+    qualification::scenario::HtGuardIntervalExpectation,
     transport::lab_config::{AccessPointConfig, OpenWrtConfig},
 };
 
@@ -49,6 +52,7 @@ pub(crate) struct OpenWrtClientLinkEvidence {
     pub(crate) rx_bitrate: Option<String>,
     pub(crate) tx_bytes: u64,
     pub(crate) tx_packets: u64,
+    pub(crate) tx_bitrate: Option<String>,
     pub(crate) tx_retries: u64,
     pub(crate) tx_failed: u64,
     pub(crate) tx_duration_micros: u64,
@@ -63,6 +67,7 @@ struct OpenWrtClientLinkSnapshot {
     rx_bitrate: Option<String>,
     tx_bytes: u64,
     tx_packets: u64,
+    tx_bitrate: Option<String>,
     tx_retries: u64,
     tx_failed: u64,
     tx_duration_micros: u64,
@@ -114,18 +119,40 @@ impl ControlledOpenWrtClient {
     pub(crate) fn connect(
         access_point: &AccessPointConfig,
         fixture: &OpenWrtConfig,
+        security: WifiAccessPointSecurity,
+        fixed_ht_mcs: Option<u8>,
+        fixed_guard_interval: HtGuardIntervalExpectation,
     ) -> Result<Self> {
         let address = access_point.secondary_client_cidr().ok_or(
             "the AP scenario requires a second client but secondary_client_address is absent",
         )?;
-        Self::connect_at(access_point, fixture, address, false)
+        Self::connect_at(
+            access_point,
+            fixture,
+            address,
+            false,
+            security,
+            fixed_ht_mcs,
+            fixed_guard_interval,
+        )
     }
 
     pub(crate) fn connect_primary(
         access_point: &AccessPointConfig,
         fixture: &OpenWrtConfig,
+        security: WifiAccessPointSecurity,
+        fixed_ht_mcs: Option<u8>,
+        fixed_guard_interval: HtGuardIntervalExpectation,
     ) -> Result<Self> {
-        Self::connect_at(access_point, fixture, access_point.client_cidr(), true)
+        Self::connect_at(
+            access_point,
+            fixture,
+            access_point.client_cidr(),
+            true,
+            security,
+            fixed_ht_mcs,
+            fixed_guard_interval,
+        )
     }
 
     fn connect_at(
@@ -133,12 +160,27 @@ impl ControlledOpenWrtClient {
         fixture: &OpenWrtConfig,
         address: String,
         install_host_forwarding: bool,
+        security: WifiAccessPointSecurity,
+        fixed_ht_mcs: Option<u8>,
+        fixed_guard_interval: HtGuardIntervalExpectation,
     ) -> Result<Self> {
+        if fixed_ht_mcs.is_some_and(|mcs| mcs > 7) {
+            return Err("controlled OpenWrt AP-client fixed HT MCS must be within 0..=7".into());
+        }
         let (ssid, passphrase) = access_point.credentials();
         let target = access_point.target_address();
         let frequency_mhz = access_point.frequency_mhz();
         let ssid_hex = encode_hex(ssid.as_bytes());
-        let mut psk = derive_psk(ssid, passphrase)?;
+        let security_config = match security {
+            WifiAccessPointSecurity::Open => Zeroizing::new(String::from("key_mgmt=NONE")),
+            WifiAccessPointSecurity::Wpa2Personal => {
+                let psk = derive_psk(ssid, passphrase)?;
+                Zeroizing::new(format!(
+                    "psk={}\\n  key_mgmt=WPA-PSK\\n  proto=RSN\\n  pairwise=CCMP\\n  group=CCMP",
+                    psk.as_str(),
+                ))
+            }
+        };
         let phy = format!(
             "/sys/class/net/{}/phy80211/name",
             fixture.wireless_interface
@@ -153,7 +195,7 @@ impl ControlledOpenWrtClient {
              ip link set {INTERFACE} up; \
              ip addr add {address} dev {INTERFACE}; \
              umask 077; \
-             printf 'ctrl_interface=/var/run/wpa_supplicant\\nnetwork={{\\n  ssid={ssid_hex}\\n  psk={psk}\\n  key_mgmt=WPA-PSK\\n  proto=RSN\\n  pairwise=CCMP\\n  group=CCMP\\n}}\\n' > {CONFIG_FILE}; \
+             printf 'ctrl_interface=/var/run/wpa_supplicant\\nnetwork={{\\n  ssid={ssid_hex}\\n  {security_config}\\n}}\\n' > {CONFIG_FILE}; \
              sed -i '/^}}$/i\\  scan_freq={frequency_mhz}' {CONFIG_FILE}; \
              wpa_supplicant -B -P {PID_FILE} -i {INTERFACE} -c {CONFIG_FILE}; \
              if command -v wpa_cli >/dev/null; then wpa_cli -i {INTERFACE} scan >/dev/null; fi; \
@@ -166,9 +208,8 @@ impl ControlledOpenWrtClient {
              iw dev {INTERFACE} link >&2 || true; \
              if command -v wpa_cli >/dev/null; then wpa_cli -i {INTERFACE} status >&2 || true; fi; \
              exit 1",
-            psk = psk.as_str(),
+            security_config = security_config.as_str(),
         ));
-        psk.zeroize();
         let output = ssh(fixture, script.as_str())?;
         if !output.status.success() {
             let _ = restore(fixture);
@@ -179,6 +220,26 @@ impl ControlledOpenWrtClient {
                 String::from_utf8_lossy(&output.stderr).trim(),
             )
             .into());
+        }
+        if fixed_ht_mcs.is_some() || fixed_guard_interval != HtGuardIntervalExpectation::Any {
+            let mut rate_mask = format!("iw dev {INTERFACE} set bitrates");
+            if let Some(mcs) = fixed_ht_mcs {
+                rate_mask.push_str(&format!(" ht-mcs-2.4 {mcs}"));
+            }
+            match fixed_guard_interval {
+                HtGuardIntervalExpectation::Any => {}
+                HtGuardIntervalExpectation::Long => rate_mask.push_str(" lgi-2.4"),
+                HtGuardIntervalExpectation::Short => rate_mask.push_str(" sgi-2.4"),
+            }
+            let output = ssh(fixture, &rate_mask)?;
+            if !output.status.success() {
+                let _ = restore(fixture);
+                return Err(format!(
+                    "cannot apply the controlled OpenWrt AP-client HT rate mask `{rate_mask}`: {}",
+                    String::from_utf8_lossy(&output.stderr).trim(),
+                )
+                .into());
+            }
         }
         // Association is visible before all bridge/driver counters settle.
         // Keep this outside the measured workload and give the target time to
@@ -263,6 +324,7 @@ impl OpenWrtClientLinkObservation {
             rx_bitrate: after.rx_bitrate,
             tx_bytes: counter_delta("TX bytes", self.before.tx_bytes, after.tx_bytes)?,
             tx_packets: counter_delta("TX packets", self.before.tx_packets, after.tx_packets)?,
+            tx_bitrate: after.tx_bitrate,
             tx_retries: counter_delta("TX retries", self.before.tx_retries, after.tx_retries)?,
             tx_failed: counter_delta("TX failed", self.before.tx_failed, after.tx_failed)?,
             tx_duration_micros: counter_delta(
@@ -347,6 +409,7 @@ fn snapshot_link(fixture: &OpenWrtConfig) -> Result<OpenWrtClientLinkSnapshot> {
          printf 'rx_bitrate=%s\\n' \"$(printf '%s\\n' \"$stats\" | sed -n 's/^[[:space:]]*rx bitrate:[[:space:]]*//p')\"; \
          printf 'tx_bytes=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/^[[:space:]]*tx bytes:/ {{print $3}}')\"; \
          printf 'tx_packets=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/^[[:space:]]*tx packets:/ {{print $3}}')\"; \
+         printf 'tx_bitrate=%s\\n' \"$(printf '%s\\n' \"$stats\" | sed -n 's/^[[:space:]]*tx bitrate:[[:space:]]*//p')\"; \
          printf 'tx_retries=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/^[[:space:]]*tx retries:/ {{print $3}}')\"; \
          printf 'tx_failed=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/^[[:space:]]*tx failed:/ {{print $3}}')\"; \
          printf 'tx_duration=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/^[[:space:]]*tx duration:/ {{print $3}}')\"; \
@@ -368,6 +431,7 @@ fn snapshot_link(fixture: &OpenWrtConfig) -> Result<OpenWrtClientLinkSnapshot> {
         rx_bitrate: tagged_optional_string(&output, "rx_bitrate"),
         tx_bytes: tagged_u64(&output, "tx_bytes")?,
         tx_packets: tagged_u64(&output, "tx_packets")?,
+        tx_bitrate: tagged_optional_string(&output, "tx_bitrate"),
         tx_retries: tagged_u64(&output, "tx_retries")?,
         tx_failed: tagged_u64(&output, "tx_failed")?,
         tx_duration_micros: tagged_u64(&output, "tx_duration")?,
@@ -481,7 +545,7 @@ fn restore(fixture: &OpenWrtConfig) -> Result<()> {
          {cleanup}; \
          if test -f {PID_FILE}; then kill $(cat {PID_FILE}) 2>/dev/null || true; fi; \
          iw dev {INTERFACE} del 2>/dev/null || true; \
-         rm -f {PID_FILE} {CONFIG_FILE}"
+         rm -f {PID_FILE} {CONFIG_FILE}",
     );
     let output = ssh(fixture, &script)?;
     if !output.status.success() {
@@ -588,7 +652,7 @@ mod tests {
 
     #[test]
     fn link_snapshot_parser_and_counter_delta_are_strict() {
-        let output = "rx_bytes=200\nrx_packets=30\nrx_duration=88\nrx_bitrate=150.0 MBit/s MCS 7 40MHz short GI\ntx_bytes=100\ntx_packets=20\ntx_retries=3\ntx_failed=1\ntx_duration=77\ntid0_aqm_drops=0\n";
+        let output = "rx_bytes=200\nrx_packets=30\nrx_duration=88\nrx_bitrate=150.0 MBit/s MCS 7 40MHz short GI\ntx_bytes=100\ntx_packets=20\ntx_bitrate=135.0 MBit/s MCS 6 40MHz short GI\ntx_retries=3\ntx_failed=1\ntx_duration=77\ntid0_aqm_drops=0\n";
         assert_eq!(tagged_u64(output, "rx_packets").unwrap(), 30);
         assert_eq!(
             tagged_optional_u64(output, "rx_duration").unwrap(),
@@ -599,6 +663,10 @@ mod tests {
             Some("150.0 MBit/s MCS 7 40MHz short GI"),
         );
         assert_eq!(tagged_u64(output, "tx_packets").unwrap(), 20);
+        assert_eq!(
+            tagged_optional_string(output, "tx_bitrate").as_deref(),
+            Some("135.0 MBit/s MCS 6 40MHz short GI"),
+        );
         assert_eq!(counter_delta("packets", 20, 27).unwrap(), 7);
         assert!(counter_delta("packets", 27, 20).is_err());
         assert_eq!(

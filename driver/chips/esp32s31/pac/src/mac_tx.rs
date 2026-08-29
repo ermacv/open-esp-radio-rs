@@ -14,6 +14,34 @@ use super::{
 const ORDINARY_QUEUE_COUNT: u8 = 4;
 const DESCRIPTOR_ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
 
+/// Read-only state of one ordinary hardware TX queue.
+///
+/// This projection deliberately keeps the queue's descriptor identity and
+/// publication/result state together. It is used at low-frequency role
+/// boundaries to distinguish a real publication from a stale completion;
+/// it grants no register mutation authority.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct MacOrdinaryTxQueueSnapshot {
+    pub descriptor_address_low: u32,
+    pub plcp_format: u8,
+    pub legacy_signal: u16,
+    pub rate: u8,
+    pub key_entry_index: u8,
+    pub bssid_select: u8,
+    pub vector_format: u8,
+    pub interface: u8,
+    pub aifsn: u8,
+    pub contention_window: u16,
+    pub scheduler_priority: u8,
+    pub cca_force: u8,
+    pub cca_aux_force: u8,
+    pub valid: bool,
+    pub enabled: bool,
+    pub completion_pending: bool,
+    pub timeout_pending: bool,
+    pub collision_pending: bool,
+}
+
 /// Closed argument projection of complete `hal_set_tx_pti`.
 ///
 /// The four PTI fields are intentionally distinct: the vendor leaf accepts
@@ -709,6 +737,43 @@ const fn physical_bank(queue: u8) -> usize {
 }
 
 impl WifiRadioRegisters {
+    /// Sample one ordinary queue without acknowledging or changing it.
+    pub fn ordinary_tx_queue_snapshot(&self, queue: u8) -> MacOrdinaryTxQueueSnapshot {
+        assert!(queue < ORDINARY_QUEUE_COUNT);
+        let bank = physical_bank(queue);
+        let control_bank = &self.peripherals.wifi_mac.wifi_mac_tx_queue_control;
+        let control = control_bank.control(bank).read();
+        let config = control_bank.config(bank).read();
+        let plcp1 = self
+            .peripherals
+            .wifi_mac
+            .wifi_mac_tx_queue_vector
+            .plcp1(bank)
+            .read();
+        let common = &self.peripherals.wifi_mac.wifi_mac_tx_common;
+        let cca = common.cca_control().read();
+        MacOrdinaryTxQueueSnapshot {
+            descriptor_address_low: control.descriptor_address_low().bits(),
+            plcp_format: control.plcp_format().bits(),
+            legacy_signal: plcp1.legacy_signal().bits(),
+            rate: plcp1.rate().bits(),
+            key_entry_index: plcp1.key_entry_index().bits(),
+            bssid_select: plcp1.bssid_select().bits(),
+            vector_format: plcp1.vector_format().bits(),
+            interface: config.interface().bits(),
+            aifsn: config.aifsn().bits(),
+            contention_window: config.contention_window().bits(),
+            scheduler_priority: config.scheduler_priority().bits(),
+            cca_force: cca.force().bits(),
+            cca_aux_force: cca.phy_aux_force().bits(),
+            valid: control.valid().bit_is_set(),
+            enabled: control.enable().bit_is_set(),
+            completion_pending: mac_tx_queue::completion_pending(common, queue),
+            timeout_pending: mac_tx_queue::timeout_pending(common, queue),
+            collision_pending: mac_tx_queue::collision_pending(common, queue),
+        }
+    }
+
     /// Execute complete `hal_set_tx_pti` over one bounded logical queue.
     pub fn set_tx_pti(&mut self, queue: MacTxQueueIndex, program: MacTxPtiProgram) {
         let bank = physical_bank(queue.get() as u8);

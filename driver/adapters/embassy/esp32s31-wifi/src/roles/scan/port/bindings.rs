@@ -54,17 +54,17 @@ where
         Self::observe_management(self, hardware, context)
     }
 
-    fn stop(&mut self, hardware: &mut H) -> Result<(), Self::Error> {
-        Self::stop(self, hardware)
+    fn park(&mut self) -> Result<(), Self::Error> {
+        Self::park(self)
     }
 
-    fn prepare_next(&mut self, hardware: &mut H) -> Result<(), Self::Error> {
-        Self::prepare_next(self, hardware)
+    fn prepare_next_channel(&mut self, hardware: &mut H) -> Result<(), Self::Error> {
+        Self::prepare_next_channel(self, hardware)
     }
 }
 
-impl<'slot, 'interrupt, P, E, W, H, const BUFFER_SIZE: usize> Esp32s31ScanTransmitPort<H>
-    for Esp32s31RunningScanTx<'slot, 'interrupt, P, E, W, BUFFER_SIZE>
+impl<'slot, P, E, W, H, const BUFFER_SIZE: usize> Esp32s31ScanTransmitPort<H>
+    for Esp32s31RunningScanTx<'slot, P, E, W, BUFFER_SIZE>
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,

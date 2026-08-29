@@ -366,7 +366,7 @@ fn an_append_is_published_only_after_a_later_service_confirms_link_release() {
 }
 
 #[test]
-fn consuming_connected_promotion_returns_live_ring_or_exact_owner() {
+fn consuming_connected_promotion_preserves_live_frontier_or_exact_owner() {
     let storage = Esp32s31RxDmaStorage::<COUNT, BUFFER_SIZE, STORAGE_SIZE>::new();
     let mut hardware = Hardware::default();
     let rx = Esp32s31RxFrontier::<ReadyDelay, COUNT, BUFFER_SIZE>::from_halted(halted_ring(
@@ -397,11 +397,11 @@ fn consuming_connected_promotion_returns_live_ring_or_exact_owner() {
     let live =
         embassy_futures::block_on(already_live.try_into_live_with_storage(&mut hardware, &storage))
             .unwrap_or_else(|_| panic!("an existing live frontier must transfer cleanly"));
-    assert_eq!(hardware.enable_count, enable_count + 1);
-    assert_eq!(hardware.disable_count, disable_count + 1);
+    assert_eq!(hardware.enable_count, enable_count);
+    assert_eq!(hardware.disable_count, disable_count);
     assert_eq!(hardware.reload_count, reload_count);
-    assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
-    assert!(live.observed_mask().is_empty());
+    assert_ne!(storage.descriptors()[0].word0() & BIT_30, 0);
+    assert!(!live.observed_mask().is_empty());
     let halted = match live.try_stop(&mut hardware) {
         Ok(halted) => halted,
         Err(_) => panic!("mock walker must stop after the live handoff"),

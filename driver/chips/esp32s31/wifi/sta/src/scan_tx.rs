@@ -5,7 +5,6 @@
 //! retains the exact descriptor across successful and passive-fallback paths.
 
 use crate::scan::Esp32s31ActiveProbeOutcome;
-use open_esp_radio_esp32s31_hal::MacInterruptSetup;
 use open_esp_radio_esp32s31_wifi_mac::tx::{TxCompletion, TxHardware};
 use open_esp_radio_ieee80211::management::ProbeRequest;
 
@@ -113,34 +112,27 @@ impl Default for Esp32s31ScanTxState {
     }
 }
 
-/// Polling TX owner for a running rescan after the MAC IRQ epoch is quiesced.
+/// Polling TX owner used by initial and running scans.
 ///
-/// The connected teardown returns the exact ordinary descriptor and disables
-/// both CPU and peripheral interrupt routes before this owner can exist. Probe
-/// completion may therefore use the same finite polling transaction as the
-/// pre-connected path without racing the WDEV runner. Re-entering a
-/// connected epoch consumes the returned control owner and reactivates IRQs.
-pub struct Esp32s31RunningScanTx<'slot, 'interrupt, P, E, T, const BUFFER_SIZE: usize> {
+/// Probe completion is derived from the ordinary descriptor transaction, not
+/// from ownership of the MAC interrupt setup token. The shared hard handler
+/// may remain installed across a logical scan epoch and only acknowledges its
+/// level source; no WDEV bottom half owns this control descriptor.
+pub struct Esp32s31RunningScanTx<'slot, P, E, T, const BUFFER_SIZE: usize> {
     control: Esp32s31ControlTx<'slot, P, E, T, BUFFER_SIZE>,
     state: Esp32s31ScanTxState,
-    _interrupts: Option<&'interrupt MacInterruptSetup>,
 }
 
-impl<'slot, 'interrupt, P, E, T, const BUFFER_SIZE: usize>
-    Esp32s31RunningScanTx<'slot, 'interrupt, P, E, T, BUFFER_SIZE>
+impl<'slot, P, E, T, const BUFFER_SIZE: usize> Esp32s31RunningScanTx<'slot, P, E, T, BUFFER_SIZE>
 where
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: WifiTxTimer,
 {
-    pub const fn new(
-        control: Esp32s31ControlTx<'slot, P, E, T, BUFFER_SIZE>,
-        interrupt_setup: &'interrupt MacInterruptSetup,
-    ) -> Self {
+    pub const fn new(control: Esp32s31ControlTx<'slot, P, E, T, BUFFER_SIZE>) -> Self {
         Self {
             control,
             state: Esp32s31ScanTxState::new(),
-            _interrupts: Some(interrupt_setup),
         }
     }
 
@@ -149,7 +141,6 @@ where
         Self {
             control,
             state: Esp32s31ScanTxState::new(),
-            _interrupts: None,
         }
     }
 
@@ -308,7 +299,7 @@ mod tests {
 
     fn running_scan_tx<'a>(
         slot: Pin<&'a mut TxSlot<256>>,
-    ) -> Esp32s31RunningScanTx<'a, 'static, ScanTxPower, fn() -> u32, ScanTxTimer, 256> {
+    ) -> Esp32s31RunningScanTx<'a, ScanTxPower, fn() -> u32, ScanTxTimer, 256> {
         fn entropy() -> u32 {
             0x1234_5678
         }

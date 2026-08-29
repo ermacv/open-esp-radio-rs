@@ -293,6 +293,8 @@ impl RxBlockAckHardware for Hardware {
 }
 
 impl ConnectedControlHardware for Hardware {
+    fn disable_station_receive_policy(&mut self) {}
+
     fn station_tsf(&mut self) -> u64 {
         self.station_tsf
     }
@@ -344,6 +346,16 @@ impl ConnectedControlHardware for Hardware {
     ) -> Result<(), StaGroupCcmpReplaceError> {
         replace_sta_group_ccmp_with_rollback(self, slot, current, replacement)
     }
+}
+
+impl open_esp_radio_esp32s31_wifi_mac::init::MacRuntimeStopHardware for Hardware {
+    fn request_mac_runtime_stop(&mut self) {}
+
+    fn mac_runtime_active_state(&mut self) -> u8 {
+        0
+    }
+
+    fn resume_mac_runtime(&mut self) {}
 }
 
 fn make_connected_security(

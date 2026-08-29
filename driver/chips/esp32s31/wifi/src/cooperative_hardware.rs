@@ -28,7 +28,9 @@ use open_esp_radio_esp32s31_wifi_mac::{
         StaGroupCcmpSlot, replace_sta_group_ccmp, replace_sta_group_ccmp_with_rollback,
     },
     he::He20PeerHardware,
-    init::{StaLinkRxPolicyHardware, StaNoiseFloorHardware},
+    init::{
+        MacRuntimeStopHardware, MacSnifferHardware, StaLinkRxPolicyHardware, StaNoiseFloorHardware,
+    },
     low_rate::{MacLowRateGateProbe, MacLowRateTransitionError},
     rate_control::BeamformingReportHardware,
     rx::{
@@ -87,6 +89,11 @@ impl<'arena> CooperativeRadioHardware<'arena> {
             .access()
             .try_station_receive_policy_snapshot()
             .expect("a synchronous STA policy snapshot must not overlap another MMIO transaction")
+    }
+
+    /// Revoke station RX admission at the outer descriptor-epoch boundary.
+    pub fn disable_station_receive_policy(&mut self) {
+        self.wifi_mac_hal().disable_station_receive_policy();
     }
 
     /// Read the live MAC RX walker frontier through the serialized PAC owner.
@@ -175,6 +182,34 @@ impl ApRxPolicyHardware for CooperativeRadioHardware<'_> {
     fn apply_ap_link_policy(&mut self, access_point: [u8; 6]) {
         self.wifi_mac_hal()
             .configure_access_point_receive_policy(access_point);
+    }
+
+    fn disable_ap_link_policy(&mut self) {
+        self.wifi_mac_hal().disable_access_point_receive_policy();
+    }
+}
+
+impl MacSnifferHardware for CooperativeRadioHardware<'_> {
+    fn configure_open_promiscuous_receive(&mut self) {
+        self.wifi_mac_hal().configure_open_promiscuous_receive();
+    }
+
+    fn disable_open_promiscuous_receive(&mut self) {
+        self.wifi_mac_hal().disable_open_mac_promiscuous_receive();
+    }
+}
+
+impl MacRuntimeStopHardware for CooperativeRadioHardware<'_> {
+    fn request_mac_runtime_stop(&mut self) {
+        self.wifi_mac_hal().request_channel_stop();
+    }
+
+    fn mac_runtime_active_state(&mut self) -> u8 {
+        self.wifi_mac_hal().channel_active_state()
+    }
+
+    fn resume_mac_runtime(&mut self) {
+        let _ = self.wifi_mac_hal().restart_after_channel_switch();
     }
 }
 
@@ -319,6 +354,13 @@ impl TxHardware for CooperativeRadioHardware<'_> {
 
     fn start_bound_he_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8) {
         TxHardware::start_bound_he_tx(&mut self.wifi_mac_hal(), dma, queue);
+    }
+
+    fn ordinary_tx_queue_snapshot(
+        &mut self,
+        queue: u8,
+    ) -> Option<open_esp_radio_esp32s31_hal::MacOrdinaryTxQueueSnapshot> {
+        Some(self.wifi_mac_hal().ordinary_tx_queue_snapshot(queue))
     }
 
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation> {
@@ -566,6 +608,17 @@ impl CooperativeRadioHardware<'_> {
 impl open_esp_radio_esp32s31_wifi_mac::rx_ampdu_hw::RxBlockAckHardware
     for CooperativeRadioHardware<'_>
 {
+    fn diagnostic_rx_block_ack_entry_snapshot(
+        &mut self,
+        hardware_index: u8,
+    ) -> Option<open_esp_radio_esp32s31_hal::wifi_mac::RxBlockAckEntrySnapshot> {
+        self.wifi_mac_hal().rx_block_ack_entry_snapshot(
+            open_esp_radio_esp32s31_hal::types::MacRxBlockAckEntryIndex::new(u32::from(
+                hardware_index,
+            ))?,
+        )
+    }
+
     fn program_rx_block_ack(
         &mut self,
         agreement: S31RxBlockAckAgreement,

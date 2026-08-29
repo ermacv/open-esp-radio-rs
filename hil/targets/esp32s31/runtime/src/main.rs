@@ -320,15 +320,28 @@ fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
     #[cfg(feature = "open-radio-hil")]
     {
         let (stage, action) = product_hil::diagnostic_snapshot();
+        console::panic_origin(info);
         console::emergency_log(format_args!(
             "OPEN_RADIO_HIL panic stage={stage} action={action} info={info}"
         ));
-        let (mcause, mepc, mtval): (usize, usize, usize);
+        let (mcause, mepc, mtval, hart_id): (usize, usize, usize, usize);
         unsafe {
             asm!("csrr {0}, mcause", out(reg) mcause);
             asm!("csrr {0}, mepc", out(reg) mepc);
             asm!("csrr {0}, mtval", out(reg) mtval);
+            asm!("csrr {0}, mhartid", out(reg) hart_id);
         }
+        let pending = esp_hal::interrupt::InterruptStatus::current();
+        let mut pending_words = [0_u32; 6];
+        for interrupt in pending.iterator() {
+            pending_words[usize::from(interrupt) / 32] |= 1 << (interrupt % 32);
+            console::panic_interrupt_source(interrupt);
+            console::panic_interrupt_route(interrupt);
+            if interrupt == esp_hal::peripherals::Interrupt::WIFI_MAC_NMI as u8 {
+                console::panic_wifi_rx_frontier();
+            }
+        }
+        console::panic_interrupt_dispatch_context(mcause, hart_id, pending_words);
         console::panic_report(mcause, mepc, mtval);
     }
     #[cfg(feature = "boot-smoke")]

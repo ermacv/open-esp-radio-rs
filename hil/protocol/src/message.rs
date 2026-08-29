@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 68;
+pub const PROTOCOL_VERSION: u16 = 70;
 // Keep command envelopes small: startup artifacts are transferred as an
 // ordered CRC-protected stream, so a large per-command inline buffer only
 // inflates UART queues and executor futures without improving semantics.
@@ -760,9 +760,9 @@ impl NetworkIpv4Configuration {
 #[serde(rename_all = "kebab-case")]
 pub enum WifiDataPlanePlacement {
     /// Radio, RX protocol, IP stack and socket workloads share CPU0.
-    #[default]
     SingleCore,
     /// Only the IP stack and socket workloads move to CPU1.
+    #[default]
     SplitRadioNetwork,
 }
 
@@ -1048,9 +1048,21 @@ impl WifiChannelWidth {
     }
 }
 
+/// Security mode selected for one explicitly started access-point epoch.
+///
+/// Keeping the choice on the wire lets one firmware image perform causal
+/// Open/WPA2 comparisons instead of comparing feature-dependent ELF layouts.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum WifiAccessPointSecurity {
+    Open,
+    Wpa2Personal,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WifiAccessPointRequest {
     pub credentials: NetworkCredentials,
+    pub security: WifiAccessPointSecurity,
     pub channel: u8,
     pub channel_width: WifiChannelWidth,
     pub client_limit: u8,
@@ -1301,6 +1313,53 @@ pub struct WifiMonitorEvidence {
     pub exported_frames: u32,
 }
 
+/// Complete interval delta of the MAC/baseband RX statistics made available
+/// by the target. Counter names whose hardware meaning is not yet established
+/// remain explicitly vendor-shaped instead of being assigned a false cause.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WifiMacRxHardwareEvidence {
+    pub mpdu_count: u16,
+    pub data_success: u16,
+    pub fcs_error: u16,
+    pub abort: u16,
+    pub abort_fcs_pass: u16,
+    pub power_drop_error: u16,
+    pub he_sig_b_error: u16,
+    pub same_bm_error: u16,
+    pub signal_field: u16,
+    pub end: u16,
+    pub other_unicast: u16,
+    pub buffer_full: u16,
+    pub fifo_overflow: u16,
+    pub tkip_error: u16,
+    pub bluetooth_block_error: u16,
+    pub frequency_hop_error: u16,
+    /// Vendor-named terminal RX state counter. Its exact semantic meaning is
+    /// intentionally not inferred by the target-neutral HIL protocol.
+    pub last_unmatched_error: u16,
+    pub ack_interrupt: u16,
+    pub rts_interrupt: u16,
+    pub brx_agc_error: u16,
+    pub brx_error: u16,
+    pub nrx_error: u16,
+    pub nrx_abort: u16,
+    pub nrx_agc_exit: u16,
+    pub nrx_baseband_off: u16,
+    pub nrx_fdm_watchdog: u16,
+    pub nrx_restart: u16,
+    pub nrx_service: u16,
+    pub nrx_tx_over: u16,
+    pub nrx_unsupported: u16,
+    pub nrx_he_format: u16,
+    pub nrx_ht_sig: u16,
+    pub nrx_he_unsupported: u16,
+    pub nrx_he_sig_a_crc: u16,
+    pub rx_hang: u8,
+    pub tx_hang: u8,
+    pub rx_tx_hang: u32,
+    pub rx_tx_panic: u32,
+}
+
 /// Bounded evidence retained for one access-point ownership epoch.
 ///
 /// These counters describe MAC/runtime work only. IP services and host-side
@@ -1365,10 +1424,8 @@ pub struct WifiAccessPointEvidence {
     pub completed_rx_descriptors: u32,
     /// Descriptors safely rearmed and returned to DMA during the live epoch.
     pub recycled_rx_descriptors: u32,
-    /// Hardware MAC RX BUFFER_FULL increments across the complete AP epoch.
-    pub rx_hardware_buffer_full: u16,
-    /// Hardware MAC RX FIFO overflow increments across the complete AP epoch.
-    pub rx_hardware_fifo_overflow: u16,
+    /// Hardware MAC/baseband counter increments across the complete AP epoch.
+    pub rx_hardware: WifiMacRxHardwareEvidence,
     /// Completed descriptors retained until the walker is stopped because a
     /// later completion was still serving as their generation guard.
     pub retained_rx_descriptors: u32,
@@ -1405,6 +1462,10 @@ pub struct WifiAccessPointEvidence {
     pub rx_rssi_max_dbm: i8,
     /// Protected HT40 data MPDUs grouped by hardware-observed MCS0..MCS7.
     pub rx_ht40_mcs_frames: [u32; 8],
+    /// Protected HT40 data MPDUs observed with the 800 ns guard interval.
+    pub rx_ht40_long_gi_frames: u32,
+    /// Protected HT40 data MPDUs observed with the 400 ns guard interval.
+    pub rx_ht40_short_gi_frames: u32,
     /// AP network A-MPDU transactions started with a typed HT vector.
     pub tx_ht_aggregates: u32,
     /// AP network A-MPDU transactions started with HT40 MCS7.

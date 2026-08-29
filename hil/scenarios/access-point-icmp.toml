@@ -4,7 +4,7 @@ description = "AP HT40 MCS7 latency and loss over 100 ICMP requests per WPA2 epo
 repetitions = 3
 image = "correctness"
 isolation = "reset"
-data_plane = "single-core"
+data_plane = "split-radio-network"
 tags = ["qualification", "wifi", "access-point", "network", "single-client", "ht40", "icmp"]
 
 [link]

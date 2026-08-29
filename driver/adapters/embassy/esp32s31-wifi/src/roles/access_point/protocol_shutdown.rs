@@ -170,6 +170,8 @@ where
                 self.pending_dtim_group_frames = Some(advertised_frames);
             }
             Esp32s31ApTxCompletionAction::BeginWpa2 { peer } => {
+                #[cfg(feature = "diagnostics")]
+                log::info!("open-radio: AP association TX complete; publish WPA2 M1 peer={peer:02x?}");
                 let message1 = self.mac.engine().begin_wpa2::<EAPOL_CAPACITY>(peer)?;
                 let processor = &mut *self;
                 processor

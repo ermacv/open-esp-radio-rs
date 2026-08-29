@@ -10,7 +10,10 @@ use open_esp_radio_esp32s31_wifi::protected_data_rx::{
     view_protected_data_fragment, view_unprotected_data, view_unprotected_data_fragment,
 };
 use open_esp_radio_esp32s31_wifi_mac::{
-    rx::{RxError, RxIngressConfig, RxPhyInfo, RxSegment, view_normalized_rx_frame},
+    rx::{
+        PUBLIC_HEADER_SIZE, RxError, RxIngressConfig, RxPhyInfo, RxSegment,
+        view_normalized_rx_frame,
+    },
     rx_ampdu::{RxBlockAckMpduKey, rx_block_ack_mpdu_key},
 };
 use open_esp_radio_ieee80211::ccmp::{CcmpHeader, CcmpKeyId, CcmpReplayError, CcmpReplayLane};
@@ -294,6 +297,7 @@ pub struct Esp32s31ApRxDispatcher {
     config: Esp32s31ApRxConfig,
     duplicates: [Option<ApPeerDuplicateState>; AP_MAX_CLIENTS],
     fragments: OpenDataDefragmenter<OPEN_FRAGMENT_CONTEXTS, OPEN_DATA_REASSEMBLY_CAPACITY>,
+    fragment_admission_active: bool,
 }
 
 impl Esp32s31ApRxDispatcher {
@@ -302,6 +306,7 @@ impl Esp32s31ApRxDispatcher {
             config,
             duplicates: [const { None }; AP_MAX_CLIENTS],
             fragments: OpenDataDefragmenter::new(OPEN_DATA_FRAGMENT_TIMEOUT_MICROS),
+            fragment_admission_active: false,
         }
     }
 
@@ -311,6 +316,7 @@ impl Esp32s31ApRxDispatcher {
         self.config = config;
         self.duplicates.fill_with(|| None);
         self.fragments.clear();
+        self.fragment_admission_active = false;
     }
 
     /// Release duplicate ownership when the AP peer close transaction reaches
@@ -332,6 +338,7 @@ impl Esp32s31ApRxDispatcher {
 
     /// Revoke every incomplete Open MSDU at an AP stop/reset edge.
     pub fn clear_open_fragmentation(&mut self) -> usize {
+        self.fragment_admission_active = false;
         self.fragments.clear()
     }
 
@@ -339,12 +346,14 @@ impl Esp32s31ApRxDispatcher {
     /// directly from the current staging frame. Reassembled payloads live in
     /// the fragment owner and must take the adapter's copying slow path.
     pub fn may_publish_in_place(&self, segment: RxSegment<'_>) -> bool {
-        let Ok(normalized) = view_normalized_rx_frame(&segment, self.config.ingress) else {
-            return false;
-        };
-        normalized
-            .mpdu
-            .get(..24)
+        // This is an immutable path-selection hint, not protocol admission.
+        // The dispatcher below still performs the complete normalized view,
+        // security and bounds validation. Avoid repeating that full parser on
+        // every ordinary in-order MPDU merely to inspect three public header
+        // bits.
+        segment
+            .buffer
+            .get(PUBLIC_HEADER_SIZE..PUBLIC_HEADER_SIZE + 24)
             .is_some_and(|mpdu| !fragmented_mpdu(mpdu))
     }
 
@@ -417,6 +426,7 @@ impl Esp32s31ApRxDispatcher {
             return Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::SecurityModeMismatch);
         }
         if fragmented {
+            self.fragment_admission_active = true;
             return match self.config.security {
                 WifiSecurityMode::Open => {
                     self.dispatch_open_fragment(segment, now_micros, &mut admit, sink)
@@ -461,7 +471,9 @@ impl Esp32s31ApRxDispatcher {
             Err(error) => return rejected_data(error),
         };
         let lane = tid.map_or(CcmpReplayLane::NonQos, CcmpReplayLane::Tid);
-        let preauthorized = if let Some(header) = ccmp_header {
+        let preauthorized = if self.fragment_admission_active
+            && let Some(header) = ccmp_header
+        {
             match admit(Esp32s31ApRxAdmissionRequest::authorize_fragment(
                 peer, lane, header,
             ))
@@ -534,7 +546,7 @@ impl Esp32s31ApRxDispatcher {
             return Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::KeyGenerationMismatch);
         }
         self.bind_duplicate_owner(peer, duplicate_owner);
-        if ccmp_header.is_none() {
+        if self.fragment_admission_active && ccmp_header.is_none() {
             let identity = match parse_open_data_identity(DataInterfaceRole::AccessPoint, mpdu) {
                 Ok(identity) => identity,
                 Err(error) => {

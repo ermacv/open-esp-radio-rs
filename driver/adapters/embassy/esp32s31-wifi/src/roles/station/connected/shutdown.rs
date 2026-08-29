@@ -19,7 +19,7 @@ use crate::{
     datapath::{DatapathRunner, DatapathServices},
     roles::station::teardown::{
         Esp32s31ConnectedStaControlTeardown, Esp32s31ConnectedStaGroupSecurity,
-        Esp32s31ConnectedStaRxTeardown, Esp32s31ConnectedStaTeardownFailure,
+        Esp32s31ConnectedStaRxPark, Esp32s31ConnectedStaTeardownFailure,
         Esp32s31ConnectedStaTeardownPort, Esp32s31ConnectedStaTeardownSuccess,
         Esp32s31ConnectedStaTxTeardown,
     },
@@ -128,7 +128,7 @@ impl<I, N, H, R, X, C> Esp32s31ConnectedEpochQuiesced<I, N, SingleRoleServices<H
 where
     H: CcmpKeyHardware,
     C: Esp32s31ConnectedStaControlTeardown<H, X>,
-    R: Esp32s31ConnectedStaRxTeardown<H>,
+    R: Esp32s31ConnectedStaRxPark<H>,
     X: Esp32s31ConnectedStaTxTeardown,
 {
     /// Stop control, RX DMA and TX, then clear both association keys while
@@ -143,7 +143,7 @@ where
             N,
             Esp32s31ConnectedStaTeardownSuccess<
                 H,
-                R::Stopped,
+                R::Parked,
                 X::Resources,
                 X::Aggregate,
                 C::Report,
@@ -152,7 +152,7 @@ where
         Esp32s31ConnectedEpochTeardownFailure<
             I,
             N,
-            Esp32s31ConnectedStaTeardownFailure<H, R, R::Stopped, X, C, C::Error, R::Error>,
+            Esp32s31ConnectedStaTeardownFailure<H, R, R::Parked, X, C, C::Error, R::Error>,
         >,
     > {
         let Self {
@@ -190,13 +190,14 @@ pub enum Esp32s31ConnectedEpochQuiesceFailure<I, C, E> {
     },
 }
 
-/// Close IRQ publication, then reveal the radio runner's network and driver
-/// owners.
+/// Park the logical IRQ consumer, then reveal the radio runner's network and
+/// driver owners.
 ///
 /// The runner has already reached its finite connected exit before this call.
-/// Keeping it opaque until the IRQ frontier closes prevents a composition
-/// root from accidentally stopping RX DMA while an ISR can still observe the
-/// epoch.
+/// The physical MAC route remains installed across role cutovers. Keeping the
+/// runner opaque until its coalesced publications are drained prevents the
+/// next consumer from interpreting stale work while preserving service for a
+/// still-powered MAC.
 #[allow(
     clippy::type_complexity,
     reason = "the public result retains the exact IRQ, network, services, and retry owners"
@@ -218,7 +219,8 @@ where
     M: RawMutex,
     C: Esp32s31ConnectedEpochRunnerOwner,
 {
-    let interrupt_drain = match interrupt.quiesce(platform) {
+    let _ = platform;
+    let interrupt_drain = match interrupt.park() {
         Ok(drain) => drain,
         Err(error) => {
             return Err(Esp32s31ConnectedEpochQuiesceFailure::Interrupt {
@@ -228,7 +230,6 @@ where
             });
         }
     };
-    interrupt.mac_runtime().end_rx_moderation();
     let (network, services) = runner.into_connected_epoch_parts();
     Ok(Esp32s31ConnectedEpochQuiesced {
         interrupt,
@@ -306,13 +307,13 @@ mod tests {
     }
 
     #[test]
-    fn reusable_parts_are_revealed_only_after_irq_stops() {
+    fn reusable_parts_retain_the_installed_irq_epoch() {
         let epoch = active_epoch();
         let stopped = quiesce_esp32s31_connected_epoch(epoch, &(), TestRunner(7, 8))
             .unwrap_or_else(|_| panic!("ready shutdown must succeed"));
         assert_eq!(stopped.network, 7);
         assert_eq!(stopped.services, 8);
-        assert!(!stopped.interrupt.is_active());
+        assert!(stopped.interrupt.is_active());
     }
 
     #[derive(Default)]
@@ -356,14 +357,14 @@ mod tests {
         fail: bool,
     }
 
-    impl Esp32s31ConnectedStaRxTeardown<TeardownHardware> for TeardownRx {
-        type Stopped = u8;
+    impl Esp32s31ConnectedStaRxPark<TeardownHardware> for TeardownRx {
+        type Parked = u8;
         type Error = u8;
 
-        fn try_stop(
+        fn try_park(
             self,
             _hardware: &mut TeardownHardware,
-        ) -> Result<Self::Stopped, (Self, Self::Error)> {
+        ) -> Result<Self::Parked, (Self, Self::Error)> {
             if self.fail { Err((self, 3)) } else { Ok(4) }
         }
     }
@@ -440,7 +441,7 @@ mod tests {
             .try_teardown(group)
             .unwrap_or_else(|_| panic!("idle connected frontier must stop"));
         assert_eq!(stopped.network, 17);
-        assert_eq!(stopped.driver.stopped_rx, 4);
+        assert_eq!(stopped.driver.parked_rx, 4);
         assert_eq!(stopped.driver.tx_resources, 5);
         assert_eq!(stopped.driver.aggregate, 7);
         assert_eq!(stopped.driver.control, 2);

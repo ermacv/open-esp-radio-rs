@@ -145,11 +145,7 @@ where
     R: MacInterruptRoute<Setup = MacInterruptSetup>,
     M: RawMutex,
 {
-    interrupt.mac_runtime().begin_rx_moderation();
-    if let Err(error) = interrupt.activate(platform, MAC_COLD_RX_INTERRUPT_MASK) {
-        interrupt.mac_runtime().end_rx_moderation();
-        return Err(error);
-    }
+    interrupt.activate_or_resume_rx_moderated(platform, MAC_COLD_RX_INTERRUPT_MASK)?;
     interrupt.mac_runtime().notify_rx_handoff();
     Ok(())
 }

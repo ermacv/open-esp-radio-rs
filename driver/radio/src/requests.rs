@@ -692,10 +692,10 @@ impl fmt::Debug for MonitorRequest {
 
 /// One capability-checked Wi-Fi owner graph requested from the supervisor.
 ///
-/// The implemented station and standalone-monitor graphs are physically
-/// exclusive, so invalid mixtures are unrepresentable. Future STA+AP or
-/// monitor-tap compositions require their own explicit variants and lifecycle
-/// contracts rather than combinations of optional fields.
+/// Every implemented topology has its own explicit variant and lifecycle
+/// contract. Station, access point, same-channel STA+AP, finite scan and
+/// standalone monitor therefore remain physically exclusive without encoding
+/// owner graphs as combinations of optional fields.
 pub enum WifiServiceRequest {
     StandaloneScan {
         plan: WifiPlan,

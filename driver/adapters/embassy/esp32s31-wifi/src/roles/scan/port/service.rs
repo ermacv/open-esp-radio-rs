@@ -4,11 +4,16 @@
 )]
 
 use super::*;
+use open_esp_radio_esp32s31_wifi_mac::init::{
+    MacRuntimeStopHardware, MacSnifferHardware, activate_promiscuous_receive,
+    deactivate_promiscuous_receive,
+};
 impl<'resources, 'sequence, 'ssid, 'rates, P, H, R, T, W, O, const RECORDS: usize>
     Esp32s31StaScanPort
     for Esp32s31ScanPort<'resources, 'sequence, 'ssid, 'rates, P, H, R, T, W, O, RECORDS>
 where
     P: Esp32s31ScanPhyPort<H>,
+    H: MacSnifferHardware + MacRuntimeStopHardware,
     R: Esp32s31ScanReceivePort<H>,
     T: Esp32s31ScanTransmitPort<H>,
     W: Esp32s31ScanTimer,
@@ -48,11 +53,19 @@ where
         _context: StaScanChannelContext<Self::Channel>,
     ) -> impl Future<Output = Result<(), Self::Error>> + '_ {
         async move {
-            self.radio
+            activate_promiscuous_receive(&mut self.radio.hardware);
+            let started = self
+                .radio
                 .rx
                 .start(&mut self.radio.hardware)
                 .await
-                .map_err(Esp32s31ScanPortError::Receive)
+                .map_err(Esp32s31ScanPortError::Receive);
+            if started.is_err() {
+                deactivate_promiscuous_receive(&mut self.radio.hardware);
+            } else {
+                self.radio.hardware.resume_mac_runtime();
+            }
+            started
         }
     }
 
@@ -82,7 +95,7 @@ where
         &mut self,
         context: StaScanChannelContext<Self::Channel>,
     ) -> Result<(), Self::Error> {
-        self.observe_scan_rx(context.channel)
+        self.observe_scan_rx(context.channel).map(|_| ())
     }
 
     fn wait_dwell_tick(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_ {
@@ -95,16 +108,22 @@ where
     fn stop_receive(
         &mut self,
         context: StaScanChannelContext<Self::Channel>,
-    ) -> Result<(), Self::Error> {
-        let observe_error = self.observe_scan_rx(context.channel).err();
-        self.radio
-            .rx
-            .stop(&mut self.radio.hardware)
-            .map_err(Esp32s31ScanPortError::Receive)?;
-        if let Some(error) = observe_error {
-            return Err(error);
+    ) -> impl Future<Output = Result<(), Self::Error>> + '_ {
+        async move {
+            deactivate_promiscuous_receive(&mut self.radio.hardware);
+            self.radio.hardware.request_mac_runtime_stop();
+            Timer::after_micros(20).await;
+            while self.radio.hardware.mac_runtime_active_state() != 0 {
+                Timer::after_micros(1).await;
+            }
+            loop {
+                let progress = self.observe_scan_rx(context.channel)?;
+                if progress.completed_descriptors == 0 {
+                    break;
+                }
+            }
+            self.radio.rx.park().map_err(Esp32s31ScanPortError::Receive)
         }
-        Ok(())
     }
 
     fn prepare_next_ring(
@@ -113,7 +132,7 @@ where
     ) -> Result<(), Self::Error> {
         self.radio
             .rx
-            .prepare_next(&mut self.radio.hardware)
+            .prepare_next_channel(&mut self.radio.hardware)
             .map_err(Esp32s31ScanPortError::Receive)
     }
 

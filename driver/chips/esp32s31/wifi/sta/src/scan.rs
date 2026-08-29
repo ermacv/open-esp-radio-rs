@@ -105,7 +105,7 @@ pub trait Esp32s31StaScanPort {
     fn stop_receive(
         &mut self,
         context: StaScanChannelContext<Self::Channel>,
-    ) -> Result<(), Self::Error>;
+    ) -> impl Future<Output = Result<(), Self::Error>> + '_;
 
     fn prepare_next_ring(
         &mut self,
@@ -198,7 +198,7 @@ where
         // Always try to close a live RX epoch after dwell began. A stop
         // failure takes precedence because descriptor ownership is then
         // uncertain and no ring mutation or retry is safe.
-        if let Err(error) = owner.stop_receive(context) {
+        if let Err(error) = owner.stop_receive(context).await {
             return StaScanStepOutcome::Failed {
                 owner,
                 error: Esp32s31StaScanError::ReceiveStop(error),
@@ -340,8 +340,8 @@ mod tests {
         fn stop_receive(
             &mut self,
             context: StaScanChannelContext<Self::Channel>,
-        ) -> Result<(), Self::Error> {
-            self.record(Action::Stop(context.channel))
+        ) -> impl Future<Output = Result<(), Self::Error>> + '_ {
+            ready(self.record(Action::Stop(context.channel)))
         }
 
         fn prepare_next_ring(
@@ -521,9 +521,9 @@ mod tests {
             fn stop_receive(
                 &mut self,
                 context: StaScanChannelContext<Self::Channel>,
-            ) -> Result<(), Self::Error> {
+            ) -> impl Future<Output = Result<(), Self::Error>> + '_ {
                 self.0.actions.push(Action::Stop(context.channel));
-                Err(Action::Stop(context.channel))
+                ready(Err(Action::Stop(context.channel)))
             }
 
             fn prepare_next_ring(

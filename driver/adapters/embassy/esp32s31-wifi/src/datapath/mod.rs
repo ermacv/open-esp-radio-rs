@@ -127,8 +127,13 @@ fn adaptive_recycled_rx_probe_enabled() -> bool {
     true
 }
 
-const fn tx_lookahead_allowed(requested: bool, interfaces: DatapathInterfaceScope) -> bool {
-    requested && matches!(interfaces, DatapathInterfaceScope::Single(_))
+const fn tx_lookahead_allowed(
+    requested: bool,
+    interfaces: DatapathInterfaceScope,
+    origin: DatapathTxOrigin,
+) -> bool {
+    let _ = (requested, interfaces, origin);
+    false
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -427,6 +432,17 @@ pub trait DatapathServices<
     /// the shared IRQ/deadline completion loop.
     fn active_tx_interface(&self) -> Option<NetworkInterfaceId> {
         None
+    }
+
+    /// Whether role work published a live TX transaction inside the current
+    /// service call.
+    ///
+    /// A paired owner reports this through [`Self::active_tx_interface`]. A
+    /// single-interface role may leave the identity implicit, but must still
+    /// expose the ownership edge so the runner adopts the transaction before
+    /// observing stop or any other idle-boundary work.
+    fn has_active_tx(&self) -> bool {
+        self.active_tx_interface().is_some()
     }
 
     /// VIF retained by a software-owned standby aggregate.

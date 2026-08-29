@@ -944,6 +944,140 @@ struct ShutdownBackend {
     tx_services: u8,
 }
 
+struct RxRepostDeadlineBackend {
+    irq: &'static EmbassyMacIrqRuntime<NoopRawMutex>,
+    rx_services: u8,
+    tx_wake: Option<WifiTxWake>,
+    tx_services: usize,
+}
+
+struct RxStartedTxBackend {
+    irq: &'static EmbassyMacIrqRuntime<NoopRawMutex>,
+    active: bool,
+    serviced_wake: Option<WifiTxWake>,
+}
+
+impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+    for RxStartedTxBackend
+{
+    type Error = TestError;
+    type Exit = TestExit;
+
+    fn service_rx<'a>(
+        &'a mut self,
+        _network_rx: &'a mut dyn DatapathNetworkRxSet,
+        _context: DatapathRxServiceContext,
+    ) -> impl Future<Output = Result<DatapathRxProgress, Self::Error>> + 'a {
+        self.active = true;
+        self.irq.publish(EVENT_TX_COMPLETE);
+        ready(Ok(DatapathRxProgress::Drained))
+    }
+
+    fn has_active_tx(&self) -> bool {
+        self.active
+    }
+
+    fn start_tx<'a>(
+        &'a mut self,
+        _frame: PinnedTxFrame<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+        _network: &'a PinnedTxInterfaceConsumer<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        pending()
+    }
+
+    fn wait_tx_deadline(&mut self) -> impl Future<Output = ()> + '_ {
+        pending()
+    }
+
+    fn service_tx<'a>(
+        &'a mut self,
+        wake: WifiTxWake,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        self.active = false;
+        self.serviced_wake = Some(wake);
+        ready(Err(TestError::Finished))
+    }
+}
+
+impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+    for RxRepostDeadlineBackend
+{
+    type Error = TestError;
+    type Exit = TestExit;
+
+    fn service_rx<'a>(
+        &'a mut self,
+        _network_rx: &'a mut dyn DatapathNetworkRxSet,
+        _context: DatapathRxServiceContext,
+    ) -> impl Future<Output = Result<DatapathRxProgress, Self::Error>> + 'a {
+        async move {
+            self.rx_services = self.rx_services.saturating_add(1);
+            self.irq.publish(EVENT_RX_SUCCESS);
+            if self.rx_services > 4 {
+                return Err(TestError::Finished);
+            }
+            Ok(DatapathRxProgress::Drained)
+        }
+    }
+
+    fn start_tx<'a>(
+        &'a mut self,
+        _frame: PinnedTxFrame<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+        _network: &'a PinnedTxInterfaceConsumer<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        self.irq.publish(EVENT_RX_SUCCESS);
+        ready(Ok(WifiTxProgress::Pending))
+    }
+
+    fn wait_tx_deadline(&mut self) -> impl Future<Output = ()> + '_ {
+        let ready = self.rx_services != 0;
+        async move {
+            if !ready {
+                pending::<()>().await;
+            }
+        }
+    }
+
+    fn service_tx<'a>(
+        &'a mut self,
+        wake: WifiTxWake,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        async move {
+            self.tx_wake = Some(wake);
+            self.tx_services += 1;
+            Err(TestError::Finished)
+        }
+    }
+}
+
 impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
     for ShutdownBackend
 {
@@ -1222,21 +1356,29 @@ fn adaptive_batching_sends_isolated_frames_and_collects_proven_bursts() {
 }
 
 #[test]
-fn prepared_tx_keeps_lookahead_only_for_a_single_interface() {
+fn every_tx_completion_reaches_an_idle_scheduler_boundary() {
     let first = NetworkInterfaceId::new(0);
     let second = NetworkInterfaceId::new(1);
 
-    assert!(tx_lookahead_allowed(
+    assert!(!tx_lookahead_allowed(
         true,
-        DatapathInterfaceScope::Single(first)
+        DatapathInterfaceScope::Single(first),
+        DatapathTxOrigin::Network,
     ));
     assert!(!tx_lookahead_allowed(
         false,
-        DatapathInterfaceScope::Single(first)
+        DatapathInterfaceScope::Single(first),
+        DatapathTxOrigin::Network,
     ));
     assert!(!tx_lookahead_allowed(
         true,
-        DatapathInterfaceScope::Pair { first, second }
+        DatapathInterfaceScope::Pair { first, second },
+        DatapathTxOrigin::Network,
+    ));
+    assert!(!tx_lookahead_allowed(
+        true,
+        DatapathInterfaceScope::Single(first),
+        DatapathTxOrigin::Control,
     ));
 }
 
@@ -1618,7 +1760,7 @@ fn network_backpressure_still_services_a_new_dma_frontier() {
 }
 
 #[test]
-fn ready_network_frame_extends_standby_before_active_tx_completion() {
+fn ready_network_frame_waits_for_the_active_tx_idle_boundary() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
     let (mut device, network) = split_network!(resources, pool);
@@ -1634,8 +1776,9 @@ fn ready_network_frame_extends_standby_before_active_tx_completion() {
     let mut run = std::boxed::Box::pin(runner.run());
     let mut context = Context::from_waker(core::task::Waker::noop());
 
-    // Start the first hardware transaction, then make a standby frame and
-    // its completion interrupt ready in the same scheduler epoch.
+    // Start the first hardware transaction, then make another frame and its
+    // completion interrupt ready in the same scheduler epoch. The completion
+    // must reach an idle scheduler boundary before the next frame is prepared.
     assert_eq!(run.as_mut().poll(&mut context), Poll::Pending);
     enqueue_frame(&mut device);
     irq.publish(EVENT_TX_COMPLETE);
@@ -1644,7 +1787,7 @@ fn ready_network_frame_extends_standby_before_active_tx_completion() {
         Err(TestError::Finished)
     );
     drop(run);
-    assert_eq!(runner.services().order, [1, 2]);
+    assert_eq!(runner.services().order, [2, 0]);
 }
 
 #[test]
@@ -1764,6 +1907,61 @@ fn executor_deadline_services_tx_without_an_interrupt() {
     );
     assert_eq!(runner.services().order[0], 2);
     assert_eq!(runner.services().tx_wake, Some(WifiTxWake::Deadline));
+}
+
+#[test]
+fn reposted_rx_cannot_starve_a_due_active_tx_deadline() {
+    let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+    let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
+    let (mut device, network) = split_network!(resources, pool);
+    enqueue_frame(&mut device);
+    let irq = std::boxed::Box::leak(std::boxed::Box::new(
+        EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
+    ));
+    let services = RxRepostDeadlineBackend {
+        irq,
+        rx_services: 0,
+        tx_wake: None,
+        tx_services: 0,
+    };
+    let mut runner = DatapathRunner::new(irq, network, NetworkInterfaceId::new(0), services);
+
+    assert_eq!(
+        embassy_futures::block_on(runner.run()),
+        Err(TestError::Finished)
+    );
+    assert_eq!(runner.services().rx_services, 1);
+    assert_eq!(runner.services().tx_wake, Some(WifiTxWake::Deadline));
+    assert_eq!(runner.services().tx_services, 1);
+    assert!(irq.rx_signaled());
+}
+
+#[test]
+fn single_role_tx_started_by_rx_is_adopted_before_an_idle_boundary() {
+    let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+    let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
+    let (_device, network) = split_network!(resources, pool);
+    let irq = std::boxed::Box::leak(std::boxed::Box::new(
+        EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
+    ));
+    irq.publish(EVENT_RX_SUCCESS);
+    let services = RxStartedTxBackend {
+        irq,
+        active: false,
+        serviced_wake: None,
+    };
+    let mut runner = DatapathRunner::new(irq, network, NetworkInterfaceId::new(0), services);
+
+    assert_eq!(
+        embassy_futures::block_on(runner.run()),
+        Err(TestError::Finished)
+    );
+    assert_eq!(
+        runner.services().serviced_wake,
+        Some(WifiTxWake::Interrupt {
+            events: EVENT_TX_COMPLETE,
+        })
+    );
 }
 
 #[test]

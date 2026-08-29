@@ -44,5 +44,15 @@ where
                 .next_deadline()
                 .is_some_and(|deadline| deadline <= now_micros)
     }
-}
 
+    pub(super) fn queued_rx_frames(&self) -> usize
+    where
+        C: AccessPointRxProtocolConsumer,
+    {
+        self.protocol_rx.queued_frames()
+    }
+
+    pub(super) fn rx_block_ack_maximum_window(&self) -> usize {
+        usize::from(self.rx_block_ack.maximum_window())
+    }
+}

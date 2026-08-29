@@ -5,18 +5,17 @@
 use embassy_futures::select::{Either, select};
 use embassy_time::Timer;
 use open_esp_radio_embassy_net::RawMutex;
-use open_esp_radio_esp32s31_hal::{MacInterruptEnableState, MacInterruptSetup, RadioRuntimeOwner};
+use open_esp_radio_esp32s31_hal::{MacInterruptEnableState, RadioRuntimeOwner};
 use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError};
 use open_esp_radio_esp32s31_wifi::{
     mac_start::Esp32s31WifiMacStartReport,
-    runtime::{Esp32s31WifiRuntimeContext, Esp32s31WifiStopped},
+    runtime::{Esp32s31WifiRoleOwner, Esp32s31WifiRuntimeContext},
     switch_esp32s31_wifi_channel,
 };
 use open_esp_radio_esp32s31_wifi_dma::rx_storage::RxDmaStorageError;
 use open_esp_radio_esp32s31_wifi_mac::{
-    init::activate_promiscuous_receive,
     irq::MacInterruptRoute,
-    rx::{RxDmaBufferAddresses, RxPhyInfo, RxRingHalted},
+    rx::{RxDmaBufferAddresses, RxPhyInfo, RxRingHalted, RxRingLive},
 };
 use open_esp_radio_ieee80211::channel::WifiChannel;
 use open_esp_radio_wifi_softmac::{
@@ -24,7 +23,7 @@ use open_esp_radio_wifi_softmac::{
 };
 
 use crate::{
-    datapath::irq::{EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime, Esp32s31MacInterruptEpoch},
+    datapath::irq::Esp32s31MacInterruptEpoch,
     datapath::rx::dma::Esp32s31RxDmaStorage,
     datapath::rx::frontier::Esp32s31RxFrontierError,
     roles::monitor::rx::{Esp32s31MonitorPrepareError, Esp32s31MonitorRx},
@@ -86,52 +85,45 @@ impl<const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORAGE_SIZE: u
     }
 }
 
-/// Platform interrupt binding for one monitor task epoch.
-pub struct Esp32s31MonitorInterrupts<'runtime, R, M: RawMutex>
+/// Role-neutral physical radio frontier consumed by a monitor task.
+///
+/// The interrupt epoch is deliberately already materialized. Logical role
+/// changes never uninstall its CPU route while the MAC remains powered.
+pub struct Esp32s31MonitorRadio<'runtime, P, R, M: RawMutex>
 where
-    R: MacInterruptRoute<Setup = MacInterruptSetup>,
-    R::Platform: Sized,
+    R: MacInterruptRoute<Platform = P>,
+    P: Sized,
 {
-    route: R,
-    mac_runtime: &'runtime EmbassyMacIrqRuntime<M>,
-    power_runtime: &'runtime EmbassyPowerIrqRuntime<M>,
+    pub owner: Esp32s31WifiRoleOwner<P>,
+    pub registers: RadioRuntimeOwner,
+    pub interrupts: Esp32s31MacInterruptEpoch<'runtime, R, M>,
 }
 
-/// Exact platform route and wake runtimes returned by a stopped monitor.
-pub struct Esp32s31MonitorInterruptParts<'runtime, R, M: RawMutex>
+impl<'runtime, P, R, M: RawMutex> Esp32s31MonitorRadio<'runtime, P, R, M>
 where
-    R: MacInterruptRoute<Setup = MacInterruptSetup>,
-    R::Platform: Sized,
-{
-    pub route: R,
-    pub mac_runtime: &'runtime EmbassyMacIrqRuntime<M>,
-    pub power_runtime: &'runtime EmbassyPowerIrqRuntime<M>,
-}
-
-impl<'runtime, R, M: RawMutex> Esp32s31MonitorInterrupts<'runtime, R, M>
-where
-    R: MacInterruptRoute<Setup = MacInterruptSetup>,
-    R::Platform: Sized,
+    R: MacInterruptRoute<Platform = P>,
+    P: Sized,
 {
     pub fn new(
-        route: R,
-        mac_runtime: &'runtime EmbassyMacIrqRuntime<M>,
-        power_runtime: &'runtime EmbassyPowerIrqRuntime<M>,
+        owner: Esp32s31WifiRoleOwner<P>,
+        registers: RadioRuntimeOwner,
+        interrupts: Esp32s31MacInterruptEpoch<'runtime, R, M>,
     ) -> Self {
         Self {
-            route,
-            mac_runtime,
-            power_runtime,
+            owner,
+            registers,
+            interrupts,
         }
     }
+}
 
-    pub fn into_parts(self) -> Esp32s31MonitorInterruptParts<'runtime, R, M> {
-        Esp32s31MonitorInterruptParts {
-            route: self.route,
-            mac_runtime: self.mac_runtime,
-            power_runtime: self.power_runtime,
-        }
-    }
+/// Physical RX-ring authority accepted by a monitor role.
+///
+/// `Halted` exists only for the first cold materialization. Every logical
+/// role handoff after the walker has started carries `Live` unchanged.
+pub enum Esp32s31MonitorRxRing<const COUNT: usize> {
+    Halted(RxRingHalted<'static, COUNT>),
+    Live(RxRingLive<'static, COUNT>),
 }
 
 /// Runtime-owned resources consumed together when a monitor role starts.
@@ -140,56 +132,29 @@ where
 /// wake runtimes and sink are executor integration. Grouping them prevents a
 /// caller from accidentally pairing an RX ring with a different IRQ epoch.
 struct Esp32s31MonitorResources<
-    'runtime,
-    R,
-    M: RawMutex,
     S,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
 > where
-    R: MacInterruptRoute<Setup = MacInterruptSetup>,
-    R::Platform: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
     dma: Esp32s31MonitorMemory<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
-    halted_ring: Option<RxRingHalted<'static, COUNT>>,
+    rx_ring: Option<Esp32s31MonitorRxRing<COUNT>>,
     sink: S,
-    route: R,
-    mac_runtime: &'runtime EmbassyMacIrqRuntime<M>,
-    power_runtime: &'runtime EmbassyPowerIrqRuntime<M>,
 }
 
-impl<
-    'runtime,
-    R,
-    M: RawMutex,
-    S,
-    const COUNT: usize,
-    const DMA_BUFFER_SIZE: usize,
-    const DMA_STORAGE_SIZE: usize,
-> Esp32s31MonitorResources<'runtime, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
+impl<S, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORAGE_SIZE: usize>
+    Esp32s31MonitorResources<S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
 where
-    R: MacInterruptRoute<Setup = MacInterruptSetup>,
-    R::Platform: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
     const fn new(
         dma: Esp32s31MonitorMemory<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
-        halted_ring: Option<RxRingHalted<'static, COUNT>>,
+        rx_ring: Option<Esp32s31MonitorRxRing<COUNT>>,
         sink: S,
-        route: R,
-        mac_runtime: &'runtime EmbassyMacIrqRuntime<M>,
-        power_runtime: &'runtime EmbassyPowerIrqRuntime<M>,
     ) -> Self {
-        Self {
-            dma,
-            halted_ring,
-            sink,
-            route,
-            mac_runtime,
-            power_runtime,
-        }
+        Self { dma, rx_ring, sink }
     }
 }
 
@@ -211,15 +176,14 @@ struct Esp32s31MonitorBuildFailure<
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
 > where
-    R: MacInterruptRoute<Platform = P, Setup = MacInterruptSetup>,
+    R: MacInterruptRoute<Platform = P>,
     P: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
     pub error: Esp32s31MonitorBuildError,
     pub plan: WifiStandaloneMonitorPlan,
-    pub wifi: Esp32s31WifiStopped<P>,
-    pub resources:
-        Esp32s31MonitorResources<'runtime, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    pub radio: Esp32s31MonitorRadio<'runtime, P, R, M>,
+    pub resources: Esp32s31MonitorResources<S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -256,7 +220,7 @@ struct Esp32s31MonitorOwner<
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
 > where
-    R: MacInterruptRoute<Platform = P, Setup = MacInterruptSetup>,
+    R: MacInterruptRoute<Platform = P>,
     P: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
@@ -290,7 +254,7 @@ impl<
     const DMA_STORAGE_SIZE: usize,
 > Esp32s31MonitorOwner<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
 where
-    R: MacInterruptRoute<Platform = P, Setup = MacInterruptSetup>,
+    R: MacInterruptRoute<Platform = P>,
     P: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
@@ -306,8 +270,8 @@ where
         self.capture_channel
     }
 
-    /// Return the common Wi-Fi owner and every reusable monitor resource only
-    /// after IRQ routing and RX DMA are both proven inactive.
+    /// Return the common live radio owner and every reusable monitor resource
+    /// after the logical monitor consumer is parked.
     fn try_into_stopped(
         self,
         control: &'runtime Esp32s31MonitorControlResources<M>,
@@ -341,25 +305,21 @@ where
                 });
             }
         };
-        let (route, interrupt_setup, mac_runtime, power_runtime) =
-            match interrupts.try_into_inactive_parts() {
-                Ok(parts) => parts,
-                Err(_) => unreachable!(
-                    "a decomposable monitor service contains an inactive interrupt epoch"
-                ),
-            };
-        let halted_ring = receive
-            .into_halted()
-            .unwrap_or_else(|_| unreachable!("a decomposable monitor service has stopped RX"));
-        let wifi = context.into_stopped(platform, registers, interrupt_setup);
+        let live_ring = receive
+            .into_live()
+            .unwrap_or_else(|_| unreachable!("a decomposable monitor service retains live RX"));
+        let radio = Esp32s31MonitorRadio::new(
+            Esp32s31WifiRoleOwner::from_runtime_parts(platform, context),
+            registers,
+            interrupts,
+        );
         Ok(Esp32s31MonitorStopped {
-            wifi,
+            radio,
             plan,
             resources: Esp32s31MonitorStoppedResources {
                 memory,
-                halted_ring,
+                live_ring,
                 sink,
-                interrupts: Esp32s31MonitorInterrupts::new(route, mac_runtime, power_runtime),
                 control,
             },
         })
@@ -415,7 +375,6 @@ where
             self.quarantined = true;
             return Err(Esp32s31MonitorChannelSwitchError::Phy(error));
         }
-        activate_promiscuous_receive(registers);
         self.context.set_current_channel(channel);
         if let Err(error) = self.service.prepare_next_receive_epoch() {
             self.quarantined = true;
@@ -445,43 +404,45 @@ fn prepare_esp32s31_monitor<
     const DMA_STORAGE_SIZE: usize,
 >(
     plan: WifiStandaloneMonitorPlan,
-    mut wifi: Esp32s31WifiStopped<P>,
-    mut resources: Esp32s31MonitorResources<
-        'runtime,
-        R,
-        M,
-        S,
-        COUNT,
-        DMA_BUFFER_SIZE,
-        DMA_STORAGE_SIZE,
-    >,
+    mut radio: Esp32s31MonitorRadio<'runtime, P, R, M>,
+    mut resources: Esp32s31MonitorResources<S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
 ) -> Result<
     Esp32s31MonitorOwner<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     Esp32s31MonitorBuildFailure<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
 >
 where
-    R: MacInterruptRoute<Platform = P, Setup = MacInterruptSetup>,
+    R: MacInterruptRoute<Platform = P>,
     P: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
-    let cold_interrupt_mask = wifi.transition_report().cold_interrupt_mask;
-    let initial_channel = wifi.current_channel();
+    let cold_interrupt_mask = radio.owner.transition_report().cold_interrupt_mask;
+    let initial_channel = radio.owner.current_channel();
     let receive = {
-        let (mut registers, _) = wifi.radio_mut();
-        activate_promiscuous_receive(&mut registers);
-        match resources.halted_ring.take() {
-            Some(ring) => match Esp32s31MonitorRx::prepare_halted(
-                plan,
-                ring,
-                &mut registers,
-                resources.dma.storage,
-            ) {
-                Ok(receive) => Ok(receive),
-                Err((ring, error)) => {
-                    resources.halted_ring = Some(ring);
-                    Err(error)
+        let mut registers = radio.registers.wifi_mac_hal();
+        match resources.rx_ring.take() {
+            Some(Esp32s31MonitorRxRing::Halted(ring)) => {
+                match Esp32s31MonitorRx::prepare_halted(
+                    plan,
+                    ring,
+                    &mut registers,
+                    resources.dma.storage,
+                ) {
+                    Ok(receive) => Ok(receive),
+                    Err((ring, error)) => {
+                        resources.rx_ring = Some(Esp32s31MonitorRxRing::Halted(ring));
+                        Err(error)
+                    }
                 }
-            },
+            }
+            Some(Esp32s31MonitorRxRing::Live(ring)) => {
+                match Esp32s31MonitorRx::from_live(plan, ring, resources.dma.storage) {
+                    Ok(receive) => Ok(receive),
+                    Err((ring, error)) => {
+                        resources.rx_ring = Some(Esp32s31MonitorRxRing::Live(ring));
+                        Err(error)
+                    }
+                }
+            }
             None => Esp32s31MonitorRx::prepare_initial(
                 plan,
                 &mut registers,
@@ -497,32 +458,26 @@ where
             return Err(Esp32s31MonitorBuildFailure {
                 error: Esp32s31MonitorBuildError::Receive(error),
                 plan,
-                wifi,
+                radio,
                 resources,
             });
         }
     };
-    let start = wifi.start_report();
-    let runtime = wifi.into_runtime_parts();
-    let interrupts = Esp32s31MacInterruptEpoch::new(
-        resources.route,
-        runtime.interrupt_setup,
-        resources.mac_runtime,
-        resources.power_runtime,
-    );
+    let start = radio.owner.start_report();
+    let (platform, context) = radio.owner.into_runtime_parts();
     let mut service = Esp32s31MonitorService::new(
-        runtime.registers,
+        radio.registers,
         receive,
         resources.sink,
-        interrupts,
-        runtime.platform,
+        radio.interrupts,
+        platform,
     );
     service
         .begin_channel_epoch(initial_channel)
         .expect("a newly prepared monitor service is quiescent");
     Ok(Esp32s31MonitorOwner {
         service,
-        context: runtime.context,
+        context,
         report: Esp32s31MonitorBuildReport {
             start,
             cold_interrupt_mask,
@@ -538,56 +493,41 @@ where
 /// Board-owned resources for one standalone monitor task.
 ///
 /// This is the only public monitor materialization input. DMA placement,
-/// capture publication, interrupt routing, executor wakes and control storage
-/// move together, so application code cannot pair pieces from different radio
-/// epochs.
+/// capture publication and control storage move together. Physical interrupt
+/// ownership belongs to [`Esp32s31MonitorRadio`], not this logical role.
 pub struct Esp32s31MonitorTaskResources<
     'runtime,
-    R,
     M: RawMutex,
     S,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
 > where
-    R: MacInterruptRoute<Setup = MacInterruptSetup>,
-    R::Platform: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
-    runtime: Esp32s31MonitorResources<'runtime, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    runtime: Esp32s31MonitorResources<S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     control: &'runtime Esp32s31MonitorControlResources<M>,
 }
 
 impl<
     'runtime,
-    R,
     M: RawMutex,
     S,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
-> Esp32s31MonitorTaskResources<'runtime, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
+> Esp32s31MonitorTaskResources<'runtime, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
 where
-    R: MacInterruptRoute<Setup = MacInterruptSetup>,
-    R::Platform: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
     pub fn new(
         memory: Esp32s31MonitorMemory<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
-        halted_ring: Option<RxRingHalted<'static, COUNT>>,
+        rx_ring: Option<Esp32s31MonitorRxRing<COUNT>>,
         sink: S,
-        interrupts: Esp32s31MonitorInterrupts<'runtime, R, M>,
         control: &'runtime Esp32s31MonitorControlResources<M>,
     ) -> Self {
         Self {
-            runtime: Esp32s31MonitorResources::new(
-                memory,
-                halted_ring,
-                sink,
-                interrupts.route,
-                interrupts.mac_runtime,
-                interrupts.power_runtime,
-            ),
+            runtime: Esp32s31MonitorResources::new(memory, rx_ring, sink),
             control,
         }
     }
@@ -595,26 +535,21 @@ where
 
 /// Reusable board/executor resources returned by a stopped monitor role.
 ///
-/// The common interrupt setup token is deliberately absent: it belongs to
-/// [`Esp32s31WifiStopped`]. Pairing these resources with another common Wi-Fi
-/// owner therefore starts a fresh role epoch through the normal builder.
+/// Physical interrupt ownership is returned separately in the common radio
+/// frontier, so these resources remain purely role-local.
 pub struct Esp32s31MonitorStoppedResources<
     'runtime,
-    R,
     M: RawMutex,
     S,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
 > where
-    R: MacInterruptRoute<Setup = MacInterruptSetup>,
-    R::Platform: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
     memory: Esp32s31MonitorMemory<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
-    halted_ring: RxRingHalted<'static, COUNT>,
+    live_ring: RxRingLive<'static, COUNT>,
     sink: S,
-    interrupts: Esp32s31MonitorInterrupts<'runtime, R, M>,
     control: &'runtime Esp32s31MonitorControlResources<M>,
 }
 
@@ -622,54 +557,39 @@ pub struct Esp32s31MonitorStoppedResources<
 /// different Wi-Fi role by a supervisor or qualification harness.
 pub struct Esp32s31MonitorStoppedResourceParts<
     'runtime,
-    R,
     M: RawMutex,
     S,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
 > where
-    R: MacInterruptRoute<Setup = MacInterruptSetup>,
-    R::Platform: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
     pub memory: Esp32s31MonitorMemory<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
-    pub halted_ring: RxRingHalted<'static, COUNT>,
+    pub live_ring: RxRingLive<'static, COUNT>,
     pub sink: S,
-    pub interrupts: Esp32s31MonitorInterrupts<'runtime, R, M>,
     pub control: &'runtime Esp32s31MonitorControlResources<M>,
 }
 
 impl<
     'runtime,
-    R,
     M: RawMutex,
     S,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
-> Esp32s31MonitorStoppedResources<'runtime, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
+> Esp32s31MonitorStoppedResources<'runtime, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
 where
-    R: MacInterruptRoute<Setup = MacInterruptSetup>,
-    R::Platform: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
     pub fn into_parts(
         self,
-    ) -> Esp32s31MonitorStoppedResourceParts<
-        'runtime,
-        R,
-        M,
-        S,
-        COUNT,
-        DMA_BUFFER_SIZE,
-        DMA_STORAGE_SIZE,
-    > {
+    ) -> Esp32s31MonitorStoppedResourceParts<'runtime, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
+    {
         Esp32s31MonitorStoppedResourceParts {
             memory: self.memory,
-            halted_ring: self.halted_ring,
+            live_ring: self.live_ring,
             sink: self.sink,
-            interrupts: self.interrupts,
             control: self.control,
         }
     }
@@ -677,13 +597,12 @@ where
     /// Rebind the exact returned role-local resources to another monitor task.
     pub fn into_task_resources(
         self,
-    ) -> Esp32s31MonitorTaskResources<'runtime, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
+    ) -> Esp32s31MonitorTaskResources<'runtime, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
     {
         Esp32s31MonitorTaskResources::new(
             self.memory,
-            Some(self.halted_ring),
+            Some(Esp32s31MonitorRxRing::Live(self.live_ring)),
             self.sink,
-            self.interrupts,
             self.control,
         )
     }
@@ -691,9 +610,9 @@ where
 
 /// Fully dematerialized standalone monitor role.
 ///
-/// This value can exist only after the task proved that no ISR route or DMA
-/// walker remains active. `wifi` may now be moved into another Wi-Fi role;
-/// `resources` remain role-local board/executor policy.
+/// This value can exist only after the task parked its logical consumer and
+/// returned the live RX ring. `radio` retains the installed physical IRQ
+/// epoch for the next role.
 pub struct Esp32s31MonitorStopped<
     'runtime,
     P,
@@ -704,21 +623,14 @@ pub struct Esp32s31MonitorStopped<
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
 > where
-    R: MacInterruptRoute<Platform = P, Setup = MacInterruptSetup>,
+    R: MacInterruptRoute<Platform = P>,
     P: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
-    pub wifi: Esp32s31WifiStopped<P>,
+    pub radio: Esp32s31MonitorRadio<'runtime, P, R, M>,
     pub plan: WifiStandaloneMonitorPlan,
-    pub resources: Esp32s31MonitorStoppedResources<
-        'runtime,
-        R,
-        M,
-        S,
-        COUNT,
-        DMA_BUFFER_SIZE,
-        DMA_STORAGE_SIZE,
-    >,
+    pub resources:
+        Esp32s31MonitorStoppedResources<'runtime, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
 }
 
 /// Failed task materialization with the complete retryable owner frontier.
@@ -732,15 +644,15 @@ pub struct Esp32s31MonitorTaskBuildFailure<
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
 > where
-    R: MacInterruptRoute<Platform = P, Setup = MacInterruptSetup>,
+    R: MacInterruptRoute<Platform = P>,
     P: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
     pub error: Esp32s31MonitorBuildError,
     pub plan: WifiStandaloneMonitorPlan,
-    pub wifi: Esp32s31WifiStopped<P>,
+    pub radio: Esp32s31MonitorRadio<'runtime, P, R, M>,
     pub resources:
-        Esp32s31MonitorTaskResources<'runtime, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        Esp32s31MonitorTaskResources<'runtime, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
 }
 
 /// Executor-side owner of all hardware used by a standalone monitor role.
@@ -758,7 +670,7 @@ pub struct Esp32s31MonitorTask<
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
 > where
-    R: MacInterruptRoute<Platform = P, Setup = MacInterruptSetup>,
+    R: MacInterruptRoute<Platform = P>,
     P: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
@@ -794,7 +706,7 @@ impl<
     const DMA_STORAGE_SIZE: usize,
 > Esp32s31MonitorTask<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
 where
-    R: MacInterruptRoute<Platform = P, Setup = MacInterruptSetup>,
+    R: MacInterruptRoute<Platform = P>,
     P: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
@@ -910,7 +822,7 @@ impl<
     const DMA_STORAGE_SIZE: usize,
 > Esp32s31MonitorTask<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
 where
-    R: MacInterruptRoute<Platform = P, Setup = MacInterruptSetup>,
+    R: MacInterruptRoute<Platform = P>,
     P: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
@@ -1051,10 +963,9 @@ pub fn prepare_esp32s31_monitor_task<
     const DMA_STORAGE_SIZE: usize,
 >(
     plan: WifiStandaloneMonitorPlan,
-    wifi: Esp32s31WifiStopped<P>,
+    radio: Esp32s31MonitorRadio<'runtime, P, R, M>,
     resources: Esp32s31MonitorTaskResources<
         'runtime,
-        R,
         M,
         S,
         COUNT,
@@ -1069,7 +980,7 @@ pub fn prepare_esp32s31_monitor_task<
     Esp32s31MonitorTaskBuildFailure<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
 >
 where
-    R: MacInterruptRoute<Platform = P, Setup = MacInterruptSetup>,
+    R: MacInterruptRoute<Platform = P>,
     P: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
@@ -1080,12 +991,12 @@ where
             return Err(Esp32s31MonitorTaskBuildFailure {
                 error: Esp32s31MonitorBuildError::Control(error),
                 plan,
-                wifi,
+                radio,
                 resources: Esp32s31MonitorTaskResources { runtime, control },
             });
         }
     };
-    match prepare_esp32s31_monitor(plan, wifi, runtime) {
+    match prepare_esp32s31_monitor(plan, radio, runtime) {
         Ok(owner) => Ok((
             controller,
             Esp32s31MonitorTask {
@@ -1102,7 +1013,7 @@ where
             Err(Esp32s31MonitorTaskBuildFailure {
                 error: failure.error,
                 plan: failure.plan,
-                wifi: failure.wifi,
+                radio: failure.radio,
                 resources: Esp32s31MonitorTaskResources {
                     runtime: failure.resources,
                     control,

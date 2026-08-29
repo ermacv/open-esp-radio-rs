@@ -3,6 +3,7 @@ id = "tcp-tx"
 description = "Sustained TCP station-to-host transmission"
 image = "correctness"
 isolation = "reset"
+data_plane = "split-radio-network"
 tags = ["qualification", "tcp", "station"]
 
 [link]

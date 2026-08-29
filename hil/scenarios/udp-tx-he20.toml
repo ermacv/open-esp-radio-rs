@@ -3,6 +3,7 @@ id = "udp-tx-he20"
 description = "Sustained HE20 UDP station-to-host transmission"
 image = "correctness"
 isolation = "reset"
+data_plane = "split-radio-network"
 tags = ["qualification", "udp", "station"]
 
 [link]

@@ -6,10 +6,12 @@
 //! provide one coherent resource set and receive every owner back together
 //! with a value-only decision.
 
-use open_esp_radio_esp32s31_hal::MacInterruptSetup;
 use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyState, PhyTargetObserver, PhyTargetPortError};
 use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
-use open_esp_radio_esp32s31_wifi_mac::tx::TxHardware;
+use open_esp_radio_esp32s31_wifi_mac::{
+    init::{MacRuntimeStopHardware, MacSnifferHardware},
+    tx::TxHardware,
+};
 use open_esp_radio_esp32s31_wifi_sta::{
     attempt::{Esp32s31StaAttemptSecurity, Esp32s31StaIdentity},
     channel::Esp32s31ScanPhy,
@@ -167,7 +169,6 @@ pub struct Esp32s31StationScanResources<
     'storage,
     'sequence,
     'slot,
-    'interrupt,
     P,
     Q,
     D,
@@ -188,7 +189,6 @@ pub struct Esp32s31StationScanResources<
     pub hardware: H,
     pub receive: R,
     pub control: Esp32s31ControlTx<'slot, X, E, T, TX_BUFFER_SIZE>,
-    pub interrupt_setup: &'interrupt MacInterruptSetup,
     pub table: &'storage mut ScanTable<RECORDS>,
     pub frame: &'storage mut [u8],
     pub scan_observer: O,
@@ -400,7 +400,6 @@ pub async fn run_esp32s31_station_scan<
     'storage,
     'sequence,
     'slot,
-    'interrupt,
     'ssid,
     'rates,
     'channels,
@@ -422,7 +421,6 @@ pub async fn run_esp32s31_station_scan<
         'storage,
         'sequence,
         'slot,
-        'interrupt,
         P,
         Q,
         D,
@@ -465,7 +463,7 @@ pub async fn run_esp32s31_station_scan<
 where
     Q: PhyTargetObserver,
     D: PhyAsyncDelay,
-    H: TxHardware,
+    H: TxHardware + MacSnifferHardware + MacRuntimeStopHardware,
     R: Esp32s31ScanReceivePort<H>,
     X: WifiTxPowerProfile,
     E: WifiTxEntropy,
@@ -482,7 +480,6 @@ where
         hardware,
         receive,
         control,
-        interrupt_setup,
         table,
         frame,
         scan_observer,
@@ -510,7 +507,7 @@ where
             Esp32s31ScanPhy::<_, _, D>::new(phy, platform, phy_observer),
             hardware,
             receive,
-            Esp32s31RunningScanTx::new(control, interrupt_setup),
+            Esp32s31RunningScanTx::new(control),
         ),
         Esp32s31ScanStorage::new(table, frame, scan_observer, sequence),
         station,

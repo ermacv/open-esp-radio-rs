@@ -28,11 +28,14 @@ pub trait AccessPointTerminalObserver: Sync {
 #[derive(Default)]
 pub struct AccessPointObservationStorage {
     pub(crate) observation: Esp32s31AccessPointControlObservation,
+    #[cfg(feature = "diagnostics")]
+    pub(crate) next_rx_block_ack_hardware_sample: u64,
 }
 
 impl AccessPointObservationStorage {
     #[cfg(feature = "diagnostics")]
     pub(crate) fn reset(&mut self) {
         self.observation = Esp32s31AccessPointControlObservation::default();
+        self.next_rx_block_ack_hardware_sample = 8_192;
     }
 }

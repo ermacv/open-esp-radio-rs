@@ -740,14 +740,15 @@ fn rx_air_evidence_markdown(
         || String::from("- Independent air observer: `not collected`\n"),
         |evidence| {
             format!(
-                "- Independent air observer frames/kernel drops: `{}` / `{}`; logical decoded data MPDUs/retry attempts/missing metadata: `{}` / `{}` / `{}`; BlockAck full/partial/unique MPDUs/backward starts: `{}` / `{}` / `{}` / `{}`\n",
+                "- Independent air observer frames/kernel drops: `{}` / `{}`; logical decoded data MPDUs/retry attempts/missing metadata: `{}` / `{}` / `{}`; BlockAck full/tail/hole/unique MPDUs/backward starts: `{}` / `{}` / `{}` / `{}` / `{}`\n",
                 evidence.captured_frames,
                 evidence.kernel_dropped,
                 evidence.logical_data_units,
                 evidence.retry_attempts,
                 evidence.missing_mac_metadata,
                 evidence.full_block_ack_frames,
-                evidence.partial_block_ack_frames,
+                evidence.tail_block_ack_frames,
+                evidence.hole_block_ack_frames,
                 evidence.unique_block_acked_mpdus,
                 evidence.backward_block_ack_starts,
             )

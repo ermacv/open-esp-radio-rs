@@ -1,3 +1,29 @@
+/// Physical ordinary-TX ownership visible to one standalone AP RX turn.
+///
+/// The AP MAC's local `pending` bit cannot represent a live retained A-MPDU:
+/// that transaction is owned by `Esp32s31AccessPointNetworkTx`.  Carry the
+/// outer ownership edge explicitly so RX protocol dispatch cannot infer an
+/// idle transmitter from the narrower AP MAC state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum AccessPointRxTxDomain {
+    IdleBoundary,
+    ActiveTransaction,
+}
+
+impl AccessPointRxTxDomain {
+    const fn tx_pending(self, mac_pending: bool) -> bool {
+        mac_pending || matches!(self, Self::ActiveTransaction)
+    }
+
+    const fn is_externally_owned(self) -> bool {
+        matches!(self, Self::ActiveTransaction)
+    }
+
+    const fn protocol_mailbox_ready(self, remaining: usize) -> bool {
+        !self.is_externally_owned() || remaining >= AP_PROTOCOL_ACTIONS_PER_RX_FRAME
+    }
+}
+
 /// Standalone AP composition of a physical RX transport and the
 /// queue-independent AP protocol processor.
 pub struct Esp32s31AccessPointControl<
@@ -228,55 +254,62 @@ where
         self.receive.scheduler_snapshot()
     }
 
-    /// Stage a complete finite DMA frontier before processing one AP frame.
+    /// Process at most one already-staged AP frame without observing DMA.
     ///
-    /// The common producer returns safe descriptors before AP parsing, WPA2,
-    /// reorder, or network publication can extend the BUFFER_FULL interval.
-    pub async fn service_rx<H, Q>(
+    /// The enclosing DATAPATH turn owns the station-style transaction order:
+    /// drain existing protocol owners, refill DMA once, then consume newly
+    /// staged owners with the remaining budget. Keeping this leaf synchronous
+    /// prevents one MPDU from manufacturing an extra executor or MMIO pass.
+    pub(super) fn service_rx_protocol<H, Q, S>(
         &mut self,
         hardware: &mut H,
-        authenticator_nonce: [u8; 32],
-        initial_replay_counter: u64,
+        tx_domain: AccessPointRxTxDomain,
+        security_material: &mut S,
         now_micros: u64,
         publish_shared_rx: &mut Q,
         #[cfg(feature = "diagnostics")] delivery_observer: Option<&dyn RxNetworkDeliveryObserver>,
     ) -> Result<DatapathRxProgress, Esp32s31AccessPointControlError>
     where
-        H: RxDma + TxHardware + Esp32s31ApRuntimeHardware + RxBlockAckHardware,
-        R: AccessPointRxProducer<H, COUNT>,
+        H: TxHardware + Esp32s31ApRuntimeHardware + RxBlockAckHardware,
         C: AccessPointRxProtocolConsumer,
         Q: FnMut(u8),
+        S: FnMut() -> ([u8; 32], u64),
     {
-        let tx_pending = self.mac.tx_pending();
-        self.apply_protocol_actions(hardware)?;
-        let protocol_blocked = self.rx_batch_pending();
-        let queued_frames = self.protocol_rx.queued_frames();
-        let stage_progress = if should_observe_ap_rx_dma(protocol_blocked, queued_frames) {
-            self.service_rx_dma(hardware).await?
-        } else {
-            DatapathRxProgress::ProbePending
-        };
-
-        // Vendor `wDev_ProcessFiq` services the RX-success frontier even when
-        // a TX transaction is active. Preserve that ownership edge by moving
-        // complete DMA units into independent staging first. Protocol work is
-        // Management and EAPOL are deferred while TX owns the sole transmit
-        // transaction because they may publish a response. Protected data is
-        // protocol-only and must continue releasing the bounded staging pool.
-        if protocol_blocked {
-            return Ok(stage_progress);
+        let tx_pending = tx_domain.tx_pending(self.mac.tx_pending());
+        if !tx_domain.is_externally_owned() {
+            #[cfg(feature = "diagnostics")]
+            self.sample_rx_block_ack_hardware(hardware);
+            self.apply_protocol_actions(hardware)?;
+        }
+        if self.rx_batch_pending() {
+            return Ok(DatapathRxProgress::NetworkBackpressured);
         }
         if self.service_rx_reorder_expiry(now_micros)? {
             return Ok(DatapathRxProgress::ProbePending);
         }
 
+        // An active retained A-MPDU keeps the radio-side mailbox consumer
+        // behind the physical TX boundary. Preserve the exact staged head
+        // until one complete frame's worst-case action set fits; consuming it
+        // first would turn bounded backpressure into ProtocolActionCapacity.
+        if !tx_domain.protocol_mailbox_ready(self.protocol_actions.remaining_capacity()) {
+            return Ok(DatapathRxProgress::ProtocolBlockedByTx);
+        }
+
         let staged_frame = if tx_pending {
-            self.protocol_rx.try_receive_protected_data()
+            self.protocol_rx
+                .try_receive_during_tx(self.mac.engine().security_mode())
         } else {
             self.protocol_rx.try_receive()
         };
         let Some(staged_frame) = staged_frame else {
-            return Ok(stage_progress);
+            // `try_receive_during_tx` preserves a management/EAPOL head which
+            // cannot borrow the ordinary-TX capability until the live
+            // aggregate completes.
+            if tx_domain.is_externally_owned() && self.protocol_rx.queued_frames() != 0 {
+                return Ok(DatapathRxProgress::ProtocolBlockedByTx);
+            }
+            return Ok(DatapathRxProgress::Drained);
         };
         self.serviced_rx_frames = self.serviced_rx_frames.saturating_add(1);
         #[cfg(feature = "diagnostics")]
@@ -289,17 +322,20 @@ where
             },
             staged_frame,
             AccessPointRxPublication::SharedStaging,
-            authenticator_nonce,
-            initial_replay_counter,
+            security_material,
             now_micros,
             publish_shared_rx,
             #[cfg(feature = "diagnostics")]
             delivery_observer,
         )?;
         // `service_staged_rx` receives no hardware capability while TX is
-        // active. Only after that protocol borrow ends does this radio owner
-        // translate and execute its value-only mailbox requests.
-        self.apply_protocol_actions(hardware)?;
+        // active. Keep its value-only mailbox requests queued until the
+        // physical aggregate returns the ordinary-TX owner. Executing them
+        // here would let standalone AP RX manufacture a second MAC
+        // transaction inside `DatapathRunner::drive_active_tx`.
+        if !tx_domain.is_externally_owned() {
+            self.apply_protocol_actions(hardware)?;
+        }
         #[cfg(not(feature = "diagnostics"))]
         let _ = protocol_class;
         #[cfg(feature = "diagnostics")]
@@ -311,11 +347,11 @@ where
         Ok(
             if self.protocol_rx.queued_frames() != 0
                 || self.rx_batch_pending()
-                || self.mac.tx_pending()
+                || tx_pending
             {
                 DatapathRxProgress::ProbePending
             } else {
-                stage_progress
+                DatapathRxProgress::Drained
             },
         )
     }

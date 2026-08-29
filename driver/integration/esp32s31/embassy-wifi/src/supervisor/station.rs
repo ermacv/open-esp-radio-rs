@@ -12,9 +12,9 @@
 #[cfg(feature = "diagnostics")]
 use core::sync::atomic::{AtomicU32, Ordering};
 
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 #[cfg(feature = "mac-irq-diagnostics")]
 use embassy_sync::once_lock::OnceLock;
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_time::Timer;
 use open_esp_radio_embassy_net::SharedPinnedRxQueue;
 use open_esp_radio_esp32s31_hal::radio_arena::Esp32s31RadioOwnerArena;
@@ -38,7 +38,7 @@ use open_esp_radio_esp32s31_wifi_embassy::{
     },
     datapath::DatapathRunner,
     datapath::irq::{EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime, Esp32s31MacInterruptEpoch},
-    datapath::rx::dma::{Esp32s31RxEpochResources, Esp32s31StagedRxProducer, Esp32s31StoppedRx},
+    datapath::rx::dma::{Esp32s31RxEpochResources, Esp32s31StagedRxProducer},
     datapath::rx::frontier::{
         EmbassyEsp32s31RxFrontierDelay, Esp32s31RxFrontier, Esp32s31RxFrontierError,
     },
@@ -47,7 +47,6 @@ use open_esp_radio_esp32s31_wifi_embassy::{
         RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandResources, RxReorderFrameStorage,
     },
     datapath::rx::staging::Esp32s31StagedRxQueue,
-    roles::monitor::Esp32s31MonitorInterrupts,
     roles::station::connected::{
         ConnectedControlPublisher, ConnectedControlResources,
         ConnectedControlShutdown as Esp32s31ConnectedControlShutdown, ConnectedWpa2Security,
@@ -62,14 +61,14 @@ use open_esp_radio_esp32s31_wifi_embassy::{
         Esp32s31ConnectedStaConfig, Esp32s31ConnectedStaConfigError,
         Esp32s31ConnectedStaControlResources, Esp32s31ConnectedStaGroupSecurity,
         Esp32s31ConnectedStaNetworkTxDomain, Esp32s31ConnectedStaPort,
-        Esp32s31ConnectedStaRateConfig, Esp32s31ConnectedStaRxPolicy,
+        Esp32s31ConnectedStaRateConfig, Esp32s31ConnectedStaRxParked, Esp32s31ConnectedStaRxPolicy,
         Esp32s31ConnectedStaRxProtocolResources, Esp32s31ConnectedStaRxService,
-        Esp32s31ConnectedStaRxStopped, Esp32s31ConnectedStaSecurityStopReport,
-        Esp32s31ConnectedStaTeardownFailure, Esp32s31ConnectedStaTxHandoffFailure,
-        Esp32s31ConnectedStaTxPolicy, Esp32s31ConnectedStaTxResources,
-        Esp32s31ConnectedStationExit, Esp32s31ConnectedTx, Esp32s31DisconnectedStaEpoch,
-        Esp32s31InitialConnectedEpochResources, Esp32s31ReconnectedStaEpoch, Esp32s31StaTxEpochExt,
-        Esp32s31StationCommand, Esp32s31StationCommandReceiver, NoopEsp32s31ConnectedRunObserver,
+        Esp32s31ConnectedStaSecurityStopReport, Esp32s31ConnectedStaTeardownFailure,
+        Esp32s31ConnectedStaTxHandoffFailure, Esp32s31ConnectedStaTxPolicy,
+        Esp32s31ConnectedStaTxResources, Esp32s31ConnectedStationExit, Esp32s31ConnectedTx,
+        Esp32s31DisconnectedStaEpoch, Esp32s31InitialConnectedEpochResources,
+        Esp32s31ReconnectedStaEpoch, Esp32s31StaTxEpochExt, Esp32s31StationCommand,
+        Esp32s31StationCommandReceiver, NoopEsp32s31ConnectedRunObserver,
         activate_esp32s31_connected_epoch, prepare_esp32s31_connected_service,
         run_and_quiesce_esp32s31_connected_epoch, start_esp32s31_initial_connected_epoch,
         start_esp32s31_reconnected_connected_epoch,
@@ -77,14 +76,17 @@ use open_esp_radio_esp32s31_wifi_embassy::{
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use open_esp_radio_esp32s31_wifi_esp_hal::mac_interrupt_epoch::{
-    EspHalMacInterruptRoute, service_mac_interrupt, service_power_interrupt,
+    EspHalMacInterruptRoute, prepare_active_connected_sta_without_power_save,
+    prepare_active_connected_sta_without_power_save_with_access, service_mac_interrupt,
+    service_power_interrupt,
 };
 #[cfg(feature = "mac-irq-diagnostics")]
 use open_esp_radio_esp32s31_wifi_mac::irq::{
-    IrqSink, EVENT_COLLISION, EVENT_RX_SUCCESS, EVENT_TX_COMPLETE, EVENT_TX_TIMEOUT,
+    EVENT_COLLISION, EVENT_RX_SUCCESS, EVENT_TX_COMPLETE, EVENT_TX_TIMEOUT, IrqSink,
 };
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::{StaGroupCcmpKeyMaterial, StaGroupCcmpSlot, StaPairwiseCcmpSlot},
+    init::MacRuntimeStopHardware,
     rx::{RxIngressConfig, RxRingError},
     rx_pool::RxStagePool,
     tx::{HeEdcaTxopLimit, HtGuardInterval, HtMcs, LegacyRate},
@@ -103,10 +105,7 @@ use open_esp_radio_esp32s31_wifi_sta::{
     single_mpdu_tx::ConnectedTxSecurity,
 };
 use open_esp_radio_ieee80211::station::StaTxSequenceCounters;
-use open_esp_radio_wifi_embassy::{
-    await_stack_boundary,
-    station_network::RunningStationNetwork,
-};
+use open_esp_radio_wifi_embassy::{await_stack_boundary, station_network::RunningStationNetwork};
 use static_cell::{ConstStaticCell, StaticCell};
 
 #[cfg(feature = "diagnostics")]
@@ -116,8 +115,9 @@ use crate::radio_resources::{
     TX_AMPDU_BUFFER_SIZE, WifiNetworkResources,
 };
 use crate::supervisor::{
-    ControlTx, ProductionStationBoardResources, ProductionStationRuntime, RX_BUFFER_SIZE,
-    RX_DESCRIPTOR_COUNT, RxStorage, StationPowerMode, TxStorage, production_station_runtime,
+    ControlTx, ProductionRxRing, ProductionStationBoardResources, ProductionStationRuntime,
+    RX_BUFFER_SIZE, RX_DESCRIPTOR_COUNT, RxStorage, StationPowerMode, TxStorage,
+    production_station_runtime,
 };
 pub(super) type ControlResources =
     ConnectedControlResources<CriticalSectionRawMutex, CONTROL_QUEUE_DEPTH>;
@@ -175,8 +175,8 @@ type ConnectedLiveRx = Esp32s31StagedRxProducer<
     { RX_BUFFER_SIZE + 4 },
 >;
 type ConnectedRxService = Esp32s31ConnectedStaRxService<ConnectedLiveRx, ConnectedRxProtocol>;
-type ConnectedStoppedRxService =
-    Esp32s31ConnectedStaRxStopped<ConnectedStoppedRx, ConnectedRxProtocolStoppedOwner>;
+type ConnectedParkedRxService =
+    Esp32s31ConnectedStaRxParked<ConnectedParkedRx, ConnectedRxProtocolStoppedOwner>;
 pub(super) type ProductionAccessPointRxProducer =
     open_esp_radio_esp32s31_wifi_embassy::roles::access_point::Esp32s31AccessPointRxProducer<
         'static,
@@ -202,8 +202,9 @@ pub(super) type ProductionAccessPointRxConsumer =
     >;
 
 pub(super) fn access_point_rx_pipeline(
-    ring: open_esp_radio_esp32s31_wifi_mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>,
+    ring: ProductionRxRing,
     storage: &'static RxStorage,
+    retained: Option<ConnectedRxEpochResources>,
     #[cfg(feature = "diagnostics")] pipeline_observer: Option<
         &'static dyn open_esp_radio_esp32s31_wifi_embassy::diagnostics::rx_pipeline::RxPipelineObserver,
     >,
@@ -211,44 +212,82 @@ pub(super) fn access_point_rx_pipeline(
     ProductionAccessPointRxProducer,
     ProductionAccessPointRxConsumer,
 ) {
+    if let Some(retained) = retained {
+        #[cfg(feature = "diagnostics")]
+        let retained = match pipeline_observer {
+            Some(observer) => retained.with_pipeline_observer(observer),
+            None => retained,
+        };
+        return match ring {
+            ProductionRxRing::Halted(ring) => open_esp_radio_esp32s31_wifi_embassy::roles::access_point::Esp32s31AccessPointRxProducer::from_halted_resources(
+                ring,
+                retained,
+            ),
+            ProductionRxRing::Live(ring) => open_esp_radio_esp32s31_wifi_embassy::roles::access_point::Esp32s31AccessPointRxProducer::from_live_resources(
+                ring,
+                retained,
+            ),
+        };
+    }
     #[cfg(feature = "diagnostics")]
     if let Some(observer) = pipeline_observer {
-        return open_esp_radio_esp32s31_wifi_embassy::roles::access_point::Esp32s31AccessPointRxProducer::from_halted_with_pipeline_observer(
+        return match ring {
+            ProductionRxRing::Halted(ring) => open_esp_radio_esp32s31_wifi_embassy::roles::access_point::Esp32s31AccessPointRxProducer::from_halted_with_pipeline_observer(
+                ring,
+                storage,
+                &RX_STAGE_POOL,
+                &STAGED_RX_QUEUE,
+                EmbassyEsp32s31RxDmaObservationDelay,
+                observer,
+            ),
+            ProductionRxRing::Live(ring) => open_esp_radio_esp32s31_wifi_embassy::roles::access_point::Esp32s31AccessPointRxProducer::from_live_with_pipeline_observer(
+                ring,
+                storage,
+                &RX_STAGE_POOL,
+                &STAGED_RX_QUEUE,
+                EmbassyEsp32s31RxDmaObservationDelay,
+                observer,
+            ),
+        };
+    }
+    match ring {
+        ProductionRxRing::Halted(ring) => open_esp_radio_esp32s31_wifi_embassy::roles::access_point::Esp32s31AccessPointRxProducer::from_halted(
             ring,
             storage,
             &RX_STAGE_POOL,
             &STAGED_RX_QUEUE,
             EmbassyEsp32s31RxDmaObservationDelay,
-            observer,
-        );
+        ),
+        ProductionRxRing::Live(ring) => open_esp_radio_esp32s31_wifi_embassy::roles::access_point::Esp32s31AccessPointRxProducer::from_live(
+            ring,
+            storage,
+            &RX_STAGE_POOL,
+            &STAGED_RX_QUEUE,
+            EmbassyEsp32s31RxDmaObservationDelay,
+        ),
     }
-    open_esp_radio_esp32s31_wifi_embassy::roles::access_point::Esp32s31AccessPointRxProducer::from_halted(
-        ring,
-        storage,
-        &RX_STAGE_POOL,
-        &STAGED_RX_QUEUE,
-        EmbassyEsp32s31RxDmaObservationDelay,
-    )
 }
 
 #[cfg(feature = "diagnostics")]
 fn log_rx_ring_topology(label: &str, rx: &ConnectedLiveRx) {
     let topology = rx.ring().topology_snapshot();
     let reload = rx.ring().reload_repair_evidence();
-    let mut armed_mask = 0_u64;
-    let mut completed_mask = 0_u64;
-    let mut invalid_mask = 0_u64;
+    let mut armed_mask = [0_u64; 2];
+    let mut completed_mask = [0_u64; 2];
+    let mut invalid_mask = [0_u64; 2];
     for index in 0..RX_DESCRIPTOR_COUNT {
+        let word = index / u64::BITS as usize;
+        let bit = 1_u64 << (index % u64::BITS as usize);
         let Some(descriptor) = rx.ring().descriptor_snapshot(index) else {
-            invalid_mask |= 1_u64 << index;
+            invalid_mask[word] |= bit;
             continue;
         };
         if rx_done(descriptor.word0) {
-            completed_mask |= 1_u64 << index;
+            completed_mask[word] |= bit;
         } else if rx_rearm_word(descriptor.word0) == Some(descriptor.word0) {
-            armed_mask |= 1_u64 << index;
+            armed_mask[word] |= bit;
         } else {
-            invalid_mask |= 1_u64 << index;
+            invalid_mask[word] |= bit;
         }
     }
     diagnostics_event!(
@@ -262,7 +301,7 @@ fn log_rx_ring_topology(label: &str, rx: &ConnectedLiveRx) {
         reload.last_repair_head,
     );
     diagnostics_event!(
-        "open-radio: connected RX topology label={} valid={} base={:#010x} start={} head={:#010x} head_next={:#010x} tail={} tail_address={:#010x} visited={} terminals={} armed_mask={:#018x} completed_mask={:#018x} invalid_mask={:#018x}",
+        "open-radio: connected RX topology label={} valid={} base={:#010x} start={} head={:#010x} head_next={:#010x} tail={} tail_address={:#010x} visited={} terminals={} armed_mask={:016x}:{:016x} completed_mask={:016x}:{:016x} invalid_mask={:016x}:{:016x}",
         label,
         topology.valid,
         topology.descriptor_base,
@@ -273,9 +312,12 @@ fn log_rx_ring_topology(label: &str, rx: &ConnectedLiveRx) {
         topology.tail_address,
         topology.visited_descriptors,
         topology.terminal_descriptors,
-        armed_mask,
-        completed_mask,
-        invalid_mask,
+        armed_mask[1],
+        armed_mask[0],
+        completed_mask[1],
+        completed_mask[0],
+        invalid_mask[1],
+        invalid_mask[0],
     );
     diagnostics_event!(
         "open-radio: connected RX buffers label={} detached={} released={}",
@@ -301,19 +343,7 @@ fn log_rx_ring_topology(label: &str, rx: &ConnectedLiveRx) {
 }
 
 pub type ConnectedHardware = CooperativeRadioHardware<'static>;
-pub(super) type ConnectedStoppedRx = Esp32s31StoppedRx<
-    'static,
-    'static,
-    'static,
-    EmbassyEsp32s31RxDmaObservationDelay,
-    CriticalSectionRawMutex,
-    RX_STAGE_SLOT_COUNT,
-    RX_DESCRIPTOR_COUNT,
-    RX_STAGE_CAPACITY,
-    RX_STAGE_SLOT_COUNT,
-    RX_BUFFER_SIZE,
-    { RX_BUFFER_SIZE + 4 },
->;
+pub(super) type ConnectedParkedRx = ConnectedLiveRx;
 pub(super) type ConnectedRxEpochResources = Esp32s31RxEpochResources<
     'static,
     'static,
@@ -415,7 +445,7 @@ type ConnectedDriverTeardownFailure = Esp32s31ConnectedDriverTeardownFailure<
     CriticalSectionRawMutex,
     ConnectedHardware,
     ConnectedRxService,
-    ConnectedStoppedRxService,
+    ConnectedParkedRxService,
     ConnectedLiveTx,
     CONTROL_QUEUE_DEPTH,
     RxRingError,
@@ -442,7 +472,7 @@ pub type ConnectedReconnectedEpoch = Esp32s31ReconnectedStaEpoch<
 pub type ConnectedDisconnectedEpoch = Esp32s31DisconnectedStaEpoch<
     RunningStationNetwork<(), NetworkRunner>,
     ConnectedHardware,
-    ConnectedStoppedRx,
+    ConnectedParkedRx,
     RadioAmpduStorage,
     &'static ControlResources,
 >;
@@ -456,8 +486,8 @@ pub(super) static IRQ_RUNTIME: EmbassyMacIrqRuntime<CriticalSectionRawMutex> =
 static POWER_IRQ_RUNTIME: EmbassyPowerIrqRuntime<CriticalSectionRawMutex> =
     EmbassyPowerIrqRuntime::new();
 // This SRAM object stores only the 32 affine handoff records. Each admitted
-// frame retains its original DMA buffer; the other half of the 64-entry ring
-// remains available to the hardware walker and a negotiated BA-16 window.
+// frame retains its original buffer from the 96-entry DMA ring. The bounded
+// handoff therefore leaves at least 64 descriptor credits with the hardware.
 #[allow(
     unsafe_code,
     reason = "the linker must retain latency-critical RX staging in internal SRAM"
@@ -640,6 +670,56 @@ pub struct Esp32s31DiagnosticRxStatistics {
     pub tx_hang: u8,
     pub rx_tx_hang: u32,
     pub rx_tx_panic: u32,
+}
+
+#[cfg(feature = "diagnostics")]
+impl Esp32s31DiagnosticRxStatistics {
+    pub(crate) fn from_deltas(
+        primary: open_esp_radio_esp32s31_hal::wifi_mac::MacRxPrimaryStatisticsDelta,
+        decode: open_esp_radio_esp32s31_hal::wifi_mac::MacRxDecodeErrorStatisticsDelta,
+        hang: open_esp_radio_esp32s31_hal::wifi_mac::MacRxHangStatisticsDelta,
+    ) -> Self {
+        Self {
+            mpdu_count: primary.mpdu_count,
+            data_success: primary.data_success,
+            fcs_error: primary.fcs_error,
+            abort: primary.abort,
+            abort_fcs_pass: primary.abort_fcs_pass,
+            power_drop_error: primary.power_drop_error,
+            he_sig_b_error: primary.he_sig_b_error,
+            same_bm_error: primary.same_bm_error,
+            signal_field: primary.signal_field,
+            end: primary.end,
+            other_unicast: primary.other_unicast,
+            buffer_full: primary.buffer_full,
+            fifo_overflow: primary.fifo_overflow,
+            tkip_error: primary.tkip_error,
+            bt_block_error: primary.bt_block_error,
+            frequency_hop_error: primary.frequency_hop_error,
+            last_unmatched_error: primary.last_unmatched_error,
+            ack_interrupt: primary.ack_interrupt,
+            rts_interrupt: primary.rts_interrupt,
+            brx_agc_error: decode.brx_agc,
+            brx_error: decode.brx,
+            nrx_error: decode.nrx,
+            nrx_abort: decode.nrx_abort,
+            nrx_agc_exit: decode.nrx_agc_exit,
+            nrx_baseband_off: decode.nrx_baseband_off,
+            nrx_fdm_watchdog: decode.nrx_fdm_watchdog,
+            nrx_restart: decode.nrx_restart,
+            nrx_service: decode.nrx_service,
+            nrx_tx_over: decode.nrx_tx_over,
+            nrx_unsupported: decode.nrx_unsupported,
+            nrx_he_format: decode.nrx_he_format,
+            nrx_ht_sig: decode.nrx_ht_sig,
+            nrx_he_unsupported: decode.nrx_he_unsupported,
+            nrx_he_sig_a_crc: decode.nrx_he_sig_a_crc,
+            rx_hang: hang.rx,
+            tx_hang: hang.tx,
+            rx_tx_hang: hang.rx_tx_hang,
+            rx_tx_panic: hang.rx_tx_panic,
+        }
+    }
 }
 
 /// Value-only hard-IRQ observation exported only by diagnostics builds.
@@ -1091,7 +1171,7 @@ pub enum ConnectedStationFault<'state, 'security> {
         _interrupt_drain:
             open_esp_radio_esp32s31_wifi_embassy::datapath::irq::Esp32s31MacInterruptEpochDrain,
         _hardware: ConnectedHardware,
-        _stopped_rx: ConnectedStoppedRx,
+        _parked_rx: ConnectedParkedRx,
         _tx_resources: ReturnedConnectedTxResources,
         _aggregate: RadioAmpduStorage,
         _control_observation: Esp32s31ConnectedControlShutdown,
@@ -1107,7 +1187,7 @@ pub enum ConnectedStationFault<'state, 'security> {
         _interrupt_drain:
             open_esp_radio_esp32s31_wifi_embassy::datapath::irq::Esp32s31MacInterruptEpochDrain,
         _hardware: ConnectedHardware,
-        _stopped_rx: ConnectedStoppedRx,
+        _parked_rx: ConnectedParkedRx,
         _aggregate: RadioAmpduStorage,
         _control_observation: Esp32s31ConnectedControlShutdown,
         _security_stop: Esp32s31ConnectedStaSecurityStopReport,
@@ -1295,12 +1375,22 @@ pub(crate) async fn run_connected<'state, 'security>(
         let (runtime, epoch) = started.runtime_and_epoch_mut();
         let (radio, _storage, _board) = runtime.split_mut();
         let (_phy, platform, interrupt) = radio.parts_mut();
-        let setup = interrupt.setup_mut().map_err(|_| {
-            open_esp_radio_esp32s31_wifi_embassy::datapath::irq::Esp32s31MacInterruptEpochActivateError::AlreadyActive
-        });
-        match setup {
-            Ok(setup) => {
-                let prepared = match epoch {
+        let prepared = if interrupt.is_active() {
+            match epoch {
+                Esp32s31ConnectedEpochResources::Initial { hardware, .. } => {
+                    prepare_active_connected_sta_without_power_save(hardware)
+                }
+                Esp32s31ConnectedEpochResources::Reconnected(reconnected) => {
+                    let access = reconnected.hardware_mut().register_access();
+                    prepare_active_connected_sta_without_power_save_with_access(&access)
+                }
+            }
+            .map_err(|_| {
+                open_esp_radio_esp32s31_wifi_embassy::datapath::irq::Esp32s31MacInterruptEpochActivateError::AlreadyActive
+            })
+        } else {
+            match interrupt.setup_mut() {
+                Ok(setup) => match epoch {
                     Esp32s31ConnectedEpochResources::Initial { hardware, .. } => {
                         Ok(setup.prepare_connected_sta_without_power_save(hardware))
                     }
@@ -1310,13 +1400,14 @@ pub(crate) async fn run_connected<'state, 'security>(
                             open_esp_radio_esp32s31_wifi_embassy::datapath::irq::Esp32s31MacInterruptEpochActivateError::AlreadyActive
                         })
                     }
-                };
-                prepared.and_then(|prepared| {
-                    activate_esp32s31_connected_epoch(interrupt, platform, prepared)
-                })
+                },
+                Err(_) => Err(
+                    open_esp_radio_esp32s31_wifi_embassy::datapath::irq::Esp32s31MacInterruptEpochActivateError::AlreadyActive,
+                ),
             }
-            Err(error) => Err(error),
-        }
+        };
+        prepared
+            .and_then(|prepared| activate_esp32s31_connected_epoch(interrupt, platform, prepared))
     };
     if let Err(error) = activation {
         diagnostics_event!(
@@ -1378,7 +1469,8 @@ pub(crate) async fn run_connected<'state, 'security>(
                 EmbassyEsp32s31RxDmaObservationDelay,
             );
             (
-                start_esp32s31_initial_connected_epoch(hardware, receive, initial.with_rx(rx)).await,
+                start_esp32s31_initial_connected_epoch(hardware, receive, initial.with_rx(rx))
+                    .await,
                 Some(staged_receiver),
             )
         }
@@ -1755,6 +1847,14 @@ pub(crate) async fn run_connected<'state, 'security>(
         }
     }
 
+    // RX materialization published the complete descriptor ring while the
+    // vendor stop request remained asserted. All later fallible composition
+    // edges are now closed, so the MAC may consume those credits.
+    radio_runner
+        .services_mut()
+        .hardware_mut()
+        .resume_mac_runtime();
+
     let _initial_network_marker = stack_runner;
     diagnostics_event!(
         "open-radio: connected datapath active phy={} tx={}kbps ampdu={}kbps mcs32={:?}",
@@ -1957,7 +2057,7 @@ pub(crate) async fn run_connected<'state, 'security>(
     let interrupt_epoch = teardown.interrupt;
     let interrupt_drain = teardown.interrupt_drain;
     let teardown = teardown.driver;
-    let (stopped_rx, stopped_protocol) = teardown.stopped_rx.into_parts();
+    let (parked_rx, stopped_protocol) = teardown.parked_rx.into_parts();
     let shutdown = stopped_protocol.shutdown();
     diagnostics_event!(
         "open-radio: RX protocol stopped queued={} retained={} commands={} active={}",
@@ -1998,7 +2098,7 @@ pub(crate) async fn run_connected<'state, 'security>(
             _outcome: outcome,
             _interrupt_drain: interrupt_drain,
             _hardware: teardown.hardware,
-            _stopped_rx: stopped_rx,
+            _parked_rx: parked_rx,
             _tx_resources: teardown.tx_resources,
             _aggregate: teardown.aggregate,
             _control_observation: teardown.control,
@@ -2033,7 +2133,7 @@ pub(crate) async fn run_connected<'state, 'security>(
             _outcome: outcome,
             _interrupt_drain: interrupt_drain,
             _hardware: teardown.hardware,
-            _stopped_rx: stopped_rx,
+            _parked_rx: parked_rx,
             _aggregate: teardown.aggregate,
             _control_observation: teardown.control,
             _security_stop: teardown.security,
@@ -2046,7 +2146,7 @@ pub(crate) async fn run_connected<'state, 'security>(
     let disconnected: ConnectedDisconnectedEpoch = Esp32s31DisconnectedStaEpoch::new(
         RunningStationNetwork::new(stack, network_runner),
         teardown.hardware,
-        stopped_rx,
+        parked_rx,
         teardown.aggregate,
         control_resources,
     );
@@ -2118,18 +2218,6 @@ pub(crate) fn mac_interrupt_epoch(setup: MacInterruptSetup) -> MacInterruptEpoch
     Esp32s31MacInterruptEpoch::new(
         EspHalMacInterruptRoute::new(mac_interrupt, power_interrupt),
         setup,
-        &IRQ_RUNTIME,
-        &POWER_IRQ_RUNTIME,
-    )
-}
-
-/// Bind a monitor epoch to the same physical IRQ route and wake domains used
-/// by station epochs. The sole radio supervisor guarantees that the two roles
-/// cannot own this route concurrently.
-pub(crate) fn monitor_interrupts()
--> Esp32s31MonitorInterrupts<'static, EspHalMacInterruptRoute, CriticalSectionRawMutex> {
-    Esp32s31MonitorInterrupts::new(
-        EspHalMacInterruptRoute::new(mac_interrupt, power_interrupt),
         &IRQ_RUNTIME,
         &POWER_IRQ_RUNTIME,
     )

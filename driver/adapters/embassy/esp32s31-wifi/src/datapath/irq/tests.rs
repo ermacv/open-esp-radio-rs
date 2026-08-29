@@ -430,6 +430,44 @@ fn moderated_rx_masks_before_ack_and_restores_only_on_bottom_half_drain() {
     assert_eq!(RX_UNMASK_CALLS.load(Ordering::Relaxed), 1);
 }
 
+#[test]
+fn moderated_irq_epoch_owns_activation_failure_and_quiesce_cleanup() {
+    RX_UNMASK_CALLS.store(0, Ordering::Relaxed);
+    let mac = EmbassyMacIrqRuntime::<NoopRawMutex>::new_with_rx_moderation(record_rx_unmask);
+    let power = EmbassyPowerIrqRuntime::<NoopRawMutex>::new();
+    let platform = Cell::new(10);
+    let mut epoch = Esp32s31MacInterruptEpoch::new(Route { active: false }, 7, &mac, &power);
+
+    assert_eq!(
+        epoch.activate_rx_moderated(
+            &platform,
+            open_esp_radio_esp32s31_hal::types::MacInterruptMask::COLD_RX,
+        ),
+        Err(Esp32s31MacInterruptEpochActivateError::Route(
+            RouteError::Activation
+        ))
+    );
+    assert!(!epoch.is_active());
+    assert!(!epoch.is_rx_moderated());
+    assert!(!mac.is_rx_moderation_active());
+
+    platform.set(0);
+    epoch
+        .activate_rx_moderated(
+            &platform,
+            open_esp_radio_esp32s31_hal::types::MacInterruptMask::COLD_RX,
+        )
+        .unwrap();
+    assert!(epoch.is_active());
+    assert!(epoch.is_rx_moderated());
+    assert!(mac.is_rx_moderation_active());
+
+    epoch.quiesce(&platform).unwrap();
+    assert!(!epoch.is_active());
+    assert!(!epoch.is_rx_moderated());
+    assert!(!mac.is_rx_moderation_active());
+}
+
 struct PowerInterrupt {
     status: MacPowerInterruptObservation,
     acknowledged: Cell<bool>,

@@ -3,6 +3,7 @@ id = "access-point-lifecycle"
 description = "Repeated cold-boot and ownership qualification for one WPA2 access point"
 image = "correctness"
 isolation = "reset"
+data_plane = "split-radio-network"
 tags = ["qualification", "wifi", "access-point", "lifecycle"]
 
 [workload]

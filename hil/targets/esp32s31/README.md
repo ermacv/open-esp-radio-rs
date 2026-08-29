@@ -25,12 +25,13 @@ placement, compiler stack frames (warning above 8 KiB, rejection above 32 KiB)
 and reviewed owner futures. Runtime evidence enforces the absolute per-core
 headroom declared in `stack.toml`.
 
-`data_plane` is selected by the startup command, not by rebuilding. The
-`single-core` topology is the explicit bounded-latency baseline: it keeps
-radio, RX protocol, `embassy-net` and socket workloads on CPU0. The production
-high-throughput topology is `split-radio-network`; it retains radio and RX
-protocol on CPU0 and moves only `embassy-net` plus sockets to CPU1. This is an
-ownership-preserving executor placement, not a second radio datapath. Network
+`data_plane` is selected by the startup command, not by rebuilding. Every
+repository scenario selects the production `split-radio-network` topology: it
+retains radio and RX protocol on CPU0 and moves only `embassy-net` plus sockets
+to CPU1. The protocol still names the CPU0-local composition so a deliberately
+constructed external diagnostic can isolate placement, but it is not a catalog
+scenario or a default. This is an ownership-preserving executor placement, not
+a second radio datapath. Network
 ingress is time-bounded at 250 us and owns
 one dedicated TX credit per permanent endpoint beyond the 64 application
 credits. Saturated egress therefore cannot prevent either STA or AP from

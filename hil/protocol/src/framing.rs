@@ -609,9 +609,49 @@ mod tests {
 
     #[test]
     fn access_point_retry_evidence_fits_and_round_trips() {
-        use crate::WifiAccessPointEvidence;
+        use crate::{WifiAccessPointEvidence, WifiMacRxHardwareEvidence};
 
         let evidence = WifiAccessPointEvidence {
+            rx_hardware: WifiMacRxHardwareEvidence {
+                mpdu_count: u16::MAX,
+                data_success: u16::MAX,
+                fcs_error: u16::MAX,
+                abort: u16::MAX,
+                abort_fcs_pass: u16::MAX,
+                power_drop_error: u16::MAX,
+                he_sig_b_error: u16::MAX,
+                same_bm_error: u16::MAX,
+                signal_field: u16::MAX,
+                end: u16::MAX,
+                other_unicast: u16::MAX,
+                buffer_full: u16::MAX,
+                fifo_overflow: u16::MAX,
+                tkip_error: u16::MAX,
+                bluetooth_block_error: u16::MAX,
+                frequency_hop_error: u16::MAX,
+                last_unmatched_error: u16::MAX,
+                ack_interrupt: u16::MAX,
+                rts_interrupt: u16::MAX,
+                brx_agc_error: u16::MAX,
+                brx_error: u16::MAX,
+                nrx_error: u16::MAX,
+                nrx_abort: u16::MAX,
+                nrx_agc_exit: u16::MAX,
+                nrx_baseband_off: u16::MAX,
+                nrx_fdm_watchdog: u16::MAX,
+                nrx_restart: u16::MAX,
+                nrx_service: u16::MAX,
+                nrx_tx_over: u16::MAX,
+                nrx_unsupported: u16::MAX,
+                nrx_he_format: u16::MAX,
+                nrx_ht_sig: u16::MAX,
+                nrx_he_unsupported: u16::MAX,
+                nrx_he_sig_a_crc: u16::MAX,
+                rx_hang: u8::MAX,
+                tx_hang: u8::MAX,
+                rx_tx_hang: u32::MAX,
+                rx_tx_panic: u32::MAX,
+            },
             data_tx_attempts: u32::MAX,
             data_tx_retried_frames: u32::MAX,
             data_tx_maximum_attempts: u8::MAX,
@@ -797,12 +837,14 @@ mod tests {
         extern crate std;
 
         use crate::{
-            NetworkCredentials, NetworkIpv4Configuration, WifiAccessPointRequest, WifiChannelWidth,
+            NetworkCredentials, NetworkIpv4Configuration, WifiAccessPointRequest,
+            WifiAccessPointSecurity, WifiChannelWidth,
         };
 
         let request = WifiAccessPointRequest {
             credentials: NetworkCredentials::try_new(b"open-radio-ap", b"private-password")
                 .unwrap(),
+            security: WifiAccessPointSecurity::Wpa2Personal,
             channel: 6,
             channel_width: WifiChannelWidth::Mhz40Above,
             client_limit: 4,
@@ -834,8 +876,8 @@ mod tests {
     #[test]
     fn station_access_point_request_round_trips_as_one_owned_command() {
         use crate::{
-            NetworkCredentials, NetworkIpv4Configuration, WifiAccessPointRequest, WifiChannelWidth,
-            WifiStationAccessPointRequest,
+            NetworkCredentials, NetworkIpv4Configuration, WifiAccessPointRequest,
+            WifiAccessPointSecurity, WifiChannelWidth, WifiStationAccessPointRequest,
         };
 
         let request = WifiStationAccessPointRequest {
@@ -844,6 +886,7 @@ mod tests {
             access_point: WifiAccessPointRequest {
                 credentials: NetworkCredentials::try_new(b"open-radio-ap", b"downstream-password")
                     .unwrap(),
+                security: WifiAccessPointSecurity::Wpa2Personal,
                 channel: 6,
                 channel_width: WifiChannelWidth::Mhz40Above,
                 client_limit: 1,

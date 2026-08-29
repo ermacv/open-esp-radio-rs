@@ -3,6 +3,7 @@ id = "station-reconnect"
 description = "Repeated safe station teardown and reassociation"
 image = "correctness"
 isolation = "reset"
+data_plane = "split-radio-network"
 tags = ["qualification", "station", "lifecycle"]
 
 [link]

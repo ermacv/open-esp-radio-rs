@@ -264,6 +264,8 @@ pub struct RxCompletedUnitFrontier {
 /// Public consumers may
 /// count retained descriptors for diagnostics, but mutation remains private
 /// to the live ring owner.
+const RX_OBSERVED_MASK_CAPACITY: usize = 96;
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct RxObservedMask {
     words: [u32; 3],
@@ -271,7 +273,7 @@ pub struct RxObservedMask {
 
 impl RxObservedMask {
     pub const fn contains(self, index: usize) -> bool {
-        index < 96 && self.words[index / 32] & (1_u32 << (index % 32)) != 0
+        index < RX_OBSERVED_MASK_CAPACITY && self.words[index / 32] & (1_u32 << (index % 32)) != 0
     }
 
     pub const fn count_ones(self) -> u32 {
@@ -1214,7 +1216,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     where
         F: FnMut(usize) -> bool,
     {
-        if COUNT == 0 || COUNT > 96 {
+        if COUNT == 0 || COUNT > RX_OBSERVED_MASK_CAPACITY {
             return RxCompletedUnitFrontier::default();
         }
         let observed = self.observed_prefix_len();
@@ -1269,7 +1271,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     where
         F: FnMut(usize) -> bool,
     {
-        if COUNT == 0 || COUNT > 96 {
+        if COUNT == 0 || COUNT > RX_OBSERVED_MASK_CAPACITY {
             return RxCompletedUnitFrontier::default();
         }
         let observed = self.observed_prefix_len();
@@ -1326,7 +1328,11 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     where
         F: FnMut(usize) -> bool,
     {
-        if COUNT == 0 || COUNT > 96 || descriptor_limit == 0 || descriptor_limit > COUNT {
+        if COUNT == 0
+            || COUNT > RX_OBSERVED_MASK_CAPACITY
+            || descriptor_limit == 0
+            || descriptor_limit > COUNT
+        {
             return Ok(None);
         }
         let observed = self.observed_prefix_len();
@@ -2290,7 +2296,7 @@ impl<const COUNT: usize> Drop for RxRingLive<'_, COUNT> {
 }
 
 fn validate_live_ring_geometry<const COUNT: usize>() -> Result<(), RxRingError> {
-    if COUNT < 2 || COUNT > 96 || !COUNT.is_multiple_of(2) {
+    if COUNT < 2 || COUNT > RX_OBSERVED_MASK_CAPACITY || !COUNT.is_multiple_of(2) {
         Err(RxRingError::Count)
     } else {
         Ok(())
@@ -2459,7 +2465,7 @@ fn wrap_sub_one<const COUNT: usize>(index: usize) -> usize {
 /// chunk uses a bit scan, preserving arbitrary holes used by the raw model
 /// without introducing a per-descriptor scan in the production path.
 fn observed_prefix_len<const COUNT: usize>(observed_mask: RxObservedMask, start: usize) -> usize {
-    if COUNT == 0 || COUNT > 96 || start >= COUNT {
+    if COUNT == 0 || COUNT > RX_OBSERVED_MASK_CAPACITY || start >= COUNT {
         return 0;
     }
     let mut cursor = start;

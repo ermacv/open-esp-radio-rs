@@ -3,9 +3,10 @@
 //! The restricted PAC below this crate owns positional MMIO transactions and
 //! compressed-address encoding. This crate owns controller-SRAM layouts and
 //! role-to-list routing that are consumed above the register boundary. It is
-//! intentionally sparse: static graph location, allocation-time links and the
-//! fixed DTM allocator prefix are bound, while hardware publication, device
-//! fences and affine reclamation still require independent proof.
+//! intentionally sparse: static graph location, allocation-time links, the
+//! fixed DTM allocator prefix and the first empty-list item-link transform are
+//! bound, while list ownership, hardware publication, device fences and
+//! affine reclamation still require independent proof.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -44,16 +45,16 @@ pub use dtm_storage::{
     BLUETOOTH_DTM_TX_PACKET_PREFIX_BYTES, BluetoothDtmBufferHeaderStorage,
     BluetoothDtmLinkStateStorage, BluetoothDtmMemoryGraphBindError,
     BluetoothDtmMemoryGraphBindFailure, BluetoothDtmMemoryGraphBinding,
-    BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphPositionalEventPrepared,
-    BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphPrepareFailure,
-    BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared, BluetoothDtmMemoryGraphStorage,
-    BluetoothDtmMemoryGraphTxPacketPrepared, BluetoothDtmPositionalEventSeed,
-    BluetoothDtmPreparedTxPacketStorage, BluetoothDtmRxBufferHeaderImage,
-    BluetoothDtmRxBufferStorage, BluetoothDtmRxPacketAddress, BluetoothDtmRxPacketAddressError,
-    BluetoothDtmRxPacketStorage, BluetoothDtmRxRearmError, BluetoothDtmSchedulerAllocationConfig,
-    BluetoothDtmSchedulerContextStorage, BluetoothDtmSchedulerItemStorage,
-    BluetoothDtmTxBufferHeaderImage, BluetoothDtmTxPacketAddress, BluetoothDtmTxPacketAddressError,
-    BluetoothDtmTxPacketPreparation, BluetoothDtmTxPacketStorage,
+    BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphEmptyListLinkPrepared,
+    BluetoothDtmMemoryGraphPositionalEventPrepared, BluetoothDtmMemoryGraphPrepareError,
+    BluetoothDtmMemoryGraphPrepareFailure, BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared,
+    BluetoothDtmMemoryGraphStorage, BluetoothDtmMemoryGraphTxPacketPrepared,
+    BluetoothDtmPositionalEventSeed, BluetoothDtmPreparedTxPacketStorage,
+    BluetoothDtmRxBufferHeaderImage, BluetoothDtmRxBufferStorage, BluetoothDtmRxPacketAddress,
+    BluetoothDtmRxPacketAddressError, BluetoothDtmRxPacketStorage, BluetoothDtmRxRearmError,
+    BluetoothDtmSchedulerAllocationConfig, BluetoothDtmSchedulerContextStorage,
+    BluetoothDtmSchedulerItemStorage, BluetoothDtmTxBufferHeaderImage, BluetoothDtmTxPacketAddress,
+    BluetoothDtmTxPacketAddressError, BluetoothDtmTxPacketPreparation, BluetoothDtmTxPacketStorage,
 };
 pub use rx_memory_list::BluetoothRxMemoryListClass;
 pub use sram_link::{BluetoothDtmBoundSramLinkAddress, BluetoothDtmBoundSramLinkAddressError};

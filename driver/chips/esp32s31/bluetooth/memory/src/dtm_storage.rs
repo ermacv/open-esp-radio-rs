@@ -79,6 +79,8 @@ const SCHEDULER_ITEM_POSITIONAL_24_IMAGE: u32 = 0x0007_bdef;
 const SCHEDULER_ITEM_STATUS_OFFSET: usize = 0x38 / 4;
 const SCHEDULER_ITEM_CONTROL_OFFSET: usize = 0x4c / 4;
 const SCHEDULER_ITEM_CONTROL_BYTE: usize = 2;
+const SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET: usize = 0;
+const SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET: usize = 0x50 / 4;
 const SCHEDULER_ITEM_COMPLETED_LINK_OFFSET: usize = 0x54 / 4;
 const LOW_TWENTY_MASK: u32 = 0x000f_ffff;
 
@@ -1005,6 +1007,38 @@ impl BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared {
         self.binding.scheduler_item_address().controller_address()
     }
 
+    /// Prepare this item as the sole member of a proven-empty hardware list.
+    ///
+    /// SOURCE: complete current `r_sym_bt_YRnBzKlWCjsIbotqvNyS` and
+    /// instruction-corresponding same-chip named
+    /// `r_btdm_sched_merge_list_remove_overlap`. On the empty-list edge the
+    /// selected item is the submitted item and its compressed hardware-next
+    /// link is cleared before any hardware-head publication.
+    ///
+    /// This memory-only transition does not prove that a scheduler list is
+    /// empty and performs no fence or MMIO. The Controller must consume it
+    /// together with its exclusive empty-list epoch before publication.
+    #[doc(hidden)]
+    pub fn prepare_empty_list_link(mut self) -> BluetoothDtmMemoryGraphEmptyListLinkPrepared {
+        let storage = self.storage.as_mut().project().scheduler_item;
+        let previous_hardware_next = storage.words[SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET];
+        let previous_software_next = storage.words[SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET];
+        storage.words[SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET] =
+            previous_hardware_next & !LOW_TWENTY_MASK;
+        storage.words[SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET] = 0;
+
+        BluetoothDtmMemoryGraphEmptyListLinkPrepared {
+            storage: self.storage,
+            binding: self.binding,
+            previous: self.previous,
+            previous_control: self.previous_control,
+            previous_status: self.previous_status,
+            previous_completed_link: self.previous_completed_link,
+            previous_hardware_next,
+            previous_software_next,
+        }
+    }
+
     /// Cancel before publication and recover the positional event owner.
     pub fn cancel(mut self) -> BluetoothDtmMemoryGraphPositionalEventPrepared {
         let storage = self.storage.as_mut().project().scheduler_item;
@@ -1016,6 +1050,47 @@ impl BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared {
             storage: self.storage,
             binding: self.binding,
             previous: self.previous,
+        }
+    }
+}
+
+/// CPU-owned graph whose scheduler item has a null hardware-next link.
+///
+/// This is only descriptor preparation for the empty-list merge case. It does
+/// not carry list ownership, visibility, publication or hardware-consumption
+/// authority; those belong to the upper Controller lifecycle.
+#[must_use = "the empty-list candidate must remain owned or be cancelled"]
+pub struct BluetoothDtmMemoryGraphEmptyListLinkPrepared {
+    storage: Pin<&'static mut BluetoothDtmMemoryGraphStorage>,
+    binding: BluetoothDtmMemoryGraphBinding,
+    previous: BluetoothDtmPositionalEventWords,
+    previous_control: u32,
+    previous_status: u32,
+    previous_completed_link: u32,
+    previous_hardware_next: u32,
+    previous_software_next: u32,
+}
+
+impl BluetoothDtmMemoryGraphEmptyListLinkPrepared {
+    /// Return the exact scheduler-item identity retained by this graph.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.binding.scheduler_item_address().controller_address()
+    }
+
+    /// Cancel before visibility or publication and recover bookkeeping state.
+    pub fn cancel(mut self) -> BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared {
+        self.storage.as_mut().project().scheduler_item.words[SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET] =
+            self.previous_hardware_next;
+        self.storage.as_mut().project().scheduler_item.words[SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET] =
+            self.previous_software_next;
+
+        BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared {
+            storage: self.storage,
+            binding: self.binding,
+            previous: self.previous,
+            previous_control: self.previous_control,
+            previous_status: self.previous_status,
+            previous_completed_link: self.previous_completed_link,
         }
     }
 }
@@ -1439,7 +1514,8 @@ mod tests {
         SCHEDULER_ITEM_ALLOCATION_FLAGS_OFFSET, SCHEDULER_ITEM_ALLOCATION_PREFIX_OFFSET,
         SCHEDULER_ITEM_COMPLETED_LINK_OFFSET, SCHEDULER_ITEM_CONTEXT_OFFSET,
         SCHEDULER_ITEM_CONTROL_BYTE, SCHEDULER_ITEM_CONTROL_OFFSET,
-        SCHEDULER_ITEM_POSITIONAL_24_OFFSET, SCHEDULER_ITEM_STATUS_OFFSET,
+        SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET, SCHEDULER_ITEM_POSITIONAL_24_OFFSET,
+        SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET, SCHEDULER_ITEM_STATUS_OFFSET,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1718,6 +1794,26 @@ mod tests {
         );
 
         let prepared = scheduler_prepared.cancel();
+        assert_eq!(snapshot(prepared.storage.as_ref().get_ref()), before);
+    }
+
+    #[test]
+    fn empty_list_link_preparation_is_the_only_additional_memory_change() {
+        let owner = model_owner(0x2f00_0d00);
+        let prepared = owner
+            .try_prepare_positional_event(|seed| Ok::<_, Infallible>(candidate_words(seed)))
+            .expect("matching anchors prepare a CPU-owned image")
+            .prepare_scheduler_bookkeeping();
+        let before = snapshot(prepared.storage.as_ref().get_ref());
+
+        let merged = prepared.prepare_empty_list_link();
+        let after = snapshot(merged.storage.as_ref().get_ref());
+        let mut expected = before.clone();
+        expected.scheduler_item[SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET] &= !LOW_TWENTY_MASK;
+        expected.scheduler_item[SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET] = 0;
+        assert_eq!(after, expected);
+
+        let prepared = merged.cancel();
         assert_eq!(snapshot(prepared.storage.as_ref().get_ref()), before);
     }
 

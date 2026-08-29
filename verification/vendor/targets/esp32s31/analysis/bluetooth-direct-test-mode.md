@@ -475,6 +475,14 @@ the exact empty-list descriptor/link writes, release visibility edge and
 insertion-end execution must consume the same item and list owner before a
 hardware-owned state can be formed.
 
+The controller-memory layer now implements the item half of that first merge
+as a separate cancellable typestate. It clears the submitted item's compressed
+hardware-next link while preserving the allocation image and clears the
+source software-next link. The Rust scheduler epoch intentionally replaces the
+three vendor manager pointers instead of materializing their private ABI. No
+public Controller path consumes both halves yet, so this state still performs
+neither a visibility fence nor an MMIO publication.
+
 The later common insertion edge supplies the missing source-program order but
 not yet its memory-model contract. It clears item byte `+0x4e`, writes
 `0xffff_ffff` to item status `+0x38`, links the item, publishes its compressed

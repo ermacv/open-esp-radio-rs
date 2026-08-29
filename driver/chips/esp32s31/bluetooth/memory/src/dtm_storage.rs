@@ -12,13 +12,15 @@
 
 #![forbid(unsafe_code)]
 
-use core::{convert::Infallible, marker::PhantomPinned, pin::Pin};
+use core::{convert::Infallible, marker::PhantomPinned, num::NonZeroU32, pin::Pin};
 
 use open_esp_radio_esp32s31_hal::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
-    BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHardwareListIndex,
+    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListHeadPublished,
+    BluetoothSchedulerHardwareListIndex,
 };
 use pin_project::pin_project;
+use vcell::VolatileCell;
 
 use crate::{
     dtm_event_image::{
@@ -84,6 +86,7 @@ const SCHEDULER_ITEM_CONTROL_BYTE: usize = 2;
 const SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET: usize = 0;
 const SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET: usize = 0x50 / 4;
 const SCHEDULER_ITEM_COMPLETED_LINK_OFFSET: usize = 0x54 / 4;
+const SCHEDULER_ITEM_WORDS: usize = BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES / 4;
 const LOW_TWENTY_MASK: u32 = 0x000f_ffff;
 
 /// Source-owned inputs to the DTM scheduler allocation field.
@@ -325,41 +328,65 @@ impl BluetoothDtmLinkStateStorage {
     }
 }
 
-/// Opaque CPU-owned scheduler-item allocation.
+/// Opaque hardware-shared scheduler-item allocation.
+///
+/// Every word is volatile because the controller may change descriptor state
+/// after head publication. CPU-owned typestates still serialize all writes;
+/// the volatile cells prevent ordinary Rust loads from being substituted for
+/// the explicit post-fence completion observation.
 #[repr(C, align(4))]
 pub struct BluetoothDtmSchedulerItemStorage {
-    words: [u32; BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES / 4],
+    words: [VolatileCell<u32>; SCHEDULER_ITEM_WORDS],
 }
 
 impl BluetoothDtmSchedulerItemStorage {
+    fn read_word(&self, index: usize) -> u32 {
+        self.words[index].get()
+    }
+
+    fn write_word(&self, index: usize, value: u32) {
+        self.words[index].set(value);
+    }
+
+    fn clear(&self) {
+        for word in &self.words {
+            word.set(0);
+        }
+    }
+
+    #[cfg(test)]
+    fn snapshot(&self) -> [u32; SCHEDULER_ITEM_WORDS] {
+        core::array::from_fn(|index| self.read_word(index))
+    }
+
     fn reviewed_words(&self) -> BluetoothDtmSchedulerItemReviewedWords {
         BluetoothDtmSchedulerItemReviewedWords {
-            word_00: self.words[0],
-            word_04: self.words[1],
-            word_08: self.words[2],
-            word_0c: self.words[3],
-            word_10: self.words[4],
-            word_14: self.words[5],
-            word_18: self.words[6],
-            word_2c: self.words[11],
-            word_44: self.words[17],
-            word_48: self.words[18],
-            word_4c: self.words[19],
+            word_00: self.read_word(0),
+            word_04: self.read_word(1),
+            word_08: self.read_word(2),
+            word_0c: self.read_word(3),
+            word_10: self.read_word(4),
+            word_14: self.read_word(5),
+            word_18: self.read_word(6),
+            word_2c: self.read_word(11),
+            word_44: self.read_word(17),
+            word_48: self.read_word(18),
+            word_4c: self.read_word(19),
         }
     }
 
     fn write_reviewed_words(&mut self, words: BluetoothDtmSchedulerItemReviewedWords) {
-        self.words[0] = words.word_00;
-        self.words[1] = words.word_04;
-        self.words[2] = words.word_08;
-        self.words[3] = words.word_0c;
-        self.words[4] = words.word_10;
-        self.words[5] = words.word_14;
-        self.words[6] = words.word_18;
-        self.words[11] = words.word_2c;
-        self.words[17] = words.word_44;
-        self.words[18] = words.word_48;
-        self.words[19] = words.word_4c;
+        self.write_word(0, words.word_00);
+        self.write_word(1, words.word_04);
+        self.write_word(2, words.word_08);
+        self.write_word(3, words.word_0c);
+        self.write_word(4, words.word_10);
+        self.write_word(5, words.word_14);
+        self.write_word(6, words.word_18);
+        self.write_word(11, words.word_2c);
+        self.write_word(17, words.word_44);
+        self.write_word(18, words.word_48);
+        self.write_word(19, words.word_4c);
     }
 }
 
@@ -944,15 +971,15 @@ impl BluetoothDtmMemoryGraphPositionalEventPrepared {
         mut self,
     ) -> BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared {
         let storage = self.storage.as_mut().project().scheduler_item;
-        let previous_control = storage.words[SCHEDULER_ITEM_CONTROL_OFFSET];
-        let previous_status = storage.words[SCHEDULER_ITEM_STATUS_OFFSET];
-        let previous_completed_link = storage.words[SCHEDULER_ITEM_COMPLETED_LINK_OFFSET];
+        let previous_control = storage.read_word(SCHEDULER_ITEM_CONTROL_OFFSET);
+        let previous_status = storage.read_word(SCHEDULER_ITEM_STATUS_OFFSET);
+        let previous_completed_link = storage.read_word(SCHEDULER_ITEM_COMPLETED_LINK_OFFSET);
 
         let mut control = previous_control.to_le_bytes();
         control[SCHEDULER_ITEM_CONTROL_BYTE] = 0;
-        storage.words[SCHEDULER_ITEM_CONTROL_OFFSET] = u32::from_le_bytes(control);
-        storage.words[SCHEDULER_ITEM_STATUS_OFFSET] = u32::MAX;
-        storage.words[SCHEDULER_ITEM_COMPLETED_LINK_OFFSET] = 0;
+        storage.write_word(SCHEDULER_ITEM_CONTROL_OFFSET, u32::from_le_bytes(control));
+        storage.write_word(SCHEDULER_ITEM_STATUS_OFFSET, u32::MAX);
+        storage.write_word(SCHEDULER_ITEM_COMPLETED_LINK_OFFSET, 0);
 
         BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared {
             storage: self.storage,
@@ -1023,11 +1050,13 @@ impl BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared {
     #[doc(hidden)]
     pub fn prepare_empty_list_link(mut self) -> BluetoothDtmMemoryGraphEmptyListLinkPrepared {
         let storage = self.storage.as_mut().project().scheduler_item;
-        let previous_hardware_next = storage.words[SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET];
-        let previous_software_next = storage.words[SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET];
-        storage.words[SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET] =
-            previous_hardware_next & !LOW_TWENTY_MASK;
-        storage.words[SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET] = 0;
+        let previous_hardware_next = storage.read_word(SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET);
+        let previous_software_next = storage.read_word(SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET);
+        storage.write_word(
+            SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET,
+            previous_hardware_next & !LOW_TWENTY_MASK,
+        );
+        storage.write_word(SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET, 0);
 
         BluetoothDtmMemoryGraphEmptyListLinkPrepared {
             storage: self.storage,
@@ -1044,9 +1073,12 @@ impl BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared {
     /// Cancel before publication and recover the positional event owner.
     pub fn cancel(mut self) -> BluetoothDtmMemoryGraphPositionalEventPrepared {
         let storage = self.storage.as_mut().project().scheduler_item;
-        storage.words[SCHEDULER_ITEM_CONTROL_OFFSET] = self.previous_control;
-        storage.words[SCHEDULER_ITEM_STATUS_OFFSET] = self.previous_status;
-        storage.words[SCHEDULER_ITEM_COMPLETED_LINK_OFFSET] = self.previous_completed_link;
+        storage.write_word(SCHEDULER_ITEM_CONTROL_OFFSET, self.previous_control);
+        storage.write_word(SCHEDULER_ITEM_STATUS_OFFSET, self.previous_status);
+        storage.write_word(
+            SCHEDULER_ITEM_COMPLETED_LINK_OFFSET,
+            self.previous_completed_link,
+        );
 
         BluetoothDtmMemoryGraphPositionalEventPrepared {
             storage: self.storage,
@@ -1103,17 +1135,21 @@ impl BluetoothDtmMemoryGraphEmptyListLinkPrepared {
         );
 
         BluetoothDtmMemoryGraphHardwareOwned {
-            _storage: self.storage,
+            storage: self.storage,
             binding: self.binding,
         }
     }
 
     /// Cancel before visibility or publication and recover bookkeeping state.
     pub fn cancel(mut self) -> BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared {
-        self.storage.as_mut().project().scheduler_item.words[SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET] =
-            self.previous_hardware_next;
-        self.storage.as_mut().project().scheduler_item.words[SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET] =
-            self.previous_software_next;
+        self.storage.as_mut().project().scheduler_item.write_word(
+            SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET,
+            self.previous_hardware_next,
+        );
+        self.storage.as_mut().project().scheduler_item.write_word(
+            SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET,
+            self.previous_software_next,
+        );
 
         BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared {
             storage: self.storage,
@@ -1134,7 +1170,7 @@ impl BluetoothDtmMemoryGraphEmptyListLinkPrepared {
 /// and it has no cancellation or conversion back into a prepared owner.
 #[must_use = "the hardware-owned graph must advance through proven completion"]
 pub struct BluetoothDtmMemoryGraphHardwareOwned {
-    _storage: Pin<&'static mut BluetoothDtmMemoryGraphStorage>,
+    storage: Pin<&'static mut BluetoothDtmMemoryGraphStorage>,
     binding: BluetoothDtmMemoryGraphBinding,
 }
 
@@ -1143,6 +1179,106 @@ impl BluetoothDtmMemoryGraphHardwareOwned {
     pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
         self.binding.scheduler_item_address().controller_address()
     }
+
+    /// Observe the sole DTM item's status after one affine finished-list event.
+    ///
+    /// The current source-owned scheduler epoch assigns DTM exclusively to
+    /// list zero and admits exactly one item. A token for another list returns
+    /// both owners unchanged and performs no status read. A matching token is
+    /// consumed by exactly one volatile load after the PAC transfer's trailing
+    /// device fence. The in-flight sentinel retains hardware ownership; every
+    /// other value advances only to completion-observed, not CPU-owned.
+    #[doc(hidden)]
+    pub fn observe_completion(
+        self,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    ) -> BluetoothDtmMemoryGraphCompletionObservation {
+        if observed.index() != BluetoothSchedulerHardwareListIndex::ZERO {
+            return BluetoothDtmMemoryGraphCompletionObservation::ListMismatch {
+                owner: self,
+                observed,
+            };
+        }
+
+        let status = self
+            .storage
+            .as_ref()
+            .get_ref()
+            .scheduler_item
+            .read_word(SCHEDULER_ITEM_STATUS_OFFSET);
+        if status == u32::MAX {
+            BluetoothDtmMemoryGraphCompletionObservation::StillInFlight(self)
+        } else {
+            let status = match NonZeroU32::new(status) {
+                None => BluetoothDtmSchedulerItemCompletionStatus::Success,
+                Some(status) => BluetoothDtmSchedulerItemCompletionStatus::NonSuccess(status),
+            };
+            BluetoothDtmMemoryGraphCompletionObservation::CompletionObserved(
+                BluetoothDtmMemoryGraphCompletionObserved {
+                    owner: self,
+                    status,
+                },
+            )
+        }
+    }
+}
+
+/// Reviewed DTM interpretation of one non-sentinel scheduler-item status.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothDtmSchedulerItemCompletionStatus {
+    /// The role-specific accounting path accepts status zero.
+    Success,
+    /// Hardware completed the item with a nonzero status.
+    NonSuccess(NonZeroU32),
+}
+
+/// Hardware-owned graph after a non-sentinel status was observed.
+///
+/// The descriptor has not yet been unlinked from the hardware list or removed
+/// from the software completion queue. This state therefore exposes status and
+/// identity only and cannot reclaim, mutate or republish the graph.
+#[must_use = "completion observation must advance through unlink and recycle ownership"]
+pub struct BluetoothDtmMemoryGraphCompletionObserved {
+    owner: BluetoothDtmMemoryGraphHardwareOwned,
+    status: BluetoothDtmSchedulerItemCompletionStatus,
+}
+
+impl BluetoothDtmMemoryGraphCompletionObserved {
+    /// Exact item whose status was observed after the fenced transfer.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.owner.scheduler_item_address()
+    }
+
+    /// Semantic non-sentinel status retained by this completion observation.
+    pub const fn status(&self) -> BluetoothDtmSchedulerItemCompletionStatus {
+        self.status
+    }
+
+    #[doc(hidden)]
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothDtmMemoryGraphHardwareOwned,
+        BluetoothDtmSchedulerItemCompletionStatus,
+    ) {
+        (self.owner, self.status)
+    }
+}
+
+/// Result of matching one fenced finished-list observation to the DTM graph.
+#[must_use = "the retained hardware graph and any unmatched list token must be handled"]
+pub enum BluetoothDtmMemoryGraphCompletionObservation {
+    /// The token belongs to another list; neither owner was consumed.
+    ListMismatch {
+        /// Unchanged DTM hardware owner.
+        owner: BluetoothDtmMemoryGraphHardwareOwned,
+        /// Unchanged affine observation for its actual list owner.
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    /// List zero was observed but hardware still reports the in-flight sentinel.
+    StillInFlight(BluetoothDtmMemoryGraphHardwareOwned),
+    /// A non-sentinel status was observed after the transfer fence.
+    CompletionObserved(BluetoothDtmMemoryGraphCompletionObserved),
 }
 
 /// Unique CPU owner of one statically located and allocation-initialized graph.
@@ -1391,7 +1527,7 @@ impl BluetoothDtmMemoryGraphCpuOwned {
         let storage = self.storage.as_mut().project();
         storage.link_state.words.fill(0);
         storage.scheduler_context.words.fill(0);
-        storage.scheduler_item.words.fill(0);
+        storage.scheduler_item.clear();
         storage.rx_header.words = rx_header;
         storage.rx_swap_reserve.words = rx_swap_reserve;
         storage.tx_header.words = tx_header;
@@ -1405,16 +1541,28 @@ impl BluetoothDtmMemoryGraphCpuOwned {
         storage.link_state.words[LINK_STATE_RX_SWAP_RESERVE_OFFSET] = rx_swap_link;
         storage.link_state.words[LINK_STATE_ALLOCATION_CONFIG_OFFSET] =
             LINK_STATE_ALLOCATION_CONFIG_IMAGE;
-        storage.scheduler_item.words[SCHEDULER_ITEM_ALLOCATION_PREFIX_OFFSET] =
-            SCHEDULER_ITEM_ALLOCATION_PREFIX_IMAGE;
-        storage.scheduler_item.words[SCHEDULER_ITEM_CONTEXT_OFFSET] = scheduler_context;
-        storage.scheduler_item.words[SCHEDULER_ITEM_LINK_STATE_OFFSET] = link_state;
-        storage.scheduler_item.words[SCHEDULER_ITEM_ALLOCATION_FLAGS_OFFSET] =
-            SCHEDULER_ITEM_ALLOCATION_FLAGS_IMAGE;
-        storage.scheduler_item.words[SCHEDULER_ITEM_ALLOCATION_CONFIG_OFFSET] =
-            config.allocation_image();
-        storage.scheduler_item.words[SCHEDULER_ITEM_POSITIONAL_24_OFFSET] =
-            SCHEDULER_ITEM_POSITIONAL_24_IMAGE;
+        storage.scheduler_item.write_word(
+            SCHEDULER_ITEM_ALLOCATION_PREFIX_OFFSET,
+            SCHEDULER_ITEM_ALLOCATION_PREFIX_IMAGE,
+        );
+        storage
+            .scheduler_item
+            .write_word(SCHEDULER_ITEM_CONTEXT_OFFSET, scheduler_context);
+        storage
+            .scheduler_item
+            .write_word(SCHEDULER_ITEM_LINK_STATE_OFFSET, link_state);
+        storage.scheduler_item.write_word(
+            SCHEDULER_ITEM_ALLOCATION_FLAGS_OFFSET,
+            SCHEDULER_ITEM_ALLOCATION_FLAGS_IMAGE,
+        );
+        storage.scheduler_item.write_word(
+            SCHEDULER_ITEM_ALLOCATION_CONFIG_OFFSET,
+            config.allocation_image(),
+        );
+        storage.scheduler_item.write_word(
+            SCHEDULER_ITEM_POSITIONAL_24_OFFSET,
+            SCHEDULER_ITEM_POSITIONAL_24_IMAGE,
+        );
     }
 }
 
@@ -1429,7 +1577,7 @@ impl BluetoothDtmMemoryGraphStorage {
                 words: [0; BLUETOOTH_DTM_SCHEDULER_CONTEXT_BYTES / 4],
             },
             scheduler_item: BluetoothDtmSchedulerItemStorage {
-                words: [0; BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES / 4],
+                words: [const { VolatileCell::new(0) }; SCHEDULER_ITEM_WORDS],
             },
             rx_header: BluetoothDtmBufferHeaderStorage {
                 words: [0; BLUETOOTH_DTM_BUFFER_HEADER_BYTES / 4],
@@ -1542,7 +1690,10 @@ mod tests {
         mem::{align_of, offset_of, size_of},
     };
 
-    use open_esp_radio_esp32s31_hal::BluetoothControllerSramAddressError;
+    use open_esp_radio_esp32s31_hal::{
+        BluetoothControllerSramAddressError, BluetoothSchedulerFinishedListObservation,
+        BluetoothSchedulerFinishedListPop,
+    };
 
     use super::{
         BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BLUETOOTH_DTM_BUFFER_HEADER_BYTES,
@@ -1551,19 +1702,20 @@ mod tests {
         BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES, BLUETOOTH_DTM_TX_PACKET_BYTES,
         BluetoothDtmBufferHeaderStorage, BluetoothDtmLinkStateReviewedWords,
         BluetoothDtmLinkStateStorage, BluetoothDtmMemoryGraphBindError,
-        BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphModelAddress,
+        BluetoothDtmMemoryGraphCompletionObservation, BluetoothDtmMemoryGraphCpuOwned,
+        BluetoothDtmMemoryGraphHardwareOwned, BluetoothDtmMemoryGraphModelAddress,
         BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphStorage,
         BluetoothDtmPositionalEventSeed, BluetoothDtmPositionalEventWords,
         BluetoothDtmRxBufferHeaderImage, BluetoothDtmRxBufferStorage, BluetoothDtmRxPacketAddress,
         BluetoothDtmRxPacketAddressError, BluetoothDtmRxPacketStorage, BluetoothDtmRxRearmError,
         BluetoothDtmSchedulerAllocationConfig, BluetoothDtmSchedulerContextStorage,
-        BluetoothDtmSchedulerItemReviewedWords, BluetoothDtmSchedulerItemStorage,
-        BluetoothDtmTxBufferHeaderImage, BluetoothDtmTxPacketAddress,
-        BluetoothDtmTxPacketAddressError, BluetoothDtmTxPacketStorage, LINK_STATE_RX_TAIL_OFFSET,
-        LINK_STATE_TX_HEAD_OFFSET, LOW_TWENTY_MASK, SCHEDULER_ITEM_ALLOCATION_CONFIG_OFFSET,
-        SCHEDULER_ITEM_ALLOCATION_FLAGS_OFFSET, SCHEDULER_ITEM_ALLOCATION_PREFIX_OFFSET,
-        SCHEDULER_ITEM_COMPLETED_LINK_OFFSET, SCHEDULER_ITEM_CONTEXT_OFFSET,
-        SCHEDULER_ITEM_CONTROL_BYTE, SCHEDULER_ITEM_CONTROL_OFFSET,
+        BluetoothDtmSchedulerItemCompletionStatus, BluetoothDtmSchedulerItemReviewedWords,
+        BluetoothDtmSchedulerItemStorage, BluetoothDtmTxBufferHeaderImage,
+        BluetoothDtmTxPacketAddress, BluetoothDtmTxPacketAddressError, BluetoothDtmTxPacketStorage,
+        LINK_STATE_RX_TAIL_OFFSET, LINK_STATE_TX_HEAD_OFFSET, LOW_TWENTY_MASK,
+        SCHEDULER_ITEM_ALLOCATION_CONFIG_OFFSET, SCHEDULER_ITEM_ALLOCATION_FLAGS_OFFSET,
+        SCHEDULER_ITEM_ALLOCATION_PREFIX_OFFSET, SCHEDULER_ITEM_COMPLETED_LINK_OFFSET,
+        SCHEDULER_ITEM_CONTEXT_OFFSET, SCHEDULER_ITEM_CONTROL_BYTE, SCHEDULER_ITEM_CONTROL_OFFSET,
         SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET, SCHEDULER_ITEM_POSITIONAL_24_OFFSET,
         SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET, SCHEDULER_ITEM_STATUS_OFFSET,
     };
@@ -1584,7 +1736,7 @@ mod tests {
         GraphSnapshot {
             link_state: storage.link_state.words,
             scheduler_context: storage.scheduler_context.words,
-            scheduler_item: storage.scheduler_item.words,
+            scheduler_item: storage.scheduler_item.snapshot(),
             rx_header: storage.rx_header.words,
             rx_swap_reserve: storage.rx_swap_reserve.words,
             tx_header: storage.tx_header.words,
@@ -1600,6 +1752,45 @@ mod tests {
             .expect("test base has valid compressed-pointer syntax");
         BluetoothDtmMemoryGraphStorage::pin_static_model(storage, base, allocation_config())
             .expect("test graph fits physical controller SRAM")
+    }
+
+    fn hardware_owner_with_status(base: u32, status: u32) -> BluetoothDtmMemoryGraphHardwareOwned {
+        let prepared = model_owner(base)
+            .try_prepare_positional_event(|seed| Ok::<_, Infallible>(candidate_words(seed)))
+            .expect("matching anchors prepare a CPU-owned image")
+            .prepare_scheduler_bookkeeping()
+            .prepare_empty_list_link();
+        let owner = BluetoothDtmMemoryGraphHardwareOwned {
+            storage: prepared.storage,
+            binding: prepared.binding,
+        };
+        owner
+            .storage
+            .as_ref()
+            .get_ref()
+            .scheduler_item
+            .write_word(SCHEDULER_ITEM_STATUS_OFFSET, status);
+        owner
+    }
+
+    fn observed_list(
+        index: u8,
+    ) -> open_esp_radio_esp32s31_hal::BluetoothSchedulerFinishedHardwareListObserved {
+        let observation =
+            BluetoothSchedulerFinishedListObservation::from_lists_for_validation(&[index])
+                .expect("test list belongs to the scheduler domain");
+        match observation.pop_lowest() {
+            BluetoothSchedulerFinishedListPop::List {
+                observed,
+                remaining,
+            } => {
+                assert!(remaining.is_empty());
+                observed
+            }
+            BluetoothSchedulerFinishedListPop::Complete => {
+                unreachable!("one scripted list cannot be empty")
+            }
+        }
     }
 
     const fn allocation_config() -> BluetoothDtmSchedulerAllocationConfig {
@@ -1734,26 +1925,36 @@ mod tests {
             &graph.link_state.words[0x68 / 4..=0x78 / 4],
             &[0x08b, 0x097, 0x08b, 0x097, 0x091]
         );
-        assert_eq!(graph.scheduler_item.words[0x08 / 4], 0x040);
+        assert_eq!(graph.scheduler_item.read_word(0x08 / 4), 0x040);
         assert_eq!(graph.link_state.words[0x30 / 4], 0x0000_1e00);
         assert_eq!(
-            graph.scheduler_item.words[SCHEDULER_ITEM_ALLOCATION_PREFIX_OFFSET],
+            graph
+                .scheduler_item
+                .read_word(SCHEDULER_ITEM_ALLOCATION_PREFIX_OFFSET),
             0x0030_0000
         );
         assert_eq!(
-            graph.scheduler_item.words[SCHEDULER_ITEM_CONTEXT_OFFSET],
+            graph
+                .scheduler_item
+                .read_word(SCHEDULER_ITEM_CONTEXT_OFFSET),
             0x061
         );
         assert_eq!(
-            graph.scheduler_item.words[SCHEDULER_ITEM_ALLOCATION_FLAGS_OFFSET],
+            graph
+                .scheduler_item
+                .read_word(SCHEDULER_ITEM_ALLOCATION_FLAGS_OFFSET),
             0xffdf_ffff
         );
         assert_eq!(
-            graph.scheduler_item.words[SCHEDULER_ITEM_ALLOCATION_CONFIG_OFFSET],
+            graph
+                .scheduler_item
+                .read_word(SCHEDULER_ITEM_ALLOCATION_CONFIG_OFFSET),
             19
         );
         assert_eq!(
-            graph.scheduler_item.words[SCHEDULER_ITEM_POSITIONAL_24_OFFSET],
+            graph
+                .scheduler_item
+                .read_word(SCHEDULER_ITEM_POSITIONAL_24_OFFSET),
             0x0007_bdef
         );
         assert_eq!(graph.rx_packet.bytes[0x05], 1);
@@ -1822,8 +2023,8 @@ mod tests {
     fn scheduler_bookkeeping_cancel_restores_the_prepared_event() {
         let mut owner = model_owner(0x2f00_0900);
         let storage = owner.storage.as_mut().project().scheduler_item;
-        storage.words[SCHEDULER_ITEM_STATUS_OFFSET] = 7;
-        storage.words[SCHEDULER_ITEM_COMPLETED_LINK_OFFSET] = 0x1234;
+        storage.write_word(SCHEDULER_ITEM_STATUS_OFFSET, 7);
+        storage.write_word(SCHEDULER_ITEM_COMPLETED_LINK_OFFSET, 0x1234);
 
         let prepared = owner
             .try_prepare_positional_event(|seed| Ok::<_, Infallible>(candidate_words(seed)))
@@ -1831,20 +2032,67 @@ mod tests {
         let before = snapshot(prepared.storage.as_ref().get_ref());
         let scheduler_prepared = prepared.prepare_scheduler_bookkeeping();
         let graph = scheduler_prepared.storage.as_ref().get_ref();
-        let control = graph.scheduler_item.words[SCHEDULER_ITEM_CONTROL_OFFSET].to_le_bytes();
+        let control = graph
+            .scheduler_item
+            .read_word(SCHEDULER_ITEM_CONTROL_OFFSET)
+            .to_le_bytes();
 
         assert_eq!(control[SCHEDULER_ITEM_CONTROL_BYTE], 0);
         assert_eq!(
-            graph.scheduler_item.words[SCHEDULER_ITEM_STATUS_OFFSET],
+            graph.scheduler_item.read_word(SCHEDULER_ITEM_STATUS_OFFSET),
             u32::MAX
         );
         assert_eq!(
-            graph.scheduler_item.words[SCHEDULER_ITEM_COMPLETED_LINK_OFFSET],
+            graph
+                .scheduler_item
+                .read_word(SCHEDULER_ITEM_COMPLETED_LINK_OFFSET),
             0
         );
 
         let prepared = scheduler_prepared.cancel();
         assert_eq!(snapshot(prepared.storage.as_ref().get_ref()), before);
+    }
+
+    #[test]
+    fn completion_observation_preserves_owners_and_classifies_status() {
+        let owner = hardware_owner_with_status(0x2f00_1900, 0);
+        let owner = match owner.observe_completion(observed_list(3)) {
+            BluetoothDtmMemoryGraphCompletionObservation::ListMismatch { owner, observed } => {
+                assert_eq!(observed.index().get(), 3);
+                owner
+            }
+            _ => panic!("another list cannot inspect the DTM item"),
+        };
+        let completed = match owner.observe_completion(observed_list(0)) {
+            BluetoothDtmMemoryGraphCompletionObservation::CompletionObserved(completed) => {
+                completed
+            }
+            _ => panic!("zero status must produce a completion observation"),
+        };
+        assert_eq!(
+            completed.status(),
+            BluetoothDtmSchedulerItemCompletionStatus::Success
+        );
+
+        let owner = hardware_owner_with_status(0x2f00_1d00, u32::MAX);
+        assert!(matches!(
+            owner.observe_completion(observed_list(0)),
+            BluetoothDtmMemoryGraphCompletionObservation::StillInFlight(_)
+        ));
+
+        let owner = hardware_owner_with_status(0x2f00_2100, 7);
+        let completed = match owner.observe_completion(observed_list(0)) {
+            BluetoothDtmMemoryGraphCompletionObservation::CompletionObserved(completed) => {
+                completed
+            }
+            _ => panic!("non-sentinel status must produce a completion observation"),
+        };
+        assert_eq!(
+            completed.status(),
+            BluetoothDtmSchedulerItemCompletionStatus::NonSuccess(
+                core::num::NonZeroU32::new(7).expect("seven is nonzero")
+            )
+        );
     }
 
     #[test]

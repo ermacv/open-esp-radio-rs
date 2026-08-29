@@ -232,6 +232,40 @@ impl PhyPowerDetectorToneArmState {
     }
 }
 
+/// One of the two complete-ROM PHY ADC-rate selections.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PhyAdcRateSelection {
+    /// Select the low PHY ADC rate.
+    Low = 0x00000000,
+    /// Select the high PHY ADC rate.
+    High = 0x00000001,
+}
+
+impl PhyAdcRateSelection {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
+/// Reviewed direct-register state surrounding RX-gain DC calibration.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PhyRxGainDcCalibrationState {
+    /// Clear the RX-gain DC calibration field during cleanup.
+    Disabled = 0x00000000,
+    /// Set both reviewed RX-gain DC calibration bits before calibration.
+    Enabled = 0x00000003,
+}
+
+impl PhyRxGainDcCalibrationState {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
 /// Reviewed receive-beacon clear requests. The type cannot select an unknown request bit.
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -808,6 +842,25 @@ impl PhyToneSelector {
         } else {
             None
         }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Complete 32-bit vendor PHY helper argument whose register-field projection is owned by generated PAC input transforms.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyVendorRegisterArgument(u32);
+
+impl PhyVendorRegisterArgument {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0xffffffff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        Some(Self(value))
     }
 
     /// Return the checked numeric value.
@@ -6589,6 +6642,153 @@ pub(crate) fn initialize_phy_front_end_low(registers: &crate::svd::PhyBasebandCo
 #[inline]
 pub(crate) fn enable_phy_front_end_adc_rates(registers: &crate::svd::PhyBasebandConfigOracle) {
     crate::svd::field_replace_modify::enable_phy_front_end_adc_rates(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_channel_dump_value` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_channel_dump_value(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyVendorRegisterArgument,
+) {
+    crate::svd::field_replace_modify::configure_phy_channel_dump_value(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_phy_channel_dump_mode` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_channel_dump_mode(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyVendorRegisterArgument,
+) {
+    crate::svd::field_replace_modify::configure_phy_channel_dump_mode(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_phy_channel_dump_enabled` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_channel_dump_enabled(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyVendorRegisterArgument,
+) {
+    crate::svd::field_replace_modify::configure_phy_channel_dump_enabled(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_phy_vht_support` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_vht_support(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+    value: PhyVendorRegisterArgument,
+) {
+    crate::svd::field_replace_modify::configure_phy_vht_support(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_phy_csi_dump_force_lltf` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_csi_dump_force_lltf(
+    registers: &crate::svd::PhyAgcOracle,
+    value: PhyVendorRegisterArgument,
+) {
+    crate::svd::field_replace_modify::configure_phy_csi_dump_force_lltf(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_phy_frequency_band_inverse` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_frequency_band_inverse(
+    registers: &crate::svd::PhyAgcOracle,
+    value: PhyVendorRegisterArgument,
+) {
+    crate::svd::field_replace_modify::configure_phy_frequency_band_inverse(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_phy_tx_output_filter_0` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_tx_output_filter_0(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyVendorRegisterArgument,
+) {
+    crate::svd::field_replace_modify::configure_phy_tx_output_filter_0(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_phy_tx_output_filter_1` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_tx_output_filter_1(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyVendorRegisterArgument,
+) {
+    crate::svd::field_replace_modify::configure_phy_tx_output_filter_1(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_phy_tx_output_filter_2` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_tx_output_filter_2(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyVendorRegisterArgument,
+) {
+    crate::svd::field_replace_modify::configure_phy_tx_output_filter_2(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_phy_baseband_watchdog_reset` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_baseband_watchdog_reset(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyVendorRegisterArgument,
+) {
+    crate::svd::field_replace_modify::configure_phy_baseband_watchdog_reset(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_phy_baseband_watchdog_interrupt` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_baseband_watchdog_interrupt(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyVendorRegisterArgument,
+) {
+    crate::svd::field_replace_modify::configure_phy_baseband_watchdog_interrupt(
+        registers,
+        value.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `configure_phy_lltf_mask_0` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_lltf_mask_0(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyVendorRegisterArgument,
+) {
+    crate::svd::field_replace_modify::configure_phy_lltf_mask_0(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_phy_lltf_mask_1` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_lltf_mask_1(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyVendorRegisterArgument,
+) {
+    crate::svd::field_replace_modify::configure_phy_lltf_mask_1(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_phy_adc_rate_high` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_adc_rate_high(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyAdcRateSelection,
+) {
+    crate::svd::field_replace_modify::configure_phy_adc_rate_high(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `configure_phy_adc_rate_low` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_adc_rate_low(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyAdcRateSelection,
+) {
+    crate::svd::field_replace_modify::configure_phy_adc_rate_low(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `configure_phy_rx_gain_dc_calibration` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_rx_gain_dc_calibration(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyRxGainDcCalibrationState,
+) {
+    crate::svd::field_replace_modify::configure_phy_rx_gain_dc_calibration(registers, value.bits());
 }
 
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.

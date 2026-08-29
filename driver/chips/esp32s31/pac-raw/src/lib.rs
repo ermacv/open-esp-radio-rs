@@ -69269,6 +69269,225 @@ pub mod field_replace_modify {
                     .bit(((input >> 1) & 0x00000001) != 0)
             });
     }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C fields [CHANNEL_DUMP_VALUE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_channel_dump_value(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.baseband_init_790c().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x0000000f;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .channel_dump_value_unknown()
+                    .bits((input & 0x0000000f) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C fields [INIT_CLEAR_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_channel_dump_mode(registers: &crate::PhyBasebandConfigOracle, input: u32) {
+        registers.baseband_init_790c().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x00000001;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.init_clear_unknown().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_TX_PA_CONTROL fields [CHANNEL_DUMP_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_channel_dump_enabled(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.baseband_tx_pa_control().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x00000001;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .channel_dump_enable_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_CBW_CONTROL_1 fields [VHT_SUPPORT] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_vht_support(registers: &crate::PhyFrequencyChannelOracle, input: u32) {
+        registers.channel_cbw_control_1().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x00000001;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.vht_support().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.CSI_DUMP_FORCE_CONTROL fields [FORCE_LLTF] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_csi_dump_force_lltf(registers: &crate::PhyAgcOracle, input: u32) {
+        registers.csi_dump_force_control().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x00000001;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.force_lltf().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.AGC_ANTENNA_CONTROL fields [FREQUENCY_BAND_INVERSE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_frequency_band_inverse(registers: &crate::PhyAgcOracle, input: u32) {
+        registers.agc_antenna_control().modify(|_, writer| {
+            let input = input.wrapping_add(0x00000001) & 0x00000001;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .frequency_band_inverse()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_OUTPUT_FILTER_CONTROL fields [FILTER_INPUT_0] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_tx_output_filter_0(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.tx_output_filter_control().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x00000001;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.filter_input_0().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_OUTPUT_FILTER_CONTROL fields [FILTER_INPUT_1] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_tx_output_filter_1(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.tx_output_filter_control().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x00000001;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.filter_input_1().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_OUTPUT_FILTER_CONTROL fields [FILTER_INPUT_2] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_tx_output_filter_2(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.tx_output_filter_control().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x00000001;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.filter_input_2().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_WATCHDOG_ENABLE fields [WATCHDOG_ENABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_baseband_watchdog_reset(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.baseband_watchdog_enable().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x00000001;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.watchdog_enable().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_WATCHDOG_ENABLE fields [WATCHDOG_INTERRUPT_ENABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_baseband_watchdog_interrupt(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.baseband_watchdog_enable().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x00000001;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .watchdog_interrupt_enable()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C fields [LLTF_MASK_INPUT_0] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_lltf_mask_0(registers: &crate::PhyBasebandConfigOracle, input: u32) {
+        registers.baseband_init_790c().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x00000001;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.lltf_mask_input_0().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C fields [LLTF_MASK_INPUT_1] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_lltf_mask_1(registers: &crate::PhyBasebandConfigOracle, input: u32) {
+        registers.baseband_init_790c().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x00000001;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.lltf_mask_input_1().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ADC_RATE_AND_FRONT_END_CONTROL fields [ADC_RATE_HIGH_OR_FRONT_END_CONTROL_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_adc_rate_high(registers: &crate::PhyBasebandConfigOracle, input: u32) {
+        registers
+            .adc_rate_and_front_end_control()
+            .modify(|_, writer| {
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                writer
+                    .adc_rate_high_or_front_end_control_unknown()
+                    .bit((input & 0x00000001) != 0)
+            });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ADC_RATE_AND_FRONT_END_CONTROL fields [ADC_RATE_LOW_OR_FRONT_END_CONTROL_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_adc_rate_low(registers: &crate::PhyBasebandConfigOracle, input: u32) {
+        registers
+            .adc_rate_and_front_end_control()
+            .modify(|_, writer| {
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                writer
+                    .adc_rate_low_or_front_end_control_unknown()
+                    .bit((input & 0x00000001) != 0)
+            });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.RX_GAIN_DC_CONTROL fields [CALIBRATION_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_rx_gain_dc_calibration(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.rx_gain_dc_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .calibration_enable_unknown()
+                    .bits((input & 0x00000003) as u8)
+            }
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.

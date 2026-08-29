@@ -268,10 +268,6 @@ impl PhyAdcRate {
         if rate & 1 == 0 { Self::Low } else { Self::High }
     }
 
-    pub(crate) const fn is_high(self) -> bool {
-        matches!(self, Self::High)
-    }
-
     const fn analog_configuration_field_value(self) -> u8 {
         match self {
             Self::Low => 2,

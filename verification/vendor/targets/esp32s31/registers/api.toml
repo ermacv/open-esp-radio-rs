@@ -425,6 +425,45 @@ description = "Arm one power-detector tone sample."
 sources = ["ROM_REV0_PHY_POWER_DETECTOR"]
 
 [[bounded-domains]]
+name = "PhyVendorRegisterArgument"
+description = "Complete 32-bit vendor PHY helper argument whose register-field projection is owned by generated PAC input transforms."
+min = 0
+max = 0xffff_ffff
+sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG"]
+
+[[enum-domains]]
+name = "PhyAdcRateSelection"
+description = "One of the two complete-ROM PHY ADC-rate selections."
+
+[[enum-domains.values]]
+name = "Low"
+value = 0
+description = "Select the low PHY ADC rate."
+sources = ["ROM_REV0_PHY_ADC_RATE"]
+
+[[enum-domains.values]]
+name = "High"
+value = 1
+description = "Select the high PHY ADC rate."
+sources = ["ROM_REV0_PHY_ADC_RATE"]
+
+[[enum-domains]]
+name = "PhyRxGainDcCalibrationState"
+description = "Reviewed direct-register state surrounding RX-gain DC calibration."
+
+[[enum-domains.values]]
+name = "Disabled"
+value = 0
+description = "Clear the RX-gain DC calibration field during cleanup."
+sources = ["ROM_REV0_PHY_SET_RX_GAIN_CAL_DC"]
+
+[[enum-domains.values]]
+name = "Enabled"
+value = 3
+description = "Set both reviewed RX-gain DC calibration bits before calibration."
+sources = ["ROM_REV0_PHY_SET_RX_GAIN_CAL_DC"]
+
+[[bounded-domains]]
 name = "BluetoothPhyInitTimingByte"
 description = "Runtime-derived byte ORed into both BLE link-controller transmit-delay fields by one fresh-read transaction."
 min = 0
@@ -9068,3 +9107,160 @@ fields = [
 value = 3
 exposure = "facade"
 sources = ["BLOB_LIBPHY_PHY_FE_REG_UPDATE", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_channel_dump_value"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_INIT_790C"
+fields = [{ field = "CHANNEL_DUMP_VALUE_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyVendorRegisterArgument"
+input-transform = { wrapping-subtract = 0, retain-mask = 0x0f }
+exposure = "facade"
+sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_channel_dump_mode"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_INIT_790C"
+fields = [{ field = "INIT_CLEAR_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyVendorRegisterArgument"
+input-transform = { wrapping-subtract = 0, retain-mask = 1 }
+exposure = "facade"
+sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_channel_dump_enabled"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_TX_PA_CONTROL"
+fields = [{ field = "CHANNEL_DUMP_ENABLE_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyVendorRegisterArgument"
+input-transform = { wrapping-subtract = 0, retain-mask = 1 }
+exposure = "facade"
+sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_vht_support"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "CHANNEL_CBW_CONTROL_1"
+fields = [{ field = "VHT_SUPPORT", source-bit-offset = 0 }]
+domain = "PhyVendorRegisterArgument"
+input-transform = { wrapping-subtract = 0, retain-mask = 1 }
+exposure = "facade"
+sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_csi_dump_force_lltf"
+peripheral = "PHY_AGC_ORACLE"
+register = "CSI_DUMP_FORCE_CONTROL"
+fields = [{ field = "FORCE_LLTF", source-bit-offset = 0 }]
+domain = "PhyVendorRegisterArgument"
+input-transform = { wrapping-subtract = 0, retain-mask = 1 }
+exposure = "facade"
+sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_frequency_band_inverse"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_ANTENNA_CONTROL"
+fields = [{ field = "FREQUENCY_BAND_INVERSE", source-bit-offset = 0 }]
+domain = "PhyVendorRegisterArgument"
+input-transform = { wrapping-add = 1, wrapping-subtract = 0, retain-mask = 1 }
+exposure = "facade"
+sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_tx_output_filter_0"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_OUTPUT_FILTER_CONTROL"
+fields = [{ field = "FILTER_INPUT_0", source-bit-offset = 0 }]
+domain = "PhyVendorRegisterArgument"
+input-transform = { wrapping-subtract = 0, retain-mask = 1 }
+exposure = "facade"
+sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_tx_output_filter_1"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_OUTPUT_FILTER_CONTROL"
+fields = [{ field = "FILTER_INPUT_1", source-bit-offset = 0 }]
+domain = "PhyVendorRegisterArgument"
+input-transform = { wrapping-subtract = 0, retain-mask = 1 }
+exposure = "facade"
+sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_tx_output_filter_2"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_OUTPUT_FILTER_CONTROL"
+fields = [{ field = "FILTER_INPUT_2", source-bit-offset = 0 }]
+domain = "PhyVendorRegisterArgument"
+input-transform = { wrapping-subtract = 0, retain-mask = 1 }
+exposure = "facade"
+sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_baseband_watchdog_reset"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_WATCHDOG_ENABLE"
+fields = [{ field = "WATCHDOG_ENABLE", source-bit-offset = 0 }]
+domain = "PhyVendorRegisterArgument"
+input-transform = { wrapping-subtract = 0, retain-mask = 1 }
+exposure = "facade"
+sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_baseband_watchdog_interrupt"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_WATCHDOG_ENABLE"
+fields = [{ field = "WATCHDOG_INTERRUPT_ENABLE", source-bit-offset = 0 }]
+domain = "PhyVendorRegisterArgument"
+input-transform = { wrapping-subtract = 0, retain-mask = 1 }
+exposure = "facade"
+sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_lltf_mask_0"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_INIT_790C"
+fields = [{ field = "LLTF_MASK_INPUT_0", source-bit-offset = 0 }]
+domain = "PhyVendorRegisterArgument"
+input-transform = { wrapping-subtract = 0, retain-mask = 1 }
+exposure = "facade"
+sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_lltf_mask_1"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_INIT_790C"
+fields = [{ field = "LLTF_MASK_INPUT_1", source-bit-offset = 0 }]
+domain = "PhyVendorRegisterArgument"
+input-transform = { wrapping-subtract = 0, retain-mask = 1 }
+exposure = "facade"
+sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_adc_rate_high"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "ADC_RATE_AND_FRONT_END_CONTROL"
+fields = [{ field = "ADC_RATE_HIGH_OR_FRONT_END_CONTROL_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyAdcRateSelection"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_ADC_RATE", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_adc_rate_low"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "ADC_RATE_AND_FRONT_END_CONTROL"
+fields = [{ field = "ADC_RATE_LOW_OR_FRONT_END_CONTROL_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyAdcRateSelection"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_ADC_RATE", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_rx_gain_dc_calibration"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "RX_GAIN_DC_CONTROL"
+fields = [{ field = "CALIBRATION_ENABLE_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyRxGainDcCalibrationState"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_SET_RX_GAIN_CAL_DC", "S31_ESP_PACS_SVD"]

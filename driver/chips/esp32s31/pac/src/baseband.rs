@@ -8,8 +8,9 @@
 
 use super::{RadioPhyRegisters, generated::PhyTxPowerTrackingState};
 
-const fn low_bit(input: u32) -> bool {
-    input & 1 != 0
+fn vendor_register_argument(input: u32) -> super::generated::PhyVendorRegisterArgument {
+    super::generated::PhyVendorRegisterArgument::new(input)
+        .expect("every u32 fits the complete generated vendor-argument domain")
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -491,12 +492,9 @@ impl RadioPhyRegisters {
     /// Apply complete rev0 ROM `phy_chan_dump_cfg`.
     pub fn configure_channel_dump(&mut self, value: u32, enabled: u32, mode: u32) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        bb.baseband_init_790c()
-            .modify(|_, w| w.channel_dump_value_unknown().set(value as u8 & 0x0f));
-        bb.baseband_init_790c()
-            .modify(|_, w| w.init_clear_unknown().bit(mode & 1 != 0));
-        bb.baseband_tx_pa_control()
-            .modify(|_, w| w.channel_dump_enable_unknown().bit(enabled & 1 != 0));
+        super::generated::configure_phy_channel_dump_value(bb, vendor_register_argument(value));
+        super::generated::configure_phy_channel_dump_mode(bb, vendor_register_argument(mode));
+        super::generated::configure_phy_channel_dump_enabled(bb, vendor_register_argument(enabled));
     }
 
     /// Apply complete rev0 ROM `phy_dac_rate_set`.
@@ -521,18 +519,18 @@ impl RadioPhyRegisters {
 
     /// Replace the standalone PHY VHT-support bit through one fresh RMW.
     pub fn set_vht_support(&mut self, input: u32) {
-        self.peripherals
-            .phy_frequency_channel_oracle
-            .channel_cbw_control_1()
-            .modify(|_, w| w.vht_support().bit(low_bit(input)));
+        super::generated::configure_phy_vht_support(
+            &self.peripherals.phy_frequency_channel_oracle,
+            vendor_register_argument(input),
+        );
     }
 
     /// Replace the PHY CSI-dump force-LLTF bit through one fresh RMW.
     pub fn set_csi_dump_force_lltf(&mut self, input: u32) {
-        self.peripherals
-            .phy_agc_oracle
-            .csi_dump_force_control()
-            .modify(|_, w| w.force_lltf().bit(low_bit(input)));
+        super::generated::configure_phy_csi_dump_force_lltf(
+            &self.peripherals.phy_agc_oracle,
+            vendor_register_argument(input),
+        );
     }
 
     /// Apply complete ROM `phy_hemu_ru26_good_res`.
@@ -544,39 +542,35 @@ impl RadioPhyRegisters {
 
     /// Apply complete ROM `phy_freq_band_reg_set` and its VHT tail.
     pub fn set_frequency_band(&mut self, input: u32) {
-        let selected = low_bit(input);
-        self.peripherals
-            .phy_agc_oracle
-            .agc_antenna_control()
-            .modify(|_, w| w.frequency_band_inverse().bit(!selected));
+        super::generated::configure_phy_frequency_band_inverse(
+            &self.peripherals.phy_agc_oracle,
+            vendor_register_argument(input),
+        );
         self.set_vht_support(input);
     }
 
     /// Apply the three fresh RMWs of complete ROM `phy_bbtx_outfilter`.
     pub fn configure_tx_output_filter(&mut self, input_0: u32, input_1: u32, input_2: u32) {
-        let control = self
-            .peripherals
-            .phy_baseband_config_oracle
-            .tx_output_filter_control();
-        control.modify(|_, w| w.filter_input_0().bit(low_bit(input_0)));
-        control.modify(|_, w| w.filter_input_1().bit(low_bit(input_1)));
-        control.modify(|_, w| w.filter_input_2().bit(low_bit(input_2)));
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        super::generated::configure_phy_tx_output_filter_0(bb, vendor_register_argument(input_0));
+        super::generated::configure_phy_tx_output_filter_1(bb, vendor_register_argument(input_1));
+        super::generated::configure_phy_tx_output_filter_2(bb, vendor_register_argument(input_2));
     }
 
     /// Replace the baseband watchdog reset-enable bit.
     pub fn set_baseband_watchdog_reset_enabled(&mut self, input: u32) {
-        self.peripherals
-            .phy_baseband_config_oracle
-            .baseband_watchdog_enable()
-            .modify(|_, w| w.watchdog_enable().bit(low_bit(input)));
+        super::generated::configure_phy_baseband_watchdog_reset(
+            &self.peripherals.phy_baseband_config_oracle,
+            vendor_register_argument(input),
+        );
     }
 
     /// Replace the baseband watchdog interrupt-enable bit.
     pub fn set_baseband_watchdog_interrupt_enabled(&mut self, input: u32) {
-        self.peripherals
-            .phy_baseband_config_oracle
-            .baseband_watchdog_enable()
-            .modify(|_, w| w.watchdog_interrupt_enable().bit(low_bit(input)));
+        super::generated::configure_phy_baseband_watchdog_interrupt(
+            &self.peripherals.phy_baseband_config_oracle,
+            vendor_register_argument(input),
+        );
     }
 
     /// Set the baseband watchdog timeout-clear bit through one fresh RMW.
@@ -595,12 +589,9 @@ impl RadioPhyRegisters {
 
     /// Apply both fresh RMWs of complete ROM `phy_lltf_mask_en`.
     pub fn configure_lltf_mask(&mut self, input_0: u32, input_1: u32) {
-        let control = self
-            .peripherals
-            .phy_baseband_config_oracle
-            .baseband_init_790c();
-        control.modify(|_, w| w.lltf_mask_input_0().bit(low_bit(input_0)));
-        control.modify(|_, w| w.lltf_mask_input_1().bit(low_bit(input_1)));
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        super::generated::configure_phy_lltf_mask_0(bb, vendor_register_argument(input_0));
+        super::generated::configure_phy_lltf_mask_1(bb, vendor_register_argument(input_1));
     }
 
     /// Enable all four recovered automatic noise-floor controls.
@@ -1112,13 +1103,13 @@ impl RadioPhyRegisters {
     /// The ROM body at `0x2f82_a6d2`, size `0x4a`, uses two fresh reads to
     /// publish the selected semantic rate into the two recovered fields.
     pub fn configure_adc_rate(&mut self, rate: crate::PhyAdcRate) {
-        let enabled = rate.is_high();
-        let control = self
-            .peripherals
-            .phy_baseband_config_oracle
-            .adc_rate_and_front_end_control();
-        control.modify(|_, w| w.adc_rate_high_or_front_end_control_unknown().bit(enabled));
-        control.modify(|_, w| w.adc_rate_low_or_front_end_control_unknown().bit(enabled));
+        let rate = match rate {
+            crate::PhyAdcRate::Low => super::generated::PhyAdcRateSelection::Low,
+            crate::PhyAdcRate::High => super::generated::PhyAdcRateSelection::High,
+        };
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        super::generated::configure_phy_adc_rate_high(bb, rate);
+        super::generated::configure_phy_adc_rate_low(bb, rate);
     }
 
     /// Apply the four front-end initialization edges before table-memory setup.
@@ -1173,16 +1164,15 @@ impl RadioPhyRegisters {
     /// calibration graph and clears them to `0b00` in its common cleanup.
     /// The field's narrower electrical meaning is not independently proved.
     pub fn set_rx_gain_dc_calibration(&mut self, enabled: bool) {
-        self.peripherals
-            .phy_baseband_config_oracle
-            .rx_gain_dc_control()
-            .modify(|_, w| {
-                if enabled {
-                    w.calibration_enable_unknown().enabled()
-                } else {
-                    w.calibration_enable_unknown().disabled()
-                }
-            });
+        let state = if enabled {
+            super::generated::PhyRxGainDcCalibrationState::Enabled
+        } else {
+            super::generated::PhyRxGainDcCalibrationState::Disabled
+        };
+        super::generated::configure_phy_rx_gain_dc_calibration(
+            &self.peripherals.phy_baseband_config_oracle,
+            state,
+        );
     }
 }
 

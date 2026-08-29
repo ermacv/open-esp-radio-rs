@@ -6,10 +6,12 @@
 
 #![forbid(unsafe_code)]
 
-pub use open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareListIndex;
 use open_esp_radio_esp32s31_hal::{
     BluetoothControllerHal, BluetoothSchedulerFinishedListObservation,
     BluetoothSchedulerFinishedListPop,
+};
+pub use open_esp_radio_esp32s31_hal::{
+    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListIndex,
 };
 
 trait BluetoothSchedulerFinishedListBackend {
@@ -39,8 +41,8 @@ pub enum BluetoothSchedulerFinishedListWorkerStep {
     Complete,
     /// One hardware list requires a separately proven item-selection step.
     List {
-        /// Positional hardware list observed in the transferred set.
-        index: BluetoothSchedulerHardwareListIndex,
+        /// Affine proof for one list from the fenced transfer.
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
         /// Whether another captured list requires a later bounded step.
         more: bool,
     },
@@ -79,12 +81,12 @@ impl BluetoothSchedulerFinishedListWorker {
         Ok(())
     }
 
-    /// Return at most one captured hardware-list index.
+    /// Return at most one affine captured hardware-list observation.
     ///
     /// A finished list is not an item-completion proof. This worker therefore does
     /// not accept a software queue, select a descriptor or change ownership.
-    /// The future completed-list owner must map `index` to an affine hardware
-    /// item and establish device-to-CPU visibility independently.
+    /// The future completed-list owner must match `observed` to an affine
+    /// hardware item and inspect the post-fence status before returning it.
     pub fn step(&mut self) -> BluetoothSchedulerFinishedListWorkerStep {
         let Some(observation) = self.observation.take() else {
             return BluetoothSchedulerFinishedListWorkerStep::Idle;
@@ -93,12 +95,15 @@ impl BluetoothSchedulerFinishedListWorker {
             BluetoothSchedulerFinishedListPop::Complete => {
                 BluetoothSchedulerFinishedListWorkerStep::Complete
             }
-            BluetoothSchedulerFinishedListPop::List { index, remaining } => {
+            BluetoothSchedulerFinishedListPop::List {
+                observed,
+                remaining,
+            } => {
                 let more = !remaining.is_empty();
                 if more {
                     self.observation = Some(remaining);
                 }
-                BluetoothSchedulerFinishedListWorkerStep::List { index, more }
+                BluetoothSchedulerFinishedListWorkerStep::List { observed, more }
             }
         }
     }
@@ -137,7 +142,7 @@ mod tests {
     }
 
     #[test]
-    fn captured_mask_yields_only_list_indices_without_item_ownership() {
+    fn captured_mask_yields_affine_list_observations_without_item_ownership() {
         let mut backend = Backend {
             observation: Some(
                 BluetoothSchedulerFinishedListObservation::from_lists_for_validation(&[3, 9])
@@ -155,14 +160,18 @@ mod tests {
         );
         assert!(matches!(
             worker.step(),
-            BluetoothSchedulerFinishedListWorkerStep::List { index, more: true }
-                if index.get() == 3
+            BluetoothSchedulerFinishedListWorkerStep::List {
+                observed,
+                more: true
+            } if observed.index().get() == 3
         ));
         assert!(worker.is_active());
         assert!(matches!(
             worker.step(),
-            BluetoothSchedulerFinishedListWorkerStep::List { index, more: false }
-                if index.get() == 9
+            BluetoothSchedulerFinishedListWorkerStep::List {
+                observed,
+                more: false
+            } if observed.index().get() == 9
         ));
         assert!(!worker.is_active());
         assert_eq!(

@@ -97,7 +97,20 @@ impl BluetoothSchedulerWorkObservation {
 }
 
 /// Finished hardware-list mask transferred by one scheduler-worker pop attempt.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+///
+/// The observation is affine because copying it would permit the same
+/// transferred bit to mint more than one list token.
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_pac::BluetoothSchedulerFinishedListObservation;
+///
+/// fn cannot_reuse(observation: BluetoothSchedulerFinishedListObservation) {
+///     let first = observation.pop_lowest();
+///     let second = observation.pop_lowest();
+///     drop((first, second));
+/// }
+/// ```
+#[derive(Debug, Eq, PartialEq)]
 #[must_use = "the scheduler finished-list observation must be drained or explicitly discarded"]
 pub struct BluetoothSchedulerFinishedListObservation(u16);
 
@@ -193,18 +206,50 @@ impl BluetoothSchedulerHardwareListIndex {
 }
 
 /// Result of consuming at most one list from a captured finished-list set.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 #[must_use = "the selected list or remaining observation must be handled"]
 pub enum BluetoothSchedulerFinishedListPop {
     /// The captured observation contains no remaining finished list.
     Complete,
     /// The lowest-numbered finished list was selected.
     List {
-        /// Positional hardware-list index selected in this step.
-        index: BluetoothSchedulerHardwareListIndex,
-        /// Remaining captured lists after consuming `index`.
+        /// Affine proof that this hardware list occurred in the transferred set.
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+        /// Remaining captured lists after consuming `observed`.
         remaining: BluetoothSchedulerFinishedListObservation,
     },
+}
+
+/// Affine proof that one list occurred in a fenced finished-list transfer.
+///
+/// This token is not an item-completion proof. It authorizes the owning
+/// scheduler layer to rescan exactly one retained list after the PAC's
+/// `status -> report -> device fence` transaction. The private constructor and
+/// absence of `Clone`/`Copy` prevent a positional index from being substituted
+/// for that temporal event. A fresh later transfer may observe the same list
+/// again; global acknowledgement and item completion require the upper affine
+/// scheduler epoch.
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_pac::BluetoothSchedulerFinishedHardwareListObserved;
+///
+/// fn cannot_reuse(observed: BluetoothSchedulerFinishedHardwareListObserved) {
+///     let first_consumer = observed;
+///     let second_consumer = observed;
+///     drop((first_consumer, second_consumer));
+/// }
+/// ```
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "the observed finished list must be matched to an owned scheduler list"]
+pub struct BluetoothSchedulerFinishedHardwareListObserved {
+    index: BluetoothSchedulerHardwareListIndex,
+}
+
+impl BluetoothSchedulerFinishedHardwareListObserved {
+    /// Hardware-list index carried by this exact transferred observation.
+    pub const fn index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.index
+    }
 }
 
 impl BluetoothSchedulerFinishedListObservation {
@@ -224,7 +269,7 @@ impl BluetoothSchedulerFinishedListObservation {
     }
 
     /// Whether no hardware list was reported finished.
-    pub const fn is_empty(self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.0 == 0
     }
 
@@ -239,7 +284,9 @@ impl BluetoothSchedulerFinishedListObservation {
         } else {
             let index = self.0.trailing_zeros() as u8;
             BluetoothSchedulerFinishedListPop::List {
-                index: BluetoothSchedulerHardwareListIndex(index),
+                observed: BluetoothSchedulerFinishedHardwareListObserved {
+                    index: BluetoothSchedulerHardwareListIndex(index),
+                },
                 remaining: Self(self.0 & !(1u16 << index)),
             }
         }

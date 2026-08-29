@@ -134,9 +134,10 @@ pub use bluetooth_scheduler_lock_modify::{
     BluetoothSchedulerLockModifyTaskObservation,
 };
 pub use bluetooth_scheduler_runtime::{
-    BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
-    BluetoothSchedulerHardwareListIndex, BluetoothSchedulerReferenceCleared,
-    BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerSoftwareListRemovalDisposition,
+    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerFinishedListObservation,
+    BluetoothSchedulerFinishedListPop, BluetoothSchedulerHardwareListIndex,
+    BluetoothSchedulerReferenceCleared, BluetoothSchedulerReferenceGateObservation,
+    BluetoothSchedulerSoftwareListRemovalDisposition,
     BluetoothSchedulerSoftwareListRemovalObservation,
     BluetoothSchedulerSoftwareListRemovalTaskObservation, BluetoothSchedulerWorkObservation,
 };

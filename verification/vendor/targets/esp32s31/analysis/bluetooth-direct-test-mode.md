@@ -496,17 +496,20 @@ item is rejected unchanged, and pre-publication cancellation requires the
 same identity before restoring both the list epoch and descriptor state. The
 joined state still remains CPU-owned and cannot call a register accessor.
 
-The later common insertion edge supplies the missing source-program order but
-not yet its memory-model contract. It clears item byte `+0x4e`, writes
+The later common insertion edge supplies the source-program order. It clears
+item byte `+0x4e`, writes
 `0xffff_ffff` to item status `+0x38`, links the item, publishes its compressed
 head at `0x2010_b000 + 0x10 * list` and only then conditionally writes one to
 `SCHEDULER_CONTROL` at `0x2010_1000` as the kick. No explicit RISC-V fence
 appears in the complete DTM, memory-manager or common-scheduler bodies.
-Consequently an open owner must prove whether the SRAM window is coherent or
-insert a release/cache-clean edge before head/kick and a matching
-acquire/cache-invalidate edge after completion before reading item status or
-RX data. Absence of a vendor fence instruction is not evidence that ordinary
-Rust memory accesses are sufficient.
+The open PAC deliberately strengthens both ownership edges with device fences:
+one before and after head publication, and one after the finished-status/report
+transfer. Official ESP-IDF commit `7b9cc1ac79f865983f59bb8ff3ff43eb74ff1dbe`
+defines `0x2f00_0000..0x2f08_0000` as the same directly mapped internal
+DRAM/DIRAM/DMA window and places external memory in a separate aperture.
+Therefore this graph needs no cache clean or invalidate operation, but its
+post-completion status and RX loads must still be volatile and inaccessible
+until the affine fenced-transfer result is consumed.
 
 Before and after request publication the current body waits only while both
 BUSY and START are set. Once that conjunction is false, it publishes result
@@ -638,10 +641,13 @@ The reviewed register model consequently promotes `0x2010_125c` to
 `SCHEDULER_FINISHED_LIST_STATUS.FINISHED_LIST_MASK` and retains `0x2010_1260`
 as the positional `SCHEDULER_FINISHED_LIST_REPORT`; it does not invent W1C
 semantics for that second word. The restricted PAC preserves the exact
-read/report order as one task-owned observation. The Bluetooth layer drains
-the mask one lowest-numbered list per finite step, allowing the future async
-bottom half to yield between lists without a loop or RTOS. Hardware-list to
-affine-item mapping remains the next layer above that token.
+read/report/fence order as one affine task-owned observation. Its mask and pop
+result cannot be copied, and each selected list becomes a nonforgeable affine
+token instead of a freely constructible positional index. The Bluetooth layer
+drains one lowest-numbered list per finite step, allowing the future async
+bottom half to yield between lists without a loop or RTOS. The token proves
+only one selection from that captured transfer; hardware-list to retained-item
+status mapping remains the next layer.
 
 The always-awake time-read prefix is now exact. Complete
 `r_sym_bt_KrvfcwDw4eZoaTPVdFj5` sets `SLEEP_TIMER_CONTROL.LATCH_REQUEST` at
@@ -709,9 +715,10 @@ The remaining work should proceed in narrow, testable increments:
 1. **Close scheduler completion ownership.** The empty-list manager epoch,
    merge-selected identity, descriptor visibility, hardware head, dynamic
    interrupt preparation, exact synchronous source-14 event and RUN are now
-   one non-reorderable typed chain. Connect finished-list/current-list
-   observations to the exact retained running item and add the acquire-side
-   visibility edge before any result or packet access. Preserve the current
+   one non-reorderable typed chain. Connect an affine finished-list observation
+   to the exact retained running item and consume that fenced proof in a
+   volatile status read before any result or packet access. The current-list
+   snapshot is not a completion predicate. Preserve the current
    insertion-end BUSY/sleep/item-status short circuits; do not create a
    task-side alias for `SCHEDULER_STATE` or equate RUN with radio completion.
 2. **Close the controller timebase source.** The latch address/order,

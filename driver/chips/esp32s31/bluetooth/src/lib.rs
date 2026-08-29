@@ -223,8 +223,9 @@ pub use scheduler::{
 };
 pub use scheduler_config::BluetoothSchedulerSoftwareConfig;
 pub use scheduler_finished_lists::{
-    BluetoothSchedulerFinishedListCaptureError, BluetoothSchedulerFinishedListWorker,
-    BluetoothSchedulerFinishedListWorkerStep, BluetoothSchedulerHardwareListIndex,
+    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerFinishedListCaptureError,
+    BluetoothSchedulerFinishedListWorker, BluetoothSchedulerFinishedListWorkerStep,
+    BluetoothSchedulerHardwareListIndex,
 };
 pub use scheduler_insertion::{
     BluetoothSchedulerInsertionBeginOutcome, BluetoothSchedulerInsertionBusyDecision,

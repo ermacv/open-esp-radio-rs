@@ -66775,6 +66775,93 @@ pub mod field_replace_modify {
             }
         });
     }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.HCCFR_CONTROL fields [ENABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_hccfr_enable_state(registers: &crate::PhyBasebandConfigOracle, input: u32) {
+        registers.hccfr_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.enable().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.HCCFR_VALUE fields [VALUE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_hccfr_value(registers: &crate::PhyBasebandConfigOracle, input: u32) {
+        registers.hccfr_value().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.value().bits((input & 0x00000fff) as u16) }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ICCFR_ENABLE_CONTROL fields [GATE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_iccfr_gate_state(registers: &crate::PhyBasebandConfigOracle, input: u32) {
+        registers.iccfr_enable_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.gate().bits((input & 0x00000003) as u8) }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ICCFR_FORCE_CONTROL fields [FORCE_MODE_HIGH] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_forced_iccfr_mode_high(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.iccfr_force_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.force_mode_high().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ICCFR_FORCE_CONTROL fields [FORCE_ENABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_forced_iccfr_enable_state(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.iccfr_force_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.force_enable().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ICCFR_FORCE_CONTROL fields [FORCE_TRIGGER] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn trigger_forced_iccfr(registers: &crate::PhyBasebandConfigOracle) {
+        registers.iccfr_force_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.force_trigger().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ICCFR_FORCE_CONTROL fields [FORCE_MODE_LOW] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_forced_iccfr_mode_low(registers: &crate::PhyBasebandConfigOracle, input: u32) {
+        registers.iccfr_force_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.force_mode_low().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ICCFR_FORCE_CONTROL fields [FORCE_VALUE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_forced_iccfr_value(registers: &crate::PhyBasebandConfigOracle, input: u32) {
+        registers.iccfr_force_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.force_value().bits((input & 0x00000fff) as u16) }
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.

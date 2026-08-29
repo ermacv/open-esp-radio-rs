@@ -7167,3 +7167,130 @@ field = "OPAQUE_DATA"
 domain = "PhyTransmitGainData2"
 exposure = "facade"
 sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
+
+[[bounded-domains]]
+name = "CfrValue"
+description = "Complete twelve-bit value accepted by reviewed HCCFR and forced-ICCFR transactions."
+min = 0
+max = 0x0fff
+sources = ["BLOB_LIBPHY_PHY_CFR_CONTROL"]
+
+[[enum-domains]]
+name = "CfrEnableState"
+description = "Boolean enable state shared by reviewed HCCFR and forced-ICCFR transactions."
+
+[[enum-domains.values]]
+name = "Disabled"
+value = 0
+description = "Disable the selected CFR path."
+sources = ["BLOB_LIBPHY_PHY_CFR_CONTROL", "S31_ESP_PACS_SVD"]
+
+[[enum-domains.values]]
+name = "Enabled"
+value = 1
+description = "Enable the selected CFR path."
+sources = ["BLOB_LIBPHY_PHY_CFR_CONTROL", "S31_ESP_PACS_SVD"]
+
+[[enum-domains]]
+name = "CfrForceMode"
+description = "Boolean mode image published independently to both forced-ICCFR mode fields."
+
+[[enum-domains.values]]
+name = "Low"
+value = 0
+description = "Publish the zero forced-ICCFR mode image."
+sources = ["BLOB_LIBPHY_PHY_CFR_CONTROL", "S31_ESP_PACS_SVD"]
+
+[[enum-domains.values]]
+name = "High"
+value = 1
+description = "Publish the one forced-ICCFR mode image."
+sources = ["BLOB_LIBPHY_PHY_CFR_CONTROL", "S31_ESP_PACS_SVD"]
+
+[[enum-domains]]
+name = "IccfrGateState"
+description = "Complete two-image ICCFR gate domain with the reviewed inverted enable encoding."
+
+[[enum-domains.values]]
+name = "Enabled"
+value = 0
+description = "Enable ICCFR through the zero gate image."
+sources = ["BLOB_LIBPHY_PHY_CFR_CONTROL", "S31_ESP_PACS_SVD"]
+
+[[enum-domains.values]]
+name = "Disabled"
+value = 3
+description = "Disable ICCFR through the all-ones gate image."
+sources = ["BLOB_LIBPHY_PHY_CFR_CONTROL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_hccfr_enable_state"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "HCCFR_CONTROL"
+fields = [{ field = "ENABLE", source-bit-offset = 0 }]
+domain = "CfrEnableState"
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_CFR_CONTROL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_hccfr_value"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "HCCFR_VALUE"
+fields = [{ field = "VALUE", source-bit-offset = 0 }]
+domain = "CfrValue"
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_CFR_CONTROL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_iccfr_gate_state"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "ICCFR_ENABLE_CONTROL"
+fields = [{ field = "GATE", source-bit-offset = 0 }]
+domain = "IccfrGateState"
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_CFR_CONTROL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_forced_iccfr_mode_high"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "ICCFR_FORCE_CONTROL"
+fields = [{ field = "FORCE_MODE_HIGH", source-bit-offset = 0 }]
+domain = "CfrForceMode"
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_CFR_CONTROL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_forced_iccfr_enable_state"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "ICCFR_FORCE_CONTROL"
+fields = [{ field = "FORCE_ENABLE", source-bit-offset = 0 }]
+domain = "CfrEnableState"
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_CFR_CONTROL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "trigger_forced_iccfr"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "ICCFR_FORCE_CONTROL"
+fields = [{ field = "FORCE_TRIGGER", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_CFR_CONTROL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_forced_iccfr_mode_low"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "ICCFR_FORCE_CONTROL"
+fields = [{ field = "FORCE_MODE_LOW", source-bit-offset = 0 }]
+domain = "CfrForceMode"
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_CFR_CONTROL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_forced_iccfr_value"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "ICCFR_FORCE_CONTROL"
+fields = [{ field = "FORCE_VALUE", source-bit-offset = 0 }]
+domain = "CfrValue"
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_CFR_CONTROL", "S31_ESP_PACS_SVD"]

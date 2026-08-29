@@ -421,6 +421,57 @@ impl PhyForcedPowerState {
     }
 }
 
+/// Boolean enable state shared by reviewed HCCFR and forced-ICCFR transactions.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CfrEnableState {
+    /// Disable the selected CFR path.
+    Disabled = 0x00000000,
+    /// Enable the selected CFR path.
+    Enabled = 0x00000001,
+}
+
+impl CfrEnableState {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
+/// Boolean mode image published independently to both forced-ICCFR mode fields.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CfrForceMode {
+    /// Publish the zero forced-ICCFR mode image.
+    Low = 0x00000000,
+    /// Publish the one forced-ICCFR mode image.
+    High = 0x00000001,
+}
+
+impl CfrForceMode {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
+/// Complete two-image ICCFR gate domain with the reviewed inverted enable encoding.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum IccfrGateState {
+    /// Enable ICCFR through the zero gate image.
+    Enabled = 0x00000000,
+    /// Disable ICCFR through the all-ones gate image.
+    Disabled = 0x00000003,
+}
+
+impl IccfrGateState {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
 /// One reviewed four-bit Wi-Fi packet-traffic-information value. Its scheduling policy remains outside the PAC.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MacPti(u32);
@@ -1168,6 +1219,29 @@ impl PhyPbusMemoryCommand {
     /// Construct a value only when it lies in the reviewed inclusive range.
     pub const fn new(value: u32) -> Option<Self> {
         if value <= 0x000003ff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Complete twelve-bit value accepted by reviewed HCCFR and forced-ICCFR transactions.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CfrValue(u32);
+
+impl CfrValue {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x00000fff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x00000fff {
             Some(Self(value))
         } else {
             None
@@ -5036,6 +5110,75 @@ pub(crate) fn publish_gain_memory_command(
     value: PhyGainMemoryCommandInput,
 ) {
     crate::svd::field_replace_modify::publish_gain_memory_command(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_hccfr_enable_state` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_hccfr_enable_state(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: CfrEnableState,
+) {
+    crate::svd::field_replace_modify::configure_hccfr_enable_state(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `configure_hccfr_value` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_hccfr_value(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: CfrValue,
+) {
+    crate::svd::field_replace_modify::configure_hccfr_value(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_iccfr_gate_state` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_iccfr_gate_state(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: IccfrGateState,
+) {
+    crate::svd::field_replace_modify::configure_iccfr_gate_state(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `configure_forced_iccfr_mode_high` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_forced_iccfr_mode_high(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: CfrForceMode,
+) {
+    crate::svd::field_replace_modify::configure_forced_iccfr_mode_high(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `configure_forced_iccfr_enable_state` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_forced_iccfr_enable_state(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: CfrEnableState,
+) {
+    crate::svd::field_replace_modify::configure_forced_iccfr_enable_state(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `trigger_forced_iccfr` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn trigger_forced_iccfr(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::trigger_forced_iccfr(registers);
+}
+
+/// Typed bridge for the reviewed `configure_forced_iccfr_mode_low` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_forced_iccfr_mode_low(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: CfrForceMode,
+) {
+    crate::svd::field_replace_modify::configure_forced_iccfr_mode_low(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `configure_forced_iccfr_value` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_forced_iccfr_value(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: CfrValue,
+) {
+    crate::svd::field_replace_modify::configure_forced_iccfr_value(registers, value.get());
 }
 
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.

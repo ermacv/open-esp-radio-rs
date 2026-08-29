@@ -6,31 +6,31 @@
 
 #![forbid(unsafe_code)]
 
+pub use super::generated::CfrValue;
+use super::generated::{CfrEnableState, CfrForceMode, IccfrGateState};
 use super::RadioPhyRegisters;
 
-/// One HCCFR/ICCFR value accepted by the recovered twelve-bit MMIO fields.
-///
-/// Construction is explicit so register operations cannot accidentally pass
-/// a wider integer to the PAC.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct CfrValue(u16);
-
-impl CfrValue {
-    /// Largest value representable by either recovered CFR field.
-    pub const MAX: u16 = 0x0fff;
-
-    /// Construct a value already known to fit the recovered field width.
-    pub const fn new(value: u16) -> Option<Self> {
-        if value <= Self::MAX {
-            Some(Self(value))
-        } else {
-            None
-        }
+const fn cfr_enable_state(enabled: bool) -> CfrEnableState {
+    if enabled {
+        CfrEnableState::Enabled
+    } else {
+        CfrEnableState::Disabled
     }
+}
 
-    /// Return the value accepted by the generated PAC field writer.
-    pub const fn get(self) -> u16 {
-        self.0
+const fn cfr_force_mode(mode: bool) -> CfrForceMode {
+    if mode {
+        CfrForceMode::High
+    } else {
+        CfrForceMode::Low
+    }
+}
+
+const fn iccfr_gate_state(enabled: bool) -> IccfrGateState {
+    if enabled {
+        IccfrGateState::Enabled
+    } else {
+        IccfrGateState::Disabled
     }
 }
 
@@ -38,59 +38,27 @@ impl RadioPhyRegisters {
     /// Publish both fields of complete pinned `phy_config_hccfr` in order.
     pub fn configure_hccfr(&mut self, enabled: bool, value: CfrValue) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        bb.hccfr_control().modify(|_, w| {
-            if enabled {
-                w.enable().enabled()
-            } else {
-                w.enable().disabled()
-            }
-        });
-        bb.hccfr_value().modify(|_, w| w.value().set(value.get()));
+        super::generated::configure_hccfr_enable_state(bb, cfr_enable_state(enabled));
+        super::generated::configure_hccfr_value(bb, value);
     }
 
     /// Apply either complete branch of pinned `phy_iccfr_en`.
     pub fn configure_iccfr_gate(&mut self, enabled: bool) {
-        self.peripherals
-            .phy_baseband_config_oracle
-            .iccfr_enable_control()
-            .modify(|_, w| {
-                if enabled {
-                    w.gate().enabled()
-                } else {
-                    w.gate().disabled()
-                }
-            });
+        super::generated::configure_iccfr_gate_state(
+            &self.peripherals.phy_baseband_config_oracle,
+            iccfr_gate_state(enabled),
+        );
     }
 
     /// Publish all five fields and the tail gate of pinned `phy_force_iccfr`.
     pub fn configure_forced_iccfr(&mut self, mode: bool, enabled: bool, value: CfrValue) {
-        let control = self
-            .peripherals
-            .phy_baseband_config_oracle
-            .iccfr_force_control();
-        control.modify(|_, w| w.force_mode_high().bit(mode));
-        control.modify(|_, w| {
-            if enabled {
-                w.force_enable().enabled()
-            } else {
-                w.force_enable().disabled()
-            }
-        });
-        control.modify(|_, w| w.force_trigger().set_bit());
-        control.modify(|_, w| w.force_mode_low().bit(mode));
-        control.modify(|_, w| w.force_value().set(value.get()));
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        let mode = cfr_force_mode(mode);
+        super::generated::configure_forced_iccfr_mode_high(bb, mode);
+        super::generated::configure_forced_iccfr_enable_state(bb, cfr_enable_state(enabled));
+        super::generated::trigger_forced_iccfr(bb);
+        super::generated::configure_forced_iccfr_mode_low(bb, mode);
+        super::generated::configure_forced_iccfr_value(bb, value);
         self.configure_iccfr_gate(enabled);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::CfrValue;
-
-    #[test]
-    fn value_rejects_wide_typed_values() {
-        assert_eq!(CfrValue::new(0), Some(CfrValue(0)));
-        assert_eq!(CfrValue::new(CfrValue::MAX), Some(CfrValue(0x0fff)));
-        assert_eq!(CfrValue::new(0x1000), None);
     }
 }

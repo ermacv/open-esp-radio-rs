@@ -1,13 +1,13 @@
 //! Exact controller transactions for the modem low-power timer.
 //!
 //! The module contains the one-command runtime-counter start performed by the
-//! controller hardware-enable path, the complete MMIO prefix immediately
-//! before ESP32-S31 installs interrupt source 127, and the bounded register
-//! classifier and hardware-acknowledgement phase at the start of that source's
-//! handler. These transactions do not initialize the vendor software
-//! environment, publish ISR storage, install a CPU route, dispatch the
-//! software timer queue, or claim that the controller, Link Layer, or HCI is
-//! live.
+//! controller hardware-enable path, the complete low-power configuration
+//! component, the MMIO prefix immediately before ESP32-S31 installs interrupt
+//! source 127, and the bounded register classifier and hardware-acknowledgement
+//! phase at the start of that source's handler. These transactions do not
+//! initialize the vendor software environment, publish ISR storage, install a
+//! CPU route, dispatch the software timer queue, or claim that the controller,
+//! Link Layer, or HCI is live.
 
 #![deny(unsafe_code)]
 
@@ -87,6 +87,36 @@ pub enum BluetoothModemLpTimerOwnerError {
 #[must_use = "the prepared modem LP-timer registers must continue through route setup"]
 pub struct BluetoothModemLpTimerRegistersPrepared {
     timer: BluetoothModemLpTimerRegisters,
+}
+
+/// Hardware branch observed while completing the BTDM low-power component.
+///
+/// The positional names retain only the independently reviewed register facts;
+/// they do not assign an undocumented clock or sleep meaning to `CONTROL_2`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothLowPowerRuntimeControlObservation {
+    /// `CONTROL_2` was clear after controls zero and four were cleared.
+    Control2Clear,
+    /// `CONTROL_2` was set, so the fresh-read `CONTROL_1` publication ran.
+    Control2SetControl1Published,
+}
+
+/// Timer ownership after the complete low-power hardware component.
+///
+/// The generated fixed-register sequence owns every command image, array
+/// index and ordering fact. This handwritten state retains only ownership and
+/// the reviewed conditional edge over generated field accessors.
+#[must_use = "the initialized modem LP-timer owner must continue through route setup"]
+pub struct BluetoothModemLpTimerLowPowerHardwareInitialized {
+    timer: BluetoothModemLpTimerRegisters,
+    runtime_control: BluetoothLowPowerRuntimeControlObservation,
+}
+
+impl BluetoothModemLpTimerLowPowerHardwareInitialized {
+    /// Return the conditional runtime-control branch observed at initialization.
+    pub const fn runtime_control_observation(&self) -> BluetoothLowPowerRuntimeControlObservation {
+        self.runtime_control
+    }
 }
 
 /// Source-127 timer registers staged for exclusive placement in stable ISR storage.
@@ -389,6 +419,14 @@ trait ModemLpTimerTransaction {
     fn fence(&mut self);
 }
 
+trait ModemLpTimerLowPowerInitTransaction {
+    fn initialize_config(&mut self);
+    fn clear_controls_0_4(&mut self);
+    fn control_2_is_set(&mut self) -> bool;
+    fn publish_control_1(&mut self);
+    fn fence(&mut self);
+}
+
 trait ModemLpTimerStartTransaction {
     fn start_counter(&mut self);
     fn fence(&mut self);
@@ -552,6 +590,21 @@ fn execute_modem_lp_timer_prepare(transaction: &mut impl ModemLpTimerTransaction
     transaction.fence();
 }
 
+fn execute_modem_lp_timer_low_power_init(
+    transaction: &mut impl ModemLpTimerLowPowerInitTransaction,
+) -> BluetoothLowPowerRuntimeControlObservation {
+    transaction.initialize_config();
+    transaction.clear_controls_0_4();
+    let observation = if transaction.control_2_is_set() {
+        transaction.publish_control_1();
+        BluetoothLowPowerRuntimeControlObservation::Control2SetControl1Published
+    } else {
+        BluetoothLowPowerRuntimeControlObservation::Control2Clear
+    };
+    transaction.fence();
+    observation
+}
+
 fn execute_modem_lp_timer_start(
     transaction: &mut impl ModemLpTimerStartTransaction,
 ) -> BluetoothModemLpTimerCounterStarted {
@@ -562,6 +615,33 @@ fn execute_modem_lp_timer_start(
 
 struct HardwareModemLpTimerTransaction<'registers> {
     registers: &'registers super::svd::BtdmRuntimeControl,
+}
+
+struct HardwareModemLpTimerLowPowerInitTransaction<'registers> {
+    config: &'registers super::svd::BtdmLowPowerConfig,
+    runtime_control: &'registers super::svd::BtdmRuntimeControl,
+}
+
+impl ModemLpTimerLowPowerInitTransaction for HardwareModemLpTimerLowPowerInitTransaction<'_> {
+    fn initialize_config(&mut self) {
+        super::svd::fixed_register_sequence::initialize_bluetooth_low_power_config(self.config);
+    }
+
+    fn clear_controls_0_4(&mut self) {
+        crate::generated::clear_bluetooth_low_power_controls_0_4(self.runtime_control);
+    }
+
+    fn control_2_is_set(&mut self) -> bool {
+        super::svd::field_read::observe_bluetooth_modem_lp_timer_control_2(self.runtime_control)
+    }
+
+    fn publish_control_1(&mut self) {
+        crate::generated::publish_bluetooth_modem_lp_timer_control_1(self.runtime_control);
+    }
+
+    fn fence(&mut self) {
+        device_fence();
+    }
 }
 
 impl ModemLpTimerStartTransaction for HardwareModemLpTimerTransaction<'_> {
@@ -748,6 +828,38 @@ impl BluetoothTaskRegisters {
 }
 
 impl BluetoothModemLpTimerRegistersPrepared {
+    /// Complete the reviewed BTDM low-power hardware component.
+    ///
+    /// SOURCE: complete public ESP32-S31 `libbtdm_common.a` member `20.o`
+    /// symbol `r_sym_bt_JHP69cMcA5vCzdaxdFgT` proves the generated twelve-write
+    /// configuration sequence. Its complete caller
+    /// `r_sym_bt_cgaCegmpqnbaoszyOy3c` then clears `CONTROL_0` and `CONTROL_4`,
+    /// samples `CONTROL_2`, and conditionally publishes `CONTROL_1` from a
+    /// fresh read. A device fence closes this restricted-PAC transaction.
+    ///
+    /// The disjoint task owner supplies only `BTDM_LOW_POWER_CONFIG`; this
+    /// prepared owner supplies only `BTDM_RUNTIME_CONTROL`. Neither register
+    /// block can alias, and task ownership remains available after return.
+    #[doc(hidden)]
+    pub fn initialize_low_power_hardware(
+        self,
+        task: &mut BluetoothTaskRegisters,
+    ) -> BluetoothModemLpTimerLowPowerHardwareInitialized {
+        let runtime_control = {
+            let mut transaction = HardwareModemLpTimerLowPowerInitTransaction {
+                config: &task.bluetooth.btdm_low_power_config,
+                runtime_control: &self.timer.peripherals.btdm_runtime_control,
+            };
+            execute_modem_lp_timer_low_power_init(&mut transaction)
+        };
+        BluetoothModemLpTimerLowPowerHardwareInitialized {
+            timer: self.timer,
+            runtime_control,
+        }
+    }
+}
+
+impl BluetoothModemLpTimerLowPowerHardwareInitialized {
     /// Move the unique timer-register owner into source-127 ISR storage.
     ///
     /// This transition performs no MMIO. The platform must store the returned
@@ -796,16 +908,17 @@ mod tests {
     use std::vec::Vec;
 
     use super::{
-        BluetoothModemLpTimerCompareDisposition, BluetoothModemLpTimerEpoch,
-        BluetoothModemLpTimerHandlerRegisterObservation, BluetoothModemLpTimerInstant,
-        BluetoothModemLpTimerInterruptObservation, ModemLpTimerHandlerRegisterDisposition,
-        ModemLpTimerHandlerRegisterTransaction, ModemLpTimerInterruptDisposition,
-        ModemLpTimerInterruptTransaction, ModemLpTimerRuntimeTransaction,
+        BluetoothLowPowerRuntimeControlObservation, BluetoothModemLpTimerCompareDisposition,
+        BluetoothModemLpTimerEpoch, BluetoothModemLpTimerHandlerRegisterObservation,
+        BluetoothModemLpTimerInstant, BluetoothModemLpTimerInterruptObservation,
+        ModemLpTimerHandlerRegisterDisposition, ModemLpTimerHandlerRegisterTransaction,
+        ModemLpTimerInterruptDisposition, ModemLpTimerInterruptTransaction,
+        ModemLpTimerLowPowerInitTransaction, ModemLpTimerRuntimeTransaction,
         ModemLpTimerStartTransaction, ModemLpTimerTransaction,
         execute_modem_lp_timer_compare_disable, execute_modem_lp_timer_compare_program,
         execute_modem_lp_timer_counter_sample, execute_modem_lp_timer_handler_registers,
-        execute_modem_lp_timer_interrupt, execute_modem_lp_timer_prepare,
-        execute_modem_lp_timer_start,
+        execute_modem_lp_timer_interrupt, execute_modem_lp_timer_low_power_init,
+        execute_modem_lp_timer_prepare, execute_modem_lp_timer_start,
     };
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -845,6 +958,94 @@ mod tests {
         assert_eq!(
             recorder.operations,
             [StartOperation::StartCounter, StartOperation::DeviceFence]
+        );
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum LowPowerInitOperation {
+        InitializeConfig,
+        ClearControls04,
+        ObserveControl2(bool),
+        PublishControl1,
+        Fence,
+    }
+
+    struct LowPowerInitRecorder {
+        control_2: bool,
+        operations: Vec<LowPowerInitOperation>,
+    }
+
+    impl ModemLpTimerLowPowerInitTransaction for LowPowerInitRecorder {
+        fn initialize_config(&mut self) {
+            self.operations
+                .push(LowPowerInitOperation::InitializeConfig);
+        }
+
+        fn clear_controls_0_4(&mut self) {
+            self.operations.push(LowPowerInitOperation::ClearControls04);
+        }
+
+        fn control_2_is_set(&mut self) -> bool {
+            self.operations
+                .push(LowPowerInitOperation::ObserveControl2(self.control_2));
+            self.control_2
+        }
+
+        fn publish_control_1(&mut self) {
+            self.operations.push(LowPowerInitOperation::PublishControl1);
+        }
+
+        fn fence(&mut self) {
+            self.operations.push(LowPowerInitOperation::Fence);
+        }
+    }
+
+    #[test]
+    fn low_power_init_skips_control_1_when_control_2_is_clear() {
+        let mut recorder = LowPowerInitRecorder {
+            control_2: false,
+            operations: Vec::new(),
+        };
+
+        let observation = execute_modem_lp_timer_low_power_init(&mut recorder);
+
+        assert_eq!(
+            observation,
+            BluetoothLowPowerRuntimeControlObservation::Control2Clear
+        );
+        assert_eq!(
+            recorder.operations,
+            [
+                LowPowerInitOperation::InitializeConfig,
+                LowPowerInitOperation::ClearControls04,
+                LowPowerInitOperation::ObserveControl2(false),
+                LowPowerInitOperation::Fence,
+            ]
+        );
+    }
+
+    #[test]
+    fn low_power_init_publishes_control_1_from_the_conditional_branch() {
+        let mut recorder = LowPowerInitRecorder {
+            control_2: true,
+            operations: Vec::new(),
+        };
+
+        let observation = execute_modem_lp_timer_low_power_init(&mut recorder);
+
+        assert_eq!(
+            observation,
+            BluetoothLowPowerRuntimeControlObservation::Control2SetControl1Published
+        );
+        assert_eq!(
+            recorder.operations,
+            [
+                LowPowerInitOperation::InitializeConfig,
+                LowPowerInitOperation::ClearControls04,
+                LowPowerInitOperation::ObserveControl2(true),
+                LowPowerInitOperation::PublishControl1,
+                LowPowerInitOperation::Fence,
+            ]
         );
     }
 

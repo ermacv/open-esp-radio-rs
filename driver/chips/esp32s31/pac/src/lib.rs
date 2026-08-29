@@ -102,12 +102,13 @@ pub use bluetooth_memory_lists::{
     BluetoothMemoryListPointerImage, BluetoothMemoryListSelector, BluetoothMemoryListSlot,
 };
 pub use bluetooth_modem_lp_timer::{
-    BluetoothModemLpTimerCompareDisposition, BluetoothModemLpTimerCounterObservation,
-    BluetoothModemLpTimerCounterStarted, BluetoothModemLpTimerEpoch,
-    BluetoothModemLpTimerHandlerPending, BluetoothModemLpTimerHandlerRegisterObservation,
-    BluetoothModemLpTimerHandlerRegisterStep, BluetoothModemLpTimerInstant,
-    BluetoothModemLpTimerInterruptObservation, BluetoothModemLpTimerInterruptReady,
-    BluetoothModemLpTimerInterruptStep, BluetoothModemLpTimerOwnerError,
+    BluetoothLowPowerRuntimeControlObservation, BluetoothModemLpTimerCompareDisposition,
+    BluetoothModemLpTimerCounterObservation, BluetoothModemLpTimerCounterStarted,
+    BluetoothModemLpTimerEpoch, BluetoothModemLpTimerHandlerPending,
+    BluetoothModemLpTimerHandlerRegisterObservation, BluetoothModemLpTimerHandlerRegisterStep,
+    BluetoothModemLpTimerInstant, BluetoothModemLpTimerInterruptObservation,
+    BluetoothModemLpTimerInterruptReady, BluetoothModemLpTimerInterruptStep,
+    BluetoothModemLpTimerLowPowerHardwareInitialized, BluetoothModemLpTimerOwnerError,
     BluetoothModemLpTimerRegisters, BluetoothModemLpTimerRegistersPrepared,
     BluetoothModemLpTimerSoftwarePending,
 };

@@ -60233,6 +60233,56 @@ pub mod fixed_register_image {
     }
 }
 
+/// Safe, SVD-declared ordered transactions of fixed complete-register images.
+pub mod fixed_register_sequence {
+
+    /// Execute the reviewed 12-step fixed-image transaction on `BTDM_LOW_POWER_CONFIG`.
+    #[inline]
+    pub fn initialize_bluetooth_low_power_config(registers: &crate::BtdmLowPowerConfig) {
+        // SAFETY: generator validation proves every target is a writable
+        // 32-bit ordinary or write-one-to-clear register, every array
+        // index is in range, and provenance qualifies each exact image.
+        unsafe {
+            registers
+                .command_0008()
+                .write_with_zero(|writer| writer.bits(0x00000020));
+            registers
+                .config(2)
+                .write_with_zero(|writer| writer.bits(0x00000043));
+            registers
+                .config(3)
+                .write_with_zero(|writer| writer.bits(0x00000012));
+            registers
+                .command_0008()
+                .write_with_zero(|writer| writer.bits(0x00000010));
+            registers
+                .config(0)
+                .write_with_zero(|writer| writer.bits(0x00000045));
+            registers
+                .config(1)
+                .write_with_zero(|writer| writer.bits(0x00000011));
+            registers
+                .command_0008()
+                .write_with_zero(|writer| writer.bits(0x00000040));
+            registers
+                .config(4)
+                .write_with_zero(|writer| writer.bits(0x00000046));
+            registers
+                .config(5)
+                .write_with_zero(|writer| writer.bits(0x00000011));
+            registers
+                .command_0008()
+                .write_with_zero(|writer| writer.bits(0x00000080));
+            registers
+                .config(6)
+                .write_with_zero(|writer| writer.bits(0x00000046));
+            registers
+                .config(7)
+                .write_with_zero(|writer| writer.bits(0x0000000f));
+        }
+    }
+}
+
 /// Affine sample-and-acknowledge transactions for same-register W1C fields.
 pub mod w1c_register_snapshot {
 
@@ -62822,6 +62872,21 @@ pub mod field_replace_modify {
                 .bit(((input >> 9) & 0x00000001) != 0)
                 .source_12()
                 .bit(((input >> 12) & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace BTDM_RUNTIME_CONTROL.CONTROL_0058 fields [CONTROL_0, CONTROL_4] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_bluetooth_low_power_controls_0_4(registers: &crate::BtdmRuntimeControl) {
+        registers.control_0058().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .control_0()
+                .bit((input & 0x00000001) != 0)
+                .control_4()
+                .bit(((input >> 4) & 0x00000001) != 0)
         });
     }
 

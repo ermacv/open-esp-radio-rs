@@ -45,6 +45,8 @@ pub struct PacApiPack {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fixed_register_images: Vec<FixedRegisterImage>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fixed_register_sequences: Vec<FixedRegisterSequence>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub w1c_register_snapshots: Vec<W1cRegisterSnapshot>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub register_image_reads: Vec<RegisterImageRead>,
@@ -348,6 +350,27 @@ common_operation!(FixedRegisterImage {
     register: String,
     value: u32,
 });
+/// One reviewed ordered transaction composed only of fixed complete-register images.
+///
+/// Array indices are facts of the transaction and therefore remain in the
+/// generated leaf instead of crossing into hand-written PAC code.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct FixedRegisterSequence {
+    pub name: String,
+    pub peripheral: String,
+    pub steps: Vec<FixedRegisterSequenceStep>,
+    pub sources: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct FixedRegisterSequenceStep {
+    pub register: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index: Option<usize>,
+    pub value: u32,
+}
 /// One sampled, same-register write-one-to-clear transaction.
 ///
 /// The generated sample is an affine token: callers may inspect declared
@@ -572,6 +595,7 @@ impl PacApiPack {
         validate_operations("field-snapshot-read", &self.field_snapshot_reads)?;
         validate_operations("fixed-register-write", &self.fixed_register_writes)?;
         validate_operations("fixed-register-image", &self.fixed_register_images)?;
+        validate_operations("fixed-register-sequence", &self.fixed_register_sequences)?;
         validate_operations("w1c-register-snapshot", &self.w1c_register_snapshots)?;
         validate_operations("register-image-read", &self.register_image_reads)?;
         validate_operations("register-image-write", &self.register_image_writes)?;
@@ -583,6 +607,18 @@ impl PacApiPack {
         validate_operations("field-replace-modify", &self.field_replace_modifies)?;
         validate_operations("field-argument-modify", &self.field_argument_modifies)?;
         validate_operations("indexed-bit-set-modify", &self.indexed_bit_set_modifies)?;
+
+        for operation in &self.fixed_register_sequences {
+            if operation.steps.is_empty() {
+                return Err(Error::message(format!(
+                    "PAC API fixed-register-sequence {:?} requires at least one step",
+                    operation.name
+                )));
+            }
+            for step in &operation.steps {
+                validate_component("register", &operation.name, &step.register)?;
+            }
+        }
 
         for operation in &self.field_or_modifies {
             if operation.fields.is_empty() {
@@ -1109,6 +1145,7 @@ impl PacApiPack {
             + self.field_snapshot_reads.len()
             + self.fixed_register_writes.len()
             + self.fixed_register_images.len()
+            + self.fixed_register_sequences.len()
             + self.w1c_register_snapshots.len()
             + self.register_image_reads.len()
             + self.register_image_writes.len()
@@ -1183,6 +1220,7 @@ impl PacApiPack {
                     .chain(self.field_snapshot_reads.iter().map(Operation::sources))
                     .chain(self.fixed_register_writes.iter().map(Operation::sources))
                     .chain(self.fixed_register_images.iter().map(Operation::sources))
+                    .chain(self.fixed_register_sequences.iter().map(Operation::sources))
                     .chain(self.w1c_register_snapshots.iter().map(Operation::sources))
                     .chain(self.register_image_reads.iter().map(Operation::sources))
                     .chain(self.register_image_writes.iter().map(Operation::sources))
@@ -1549,6 +1587,20 @@ impl_register_operation!(FieldRead);
 impl_register_operation!(FieldSnapshotRead);
 impl_register_operation!(FixedRegisterWrite);
 impl_register_operation!(FixedRegisterImage);
+impl Operation for FixedRegisterSequence {
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn peripheral(&self) -> &str {
+        &self.peripheral
+    }
+    fn register(&self) -> Option<&str> {
+        None
+    }
+    fn sources(&self) -> &[String] {
+        &self.sources
+    }
+}
 impl_register_operation!(W1cRegisterSnapshot);
 impl_register_operation!(RegisterImageRead);
 impl_register_operation!(RegisterImageWrite);
@@ -1725,6 +1777,7 @@ mod tests {
             field_snapshot_reads: Vec::new(),
             fixed_register_writes: Vec::new(),
             fixed_register_images: Vec::new(),
+            fixed_register_sequences: Vec::new(),
             w1c_register_snapshots: Vec::new(),
             register_image_reads: Vec::new(),
             register_image_writes: Vec::new(),

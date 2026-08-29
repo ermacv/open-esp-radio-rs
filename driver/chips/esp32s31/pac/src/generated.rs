@@ -3249,6 +3249,12 @@ pub(crate) fn mask_bluetooth_primary_baseline_bank_1(
     crate::svd::field_replace_modify::mask_bluetooth_primary_baseline_bank_1(registers);
 }
 
+/// Typed bridge for the reviewed `clear_bluetooth_low_power_controls_0_4` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_bluetooth_low_power_controls_0_4(registers: &crate::svd::BtdmRuntimeControl) {
+    crate::svd::field_replace_modify::clear_bluetooth_low_power_controls_0_4(registers);
+}
+
 /// Typed bridge for the reviewed `clear_bluetooth_memory_list_1_pointer_b` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_bluetooth_memory_list_1_pointer_b(

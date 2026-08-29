@@ -488,6 +488,7 @@ impl PacApiPack {
         output.push_str(&self.render_field_snapshot_reads(&device)?);
         output.push_str(&self.render_fixed_register_writes());
         output.push_str(&self.render_fixed_register_images(&device)?);
+        output.push_str(&self.render_fixed_register_sequences(&device)?);
         output.push_str(&self.render_w1c_register_snapshots(&device)?);
         output.push_str(&self.render_register_image_reads(&device)?);
         output.push_str(&self.render_register_image_writes(&device)?);
@@ -982,6 +983,54 @@ impl PacApiPack {
                  }}\n",
                 binding.value, binding.peripheral, binding.register, binding.name, binding.value,
             ));
+        }
+        output.push_str("}\n");
+        Ok(output)
+    }
+
+    fn render_fixed_register_sequences(&self, device: &Device) -> Result<String> {
+        if self.fixed_register_sequences.is_empty() {
+            return Ok(String::new());
+        }
+        let mut output = String::from(
+            "\n/// Safe, SVD-declared ordered transactions of fixed complete-register images.\n\
+             pub mod fixed_register_sequence {\n",
+        );
+        for binding in &self.fixed_register_sequences {
+            let peripheral_type = type_binding_name(&binding.peripheral);
+            output.push_str(&format!(
+                "\n    /// Execute the reviewed {}-step fixed-image transaction on `{}`.\n\
+                 #[inline]\n\
+                 pub fn {}(registers: &crate::{peripheral_type}) {{\n\
+                     // SAFETY: generator validation proves every target is a writable\n\
+                     // 32-bit ordinary or write-one-to-clear register, every array\n\
+                     // index is in range, and provenance qualifies each exact image.\n\
+                     unsafe {{\n",
+                binding.steps.len(),
+                binding.peripheral,
+                binding.name,
+            ));
+            for step in &binding.steps {
+                let register = member_binding_name(&step.register);
+                let register_binding = pac_api_svd::register(
+                    device,
+                    &binding.name,
+                    &binding.peripheral,
+                    &step.register,
+                )?;
+                let index = match (register_binding.is_array, step.index) {
+                    (false, None) => String::new(),
+                    (true, Some(index)) => index.to_string(),
+                    _ => unreachable!("PAC API SVD validation rejects mismatched sequence indices"),
+                };
+                output.push_str(&format!(
+                    "                         registers.{register}({index}).write_with_zero(|writer|\n\
+                         writer.bits(0x{:08x})\n\
+                     );\n",
+                    step.value,
+                ));
+            }
+            output.push_str("                     }\n                 }\n");
         }
         output.push_str("}\n");
         Ok(output)

@@ -1821,6 +1821,25 @@ register = "COMMAND_0010"
 value = 0x00040000
 sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_RUNTIME"]
 
+[[fixed-register-sequences]]
+name = "initialize_bluetooth_low_power_config"
+peripheral = "BTDM_LOW_POWER_CONFIG"
+steps = [
+    { register = "COMMAND_0008", value = 0x00000020 },
+    { register = "CONFIG%s", index = 2, value = 0x00000043 },
+    { register = "CONFIG%s", index = 3, value = 0x00000012 },
+    { register = "COMMAND_0008", value = 0x00000010 },
+    { register = "CONFIG%s", index = 0, value = 0x00000045 },
+    { register = "CONFIG%s", index = 1, value = 0x00000011 },
+    { register = "COMMAND_0008", value = 0x00000040 },
+    { register = "CONFIG%s", index = 4, value = 0x00000046 },
+    { register = "CONFIG%s", index = 5, value = 0x00000011 },
+    { register = "COMMAND_0008", value = 0x00000080 },
+    { register = "CONFIG%s", index = 6, value = 0x00000046 },
+    { register = "CONFIG%s", index = 7, value = 0x0000000f },
+]
+sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
+
 [[fixed-register-images]]
 name = "latch_ble_phy_register_initialization_entry"
 peripheral = "BLE_PHY_INIT_TOGGLE"
@@ -3030,7 +3049,22 @@ register = "CONTROL_0058"
 fields = [{ field = "CONTROL_1", source-bit-offset = 0 }]
 value = 0x00000001
 exposure = "facade"
-sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_IRQ"]
+sources = [
+    "BLOB_LIBBTDM_MODEM_LP_TIMER_IRQ",
+    "BLOB_LIBBTDM_RUNTIME_CONTROL",
+]
+
+[[field-replace-modifies]]
+name = "clear_bluetooth_low_power_controls_0_4"
+peripheral = "BTDM_RUNTIME_CONTROL"
+register = "CONTROL_0058"
+fields = [
+    { field = "CONTROL_0", source-bit-offset = 0 },
+    { field = "CONTROL_4", source-bit-offset = 4 },
+]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_RUNTIME_CONTROL"]
 
 [[field-or-modifies]]
 name = "or_bluetooth_memory_list_1_pointer_b"
@@ -3518,7 +3552,10 @@ name = "observe_bluetooth_modem_lp_timer_control_2"
 peripheral = "BTDM_RUNTIME_CONTROL"
 register = "CONTROL_0058"
 field = "CONTROL_2"
-sources = ["BLOB_LIBBTDM_MODEM_LP_TIMER_IRQ"]
+sources = [
+    "BLOB_LIBBTDM_MODEM_LP_TIMER_IRQ",
+    "BLOB_LIBBTDM_RUNTIME_CONTROL",
+]
 
 [[field-reads]]
 name = "observe_bluetooth_modem_lp_timer_state_0024"

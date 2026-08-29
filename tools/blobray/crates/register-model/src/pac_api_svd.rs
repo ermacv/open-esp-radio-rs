@@ -14,6 +14,7 @@ pub(super) struct RegisterBinding<'a> {
     pub(super) info: &'a RegisterInfo,
     pub(super) properties: RegisterProperties,
     pub(super) is_array: bool,
+    pub(super) array_len: Option<usize>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -250,6 +251,47 @@ impl PacApiPack {
                     "PAC API fixed-register-image {:?} only supports ordinary or one-to-clear registers",
                     operation.name
                 )));
+            }
+        }
+        for operation in &self.fixed_register_sequences {
+            for step in &operation.steps {
+                let binding = writable_register(
+                    &device,
+                    &operation.name,
+                    &operation.peripheral,
+                    &step.register,
+                )?;
+                if !matches!(
+                    binding.info.modified_write_values,
+                    None | Some(ModifiedWriteValues::OneToClear)
+                ) {
+                    return Err(Error::message(format!(
+                        "PAC API fixed-register-sequence {:?} only supports ordinary or one-to-clear registers",
+                        operation.name
+                    )));
+                }
+                match (binding.array_len, step.index) {
+                    (None, None) => {}
+                    (None, Some(_)) => {
+                        return Err(Error::message(format!(
+                            "PAC API fixed-register-sequence {:?} supplies an index for non-array register {}.{}",
+                            operation.name, operation.peripheral, step.register
+                        )));
+                    }
+                    (Some(_), None) => {
+                        return Err(Error::message(format!(
+                            "PAC API fixed-register-sequence {:?} requires an index for array register {}.{}",
+                            operation.name, operation.peripheral, step.register
+                        )));
+                    }
+                    (Some(len), Some(index)) if index >= len => {
+                        return Err(Error::message(format!(
+                            "PAC API fixed-register-sequence {:?} index {index} exceeds {}.{} length {len}",
+                            operation.name, operation.peripheral, step.register
+                        )));
+                    }
+                    (Some(_), Some(_)) => {}
+                }
             }
         }
         for operation in &self.w1c_register_snapshots {
@@ -929,11 +971,15 @@ pub(super) fn register<'a>(
             "PAC API operation {operation:?} peripheral {peripheral_name:?} has no registers"
         ))
     })?;
-    let (info, is_array) = children
+    let (info, array_len) = children
         .iter()
         .find_map(|child| match child {
             RegisterCluster::Register(register) if register.name == register_name => {
-                Some((&**register, matches!(register, svd_rs::MaybeArray::Array(_, _))))
+                let array_len = match register {
+                    svd_rs::MaybeArray::Single(_) => None,
+                    svd_rs::MaybeArray::Array(_, dimension) => Some(dimension.dim as usize),
+                };
+                Some((&**register, array_len))
             }
             _ => None,
         })
@@ -952,7 +998,8 @@ pub(super) fn register<'a>(
     Ok(RegisterBinding {
         info,
         properties,
-        is_array,
+        is_array: array_len.is_some(),
+        array_len,
     })
 }
 
@@ -1580,6 +1627,47 @@ peripherals = ["INTERRUPT"]
                 "unexpected rejection for {register}: {error}"
             );
         }
+    }
+
+    #[test]
+    fn fixed_register_sequence_owns_ordered_array_indices() {
+        let mut pack: PacApiPack = toml_edit::de::from_str(
+            r#"schema = 5
+
+[[fixed-register-sequences]]
+name = "initialize_status"
+peripheral = "RADIO"
+steps = [
+    { register = "CONTROL", value = 1 },
+    { register = "STATUS%s", index = 1, value = 2 },
+]
+sources = ["PUBLIC_SEQUENCE"]
+"#,
+        )
+        .unwrap();
+
+        assert!(pack.validate_against_svd(W1C_REGISTER_SNAPSHOT_SVD).is_ok());
+        assert_eq!(pack.operation_count(), 1);
+        assert_eq!(pack.source_ids(), BTreeSet::from(["PUBLIC_SEQUENCE"]));
+
+        pack.fixed_register_sequences[0].steps[1].index = None;
+        assert!(
+            pack.validate_against_svd(W1C_REGISTER_SNAPSHOT_SVD)
+                .is_err()
+        );
+
+        pack.fixed_register_sequences[0].steps[1].index = Some(2);
+        assert!(
+            pack.validate_against_svd(W1C_REGISTER_SNAPSHOT_SVD)
+                .is_err()
+        );
+
+        pack.fixed_register_sequences[0].steps[1].index = Some(1);
+        pack.fixed_register_sequences[0].steps[0].index = Some(0);
+        assert!(
+            pack.validate_against_svd(W1C_REGISTER_SNAPSHOT_SVD)
+                .is_err()
+        );
     }
 
     #[test]

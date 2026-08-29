@@ -13,6 +13,7 @@ use open_esp_radio_esp32s31_pac::{
     BluetoothModemLpTimerHandlerRegisterStep as PacBluetoothModemLpTimerHandlerRegisterStep,
     BluetoothModemLpTimerInterruptReady as PacBluetoothModemLpTimerInterruptReady,
     BluetoothModemLpTimerInterruptStep as PacBluetoothModemLpTimerInterruptStep,
+    BluetoothModemLpTimerLowPowerHardwareInitialized as PacBluetoothModemLpTimerLowPowerHardwareInitialized,
     BluetoothModemLpTimerRegistersPrepared as PacBluetoothModemLpTimerRegistersPrepared,
     BluetoothModemLpTimerSoftwarePending as PacBluetoothModemLpTimerSoftwarePending,
     BluetoothPrimaryInterruptEpoch,
@@ -28,11 +29,12 @@ use open_esp_radio_esp32s31_pac::{
 pub use open_esp_radio_esp32s31_pac::{
     BluetoothControllerHalInitConfig, BluetoothControllerLatchedTime,
     BluetoothControllerTimeLatchBeginError, BluetoothControllerTimeLatchStep,
-    BluetoothControllerTimeLatchStepError, BluetoothModemLpTimerCompareDisposition,
-    BluetoothModemLpTimerCounterObservation, BluetoothModemLpTimerCounterStarted,
-    BluetoothModemLpTimerEpoch, BluetoothModemLpTimerHandlerRegisterObservation,
-    BluetoothModemLpTimerInstant, BluetoothModemLpTimerInterruptObservation,
-    BluetoothModemLpTimerOwnerError, BluetoothNrtInterruptAcknowledged,
+    BluetoothControllerTimeLatchStepError, BluetoothLowPowerRuntimeControlObservation,
+    BluetoothModemLpTimerCompareDisposition, BluetoothModemLpTimerCounterObservation,
+    BluetoothModemLpTimerCounterStarted, BluetoothModemLpTimerEpoch,
+    BluetoothModemLpTimerHandlerRegisterObservation, BluetoothModemLpTimerInstant,
+    BluetoothModemLpTimerInterruptObservation, BluetoothModemLpTimerOwnerError,
+    BluetoothNrtInterruptAcknowledged,
     BluetoothSchedulerDisableBeginError as BluetoothControllerSchedulerDisableBeginError,
     BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
     BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadError,
@@ -353,8 +355,44 @@ pub struct BluetoothModemLpTimerRegistersPreparedOwner {
 }
 
 impl BluetoothModemLpTimerRegistersPreparedOwner {
-    /// Transfer the unique task-side partition into stable source-127 ISR
-    /// storage before the CPU route is enabled.
+    /// Complete the low-power hardware component with the retained task owner.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the matching initialized controller software
+    /// environment and must invoke this after the timer-register prefix but
+    /// before source 127 can reach the CPU.
+    #[doc(hidden)]
+    #[allow(
+        unsafe_code,
+        reason = "the caller must retain the matching controller software and inactive source-127 route"
+    )]
+    pub unsafe fn initialize_low_power_hardware(
+        self,
+        task: &mut BluetoothTaskOwner,
+    ) -> BluetoothModemLpTimerLowPowerHardwareInitializedOwner {
+        task.reunitable = false;
+        BluetoothModemLpTimerLowPowerHardwareInitializedOwner {
+            registers: self
+                .registers
+                .initialize_low_power_hardware(&mut task.registers),
+        }
+    }
+}
+
+/// Opaque HAL owner after the complete low-power hardware component.
+#[must_use = "the initialized modem LP-timer owner must continue through route setup"]
+pub struct BluetoothModemLpTimerLowPowerHardwareInitializedOwner {
+    registers: PacBluetoothModemLpTimerLowPowerHardwareInitialized,
+}
+
+impl BluetoothModemLpTimerLowPowerHardwareInitializedOwner {
+    /// Return the positional runtime-control branch observed during initialization.
+    pub const fn runtime_control_observation(&self) -> BluetoothLowPowerRuntimeControlObservation {
+        self.registers.runtime_control_observation()
+    }
+
+    /// Transfer the unique timer partition into stable source-127 ISR storage.
     ///
     /// This transition performs no MMIO and exposes no raw PAC owner.
     pub fn stage_for_interrupt(self) -> BluetoothModemLpTimerInterruptReadyOwner {

@@ -881,6 +881,7 @@ version = "0.1.0"
 dependencies = [
  "open-esp-radio-esp32s31-hal",
  "pin-project",
+ "vcell",
 ]
 
 [[package]]

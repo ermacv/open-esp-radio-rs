@@ -1349,6 +1349,29 @@ impl PhyRx11bLowRateArgument {
     }
 }
 
+/// Complete final Wi-Fi RX-gain-table index consumed by the reviewed limit tail.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyRxGainTableLastIndex(u32);
+
+impl PhyRxGainTableLastIndex {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x000000ff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x000000ff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Register-specific complete TIMER0 threshold word accepted by the public common LL; no clock source, unit, or deadline policy is assigned at the PAC boundary.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Ieee802154Timer0ThresholdWord(u32);
@@ -5658,6 +5681,30 @@ pub(crate) fn enable_phy_rf_rx_saturation_low(registers: &crate::svd::PhyAgcOrac
 #[inline]
 pub(crate) fn disable_phy_rf_rx_saturation_low(registers: &crate::svd::PhyAgcOracle) {
     crate::svd::field_replace_modify::disable_phy_rf_rx_saturation_low(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_rx_gain_table_final_index` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_rx_gain_table_final_index(
+    registers: &crate::svd::PhyAgcOracle,
+    value: PhyRxGainTableLastIndex,
+) {
+    crate::svd::field_replace_modify::configure_phy_rx_gain_table_final_index(
+        registers,
+        value.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `configure_phy_rx_gain_table_final_limit` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_rx_gain_table_final_limit(
+    registers: &crate::svd::PhyAgcOracle,
+    value: PhyRxGainTableLastIndex,
+) {
+    crate::svd::field_replace_modify::configure_phy_rx_gain_table_final_limit(
+        registers,
+        value.get(),
+    );
 }
 
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.

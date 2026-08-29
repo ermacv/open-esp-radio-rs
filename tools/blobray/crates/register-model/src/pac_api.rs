@@ -466,6 +466,8 @@ pub struct FieldInputTransform {
     #[serde(default)]
     pub wrapping_add: u32,
     pub wrapping_subtract: u32,
+    #[serde(default)]
+    pub clamp_maximum: Option<u32>,
     pub retain_mask: u32,
 }
 

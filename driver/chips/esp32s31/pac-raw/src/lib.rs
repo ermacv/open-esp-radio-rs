@@ -67507,6 +67507,36 @@ pub mod field_replace_modify {
             unsafe { writer.low_unknown().bits(input & 0x0007ffff) }
         });
     }
+
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [RX_GAIN_INDEX_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_rx_gain_table_final_index(registers: &crate::PhyAgcOracle, input: u32) {
+        registers.agc_shared_control().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x0000007f;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .rx_gain_index_unknown()
+                    .bits((input & 0x0000007f) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.RX_GAIN_LIMIT_CONTROL fields [RX_GAIN_LIMIT_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_rx_gain_table_final_limit(registers: &crate::PhyAgcOracle, input: u32) {
+        registers.rx_gain_limit_control().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000).min(0x0000004c) & 0x0000007f;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .rx_gain_limit_unknown()
+                    .bits((input & 0x0000007f) as u8)
+            }
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.

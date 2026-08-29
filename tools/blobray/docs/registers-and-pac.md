@@ -160,9 +160,9 @@ outside the projected source image. Generated code owns the required unsafe
 field-writer calls; handwritten PAC/HAL code receives only the typed or
 argument-free accessor. Separate declarations remain separate volatile reads,
 so an evidenced sequence of RMW operations is not silently collapsed into a
-software register image. An input transform may retain a reviewed mask after
-one wrapping addition or subtraction; the arithmetic and truncation remain
-inside generated PAC code.
+software register image. An input transform may apply one wrapping addition or
+subtraction, an optional inclusive maximum and a reviewed retained-bit mask;
+the arithmetic, bound and truncation remain inside generated PAC code.
 
 ### Bitwise-composed register inputs
 

@@ -2,7 +2,9 @@
 
 #![forbid(unsafe_code)]
 
-use super::generated::{PhyAgcParameterByte, PhyLowRateState, PhyRx11bLowRateArgument};
+use super::generated::{
+    PhyAgcParameterByte, PhyLowRateState, PhyRx11bLowRateArgument, PhyRxGainTableLastIndex,
+};
 use super::{PhyFtmEnableVendorArgument, RadioPhyRegisters};
 
 const fn phy_low_rate_state(enabled: bool) -> PhyLowRateState {
@@ -152,10 +154,10 @@ impl RadioPhyRegisters {
     /// Publish both final RX-gain limits through separate fresh RMWs.
     pub fn configure_rx_gain_limits(&mut self, wifi_last_index: u8) {
         let agc = &self.peripherals.phy_agc_oracle;
-        agc.agc_shared_control()
-            .modify(|_, w| w.rx_gain_index_unknown().set(wifi_last_index & 0x7f));
-        agc.rx_gain_limit_control()
-            .modify(|_, w| w.rx_gain_limit_unknown().set(wifi_last_index.min(0x4c)));
+        let wifi_last_index = PhyRxGainTableLastIndex::new(u32::from(wifi_last_index))
+            .expect("every u8 is a complete RX-gain-table final index");
+        super::generated::configure_phy_rx_gain_table_final_index(agc, wifi_last_index);
+        super::generated::configure_phy_rx_gain_table_final_limit(agc, wifi_last_index);
     }
 
     /// Publish one saturation-gain word to both recovered destinations.

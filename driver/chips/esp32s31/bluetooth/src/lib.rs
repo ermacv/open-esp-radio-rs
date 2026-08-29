@@ -116,8 +116,10 @@ pub use controller_time::{
     BluetoothControllerTimeWorkerPhase,
 };
 pub use dtm_event_prepare::{
-    BluetoothDtmLockModifyCompleted, BluetoothDtmLockModifyJoin, BluetoothDtmLockModifyJoinError,
-    BluetoothDtmLockModifyJoinFailure, BluetoothDtmReceiverEvent,
+    BluetoothDtmLockModifyAdmission, BluetoothDtmLockModifyAdmissionFailure,
+    BluetoothDtmLockModifyCompleted, BluetoothDtmLockModifyCompletion, BluetoothDtmLockModifyJoin,
+    BluetoothDtmLockModifyJoinError, BluetoothDtmLockModifyJoinFailure,
+    BluetoothDtmLockModifyPending, BluetoothDtmReceiverEvent,
     BluetoothDtmReviewedEventPrepareFailure, BluetoothDtmReviewedEventWordsPlan,
     BluetoothDtmReviewedEventWordsPlanError, BluetoothDtmReviewedEventWordsPlanFailure,
     BluetoothDtmReviewedEventWordsPrepared, BluetoothDtmSchedulerBookkeepingPrepared,
@@ -219,12 +221,11 @@ pub use scheduler_finished_lists::{
     BluetoothSchedulerFinishedListWorkerStep, BluetoothSchedulerHardwareListIndex,
 };
 pub use scheduler_lock_modify::{
-    BluetoothSchedulerLockModifyAwaitingPublication, BluetoothSchedulerLockModifyBeginError,
-    BluetoothSchedulerLockModifyEvent, BluetoothSchedulerLockModifyEventCell,
-    BluetoothSchedulerLockModifyEventPublication, BluetoothSchedulerLockModifyInFlight,
-    BluetoothSchedulerLockModifyInterruptObservation, BluetoothSchedulerLockModifyProgress,
-    BluetoothSchedulerLockModifyPublication, BluetoothSchedulerLockModifyPublicationResult,
-    BluetoothSchedulerLockModifyWorker, BluetoothSchedulerLockModifyWorkerStep,
+    BluetoothSchedulerLockModifyBeginError, BluetoothSchedulerLockModifyEvent,
+    BluetoothSchedulerLockModifyEventCell, BluetoothSchedulerLockModifyEventPublication,
+    BluetoothSchedulerLockModifyInterruptObservation,
+    BluetoothSchedulerLockModifyPublicationResult, BluetoothSchedulerLockModifyWorker,
+    BluetoothSchedulerLockModifyWorkerStep,
 };
 pub use scheduler_timeline::{
     BluetoothSchedulerOverlapResolved, BluetoothSchedulerRawWindow, BluetoothSchedulerReservation,

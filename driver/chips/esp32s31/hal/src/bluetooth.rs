@@ -1038,12 +1038,24 @@ impl BluetoothControllerHal<'_> {
     /// its affine publication token. It performs two fresh operational-word
     /// RMW edges, publishes the typed request and returns only after a device
     /// fence; it never polls or blocks an executor.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the initialized pinned scheduler item named by
+    /// `request` and exclusive scheduler task/interrupt serialization until
+    /// verified Controller ownership return.
     #[doc(hidden)]
-    pub fn publish_scheduler_lock_modify(
+    #[allow(
+        unsafe_code,
+        reason = "the caller retains descriptor lifetime and scheduler serialization"
+    )]
+    pub unsafe fn publish_scheduler_lock_modify(
         &mut self,
         request: BluetoothSchedulerLockModifyRequest,
     ) -> BluetoothSchedulerLockModifyPublished {
-        self.registers.publish_scheduler_lock_modify(request)
+        // SAFETY: this method forwards the identical descriptor-lifetime and
+        // serialization obligations to the restricted PAC transaction.
+        unsafe { self.registers.publish_scheduler_lock_modify(request) }
     }
 
     /// Publish one controller-time latch request and return immediately.

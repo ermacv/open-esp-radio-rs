@@ -228,8 +228,19 @@ impl BluetoothTaskRegisters {
     /// observation ended the pre-publication wait. The PAC method itself owns
     /// all three writes: two independent fresh-read updates of the operational
     /// word followed by the typed request publication.
+    ///
+    /// # Safety
+    ///
+    /// The request address must identify an initialized scheduler item that
+    /// remains pinned and inaccessible to the CPU until the Controller returns
+    /// ownership. The caller must also serialize the transaction with every
+    /// scheduler task and interrupt owner.
     #[doc(hidden)]
-    pub fn publish_scheduler_lock_modify(
+    #[allow(
+        unsafe_code,
+        reason = "the caller retains descriptor lifetime and scheduler serialization"
+    )]
+    pub unsafe fn publish_scheduler_lock_modify(
         &mut self,
         request: BluetoothSchedulerLockModifyRequest,
     ) -> BluetoothSchedulerLockModifyPublished {

@@ -23,8 +23,12 @@ use open_esp_radio_esp32s31_hal::{
 use crate::{
     BluetoothDtmLinkStateReset, BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern,
     BluetoothDtmPreparedTxGraph, BluetoothDtmRole, BluetoothSchedulerReservation,
-    BluetoothSchedulerSequenceReady, dtm_scheduler_item::apply_overlap_insertion_power,
-    scheduler_lock_modify::BluetoothSchedulerLockModifyPublicationResult,
+    BluetoothSchedulerSequenceReady,
+    dtm_scheduler_item::apply_overlap_insertion_power,
+    scheduler_lock_modify::{
+        BluetoothSchedulerLockModifyBeginError, BluetoothSchedulerLockModifyPublicationResult,
+        BluetoothSchedulerLockModifyWorker,
+    },
 };
 
 /// Type marker for a transmitter event with a prepared packet prerequisite.
@@ -355,6 +359,91 @@ pub struct BluetoothDtmSchedulerBookkeepingPrepared<Role> {
     _role: PhantomData<Role>,
 }
 
+/// Rejected admission retaining the exact CPU-owned DTM graph.
+#[must_use = "a rejected DTM scheduler admission still owns its prepared graph"]
+pub struct BluetoothDtmLockModifyAdmissionFailure<Role> {
+    prepared: BluetoothDtmSchedulerBookkeepingPrepared<Role>,
+    error: BluetoothSchedulerLockModifyBeginError,
+}
+
+impl<Role> BluetoothDtmLockModifyAdmissionFailure<Role> {
+    /// Why the sole scheduler worker rejected this graph.
+    pub const fn error(&self) -> BluetoothSchedulerLockModifyBeginError {
+        self.error
+    }
+
+    /// Recover the unchanged, still-cancellable graph.
+    pub fn into_prepared(self) -> BluetoothDtmSchedulerBookkeepingPrepared<Role> {
+        self.prepared
+    }
+}
+
+impl<Role> core::fmt::Debug for BluetoothDtmLockModifyAdmissionFailure<Role> {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothDtmLockModifyAdmissionFailure")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Result of binding one prepared DTM graph to the sole scheduler worker.
+#[must_use = "the admitted or rejected DTM graph must remain owned"]
+pub enum BluetoothDtmLockModifyAdmission<Role> {
+    /// The worker owns the exact request while this value retains its graph.
+    Admitted(BluetoothDtmLockModifyPending<Role>),
+    /// Another request or unconsumed result already occupies the worker.
+    Rejected(BluetoothDtmLockModifyAdmissionFailure<Role>),
+}
+
+/// Prepared DTM graph retained while its exact lock/modify request is active.
+///
+/// Dropping this value can leak logical progress but cannot expose or move its
+/// pinned static backing allocation. No cancellation transition exists after
+/// admission because a later worker event may cross the MMIO boundary.
+#[must_use = "the pending DTM request must be joined to its worker result"]
+pub struct BluetoothDtmLockModifyPending<Role> {
+    prepared: BluetoothDtmSchedulerBookkeepingPrepared<Role>,
+}
+
+impl<Role> BluetoothDtmLockModifyPending<Role> {
+    /// DTM role retained while the worker owns the request.
+    pub const fn role(&self) -> BluetoothDtmRole {
+        self.prepared.role()
+    }
+
+    /// Exact pinned scheduler-item identity retained by this pending request.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.prepared.scheduler_item_address()
+    }
+
+    /// Exact hardware-list identity retained by this pending request.
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.prepared.hardware_list_index()
+    }
+
+    pub(crate) fn take_completion(
+        self,
+        worker: &mut BluetoothSchedulerLockModifyWorker,
+    ) -> BluetoothDtmLockModifyCompletion<Role> {
+        match worker.take_result() {
+            Some(publication) => BluetoothDtmLockModifyCompletion::Complete(
+                self.prepared.join_lock_modify_publication(publication),
+            ),
+            None => BluetoothDtmLockModifyCompletion::Waiting(self),
+        }
+    }
+}
+
+/// One bounded attempt to consume the scheduler worker's publication result.
+#[must_use = "a waiting or complete DTM lock/modify state must remain owned"]
+pub enum BluetoothDtmLockModifyCompletion<Role> {
+    /// The worker has not produced its terminal publication result yet.
+    Waiting(BluetoothDtmLockModifyPending<Role>),
+    /// A result was consumed and checked against the retained graph identity.
+    Complete(BluetoothDtmLockModifyJoin<Role>),
+}
+
 /// Why a completed lock/modify transaction cannot belong to a prepared DTM
 /// graph.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -501,6 +590,23 @@ impl<Role> BluetoothDtmSchedulerBookkeepingPrepared<Role> {
         )
     }
 
+    pub(crate) fn begin_lock_modify(
+        self,
+        worker: &mut BluetoothSchedulerLockModifyWorker,
+    ) -> BluetoothDtmLockModifyAdmission<Role> {
+        match worker.begin(self.scheduler_lock_modify_request()) {
+            Ok(()) => BluetoothDtmLockModifyAdmission::Admitted(BluetoothDtmLockModifyPending {
+                prepared: self,
+            }),
+            Err(error) => {
+                BluetoothDtmLockModifyAdmission::Rejected(BluetoothDtmLockModifyAdmissionFailure {
+                    prepared: self,
+                    error,
+                })
+            }
+        }
+    }
+
     /// Join the graph to the exact completed lock/modify request.
     ///
     /// A result for another address or hardware list is returned with this
@@ -584,8 +690,9 @@ mod tests {
         BluetoothDtmPayloadPattern, BluetoothDtmPhy, BluetoothDtmRole,
         BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerTimingPolicy,
         BluetoothDtmTxGraphPrepare, BluetoothSchedulerLockModifyPublicationResult,
-        BluetoothSchedulerReservation, BluetoothSchedulerSequenceAuthorizationError,
-        BluetoothSchedulerSequenceReady, BluetoothSchedulerTimeline,
+        BluetoothSchedulerLockModifyWorker, BluetoothSchedulerReservation,
+        BluetoothSchedulerSequenceAuthorizationError, BluetoothSchedulerSequenceReady,
+        BluetoothSchedulerTimeline,
     };
 
     fn owner(base: u32) -> crate::BluetoothDtmMemoryGraphCpuOwned {
@@ -761,16 +868,44 @@ mod tests {
             .expect("current graph anchors satisfy the generated RX image")
             .prepare_scheduler_bookkeeping();
         let request = scheduler_prepared.scheduler_lock_modify_request();
+        let mut worker = BluetoothSchedulerLockModifyWorker::new();
 
-        let completed = match scheduler_prepared.join_lock_modify_publication(
+        let pending = match scheduler_prepared.begin_lock_modify(&mut worker) {
+            super::BluetoothDtmLockModifyAdmission::Admitted(pending) => pending,
+            super::BluetoothDtmLockModifyAdmission::Rejected(_) => {
+                panic!("an idle worker rejected the bound graph")
+            }
+        };
+        assert!(worker.is_active());
+        assert_eq!(pending.role(), BluetoothDtmRole::Receiver);
+        assert_eq!(pending.scheduler_item_address(), request.address());
+        assert_eq!(
+            pending.hardware_list_index(),
+            BluetoothSchedulerHardwareListIndex::ZERO
+        );
+        let pending = match pending.take_completion(&mut worker) {
+            super::BluetoothDtmLockModifyCompletion::Waiting(pending) => pending,
+            super::BluetoothDtmLockModifyCompletion::Complete(_) => {
+                panic!("an awaiting worker fabricated a result")
+            }
+        };
+        worker.complete_for_validation(
             BluetoothSchedulerLockModifyPublicationResult::for_validation(7, request),
-        ) {
-            super::BluetoothDtmLockModifyJoin::Joined(completed) => completed,
-            super::BluetoothDtmLockModifyJoin::Rejected(_) => {
-                panic!("the exact request did not rejoin its prepared graph")
+        );
+
+        let completed = match pending.take_completion(&mut worker) {
+            super::BluetoothDtmLockModifyCompletion::Complete(
+                super::BluetoothDtmLockModifyJoin::Joined(completed),
+            ) => completed,
+            super::BluetoothDtmLockModifyCompletion::Complete(
+                super::BluetoothDtmLockModifyJoin::Rejected(_),
+            ) => panic!("the exact worker result did not rejoin its retained graph"),
+            super::BluetoothDtmLockModifyCompletion::Waiting(_) => {
+                panic!("the completed worker did not yield its result")
             }
         };
 
+        assert!(!worker.is_active());
         assert_eq!(completed.role(), BluetoothDtmRole::Receiver);
         assert_eq!(completed.scheduler_window().start(), 103);
         assert_eq!(completed.scheduler_item_address(), request.address());

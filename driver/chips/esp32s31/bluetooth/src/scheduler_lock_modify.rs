@@ -4,7 +4,7 @@
 //! the caller should return to its executor and resume only after an interrupt
 //! or another controller event supplies a new observation; no path spins.
 
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 use core::{
     mem,
@@ -24,7 +24,7 @@ const EVENT_BUSY: u8 = 1 << 1;
 /// Result of evaluating one fresh scheduler event.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[must_use = "waiting state or completed transition must remain owned"]
-pub enum BluetoothSchedulerLockModifyProgress<W, R> {
+enum BluetoothSchedulerLockModifyProgress<W, R> {
     /// Hardware still has both BUSY and START set.
     Waiting(W),
     /// The current phase can advance without polling.
@@ -116,18 +116,18 @@ impl Default for BluetoothSchedulerLockModifyEventCell {
 /// A validated transaction waiting for permission to publish.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[must_use = "the scheduler request has not yet been published"]
-pub struct BluetoothSchedulerLockModifyAwaitingPublication {
+struct BluetoothSchedulerLockModifyAwaitingPublication {
     request: BluetoothSchedulerLockModifyRequest,
 }
 
 impl BluetoothSchedulerLockModifyAwaitingPublication {
     /// Start a pure transaction without touching MMIO.
-    pub const fn new(request: BluetoothSchedulerLockModifyRequest) -> Self {
+    const fn new(request: BluetoothSchedulerLockModifyRequest) -> Self {
         Self { request }
     }
 
     /// Evaluate the pre-publication wait predicate once.
-    pub const fn observe(
+    const fn observe(
         self,
         observation: BluetoothSchedulerLockModifyObservation,
     ) -> BluetoothSchedulerLockModifyProgress<Self, BluetoothSchedulerLockModifyPublication> {
@@ -144,7 +144,7 @@ impl BluetoothSchedulerLockModifyAwaitingPublication {
 /// Permission for the task owner to publish one request.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[must_use = "publication must be performed or explicitly abandoned"]
-pub struct BluetoothSchedulerLockModifyPublication {
+struct BluetoothSchedulerLockModifyPublication {
     request: BluetoothSchedulerLockModifyRequest,
 }
 
@@ -156,13 +156,6 @@ impl BluetoothSchedulerLockModifyPublication {
     /// the PAC proof that all ordered MMIO writes and the trailing device fence
     /// completed, so a pure state transition can no longer impersonate live
     /// publication.
-    pub fn publish(
-        self,
-        controller: &mut BluetoothControllerHal<'_>,
-    ) -> BluetoothSchedulerLockModifyInFlight {
-        self.publish_with(controller)
-    }
-
     fn publish_with(
         self,
         backend: &mut impl BluetoothSchedulerLockModifyBackend,
@@ -187,25 +180,33 @@ impl BluetoothSchedulerLockModifyBackend for BluetoothControllerHal<'_> {
         self.capture_scheduler_lock_modify_task()
     }
 
+    #[allow(
+        unsafe_code,
+        reason = "worker admission is reachable only while the bound DTM graph owner is retained"
+    )]
     fn publish(
         &mut self,
         request: BluetoothSchedulerLockModifyRequest,
     ) -> BluetoothSchedulerLockModifyPublished {
-        self.publish_scheduler_lock_modify(request)
+        // SAFETY: production worker admission is crate-private and consumes a
+        // prepared DTM graph into the pending owner that keeps its pinned
+        // scheduler item alive. The powered runtime retains the sole task and
+        // interrupt endpoints for the same scheduler epoch.
+        unsafe { self.publish_scheduler_lock_modify(request) }
     }
 }
 
 /// One published lock/modify request awaiting its publication-result event.
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "the in-flight scheduler request still owns its publication result"]
-pub struct BluetoothSchedulerLockModifyInFlight {
+struct BluetoothSchedulerLockModifyInFlight {
     _publication: BluetoothSchedulerLockModifyPublished,
     request: BluetoothSchedulerLockModifyRequest,
 }
 
 impl BluetoothSchedulerLockModifyInFlight {
     /// Evaluate the post-publication wait predicate once.
-    pub const fn observe(
+    const fn observe(
         self,
         observation: BluetoothSchedulerLockModifyObservation,
     ) -> BluetoothSchedulerLockModifyProgress<Self, BluetoothSchedulerLockModifyPublicationResult>
@@ -320,7 +321,7 @@ impl BluetoothSchedulerLockModifyWorker {
     }
 
     /// Admit one validated request without touching hardware.
-    pub fn begin(
+    pub(crate) fn begin(
         &mut self,
         request: BluetoothSchedulerLockModifyRequest,
     ) -> Result<(), BluetoothSchedulerLockModifyBeginError> {
@@ -405,7 +406,7 @@ impl BluetoothSchedulerLockModifyWorker {
     }
 
     /// Consume the stored result and make the worker idle again.
-    pub fn take_result(&mut self) -> Option<BluetoothSchedulerLockModifyPublicationResult> {
+    pub(crate) fn take_result(&mut self) -> Option<BluetoothSchedulerLockModifyPublicationResult> {
         let state = mem::replace(
             &mut self.state,
             BluetoothSchedulerLockModifyWorkerState::Idle,
@@ -422,6 +423,23 @@ impl BluetoothSchedulerLockModifyWorker {
     /// Whether publication or its result remains owned by the worker.
     pub const fn is_active(&self) -> bool {
         !matches!(self.state, BluetoothSchedulerLockModifyWorkerState::Idle)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn complete_for_validation(
+        &mut self,
+        result: BluetoothSchedulerLockModifyPublicationResult,
+    ) {
+        let request = match self.state {
+            BluetoothSchedulerLockModifyWorkerState::Awaiting(awaiting) => awaiting.request,
+            BluetoothSchedulerLockModifyWorkerState::InFlight(ref in_flight) => in_flight.request,
+            BluetoothSchedulerLockModifyWorkerState::Idle
+            | BluetoothSchedulerLockModifyWorkerState::Complete(_) => {
+                panic!("validation completion requires one active request")
+            }
+        };
+        assert_eq!(request, result.request());
+        self.state = BluetoothSchedulerLockModifyWorkerState::Complete(result);
     }
 }
 

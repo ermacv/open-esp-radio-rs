@@ -60,7 +60,7 @@ impl BluetoothSchedulerSoftwareConfig {
 #[must_use = "the initialized scheduler retains every powered Bluetooth owner"]
 pub struct BluetoothSchedulerInitialized<P, const MODEM_TIMER_CAPACITY: usize> {
     task: BluetoothTaskResources,
-    _interrupts: BluetoothInterruptBankOwner,
+    _interrupts: Option<BluetoothInterruptBankOwner>,
     _platform: BluetoothTeardownPendingPlatform<P>,
     time_scale: BluetoothControllerTimeScale,
     config: BluetoothSchedulerSoftwareConfig,
@@ -70,6 +70,13 @@ pub struct BluetoothSchedulerInitialized<P, const MODEM_TIMER_CAPACITY: usize> {
 impl<P, const MODEM_TIMER_CAPACITY: usize> BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY> {
     pub(crate) fn task_mut(&mut self) -> &mut BluetoothTaskResources {
         &mut self.task
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn take_interrupt_owner(&mut self) -> BluetoothInterruptBankOwner {
+        self._interrupts
+            .take()
+            .expect("private Controller invariant retains the interrupt owner until activation")
     }
 
     #[cfg(target_arch = "riscv32")]
@@ -156,7 +163,7 @@ impl<P> BluetoothControllerHalInitialized<P> {
         initialize_hardware(&mut task);
         BluetoothSchedulerInitialized {
             task,
-            _interrupts: interrupts,
+            _interrupts: Some(interrupts),
             _platform: platform,
             time_scale,
             config: BluetoothSchedulerSoftwareConfig::reviewed_standalone(),

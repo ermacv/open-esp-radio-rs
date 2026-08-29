@@ -4,11 +4,15 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth_memory::BluetoothBlePhyEngineCpuOwned;
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_esp32s31_hal::BluetoothModemLpTimerLowPowerHardwareInitializedOwner;
 #[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_esp32s31_hal::BluetoothPhyRegisterInitInputs;
 
 #[cfg(target_arch = "riscv32")]
 use crate::baseband::BluetoothControllerBasebandInitialized;
+#[cfg(target_arch = "riscv32")]
+use crate::resources::BluetoothInterruptBankOwner;
 
 /// Source-owned values consumed by the finite BLE PHY register transaction.
 ///
@@ -122,6 +126,18 @@ where
     /// Inspect the complete common-PHY transition.
     pub const fn phy_report(&self) -> crate::BluetoothPhyInitializationReport {
         self.initialized.phy_report()
+    }
+
+    pub(crate) fn take_activation_owners(
+        &mut self,
+    ) -> (
+        BluetoothInterruptBankOwner,
+        BluetoothModemLpTimerLowPowerHardwareInitializedOwner,
+    ) {
+        let controller = &mut self.initialized.initialized.controller;
+        let interrupts = controller.take_interrupt_owner();
+        let timer = controller.take_timer_hardware();
+        (interrupts, timer)
     }
 }
 

@@ -138,7 +138,7 @@ pub struct BluetoothControllerLowPowerHardwareInitialized<
         CONTROLLER_TO_HOST_DEPTH,
         PACKET_CAPACITY,
     >,
-    timer_hardware: BluetoothModemLpTimerLowPowerHardwareInitializedOwner,
+    timer_hardware: Option<BluetoothModemLpTimerLowPowerHardwareInitializedOwner>,
 }
 
 /// Lossless failure to initialize the disjoint modem low-power timer owner.
@@ -370,7 +370,7 @@ where
             Ok((controller, timer_hardware)) => {
                 Ok(BluetoothControllerLowPowerHardwareInitialized {
                     controller,
-                    timer_hardware,
+                    timer_hardware: Some(timer_hardware),
                 })
             }
             Err((controller, error)) => {
@@ -450,10 +450,27 @@ where
         self.controller.scheduler.task_mut()
     }
 
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn take_interrupt_owner(&mut self) -> crate::resources::BluetoothInterruptBankOwner {
+        self.controller.scheduler.take_interrupt_owner()
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn take_timer_hardware(
+        &mut self,
+    ) -> BluetoothModemLpTimerLowPowerHardwareInitializedOwner {
+        self.timer_hardware.take().expect(
+            "private Controller invariant retains the low-power timer owner until activation",
+        )
+    }
+
     /// Conditional runtime-control branch observed by the exact hardware
     /// component.
     pub const fn runtime_control_observation(&self) -> BluetoothLowPowerRuntimeControlObservation {
-        self.timer_hardware.runtime_control_observation()
+        self.timer_hardware
+            .as_ref()
+            .expect("public low-power state always retains its timer owner")
+            .runtime_control_observation()
     }
 }
 

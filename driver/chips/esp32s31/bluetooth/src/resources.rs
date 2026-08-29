@@ -13,8 +13,8 @@ use open_esp_radio_esp32s31_hal::{
 };
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::{
-    BluetoothModemLpTimerLowPowerHardwareInitializedOwner, BluetoothModemLpTimerOwnerError,
-    BluetoothPhyRegisterInitInputs,
+    BluetoothInterruptOutputPreparedOwner, BluetoothModemLpTimerLowPowerHardwareInitializedOwner,
+    BluetoothModemLpTimerOwnerError, BluetoothPhyRegisterInitInputs,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_esp32s31_hal::{BluetoothSharedPhyBorrow, SharedPhyHal};
@@ -374,6 +374,25 @@ impl BluetoothTaskResources {
 #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 pub(crate) struct BluetoothInterruptBankOwner {
     _registers: HalBluetoothInterruptSetupOwner,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothInterruptBankOwner {
+    /// Prepare the controller output while retaining the affine IRQ partition.
+    ///
+    /// # Safety
+    ///
+    /// The caller must own the matching completed Controller initialization
+    /// and prove that all three CPU routes remain inactive.
+    #[allow(
+        unsafe_code,
+        reason = "the upper Controller typestate discharges the HAL interrupt prerequisites"
+    )]
+    pub(crate) unsafe fn prepare_controller_output(self) -> BluetoothInterruptOutputPreparedOwner {
+        // SAFETY: the caller retains the complete matching Controller epoch
+        // and the only route installers are still inaccessible.
+        unsafe { self._registers.prepare_controller_output() }
+    }
 }
 
 #[cfg(test)]

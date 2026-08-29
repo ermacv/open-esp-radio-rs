@@ -111,12 +111,13 @@ the exclusive Wi-Fi or Bluetooth route and return before power-up. The public
 Bluetooth init path now consumes that cold owner through clock/reset, the
 complete 50-operation BTDM HAL transaction, scheduler and bounded HCI software
 owners, the source-127 low-power hardware component, common PHY, finite
-`bt_bb_v2_init_cmplx(1)` and the complete BLE PHY register transaction. The
-last transition consumes one pinned static graph containing the recovered
+`bt_bb_v2_init_cmplx(1)`, the complete BLE PHY register transaction,
+controller-output preparation and the one-shot runtime-timer start. The BLE
+PHY transition consumes one pinned static graph containing the recovered
 environment, its auxiliary allocations and resolving-list object, so no raw
-caller address or vendor allocator ABI enters production. It still stops
-before controller-output activation, live IRQ routing, scheduler-item
-publication or Link Layer work. Once the first powered MMIO mutation occurs,
+caller address or vendor allocator ABI enters production. The chain still
+stops before stable ISR storage, live IRQ routing, scheduler-item publication
+or Link Layer work. Once the first powered MMIO mutation occurs,
 every owner is retained fail-stop because complete rollback and last-owner PHY
 teardown remain unrecovered. The interrupt slice now
 preserves two distinct vendor paths: primary source 124 samples masked status,

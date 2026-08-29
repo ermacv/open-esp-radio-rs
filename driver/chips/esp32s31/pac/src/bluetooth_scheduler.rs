@@ -7,6 +7,52 @@ use super::{
     device_fence,
 };
 
+trait BluetoothSchedulerHardwareListHeadControl {
+    fn order_descriptor_before_publication(&mut self);
+    fn publish_head(
+        &mut self,
+        index: BluetoothSchedulerHardwareListIndex,
+        head: BluetoothSchedulerHardwareListHead,
+    );
+    fn order_after_publication(&mut self);
+}
+
+impl BluetoothSchedulerHardwareListHeadControl for BluetoothTaskRegisters {
+    fn order_descriptor_before_publication(&mut self) {
+        device_fence();
+    }
+
+    fn publish_head(
+        &mut self,
+        index: BluetoothSchedulerHardwareListIndex,
+        head: BluetoothSchedulerHardwareListHead,
+    ) {
+        let head_bits =
+            super::generated::BluetoothSchedulerListHeadBits::new(head.compressed_image())
+                .expect("validated scheduler head fits its generated PAC domain");
+        super::generated::publish_bluetooth_scheduler_hardware_list_head(
+            &self.bluetooth.btdm_scheduler_table,
+            index.get() as usize,
+            head_bits,
+        );
+    }
+
+    fn order_after_publication(&mut self) {
+        device_fence();
+    }
+}
+
+fn execute_scheduler_hardware_list_head_publication(
+    control: &mut impl BluetoothSchedulerHardwareListHeadControl,
+    index: BluetoothSchedulerHardwareListIndex,
+    head: BluetoothSchedulerHardwareListHead,
+) -> BluetoothSchedulerHardwareListHeadPublished {
+    control.order_descriptor_before_publication();
+    control.publish_head(index, head);
+    control.order_after_publication();
+    BluetoothSchedulerHardwareListHeadPublished { index, head }
+}
+
 /// Head published to one scheduler hardware list.
 ///
 /// A non-empty value proves only the controller pointer encoding. Allocation,
@@ -72,8 +118,8 @@ pub enum BluetoothSchedulerInsertionCommand {
     One,
 }
 
-/// Affine evidence that one hardware-list head was published and the trailing
-/// device fence completed.
+/// Affine evidence that descriptor writes were ordered before one hardware-list
+/// head publication and the trailing device fence completed.
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "the published scheduler head must feed insertion-end ownership"]
 pub struct BluetoothSchedulerHardwareListHeadPublished {
@@ -182,8 +228,8 @@ impl BluetoothTaskRegisters {
         BluetoothSchedulerHardwareListHead::from_compressed_image(image)
     }
 
-    /// Publish one scheduler hardware-list head while preserving the
-    /// unassigned upper twelve entry bits.
+    /// Order prior descriptor writes and publish one scheduler hardware-list
+    /// head while preserving the unassigned upper twelve entry bits.
     ///
     /// SOURCE: complete current insertion-end
     /// `r_sym_bt_4KfpZh0Hu5NprlqcNu0D` and same-chip named
@@ -191,10 +237,12 @@ impl BluetoothTaskRegisters {
     ///
     /// # Safety
     ///
-    /// The caller must own the scheduler insertion epoch, must keep an
-    /// addressed scheduler item initialized and alive until a later verified
-    /// completion/removal transaction, and must serialize this publication
-    /// with the scheduler interrupt owner.
+    /// The caller must own the scheduler insertion epoch, must have completed
+    /// every CPU write to the addressed descriptor graph, must keep that graph
+    /// alive until a later verified completion/removal transaction, and must
+    /// serialize this publication with the scheduler interrupt owner. This
+    /// method orders prior SRAM writes before the MMIO head update; it does not
+    /// validate descriptor contents or establish completion ownership.
     #[doc(hidden)]
     #[allow(
         unsafe_code,
@@ -205,16 +253,7 @@ impl BluetoothTaskRegisters {
         index: BluetoothSchedulerHardwareListIndex,
         head: BluetoothSchedulerHardwareListHead,
     ) -> BluetoothSchedulerHardwareListHeadPublished {
-        let head_bits =
-            super::generated::BluetoothSchedulerListHeadBits::new(head.compressed_image())
-                .expect("validated scheduler head fits its generated PAC domain");
-        super::generated::publish_bluetooth_scheduler_hardware_list_head(
-            &self.bluetooth.btdm_scheduler_table,
-            index.get() as usize,
-            head_bits,
-        );
-        device_fence();
-        BluetoothSchedulerHardwareListHeadPublished { index, head }
+        execute_scheduler_hardware_list_head_publication(self, index, head)
     }
 
     /// Clear START in the positional command selected by insertion-end.
@@ -275,8 +314,42 @@ impl BluetoothTaskRegisters {
 mod tests {
     use super::{
         BluetoothControllerSramAddress, BluetoothSchedulerHardwareListHead,
-        BluetoothSchedulerHardwareListHeadError,
+        BluetoothSchedulerHardwareListHeadControl, BluetoothSchedulerHardwareListHeadError,
+        BluetoothSchedulerHardwareListIndex, execute_scheduler_hardware_list_head_publication,
     };
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum PublicationOperation {
+        DescriptorFence,
+        Publish {
+            index: BluetoothSchedulerHardwareListIndex,
+            head: BluetoothSchedulerHardwareListHead,
+        },
+        DeviceFence,
+    }
+
+    struct PublicationRecorder {
+        operations: std::vec::Vec<PublicationOperation>,
+    }
+
+    impl BluetoothSchedulerHardwareListHeadControl for PublicationRecorder {
+        fn order_descriptor_before_publication(&mut self) {
+            self.operations.push(PublicationOperation::DescriptorFence);
+        }
+
+        fn publish_head(
+            &mut self,
+            index: BluetoothSchedulerHardwareListIndex,
+            head: BluetoothSchedulerHardwareListHead,
+        ) {
+            self.operations
+                .push(PublicationOperation::Publish { index, head });
+        }
+
+        fn order_after_publication(&mut self) {
+            self.operations.push(PublicationOperation::DeviceFence);
+        }
+    }
 
     #[test]
     fn non_empty_head_cannot_alias_the_empty_scheduler_state() {
@@ -294,6 +367,33 @@ mod tests {
                 .expect("non-empty controller address is a valid list head")
                 .address(),
             Some(item)
+        );
+    }
+
+    #[test]
+    fn descriptor_visibility_precedes_head_publication() {
+        let index = BluetoothSchedulerHardwareListIndex::ZERO;
+        let head = BluetoothSchedulerHardwareListHead::from_address(
+            BluetoothControllerSramAddress::new(0x2f00_0100)
+                .expect("test item lies in controller SRAM"),
+        )
+        .expect("test item does not encode the empty head");
+        let mut recorder = PublicationRecorder {
+            operations: std::vec::Vec::new(),
+        };
+
+        let published =
+            execute_scheduler_hardware_list_head_publication(&mut recorder, index, head);
+
+        assert_eq!(published.index(), index);
+        assert_eq!(published.head(), head);
+        assert_eq!(
+            recorder.operations,
+            [
+                PublicationOperation::DescriptorFence,
+                PublicationOperation::Publish { index, head },
+                PublicationOperation::DeviceFence,
+            ]
         );
     }
 }

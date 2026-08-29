@@ -106,9 +106,11 @@ The next on-air transition is blocked by synchronous evidence for:
 2. feature-specific NRT interrupt policy, typed primary/NRT routing and
    handler-to-executor notification without lost work; the staged same-core
    ISR owner and core-owned durable primary publication are already composed;
-3. the internal consumer/latch of the private DTM RX/TX graph, complete
-   element ownership, hardware current/next rotation and CPU/device visibility
-   fences;
+3. the undocumented hardware interpretation of the private DTM RX/TX graph,
+   complete element ownership, hardware current/next rotation and the
+   completion-side visibility fence; the current blob has no separate
+   software latch and the PAC now orders descriptor writes before head
+   publication;
 4. radio scheduler command, timer, doorbell and completion ordering, including
    the selector-6 consistency invariant; scanner-role resume is deliberately
    outside the DTM-only event graph;

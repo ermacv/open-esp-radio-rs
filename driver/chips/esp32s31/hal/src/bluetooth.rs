@@ -946,13 +946,15 @@ impl BluetoothControllerHal<'_> {
         self.registers.scheduler_hardware_list_head(index)
     }
 
-    /// Publish one scheduler hardware-list head through the restricted PAC.
+    /// Order prior descriptor writes and publish one scheduler hardware-list
+    /// head through the restricted PAC.
     ///
     /// # Safety
     ///
-    /// The caller must retain the scheduler insertion epoch, descriptor
-    /// initialization/lifetime and task/interrupt serialization required by
-    /// the underlying PAC transaction.
+    /// The caller must retain the scheduler insertion epoch, completed
+    /// descriptor initialization, graph lifetime and task/interrupt
+    /// serialization required by the underlying PAC transaction. The PAC
+    /// orders those prior SRAM writes before the MMIO head update.
     #[doc(hidden)]
     #[allow(
         unsafe_code,

@@ -7,6 +7,7 @@ use open_esp_radio_esp32s31_hal::{
     BluetoothInterruptOutputPreparedOwner, BluetoothInterruptRegistersOwner,
     BluetoothLowPowerRuntimeControlObservation, BluetoothModemLpTimerCounterStartedOwner,
     BluetoothModemLpTimerInterruptReadyOwner, BluetoothModemLpTimerSoftwarePendingOwner,
+    BluetoothSchedulerRunInterruptsPrepared,
 };
 
 #[cfg(target_arch = "riscv32")]
@@ -172,6 +173,48 @@ pub trait BluetoothSharedInterruptDispatchStorage {
     fn service_nrt_default_interrupt(
         &self,
     ) -> Result<BluetoothNrtDefaultInterruptEpoch, Self::Error>;
+}
+
+/// Stable task-side access to the shared interrupt owner for scheduler start.
+///
+/// This is deliberately separate from hard-handler dispatch. Implementations
+/// must execute the finite dynamic interrupt preparation synchronously while
+/// retaining the owner in the same stable slot. The Controller state that
+/// calls it guarantees that CPU routes are still inactive.
+#[cfg(target_arch = "riscv32")]
+pub trait BluetoothSchedulerRunInterruptStorage {
+    /// Exact reason the stable owner could not prepare scheduler interrupts.
+    type Error;
+
+    /// Clear stale dynamic sources and enable the scheduler-run groups.
+    fn prepare_scheduler_run_interrupts(
+        &self,
+    ) -> Result<BluetoothSchedulerRunInterruptsPrepared, Self::Error>;
+}
+
+/// Failed DTM scheduler start before the synchronous run suffix began.
+///
+/// The published head is returned unchanged. Once interrupt preparation
+/// succeeds, every remaining operation is infallible and ownership advances
+/// directly to [`crate::BluetoothDtmSchedulerRunning`].
+#[must_use = "a failed DTM scheduler start still owns its published graph"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothDtmSchedulerStartFailure<Role, E> {
+    error: E,
+    head: crate::BluetoothDtmSchedulerHeadPublished<Role>,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<Role, E> BluetoothDtmSchedulerStartFailure<Role, E> {
+    /// Inspect the exact stable-storage rejection.
+    pub const fn error(&self) -> &E {
+        &self.error
+    }
+
+    /// Recover the error and unchanged published DTM head.
+    pub fn into_parts(self) -> (E, crate::BluetoothDtmSchedulerHeadPublished<Role>) {
+        (self.error, self.head)
+    }
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -544,6 +587,36 @@ where
         crate::BluetoothDtmSchedulerHeadPublicationFailure<Role>,
     > {
         self.initialized.publish_dtm_first_scheduler_head(merged)
+    }
+
+    /// Admit one published DTM graph through the complete scheduler-run suffix.
+    ///
+    /// The exact order is dynamic interrupt preparation, synchronous BTMAC
+    /// scheduler-event publication and the final RUN command. The returned
+    /// state retains the graph and grants no CPU-side completion access.
+    #[expect(
+        clippy::result_large_err,
+        reason = "pre-suffix-MMIO rejection returns the complete published DTM graph"
+    )]
+    pub fn start_dtm_scheduler<Role>(
+        &mut self,
+        head: crate::BluetoothDtmSchedulerHeadPublished<Role>,
+    ) -> Result<
+        crate::BluetoothDtmSchedulerRunning<Role>,
+        BluetoothDtmSchedulerStartFailure<Role, S::Error>,
+    >
+    where
+        S: BluetoothSchedulerRunInterruptStorage,
+    {
+        let interrupts = match self._storage.prepare_scheduler_run_interrupts() {
+            Ok(interrupts) => interrupts,
+            Err(error) => return Err(BluetoothDtmSchedulerStartFailure { error, head }),
+        };
+        let (item, publication) = head.into_parts();
+        let task = self.initialized.task_mut();
+        let event = task.publish_scheduler_run_event(publication, interrupts);
+        let run = task.publish_scheduler_hardware_run_command(event);
+        Ok(crate::BluetoothDtmSchedulerRunning::new(item, run))
     }
 
     /// Service and durably publish one primary source-124 epoch.

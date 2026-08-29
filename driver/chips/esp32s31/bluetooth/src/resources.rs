@@ -15,7 +15,8 @@ use open_esp_radio_esp32s31_hal::{
     BluetoothInterruptOutputPreparedOwner, BluetoothModemLpTimerLowPowerHardwareInitializedOwner,
     BluetoothModemLpTimerOwnerError, BluetoothPhyRegisterInitInputs,
     BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadPublished,
-    BluetoothSchedulerHardwareListIndex,
+    BluetoothSchedulerHardwareListIndex, BluetoothSchedulerHardwareRunCommandPublished,
+    BluetoothSchedulerRunEventPublished, BluetoothSchedulerRunInterruptsPrepared,
 };
 #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 use open_esp_radio_esp32s31_hal::{
@@ -241,6 +242,31 @@ impl BluetoothTaskResources {
     ) -> BluetoothSchedulerHardwareListHeadPublished {
         let mut controller = self.registers.borrow_bluetooth_controller();
         unsafe { controller.publish_scheduler_hardware_list_head(index, head) }
+    }
+
+    /// Publish the synchronous BTMAC scheduler event after the exact head and
+    /// interrupt preparation have completed.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn publish_scheduler_run_event(
+        &mut self,
+        head: BluetoothSchedulerHardwareListHeadPublished,
+        interrupts: BluetoothSchedulerRunInterruptsPrepared,
+    ) -> BluetoothSchedulerRunEventPublished {
+        self.registers
+            .borrow_bluetooth_controller()
+            .publish_scheduler_run_event(head, interrupts)
+    }
+
+    /// Consume the complete run-event proof into the final hardware RUN
+    /// publication.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn publish_scheduler_hardware_run_command(
+        &mut self,
+        event: BluetoothSchedulerRunEventPublished,
+    ) -> BluetoothSchedulerHardwareRunCommandPublished {
+        self.registers
+            .borrow_bluetooth_controller()
+            .publish_scheduler_hardware_run_command(event)
     }
 
     /// Durable logical phase paired with this unique task owner.

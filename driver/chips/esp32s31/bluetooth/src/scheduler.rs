@@ -16,7 +16,7 @@ use open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareListHead;
 use open_esp_radio_esp32s31_hal::{
     BluetoothControllerSramAddress, BluetoothSchedulerHardwareListHeadError,
     BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHardwareListIndex,
-    BluetoothSchedulerHardwareListsCleared,
+    BluetoothSchedulerHardwareListsCleared, BluetoothSchedulerHardwareRunCommandPublished,
 };
 use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
 
@@ -201,6 +201,52 @@ impl<Role> BluetoothDtmSchedulerHeadPublished<Role> {
     /// Hardware list whose head now addresses this item.
     pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
         self.publication.index()
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        BluetoothDtmEmptyListLinkPrepared<Role>,
+        BluetoothSchedulerHardwareListHeadPublished,
+    ) {
+        (self.item, self.publication)
+    }
+}
+
+/// DTM graph admitted to scheduler execution by the complete run transaction.
+///
+/// This state retains the pinned graph and the affine proof of
+/// `head -> dynamic interrupts -> synchronous BTMAC event -> RUN`. It does not
+/// claim that the radio completed the item or that CPU access may resume.
+#[must_use = "the running DTM graph must advance through owned completion or quiescence"]
+pub struct BluetoothDtmSchedulerRunning<Role> {
+    item: BluetoothDtmEmptyListLinkPrepared<Role>,
+    run: BluetoothSchedulerHardwareRunCommandPublished,
+}
+
+impl<Role> BluetoothDtmSchedulerRunning<Role> {
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) const fn new(
+        item: BluetoothDtmEmptyListLinkPrepared<Role>,
+        run: BluetoothSchedulerHardwareRunCommandPublished,
+    ) -> Self {
+        Self { item, run }
+    }
+
+    /// Role retained by the running scheduler graph.
+    pub const fn role(&self) -> BluetoothDtmRole {
+        self.item.role()
+    }
+
+    /// Exact scheduler-item address retained while hardware owns the graph.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.item.scheduler_item_address()
+    }
+
+    /// Hardware list admitted by the complete run transaction.
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.run.index()
     }
 }
 

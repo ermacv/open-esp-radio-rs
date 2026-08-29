@@ -666,8 +666,8 @@ this is not yet a deadline-ready production time source.
 | Layer | DTM responsibility | Current publication gate |
 | --- | --- | --- |
 | SVD / restricted PAC | Typed controller-window fields, complete publication/ack order, controller-time reads and the SRAM compression domain | Lock/modify, insertion execution-lock/modify, always-awake time-latch and software-list-removal fields, exact publications, wait predicates and finite live MMIO are present. Command-zero accepts only a typed item/list request; command-one accepts a typed list and constructs its one-hot field inside the PAC. A fresh interrupt-owned BUSY observation drives each finite PAC task step: idle command zero reads no command field, a clear ready field never reads its result, and busy command one never reads rejection before ready. Terminal values reduce to pending/retained/reconcile/rejected dispositions without exposing register images. The later interrupt-time scheduler snapshot also returns the typed current hardware-list index. The removal gate preserves the current short-circuit read order without a polling loop. Scheduler-head publication now orders every prior CPU descriptor write before its generated MMIO field update and retains the trailing device fence. BTMAC source 14 is modeled as one generated W1C clear field plus one interrupt-enable field; the affine run suffix consumes the published head and dynamic-interrupt proof, performs the exact synchronous clear/enable/fence transaction and admits RUN only by consuming that result. Descriptor completion ownership remains absent. |
-| HAL | Powered controller epoch, common RF wake, cache/device fences, timer conversion, same-core IRQ routing and bounded stop/quiesce | The HAL forwards the finite insertion execution publications and observations without exposing raw PAC access. It also forwards the safe typed scheduler run-event and RUN chain; no upper layer passes an address, mask or register image. The powered Controller retains the unique live latch owner and exposes finite request/recheck operations with generation-safe cancellation drain. A proven wake/recheck source, physical counter contract, Controller composition of the run suffix, affine insertion worker and powered rollback remain absent. |
-| Scheduler core | Affine event item, ordered deadline queue, insert/abort/complete states, hardware-head replacement and consistency check | DTM list zero now has an exclusive empty epoch, exact first-item merge and terminal pre-route publication transition. The Controller rejects a merge from another epoch before MMIO, retains the unchanged graph on failure and, on success, records the published identity while the graph becomes non-cancellable. The PAC orders descriptor SRAM before the generated head accessor and applies the trailing fence. Current insertion-begin outcomes and the insertion-end command/head/BUSY/sleep/status order remain semantic staged plans; conditional lock/modify has finite PAC/HAL operations without polling. Dynamic interrupt preparation, scheduler event, RUN and completion selection are not yet composed. |
+| HAL | Powered controller epoch, common RF wake, cache/device fences, timer conversion, same-core IRQ routing and bounded stop/quiesce | The HAL forwards the finite insertion execution publications and observations without exposing raw PAC access. It also forwards the safe typed scheduler run-event and RUN chain; no upper layer passes an address, mask or register image. The powered Controller retains the unique live latch owner and exposes finite request/recheck operations with generation-safe cancellation drain. The stable ESP-HAL storage lease can now synchronously lend that owner for dynamic scheduler interrupt preparation while routes remain inactive. A proven wake/recheck source, physical counter contract, live-route lifecycle, affine completion worker and powered rollback remain absent. |
+| Scheduler core | Affine event item, ordered deadline queue, insert/abort/complete states, hardware-head replacement and consistency check | DTM list zero now has an exclusive empty epoch, exact first-item merge and terminal pre-route publication transition. The Controller rejects a merge from another epoch before head MMIO, retains the unchanged graph on failure and, on success, records the published identity while the graph becomes non-cancellable. It then consumes that head through stable-owner dynamic interrupt preparation, synchronous source-14 event publication and RUN as one typed suffix. Storage rejection returns the unchanged head before suffix MMIO; success returns an affine running graph and no CPU mutation surface. Current insertion-begin outcomes and the insertion-end command/head/BUSY/sleep/status order remain semantic staged plans; conditional lock/modify has finite PAC/HAL operations without polling. Completion selection and acquire visibility are not yet composed. |
 | Packet memory | Static aligned TX/RX/link-state slots with `CPU -> prepared -> hardware -> completed -> CPU` ownership | A no-heap memory crate owns the complete 936-byte DTM graph, validates physical placement and installs every reviewed allocation-time link. TX readiness and role-specific event/bookkeeping transforms remain affine through the first merge. The terminal Controller now consumes that CPU-owned merge into a hardware-visible head state that exposes no mutation or cancellation. The current blob has no separate software graph latch. Hardware interpretation, acquire-side completion visibility, current/next rotation and affine completion/reclaim are still absent. |
 | LLL DTM | Parameter validation, channel/PHY/pattern image, TX/RX event state machine and receive counter | The complete channel domain, composed frequency lookup, role-dependent PHY/rate mapping, all eight bounded TX payload patterns, packet-duration/minimum-interval/tick arithmetic, constant-time event catch-up and one-word RX accounting transition are typed. TX and RX event plans are distinct states: TX requires a prepared graph and retains its exact pattern/length through scheduler bookkeeping, while RX accepts an ordinary bound graph. Exact command roles, allocation rollback, descriptor chain anchors, wrapping received-packet count and unconditional handoff to the append decision are mapped. The ordinary re-arm is fail-closed on the swap bit; remaining field meanings, swap ownership, live item/buffer ownership, abort and quiescence are incomplete. |
 | HCI | LE Receiver Test, LE Transmitter Test and LE Test End command/event semantics for only the implemented variants | Bootstrap transport exists; operational DTM opcodes must remain unsupported until the physical owner is live. |
@@ -700,14 +700,14 @@ require reproducing the vendor intrusive list layout.
 
 The remaining work should proceed in narrow, testable increments:
 
-1. **Compose the scheduler run suffix.** The empty-list manager epoch,
-   merge-selected identity, descriptor visibility and first hardware head are
-   composed. The restricted PAC/HAL suffix now consumes that head plus dynamic
-   interrupt preparation through the exact synchronous source-14 event and
-   RUN. Connect it to the terminal Controller as one non-reorderable transition.
-   Preserve the current insertion-end BUSY/sleep/item-status short circuits;
-   do not create a task-side alias for `SCHEDULER_STATE` or equate RUN with
-   radio completion.
+1. **Close scheduler completion ownership.** The empty-list manager epoch,
+   merge-selected identity, descriptor visibility, hardware head, dynamic
+   interrupt preparation, exact synchronous source-14 event and RUN are now
+   one non-reorderable typed chain. Connect finished-list/current-list
+   observations to the exact retained running item and add the acquire-side
+   visibility edge before any result or packet access. Preserve the current
+   insertion-end BUSY/sleep/item-status short circuits; do not create a
+   task-side alias for `SCHEDULER_STATE` or equate RUN with radio completion.
 2. **Close the controller timebase source.** The latch address/order,
    standalone scale arithmetic, affine nonblocking request phases, pure
    wrapping epoch projection and sole powered task-side MMIO owner now exist.
@@ -724,15 +724,15 @@ The remaining work should proceed in narrow, testable increments:
    link. The complete event body proves there is no separate software latch;
    retain the published `item -> link state -> private links` chain and trace
    only the undocumented hardware interpretation still needed for completion.
-4. **Advance the bound graph into hardware ownership.** The no-heap aligned
+4. **Advance the running graph through completion.** The no-heap aligned
    capacity, non-forgeable physical-SRAM binding, exact allocation-time links,
-   consuming TX packet readiness and role-specific event preparation now
-   exist. The first published-head state now prevents mutation and cancellation.
-   Add `Running/Completed/Recycled` only after the RUN and acquire-side rules
-   are proven; prevent reuse before callback, abort or quiescence. The exact
-   wrapping receive count and append-decision outcome may be consumed only by
-   the completed owner; the swap-reserve observation must remain quarantined
-   until its detached-header ownership is proven.
+   consuming TX packet readiness, role-specific event preparation and affine
+   `Running` owner now exist. Add `Completed/Recycled` only after the
+   finished-list selection and acquire-side rules are proven; prevent reuse
+   before callback, abort or quiescence. The exact wrapping receive count and
+   append-decision outcome may be consumed only by the completed owner; the
+   swap-reserve observation must remain quarantined until its detached-header
+   ownership is proven.
 5. **Implement the open scheduler model.** Use a fixed-capacity ordered queue,
    explicit `Prepared/Scheduled/Running/Completed/Recycled/Aborted` states and
    a single hardware-head owner. Retain each request's typed list index beside

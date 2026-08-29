@@ -19,7 +19,10 @@
 //! snapshot modes, positional dynamic scheduler classifier, coalesced wake
 //! state, affine ISR scheduler-register staging and one live finite
 //! scheduler-lock/modify PAC/HAL publication with a durable event worker are
-//! also represented. A sampled
+//! also represented. The terminal pre-route Controller can additionally
+//! consume one identity-checked DTM graph through descriptor/head visibility,
+//! stable-owner dynamic interrupt preparation, the synchronous BTMAC event
+//! and RUN as one affine chain. A sampled
 //! sixteen-list finished mask can be drained one bit per bounded event step.
 //! Controller-SRAM allocation geometry and result parsing live in the separate
 //! `open-esp-radio-esp32s31-bluetooth-memory` layer below this LLL boundary;
@@ -106,8 +109,9 @@ pub use controller_start::{
     BluetoothControllerInterruptOwnersPublished, BluetoothControllerInterruptOwnersReady,
     BluetoothControllerModemLpTimerRestoreFailure, BluetoothControllerModemLpTimerSoftwareStep,
     BluetoothControllerModemLpTimerSoftwareWork, BluetoothControllerOutputTimerStarted,
-    BluetoothInterruptOwnerStorage, BluetoothModemLpTimerInterruptDispatchStorage,
-    BluetoothModemLpTimerSoftwareOwnerStorage, BluetoothSharedInterruptDispatchStorage,
+    BluetoothDtmSchedulerStartFailure, BluetoothInterruptOwnerStorage,
+    BluetoothModemLpTimerInterruptDispatchStorage, BluetoothModemLpTimerSoftwareOwnerStorage,
+    BluetoothSchedulerRunInterruptStorage, BluetoothSharedInterruptDispatchStorage,
 };
 pub use controller_time::{BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample};
 #[cfg(target_arch = "riscv32")]
@@ -215,7 +219,7 @@ pub use scheduler::{
     BluetoothDtmEmptySchedulerMergeError, BluetoothDtmEmptySchedulerMergeFailure,
     BluetoothDtmEmptySchedulerMergePrepared, BluetoothDtmSchedulerHeadPublicationError,
     BluetoothDtmSchedulerHeadPublicationFailure, BluetoothDtmSchedulerHeadPublished,
-    BluetoothSchedulerInitialized,
+    BluetoothDtmSchedulerRunning, BluetoothSchedulerInitialized,
 };
 pub use scheduler_config::BluetoothSchedulerSoftwareConfig;
 pub use scheduler_finished_lists::{

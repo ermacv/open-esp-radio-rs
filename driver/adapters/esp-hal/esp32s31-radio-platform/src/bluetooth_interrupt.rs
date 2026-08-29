@@ -24,13 +24,13 @@ use open_esp_radio_esp32s31_bluetooth::{
     BluetoothCpuInterruptRoutePolicy, BluetoothInterruptOwnerStorage,
     BluetoothModemLpTimerInterruptDispatchStorage, BluetoothModemLpTimerSoftwareOwnerStorage,
     BluetoothModemLpTimerStableInterruptStep, BluetoothNrtDefaultInterruptEpoch,
-    BluetoothPrimaryInterruptStep, BluetoothSharedInterruptDispatchStorage,
-    step_nrt_default_interrupt, step_primary_interrupt,
+    BluetoothPrimaryInterruptStep, BluetoothSchedulerRunInterruptStorage,
+    BluetoothSharedInterruptDispatchStorage, step_nrt_default_interrupt, step_primary_interrupt,
 };
 use open_esp_radio_esp32s31_hal::{
     BluetoothInterruptRegistersOwner, BluetoothModemLpTimerHandlerRegisterStep,
     BluetoothModemLpTimerInterruptReadyOwner, BluetoothModemLpTimerInterruptStep,
-    BluetoothModemLpTimerSoftwarePendingOwner,
+    BluetoothModemLpTimerSoftwarePendingOwner, BluetoothSchedulerRunInterruptsPrepared,
 };
 
 use crate::bluetooth_route_policy::{
@@ -147,6 +147,13 @@ pub enum EspHalBluetoothSharedInterruptDispatchError {
     Unavailable,
 }
 
+/// Why scheduler-start interrupt preparation could not borrow stable storage.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EspHalBluetoothSchedulerRunInterruptError {
+    /// The shared owner is absent from process-wide stable storage.
+    Unavailable,
+}
+
 /// Why task-side source-127 ownership could not enter or leave stable storage.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EspHalBluetoothModemLpTimerStorageError {
@@ -168,6 +175,19 @@ pub struct EspHalBluetoothModemLpTimerRestoreFailure {
 }
 
 impl PublishedEspHalBluetoothInterruptOwners {
+    /// Prepare the exact dynamic interrupt groups required before scheduler
+    /// event publication while retaining the shared owner in stable storage.
+    pub fn prepare_scheduler_run_interrupts(
+        &self,
+    ) -> Result<BluetoothSchedulerRunInterruptsPrepared, EspHalBluetoothSchedulerRunInterruptError>
+    {
+        critical_section::with(|critical_section| {
+            let mut slot = INTERRUPT_REGISTERS.borrow_ref_mut(critical_section);
+            service_stable_owner(&mut slot, |owner| owner.prepare_scheduler_run_interrupts())
+                .ok_or(EspHalBluetoothSchedulerRunInterruptError::Unavailable)
+        })
+    }
+
     /// Capture, acknowledge and classify one primary source-124 epoch.
     ///
     /// The unique shared register owner remains in its process-wide slot for
@@ -294,6 +314,16 @@ impl PublishedEspHalBluetoothInterruptOwners {
             *slot = Some(StoredBluetoothModemLpTimerOwner::Ready(owner));
             Ok(())
         })
+    }
+}
+
+impl BluetoothSchedulerRunInterruptStorage for PublishedEspHalBluetoothInterruptOwners {
+    type Error = EspHalBluetoothSchedulerRunInterruptError;
+
+    fn prepare_scheduler_run_interrupts(
+        &self,
+    ) -> Result<BluetoothSchedulerRunInterruptsPrepared, Self::Error> {
+        PublishedEspHalBluetoothInterruptOwners::prepare_scheduler_run_interrupts(self)
     }
 }
 

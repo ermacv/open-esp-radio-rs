@@ -192,6 +192,10 @@ where
             .controller_time_needs_recheck()
     }
 
+    pub(crate) fn task_mut(&mut self) -> &mut crate::resources::BluetoothTaskResources {
+        self.initialized.initialized.controller.task_mut()
+    }
+
     pub(crate) fn request_controller_time(
         &mut self,
     ) -> Result<crate::BluetoothControllerTimeRequest, crate::BluetoothControllerTimeRequestError>

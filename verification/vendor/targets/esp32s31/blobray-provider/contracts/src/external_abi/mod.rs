@@ -355,6 +355,11 @@ const ESP32S31_BLE_EXTERNAL_FUNCTION_MODELS: &[ExternalCallModelSpec] = &[
         return_model: ExternalReturnModel::Void,
         outputs: &[],
     },
+    ExternalCallModelSpec {
+        id: "random-u32",
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: &[],
+    },
 ];
 
 const ESP32S31_BLE_EXTERNAL_FUNCTION_MODEL_SET: ExternalCallModelSetSpec =

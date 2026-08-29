@@ -498,17 +498,17 @@ execution-model = "coex-xtal-frequency-get"
 # 0x2025_0819, checks the terminal magic at +0x24 and publishes its argument
 # through this relocated pointer cell. The public same-chip revision
 # `espressif/esp32s31-bt-lib@31c30949541a5d3abd4043a1cb66d55aa55577dd`
-# retains the unobfuscated `r_ext_funcs_p` identity. Its complete allocation
-# and free wrappers are instruction- and section-order-equivalent to pinned
-# `r_sym_ble_N29j35mh9V8b2F3PiMxx` and
-# `r_sym_ble_DDSTeQuSRJEYXxXpW8Go`: they call +0x04 with the aligned byte count
-# and the caller's binary allocation class, and tail-call +0x08 with the
-# allocation pointer. The same named revision's `r_ll_assert` preserves all
-# four incoming arguments and tail-calls +0x0c. Pinned analysis independently
-# recovers the same three offsets from the guarded table root. This anchor
-# records only that reviewed external-function ABI; it does not make the
-# vendor allocator, assertion provider or table part of the open Controller
-# architecture.
+# retains the unobfuscated `r_ext_funcs_p` identity. Complete same-chip callers
+# prove allocation/free/assertion at +0x04..+0x0c, zero-argument random at
+# +0x10, two-output P-256 key generation at +0x14, four-pointer P-256 DH at
+# +0x18, and `(key, input, length, output)` AES-CMAC at +0x20. The named
+# `r_ble_ll_iso_calc_big_session_key` caller passes lengths 4 and 16 and never
+# consumes a fifth argument. ESP-IDF
+# `2067f3ae32b7e7b61a0f3a052df63d619cd7c61d` independently publishes the
+# corresponding P-256 directions and `ext_ble_ll_iso_aes_cmac` signature.
+# Pinned analysis recovers the same offsets from the guarded table root. This
+# anchor records only the reviewed external-function ABI; it does not make the
+# vendor providers or table part of the open Controller architecture.
 [[anchors]]
 id = "ble-external-functions-20250819"
 status = "reviewed"
@@ -577,6 +577,47 @@ arguments = ["u32", "const-ptr", "u32", "u32"]
 return = "void"
 semantic = "diagnostic.assert"
 execution-model = "osi-assert"
+
+[[anchors.slots]]
+offset = 0x10
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "random_u32"
+arguments = []
+return = "u32"
+semantic = "random.next-u32"
+execution-model = "random-u32"
+
+[[anchors.slots]]
+offset = 0x14
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "p256_generate_key_pair"
+arguments = ["out-ptr", "out-ptr"]
+return = "i32"
+semantic = "crypto.p256.key-pair.generate"
+
+[[anchors.slots]]
+offset = 0x18
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "p256_diffie_hellman"
+arguments = ["const-ptr", "const-ptr", "const-ptr", "out-ptr"]
+return = "i32"
+semantic = "crypto.p256.diffie-hellman.calculate"
+
+[[anchors.slots]]
+offset = 0x20
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "aes_cmac"
+arguments = ["const-ptr", "const-ptr", "usize", "out-ptr"]
+return = "i32"
+semantic = "crypto.aes-cmac.calculate"
 
 # `net80211_funcs` is a pointer cell, not a static function table image.
 # `net80211_funcs_init` allocates 0x14c bytes and

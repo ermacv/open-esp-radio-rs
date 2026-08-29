@@ -427,6 +427,38 @@ effects = ["diagnostic.assertion-failure"]
 replacement = "diagnostic.typed-assertion"
 
 [[operations]]
+id = "crypto.p256.key-pair.generate"
+domain = "crypto"
+summary = "Generate a P-256 public and private key pair"
+argument-roles = ["public-key-output", "private-key-output"]
+return-role = "status"
+effects = ["crypto.generate-key-pair", "memory.write-output"]
+replacement = "crypto.p256-key-pair-provider"
+
+[[operations]]
+id = "crypto.p256.diffie-hellman.calculate"
+domain = "crypto"
+summary = "Derive a P-256 Diffie-Hellman key from peer public coordinates and a local private key"
+argument-roles = [
+  "peer-public-key-x",
+  "peer-public-key-y",
+  "local-private-key",
+  "shared-key-output",
+]
+return-role = "status"
+effects = ["crypto.derive-shared-key", "memory.write-output"]
+replacement = "crypto.p256-diffie-hellman-provider"
+
+[[operations]]
+id = "crypto.aes-cmac.calculate"
+domain = "crypto"
+summary = "Calculate an AES-CMAC tag for a caller-sized message"
+argument-roles = ["key", "message", "message-length", "tag-output"]
+return-role = "status"
+effects = ["crypto.authenticate-message", "memory.write-output"]
+replacement = "crypto.aes-cmac-provider"
+
+[[operations]]
 id = "memory.allocate-zeroed"
 domain = "memory"
 summary = "Allocate caller-sized storage initialized to zero"

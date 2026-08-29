@@ -204,3 +204,12 @@ fn wifi_runtime_callback_model_preserves_an_uninterpreted_esp_err_result() {
         ExternalReturnModel::SymbolicU32
     );
 }
+
+#[test]
+fn ble_random_provider_returns_a_fresh_symbolic_word() {
+    let random = BLE_EXTERNAL_FUNCTION_MODELS_20250819
+        .model("random-u32")
+        .unwrap();
+    assert_eq!(random.spec().return_model, ExternalReturnModel::SymbolicU32);
+    assert!(random.spec().outputs.is_empty());
+}

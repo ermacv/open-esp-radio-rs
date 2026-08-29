@@ -152,6 +152,18 @@ where
             .controller
             .modem_lp_timer_software_parts_mut()
     }
+
+    pub(crate) const fn primary_interrupt_publications(
+        &self,
+    ) -> (
+        &crate::BluetoothSchedulerWakeCell,
+        &crate::BluetoothSchedulerLockModifyEventCell,
+    ) {
+        self.initialized
+            .initialized
+            .controller
+            .primary_interrupt_publications()
+    }
 }
 
 #[cfg(target_arch = "riscv32")]

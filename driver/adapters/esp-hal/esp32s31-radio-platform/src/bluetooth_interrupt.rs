@@ -23,7 +23,8 @@ use esp_hal::{
 use open_esp_radio_esp32s31_bluetooth::{
     BluetoothCpuInterruptRoutePolicy, BluetoothInterruptOwnerStorage,
     BluetoothModemLpTimerSoftwareOwnerStorage, BluetoothNrtDefaultInterruptEpoch,
-    BluetoothPrimaryInterruptStep, step_nrt_default_interrupt, step_primary_interrupt,
+    BluetoothPrimaryInterruptStep, BluetoothSharedInterruptDispatchStorage,
+    step_nrt_default_interrupt, step_primary_interrupt,
 };
 use open_esp_radio_esp32s31_hal::{
     BluetoothInterruptRegistersOwner, BluetoothModemLpTimerHandlerRegisterStep,
@@ -136,6 +137,13 @@ pub enum EspHalBluetoothNrtInterruptStep {
     Unavailable,
     /// The default Controller profile acknowledged one opaque NRT epoch.
     Serviced(BluetoothNrtDefaultInterruptEpoch),
+}
+
+/// Why the shared primary/NRT owner could not service an interrupt entry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EspHalBluetoothSharedInterruptDispatchError {
+    /// The shared owner is absent from process-wide stable storage.
+    Unavailable,
 }
 
 /// Why task-side source-127 ownership could not enter or leave stable storage.
@@ -336,6 +344,30 @@ impl BluetoothModemLpTimerSoftwareOwnerStorage for PublishedEspHalBluetoothInter
     ) -> Result<(), (Self::RestoreError, BluetoothModemLpTimerInterruptReadyOwner)> {
         PublishedEspHalBluetoothInterruptOwners::restore_modem_lp_timer_ready(self, owner)
             .map_err(|failure| (failure.error, failure.owner))
+    }
+}
+
+impl BluetoothSharedInterruptDispatchStorage for PublishedEspHalBluetoothInterruptOwners {
+    type Error = EspHalBluetoothSharedInterruptDispatchError;
+
+    fn service_primary_interrupt(&self) -> Result<BluetoothPrimaryInterruptStep, Self::Error> {
+        match PublishedEspHalBluetoothInterruptOwners::service_primary_interrupt(self) {
+            EspHalBluetoothPrimaryInterruptStep::Unavailable => {
+                Err(EspHalBluetoothSharedInterruptDispatchError::Unavailable)
+            }
+            EspHalBluetoothPrimaryInterruptStep::Serviced(step) => Ok(step),
+        }
+    }
+
+    fn service_nrt_default_interrupt(
+        &self,
+    ) -> Result<BluetoothNrtDefaultInterruptEpoch, Self::Error> {
+        match PublishedEspHalBluetoothInterruptOwners::service_nrt_default_interrupt(self) {
+            EspHalBluetoothNrtInterruptStep::Unavailable => {
+                Err(EspHalBluetoothSharedInterruptDispatchError::Unavailable)
+            }
+            EspHalBluetoothNrtInterruptStep::Serviced(epoch) => Ok(epoch),
+        }
     }
 }
 

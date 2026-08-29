@@ -15,7 +15,9 @@ use open_esp_radio_esp32s31_pac::BluetoothPrimaryInterruptEpoch;
 
 use crate::{
     BluetoothPrimaryControllerFault, BluetoothPrimaryInterruptClassification,
-    BluetoothSchedulerReferenceAction, BluetoothSchedulerWorkerWake,
+    BluetoothSchedulerLockModifyEventCell, BluetoothSchedulerLockModifyEventPublication,
+    BluetoothSchedulerReferenceAction, BluetoothSchedulerWakeCell,
+    BluetoothSchedulerWakePublication, BluetoothSchedulerWorkerWake,
 };
 
 /// Terminal result of one bounded primary source-124 handler step.
@@ -50,6 +52,60 @@ pub struct BluetoothPrimarySchedulerEvent {
     classification: BluetoothPrimaryInterruptClassification,
     wake: BluetoothSchedulerWorkerWake,
     lock_modify: BluetoothSchedulerLockModifyInterruptObservation,
+}
+
+/// Durable Controller disposition of one acknowledged primary epoch.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "fault, recovery or scheduler publication must reach the Controller owner"]
+pub enum BluetoothPrimaryPublishedInterruptStep {
+    /// A baseline or unclassified fault published no ordinary work.
+    Fault(BluetoothPrimaryControllerFault),
+    /// The epoch contained no reviewed dynamic scheduler work.
+    NoSchedulerWork(BluetoothPrimaryNoSchedulerWork),
+    /// Selector-6 recovery is required before the later work observation.
+    ReferenceRecoveryRequired(BluetoothPrimaryReferenceRecoveryRequired),
+    /// Both durable scheduler cells accepted the same temporal event.
+    Scheduler {
+        /// Exact classified primary event.
+        event: BluetoothPrimarySchedulerEvent,
+        /// Coalescing disposition of the general scheduler handoff.
+        scheduler: BluetoothSchedulerWakePublication,
+        /// Latest-value disposition of the lock/modify handoff.
+        lock_modify: BluetoothSchedulerLockModifyEventPublication,
+    },
+}
+
+impl BluetoothPrimaryInterruptStep {
+    /// Publish one classified primary result into its matching Controller cells.
+    ///
+    /// Fault, empty and selector-6 recovery outcomes never publish ordinary
+    /// scheduler work. A scheduler outcome updates both cells from the same
+    /// later hardware observation before returning their wake dispositions.
+    pub fn publish(
+        self,
+        scheduler_wake: &BluetoothSchedulerWakeCell,
+        lock_modify_events: &BluetoothSchedulerLockModifyEventCell,
+    ) -> BluetoothPrimaryPublishedInterruptStep {
+        match self {
+            Self::Fault(fault) => BluetoothPrimaryPublishedInterruptStep::Fault(fault),
+            Self::NoSchedulerWork(epoch) => {
+                BluetoothPrimaryPublishedInterruptStep::NoSchedulerWork(epoch)
+            }
+            Self::ReferenceRecoveryRequired(required) => {
+                BluetoothPrimaryPublishedInterruptStep::ReferenceRecoveryRequired(required)
+            }
+            Self::Scheduler(event) => {
+                let scheduler = scheduler_wake.publish_from_interrupt(event.wake().class());
+                let lock_modify =
+                    lock_modify_events.publish_from_interrupt(event.lock_modify_observation());
+                BluetoothPrimaryPublishedInterruptStep::Scheduler {
+                    event,
+                    scheduler,
+                    lock_modify,
+                }
+            }
+        }
+    }
 }
 
 impl BluetoothPrimarySchedulerEvent {
@@ -329,5 +385,47 @@ mod tests {
 
         assert!(fault.sources().unclassified_pending());
         assert_eq!(backend.operations, [Operation::PrimaryEpoch]);
+    }
+
+    #[test]
+    fn one_primary_scheduler_event_updates_both_durable_cells_from_one_observation() {
+        let mut backend = Backend::dynamic(false, true, true, true, true, true);
+        let scheduler_wake = BluetoothSchedulerWakeCell::new();
+        let lock_modify_events = BluetoothSchedulerLockModifyEventCell::new();
+
+        let published = execute_primary_interrupt_step(&mut backend)
+            .publish(&scheduler_wake, &lock_modify_events);
+
+        assert!(matches!(
+            published,
+            BluetoothPrimaryPublishedInterruptStep::Scheduler {
+                scheduler: BluetoothSchedulerWakePublication::WakeWorker,
+                lock_modify: BluetoothSchedulerLockModifyEventPublication::WakeWorker,
+                ..
+            }
+        ));
+        assert!(
+            scheduler_wake
+                .take()
+                .expect("scheduler work must be durable")
+                .is_marked()
+        );
+        assert!(
+            lock_modify_events
+                .take()
+                .expect("the matching BUSY observation must be durable")
+                .is_busy()
+        );
+
+        let empty = execute_primary_interrupt_step(&mut Backend::dynamic(
+            false, false, false, false, false, false,
+        ))
+        .publish(&scheduler_wake, &lock_modify_events);
+        assert!(matches!(
+            empty,
+            BluetoothPrimaryPublishedInterruptStep::NoSchedulerWork(_)
+        ));
+        assert!(!scheduler_wake.is_pending());
+        assert!(!lock_modify_events.is_pending());
     }
 }

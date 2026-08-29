@@ -101,6 +101,7 @@ pub use controller_start::{
     BluetoothControllerModemLpTimerRestoreFailure, BluetoothControllerModemLpTimerSoftwareStep,
     BluetoothControllerModemLpTimerSoftwareWork, BluetoothControllerOutputTimerStarted,
     BluetoothInterruptOwnerStorage, BluetoothModemLpTimerSoftwareOwnerStorage,
+    BluetoothSharedInterruptDispatchStorage,
 };
 pub use controller_time::{BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample};
 pub use dtm_event_prepare::{
@@ -183,8 +184,8 @@ pub use phy::{
 };
 pub use primary_interrupt::{
     BluetoothPrimaryInterruptStep, BluetoothPrimaryNoSchedulerWork,
-    BluetoothPrimaryReferenceRecoveryRequired, BluetoothPrimarySchedulerEvent,
-    step_primary_interrupt,
+    BluetoothPrimaryPublishedInterruptStep, BluetoothPrimaryReferenceRecoveryRequired,
+    BluetoothPrimarySchedulerEvent, step_primary_interrupt,
 };
 pub use resources::{BluetoothStopped, BluetoothStoppedReleaseFailure};
 pub use runtime_resources::{

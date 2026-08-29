@@ -170,6 +170,16 @@ impl<const MODEM_TIMER_CAPACITY: usize> BluetoothControllerRuntimeResources<MODE
     }
 
     #[cfg(target_arch = "riscv32")]
+    pub(crate) const fn primary_interrupt_publications(
+        &self,
+    ) -> (
+        &BluetoothSchedulerWakeCell,
+        &BluetoothSchedulerLockModifyEventCell,
+    ) {
+        (&self.scheduler_wake, &self.scheduler_lock_modify_events)
+    }
+
+    #[cfg(target_arch = "riscv32")]
     pub(crate) fn modem_lp_timer_software_parts_mut(
         &mut self,
     ) -> (

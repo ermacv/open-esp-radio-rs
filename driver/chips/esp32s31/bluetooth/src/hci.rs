@@ -477,6 +477,16 @@ where
             .modem_lp_timer_software_parts_mut()
     }
 
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) const fn primary_interrupt_publications(
+        &self,
+    ) -> (
+        &crate::BluetoothSchedulerWakeCell,
+        &crate::BluetoothSchedulerLockModifyEventCell,
+    ) {
+        self.controller.scheduler.primary_interrupt_publications()
+    }
+
     /// Conditional runtime-control branch observed by the exact hardware
     /// component.
     pub const fn runtime_control_observation(&self) -> BluetoothLowPowerRuntimeControlObservation {

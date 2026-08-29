@@ -14,7 +14,8 @@ use crate::{
     BluetoothControllerBlePhyEngineInitialized, BluetoothModemLpTimerEventCell,
     BluetoothModemLpTimerEventPublication, BluetoothModemLpTimerExpiration,
     BluetoothModemLpTimerExpirationPending, BluetoothModemLpTimerSoftwareStep,
-    BluetoothModemLpTimerSoftwareWork,
+    BluetoothModemLpTimerSoftwareWork, BluetoothNrtDefaultInterruptEpoch,
+    BluetoothPrimaryInterruptStep, BluetoothPrimaryPublishedInterruptStep,
 };
 
 /// Powered Controller after IRQ-output preparation and runtime-timer start.
@@ -129,6 +130,25 @@ pub trait BluetoothModemLpTimerSoftwareOwnerStorage {
         &self,
         owner: BluetoothModemLpTimerInterruptReadyOwner,
     ) -> Result<(), (Self::RestoreError, BluetoothModemLpTimerInterruptReadyOwner)>;
+}
+
+/// Stable platform dispatch over the published shared interrupt owner.
+///
+/// Implementations must retain the unique primary/NRT register owner in
+/// stable storage across every call. Both methods execute exactly one finite
+/// Controller disposition and enable no CPU route themselves.
+#[cfg(target_arch = "riscv32")]
+pub trait BluetoothSharedInterruptDispatchStorage {
+    /// Exact reason the shared owner could not service an entry.
+    type Error;
+
+    /// Capture, acknowledge and classify one primary source-124 epoch.
+    fn service_primary_interrupt(&self) -> Result<BluetoothPrimaryInterruptStep, Self::Error>;
+
+    /// Capture and acknowledge one default-profile NRT source-133 epoch.
+    fn service_nrt_default_interrupt(
+        &self,
+    ) -> Result<BluetoothNrtDefaultInterruptEpoch, Self::Error>;
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -439,6 +459,36 @@ where
             events,
             storage: &self._storage,
         })
+    }
+
+    /// Service and durably publish one primary source-124 epoch.
+    ///
+    /// Both Controller cells are selected from this exact powered runtime.
+    /// The returned wake dispositions can notify an executor later; pending
+    /// state is already durable before this method returns.
+    pub fn service_primary_interrupt(
+        &self,
+    ) -> Result<BluetoothPrimaryPublishedInterruptStep, S::Error>
+    where
+        S: BluetoothSharedInterruptDispatchStorage,
+    {
+        let step = self._storage.service_primary_interrupt()?;
+        let (scheduler_wake, lock_modify_events) =
+            self.initialized.primary_interrupt_publications();
+        Ok(step.publish(scheduler_wake, lock_modify_events))
+    }
+
+    /// Service one opaque default-profile NRT source-133 epoch.
+    ///
+    /// The reviewed default path intentionally publishes no scheduler or
+    /// Link-Layer work and keeps the shared owner in stable platform storage.
+    pub fn service_nrt_default_interrupt(
+        &self,
+    ) -> Result<BluetoothNrtDefaultInterruptEpoch, S::Error>
+    where
+        S: BluetoothSharedInterruptDispatchStorage,
+    {
+        self._storage.service_nrt_default_interrupt()
     }
 }
 

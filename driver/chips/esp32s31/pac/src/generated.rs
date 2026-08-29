@@ -6965,6 +6965,18 @@ pub(crate) fn configure_phy_txiq_second_polarity(
     crate::svd::field_replace_modify::configure_phy_txiq_second_polarity(registers, value.get());
 }
 
+/// Typed bridge for the reviewed `begin_phy_tx_iq_correction` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn begin_phy_tx_iq_correction(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::begin_phy_tx_iq_correction(registers);
+}
+
+/// Typed bridge for the reviewed `complete_phy_tx_iq_correction` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn complete_phy_tx_iq_correction(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::complete_phy_tx_iq_correction(registers);
+}
+
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
 #[inline]
 pub(crate) fn configure_shared_modem_low_power_timer(

@@ -1000,19 +1000,11 @@ impl RadioPhyRegisters {
     /// Complete ROM `phy_rfcal_txiq` clears the high mode bit while setting
     /// the low bit on entry. Its completion edge sets only the high bit.
     pub fn configure_tx_iq_correction(&mut self, begin: bool) {
-        let control = self
-            .peripherals
-            .phy_baseband_config_oracle
-            .iq_correction_aux();
+        let bb = &self.peripherals.phy_baseband_config_oracle;
         if begin {
-            control.modify(|_, w| {
-                w.tx_iq_correction_mode_high()
-                    .clear_bit()
-                    .tx_iq_correction_mode_low()
-                    .set_bit()
-            });
+            super::generated::begin_phy_tx_iq_correction(bb);
         } else {
-            control.modify(|_, w| w.tx_iq_correction_mode_high().set_bit());
+            super::generated::complete_phy_tx_iq_correction(bb);
         }
     }
 

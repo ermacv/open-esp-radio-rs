@@ -9423,3 +9423,24 @@ fields = [
     "HIGH_NIBBLE_UNKNOWN",
 ]
 sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "begin_phy_tx_iq_correction"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "IQ_CORRECTION_AUX"
+fields = [
+    { field = "TX_IQ_CORRECTION_MODE_LOW", source-bit-offset = 0 },
+    { field = "TX_IQ_CORRECTION_MODE_HIGH", source-bit-offset = 1 },
+]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_RFCAL_TXIQ", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "complete_phy_tx_iq_correction"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "IQ_CORRECTION_AUX"
+fields = [{ field = "TX_IQ_CORRECTION_MODE_HIGH", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_RFCAL_TXIQ", "S31_ESP_PACS_SVD"]

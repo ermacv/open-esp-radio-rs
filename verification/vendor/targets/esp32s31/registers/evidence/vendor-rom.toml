@@ -38,6 +38,10 @@ id = "ROM_REV0_PHY_TXIQ_GET_MIS_PWR"
 description = "_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_txiq_get_mis_pwr at 0x2f82ae18, size 0xa8."
 
 [[sources]]
+id = "ROM_REV0_PHY_RFCAL_TXIQ"
+description = "_oracles/esp32s31_rev0_rom.elf sha256 d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542; complete phy_rfcal_txiq at 0x2f82b1de, size 0x132. Its entry clears the high TX-IQ correction mode while setting the low mode in one fresh RMW; its completion edge sets the high mode in a separate fresh RMW."
+
+[[sources]]
 id = "ROM_REV0_PHY_RX_DCO_CAL"
 description = "_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete phy_pbus_rx_dco_cal at 0x2f828f44, size 0x228, including the bounded capture/clear/restore graph."
 

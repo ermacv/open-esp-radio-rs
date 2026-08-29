@@ -69677,6 +69677,34 @@ pub mod field_replace_modify {
             }
         });
     }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields [TX_IQ_CORRECTION_MODE_LOW, TX_IQ_CORRECTION_MODE_HIGH] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn begin_phy_tx_iq_correction(registers: &crate::PhyBasebandConfigOracle) {
+        registers.iq_correction_aux().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .tx_iq_correction_mode_low()
+                .bit((input & 0x00000001) != 0)
+                .tx_iq_correction_mode_high()
+                .bit(((input >> 1) & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields [TX_IQ_CORRECTION_MODE_HIGH] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn complete_phy_tx_iq_correction(registers: &crate::PhyBasebandConfigOracle) {
+        registers.iq_correction_aux().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .tx_iq_correction_mode_high()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.

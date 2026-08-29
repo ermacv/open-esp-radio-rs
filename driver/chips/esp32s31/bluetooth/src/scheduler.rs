@@ -6,7 +6,7 @@ use crate::{
     BluetoothControllerRuntimeResources, BluetoothDtmRole,
     BluetoothDtmSchedulerBookkeepingPrepared,
     controller_hal::BluetoothControllerHalInitialized,
-    dtm_event_prepare::BluetoothDtmEmptyListLinkPrepared,
+    dtm_event_prepare::{BluetoothDtmEmptyListLinkPrepared, BluetoothDtmHardwareOwnedEvent},
     resources::{
         BluetoothInterruptBankOwner, BluetoothTaskResources, BluetoothTeardownPendingPlatform,
     },
@@ -37,6 +37,9 @@ enum BluetoothSchedulerExclusiveListState {
         address: BluetoothControllerSramAddress,
     },
     FirstItemHeadPublished {
+        address: BluetoothControllerSramAddress,
+    },
+    FirstItemRunning {
         address: BluetoothControllerSramAddress,
     },
 }
@@ -83,6 +86,15 @@ impl BluetoothSchedulerExclusiveListEpoch {
             "only the merge-selected first item can become the hardware head"
         );
         self.state = BluetoothSchedulerExclusiveListState::FirstItemHeadPublished { address };
+    }
+
+    fn retain_running_first_item(&mut self, address: BluetoothControllerSramAddress) {
+        assert_eq!(
+            self.state,
+            BluetoothSchedulerExclusiveListState::FirstItemHeadPublished { address },
+            "only the published first item can enter the running scheduler phase"
+        );
+        self.state = BluetoothSchedulerExclusiveListState::FirstItemRunning { address };
     }
 }
 
@@ -183,7 +195,7 @@ impl<Role> BluetoothDtmSchedulerHeadPublicationFailure<Role> {
 /// scheduler event publication, RUN and completion ownership remain absent.
 #[must_use = "the published scheduler head must advance to RUN or fail-stop ownership"]
 pub struct BluetoothDtmSchedulerHeadPublished<Role> {
-    item: BluetoothDtmEmptyListLinkPrepared<Role>,
+    item: BluetoothDtmHardwareOwnedEvent<Role>,
     publication: BluetoothSchedulerHardwareListHeadPublished,
 }
 
@@ -207,7 +219,7 @@ impl<Role> BluetoothDtmSchedulerHeadPublished<Role> {
     pub(crate) fn into_parts(
         self,
     ) -> (
-        BluetoothDtmEmptyListLinkPrepared<Role>,
+        BluetoothDtmHardwareOwnedEvent<Role>,
         BluetoothSchedulerHardwareListHeadPublished,
     ) {
         (self.item, self.publication)
@@ -221,14 +233,14 @@ impl<Role> BluetoothDtmSchedulerHeadPublished<Role> {
 /// claim that the radio completed the item or that CPU access may resume.
 #[must_use = "the running DTM graph must advance through owned completion or quiescence"]
 pub struct BluetoothDtmSchedulerRunning<Role> {
-    item: BluetoothDtmEmptyListLinkPrepared<Role>,
+    item: BluetoothDtmHardwareOwnedEvent<Role>,
     run: BluetoothSchedulerHardwareRunCommandPublished,
 }
 
 impl<Role> BluetoothDtmSchedulerRunning<Role> {
     #[cfg(target_arch = "riscv32")]
     pub(crate) const fn new(
-        item: BluetoothDtmEmptyListLinkPrepared<Role>,
+        item: BluetoothDtmHardwareOwnedEvent<Role>,
         run: BluetoothSchedulerHardwareRunCommandPublished,
     ) -> Self {
         Self { item, run }
@@ -427,11 +439,18 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
             self.task
                 .publish_scheduler_hardware_list_head(merged.hardware_list_index(), head)
         };
+        let item = merged.item.into_hardware_owned(&publication);
         self._scheduler_list.retain_published_first_item(address);
-        Ok(BluetoothDtmSchedulerHeadPublished {
-            item: merged.item,
-            publication,
-        })
+        Ok(BluetoothDtmSchedulerHeadPublished { item, publication })
+    }
+
+    /// Retain that the exact published first item crossed the final RUN edge.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn retain_running_dtm_first_item(
+        &mut self,
+        address: BluetoothControllerSramAddress,
+    ) {
+        self._scheduler_list.retain_running_first_item(address);
     }
 
     /// Borrow the matching interrupt and task runtime endpoints from this
@@ -609,6 +628,7 @@ mod tests {
 
         assert!(!list.can_publish_first_item(first));
         assert!(!list.cancel_first_item(first));
+        list.retain_running_first_item(first);
         assert_eq!(
             list.prepare_first_item(other),
             Err(BluetoothDtmEmptySchedulerMergeError::ListNotEmpty)

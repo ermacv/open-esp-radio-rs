@@ -10,13 +10,17 @@
 
 use core::{convert::Infallible, marker::PhantomData};
 
-#[cfg(any(target_arch = "riscv32", test))]
-use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmMemoryGraphEmptyListLinkPrepared;
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphPositionalEventPrepared,
     BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphPrepareFailure,
     BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared, BluetoothDtmPositionalEventWords,
 };
+#[cfg(any(target_arch = "riscv32", test))]
+use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothDtmMemoryGraphEmptyListLinkPrepared, BluetoothDtmMemoryGraphHardwareOwned,
+};
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareListHeadPublished;
 use open_esp_radio_esp32s31_hal::{
     BluetoothControllerSramAddress, BluetoothSchedulerHardwareListIndex,
 };
@@ -425,6 +429,19 @@ impl<Role> BluetoothDtmEmptyListLinkPrepared<Role> {
         BluetoothSchedulerHardwareListIndex::ZERO
     }
 
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn into_hardware_owned(
+        self,
+        publication: &BluetoothSchedulerHardwareListHeadPublished,
+    ) -> BluetoothDtmHardwareOwnedEvent<Role> {
+        BluetoothDtmHardwareOwnedEvent {
+            memory: self.memory.into_hardware_owned(publication),
+            packet: self.packet,
+            _reservation: self.reservation,
+            _role: PhantomData,
+        }
+    }
+
     pub(crate) fn cancel(self) -> BluetoothDtmSchedulerBookkeepingPrepared<Role> {
         BluetoothDtmSchedulerBookkeepingPrepared {
             memory: self.memory.cancel(),
@@ -432,6 +449,33 @@ impl<Role> BluetoothDtmEmptyListLinkPrepared<Role> {
             reservation: self.reservation,
             _role: PhantomData,
         }
+    }
+}
+
+/// Internal DTM event whose pinned graph has crossed the hardware-head edge.
+///
+/// Only the scheduler lifecycle can create this owner by pairing the prepared
+/// event with its exact affine PAC publication. It intentionally has no
+/// cancellation path or mutable access to controller-owned storage.
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) struct BluetoothDtmHardwareOwnedEvent<Role> {
+    memory: BluetoothDtmMemoryGraphHardwareOwned,
+    packet: BluetoothDtmEventPacket,
+    _reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+    _role: PhantomData<Role>,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl<Role> BluetoothDtmHardwareOwnedEvent<Role> {
+    pub(crate) const fn role(&self) -> BluetoothDtmRole {
+        match self.packet {
+            BluetoothDtmEventPacket::Transmitter { .. } => BluetoothDtmRole::Transmitter,
+            BluetoothDtmEventPacket::Receiver => BluetoothDtmRole::Receiver,
+        }
+    }
+
+    pub(crate) const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.memory.scheduler_item_address()
     }
 }
 

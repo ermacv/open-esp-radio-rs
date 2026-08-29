@@ -594,10 +594,6 @@ where
     /// The exact order is dynamic interrupt preparation, synchronous BTMAC
     /// scheduler-event publication and the final RUN command. The returned
     /// state retains the graph and grants no CPU-side completion access.
-    #[expect(
-        clippy::result_large_err,
-        reason = "pre-suffix-MMIO rejection returns the complete published DTM graph"
-    )]
     pub fn start_dtm_scheduler<Role>(
         &mut self,
         head: crate::BluetoothDtmSchedulerHeadPublished<Role>,
@@ -612,10 +608,12 @@ where
             Ok(interrupts) => interrupts,
             Err(error) => return Err(BluetoothDtmSchedulerStartFailure { error, head }),
         };
+        let address = head.scheduler_item_address();
         let (item, publication) = head.into_parts();
         let task = self.initialized.task_mut();
         let event = task.publish_scheduler_run_event(publication, interrupts);
         let run = task.publish_scheduler_hardware_run_command(event);
+        self.initialized.retain_running_dtm_first_item(address);
         Ok(crate::BluetoothDtmSchedulerRunning::new(item, run))
     }
 

@@ -196,6 +196,17 @@ where
         self.initialized.initialized.controller.task_mut()
     }
 
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn retain_running_dtm_first_item(
+        &mut self,
+        address: open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress,
+    ) {
+        self.initialized
+            .initialized
+            .controller
+            .retain_running_dtm_first_item(address);
+    }
+
     pub(crate) fn request_controller_time(
         &mut self,
     ) -> Result<crate::BluetoothControllerTimeRequest, crate::BluetoothControllerTimeRequestError>

@@ -5,9 +5,10 @@
 //! The separate `0x28`-byte DTM environment remains LLL state above this
 //! boundary. A target-only binding derives the real addresses of one static
 //! allocation, rejects storage outside physical internal SRAM and retains the
-//! allocation behind one movable CPU owner. It exposes no controller
-//! publication or hardware-owned state. Four-byte alignment is the minimum
-//! proven by compressed controller links; it is not a cache-coherency claim.
+//! allocation behind one movable owner. A matching affine PAC head-publication
+//! token consumes the last CPU rollback state into a hardware-owned graph.
+//! Four-byte alignment is the minimum proven by compressed controller links;
+//! it is not a cache-coherency claim.
 
 #![forbid(unsafe_code)]
 
@@ -15,6 +16,7 @@ use core::{convert::Infallible, marker::PhantomPinned, pin::Pin};
 
 use open_esp_radio_esp32s31_hal::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
+    BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHardwareListIndex,
 };
 use pin_project::pin_project;
 
@@ -1077,6 +1079,35 @@ impl BluetoothDtmMemoryGraphEmptyListLinkPrepared {
         self.binding.scheduler_item_address().controller_address()
     }
 
+    /// Consume CPU rollback ownership after the exact list head is published.
+    ///
+    /// This transition accepts only the affine PAC publication proof for DTM's
+    /// fixed list zero and verifies that its head names this pinned graph. The
+    /// resulting owner deliberately discards every rollback image: hardware
+    /// may already retain and mutate the graph, so cancellation and CPU-side
+    /// preparation must no longer be expressible.
+    #[doc(hidden)]
+    pub fn into_hardware_owned(
+        self,
+        publication: &BluetoothSchedulerHardwareListHeadPublished,
+    ) -> BluetoothDtmMemoryGraphHardwareOwned {
+        assert_eq!(
+            publication.index(),
+            BluetoothSchedulerHardwareListIndex::ZERO,
+            "a DTM graph can only consume its fixed hardware-list publication"
+        );
+        assert_eq!(
+            publication.head().address(),
+            Some(self.scheduler_item_address()),
+            "the published scheduler head must name the retained DTM graph"
+        );
+
+        BluetoothDtmMemoryGraphHardwareOwned {
+            _storage: self.storage,
+            binding: self.binding,
+        }
+    }
+
     /// Cancel before visibility or publication and recover bookkeeping state.
     pub fn cancel(mut self) -> BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared {
         self.storage.as_mut().project().scheduler_item.words[SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET] =
@@ -1092,6 +1123,25 @@ impl BluetoothDtmMemoryGraphEmptyListLinkPrepared {
             previous_status: self.previous_status,
             previous_completed_link: self.previous_completed_link,
         }
+    }
+}
+
+/// Pinned DTM graph visible to and exclusively retained for controller use.
+///
+/// The matching affine PAC publication has completed both visibility fences
+/// and installed this graph as hardware-list zero's head. This type exposes
+/// identity only: it grants neither CPU mutation nor completion visibility,
+/// and it has no cancellation or conversion back into a prepared owner.
+#[must_use = "the hardware-owned graph must advance through proven completion"]
+pub struct BluetoothDtmMemoryGraphHardwareOwned {
+    _storage: Pin<&'static mut BluetoothDtmMemoryGraphStorage>,
+    binding: BluetoothDtmMemoryGraphBinding,
+}
+
+impl BluetoothDtmMemoryGraphHardwareOwned {
+    /// Return the exact scheduler-item identity retained by hardware.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.binding.scheduler_item_address().controller_address()
     }
 }
 

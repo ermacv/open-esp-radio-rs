@@ -20,23 +20,30 @@ use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
 /// Typed event cells and workers make numeric broker source identifiers and an
 /// intrusive callback list unnecessary.
 ///
-/// The open scheduler item queue, remaining hardware initialization and stable
-/// ISR publication are still missing, so this state exposes no PHY, BTBB, IRQ,
-/// Controller or Link-Layer readiness. The next consuming transition may bind
-/// a pristine HCI bootstrap epoch, but still establishes no operational HCI or
-/// radio capability. Dropping this state is fail-stop because
+/// The bounded software timeline is retained in the runtime owner, while
+/// scheduler-item hardware publication, remaining hardware initialization and
+/// stable ISR publication are still missing. This state therefore exposes no
+/// PHY, BTBB, IRQ, Controller or Link-Layer readiness. The next consuming
+/// transition may bind a pristine HCI bootstrap epoch, but still establishes no
+/// operational HCI or radio capability. Dropping this state is fail-stop because
 /// no verified rollback exists after scheduler MMIO mutation.
 #[must_use = "the initialized scheduler retains every powered Bluetooth owner"]
-pub struct BluetoothSchedulerInitialized<P, const MODEM_TIMER_CAPACITY: usize> {
+pub struct BluetoothSchedulerInitialized<
+    P,
+    const MODEM_TIMER_CAPACITY: usize,
+    const SCHEDULER_CAPACITY: usize,
+> {
     task: BluetoothTaskResources,
     _interrupts: Option<BluetoothInterruptBankOwner>,
     _platform: BluetoothTeardownPendingPlatform<P>,
     time_scale: BluetoothControllerTimeScale,
     config: BluetoothSchedulerSoftwareConfig,
-    runtime: BluetoothControllerRuntimeResources<MODEM_TIMER_CAPACITY>,
+    runtime: BluetoothControllerRuntimeResources<MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
 }
 
-impl<P, const MODEM_TIMER_CAPACITY: usize> BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY> {
+impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
+    BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
+{
     pub(crate) fn task_mut(&mut self) -> &mut BluetoothTaskResources {
         &mut self.task
     }
@@ -70,6 +77,11 @@ impl<P, const MODEM_TIMER_CAPACITY: usize> BluetoothSchedulerInitialized<P, MODE
         self.runtime.modem_timer_capacity()
     }
 
+    /// Number of fixed scheduler reservations retained by this epoch.
+    pub const fn scheduler_capacity(&self) -> usize {
+        self.runtime.scheduler_capacity()
+    }
+
     /// Return the scheduler scale retained by this exact hardware epoch.
     pub const fn controller_time_scale(&self) -> BluetoothControllerTimeScale {
         self.time_scale
@@ -95,7 +107,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize> BluetoothSchedulerInitialized<P, MODE
         &mut self,
     ) -> (
         BluetoothControllerInterruptRuntime<'_>,
-        BluetoothControllerTaskRuntime<'_>,
+        BluetoothControllerTaskRuntime<'_, SCHEDULER_CAPACITY>,
     ) {
         self.runtime.split()
     }
@@ -137,28 +149,37 @@ impl<P> BluetoothControllerHalInitialized<P> {
     /// consumed into the same powered ownership epoch; it replaces the vendor
     /// event, broker-node and task containers instead of emulating their ABI.
     #[cfg(target_arch = "riscv32")]
-    pub fn initialize_scheduler<const MODEM_TIMER_CAPACITY: usize>(
+    pub fn initialize_scheduler<
+        const MODEM_TIMER_CAPACITY: usize,
+        const SCHEDULER_CAPACITY: usize,
+    >(
         self,
-        runtime: BluetoothControllerRuntimeResources<MODEM_TIMER_CAPACITY>,
-    ) -> BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY> {
+        runtime: BluetoothControllerRuntimeResources<MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
+    ) -> BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY> {
         self.initialize_scheduler_with(runtime, |task| {
             task.clear_scheduler_hardware_list_heads();
         })
     }
 
     #[cfg(test)]
-    pub(crate) fn initialize_scheduler_for_validation<const MODEM_TIMER_CAPACITY: usize>(
+    pub(crate) fn initialize_scheduler_for_validation<
+        const MODEM_TIMER_CAPACITY: usize,
+        const SCHEDULER_CAPACITY: usize,
+    >(
         self,
-        runtime: BluetoothControllerRuntimeResources<MODEM_TIMER_CAPACITY>,
-    ) -> BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY> {
+        runtime: BluetoothControllerRuntimeResources<MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
+    ) -> BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY> {
         self.initialize_scheduler_with(runtime, |_| {})
     }
 
-    fn initialize_scheduler_with<const MODEM_TIMER_CAPACITY: usize>(
+    fn initialize_scheduler_with<
+        const MODEM_TIMER_CAPACITY: usize,
+        const SCHEDULER_CAPACITY: usize,
+    >(
         self,
-        runtime: BluetoothControllerRuntimeResources<MODEM_TIMER_CAPACITY>,
+        runtime: BluetoothControllerRuntimeResources<MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
         initialize_hardware: impl FnOnce(&mut BluetoothTaskResources),
-    ) -> BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY> {
+    ) -> BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY> {
         assert!(
             runtime.is_pristine(),
             "only a pristine Controller runtime can initialize a scheduler epoch"
@@ -216,7 +237,7 @@ mod tests {
         let time_scale = initialized.controller_time_scale();
         let scheduler_operations = Rc::clone(&operations);
         let mut scheduler = initialized.initialize_scheduler_with(
-            BluetoothControllerRuntimeResources::<4>::new(),
+            BluetoothControllerRuntimeResources::<4, 3>::new(),
             |_| {
                 scheduler_operations.borrow_mut().push("scheduler-hardware");
             },
@@ -232,6 +253,7 @@ mod tests {
         );
         assert!(!scheduler.controller_time_needs_recheck());
         assert_eq!(scheduler.modem_timer_capacity(), 4);
+        assert_eq!(scheduler.scheduler_capacity(), 3);
         assert!(scheduler.runtime_is_pristine());
         let (interrupt, task) = scheduler.split_runtime();
         assert!(core::ptr::eq(

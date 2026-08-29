@@ -2,8 +2,8 @@
 //!
 //! These resources replace independently allocated vendor event, queue, task
 //! and generic broker-node objects with one affine Rust owner. They contain no
-//! HCI Host state and do not make the radio operational; the open scheduler
-//! item queue, stable ISR placement and powered hardware transitions remain
+//! HCI Host state and do not make the radio operational; stable ISR placement,
+//! scheduler-item hardware publication and powered hardware transitions remain
 //! separate stages.
 
 #![forbid(unsafe_code)]
@@ -14,7 +14,7 @@ use crate::{
     BluetoothModemLpTimerEventCell, BluetoothModemLpTimerQueue,
     BluetoothModemLpTimerWorkerWakeCell, BluetoothSchedulerFinishedListWorker,
     BluetoothSchedulerLockModifyEventCell, BluetoothSchedulerLockModifyWorker,
-    BluetoothSchedulerWakeCell,
+    BluetoothSchedulerTimeline, BluetoothSchedulerWakeCell,
 };
 
 /// Allocation-free event and worker storage for exactly one Controller epoch.
@@ -23,11 +23,15 @@ use crate::{
 /// complete value is allowed before stable ISR publication; splitting or
 /// pinning it for a live route will be a later consuming transition.
 #[must_use = "Controller runtime resources must remain owned by their hardware epoch"]
-pub struct BluetoothControllerRuntimeResources<const MODEM_TIMER_CAPACITY: usize> {
+pub struct BluetoothControllerRuntimeResources<
+    const MODEM_TIMER_CAPACITY: usize,
+    const SCHEDULER_CAPACITY: usize = 4,
+> {
     scheduler_wake: BluetoothSchedulerWakeCell,
     scheduler_lock_modify_events: BluetoothSchedulerLockModifyEventCell,
     scheduler_lock_modify_worker: BluetoothSchedulerLockModifyWorker,
     scheduler_finished_lists: BluetoothSchedulerFinishedListWorker,
+    scheduler_timeline: BluetoothSchedulerTimeline<SCHEDULER_CAPACITY>,
     modem_lp_timer_queue: BluetoothModemLpTimerQueue<MODEM_TIMER_CAPACITY>,
     modem_lp_timer_epoch: BluetoothModemLpTimerEpoch,
     modem_lp_timer_worker_wake: BluetoothModemLpTimerWorkerWakeCell,
@@ -38,8 +42,8 @@ pub struct BluetoothControllerRuntimeResources<const MODEM_TIMER_CAPACITY: usize
 ///
 /// This endpoint can only be produced together with the matching
 /// [`BluetoothControllerTaskRuntime`]. It deliberately exposes no timer queue
-/// or scheduler item storage: their interrupt/task synchronization contract
-/// has not been proven yet.
+/// or scheduler item storage: scheduler reservations are exclusively owned by
+/// the matching task endpoint.
 #[must_use = "the interrupt endpoint must remain paired with its task endpoint"]
 pub struct BluetoothControllerInterruptRuntime<'runtime> {
     scheduler_wake: &'runtime BluetoothSchedulerWakeCell,
@@ -76,16 +80,17 @@ impl BluetoothControllerInterruptRuntime<'_> {
 /// event cells are shared only with the matching interrupt endpoint returned
 /// by the same [`BluetoothControllerRuntimeResources::split`] call.
 #[must_use = "the task endpoint must remain paired with its interrupt endpoint"]
-pub struct BluetoothControllerTaskRuntime<'runtime> {
+pub struct BluetoothControllerTaskRuntime<'runtime, const SCHEDULER_CAPACITY: usize = 4> {
     scheduler_wake: &'runtime BluetoothSchedulerWakeCell,
     scheduler_lock_modify_events: &'runtime BluetoothSchedulerLockModifyEventCell,
     scheduler_lock_modify_worker: &'runtime mut BluetoothSchedulerLockModifyWorker,
     scheduler_finished_lists: &'runtime mut BluetoothSchedulerFinishedListWorker,
+    scheduler_timeline: &'runtime mut BluetoothSchedulerTimeline<SCHEDULER_CAPACITY>,
     modem_lp_timer_worker_wake: &'runtime BluetoothModemLpTimerWorkerWakeCell,
     modem_lp_timer_events: &'runtime BluetoothModemLpTimerEventCell,
 }
 
-impl BluetoothControllerTaskRuntime<'_> {
+impl<const SCHEDULER_CAPACITY: usize> BluetoothControllerTaskRuntime<'_, SCHEDULER_CAPACITY> {
     /// Durable general scheduler handoff for this epoch.
     pub const fn scheduler_wake(&self) -> &BluetoothSchedulerWakeCell {
         self.scheduler_wake
@@ -106,6 +111,11 @@ impl BluetoothControllerTaskRuntime<'_> {
         self.scheduler_finished_lists
     }
 
+    /// The sole source-owned scheduler timeline for this epoch.
+    pub fn scheduler_timeline(&mut self) -> &mut BluetoothSchedulerTimeline<SCHEDULER_CAPACITY> {
+        self.scheduler_timeline
+    }
+
     /// Durable source-127 task-readiness handoff for this epoch.
     pub const fn modem_lp_timer_worker_wake(&self) -> &BluetoothModemLpTimerWorkerWakeCell {
         self.modem_lp_timer_worker_wake
@@ -117,18 +127,25 @@ impl BluetoothControllerTaskRuntime<'_> {
     }
 }
 
-impl<const MODEM_TIMER_CAPACITY: usize> BluetoothControllerRuntimeResources<MODEM_TIMER_CAPACITY> {
+impl<const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerRuntimeResources<MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
+{
     /// Construct one pristine runtime epoch without allocation or MMIO.
     pub const fn new() -> Self {
         assert!(
             MODEM_TIMER_CAPACITY > 0,
             "a Controller runtime needs at least one modem timer slot"
         );
+        assert!(
+            SCHEDULER_CAPACITY > 0,
+            "a Controller runtime needs at least one scheduler slot"
+        );
         Self {
             scheduler_wake: BluetoothSchedulerWakeCell::new(),
             scheduler_lock_modify_events: BluetoothSchedulerLockModifyEventCell::new(),
             scheduler_lock_modify_worker: BluetoothSchedulerLockModifyWorker::new(),
             scheduler_finished_lists: BluetoothSchedulerFinishedListWorker::new(),
+            scheduler_timeline: BluetoothSchedulerTimeline::new(),
             modem_lp_timer_queue: BluetoothModemLpTimerQueue::new(),
             modem_lp_timer_epoch: BluetoothModemLpTimerEpoch::new(),
             modem_lp_timer_worker_wake: BluetoothModemLpTimerWorkerWakeCell::new(),
@@ -141,6 +158,11 @@ impl<const MODEM_TIMER_CAPACITY: usize> BluetoothControllerRuntimeResources<MODE
         MODEM_TIMER_CAPACITY
     }
 
+    /// Number of fixed software scheduler slots owned by this epoch.
+    pub const fn scheduler_capacity(&self) -> usize {
+        SCHEDULER_CAPACITY
+    }
+
     /// Whether no event, request, completion drain or timer has entered this
     /// epoch yet.
     pub fn is_pristine(&self) -> bool {
@@ -148,6 +170,7 @@ impl<const MODEM_TIMER_CAPACITY: usize> BluetoothControllerRuntimeResources<MODE
             && !self.scheduler_lock_modify_events.is_pending()
             && self.scheduler_lock_modify_worker.is_idle()
             && !self.scheduler_finished_lists.is_active()
+            && self.scheduler_timeline.is_empty()
             && self.modem_lp_timer_queue.is_empty()
             && self.modem_lp_timer_epoch.high_byte() == 0
             && !self.modem_lp_timer_worker_wake.is_pending()
@@ -164,7 +187,7 @@ impl<const MODEM_TIMER_CAPACITY: usize> BluetoothControllerRuntimeResources<MODE
         &mut self,
     ) -> (
         BluetoothControllerInterruptRuntime<'_>,
-        BluetoothControllerTaskRuntime<'_>,
+        BluetoothControllerTaskRuntime<'_, SCHEDULER_CAPACITY>,
     ) {
         let scheduler_wake = &self.scheduler_wake;
         let scheduler_lock_modify_events = &self.scheduler_lock_modify_events;
@@ -182,6 +205,7 @@ impl<const MODEM_TIMER_CAPACITY: usize> BluetoothControllerRuntimeResources<MODE
                 scheduler_lock_modify_events,
                 scheduler_lock_modify_worker: &mut self.scheduler_lock_modify_worker,
                 scheduler_finished_lists: &mut self.scheduler_finished_lists,
+                scheduler_timeline: &mut self.scheduler_timeline,
                 modem_lp_timer_worker_wake,
                 modem_lp_timer_events,
             },
@@ -219,8 +243,8 @@ impl<const MODEM_TIMER_CAPACITY: usize> BluetoothControllerRuntimeResources<MODE
     }
 }
 
-impl<const MODEM_TIMER_CAPACITY: usize> Default
-    for BluetoothControllerRuntimeResources<MODEM_TIMER_CAPACITY>
+impl<const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize> Default
+    for BluetoothControllerRuntimeResources<MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
 {
     fn default() -> Self {
         Self::new()
@@ -229,25 +253,39 @@ impl<const MODEM_TIMER_CAPACITY: usize> Default
 
 #[cfg(test)]
 mod tests {
+    use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
+
     use super::BluetoothControllerRuntimeResources;
+    use crate::{
+        BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample, BluetoothDtmChannel,
+        BluetoothDtmPhy, BluetoothDtmRole, BluetoothDtmSchedulerItemEvent,
+        BluetoothDtmSchedulerTimingPolicy, BluetoothSchedulerSoftwareConfig,
+    };
 
     #[test]
     fn one_aggregate_starts_as_one_pristine_bounded_epoch() {
-        let resources = BluetoothControllerRuntimeResources::<4>::new();
+        let resources = BluetoothControllerRuntimeResources::<4, 3>::new();
 
         assert_eq!(resources.modem_timer_capacity(), 4);
+        assert_eq!(resources.scheduler_capacity(), 3);
         assert!(resources.is_pristine());
     }
 
     #[test]
     #[should_panic(expected = "at least one modem timer slot")]
-    fn zero_capacity_profile_is_rejected() {
-        let _resources = BluetoothControllerRuntimeResources::<0>::new();
+    fn zero_modem_timer_capacity_profile_is_rejected() {
+        let _resources = BluetoothControllerRuntimeResources::<0, 1>::new();
+    }
+
+    #[test]
+    #[should_panic(expected = "at least one scheduler slot")]
+    fn zero_scheduler_capacity_profile_is_rejected() {
+        let _resources = BluetoothControllerRuntimeResources::<1, 0>::new();
     }
 
     #[test]
     fn split_borrows_one_matching_interrupt_and_task_epoch() {
-        let mut resources = BluetoothControllerRuntimeResources::<4>::new();
+        let mut resources = BluetoothControllerRuntimeResources::<4, 3>::new();
         let (interrupt, mut task) = resources.split();
 
         assert!(core::ptr::eq(
@@ -268,5 +306,48 @@ mod tests {
         ));
         assert!(task.scheduler_lock_modify_worker().is_idle());
         assert!(!task.scheduler_finished_lists().is_active());
+        assert!(task.scheduler_timeline().is_empty());
+    }
+
+    #[test]
+    fn task_reservation_remains_in_the_runtime_epoch_until_explicit_release() {
+        let mut resources = BluetoothControllerRuntimeResources::<4, 2>::new();
+        let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+        let epoch = BluetoothControllerSchedulerEpoch::new(
+            BluetoothControllerTimeSample::for_validation(0),
+            0,
+            scale,
+        );
+        let event = BluetoothDtmSchedulerItemEvent::new(
+            BluetoothDtmChannel::new(0).expect("channel zero is valid"),
+            BluetoothDtmPhy::Le1M,
+            BluetoothDtmRole::Receiver,
+            100,
+            120,
+        )
+        .expect("receiver event is valid");
+        let timing_policy = BluetoothDtmSchedulerTimingPolicy::from_scheduler_config(
+            BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
+            scale,
+        );
+
+        let reservation = {
+            let (_interrupt, mut task) = resources.split();
+            task.scheduler_timeline()
+                .reserve_dtm_event(
+                    event,
+                    epoch,
+                    timing_policy,
+                    BluetoothControllerTimeSample::for_validation(0),
+                )
+                .expect("one runtime-owned scheduler slot is free")
+        };
+        assert!(!resources.is_pristine());
+
+        {
+            let (_interrupt, mut task) = resources.split();
+            assert!(task.scheduler_timeline().release(reservation));
+        }
+        assert!(resources.is_pristine());
     }
 }

@@ -30,6 +30,7 @@ pub struct BluetoothControllerHciInitializationFailure<
     P,
     M,
     const MODEM_TIMER_CAPACITY: usize,
+    const SCHEDULER_CAPACITY: usize,
     const HOST_TO_CONTROLLER_DEPTH: usize,
     const CONTROLLER_TO_HOST_DEPTH: usize,
     const PACKET_CAPACITY: usize,
@@ -37,7 +38,7 @@ pub struct BluetoothControllerHciInitializationFailure<
     M: RawMutex,
 {
     error: BluetoothControllerHciInitializationError,
-    scheduler: BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY>,
+    scheduler: BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
     hci: LeControllerHciResources<
         M,
         HOST_TO_CONTROLLER_DEPTH,
@@ -50,6 +51,7 @@ impl<
     P,
     M,
     const MODEM_TIMER_CAPACITY: usize,
+    const SCHEDULER_CAPACITY: usize,
     const HOST_TO_CONTROLLER_DEPTH: usize,
     const CONTROLLER_TO_HOST_DEPTH: usize,
     const PACKET_CAPACITY: usize,
@@ -58,6 +60,7 @@ impl<
         P,
         M,
         MODEM_TIMER_CAPACITY,
+        SCHEDULER_CAPACITY,
         HOST_TO_CONTROLLER_DEPTH,
         CONTROLLER_TO_HOST_DEPTH,
         PACKET_CAPACITY,
@@ -74,7 +77,7 @@ where
     pub fn into_parts(
         self,
     ) -> (
-        BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY>,
+        BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
         LeControllerHciResources<
             M,
             HOST_TO_CONTROLLER_DEPTH,
@@ -98,13 +101,14 @@ pub struct BluetoothControllerHciInitialized<
     P,
     M,
     const MODEM_TIMER_CAPACITY: usize,
+    const SCHEDULER_CAPACITY: usize,
     const HOST_TO_CONTROLLER_DEPTH: usize,
     const CONTROLLER_TO_HOST_DEPTH: usize,
     const PACKET_CAPACITY: usize,
 > where
     M: RawMutex,
 {
-    scheduler: BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY>,
+    scheduler: BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
     hci: LeControllerHciResources<
         M,
         HOST_TO_CONTROLLER_DEPTH,
@@ -124,6 +128,7 @@ pub struct BluetoothControllerLowPowerHardwareInitialized<
     P,
     M,
     const MODEM_TIMER_CAPACITY: usize,
+    const SCHEDULER_CAPACITY: usize,
     const HOST_TO_CONTROLLER_DEPTH: usize,
     const CONTROLLER_TO_HOST_DEPTH: usize,
     const PACKET_CAPACITY: usize,
@@ -134,6 +139,7 @@ pub struct BluetoothControllerLowPowerHardwareInitialized<
         P,
         M,
         MODEM_TIMER_CAPACITY,
+        SCHEDULER_CAPACITY,
         HOST_TO_CONTROLLER_DEPTH,
         CONTROLLER_TO_HOST_DEPTH,
         PACKET_CAPACITY,
@@ -147,6 +153,7 @@ pub struct BluetoothControllerLowPowerHardwareInitializationFailure<
     P,
     M,
     const MODEM_TIMER_CAPACITY: usize,
+    const SCHEDULER_CAPACITY: usize,
     const HOST_TO_CONTROLLER_DEPTH: usize,
     const CONTROLLER_TO_HOST_DEPTH: usize,
     const PACKET_CAPACITY: usize,
@@ -157,6 +164,7 @@ pub struct BluetoothControllerLowPowerHardwareInitializationFailure<
         P,
         M,
         MODEM_TIMER_CAPACITY,
+        SCHEDULER_CAPACITY,
         HOST_TO_CONTROLLER_DEPTH,
         CONTROLLER_TO_HOST_DEPTH,
         PACKET_CAPACITY,
@@ -168,6 +176,7 @@ impl<
     P,
     M,
     const MODEM_TIMER_CAPACITY: usize,
+    const SCHEDULER_CAPACITY: usize,
     const HOST_TO_CONTROLLER_DEPTH: usize,
     const CONTROLLER_TO_HOST_DEPTH: usize,
     const PACKET_CAPACITY: usize,
@@ -176,6 +185,7 @@ impl<
         P,
         M,
         MODEM_TIMER_CAPACITY,
+        SCHEDULER_CAPACITY,
         HOST_TO_CONTROLLER_DEPTH,
         CONTROLLER_TO_HOST_DEPTH,
         PACKET_CAPACITY,
@@ -195,6 +205,7 @@ where
         P,
         M,
         MODEM_TIMER_CAPACITY,
+        SCHEDULER_CAPACITY,
         HOST_TO_CONTROLLER_DEPTH,
         CONTROLLER_TO_HOST_DEPTH,
         PACKET_CAPACITY,
@@ -211,6 +222,7 @@ where
 pub struct BluetoothControllerRuntimeEndpoints<
     'runtime,
     M,
+    const SCHEDULER_CAPACITY: usize,
     const HOST_TO_CONTROLLER_DEPTH: usize,
     const CONTROLLER_TO_HOST_DEPTH: usize,
     const PACKET_CAPACITY: usize,
@@ -220,7 +232,7 @@ pub struct BluetoothControllerRuntimeEndpoints<
     /// Interrupt-side scheduler publications.
     pub interrupt: BluetoothControllerInterruptRuntime<'runtime>,
     /// Task-side scheduler workers.
-    pub task: BluetoothControllerTaskRuntime<'runtime>,
+    pub task: BluetoothControllerTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
     /// Host-facing typed HCI transport.
     pub hci_host: InProcessHciHostTransport<
         'runtime,
@@ -243,6 +255,7 @@ impl<
     P,
     M,
     const MODEM_TIMER_CAPACITY: usize,
+    const SCHEDULER_CAPACITY: usize,
     const HOST_TO_CONTROLLER_DEPTH: usize,
     const CONTROLLER_TO_HOST_DEPTH: usize,
     const PACKET_CAPACITY: usize,
@@ -251,6 +264,7 @@ impl<
         P,
         M,
         MODEM_TIMER_CAPACITY,
+        SCHEDULER_CAPACITY,
         HOST_TO_CONTROLLER_DEPTH,
         CONTROLLER_TO_HOST_DEPTH,
         PACKET_CAPACITY,
@@ -261,6 +275,11 @@ where
     /// Number of scheduler modem-timer slots retained by this exact epoch.
     pub const fn modem_timer_capacity(&self) -> usize {
         self.scheduler.modem_timer_capacity()
+    }
+
+    /// Number of source-owned scheduler reservations retained by this epoch.
+    pub const fn scheduler_capacity(&self) -> usize {
+        self.scheduler.scheduler_capacity()
     }
 
     /// Scheduler time scale retained by this exact powered epoch.
@@ -289,6 +308,7 @@ where
     ) -> BluetoothControllerRuntimeEndpoints<
         '_,
         M,
+        SCHEDULER_CAPACITY,
         HOST_TO_CONTROLLER_DEPTH,
         CONTROLLER_TO_HOST_DEPTH,
         PACKET_CAPACITY,
@@ -349,6 +369,7 @@ where
             P,
             M,
             MODEM_TIMER_CAPACITY,
+            SCHEDULER_CAPACITY,
             HOST_TO_CONTROLLER_DEPTH,
             CONTROLLER_TO_HOST_DEPTH,
             PACKET_CAPACITY,
@@ -357,6 +378,7 @@ where
             P,
             M,
             MODEM_TIMER_CAPACITY,
+            SCHEDULER_CAPACITY,
             HOST_TO_CONTROLLER_DEPTH,
             CONTROLLER_TO_HOST_DEPTH,
             PACKET_CAPACITY,
@@ -384,6 +406,7 @@ impl<
     P,
     M,
     const MODEM_TIMER_CAPACITY: usize,
+    const SCHEDULER_CAPACITY: usize,
     const HOST_TO_CONTROLLER_DEPTH: usize,
     const CONTROLLER_TO_HOST_DEPTH: usize,
     const PACKET_CAPACITY: usize,
@@ -392,6 +415,7 @@ impl<
         P,
         M,
         MODEM_TIMER_CAPACITY,
+        SCHEDULER_CAPACITY,
         HOST_TO_CONTROLLER_DEPTH,
         CONTROLLER_TO_HOST_DEPTH,
         PACKET_CAPACITY,
@@ -402,6 +426,11 @@ where
     /// Number of scheduler modem-timer slots retained by this exact epoch.
     pub const fn modem_timer_capacity(&self) -> usize {
         self.controller.modem_timer_capacity()
+    }
+
+    /// Number of source-owned scheduler reservations retained by this epoch.
+    pub const fn scheduler_capacity(&self) -> usize {
+        self.controller.scheduler_capacity()
     }
 
     /// Scheduler time scale retained by this exact powered epoch.
@@ -431,6 +460,7 @@ where
     ) -> BluetoothControllerRuntimeEndpoints<
         '_,
         M,
+        SCHEDULER_CAPACITY,
         HOST_TO_CONTROLLER_DEPTH,
         CONTROLLER_TO_HOST_DEPTH,
         PACKET_CAPACITY,
@@ -514,7 +544,9 @@ where
     }
 }
 
-impl<P, const MODEM_TIMER_CAPACITY: usize> BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY> {
+impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
+    BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
+{
     /// Bind a pristine bounded HCI bootstrap epoch after scheduler init.
     #[expect(
         clippy::result_large_err,
@@ -538,6 +570,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize> BluetoothSchedulerInitialized<P, MODE
             P,
             M,
             MODEM_TIMER_CAPACITY,
+            SCHEDULER_CAPACITY,
             HOST_TO_CONTROLLER_DEPTH,
             CONTROLLER_TO_HOST_DEPTH,
             PACKET_CAPACITY,
@@ -546,6 +579,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize> BluetoothSchedulerInitialized<P, MODE
             P,
             M,
             MODEM_TIMER_CAPACITY,
+            SCHEDULER_CAPACITY,
             HOST_TO_CONTROLLER_DEPTH,
             CONTROLLER_TO_HOST_DEPTH,
             PACKET_CAPACITY,
@@ -586,7 +620,7 @@ mod tests {
 
     type TestHciResources = LeControllerHciResources<NoopRawMutex, 1, 1, 31>;
 
-    fn scheduler() -> BluetoothSchedulerInitialized<(), 4> {
+    fn scheduler() -> BluetoothSchedulerInitialized<(), 4, 3> {
         let stopped = BluetoothStopped::from_hardware((), RadioHardware::for_validation());
         let (registers, platform) = stopped.into_parts();
         BluetoothClockedResources::for_validation(registers, platform)
@@ -611,6 +645,7 @@ mod tests {
             .unwrap_or_else(|_| panic!("pristine HCI resources must bind"));
         assert!(controller.runtime_is_pristine());
         assert_eq!(controller.modem_timer_capacity(), 4);
+        assert_eq!(controller.scheduler_capacity(), 3);
 
         let BluetoothControllerRuntimeEndpoints {
             interrupt,

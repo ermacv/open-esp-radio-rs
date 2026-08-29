@@ -11,8 +11,11 @@ use crate::{
         BluetoothInterruptBankOwner, BluetoothTaskResources, BluetoothTeardownPendingPlatform,
     },
 };
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareListHead;
 use open_esp_radio_esp32s31_hal::{
-    BluetoothControllerSramAddress, BluetoothSchedulerHardwareListIndex,
+    BluetoothControllerSramAddress, BluetoothSchedulerHardwareListHeadError,
+    BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHardwareListIndex,
     BluetoothSchedulerHardwareListsCleared,
 };
 use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
@@ -31,6 +34,9 @@ struct BluetoothSchedulerExclusiveListEpoch {
 enum BluetoothSchedulerExclusiveListState {
     Empty,
     FirstItemPrepared {
+        address: BluetoothControllerSramAddress,
+    },
+    FirstItemHeadPublished {
         address: BluetoothControllerSramAddress,
     },
 }
@@ -60,6 +66,23 @@ impl BluetoothSchedulerExclusiveListEpoch {
         }
         self.state = BluetoothSchedulerExclusiveListState::Empty;
         true
+    }
+
+    fn can_publish_first_item(&self, address: BluetoothControllerSramAddress) -> bool {
+        matches!(
+            self.state,
+            BluetoothSchedulerExclusiveListState::FirstItemPrepared {
+                address: prepared
+            } if prepared == address
+        )
+    }
+
+    fn retain_published_first_item(&mut self, address: BluetoothControllerSramAddress) {
+        assert!(
+            self.can_publish_first_item(address),
+            "only the merge-selected first item can become the hardware head"
+        );
+        self.state = BluetoothSchedulerExclusiveListState::FirstItemHeadPublished { address };
     }
 }
 
@@ -113,6 +136,71 @@ impl<Role> BluetoothDtmEmptySchedulerMergePrepared<Role> {
     /// Hardware list assigned to DTM by its zeroed private context.
     pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
         self.item.hardware_list_index()
+    }
+}
+
+/// Why a prepared first-item merge could not publish its scheduler head.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothDtmSchedulerHeadPublicationError {
+    /// The merge belongs to another scheduler epoch or list identity.
+    SchedulerIdentityMismatch,
+    /// The selected address aliases the reserved empty hardware-head image.
+    EncodesEmptyHead,
+}
+
+impl From<BluetoothSchedulerHardwareListHeadError> for BluetoothDtmSchedulerHeadPublicationError {
+    fn from(error: BluetoothSchedulerHardwareListHeadError) -> Self {
+        match error {
+            BluetoothSchedulerHardwareListHeadError::EncodesEmptyHead => Self::EncodesEmptyHead,
+        }
+    }
+}
+
+/// Lossless rejection before scheduler-head MMIO publication.
+#[must_use = "the unchanged CPU-owned merge can still be retried or cancelled"]
+pub struct BluetoothDtmSchedulerHeadPublicationFailure<Role> {
+    error: BluetoothDtmSchedulerHeadPublicationError,
+    merged: BluetoothDtmEmptySchedulerMergePrepared<Role>,
+}
+
+impl<Role> BluetoothDtmSchedulerHeadPublicationFailure<Role> {
+    /// Exact reason no scheduler head was published.
+    pub const fn error(&self) -> BluetoothDtmSchedulerHeadPublicationError {
+        self.error
+    }
+
+    /// Recover the unchanged CPU-owned merge.
+    pub fn into_merged(self) -> BluetoothDtmEmptySchedulerMergePrepared<Role> {
+        self.merged
+    }
+}
+
+/// DTM graph whose scheduler item is visible as one hardware-list head.
+///
+/// The descriptor-before-head and trailing device fences have completed. This
+/// state retains the pinned graph and affine list identity, so cancellation and
+/// CPU mutation are no longer available. Dynamic interrupt preparation,
+/// scheduler event publication, RUN and completion ownership remain absent.
+#[must_use = "the published scheduler head must advance to RUN or fail-stop ownership"]
+pub struct BluetoothDtmSchedulerHeadPublished<Role> {
+    item: BluetoothDtmEmptyListLinkPrepared<Role>,
+    publication: BluetoothSchedulerHardwareListHeadPublished,
+}
+
+impl<Role> BluetoothDtmSchedulerHeadPublished<Role> {
+    /// Role retained by the now hardware-visible graph.
+    pub const fn role(&self) -> BluetoothDtmRole {
+        self.item.role()
+    }
+
+    /// Exact item retained by both graph and published head evidence.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.item.scheduler_item_address()
+    }
+
+    /// Hardware list whose head now addresses this item.
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.publication.index()
     }
 }
 
@@ -250,6 +338,54 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
             return Err(merged);
         }
         Ok(merged.item.cancel())
+    }
+
+    /// Publish the merge-selected first item after the complete hardware
+    /// initialization chain has made interrupt routes stable but inactive.
+    ///
+    /// This remains crate-private so an early scheduler state cannot publish a
+    /// graph before PHY, BTBB, BLE-PHY and stable interrupt ownership exist.
+    #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "pre-MMIO rejection returns the complete no-alloc affine DTM graph"
+    )]
+    #[allow(
+        unsafe_code,
+        reason = "the terminal Controller state proves inactive routes while this scheduler retains the graph and exact list identity"
+    )]
+    pub(crate) fn publish_dtm_first_scheduler_head<Role>(
+        &mut self,
+        merged: BluetoothDtmEmptySchedulerMergePrepared<Role>,
+    ) -> Result<
+        BluetoothDtmSchedulerHeadPublished<Role>,
+        BluetoothDtmSchedulerHeadPublicationFailure<Role>,
+    > {
+        let address = merged.scheduler_item_address();
+        if !self._scheduler_list.can_publish_first_item(address) {
+            return Err(BluetoothDtmSchedulerHeadPublicationFailure {
+                error: BluetoothDtmSchedulerHeadPublicationError::SchedulerIdentityMismatch,
+                merged,
+            });
+        }
+        let head = match BluetoothSchedulerHardwareListHead::from_address(address) {
+            Ok(head) => head,
+            Err(error) => {
+                return Err(BluetoothDtmSchedulerHeadPublicationFailure {
+                    error: error.into(),
+                    merged,
+                });
+            }
+        };
+        let publication = unsafe {
+            self.task
+                .publish_scheduler_hardware_list_head(merged.hardware_list_index(), head)
+        };
+        self._scheduler_list.retain_published_first_item(address);
+        Ok(BluetoothDtmSchedulerHeadPublished {
+            item: merged.item,
+            publication,
+        })
     }
 
     /// Borrow the matching interrupt and task runtime endpoints from this
@@ -408,6 +544,29 @@ mod tests {
         assert!(!list.cancel_first_item(other));
         assert!(list.cancel_first_item(first));
         assert_eq!(list.prepare_first_item(other), Ok(()));
+    }
+
+    #[test]
+    fn published_first_item_cannot_be_cancelled_or_replaced() {
+        let mut list = BluetoothSchedulerExclusiveListEpoch::new(
+            BluetoothSchedulerHardwareListsCleared::for_validation(),
+        );
+        let first = open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress::new(0x2f00_0100)
+            .expect("first item lies in controller SRAM");
+        let other = open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress::new(0x2f00_0200)
+            .expect("second item lies in controller SRAM");
+
+        assert_eq!(list.prepare_first_item(first), Ok(()));
+        assert!(list.can_publish_first_item(first));
+        assert!(!list.can_publish_first_item(other));
+        list.retain_published_first_item(first);
+
+        assert!(!list.can_publish_first_item(first));
+        assert!(!list.cancel_first_item(first));
+        assert_eq!(
+            list.prepare_first_item(other),
+            Err(BluetoothDtmEmptySchedulerMergeError::ListNotEmpty)
+        );
     }
 
     #[test]

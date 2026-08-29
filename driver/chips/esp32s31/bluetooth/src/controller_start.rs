@@ -526,6 +526,26 @@ where
         self.initialized.recheck_controller_time()
     }
 
+    /// Publish the exact first DTM scheduler head while every CPU route is
+    /// still inactive and both register owners reside in stable storage.
+    ///
+    /// Success advances descriptor ownership irreversibly: the returned graph
+    /// can no longer be cancelled or mutated by CPU code. It does not yet
+    /// prepare dynamic interrupts, publish the scheduler event or issue RUN.
+    #[expect(
+        clippy::result_large_err,
+        reason = "pre-MMIO rejection returns the complete affine DTM graph"
+    )]
+    pub fn publish_dtm_first_scheduler_head<Role>(
+        &mut self,
+        merged: crate::BluetoothDtmEmptySchedulerMergePrepared<Role>,
+    ) -> Result<
+        crate::BluetoothDtmSchedulerHeadPublished<Role>,
+        crate::BluetoothDtmSchedulerHeadPublicationFailure<Role>,
+    > {
+        self.initialized.publish_dtm_first_scheduler_head(merged)
+    }
+
     /// Service and durably publish one primary source-124 epoch.
     ///
     /// Both Controller cells are selected from this exact powered runtime.

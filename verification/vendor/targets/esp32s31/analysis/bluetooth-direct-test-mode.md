@@ -667,8 +667,8 @@ this is not yet a deadline-ready production time source.
 | --- | --- | --- |
 | SVD / restricted PAC | Typed controller-window fields, complete publication/ack order, controller-time reads and the SRAM compression domain | Lock/modify, insertion execution-lock/modify, always-awake time-latch and software-list-removal fields, exact publications, wait predicates and finite live MMIO are present. Command-zero accepts only a typed item/list request; command-one accepts a typed list and constructs its one-hot field inside the PAC. A fresh interrupt-owned BUSY observation drives each finite PAC task step: idle command zero reads no command field, a clear ready field never reads its result, and busy command one never reads rejection before ready. Terminal values reduce to pending/retained/reconcile/rejected dispositions without exposing register images. The later interrupt-time scheduler snapshot also returns the typed current hardware-list index. The removal gate preserves the current short-circuit read order without a polling loop. Scheduler-head publication now orders every prior CPU descriptor write before its generated MMIO field update and retains the trailing device fence. Descriptor ownership and remaining scheduler commands are absent. |
 | HAL | Powered controller epoch, common RF wake, cache/device fences, timer conversion, same-core IRQ routing and bounded stop/quiesce | The HAL forwards the finite insertion execution publications and observations without exposing raw PAC access. The powered Controller retains the unique live latch owner and exposes finite request/recheck operations with generation-safe cancellation drain. A proven wake/recheck source, physical counter contract, affine insertion worker and powered rollback remain absent. |
-| Scheduler core | Affine event item, ordered deadline queue, insert/abort/complete states, hardware-head replacement and consistency check | The conditional lock/modify MMIO operation has affine event-driven phases and a typed item/list request, but admission remains closed until the common scheduler owns the selected item for the complete transaction. DTM's zeroed private scheduler context proves target list zero. The first exclusive empty-list transition now also proves that the submitted and selected item are identical and remains losslessly cancellable before publication. The current insertion-begin outcomes are exposed as semantic `Unlocked`, `ExecutionLockRetained` and `CurrentHeadReconciled` states, and a staged pure insertion-end plan preserves command-clear/head ordering plus the current BUSY, sleep-policy and typed item-status short circuits without raw result or register images. Eleven DTM scheduler-item words and their typed channel/role/PHY/sequence-lead inputs have exact pre-insert transforms. A bounded source-owned timeline resolves strict wrapping overlaps, retains affine generations and applies fixed-capacity backpressure without exposing the vendor list ABI. The powered runtime retains that timeline for the whole epoch, and its powered task endpoint joins the sole mutable software workers to the matching task-side HAL owner. The overlap-resolved reservation requires the second fresh deadline sample before the DTM event typestate can form sequence words and survives graph/bookkeeping preparation and cancellation. The current hardware-list index and bounded finished-list drain share the exact list domain, but neither selects an affine item. The descriptor-before-head PAC fence is now present; Controller execution of insertion-end, broker notification, raw finished-status source and abort/completion composition remain absent. |
-| Packet memory | Static aligned TX/RX/link-state slots with `CPU -> prepared -> hardware -> completed -> CPU` ownership | A separate no-heap controller-memory crate reserves every reviewed per-event DTM link-graph allocation with four-byte alignment: link state, scheduler item/context, three role-specific headers and complete TX/RX packet slots. The separate `0x28`-byte DTM environment remains LLL state. Target binding gives a movable CPU owner one non-movable static allocation, validates the complete physical SRAM extent before mutation and installs the bound headers, five private-chain anchors and scheduler-item link. TX preparation consumes that owner and yields packet readiness only after a total declared-byte copy; mutable TX-slot access is unavailable after binding. TX/RX re-arm sentinels, list routing and positional result parsing are also exact CPU-owned components. Production placement ownership, undocumented packet-engine field interpretation and affine hardware completion/reclaim states are absent. The lower PAC now supplies the release-side descriptor-before-head fence, but no memory state may invoke it directly. |
+| Scheduler core | Affine event item, ordered deadline queue, insert/abort/complete states, hardware-head replacement and consistency check | DTM list zero now has an exclusive empty epoch, exact first-item merge and terminal pre-route publication transition. The Controller rejects a merge from another epoch before MMIO, retains the unchanged graph on failure and, on success, records the published identity while the graph becomes non-cancellable. The PAC orders descriptor SRAM before the generated head accessor and applies the trailing fence. Current insertion-begin outcomes and the insertion-end command/head/BUSY/sleep/status order remain semantic staged plans; conditional lock/modify has finite PAC/HAL operations without polling. Dynamic interrupt preparation, scheduler event, RUN and completion selection are not yet composed. |
+| Packet memory | Static aligned TX/RX/link-state slots with `CPU -> prepared -> hardware -> completed -> CPU` ownership | A no-heap memory crate owns the complete 936-byte DTM graph, validates physical placement and installs every reviewed allocation-time link. TX readiness and role-specific event/bookkeeping transforms remain affine through the first merge. The terminal Controller now consumes that CPU-owned merge into a hardware-visible head state that exposes no mutation or cancellation. The current blob has no separate software graph latch. Hardware interpretation, acquire-side completion visibility, current/next rotation and affine completion/reclaim are still absent. |
 | LLL DTM | Parameter validation, channel/PHY/pattern image, TX/RX event state machine and receive counter | The complete channel domain, composed frequency lookup, role-dependent PHY/rate mapping, all eight bounded TX payload patterns, packet-duration/minimum-interval/tick arithmetic, constant-time event catch-up and one-word RX accounting transition are typed. TX and RX event plans are distinct states: TX requires a prepared graph and retains its exact pattern/length through scheduler bookkeeping, while RX accepts an ordinary bound graph. Exact command roles, allocation rollback, descriptor chain anchors, wrapping received-packet count and unconditional handoff to the append decision are mapped. The ordinary re-arm is fail-closed on the swap bit; remaining field meanings, swap ownership, live item/buffer ownership, abort and quiescence are incomplete. |
 | HCI | LE Receiver Test, LE Transmitter Test and LE Test End command/event semantics for only the implemented variants | Bootstrap transport exists; operational DTM opcodes must remain unsupported until the physical owner is live. |
 
@@ -700,16 +700,13 @@ require reproducing the vendor intrusive list layout.
 
 The remaining work should proceed in narrow, testable increments:
 
-1. **Own the complete scheduler insertion transaction.** The current
-   insertion-begin outcomes and insertion-end short-circuit plan are now
-   semantic Rust states. Add the affine manager software list and merge
-   selection that retain both the submitted item and any distinct selected
-   item. Only `ExecutionLockRetained` may feed the existing lock/modify worker,
-   and only after the environment gate with that exact selected pointer;
-   `Unlocked` must reach insertion-end without fabricating a request. Execute
-   the typed end plan only after proving descriptor visibility and the
-   head/broker/RUN prerequisites. Do not couple the lock/modify result to radio
-   completion or create a task-side alias for `SCHEDULER_STATE`.
+1. **Finish the scheduler insertion transaction.** The empty-list manager
+   epoch, merge-selected identity, descriptor visibility and first hardware
+   head are now composed. Continue only that retained state through dynamic
+   interrupt preparation, source-owned scheduler-event publication and RUN.
+   Preserve the current insertion-end BUSY/sleep/item-status short circuits;
+   do not create a task-side alias for `SCHEDULER_STATE` or equate RUN with
+   radio completion.
 2. **Close the controller timebase source.** The latch address/order,
    standalone scale arithmetic, affine nonblocking request phases, pure
    wrapping epoch projection and sole powered task-side MMIO owner now exist.
@@ -723,14 +720,15 @@ The remaining work should proceed in narrow, testable increments:
    TX/RX header image and RX re-arm transform are now exact. Trace every
    additional word read by hardware for one TX-role event and prove the
    complete field masks for access address, CRC, whitening, power and next
-   link. Bind the private `item -> link state -> RX tail` path to its internal
-   packet-engine latch and the required publication fence.
+   link. The complete event body proves there is no separate software latch;
+   retain the published `item -> link state -> private links` chain and trace
+   only the undocumented hardware interpretation still needed for completion.
 4. **Advance the bound graph into hardware ownership.** The no-heap aligned
    capacity, non-forgeable physical-SRAM binding, exact allocation-time links,
    consuming TX packet readiness and role-specific event preparation now
-   exist. Add `HardwareOwned/Completed/Recycled` only after the private packet-
-   engine latch and release/acquire rules are proven; prevent mutation after
-   publication and reuse before callback, abort or quiescence. The exact
+   exist. The first published-head state now prevents mutation and cancellation.
+   Add `Running/Completed/Recycled` only after the RUN and acquire-side rules
+   are proven; prevent reuse before callback, abort or quiescence. The exact
    wrapping receive count and append-decision outcome may be consumed only by
    the completed owner; the swap-reserve observation must remain quarantined
    until its detached-header ownership is proven.

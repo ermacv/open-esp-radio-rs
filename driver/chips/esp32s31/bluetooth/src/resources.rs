@@ -14,6 +14,8 @@ use open_esp_radio_esp32s31_hal::BluetoothTaskOwnerReuniteFailure;
 use open_esp_radio_esp32s31_hal::{
     BluetoothInterruptOutputPreparedOwner, BluetoothModemLpTimerLowPowerHardwareInitializedOwner,
     BluetoothModemLpTimerOwnerError, BluetoothPhyRegisterInitInputs,
+    BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadPublished,
+    BluetoothSchedulerHardwareListIndex,
 };
 #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 use open_esp_radio_esp32s31_hal::{
@@ -216,6 +218,29 @@ impl BluetoothTaskResources {
         self.registers
             .borrow_bluetooth_controller()
             .clear_scheduler_hardware_list_heads()
+    }
+
+    /// Publish one already initialized scheduler graph through the sole task
+    /// register owner retained by this powered epoch.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the matching exclusive scheduler-list epoch and
+    /// the complete pinned graph, must have finished every descriptor write,
+    /// and must prove that no interrupt-side scheduler access can race this
+    /// operation. The lower PAC orders descriptor visibility before MMIO.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        reason = "the scheduler lifecycle discharges graph lifetime and inactive-route prerequisites"
+    )]
+    pub(crate) unsafe fn publish_scheduler_hardware_list_head(
+        &mut self,
+        index: BluetoothSchedulerHardwareListIndex,
+        head: BluetoothSchedulerHardwareListHead,
+    ) -> BluetoothSchedulerHardwareListHeadPublished {
+        let mut controller = self.registers.borrow_bluetooth_controller();
+        unsafe { controller.publish_scheduler_hardware_list_head(index, head) }
     }
 
     /// Durable logical phase paired with this unique task owner.

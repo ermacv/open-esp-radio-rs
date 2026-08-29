@@ -203,6 +203,23 @@ where
             .request_controller_time()
     }
 
+    #[expect(
+        clippy::result_large_err,
+        reason = "the internal no-alloc delegation preserves the complete rejected graph"
+    )]
+    pub(crate) fn publish_dtm_first_scheduler_head<Role>(
+        &mut self,
+        merged: crate::BluetoothDtmEmptySchedulerMergePrepared<Role>,
+    ) -> Result<
+        crate::BluetoothDtmSchedulerHeadPublished<Role>,
+        crate::BluetoothDtmSchedulerHeadPublicationFailure<Role>,
+    > {
+        self.initialized
+            .initialized
+            .controller
+            .publish_dtm_first_scheduler_head(merged)
+    }
+
     pub(crate) fn abandon_controller_time(
         &mut self,
         request: crate::BluetoothControllerTimeRequest,

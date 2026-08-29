@@ -213,7 +213,9 @@ pub use runtime_resources::{
 #[cfg(any(target_arch = "riscv32", test))]
 pub use scheduler::{
     BluetoothDtmEmptySchedulerMergeError, BluetoothDtmEmptySchedulerMergeFailure,
-    BluetoothDtmEmptySchedulerMergePrepared, BluetoothSchedulerInitialized,
+    BluetoothDtmEmptySchedulerMergePrepared, BluetoothDtmSchedulerHeadPublicationError,
+    BluetoothDtmSchedulerHeadPublicationFailure, BluetoothDtmSchedulerHeadPublished,
+    BluetoothSchedulerInitialized,
 };
 pub use scheduler_config::BluetoothSchedulerSoftwareConfig;
 pub use scheduler_finished_lists::{

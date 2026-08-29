@@ -481,6 +481,23 @@ where
     }
 
     #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "the internal no-alloc delegation preserves the complete rejected graph"
+    )]
+    pub(crate) fn publish_dtm_first_scheduler_head<Role>(
+        &mut self,
+        merged: crate::BluetoothDtmEmptySchedulerMergePrepared<Role>,
+    ) -> Result<
+        crate::BluetoothDtmSchedulerHeadPublished<Role>,
+        crate::BluetoothDtmSchedulerHeadPublicationFailure<Role>,
+    > {
+        self.controller
+            .scheduler
+            .publish_dtm_first_scheduler_head(merged)
+    }
+
+    #[cfg(target_arch = "riscv32")]
     pub(crate) const fn controller_time_phase(&self) -> crate::BluetoothControllerTimeWorkerPhase {
         self.controller.scheduler.controller_time_phase()
     }

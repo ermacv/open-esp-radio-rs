@@ -19,6 +19,9 @@ mod coordinator;
 mod bluetooth_interrupt;
 
 #[cfg(any(feature = "esp32s31", test))]
+mod bluetooth_address;
+
+#[cfg(any(feature = "esp32s31", test))]
 mod bluetooth_route_policy;
 
 #[cfg(feature = "esp32s31")]

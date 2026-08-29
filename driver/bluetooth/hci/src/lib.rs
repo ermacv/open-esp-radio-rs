@@ -28,9 +28,9 @@ mod resources;
 mod worker;
 
 pub use bootstrap::{
-    BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY, BootstrapCommand, BootstrapCommandCompleteEvent,
-    BootstrapConfigError, BootstrapHostBuffers, BootstrapPhase, LeControllerBootstrap,
-    LeControllerBootstrapConfig,
+    BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY, BluetoothPublicDeviceAddress, BootstrapCommand,
+    BootstrapCommandCompleteEvent, BootstrapConfigError, BootstrapHostBuffers, BootstrapPhase,
+    LeControllerBootstrap, LeControllerBootstrapConfig,
 };
 pub use bt_hci;
 pub use channel::{

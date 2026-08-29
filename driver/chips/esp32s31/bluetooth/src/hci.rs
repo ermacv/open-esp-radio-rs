@@ -269,8 +269,8 @@ mod tests {
     use embassy_futures::block_on;
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use open_esp_radio_bluetooth_hci::{
-        LeControllerBootstrapConfig, LeControllerHciResources,
-        bt_hci::{cmd::controller_baseband::Reset, param::BdAddr, transport::Transport},
+        BluetoothPublicDeviceAddress, LeControllerBootstrapConfig, LeControllerHciResources,
+        bt_hci::{cmd::controller_baseband::Reset, transport::Transport},
     };
     use open_esp_radio_esp32s31_pac::RadioHardware;
 
@@ -291,8 +291,12 @@ mod tests {
     }
 
     fn hci() -> TestHciResources {
-        let config = LeControllerBootstrapConfig::new(BdAddr::new([2, 3, 5, 7, 11, 13]), 27, 1)
-            .expect("nonzero test profile");
+        let config = LeControllerBootstrapConfig::new(
+            BluetoothPublicDeviceAddress::from_canonical_bytes([2, 3, 5, 7, 11, 13]),
+            27,
+            1,
+        )
+        .expect("nonzero test profile");
         TestHciResources::new(config).expect("profile fits its bounded queues")
     }
 

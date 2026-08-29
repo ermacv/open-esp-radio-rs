@@ -328,15 +328,15 @@ mod tests {
         cmd::{Cmd, Opcode, controller_baseband::Reset},
         data::AclPacket,
         event::{CommandComplete, CommandCompleteWithStatus, EventKind},
-        param::{BdAddr, Status},
+        param::Status,
         transport::Transport,
     };
     use embassy_futures::block_on;
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
     use crate::{
-        BootstrapPhase, HostToControllerFrame, InProcessHciChannel, LeControllerBootstrap,
-        LeControllerBootstrapConfig,
+        BluetoothPublicDeviceAddress, BootstrapPhase, HostToControllerFrame, InProcessHciChannel,
+        LeControllerBootstrap, LeControllerBootstrapConfig,
     };
 
     use super::{BootstrapWorkerError, BootstrapWorkerExit, LeControllerBootstrapWorker};
@@ -433,7 +433,12 @@ mod tests {
     }
 
     fn bootstrap() -> LeControllerBootstrap {
-        let config = LeControllerBootstrapConfig::new(BdAddr::new([0; 6]), 27, 1).unwrap();
+        let config = LeControllerBootstrapConfig::new(
+            BluetoothPublicDeviceAddress::from_canonical_bytes([0; 6]),
+            27,
+            1,
+        )
+        .unwrap();
         LeControllerBootstrap::new(config)
     }
 

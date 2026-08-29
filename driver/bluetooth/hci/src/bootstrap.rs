@@ -42,10 +42,36 @@ pub enum BootstrapConfigError {
     ZeroAclDataPacketCount,
 }
 
+/// Public Bluetooth device identity in canonical display order.
+///
+/// The first byte is the octet printed first in an EUI-48 address. HCI carries
+/// `BD_ADDR` least-significant octet first, so keeping canonical bytes in a
+/// separate type prevents a platform eFuse reader from leaking byte-order
+/// policy into every Controller bootstrap caller.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothPublicDeviceAddress([u8; 6]);
+
+impl BluetoothPublicDeviceAddress {
+    /// Construct an address from canonical EUI-48 bytes.
+    pub const fn from_canonical_bytes(bytes: [u8; 6]) -> Self {
+        Self(bytes)
+    }
+
+    /// Return the canonical EUI-48 byte sequence unchanged.
+    pub const fn canonical_bytes(self) -> [u8; 6] {
+        self.0
+    }
+
+    fn hci_wire_address(self) -> BdAddr {
+        let [byte_0, byte_1, byte_2, byte_3, byte_4, byte_5] = self.0;
+        BdAddr::new([byte_5, byte_4, byte_3, byte_2, byte_1, byte_0])
+    }
+}
+
 /// Immutable, non-radio values reported during HCI Host bootstrap.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LeControllerBootstrapConfig {
-    public_address: BdAddr,
+    public_address: BluetoothPublicDeviceAddress,
     le_acl_data_packet_length: u16,
     total_num_le_acl_data_packets: u8,
 }
@@ -57,7 +83,7 @@ impl LeControllerBootstrapConfig {
     /// address. This value is a software HCI report and is not proof that an
     /// ESP32-S31 address or packet buffer has reached hardware.
     pub const fn new(
-        public_address: BdAddr,
+        public_address: BluetoothPublicDeviceAddress,
         le_acl_data_packet_length: u16,
         total_num_le_acl_data_packets: u8,
     ) -> Result<Self, BootstrapConfigError> {
@@ -74,8 +100,8 @@ impl LeControllerBootstrapConfig {
         })
     }
 
-    /// Public address returned to the Host in HCI byte order.
-    pub const fn public_address(&self) -> BdAddr {
+    /// Public address in canonical EUI-48 display order.
+    pub const fn public_address(&self) -> BluetoothPublicDeviceAddress {
         self.public_address
     }
 
@@ -371,7 +397,7 @@ impl LeControllerBootstrap {
                 if !parameters.is_empty() {
                     return invalid_parameters(opcode);
                 }
-                command_success(opcode, self.config.public_address.raw())
+                command_success(opcode, self.config.public_address.hci_wire_address().raw())
             }
             BootstrapCommand::LeSetEventMask => {
                 let Some(mask) = parse_complete::<LeEventMask>(parameters) else {
@@ -478,8 +504,8 @@ mod tests {
     };
 
     use super::{
-        BootstrapCommand, BootstrapConfigError, BootstrapHostBuffers, BootstrapPhase,
-        LeControllerBootstrap, LeControllerBootstrapConfig,
+        BluetoothPublicDeviceAddress, BootstrapCommand, BootstrapConfigError, BootstrapHostBuffers,
+        BootstrapPhase, LeControllerBootstrap, LeControllerBootstrapConfig,
     };
 
     type TestChannel = InProcessHciChannel<NoopRawMutex, 1, 1, 32>;
@@ -521,7 +547,7 @@ mod tests {
 
     #[test]
     fn trouble_no_security_bootstrap_and_conservative_extensions_are_supported() {
-        let public_address = BdAddr::new([0x06, 0x05, 0x04, 0x03, 0x02, 0x01]);
+        let public_address = BluetoothPublicDeviceAddress::from_canonical_bytes([1, 2, 3, 4, 5, 6]);
         let config = LeControllerBootstrapConfig::new(public_address, 251, 4).unwrap();
         let mut bootstrap = LeControllerBootstrap::new(config);
         let mut channel = TestChannel::new();
@@ -638,7 +664,7 @@ mod tests {
 
             assert_success(
                 round_trip(&host, &controller, &mut bootstrap, &ReadBdAddr::new()).await,
-                public_address.raw(),
+                &[6, 5, 4, 3, 2, 1],
             );
             assert_success(
                 round_trip(
@@ -676,10 +702,34 @@ mod tests {
     }
 
     #[test]
+    fn read_bd_addr_converts_canonical_identity_at_the_hci_boundary() {
+        let public_address = BluetoothPublicDeviceAddress::from_canonical_bytes([1, 2, 3, 4, 5, 6]);
+        let config = LeControllerBootstrapConfig::new(public_address, 27, 1).unwrap();
+        assert_eq!(
+            config.public_address().canonical_bytes(),
+            [1, 2, 3, 4, 5, 6]
+        );
+
+        let mut bootstrap = LeControllerBootstrap::new(config);
+        assert_eq!(
+            bootstrap.dispatch_raw(Reset::OPCODE, &[]).status(),
+            Status::SUCCESS
+        );
+        let response = bootstrap.dispatch_raw(ReadBdAddr::OPCODE, &[]);
+        assert_eq!(response.status(), Status::SUCCESS);
+        assert_eq!(&response.as_bytes()[6..], &[6, 5, 4, 3, 2, 1]);
+    }
+
+    #[test]
     fn external_controller_exec_completes_from_bootstrap_dispatch() {
         const HARDWARE_ERROR: [u8; 3] = [0x10, 0x01, 0x42];
 
-        let config = LeControllerBootstrapConfig::new(BdAddr::new([0; 6]), 27, 1).unwrap();
+        let config = LeControllerBootstrapConfig::new(
+            BluetoothPublicDeviceAddress::from_canonical_bytes([0; 6]),
+            27,
+            1,
+        )
+        .unwrap();
         let mut bootstrap = LeControllerBootstrap::new(config);
         let mut channel = TestChannel::new();
         let (host, controller) = channel.split();
@@ -724,7 +774,7 @@ mod tests {
     #[test]
     fn real_trouble_runner_reaches_initialized_over_the_source_owned_hci_boundary() {
         let config = LeControllerBootstrapConfig::new(
-            BdAddr::new([0x06, 0x05, 0x04, 0x03, 0x02, 0x01]),
+            BluetoothPublicDeviceAddress::from_canonical_bytes([1, 2, 3, 4, 5, 6]),
             251,
             4,
         )
@@ -782,7 +832,12 @@ mod tests {
 
     #[test]
     fn known_commands_are_disallowed_before_reset_and_malformed_input_never_mutates() {
-        let config = LeControllerBootstrapConfig::new(BdAddr::new([0; 6]), 27, 1).unwrap();
+        let config = LeControllerBootstrapConfig::new(
+            BluetoothPublicDeviceAddress::from_canonical_bytes([0; 6]),
+            27,
+            1,
+        )
+        .unwrap();
         let mut bootstrap = LeControllerBootstrap::new(config);
 
         let before_reset = bootstrap.dispatch_raw(SetEventMask::OPCODE, &[0; 8]);
@@ -857,11 +912,19 @@ mod tests {
     #[test]
     fn bootstrap_config_rejects_profiles_without_acl_capacity() {
         assert_eq!(
-            LeControllerBootstrapConfig::new(BdAddr::new([0; 6]), 0, 1),
+            LeControllerBootstrapConfig::new(
+                BluetoothPublicDeviceAddress::from_canonical_bytes([0; 6]),
+                0,
+                1,
+            ),
             Err(BootstrapConfigError::ZeroAclDataPacketLength)
         );
         assert_eq!(
-            LeControllerBootstrapConfig::new(BdAddr::new([0; 6]), 27, 0),
+            LeControllerBootstrapConfig::new(
+                BluetoothPublicDeviceAddress::from_canonical_bytes([0; 6]),
+                27,
+                0,
+            ),
             Err(BootstrapConfigError::ZeroAclDataPacketCount)
         );
     }

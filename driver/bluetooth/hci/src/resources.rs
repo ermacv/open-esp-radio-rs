@@ -139,16 +139,20 @@ where
 
 #[cfg(test)]
 mod tests {
-    use bt_hci::{cmd::controller_baseband::Reset, param::BdAddr, transport::Transport};
+    use bt_hci::{cmd::controller_baseband::Reset, transport::Transport};
     use embassy_futures::block_on;
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
     use super::{LeControllerHciResources, LeControllerHciResourcesError};
-    use crate::LeControllerBootstrapConfig;
+    use crate::{BluetoothPublicDeviceAddress, LeControllerBootstrapConfig};
 
     fn config(payload: u16, credits: u8) -> LeControllerBootstrapConfig {
-        LeControllerBootstrapConfig::new(BdAddr::new([2, 3, 5, 7, 11, 13]), payload, credits)
-            .expect("nonzero test profile")
+        LeControllerBootstrapConfig::new(
+            BluetoothPublicDeviceAddress::from_canonical_bytes([2, 3, 5, 7, 11, 13]),
+            payload,
+            credits,
+        )
+        .expect("nonzero test profile")
     }
 
     #[test]

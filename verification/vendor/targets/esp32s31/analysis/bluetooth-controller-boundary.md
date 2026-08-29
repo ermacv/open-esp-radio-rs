@@ -33,6 +33,7 @@ The hashes cover the complete raw files used for this review.
 | [`components/soc/esp32s31/include/soc/interrupts.h`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/soc/esp32s31/include/soc/interrupts.h#L139-L153) | Bluetooth MAC CPU sources 124 and 133 | `1a4f155b87090376b1a40ac62e19de344c7f10dc53d9b4451b66d545e9e4717d` |
 | [`components/bt/porting_btdm/transport/src/hci_transport.c`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/bt/porting_btdm/transport/src/hci_transport.c#L23-L103) | HCI command/ACL/event routing | `db3fea7daa8d313e16f570eac6dc7e87a860edf03e896af49cce9d5dd7d13b45` |
 | [`components/bt/porting_btdm/transport/src/hci_transport.c`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/bt/porting_btdm/transport/src/hci_transport.c#L214-L291) | transport selection, callback registration and teardown | same file/hash as above |
+| [`components/esp_hw_support/port/esp32s31/Kconfig.mac`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/esp_hw_support/port/esp32s31/Kconfig.mac) | default two-universal-address policy and Bluetooth final-octet offset | `7b2e44be28d7b51e459ca5a407bf33430c543849836cfa479f2657d7e9fbdd10` |
 | [`esp32s31-bt-lib/libbtdm_common.a`](https://github.com/espressif/esp32s31-bt-lib/blob/7f20740dd66ee774ffce5db0b55507892551aa31/libbtdm_common.a) | exact public S31 BTDM object code used to split composite HAL/task boundaries | `fa22a8a2aca48b807addda2bbad78868d6774c82bcdeb8090f9140f6cbccd099` |
 
 The exact public ESP32-S31 controller-library revision is additionally pinned
@@ -66,11 +67,15 @@ complete 182-byte archive body. It calls three software environment helpers
 HCI state, initializes a vendor mempool with 272-byte elements, registers
 numeric broker source four and initializes a software list head. These are
 open-Controller storage, address and dispatch policy rather than silicon
-transactions. The Rust replacement therefore binds the already initialized
-scheduler epoch to one bounded `LeControllerHciResources` owner instead of
-copying the private environment, pool or callback node. The platform path that
-supplies the reviewed public address is still missing, and this state exposes
-only the conservative bootstrap dispatcher—not operational Link-Layer HCI.
+transactions. The ESP-HAL platform lease now reads the factory base identity
+through its safe eFuse accessor and applies the pinned S31 two-universal-address
+policy: Bluetooth is the next final-octet value after Wi-Fi STA. It retains the
+result in canonical EUI-48 order; the generic HCI bootstrap performs the
+observed single six-byte reversal only when encoding `BD_ADDR`. The Rust
+replacement therefore binds the already initialized scheduler epoch to one
+bounded `LeControllerHciResources` owner instead of copying the private
+environment, pool or callback node. This state exposes only the conservative
+bootstrap dispatcher—not operational Link-Layer HCI.
 
 The interrupt boundary contains three CPU routes. The primary Bluetooth MAC
 route uses source 124, level 3 and an IRAM-capable handler request. The modem

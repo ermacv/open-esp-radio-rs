@@ -2433,6 +2433,7 @@ version = "0.1.0"
 dependencies = [
  "critical-section",
  "esp-hal",
+ "open-esp-radio-bluetooth-hci",
  "open-esp-radio-esp32s31-bluetooth",
  "open-esp-radio-esp32s31-hal",
 ]

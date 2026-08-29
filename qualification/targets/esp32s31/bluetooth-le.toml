@@ -96,6 +96,7 @@ owners = [
   { path = "driver/chips/esp32s31/bluetooth/src/scheduler.rs", token = "split_runtime" },
   { path = "driver/chips/esp32s31/bluetooth/src/hci.rs", token = "BluetoothControllerHciInitialized" },
   { path = "driver/chips/esp32s31/bluetooth/src/hci.rs", token = "BluetoothControllerRuntimeEndpoints" },
+  { path = "driver/adapters/esp-hal/esp32s31-radio-platform/src/esp32s31.rs", token = "bluetooth_public_address" },
   { path = "driver/chips/esp32s31/pac/src/bluetooth_controller_hal_init.rs", token = "BluetoothControllerHalInitConfig" },
   { path = "driver/chips/esp32s31/pac/src/bluetooth_modem_lp_timer.rs", token = "BluetoothModemLpTimerRegistersPrepared" },
   { path = "driver/chips/esp32s31/hal/src/bluetooth.rs", token = "BluetoothModemLpTimerRegistersPreparedOwner" },
@@ -107,6 +108,7 @@ tests = [
   { path = "driver/chips/esp32s31/bluetooth/src/scheduler.rs", token = "controller_hal_precedes_complete_scheduler_init_and_arms_fail_stop" },
   { path = "driver/chips/esp32s31/bluetooth/src/hci.rs", token = "scheduler_and_hci_split_as_one_pristine_powered_epoch" },
   { path = "driver/chips/esp32s31/bluetooth/src/hci.rs", token = "used_hci_epoch_is_rejected_without_losing_either_owner" },
+  { path = "driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_address.rs", token = "bluetooth_uses_the_s31_second_universal_address" },
   { path = "driver/chips/esp32s31/bluetooth/src/runtime_resources.rs", token = "one_aggregate_starts_as_one_pristine_bounded_epoch" },
   { path = "driver/chips/esp32s31/bluetooth/src/runtime_resources.rs", token = "zero_capacity_profile_is_rejected" },
   { path = "driver/chips/esp32s31/bluetooth/src/runtime_resources.rs", token = "split_borrows_one_matching_interrupt_and_task_epoch" },
@@ -119,7 +121,7 @@ vendor-anchors = [
   { path = "verification/vendor/targets/esp32s31/analysis/bluetooth-controller-boundary.md", token = "r_sym_bt_AJP6s1I6EhaAHnz8n72F" },
 ]
 gaps = [
-  { axis = "implementation", id = "hal-init-hci-address-and-modem-lp-register-components-disconnected-by-open-scheduler-item-storage-and-route-stages" },
+  { axis = "implementation", id = "hal-init-and-modem-lp-register-components-disconnected-by-open-scheduler-item-storage-and-route-stages" },
   { axis = "vendor", id = "complete-controller-init-production-trace-missing" },
   { axis = "hil", id = "initialized-controller-cell-missing" },
   { axis = "async", id = "stable-route-and-controller-task-wake-composition-missing" },
@@ -571,11 +573,13 @@ title = "Conservative LE HCI Host bootstrap"
 scope = "Closed Reset mask address buffer flow-control information and fail-closed unsupported-command semantics before any Link Layer or radio capability"
 depends-on = ["hci-handoff-storage"]
 owners = [
+  { path = "driver/bluetooth/hci/src/bootstrap.rs", token = "BluetoothPublicDeviceAddress" },
   { path = "driver/bluetooth/hci/src/bootstrap.rs", token = "LeControllerBootstrap" },
   { path = "driver/bluetooth/hci/src/bootstrap.rs", token = "BootstrapCommand" },
   { path = "driver/bluetooth/hci/src/bootstrap.rs", token = "BootstrapCommandCompleteEvent" },
 ]
 tests = [
+  { path = "driver/bluetooth/hci/src/bootstrap.rs", token = "read_bd_addr_converts_canonical_identity_at_the_hci_boundary" },
   { path = "driver/bluetooth/hci/src/bootstrap.rs", token = "trouble_no_security_bootstrap_and_conservative_extensions_are_supported" },
   { path = "driver/bluetooth/hci/src/bootstrap.rs", token = "external_controller_exec_completes_from_bootstrap_dispatch" },
   { path = "driver/bluetooth/hci/src/bootstrap.rs", token = "real_trouble_runner_reaches_initialized_over_the_source_owned_hci_boundary" },

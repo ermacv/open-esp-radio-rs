@@ -4,11 +4,19 @@
 //! `components/bt/controller/esp32s31/bt.c`, `btdm_lp.c`, and the S31 modem
 //! clock implementation. These paths define semantics; the PAC stays private.
 
-use esp_hal::peripherals::{
-    HP_SYS_CLKRST, I2C_ANA_MST, LP_AON_CLK_RST, LP_PERI, LP_TSENS, MODEM_LPCON, MODEM_SYSCON, PMU,
+use esp_hal::{
+    efuse,
+    peripherals::{
+        HP_SYS_CLKRST, I2C_ANA_MST, LP_AON_CLK_RST, LP_PERI, LP_TSENS, MODEM_LPCON, MODEM_SYSCON,
+        PMU,
+    },
 };
+use open_esp_radio_bluetooth_hci::BluetoothPublicDeviceAddress;
 
-use crate::coordinator::{BluetoothPlatformBusy, BluetoothPlatformLease, ClockCoordinator};
+use crate::{
+    bluetooth_address::bluetooth_public_address_from_base,
+    coordinator::{BluetoothPlatformBusy, BluetoothPlatformLease, ClockCoordinator},
+};
 
 /// Sole safe owner of the ESP32-S31 shared radio-platform singletons.
 ///
@@ -76,4 +84,24 @@ impl EspHalRadioPlatform {
 /// custom-PAC typestate owns all hardware cleanup.
 pub struct EspHalBluetoothPlatform<'a> {
     _inner: BluetoothPlatformLease<'a>,
+}
+
+impl EspHalBluetoothPlatform<'_> {
+    /// Read the factory base identity through ESP-HAL's safe eFuse accessor,
+    /// apply the ESP32-S31 second-universal-address policy and retain the
+    /// result in canonical EUI-48 order.
+    ///
+    /// The reviewed ESP32-S31 Controller HCI initializer requests the Bluetooth
+    /// interface identity, then reverses those six canonical bytes for its HCI
+    /// storage.
+    /// [`BluetoothPublicDeviceAddress`] owns that protocol conversion, so this
+    /// platform boundary neither exposes eFuse fields nor asks callers to
+    /// hand-author HCI byte order.
+    pub fn bluetooth_public_address(&self) -> BluetoothPublicDeviceAddress {
+        let base = efuse::base_mac_address();
+        let bytes = base.as_bytes();
+        bluetooth_public_address_from_base([
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5],
+        ])
+    }
 }

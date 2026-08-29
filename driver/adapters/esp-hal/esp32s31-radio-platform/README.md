@@ -8,7 +8,11 @@ singletons used by radio lifecycles: `MODEM_SYSCON`, `MODEM_LPCON`,
 words carved from those blocks are operated only by the affine custom PAC.
 Clients receive narrow affine reservations; all clock dependencies are
 reference-counted by the route-owned custom PAC before they reach MMIO. The
-Bluetooth platform lease exposes no operation family or singleton token.
+Bluetooth platform lease exposes no operation family or singleton token. It
+does expose the effective Bluetooth interface address through ESP-HAL's safe
+base-eFuse accessor plus the pinned S31 second-universal-address policy. The
+result remains in canonical EUI-48 order; the generic HCI bootstrap type
+performs the reviewed conversion to HCI `BD_ADDR` byte order.
 
 Bluetooth is the first client. The existing Wi-Fi ESP-HAL adapter still owns
 the same singleton types independently, so safe Wi-Fi + Bluetooth composition
@@ -30,3 +34,4 @@ The Bluetooth clock/reset sequence is pinned to the reviewed ESP-IDF source:
 - [`bt.c`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/bt/controller/esp32s31/bt.c)
 - [`btdm_lp.c`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/bt/porting_btdm/controller/btdm_common/src/btdm_lp.c)
 - [`modem_clock_impl.c`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/esp_hw_support/modem/port/esp32s31/modem_clock_impl.c)
+- [`Kconfig.mac`](https://github.com/espressif/esp-idf/blob/aeab6dcfbeb44aba4b1f8ed102e3086172833153/components/esp_hw_support/port/esp32s31/Kconfig.mac)

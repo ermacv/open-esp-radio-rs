@@ -16,7 +16,11 @@ use crate::{
     artifact, direct, external_result_call_token,
 };
 
-const MAX_CALL_GRAPH_STATES: usize = 127;
+// The resumable structural explorer does not replay the shared function
+// prefix for every branch combination. Keep enough frontier states to cover
+// eight independent binary decisions while retaining a hard artifact-wide
+// guard against exponential vendor CFGs.
+const MAX_CALL_GRAPH_STATES: usize = 511;
 const MAX_CALL_GRAPH_BRANCH_DECISIONS: usize = 12;
 const MAX_CALL_GRAPH_INSTRUCTION_STEPS_PER_TRACE: usize = 4_096;
 const MAX_CALL_GRAPH_EVENTS_PER_TRACE: usize = 1_024;

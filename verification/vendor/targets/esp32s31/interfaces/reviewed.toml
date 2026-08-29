@@ -523,6 +523,7 @@ layout-version = "esp32s31-ble-external-functions-20250819"
 pointer-width = 32
 layout-size = 0x28
 slot-stride = 4
+execution-contract = "esp32s31-ble-external-functions-20250819"
 
 [[anchors.guards]]
 kind = "artifact-sha256"
@@ -552,6 +553,8 @@ origin = "observed"
 name = "allocate"
 arguments = ["u32", "u32"]
 return = "mut-ptr"
+semantic = "memory.classified.allocate"
+execution-model = "allocate"
 
 [[anchors.slots]]
 offset = 0x08
@@ -562,6 +565,7 @@ name = "free"
 arguments = ["mut-ptr"]
 return = "void"
 semantic = "memory.deallocate"
+execution-model = "free"
 
 [[anchors.slots]]
 offset = 0x0c
@@ -571,6 +575,8 @@ origin = "observed"
 name = "osi_assert"
 arguments = ["u32", "const-ptr", "u32", "u32"]
 return = "void"
+semantic = "diagnostic.assert"
+execution-model = "osi-assert"
 
 # `net80211_funcs` is a pointer cell, not a static function table image.
 # `net80211_funcs_init` allocates 0x14c bytes and

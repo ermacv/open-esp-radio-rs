@@ -90,13 +90,13 @@ pub(super) fn resolve(
                             ),
                         ));
                     };
-                    if argument_type != "usize" {
+                    if !matches!(argument_type.as_str(), "usize" | "u32") {
                         return Err(super::validation::ValidationError::slot(
                             anchor,
                             slot,
                             "execution-model",
                             format!(
-                                "call model {model_id:?} allocation size argument a{size_argument} has non-size ABI type {argument_type:?}"
+                                "call model {model_id:?} allocation size argument a{size_argument} has unsupported size ABI type {argument_type:?}"
                             ),
                         ));
                     }

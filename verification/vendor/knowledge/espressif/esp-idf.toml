@@ -409,6 +409,24 @@ effects = ["memory.allocate"]
 replacement = "rust.owned-allocation-policy"
 
 [[operations]]
+id = "memory.classified.allocate"
+domain = "memory"
+summary = "Allocate caller-sized storage under an explicit allocator class"
+argument-roles = ["size", "allocation-class"]
+return-role = "pointer"
+effects = ["memory.allocate"]
+replacement = "rust.owned-allocation-policy"
+
+[[operations]]
+id = "diagnostic.assert"
+domain = "diagnostic"
+summary = "Report an assertion failure with its source location and two diagnostic values"
+argument-roles = ["line", "source-name", "parameter-one", "parameter-two"]
+return-role = "none"
+effects = ["diagnostic.assertion-failure"]
+replacement = "diagnostic.typed-assertion"
+
+[[operations]]
 id = "memory.allocate-zeroed"
 domain = "memory"
 summary = "Allocate caller-sized storage initialized to zero"

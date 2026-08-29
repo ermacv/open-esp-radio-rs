@@ -339,12 +339,38 @@ const ESP32S31_WIFI_RUNTIME_CALLBACK_MODEL_SET: ExternalCallModelSetSpec =
         models: ESP32S31_WIFI_RUNTIME_CALLBACKS,
     };
 
+const ESP32S31_BLE_EXTERNAL_FUNCTION_MODELS: &[ExternalCallModelSpec] = &[
+    ExternalCallModelSpec {
+        id: "allocate",
+        return_model: ExternalReturnModel::Allocated { size_argument: 0 },
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "free",
+        return_model: ExternalReturnModel::Void,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "osi-assert",
+        return_model: ExternalReturnModel::Void,
+        outputs: &[],
+    },
+];
+
+const ESP32S31_BLE_EXTERNAL_FUNCTION_MODEL_SET: ExternalCallModelSetSpec =
+    ExternalCallModelSetSpec {
+        id: "esp32s31-ble-external-functions-20250819",
+        models: ESP32S31_BLE_EXTERNAL_FUNCTION_MODELS,
+    };
+
 pub const WIFI_OSI_MODELS_V9: ExternalCallModelSetRef =
     ExternalCallModelSetRef::new(&ESP32S31_WIFI_OSI_MODEL_SET);
 pub const COEX_ADAPTER_MODELS_V2: ExternalCallModelSetRef =
     ExternalCallModelSetRef::new(&ESP32S31_COEX_ADAPTER_MODEL_SET);
 pub const WIFI_RUNTIME_CALLBACKS_V1: ExternalCallModelSetRef =
     ExternalCallModelSetRef::new(&ESP32S31_WIFI_RUNTIME_CALLBACK_MODEL_SET);
+pub const BLE_EXTERNAL_FUNCTION_MODELS_20250819: ExternalCallModelSetRef =
+    ExternalCallModelSetRef::new(&ESP32S31_BLE_EXTERNAL_FUNCTION_MODEL_SET);
 pub const ENV_IS_CHIP_MODEL: ExternalCallModelRef =
     ExternalCallModelRef::new(&ESP32S31_WIFI_OSI_MODELS[0]);
 pub const RAND_MODEL: ExternalCallModelRef =

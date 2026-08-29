@@ -17,11 +17,18 @@ use crate::{
     interface_discovery::{InterfaceRoot, InterfaceSlotAssignment},
 };
 
-const EXECUTION_MODELS: &[ExternalCallModelSpec] = &[ExternalCallModelSpec {
-    id: "queue-send-from-isr",
-    return_model: ExternalReturnModel::Constant(1),
-    outputs: &[],
-}];
+const EXECUTION_MODELS: &[ExternalCallModelSpec] = &[
+    ExternalCallModelSpec {
+        id: "queue-send-from-isr",
+        return_model: ExternalReturnModel::Constant(1),
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "allocate-u32",
+        return_model: ExternalReturnModel::Allocated { size_argument: 0 },
+        outputs: &[],
+    },
+];
 const EXECUTION_MODEL_SET_SPEC: ExternalCallModelSetSpec = ExternalCallModelSetSpec {
     id: "fixture.services-v1",
     models: EXECUTION_MODELS,
@@ -917,6 +924,45 @@ fn execution_model_identity_is_not_inferred_from_semantics_or_offset() {
     .unwrap_err();
     std::fs::remove_dir_all(directory).unwrap();
     assert!(error.to_string().contains("has no call model"));
+}
+
+#[test]
+fn allocation_model_accepts_the_reviewed_u32_size_abi() {
+    let directory = fixture_directory();
+    let facts = directory.join("facts.json");
+    let pack = directory.join("pack.toml");
+    let catalog = directory.join("semantics.toml");
+    let digest = fake_digest('8');
+    write_facts(&facts, &digest);
+    write_catalog(&catalog);
+    let input = reviewed_pack(&digest, "rtos.queue.send-from-isr")
+        .replace(
+            "slot-stride = 4\n",
+            "slot-stride = 4\nexecution-contract = \"fixture.services-v1\"\n",
+        )
+        .replace(
+            "arguments = [\"opaque-handle\", \"const-ptr\", \"out-ptr\"]\nreturn = \"bool\"\nsemantic = \"rtos.queue.send-from-isr\"\n",
+            "arguments = [\"u32\", \"u32\"]\nreturn = \"mut-ptr\"\nexecution-model = \"allocate-u32\"\n",
+        );
+    std::fs::write(&pack, input).unwrap();
+
+    let workspace = InterfaceWorkspace::load(
+        &facts,
+        &pack,
+        &[catalog],
+        "riscv-ilp32",
+        Some(&EXECUTION_CONTRACTS),
+    )
+    .unwrap();
+    std::fs::remove_dir_all(directory).unwrap();
+
+    assert_eq!(
+        workspace.bindings()[0]
+            .execution_model
+            .as_ref()
+            .map(|model| model.return_model),
+        Some(ExternalReturnModel::Allocated { size_argument: 0 })
+    );
 }
 
 #[test]

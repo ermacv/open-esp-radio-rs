@@ -118,6 +118,7 @@ PHY transition consumes one pinned static graph containing the recovered
 environment, its auxiliary allocations and resolving-list object, so no raw
 caller address or vendor allocator ABI enters production. The chain atomically
 publishes both disjoint HAL owners in process-wide ESP-HAL ISR storage, then
+provides a lossless source-127 register/software/rearm storage handoff, and then
 stops before live IRQ routing, scheduler-item publication or Link Layer work.
 Once the first powered MMIO mutation occurs,
 every owner is retained fail-stop because complete rollback and last-owner PHY

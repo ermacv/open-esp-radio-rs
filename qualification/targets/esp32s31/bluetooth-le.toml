@@ -109,6 +109,7 @@ owners = [
   { path = "driver/chips/esp32s31/bluetooth/src/controller_start.rs", token = "BluetoothControllerInterruptOwnersReady" },
   { path = "driver/chips/esp32s31/bluetooth/src/controller_start.rs", token = "BluetoothControllerInterruptOwnersPublished" },
   { path = "driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_interrupt.rs", token = "EspHalBluetoothInterruptStorage" },
+  { path = "driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_interrupt.rs", token = "EspHalBluetoothModemLpTimerInterruptStep" },
 ]
 tests = [
   { path = "driver/chips/esp32s31/hal/src/bluetooth.rs", token = "untouched_task_owner_reconstructs_the_neutral_root" },
@@ -128,6 +129,7 @@ tests = [
   { path = "driver/chips/esp32s31/pac/src/bluetooth_modem_lp_timer.rs", token = "source_127_prefix_is_exactly_eight_mmio_operations_then_one_fence" },
   { path = "driver/chips/esp32s31/pac/src/bluetooth_modem_lp_timer.rs", token = "runtime_counter_start_orders_the_command_before_publication" },
   { path = "driver/chips/esp32s31/bluetooth/src/controller_start.rs", token = "controller_output_precedes_the_single_runtime_timer_start" },
+  { path = "driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_route_policy.rs", token = "source_127_register_entry_stops_while_software_owns_the_timer" },
 ]
 vendor-anchors = [
   { path = "verification/vendor/targets/esp32s31/README.md", token = "event/list" },

@@ -23,12 +23,16 @@ use open_esp_radio_esp32s31_bluetooth::{
     BluetoothCpuInterruptRoutePolicy, BluetoothInterruptOwnerStorage,
 };
 use open_esp_radio_esp32s31_hal::{
-    BluetoothInterruptRegistersOwner, BluetoothModemLpTimerInterruptReadyOwner,
+    BluetoothInterruptRegistersOwner, BluetoothModemLpTimerHandlerRegisterStep,
+    BluetoothModemLpTimerInterruptReadyOwner, BluetoothModemLpTimerInterruptStep,
+    BluetoothModemLpTimerSoftwarePendingOwner,
 };
 
 use crate::bluetooth_route_policy::{
-    BluetoothInterruptRouteError, EspHalBluetoothInterruptStorageError, REQUIRED_PRIORITY_LEVEL,
-    validate_interrupt_storage, validate_quiesce_core, validate_route_priorities,
+    BluetoothInterruptRouteError, BluetoothModemLpTimerInterruptAdmission,
+    BluetoothModemLpTimerStoragePhase, EspHalBluetoothInterruptStorageError,
+    REQUIRED_PRIORITY_LEVEL, classify_modem_lp_timer_interrupt, validate_interrupt_storage,
+    validate_quiesce_core, validate_route_priorities,
 };
 
 pub(crate) const PRIMARY_INTERRUPT: Interrupt = Interrupt::BT_MAC;
@@ -56,8 +60,22 @@ const _: () = assert!(ROUTE_PRIORITY as u8 == REQUIRED_PRIORITY_LEVEL);
 
 static INTERRUPT_REGISTERS: Mutex<RefCell<Option<BluetoothInterruptRegistersOwner>>> =
     Mutex::new(RefCell::new(None));
-static MODEM_LP_TIMER: Mutex<RefCell<Option<BluetoothModemLpTimerInterruptReadyOwner>>> =
+static MODEM_LP_TIMER: Mutex<RefCell<Option<StoredBluetoothModemLpTimerOwner>>> =
     Mutex::new(RefCell::new(None));
+
+enum StoredBluetoothModemLpTimerOwner {
+    Ready(BluetoothModemLpTimerInterruptReadyOwner),
+    SoftwarePending(BluetoothModemLpTimerSoftwarePendingOwner),
+}
+
+impl StoredBluetoothModemLpTimerOwner {
+    const fn phase(&self) -> BluetoothModemLpTimerStoragePhase {
+        match self {
+            Self::Ready(_) => BluetoothModemLpTimerStoragePhase::Ready,
+            Self::SoftwarePending(_) => BluetoothModemLpTimerStoragePhase::SoftwarePending,
+        }
+    }
+}
 
 /// Stable process-wide slots for both Bluetooth ISR register owners.
 ///
@@ -80,6 +98,129 @@ impl EspHalBluetoothInterruptStorage {
 #[must_use = "published Bluetooth ISR owners remain process-wide until verified teardown"]
 pub struct PublishedEspHalBluetoothInterruptOwners {
     _private: (),
+}
+
+/// Result of one finite source-127 register-only hard-handler entry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EspHalBluetoothModemLpTimerInterruptStep {
+    /// No timer owner is currently available in the stable slot.
+    Unavailable,
+    /// Software work already owns the timer; no register was touched.
+    AwaitingSoftware,
+    /// The first status observation was empty and restored the ready owner.
+    Spurious,
+    /// The common register phase completed without software work.
+    Rearmed,
+    /// The acknowledged register phase transferred ownership to task work.
+    SoftwarePending,
+}
+
+/// Why task-side source-127 ownership could not enter or leave stable storage.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EspHalBluetoothModemLpTimerStorageError {
+    /// No timer owner is present in the process-wide slot.
+    Missing,
+    /// The stable owner is ready for an IRQ and has no pending software work.
+    NotSoftwarePending,
+    /// Task work attempted to restore an owner into an occupied slot.
+    Occupied,
+}
+
+/// Failed task-side rearm retaining the unique ready owner.
+#[must_use = "a failed source-127 rearm still owns the timer registers"]
+pub struct EspHalBluetoothModemLpTimerRestoreFailure {
+    /// Exact stable-storage rejection.
+    pub error: EspHalBluetoothModemLpTimerStorageError,
+    /// Unchanged ISR-ready owner.
+    pub owner: BluetoothModemLpTimerInterruptReadyOwner,
+}
+
+impl PublishedEspHalBluetoothInterruptOwners {
+    /// Execute at most the source-127 classifier and common register phase.
+    ///
+    /// A software-pending result leaves the unique owner in stable storage for
+    /// task context. Re-entry before task acquisition performs no MMIO.
+    pub fn service_modem_lp_timer_interrupt(&self) -> EspHalBluetoothModemLpTimerInterruptStep {
+        critical_section::with(|critical_section| {
+            let mut slot = MODEM_LP_TIMER.borrow_ref_mut(critical_section);
+            let phase = slot
+                .as_ref()
+                .map_or(BluetoothModemLpTimerStoragePhase::Missing, |owner| {
+                    owner.phase()
+                });
+            match classify_modem_lp_timer_interrupt(phase) {
+                BluetoothModemLpTimerInterruptAdmission::Unavailable => {
+                    EspHalBluetoothModemLpTimerInterruptStep::Unavailable
+                }
+                BluetoothModemLpTimerInterruptAdmission::AwaitSoftware => {
+                    EspHalBluetoothModemLpTimerInterruptStep::AwaitingSoftware
+                }
+                BluetoothModemLpTimerInterruptAdmission::ServiceRegisters => {
+                    let Some(StoredBluetoothModemLpTimerOwner::Ready(ready)) = slot.take() else {
+                        return EspHalBluetoothModemLpTimerInterruptStep::Unavailable;
+                    };
+                    match ready.step() {
+                        BluetoothModemLpTimerInterruptStep::Spurious(ready) => {
+                            *slot = Some(StoredBluetoothModemLpTimerOwner::Ready(ready));
+                            EspHalBluetoothModemLpTimerInterruptStep::Spurious
+                        }
+                        BluetoothModemLpTimerInterruptStep::HandlerPending(pending) => {
+                            match pending.step_registers() {
+                                BluetoothModemLpTimerHandlerRegisterStep::Rearmed(ready) => {
+                                    *slot = Some(StoredBluetoothModemLpTimerOwner::Ready(ready));
+                                    EspHalBluetoothModemLpTimerInterruptStep::Rearmed
+                                }
+                                BluetoothModemLpTimerHandlerRegisterStep::SoftwarePending(
+                                    pending,
+                                ) => {
+                                    *slot = Some(
+                                        StoredBluetoothModemLpTimerOwner::SoftwarePending(pending),
+                                    );
+                                    EspHalBluetoothModemLpTimerInterruptStep::SoftwarePending
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        })
+    }
+
+    /// Move source-127 software-pending ownership into task context.
+    pub fn take_modem_lp_timer_software_pending(
+        &self,
+    ) -> Result<BluetoothModemLpTimerSoftwarePendingOwner, EspHalBluetoothModemLpTimerStorageError>
+    {
+        critical_section::with(|critical_section| {
+            let mut slot = MODEM_LP_TIMER.borrow_ref_mut(critical_section);
+            match slot.take() {
+                Some(StoredBluetoothModemLpTimerOwner::SoftwarePending(owner)) => Ok(owner),
+                Some(owner @ StoredBluetoothModemLpTimerOwner::Ready(_)) => {
+                    *slot = Some(owner);
+                    Err(EspHalBluetoothModemLpTimerStorageError::NotSoftwarePending)
+                }
+                None => Err(EspHalBluetoothModemLpTimerStorageError::Missing),
+            }
+        })
+    }
+
+    /// Return a fully rearmed source-127 owner to stable ISR storage.
+    pub fn restore_modem_lp_timer_ready(
+        &self,
+        owner: BluetoothModemLpTimerInterruptReadyOwner,
+    ) -> Result<(), EspHalBluetoothModemLpTimerRestoreFailure> {
+        critical_section::with(|critical_section| {
+            let mut slot = MODEM_LP_TIMER.borrow_ref_mut(critical_section);
+            if slot.is_some() {
+                return Err(EspHalBluetoothModemLpTimerRestoreFailure {
+                    error: EspHalBluetoothModemLpTimerStorageError::Occupied,
+                    owner,
+                });
+            }
+            *slot = Some(StoredBluetoothModemLpTimerOwner::Ready(owner));
+            Ok(())
+        })
+    }
 }
 
 impl BluetoothInterruptOwnerStorage for EspHalBluetoothInterruptStorage {
@@ -105,7 +246,7 @@ impl BluetoothInterruptOwnerStorage for EspHalBluetoothInterruptStorage {
             match validate_interrupt_storage(interrupt_slot.is_some(), timer_slot.is_some()) {
                 Ok(()) => {
                     *interrupt_slot = Some(interrupts);
-                    *timer_slot = Some(timer);
+                    *timer_slot = Some(StoredBluetoothModemLpTimerOwner::Ready(timer));
                     Ok(PublishedEspHalBluetoothInterruptOwners { _private: () })
                 }
                 Err(error) => Err((error, self, interrupts, timer)),

@@ -33,6 +33,36 @@ pub(crate) const fn validate_interrupt_storage(
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BluetoothModemLpTimerStoragePhase {
+    Missing,
+    Ready,
+    SoftwarePending,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BluetoothModemLpTimerInterruptAdmission {
+    Unavailable,
+    ServiceRegisters,
+    AwaitSoftware,
+}
+
+pub(crate) const fn classify_modem_lp_timer_interrupt(
+    phase: BluetoothModemLpTimerStoragePhase,
+) -> BluetoothModemLpTimerInterruptAdmission {
+    match phase {
+        BluetoothModemLpTimerStoragePhase::Missing => {
+            BluetoothModemLpTimerInterruptAdmission::Unavailable
+        }
+        BluetoothModemLpTimerStoragePhase::Ready => {
+            BluetoothModemLpTimerInterruptAdmission::ServiceRegisters
+        }
+        BluetoothModemLpTimerStoragePhase::SoftwarePending => {
+            BluetoothModemLpTimerInterruptAdmission::AwaitSoftware
+        }
+    }
+}
+
 /// Validate the complete route set before any route can be installed.
 pub(crate) const fn validate_route_priorities(
     primary: u8,
@@ -64,9 +94,10 @@ pub(crate) const fn validate_quiesce_core(
 #[cfg(test)]
 mod tests {
     use super::{
-        BluetoothInterruptRouteError, EspHalBluetoothInterruptStorageError,
-        REQUIRED_PRIORITY_LEVEL, validate_interrupt_storage, validate_quiesce_core,
-        validate_route_priorities,
+        BluetoothInterruptRouteError, BluetoothModemLpTimerInterruptAdmission,
+        BluetoothModemLpTimerStoragePhase, EspHalBluetoothInterruptStorageError,
+        REQUIRED_PRIORITY_LEVEL, classify_modem_lp_timer_interrupt, validate_interrupt_storage,
+        validate_quiesce_core, validate_route_priorities,
     };
 
     #[test]
@@ -120,6 +151,22 @@ mod tests {
         assert_eq!(
             validate_interrupt_storage(false, true),
             Err(EspHalBluetoothInterruptStorageError::StorageInvariant)
+        );
+    }
+
+    #[test]
+    fn source_127_register_entry_stops_while_software_owns_the_timer() {
+        assert_eq!(
+            classify_modem_lp_timer_interrupt(BluetoothModemLpTimerStoragePhase::Missing),
+            BluetoothModemLpTimerInterruptAdmission::Unavailable
+        );
+        assert_eq!(
+            classify_modem_lp_timer_interrupt(BluetoothModemLpTimerStoragePhase::Ready),
+            BluetoothModemLpTimerInterruptAdmission::ServiceRegisters
+        );
+        assert_eq!(
+            classify_modem_lp_timer_interrupt(BluetoothModemLpTimerStoragePhase::SoftwarePending),
+            BluetoothModemLpTimerInterruptAdmission::AwaitSoftware
         );
     }
 }

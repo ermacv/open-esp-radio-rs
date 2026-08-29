@@ -67764,6 +67764,136 @@ pub mod field_replace_modify {
                 .bit(((input >> 1) & 0x00000001) != 0)
         });
     }
+
+    /// Replace PHY_PBUS.STATUS_CLOCK_FORCE fields [RX_CLOCK_LOW_OR_RXIQ_STATUS_FIRST_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_pbus_rxiq_status_first(registers: &crate::PhyPbus) {
+        registers.status_clock_force().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .rx_clock_low_or_rxiq_status_first_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_PBUS.STATUS_CLOCK_FORCE fields [RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_pbus_rxiq_status_second(registers: &crate::PhyPbus) {
+        registers.status_clock_force().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .rx_clock_high_or_rxiq_status_second_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields [RX_IQ_CORRECTION_MODE_LOW] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_rxiq_root_rx_correction_mode_low(registers: &crate::PhyBasebandConfigOracle) {
+        registers.iq_correction_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .rx_iq_correction_mode_low()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields [TX_IQ_CORRECTION_MODE_LOW] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_rxiq_root_tx_correction_mode_low(registers: &crate::PhyBasebandConfigOracle) {
+        registers.iq_correction_aux().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .tx_iq_correction_mode_low()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields [RX_IQ_CORRECTION_MODE_HIGH] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_rxiq_root_rx_correction_mode_high(registers: &crate::PhyBasebandConfigOracle) {
+        registers.iq_correction_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .rx_iq_correction_mode_high()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields [TX_IQ_CORRECTION_MODE_HIGH] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_rxiq_root_tx_correction_mode_high(registers: &crate::PhyBasebandConfigOracle) {
+        registers.iq_correction_aux().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .tx_iq_correction_mode_high()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields [RX_IQ_CORRECTION_MODE_HIGH] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_rxiq_root_rx_correction_mode_high(registers: &crate::PhyBasebandConfigOracle) {
+        registers.iq_correction_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .rx_iq_correction_mode_high()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields [TX_IQ_CORRECTION_MODE_HIGH] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_rxiq_root_tx_correction_mode_high(registers: &crate::PhyBasebandConfigOracle) {
+        registers.iq_correction_aux().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .tx_iq_correction_mode_high()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields [RX_IQ_CORRECTION_MODE_LOW] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_rxiq_root_rx_correction_mode_low(registers: &crate::PhyBasebandConfigOracle) {
+        registers.iq_correction_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .rx_iq_correction_mode_low()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_PBUS.STATUS_CLOCK_FORCE fields [RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_pbus_rxiq_status_second(registers: &crate::PhyPbus) {
+        registers.status_clock_force().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .rx_clock_high_or_rxiq_status_second_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.

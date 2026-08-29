@@ -433,34 +433,24 @@ impl RadioPhyRegisters {
 
     /// Publish both RXIQ root status bits through independent fresh RMWs.
     pub fn configure_rxiq_root_status(&mut self) {
-        let status = self.peripherals.phy_pbus.status_clock_force();
-        status.modify(|_, w| w.rx_clock_low_or_rxiq_status_first_unknown().set_bit());
-        status.modify(|_, w| w.rx_clock_high_or_rxiq_status_second_unknown().set_bit());
+        let pbus = &self.peripherals.phy_pbus;
+        super::generated::set_pbus_rxiq_status_first(pbus);
+        super::generated::set_pbus_rxiq_status_second(pbus);
     }
 
     /// Apply the complete four-edge RXIQ correction prefix or suffix.
     pub fn configure_rxiq_root_correction(&mut self, begin: bool) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
         if begin {
-            bb.iq_correction_control()
-                .modify(|_, w| w.rx_iq_correction_mode_low().set_bit());
-            bb.iq_correction_aux()
-                .modify(|_, w| w.tx_iq_correction_mode_low().set_bit());
-            bb.iq_correction_control()
-                .modify(|_, w| w.rx_iq_correction_mode_high().clear_bit());
-            bb.iq_correction_aux()
-                .modify(|_, w| w.tx_iq_correction_mode_high().clear_bit());
+            super::generated::set_rxiq_root_rx_correction_mode_low(bb);
+            super::generated::set_rxiq_root_tx_correction_mode_low(bb);
+            super::generated::clear_rxiq_root_rx_correction_mode_high(bb);
+            super::generated::clear_rxiq_root_tx_correction_mode_high(bb);
         } else {
-            bb.iq_correction_control()
-                .modify(|_, w| w.rx_iq_correction_mode_high().set_bit());
-            bb.iq_correction_aux()
-                .modify(|_, w| w.tx_iq_correction_mode_high().set_bit());
-            bb.iq_correction_control()
-                .modify(|_, w| w.rx_iq_correction_mode_low().clear_bit());
-            self.peripherals
-                .phy_pbus
-                .status_clock_force()
-                .modify(|_, w| w.rx_clock_high_or_rxiq_status_second_unknown().clear_bit());
+            super::generated::set_rxiq_root_rx_correction_mode_high(bb);
+            super::generated::set_rxiq_root_tx_correction_mode_high(bb);
+            super::generated::clear_rxiq_root_rx_correction_mode_low(bb);
+            super::generated::clear_pbus_rxiq_status_second(&self.peripherals.phy_pbus);
         }
     }
 

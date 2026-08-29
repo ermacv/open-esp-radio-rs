@@ -8013,3 +8013,93 @@ fields = [
 value = 3
 exposure = "facade"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_pbus_rxiq_status_first"
+peripheral = "PHY_PBUS"
+register = "STATUS_CLOCK_FORCE"
+fields = [{ field = "RX_CLOCK_LOW_OR_RXIQ_STATUS_FIRST_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_RXIQ_CAL_INIT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_pbus_rxiq_status_second"
+peripheral = "PHY_PBUS"
+register = "STATUS_CLOCK_FORCE"
+fields = [{ field = "RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_RXIQ_CAL_INIT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_rxiq_root_rx_correction_mode_low"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "IQ_CORRECTION_CONTROL"
+fields = [{ field = "RX_IQ_CORRECTION_MODE_LOW", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_RXIQ_CAL_INIT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_rxiq_root_tx_correction_mode_low"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "IQ_CORRECTION_AUX"
+fields = [{ field = "TX_IQ_CORRECTION_MODE_LOW", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_RXIQ_CAL_INIT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_rxiq_root_rx_correction_mode_high"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "IQ_CORRECTION_CONTROL"
+fields = [{ field = "RX_IQ_CORRECTION_MODE_HIGH", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_RXIQ_CAL_INIT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_rxiq_root_tx_correction_mode_high"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "IQ_CORRECTION_AUX"
+fields = [{ field = "TX_IQ_CORRECTION_MODE_HIGH", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_RXIQ_CAL_INIT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_rxiq_root_rx_correction_mode_high"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "IQ_CORRECTION_CONTROL"
+fields = [{ field = "RX_IQ_CORRECTION_MODE_HIGH", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_RXIQ_CAL_INIT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_rxiq_root_tx_correction_mode_high"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "IQ_CORRECTION_AUX"
+fields = [{ field = "TX_IQ_CORRECTION_MODE_HIGH", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_RXIQ_CAL_INIT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_rxiq_root_rx_correction_mode_low"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "IQ_CORRECTION_CONTROL"
+fields = [{ field = "RX_IQ_CORRECTION_MODE_LOW", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_RXIQ_CAL_INIT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_pbus_rxiq_status_second"
+peripheral = "PHY_PBUS"
+register = "STATUS_CLOCK_FORCE"
+fields = [{ field = "RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_RXIQ_CAL_INIT", "S31_ESP_PACS_SVD"]

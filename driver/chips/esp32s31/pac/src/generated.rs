@@ -5809,6 +5809,80 @@ pub(crate) fn enable_tx_iq_correction_modes(registers: &crate::svd::PhyBasebandC
     crate::svd::field_replace_modify::enable_tx_iq_correction_modes(registers);
 }
 
+/// Typed bridge for the reviewed `set_pbus_rxiq_status_first` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn set_pbus_rxiq_status_first(registers: &crate::svd::PhyPbus) {
+    crate::svd::field_replace_modify::set_pbus_rxiq_status_first(registers);
+}
+
+/// Typed bridge for the reviewed `set_pbus_rxiq_status_second` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn set_pbus_rxiq_status_second(registers: &crate::svd::PhyPbus) {
+    crate::svd::field_replace_modify::set_pbus_rxiq_status_second(registers);
+}
+
+/// Typed bridge for the reviewed `set_rxiq_root_rx_correction_mode_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn set_rxiq_root_rx_correction_mode_low(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::set_rxiq_root_rx_correction_mode_low(registers);
+}
+
+/// Typed bridge for the reviewed `set_rxiq_root_tx_correction_mode_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn set_rxiq_root_tx_correction_mode_low(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::set_rxiq_root_tx_correction_mode_low(registers);
+}
+
+/// Typed bridge for the reviewed `clear_rxiq_root_rx_correction_mode_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_rxiq_root_rx_correction_mode_high(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::clear_rxiq_root_rx_correction_mode_high(registers);
+}
+
+/// Typed bridge for the reviewed `clear_rxiq_root_tx_correction_mode_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_rxiq_root_tx_correction_mode_high(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::clear_rxiq_root_tx_correction_mode_high(registers);
+}
+
+/// Typed bridge for the reviewed `set_rxiq_root_rx_correction_mode_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn set_rxiq_root_rx_correction_mode_high(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::set_rxiq_root_rx_correction_mode_high(registers);
+}
+
+/// Typed bridge for the reviewed `set_rxiq_root_tx_correction_mode_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn set_rxiq_root_tx_correction_mode_high(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::set_rxiq_root_tx_correction_mode_high(registers);
+}
+
+/// Typed bridge for the reviewed `clear_rxiq_root_rx_correction_mode_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_rxiq_root_rx_correction_mode_low(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::clear_rxiq_root_rx_correction_mode_low(registers);
+}
+
+/// Typed bridge for the reviewed `clear_pbus_rxiq_status_second` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_pbus_rxiq_status_second(registers: &crate::svd::PhyPbus) {
+    crate::svd::field_replace_modify::clear_pbus_rxiq_status_second(registers);
+}
+
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
 #[inline]
 pub(crate) fn configure_shared_modem_low_power_timer(

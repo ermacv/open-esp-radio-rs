@@ -140,18 +140,13 @@ impl RadioPhyRegisters {
     pub fn configure_rf_rx_saturation(&mut self, enabled: bool) {
         let agc = &self.peripherals.phy_agc_oracle;
         super::svd::fixed_register_image::initialize_rf_rx_saturation_config(agc);
-        agc.agc_saturation_control().modify(|_, w| {
-            w.rf_rx_saturation_bit_19_unknown()
-                .bit(enabled)
-                .rf_rx_saturation_bit_24_unknown()
-                .bit(enabled)
-                .rf_rx_saturation_bit_28_unknown()
-                .bit(enabled)
-                .rf_rx_saturation_high_unknown()
-                .set(if enabled { 3 } else { 0 })
-        });
-        agc.agc_saturation_control()
-            .modify(|_, w| w.low_unknown().set(if enabled { 0x0800 } else { 0x0400 }));
+        if enabled {
+            super::generated::enable_phy_rf_rx_saturation_state(agc);
+            super::generated::enable_phy_rf_rx_saturation_low(agc);
+        } else {
+            super::generated::disable_phy_rf_rx_saturation_state(agc);
+            super::generated::disable_phy_rf_rx_saturation_low(agc);
+        }
     }
 
     /// Publish both final RX-gain limits through separate fresh RMWs.

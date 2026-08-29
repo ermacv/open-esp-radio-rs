@@ -67443,6 +67443,70 @@ pub mod field_replace_modify {
             writer.low_rate_enable().bit((input & 0x00000001) != 0)
         });
     }
+
+    /// Replace PHY_AGC_ORACLE.AGC_SATURATION_CONTROL fields [RF_RX_SATURATION_BIT_19_UNKNOWN, RF_RX_SATURATION_BIT_24_UNKNOWN, RF_RX_SATURATION_BIT_28_UNKNOWN, RF_RX_SATURATION_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_phy_rf_rx_saturation_state(registers: &crate::PhyAgcOracle) {
+        registers.agc_saturation_control().modify(|_, writer| {
+            let input = 0x0000001f_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .rf_rx_saturation_bit_19_unknown()
+                    .bit((input & 0x00000001) != 0)
+                    .rf_rx_saturation_bit_24_unknown()
+                    .bit(((input >> 1) & 0x00000001) != 0)
+                    .rf_rx_saturation_bit_28_unknown()
+                    .bit(((input >> 2) & 0x00000001) != 0)
+                    .rf_rx_saturation_high_unknown()
+                    .bits(((input >> 3) & 0x00000003) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.AGC_SATURATION_CONTROL fields [RF_RX_SATURATION_BIT_19_UNKNOWN, RF_RX_SATURATION_BIT_24_UNKNOWN, RF_RX_SATURATION_BIT_28_UNKNOWN, RF_RX_SATURATION_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn disable_phy_rf_rx_saturation_state(registers: &crate::PhyAgcOracle) {
+        registers.agc_saturation_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .rf_rx_saturation_bit_19_unknown()
+                    .bit((input & 0x00000001) != 0)
+                    .rf_rx_saturation_bit_24_unknown()
+                    .bit(((input >> 1) & 0x00000001) != 0)
+                    .rf_rx_saturation_bit_28_unknown()
+                    .bit(((input >> 2) & 0x00000001) != 0)
+                    .rf_rx_saturation_high_unknown()
+                    .bits(((input >> 3) & 0x00000003) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.AGC_SATURATION_CONTROL fields [LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_phy_rf_rx_saturation_low(registers: &crate::PhyAgcOracle) {
+        registers.agc_saturation_control().modify(|_, writer| {
+            let input = 0x00000800_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.low_unknown().bits(input & 0x0007ffff) }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.AGC_SATURATION_CONTROL fields [LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn disable_phy_rf_rx_saturation_low(registers: &crate::PhyAgcOracle) {
+        registers.agc_saturation_control().modify(|_, writer| {
+            let input = 0x00000400_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.low_unknown().bits(input & 0x0007ffff) }
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.

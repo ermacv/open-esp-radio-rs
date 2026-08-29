@@ -5636,6 +5636,30 @@ pub(crate) fn configure_phy_rx11b_secondary_low_rate_state(
     );
 }
 
+/// Typed bridge for the reviewed `enable_phy_rf_rx_saturation_state` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_phy_rf_rx_saturation_state(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::enable_phy_rf_rx_saturation_state(registers);
+}
+
+/// Typed bridge for the reviewed `disable_phy_rf_rx_saturation_state` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn disable_phy_rf_rx_saturation_state(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::disable_phy_rf_rx_saturation_state(registers);
+}
+
+/// Typed bridge for the reviewed `enable_phy_rf_rx_saturation_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_phy_rf_rx_saturation_low(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::enable_phy_rf_rx_saturation_low(registers);
+}
+
+/// Typed bridge for the reviewed `disable_phy_rf_rx_saturation_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn disable_phy_rf_rx_saturation_low(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::disable_phy_rf_rx_saturation_low(registers);
+}
+
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
 #[inline]
 pub(crate) fn configure_shared_modem_low_power_timer(

@@ -7774,3 +7774,49 @@ domain = "PhyRx11bLowRateArgument"
 input-transform = { wrapping-subtract = 0, retain-mask = 1 }
 exposure = "facade"
 sources = ["ROM_REV0_PHY_RX11BLR_CFG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_phy_rf_rx_saturation_state"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_SATURATION_CONTROL"
+fields = [
+    { field = "RF_RX_SATURATION_BIT_19_UNKNOWN", source-bit-offset = 0 },
+    { field = "RF_RX_SATURATION_BIT_24_UNKNOWN", source-bit-offset = 1 },
+    { field = "RF_RX_SATURATION_BIT_28_UNKNOWN", source-bit-offset = 2 },
+    { field = "RF_RX_SATURATION_HIGH_UNKNOWN", source-bit-offset = 3 },
+]
+value = 0x1f
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "disable_phy_rf_rx_saturation_state"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_SATURATION_CONTROL"
+fields = [
+    { field = "RF_RX_SATURATION_BIT_19_UNKNOWN", source-bit-offset = 0 },
+    { field = "RF_RX_SATURATION_BIT_24_UNKNOWN", source-bit-offset = 1 },
+    { field = "RF_RX_SATURATION_BIT_28_UNKNOWN", source-bit-offset = 2 },
+    { field = "RF_RX_SATURATION_HIGH_UNKNOWN", source-bit-offset = 3 },
+]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_phy_rf_rx_saturation_low"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_SATURATION_CONTROL"
+fields = [{ field = "LOW_UNKNOWN", source-bit-offset = 0 }]
+value = 0x0800
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "disable_phy_rf_rx_saturation_low"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_SATURATION_CONTROL"
+fields = [{ field = "LOW_UNKNOWN", source-bit-offset = 0 }]
+value = 0x0400
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]

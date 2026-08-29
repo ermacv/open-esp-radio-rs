@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::generated::{PhyAgcParameterByte, PhyLowRateState};
+use super::generated::{PhyAgcParameterByte, PhyLowRateState, PhyRx11bLowRateArgument};
 use super::{PhyFtmEnableVendorArgument, RadioPhyRegisters};
 
 const fn phy_low_rate_state(enabled: bool) -> PhyLowRateState {
@@ -128,14 +128,12 @@ impl RadioPhyRegisters {
     /// Apply complete rev0 ROM `phy_rx11blr_cfg` without widening the caller
     /// low-bit contract into a boolean ABI.
     pub fn configure_rx_11b_low_rate(&mut self, input: u32) {
-        let enabled = input & 1 != 0;
+        let input = PhyRx11bLowRateArgument::new(input)
+            .expect("every u32 is a complete phy_rx11blr_cfg argument");
         let agc = &self.peripherals.phy_agc_oracle;
-        agc.low_rate_primary_control()
-            .modify(|_, w| w.low_rate_enable_first().bit(enabled));
-        agc.low_rate_primary_control()
-            .modify(|_, w| w.low_rate_enable_second().bit(enabled));
-        agc.low_rate_secondary_control()
-            .modify(|_, w| w.low_rate_enable().bit(enabled));
+        super::generated::configure_phy_rx11b_first_low_rate_state(agc, input);
+        super::generated::configure_phy_rx11b_second_low_rate_state(agc, input);
+        super::generated::configure_phy_rx11b_secondary_low_rate_state(agc, input);
     }
 
     /// Apply either complete branch of rev0 ROM `phy_rfrx_sat_rst`.

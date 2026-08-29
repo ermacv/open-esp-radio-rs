@@ -67403,6 +67403,46 @@ pub mod field_replace_modify {
             }
         });
     }
+
+    /// Replace PHY_AGC_ORACLE.LOW_RATE_PRIMARY_CONTROL fields [LOW_RATE_ENABLE_FIRST] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_rx11b_first_low_rate_state(registers: &crate::PhyAgcOracle, input: u32) {
+        registers.low_rate_primary_control().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x00000001;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .low_rate_enable_first()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.LOW_RATE_PRIMARY_CONTROL fields [LOW_RATE_ENABLE_SECOND] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_rx11b_second_low_rate_state(registers: &crate::PhyAgcOracle, input: u32) {
+        registers.low_rate_primary_control().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x00000001;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .low_rate_enable_second()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.LOW_RATE_SECONDARY_CONTROL fields [LOW_RATE_ENABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_rx11b_secondary_low_rate_state(
+        registers: &crate::PhyAgcOracle,
+        input: u32,
+    ) {
+        registers.low_rate_secondary_control().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x00000001;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.low_rate_enable().bit((input & 0x00000001) != 0)
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.

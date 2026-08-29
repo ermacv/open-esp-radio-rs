@@ -7737,3 +7737,40 @@ fields = [
 value = 0x1e1e
 exposure = "facade"
 sources = ["ROM_REV0_PHY_ANT_INIT", "S31_ESP_PACS_SVD"]
+
+[[bounded-domains]]
+name = "PhyRx11bLowRateArgument"
+description = "Complete 32-bit caller ABI consumed through its low bit by rev0 phy_rx11blr_cfg."
+min = 0
+max = 0xffff_ffff
+sources = ["ROM_REV0_PHY_RX11BLR_CFG"]
+
+[[field-replace-modifies]]
+name = "configure_phy_rx11b_first_low_rate_state"
+peripheral = "PHY_AGC_ORACLE"
+register = "LOW_RATE_PRIMARY_CONTROL"
+fields = [{ field = "LOW_RATE_ENABLE_FIRST", source-bit-offset = 0 }]
+domain = "PhyRx11bLowRateArgument"
+input-transform = { wrapping-subtract = 0, retain-mask = 1 }
+exposure = "facade"
+sources = ["ROM_REV0_PHY_RX11BLR_CFG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_rx11b_second_low_rate_state"
+peripheral = "PHY_AGC_ORACLE"
+register = "LOW_RATE_PRIMARY_CONTROL"
+fields = [{ field = "LOW_RATE_ENABLE_SECOND", source-bit-offset = 0 }]
+domain = "PhyRx11bLowRateArgument"
+input-transform = { wrapping-subtract = 0, retain-mask = 1 }
+exposure = "facade"
+sources = ["ROM_REV0_PHY_RX11BLR_CFG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_rx11b_secondary_low_rate_state"
+peripheral = "PHY_AGC_ORACLE"
+register = "LOW_RATE_SECONDARY_CONTROL"
+fields = [{ field = "LOW_RATE_ENABLE", source-bit-offset = 0 }]
+domain = "PhyRx11bLowRateArgument"
+input-transform = { wrapping-subtract = 0, retain-mask = 1 }
+exposure = "facade"
+sources = ["ROM_REV0_PHY_RX11BLR_CFG", "S31_ESP_PACS_SVD"]

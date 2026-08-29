@@ -1330,6 +1330,25 @@ impl PhyAgcParameterByte {
     }
 }
 
+/// Complete 32-bit caller ABI consumed through its low bit by rev0 phy_rx11blr_cfg.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyRx11bLowRateArgument(u32);
+
+impl PhyRx11bLowRateArgument {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0xffffffff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        Some(Self(value))
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Register-specific complete TIMER0 threshold word accepted by the public common LL; no clock source, unit, or deadline policy is assigned at the PAC boundary.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Ieee802154Timer0ThresholdWord(u32);
@@ -5579,6 +5598,42 @@ pub(crate) fn configure_phy_agc_initial_antenna_control(registers: &crate::svd::
 #[inline]
 pub(crate) fn configure_phy_agc_initial_antenna_paths(registers: &crate::svd::PhyAgcOracle) {
     crate::svd::field_replace_modify::configure_phy_agc_initial_antenna_paths(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_rx11b_first_low_rate_state` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_rx11b_first_low_rate_state(
+    registers: &crate::svd::PhyAgcOracle,
+    value: PhyRx11bLowRateArgument,
+) {
+    crate::svd::field_replace_modify::configure_phy_rx11b_first_low_rate_state(
+        registers,
+        value.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `configure_phy_rx11b_second_low_rate_state` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_rx11b_second_low_rate_state(
+    registers: &crate::svd::PhyAgcOracle,
+    value: PhyRx11bLowRateArgument,
+) {
+    crate::svd::field_replace_modify::configure_phy_rx11b_second_low_rate_state(
+        registers,
+        value.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `configure_phy_rx11b_secondary_low_rate_state` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_rx11b_secondary_low_rate_state(
+    registers: &crate::svd::PhyAgcOracle,
+    value: PhyRx11bLowRateArgument,
+) {
+    crate::svd::field_replace_modify::configure_phy_rx11b_secondary_low_rate_state(
+        registers,
+        value.get(),
+    );
 }
 
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.

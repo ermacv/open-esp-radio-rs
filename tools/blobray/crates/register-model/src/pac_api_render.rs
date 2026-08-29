@@ -357,8 +357,12 @@ impl PacApiPack {
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
+            let argument_lint = too_many_arguments_attribute(
+                operation.arguments.len(),
+                operation.register.contains("%s"),
+            );
             output.push_str(&format!(
-                "/// Typed bridge for the reviewed `{}` multi-argument field-replacement transaction.\n#[inline]\npub(crate) fn {}(registers: &crate::svd::{}, {index_parameter}{parameters}) {{\n    crate::svd::field_argument_modify::{}(registers, {index_argument}{arguments});\n}}\n\n",
+                "/// Typed bridge for the reviewed `{}` multi-argument field-replacement transaction.\n{argument_lint}#[inline]\npub(crate) fn {}(registers: &crate::svd::{}, {index_parameter}{parameters}) {{\n    crate::svd::field_argument_modify::{}(registers, {index_argument}{arguments});\n}}\n\n",
                 operation.name,
                 operation.name,
                 type_binding_name(&operation.peripheral),
@@ -1872,6 +1876,12 @@ mod tests {
             field_input_transform_expression(0, 1, None, 0x7f),
             "let input = input.wrapping_sub(0x00000001) & 0x0000007f;\n                         "
         );
+    }
+
+    #[test]
+    fn generated_facade_accounts_for_the_register_owner_argument() {
+        assert!(too_many_arguments_attribute(6, false).is_empty());
+        assert!(too_many_arguments_attribute(7, false).contains("clippy::too_many_arguments"));
     }
 
     #[test]

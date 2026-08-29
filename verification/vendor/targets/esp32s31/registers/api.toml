@@ -471,6 +471,34 @@ max = 0xff
 sources = ["ROM_REV0_PHY_IQ_COEFFICIENTS"]
 
 [[bounded-domains]]
+name = "PhyToneByteImage"
+description = "One complete eight-bit component of a reviewed calibration-tone field transaction."
+min = 0
+max = 0xff
+sources = ["BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW", "ROM_REV0_PHY_START_STOP_TX_TONE", "ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
+
+[[bounded-domains]]
+name = "PhyToneTwoBitImage"
+description = "One complete two-bit component of a reviewed calibration-tone field transaction."
+min = 0
+max = 3
+sources = ["BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW", "ROM_REV0_PHY_START_STOP_TX_TONE", "ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
+
+[[bounded-domains]]
+name = "PhyToneThreeBitImage"
+description = "One complete three-bit component of a reviewed calibration-tone field transaction."
+min = 0
+max = 7
+sources = ["BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW", "ROM_REV0_PHY_START_STOP_TX_TONE", "ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
+
+[[bounded-domains]]
+name = "PhyToneFourBitImage"
+description = "One complete four-bit component of a reviewed calibration-tone field transaction."
+min = 0
+max = 0x0f
+sources = ["BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW", "ROM_REV0_PHY_START_STOP_TX_TONE", "ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
+
+[[bounded-domains]]
 name = "BluetoothPhyInitTimingByte"
 description = "Runtime-derived byte ORed into both BLE link-controller transmit-delay fields by one fresh-read transaction."
 min = 0
@@ -9323,3 +9351,75 @@ domain = "PhyIqCoefficientImageByte"
 input-transform = { wrapping-subtract = 0, retain-mask = 0x7f }
 exposure = "facade"
 sources = ["ROM_REV0_PHY_IQ_COEFFICIENTS", "S31_ESP_PACS_SVD"]
+
+[[field-argument-modifies]]
+name = "configure_phy_tone_path_0"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TONE_PATH_0_CONTROL"
+arguments = [
+    { name = "selector_high", field = "SELECTOR_HIGH", domain = "PhyToneByteImage" },
+    { name = "low_reserved", field = "LOW_RESERVED_CLEAR_UNKNOWN", domain = "PhyToneTwoBitImage" },
+    { name = "negated_step", field = "NEGATED_STEP_OR_ATTENUATION", domain = "PhyToneByteImage" },
+    { name = "enabled", field = "TONE_ENABLE_OR_ARM" },
+    { name = "mismatch_mode", field = "TXIQ_MISMATCH_MODE_UNKNOWN", domain = "PhyToneThreeBitImage" },
+    { name = "middle_reserved", field = "MIDDLE_RESERVED_CLEAR_UNKNOWN", domain = "PhyToneTwoBitImage" },
+    { name = "polarity", field = "TXIQ_POLARITY_IMAGE", domain = "PhyToneFourBitImage" },
+]
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW", "ROM_REV0_PHY_START_STOP_TX_TONE", "ROM_REV0_PHY_TXIQ_GET_MIS_PWR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_phy_tone_path_1_low_image"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TONE_PATH_1_CONTROL"
+fields = [
+    { field = "SELECTOR_HIGH", source-bit-offset = 0 },
+    { field = "LOW_RESERVED_CLEAR_UNKNOWN", source-bit-offset = 8 },
+    { field = "NEGATED_STEP_OR_ATTENUATION", source-bit-offset = 10 },
+    { field = "TONE_ENABLE_OR_ARM", source-bit-offset = 18 },
+    { field = "LOW_IMAGE_REMAINDER_UNKNOWN", source-bit-offset = 19 },
+]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW", "ROM_REV0_PHY_START_STOP_TX_TONE", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_txiq_second_polarity"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TONE_PATH_0_CONTROL"
+fields = [{ field = "TXIQ_POLARITY_IMAGE", source-bit-offset = 0 }]
+domain = "PhyToneFourBitImage"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR", "S31_ESP_PACS_SVD"]
+
+[[field-snapshot-reads]]
+name = "capture_phy_txiq_tone_control"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TONE_PATH_0_CONTROL"
+fields = [
+    "SELECTOR_HIGH",
+    "LOW_RESERVED_CLEAR_UNKNOWN",
+    "NEGATED_STEP_OR_ATTENUATION",
+    "TONE_ENABLE_OR_ARM",
+    "TXIQ_MISMATCH_MODE_UNKNOWN",
+    "MIDDLE_RESERVED_CLEAR_UNKNOWN",
+    "TXIQ_POLARITY_IMAGE",
+    "HIGH_NIBBLE_UNKNOWN",
+]
+sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR", "S31_ESP_PACS_SVD"]
+
+[[zero-based-field-writes]]
+name = "restore_phy_txiq_tone_control"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TONE_PATH_0_CONTROL"
+fields = [
+    "SELECTOR_HIGH",
+    "LOW_RESERVED_CLEAR_UNKNOWN",
+    "NEGATED_STEP_OR_ATTENUATION",
+    "TONE_ENABLE_OR_ARM",
+    "TXIQ_MISMATCH_MODE_UNKNOWN",
+    "MIDDLE_RESERVED_CLEAR_UNKNOWN",
+    "TXIQ_POLARITY_IMAGE",
+    "HIGH_NIBBLE_UNKNOWN",
+]
+sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR", "S31_ESP_PACS_SVD"]

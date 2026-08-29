@@ -387,6 +387,33 @@ fn iq_coefficient_image(coefficient: i8) -> super::generated::PhyIqCoefficientIm
         .expect("one coefficient byte fits the complete generated IQ domain")
 }
 
+fn tone_byte(value: u8) -> super::generated::PhyToneByteImage {
+    super::generated::PhyToneByteImage::new(u32::from(value))
+        .expect("one byte fits the complete generated tone-byte domain")
+}
+
+fn tone_two_bit(value: u32) -> super::generated::PhyToneTwoBitImage {
+    super::generated::PhyToneTwoBitImage::new(value)
+        .expect("reviewed tone transaction supplies a complete two-bit image")
+}
+
+fn tone_three_bit(value: u32) -> super::generated::PhyToneThreeBitImage {
+    super::generated::PhyToneThreeBitImage::new(value)
+        .expect("reviewed tone transaction supplies a complete three-bit image")
+}
+
+fn tone_four_bit(value: u32) -> super::generated::PhyToneFourBitImage {
+    super::generated::PhyToneFourBitImage::new(value)
+        .expect("reviewed tone transaction supplies a complete four-bit image")
+}
+
+fn tone_selector_high(selector: u16) -> super::generated::PhyToneByteImage {
+    let selector = super::generated::PhyToneSelector::new(u32::from(selector))
+        .expect("tone selector must fit the generated ten-bit domain");
+    super::generated::PhyToneByteImage::new(selector.get() / 4)
+        .expect("upper eight selector bits fit the generated tone-byte domain")
+}
+
 impl RadioPhyRegisters {
     pub(crate) const fn txdc_pwdet_restore_pending(&self) -> bool {
         self.restore_slot.txdc_pending()
@@ -816,36 +843,18 @@ impl RadioPhyRegisters {
     }
 
     fn configure_tone_paths(&mut self, enabled: bool, path_0_selector: u16, path_0_step: u8) {
-        debug_assert!(path_0_selector <= 0x03ff);
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        bb.tone_path_0_control().modify(|_, w| {
-            w.selector_high()
-                .set((path_0_selector >> 2) as u8)
-                .low_reserved_clear_unknown()
-                .set(0)
-                .negated_step_or_attenuation()
-                .set(path_0_step.wrapping_neg())
-                .tone_enable_or_arm()
-                .bit(enabled)
-                .txiq_mismatch_mode_unknown()
-                .set(0)
-                .middle_reserved_clear_unknown()
-                .set(0)
-                .txiq_polarity_image()
-                .set(0)
-        });
-        bb.tone_path_1_control().modify(|_, w| {
-            w.selector_high()
-                .cleared()
-                .low_reserved_clear_unknown()
-                .cleared()
-                .negated_step_or_attenuation()
-                .cleared()
-                .tone_enable_or_arm()
-                .clear_bit()
-                .low_image_remainder_unknown()
-                .cleared()
-        });
+        super::generated::configure_phy_tone_path_0(
+            bb,
+            tone_selector_high(path_0_selector),
+            tone_two_bit(0),
+            tone_byte(path_0_step.wrapping_neg()),
+            enabled,
+            tone_three_bit(0),
+            tone_two_bit(0),
+            tone_four_bit(0),
+        );
+        super::generated::clear_phy_tone_path_1_low_image(bb);
     }
 
     /// Program the complete archive calibration-tone leaf and restore TX gain.
@@ -878,16 +887,25 @@ impl RadioPhyRegisters {
     pub fn prepare_txiq_tone_control_restore(&mut self) -> Result<(), TxIqToneControlPrepareError> {
         let bb = &self.peripherals.phy_baseband_config_oracle;
         self.restore_slot.prepare_txiq_with(|| {
-            let control = bb.tone_path_0_control().read();
+            let (
+                selector_high,
+                low_reserved_clear_unknown,
+                negated_step_or_attenuation,
+                tone_enable_or_arm,
+                txiq_mismatch_mode_unknown,
+                middle_reserved_clear_unknown,
+                txiq_polarity_image,
+                high_nibble_unknown,
+            ) = super::svd::field_snapshot_read::capture_phy_txiq_tone_control(bb);
             TxIqToneControlFields {
-                selector_high: control.selector_high().bits(),
-                low_reserved_clear_unknown: control.low_reserved_clear_unknown().bits(),
-                negated_step_or_attenuation: control.negated_step_or_attenuation().bits(),
-                tone_enable_or_arm: control.tone_enable_or_arm().bit(),
-                txiq_mismatch_mode_unknown: control.txiq_mismatch_mode_unknown().bits(),
-                middle_reserved_clear_unknown: control.middle_reserved_clear_unknown().bits(),
-                txiq_polarity_image: control.txiq_polarity_image().bits(),
-                high_nibble_unknown: control.high_nibble_unknown().bits(),
+                selector_high,
+                low_reserved_clear_unknown,
+                negated_step_or_attenuation,
+                tone_enable_or_arm,
+                txiq_mismatch_mode_unknown,
+                middle_reserved_clear_unknown,
+                txiq_polarity_image,
+                high_nibble_unknown,
             }
         })
     }
@@ -896,35 +914,20 @@ impl RadioPhyRegisters {
     ///
     /// A caller without a successful prepare operation is rejected before
     /// MMIO. The slot is cleared only after the complete accessor write.
-    #[allow(
-        unsafe_code,
-        reason = "the complete accessor write covers every modeled bit without assuming a reset image"
-    )]
     pub fn restore_txiq_tone_control(&mut self) -> Result<(), TxIqToneControlRestoreError> {
         let bb = &self.peripherals.phy_baseband_config_oracle;
         self.restore_slot.restore_txiq_with(|fields| {
-            // SAFETY: every one of the 32 bits is supplied through its named
-            // SVD field accessor from the single earlier register sample.
-            unsafe {
-                bb.tone_path_0_control().write_with_zero(|w| {
-                    w.selector_high()
-                        .set(fields.selector_high)
-                        .low_reserved_clear_unknown()
-                        .set(fields.low_reserved_clear_unknown)
-                        .negated_step_or_attenuation()
-                        .set(fields.negated_step_or_attenuation)
-                        .tone_enable_or_arm()
-                        .bit(fields.tone_enable_or_arm)
-                        .txiq_mismatch_mode_unknown()
-                        .set(fields.txiq_mismatch_mode_unknown)
-                        .middle_reserved_clear_unknown()
-                        .set(fields.middle_reserved_clear_unknown)
-                        .txiq_polarity_image()
-                        .set(fields.txiq_polarity_image)
-                        .high_nibble_unknown()
-                        .set(fields.high_nibble_unknown)
-                });
-            }
+            super::svd::zero_based_field_write::restore_phy_txiq_tone_control(
+                bb,
+                fields.selector_high,
+                fields.low_reserved_clear_unknown,
+                fields.negated_step_or_attenuation,
+                fields.tone_enable_or_arm,
+                fields.txiq_mismatch_mode_unknown,
+                fields.middle_reserved_clear_unknown,
+                fields.txiq_polarity_image,
+                fields.high_nibble_unknown,
+            );
         })
     }
 
@@ -936,32 +939,26 @@ impl RadioPhyRegisters {
         attenuation: u8,
         selector: u16,
     ) {
-        debug_assert!(selector <= 0x03ff);
         let bb = &self.peripherals.phy_baseband_config_oracle;
         if first {
-            bb.tone_path_0_control().modify(|_, w| {
-                w.selector_high()
-                    .set((selector >> 2) as u8)
-                    .low_reserved_clear_unknown()
-                    .set(0)
-                    .negated_step_or_attenuation()
-                    .set(attenuation.wrapping_neg())
-                    .tone_enable_or_arm()
-                    .set_bit()
-                    .txiq_mismatch_mode_unknown()
-                    .set(0b101)
-                    .middle_reserved_clear_unknown()
-                    .set(0)
-                    .txiq_polarity_image()
-                    .set(if polarity { 0b0100 } else { 0 })
-            });
-            bb.tone_selector_control()
-                .modify(|_, w| w.path_0_selector_low().set((selector & 3) as u8));
+            super::generated::configure_phy_tone_path_0(
+                bb,
+                tone_selector_high(selector),
+                tone_two_bit(0),
+                tone_byte(attenuation.wrapping_neg()),
+                true,
+                tone_three_bit(5),
+                tone_two_bit(0),
+                tone_four_bit(if polarity { 4 } else { 0 }),
+            );
+            let selector = super::generated::PhyToneSelector::new(u32::from(selector))
+                .expect("tone selector must fit the generated ten-bit domain");
+            super::generated::configure_phy_tone_path_0_selector_low(bb, selector);
         } else {
-            bb.tone_path_0_control().modify(|_, w| {
-                w.txiq_polarity_image()
-                    .set(if polarity { 0b1000 } else { 0b0001 })
-            });
+            super::generated::configure_phy_txiq_second_polarity(
+                bb,
+                tone_four_bit(if polarity { 8 } else { 1 }),
+            );
         }
     }
 

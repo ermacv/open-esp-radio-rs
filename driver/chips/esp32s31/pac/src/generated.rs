@@ -892,6 +892,98 @@ impl PhyIqCoefficientImageByte {
     }
 }
 
+/// One complete eight-bit component of a reviewed calibration-tone field transaction.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyToneByteImage(u32);
+
+impl PhyToneByteImage {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x000000ff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x000000ff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// One complete two-bit component of a reviewed calibration-tone field transaction.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyToneTwoBitImage(u32);
+
+impl PhyToneTwoBitImage {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x00000003;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x00000003 {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// One complete three-bit component of a reviewed calibration-tone field transaction.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyToneThreeBitImage(u32);
+
+impl PhyToneThreeBitImage {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x00000007;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x00000007 {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// One complete four-bit component of a reviewed calibration-tone field transaction.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyToneFourBitImage(u32);
+
+impl PhyToneFourBitImage {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x0000000f;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x0000000f {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Runtime-derived byte ORed into both BLE link-controller transmit-delay fields by one fresh-read transaction.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct BluetoothPhyInitTimingByte(u32);
@@ -6858,6 +6950,21 @@ pub(crate) fn publish_phy_rx_iq_phase_coefficient(
     crate::svd::field_replace_modify::publish_phy_rx_iq_phase_coefficient(registers, value.get());
 }
 
+/// Typed bridge for the reviewed `clear_phy_tone_path_1_low_image` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_tone_path_1_low_image(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::clear_phy_tone_path_1_low_image(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_txiq_second_polarity` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_txiq_second_polarity(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyToneFourBitImage,
+) {
+    crate::svd::field_replace_modify::configure_phy_txiq_second_polarity(registers, value.get());
+}
+
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
 #[inline]
 pub(crate) fn configure_shared_modem_low_power_timer(
@@ -6917,6 +7024,34 @@ pub(crate) fn restore_bluetooth_peripheral_clocks(
         ccm_enabled,
         bah_enabled,
         ble_timer_enabled,
+    );
+}
+
+/// Typed bridge for the reviewed `configure_phy_tone_path_0` multi-argument field-replacement transaction.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "reviewed hardware transaction exposes one typed argument per field"
+)]
+#[inline]
+pub(crate) fn configure_phy_tone_path_0(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    selector_high: PhyToneByteImage,
+    low_reserved: PhyToneTwoBitImage,
+    negated_step: PhyToneByteImage,
+    enabled: bool,
+    mismatch_mode: PhyToneThreeBitImage,
+    middle_reserved: PhyToneTwoBitImage,
+    polarity: PhyToneFourBitImage,
+) {
+    crate::svd::field_argument_modify::configure_phy_tone_path_0(
+        registers,
+        selector_high.get(),
+        low_reserved.get(),
+        negated_step.get(),
+        enabled,
+        mismatch_mode.get(),
+        middle_reserved.get(),
+        polarity.get(),
     );
 }
 

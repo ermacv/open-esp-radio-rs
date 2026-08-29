@@ -59172,6 +59172,25 @@ pub mod field_snapshot_read {
             sample.rst_modem_sec().bit(),
         )
     }
+
+    /// Read `SELECTOR_HIGH`, `LOW_RESERVED_CLEAR_UNKNOWN`, `NEGATED_STEP_OR_ATTENUATION`, `TONE_ENABLE_OR_ARM`, `TXIQ_MISMATCH_MODE_UNKNOWN`, `MIDDLE_RESERVED_CLEAR_UNKNOWN`, `TXIQ_POLARITY_IMAGE`, `HIGH_NIBBLE_UNKNOWN` from one `PHY_BASEBAND_CONFIG_ORACLE`.`TONE_PATH_0_CONTROL` sample.
+    #[allow(clippy::type_complexity)]
+    #[inline]
+    pub fn capture_phy_txiq_tone_control(
+        registers: &crate::PhyBasebandConfigOracle,
+    ) -> (u8, u8, u8, bool, u8, u8, u8, u8) {
+        let sample = registers.tone_path_0_control().read();
+        (
+            sample.selector_high().bits(),
+            sample.low_reserved_clear_unknown().bits(),
+            sample.negated_step_or_attenuation().bits(),
+            sample.tone_enable_or_arm().bit(),
+            sample.txiq_mismatch_mode_unknown().bits(),
+            sample.middle_reserved_clear_unknown().bits(),
+            sample.txiq_polarity_image().bits(),
+            sample.high_nibble_unknown().bits(),
+        )
+    }
 }
 
 /// Safe, SVD-declared complete-register writes of fixed enumerated values.
@@ -61692,6 +61711,49 @@ pub mod zero_based_field_write {
                     .bit(read_write_value)
                     .start_or_reset()
                     .bit(start_or_reset_value)
+            });
+        }
+    }
+
+    /// Write `SELECTOR_HIGH`, `LOW_RESERVED_CLEAR_UNKNOWN`, `NEGATED_STEP_OR_ATTENUATION`, `TONE_ENABLE_OR_ARM`, `TXIQ_MISMATCH_MODE_UNKNOWN`, `MIDDLE_RESERVED_CLEAR_UNKNOWN`, `TXIQ_POLARITY_IMAGE`, `HIGH_NIBBLE_UNKNOWN` in `PHY_BASEBAND_CONFIG_ORACLE`.`TONE_PATH_0_CONTROL` while publishing zero to every other register bit.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "reviewed hardware transaction exposes one typed argument per field"
+    )]
+    #[inline]
+    pub fn restore_phy_txiq_tone_control(
+        registers: &crate::PhyBasebandConfigOracle,
+        selector_high_value: u8,
+        low_reserved_clear_unknown_value: u8,
+        negated_step_or_attenuation_value: u8,
+        tone_enable_or_arm_value: bool,
+        txiq_mismatch_mode_unknown_value: u8,
+        middle_reserved_clear_unknown_value: u8,
+        txiq_polarity_image_value: u8,
+        high_nibble_unknown_value: u8,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.tone_path_0_control().write_with_zero(|writer| {
+                writer
+                    .selector_high()
+                    .set(selector_high_value)
+                    .low_reserved_clear_unknown()
+                    .set(low_reserved_clear_unknown_value)
+                    .negated_step_or_attenuation()
+                    .set(negated_step_or_attenuation_value)
+                    .tone_enable_or_arm()
+                    .bit(tone_enable_or_arm_value)
+                    .txiq_mismatch_mode_unknown()
+                    .set(txiq_mismatch_mode_unknown_value)
+                    .middle_reserved_clear_unknown()
+                    .set(middle_reserved_clear_unknown_value)
+                    .txiq_polarity_image()
+                    .set(txiq_polarity_image_value)
+                    .high_nibble_unknown()
+                    .set(high_nibble_unknown_value)
             });
         }
     }
@@ -69575,6 +69637,46 @@ pub mod field_replace_modify {
             }
         });
     }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_1_CONTROL fields [SELECTOR_HIGH, LOW_RESERVED_CLEAR_UNKNOWN, NEGATED_STEP_OR_ATTENUATION, TONE_ENABLE_OR_ARM, LOW_IMAGE_REMAINDER_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_phy_tone_path_1_low_image(registers: &crate::PhyBasebandConfigOracle) {
+        registers.tone_path_1_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .selector_high()
+                    .bits((input & 0x000000ff) as u8)
+                    .low_reserved_clear_unknown()
+                    .bits(((input >> 8) & 0x00000003) as u8)
+                    .negated_step_or_attenuation()
+                    .bits(((input >> 10) & 0x000000ff) as u8)
+                    .tone_enable_or_arm()
+                    .bit(((input >> 18) & 0x00000001) != 0)
+                    .low_image_remainder_unknown()
+                    .bits(((input >> 19) & 0x000001ff) as u16)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_0_CONTROL fields [TXIQ_POLARITY_IMAGE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_txiq_second_polarity(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.tone_path_0_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .txiq_polarity_image()
+                    .bits((input & 0x0000000f) as u8)
+            }
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.
@@ -69663,6 +69765,45 @@ pub mod field_argument_modify {
                 .bit(bah_enabled)
                 .clk_ble_timer_en()
                 .bit(ble_timer_enabled)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_0_CONTROL fields [selector_high -> SELECTOR_HIGH, low_reserved -> LOW_RESERVED_CLEAR_UNKNOWN, negated_step -> NEGATED_STEP_OR_ATTENUATION, enabled -> TONE_ENABLE_OR_ARM, mismatch_mode -> TXIQ_MISMATCH_MODE_UNKNOWN, middle_reserved -> MIDDLE_RESERVED_CLEAR_UNKNOWN, polarity -> TXIQ_POLARITY_IMAGE] from independently typed arguments while preserving every other bit.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "reviewed hardware transaction exposes one typed argument per field"
+    )]
+    #[inline]
+    pub fn configure_phy_tone_path_0(
+        registers: &crate::PhyBasebandConfigOracle,
+        selector_high: u32,
+        low_reserved: u32,
+        negated_step: u32,
+        enabled: bool,
+        mismatch_mode: u32,
+        middle_reserved: u32,
+        polarity: u32,
+    ) {
+        registers.tone_path_0_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every typed argument fits its named SVD field;
+            // no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .selector_high()
+                    .bits(selector_high as u8)
+                    .low_reserved_clear_unknown()
+                    .bits(low_reserved as u8)
+                    .negated_step_or_attenuation()
+                    .bits(negated_step as u8)
+                    .tone_enable_or_arm()
+                    .bit(enabled)
+                    .txiq_mismatch_mode_unknown()
+                    .bits(mismatch_mode as u8)
+                    .middle_reserved_clear_unknown()
+                    .bits(middle_reserved as u8)
+                    .txiq_polarity_image()
+                    .bits(polarity as u8)
+            }
         });
     }
 }

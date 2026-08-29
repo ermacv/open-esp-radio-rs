@@ -126,7 +126,8 @@ impl InterfacePack {
             &matches_by_anchor,
             &execution_model_sets,
         );
-        let unreviewed_observations = build_unreviewed_observations(self, facts, &matched_by);
+        let unreviewed_observations =
+            build_unreviewed_observations(self, facts, &matched_by, &matches_by_anchor);
         let contracts = build_contracts(self, &bindings, &execution_model_sets);
         let mut summary = build_summary(self, facts, catalogs, &matched_by, &matches_by_anchor);
         summary.resolved_calls = bindings.iter().map(|binding| binding.calls.len()).sum();
@@ -278,11 +279,20 @@ fn build_summary(
         .iter()
         .map(|anchor| (anchor.id.as_str(), anchor))
         .collect::<BTreeMap<_, _>>();
+    let unreviewed_anchors = facts
+        .tables
+        .iter()
+        .enumerate()
+        .filter(|(index, fact)| {
+            matched_by[*index].is_none()
+                && linked_view_anchor(pack, facts, fact, matches_by_anchor).is_none()
+        })
+        .count();
     let mut summary = InterfaceWorkspaceSummary {
         fact_tables: facts.tables.len(),
         observed_slots: facts.observed_slots(),
         observed_calls: facts.observed_calls(),
-        unreviewed_anchors: matched_by.iter().filter(|anchor| anchor.is_none()).count(),
+        unreviewed_anchors,
         semantic_operations: catalogs.len(),
         ..InterfaceWorkspaceSummary::default()
     };
@@ -317,7 +327,9 @@ fn build_summary(
             .count();
     }
     for (fact_index, fact) in facts.tables.iter().enumerate() {
-        let Some(anchor) = matched_by[fact_index].and_then(|id| anchors_by_id.get(id).copied())
+        let Some(anchor) = matched_by[fact_index]
+            .and_then(|id| anchors_by_id.get(id).copied())
+            .or_else(|| linked_view_anchor(pack, facts, fact, matches_by_anchor))
         else {
             summary.unreviewed_slots += fact.slots.len();
             continue;
@@ -368,6 +380,7 @@ fn build_unreviewed_observations(
     pack: &InterfacePack,
     facts: &InterfaceFacts,
     matched_by: &[Option<&str>],
+    matches_by_anchor: &[Vec<usize>],
 ) -> Vec<UnreviewedInterfaceObservation> {
     let anchors_by_id = pack
         .anchors
@@ -376,7 +389,9 @@ fn build_unreviewed_observations(
         .collect::<BTreeMap<_, _>>();
     let mut observations = Vec::new();
     for (fact_index, fact) in facts.tables.iter().enumerate() {
-        let anchor = matched_by[fact_index].and_then(|id| anchors_by_id.get(id).copied());
+        let anchor = matched_by[fact_index]
+            .and_then(|id| anchors_by_id.get(id).copied())
+            .or_else(|| linked_view_anchor(pack, facts, fact, matches_by_anchor));
         if anchor.is_some_and(|anchor| anchor.status == ReviewStatus::Ignored) {
             continue;
         }
@@ -474,6 +489,57 @@ fn build_unreviewed_observations(
         ))
     });
     observations
+}
+
+/// Associate a linked ELF data symbol with the reviewed relocated-symbol
+/// contract already proven against its source inventory.
+///
+/// Linking turns an archive relocation root into a bounded data address. The
+/// address and member are deliberately not stable, but the exported symbol,
+/// logical source, container path, and addend survive. This association only
+/// classifies research backlog; the reviewed contract remains guarded by its
+/// original source artifact and no executable behavior is granted here.
+fn linked_view_anchor<'a>(
+    pack: &'a InterfacePack,
+    facts: &InterfaceFacts,
+    fact: &super::InterfaceTableFact,
+    matches_by_anchor: &[Vec<usize>],
+) -> Option<&'a InterfaceAnchor> {
+    let InterfaceFactRoot::BoundedDataAddress {
+        symbol,
+        address,
+        symbol_address,
+        ..
+    } = &fact.root
+    else {
+        return None;
+    };
+    let addend = i64::from(address.checked_sub(*symbol_address)?);
+    let artifact = facts.artifact(fact.artifact)?;
+    let mut candidates = pack
+        .anchors
+        .iter()
+        .zip(matches_by_anchor)
+        .filter(|(anchor, matches)| {
+            !matches.is_empty()
+                && anchor.origin == PackOrigin::Observed
+                && artifact.sources.contains(&anchor.source)
+                && anchor.container_path == fact.container_path
+                && matches!(
+                    &anchor.root,
+                    InterfaceRootSelector::RelocatedSymbol {
+                        symbol: anchor_symbol,
+                        addend: anchor_addend,
+                        addressing,
+                        ..
+                    } if anchor_symbol == symbol
+                        && *anchor_addend == addend
+                        && addressing == "absolute"
+                )
+        })
+        .map(|(anchor, _)| anchor);
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
 }
 
 fn build_bindings(

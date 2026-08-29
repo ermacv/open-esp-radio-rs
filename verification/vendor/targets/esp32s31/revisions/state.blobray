@@ -1,5 +1,7 @@
 blobray-revision-state 1
 project ["esp32s31-radio-rev0"]
-baseline ["esp32s31-rev0-vendor-scope-2026-08-29"]
-current ["esp32s31-rev0-vendor-scope-2026-08-29"]
+baseline ["esp32s31-rev0-ble-ext-funcs-2026-08-29"]
+current ["esp32s31-rev0-ble-ext-funcs-2026-08-29"]
+revision ["esp32s31-rev0-ble-ext-funcs-2026-08-29","snapshots/esp32s31-rev0-ble-ext-funcs-2026-08-29.json.gz","af65e83768e1aed5572795a7df81c3fd9c29cf79925b7c9d9cd224d62b0143f8","6f2e36a28c13636bde1a4d0d4ed06f98aba995bcdab3a5f915d1cb99a85b9688"]
 revision ["esp32s31-rev0-vendor-scope-2026-08-29","snapshots/esp32s31-rev0-vendor-scope-2026-08-29.json.gz","68b363bc36ff442dee3b9990e5c708be950879018ebc718e0f77e36bc57a19ad","6f2e36a28c13636bde1a4d0d4ed06f98aba995bcdab3a5f915d1cb99a85b9688"]
+prepared-update ["esp32s31-rev0-ble-ext-funcs-2026-08-29","af65e83768e1aed5572795a7df81c3fd9c29cf79925b7c9d9cd224d62b0143f8","6f2e36a28c13636bde1a4d0d4ed06f98aba995bcdab3a5f915d1cb99a85b9688"]

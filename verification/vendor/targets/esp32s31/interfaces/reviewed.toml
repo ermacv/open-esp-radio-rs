@@ -494,6 +494,84 @@ reason = "Exact generated facts recover this slot for the pinned artifact. Bind 
 origin = "observed"
 execution-model = "coex-xtal-frequency-get"
 
+# The complete pinned `esp_register_ext_funcs` accepts exactly layout version
+# 0x2025_0819, checks the terminal magic at +0x24 and publishes its argument
+# through this relocated pointer cell. The public same-chip revision
+# `espressif/esp32s31-bt-lib@31c30949541a5d3abd4043a1cb66d55aa55577dd`
+# retains the unobfuscated `r_ext_funcs_p` identity. Its complete allocation
+# and free wrappers are instruction- and section-order-equivalent to pinned
+# `r_sym_ble_N29j35mh9V8b2F3PiMxx` and
+# `r_sym_ble_DDSTeQuSRJEYXxXpW8Go`: they call +0x04 with the aligned byte count
+# and the caller's binary allocation class, and tail-call +0x08 with the
+# allocation pointer. The same named revision's `r_ll_assert` preserves all
+# four incoming arguments and tail-calls +0x0c. Pinned analysis independently
+# recovers the same three offsets from the guarded table root. This anchor
+# records only that reviewed external-function ABI; it does not make the
+# vendor allocator, assertion provider or table part of the open Controller
+# architecture.
+[[anchors]]
+id = "ble-external-functions-20250819"
+status = "reviewed"
+origin = "observed"
+source = "ble-controller"
+root-kind = "relocated-symbol"
+symbol = "r_sym_ble_pBNUoU5EPgUlFpeQVn6W"
+addend = 0
+addressing = "absolute"
+container-path = [{ offset = 0, width = 32 }]
+layout-version = "esp32s31-ble-external-functions-20250819"
+pointer-width = 32
+layout-size = 0x28
+slot-stride = 4
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195"
+
+[[anchors.guards]]
+kind = "runtime-value"
+purpose = "version"
+offset = 0
+width = 32
+mask = 0xffffffff
+value = 0x20250819
+
+[[anchors.guards]]
+kind = "runtime-value"
+purpose = "magic"
+offset = 0x24
+width = 32
+mask = 0xffffffff
+value = 0xa5a5a5a5
+
+[[anchors.slots]]
+offset = 0x04
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "allocate"
+arguments = ["u32", "u32"]
+return = "mut-ptr"
+
+[[anchors.slots]]
+offset = 0x08
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "free"
+arguments = ["mut-ptr"]
+return = "void"
+semantic = "memory.deallocate"
+
+[[anchors.slots]]
+offset = 0x0c
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "osi_assert"
+arguments = ["u32", "const-ptr", "u32", "u32"]
+return = "void"
+
 # `net80211_funcs` is a pointer cell, not a static function table image.
 # `net80211_funcs_init` allocates 0x14c bytes and
 # `net80211_softap_funcs_init` stores `hostap_input` at +0x84.  Consumers in

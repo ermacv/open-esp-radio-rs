@@ -78,7 +78,7 @@ pub(crate) const INTERFACE_FACTS: ArtifactSchema = ArtifactSchema {
 };
 
 pub(crate) const CAPABILITY_CONTEXT: ArtifactSchema = ArtifactSchema {
-    version: 1,
+    version: 2,
     command: "interfaces capability-context",
 };
 
@@ -139,7 +139,7 @@ mod tests {
         assert_eq!(
             CAPABILITY_CONTEXT,
             ArtifactSchema {
-                version: 1,
+                version: 2,
                 command: "interfaces capability-context",
             }
         );

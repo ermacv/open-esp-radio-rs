@@ -45,7 +45,7 @@ artifact-sha256 = "fa22a8a2aca48b807addda2bbad78868d6774c82bcdeb8090f9140f6cbccd
 
 [[inputs]]
 source = "bluetooth"
-artifact-sha256 = "b18e4599c2c8c4dd45954ca81a990b7a0474a274bbe13df33d91c604f24923f7"
+artifact-sha256 = "9f5d3ab22bb1291063ec4a3ecd9b1f0dec1707747b22ea383c12cf1d79a63c9e"
 
 [[inputs]]
 source = "bredr"
@@ -145,7 +145,7 @@ artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227
 
 [[inputs]]
 source = "rust"
-artifact-sha256 = "6232aff08c32ce4ad055e91f6264107d20f4aba2a434e5e4d003d16fb149b146"
+artifact-sha256 = "d3afa4dca54173251e82f9f24366bb56106191e297f2a4ac2295ca9ec28e4e22"
 
 [[inputs]]
 source = "wifi-key-role"
@@ -161,7 +161,7 @@ artifact-sha256 = "f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b949
 
 [[inputs]]
 source = "wifi-registers"
-artifact-sha256 = "e60cedb13ba3eb8431cd1c0cfb7c79fa07bcad7b114c0512bc93b2f8e63d5c06"
+artifact-sha256 = "b774e62f735b4f5883898f901caaf1ddec822f07c7bcb78da5319d1126fa8d12"
 
 [[inputs]]
 source = "wifi-sta-ap-receive"

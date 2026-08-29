@@ -1089,6 +1089,78 @@ fn sparse_pack_keeps_generated_backlog_outside_reviewed_toml() {
 }
 
 #[test]
+fn linked_view_reuses_the_reviewed_source_inventory_anchor() {
+    let directory = fixture_directory();
+    let facts_path = directory.join("facts.json");
+    let pack_path = directory.join("pack.toml");
+    let catalog_path = directory.join("semantics.toml");
+    let digest = fake_digest('a');
+    write_facts(&facts_path, &digest);
+    let mut facts: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&facts_path).unwrap()).unwrap();
+    facts["artifacts"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "index": 1,
+            "path": "linked.elf",
+            "roles": [],
+            "sources": ["libpp"],
+            "sha256": fake_digest('b'),
+            "container": "elf32",
+            "functions": 1,
+            "reviewed_boundaries": 0
+        }));
+    facts["table_candidates"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "artifact": 1,
+            "root": {
+                "kind": "bounded-data-address",
+                "canonical": "<elf>::g_services+0x0",
+                "member": null,
+                "symbol": "g_services",
+                "address": "0x00002000",
+                "symbol_address": "0x00002000",
+                "symbol_size": 4
+            },
+            "container_path": [{"offset": 0, "width": 32}],
+            "slots": [
+                {"offset": 16, "width": 32, "functions": ["linked_post_event"], "call_sites": 1},
+                {"offset": 20, "width": 32, "functions": ["linked_post_event"], "call_sites": 1}
+            ],
+            "functions": ["linked_post_event"],
+            "call_sites": 2
+        }));
+    std::fs::write(&facts_path, facts.to_string()).unwrap();
+    write_catalog(&catalog_path);
+    std::fs::write(
+        &pack_path,
+        reviewed_pack(&digest, "rtos.queue.send-from-isr"),
+    )
+    .unwrap();
+
+    let workspace = InterfaceWorkspace::load(
+        &facts_path,
+        &pack_path,
+        std::slice::from_ref(&catalog_path),
+        "riscv-ilp32",
+        None,
+    )
+    .unwrap();
+    std::fs::remove_dir_all(directory).unwrap();
+
+    assert_eq!(workspace.summary().reviewed_slots, 2);
+    assert_eq!(workspace.summary().unreviewed_slots, 1);
+    assert_eq!(workspace.unreviewed_observations().len(), 1);
+    let observation = &workspace.unreviewed_observations()[0];
+    assert_eq!(observation.contract, "fixture::wifi-osi");
+    assert_eq!(observation.offset, 20);
+    assert_eq!(observation.functions, ["linked_post_event"]);
+}
+
+#[test]
 fn runtime_version_guard_can_replace_artifact_pinning() {
     let directory = fixture_directory();
     let facts = directory.join("facts.json");

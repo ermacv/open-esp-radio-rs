@@ -812,14 +812,13 @@ impl RadioPhyRegisters {
     }
 
     fn configure_tone_selectors(&mut self, path_0: u16, path_1: u16) {
-        debug_assert!(path_0 <= 0x03ff);
-        debug_assert!(path_1 <= 0x03ff);
-        let selectors = self
-            .peripherals
-            .phy_baseband_config_oracle
-            .tone_selector_control();
-        selectors.modify(|_, w| w.path_0_selector_low().set((path_0 & 3) as u8));
-        selectors.modify(|_, w| w.path_1_selector_low().set((path_1 & 3) as u8));
+        let path_0 = super::generated::PhyToneSelector::new(u32::from(path_0))
+            .expect("tone selector must fit the generated ten-bit domain");
+        let path_1 = super::generated::PhyToneSelector::new(u32::from(path_1))
+            .expect("tone selector must fit the generated ten-bit domain");
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        super::generated::configure_phy_tone_path_0_selector_low(bb, path_0);
+        super::generated::configure_phy_tone_path_1_selector_low(bb, path_1);
     }
 
     fn configure_tone_paths(&mut self, enabled: bool, path_0_selector: u16, path_0_step: u8) {
@@ -974,10 +973,15 @@ impl RadioPhyRegisters {
 
     /// Set or clear the shared first-path arm bit for one PWDET sample.
     pub fn set_power_detector_tone_armed(&mut self, armed: bool) {
-        self.peripherals
-            .phy_baseband_config_oracle
-            .tone_path_0_control()
-            .modify(|_, w| w.tone_enable_or_arm().bit(armed));
+        let armed = if armed {
+            super::generated::PhyPowerDetectorToneArmState::Armed
+        } else {
+            super::generated::PhyPowerDetectorToneArmState::Disarmed
+        };
+        super::generated::set_phy_power_detector_tone_armed(
+            &self.peripherals.phy_baseband_config_oracle,
+            armed,
+        );
     }
 
     /// Stop both tone paths and restore the two DAC-scale fields.

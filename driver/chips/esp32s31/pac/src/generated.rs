@@ -215,6 +215,23 @@ impl BluetoothHalSleepTimerShift {
     }
 }
 
+/// Semantic arm state of the shared first PHY tone path during power-detector sampling.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PhyPowerDetectorToneArmState {
+    /// Do not arm the power-detector tone sample.
+    Disarmed = 0x00000000,
+    /// Arm one power-detector tone sample.
+    Armed = 0x00000001,
+}
+
+impl PhyPowerDetectorToneArmState {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
 /// Reviewed receive-beacon clear requests. The type cannot select an unknown request bit.
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -764,6 +781,29 @@ impl PhyPowerDetectorRestoreByte {
     /// Construct a value only when it lies in the reviewed inclusive range.
     pub const fn new(value: u32) -> Option<Self> {
         if value <= 0x000000ff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Complete ten-bit PHY calibration-tone selector accepted by the reviewed archive and ROM tone transactions.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyToneSelector(u32);
+
+impl PhyToneSelector {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x000003ff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x000003ff {
             Some(Self(value))
         } else {
             None
@@ -6414,6 +6454,39 @@ pub(crate) fn disable_phy_tone_path_1(registers: &crate::svd::PhyBasebandConfigO
 #[inline]
 pub(crate) fn stop_phy_tone_paths(registers: &crate::svd::PhyBasebandConfigOracle) {
     crate::svd::field_replace_modify::stop_phy_tone_paths(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_tone_path_0_selector_low` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_tone_path_0_selector_low(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyToneSelector,
+) {
+    crate::svd::field_replace_modify::configure_phy_tone_path_0_selector_low(
+        registers,
+        value.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `configure_phy_tone_path_1_selector_low` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_tone_path_1_selector_low(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyToneSelector,
+) {
+    crate::svd::field_replace_modify::configure_phy_tone_path_1_selector_low(
+        registers,
+        value.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `set_phy_power_detector_tone_armed` field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_power_detector_tone_armed(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyPowerDetectorToneArmState,
+) {
+    crate::svd::field_replace_modify::set_phy_power_detector_tone_armed(registers, value.bits());
 }
 
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.

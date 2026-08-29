@@ -402,6 +402,29 @@ max = 0xff
 sources = ["ROM_REV0_PHY_POWER_DETECTOR"]
 
 [[bounded-domains]]
+name = "PhyToneSelector"
+description = "Complete ten-bit PHY calibration-tone selector accepted by the reviewed archive and ROM tone transactions."
+min = 0
+max = 0x03ff
+sources = ["BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW", "ROM_REV0_PHY_START_STOP_TX_TONE"]
+
+[[enum-domains]]
+name = "PhyPowerDetectorToneArmState"
+description = "Semantic arm state of the shared first PHY tone path during power-detector sampling."
+
+[[enum-domains.values]]
+name = "Disarmed"
+value = 0
+description = "Do not arm the power-detector tone sample."
+sources = ["ROM_REV0_PHY_POWER_DETECTOR"]
+
+[[enum-domains.values]]
+name = "Armed"
+value = 1
+description = "Arm one power-detector tone sample."
+sources = ["ROM_REV0_PHY_POWER_DETECTOR"]
+
+[[bounded-domains]]
 name = "BluetoothPhyInitTimingByte"
 description = "Runtime-derived byte ORed into both BLE link-controller transmit-delay fields by one fresh-read transaction."
 min = 0
@@ -8839,3 +8862,32 @@ fields = [{ field = "TONE_STOP_CONTROL_UNKNOWN", source-bit-offset = 0 }]
 value = 3
 exposure = "facade"
 sources = ["BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW", "ROM_REV0_PHY_START_STOP_TX_TONE", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_tone_path_0_selector_low"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TONE_SELECTOR_CONTROL"
+fields = [{ field = "PATH_0_SELECTOR_LOW", source-bit-offset = 0 }]
+domain = "PhyToneSelector"
+input-transform = { wrapping-subtract = 0, retain-mask = 0x03 }
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW", "ROM_REV0_PHY_START_STOP_TX_TONE", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_tone_path_1_selector_low"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TONE_SELECTOR_CONTROL"
+fields = [{ field = "PATH_1_SELECTOR_LOW", source-bit-offset = 0 }]
+domain = "PhyToneSelector"
+input-transform = { wrapping-subtract = 0, retain-mask = 0x03 }
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW", "ROM_REV0_PHY_START_STOP_TX_TONE", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_phy_power_detector_tone_armed"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TONE_PATH_0_CONTROL"
+fields = [{ field = "TONE_ENABLE_OR_ARM", source-bit-offset = 0 }]
+domain = "PhyPowerDetectorToneArmState"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_POWER_DETECTOR", "S31_ESP_PACS_SVD"]

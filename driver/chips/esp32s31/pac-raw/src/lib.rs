@@ -68963,6 +68963,55 @@ pub mod field_replace_modify {
                 }
             });
     }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TONE_SELECTOR_CONTROL fields [PATH_0_SELECTOR_LOW] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_tone_path_0_selector_low(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.tone_selector_control().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x00000003;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .path_0_selector_low()
+                    .bits((input & 0x00000003) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TONE_SELECTOR_CONTROL fields [PATH_1_SELECTOR_LOW] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_tone_path_1_selector_low(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.tone_selector_control().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x00000003;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .path_1_selector_low()
+                    .bits((input & 0x00000003) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_0_CONTROL fields [TONE_ENABLE_OR_ARM] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_power_detector_tone_armed(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.tone_path_0_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.tone_enable_or_arm().bit((input & 0x00000001) != 0)
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.

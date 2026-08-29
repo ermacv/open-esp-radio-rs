@@ -59,7 +59,7 @@ pub use bluetooth::{
     BluetoothInterruptOutputAfterRoutesOwner, BluetoothInterruptOutputPreparedOwner,
     BluetoothInterruptRegistersOwner, BluetoothInterruptSetupOwner,
     BluetoothLowPowerRuntimeControlObservation, BluetoothModemLpTimerCompareDisposition,
-    BluetoothModemLpTimerCounterObservation, BluetoothModemLpTimerCounterStarted,
+    BluetoothModemLpTimerCounterObservation, BluetoothModemLpTimerCounterStartedOwner,
     BluetoothModemLpTimerEpoch, BluetoothModemLpTimerHandlerPendingOwner,
     BluetoothModemLpTimerHandlerRegisterObservation, BluetoothModemLpTimerHandlerRegisterStep,
     BluetoothModemLpTimerInstant, BluetoothModemLpTimerInterruptObservation,

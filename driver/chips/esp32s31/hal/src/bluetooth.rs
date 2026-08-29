@@ -9,6 +9,7 @@
 use open_esp_radio_esp32s31_pac::{
     BluetoothColdRegisters as PacBluetoothColdRegisters, BluetoothInterruptRegisters,
     BluetoothInterruptSetup as PacBluetoothInterruptSetup, BluetoothLowPowerClockObservation,
+    BluetoothModemLpTimerCounterStarted as PacBluetoothModemLpTimerCounterStarted,
     BluetoothModemLpTimerHandlerPending as PacBluetoothModemLpTimerHandlerPending,
     BluetoothModemLpTimerHandlerRegisterStep as PacBluetoothModemLpTimerHandlerRegisterStep,
     BluetoothModemLpTimerInterruptReady as PacBluetoothModemLpTimerInterruptReady,
@@ -31,11 +32,11 @@ pub use open_esp_radio_esp32s31_pac::{
     BluetoothControllerTimeLatchBeginError, BluetoothControllerTimeLatchStep,
     BluetoothControllerTimeLatchStepError, BluetoothLowPowerRuntimeControlObservation,
     BluetoothModemLpTimerCompareDisposition, BluetoothModemLpTimerCounterObservation,
-    BluetoothModemLpTimerCounterStarted, BluetoothModemLpTimerEpoch,
-    BluetoothModemLpTimerHandlerRegisterObservation, BluetoothModemLpTimerInstant,
-    BluetoothModemLpTimerInterruptObservation, BluetoothModemLpTimerOwnerError,
-    BluetoothNrtInterruptAcknowledged, BluetoothPhyEnvironmentAddress,
-    BluetoothPhyEnvironmentAddressError, BluetoothPhyRegisterInitInputs,
+    BluetoothModemLpTimerEpoch, BluetoothModemLpTimerHandlerRegisterObservation,
+    BluetoothModemLpTimerInstant, BluetoothModemLpTimerInterruptObservation,
+    BluetoothModemLpTimerOwnerError, BluetoothNrtInterruptAcknowledged,
+    BluetoothPhyEnvironmentAddress, BluetoothPhyEnvironmentAddressError,
+    BluetoothPhyRegisterInitInputs,
     BluetoothSchedulerDisableBeginError as BluetoothControllerSchedulerDisableBeginError,
     BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
     BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadError,
@@ -412,7 +413,27 @@ impl BluetoothModemLpTimerLowPowerHardwareInitializedOwner {
         self.registers.runtime_control_observation()
     }
 
-    /// Transfer the unique timer partition into stable source-127 ISR storage.
+    /// Start the runtime timer exactly once for this affine hardware epoch.
+    pub fn start_runtime_timer(self) -> BluetoothModemLpTimerCounterStartedOwner {
+        BluetoothModemLpTimerCounterStartedOwner {
+            registers: self.registers.start_runtime_timer(),
+        }
+    }
+}
+
+/// Opaque HAL owner after the one-shot BTDM runtime-timer start command.
+#[must_use = "the started modem LP timer must continue through route setup"]
+pub struct BluetoothModemLpTimerCounterStartedOwner {
+    registers: PacBluetoothModemLpTimerCounterStarted,
+}
+
+impl BluetoothModemLpTimerCounterStartedOwner {
+    /// Return the low-power runtime-control branch retained across start.
+    pub const fn runtime_control_observation(&self) -> BluetoothLowPowerRuntimeControlObservation {
+        self.registers.runtime_control_observation()
+    }
+
+    /// Transfer the unique started timer into stable source-127 ISR storage.
     ///
     /// This transition performs no MMIO and exposes no raw PAC owner.
     pub fn stage_for_interrupt(self) -> BluetoothModemLpTimerInterruptReadyOwner {
@@ -899,20 +920,6 @@ pub struct BluetoothControllerHal<'registers> {
 }
 
 impl BluetoothControllerHal<'_> {
-    /// Start the BTDM runtime timer through its generated PAC command
-    /// accessor and retain the completed-command token.
-    ///
-    /// This finite component performs no CPU-route setup and does not make the
-    /// controller runnable. The higher lifecycle must place it after the
-    /// completed controller hardware/output preparation and before primary
-    /// route allocation, exactly as established by the reviewed enable path.
-    #[doc(hidden)]
-    pub fn start_modem_lp_timer_counter(
-        &mut self,
-    ) -> Result<BluetoothModemLpTimerCounterStarted, BluetoothModemLpTimerOwnerError> {
-        self.registers.start_modem_lp_timer_counter()
-    }
-
     /// Remove every published scheduler hardware-list head.
     ///
     /// This is only the reviewed controller-initialization prefix. It does not

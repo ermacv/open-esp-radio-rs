@@ -38,16 +38,15 @@ impl BluetoothModemLpTimerRegisters {
     }
 }
 
-/// Evidence that the exact BTDM runtime-timer start command and trailing
-/// device fence completed.
+/// Timer-register ownership after the exact BTDM runtime-timer start command.
 ///
-/// This token does not prove source-127 route setup, a working software timer
-/// queue, controller readiness, or a physical time unit. A future enable
-/// typestate must retain it across interrupt-output and CPU-route setup.
-#[derive(Debug, Eq, PartialEq)]
+/// Consuming the preceding low-power owner makes the command one-shot for this
+/// hardware epoch. This state does not prove source-127 route setup, a working
+/// software timer queue, controller readiness, or a physical time unit.
 #[must_use = "the started runtime timer must feed controller-enable ownership"]
 pub struct BluetoothModemLpTimerCounterStarted {
-    _private: (),
+    timer: BluetoothModemLpTimerRegisters,
+    runtime_control: BluetoothLowPowerRuntimeControlObservation,
 }
 
 /// Why task context cannot perform a modem LP-timer transition.
@@ -605,12 +604,9 @@ fn execute_modem_lp_timer_low_power_init(
     observation
 }
 
-fn execute_modem_lp_timer_start(
-    transaction: &mut impl ModemLpTimerStartTransaction,
-) -> BluetoothModemLpTimerCounterStarted {
+fn execute_modem_lp_timer_start(transaction: &mut impl ModemLpTimerStartTransaction) {
     transaction.start_counter();
     transaction.fence();
-    BluetoothModemLpTimerCounterStarted { _private: () }
 }
 
 struct HardwareModemLpTimerTransaction<'registers> {
@@ -767,35 +763,6 @@ impl ModemLpTimerRuntimeTransaction for HardwareModemLpTimerTransaction<'_> {
 }
 
 impl BluetoothTaskRegisters {
-    /// Start the BTDM runtime timer during controller hardware enable.
-    ///
-    /// SOURCE: complete current `libbtdm_common.a` member `9.o` symbol
-    /// `r_sym_bt_ymLPVGRY14FVW494j9ZD` writes the sole reviewed command and
-    /// returns. The instruction-identical public same-chip predecessor names
-    /// the operation `r_btdm_hal_rtc_start`; its complete caller places this
-    /// edge after controller hardware/output preparation and before primary
-    /// CPU-route allocation. The restricted PAC adds one device fence before
-    /// returning the completion token. The token proves this invocation completed;
-    /// it does not by itself enforce that the higher lifecycle invokes the command
-    /// exactly once.
-    ///
-    /// This component is hidden because the higher lifecycle must retain the
-    /// completed PHY, BTBB, BLE-engine, controller-output, software-runtime
-    /// and route prerequisites in their independently proven order.
-    #[doc(hidden)]
-    pub fn start_modem_lp_timer_counter(
-        &mut self,
-    ) -> Result<BluetoothModemLpTimerCounterStarted, BluetoothModemLpTimerOwnerError> {
-        let timer = self
-            .modem_lp_timer
-            .as_mut()
-            .ok_or(BluetoothModemLpTimerOwnerError::OwnerSeparated)?;
-        let mut transaction = HardwareModemLpTimerTransaction {
-            registers: &timer.peripherals.btdm_runtime_control,
-        };
-        Ok(execute_modem_lp_timer_start(&mut transaction))
-    }
-
     /// Apply the exact controller-register prefix before source 127 is routed.
     ///
     /// SOURCE: public ESP32-S31 `libbtdm_common.a` member `9.o`, complete
@@ -860,7 +827,34 @@ impl BluetoothModemLpTimerRegistersPrepared {
 }
 
 impl BluetoothModemLpTimerLowPowerHardwareInitialized {
-    /// Move the unique timer-register owner into source-127 ISR storage.
+    /// Start the BTDM runtime timer during controller hardware enable.
+    ///
+    /// SOURCE: complete current `libbtdm_common.a` member `9.o` symbol
+    /// `r_sym_bt_ymLPVGRY14FVW494j9ZD` writes the sole reviewed command and
+    /// returns. The instruction-identical public same-chip predecessor names
+    /// the operation `r_btdm_hal_rtc_start`; its complete caller places this
+    /// edge after controller output preparation and before primary CPU-route
+    /// allocation. Consuming this owner proves the command cannot be repeated
+    /// through the same timer epoch.
+    pub fn start_runtime_timer(self) -> BluetoothModemLpTimerCounterStarted {
+        let mut transaction = HardwareModemLpTimerTransaction {
+            registers: &self.timer.peripherals.btdm_runtime_control,
+        };
+        execute_modem_lp_timer_start(&mut transaction);
+        BluetoothModemLpTimerCounterStarted {
+            timer: self.timer,
+            runtime_control: self.runtime_control,
+        }
+    }
+}
+
+impl BluetoothModemLpTimerCounterStarted {
+    /// Return the low-power runtime-control branch retained across start.
+    pub const fn runtime_control_observation(&self) -> BluetoothLowPowerRuntimeControlObservation {
+        self.runtime_control
+    }
+
+    /// Move the started timer-register owner into source-127 ISR storage.
     ///
     /// This transition performs no MMIO. The platform must store the returned
     /// value before enabling the CPU route and recover it only after that route
@@ -953,7 +947,7 @@ mod tests {
             operations: Vec::new(),
         };
 
-        let _started = execute_modem_lp_timer_start(&mut recorder);
+        execute_modem_lp_timer_start(&mut recorder);
 
         assert_eq!(
             recorder.operations,

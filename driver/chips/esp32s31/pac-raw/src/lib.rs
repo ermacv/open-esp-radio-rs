@@ -58819,6 +58819,30 @@ pub mod field_read {
             .sar_sample()
             .bits()
     }
+
+    /// Read `PHY_BASEBAND_CONFIG_ORACLE`.`POWER_DETECTOR_TABLE_1`.`TX_DC_TEMPORARY_LOW_UNKNOWN` without exposing its register block.
+    #[inline]
+    pub fn capture_phy_txdc_power_detector_table_low(
+        registers: &crate::PhyBasebandConfigOracle,
+    ) -> u8 {
+        registers
+            .power_detector_table_1()
+            .read()
+            .tx_dc_temporary_low_unknown()
+            .bits()
+    }
+
+    /// Read `PHY_BASEBAND_CONFIG_ORACLE`.`POWER_DETECTOR_CONTROL`.`CALIBRATION_FIELD_UNKNOWN` without exposing its register block.
+    #[inline]
+    pub fn capture_phy_txdc_power_detector_calibration(
+        registers: &crate::PhyBasebandConfigOracle,
+    ) -> u8 {
+        registers
+            .power_detector_control()
+            .read()
+            .calibration_field_unknown()
+            .bits()
+    }
 }
 
 /// Safe same-sample observations through reviewed SVD fields.
@@ -68697,6 +68721,70 @@ pub mod field_replace_modify {
             writer
                 .watchdog_timeout_clear()
                 .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_TABLE_1 fields [TX_DC_TEMPORARY_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn prepare_phy_txdc_power_detector_table_low(registers: &crate::PhyBasebandConfigOracle) {
+        registers.power_detector_table_1().modify(|_, writer| {
+            let input = 0x000000f0_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .tx_dc_temporary_low_unknown()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields [CALIBRATION_FIELD_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn prepare_phy_txdc_power_detector_calibration(registers: &crate::PhyBasebandConfigOracle) {
+        registers.power_detector_control().modify(|_, writer| {
+            let input = 0x00000078_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .calibration_field_unknown()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_TABLE_1 fields [TX_DC_TEMPORARY_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn restore_phy_txdc_power_detector_table_low(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.power_detector_table_1().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .tx_dc_temporary_low_unknown()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL fields [CALIBRATION_FIELD_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn restore_phy_txdc_power_detector_calibration(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.power_detector_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .calibration_field_unknown()
+                    .bits((input & 0x000000ff) as u8)
+            }
         });
     }
 }

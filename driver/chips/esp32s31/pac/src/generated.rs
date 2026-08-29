@@ -753,6 +753,29 @@ impl BluetoothHalInitByte {
     }
 }
 
+/// One complete eight-bit power-detector field captured and restored by the reviewed TX-DC calibration transaction.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyPowerDetectorRestoreByte(u32);
+
+impl PhyPowerDetectorRestoreByte {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x000000ff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x000000ff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Runtime-derived byte ORed into both BLE link-controller transmit-delay fields by one fresh-read transaction.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct BluetoothPhyInitTimingByte(u32);
@@ -6271,6 +6294,46 @@ pub(crate) fn raise_phy_power_detector_sar_trigger(
 #[inline]
 pub(crate) fn clear_phy_baseband_watchdog_timeout(registers: &crate::svd::PhyBasebandConfigOracle) {
     crate::svd::field_replace_modify::clear_phy_baseband_watchdog_timeout(registers);
+}
+
+/// Typed bridge for the reviewed `prepare_phy_txdc_power_detector_table_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn prepare_phy_txdc_power_detector_table_low(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::prepare_phy_txdc_power_detector_table_low(registers);
+}
+
+/// Typed bridge for the reviewed `prepare_phy_txdc_power_detector_calibration` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn prepare_phy_txdc_power_detector_calibration(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::prepare_phy_txdc_power_detector_calibration(registers);
+}
+
+/// Typed bridge for the reviewed `restore_phy_txdc_power_detector_table_low` field-replacement transaction.
+#[inline]
+pub(crate) fn restore_phy_txdc_power_detector_table_low(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyPowerDetectorRestoreByte,
+) {
+    crate::svd::field_replace_modify::restore_phy_txdc_power_detector_table_low(
+        registers,
+        value.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `restore_phy_txdc_power_detector_calibration` field-replacement transaction.
+#[inline]
+pub(crate) fn restore_phy_txdc_power_detector_calibration(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyPowerDetectorRestoreByte,
+) {
+    crate::svd::field_replace_modify::restore_phy_txdc_power_detector_calibration(
+        registers,
+        value.get(),
+    );
 }
 
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.

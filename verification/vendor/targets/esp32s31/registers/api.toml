@@ -395,6 +395,13 @@ max = 0xff
 sources = ["BLOB_LIBBTDM_HAL_CONTROLLER_INIT"]
 
 [[bounded-domains]]
+name = "PhyPowerDetectorRestoreByte"
+description = "One complete eight-bit power-detector field captured and restored by the reviewed TX-DC calibration transaction."
+min = 0
+max = 0xff
+sources = ["ROM_REV0_PHY_POWER_DETECTOR"]
+
+[[bounded-domains]]
 name = "BluetoothPhyInitTimingByte"
 description = "Runtime-derived byte ORed into both BLE link-controller transmit-delay fields by one fresh-read transaction."
 min = 0
@@ -8673,4 +8680,54 @@ name = "observe_phy_power_detector_sar_sample"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 register = "POWER_DETECTOR_SAR_RESULT"
 field = "SAR_SAMPLE"
+sources = ["ROM_REV0_PHY_POWER_DETECTOR", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "capture_phy_txdc_power_detector_table_low"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_TABLE_1"
+field = "TX_DC_TEMPORARY_LOW_UNKNOWN"
+sources = ["ROM_REV0_PHY_POWER_DETECTOR", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "capture_phy_txdc_power_detector_calibration"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_CONTROL"
+field = "CALIBRATION_FIELD_UNKNOWN"
+sources = ["ROM_REV0_PHY_POWER_DETECTOR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "prepare_phy_txdc_power_detector_table_low"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_TABLE_1"
+fields = [{ field = "TX_DC_TEMPORARY_LOW_UNKNOWN", source-bit-offset = 0 }]
+value = 0xf0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_POWER_DETECTOR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "prepare_phy_txdc_power_detector_calibration"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_CONTROL"
+fields = [{ field = "CALIBRATION_FIELD_UNKNOWN", source-bit-offset = 0 }]
+value = 0x78
+exposure = "facade"
+sources = ["ROM_REV0_PHY_POWER_DETECTOR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "restore_phy_txdc_power_detector_table_low"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_TABLE_1"
+fields = [{ field = "TX_DC_TEMPORARY_LOW_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyPowerDetectorRestoreByte"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_POWER_DETECTOR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "restore_phy_txdc_power_detector_calibration"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_CONTROL"
+fields = [{ field = "CALIBRATION_FIELD_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyPowerDetectorRestoreByte"
+exposure = "facade"
 sources = ["ROM_REV0_PHY_POWER_DETECTOR", "S31_ESP_PACS_SVD"]

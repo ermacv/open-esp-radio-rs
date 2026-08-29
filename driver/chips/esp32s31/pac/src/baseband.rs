@@ -722,21 +722,19 @@ impl RadioPhyRegisters {
         let bb = &self.peripherals.phy_baseband_config_oracle;
         self.restore_slot.prepare_txdc_with(
             || {
-                let table = bb.power_detector_table_1().read();
-                let control = bb.power_detector_control().read();
                 (
                     TxDcPwdetRestoreFields {
-                        table_low: table.tx_dc_temporary_low_unknown().bits(),
-                        calibration: control.calibration_field_unknown().bits(),
+                        table_low:
+                            super::svd::field_read::capture_phy_txdc_power_detector_table_low(bb),
+                        calibration:
+                            super::svd::field_read::capture_phy_txdc_power_detector_calibration(bb),
                     },
                     (),
                 )
             },
             |()| {
-                bb.power_detector_table_1()
-                    .modify(|_, w| w.tx_dc_temporary_low_unknown().set(0xf0));
-                bb.power_detector_control()
-                    .modify(|_, w| w.calibration_field_unknown().set(0x78));
+                super::generated::prepare_phy_txdc_power_detector_table_low(bb);
+                super::generated::prepare_phy_txdc_power_detector_calibration(bb);
             },
         )
     }
@@ -756,10 +754,14 @@ impl RadioPhyRegisters {
     pub fn restore_txdc_power_detector(&mut self) -> Result<(), TxDcPwdetRestoreError> {
         let bb = &self.peripherals.phy_baseband_config_oracle;
         self.restore_slot.restore_txdc_with(|fields| {
-            bb.power_detector_table_1()
-                .modify(|_, w| w.tx_dc_temporary_low_unknown().set(fields.table_low));
-            bb.power_detector_control()
-                .modify(|_, w| w.calibration_field_unknown().set(fields.calibration));
+            let table_low =
+                super::generated::PhyPowerDetectorRestoreByte::new(u32::from(fields.table_low))
+                    .expect("captured power-detector byte fits its generated restore domain");
+            let calibration =
+                super::generated::PhyPowerDetectorRestoreByte::new(u32::from(fields.calibration))
+                    .expect("captured power-detector byte fits its generated restore domain");
+            super::generated::restore_phy_txdc_power_detector_table_low(bb, table_low);
+            super::generated::restore_phy_txdc_power_detector_calibration(bb, calibration);
             super::generated::enable_phy_power_detector_sar_mode(bb);
         })
     }

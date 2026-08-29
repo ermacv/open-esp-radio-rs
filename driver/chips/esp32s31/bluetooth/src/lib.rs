@@ -1,11 +1,15 @@
 //! ESP32-S31 Bluetooth controller hardware boundary.
 //!
-//! This crate is intentionally below HCI and the Bluetooth Link Layer. The
-//! implemented slices establish lossless physical ownership, the route-owned
+//! This crate is intentionally below operational HCI and the Bluetooth Link
+//! Layer. It binds portable bootstrap resources only to preserve one powered
+//! ownership epoch. The implemented slices establish lossless physical
+//! ownership, the route-owned
 //! clock/reset prerequisite, the complete 50-operation BTDM HAL-init body and
 //! the following complete scheduler-init component. The latter retains its
 //! source-owned software policy and replaces vendor broker/event containers
-//! with one pristine static Rust runtime epoch.
+//! with one pristine static Rust runtime epoch. The following HCI software
+//! initialization binds that powered epoch to one bounded portable transport
+//! and bootstrap dispatcher; it does not claim operational Link-Layer work.
 //! Common PHY and BT-baseband remain later enable-stage components. The
 //! two Controller interrupt sources, level/residency policies, baseline masks,
 //! snapshot modes, positional dynamic scheduler classifier, coalesced wake
@@ -49,6 +53,8 @@ mod dtm_rx_completion;
 mod dtm_scheduler_item;
 mod dtm_timing;
 mod dtm_tx_packet;
+#[cfg(any(target_arch = "riscv32", test))]
+mod hci;
 mod interrupt;
 mod interrupt_classifier;
 mod interrupt_wake;
@@ -110,6 +116,11 @@ pub use dtm_tx_packet::{
     BluetoothDtmPreparedTxPacket, BluetoothDtmTxBufferHeaderImage, BluetoothDtmTxGraphPrepare,
     BluetoothDtmTxPacketAddress, BluetoothDtmTxPacketAddressError, BluetoothDtmTxPacketPrepare,
     BluetoothDtmTxPacketStorage,
+};
+#[cfg(any(target_arch = "riscv32", test))]
+pub use hci::{
+    BluetoothControllerHciInitializationError, BluetoothControllerHciInitializationFailure,
+    BluetoothControllerHciInitialized, BluetoothControllerRuntimeEndpoints,
 };
 pub use interrupt::{
     BluetoothCpuInterruptRoutePolicy, BluetoothCpuInterruptSource,

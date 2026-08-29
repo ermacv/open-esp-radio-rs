@@ -14,12 +14,15 @@ validation-probes = [
 ]
 
 [dependencies]
+embassy-sync = "0.8.0"
+open-esp-radio-bluetooth-hci = { path = "../../../bluetooth/hci" }
 open-esp-radio-esp32s31-hal = { path = "../hal" }
 open-esp-radio-esp32s31-bluetooth-memory = { path = "memory" }
 open-esp-radio-esp32s31-pac = { path = "../pac" }
 open-esp-radio-esp32s31-phy = { path = "../phy" }
 
 [dev-dependencies]
+embassy-futures = "0.1.2"
 open-esp-radio-esp32s31-pac = { path = "../pac", features = ["validation-probes"] }
 
 [lints]

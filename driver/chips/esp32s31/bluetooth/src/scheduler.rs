@@ -53,7 +53,9 @@ impl BluetoothSchedulerSoftwareConfig {
 ///
 /// The open scheduler item queue, remaining hardware initialization and stable
 /// ISR publication are still missing, so this state exposes no PHY, BTBB, IRQ,
-/// HCI, Controller or Link-Layer readiness. Dropping it is fail-stop because
+/// Controller or Link-Layer readiness. The next consuming transition may bind
+/// a pristine HCI bootstrap epoch, but still establishes no operational HCI or
+/// radio capability. Dropping this state is fail-stop because
 /// no verified rollback exists after scheduler MMIO mutation.
 #[must_use = "the initialized scheduler retains every powered Bluetooth owner"]
 pub struct BluetoothSchedulerInitialized<P, const MODEM_TIMER_CAPACITY: usize> {
@@ -117,6 +119,14 @@ impl<P> BluetoothControllerHalInitialized<P> {
         self.initialize_scheduler_with(runtime, |task| {
             task.clear_scheduler_hardware_list_heads();
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn initialize_scheduler_for_validation<const MODEM_TIMER_CAPACITY: usize>(
+        self,
+        runtime: BluetoothControllerRuntimeResources<MODEM_TIMER_CAPACITY>,
+    ) -> BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY> {
+        self.initialize_scheduler_with(runtime, |_| {})
     }
 
     fn initialize_scheduler_with<const MODEM_TIMER_CAPACITY: usize>(

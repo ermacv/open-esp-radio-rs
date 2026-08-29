@@ -59,6 +59,19 @@ SRAM prefix `0x2f00_0000`. The restricted PAC represents these accepted
 domains directly and executes the complete 50-operation MMIO body. It does
 not reproduce the vendor object layout, task, event primitive or IRQ allocator.
 
+The next complete task-initialization component is current symbol
+`r_sym_bt_AJP6s1I6EhaAHnz8n72F`. Structural review finds no MMIO in its
+complete 182-byte archive body. It calls three software environment helpers
+(one reads the public eFuse MAC and reverses its six bytes), clears 48 bytes of
+HCI state, initializes a vendor mempool with 272-byte elements, registers
+numeric broker source four and initializes a software list head. These are
+open-Controller storage, address and dispatch policy rather than silicon
+transactions. The Rust replacement therefore binds the already initialized
+scheduler epoch to one bounded `LeControllerHciResources` owner instead of
+copying the private environment, pool or callback node. The platform path that
+supplies the reviewed public address is still missing, and this state exposes
+only the conservative bootstrap dispatcher—not operational Link-Layer HCI.
+
 The interrupt boundary contains three CPU routes. The primary Bluetooth MAC
 route uses source 124, level 3 and an IRAM-capable handler request. The modem
 low-power timer uses source 127 with the same level and residency requirement.
@@ -121,12 +134,12 @@ minimum dependency graph and publication gate for each unit are:
 | --- | --- | --- | --- |
 | Register evidence and SVD | Address, field, access and transaction provenance | Partial but substantial; generated model is fail-closed | Every register used by the first vertical slice is reviewed and generated with no raw-address escape in upper layers. |
 | Restricted PAC | Affine peripheral ownership and finite MMIO operations | Cold ownership, scheduler prefix, full 50-operation HAL body, generated BTDM runtime-timer start, memory-pointer geometry, IRQ prefixes and the ISR scheduler read/clear plus worker finished-list mask transfer exist | DTM trace uses only typed operations and has exact rollback/quiescence edges. |
-| Platform/HAL lifecycle | Clocks, reset, controller HAL, scheduler prefix, PHY, BTBB, interrupt matrix, entropy/crypto and coexistence leases | Clock/reset now consumes into the complete 50-operation controller HAL state; only that state reaches the scheduler-table prefix, preserving the recovered `r_btdm_task_init` hardware order. The selected time scale remains affine with the epoch. The exact runtime-timer start command is an ordered HAL component but remains disconnected until its preceding PHY, BTBB, BLE-engine and controller-output states are composed. Typed IRQ pair primitives exist but the live epoch remains closed | One owner can power, route both IRQs, run and return cold without owner duplication. |
+| Platform/HAL lifecycle | Clocks, reset, controller HAL, scheduler prefix, PHY, BTBB, interrupt matrix, entropy/crypto and coexistence leases | Clock/reset now consumes into the complete 50-operation controller HAL state; only that state reaches the scheduler-table prefix, preserving the recovered `r_btdm_task_init` hardware order. The selected time scale and one bounded HCI bootstrap resource epoch then remain affine with that powered scheduler owner. The exact runtime-timer start command is an ordered HAL component but remains disconnected until its preceding PHY, BTBB, BLE-engine and controller-output states are composed. Typed IRQ pair primitives exist but the live epoch remains closed | One owner can power, route both IRQs, run and return cold without owner duplication. |
 | Controller timer and scheduler | Radio timebase, prepare/abort/doorbell/completion and collision policy | The always-awake latch request/self-clear/read order, bidirectional wrapping scheduler epoch and nine-word DTM item update have pure models; no live owner, physical counter contract or complete command/status semantics exist | Virtual-time model plus register trace proves one scheduled event, cancellation and late/error handling. |
 | Packet memory dataplane | Static RX/TX/free/ready storage, DMA visibility and backpressure | A dedicated controller-memory crate now owns the complete no-heap per-event DTM allocation footprint, the sole TX backing slot, RX/TX extent/header geometry, paired ordinary RX re-arm/result parsing and normal scan/non-scan global-list routing. Target binding derives real field addresses, validates the complete physical-SRAM extent before mutation and gives a movable CPU owner one non-movable static allocation with exact private links. The separate DTM environment remains LLL state. The DTM private TX-head/RX-tail descriptor path and unconditional entry into the append decision are mapped; the swap-reserve branch remains quarantined. Production placement ownership, remaining hardware-consumed fields, internal pointer latch, cache/fences and affine publication/reclaim states do not exist | Every buffer has an affine CPU/hardware state and is reclaimed on success, error, abort and shutdown. |
 | Lower Link Layer (LLL) | Channel/whitening/CRC/access address, hard ISR turnaround and one radio-event state machine | Pure DTM channel/PHY/payload/timing lowering, scheduler-item/link-state transforms and returned-buffer accounting exist; no live radio-event owner, complete descriptor consumer or ISR turnaround exists | DTM TX/RX works first; then one advertising event executes without executor-latency dependence. |
 | Upper Link Layer (ULL) | Advertising/scanning/connection scheduling, SN/NESN/retry, supervision and LLCP | Absent | Legacy advertising, scanning and one peripheral connection pass deterministic virtual-clock tests and HIL. |
-| HCI Controller | Command/event table, capability reporting, ACL flow control and completed-packet credits | Bounded transport/bootstrap exists; operational Controller is absent | Only implemented LL features are advertised; all supported commands and ACL paths reach owned ULL state with bounded cancellation-safe queues. |
+| HCI Controller | Command/event table, capability reporting, ACL flow control and completed-packet credits | Bounded transport/bootstrap is now bound after scheduler initialization to the same powered owner; the public-address platform input and operational Controller remain absent | Only implemented LL features are advertised; all supported commands and ACL paths reach owned ULL state with bounded cancellation-safe queues. |
 | Host and application | L2CAP, ATT/GATT, GAP/SMP and application policy | Trouble bootstrap works in host tests only | Trouble Runner and a bounded GATT peripheral run through the same production Controller worker. |
 | Qualification | RF, protocol, concurrency, soak, teardown and negative evidence | Ledger is intentionally not ready | Dated HIL and conformance cells close each capability independently; interoperability alone is insufficient. |
 
@@ -289,8 +302,10 @@ The implementation order is:
 The complete controller HAL component now consumes the clock/reset owner, and
 only its terminal affine state can execute the sixteen-entry scheduler-table
 low-bit clear. This matches the recovered hardware order inside
-`r_btdm_task_init`; it does not reproduce the vendor task environment or
-broker. The clear remains only an observed initialization prefix: it neither
+`r_btdm_task_init`. The following consuming HCI transition replaces the
+reviewed vendor environment, packet pool and broker source with one bounded
+Rust epoch and can only split scheduler plus HCI endpoints together. The
+scheduler clear remains only an observed initialization prefix: it neither
 proves the meaning of those entries nor establishes that vendor event/list
 objects are hardware requirements. Neither state may be promoted to
 `ControllerInitialized` until the subsequent hardware command, IRQ and storage

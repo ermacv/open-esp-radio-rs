@@ -404,6 +404,23 @@ impl IqEstimatorEnableState {
     }
 }
 
+/// Boolean forced-power-index state accepted by complete rev0 ROM phy_force_pwr_index.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PhyForcedPowerState {
+    /// Disable the forced PHY power index.
+    Disabled = 0x00000000,
+    /// Enable the forced PHY power index.
+    Enabled = 0x00000001,
+}
+
+impl PhyForcedPowerState {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
 /// One reviewed four-bit Wi-Fi packet-traffic-information value. Its scheduling policy remains outside the PAC.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MacPti(u32);
@@ -1117,6 +1134,52 @@ impl IqEstimatorControlWord {
     }
 }
 
+/// Complete eight-bit index shared by reviewed PBUS, TX-CFR and gain-memory transactions.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyMemoryIndex(u32);
+
+impl PhyMemoryIndex {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x000000ff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x000000ff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Complete ten-bit PBUS-memory command accepted by rev0 ROM phy_write_pbus_mem.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyPbusMemoryCommand(u32);
+
+impl PhyPbusMemoryCommand {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x000003ff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x000003ff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Register-specific complete TIMER0 threshold word accepted by the public common LL; no clock source, unit, or deadline policy is assigned at the PAC boundary.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Ieee802154Timer0ThresholdWord(u32);
@@ -1504,6 +1567,214 @@ impl PbusForceTestInput {
     }
 }
 
+/// One logical first/last PBUS group-boundary pair before projection into the selected even or odd SVD fields.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PbusMemoryGroupBoundaryInput(u32);
+
+impl PbusMemoryGroupBoundaryInput {
+    /// Compose one register-specific image from typed logical arguments.
+    pub(crate) const fn compose(first_entry: u8, last_entry: u8) -> Self {
+        Self(((first_entry as u32) | ((last_entry as u32) << 8)) & 0x0000ffff)
+    }
+
+    /// Return the generated numeric image to its private raw-PAC bridge.
+    pub(crate) const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Gain-memory command image with a caller index, zero low field and the reviewed gain-write selector.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyGainMemoryCommandInput(u32);
+
+impl PhyGainMemoryCommandInput {
+    /// Compose one register-specific image from typed logical arguments.
+    pub(crate) const fn compose(index: u8) -> Self {
+        Self((0x00000100 | (index as u32)) & 0x000001ff)
+    }
+
+    /// Return the generated numeric image to its private raw-PAC bridge.
+    pub(crate) const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// First gain-memory data word produced by the reviewed receive-gain encoder.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyGeneratedReceiveGainData0(u32);
+
+impl PhyGeneratedReceiveGainData0 {
+    /// Compose one register-specific image from typed logical arguments.
+    pub(crate) const fn compose(dc_i: u16, dc_q: u16, index_dc_q: u16, auxiliary: u16) -> Self {
+        Self(
+            ((dc_i as u32) << 31)
+                | ((dc_q as u32) << 13)
+                | ((index_dc_q as u32) << 22)
+                | ((auxiliary as u32) & 0x00001fff),
+        )
+    }
+
+    /// Return the generated numeric image to its private raw-PAC bridge.
+    pub(crate) const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Second gain-memory data word produced by the reviewed receive-gain encoder.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyGeneratedReceiveGainData1(u32);
+
+impl PhyGeneratedReceiveGainData1 {
+    /// Compose one register-specific image from typed logical arguments.
+    pub(crate) const fn compose(
+        encoded_gain_high: u32,
+        encoded_gain_low: u32,
+        index_dc_i: u16,
+        dc_i: u16,
+        mixer_digital_gain: u8,
+    ) -> Self {
+        Self(
+            ((((encoded_gain_high) >> 4) & 0x0000007f) << 20)
+                | (((encoded_gain_low) & 0x00000007) << 17)
+                | ((index_dc_i as u32) << 8)
+                | ((dc_i as u32) >> 1)
+                | ((mixer_digital_gain as u32) << 29),
+        )
+    }
+
+    /// Return the generated numeric image to its private raw-PAC bridge.
+    pub(crate) const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Third gain-memory data word produced by the reviewed receive-gain encoder.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyGeneratedReceiveGainData2(u32);
+
+impl PhyGeneratedReceiveGainData2 {
+    /// Compose one register-specific image from typed logical arguments.
+    pub(crate) const fn compose(
+        parameter_002: u8,
+        encoded_gain_high: u32,
+        encoded_gain_middle: u32,
+    ) -> Self {
+        Self(
+            ((parameter_002 as u32) >> 6)
+                | ((((encoded_gain_high) >> 15) & 0x00000007) << 5)
+                | ((((encoded_gain_middle) >> 12) & 0x00000007) << 2),
+        )
+    }
+
+    /// Return the generated numeric image to its private raw-PAC bridge.
+    pub(crate) const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Second fixed-form receive-table initialization data word.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyReceiveTableGainData1(u32);
+
+impl PhyReceiveTableGainData1 {
+    /// Compose one register-specific image from typed logical arguments.
+    pub(crate) const fn compose(parameter_002: u8) -> Self {
+        Self(0x02010080 | ((parameter_002 as u32) << 29))
+    }
+
+    /// Return the generated numeric image to its private raw-PAC bridge.
+    pub(crate) const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Third fixed-form receive-table initialization data word.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyReceiveTableGainData2(u32);
+
+impl PhyReceiveTableGainData2 {
+    /// Compose one register-specific image from typed logical arguments.
+    pub(crate) const fn compose(parameter_002: u8) -> Self {
+        Self(0x000000fc | ((parameter_002 as u32) >> 6))
+    }
+
+    /// Return the generated numeric image to its private raw-PAC bridge.
+    pub(crate) const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// First gain-memory data word produced by the reviewed transmit-gain encoder.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyTransmitGainData0(u32);
+
+impl PhyTransmitGainData0 {
+    /// Compose one register-specific image from typed logical arguments.
+    pub(crate) const fn compose(config: u16, seed_2: u16, seed_1_high: u16, seed_3: u16) -> Self {
+        Self(
+            ((config as u32) & 0x00001fff)
+                | ((seed_2 as u32) << 22)
+                | ((seed_1_high as u32) << 31)
+                | ((seed_3 as u32) << 13),
+        )
+    }
+
+    /// Return the generated numeric image to its private raw-PAC bridge.
+    pub(crate) const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Second gain-memory data word produced by the reviewed transmit-gain encoder.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyTransmitGainData1(u32);
+
+impl PhyTransmitGainData1 {
+    /// Compose one register-specific image from typed logical arguments.
+    pub(crate) const fn compose(
+        seed_0: u16,
+        seed_1_low: u16,
+        gain_64_high: u16,
+        gain_72_low: u16,
+        gain_64_low: u16,
+    ) -> Self {
+        Self(
+            0x10000000
+                | ((seed_0 as u32) << 8)
+                | ((seed_1_low as u32) >> 1)
+                | ((((gain_64_high as u32) >> 6) & 0x000000ff) << 17)
+                | (((gain_72_low as u32) & 0x00000007) << 31)
+                | (((gain_64_low as u32) & 0x0000003f) << 20),
+        )
+    }
+
+    /// Return the generated numeric image to its private raw-PAC bridge.
+    pub(crate) const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Third gain-memory data word produced by the reviewed transmit-gain encoder.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyTransmitGainData2(u32);
+
+impl PhyTransmitGainData2 {
+    /// Compose one register-specific image from typed logical arguments.
+    pub(crate) const fn compose(gain_72_low: u16, gain_72_high: u16, gain_32: u8) -> Self {
+        Self(
+            0x00007f80
+                | (((gain_72_low as u32) >> 1) & 0x00000003)
+                | (((gain_72_high as u32) >> 1) & 0x0000001c)
+                | ((gain_32 as u32) << 15),
+        )
+    }
+
+    /// Return the generated numeric image to its private raw-PAC bridge.
+    pub(crate) const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Reviewed named fields in the eight-bit PHY analog-I2C register space. Generated accessors exclusively own sampled-byte masks and shifts.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct PhyI2cField {
@@ -1768,6 +2039,78 @@ pub(crate) fn publish_bluetooth_modem_lp_timer_compare(
         registers,
         value.get(),
     );
+}
+
+/// Typed bridge for the reviewed `publish_generated_receive_gain_data_0` complete-register transaction.
+#[inline]
+pub(crate) fn publish_generated_receive_gain_data_0(
+    registers: &crate::svd::PhyMemory,
+    value: PhyGeneratedReceiveGainData0,
+) {
+    crate::svd::full_register_write::publish_generated_receive_gain_data_0(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_generated_receive_gain_data_1` complete-register transaction.
+#[inline]
+pub(crate) fn publish_generated_receive_gain_data_1(
+    registers: &crate::svd::PhyMemory,
+    value: PhyGeneratedReceiveGainData1,
+) {
+    crate::svd::full_register_write::publish_generated_receive_gain_data_1(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_generated_receive_gain_data_2` complete-register transaction.
+#[inline]
+pub(crate) fn publish_generated_receive_gain_data_2(
+    registers: &crate::svd::PhyMemory,
+    value: PhyGeneratedReceiveGainData2,
+) {
+    crate::svd::full_register_write::publish_generated_receive_gain_data_2(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_receive_table_gain_data_1` complete-register transaction.
+#[inline]
+pub(crate) fn publish_receive_table_gain_data_1(
+    registers: &crate::svd::PhyMemory,
+    value: PhyReceiveTableGainData1,
+) {
+    crate::svd::full_register_write::publish_receive_table_gain_data_1(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_receive_table_gain_data_2` complete-register transaction.
+#[inline]
+pub(crate) fn publish_receive_table_gain_data_2(
+    registers: &crate::svd::PhyMemory,
+    value: PhyReceiveTableGainData2,
+) {
+    crate::svd::full_register_write::publish_receive_table_gain_data_2(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_transmit_gain_data_0` complete-register transaction.
+#[inline]
+pub(crate) fn publish_transmit_gain_data_0(
+    registers: &crate::svd::PhyMemory,
+    value: PhyTransmitGainData0,
+) {
+    crate::svd::full_register_write::publish_transmit_gain_data_0(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_transmit_gain_data_1` complete-register transaction.
+#[inline]
+pub(crate) fn publish_transmit_gain_data_1(
+    registers: &crate::svd::PhyMemory,
+    value: PhyTransmitGainData1,
+) {
+    crate::svd::full_register_write::publish_transmit_gain_data_1(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_transmit_gain_data_2` complete-register transaction.
+#[inline]
+pub(crate) fn publish_transmit_gain_data_2(
+    registers: &crate::svd::PhyMemory,
+    value: PhyTransmitGainData2,
+) {
+    crate::svd::full_register_write::publish_transmit_gain_data_2(registers, value.get());
 }
 
 /// Typed bridge for the reviewed `set_ftm_enabled_from_vendor_argument` masked transaction.
@@ -4599,6 +4942,100 @@ pub(crate) fn set_iq_estimator_measurement_state(
     value: IqEstimatorEnableState,
 ) {
     crate::svd::field_replace_modify::set_iq_estimator_measurement_state(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `configure_even_pbus_memory_group_boundary` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_even_pbus_memory_group_boundary(
+    registers: &crate::svd::PhyMemory,
+    index: usize,
+    value: PbusMemoryGroupBoundaryInput,
+) {
+    crate::svd::field_replace_modify::configure_even_pbus_memory_group_boundary(
+        registers,
+        index,
+        value.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `configure_odd_pbus_memory_group_boundary` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_odd_pbus_memory_group_boundary(
+    registers: &crate::svd::PhyMemory,
+    index: usize,
+    value: PbusMemoryGroupBoundaryInput,
+) {
+    crate::svd::field_replace_modify::configure_odd_pbus_memory_group_boundary(
+        registers,
+        index,
+        value.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `publish_pbus_memory_command` field-replacement transaction.
+#[inline]
+pub(crate) fn publish_pbus_memory_command(
+    registers: &crate::svd::PhyMemory,
+    value: PhyPbusMemoryCommand,
+) {
+    crate::svd::field_replace_modify::publish_pbus_memory_command(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_table_memory_base_index` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_table_memory_base_index(
+    registers: &crate::svd::PhyClockOracle,
+    value: PhyMemoryIndex,
+) {
+    crate::svd::field_replace_modify::configure_table_memory_base_index(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_forced_power_state` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_forced_power_state(
+    registers: &crate::svd::PhyClockOracle,
+    value: PhyForcedPowerState,
+) {
+    crate::svd::field_replace_modify::configure_forced_power_state(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `configure_forced_power_index` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_forced_power_index(
+    registers: &crate::svd::PhyClockOracle,
+    value: PhyForcedPowerIndex,
+) {
+    crate::svd::field_replace_modify::configure_forced_power_index(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_tx_cfr_memory_index` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_tx_cfr_memory_index(
+    registers: &crate::svd::PhyMemory,
+    value: PhyMemoryIndex,
+) {
+    crate::svd::field_replace_modify::configure_tx_cfr_memory_index(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `set_tx_cfr_commit` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn set_tx_cfr_commit(registers: &crate::svd::PhyMemory) {
+    crate::svd::field_replace_modify::set_tx_cfr_commit(registers);
+}
+
+/// Typed bridge for the reviewed `clear_tx_cfr_commit` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_tx_cfr_commit(registers: &crate::svd::PhyMemory) {
+    crate::svd::field_replace_modify::clear_tx_cfr_commit(registers);
+}
+
+/// Typed bridge for the reviewed `publish_gain_memory_command` field-replacement transaction.
+#[inline]
+pub(crate) fn publish_gain_memory_command(
+    registers: &crate::svd::PhyMemory,
+    value: PhyGainMemoryCommandInput,
+) {
+    crate::svd::field_replace_modify::publish_gain_memory_command(registers, value.get());
 }
 
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.

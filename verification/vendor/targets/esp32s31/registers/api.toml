@@ -6819,3 +6819,351 @@ register = "SIGNAL_POWER_DIFFERENCE_Q"
 field = "VALUE"
 signed = true
 sources = ["ROM_REV0_PHY_IQ_ESTIMATOR", "S31_ESP_PACS_SVD"]
+
+[[bounded-domains]]
+name = "PhyMemoryIndex"
+description = "Complete eight-bit index shared by reviewed PBUS, TX-CFR and gain-memory transactions."
+min = 0
+max = 0xff
+sources = ["ROM_REV0_PHY_WRITE_PBUS_MEM", "BLOB_LIBPHY_PHY_SET_TX_CFR_MEM", "ROM_REV0_PHY_WRITE_GAIN_MEM"]
+
+[[bounded-domains]]
+name = "PhyPbusMemoryCommand"
+description = "Complete ten-bit PBUS-memory command accepted by rev0 ROM phy_write_pbus_mem."
+min = 0
+max = 0x03ff
+sources = ["ROM_REV0_PHY_WRITE_PBUS_MEM"]
+
+[[enum-domains]]
+name = "PhyForcedPowerState"
+description = "Boolean forced-power-index state accepted by complete rev0 ROM phy_force_pwr_index."
+
+[[enum-domains.values]]
+name = "Disabled"
+value = 0
+description = "Disable the forced PHY power index."
+sources = ["ROM_REV0_PHY_FORCE_PWR_INDEX", "S31_ESP_PACS_SVD"]
+
+[[enum-domains.values]]
+name = "Enabled"
+value = 1
+description = "Enable the forced PHY power index."
+sources = ["ROM_REV0_PHY_FORCE_PWR_INDEX", "S31_ESP_PACS_SVD"]
+
+[[bitwise-composed-domains]]
+name = "PbusMemoryGroupBoundaryInput"
+description = "One logical first/last PBUS group-boundary pair before projection into the selected even or odd SVD fields."
+peripheral = "PHY_MEMORY"
+register = "GROUP_BOUNDARY%s"
+arguments = [
+    { name = "first_entry", value-type = "u8", left-shift = 0 },
+    { name = "last_entry", value-type = "u8", left-shift = 8 },
+]
+output-mask = 0x0000ffff
+sources = ["ROM_REV0_PHY_WRITE_PBUS_MEM", "S31_ESP_PACS_SVD"]
+
+[[bitwise-composed-domains]]
+name = "PhyGainMemoryCommandInput"
+description = "Gain-memory command image with a caller index, zero low field and the reviewed gain-write selector."
+peripheral = "PHY_MEMORY"
+register = "COMMAND"
+arguments = [{ name = "index", value-type = "u8", left-shift = 0 }]
+fixed-value = 0x00000100
+output-mask = 0x000001ff
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM", "S31_ESP_PACS_SVD"]
+
+[[bitwise-composed-domains]]
+name = "PhyGeneratedReceiveGainData0"
+description = "First gain-memory data word produced by the reviewed receive-gain encoder."
+peripheral = "PHY_MEMORY"
+register = "DATA_0"
+arguments = [
+    { name = "dc_i", value-type = "u16", left-shift = 31 },
+    { name = "dc_q", value-type = "u16", left-shift = 13 },
+    { name = "index_dc_q", value-type = "u16", left-shift = 22 },
+    { name = "auxiliary", value-type = "u16", retain-mask = 0x1fff, left-shift = 0 },
+]
+output-mask = 0xffffffff
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
+
+[[bitwise-composed-domains]]
+name = "PhyGeneratedReceiveGainData1"
+description = "Second gain-memory data word produced by the reviewed receive-gain encoder."
+peripheral = "PHY_MEMORY"
+register = "DATA_1"
+arguments = [
+    { name = "encoded_gain_high", value-type = "u32", right-shift = 4, retain-mask = 0x7f, left-shift = 20 },
+    { name = "encoded_gain_low", value-type = "u32", retain-mask = 0x07, left-shift = 17 },
+    { name = "index_dc_i", value-type = "u16", left-shift = 8 },
+    { name = "dc_i", value-type = "u16", right-shift = 1, left-shift = 0 },
+    { name = "mixer_digital_gain", value-type = "u8", left-shift = 29 },
+]
+output-mask = 0xffffffff
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
+
+[[bitwise-composed-domains]]
+name = "PhyGeneratedReceiveGainData2"
+description = "Third gain-memory data word produced by the reviewed receive-gain encoder."
+peripheral = "PHY_MEMORY"
+register = "DATA_2"
+arguments = [
+    { name = "parameter_002", value-type = "u8", right-shift = 6, left-shift = 0 },
+    { name = "encoded_gain_high", value-type = "u32", right-shift = 15, retain-mask = 0x07, left-shift = 5 },
+    { name = "encoded_gain_middle", value-type = "u32", right-shift = 12, retain-mask = 0x07, left-shift = 2 },
+]
+output-mask = 0xffffffff
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
+
+[[bitwise-composed-domains]]
+name = "PhyReceiveTableGainData1"
+description = "Second fixed-form receive-table initialization data word."
+peripheral = "PHY_MEMORY"
+register = "DATA_1"
+arguments = [{ name = "parameter_002", value-type = "u8", left-shift = 29 }]
+fixed-value = 0x02010080
+output-mask = 0xffffffff
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
+
+[[bitwise-composed-domains]]
+name = "PhyReceiveTableGainData2"
+description = "Third fixed-form receive-table initialization data word."
+peripheral = "PHY_MEMORY"
+register = "DATA_2"
+arguments = [{ name = "parameter_002", value-type = "u8", right-shift = 6, left-shift = 0 }]
+fixed-value = 0x000000fc
+output-mask = 0xffffffff
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
+
+[[bitwise-composed-domains]]
+name = "PhyTransmitGainData0"
+description = "First gain-memory data word produced by the reviewed transmit-gain encoder."
+peripheral = "PHY_MEMORY"
+register = "DATA_0"
+arguments = [
+    { name = "config", value-type = "u16", retain-mask = 0x1fff, left-shift = 0 },
+    { name = "seed_2", value-type = "u16", left-shift = 22 },
+    { name = "seed_1_high", value-type = "u16", left-shift = 31 },
+    { name = "seed_3", value-type = "u16", left-shift = 13 },
+]
+output-mask = 0xffffffff
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
+
+[[bitwise-composed-domains]]
+name = "PhyTransmitGainData1"
+description = "Second gain-memory data word produced by the reviewed transmit-gain encoder."
+peripheral = "PHY_MEMORY"
+register = "DATA_1"
+arguments = [
+    { name = "seed_0", value-type = "u16", left-shift = 8 },
+    { name = "seed_1_low", value-type = "u16", right-shift = 1, left-shift = 0 },
+    { name = "gain_64_high", value-type = "u16", right-shift = 6, retain-mask = 0xff, left-shift = 17 },
+    { name = "gain_72_low", value-type = "u16", retain-mask = 0x07, left-shift = 31 },
+    { name = "gain_64_low", value-type = "u16", retain-mask = 0x3f, left-shift = 20 },
+]
+fixed-value = 0x10000000
+output-mask = 0xffffffff
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
+
+[[bitwise-composed-domains]]
+name = "PhyTransmitGainData2"
+description = "Third gain-memory data word produced by the reviewed transmit-gain encoder."
+peripheral = "PHY_MEMORY"
+register = "DATA_2"
+arguments = [
+    { name = "gain_72_low", value-type = "u16", right-shift = 1, retain-mask = 0x03, left-shift = 0 },
+    { name = "gain_72_high", value-type = "u16", right-shift = 1, retain-mask = 0x1c, left-shift = 0 },
+    { name = "gain_32", value-type = "u8", left-shift = 15 },
+]
+fixed-value = 0x00007f80
+output-mask = 0xffffffff
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
+
+[[field-replace-modifies]]
+name = "configure_even_pbus_memory_group_boundary"
+peripheral = "PHY_MEMORY"
+register = "GROUP_BOUNDARY%s"
+fields = [
+    { field = "EVEN_GROUP_FIRST_ENTRY", source-bit-offset = 0 },
+    { field = "EVEN_GROUP_LAST_ENTRY", source-bit-offset = 8 },
+]
+domain = "PbusMemoryGroupBoundaryInput"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_WRITE_PBUS_MEM", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_odd_pbus_memory_group_boundary"
+peripheral = "PHY_MEMORY"
+register = "GROUP_BOUNDARY%s"
+fields = [
+    { field = "ODD_GROUP_FIRST_ENTRY", source-bit-offset = 0 },
+    { field = "ODD_GROUP_LAST_ENTRY", source-bit-offset = 8 },
+]
+domain = "PbusMemoryGroupBoundaryInput"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_WRITE_PBUS_MEM", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "publish_pbus_memory_command"
+peripheral = "PHY_MEMORY"
+register = "COMMAND"
+fields = [
+    { field = "MEMORY_INDEX", source-bit-offset = 0 },
+    { field = "GAIN_WRITE_OR_PBUS_COMMAND_BIT_8", source-bit-offset = 8 },
+    { field = "PBUS_COMMAND_BIT_9", source-bit-offset = 9 },
+]
+domain = "PhyPbusMemoryCommand"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_WRITE_PBUS_MEM", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_table_memory_base_index"
+peripheral = "PHY_CLOCK_ORACLE"
+register = "TABLE_MEMORY_INDEX_SOURCE"
+field = "BASE_INDEX"
+sources = ["BLOB_LIBPHY_PHY_SET_TX_CFR_MEM", "ROM_REV0_PHY_WRITE_GAIN_MEM", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_table_memory_base_index"
+peripheral = "PHY_CLOCK_ORACLE"
+register = "TABLE_MEMORY_INDEX_SOURCE"
+fields = [{ field = "BASE_INDEX", source-bit-offset = 0 }]
+domain = "PhyMemoryIndex"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FE_REG_INIT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_forced_power_state"
+peripheral = "PHY_CLOCK_ORACLE"
+register = "TABLE_MEMORY_INDEX_SOURCE"
+fields = [{ field = "FORCE_POWER_ENABLE", source-bit-offset = 0 }]
+domain = "PhyForcedPowerState"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FORCE_PWR_INDEX", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_forced_power_index"
+peripheral = "PHY_CLOCK_ORACLE"
+register = "TABLE_MEMORY_INDEX_SOURCE"
+fields = [{ field = "FORCED_POWER_INDEX", source-bit-offset = 0 }]
+domain = "PhyForcedPowerIndex"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FORCE_PWR_INDEX", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_tx_cfr_memory_index"
+peripheral = "PHY_MEMORY"
+register = "COMMAND"
+fields = [{ field = "MEMORY_INDEX", source-bit-offset = 0 }]
+domain = "PhyMemoryIndex"
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_SET_TX_CFR_MEM", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_tx_cfr_commit"
+peripheral = "PHY_MEMORY"
+register = "COMMAND"
+fields = [{ field = "TX_CFR_COMMIT", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_SET_TX_CFR_MEM", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_tx_cfr_commit"
+peripheral = "PHY_MEMORY"
+register = "COMMAND"
+fields = [{ field = "TX_CFR_COMMIT", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_SET_TX_CFR_MEM", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "publish_gain_memory_command"
+peripheral = "PHY_MEMORY"
+register = "COMMAND"
+fields = [
+    { field = "GAIN_COMMAND_LOW_ZERO_UNKNOWN", source-bit-offset = 9 },
+    { field = "MEMORY_INDEX", source-bit-offset = 0 },
+    { field = "GAIN_WRITE_OR_PBUS_COMMAND_BIT_8", source-bit-offset = 8 },
+]
+domain = "PhyGainMemoryCommandInput"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM", "S31_ESP_PACS_SVD"]
+
+[[fixed-register-images]]
+name = "publish_receive_table_gain_data_0"
+peripheral = "PHY_MEMORY"
+register = "DATA_0"
+value = 0x40200000
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
+
+[[full-register-writes]]
+name = "publish_generated_receive_gain_data_0"
+peripheral = "PHY_MEMORY"
+register = "DATA_0"
+field = "OPAQUE_DATA"
+domain = "PhyGeneratedReceiveGainData0"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
+
+[[full-register-writes]]
+name = "publish_generated_receive_gain_data_1"
+peripheral = "PHY_MEMORY"
+register = "DATA_1"
+field = "OPAQUE_DATA"
+domain = "PhyGeneratedReceiveGainData1"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
+
+[[full-register-writes]]
+name = "publish_generated_receive_gain_data_2"
+peripheral = "PHY_MEMORY"
+register = "DATA_2"
+field = "OPAQUE_DATA"
+domain = "PhyGeneratedReceiveGainData2"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
+
+[[full-register-writes]]
+name = "publish_receive_table_gain_data_1"
+peripheral = "PHY_MEMORY"
+register = "DATA_1"
+field = "OPAQUE_DATA"
+domain = "PhyReceiveTableGainData1"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
+
+[[full-register-writes]]
+name = "publish_receive_table_gain_data_2"
+peripheral = "PHY_MEMORY"
+register = "DATA_2"
+field = "OPAQUE_DATA"
+domain = "PhyReceiveTableGainData2"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
+
+[[full-register-writes]]
+name = "publish_transmit_gain_data_0"
+peripheral = "PHY_MEMORY"
+register = "DATA_0"
+field = "OPAQUE_DATA"
+domain = "PhyTransmitGainData0"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
+
+[[full-register-writes]]
+name = "publish_transmit_gain_data_1"
+peripheral = "PHY_MEMORY"
+register = "DATA_1"
+field = "OPAQUE_DATA"
+domain = "PhyTransmitGainData1"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
+
+[[full-register-writes]]
+name = "publish_transmit_gain_data_2"
+peripheral = "PHY_MEMORY"
+register = "DATA_2"
+field = "OPAQUE_DATA"
+domain = "PhyTransmitGainData2"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]

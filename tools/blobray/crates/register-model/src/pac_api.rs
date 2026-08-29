@@ -184,6 +184,8 @@ pub struct BitwiseComposedDomain {
     pub peripheral: String,
     pub register: String,
     pub arguments: Vec<BitwiseComposedDomainArgument>,
+    #[serde(default)]
+    pub fixed_value: u32,
     pub output_mask: u32,
     pub sources: Vec<String>,
 }
@@ -193,7 +195,15 @@ pub struct BitwiseComposedDomain {
 pub struct BitwiseComposedDomainArgument {
     pub name: String,
     pub value_type: BitwiseComposedValueType,
+    #[serde(default)]
+    pub right_shift: u8,
+    #[serde(default = "all_u32_bits")]
+    pub retain_mask: u32,
     pub left_shift: u8,
+}
+
+const fn all_u32_bits() -> u32 {
+    u32::MAX
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -839,9 +849,13 @@ impl PacApiPack {
                     .enum_domains
                     .iter()
                     .any(|candidate| candidate.name == *domain_name)
+                    && !self
+                        .bitwise_composed_domains
+                        .iter()
+                        .any(|candidate| candidate.name == *domain_name)
                 {
                     return Err(Error::message(format!(
-                        "PAC API field-replace-modify {:?} requires a bounded or enum domain",
+                        "PAC API field-replace-modify {:?} requires a bounded, enum, or bitwise-composed domain",
                         operation.name
                     )));
                 }
@@ -1284,9 +1298,9 @@ impl PacApiPack {
             )?;
             validate_component("peripheral", &domain.name, &domain.peripheral)?;
             validate_component("register", &domain.name, &domain.register)?;
-            if domain.arguments.len() < 2 {
+            if domain.arguments.is_empty() {
                 return Err(Error::message(format!(
-                    "PAC API bitwise-composed domain {:?} requires at least two arguments",
+                    "PAC API bitwise-composed domain {:?} requires at least one argument",
                     domain.name
                 )));
             }
@@ -1310,9 +1324,15 @@ impl PacApiPack {
                         domain.name, argument.name
                     )));
                 }
-                if argument.left_shift >= 32 {
+                if argument.right_shift >= 32 || argument.left_shift >= 32 {
                     return Err(Error::message(format!(
                         "PAC API bitwise-composed domain {:?} argument {:?} shifts outside u32",
+                        domain.name, argument.name
+                    )));
+                }
+                if argument.retain_mask == 0 {
+                    return Err(Error::message(format!(
+                        "PAC API bitwise-composed domain {:?} argument {:?} retains no bits",
                         domain.name, argument.name
                     )));
                 }
@@ -1830,7 +1850,7 @@ mod tests {
     }
 
     #[test]
-    fn bitwise_composed_domain_rejects_a_shift_outside_u32() {
+    fn bitwise_composed_domain_rejects_invalid_argument_projection() {
         let mut pack = empty_pack();
         pack.bitwise_composed_domains.push(BitwiseComposedDomain {
             name: "CommandInput".to_owned(),
@@ -1841,20 +1861,29 @@ mod tests {
                 BitwiseComposedDomainArgument {
                     name: "selector".to_owned(),
                     value_type: BitwiseComposedValueType::U8,
+                    right_shift: 0,
+                    retain_mask: u32::MAX,
                     left_shift: 2,
                 },
                 BitwiseComposedDomainArgument {
                     name: "value".to_owned(),
                     value_type: BitwiseComposedValueType::U16,
+                    right_shift: 0,
+                    retain_mask: u32::MAX,
                     left_shift: 6,
                 },
             ],
+            fixed_value: 0,
             output_mask: 0x0001_fffc,
             sources: vec!["REVIEW".to_owned()],
         });
         assert!(pack.validate().is_ok());
 
-        pack.bitwise_composed_domains[0].arguments[1].left_shift = 32;
+        pack.bitwise_composed_domains[0].arguments[1].right_shift = 32;
+        assert!(pack.validate().is_err());
+
+        pack.bitwise_composed_domains[0].arguments[1].right_shift = 0;
+        pack.bitwise_composed_domains[0].arguments[1].retain_mask = 0;
         assert!(pack.validate().is_err());
     }
 

@@ -107,22 +107,37 @@ impl PacApiPack {
                 .arguments
                 .iter()
                 .map(|argument| {
-                    let value = if argument.value_type.requires_u32_cast() {
+                    let mut value = if argument.value_type.requires_u32_cast() {
                         format!("{} as u32", argument.name)
                     } else {
                         argument.name.clone()
                     };
-                    if argument.left_shift == 0 {
-                        format!("({value})")
-                    } else {
-                        format!("(({value}) << {})", argument.left_shift)
+                    if argument.right_shift != 0 {
+                        value = format!("({value}) >> {}", argument.right_shift);
                     }
+                    if argument.retain_mask != u32::MAX {
+                        value = format!("({value}) & 0x{:08x}", argument.retain_mask);
+                    }
+                    if argument.left_shift != 0 {
+                        value = format!("({value}) << {}", argument.left_shift);
+                    }
+                    format!("({value})")
                 })
                 .collect::<Vec<_>>()
                 .join(" | ");
+            let composition = if domain.fixed_value == 0 {
+                composition
+            } else {
+                format!("0x{:08x} | {composition}", domain.fixed_value)
+            };
+            let composition = if domain.output_mask == u32::MAX {
+                composition
+            } else {
+                format!("({composition}) & 0x{:08x}", domain.output_mask)
+            };
             output.push_str(&format!(
-                "#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]\npub struct {}(u32);\n\nimpl {} {{\n    /// Compose one register-specific image from typed logical arguments.\n    pub(crate) const fn compose({parameters}) -> Self {{\n        Self(({composition}) & 0x{:08x})\n    }}\n\n    /// Return the generated numeric image to its private raw-PAC bridge.\n    pub(crate) const fn get(self) -> u32 {{ self.0 }}\n}}\n\n",
-                domain.name, domain.name, domain.output_mask,
+                "#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]\npub struct {}(u32);\n\nimpl {} {{\n    /// Compose one register-specific image from typed logical arguments.\n    pub(crate) const fn compose({parameters}) -> Self {{\n        Self({composition})\n    }}\n\n    /// Return the generated numeric image to its private raw-PAC bridge.\n    pub(crate) const fn get(self) -> u32 {{ self.0 }}\n}}\n\n",
+                domain.name, domain.name,
             ));
         }
         output.push_str(&self.render_indirect_register_field_domains());

@@ -508,8 +508,14 @@ impl PacApiPack {
                             .find(|candidate| candidate.name == domain_name)
                             .and_then(|domain| domain.values.iter().map(|value| value.value).max())
                     })
+                    .or_else(|| {
+                        self.bitwise_composed_domains
+                            .iter()
+                            .find(|candidate| candidate.name == domain_name)
+                            .map(|domain| domain.output_mask)
+                    })
                     .expect(
-                        "pack validation requires a bounded or enum field-replace-modify domain",
+                        "pack validation requires a bounded, enum, or bitwise-composed field-replace-modify domain",
                     )
                 })
             };

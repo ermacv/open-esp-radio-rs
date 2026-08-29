@@ -152,27 +152,30 @@ project manifest.
 
 `[[field-replace-modifies]]` declares one ordinary read-write register update
 that replaces named SVD fields and preserves every other bit from the same
-fresh read. Each field selects bits from either one zero-based bounded domain
-or one fixed logical value. Blobray derives destination masks, shifts and Rust
-field widths from the reviewed SVD and rejects duplicate/read-only fields,
-out-of-range source projections and values outside the projected source
-image. Generated code owns the required unsafe field-writer calls; handwritten
-PAC/HAL code receives only the typed or argument-free accessor. Separate
-declarations remain separate volatile reads, so an evidenced sequence of RMW
-operations is not silently collapsed into a software register image.
+fresh read. Each field selects bits from one zero-based bounded domain, one
+bitwise-composed domain, or one fixed logical value. Blobray derives
+destination masks, shifts and Rust field widths from the reviewed SVD and
+rejects duplicate/read-only fields, out-of-range source projections and values
+outside the projected source image. Generated code owns the required unsafe
+field-writer calls; handwritten PAC/HAL code receives only the typed or
+argument-free accessor. Separate declarations remain separate volatile reads,
+so an evidenced sequence of RMW operations is not silently collapsed into a
+software register image.
 
 ### Bitwise-composed register inputs
 
 `[[bitwise-composed-domains]]` declares a register-specific logical input when
-the reviewed vendor encoder shifts and ORs typed arguments before applying one
-final mask. This is intentionally distinct from independent field projection:
-overlapping contributions are preserved, including high argument bits that
-reach an adjacent physical field. Blobray validates the argument types, names,
-shift bounds, register binding and output mask, then emits a crate-private
-composer. Handwritten PAC code supplies only the logical arguments and cannot
-construct or inspect the packed register image. When the domain feeds a
-`[[masked-register-modifies]]` transaction, publication also rejects any
-composed bit that the transaction would silently truncate.
+the reviewed vendor encoder selects, shifts and ORs typed arguments before
+applying one final mask. Each argument may declare a right shift, retained-bit
+mask and left shift; the domain may also contribute a fixed value. This is
+intentionally distinct from independent field projection: overlapping
+contributions are preserved, including high argument bits that reach an
+adjacent physical field. Blobray validates the argument types, names, shift
+bounds, nonempty retained masks, register binding and output mask, then emits a
+crate-private composer. Handwritten PAC code supplies only the logical
+arguments and cannot construct or inspect the packed register image. When the
+domain feeds a masked or field-replacement transaction, publication also
+rejects any composed bit that the transaction would silently truncate.
 
 ### Sample-and-zero bit publication
 

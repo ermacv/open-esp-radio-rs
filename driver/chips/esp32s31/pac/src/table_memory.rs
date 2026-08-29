@@ -2,6 +2,12 @@
 
 #![forbid(unsafe_code)]
 
+use super::generated::{
+    PbusMemoryGroupBoundaryInput, PhyForcedPowerState, PhyGainMemoryCommandInput,
+    PhyGeneratedReceiveGainData0, PhyGeneratedReceiveGainData1, PhyGeneratedReceiveGainData2,
+    PhyMemoryIndex, PhyPbusMemoryCommand, PhyReceiveTableGainData1, PhyReceiveTableGainData2,
+    PhyTransmitGainData0, PhyTransmitGainData1, PhyTransmitGainData2,
+};
 use super::{PhyForcedPowerIndex, RadioPhyRegisters};
 
 /// One packed PBUS-memory group boundary.
@@ -18,8 +24,26 @@ pub struct PbusMemoryGroupBoundary {
 /// One complete gain-memory transaction encoded only inside the PAC.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct PhyGainMemoryEntry {
-    words: [u32; 3],
+    words: PhyGainMemoryWords,
     index: u8,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum PhyGainMemoryWords {
+    GeneratedReceive {
+        data_0: PhyGeneratedReceiveGainData0,
+        data_1: PhyGeneratedReceiveGainData1,
+        data_2: PhyGeneratedReceiveGainData2,
+    },
+    ReceiveTable {
+        data_1: PhyReceiveTableGainData1,
+        data_2: PhyReceiveTableGainData2,
+    },
+    Transmit {
+        data_0: PhyTransmitGainData0,
+        data_1: PhyTransmitGainData1,
+        data_2: PhyTransmitGainData2,
+    },
 }
 
 impl core::fmt::Debug for PhyGainMemoryEntry {
@@ -43,20 +67,21 @@ impl PhyGainMemoryEntry {
     ) -> Self {
         let [dc_i, dc_q] = dc;
         Self {
-            words: [
-                ((dc_i as u32) << 31)
-                    | ((dc_q as u32) << 13)
-                    | ((index_dc[1] as u32) << 22)
-                    | ((auxiliary as u32) & 0x1fff),
-                (((encoded_gain >> 4) & 0x7f) << 20)
-                    | ((encoded_gain & 7) << 17)
-                    | ((index_dc[0] as u32) << 8)
-                    | ((dc_i as u32) >> 1)
-                    | ((mixer_digital_gain as u32) << 29),
-                ((parameter_002 >> 6) as u32)
-                    | (((encoded_gain >> 15) & 7) << 5)
-                    | (((encoded_gain >> 12) & 7) << 2),
-            ],
+            words: PhyGainMemoryWords::GeneratedReceive {
+                data_0: PhyGeneratedReceiveGainData0::compose(dc_i, dc_q, index_dc[1], auxiliary),
+                data_1: PhyGeneratedReceiveGainData1::compose(
+                    encoded_gain,
+                    encoded_gain,
+                    index_dc[0],
+                    dc_i,
+                    mixer_digital_gain,
+                ),
+                data_2: PhyGeneratedReceiveGainData2::compose(
+                    parameter_002,
+                    encoded_gain,
+                    encoded_gain,
+                ),
+            },
             index,
         }
     }
@@ -64,11 +89,10 @@ impl PhyGainMemoryEntry {
     /// Encode one fixed-form receive-table initialization entry.
     pub const fn receive_table(index: u8, parameter_002: u8) -> Self {
         Self {
-            words: [
-                0x4020_0000,
-                0x0201_0080 | ((parameter_002 as u32) << 29),
-                ((parameter_002 >> 6) as u32) | 0x0000_00fc,
-            ],
+            words: PhyGainMemoryWords::ReceiveTable {
+                data_1: PhyReceiveTableGainData1::compose(parameter_002),
+                data_2: PhyReceiveTableGainData2::compose(parameter_002),
+            },
             index,
         }
     }
@@ -83,25 +107,12 @@ impl PhyGainMemoryEntry {
         config: u16,
     ) -> Self {
         let [seed_0, seed_1, seed_2, seed_3] = seed;
-        let gain_72 = gain_72 as u32;
-        let gain_64 = gain_64 as u32;
         Self {
-            words: [
-                ((config as u32) & 0x1fff)
-                    | ((seed_2 as u32) << 22)
-                    | ((seed_1 as u32) << 31)
-                    | ((seed_3 as u32) << 13),
-                ((seed_0 as u32) << 8)
-                    | ((seed_1 as u32) >> 1)
-                    | (((gain_64 >> 6) & 0xff) << 17)
-                    | ((gain_72 & 7) << 31)
-                    | ((gain_64 & 0x3f) << 20)
-                    | 0x1000_0000,
-                ((gain_72 & 7) >> 1)
-                    | ((gain_72 >> 1) & 0x1c)
-                    | ((gain_32 as u32) << 15)
-                    | 0x0000_7f80,
-            ],
+            words: PhyGainMemoryWords::Transmit {
+                data_0: PhyTransmitGainData0::compose(config, seed_2, seed_1, seed_3),
+                data_1: PhyTransmitGainData1::compose(seed_0, seed_1, gain_64, gain_72, gain_64),
+                data_2: PhyTransmitGainData2::compose(gain_72, gain_72, gain_32),
+            },
             index,
         }
     }
@@ -116,15 +127,12 @@ pub enum PhyMemoryError {
     PbusCommandOutOfRange,
 }
 
-const fn split_pbus_command(command: u16) -> Result<(u8, bool, bool), PhyMemoryError> {
-    if command > 0x03ff {
-        return Err(PhyMemoryError::PbusCommandOutOfRange);
+const fn forced_power_state(enabled: bool) -> PhyForcedPowerState {
+    if enabled {
+        PhyForcedPowerState::Enabled
+    } else {
+        PhyForcedPowerState::Disabled
     }
-    Ok((
-        (command & 0xff) as u8,
-        command & 0x100 != 0,
-        command & 0x200 != 0,
-    ))
 }
 
 impl RadioPhyRegisters {
@@ -135,28 +143,74 @@ impl RadioPhyRegisters {
         data: u32,
         command: u16,
     ) -> Result<(), PhyMemoryError> {
-        let (memory_index, command_bit_8, command_bit_9) = split_pbus_command(command)?;
+        let command = PhyPbusMemoryCommand::new(u32::from(command))
+            .ok_or(PhyMemoryError::PbusCommandOutOfRange)?;
 
         if let Some(boundary) = boundary {
-            if boundary.group >= 12 {
-                return Err(PhyMemoryError::PbusGroupOutOfRange);
-            }
-            let pair = usize::from(boundary.group >> 1);
-            let group_boundary = self.peripherals.phy_memory.group_boundary(pair);
-            if boundary.group & 1 == 0 {
-                group_boundary.modify(|_, w| {
-                    w.even_group_first_entry()
-                        .set(boundary.first_entry)
-                        .even_group_last_entry()
-                        .set(boundary.last_entry)
-                });
-            } else {
-                group_boundary.modify(|_, w| {
-                    w.odd_group_first_entry()
-                        .set(boundary.first_entry)
-                        .odd_group_last_entry()
-                        .set(boundary.last_entry)
-                });
+            let value =
+                PbusMemoryGroupBoundaryInput::compose(boundary.first_entry, boundary.last_entry);
+            match boundary.group {
+                0 => super::generated::configure_even_pbus_memory_group_boundary(
+                    &self.peripherals.phy_memory,
+                    0,
+                    value,
+                ),
+                1 => super::generated::configure_odd_pbus_memory_group_boundary(
+                    &self.peripherals.phy_memory,
+                    0,
+                    value,
+                ),
+                2 => super::generated::configure_even_pbus_memory_group_boundary(
+                    &self.peripherals.phy_memory,
+                    1,
+                    value,
+                ),
+                3 => super::generated::configure_odd_pbus_memory_group_boundary(
+                    &self.peripherals.phy_memory,
+                    1,
+                    value,
+                ),
+                4 => super::generated::configure_even_pbus_memory_group_boundary(
+                    &self.peripherals.phy_memory,
+                    2,
+                    value,
+                ),
+                5 => super::generated::configure_odd_pbus_memory_group_boundary(
+                    &self.peripherals.phy_memory,
+                    2,
+                    value,
+                ),
+                6 => super::generated::configure_even_pbus_memory_group_boundary(
+                    &self.peripherals.phy_memory,
+                    3,
+                    value,
+                ),
+                7 => super::generated::configure_odd_pbus_memory_group_boundary(
+                    &self.peripherals.phy_memory,
+                    3,
+                    value,
+                ),
+                8 => super::generated::configure_even_pbus_memory_group_boundary(
+                    &self.peripherals.phy_memory,
+                    4,
+                    value,
+                ),
+                9 => super::generated::configure_odd_pbus_memory_group_boundary(
+                    &self.peripherals.phy_memory,
+                    4,
+                    value,
+                ),
+                10 => super::generated::configure_even_pbus_memory_group_boundary(
+                    &self.peripherals.phy_memory,
+                    5,
+                    value,
+                ),
+                11 => super::generated::configure_odd_pbus_memory_group_boundary(
+                    &self.peripherals.phy_memory,
+                    5,
+                    value,
+                ),
+                _ => return Err(PhyMemoryError::PbusGroupOutOfRange),
             }
         }
 
@@ -164,44 +218,30 @@ impl RadioPhyRegisters {
             &self.peripherals.phy_memory,
             super::generated::PhyMemoryData0::new(data),
         );
-        self.peripherals.phy_memory.command().modify(|_, w| {
-            w.memory_index()
-                .set(memory_index)
-                .gain_write_or_pbus_command_bit_8()
-                .bit(command_bit_8)
-                .pbus_command_bit_9()
-                .bit(command_bit_9)
-        });
+        super::generated::publish_pbus_memory_command(&self.peripherals.phy_memory, command);
         Ok(())
     }
 
     /// Sample the shared CFR/gain-memory base index exactly once.
     pub fn read_table_memory_base_index(&self) -> u8 {
-        self.peripherals
-            .phy_clock_oracle
-            .table_memory_index_source()
-            .read()
-            .base_index()
-            .bits()
+        super::svd::field_read::observe_table_memory_base_index(&self.peripherals.phy_clock_oracle)
     }
 
     /// Configure the shared CFR/gain-memory base index through one fresh RMW.
     pub fn configure_table_memory_base_index(&mut self, index: u8) {
-        self.peripherals
-            .phy_clock_oracle
-            .table_memory_index_source()
-            .modify(|_, w| w.base_index().set(index));
+        super::generated::configure_table_memory_base_index(
+            &self.peripherals.phy_clock_oracle,
+            PhyMemoryIndex::new(u32::from(index))
+                .expect("u8 always fits the reviewed PHY memory-index domain"),
+        );
     }
 
     /// Apply complete rev0 ROM `phy_force_pwr_index` through its two ordered
     /// fresh-read field replacements.
     pub fn configure_forced_power_index(&mut self, enabled: bool, index: PhyForcedPowerIndex) {
-        let control = self
-            .peripherals
-            .phy_clock_oracle
-            .table_memory_index_source();
-        control.modify(|_, w| w.force_power_enable().bit(enabled));
-        control.modify(|_, w| w.forced_power_index().set(index.get() as u8));
+        let control = &self.peripherals.phy_clock_oracle;
+        super::generated::configure_forced_power_state(control, forced_power_state(enabled));
+        super::generated::configure_forced_power_index(control, index);
     }
 
     /// Publish one TX-CFR entry and its complete set/clear commit pulse.
@@ -210,43 +250,48 @@ impl RadioPhyRegisters {
             &self.peripherals.phy_memory,
             super::generated::PhyMemoryData0::new(data),
         );
-        self.peripherals
-            .phy_memory
-            .command()
-            .modify(|_, w| w.memory_index().set(index));
-        self.peripherals
-            .phy_memory
-            .command()
-            .modify(|_, w| w.tx_cfr_commit().set_bit());
-        self.peripherals
-            .phy_memory
-            .command()
-            .modify(|_, w| w.tx_cfr_commit().clear_bit());
+        let memory = &self.peripherals.phy_memory;
+        super::generated::configure_tx_cfr_memory_index(
+            memory,
+            PhyMemoryIndex::new(u32::from(index))
+                .expect("u8 always fits the reviewed PHY memory-index domain"),
+        );
+        super::generated::set_tx_cfr_commit(memory);
+        super::generated::clear_tx_cfr_commit(memory);
     }
 
     /// Publish one three-word gain-memory entry in complete ROM order.
     pub fn program_gain_memory_entry(&mut self, entry: PhyGainMemoryEntry) {
         let memory = &self.peripherals.phy_memory;
-        super::generated::phy_memory_data_0(
-            memory,
-            super::generated::PhyMemoryData0::new(entry.words[0]),
-        );
-        super::generated::phy_memory_data_1(
-            memory,
-            super::generated::PhyMemoryData1::new(entry.words[1]),
-        );
-        super::generated::phy_memory_data_2(
-            memory,
-            super::generated::PhyMemoryData2::new(entry.words[2]),
-        );
+        match entry.words {
+            PhyGainMemoryWords::GeneratedReceive {
+                data_0,
+                data_1,
+                data_2,
+            } => {
+                super::generated::publish_generated_receive_gain_data_0(memory, data_0);
+                super::generated::publish_generated_receive_gain_data_1(memory, data_1);
+                super::generated::publish_generated_receive_gain_data_2(memory, data_2);
+            }
+            PhyGainMemoryWords::ReceiveTable { data_1, data_2 } => {
+                super::svd::fixed_register_image::publish_receive_table_gain_data_0(memory);
+                super::generated::publish_receive_table_gain_data_1(memory, data_1);
+                super::generated::publish_receive_table_gain_data_2(memory, data_2);
+            }
+            PhyGainMemoryWords::Transmit {
+                data_0,
+                data_1,
+                data_2,
+            } => {
+                super::generated::publish_transmit_gain_data_0(memory, data_0);
+                super::generated::publish_transmit_gain_data_1(memory, data_1);
+                super::generated::publish_transmit_gain_data_2(memory, data_2);
+            }
+        }
 
-        self.peripherals.phy_memory.command().modify(|_, w| {
-            w.gain_command_low_zero_unknown()
-                .set(0)
-                .memory_index()
-                .set(entry.index)
-                .gain_write_or_pbus_command_bit_8()
-                .set_bit()
-        });
+        super::generated::publish_gain_memory_command(
+            memory,
+            PhyGainMemoryCommandInput::compose(entry.index),
+        );
     }
 }

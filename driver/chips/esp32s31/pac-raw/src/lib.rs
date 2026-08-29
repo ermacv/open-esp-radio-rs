@@ -58214,6 +58214,110 @@ pub mod full_register_write {
                 .write_with_zero(|writer| writer.image().set(value));
         }
     }
+
+    /// Write every bit of `PHY_MEMORY`.`DATA_0` through its full-width field.
+    #[inline]
+    pub fn publish_generated_receive_gain_data_0(registers: &crate::PhyMemory, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .data_0()
+                .write_with_zero(|writer| writer.opaque_data().set(value));
+        }
+    }
+
+    /// Write every bit of `PHY_MEMORY`.`DATA_1` through its full-width field.
+    #[inline]
+    pub fn publish_generated_receive_gain_data_1(registers: &crate::PhyMemory, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .data_1()
+                .write_with_zero(|writer| writer.opaque_data().set(value));
+        }
+    }
+
+    /// Write every bit of `PHY_MEMORY`.`DATA_2` through its full-width field.
+    #[inline]
+    pub fn publish_generated_receive_gain_data_2(registers: &crate::PhyMemory, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .data_2()
+                .write_with_zero(|writer| writer.opaque_data().set(value));
+        }
+    }
+
+    /// Write every bit of `PHY_MEMORY`.`DATA_1` through its full-width field.
+    #[inline]
+    pub fn publish_receive_table_gain_data_1(registers: &crate::PhyMemory, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .data_1()
+                .write_with_zero(|writer| writer.opaque_data().set(value));
+        }
+    }
+
+    /// Write every bit of `PHY_MEMORY`.`DATA_2` through its full-width field.
+    #[inline]
+    pub fn publish_receive_table_gain_data_2(registers: &crate::PhyMemory, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .data_2()
+                .write_with_zero(|writer| writer.opaque_data().set(value));
+        }
+    }
+
+    /// Write every bit of `PHY_MEMORY`.`DATA_0` through its full-width field.
+    #[inline]
+    pub fn publish_transmit_gain_data_0(registers: &crate::PhyMemory, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .data_0()
+                .write_with_zero(|writer| writer.opaque_data().set(value));
+        }
+    }
+
+    /// Write every bit of `PHY_MEMORY`.`DATA_1` through its full-width field.
+    #[inline]
+    pub fn publish_transmit_gain_data_1(registers: &crate::PhyMemory, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .data_1()
+                .write_with_zero(|writer| writer.opaque_data().set(value));
+        }
+    }
+
+    /// Write every bit of `PHY_MEMORY`.`DATA_2` through its full-width field.
+    #[inline]
+    pub fn publish_transmit_gain_data_2(registers: &crate::PhyMemory, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .data_2()
+                .write_with_zero(|writer| writer.opaque_data().set(value));
+        }
+    }
 }
 
 /// Safe, SVD-declared observations which cover a complete register.
@@ -58648,6 +58752,16 @@ pub mod field_read {
         registers: &crate::PhyIqEstimatorOracle,
     ) -> i32 {
         registers.signal_power_difference_q().read().value().bits() as i32
+    }
+
+    /// Read `PHY_CLOCK_ORACLE`.`TABLE_MEMORY_INDEX_SOURCE`.`BASE_INDEX` without exposing its register block.
+    #[inline]
+    pub fn observe_table_memory_base_index(registers: &crate::PhyClockOracle) -> u8 {
+        registers
+            .table_memory_index_source()
+            .read()
+            .base_index()
+            .bits()
     }
 }
 
@@ -59930,6 +60044,19 @@ pub mod fixed_register_image {
             registers
                 .i2c1_ctrl()
                 .write_with_zero(|writer| writer.bits(0x04000000));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x40200000` to `PHY_MEMORY`.`DATA_0`.
+    #[inline]
+    pub fn publish_receive_table_gain_data_0(registers: &crate::PhyMemory) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .data_0()
+                .write_with_zero(|writer| writer.bits(0x40200000));
         }
     }
 }
@@ -66508,6 +66635,144 @@ pub mod field_replace_modify {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             writer.measurement_enable().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_MEMORY.GROUP_BOUNDARY%s fields [EVEN_GROUP_FIRST_ENTRY, EVEN_GROUP_LAST_ENTRY] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_even_pbus_memory_group_boundary(
+        registers: &crate::PhyMemory,
+        index: usize,
+        input: u32,
+    ) {
+        registers.group_boundary(index).modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .even_group_first_entry()
+                    .bits((input & 0x000000ff) as u8)
+                    .even_group_last_entry()
+                    .bits(((input >> 8) & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_MEMORY.GROUP_BOUNDARY%s fields [ODD_GROUP_FIRST_ENTRY, ODD_GROUP_LAST_ENTRY] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_odd_pbus_memory_group_boundary(
+        registers: &crate::PhyMemory,
+        index: usize,
+        input: u32,
+    ) {
+        registers.group_boundary(index).modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .odd_group_first_entry()
+                    .bits((input & 0x000000ff) as u8)
+                    .odd_group_last_entry()
+                    .bits(((input >> 8) & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_MEMORY.COMMAND fields [MEMORY_INDEX, GAIN_WRITE_OR_PBUS_COMMAND_BIT_8, PBUS_COMMAND_BIT_9] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_pbus_memory_command(registers: &crate::PhyMemory, input: u32) {
+        registers.command().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .memory_index()
+                    .bits((input & 0x000000ff) as u8)
+                    .gain_write_or_pbus_command_bit_8()
+                    .bit(((input >> 8) & 0x00000001) != 0)
+                    .pbus_command_bit_9()
+                    .bit(((input >> 9) & 0x00000001) != 0)
+            }
+        });
+    }
+
+    /// Replace PHY_CLOCK_ORACLE.TABLE_MEMORY_INDEX_SOURCE fields [BASE_INDEX] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_table_memory_base_index(registers: &crate::PhyClockOracle, input: u32) {
+        registers.table_memory_index_source().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.base_index().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace PHY_CLOCK_ORACLE.TABLE_MEMORY_INDEX_SOURCE fields [FORCE_POWER_ENABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_forced_power_state(registers: &crate::PhyClockOracle, input: u32) {
+        registers.table_memory_index_source().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.force_power_enable().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_CLOCK_ORACLE.TABLE_MEMORY_INDEX_SOURCE fields [FORCED_POWER_INDEX] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_forced_power_index(registers: &crate::PhyClockOracle, input: u32) {
+        registers.table_memory_index_source().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.forced_power_index().bits((input & 0x0000003f) as u8) }
+        });
+    }
+
+    /// Replace PHY_MEMORY.COMMAND fields [MEMORY_INDEX] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_tx_cfr_memory_index(registers: &crate::PhyMemory, input: u32) {
+        registers.command().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.memory_index().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace PHY_MEMORY.COMMAND fields [TX_CFR_COMMIT] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_tx_cfr_commit(registers: &crate::PhyMemory) {
+        registers.command().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.tx_cfr_commit().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_MEMORY.COMMAND fields [TX_CFR_COMMIT] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_tx_cfr_commit(registers: &crate::PhyMemory) {
+        registers.command().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.tx_cfr_commit().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_MEMORY.COMMAND fields [GAIN_COMMAND_LOW_ZERO_UNKNOWN, MEMORY_INDEX, GAIN_WRITE_OR_PBUS_COMMAND_BIT_8] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_gain_memory_command(registers: &crate::PhyMemory, input: u32) {
+        registers.command().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .gain_command_low_zero_unknown()
+                    .bits(((input >> 9) & 0x000007ff) as u16)
+                    .memory_index()
+                    .bits((input & 0x000000ff) as u8)
+                    .gain_write_or_pbus_command_bit_8()
+                    .bit(((input >> 8) & 0x00000001) != 0)
+            }
         });
     }
 }

@@ -118,10 +118,12 @@ pub use bluetooth_phy_init::{
     BluetoothPhyRegisterInitInputs,
 };
 pub use bluetooth_scheduler::{
-    BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadError,
-    BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHardwareListsCleared,
-    BluetoothSchedulerHardwareRunCommandPublished, BluetoothSchedulerInsertionCommand,
-    BluetoothSchedulerInsertionCommandStartCleared, BluetoothSchedulerRunEventPublished,
+    BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadEmptyObserved,
+    BluetoothSchedulerHardwareListHeadError, BluetoothSchedulerHardwareListHeadPublished,
+    BluetoothSchedulerHardwareListHeadRetirementObservation,
+    BluetoothSchedulerHardwareListsCleared, BluetoothSchedulerHardwareRunCommandPublished,
+    BluetoothSchedulerInsertionCommand, BluetoothSchedulerInsertionCommandStartCleared,
+    BluetoothSchedulerRunEventPublished,
 };
 pub use bluetooth_scheduler_insertion::{
     BluetoothSchedulerExecutionLockDisposition, BluetoothSchedulerExecutionLockPublished,

@@ -630,6 +630,20 @@ where
         self.initialized.observe_dtm_completion(running)
     }
 
+    /// Observe the post-picker hardware-list retirement barrier.
+    ///
+    /// This operation never clears or republishes the head. It performs one
+    /// fresh typed read with a trailing device fence. Any nonempty result is a
+    /// fail-stop invariant violation; the affine owner is retained only for
+    /// diagnostic shutdown handling, never for a polling retry.
+    pub fn observe_dtm_hardware_head_retirement<Role>(
+        &mut self,
+        completed: crate::BluetoothDtmSchedulerCompletionObserved<Role>,
+    ) -> crate::BluetoothDtmSchedulerHardwareHeadRetirementStep<Role> {
+        self.initialized
+            .observe_dtm_hardware_head_retirement(completed)
+    }
+
     /// Service and durably publish one primary source-124 epoch.
     ///
     /// Both Controller cells are selected from this exact powered runtime.

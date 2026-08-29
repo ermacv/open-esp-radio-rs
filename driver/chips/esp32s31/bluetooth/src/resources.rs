@@ -336,6 +336,17 @@ impl BluetoothTaskResources {
         worker.capture(&mut controller)
     }
 
+    /// Perform one fresh fenced hardware-head retirement observation.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn observe_scheduler_hardware_list_head_retirement(
+        &mut self,
+        run: open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareRunCommandPublished,
+    ) -> open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareListHeadRetirementObservation {
+        self.registers
+            .borrow_bluetooth_controller()
+            .observe_scheduler_hardware_list_head_retirement(run)
+    }
+
     /// Execute the complete reviewed controller HAL-init component.
     ///
     /// The owning lifecycle invokes this component after clocks and before

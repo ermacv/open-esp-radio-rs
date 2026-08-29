@@ -26,7 +26,8 @@
 //! drained one bit per bounded event step. The terminal Controller can also
 //! perform one fresh transfer and immediately join list zero to its exact
 //! running DTM epoch; a non-sentinel status advances to a hardware-owned
-//! completion observation.
+//! completion observation. A second affine operation performs the mandatory
+//! fresh post-picker head read and advances only after list zero is empty.
 //! Controller-SRAM allocation geometry and result parsing live in the separate
 //! `open-esp-radio-esp32s31-bluetooth-memory` layer below this LLL boundary;
 //! one bounded DTM RX transition accounts a result word without claiming its
@@ -34,8 +35,8 @@
 //! The initialized scheduler now joins its software task endpoint to the exact
 //! task-side HAL owner, so one lock/modify event step can reach the restricted
 //! PAC without exporting register authority. The remaining components are not
-//! connected across the missing selector-6 invariant, completion unlink and
-//! recycle owner, live primary-ISR/executor composition,
+//! connected across the missing selector-6 invariant, software-list removal
+//! and recycle owner, live primary-ISR/executor composition,
 //! feature-specific NRT classification and live-route
 //! prerequisites. Stable two-owner ISR publication is connected, but no
 //! current finite state
@@ -228,6 +229,10 @@ pub use scheduler::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use scheduler::{BluetoothDtmSchedulerCompletionObserved, BluetoothDtmSchedulerCompletionStep};
+#[cfg(target_arch = "riscv32")]
+pub use scheduler::{
+    BluetoothDtmSchedulerHardwareHeadEmptyObserved, BluetoothDtmSchedulerHardwareHeadRetirementStep,
+};
 pub use scheduler_config::BluetoothSchedulerSoftwareConfig;
 pub use scheduler_finished_lists::{
     BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerFinishedListCaptureError,

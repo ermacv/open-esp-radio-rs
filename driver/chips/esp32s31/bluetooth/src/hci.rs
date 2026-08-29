@@ -499,6 +499,16 @@ where
     }
 
     #[cfg(target_arch = "riscv32")]
+    pub(crate) fn observe_dtm_hardware_head_retirement<Role>(
+        &mut self,
+        completed: crate::BluetoothDtmSchedulerCompletionObserved<Role>,
+    ) -> crate::BluetoothDtmSchedulerHardwareHeadRetirementStep<Role> {
+        self.controller
+            .scheduler
+            .observe_dtm_hardware_head_retirement(completed)
+    }
+
+    #[cfg(target_arch = "riscv32")]
     #[expect(
         clippy::result_large_err,
         reason = "the internal no-alloc delegation preserves the complete rejected graph"

@@ -42,8 +42,9 @@ pub use open_esp_radio_esp32s31_pac::{
     BluetoothSchedulerExecutionLockRequest, BluetoothSchedulerExecutionModifyDisposition,
     BluetoothSchedulerExecutionModifyPublished, BluetoothSchedulerFinishedHardwareListObserved,
     BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
-    BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadError,
-    BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHardwareListIndex,
+    BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadEmptyObserved,
+    BluetoothSchedulerHardwareListHeadError, BluetoothSchedulerHardwareListHeadPublished,
+    BluetoothSchedulerHardwareListHeadRetirementObservation, BluetoothSchedulerHardwareListIndex,
     BluetoothSchedulerHardwareListsCleared, BluetoothSchedulerHardwareRunCommandPublished,
     BluetoothSchedulerInsertionCommand, BluetoothSchedulerInsertionCommandStartCleared,
     BluetoothSchedulerLockModifyInterruptObservation, BluetoothSchedulerLockModifyObservation,
@@ -937,13 +938,14 @@ impl BluetoothControllerHal<'_> {
         self.registers.clear_scheduler_hardware_list_heads()
     }
 
-    /// Read the currently published head of one scheduler hardware list.
-    #[doc(hidden)]
-    pub fn scheduler_hardware_list_head(
+    /// Perform one fresh fenced post-completion head observation while
+    /// retaining the exact affine RUN provenance on every result path.
+    pub fn observe_scheduler_hardware_list_head_retirement(
         &mut self,
-        index: BluetoothSchedulerHardwareListIndex,
-    ) -> BluetoothSchedulerHardwareListHead {
-        self.registers.scheduler_hardware_list_head(index)
+        run: BluetoothSchedulerHardwareRunCommandPublished,
+    ) -> BluetoothSchedulerHardwareListHeadRetirementObservation {
+        self.registers
+            .observe_scheduler_hardware_list_head_retirement(run)
     }
 
     /// Order prior descriptor writes and publish one scheduler hardware-list

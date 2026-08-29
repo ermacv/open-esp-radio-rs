@@ -25,6 +25,8 @@ use open_esp_radio_esp32s31_hal::{
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::{
     BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListHead,
+    BluetoothSchedulerHardwareListHeadEmptyObserved,
+    BluetoothSchedulerHardwareListHeadRetirementObservation,
 };
 use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
 
@@ -51,6 +53,9 @@ enum BluetoothSchedulerExclusiveListState {
         address: BluetoothControllerSramAddress,
     },
     FirstItemCompletionObserved {
+        address: BluetoothControllerSramAddress,
+    },
+    FirstItemHardwareHeadEmptyObserved {
         address: BluetoothControllerSramAddress,
     },
 }
@@ -118,6 +123,22 @@ impl BluetoothSchedulerExclusiveListEpoch {
             "only the running first item can enter completion-observed"
         );
         self.state = BluetoothSchedulerExclusiveListState::FirstItemCompletionObserved { address };
+    }
+
+    fn retains_completion_observed_first_item(
+        &self,
+        address: BluetoothControllerSramAddress,
+    ) -> bool {
+        self.state == BluetoothSchedulerExclusiveListState::FirstItemCompletionObserved { address }
+    }
+
+    fn retain_hardware_head_empty_first_item(&mut self, address: BluetoothControllerSramAddress) {
+        assert!(
+            self.retains_completion_observed_first_item(address),
+            "only the completion-observed first item can retire its hardware head"
+        );
+        self.state =
+            BluetoothSchedulerExclusiveListState::FirstItemHardwareHeadEmptyObserved { address };
     }
 }
 
@@ -353,6 +374,66 @@ pub enum BluetoothDtmSchedulerCompletionStep<Role> {
         /// Whether the captured transfer retains another list.
         more: bool,
     },
+}
+
+/// Completed DTM graph after its exact hardware-list head was freshly empty.
+///
+/// The descriptor remains unavailable to CPU mutation until the independent
+/// software-list removal gate and recycle transition complete.
+#[must_use = "the empty-head graph must advance through software-list removal and recycle"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothDtmSchedulerHardwareHeadEmptyObserved<Role> {
+    item: BluetoothDtmCompletionObservedEvent<Role>,
+    head: BluetoothSchedulerHardwareListHeadEmptyObserved,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<Role> BluetoothDtmSchedulerHardwareHeadEmptyObserved<Role> {
+    /// Role retained by the completed event.
+    pub const fn role(&self) -> BluetoothDtmRole {
+        self.item.role()
+    }
+
+    /// Exact scheduler item whose hardware head became empty.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.item.scheduler_item_address()
+    }
+
+    /// Semantic completion status retained through the head observation.
+    pub const fn status(&self) -> BluetoothDtmSchedulerItemCompletionStatus {
+        self.item.status()
+    }
+
+    /// Hardware list retained by the original RUN and empty observation.
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.head.index()
+    }
+}
+
+/// One bounded post-completion hardware-head retirement attempt.
+#[must_use = "the completion owner must enter fail-stop handling or advance"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothDtmSchedulerHardwareHeadRetirementStep<Role> {
+    /// The supplied completion does not belong to this scheduler epoch.
+    SchedulerIdentityMismatch(BluetoothDtmSchedulerCompletionObserved<Role>),
+    /// The captured transfer still retains another impossible list bit.
+    FinishedListDrainStillActive(BluetoothDtmSchedulerCompletionObserved<Role>),
+    /// The expected head remains nonempty; the sole-item invariant failed.
+    ExpectedHeadStillPublished {
+        /// Completion owner retained for fail-stop handling.
+        completed: BluetoothDtmSchedulerCompletionObserved<Role>,
+        /// Fresh typed head retained for diagnostics without granting access.
+        observed: BluetoothSchedulerHardwareListHead,
+    },
+    /// A different nonempty head appeared in the exclusive list; fail closed.
+    UnexpectedHeadChanged {
+        /// Completion owner retained without granting descriptor access.
+        completed: BluetoothDtmSchedulerCompletionObserved<Role>,
+        /// Fresh conflicting head identity.
+        observed: BluetoothSchedulerHardwareListHead,
+    },
+    /// The exact list head was freshly observed empty after a device fence.
+    EmptyObserved(BluetoothDtmSchedulerHardwareHeadEmptyObserved<Role>),
 }
 
 /// Hardware and source-owned software state after scheduler initialization.
@@ -604,6 +685,63 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         }
     }
 
+    /// Perform one fresh fenced hardware-head retirement observation for the
+    /// exact completion retained by this Controller epoch.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn observe_dtm_hardware_head_retirement<Role>(
+        &mut self,
+        completed: BluetoothDtmSchedulerCompletionObserved<Role>,
+    ) -> BluetoothDtmSchedulerHardwareHeadRetirementStep<Role> {
+        let address = completed.scheduler_item_address();
+        if completed.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || !self
+                ._scheduler_list
+                .retains_completion_observed_first_item(address)
+        {
+            return BluetoothDtmSchedulerHardwareHeadRetirementStep::SchedulerIdentityMismatch(
+                completed,
+            );
+        }
+        if self.runtime.scheduler_finished_lists_mut().is_active() {
+            return BluetoothDtmSchedulerHardwareHeadRetirementStep::FinishedListDrainStillActive(
+                completed,
+            );
+        }
+
+        let BluetoothDtmSchedulerCompletionObserved { item, run } = completed;
+        match self
+            .task
+            .observe_scheduler_hardware_list_head_retirement(run)
+        {
+            BluetoothSchedulerHardwareListHeadRetirementObservation::ExpectedHeadStillPublished {
+                run,
+                observed,
+            } => BluetoothDtmSchedulerHardwareHeadRetirementStep::ExpectedHeadStillPublished {
+                completed: BluetoothDtmSchedulerCompletionObserved { item, run },
+                observed,
+            },
+            BluetoothSchedulerHardwareListHeadRetirementObservation::UnexpectedHeadChanged {
+                run,
+                observed,
+            } => BluetoothDtmSchedulerHardwareHeadRetirementStep::UnexpectedHeadChanged {
+                completed: BluetoothDtmSchedulerCompletionObserved { item, run },
+                observed,
+            },
+            BluetoothSchedulerHardwareListHeadRetirementObservation::EmptyObserved(head) => {
+                assert_eq!(
+                    head.completed_head().address(),
+                    Some(address),
+                    "the retired hardware head must retain the exact completed DTM identity"
+                );
+                self._scheduler_list
+                    .retain_hardware_head_empty_first_item(address);
+                BluetoothDtmSchedulerHardwareHeadRetirementStep::EmptyObserved(
+                    BluetoothDtmSchedulerHardwareHeadEmptyObserved { item, head },
+                )
+            }
+        }
+    }
+
     /// Borrow the matching interrupt and task runtime endpoints from this
     /// initialized hardware epoch.
     ///
@@ -786,8 +924,15 @@ mod tests {
             Err(BluetoothDtmEmptySchedulerMergeError::ListNotEmpty)
         );
         list.retain_completion_observed_first_item(first);
+        assert!(list.retains_completion_observed_first_item(first));
         assert!(!list.retains_running_first_item(first));
         assert!(!list.cancel_first_item(first));
+        assert_eq!(
+            list.prepare_first_item(other),
+            Err(BluetoothDtmEmptySchedulerMergeError::ListNotEmpty)
+        );
+        list.retain_hardware_head_empty_first_item(first);
+        assert!(!list.retains_completion_observed_first_item(first));
         assert_eq!(
             list.prepare_first_item(other),
             Err(BluetoothDtmEmptySchedulerMergeError::ListNotEmpty)

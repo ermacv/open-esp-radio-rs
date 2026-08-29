@@ -17,6 +17,56 @@ trait BluetoothSchedulerHardwareListHeadControl {
     fn order_after_publication(&mut self);
 }
 
+trait BluetoothSchedulerHardwareListHeadObservationControl {
+    fn read_head(
+        &mut self,
+        index: BluetoothSchedulerHardwareListIndex,
+    ) -> BluetoothSchedulerHardwareListHead;
+    fn order_after_observation(&mut self);
+}
+
+impl BluetoothSchedulerHardwareListHeadObservationControl for BluetoothTaskRegisters {
+    fn read_head(
+        &mut self,
+        index: BluetoothSchedulerHardwareListIndex,
+    ) -> BluetoothSchedulerHardwareListHead {
+        self.scheduler_hardware_list_head(index)
+    }
+
+    fn order_after_observation(&mut self) {
+        device_fence();
+    }
+}
+
+fn execute_scheduler_hardware_list_head_observation(
+    control: &mut impl BluetoothSchedulerHardwareListHeadObservationControl,
+    index: BluetoothSchedulerHardwareListIndex,
+) -> BluetoothSchedulerHardwareListHead {
+    let head = control.read_head(index);
+    control.order_after_observation();
+    head
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BluetoothSchedulerHardwareListHeadRetirementDisposition {
+    Empty,
+    ExpectedHeadStillPublished,
+    UnexpectedHeadChanged,
+}
+
+fn classify_scheduler_hardware_list_head_retirement(
+    expected: BluetoothSchedulerHardwareListHead,
+    observed: BluetoothSchedulerHardwareListHead,
+) -> BluetoothSchedulerHardwareListHeadRetirementDisposition {
+    if observed.address().is_none() {
+        BluetoothSchedulerHardwareListHeadRetirementDisposition::Empty
+    } else if observed == expected {
+        BluetoothSchedulerHardwareListHeadRetirementDisposition::ExpectedHeadStillPublished
+    } else {
+        BluetoothSchedulerHardwareListHeadRetirementDisposition::UnexpectedHeadChanged
+    }
+}
+
 impl BluetoothSchedulerHardwareListHeadControl for BluetoothTaskRegisters {
     fn order_descriptor_before_publication(&mut self) {
         device_fence();
@@ -240,6 +290,51 @@ pub struct BluetoothSchedulerHardwareRunCommandPublished {
     event: BluetoothSchedulerRunEventPublished,
 }
 
+/// RUN provenance after one fresh fenced observation found its list empty.
+///
+/// The token is affine and retains the complete run prologue. It proves only
+/// that the hardware head was empty at this post-completion observation; the
+/// software-list removal predicate and descriptor reclamation remain separate.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "the empty hardware-head observation must feed software-list removal"]
+pub struct BluetoothSchedulerHardwareListHeadEmptyObserved {
+    run: BluetoothSchedulerHardwareRunCommandPublished,
+}
+
+impl BluetoothSchedulerHardwareListHeadEmptyObserved {
+    /// Hardware list whose head was freshly observed empty.
+    pub const fn index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.run.index()
+    }
+
+    /// Originally published head retained by the completed RUN epoch.
+    pub const fn completed_head(&self) -> BluetoothSchedulerHardwareListHead {
+        self.run.head()
+    }
+}
+
+/// Result of one bounded post-completion hardware-head observation.
+#[must_use = "the retained RUN provenance must enter fail-stop handling or advance"]
+pub enum BluetoothSchedulerHardwareListHeadRetirementObservation {
+    /// The originally published head remains nonempty at the mandatory gate.
+    /// The DTM sole-item owner must treat this as a fail-stop invariant.
+    ExpectedHeadStillPublished {
+        /// Unchanged affine RUN provenance retained for fail-stop handling.
+        run: BluetoothSchedulerHardwareRunCommandPublished,
+        /// Freshly observed typed head, retained only as diagnostic identity.
+        observed: BluetoothSchedulerHardwareListHead,
+    },
+    /// A different nonempty head was observed after this RUN publication.
+    UnexpectedHeadChanged {
+        /// Unchanged affine RUN provenance; callers must fail closed.
+        run: BluetoothSchedulerHardwareRunCommandPublished,
+        /// Fresh conflicting head identity.
+        observed: BluetoothSchedulerHardwareListHead,
+    },
+    /// The matching hardware-list head was freshly observed empty.
+    EmptyObserved(BluetoothSchedulerHardwareListHeadEmptyObserved),
+}
+
 impl BluetoothSchedulerHardwareRunCommandPublished {
     /// Hardware list now admitted to scheduler execution.
     pub const fn index(&self) -> BluetoothSchedulerHardwareListIndex {
@@ -283,7 +378,7 @@ impl BluetoothTaskRegisters {
     /// `r_btdm_sched_get_hw_list_header`. Zero is returned as no head;
     /// nonzero images reconstruct a four-byte-aligned 0x2f-prefixed address.
     #[doc(hidden)]
-    pub fn scheduler_hardware_list_head(
+    pub(crate) fn scheduler_hardware_list_head(
         &mut self,
         index: BluetoothSchedulerHardwareListIndex,
     ) -> BluetoothSchedulerHardwareListHead {
@@ -292,6 +387,44 @@ impl BluetoothTaskRegisters {
             index.get() as usize,
         );
         BluetoothSchedulerHardwareListHead::from_compressed_image(image)
+    }
+
+    /// Observe whether the hardware list admitted by one RUN is now empty.
+    ///
+    /// SOURCE: the post-picker tail of current
+    /// `r_sym_ble_rmNuzAO8kQQQXQIpTzGZ`, mapped to same-chip named
+    /// `r_sched_txn_onSchedHwListDone`, freshly reads the hardware-list head
+    /// after the source manager becomes empty and asserts that head is empty
+    /// before the following software-list removal call.
+    ///
+    /// This finite transaction consumes and returns the affine RUN provenance
+    /// on both paths, so an old empty-head observation cannot be replayed
+    /// against a later scheduler epoch. The trailing device fence orders the
+    /// observation before any later CPU-side descriptor transition.
+    pub fn observe_scheduler_hardware_list_head_retirement(
+        &mut self,
+        run: BluetoothSchedulerHardwareRunCommandPublished,
+    ) -> BluetoothSchedulerHardwareListHeadRetirementObservation {
+        let observed = execute_scheduler_hardware_list_head_observation(self, run.index());
+        match classify_scheduler_hardware_list_head_retirement(run.head(), observed) {
+            BluetoothSchedulerHardwareListHeadRetirementDisposition::Empty => {
+                BluetoothSchedulerHardwareListHeadRetirementObservation::EmptyObserved(
+                    BluetoothSchedulerHardwareListHeadEmptyObserved { run },
+                )
+            }
+            BluetoothSchedulerHardwareListHeadRetirementDisposition::ExpectedHeadStillPublished => {
+                BluetoothSchedulerHardwareListHeadRetirementObservation::ExpectedHeadStillPublished {
+                    run,
+                    observed,
+                }
+            }
+            BluetoothSchedulerHardwareListHeadRetirementDisposition::UnexpectedHeadChanged => {
+                BluetoothSchedulerHardwareListHeadRetirementObservation::UnexpectedHeadChanged {
+                    run,
+                    observed,
+                }
+            }
+        }
     }
 
     /// Order prior descriptor writes and publish one scheduler hardware-list
@@ -397,7 +530,11 @@ mod tests {
     use super::{
         BluetoothControllerSramAddress, BluetoothSchedulerHardwareListHead,
         BluetoothSchedulerHardwareListHeadControl, BluetoothSchedulerHardwareListHeadError,
+        BluetoothSchedulerHardwareListHeadObservationControl,
+        BluetoothSchedulerHardwareListHeadRetirementDisposition,
         BluetoothSchedulerHardwareListIndex, BluetoothSchedulerRunEventControl,
+        classify_scheduler_hardware_list_head_retirement,
+        execute_scheduler_hardware_list_head_observation,
         execute_scheduler_hardware_list_head_publication, execute_scheduler_run_event_publication,
     };
 
@@ -413,6 +550,31 @@ mod tests {
 
     struct PublicationRecorder {
         operations: std::vec::Vec<PublicationOperation>,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum ObservationOperation {
+        Read(BluetoothSchedulerHardwareListIndex),
+        DeviceFence,
+    }
+
+    struct ObservationRecorder {
+        head: BluetoothSchedulerHardwareListHead,
+        operations: std::vec::Vec<ObservationOperation>,
+    }
+
+    impl BluetoothSchedulerHardwareListHeadObservationControl for ObservationRecorder {
+        fn read_head(
+            &mut self,
+            index: BluetoothSchedulerHardwareListIndex,
+        ) -> BluetoothSchedulerHardwareListHead {
+            self.operations.push(ObservationOperation::Read(index));
+            self.head
+        }
+
+        fn order_after_observation(&mut self) {
+            self.operations.push(ObservationOperation::DeviceFence);
+        }
     }
 
     impl BluetoothSchedulerHardwareListHeadControl for PublicationRecorder {
@@ -520,6 +682,57 @@ mod tests {
                 PublicationOperation::Publish { index, head },
                 PublicationOperation::DeviceFence,
             ]
+        );
+    }
+
+    #[test]
+    fn post_completion_head_observation_is_fenced_and_bounded() {
+        let index = BluetoothSchedulerHardwareListIndex::ZERO;
+        let head = BluetoothSchedulerHardwareListHead::empty();
+        let mut recorder = ObservationRecorder {
+            head,
+            operations: std::vec::Vec::new(),
+        };
+
+        let observed = execute_scheduler_hardware_list_head_observation(&mut recorder, index);
+
+        assert_eq!(observed, head);
+        assert_eq!(
+            recorder.operations,
+            [
+                ObservationOperation::Read(index),
+                ObservationOperation::DeviceFence,
+            ]
+        );
+    }
+
+    #[test]
+    fn head_retirement_distinguishes_empty_retained_and_changed_identity() {
+        let expected = BluetoothSchedulerHardwareListHead::from_address(
+            BluetoothControllerSramAddress::new(0x2f00_0100)
+                .expect("expected item lies in controller SRAM"),
+        )
+        .expect("expected item is a nonempty head");
+        let changed = BluetoothSchedulerHardwareListHead::from_address(
+            BluetoothControllerSramAddress::new(0x2f00_0200)
+                .expect("changed item lies in controller SRAM"),
+        )
+        .expect("changed item is a nonempty head");
+
+        assert_eq!(
+            classify_scheduler_hardware_list_head_retirement(
+                expected,
+                BluetoothSchedulerHardwareListHead::empty(),
+            ),
+            BluetoothSchedulerHardwareListHeadRetirementDisposition::Empty
+        );
+        assert_eq!(
+            classify_scheduler_hardware_list_head_retirement(expected, expected),
+            BluetoothSchedulerHardwareListHeadRetirementDisposition::ExpectedHeadStillPublished
+        );
+        assert_eq!(
+            classify_scheduler_hardware_list_head_retirement(expected, changed),
+            BluetoothSchedulerHardwareListHeadRetirementDisposition::UnexpectedHeadChanged
         );
     }
 }

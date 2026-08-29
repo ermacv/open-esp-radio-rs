@@ -5993,6 +5993,12 @@ pub(crate) fn configure_tx_power_tracking_value_6(registers: &crate::svd::PhyBas
     crate::svd::field_replace_modify::configure_tx_power_tracking_value_6(registers);
 }
 
+/// Typed bridge for the reviewed `configure_bt_wifi_baseband_fields` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_bt_wifi_baseband_fields(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::configure_bt_wifi_baseband_fields(registers);
+}
+
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
 #[inline]
 pub(crate) fn configure_shared_modem_low_power_timer(

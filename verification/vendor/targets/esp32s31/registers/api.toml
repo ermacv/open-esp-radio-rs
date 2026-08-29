@@ -8245,3 +8245,17 @@ fields = [{ field = "TRACK_VALUE_0_UNKNOWN", source-bit-offset = 0 }]
 value = 0xe6
 exposure = "facade"
 sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_bt_wifi_baseband_fields"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_INIT_7CD0"
+fields = [
+    { field = "INIT_LOW_UNKNOWN", source-bit-offset = 0 },
+    { field = "INIT_LOW_UNKNOWN_1", source-bit-offset = 1 },
+    { field = "INIT_LOW_UNKNOWN_3", source-bit-offset = 2 },
+    { field = "INIT_HIGH_UNKNOWN", source-bit-offset = 3 },
+]
+value = 0x7f
+exposure = "facade"
+sources = ["ROM_REV0_PHY_BTBB_WIFI_BB_CFG2", "S31_ESP_PACS_SVD"]

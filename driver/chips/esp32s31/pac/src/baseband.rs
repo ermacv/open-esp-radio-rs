@@ -483,19 +483,9 @@ impl RadioPhyRegisters {
 
     /// Apply complete rev0 ROM `phy_btbb_wifi_bb_cfg2`.
     pub fn configure_bt_wifi_baseband(&mut self) {
-        self.peripherals
-            .phy_baseband_config_oracle
-            .baseband_init_7cd0()
-            .modify(|_, w| {
-                w.init_low_unknown()
-                    .set_bit()
-                    .init_low_unknown_1()
-                    .set_bit()
-                    .init_low_unknown_3()
-                    .set_bit()
-                    .init_high_unknown()
-                    .set(0x0f)
-            });
+        super::generated::configure_bt_wifi_baseband_fields(
+            &self.peripherals.phy_baseband_config_oracle,
+        );
     }
 
     /// Apply complete rev0 ROM `phy_chan_dump_cfg`.

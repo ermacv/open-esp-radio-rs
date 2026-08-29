@@ -68090,6 +68090,27 @@ pub mod field_replace_modify {
             }
         });
     }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CD0 fields [INIT_LOW_UNKNOWN, INIT_LOW_UNKNOWN_1, INIT_LOW_UNKNOWN_3, INIT_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_bt_wifi_baseband_fields(registers: &crate::PhyBasebandConfigOracle) {
+        registers.baseband_init_7cd0().modify(|_, writer| {
+            let input = 0x0000007f_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .init_low_unknown()
+                    .bit((input & 0x00000001) != 0)
+                    .init_low_unknown_1()
+                    .bit(((input >> 1) & 0x00000001) != 0)
+                    .init_low_unknown_3()
+                    .bit(((input >> 2) & 0x00000001) != 0)
+                    .init_high_unknown()
+                    .bits(((input >> 3) & 0x0000000f) as u8)
+            }
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.

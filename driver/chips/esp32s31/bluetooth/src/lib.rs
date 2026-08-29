@@ -78,6 +78,7 @@ mod scheduler;
 mod scheduler_config;
 mod scheduler_finished_lists;
 mod scheduler_lock_modify;
+mod scheduler_timeline;
 #[cfg(feature = "validation-probes")]
 #[doc(hidden)]
 pub mod validation;
@@ -216,4 +217,8 @@ pub use scheduler_lock_modify::{
     BluetoothSchedulerLockModifyInterruptObservation, BluetoothSchedulerLockModifyProgress,
     BluetoothSchedulerLockModifyPublication, BluetoothSchedulerLockModifyPublicationResult,
     BluetoothSchedulerLockModifyWorker, BluetoothSchedulerLockModifyWorkerStep,
+};
+pub use scheduler_timeline::{
+    BluetoothSchedulerRawWindow, BluetoothSchedulerReservation, BluetoothSchedulerReservationError,
+    BluetoothSchedulerTimeline,
 };

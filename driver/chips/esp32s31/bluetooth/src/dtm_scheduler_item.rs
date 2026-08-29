@@ -143,6 +143,10 @@ impl BluetoothDtmSchedulerItemEvent {
     pub(crate) const fn raw_start(self, epoch: BluetoothControllerSchedulerEpoch) -> u32 {
         epoch.raw_time_for_scheduler_time(self.scheduler_start)
     }
+
+    pub(crate) const fn raw_end(self, epoch: BluetoothControllerSchedulerEpoch) -> u32 {
+        epoch.raw_time_for_scheduler_time(self.scheduler_end)
+    }
 }
 
 /// Apply the common scheduler overlap-insertion power projection.

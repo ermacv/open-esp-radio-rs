@@ -622,6 +622,54 @@ return = "i32"
 semantic = "crypto.aes-cmac.calculate"
 execution-model = "aes-cmac"
 
+# Current complete `r_ble_log_internal_x0` through `_x3` bodies load the
+# environment pointer from this cell, call the boolean filter at +0x0c as
+# `(environment, record_kind)`, and, only when accepted, publish the assembled
+# record through +0x08. The four record builders independently prove lengths
+# 8, 12, 16 and 20 bytes; `r_ble_log_internal_hex` additionally proves the
+# payload length/pointer arguments. Public same-chip commit
+# `espressif/esp32s31-bt-lib@31c30949541a5d3abd4043a1cb66d55aa55577dd`
+# retains the unobfuscated `ble_log_env` identity and byte-identical x0..x3
+# bodies. The anchor names only the reviewed callback ABI prefix. It does not
+# claim a concrete runtime callback target, enabled logging policy, or the
+# meaning of later environment fields.
+[[anchors]]
+id = "ble-log-environment-v1"
+status = "reviewed"
+origin = "observed"
+source = "ble-controller"
+root-kind = "relocated-symbol"
+symbol = "r_sym_ble_uTn5xZ9antW1c4yN7ZQX"
+addend = 0
+addressing = "absolute"
+container-path = [{ offset = 0, width = 32 }]
+layout-version = "esp32s31-ble-log-environment-v1"
+pointer-width = 32
+layout-size = 0x10
+slot-stride = 4
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195"
+
+[[anchors.slots]]
+offset = 0x08
+width = 32
+status = "reviewed"
+origin = "reviewed"
+name = "write_record"
+arguments = ["usize", "const-ptr", "usize", "const-ptr", "u32"]
+return = "void"
+
+[[anchors.slots]]
+offset = 0x0c
+width = 32
+status = "reviewed"
+origin = "reviewed"
+name = "filter_record"
+arguments = ["mut-ptr", "u32"]
+return = "bool"
+
 # `net80211_funcs` is a pointer cell, not a static function table image.
 # `net80211_funcs_init` allocates 0x14c bytes and
 # `net80211_softap_funcs_init` stores `hostap_input` at +0x84.  Consumers in

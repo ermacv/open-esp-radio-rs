@@ -10,10 +10,12 @@ accounting and append-decision entry are now recovered as well. The exact forty-
 permutation/frequency composition and role-dependent PHY-rate images are typed
 inputs to that event. Together these prove that DTM is a small Lower Link Layer
 role built from controller-SRAM descriptors, a common radio wake operation and
-an event-driven scheduler lifecycle. They do not yet prove the internal
-packet-engine latch/consumer of the private DTM graph, the hardware
-status-to-finished-mask boundary, memory visibility fences or an affine RX
-buffer owner needed for an on-air open implementation.
+an event-driven scheduler lifecycle. The current hardware-list index is also
+now an exact typed field of the interrupt-time scheduler-state observation.
+They do not yet prove the internal packet-engine latch/consumer of the private
+DTM graph, the relation from that index or a finished-list bit to an affine
+item, the hardware status-to-finished-mask boundary, memory visibility fences
+or an affine RX buffer owner needed for an on-air open implementation.
 
 This review narrows the first physical vertical slice. It does not make DTM a
 production capability and does not import the vendor scheduler, callback
@@ -495,6 +497,15 @@ set hardware-list bit and calls current 0x142-byte
 finished items from the hardware-linked list and joins them to the software
 completed queue through the intrusive link at `item+0x54`.
 
+The complete current 12-byte leaf `r_sym_bt_iFvwGI2tL5M1WM3fIkHq` is
+instruction-identical to same-chip named
+`r_btdm_sched_get_current_link_index`: one `SCHEDULER_STATE` read returns
+exactly bits 23:20 as a zero-based current hardware-list index. The restricted
+PAC retains that semantic field in the later source-124 scheduler snapshot,
+and the Controller event carries it without exposing a register image. This
+proves active-list identity only. It does not prove which affine item is on
+that list, that the item has completed, or that its SRAM is CPU-visible.
+
 The coalesced bottom half is current 0x70-byte
 `r_sym_bt_uNi9OHmE7XdXfGqTelU5`, mapped to named
 `r_btdm_recycle_in_task`. It repeatedly uses current
@@ -582,9 +593,9 @@ this is not yet a deadline-ready production time source.
 
 | Layer | DTM responsibility | Current publication gate |
 | --- | --- | --- |
-| SVD / restricted PAC | Typed controller-window fields, complete publication/ack order, controller-time reads and the SRAM compression domain | Lock/modify, always-awake time-latch and software-list-removal fields, exact images, wait predicates and finite live MMIO are present. The removal gate preserves the current short-circuit read order without a polling loop. The remaining scheduler commands are absent. |
+| SVD / restricted PAC | Typed controller-window fields, complete publication/ack order, controller-time reads and the SRAM compression domain | Lock/modify, always-awake time-latch and software-list-removal fields, exact images, wait predicates and finite live MMIO are present. The later interrupt-time scheduler snapshot also returns the typed current hardware-list index. The removal gate preserves the current short-circuit read order without a polling loop. The remaining scheduler commands are absent. |
 | HAL | Powered controller epoch, common RF wake, cache/device fences, timer conversion, same-core IRQ routing and bounded stop/quiesce | The powered Controller retains the unique live latch owner and exposes finite request/recheck operations with generation-safe cancellation drain. A proven wake/recheck source, physical counter contract and powered rollback remain absent. |
-| Scheduler core | Affine event item, ordered deadline queue, insert/abort/complete states, hardware-head replacement and consistency check | One head lock/modify operation has affine event-driven phases; eleven DTM scheduler-item words and their typed channel/role/PHY/sequence-lead inputs have exact pre-insert transforms. A bounded source-owned timeline resolves strict wrapping overlaps, retains affine generations and applies fixed-capacity backpressure without exposing the vendor list ABI. The powered runtime retains that timeline for the whole epoch, and its powered task endpoint joins the sole mutable software workers to the matching task-side HAL owner. One lock/modify event step can therefore reach the typed PAC transaction without exporting MMIO authority. The overlap-resolved reservation requires the second fresh deadline sample before the DTM event typestate can form sequence words and survives graph/bookkeeping preparation and cancellation. Broker notification, hardware publication, raw status source, fences and abort/completion composition remain absent. |
+| Scheduler core | Affine event item, ordered deadline queue, insert/abort/complete states, hardware-head replacement and consistency check | One head lock/modify operation has affine event-driven phases; eleven DTM scheduler-item words and their typed channel/role/PHY/sequence-lead inputs have exact pre-insert transforms. A bounded source-owned timeline resolves strict wrapping overlaps, retains affine generations and applies fixed-capacity backpressure without exposing the vendor list ABI. The powered runtime retains that timeline for the whole epoch, and its powered task endpoint joins the sole mutable software workers to the matching task-side HAL owner. One lock/modify event step can therefore reach the typed PAC transaction without exporting MMIO authority. The overlap-resolved reservation requires the second fresh deadline sample before the DTM event typestate can form sequence words and survives graph/bookkeeping preparation and cancellation. The current hardware-list index and bounded finished-list drain are typed, but their relation to an affine item is not. Broker notification, hardware publication, raw finished-status source, fences and abort/completion composition remain absent. |
 | Packet memory | Static aligned TX/RX/link-state slots with `CPU -> prepared -> hardware -> completed -> CPU` ownership | A separate no-heap controller-memory crate reserves every reviewed per-event DTM link-graph allocation with four-byte alignment: link state, scheduler item/context, three role-specific headers and complete TX/RX packet slots. The separate `0x28`-byte DTM environment remains LLL state. Target binding gives a movable CPU owner one non-movable static allocation, validates the complete physical SRAM extent before mutation and installs the bound headers, five private-chain anchors and scheduler-item link. TX preparation consumes that owner and yields packet readiness only after a total declared-byte copy; mutable TX-slot access is unavailable after binding. TX/RX re-arm sentinels, list routing and positional result parsing are also exact CPU-owned components. Production placement ownership, the packet-engine latch/consumer, cacheability/fences and affine hardware completion/reclaim states are absent. |
 | LLL DTM | Parameter validation, channel/PHY/pattern image, TX/RX event state machine and receive counter | The complete channel domain, composed frequency lookup, role-dependent PHY/rate mapping, all eight bounded TX payload patterns, packet-duration/minimum-interval/tick arithmetic, constant-time event catch-up and one-word RX accounting transition are typed. TX and RX event plans are distinct states: TX requires a prepared graph and retains its exact pattern/length through scheduler bookkeeping, while RX accepts an ordinary bound graph. Exact command roles, allocation rollback, descriptor chain anchors, wrapping received-packet count and unconditional handoff to the append decision are mapped. The ordinary re-arm is fail-closed on the swap bit; remaining field meanings, swap ownership, live item/buffer ownership, abort and quiescence are incomplete. |
 | HCI | LE Receiver Test, LE Transmitter Test and LE Test End command/event semantics for only the implemented variants | Bootstrap transport exists; operational DTM opcodes must remain unsupported until the physical owner is live. |
@@ -648,9 +659,12 @@ The remaining work should proceed in narrow, testable increments:
    until its detached-header ownership is proven.
 5. **Implement the open scheduler model.** Use a fixed-capacity ordered queue,
    explicit `Prepared/Scheduled/Running/Completed/Recycled/Aborted` states and
-   a single hardware-head owner. Feed the bounded finished-list mask into the
-   mapped item-selection/recycle transition. Model selector-6 as an internal
-   invariant. Keep scan resume outside the DTM feature graph.
+   a single hardware-head owner. Use the retained interrupt-time current-list
+   index only after proving how it identifies the scheduled affine item, then
+   feed the bounded finished-list mask into the mapped item-selection/recycle
+   transition. Neither list index is itself a completion token. Model
+   selector-6 as an internal invariant. Keep scan resume outside the DTM
+   feature graph.
 6. **Compose the ISR epoch.** The level-3 hard handler captures/acknowledges a
    bounded snapshot, advances only deadline-critical LLL state and publishes a
    lost-wake-safe token. The executor-neutral owner drains completions and HCI
@@ -676,6 +690,8 @@ now-classified scan-resume path.
 - raw interrupt/status origin of the finished hardware-list mask, its
   acknowledge/re-arm order and the fence that makes completed descriptors
   CPU-readable;
+- exact relation among the sampled current hardware-list index, the finished-
+  list mask and the affine scheduler item selected for ownership return;
 - exact controller-time raw width, wrap and physical unit;
 - complete S31 descriptor field boundaries, all hardware-read words and the
   internal latch that consumes DTM's private link-state RX pointer;

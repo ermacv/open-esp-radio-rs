@@ -48,21 +48,36 @@ pub struct BluetoothSchedulerReferenceCleared {
 pub struct BluetoothSchedulerWorkObservation {
     busy: bool,
     reference_path_state: bool,
+    current_hardware_list: BluetoothSchedulerHardwareListIndex,
 }
 
 impl BluetoothSchedulerWorkObservation {
-    const fn new(busy: bool, reference_path_state: bool) -> Self {
+    const fn new(
+        busy: bool,
+        reference_path_state: bool,
+        current_hardware_list: BluetoothSchedulerHardwareListIndex,
+    ) -> Self {
         Self {
             busy,
             reference_path_state,
+            current_hardware_list,
         }
     }
 
     /// Construct semantic deferred-work fields for upper-layer validation.
     #[cfg(feature = "validation-probes")]
     #[doc(hidden)]
-    pub const fn from_fields_for_validation(busy: bool, reference_state_29: bool) -> Self {
-        Self::new(busy, reference_state_29)
+    pub const fn from_fields_for_validation(
+        busy: bool,
+        reference_state_29: bool,
+        current_hardware_list: u8,
+    ) -> Self {
+        assert!(current_hardware_list < 16);
+        Self::new(
+            busy,
+            reference_state_29,
+            BluetoothSchedulerHardwareListIndex(current_hardware_list),
+        )
     }
 
     /// Whether the scheduler was busy at the deferred-work temporal point.
@@ -73,6 +88,11 @@ impl BluetoothSchedulerWorkObservation {
     /// Whether the reviewed reference path was active at this temporal point.
     pub const fn reference_path_active(self) -> bool {
         self.busy && self.reference_path_state
+    }
+
+    /// Hardware-list index captured from the same scheduler-state sample.
+    pub const fn current_hardware_list(self) -> BluetoothSchedulerHardwareListIndex {
+        self.current_hardware_list
     }
 }
 
@@ -232,6 +252,7 @@ trait BluetoothSchedulerInterruptControl {
 struct SchedulerStateObservation {
     busy: bool,
     reference_path_state: bool,
+    current_hardware_list: BluetoothSchedulerHardwareListIndex,
 }
 
 struct HardwareSchedulerInterruptControl<'a> {
@@ -240,13 +261,14 @@ struct HardwareSchedulerInterruptControl<'a> {
 
 impl BluetoothSchedulerInterruptControl for HardwareSchedulerInterruptControl<'_> {
     fn read_scheduler_state(&mut self) -> SchedulerStateObservation {
-        let (busy, reference_path_state) =
+        let (busy, reference_path_state, current_link_index) =
             super::svd::field_snapshot_read::observe_bluetooth_scheduler_interrupt_state(
                 self.registers,
             );
         SchedulerStateObservation {
             busy,
             reference_path_state,
+            current_hardware_list: BluetoothSchedulerHardwareListIndex(current_link_index),
         }
     }
 
@@ -313,7 +335,11 @@ fn execute_work_observation(
     control: &mut impl BluetoothSchedulerInterruptControl,
 ) -> BluetoothSchedulerWorkObservation {
     let state = control.read_scheduler_state();
-    BluetoothSchedulerWorkObservation::new(state.busy, state.reference_path_state)
+    BluetoothSchedulerWorkObservation::new(
+        state.busy,
+        state.reference_path_state,
+        state.current_hardware_list,
+    )
 }
 
 fn execute_finished_list_transfer(
@@ -514,10 +540,12 @@ mod tests {
                 SchedulerStateObservation {
                     busy: false,
                     reference_path_state: false,
+                    current_hardware_list: BluetoothSchedulerHardwareListIndex(3),
                 },
                 SchedulerStateObservation {
                     busy: true,
                     reference_path_state: true,
+                    current_hardware_list: BluetoothSchedulerHardwareListIndex(9),
                 },
             ],
             next_state: 0,
@@ -531,6 +559,7 @@ mod tests {
         assert!(!gate.is_busy());
         assert!(work.is_busy());
         assert!(work.reference_path_active());
+        assert_eq!(work.current_hardware_list().get(), 9);
         assert_eq!(
             recorder.operations,
             [
@@ -573,7 +602,9 @@ mod tests {
         );
         assert_eq!(
             BluetoothSchedulerSoftwareListRemovalObservation::from_split(
-                super::BluetoothSchedulerWorkObservation::from_fields_for_validation(false, false),
+                super::BluetoothSchedulerWorkObservation::from_fields_for_validation(
+                    false, false, 0,
+                ),
                 blocked,
             )
             .classify(),
@@ -595,7 +626,9 @@ mod tests {
         );
         assert_eq!(
             BluetoothSchedulerSoftwareListRemovalObservation::from_split(
-                super::BluetoothSchedulerWorkObservation::from_fields_for_validation(false, false),
+                super::BluetoothSchedulerWorkObservation::from_fields_for_validation(
+                    false, false, 0,
+                ),
                 ready_observation,
             )
             .classify(),
@@ -611,7 +644,9 @@ mod tests {
             );
         assert_eq!(
             BluetoothSchedulerSoftwareListRemovalObservation::from_split(
-                super::BluetoothSchedulerWorkObservation::from_fields_for_validation(true, false),
+                super::BluetoothSchedulerWorkObservation::from_fields_for_validation(
+                    true, false, 0,
+                ),
                 task,
             )
             .classify(),

@@ -2897,10 +2897,17 @@ bit-width = 20
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "OPAQUE_STATE_20_28"
-method = "opaque_state_20_28"
+svd-name = "CURRENT_LINK_INDEX"
+method = "current_link_index"
 bit-offset = 20
-bit-width = 9
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "OPAQUE_STATE_24_28"
+method = "opaque_state_24_28"
+bit-offset = 24
+bit-width = 5
 access = "read-write"
 
 [[registers.fields]]

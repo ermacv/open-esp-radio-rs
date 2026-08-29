@@ -45074,7 +45074,7 @@ pub mod bluetooth_scheduler_interrupt_runtime {
         pub const fn scheduler_reference(&self) -> &SchedulerReference {
             &self.scheduler_reference
         }
-        #[doc = "0x7c - The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both REFERENCE_PATH_STATE and BUSY. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits."]
+        #[doc = "0x7c - The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both REFERENCE_PATH_STATE and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits."]
         #[inline(always)]
         pub const fn scheduler_state(&self) -> &SchedulerState {
             &self.scheduler_state
@@ -45133,10 +45133,10 @@ pub mod bluetooth_scheduler_interrupt_runtime {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "SCHEDULER_STATE (rw) register accessor: The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both REFERENCE_PATH_STATE and BUSY. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_state::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_state::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_state`] module"]
+    #[doc = "SCHEDULER_STATE (rw) register accessor: The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both REFERENCE_PATH_STATE and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_state::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_state::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@scheduler_state`] module"]
     #[doc(alias = "SCHEDULER_STATE")]
     pub type SchedulerState = crate::Reg<scheduler_state::SchedulerStateSpec>;
-    #[doc = "The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both REFERENCE_PATH_STATE and BUSY. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits."]
+    #[doc = "The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both REFERENCE_PATH_STATE and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits."]
     pub mod scheduler_state {
         #[doc = "Register `SCHEDULER_STATE` reader"]
         pub type R = crate::R<SchedulerStateSpec>;
@@ -45146,10 +45146,14 @@ pub mod bluetooth_scheduler_interrupt_runtime {
         pub type ValueLow20R = crate::FieldReader<u32>;
         #[doc = "Field `VALUE_LOW_20` writer - "]
         pub type ValueLow20W<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
-        #[doc = "Field `OPAQUE_STATE_20_28` reader - "]
-        pub type OpaqueState20_28R = crate::FieldReader<u16>;
-        #[doc = "Field `OPAQUE_STATE_20_28` writer - "]
-        pub type OpaqueState20_28W<'a, REG> = crate::FieldWriter<'a, REG, 9, u16>;
+        #[doc = "Field `CURRENT_LINK_INDEX` reader - Zero-based current scheduler hardware-list index returned by the complete current-link-index leaf."]
+        pub type CurrentLinkIndexR = crate::FieldReader;
+        #[doc = "Field `CURRENT_LINK_INDEX` writer - Zero-based current scheduler hardware-list index returned by the complete current-link-index leaf."]
+        pub type CurrentLinkIndexW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        #[doc = "Field `OPAQUE_STATE_24_28` reader - "]
+        pub type OpaqueState24_28R = crate::FieldReader;
+        #[doc = "Field `OPAQUE_STATE_24_28` writer - "]
+        pub type OpaqueState24_28W<'a, REG> = crate::FieldWriter<'a, REG, 5>;
         #[doc = "Field `REFERENCE_PATH_STATE` reader - State sampled together with BUSY by the complete source-124 deferred-work predicate. The underlying scheduler-state meaning remains unqualified."]
         pub type ReferencePathStateR = crate::BitReader;
         #[doc = "Field `REFERENCE_PATH_STATE` writer - State sampled together with BUSY by the complete source-124 deferred-work predicate. The underlying scheduler-state meaning remains unqualified."]
@@ -45168,10 +45172,15 @@ pub mod bluetooth_scheduler_interrupt_runtime {
             pub fn value_low_20(&self) -> ValueLow20R {
                 ValueLow20R::new(self.bits & 0x000f_ffff)
             }
-            #[doc = "Bits 20:28"]
+            #[doc = "Bits 20:23 - Zero-based current scheduler hardware-list index returned by the complete current-link-index leaf."]
             #[inline(always)]
-            pub fn opaque_state_20_28(&self) -> OpaqueState20_28R {
-                OpaqueState20_28R::new(((self.bits >> 20) & 0x01ff) as u16)
+            pub fn current_link_index(&self) -> CurrentLinkIndexR {
+                CurrentLinkIndexR::new(((self.bits >> 20) & 0x0f) as u8)
+            }
+            #[doc = "Bits 24:28"]
+            #[inline(always)]
+            pub fn opaque_state_24_28(&self) -> OpaqueState24_28R {
+                OpaqueState24_28R::new(((self.bits >> 24) & 0x1f) as u8)
             }
             #[doc = "Bit 29 - State sampled together with BUSY by the complete source-124 deferred-work predicate. The underlying scheduler-state meaning remains unqualified."]
             #[inline(always)]
@@ -45195,10 +45204,15 @@ pub mod bluetooth_scheduler_interrupt_runtime {
             pub fn value_low_20(&mut self) -> ValueLow20W<'_, SchedulerStateSpec> {
                 ValueLow20W::new(self, 0)
             }
-            #[doc = "Bits 20:28"]
+            #[doc = "Bits 20:23 - Zero-based current scheduler hardware-list index returned by the complete current-link-index leaf."]
             #[inline(always)]
-            pub fn opaque_state_20_28(&mut self) -> OpaqueState20_28W<'_, SchedulerStateSpec> {
-                OpaqueState20_28W::new(self, 20)
+            pub fn current_link_index(&mut self) -> CurrentLinkIndexW<'_, SchedulerStateSpec> {
+                CurrentLinkIndexW::new(self, 20)
+            }
+            #[doc = "Bits 24:28"]
+            #[inline(always)]
+            pub fn opaque_state_24_28(&mut self) -> OpaqueState24_28W<'_, SchedulerStateSpec> {
+                OpaqueState24_28W::new(self, 24)
             }
             #[doc = "Bit 29 - State sampled together with BUSY by the complete source-124 deferred-work predicate. The underlying scheduler-state meaning remains unqualified."]
             #[inline(always)]
@@ -45216,7 +45230,7 @@ pub mod bluetooth_scheduler_interrupt_runtime {
                 BusyW::new(self, 31)
             }
         }
-        #[doc = "The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both REFERENCE_PATH_STATE and BUSY. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_state::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_state::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "The source-124 handler reads this shared scheduler state at a bank-one reference gate and again before publishing deferred work. Its deferred-work predicate requires both REFERENCE_PATH_STATE and BUSY. The complete current-link-index leaf returns bits 23:20. Command transactions also wait while BUSY is set; other complete users consume or publish the low 20 and low 30 bits.\n\nYou can [`read`](crate::Reg::read) this register and get [`scheduler_state::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`scheduler_state::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct SchedulerStateSpec;
         impl crate::RegisterSpec for SchedulerStateSpec {
             type Ux = u32;
@@ -58924,14 +58938,18 @@ pub mod field_read {
 /// Safe same-sample observations through reviewed SVD fields.
 pub mod field_snapshot_read {
 
-    /// Read `BUSY`, `REFERENCE_PATH_STATE` from one `BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME`.`SCHEDULER_STATE` sample.
+    /// Read `BUSY`, `REFERENCE_PATH_STATE`, `CURRENT_LINK_INDEX` from one `BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME`.`SCHEDULER_STATE` sample.
     #[allow(clippy::type_complexity)]
     #[inline]
     pub fn observe_bluetooth_scheduler_interrupt_state(
         registers: &crate::BluetoothSchedulerInterruptRuntime,
-    ) -> (bool, bool) {
+    ) -> (bool, bool, u8) {
         let sample = registers.scheduler_state().read();
-        (sample.busy().bit(), sample.reference_path_state().bit())
+        (
+            sample.busy().bit(),
+            sample.reference_path_state().bit(),
+            sample.current_link_index().bits(),
+        )
     }
 
     /// Read `MAP`, `UNCLASSIFIED_6_7`, `PASS_LEVEL`, `UNCLASSIFIED_10_31` from one `IEEE802154_INTERRUPT_ROUTE`.`CORE0_ROUTE` sample.

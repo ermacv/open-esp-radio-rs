@@ -3495,8 +3495,8 @@ sources = ["BLOB_LIBBTDM_SLEEP_TIMER_REGISTERS", "BLOB_LIBBTDM_SLEEP_TIMER_SNAPS
 name = "observe_bluetooth_scheduler_interrupt_state"
 peripheral = "BLUETOOTH_SCHEDULER_INTERRUPT_RUNTIME"
 register = "SCHEDULER_STATE"
-fields = ["BUSY", "REFERENCE_PATH_STATE"]
-sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS"]
+fields = ["BUSY", "REFERENCE_PATH_STATE", "CURRENT_LINK_INDEX"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_REGISTERS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 
 [[field-reads]]
 name = "observe_bluetooth_scheduler_software_list_command_0_status_26"

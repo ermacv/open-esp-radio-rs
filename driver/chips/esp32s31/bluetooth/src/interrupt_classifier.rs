@@ -301,6 +301,7 @@ mod tests {
                     BluetoothSchedulerWorkObservation::from_fields_for_validation(
                         busy,
                         reference_state_29,
+                        0,
                     ),
                 ),
             ),

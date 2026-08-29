@@ -12,6 +12,7 @@ use open_esp_radio_esp32s31_hal::{
     BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerWorkObservation,
 };
 use open_esp_radio_esp32s31_pac::BluetoothPrimaryInterruptEpoch;
+use open_esp_radio_esp32s31_pac::BluetoothSchedulerHardwareListIndex;
 
 use crate::{
     BluetoothPrimaryControllerFault, BluetoothPrimaryInterruptClassification,
@@ -52,6 +53,7 @@ pub struct BluetoothPrimarySchedulerEvent {
     classification: BluetoothPrimaryInterruptClassification,
     wake: BluetoothSchedulerWorkerWake,
     lock_modify: BluetoothSchedulerLockModifyInterruptObservation,
+    current_hardware_list: BluetoothSchedulerHardwareListIndex,
 }
 
 /// Durable Controller disposition of one acknowledged primary epoch.
@@ -119,6 +121,11 @@ impl BluetoothPrimarySchedulerEvent {
         &self,
     ) -> BluetoothSchedulerLockModifyInterruptObservation {
         self.lock_modify
+    }
+
+    /// Hardware-list index captured by the same scheduler-state read.
+    pub const fn current_hardware_list(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.current_hardware_list
     }
 }
 
@@ -197,6 +204,7 @@ fn execute_primary_interrupt_step(
         classification,
         wake,
         lock_modify: BluetoothSchedulerLockModifyInterruptObservation::from_busy(work.is_busy()),
+        current_hardware_list: work.current_hardware_list(),
     })
 }
 
@@ -255,6 +263,7 @@ mod tests {
                 work: BluetoothSchedulerWorkObservation::from_fields_for_validation(
                     work_busy,
                     work_reference_state_29,
+                    7,
                 ),
                 operations: Vec::new(),
             }
@@ -308,6 +317,7 @@ mod tests {
         );
         assert_eq!(event.wake().reference_state_publication(), Some(true));
         assert!(event.lock_modify_observation().is_busy());
+        assert_eq!(event.current_hardware_list().get(), 7);
         assert_eq!(
             backend.operations,
             [Operation::PrimaryEpoch, Operation::Work]

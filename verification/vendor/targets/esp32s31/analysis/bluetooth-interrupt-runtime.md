@@ -4,14 +4,16 @@ Verdict: **PARTIAL**. The primary source-124 handler now has a lossless typed
 prefix and disposition: its four baseline groups are fatal assertion lanes,
 including the two conditional diagnostic captures, while its dynamic suffix
 retains two temporally distinct scheduler-state observations, affine MMIO
-ownership and a coalesced deferred-work contract. The exact software-list
-producer/consumer graph and the default BLE consumers of selectors 4 and 6
-are recovered. The initialized scheduler now returns a powered task endpoint
-that keeps the sole lock/modify worker beside the exact task-side HAL owner;
-one finite event step can therefore reach the restricted PAC without an MMIO
-capability escaping into executor code. Selector actions, NRT feature meanings
-and the live async ISR owner remain unresolved, so neither CPU route may yet
-form a live production interrupt epoch.
+ownership and a coalesced deferred-work contract. Its later observation also
+retains the semantic current hardware-list index from the same sample. The
+exact software-list producer/consumer graph and the default BLE consumers of
+selectors 4 and 6 are recovered. The initialized scheduler now returns a
+powered task endpoint that keeps the sole lock/modify worker beside the exact
+task-side HAL owner; one finite event step can therefore reach the restricted
+PAC without an MMIO capability escaping into executor code. Selector actions,
+the hardware-list-to-item relation, NRT feature meanings and the live async ISR
+owner remain unresolved, so neither CPU route may yet form a live production
+interrupt epoch.
 
 This review separates silicon behavior from the internal callback and RTOS
 architecture of the reference Controller. The Rust driver does not reproduce
@@ -48,6 +50,7 @@ inputs. The table below records only the distilled control and MMIO facts.
 | `r_sym_bt_MDZbajeLxsB0cvuBOREd` / `r_sym_bt_2VbAPsx8lRNZdbVZTEOe` | complete leaves | Read `0x2010_105c/1068`, then copy both images to `0x2010_1058/1064`. |
 | `r_sym_bt_6lAYUFKOuBLyOZ6Kvsv5` / `r_sym_bt_Ak3CRkSbyZRhUlneqclG` / `r_sym_bt_DOVkQWJHjeuid8jcS9Bq` | 24 / 24 / 16 bytes | Enable, disable and W1C the exact dynamic images `0x1820_0000` and `0x0000_0008`. |
 | `r_sym_bt_37HcX0qW6j1XVtKakUIG` / `r_sym_bt_zczKhmPr5kLPCXpBc7GE` | 80 / 92 bytes | Decode `SCHEDULER_STATE`; the boolean consumed by deferred-work construction is exactly bit 31 AND bit 29. |
+| `r_sym_bt_iFvwGI2tL5M1WM3fIkHq` | 12 bytes | Instruction-identical to same-chip named `r_btdm_sched_get_current_link_index`: one `SCHEDULER_STATE` read returns exactly the zero-based hardware-list index in bits 23:20. |
 | `r_sym_bt_iEsFo1nbR5S71P2lMKhY` / `r_sym_bt_gs5GeSH15pdzrMDbb7oK` | 90 / 78 bytes | Build one static deferred event, optionally set its one-bit argument, and optionally publish the decoded state through selector 4. |
 | `r_sym_bt_uNi9OHmE7XdXfGqTelU5` | 112 bytes | Same-chip named `r_btdm_recycle_in_task`: consume and clear the marker, drain scheduler work, then publish selector `0x8000_0001`; this is a drain event, not one callback per hardware edge. |
 | `r_sym_bt_E8c5Eimm0z6kYe9v4wHr` / `r_sym_bt_YRnBzKlWCjsIbotqvNyS` | 360 / 574 bytes | Insert a scheduler item through its `+0x54` intrusive link into the manager-root completion queue; task-side removal/reordering calls the insertion path. This proves a software producer, not a hardware completion FIFO. |
@@ -110,6 +113,13 @@ the same derived state when the table requests state publication; the default
 BLE consumer uses both its presence and boolean payload to decide whether to
 retry scheduler work.
 
+The reviewed current-link leaf proves that bits 23:20 of this same register
+are the zero-based current hardware-list index. The restricted PAC projects
+that field from the later sample and the durable primary scheduler event
+retains it beside the busy/reference observation. This identifies the active
+list at that temporal point; it does not identify an affine scheduler item,
+imply that the list is finished or authorize descriptor reclamation.
+
 The two reads cannot be folded into one observation: the reference clear and
 selector-6 software path occur between their positions. The Rust classifier
 therefore uses distinct reference-gate and work-observation types.
@@ -154,7 +164,9 @@ neither required nor desirable. The restricted PAC now names and transfers
 the exact 16-bit `SCHEDULER_FINISHED_LIST_STATUS` mask while keeping the
 destination word positional as `SCHEDULER_FINISHED_LIST_REPORT`. The Bluetooth
 core can drain one list bit per bounded event step; it does not yet map a bit
-to an affine item or callback.
+to an affine item or callback. The separately retained current hardware-list
+index narrows that mapping problem but is not a completion token and is not
+joined to a finished-list bit without further evidence.
 
 Complete default BLE registration review found exactly three manager-0
 consumers. `r_sym_ble_uwrf0kLZsRbzFJ7u8SEr` owns selector 6,
@@ -203,7 +215,9 @@ them.
   selector-4 reference-state-driven scheduler retry;
 - an affine scheduler item lifecycle and bounded completion queue that replace
   the recovered software intrusive list, including the semantic
-  status-to-finished-list edge, memory fence, abort and shutdown drain;
+  relation among the current hardware-list index, finished-list bits and
+  affine items, plus the status-to-finished-list edge, memory fence, abort and
+  shutdown drain;
 - executor-neutral waker registration with a register-then-recheck poll
   protocol and a quiescent teardown barrier;
 - live same-core composition of the staged interrupt-bank, scheduler runtime

@@ -8731,3 +8731,111 @@ fields = [{ field = "CALIBRATION_FIELD_UNKNOWN", source-bit-offset = 0 }]
 domain = "PhyPowerDetectorRestoreByte"
 exposure = "facade"
 sources = ["ROM_REV0_PHY_POWER_DETECTOR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "restore_phy_tx_gain_compensation_byte_0"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_GAIN_COMPENSATION"
+fields = [{ field = "COMPENSATION_BYTE_0_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "restore_phy_tx_gain_compensation_byte_1"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_GAIN_COMPENSATION"
+fields = [{ field = "COMPENSATION_BYTE_1_UNKNOWN", source-bit-offset = 0 }]
+value = 0xfa
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "restore_phy_tx_gain_compensation_byte_2"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_GAIN_COMPENSATION"
+fields = [{ field = "COMPENSATION_BYTE_2_UNKNOWN", source-bit-offset = 0 }]
+value = 0xff
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "restore_phy_tx_gain_compensation_byte_3"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_GAIN_COMPENSATION"
+fields = [{ field = "COMPENSATION_BYTE_3_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_phy_power_control_tone_stop"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "FRONT_END_AND_TONE_STOP_CONTROL"
+fields = [{ field = "TONE_STOP_CONTROL_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_START_STOP_TX_TONE", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_phy_dac_scale_high"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "DAC_SCALE_CONTROL"
+fields = [{ field = "DAC_SCALE_HIGH_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_START_STOP_TX_TONE", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_phy_dac_scale_low"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "DAC_SCALE_CONTROL"
+fields = [{ field = "DAC_SCALE_LOW_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_START_STOP_TX_TONE", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "restore_phy_dac_scale_high"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "DAC_SCALE_CONTROL"
+fields = [{ field = "DAC_SCALE_HIGH_UNKNOWN", source-bit-offset = 0 }]
+value = 0xff
+exposure = "facade"
+sources = ["ROM_REV0_PHY_START_STOP_TX_TONE", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "restore_phy_dac_scale_low"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "DAC_SCALE_CONTROL"
+fields = [{ field = "DAC_SCALE_LOW_UNKNOWN", source-bit-offset = 0 }]
+value = 0xff
+exposure = "facade"
+sources = ["ROM_REV0_PHY_START_STOP_TX_TONE", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "disable_phy_tone_path_0"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TONE_PATH_0_CONTROL"
+fields = [{ field = "TONE_ENABLE_OR_ARM", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW", "ROM_REV0_PHY_START_STOP_TX_TONE", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "disable_phy_tone_path_1"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TONE_PATH_1_CONTROL"
+fields = [{ field = "TONE_ENABLE_OR_ARM", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW", "ROM_REV0_PHY_START_STOP_TX_TONE", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "stop_phy_tone_paths"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "FRONT_END_AND_TONE_STOP_CONTROL"
+fields = [{ field = "TONE_STOP_CONTROL_UNKNOWN", source-bit-offset = 0 }]
+value = 3
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW", "ROM_REV0_PHY_START_STOP_TX_TONE", "S31_ESP_PACS_SVD"]

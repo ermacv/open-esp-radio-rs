@@ -804,14 +804,11 @@ impl RadioPhyRegisters {
     /// Apply complete pinned `phy_txgain_comp_pacfg_new(1)` as four ordered
     /// fresh-read byte updates.
     pub fn restore_tx_gain_compensation(&mut self) {
-        let compensation = self
-            .peripherals
-            .phy_baseband_config_oracle
-            .tx_gain_compensation();
-        compensation.modify(|_, w| w.compensation_byte_0_unknown().set(0));
-        compensation.modify(|_, w| w.compensation_byte_1_unknown().set(0xfa));
-        compensation.modify(|_, w| w.compensation_byte_2_unknown().set(0xff));
-        compensation.modify(|_, w| w.compensation_byte_3_unknown().set(0));
+        let bb = &self.peripherals.phy_baseband_config_oracle;
+        super::generated::restore_phy_tx_gain_compensation_byte_0(bb);
+        super::generated::restore_phy_tx_gain_compensation_byte_1(bb);
+        super::generated::restore_phy_tx_gain_compensation_byte_2(bb);
+        super::generated::restore_phy_tx_gain_compensation_byte_3(bb);
     }
 
     fn configure_tone_selectors(&mut self, path_0: u16, path_1: u16) {
@@ -873,12 +870,9 @@ impl RadioPhyRegisters {
     /// Program the ROM power-control tone with DAC scale and TX gain disabled.
     pub fn configure_power_control_tone(&mut self, selector: u16, step: u8) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        bb.front_end_and_tone_stop_control()
-            .modify(|_, w| w.tone_stop_control_unknown().set(0));
-        bb.dac_scale_control()
-            .modify(|_, w| w.dac_scale_high_unknown().set(0));
-        bb.dac_scale_control()
-            .modify(|_, w| w.dac_scale_low_unknown().set(0));
+        super::generated::clear_phy_power_control_tone_stop(bb);
+        super::generated::clear_phy_dac_scale_high(bb);
+        super::generated::clear_phy_dac_scale_low(bb);
         self.clear_tx_gain_compensation();
         self.configure_tone_selectors(selector, 0);
         self.configure_tone_paths(true, selector, step);
@@ -990,10 +984,8 @@ impl RadioPhyRegisters {
     pub fn stop_power_detector_tone(&mut self) {
         self.stop_calibration_tone_paths();
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        bb.dac_scale_control()
-            .modify(|_, w| w.dac_scale_high_unknown().set(0xff));
-        bb.dac_scale_control()
-            .modify(|_, w| w.dac_scale_low_unknown().set(0xff));
+        super::generated::restore_phy_dac_scale_high(bb);
+        super::generated::restore_phy_dac_scale_low(bb);
     }
 
     /// Stop both tone paths without changing their DAC-scale fields.
@@ -1003,12 +995,9 @@ impl RadioPhyRegisters {
     /// two additional DAC-scale restores in [`Self::stop_power_detector_tone`].
     pub fn stop_calibration_tone_paths(&mut self) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        bb.tone_path_0_control()
-            .modify(|_, w| w.tone_enable_or_arm().clear_bit());
-        bb.tone_path_1_control()
-            .modify(|_, w| w.tone_enable_or_arm().clear_bit());
-        bb.front_end_and_tone_stop_control()
-            .modify(|_, w| w.tone_stop_control_unknown().set(3));
+        super::generated::disable_phy_tone_path_0(bb);
+        super::generated::disable_phy_tone_path_1(bb);
+        super::generated::stop_phy_tone_paths(bb);
     }
 
     /// Enter or complete the TX-IQ correction phase with one fresh RMW.

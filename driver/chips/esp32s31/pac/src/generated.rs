@@ -6336,6 +6336,86 @@ pub(crate) fn restore_phy_txdc_power_detector_calibration(
     );
 }
 
+/// Typed bridge for the reviewed `restore_phy_tx_gain_compensation_byte_0` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn restore_phy_tx_gain_compensation_byte_0(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::restore_phy_tx_gain_compensation_byte_0(registers);
+}
+
+/// Typed bridge for the reviewed `restore_phy_tx_gain_compensation_byte_1` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn restore_phy_tx_gain_compensation_byte_1(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::restore_phy_tx_gain_compensation_byte_1(registers);
+}
+
+/// Typed bridge for the reviewed `restore_phy_tx_gain_compensation_byte_2` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn restore_phy_tx_gain_compensation_byte_2(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::restore_phy_tx_gain_compensation_byte_2(registers);
+}
+
+/// Typed bridge for the reviewed `restore_phy_tx_gain_compensation_byte_3` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn restore_phy_tx_gain_compensation_byte_3(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::restore_phy_tx_gain_compensation_byte_3(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_power_control_tone_stop` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_power_control_tone_stop(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::clear_phy_power_control_tone_stop(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_dac_scale_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_dac_scale_high(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::clear_phy_dac_scale_high(registers);
+}
+
+/// Typed bridge for the reviewed `clear_phy_dac_scale_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_dac_scale_low(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::clear_phy_dac_scale_low(registers);
+}
+
+/// Typed bridge for the reviewed `restore_phy_dac_scale_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn restore_phy_dac_scale_high(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::restore_phy_dac_scale_high(registers);
+}
+
+/// Typed bridge for the reviewed `restore_phy_dac_scale_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn restore_phy_dac_scale_low(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::restore_phy_dac_scale_low(registers);
+}
+
+/// Typed bridge for the reviewed `disable_phy_tone_path_0` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn disable_phy_tone_path_0(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::disable_phy_tone_path_0(registers);
+}
+
+/// Typed bridge for the reviewed `disable_phy_tone_path_1` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn disable_phy_tone_path_1(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::disable_phy_tone_path_1(registers);
+}
+
+/// Typed bridge for the reviewed `stop_phy_tone_paths` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn stop_phy_tone_paths(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::stop_phy_tone_paths(registers);
+}
+
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
 #[inline]
 pub(crate) fn configure_shared_modem_low_power_timer(

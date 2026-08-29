@@ -230,6 +230,40 @@ impl MacRxBeaconClearRequest {
     }
 }
 
+/// Boolean state accepted by reviewed MODEM_SYSCON Bluetooth clock-gate transactions.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ModemSysconClockGateState {
+    /// The selected MODEM_SYSCON clock gate is disabled.
+    Disabled = 0x00000000,
+    /// The selected MODEM_SYSCON clock gate is enabled.
+    Enabled = 0x00000001,
+}
+
+impl ModemSysconClockGateState {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
+/// Boolean state accepted by reviewed MODEM_SYSCON Bluetooth reset transactions.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ModemSysconResetState {
+    /// The selected MODEM_SYSCON reset is released.
+    Released = 0x00000000,
+    /// The selected MODEM_SYSCON reset is asserted.
+    Asserted = 0x00000001,
+}
+
+impl ModemSysconResetState {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
 /// One reviewed four-bit Wi-Fi packet-traffic-information value. Its scheduling policy remains outside the PAC.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MacPti(u32);
@@ -3937,6 +3971,144 @@ pub(crate) fn enable_frontend_baseband_power(registers: &crate::svd::PmuRadio) {
     crate::svd::field_replace_modify::enable_frontend_baseband_power(registers);
 }
 
+/// Typed bridge for the reviewed `prepare_modem_syscon_clock_map` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn prepare_modem_syscon_clock_map(registers: &crate::svd::ModemSysconRadio) {
+    crate::svd::field_replace_modify::prepare_modem_syscon_clock_map(registers);
+}
+
+/// Typed bridge for the reviewed `set_bluetooth_wifi_baseband_80x1_clock` field-replacement transaction.
+#[inline]
+pub(crate) fn set_bluetooth_wifi_baseband_80x1_clock(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconClockGateState,
+) {
+    crate::svd::field_replace_modify::set_bluetooth_wifi_baseband_80x1_clock(
+        registers,
+        value.bits(),
+    );
+}
+
+/// Typed bridge for the reviewed `set_bluetooth_etm_clock` field-replacement transaction.
+#[inline]
+pub(crate) fn set_bluetooth_etm_clock(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconClockGateState,
+) {
+    crate::svd::field_replace_modify::set_bluetooth_etm_clock(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_bluetooth_mac_clock` field-replacement transaction.
+#[inline]
+pub(crate) fn set_bluetooth_mac_clock(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconClockGateState,
+) {
+    crate::svd::field_replace_modify::set_bluetooth_mac_clock(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_bluetooth_peripheral_clocks` field-replacement transaction.
+#[inline]
+pub(crate) fn set_bluetooth_peripheral_clocks(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconClockGateState,
+) {
+    crate::svd::field_replace_modify::set_bluetooth_peripheral_clocks(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_bluetooth_apb_clock` field-replacement transaction.
+#[inline]
+pub(crate) fn set_bluetooth_apb_clock(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconClockGateState,
+) {
+    crate::svd::field_replace_modify::set_bluetooth_apb_clock(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_bluetooth_modem_security_apb_clock` field-replacement transaction.
+#[inline]
+pub(crate) fn set_bluetooth_modem_security_apb_clock(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconClockGateState,
+) {
+    crate::svd::field_replace_modify::set_bluetooth_modem_security_apb_clock(
+        registers,
+        value.bits(),
+    );
+}
+
+/// Typed bridge for the reviewed `set_bluetooth_baseband_clock` field-replacement transaction.
+#[inline]
+pub(crate) fn set_bluetooth_baseband_clock(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconClockGateState,
+) {
+    crate::svd::field_replace_modify::set_bluetooth_baseband_clock(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_bluetooth_mac_reset` field-replacement transaction.
+#[inline]
+pub(crate) fn set_bluetooth_mac_reset(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconResetState,
+) {
+    crate::svd::field_replace_modify::set_bluetooth_mac_reset(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_bluetooth_mac_apb_reset` field-replacement transaction.
+#[inline]
+pub(crate) fn set_bluetooth_mac_apb_reset(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconResetState,
+) {
+    crate::svd::field_replace_modify::set_bluetooth_mac_apb_reset(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_bluetooth_timer_reset` field-replacement transaction.
+#[inline]
+pub(crate) fn set_bluetooth_timer_reset(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconResetState,
+) {
+    crate::svd::field_replace_modify::set_bluetooth_timer_reset(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_bluetooth_modem_ecb_reset` field-replacement transaction.
+#[inline]
+pub(crate) fn set_bluetooth_modem_ecb_reset(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconResetState,
+) {
+    crate::svd::field_replace_modify::set_bluetooth_modem_ecb_reset(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_bluetooth_modem_ccm_reset` field-replacement transaction.
+#[inline]
+pub(crate) fn set_bluetooth_modem_ccm_reset(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconResetState,
+) {
+    crate::svd::field_replace_modify::set_bluetooth_modem_ccm_reset(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_bluetooth_modem_bah_reset` field-replacement transaction.
+#[inline]
+pub(crate) fn set_bluetooth_modem_bah_reset(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconResetState,
+) {
+    crate::svd::field_replace_modify::set_bluetooth_modem_bah_reset(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `set_bluetooth_modem_security_reset` field-replacement transaction.
+#[inline]
+pub(crate) fn set_bluetooth_modem_security_reset(
+    registers: &crate::svd::ModemSysconRadio,
+    value: ModemSysconResetState,
+) {
+    crate::svd::field_replace_modify::set_bluetooth_modem_security_reset(registers, value.bits());
+}
+
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
 #[inline]
 pub(crate) fn configure_shared_modem_low_power_timer(
@@ -3976,6 +4148,26 @@ pub(crate) fn restore_modem_source_clocks(
         pll_selected,
         pll_clock_enabled,
         xtal_clock_enabled,
+    );
+}
+
+/// Typed bridge for the reviewed `restore_bluetooth_peripheral_clocks` multi-argument field-replacement transaction.
+#[inline]
+pub(crate) fn restore_bluetooth_peripheral_clocks(
+    registers: &crate::svd::ModemSysconRadio,
+    modem_security_enabled: bool,
+    ecb_enabled: bool,
+    ccm_enabled: bool,
+    bah_enabled: bool,
+    ble_timer_enabled: bool,
+) {
+    crate::svd::field_argument_modify::restore_bluetooth_peripheral_clocks(
+        registers,
+        modem_security_enabled,
+        ecb_enabled,
+        ccm_enabled,
+        bah_enabled,
+        ble_timer_enabled,
     );
 }
 

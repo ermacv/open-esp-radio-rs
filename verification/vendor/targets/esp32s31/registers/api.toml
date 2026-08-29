@@ -5645,3 +5645,259 @@ fields = [
 value = 0x1f
 exposure = "facade"
 sources = ["ROM_REV0_PHY_OPEN_FE_BB_CLK", "S31_PMU_HEADERS"]
+
+[[enum-domains]]
+name = "ModemSysconClockGateState"
+description = "Boolean state accepted by reviewed MODEM_SYSCON Bluetooth clock-gate transactions."
+
+[[enum-domains.values]]
+name = "Disabled"
+value = 0
+description = "The selected MODEM_SYSCON clock gate is disabled."
+sources = ["S31_MODEM_SYSCON_STRUCT", "S31_ESP_PACS_SVD"]
+
+[[enum-domains.values]]
+name = "Enabled"
+value = 1
+description = "The selected MODEM_SYSCON clock gate is enabled."
+sources = ["S31_MODEM_SYSCON_STRUCT", "S31_ESP_PACS_SVD"]
+
+[[enum-domains]]
+name = "ModemSysconResetState"
+description = "Boolean state accepted by reviewed MODEM_SYSCON Bluetooth reset transactions."
+
+[[enum-domains.values]]
+name = "Released"
+value = 0
+description = "The selected MODEM_SYSCON reset is released."
+sources = ["S31_MODEM_SYSCON_STRUCT", "S31_ESP_PACS_SVD"]
+
+[[enum-domains.values]]
+name = "Asserted"
+value = 1
+description = "The selected MODEM_SYSCON reset is asserted."
+sources = ["S31_MODEM_SYSCON_STRUCT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "prepare_modem_syscon_clock_map"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF_POWER_ST"
+fields = [
+    { field = "CLK_ZB_ST_MAP_BIT_TWO", source-bit-offset = 0 },
+    { field = "CLK_FE_ST_MAP_BIT_ONE", source-bit-offset = 1 },
+    { field = "CLK_FE_ST_MAP_BIT_TWO", source-bit-offset = 2 },
+    { field = "CLK_BT_ST_MAP_BIT_TWO", source-bit-offset = 3 },
+    { field = "CLK_WIFI_ST_MAP_BIT_ONE", source-bit-offset = 4 },
+    { field = "CLK_WIFI_ST_MAP_BIT_TWO", source-bit-offset = 5 },
+    { field = "CLK_MODEM_PERI_ST_MAP_BIT_TWO", source-bit-offset = 6 },
+    { field = "CLK_MODEM_APB_ST_MAP_BIT_ONE", source-bit-offset = 7 },
+    { field = "CLK_MODEM_APB_ST_MAP_BIT_TWO", source-bit-offset = 8 },
+]
+value = 0x1ff
+exposure = "facade"
+sources = ["ESP_HAL_63E97BE_S31_MODEM_CLOCK_MAP", "S31_MODEM_SYSCON_STRUCT"]
+
+[[field-snapshot-reads]]
+name = "observe_modem_syscon_clock_map"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF_POWER_ST"
+fields = [
+    "CLK_ZB_ST_MAP_BIT_TWO",
+    "CLK_FE_ST_MAP_BIT_ONE",
+    "CLK_FE_ST_MAP_BIT_TWO",
+    "CLK_BT_ST_MAP_BIT_TWO",
+    "CLK_WIFI_ST_MAP_BIT_ONE",
+    "CLK_WIFI_ST_MAP_BIT_TWO",
+    "CLK_MODEM_PERI_ST_MAP_BIT_TWO",
+    "CLK_MODEM_APB_ST_MAP_BIT_ONE",
+    "CLK_MODEM_APB_ST_MAP_BIT_TWO",
+]
+sources = ["ESP_HAL_63E97BE_S31_MODEM_CLOCK_MAP", "S31_MODEM_SYSCON_STRUCT"]
+
+[[field-snapshot-reads]]
+name = "observe_bluetooth_modem_clock_conf"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF"
+fields = [
+    "CLK_ETM_EN",
+    "CLK_MODEM_SEC_EN",
+    "CLK_MODEM_SEC_ECB_EN",
+    "CLK_MODEM_SEC_CCM_EN",
+    "CLK_MODEM_SEC_BAH_EN",
+    "CLK_BLE_TIMER_EN",
+    "CLK_MODEM_SEC_APB_EN",
+]
+sources = ["S31_MODEM_SYSCON_STRUCT", "S31_ESP_PACS_SVD"]
+
+[[field-snapshot-reads]]
+name = "observe_bluetooth_modem_clock_conf1"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF1"
+fields = [
+    "CLK_WIFIBB_80X1_EN",
+    "CLK_BTMAC_EN",
+    "CLK_BT_APB_EN",
+    "CLK_BTBB_EN",
+]
+sources = ["S31_MODEM_SYSCON_STRUCT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_bluetooth_wifi_baseband_80x1_clock"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF1"
+fields = [{ field = "CLK_WIFIBB_80X1_EN", source-bit-offset = 0 }]
+domain = "ModemSysconClockGateState"
+exposure = "facade"
+sources = ["S31_MODEM_SYSCON_STRUCT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_bluetooth_etm_clock"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF"
+fields = [{ field = "CLK_ETM_EN", source-bit-offset = 0 }]
+domain = "ModemSysconClockGateState"
+exposure = "facade"
+sources = ["S31_MODEM_SYSCON_STRUCT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_bluetooth_mac_clock"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF1"
+fields = [{ field = "CLK_BTMAC_EN", source-bit-offset = 0 }]
+domain = "ModemSysconClockGateState"
+exposure = "facade"
+sources = ["S31_MODEM_SYSCON_STRUCT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_bluetooth_peripheral_clocks"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF"
+fields = [
+    { field = "CLK_MODEM_SEC_EN", source-bit-offset = 0 },
+    { field = "CLK_MODEM_SEC_ECB_EN", source-bit-offset = 0 },
+    { field = "CLK_MODEM_SEC_CCM_EN", source-bit-offset = 0 },
+    { field = "CLK_MODEM_SEC_BAH_EN", source-bit-offset = 0 },
+    { field = "CLK_BLE_TIMER_EN", source-bit-offset = 0 },
+]
+domain = "ModemSysconClockGateState"
+exposure = "facade"
+sources = ["S31_MODEM_SYSCON_STRUCT", "S31_ESP_PACS_SVD"]
+
+[[field-argument-modifies]]
+name = "restore_bluetooth_peripheral_clocks"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF"
+arguments = [
+    { name = "modem_security_enabled", field = "CLK_MODEM_SEC_EN" },
+    { name = "ecb_enabled", field = "CLK_MODEM_SEC_ECB_EN" },
+    { name = "ccm_enabled", field = "CLK_MODEM_SEC_CCM_EN" },
+    { name = "bah_enabled", field = "CLK_MODEM_SEC_BAH_EN" },
+    { name = "ble_timer_enabled", field = "CLK_BLE_TIMER_EN" },
+]
+exposure = "facade"
+sources = ["S31_MODEM_SYSCON_STRUCT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_bluetooth_apb_clock"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF1"
+fields = [{ field = "CLK_BT_APB_EN", source-bit-offset = 0 }]
+domain = "ModemSysconClockGateState"
+exposure = "facade"
+sources = ["S31_MODEM_SYSCON_STRUCT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_bluetooth_modem_security_apb_clock"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF"
+fields = [{ field = "CLK_MODEM_SEC_APB_EN", source-bit-offset = 0 }]
+domain = "ModemSysconClockGateState"
+exposure = "facade"
+sources = ["S31_MODEM_SYSCON_STRUCT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_bluetooth_baseband_clock"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "CLK_CONF1"
+fields = [{ field = "CLK_BTBB_EN", source-bit-offset = 0 }]
+domain = "ModemSysconClockGateState"
+exposure = "facade"
+sources = ["S31_MODEM_SYSCON_STRUCT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_bluetooth_mac_reset"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "MODEM_RST_CONF"
+fields = [{ field = "RST_BTMAC", source-bit-offset = 0 }]
+domain = "ModemSysconResetState"
+exposure = "facade"
+sources = ["S31_MODEM_SYSCON_STRUCT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_bluetooth_mac_apb_reset"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "MODEM_RST_CONF"
+fields = [{ field = "RST_BTMAC_APB", source-bit-offset = 0 }]
+domain = "ModemSysconResetState"
+exposure = "facade"
+sources = ["S31_MODEM_SYSCON_STRUCT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_bluetooth_timer_reset"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "MODEM_RST_CONF"
+fields = [{ field = "RST_BLE_TIMER", source-bit-offset = 0 }]
+domain = "ModemSysconResetState"
+exposure = "facade"
+sources = ["S31_MODEM_SYSCON_STRUCT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_bluetooth_modem_ecb_reset"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "MODEM_RST_CONF"
+fields = [{ field = "RST_MODEM_ECB", source-bit-offset = 0 }]
+domain = "ModemSysconResetState"
+exposure = "facade"
+sources = ["S31_MODEM_SYSCON_STRUCT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_bluetooth_modem_ccm_reset"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "MODEM_RST_CONF"
+fields = [{ field = "RST_MODEM_CCM", source-bit-offset = 0 }]
+domain = "ModemSysconResetState"
+exposure = "facade"
+sources = ["S31_MODEM_SYSCON_STRUCT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_bluetooth_modem_bah_reset"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "MODEM_RST_CONF"
+fields = [{ field = "RST_MODEM_BAH", source-bit-offset = 0 }]
+domain = "ModemSysconResetState"
+exposure = "facade"
+sources = ["S31_MODEM_SYSCON_STRUCT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_bluetooth_modem_security_reset"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "MODEM_RST_CONF"
+fields = [{ field = "RST_MODEM_SEC", source-bit-offset = 0 }]
+domain = "ModemSysconResetState"
+exposure = "facade"
+sources = ["S31_MODEM_SYSCON_STRUCT", "S31_ESP_PACS_SVD"]
+
+[[field-snapshot-reads]]
+name = "observe_bluetooth_controller_resets"
+peripheral = "MODEM_SYSCON_RADIO"
+register = "MODEM_RST_CONF"
+fields = [
+    "RST_BTMAC",
+    "RST_BTMAC_APB",
+    "RST_BLE_TIMER",
+    "RST_MODEM_ECB",
+    "RST_MODEM_CCM",
+    "RST_MODEM_BAH",
+    "RST_MODEM_SEC",
+]
+sources = ["S31_MODEM_SYSCON_STRUCT", "S31_ESP_PACS_SVD"]

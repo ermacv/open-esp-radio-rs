@@ -58551,6 +58551,73 @@ pub mod field_snapshot_read {
             sample.modem_xtal_clk_en().bit(),
         )
     }
+
+    /// Read `CLK_ZB_ST_MAP_BIT_TWO`, `CLK_FE_ST_MAP_BIT_ONE`, `CLK_FE_ST_MAP_BIT_TWO`, `CLK_BT_ST_MAP_BIT_TWO`, `CLK_WIFI_ST_MAP_BIT_ONE`, `CLK_WIFI_ST_MAP_BIT_TWO`, `CLK_MODEM_PERI_ST_MAP_BIT_TWO`, `CLK_MODEM_APB_ST_MAP_BIT_ONE`, `CLK_MODEM_APB_ST_MAP_BIT_TWO` from one `MODEM_SYSCON_RADIO`.`CLK_CONF_POWER_ST` sample.
+    #[inline]
+    pub fn observe_modem_syscon_clock_map(
+        registers: &crate::ModemSysconRadio,
+    ) -> (bool, bool, bool, bool, bool, bool, bool, bool, bool) {
+        let sample = registers.clk_conf_power_st().read();
+        (
+            sample.clk_zb_st_map_bit_two().bit(),
+            sample.clk_fe_st_map_bit_one().bit(),
+            sample.clk_fe_st_map_bit_two().bit(),
+            sample.clk_bt_st_map_bit_two().bit(),
+            sample.clk_wifi_st_map_bit_one().bit(),
+            sample.clk_wifi_st_map_bit_two().bit(),
+            sample.clk_modem_peri_st_map_bit_two().bit(),
+            sample.clk_modem_apb_st_map_bit_one().bit(),
+            sample.clk_modem_apb_st_map_bit_two().bit(),
+        )
+    }
+
+    /// Read `CLK_ETM_EN`, `CLK_MODEM_SEC_EN`, `CLK_MODEM_SEC_ECB_EN`, `CLK_MODEM_SEC_CCM_EN`, `CLK_MODEM_SEC_BAH_EN`, `CLK_BLE_TIMER_EN`, `CLK_MODEM_SEC_APB_EN` from one `MODEM_SYSCON_RADIO`.`CLK_CONF` sample.
+    #[inline]
+    pub fn observe_bluetooth_modem_clock_conf(
+        registers: &crate::ModemSysconRadio,
+    ) -> (bool, bool, bool, bool, bool, bool, bool) {
+        let sample = registers.clk_conf().read();
+        (
+            sample.clk_etm_en().bit(),
+            sample.clk_modem_sec_en().bit(),
+            sample.clk_modem_sec_ecb_en().bit(),
+            sample.clk_modem_sec_ccm_en().bit(),
+            sample.clk_modem_sec_bah_en().bit(),
+            sample.clk_ble_timer_en().bit(),
+            sample.clk_modem_sec_apb_en().bit(),
+        )
+    }
+
+    /// Read `CLK_WIFIBB_80X1_EN`, `CLK_BTMAC_EN`, `CLK_BT_APB_EN`, `CLK_BTBB_EN` from one `MODEM_SYSCON_RADIO`.`CLK_CONF1` sample.
+    #[inline]
+    pub fn observe_bluetooth_modem_clock_conf1(
+        registers: &crate::ModemSysconRadio,
+    ) -> (bool, bool, bool, bool) {
+        let sample = registers.clk_conf1().read();
+        (
+            sample.clk_wifibb_80x1_en().bit(),
+            sample.clk_btmac_en().bit(),
+            sample.clk_bt_apb_en().bit(),
+            sample.clk_btbb_en().bit(),
+        )
+    }
+
+    /// Read `RST_BTMAC`, `RST_BTMAC_APB`, `RST_BLE_TIMER`, `RST_MODEM_ECB`, `RST_MODEM_CCM`, `RST_MODEM_BAH`, `RST_MODEM_SEC` from one `MODEM_SYSCON_RADIO`.`MODEM_RST_CONF` sample.
+    #[inline]
+    pub fn observe_bluetooth_controller_resets(
+        registers: &crate::ModemSysconRadio,
+    ) -> (bool, bool, bool, bool, bool, bool, bool) {
+        let sample = registers.modem_rst_conf().read();
+        (
+            sample.rst_btmac().bit(),
+            sample.rst_btmac_apb().bit(),
+            sample.rst_ble_timer().bit(),
+            sample.rst_modem_ecb().bit(),
+            sample.rst_modem_ccm().bit(),
+            sample.rst_modem_bah().bit(),
+            sample.rst_modem_sec().bit(),
+        )
+    }
 }
 
 /// Safe, SVD-declared complete-register writes of fixed enumerated values.
@@ -65210,6 +65277,185 @@ pub mod field_replace_modify {
             }
         });
     }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF_POWER_ST fields [CLK_ZB_ST_MAP_BIT_TWO, CLK_FE_ST_MAP_BIT_ONE, CLK_FE_ST_MAP_BIT_TWO, CLK_BT_ST_MAP_BIT_TWO, CLK_WIFI_ST_MAP_BIT_ONE, CLK_WIFI_ST_MAP_BIT_TWO, CLK_MODEM_PERI_ST_MAP_BIT_TWO, CLK_MODEM_APB_ST_MAP_BIT_ONE, CLK_MODEM_APB_ST_MAP_BIT_TWO] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn prepare_modem_syscon_clock_map(registers: &crate::ModemSysconRadio) {
+        registers.clk_conf_power_st().modify(|_, writer| {
+            let input = 0x000001ff_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .clk_zb_st_map_bit_two()
+                .bit((input & 0x00000001) != 0)
+                .clk_fe_st_map_bit_one()
+                .bit(((input >> 1) & 0x00000001) != 0)
+                .clk_fe_st_map_bit_two()
+                .bit(((input >> 2) & 0x00000001) != 0)
+                .clk_bt_st_map_bit_two()
+                .bit(((input >> 3) & 0x00000001) != 0)
+                .clk_wifi_st_map_bit_one()
+                .bit(((input >> 4) & 0x00000001) != 0)
+                .clk_wifi_st_map_bit_two()
+                .bit(((input >> 5) & 0x00000001) != 0)
+                .clk_modem_peri_st_map_bit_two()
+                .bit(((input >> 6) & 0x00000001) != 0)
+                .clk_modem_apb_st_map_bit_one()
+                .bit(((input >> 7) & 0x00000001) != 0)
+                .clk_modem_apb_st_map_bit_two()
+                .bit(((input >> 8) & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields [CLK_WIFIBB_80X1_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_bluetooth_wifi_baseband_80x1_clock(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.clk_conf1().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_wifibb_80x1_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields [CLK_ETM_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_bluetooth_etm_clock(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.clk_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_etm_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields [CLK_BTMAC_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_bluetooth_mac_clock(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.clk_conf1().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_btmac_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields [CLK_MODEM_SEC_EN, CLK_MODEM_SEC_ECB_EN, CLK_MODEM_SEC_CCM_EN, CLK_MODEM_SEC_BAH_EN, CLK_BLE_TIMER_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_bluetooth_peripheral_clocks(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.clk_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .clk_modem_sec_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_modem_sec_ecb_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_modem_sec_ccm_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_modem_sec_bah_en()
+                .bit((input & 0x00000001) != 0)
+                .clk_ble_timer_en()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields [CLK_BT_APB_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_bluetooth_apb_clock(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.clk_conf1().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_bt_apb_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields [CLK_MODEM_SEC_APB_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_bluetooth_modem_security_apb_clock(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.clk_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_modem_sec_apb_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF1 fields [CLK_BTBB_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_bluetooth_baseband_clock(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.clk_conf1().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.clk_btbb_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields [RST_BTMAC] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_bluetooth_mac_reset(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.modem_rst_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.rst_btmac().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields [RST_BTMAC_APB] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_bluetooth_mac_apb_reset(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.modem_rst_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.rst_btmac_apb().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields [RST_BLE_TIMER] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_bluetooth_timer_reset(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.modem_rst_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.rst_ble_timer().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields [RST_MODEM_ECB] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_bluetooth_modem_ecb_reset(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.modem_rst_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.rst_modem_ecb().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields [RST_MODEM_CCM] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_bluetooth_modem_ccm_reset(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.modem_rst_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.rst_modem_ccm().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields [RST_MODEM_BAH] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_bluetooth_modem_bah_reset(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.modem_rst_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.rst_modem_bah().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.MODEM_RST_CONF fields [RST_MODEM_SEC] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_bluetooth_modem_security_reset(registers: &crate::ModemSysconRadio, input: u32) {
+        registers.modem_rst_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.rst_modem_sec().bit((input & 0x00000001) != 0)
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.
@@ -65271,6 +65517,33 @@ pub mod field_argument_modify {
                 .bit(pll_clock_enabled)
                 .modem_xtal_clk_en()
                 .bit(xtal_clock_enabled)
+        });
+    }
+
+    /// Replace MODEM_SYSCON_RADIO.CLK_CONF fields [modem_security_enabled -> CLK_MODEM_SEC_EN, ecb_enabled -> CLK_MODEM_SEC_ECB_EN, ccm_enabled -> CLK_MODEM_SEC_CCM_EN, bah_enabled -> CLK_MODEM_SEC_BAH_EN, ble_timer_enabled -> CLK_BLE_TIMER_EN] from independently typed arguments while preserving every other bit.
+    #[inline]
+    pub fn restore_bluetooth_peripheral_clocks(
+        registers: &crate::ModemSysconRadio,
+        modem_security_enabled: bool,
+        ecb_enabled: bool,
+        ccm_enabled: bool,
+        bah_enabled: bool,
+        ble_timer_enabled: bool,
+    ) {
+        registers.clk_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every typed argument fits its named SVD field;
+            // no whole-register image crosses this API.
+            writer
+                .clk_modem_sec_en()
+                .bit(modem_security_enabled)
+                .clk_modem_sec_ecb_en()
+                .bit(ecb_enabled)
+                .clk_modem_sec_ccm_en()
+                .bit(ccm_enabled)
+                .clk_modem_sec_bah_en()
+                .bit(bah_enabled)
+                .clk_ble_timer_en()
+                .bit(ble_timer_enabled)
         });
     }
 }

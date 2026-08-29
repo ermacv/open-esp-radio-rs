@@ -87,7 +87,7 @@ pub(crate) fn investigate(
         }
     };
     let report = FunctionInvestigationReport {
-        schema_version: 15,
+        schema_version: 16,
         command: "inspect function",
         source: request.source.to_owned(),
         symbol: request.symbol.to_owned(),
@@ -143,7 +143,7 @@ pub(crate) fn investigate(
 }
 
 fn validate_report(report: &FunctionInvestigationReport) -> Result<()> {
-    if report.schema_version != 15 || report.command != "inspect function" {
+    if report.schema_version != 16 || report.command != "inspect function" {
         return Err(crate::Error::invalid(
             "function investigation report uses an unsupported schema or command",
         ));
@@ -344,6 +344,15 @@ fn semantic_evidence(
                     && reviewed.identity == function.identity
             })
         });
+        let reviewed_function = reviewed.and_then(|reviewed| {
+            reviewed.name.as_ref().map(|name| ReviewedFunctionEvidence {
+                name: name.clone(),
+                role: reviewed.role.clone(),
+                summary: reviewed.summary.clone(),
+                accept_incomplete: reviewed.accept_incomplete,
+                provenance: "reviewed-function-pack",
+            })
+        });
         let reviewed_signature = reviewed
             .and_then(|reviewed| {
                 reviewed
@@ -509,6 +518,7 @@ fn semantic_evidence(
             report: profile.output.display().to_string(),
             complete,
             exact,
+            reviewed_function,
             reviewed_signature,
             pseudo,
             blockers,

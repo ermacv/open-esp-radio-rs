@@ -31,14 +31,16 @@ cost, then by co-blockers and impact. `--strategy frontier` (also accepted as
 benefit and no more effort, with one strict improvement. Frontier results are
 then ordered by the impact score.
 
-The machine report uses schema 14. It separates the complete backlog from the
-bounded recommendation:
+The machine report uses schema 15. It separates the complete backlog from the
+bounded recommendation and exposes reviewed labels for referenced functions:
 
 - `inventory.findings` contains every typed finding exactly once;
 - `inventory.actions` contains every coalesced next action and refers to
   its findings only through `finding_ids`;
 - `inventory.prerequisites` contains every deduplicated destination or anchor
   action without a selection-specific rank;
+- `reviewed_functions` maps generated identities to manually reviewed names,
+  roles and summaries without replacing generated behavior or completeness;
 - `selection.steps` is the only ranked list. Its typed prerequisite/action
   references are bounded by `--limit` and `--budget`.
 - `finding_query` is always present. It distinguishes `all`, `open`,

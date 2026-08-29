@@ -130,6 +130,8 @@ pub struct SemanticFunctionEvidence {
     pub complete: bool,
     pub exact: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub reviewed_function: Option<ReviewedFunctionEvidence>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reviewed_signature: Option<ReviewedFunctionSignatureEvidence>,
     pub pseudo: String,
     pub blockers: Vec<BlockerExplanationEvidence>,
@@ -145,6 +147,17 @@ pub struct SemanticFunctionEvidence {
     /// evidence report and points at `report` for indexed retrieval.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub linked_ir: Option<StoredLinkedIrRecord>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ReviewedFunctionEvidence {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    pub accept_incomplete: bool,
+    pub provenance: &'static str,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]

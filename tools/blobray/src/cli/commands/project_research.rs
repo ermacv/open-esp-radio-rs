@@ -144,7 +144,7 @@ fn render(report: &research::ResearchNextReport) {
             ],
             actions.iter().map(|candidate| [
                 candidate.rank.to_string(),
-                compact_middle(&candidate.action.next_action.inspect_label(), 34),
+                compact_middle(&action_inspect_label(report, candidate.action), 34),
                 format!(
                     "{} · {} ({})",
                     action_lane_label(&candidate.findings),
@@ -962,6 +962,36 @@ fn compact_middle(value: &str, max_chars: usize) -> String {
         .collect()
 }
 
+fn action_inspect_label(
+    report: &research::ResearchNextReport,
+    action: &research::ResearchActionCatalogEntry,
+) -> String {
+    let fallback = action.next_action.inspect_label();
+    let Some(selector) = action
+        .next_action
+        .argv
+        .windows(3)
+        .find(|arguments| arguments[0] == "inspect" && arguments[1] == "function")
+        .map(|arguments| arguments[2].as_str())
+    else {
+        return fallback;
+    };
+    reviewed_function_name(&report.reviewed_functions, selector)
+        .map_or(fallback, |name| format!("function {name}"))
+}
+
+fn reviewed_function_name<'a>(
+    functions: &'a [research::ResearchReviewedFunction],
+    selector: &str,
+) -> Option<&'a str> {
+    let (source, symbol) = selector.split_once(':')?;
+    let identity = format!("{source}::{symbol}");
+    functions
+        .iter()
+        .find(|function| function.identity == identity)
+        .map(|function| function.name.as_str())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1045,6 +1075,27 @@ mod tests {
         );
         assert_eq!(compact_middle("radio", 1), "…");
         assert_eq!(compact_middle("radio", 0), "");
+    }
+
+    #[test]
+    fn reviewed_function_names_replace_obfuscated_research_labels() {
+        let reviewed = [research::ResearchReviewedFunction {
+            profile: "ble-controller-all".to_owned(),
+            source: "ble-controller".to_owned(),
+            identity: "ble-controller::r_sym_bt_obfuscated".to_owned(),
+            name: "btdm_broker_detach".to_owned(),
+            role: Some("btdm.broker.detach".to_owned()),
+            summary: None,
+        }];
+
+        assert_eq!(
+            reviewed_function_name(&reviewed, "ble-controller:r_sym_bt_obfuscated"),
+            Some("btdm_broker_detach")
+        );
+        assert_eq!(
+            reviewed_function_name(&reviewed, "ble-controller:other"),
+            None
+        );
     }
 
     #[test]

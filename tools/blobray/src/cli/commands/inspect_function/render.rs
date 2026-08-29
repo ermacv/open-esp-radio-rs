@@ -565,6 +565,19 @@ pub(super) fn human(report: &FunctionInvestigationReport, full: bool) {
 fn render_summary(report: &FunctionInvestigationReport) {
     outputln!("{}", output::heading("Function investigation"));
     outputln!("Function: {}:{}", report.source, report.symbol);
+    if let Some(reviewed) = report
+        .semantics
+        .iter()
+        .find_map(|semantic| semantic.reviewed_function.as_ref())
+    {
+        outputln!("Reviewed: {}", reviewed.name);
+        if let Some(role) = &reviewed.role {
+            outputln!("Role:     {role}");
+        }
+        if let Some(summary) = &reviewed.summary {
+            outputln!("Summary:  {summary}");
+        }
+    }
     outputln!("Artifact: {}", report.runtime.artifact);
     if let Some(member) = &report.runtime.member {
         outputln!("Member:   {member}");

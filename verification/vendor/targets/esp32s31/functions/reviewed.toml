@@ -498,6 +498,106 @@ name = "selector"
 abi = "u32"
 role = "selector"
 
+# The ten function text sections in current libbtdm_common.a member 2.o are
+# byte-identical, in the same order and with the same relocation geometry, as
+# public same-chip btdm_broker.c.o from espressif/esp32s31-bt-lib commit
+# 31c30949541a5d3abd4043a1cb66d55aa55577dd (archive sha256
+# bd9007072c6ab94df5f29d8b96dc65a69cb4406568c75a64022c8121e242b96c).
+# The linked BLE controller contains nine of those functions; the postponed
+# subscriber is inventory-only in this configuration and is therefore not
+# falsely published as a reviewed linked function. These records publish only
+# the recovered function identities and roles. The generated linked IR remains
+# the source of behavior, layout and completeness.
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_bt_kNIbP2qfZqaMNyimIzAy"
+status = "reviewed"
+name = "btdm_broker_attach"
+role = "btdm.broker.attach"
+summary = "Initializes and attaches one broker-source node; generated current-artifact evidence owns its exact memory effects."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_bt_gvLJK4crXTPEAF7nrRbG"
+status = "reviewed"
+name = "btdm_broker_detach"
+role = "btdm.broker.detach"
+summary = "Detaches one broker-source node; generated current-artifact evidence owns its exact list traversal and failure path."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_bt_Hl337IkWeUHjq0EeK30W"
+status = "reviewed"
+name = "btdm_broker_subscribe"
+role = "btdm.broker.subscribe"
+summary = "Subscribes one broker listener; generated current-artifact evidence owns its exact ordering and list effects."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_bt_dYGcLZRYPrOtgA14Jo04"
+status = "reviewed"
+name = "btdm_broker_subscribe_preemptive"
+role = "btdm.broker.subscribe-preemptive"
+summary = "Subscribes one preemptive broker listener; generated current-artifact evidence owns its exact ordering and list effects."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_bt_nT9MeY3nWQXXI5nFg2S8"
+status = "reviewed"
+name = "btdm_broker_unsubscribe"
+role = "btdm.broker.unsubscribe"
+summary = "Unsubscribes one broker listener; generated current-artifact evidence owns its exact search, unlinking and return states."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_bt_2aNNQgpuVlZoKiS5xEYJ"
+status = "reviewed"
+name = "btdm_broker_init"
+role = "btdm.broker.init"
+summary = "Initializes the BTDM broker module; generated current-artifact evidence owns its exact allocation and state publication."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_bt_IC9dhEnPEOc25W2GSTDF"
+status = "reviewed"
+name = "btdm_broker_deinit"
+role = "btdm.broker.deinit"
+summary = "Provides the BTDM broker module deinitialization boundary; the complete current body remains generated evidence."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_bt_fqmZkUKgd5GE6m7i2YFG"
+status = "reviewed"
+name = "btdm_broker_env_init"
+role = "btdm.broker.environment-init"
+summary = "Initializes the BTDM broker environment; generated current-artifact evidence owns its allocation and field initialization."
+accept-incomplete = true
+
+[[functions]]
+profile = "ble-controller-all"
+source = "ble-controller"
+identity = "ble-controller::r_sym_bt_yGU6cF4ldGd8WlytaSqf"
+status = "reviewed"
+name = "btdm_broker_env_deinit"
+role = "btdm.broker.environment-deinit"
+summary = "Deinitializes the BTDM broker environment; generated current-artifact evidence owns its detach and release sequence."
+accept-incomplete = true
+
 # The linked vendor image exports one 508-byte `phy_param` object. This type
 # names only exact machine-level observations that are also classified by the
 # executable semantic harness. It is evidence about the vendor layout, not a

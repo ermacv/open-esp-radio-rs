@@ -211,8 +211,9 @@ cargo blobray project research next --scope ieee802154-baseband-leaves \
 
 The command is read-only unless `--output` is supplied. Each candidate names
 the missing knowledge, confidence, affected scopes, expected impact and a
-typed next action. Report schema 14 ranks unique user actions and
-required public analysis-surface coverage gates:
+typed next action. Report schema 15 ranks unique user actions, exposes the
+reviewed names and roles of referenced functions, and includes required public
+analysis-surface coverage gates:
 independent findings that lead to the same inspection command remain listed as
 `related_findings` instead of consuming duplicate top-N slots. Impact is
 aggregated across the complete action before ranking, not inherited from the
@@ -486,11 +487,12 @@ cargo blobray inspect function archive:phy_chip_set_chan \
 The ordinary view is for understanding vendor behavior. The replacement view
 adds reviewed ownership, production binding, proof strength and verification
 status. These are deliberately separate questions. Function investigation
-schema 15 attaches the same typed blocker-resolution route used by research
+schema 16 attaches the same typed blocker-resolution route used by research
 ranking: owner, producer effect, minimum evidence, optional consumed record
 destination, and exact authenticated root completion predicate. A missing
 backend capability therefore never appears as an instruction to edit the
-function pack.
+function pack. It also exposes a reviewed function's name, role and summary
+independently of whether its ABI signature has already been reviewed.
 
 Use `project browse` for navigation and `advanced ...` only for backend
 debugging or a focused low-level experiment.

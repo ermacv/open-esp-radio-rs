@@ -22,7 +22,7 @@ use crate::{
     review_scopes::{ReviewScopeReport, ReviewScopesDocument},
 };
 
-pub(crate) const RESEARCH_SCHEMA: u32 = 14;
+pub(crate) const RESEARCH_SCHEMA: u32 = 15;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -478,6 +478,18 @@ pub(crate) struct ResearchSelection {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct ResearchReviewedFunction {
+    pub(crate) profile: String,
+    pub(crate) source: String,
+    pub(crate) identity: String,
+    pub(crate) name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) role: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) summary: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct ResearchNextReport {
     pub(crate) schema_version: u32,
     pub(crate) command: String,
@@ -490,6 +502,7 @@ pub(crate) struct ResearchNextReport {
     pub(crate) completion_claim: bool,
     pub(crate) capability_diagnostic: Option<String>,
     pub(crate) verification_diagnostic: Option<String>,
+    pub(crate) reviewed_functions: Vec<ResearchReviewedFunction>,
     pub(crate) inventory: ResearchInventory,
     pub(crate) selection: ResearchSelection,
 }
@@ -726,6 +739,7 @@ pub(crate) fn next(
         actions,
         prerequisites,
     )?;
+    let reviewed_functions = research_reviewed_functions(session, &inventory)?;
     let report = ResearchNextReport {
         schema_version: RESEARCH_SCHEMA,
         command: "research next".to_owned(),
@@ -737,6 +751,7 @@ pub(crate) fn next(
         completion_claim: false,
         capability_diagnostic,
         verification_diagnostic,
+        reviewed_functions,
         inventory,
         selection: ResearchSelection {
             strategy: options.strategy,
@@ -751,6 +766,50 @@ pub(crate) fn next(
     };
     validate_report(&report)?;
     Ok(report)
+}
+
+fn research_reviewed_functions(
+    session: &ProjectSession,
+    inventory: &ResearchInventory,
+) -> Result<Vec<ResearchReviewedFunction>> {
+    let referenced = inventory
+        .findings
+        .iter()
+        .flat_map(|finding| {
+            finding
+                .inspection_function_ids
+                .iter()
+                .chain(&finding.direct_function_ids)
+                .chain(&finding.guaranteed_function_ids)
+                .chain(&finding.optimistic_function_ids)
+                .chain(&finding.marginal_function_ids)
+                .chain(&finding.affected_scope_roots)
+        })
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let Some(workspace) = session.function_workspace()? else {
+        return Ok(Vec::new());
+    };
+    let mut reviewed = workspace
+        .pack
+        .functions
+        .iter()
+        .filter(|function| referenced.contains(function.identity.as_str()))
+        .filter_map(|function| {
+            function.name.as_ref().map(|name| ResearchReviewedFunction {
+                profile: function.profile.clone(),
+                source: function.source.clone(),
+                identity: function.identity.clone(),
+                name: name.clone(),
+                role: function.role.clone(),
+                summary: function.summary.clone(),
+            })
+        })
+        .collect::<Vec<_>>();
+    reviewed.sort_by(|left, right| {
+        (&left.identity, &left.profile).cmp(&(&right.identity, &right.profile))
+    });
+    Ok(reviewed)
 }
 
 fn build_inventory(
@@ -886,6 +945,30 @@ fn validate_report(report: &ResearchNextReport) -> Result<()> {
         ));
     }
     let inventory = &report.inventory;
+    let mut previous_reviewed = None;
+    for function in &report.reviewed_functions {
+        if function.profile.is_empty()
+            || function.source.is_empty()
+            || function.name.is_empty()
+            || function
+                .identity
+                .strip_prefix(&function.source)
+                .and_then(|identity| identity.strip_prefix("::"))
+                .is_none_or(str::is_empty)
+        {
+            return Err(crate::Error::invalid(
+                "research reviewed-function labels must have a profile, source, identity and name",
+            ));
+        }
+        let key = (function.identity.as_str(), function.profile.as_str());
+        if previous_reviewed.is_some_and(|previous| previous >= key) {
+            return Err(crate::Error::invalid(format!(
+                "research reviewed-function labels are not unique and strictly sorted at {:?}",
+                function.identity
+            )));
+        }
+        previous_reviewed = Some(key);
+    }
     validate_sorted_unique_ids(
         "finding",
         inventory.findings.iter().map(|finding| finding.id.as_str()),
@@ -4746,6 +4829,7 @@ mod tests {
             completion_claim: false,
             capability_diagnostic: None,
             verification_diagnostic: None,
+            reviewed_functions: Vec::new(),
             inventory,
             selection: ResearchSelection {
                 strategy,
@@ -5304,7 +5388,7 @@ mod tests {
             None,
         );
 
-        assert_eq!(report.schema_version, 14);
+        assert_eq!(report.schema_version, 15);
         assert_eq!(report.selection.steps.len(), 1);
         assert_eq!(report.inventory.actions.len(), 3);
         assert_eq!(report.inventory.findings.len(), 3);
@@ -6640,7 +6724,7 @@ locator = "RADIO.STATUS"
     }
 
     #[test]
-    fn schema_fourteen_serializes_routes_query_and_executable_actions() {
+    fn schema_fifteen_serializes_routes_query_and_executable_actions() {
         let mut candidate = accumulator("register", "register-model");
         candidate.subject = ResearchSubject::MmioRegister {
             address_space: "radio".to_owned(),
@@ -6665,7 +6749,7 @@ locator = "RADIO.STATUS"
 
         let report = report_from_actions(vec![action], ResearchRankingStrategy::Impact, 10, None);
         let value = serde_json::to_value(report).unwrap();
-        assert_eq!(value["schema_version"], 14);
+        assert_eq!(value["schema_version"], 15);
         assert_eq!(value["finding_query"]["state"], "all");
         assert_eq!(value["finding_query"]["completion_claim"], false);
         assert_eq!(

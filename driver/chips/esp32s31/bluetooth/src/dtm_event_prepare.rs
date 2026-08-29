@@ -714,7 +714,7 @@ mod tests {
         assert_eq!(words.scheduler_item().word_14, 0x5150_0000);
         assert_eq!(words.scheduler_item().word_2c, 0);
         let (_owner, reservation) = prepared.cancel();
-        assert!(timeline.release(reservation));
+        assert!(timeline.release(reservation).is_ok());
         assert!(timeline.is_empty());
     }
 
@@ -748,7 +748,7 @@ mod tests {
             epoch().raw_time_for_scheduler_time(0)
         );
         let (_owner, reservation) = prepared.cancel();
-        assert!(timeline.release(reservation));
+        assert!(timeline.release(reservation).is_ok());
     }
 
     #[test]
@@ -780,8 +780,8 @@ mod tests {
         assert_eq!(scheduler_words.word_10, 2);
 
         let (_owner, resolved) = prepared.cancel();
-        assert!(timeline.release(resolved));
-        assert!(timeline.release(occupied));
+        assert!(timeline.release(resolved).is_ok());
+        assert!(timeline.release(occupied).is_ok());
         assert!(timeline.is_empty());
     }
 
@@ -806,7 +806,7 @@ mod tests {
                 scheduler_item: BluetoothDtmRole::Receiver,
             }
         );
-        assert!(timeline.release(failure.into_reservation()));
+        assert!(timeline.release(failure.into_reservation()).is_ok());
     }
 
     #[test]
@@ -827,6 +827,6 @@ mod tests {
             failure.error(),
             BluetoothSchedulerSequenceAuthorizationError::DeadlineExpired
         );
-        assert!(timeline.release(failure.into_reservation()));
+        assert!(timeline.release(failure.into_reservation()).is_ok());
     }
 }

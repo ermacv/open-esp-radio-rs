@@ -261,7 +261,8 @@ pub use scheduler_lock_modify::{
 };
 pub use scheduler_timeline::{
     BluetoothSchedulerOverlapResolved, BluetoothSchedulerRawWindow, BluetoothSchedulerReservation,
-    BluetoothSchedulerReservationError, BluetoothSchedulerSequenceAuthorizationError,
+    BluetoothSchedulerReservationError, BluetoothSchedulerReservationReleaseError,
+    BluetoothSchedulerReservationReleaseFailure, BluetoothSchedulerSequenceAuthorizationError,
     BluetoothSchedulerSequenceAuthorizationFailure, BluetoothSchedulerSequenceReady,
     BluetoothSchedulerTimeline,
 };

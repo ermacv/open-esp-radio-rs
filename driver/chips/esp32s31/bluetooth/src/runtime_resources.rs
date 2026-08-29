@@ -437,7 +437,7 @@ mod tests {
 
         {
             let (_interrupt, mut task) = resources.split();
-            assert!(task.scheduler_timeline().release(reservation));
+            assert!(task.scheduler_timeline().release(reservation).is_ok());
         }
         assert!(resources.is_pristine());
     }

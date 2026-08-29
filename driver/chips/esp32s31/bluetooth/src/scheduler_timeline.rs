@@ -101,6 +101,15 @@ pub enum BluetoothSchedulerSequenceAuthorizationError {
     DeadlineExpired,
 }
 
+/// Why a source-owned reservation could not be released.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothSchedulerReservationReleaseError {
+    /// The reservation names no slot in this timeline instance.
+    SlotOutOfRange,
+    /// The slot generation or window belongs to another reservation epoch.
+    IdentityMismatch,
+}
+
 /// Affine identity of one source-owned scheduler reservation.
 ///
 /// Dropping this value does not silently remove the occupied interval. The
@@ -149,6 +158,35 @@ impl<State> core::fmt::Debug for BluetoothSchedulerReservation<State> {
             .field("generation", &self.generation)
             .field("window", &self.window)
             .finish_non_exhaustive()
+    }
+}
+
+/// Lossless scheduler-reservation release rejection.
+#[must_use = "a rejected reservation remains occupied and must be retained"]
+pub struct BluetoothSchedulerReservationReleaseFailure<State> {
+    error: BluetoothSchedulerReservationReleaseError,
+    reservation: BluetoothSchedulerReservation<State>,
+}
+
+impl<State> BluetoothSchedulerReservationReleaseFailure<State> {
+    /// Exact reason the timeline rejected this reservation.
+    pub const fn error(&self) -> BluetoothSchedulerReservationReleaseError {
+        self.error
+    }
+
+    /// Recover the unchanged affine reservation.
+    pub fn into_reservation(self) -> BluetoothSchedulerReservation<State> {
+        self.reservation
+    }
+}
+
+impl<State> core::fmt::Debug for BluetoothSchedulerReservationReleaseFailure<State> {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothSchedulerReservationReleaseFailure")
+            .field("error", &self.error)
+            .field("reservation", &self.reservation)
+            .finish()
     }
 }
 
@@ -325,17 +363,27 @@ impl<const CAPACITY: usize> BluetoothSchedulerTimeline<CAPACITY> {
 
     /// Release exactly the reservation named by the affine identity.
     ///
-    /// `false` means the reservation was already removed. A stale generation
-    /// can never release a later occupant of the same slot.
-    pub fn release<State>(&mut self, reservation: BluetoothSchedulerReservation<State>) -> bool {
+    /// Rejection returns the unchanged affine reservation. A stale generation
+    /// can never release a later occupant of the same slot or disappear into a
+    /// lossy boolean result.
+    pub fn release<State>(
+        &mut self,
+        reservation: BluetoothSchedulerReservation<State>,
+    ) -> Result<(), BluetoothSchedulerReservationReleaseFailure<State>> {
         let Some(slot) = self.slots.get_mut(reservation.slot) else {
-            return false;
+            return Err(BluetoothSchedulerReservationReleaseFailure {
+                error: BluetoothSchedulerReservationReleaseError::SlotOutOfRange,
+                reservation,
+            });
         };
         if slot.generation != reservation.generation || slot.window != Some(reservation.window) {
-            return false;
+            return Err(BluetoothSchedulerReservationReleaseFailure {
+                error: BluetoothSchedulerReservationReleaseError::IdentityMismatch,
+                reservation,
+            });
         }
         slot.window = None;
-        true
+        Ok(())
     }
 
     /// Whether no scheduler window remains reserved.
@@ -357,8 +405,8 @@ mod tests {
     };
 
     use super::{
-        BluetoothSchedulerReservationError, BluetoothSchedulerTimeline,
-        BluetoothSchedulerTimelineSlot,
+        BluetoothSchedulerReservationError, BluetoothSchedulerReservationReleaseError,
+        BluetoothSchedulerTimeline, BluetoothSchedulerTimelineSlot,
     };
     use crate::{
         BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample, BluetoothDtmChannel,
@@ -462,11 +510,33 @@ mod tests {
         let mut timeline = BluetoothSchedulerTimeline::<1>::new();
         let first = reserve_raw(&mut timeline, 20, 30, 0).expect("one slot is free");
         let first_generation = first.generation();
-        assert!(timeline.release(first));
+        assert!(timeline.release(first).is_ok());
         assert!(timeline.is_empty());
 
         let second = reserve_raw(&mut timeline, 40, 50, 0).expect("released slot is reusable");
         assert_ne!(second.generation(), first_generation);
+    }
+
+    #[test]
+    fn rejected_release_returns_the_exact_reservation_and_preserves_both_timelines() {
+        let mut source = BluetoothSchedulerTimeline::<1>::new();
+        let reservation = reserve_raw(&mut source, 20, 30, 0).expect("source slot is available");
+        let mut other = BluetoothSchedulerTimeline::<1>::new();
+        let _other_reservation =
+            reserve_raw(&mut other, 40, 50, 0).expect("other slot is available");
+
+        let failure = other
+            .release(reservation)
+            .expect_err("a different occupied identity must reject release");
+        assert_eq!(
+            failure.error(),
+            BluetoothSchedulerReservationReleaseError::IdentityMismatch
+        );
+        let reservation = failure.into_reservation();
+        assert_eq!(reservation.window().start(), 20);
+        assert!(!source.is_empty());
+        assert!(!other.is_empty());
+        assert!(source.release(reservation).is_ok());
     }
 
     #[test]

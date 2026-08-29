@@ -36,7 +36,7 @@ pub enum BluetoothSchedulerInsertionLockModifyGate {
     CheckEnvironmentAndMergeSelection,
 }
 
-/// Actions that insertion-end performs before checking scheduler sleep state.
+/// Actions that insertion-end performs before checking scheduler BUSY state.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[must_use = "the insertion-end prelude must be applied before its continuation"]
 pub struct BluetoothSchedulerInsertionEndPrelude {
@@ -56,14 +56,44 @@ impl BluetoothSchedulerInsertionEndPrelude {
         self.command_to_clear
     }
 
-    /// Continue after the prelude with the current scheduler sleep policy.
-    pub const fn observe_sleep_policy(
+    /// Continue after the prelude with one fresh scheduler BUSY observation.
+    pub const fn observe_scheduler_busy(
         self,
-        sleep_enabled: bool,
-    ) -> BluetoothSchedulerInsertionSleepDecision {
+        scheduler_busy: bool,
+    ) -> BluetoothSchedulerInsertionBusyDecision {
+        if scheduler_busy {
+            BluetoothSchedulerInsertionBusyDecision::NoFurtherHardwareAction
+        } else {
+            BluetoothSchedulerInsertionBusyDecision::ObserveSleepPolicy(
+                BluetoothSchedulerInsertionSleepGate { _private: () },
+            )
+        }
+    }
+}
+
+/// Action after the scheduler BUSY observation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[must_use = "the insertion-end busy decision must be applied or advanced"]
+pub enum BluetoothSchedulerInsertionBusyDecision {
+    /// The scheduler is still busy, so insertion-end performs no later head or
+    /// RUN publication.
+    NoFurtherHardwareAction,
+    /// The scheduler is idle; obtain the current sleep-policy observation.
+    ObserveSleepPolicy(BluetoothSchedulerInsertionSleepGate),
+}
+
+/// Permission to classify the current scheduler sleep policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothSchedulerInsertionSleepGate {
+    _private: (),
+}
+
+impl BluetoothSchedulerInsertionSleepGate {
+    /// Select the next current insertion-end action.
+    pub const fn observe(self, sleep_enabled: bool) -> BluetoothSchedulerInsertionSleepDecision {
         if sleep_enabled {
-            BluetoothSchedulerInsertionSleepDecision::ObserveSchedulerBusy(
-                BluetoothSchedulerInsertionBusyGate { _private: () },
+            BluetoothSchedulerInsertionSleepDecision::ObserveSubmittedItemStatus(
+                BluetoothSchedulerInsertionItemStatusGate { _private: () },
             )
         } else {
             BluetoothSchedulerInsertionSleepDecision::PublishManagerSoftwareHead
@@ -71,45 +101,15 @@ impl BluetoothSchedulerInsertionEndPrelude {
     }
 }
 
-/// Next action selected by the current scheduler sleep policy.
+/// Action after the scheduler is idle and sleep policy has been observed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[must_use = "the insertion-end sleep decision must be applied or advanced"]
 pub enum BluetoothSchedulerInsertionSleepDecision {
     /// Sleep is disabled: publish the manager's software-list head without a
     /// hardware RUN command.
     PublishManagerSoftwareHead,
-    /// Sleep is enabled: obtain a fresh scheduler BUSY observation.
-    ObserveSchedulerBusy(BluetoothSchedulerInsertionBusyGate),
-}
-
-/// Permission to classify one fresh scheduler BUSY observation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothSchedulerInsertionBusyGate {
-    _private: (),
-}
-
-impl BluetoothSchedulerInsertionBusyGate {
-    /// Select the next current insertion-end action.
-    pub const fn observe(self, scheduler_busy: bool) -> BluetoothSchedulerInsertionBusyDecision {
-        if scheduler_busy {
-            BluetoothSchedulerInsertionBusyDecision::NoFurtherHardwareAction
-        } else {
-            BluetoothSchedulerInsertionBusyDecision::ObserveSubmittedItemStatus(
-                BluetoothSchedulerInsertionItemStatusGate { _private: () },
-            )
-        }
-    }
-}
-
-/// Action after the sleep-enabled scheduler BUSY observation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[must_use = "the insertion-end busy decision must be applied or advanced"]
-pub enum BluetoothSchedulerInsertionBusyDecision {
-    /// The scheduler is still busy, so insertion-end performs no later head or
-    /// RUN publication.
-    NoFurtherHardwareAction,
-    /// The scheduler is idle; inspect the submitted item's typed in-flight
-    /// status before deciding whether publication is still required.
+    /// Sleep is enabled: inspect the submitted item's typed in-flight status
+    /// before deciding whether publication is still required.
     ObserveSubmittedItemStatus(BluetoothSchedulerInsertionItemStatusGate),
 }
 
@@ -224,35 +224,35 @@ mod tests {
     }
 
     #[test]
-    fn sleep_disabled_uses_the_manager_head_without_observing_busy_or_status() {
+    fn busy_short_circuits_before_sleep_policy_or_item_status() {
         assert_eq!(
             BluetoothSchedulerInsertionBeginOutcome::Unlocked
                 .insertion_end_prelude()
-                .observe_sleep_policy(false),
-            BluetoothSchedulerInsertionSleepDecision::PublishManagerSoftwareHead
+                .observe_scheduler_busy(true),
+            BluetoothSchedulerInsertionBusyDecision::NoFurtherHardwareAction
         );
     }
 
     #[test]
-    fn sleep_enabled_path_observes_busy_before_item_status() {
-        let busy_gate = match BluetoothSchedulerInsertionBeginOutcome::Unlocked
+    fn idle_path_observes_sleep_policy_before_item_status() {
+        let sleep_gate = match BluetoothSchedulerInsertionBeginOutcome::Unlocked
             .insertion_end_prelude()
-            .observe_sleep_policy(true)
+            .observe_scheduler_busy(false)
         {
-            BluetoothSchedulerInsertionSleepDecision::ObserveSchedulerBusy(gate) => gate,
-            BluetoothSchedulerInsertionSleepDecision::PublishManagerSoftwareHead => {
-                panic!("sleep-enabled insertion skipped its busy observation")
+            BluetoothSchedulerInsertionBusyDecision::ObserveSleepPolicy(gate) => gate,
+            BluetoothSchedulerInsertionBusyDecision::NoFurtherHardwareAction => {
+                panic!("idle insertion skipped its sleep-policy observation")
             }
         };
         assert_eq!(
-            busy_gate.observe(true),
-            BluetoothSchedulerInsertionBusyDecision::NoFurtherHardwareAction
+            sleep_gate.observe(false),
+            BluetoothSchedulerInsertionSleepDecision::PublishManagerSoftwareHead
         );
 
-        let status_gate = match busy_gate.observe(false) {
-            BluetoothSchedulerInsertionBusyDecision::ObserveSubmittedItemStatus(gate) => gate,
-            BluetoothSchedulerInsertionBusyDecision::NoFurtherHardwareAction => {
-                panic!("idle insertion skipped its submitted-item status")
+        let status_gate = match sleep_gate.observe(true) {
+            BluetoothSchedulerInsertionSleepDecision::ObserveSubmittedItemStatus(gate) => gate,
+            BluetoothSchedulerInsertionSleepDecision::PublishManagerSoftwareHead => {
+                panic!("sleep-enabled insertion skipped its submitted-item status")
             }
         };
         assert_eq!(

@@ -219,9 +219,9 @@ pub use scheduler_finished_lists::{
 };
 pub use scheduler_insertion::{
     BluetoothSchedulerInsertionBeginOutcome, BluetoothSchedulerInsertionBusyDecision,
-    BluetoothSchedulerInsertionBusyGate, BluetoothSchedulerInsertionEndPrelude,
-    BluetoothSchedulerInsertionFinalAction, BluetoothSchedulerInsertionItemStatusGate,
-    BluetoothSchedulerInsertionLockModifyGate, BluetoothSchedulerInsertionSleepDecision,
+    BluetoothSchedulerInsertionEndPrelude, BluetoothSchedulerInsertionFinalAction,
+    BluetoothSchedulerInsertionItemStatusGate, BluetoothSchedulerInsertionLockModifyGate,
+    BluetoothSchedulerInsertionSleepDecision, BluetoothSchedulerInsertionSleepGate,
 };
 pub use scheduler_lock_modify::{
     BluetoothSchedulerLockModifyBeginError, BluetoothSchedulerLockModifyEvent,

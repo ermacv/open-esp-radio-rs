@@ -175,10 +175,9 @@ impl RadioPhyRegisters {
 
     /// Select the complete pinned `phy_set_ftm_en` one-bit image.
     pub fn set_ftm_enabled(&mut self, enabled: bool) {
-        self.peripherals
-            .phy_agc_oracle
-            .ftm_control()
-            .modify(|_, w| w.enable().bit(enabled));
+        self.set_ftm_enabled_from_vendor_argument(PhyFtmEnableVendorArgument::new(u32::from(
+            enabled,
+        )));
     }
 
     /// Apply the complete vendor ABI projection through generated PAC masks.
@@ -191,12 +190,7 @@ impl RadioPhyRegisters {
 
     /// Read back the single field owned by `phy_set_ftm_en`.
     pub fn ftm_enabled(&self) -> bool {
-        self.peripherals
-            .phy_agc_oracle
-            .ftm_control()
-            .read()
-            .enable()
-            .bit_is_set()
+        super::svd::field_read::observe_phy_ftm_enabled(&self.peripherals.phy_agc_oracle)
     }
 
     /// Apply complete pinned `phy_reg_update_new` and both finite children.

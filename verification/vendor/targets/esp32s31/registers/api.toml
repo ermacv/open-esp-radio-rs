@@ -2522,6 +2522,13 @@ set-mask = 0x00000000
 exposure = "facade"
 sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
 
+[[field-reads]]
+name = "observe_phy_ftm_enabled"
+peripheral = "PHY_AGC_ORACLE"
+register = "FTM_CONTROL"
+field = "ENABLE"
+sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW", "S31_ESP_PACS_SVD"]
+
 [[masked-register-modifies]]
 name = "publish_station_tbtt_target"
 peripheral = "WIFI_MAC_STA_TBTT_TARGET"

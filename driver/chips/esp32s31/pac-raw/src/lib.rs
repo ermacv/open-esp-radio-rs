@@ -58348,6 +58348,12 @@ pub mod field_read {
         registers.entry(index).read().head_pointer().bits()
     }
 
+    /// Read `PHY_AGC_ORACLE`.`FTM_CONTROL`.`ENABLE` without exposing its register block.
+    #[inline]
+    pub fn observe_phy_ftm_enabled(registers: &crate::PhyAgcOracle) -> bool {
+        registers.ftm_control().read().enable().bit()
+    }
+
     /// Read `BLUETOOTH_CONTROLLER_CORE`.`SLEEP_TIMER_CONTROL`.`LATCH_REQUEST` without exposing its register block.
     #[inline]
     pub fn observe_bluetooth_controller_time_latch_request(

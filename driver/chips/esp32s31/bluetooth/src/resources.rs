@@ -6,6 +6,8 @@ use core::mem::ManuallyDrop;
 use open_esp_radio_esp32s31_hal::BluetoothColdOwner as HalBluetoothColdOwner;
 #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
 use open_esp_radio_esp32s31_hal::BluetoothControllerHalBorrow;
+#[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
+use open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareListsCleared;
 #[cfg(test)]
 use open_esp_radio_esp32s31_hal::BluetoothTaskOwnerReuniteFailure;
 #[cfg(target_arch = "riscv32")]
@@ -208,10 +210,12 @@ impl BluetoothTaskResources {
 
     /// Remove every scheduler hardware-list head through one finite HAL borrow.
     #[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
-    pub(crate) fn clear_scheduler_hardware_list_heads(&mut self) {
+    pub(crate) fn clear_scheduler_hardware_list_heads(
+        &mut self,
+    ) -> BluetoothSchedulerHardwareListsCleared {
         self.registers
             .borrow_bluetooth_controller()
-            .clear_scheduler_hardware_list_heads();
+            .clear_scheduler_hardware_list_heads()
     }
 
     /// Durable logical phase paired with this unique task owner.

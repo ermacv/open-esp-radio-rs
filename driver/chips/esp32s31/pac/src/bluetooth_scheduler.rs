@@ -108,6 +108,26 @@ impl BluetoothSchedulerInsertionCommandStartCleared {
     }
 }
 
+/// Affine proof that every scheduler hardware-list head is empty after the
+/// complete initialization transaction and its trailing device fence.
+///
+/// This does not prove that arbitrary software list containers are empty. The
+/// Controller may use it only to seed a new source-owned exclusive list epoch.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "the cleared hardware-list epoch must be retained by scheduler ownership"]
+pub struct BluetoothSchedulerHardwareListsCleared {
+    _private: (),
+}
+
+#[cfg(feature = "validation-probes")]
+impl BluetoothSchedulerHardwareListsCleared {
+    /// Construct host-only initialization evidence without MMIO.
+    #[doc(hidden)]
+    pub const fn for_validation() -> Self {
+        Self { _private: () }
+    }
+}
+
 /// Affine evidence that the hardware RUN command and trailing device fence
 /// completed.
 ///
@@ -131,7 +151,9 @@ impl BluetoothTaskRegisters {
     /// This method deliberately does not expose the later software event and
     /// list initialization performed by the vendor function, and therefore
     /// does not claim that the complete controller or scheduler is running.
-    pub fn clear_scheduler_hardware_list_heads(&mut self) {
+    pub fn clear_scheduler_hardware_list_heads(
+        &mut self,
+    ) -> BluetoothSchedulerHardwareListsCleared {
         for index in 0..16 {
             super::generated::clear_bluetooth_scheduler_hardware_list_head(
                 &self.bluetooth.btdm_scheduler_table,
@@ -139,6 +161,7 @@ impl BluetoothTaskRegisters {
             );
         }
         device_fence();
+        BluetoothSchedulerHardwareListsCleared { _private: () }
     }
 
     /// Read the currently published head of one scheduler hardware list.

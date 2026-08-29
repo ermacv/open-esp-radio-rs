@@ -43,8 +43,9 @@ pub use open_esp_radio_esp32s31_pac::{
     BluetoothSchedulerExecutionModifyPublished, BluetoothSchedulerFinishedListObservation,
     BluetoothSchedulerFinishedListPop, BluetoothSchedulerHardwareListHead,
     BluetoothSchedulerHardwareListHeadError, BluetoothSchedulerHardwareListHeadPublished,
-    BluetoothSchedulerHardwareListIndex, BluetoothSchedulerHardwareRunCommandPublished,
-    BluetoothSchedulerInsertionCommand, BluetoothSchedulerInsertionCommandStartCleared,
+    BluetoothSchedulerHardwareListIndex, BluetoothSchedulerHardwareListsCleared,
+    BluetoothSchedulerHardwareRunCommandPublished, BluetoothSchedulerInsertionCommand,
+    BluetoothSchedulerInsertionCommandStartCleared,
     BluetoothSchedulerLockModifyInterruptObservation, BluetoothSchedulerLockModifyObservation,
     BluetoothSchedulerLockModifyPublished, BluetoothSchedulerLockModifyRequest,
     BluetoothSchedulerLockModifyTaskObservation, BluetoothSchedulerReferenceCleared,
@@ -930,8 +931,10 @@ impl BluetoothControllerHal<'_> {
     /// establish scheduler, Link Layer or HCI readiness. The borrow proves
     /// exclusive register access, not powered lifecycle state; the caller must
     /// retain the independently established clock/reset prerequisite.
-    pub fn clear_scheduler_hardware_list_heads(&mut self) {
-        self.registers.clear_scheduler_hardware_list_heads();
+    pub fn clear_scheduler_hardware_list_heads(
+        &mut self,
+    ) -> BluetoothSchedulerHardwareListsCleared {
+        self.registers.clear_scheduler_hardware_list_heads()
     }
 
     /// Read the currently published head of one scheduler hardware list.

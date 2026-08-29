@@ -119,8 +119,9 @@ pub use bluetooth_phy_init::{
 };
 pub use bluetooth_scheduler::{
     BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadError,
-    BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHardwareRunCommandPublished,
-    BluetoothSchedulerInsertionCommand, BluetoothSchedulerInsertionCommandStartCleared,
+    BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHardwareListsCleared,
+    BluetoothSchedulerHardwareRunCommandPublished, BluetoothSchedulerInsertionCommand,
+    BluetoothSchedulerInsertionCommandStartCleared,
 };
 pub use bluetooth_scheduler_insertion::{
     BluetoothSchedulerExecutionLockDisposition, BluetoothSchedulerExecutionLockPublished,

@@ -9,7 +9,25 @@ use crate::{
         BluetoothInterruptBankOwner, BluetoothTaskResources, BluetoothTeardownPendingPlatform,
     },
 };
+use open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareListsCleared;
 use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
+
+/// Exclusive empty scheduler-list epoch owned by the source controller.
+///
+/// The PAC proof establishes that no hardware-list head remains published.
+/// This owner adds the independently constructed source-owned software list,
+/// which starts empty and cannot be aliased through a vendor container.
+struct BluetoothSchedulerExclusiveListEpoch {
+    _hardware_lists_cleared: BluetoothSchedulerHardwareListsCleared,
+}
+
+impl BluetoothSchedulerExclusiveListEpoch {
+    const fn new(hardware_lists_cleared: BluetoothSchedulerHardwareListsCleared) -> Self {
+        Self {
+            _hardware_lists_cleared: hardware_lists_cleared,
+        }
+    }
+}
 
 /// Hardware and source-owned software state after scheduler initialization.
 ///
@@ -38,6 +56,7 @@ pub struct BluetoothSchedulerInitialized<
     _platform: BluetoothTeardownPendingPlatform<P>,
     time_scale: BluetoothControllerTimeScale,
     config: BluetoothSchedulerSoftwareConfig,
+    _scheduler_list: BluetoothSchedulerExclusiveListEpoch,
     runtime: BluetoothControllerRuntimeResources<MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
 }
 
@@ -161,9 +180,7 @@ impl<P> BluetoothControllerHalInitialized<P> {
         self,
         runtime: BluetoothControllerRuntimeResources<MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
     ) -> BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY> {
-        self.initialize_scheduler_with(runtime, |task| {
-            task.clear_scheduler_hardware_list_heads();
-        })
+        self.initialize_scheduler_with(runtime, |task| task.clear_scheduler_hardware_list_heads())
     }
 
     #[cfg(test)]
@@ -174,7 +191,9 @@ impl<P> BluetoothControllerHalInitialized<P> {
         self,
         runtime: BluetoothControllerRuntimeResources<MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
     ) -> BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY> {
-        self.initialize_scheduler_with(runtime, |_| {})
+        self.initialize_scheduler_with(runtime, |_| {
+            BluetoothSchedulerHardwareListsCleared::for_validation()
+        })
     }
 
     fn initialize_scheduler_with<
@@ -183,7 +202,9 @@ impl<P> BluetoothControllerHalInitialized<P> {
     >(
         self,
         runtime: BluetoothControllerRuntimeResources<MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>,
-        initialize_hardware: impl FnOnce(&mut BluetoothTaskResources),
+        initialize_hardware: impl FnOnce(
+            &mut BluetoothTaskResources,
+        ) -> BluetoothSchedulerHardwareListsCleared,
     ) -> BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY> {
         assert!(
             runtime.is_pristine(),
@@ -195,13 +216,14 @@ impl<P> BluetoothControllerHalInitialized<P> {
             platform,
             time_scale,
         } = self;
-        initialize_hardware(&mut task);
+        let hardware_lists_cleared = initialize_hardware(&mut task);
         BluetoothSchedulerInitialized {
             task,
             _interrupts: Some(interrupts),
             _platform: platform,
             time_scale,
             config: BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
+            _scheduler_list: BluetoothSchedulerExclusiveListEpoch::new(hardware_lists_cleared),
             runtime,
         }
     }
@@ -216,6 +238,8 @@ mod tests {
     use std::{cell::RefCell, rc::Rc, vec::Vec};
 
     use crate::{BluetoothClockedResources, BluetoothControllerRuntimeResources, BluetoothStopped};
+
+    use super::BluetoothSchedulerHardwareListsCleared;
 
     static PLATFORM_DROPS: AtomicUsize = AtomicUsize::new(0);
 
@@ -245,6 +269,7 @@ mod tests {
             BluetoothControllerRuntimeResources::<4, 3>::new(),
             |_| {
                 scheduler_operations.borrow_mut().push("scheduler-hardware");
+                BluetoothSchedulerHardwareListsCleared::for_validation()
             },
         );
         assert_eq!(

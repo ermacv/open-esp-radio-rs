@@ -464,6 +464,17 @@ Bluetooth core now represents this short-circuited semantic plan without raw
 result codes or register images. It still exposes no safe DTM-to-lock/modify
 admission until merge selection and manager-list ownership are affine.
 
+Scheduler initialization now closes the initial-list prerequisite without
+assuming anything about a vendor container. The PAC returns an affine proof
+only after clearing all sixteen hardware heads and completing its trailing
+device fence. The Controller consumes that proof while constructing its own
+exclusive empty software-list epoch and retains the combined owner through
+all later powered states. This makes the first insertion into that pristine
+epoch a distinct, bounded merge case. It does not authorize insertion yet:
+the exact empty-list descriptor/link writes, release visibility edge and
+insertion-end execution must consume the same item and list owner before a
+hardware-owned state can be formed.
+
 The later common insertion edge supplies the missing source-program order but
 not yet its memory-model contract. It clears item byte `+0x4e`, writes
 `0xffff_ffff` to item status `+0x38`, links the item, publishes its compressed

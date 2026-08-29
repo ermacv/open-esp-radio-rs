@@ -15,14 +15,15 @@ the same singleton types independently, so safe Wi-Fi + Bluetooth composition
 is intentionally impossible today. Wi-Fi must migrate to this coordinator
 before coexistence can be enabled.
 
-The pinned ESP32-S31 PAC names the primary and NRT Controller sources as
-`BT_MAC` and `BT_MAC_INT1`. This adapter compile-checks those identities
-against the reviewed source-124/source-133 policies and contains a
-same-core, level-three bind/disable pair. The primitives remain crate-private:
-shared ISR register storage, NRT dispatch and scheduler-list drain
-must exist before a public live interrupt epoch can safely enable either
-route. The chip crate already owns the positional dynamic-scheduler classifier
-and RTOS-free coalesced wake state; this adapter does not duplicate them.
+The pinned ESP32-S31 PAC names all three Controller sources as `BT_MAC`,
+`MODEM_LP_TIMER`, and `BT_MAC_INT1`. This adapter compile-checks those
+identities against the reviewed source-124/source-127/source-133 policies and
+contains one same-core, level-three bind/disable set. The primitives remain
+crate-private: stable ISR register storage, timer/NRT dispatch and
+scheduler-list drain must exist before a public live interrupt epoch can
+safely enable any route. The chip crate already owns the positional
+dynamic-scheduler classifier, bounded modem-timer queue and RTOS-free
+coalesced wake state; this adapter does not duplicate them.
 
 The Bluetooth clock/reset sequence is pinned to the reviewed ESP-IDF source:
 

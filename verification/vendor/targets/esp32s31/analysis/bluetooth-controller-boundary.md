@@ -59,11 +59,12 @@ SRAM prefix `0x2f00_0000`. The restricted PAC represents these accepted
 domains directly and executes the complete 50-operation MMIO body. It does
 not reproduce the vendor object layout, task, event primitive or IRQ allocator.
 
-The interrupt boundary is now known to contain two CPU routes, not one. The
-primary Bluetooth MAC route uses source 124, level 3 and an IRAM-capable
-handler request. The non-real-time (NRT) Bluetooth MAC INT1 route uses source
-133 and level 3 without requesting IRAM placement. The public OSAL installs
-both on the configured Controller core. The primary setup clears and enables
+The interrupt boundary contains three CPU routes. The primary Bluetooth MAC
+route uses source 124, level 3 and an IRAM-capable handler request. The modem
+low-power timer uses source 127 with the same level and residency requirement.
+The non-real-time (NRT) Bluetooth MAC INT1 route uses source 133 and level 3
+without requesting IRAM placement. The public OSAL installs all three on the
+configured Controller core. The primary setup clears and enables
 baseline groups `0x0000_8000` in bank 0 and `0x0000_1300` in bank 1 before the
 output strobe. Its handler samples masked status; the NRT handler samples its
 dedicated snapshot status. Both acknowledge through the same two W1C clear banks. The restricted
@@ -205,7 +206,7 @@ shared hardware lease can be dropped.
 | `btdm_coex_enable` | profile-optional for standalone | A no-op success is source-correct only while the product contract excludes simultaneous Wi-Fi. |
 | `ble_stack_enable` | unresolved composite | Replace protocol activation; recover any remaining radio-engine activation transaction separately. |
 | `r_btdm_hci_fc_enable` | open-controller replacement | Start a fresh bounded HCI credit epoch in Rust. |
-| `r_btdm_task_enable` | split, still incomplete | The hardware-only 50-operation BTDM HAL-init body, exact baseline fault masks and diagnostic capture, controller-output strobes, generated runtime-timer start command, typed two-route ESP-HAL primitives, affine ISR scheduler MMIO, dynamic scheduler classifier, RTOS-free coalesced wake cell and pure controller-time latch/epoch phases are recovered as separate contracts. Replace the RTOS task with one affine async Controller owner; ordered composition of PHY/BTBB/BLE-engine/output/timer prerequisites, feature-specific NRT policy, live-route composition, the controller-time wake/recheck source, typed selector-4/6 actions, the open scheduler queue and live scheduler activation remain unresolved. |
+| `r_btdm_task_enable` | split, still incomplete | The hardware-only 50-operation BTDM HAL-init body, exact baseline fault masks and diagnostic capture, controller-output strobes, generated runtime-timer start command, typed three-route ESP-HAL primitives, affine ISR scheduler MMIO, dynamic scheduler classifier, RTOS-free coalesced wake cell and pure controller-time latch/epoch phases are recovered as separate contracts. Replace the RTOS task with one affine async Controller owner; ordered composition of PHY/BTBB/BLE-engine/output/timer prerequisites, feature-specific NRT policy, stable ISR storage/live-route composition, the controller-time wake/recheck source, typed selector-4/6 actions, the open scheduler queue and live scheduler activation remain unresolved. |
 | `r_btdm_task_disable` and `ble_stack_disable` | unresolved composite | Define a stop barrier: mask sources, cancel/abort commands, acknowledge residual status, reclaim every packet, then expose a quiesced owner. |
 
 The public OSAL demonstrates that the vendor implementation uses FreeRTOS
@@ -221,7 +222,7 @@ The target path is:
 ```text
 SVD / restricted PAC
   -> shared clock, reset, PHY and BTBB leases
-  -> BLE Controller HAL: primary/NRT IRQs + timer/scheduler + packet memory + radio command
+  -> BLE Controller HAL: primary/timer/NRT IRQs + scheduler + packet memory + radio command
   -> Lower Link Layer (hard-deadline radio-event engine)
   -> Upper Link Layer and LL control procedures
   -> bounded HCI command/event/ACL worker

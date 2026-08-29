@@ -1,4 +1,4 @@
-//! Platform-neutral validation for the two ESP32-S31 Bluetooth CPU routes.
+//! Platform-neutral validation for the three ESP32-S31 Bluetooth CPU routes.
 
 #![forbid(unsafe_code)]
 
@@ -7,17 +7,22 @@ pub(crate) const REQUIRED_PRIORITY_LEVEL: u8 = 3;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum BluetoothInterruptRouteError {
     PrimaryPriority,
+    ModemLpTimerPriority,
     NrtPriority,
     WrongCore,
 }
 
-/// Validate the complete pair before either route can be installed.
+/// Validate the complete route set before any route can be installed.
 pub(crate) const fn validate_route_priorities(
     primary: u8,
+    modem_lp_timer: u8,
     nrt: u8,
 ) -> Result<(), BluetoothInterruptRouteError> {
     if primary != REQUIRED_PRIORITY_LEVEL {
         return Err(BluetoothInterruptRouteError::PrimaryPriority);
+    }
+    if modem_lp_timer != REQUIRED_PRIORITY_LEVEL {
+        return Err(BluetoothInterruptRouteError::ModemLpTimerPriority);
     }
     if nrt != REQUIRED_PRIORITY_LEVEL {
         return Err(BluetoothInterruptRouteError::NrtPriority);
@@ -43,21 +48,29 @@ mod tests {
     };
 
     #[test]
-    fn complete_level_three_pair_is_accepted() {
+    fn complete_level_three_route_set_is_accepted() {
         assert_eq!(
-            validate_route_priorities(REQUIRED_PRIORITY_LEVEL, REQUIRED_PRIORITY_LEVEL),
+            validate_route_priorities(
+                REQUIRED_PRIORITY_LEVEL,
+                REQUIRED_PRIORITY_LEVEL,
+                REQUIRED_PRIORITY_LEVEL,
+            ),
             Ok(())
         );
     }
 
     #[test]
-    fn either_invalid_priority_rejects_the_pair_before_binding() {
+    fn any_invalid_priority_rejects_the_route_set_before_binding() {
         assert_eq!(
-            validate_route_priorities(2, REQUIRED_PRIORITY_LEVEL),
+            validate_route_priorities(2, REQUIRED_PRIORITY_LEVEL, REQUIRED_PRIORITY_LEVEL),
             Err(BluetoothInterruptRouteError::PrimaryPriority)
         );
         assert_eq!(
-            validate_route_priorities(REQUIRED_PRIORITY_LEVEL, 2),
+            validate_route_priorities(REQUIRED_PRIORITY_LEVEL, 2, REQUIRED_PRIORITY_LEVEL),
+            Err(BluetoothInterruptRouteError::ModemLpTimerPriority)
+        );
+        assert_eq!(
+            validate_route_priorities(REQUIRED_PRIORITY_LEVEL, REQUIRED_PRIORITY_LEVEL, 2),
             Err(BluetoothInterruptRouteError::NrtPriority)
         );
     }

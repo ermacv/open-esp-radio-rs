@@ -31,6 +31,10 @@ pub struct EspHalRadioPlatform {
 
 impl EspHalRadioPlatform {
     /// Establish the neutral radio-platform owner after `esp_hal::init`.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "construction consumes the complete non-groupable ESP-HAL singleton set"
+    )]
     pub const fn new(
         modem_syscon: MODEM_SYSCON<'static>,
         modem_lpcon: MODEM_LPCON<'static>,

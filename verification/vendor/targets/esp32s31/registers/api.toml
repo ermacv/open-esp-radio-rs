@@ -8103,3 +8103,145 @@ fields = [{ field = "RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_UNKNOWN", source-bit-of
 value = 0
 exposure = "facade"
 sources = ["BLOB_LIBPHY_PHY_RXIQ_CAL_INIT", "S31_ESP_PACS_SVD"]
+
+[[enum-domains]]
+name = "PhyTxPowerTrackingState"
+description = "Boolean state accepted by the complete PHY baseband TX-power tracking transaction."
+
+[[enum-domains.values]]
+name = "Disabled"
+value = 0
+description = "Disable PHY baseband TX-power tracking."
+sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]
+
+[[enum-domains.values]]
+name = "Enabled"
+value = 1
+description = "Enable PHY baseband TX-power tracking."
+sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_tx_power_tracking_state"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_POWER_TRACK_CONTROL_0"
+fields = [{ field = "TRACK_ENABLE", source-bit-offset = 0 }]
+domain = "PhyTxPowerTrackingState"
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_tx_power_tracking_initial_field"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_POWER_TRACK_CONTROL_0"
+fields = [{ field = "INIT_CLEAR_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_tx_power_tracking_initial_field"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_POWER_TRACK_CONTROL_0"
+fields = [{ field = "INIT_SET_UNKNOWN", source-bit-offset = 0 }]
+value = 0x1f
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_tx_power_tracking_control_low"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_POWER_TRACK_CONTROL_1"
+fields = [{ field = "INIT_CLEAR_LOW_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_tx_power_tracking_control_high"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_POWER_TRACK_CONTROL_1"
+fields = [{ field = "INIT_CLEAR_HIGH_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_tx_power_tracking_value_5"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_POWER_TRACK_CONTROL_3"
+fields = [{ field = "TRACK_VALUE_1_UNKNOWN", source-bit-offset = 0 }]
+value = 0x79
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_tx_power_tracking_value_4"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_POWER_TRACK_CONTROL_3"
+fields = [{ field = "TRACK_VALUE_0_UNKNOWN", source-bit-offset = 0 }]
+value = 0x83
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_tx_power_tracking_value_3"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_POWER_TRACK_CONTROL_2"
+fields = [{ field = "TRACK_VALUE_3_UNKNOWN", source-bit-offset = 0 }]
+value = 0x8d
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_tx_power_tracking_value_2"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_POWER_TRACK_CONTROL_2"
+fields = [{ field = "TRACK_VALUE_2_UNKNOWN", source-bit-offset = 0 }]
+value = 0x96
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_tx_power_tracking_value_1"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_POWER_TRACK_CONTROL_2"
+fields = [{ field = "TRACK_VALUE_1_UNKNOWN", source-bit-offset = 0 }]
+value = 0xa0
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_tx_power_tracking_value_0"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_POWER_TRACK_CONTROL_2"
+fields = [{ field = "TRACK_VALUE_0_UNKNOWN", source-bit-offset = 0 }]
+value = 0xb1
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_tx_power_tracking_value_8"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_POWER_TRACK_CONTROL_1"
+fields = [{ field = "TRACK_VALUE_2_UNKNOWN", source-bit-offset = 0 }]
+value = 0xbe
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_tx_power_tracking_value_7"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_POWER_TRACK_CONTROL_1"
+fields = [{ field = "TRACK_VALUE_1_UNKNOWN", source-bit-offset = 0 }]
+value = 0xd2
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_tx_power_tracking_value_6"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_POWER_TRACK_CONTROL_1"
+fields = [{ field = "TRACK_VALUE_0_UNKNOWN", source-bit-offset = 0 }]
+value = 0xe6
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG", "S31_ESP_PACS_SVD"]

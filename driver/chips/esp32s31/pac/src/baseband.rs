@@ -6,7 +6,7 @@
 
 #![deny(unsafe_code)]
 
-use super::RadioPhyRegisters;
+use super::{RadioPhyRegisters, generated::PhyTxPowerTrackingState};
 
 const fn low_bit(input: u32) -> bool {
     input & 1 != 0
@@ -457,37 +457,28 @@ impl RadioPhyRegisters {
     /// Configure all fourteen ordered TX-power tracking RMW edges.
     pub fn configure_tx_power_tracking(&mut self, enabled: bool) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        bb.tx_power_track_control_0()
-            .modify(|_, w| w.track_enable().bit(enabled));
-        bb.tx_power_track_control_0()
-            .modify(|_, w| w.init_clear_unknown().set(0));
-        bb.tx_power_track_control_0()
-            .modify(|_, w| w.init_set_unknown().set(0x1f));
+        let state = if enabled {
+            PhyTxPowerTrackingState::Enabled
+        } else {
+            PhyTxPowerTrackingState::Disabled
+        };
+        super::generated::configure_tx_power_tracking_state(bb, state);
+        super::generated::clear_tx_power_tracking_initial_field(bb);
+        super::generated::configure_tx_power_tracking_initial_field(bb);
 
         // The complete body clears the adjacent bits through separate reads.
-        bb.tx_power_track_control_1()
-            .modify(|_, w| w.init_clear_low_unknown().clear_bit());
-        bb.tx_power_track_control_1()
-            .modify(|_, w| w.init_clear_high_unknown().clear_bit());
+        super::generated::clear_tx_power_tracking_control_low(bb);
+        super::generated::clear_tx_power_tracking_control_high(bb);
 
-        bb.tx_power_track_control_3()
-            .modify(|_, w| w.track_value_1_unknown().set(0x79));
-        bb.tx_power_track_control_3()
-            .modify(|_, w| w.track_value_0_unknown().set(0x83));
-        bb.tx_power_track_control_2()
-            .modify(|_, w| w.track_value_3_unknown().set(0x8d));
-        bb.tx_power_track_control_2()
-            .modify(|_, w| w.track_value_2_unknown().set(0x96));
-        bb.tx_power_track_control_2()
-            .modify(|_, w| w.track_value_1_unknown().set(0xa0));
-        bb.tx_power_track_control_2()
-            .modify(|_, w| w.track_value_0_unknown().set(0xb1));
-        bb.tx_power_track_control_1()
-            .modify(|_, w| w.track_value_2_unknown().set(0xbe));
-        bb.tx_power_track_control_1()
-            .modify(|_, w| w.track_value_1_unknown().set(0xd2));
-        bb.tx_power_track_control_1()
-            .modify(|_, w| w.track_value_0_unknown().set(0xe6));
+        super::generated::configure_tx_power_tracking_value_5(bb);
+        super::generated::configure_tx_power_tracking_value_4(bb);
+        super::generated::configure_tx_power_tracking_value_3(bb);
+        super::generated::configure_tx_power_tracking_value_2(bb);
+        super::generated::configure_tx_power_tracking_value_1(bb);
+        super::generated::configure_tx_power_tracking_value_0(bb);
+        super::generated::configure_tx_power_tracking_value_8(bb);
+        super::generated::configure_tx_power_tracking_value_7(bb);
+        super::generated::configure_tx_power_tracking_value_6(bb);
     }
 
     /// Apply complete rev0 ROM `phy_btbb_wifi_bb_cfg2`.

@@ -506,6 +506,23 @@ impl PhyLowRateState {
     }
 }
 
+/// Boolean state accepted by the complete PHY baseband TX-power tracking transaction.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PhyTxPowerTrackingState {
+    /// Disable PHY baseband TX-power tracking.
+    Disabled = 0x00000000,
+    /// Enable PHY baseband TX-power tracking.
+    Enabled = 0x00000001,
+}
+
+impl PhyTxPowerTrackingState {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
 /// One reviewed four-bit Wi-Fi packet-traffic-information value. Its scheduling policy remains outside the PAC.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MacPti(u32);
@@ -5881,6 +5898,99 @@ pub(crate) fn clear_rxiq_root_rx_correction_mode_low(
 #[inline]
 pub(crate) fn clear_pbus_rxiq_status_second(registers: &crate::svd::PhyPbus) {
     crate::svd::field_replace_modify::clear_pbus_rxiq_status_second(registers);
+}
+
+/// Typed bridge for the reviewed `configure_tx_power_tracking_state` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_tx_power_tracking_state(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyTxPowerTrackingState,
+) {
+    crate::svd::field_replace_modify::configure_tx_power_tracking_state(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `clear_tx_power_tracking_initial_field` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_tx_power_tracking_initial_field(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::clear_tx_power_tracking_initial_field(registers);
+}
+
+/// Typed bridge for the reviewed `configure_tx_power_tracking_initial_field` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_tx_power_tracking_initial_field(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::configure_tx_power_tracking_initial_field(registers);
+}
+
+/// Typed bridge for the reviewed `clear_tx_power_tracking_control_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_tx_power_tracking_control_low(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::clear_tx_power_tracking_control_low(registers);
+}
+
+/// Typed bridge for the reviewed `clear_tx_power_tracking_control_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_tx_power_tracking_control_high(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::clear_tx_power_tracking_control_high(registers);
+}
+
+/// Typed bridge for the reviewed `configure_tx_power_tracking_value_5` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_tx_power_tracking_value_5(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::configure_tx_power_tracking_value_5(registers);
+}
+
+/// Typed bridge for the reviewed `configure_tx_power_tracking_value_4` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_tx_power_tracking_value_4(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::configure_tx_power_tracking_value_4(registers);
+}
+
+/// Typed bridge for the reviewed `configure_tx_power_tracking_value_3` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_tx_power_tracking_value_3(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::configure_tx_power_tracking_value_3(registers);
+}
+
+/// Typed bridge for the reviewed `configure_tx_power_tracking_value_2` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_tx_power_tracking_value_2(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::configure_tx_power_tracking_value_2(registers);
+}
+
+/// Typed bridge for the reviewed `configure_tx_power_tracking_value_1` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_tx_power_tracking_value_1(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::configure_tx_power_tracking_value_1(registers);
+}
+
+/// Typed bridge for the reviewed `configure_tx_power_tracking_value_0` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_tx_power_tracking_value_0(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::configure_tx_power_tracking_value_0(registers);
+}
+
+/// Typed bridge for the reviewed `configure_tx_power_tracking_value_8` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_tx_power_tracking_value_8(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::configure_tx_power_tracking_value_8(registers);
+}
+
+/// Typed bridge for the reviewed `configure_tx_power_tracking_value_7` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_tx_power_tracking_value_7(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::configure_tx_power_tracking_value_7(registers);
+}
+
+/// Typed bridge for the reviewed `configure_tx_power_tracking_value_6` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_tx_power_tracking_value_6(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::configure_tx_power_tracking_value_6(registers);
 }
 
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.

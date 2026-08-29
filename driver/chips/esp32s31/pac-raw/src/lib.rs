@@ -67894,6 +67894,202 @@ pub mod field_replace_modify {
                 .bit((input & 0x00000001) != 0)
         });
     }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_0 fields [TRACK_ENABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_tx_power_tracking_state(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.tx_power_track_control_0().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.track_enable().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_0 fields [INIT_CLEAR_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_tx_power_tracking_initial_field(registers: &crate::PhyBasebandConfigOracle) {
+        registers.tx_power_track_control_0().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.init_clear_unknown().bits((input & 0x0000000f) as u8) }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_0 fields [INIT_SET_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_tx_power_tracking_initial_field(registers: &crate::PhyBasebandConfigOracle) {
+        registers.tx_power_track_control_0().modify(|_, writer| {
+            let input = 0x0000001f_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.init_set_unknown().bits((input & 0x0000001f) as u8) }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_1 fields [INIT_CLEAR_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_tx_power_tracking_control_low(registers: &crate::PhyBasebandConfigOracle) {
+        registers.tx_power_track_control_1().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .init_clear_low_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_1 fields [INIT_CLEAR_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_tx_power_tracking_control_high(registers: &crate::PhyBasebandConfigOracle) {
+        registers.tx_power_track_control_1().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .init_clear_high_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_3 fields [TRACK_VALUE_1_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_tx_power_tracking_value_5(registers: &crate::PhyBasebandConfigOracle) {
+        registers.tx_power_track_control_3().modify(|_, writer| {
+            let input = 0x00000079_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .track_value_1_unknown()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_3 fields [TRACK_VALUE_0_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_tx_power_tracking_value_4(registers: &crate::PhyBasebandConfigOracle) {
+        registers.tx_power_track_control_3().modify(|_, writer| {
+            let input = 0x00000083_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .track_value_0_unknown()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_2 fields [TRACK_VALUE_3_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_tx_power_tracking_value_3(registers: &crate::PhyBasebandConfigOracle) {
+        registers.tx_power_track_control_2().modify(|_, writer| {
+            let input = 0x0000008d_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .track_value_3_unknown()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_2 fields [TRACK_VALUE_2_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_tx_power_tracking_value_2(registers: &crate::PhyBasebandConfigOracle) {
+        registers.tx_power_track_control_2().modify(|_, writer| {
+            let input = 0x00000096_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .track_value_2_unknown()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_2 fields [TRACK_VALUE_1_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_tx_power_tracking_value_1(registers: &crate::PhyBasebandConfigOracle) {
+        registers.tx_power_track_control_2().modify(|_, writer| {
+            let input = 0x000000a0_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .track_value_1_unknown()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_2 fields [TRACK_VALUE_0_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_tx_power_tracking_value_0(registers: &crate::PhyBasebandConfigOracle) {
+        registers.tx_power_track_control_2().modify(|_, writer| {
+            let input = 0x000000b1_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .track_value_0_unknown()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_1 fields [TRACK_VALUE_2_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_tx_power_tracking_value_8(registers: &crate::PhyBasebandConfigOracle) {
+        registers.tx_power_track_control_1().modify(|_, writer| {
+            let input = 0x000000be_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .track_value_2_unknown()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_1 fields [TRACK_VALUE_1_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_tx_power_tracking_value_7(registers: &crate::PhyBasebandConfigOracle) {
+        registers.tx_power_track_control_1().modify(|_, writer| {
+            let input = 0x000000d2_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .track_value_1_unknown()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_1 fields [TRACK_VALUE_0_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_tx_power_tracking_value_6(registers: &crate::PhyBasebandConfigOracle) {
+        registers.tx_power_track_control_1().modify(|_, writer| {
+            let input = 0x000000e6_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .track_value_0_unknown()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.

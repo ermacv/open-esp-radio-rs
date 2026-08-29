@@ -57,6 +57,17 @@ pub fn configure_hccfr(registers: &mut impl SharedPhyAccess, enabled: bool, valu
     registers.configure_hccfr(enabled, value);
 }
 
+/// Apply complete pinned `phy_config_hccfr` from its unmodified vendor ABI.
+#[cfg(target_arch = "riscv32")]
+pub fn configure_hccfr_from_vendor_arguments(
+    registers: &mut impl SharedPhyAccess,
+    enabled: u32,
+    value: u32,
+) {
+    let registers = phy_pac_mut(registers);
+    registers.configure_hccfr_from_vendor_arguments(enabled, value);
+}
+
 /// Apply either complete branch of pinned `libphy.a[phy_reg.o]::phy_iccfr_en`.
 #[cfg(target_arch = "riscv32")]
 pub fn configure_iccfr_gate(registers: &mut impl SharedPhyAccess, enabled: bool) {
@@ -74,6 +85,18 @@ pub fn configure_forced_iccfr(
 ) {
     let registers = phy_pac_mut(registers);
     registers.configure_forced_iccfr(mode, enabled, value);
+}
+
+/// Apply complete pinned `phy_force_iccfr` from its unmodified vendor ABI.
+#[cfg(target_arch = "riscv32")]
+pub fn configure_forced_iccfr_from_vendor_arguments(
+    registers: &mut impl SharedPhyAccess,
+    mode: u32,
+    enabled: u32,
+    value: u32,
+) {
+    let registers = phy_pac_mut(registers);
+    registers.configure_forced_iccfr_from_vendor_arguments(mode, enabled, value);
 }
 
 /// Apply complete rev0 ROM `phy_btbb_wifi_bb_cfg2`.

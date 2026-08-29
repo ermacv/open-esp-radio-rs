@@ -1290,15 +1290,6 @@ pub extern "C" fn open_phy_trace_phy_close_fe_bb_clk(registers: &mut RadioPhyReg
     open_esp_radio_esp32s31_hal::phy_clock::close_frontend_baseband(registers);
 }
 
-const fn cfr_value_from_vendor_argument(value: u32) -> open_esp_radio_esp32s31_hal::CfrValue {
-    match open_esp_radio_esp32s31_hal::CfrValue::new(
-        value as u16 & open_esp_radio_esp32s31_hal::CfrValue::MAX,
-    ) {
-        Some(value) => value,
-        None => unreachable!(),
-    }
-}
-
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_phy_config_hccfr(
@@ -1306,10 +1297,10 @@ pub extern "C" fn open_phy_trace_phy_config_hccfr(
     value: u32,
     registers: &mut RadioPhyRegisters,
 ) {
-    open_esp_radio_esp32s31_hal::phy_baseband::configure_hccfr(
+    open_esp_radio_esp32s31_hal::phy_baseband::configure_hccfr_from_vendor_arguments(
         registers,
-        enabled & 1 != 0,
-        cfr_value_from_vendor_argument(value),
+        enabled,
+        value,
     );
 }
 
@@ -1327,11 +1318,8 @@ pub extern "C" fn open_phy_trace_phy_force_iccfr(
     value: u32,
     registers: &mut RadioPhyRegisters,
 ) {
-    open_esp_radio_esp32s31_hal::phy_baseband::configure_forced_iccfr(
-        registers,
-        mode & 1 != 0,
-        enabled & 1 != 0,
-        cfr_value_from_vendor_argument(value),
+    open_esp_radio_esp32s31_hal::phy_baseband::configure_forced_iccfr_from_vendor_arguments(
+        registers, mode, enabled, value,
     );
 }
 
@@ -1590,10 +1578,8 @@ pub extern "C" fn open_phy_trace_force_rx_gain(
     gain: u32,
     registers: &mut RadioPhyRegisters,
 ) {
-    open_esp_radio_esp32s31_hal::phy_agc::configure_forced_rx_gain(
-        registers,
-        enabled & 1 != 0,
-        open_esp_radio_esp32s31_hal::ForcedRxGain::new(gain as u8),
+    open_esp_radio_esp32s31_hal::phy_agc::configure_forced_rx_gain_from_vendor_arguments(
+        registers, enabled, gain,
     );
 }
 

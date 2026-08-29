@@ -67229,10 +67229,38 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.HCCFR_CONTROL fields [ENABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_hccfr_enable_from_vendor_argument(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.hccfr_control().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x00000001;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.enable().bit((input & 0x00000001) != 0)
+        });
+    }
+
     /// Replace PHY_BASEBAND_CONFIG_ORACLE.HCCFR_VALUE fields [VALUE] from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_hccfr_value(registers: &crate::PhyBasebandConfigOracle, input: u32) {
         registers.hccfr_value().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.value().bits((input & 0x00000fff) as u16) }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.HCCFR_VALUE fields [VALUE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_hccfr_value_from_vendor_argument(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.hccfr_value().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x00000fff;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe { writer.value().bits((input & 0x00000fff) as u16) }
@@ -67300,6 +67328,20 @@ pub mod field_replace_modify {
     #[inline]
     pub fn configure_forced_iccfr_value(registers: &crate::PhyBasebandConfigOracle, input: u32) {
         registers.iccfr_force_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.force_value().bits((input & 0x00000fff) as u16) }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.ICCFR_FORCE_CONTROL fields [FORCE_VALUE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_forced_iccfr_value_from_vendor_argument(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.iccfr_force_control().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x00000fff;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             unsafe { writer.force_value().bits((input & 0x00000fff) as u16) }
@@ -67448,10 +67490,42 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [CONTROL_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_forced_rx_gain_value_from_vendor_argument(
+        registers: &crate::PhyAgcOracle,
+        input: u32,
+    ) {
+        registers.agc_shared_control().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x000000ff;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .control_high_unknown()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
     /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [PULSE_UNKNOWN] from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn configure_forced_rx_gain_state(registers: &crate::PhyAgcOracle, input: u32) {
         registers.agc_shared_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.pulse_unknown().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [PULSE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_forced_rx_gain_state_from_vendor_argument(
+        registers: &crate::PhyAgcOracle,
+        input: u32,
+    ) {
+        registers.agc_shared_control().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x00000001;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             writer.pulse_unknown().bit((input & 0x00000001) != 0)

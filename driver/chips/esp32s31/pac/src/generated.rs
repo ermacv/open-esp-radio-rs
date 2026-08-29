@@ -5806,6 +5806,18 @@ pub(crate) fn configure_hccfr_enable_state(
     crate::svd::field_replace_modify::configure_hccfr_enable_state(registers, value.bits());
 }
 
+/// Typed bridge for the reviewed `configure_hccfr_enable_from_vendor_argument` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_hccfr_enable_from_vendor_argument(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyVendorRegisterArgument,
+) {
+    crate::svd::field_replace_modify::configure_hccfr_enable_from_vendor_argument(
+        registers,
+        value.get(),
+    );
+}
+
 /// Typed bridge for the reviewed `configure_hccfr_value` field-replacement transaction.
 #[inline]
 pub(crate) fn configure_hccfr_value(
@@ -5813,6 +5825,18 @@ pub(crate) fn configure_hccfr_value(
     value: CfrValue,
 ) {
     crate::svd::field_replace_modify::configure_hccfr_value(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_hccfr_value_from_vendor_argument` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_hccfr_value_from_vendor_argument(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyVendorRegisterArgument,
+) {
+    crate::svd::field_replace_modify::configure_hccfr_value_from_vendor_argument(
+        registers,
+        value.get(),
+    );
 }
 
 /// Typed bridge for the reviewed `configure_iccfr_gate_state` field-replacement transaction.
@@ -5864,6 +5888,18 @@ pub(crate) fn configure_forced_iccfr_value(
     value: CfrValue,
 ) {
     crate::svd::field_replace_modify::configure_forced_iccfr_value(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_forced_iccfr_value_from_vendor_argument` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_forced_iccfr_value_from_vendor_argument(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyVendorRegisterArgument,
+) {
+    crate::svd::field_replace_modify::configure_forced_iccfr_value_from_vendor_argument(
+        registers,
+        value.get(),
+    );
 }
 
 /// Typed bridge for the reviewed `clear_coex_timer_disable` fixed field-replacement transaction.
@@ -5968,6 +6004,18 @@ pub(crate) fn configure_forced_rx_gain_value(
     crate::svd::field_replace_modify::configure_forced_rx_gain_value(registers, value.get());
 }
 
+/// Typed bridge for the reviewed `configure_forced_rx_gain_value_from_vendor_argument` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_forced_rx_gain_value_from_vendor_argument(
+    registers: &crate::svd::PhyAgcOracle,
+    value: PhyVendorRegisterArgument,
+) {
+    crate::svd::field_replace_modify::configure_forced_rx_gain_value_from_vendor_argument(
+        registers,
+        value.get(),
+    );
+}
+
 /// Typed bridge for the reviewed `configure_forced_rx_gain_state` field-replacement transaction.
 #[inline]
 pub(crate) fn configure_forced_rx_gain_state(
@@ -5975,6 +6023,18 @@ pub(crate) fn configure_forced_rx_gain_state(
     value: AgcRuntimeEnableState,
 ) {
     crate::svd::field_replace_modify::configure_forced_rx_gain_state(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `configure_forced_rx_gain_state_from_vendor_argument` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_forced_rx_gain_state_from_vendor_argument(
+    registers: &crate::svd::PhyAgcOracle,
+    value: PhyVendorRegisterArgument,
+) {
+    crate::svd::field_replace_modify::configure_forced_rx_gain_state_from_vendor_argument(
+        registers,
+        value.get(),
+    );
 }
 
 /// Typed bridge for the reviewed `configure_phy_low_rate_first_state` field-replacement transaction.

@@ -125,6 +125,17 @@ pub fn configure_forced_rx_gain(
     registers.configure_forced_rx_gain(enabled, gain);
 }
 
+/// Apply complete rev0 ROM `phy_force_rx_gain` from its unmodified vendor ABI.
+#[cfg(target_arch = "riscv32")]
+pub fn configure_forced_rx_gain_from_vendor_arguments(
+    registers: &mut impl SharedPhyAccess,
+    enabled: u32,
+    gain: u32,
+) {
+    let registers = phy_pac_mut(registers);
+    registers.configure_forced_rx_gain_from_vendor_arguments(enabled, gain);
+}
+
 /// Apply complete rev0 ROM `phy_rx11blr_cfg`.
 #[cfg(target_arch = "riscv32")]
 pub fn configure_rx_11b_low_rate(registers: &mut impl SharedPhyAccess, input: u32) {

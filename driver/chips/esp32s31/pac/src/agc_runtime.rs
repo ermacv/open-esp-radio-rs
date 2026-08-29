@@ -6,6 +6,11 @@ use super::RadioPhyRegisters;
 use super::generated::AgcRuntimeEnableState;
 pub use super::generated::ForcedRxGain;
 
+fn vendor_register_argument(input: u32) -> super::generated::PhyVendorRegisterArgument {
+    super::generated::PhyVendorRegisterArgument::new(input)
+        .expect("every u32 fits the complete generated vendor-argument domain")
+}
+
 const fn agc_runtime_enable_state(enabled: bool) -> AgcRuntimeEnableState {
     if enabled {
         AgcRuntimeEnableState::Enabled
@@ -28,5 +33,19 @@ impl RadioPhyRegisters {
         let agc = &self.peripherals.phy_agc_oracle;
         super::generated::configure_forced_rx_gain_value(agc, gain);
         super::generated::configure_forced_rx_gain_state(agc, agc_runtime_enable_state(enabled));
+    }
+
+    /// Apply complete rev0 ROM `phy_force_rx_gain` directly from its vendor
+    /// ABI while keeping both field projections inside generated PAC code.
+    pub fn configure_forced_rx_gain_from_vendor_arguments(&mut self, enabled: u32, gain: u32) {
+        let agc = &self.peripherals.phy_agc_oracle;
+        super::generated::configure_forced_rx_gain_value_from_vendor_argument(
+            agc,
+            vendor_register_argument(gain),
+        );
+        super::generated::configure_forced_rx_gain_state_from_vendor_argument(
+            agc,
+            vendor_register_argument(enabled),
+        );
     }
 }

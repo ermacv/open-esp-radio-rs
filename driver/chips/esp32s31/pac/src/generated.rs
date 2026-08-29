@@ -2599,6 +2599,18 @@ pub(crate) fn clear_bluetooth_scheduler_insertion_command_1_start(
     );
 }
 
+/// Typed bridge for the reviewed `clear_agc_baseband_update_mode` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_agc_baseband_update_mode(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::clear_agc_baseband_update_mode(registers);
+}
+
+/// Typed bridge for the reviewed `complete_agc_baseband_update_mode` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn complete_agc_baseband_update_mode(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::complete_agc_baseband_update_mode(registers);
+}
+
 /// Typed bridge for the reviewed `clear_bluetooth_memory_list_1_pointer_a` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_bluetooth_memory_list_1_pointer_a(

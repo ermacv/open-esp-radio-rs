@@ -62418,6 +62418,34 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace PHY_AGC_ORACLE.RX_11B_MODE_CONTROL fields [BB_AGC_UPDATE_CLEAR_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_agc_baseband_update_mode(registers: &crate::PhyAgcOracle) {
+        registers.rx_11b_mode_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .bb_agc_update_clear_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.AGC_UPDATE_8078_CONTROL fields [BB_AGC_UPDATE_SET_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn complete_agc_baseband_update_mode(registers: &crate::PhyAgcOracle) {
+        registers.agc_update_8078_control().modify(|_, writer| {
+            let input = 0x00000007_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .bb_agc_update_set_unknown()
+                    .bits((input & 0x00000007) as u8)
+            }
+        });
+    }
+
     /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A fields [COMPRESSED_SRAM_POINTER] from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_memory_list_1_pointer_a(registers: &crate::BluetoothControllerCore) {

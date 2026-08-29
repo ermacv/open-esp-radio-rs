@@ -49,16 +49,14 @@ impl RadioPhyRegisters {
         let agc = &self.peripherals.phy_agc_oracle;
         super::svd::fixed_register_image::initialize_agc_update_8070(agc);
         super::svd::fixed_register_image::initialize_agc_update_78a4(agc);
-        agc.rx_11b_mode_control()
-            .modify(|_, w| w.bb_agc_update_clear_unknown().clear_bit());
+        super::generated::clear_agc_baseband_update_mode(agc);
         super::svd::fixed_register_image::initialize_agc_update_8010(agc);
         super::svd::fixed_register_image::initialize_agc_update_8018(agc);
         super::svd::fixed_register_image::initialize_agc_update_801c(agc);
         super::svd::fixed_register_image::initialize_agc_update_8020(agc);
         super::svd::fixed_register_image::initialize_agc_update_8028(agc);
         super::svd::fixed_register_image::initialize_agc_update_802c(agc);
-        agc.agc_update_8078_control()
-            .modify(|_, w| w.bb_agc_update_set_unknown().set(7));
+        super::generated::complete_agc_baseband_update_mode(agc);
         super::svd::fixed_register_image::initialize_rx_11b_path_control_0(agc);
         super::svd::fixed_register_image::initialize_agc_update_7048(agc);
         super::svd::fixed_register_image::initialize_rx_11b_window_control(agc);

@@ -1882,6 +1882,15 @@ register = "AGC_UPDATE_78A4_OPAQUE"
 value = 0x0001721f
 sources = ["ROM_REV0_PHY_AGC"]
 
+[[field-replace-modifies]]
+name = "clear_agc_baseband_update_mode"
+peripheral = "PHY_AGC_ORACLE"
+register = "RX_11B_MODE_CONTROL"
+fields = [{ field = "BB_AGC_UPDATE_CLEAR_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
 [[fixed-register-images]]
 name = "initialize_agc_update_8010"
 peripheral = "PHY_AGC_ORACLE"
@@ -1923,6 +1932,15 @@ peripheral = "PHY_AGC_ORACLE"
 register = "AGC_UPDATE_802C_OPAQUE"
 value = 0x01000080
 sources = ["ROM_REV0_PHY_AGC"]
+
+[[field-replace-modifies]]
+name = "complete_agc_baseband_update_mode"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_UPDATE_8078_CONTROL"
+fields = [{ field = "BB_AGC_UPDATE_SET_UNKNOWN", source-bit-offset = 0 }]
+value = 7
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
 
 [[fixed-register-images]]
 name = "initialize_rx_11b_path_control_0"

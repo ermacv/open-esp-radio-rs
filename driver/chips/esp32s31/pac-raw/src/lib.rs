@@ -66978,6 +66978,42 @@ pub mod field_replace_modify {
             unsafe { writer.secondary_tick_image().bits(input & 0x00ffffff) }
         });
     }
+
+    /// Replace PHY_AGC_ORACLE.ANTENNA_CONTROL_0 fields [ANTENNA_DIVERSITY_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_antenna_diversity_state(registers: &crate::PhyAgcOracle, input: u32) {
+        registers.antenna_control_0().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .antenna_diversity_enable_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [CONTROL_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_forced_rx_gain_value(registers: &crate::PhyAgcOracle, input: u32) {
+        registers.agc_shared_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .control_high_unknown()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [PULSE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_forced_rx_gain_state(registers: &crate::PhyAgcOracle, input: u32) {
+        registers.agc_shared_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.pulse_unknown().bit((input & 0x00000001) != 0)
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.

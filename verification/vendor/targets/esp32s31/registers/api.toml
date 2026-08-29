@@ -7386,3 +7386,53 @@ domain = "CoexTimerTickInput"
 input-transform = { wrapping-subtract = 0, retain-mask = 0x00ffffff }
 exposure = "facade"
 sources = ["BLOB_LIBCOEX_HW_TIMER", "S31_ESP_PACS_SVD"]
+
+[[bounded-domains]]
+name = "ForcedRxGain"
+description = "Complete byte accepted by the recovered forced-RX-gain transaction."
+min = 0
+max = 0xff
+sources = ["ROM_REV0_PHY_FORCE_RX_GAIN"]
+
+[[enum-domains]]
+name = "AgcRuntimeEnableState"
+description = "Boolean state accepted by reviewed runtime AGC and antenna-diversity transactions."
+
+[[enum-domains.values]]
+name = "Disabled"
+value = 0
+description = "Disable the selected runtime AGC behavior."
+sources = ["ROM_REV0_PHY_ANT_DFT_CFG", "ROM_REV0_PHY_FORCE_RX_GAIN", "S31_ESP_PACS_SVD"]
+
+[[enum-domains.values]]
+name = "Enabled"
+value = 1
+description = "Enable the selected runtime AGC behavior."
+sources = ["ROM_REV0_PHY_ANT_DFT_CFG", "ROM_REV0_PHY_FORCE_RX_GAIN", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_antenna_diversity_state"
+peripheral = "PHY_AGC_ORACLE"
+register = "ANTENNA_CONTROL_0"
+fields = [{ field = "ANTENNA_DIVERSITY_ENABLE_UNKNOWN", source-bit-offset = 0 }]
+domain = "AgcRuntimeEnableState"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_ANT_DFT_CFG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_forced_rx_gain_value"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_SHARED_CONTROL"
+fields = [{ field = "CONTROL_HIGH_UNKNOWN", source-bit-offset = 0 }]
+domain = "ForcedRxGain"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FORCE_RX_GAIN", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_forced_rx_gain_state"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_SHARED_CONTROL"
+fields = [{ field = "PULSE_UNKNOWN", source-bit-offset = 0 }]
+domain = "AgcRuntimeEnableState"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FORCE_RX_GAIN", "S31_ESP_PACS_SVD"]

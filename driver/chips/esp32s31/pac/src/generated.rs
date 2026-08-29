@@ -472,6 +472,23 @@ impl IccfrGateState {
     }
 }
 
+/// Boolean state accepted by reviewed runtime AGC and antenna-diversity transactions.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum AgcRuntimeEnableState {
+    /// Disable the selected runtime AGC behavior.
+    Disabled = 0x00000000,
+    /// Enable the selected runtime AGC behavior.
+    Enabled = 0x00000001,
+}
+
+impl AgcRuntimeEnableState {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
 /// One reviewed four-bit Wi-Fi packet-traffic-information value. Its scheduling policy remains outside the PAC.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MacPti(u32);
@@ -1238,6 +1255,29 @@ impl CfrValue {
     /// Construct a value only when it lies in the reviewed inclusive range.
     pub const fn new(value: u32) -> Option<Self> {
         if value <= 0x00000fff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Complete byte accepted by the recovered forced-RX-gain transaction.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ForcedRxGain(u32);
+
+impl ForcedRxGain {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x000000ff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x000000ff {
             Some(Self(value))
         } else {
             None
@@ -5259,6 +5299,33 @@ pub(crate) fn configure_coex_timer_secondary_target(
         index,
         value.get(),
     );
+}
+
+/// Typed bridge for the reviewed `configure_antenna_diversity_state` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_antenna_diversity_state(
+    registers: &crate::svd::PhyAgcOracle,
+    value: AgcRuntimeEnableState,
+) {
+    crate::svd::field_replace_modify::configure_antenna_diversity_state(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `configure_forced_rx_gain_value` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_forced_rx_gain_value(
+    registers: &crate::svd::PhyAgcOracle,
+    value: ForcedRxGain,
+) {
+    crate::svd::field_replace_modify::configure_forced_rx_gain_value(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_forced_rx_gain_state` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_forced_rx_gain_state(
+    registers: &crate::svd::PhyAgcOracle,
+    value: AgcRuntimeEnableState,
+) {
+    crate::svd::field_replace_modify::configure_forced_rx_gain_state(registers, value.bits());
 }
 
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.

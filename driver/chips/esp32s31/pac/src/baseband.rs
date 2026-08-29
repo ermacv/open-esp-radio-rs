@@ -358,30 +358,33 @@ const fn quarter_db_to_dbm(quarter_db: i32) -> i8 {
     ((quarter_db + 2) >> 2) as i8
 }
 
-const fn tx_iq_gain_field(coefficient: i8) -> u8 {
+const fn saturate_tx_iq_gain(coefficient: i8) -> i8 {
     // Complete ROM `phy_txiq_set_reg` deliberately excludes the most
     // negative two's-complement endpoint before publishing the six-bit
     // field. This differs from merely retaining the low bits of an `i8`.
-    let saturated = if coefficient < -31 {
+    if coefficient < -31 {
         -31
     } else if coefficient > 31 {
         31
     } else {
         coefficient
-    };
-    saturated as u8 & 0x3f
+    }
 }
 
-const fn tx_iq_phase_field(coefficient: i8) -> u8 {
+const fn saturate_tx_iq_phase(coefficient: i8) -> i8 {
     // The seven-bit phase field has the analogous symmetric ROM range.
-    let saturated = if coefficient < -63 {
+    if coefficient < -63 {
         -63
     } else if coefficient > 63 {
         63
     } else {
         coefficient
-    };
-    saturated as u8 & 0x7f
+    }
+}
+
+fn iq_coefficient_image(coefficient: i8) -> super::generated::PhyIqCoefficientImageByte {
+    super::generated::PhyIqCoefficientImageByte::new(u32::from(coefficient as u8))
+        .expect("one coefficient byte fits the complete generated IQ domain")
 }
 
 impl RadioPhyRegisters {
@@ -1018,53 +1021,41 @@ impl RadioPhyRegisters {
 
     /// Select the RX-IQ calibration mode with one fresh RMW.
     pub fn configure_rx_iq_calibration_mode(&mut self) {
-        self.peripherals
-            .phy_baseband_config_oracle
-            .iq_correction_control()
-            .modify(|_, w| {
-                w.rx_iq_correction_mode_high()
-                    .clear_bit()
-                    .rx_iq_correction_mode_low()
-                    .set_bit()
-            });
+        super::generated::configure_phy_rx_iq_calibration_mode(
+            &self.peripherals.phy_baseband_config_oracle,
+        );
     }
 
     /// Publish one signed TX-IQ gain coefficient using the ROM saturation.
     pub fn set_tx_iq_gain_coefficient(&mut self, coefficient: i8) {
-        self.peripherals
-            .phy_baseband_config_oracle
-            .iq_correction_aux()
-            .modify(|_, w| {
-                w.tx_iq_gain_coefficient()
-                    .set(tx_iq_gain_field(coefficient))
-            });
+        super::generated::publish_phy_tx_iq_gain_coefficient(
+            &self.peripherals.phy_baseband_config_oracle,
+            iq_coefficient_image(saturate_tx_iq_gain(coefficient)),
+        );
     }
 
     /// Publish one signed TX-IQ phase coefficient using the ROM saturation.
     pub fn set_tx_iq_phase_coefficient(&mut self, coefficient: i8) {
-        self.peripherals
-            .phy_baseband_config_oracle
-            .iq_correction_aux()
-            .modify(|_, w| {
-                w.tx_iq_phase_coefficient()
-                    .set(tx_iq_phase_field(coefficient))
-            });
+        super::generated::publish_phy_tx_iq_phase_coefficient(
+            &self.peripherals.phy_baseband_config_oracle,
+            iq_coefficient_image(saturate_tx_iq_phase(coefficient)),
+        );
     }
 
     /// Publish one signed RX-IQ gain coefficient using the ROM truncation.
     pub fn set_rx_iq_gain_coefficient(&mut self, coefficient: i8) {
-        self.peripherals
-            .phy_baseband_config_oracle
-            .iq_correction_control()
-            .modify(|_, w| w.rx_iq_gain_coefficient().set(coefficient as u8 & 0x3f));
+        super::generated::publish_phy_rx_iq_gain_coefficient(
+            &self.peripherals.phy_baseband_config_oracle,
+            iq_coefficient_image(coefficient),
+        );
     }
 
     /// Publish one signed RX-IQ phase coefficient using the ROM truncation.
     pub fn set_rx_iq_phase_coefficient(&mut self, coefficient: i8) {
-        self.peripherals
-            .phy_baseband_config_oracle
-            .iq_correction_control()
-            .modify(|_, w| w.rx_iq_phase_coefficient().set(coefficient as u8 & 0x7f));
+        super::generated::publish_phy_rx_iq_phase_coefficient(
+            &self.peripherals.phy_baseband_config_oracle,
+            iq_coefficient_image(coefficient),
+        );
     }
 
     /// Trigger one TX-DC comparator measurement using three fresh RMW edges.

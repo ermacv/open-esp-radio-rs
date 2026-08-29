@@ -869,6 +869,29 @@ impl PhyVendorRegisterArgument {
     }
 }
 
+/// Complete two's-complement coefficient byte accepted by generated PHY IQ field projections after reviewed saturation.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyIqCoefficientImageByte(u32);
+
+impl PhyIqCoefficientImageByte {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x000000ff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x000000ff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Runtime-derived byte ORed into both BLE link-controller transmit-delay fields by one fresh-read transaction.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct BluetoothPhyInitTimingByte(u32);
@@ -6789,6 +6812,50 @@ pub(crate) fn configure_phy_rx_gain_dc_calibration(
     value: PhyRxGainDcCalibrationState,
 ) {
     crate::svd::field_replace_modify::configure_phy_rx_gain_dc_calibration(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `configure_phy_rx_iq_calibration_mode` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_rx_iq_calibration_mode(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::configure_phy_rx_iq_calibration_mode(registers);
+}
+
+/// Typed bridge for the reviewed `publish_phy_tx_iq_gain_coefficient` field-replacement transaction.
+#[inline]
+pub(crate) fn publish_phy_tx_iq_gain_coefficient(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyIqCoefficientImageByte,
+) {
+    crate::svd::field_replace_modify::publish_phy_tx_iq_gain_coefficient(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_phy_tx_iq_phase_coefficient` field-replacement transaction.
+#[inline]
+pub(crate) fn publish_phy_tx_iq_phase_coefficient(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyIqCoefficientImageByte,
+) {
+    crate::svd::field_replace_modify::publish_phy_tx_iq_phase_coefficient(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_phy_rx_iq_gain_coefficient` field-replacement transaction.
+#[inline]
+pub(crate) fn publish_phy_rx_iq_gain_coefficient(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyIqCoefficientImageByte,
+) {
+    crate::svd::field_replace_modify::publish_phy_rx_iq_gain_coefficient(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_phy_rx_iq_phase_coefficient` field-replacement transaction.
+#[inline]
+pub(crate) fn publish_phy_rx_iq_phase_coefficient(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PhyIqCoefficientImageByte,
+) {
+    crate::svd::field_replace_modify::publish_phy_rx_iq_phase_coefficient(registers, value.get());
 }
 
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.

@@ -464,6 +464,13 @@ description = "Set both reviewed RX-gain DC calibration bits before calibration.
 sources = ["ROM_REV0_PHY_SET_RX_GAIN_CAL_DC"]
 
 [[bounded-domains]]
+name = "PhyIqCoefficientImageByte"
+description = "Complete two's-complement coefficient byte accepted by generated PHY IQ field projections after reviewed saturation."
+min = 0
+max = 0xff
+sources = ["ROM_REV0_PHY_IQ_COEFFICIENTS"]
+
+[[bounded-domains]]
 name = "BluetoothPhyInitTimingByte"
 description = "Runtime-derived byte ORed into both BLE link-controller transmit-delay fields by one fresh-read transaction."
 min = 0
@@ -9264,3 +9271,55 @@ fields = [{ field = "CALIBRATION_ENABLE_UNKNOWN", source-bit-offset = 0 }]
 domain = "PhyRxGainDcCalibrationState"
 exposure = "facade"
 sources = ["ROM_REV0_PHY_SET_RX_GAIN_CAL_DC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_rx_iq_calibration_mode"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "IQ_CORRECTION_CONTROL"
+fields = [
+    { field = "RX_IQ_CORRECTION_MODE_LOW", source-bit-offset = 0 },
+    { field = "RX_IQ_CORRECTION_MODE_HIGH", source-bit-offset = 1 },
+]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "publish_phy_tx_iq_gain_coefficient"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "IQ_CORRECTION_AUX"
+fields = [{ field = "TX_IQ_GAIN_COEFFICIENT", source-bit-offset = 0 }]
+domain = "PhyIqCoefficientImageByte"
+input-transform = { wrapping-subtract = 0, retain-mask = 0x3f }
+exposure = "facade"
+sources = ["ROM_REV0_PHY_IQ_COEFFICIENTS", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "publish_phy_tx_iq_phase_coefficient"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "IQ_CORRECTION_AUX"
+fields = [{ field = "TX_IQ_PHASE_COEFFICIENT", source-bit-offset = 0 }]
+domain = "PhyIqCoefficientImageByte"
+input-transform = { wrapping-subtract = 0, retain-mask = 0x7f }
+exposure = "facade"
+sources = ["ROM_REV0_PHY_IQ_COEFFICIENTS", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "publish_phy_rx_iq_gain_coefficient"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "IQ_CORRECTION_CONTROL"
+fields = [{ field = "RX_IQ_GAIN_COEFFICIENT", source-bit-offset = 0 }]
+domain = "PhyIqCoefficientImageByte"
+input-transform = { wrapping-subtract = 0, retain-mask = 0x3f }
+exposure = "facade"
+sources = ["ROM_REV0_PHY_IQ_COEFFICIENTS", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "publish_phy_rx_iq_phase_coefficient"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "IQ_CORRECTION_CONTROL"
+fields = [{ field = "RX_IQ_PHASE_COEFFICIENT", source-bit-offset = 0 }]
+domain = "PhyIqCoefficientImageByte"
+input-transform = { wrapping-subtract = 0, retain-mask = 0x7f }
+exposure = "facade"
+sources = ["ROM_REV0_PHY_IQ_COEFFICIENTS", "S31_ESP_PACS_SVD"]

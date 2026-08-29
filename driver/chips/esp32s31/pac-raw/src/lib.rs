@@ -69488,6 +69488,93 @@ pub mod field_replace_modify {
             }
         });
     }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields [RX_IQ_CORRECTION_MODE_LOW, RX_IQ_CORRECTION_MODE_HIGH] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_rx_iq_calibration_mode(registers: &crate::PhyBasebandConfigOracle) {
+        registers.iq_correction_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .rx_iq_correction_mode_low()
+                .bit((input & 0x00000001) != 0)
+                .rx_iq_correction_mode_high()
+                .bit(((input >> 1) & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields [TX_IQ_GAIN_COEFFICIENT] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_phy_tx_iq_gain_coefficient(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.iq_correction_aux().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x0000003f;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .tx_iq_gain_coefficient()
+                    .bits((input & 0x0000003f) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields [TX_IQ_PHASE_COEFFICIENT] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_phy_tx_iq_phase_coefficient(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.iq_correction_aux().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x0000007f;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .tx_iq_phase_coefficient()
+                    .bits((input & 0x0000007f) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields [RX_IQ_GAIN_COEFFICIENT] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_phy_rx_iq_gain_coefficient(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.iq_correction_control().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x0000003f;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .rx_iq_gain_coefficient()
+                    .bits((input & 0x0000003f) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields [RX_IQ_PHASE_COEFFICIENT] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn publish_phy_rx_iq_phase_coefficient(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.iq_correction_control().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x0000007f;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .rx_iq_phase_coefficient()
+                    .bits((input & 0x0000007f) as u8)
+            }
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.

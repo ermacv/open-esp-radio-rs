@@ -508,16 +508,18 @@ counter. The restricted PAC now exposes only fresh-read OR publication,
 pending-bit observation and the complete latched word. The Bluetooth layer
 owns affine `publication -> in flight -> read ready -> sample` phases and a
 pure wrapping scheduler-epoch projection. Every pending observation returns
-control immediately. A live owner, registered wake or bounded timer recheck,
-and the MMIO ordering fence remain absent, so this is not yet a production
-time source.
+control immediately. The same powered Controller owner now exposes request,
+generation-scoped abandon and one-observation recheck operations; PAC
+publication includes its device fence. A registered wake or proven bounded
+recheck source, effective counter width and physical unit remain absent, so
+this is not yet a deadline-ready production time source.
 
 ## What belongs in each open layer
 
 | Layer | DTM responsibility | Current publication gate |
 | --- | --- | --- |
-| SVD / restricted PAC | Typed controller-window fields, complete publication/ack order, controller-time reads and the SRAM compression domain | Lock/modify and always-awake time-latch fields, exact images and wait predicates are finite. Live cross-owner MMIO and the remaining scheduler commands are absent. |
-| HAL | Powered controller epoch, common RF wake, cache/device fences, timer conversion, same-core IRQ routing and bounded stop/quiesce | Clock/PHY/BTBB components exist separately; the time-scale transform and pure affine latch phases exist, but no reachable composed epoch, live latch owner or powered rollback exists. |
+| SVD / restricted PAC | Typed controller-window fields, complete publication/ack order, controller-time reads and the SRAM compression domain | Lock/modify and always-awake time-latch fields, exact images, wait predicates and finite live MMIO are present. The remaining scheduler commands are absent. |
+| HAL | Powered controller epoch, common RF wake, cache/device fences, timer conversion, same-core IRQ routing and bounded stop/quiesce | The powered Controller retains the unique live latch owner and exposes finite request/recheck operations with generation-safe cancellation drain. A proven wake/recheck source, physical counter contract and powered rollback remain absent. |
 | Scheduler core | Affine event item, ordered deadline queue, insert/abort/complete states, hardware-head replacement and consistency check | One head lock/modify operation has affine event-driven phases; nine DTM scheduler-item words and their typed channel/role/PHY inputs have exact pre-insert transforms. The finished-item/recycle call chain and DTM callback edge are mapped; the open queue, raw status source, fences and abort path are absent. |
 | Packet memory | Static aligned TX/RX/link-state slots with `CPU -> prepared -> hardware -> completed -> CPU` ownership | A separate no-heap controller-memory crate reserves every reviewed per-event DTM link-graph allocation with four-byte alignment: link state, scheduler item/context, three role-specific headers and complete TX/RX packet slots. The separate `0x28`-byte DTM environment remains LLL state. Target binding gives a movable CPU owner one non-movable static allocation, validates the complete physical SRAM extent before mutation and installs the bound headers, five private-chain anchors and scheduler-item link. TX preparation consumes that owner and yields packet readiness only after a total declared-byte copy; mutable TX-slot access is unavailable after binding. TX/RX re-arm sentinels, list routing and positional result parsing are also exact CPU-owned components. Production placement ownership, the packet-engine latch/consumer, cacheability/fences and affine hardware completion/reclaim states are absent. |
 | LLL DTM | Parameter validation, channel/PHY/pattern image, TX/RX event state machine and receive counter | The complete channel domain, composed frequency lookup, role-dependent PHY/rate mapping, all eight bounded TX payload patterns, packet-duration/minimum-interval/tick arithmetic, constant-time event catch-up and one-word RX accounting transition are typed. TX and RX event plans are distinct states: TX requires a prepared graph and retains its exact pattern/length through scheduler bookkeeping, while RX accepts an ordinary bound graph. Exact command roles, allocation rollback, descriptor chain anchors, wrapping received-packet count and unconditional handoff to the append decision are mapped. The ordinary re-arm is fail-closed on the swap bit; remaining field meanings, swap ownership, live item/buffer ownership, abort and quiescence are incomplete. |
@@ -556,12 +558,12 @@ The remaining work should proceed in narrow, testable increments:
    Connect task-side publication with fresh ISR-side observations through one
    lost-wake-safe owner. Keep the result positional and do not couple it to
    radio completion. Do not create a task-side alias for `SCHEDULER_STATE`.
-2. **Compose the controller timebase owner.** The latch address/order,
-   standalone scale arithmetic, affine nonblocking request phases and pure
-   wrapping epoch projection now exist. Bind them to the sole task-side MMIO
-   owner and a lost-wake-safe registered event or bounded timer recheck; prove
-   the effective counter width, physical unit and required ordering fence
-   before scheduler deadlines become live. Compose the now-exact DTM
+2. **Close the controller timebase source.** The latch address/order,
+   standalone scale arithmetic, affine nonblocking request phases, pure
+   wrapping epoch projection and sole powered task-side MMIO owner now exist.
+   Add a lost-wake-safe registered event or proven bounded timer recheck and
+   establish the effective counter width and physical unit before scheduler
+   deadlines become live. Compose the now-exact DTM
    microsecond interval with the recovered environment remainder only after
    that value has a source-owned initialization path.
 3. **Close the hardware-consumed descriptor.** Eight link-state reset words,

@@ -4,17 +4,19 @@
 use core::mem::ManuallyDrop;
 
 use open_esp_radio_esp32s31_hal::BluetoothColdOwner as HalBluetoothColdOwner;
+#[cfg(any(target_arch = "riscv32", feature = "validation-probes"))]
+use open_esp_radio_esp32s31_hal::BluetoothControllerHalBorrow;
 #[cfg(test)]
 use open_esp_radio_esp32s31_hal::BluetoothTaskOwnerReuniteFailure;
-#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
-use open_esp_radio_esp32s31_hal::{
-    BluetoothControllerHalBorrow, BluetoothInterruptSetupOwner as HalBluetoothInterruptSetupOwner,
-    BluetoothTaskOwner as HalBluetoothTaskOwner,
-};
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::{
     BluetoothInterruptOutputPreparedOwner, BluetoothModemLpTimerLowPowerHardwareInitializedOwner,
     BluetoothModemLpTimerOwnerError, BluetoothPhyRegisterInitInputs,
+};
+#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
+use open_esp_radio_esp32s31_hal::{
+    BluetoothInterruptSetupOwner as HalBluetoothInterruptSetupOwner,
+    BluetoothTaskOwner as HalBluetoothTaskOwner,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_esp32s31_hal::{BluetoothSharedPhyBorrow, SharedPhyHal};
@@ -23,12 +25,13 @@ use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
 use open_esp_radio_esp32s31_pac::RadioHardware;
 use open_esp_radio_esp32s31_pac::RadioPhyReleaseError;
 
-#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
+#[cfg(target_arch = "riscv32")]
 use crate::controller_time::{
     BluetoothControllerTimeEventError, BluetoothControllerTimeEventStep,
     BluetoothControllerTimeRequest, BluetoothControllerTimeRequestError,
-    BluetoothControllerTimeWorker, BluetoothControllerTimeWorkerPhase,
 };
+#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
+use crate::controller_time::{BluetoothControllerTimeWorker, BluetoothControllerTimeWorkerPhase};
 
 /// Complete cold Bluetooth owner before any powered lifecycle transaction.
 ///
@@ -212,28 +215,17 @@ impl BluetoothTaskResources {
     }
 
     /// Durable logical phase paired with this unique task owner.
-    #[allow(
-        dead_code,
-        reason = "the time worker awaits the powered controller runner composition"
-    )]
     pub(crate) const fn controller_time_phase(&self) -> BluetoothControllerTimeWorkerPhase {
         self.controller_time.phase()
     }
 
     /// Whether the runner must retain a durable recheck event or deadline.
-    #[allow(
-        dead_code,
-        reason = "the time worker awaits the powered controller runner composition"
-    )]
     pub(crate) const fn controller_time_needs_recheck(&self) -> bool {
         self.controller_time.needs_recheck()
     }
 
     /// Publish one request while retaining worker and PAC ownership together.
-    #[allow(
-        dead_code,
-        reason = "the time worker awaits the powered controller runner composition"
-    )]
+    #[cfg(target_arch = "riscv32")]
     pub(crate) fn request_controller_time(
         &mut self,
     ) -> Result<BluetoothControllerTimeRequest, BluetoothControllerTimeRequestError> {
@@ -246,10 +238,7 @@ impl BluetoothTaskResources {
     }
 
     /// Abandon only the matching logical request; late cancellation is inert.
-    #[allow(
-        dead_code,
-        reason = "the time worker awaits the powered controller runner composition"
-    )]
+    #[cfg(target_arch = "riscv32")]
     pub(crate) fn abandon_controller_time(
         &mut self,
         request: BluetoothControllerTimeRequest,
@@ -258,10 +247,7 @@ impl BluetoothTaskResources {
     }
 
     /// Perform one bounded hardware recheck with a short HAL borrow.
-    #[allow(
-        dead_code,
-        reason = "the time worker awaits the powered controller runner composition"
-    )]
+    #[cfg(target_arch = "riscv32")]
     pub(crate) fn recheck_controller_time(
         &mut self,
     ) -> Result<BluetoothControllerTimeEventStep, BluetoothControllerTimeEventError> {

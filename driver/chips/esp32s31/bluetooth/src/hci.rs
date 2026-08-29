@@ -451,6 +451,16 @@ where
     }
 
     #[cfg(target_arch = "riscv32")]
+    pub(crate) const fn controller_time_phase(&self) -> crate::BluetoothControllerTimeWorkerPhase {
+        self.controller.scheduler.controller_time_phase()
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) const fn controller_time_needs_recheck(&self) -> bool {
+        self.controller.scheduler.controller_time_needs_recheck()
+    }
+
+    #[cfg(target_arch = "riscv32")]
     pub(crate) fn take_interrupt_owner(&mut self) -> crate::resources::BluetoothInterruptBankOwner {
         self.controller.scheduler.take_interrupt_owner()
     }

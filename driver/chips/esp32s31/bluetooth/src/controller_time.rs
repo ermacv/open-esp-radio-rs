@@ -79,11 +79,11 @@ mod worker {
     /// This prevents a late cancellation from abandoning a newer request.
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     #[must_use = "the request identity must be completed or abandoned"]
-    pub(crate) struct BluetoothControllerTimeRequest(u64);
+    pub struct BluetoothControllerTimeRequest(u64);
 
     /// Durable logical phase retained between executor events.
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    pub(crate) enum BluetoothControllerTimeWorkerPhase {
+    pub enum BluetoothControllerTimeWorkerPhase {
         /// No logical or hardware request belongs to this worker.
         Idle,
         /// This worker published the request and may return its completed sample.
@@ -97,7 +97,7 @@ mod worker {
 
     /// Why a fresh logical controller-time request was not published.
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    pub(crate) enum BluetoothControllerTimeRequestError {
+    pub enum BluetoothControllerTimeRequestError {
         /// Another logical request or orphan drain is active; no MMIO occurred.
         Busy,
         /// The lower owner already held a request although the durable worker was
@@ -112,7 +112,7 @@ mod worker {
     /// Result of exactly one controller-time recheck event.
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     #[must_use = "the worker event outcome must drive the next controller action"]
-    pub(crate) enum BluetoothControllerTimeEventStep {
+    pub enum BluetoothControllerTimeEventStep {
         /// No transaction was active; no MMIO occurred.
         Idle,
         /// Hardware still owns the request; arrange one later recheck event.
@@ -131,7 +131,7 @@ mod worker {
 
     /// Fail-stop result of a controller-time recheck event.
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    pub(crate) enum BluetoothControllerTimeEventError {
+    pub enum BluetoothControllerTimeEventError {
         /// The lower sticky owner disappeared while the worker was active.
         OwnershipLost,
         /// A previous ownership mismatch already stopped this worker.
@@ -303,10 +303,12 @@ mod worker {
 #[cfg(test)]
 pub(crate) use worker::BluetoothControllerTimeHardware;
 #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
-pub(crate) use worker::{
+pub(crate) use worker::BluetoothControllerTimeWorker;
+#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
+pub use worker::{
     BluetoothControllerTimeEventError, BluetoothControllerTimeEventStep,
     BluetoothControllerTimeRequest, BluetoothControllerTimeRequestError,
-    BluetoothControllerTimeWorker, BluetoothControllerTimeWorkerPhase,
+    BluetoothControllerTimeWorkerPhase,
 };
 
 /// Raw-time anchor paired with the BLE scheduler's positional epoch.

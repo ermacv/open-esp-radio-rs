@@ -48,6 +48,7 @@ impl BluetoothModemLpTimerWorkerWakeCell {
         }
     }
 
+    #[cfg(any(target_arch = "riscv32", test))]
     fn publish_from_interrupt(&self) -> BluetoothModemLpTimerWorkerWakePublication {
         if self.pending.swap(true, Ordering::AcqRel) {
             BluetoothModemLpTimerWorkerWakePublication::Coalesced
@@ -57,6 +58,7 @@ impl BluetoothModemLpTimerWorkerWakeCell {
     }
 
     /// Close the current wake epoch after task context acquired the owner.
+    #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) fn take(&self) -> bool {
         self.pending.swap(false, Ordering::AcqRel)
     }
@@ -102,6 +104,7 @@ pub enum BluetoothModemLpTimerPublishedInterruptStep {
 
 impl BluetoothModemLpTimerStableInterruptStep {
     /// Publish task readiness while preserving the exact register disposition.
+    #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) fn publish(
         self,
         worker_wake: &BluetoothModemLpTimerWorkerWakeCell,

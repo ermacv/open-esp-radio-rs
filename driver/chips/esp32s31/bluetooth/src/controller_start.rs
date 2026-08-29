@@ -11,12 +11,15 @@ use open_esp_radio_esp32s31_hal::{
 
 #[cfg(target_arch = "riscv32")]
 use crate::{
-    BluetoothControllerBlePhyEngineInitialized, BluetoothModemLpTimerEventCell,
-    BluetoothModemLpTimerEventPublication, BluetoothModemLpTimerExpiration,
-    BluetoothModemLpTimerExpirationPending, BluetoothModemLpTimerPublishedInterruptStep,
-    BluetoothModemLpTimerSoftwareStep, BluetoothModemLpTimerSoftwareWork,
-    BluetoothModemLpTimerStableInterruptStep, BluetoothNrtDefaultInterruptEpoch,
-    BluetoothPrimaryInterruptStep, BluetoothPrimaryPublishedInterruptStep,
+    BluetoothControllerBlePhyEngineInitialized, BluetoothControllerTimeEventError,
+    BluetoothControllerTimeEventStep, BluetoothControllerTimeRequest,
+    BluetoothControllerTimeRequestError, BluetoothControllerTimeWorkerPhase,
+    BluetoothModemLpTimerEventCell, BluetoothModemLpTimerEventPublication,
+    BluetoothModemLpTimerExpiration, BluetoothModemLpTimerExpirationPending,
+    BluetoothModemLpTimerPublishedInterruptStep, BluetoothModemLpTimerSoftwareStep,
+    BluetoothModemLpTimerSoftwareWork, BluetoothModemLpTimerStableInterruptStep,
+    BluetoothNrtDefaultInterruptEpoch, BluetoothPrimaryInterruptStep,
+    BluetoothPrimaryPublishedInterruptStep,
 };
 
 /// Powered Controller after IRQ-output preparation and runtime-timer start.
@@ -476,6 +479,39 @@ where
             events,
             storage: &self._storage,
         })
+    }
+
+    /// Inspect the durable always-awake controller-time worker phase.
+    pub const fn controller_time_phase(&self) -> BluetoothControllerTimeWorkerPhase {
+        self.initialized.controller_time_phase()
+    }
+
+    /// Whether a bounded external event must recheck the hardware latch.
+    pub const fn controller_time_needs_recheck(&self) -> bool {
+        self.initialized.controller_time_needs_recheck()
+    }
+
+    /// Publish one controller-time latch request without polling.
+    ///
+    /// The returned identity must be matched by a later sample or explicit
+    /// abandonment. `recheck_controller_time` performs at most one fresh
+    /// hardware observation per call.
+    pub fn request_controller_time(
+        &mut self,
+    ) -> Result<BluetoothControllerTimeRequest, BluetoothControllerTimeRequestError> {
+        self.initialized.request_controller_time()
+    }
+
+    /// Abandon only the matching logical request while retaining any hardware work.
+    pub fn abandon_controller_time(&mut self, request: BluetoothControllerTimeRequest) -> bool {
+        self.initialized.abandon_controller_time(request)
+    }
+
+    /// Perform one bounded controller-time latch recheck.
+    pub fn recheck_controller_time(
+        &mut self,
+    ) -> Result<BluetoothControllerTimeEventStep, BluetoothControllerTimeEventError> {
+        self.initialized.recheck_controller_time()
     }
 
     /// Service and durably publish one primary source-124 epoch.

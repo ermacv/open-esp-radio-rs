@@ -173,6 +173,53 @@ where
             .controller
             .modem_lp_timer_worker_wake()
     }
+
+    pub(crate) const fn controller_time_phase(&self) -> crate::BluetoothControllerTimeWorkerPhase {
+        self.initialized
+            .initialized
+            .controller
+            .controller_time_phase()
+    }
+
+    pub(crate) const fn controller_time_needs_recheck(&self) -> bool {
+        self.initialized
+            .initialized
+            .controller
+            .controller_time_needs_recheck()
+    }
+
+    pub(crate) fn request_controller_time(
+        &mut self,
+    ) -> Result<crate::BluetoothControllerTimeRequest, crate::BluetoothControllerTimeRequestError>
+    {
+        self.initialized
+            .initialized
+            .controller
+            .task_mut()
+            .request_controller_time()
+    }
+
+    pub(crate) fn abandon_controller_time(
+        &mut self,
+        request: crate::BluetoothControllerTimeRequest,
+    ) -> bool {
+        self.initialized
+            .initialized
+            .controller
+            .task_mut()
+            .abandon_controller_time(request)
+    }
+
+    pub(crate) fn recheck_controller_time(
+        &mut self,
+    ) -> Result<crate::BluetoothControllerTimeEventStep, crate::BluetoothControllerTimeEventError>
+    {
+        self.initialized
+            .initialized
+            .controller
+            .task_mut()
+            .recheck_controller_time()
+    }
 }
 
 #[cfg(target_arch = "riscv32")]

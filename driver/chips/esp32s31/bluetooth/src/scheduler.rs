@@ -72,6 +72,18 @@ impl<P, const MODEM_TIMER_CAPACITY: usize> BluetoothSchedulerInitialized<P, MODE
         &mut self.task
     }
 
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) const fn controller_time_phase(
+        &self,
+    ) -> crate::controller_time::BluetoothControllerTimeWorkerPhase {
+        self.task.controller_time_phase()
+    }
+
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) const fn controller_time_needs_recheck(&self) -> bool {
+        self.task.controller_time_needs_recheck()
+    }
+
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn take_interrupt_owner(&mut self) -> BluetoothInterruptBankOwner {
         self._interrupts
@@ -245,6 +257,11 @@ mod tests {
             ["controller-hal", "scheduler-hardware"]
         );
         assert_eq!(scheduler.controller_time_scale(), time_scale);
+        assert_eq!(
+            scheduler.controller_time_phase(),
+            crate::controller_time::BluetoothControllerTimeWorkerPhase::Idle
+        );
+        assert!(!scheduler.controller_time_needs_recheck());
         assert_eq!(scheduler.modem_timer_capacity(), 4);
         assert!(scheduler.runtime_is_pristine());
         let (interrupt, task) = scheduler.split_runtime();

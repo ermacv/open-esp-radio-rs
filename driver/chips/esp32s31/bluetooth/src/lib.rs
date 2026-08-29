@@ -104,6 +104,12 @@ pub use controller_start::{
     BluetoothModemLpTimerSoftwareOwnerStorage, BluetoothSharedInterruptDispatchStorage,
 };
 pub use controller_time::{BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample};
+#[cfg(target_arch = "riscv32")]
+pub use controller_time::{
+    BluetoothControllerTimeEventError, BluetoothControllerTimeEventStep,
+    BluetoothControllerTimeRequest, BluetoothControllerTimeRequestError,
+    BluetoothControllerTimeWorkerPhase,
+};
 pub use dtm_event_prepare::{
     BluetoothDtmReceiverEvent, BluetoothDtmReviewedEventWordsPlan,
     BluetoothDtmReviewedEventWordsPlanError, BluetoothDtmReviewedEventWordsPrepared,

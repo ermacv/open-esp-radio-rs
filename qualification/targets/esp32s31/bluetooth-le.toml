@@ -155,6 +155,10 @@ owners = [
   { path = "driver/chips/esp32s31/hal/src/bluetooth.rs", token = "begin_controller_time_latch" },
   { path = "driver/chips/esp32s31/hal/src/bluetooth.rs", token = "step_controller_time_latch" },
   { path = "driver/chips/esp32s31/bluetooth/src/controller_time.rs", token = "BluetoothControllerSchedulerEpoch" },
+  { path = "driver/chips/esp32s31/bluetooth/src/controller_time.rs", token = "BluetoothControllerTimeRequest" },
+  { path = "driver/chips/esp32s31/bluetooth/src/controller_time.rs", token = "BluetoothControllerTimeEventStep" },
+  { path = "driver/chips/esp32s31/bluetooth/src/controller_start.rs", token = "request_controller_time" },
+  { path = "driver/chips/esp32s31/bluetooth/src/controller_start.rs", token = "recheck_controller_time" },
   { path = "driver/adapters/embassy/esp32s31-bluetooth/src/lib.rs", token = "EmbassyBluetoothRuntimeWakers" },
   { path = "driver/adapters/embassy/esp32s31-bluetooth/src/lib.rs", token = "EmbassyBluetoothWake" },
 ]
@@ -172,6 +176,7 @@ tests = [
   { path = "driver/chips/esp32s31/bluetooth/src/controller_time.rs", token = "lower_ownership_collision_is_sticky_fail_stop" },
   { path = "driver/chips/esp32s31/bluetooth/src/controller_time.rs", token = "ownership_loss_is_sticky_fail_stop_without_more_hardware_access" },
   { path = "driver/chips/esp32s31/bluetooth/src/controller_time.rs", token = "scheduler_epoch_matches_forward_backward_and_wrapping_branches" },
+  { path = "driver/chips/esp32s31/bluetooth/src/scheduler.rs", token = "controller_hal_precedes_complete_scheduler_init_and_arms_fail_stop" },
   { path = "driver/adapters/embassy/esp32s31-bluetooth/src/lib.rs", token = "scheduler_wins_a_ready_tie_with_external_recheck" },
   { path = "driver/adapters/embassy/esp32s31-bluetooth/src/lib.rs", token = "external_recheck_does_not_consume_a_later_scheduler_batch" },
 ]
@@ -179,7 +184,7 @@ vendor-anchors = [
   { path = "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md", token = "SLEEP_TIMER_CONTROL.LATCH_REQUEST" },
 ]
 gaps = [
-  { axis = "implementation", id = "powered-reset-idle-lifecycle-and-live-worker-adapter-composition-missing" },
+  { axis = "implementation", id = "powered-time-api-composed-but-live-scheduling-client-missing" },
   { axis = "vendor", id = "effective-counter-width-physical-unit-and-wake-source-missing" },
   { axis = "hil", id = "controller-time-latch-and-wrap-cell-missing" },
   { axis = "async", id = "live-controller-runner-and-proven-absolute-recheck-source-missing" },

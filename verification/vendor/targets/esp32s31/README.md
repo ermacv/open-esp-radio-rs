@@ -108,18 +108,17 @@ retain provenance and navigation authority.
 
 The cold ownership slice is lossless: one neutral radio root can enter either
 the exclusive Wi-Fi or Bluetooth route and return before power-up. The public
-Bluetooth init path now consumes that cold owner through clock/reset and the
-verified sixteen-entry scheduler-table low-bit transaction, then stops. It
-does not skip the still-missing event/list, LP, BLE-stack and HCI init stages.
-The separately implemented common-PHY and finite `bt_bb_v2_init_cmplx(1)`
-components preserve their correct enable-stage order but are deliberately not
-reachable from that incomplete init frontier. The complete 50-operation BTDM
-HAL-init body is also implemented as a typed restricted-PAC component. Its
-runtime inputs are derived from the complete caller/setter/helper chain rather
-than a copied vendor config ABI, but it remains validation-only until the
-intervening controller and BLE lifecycle prerequisites exist. Once the first powered MMIO
-mutation occurs, every owner is retained fail-stop because complete rollback
-and last-owner PHY teardown remain unrecovered. The interrupt slice now
+Bluetooth init path now consumes that cold owner through clock/reset, the
+complete 50-operation BTDM HAL transaction, scheduler and bounded HCI software
+owners, the source-127 low-power hardware component, common PHY, finite
+`bt_bb_v2_init_cmplx(1)` and the complete BLE PHY register transaction. The
+last transition consumes one pinned static graph containing the recovered
+environment, its auxiliary allocations and resolving-list object, so no raw
+caller address or vendor allocator ABI enters production. It still stops
+before controller-output activation, live IRQ routing, scheduler-item
+publication or Link Layer work. Once the first powered MMIO mutation occurs,
+every owner is retained fail-stop because complete rollback and last-owner PHY
+teardown remain unrecovered. The interrupt slice now
 preserves two distinct vendor paths: primary source 124 samples masked status,
 NRT source 133 samples its dedicated snapshot status, and both acknowledge through the same W1C
 clear banks. The primary baseline groups (`0x00008000`, `0x00001300`), exact
@@ -143,8 +142,8 @@ the outer init/enable/disable/deinit order and rollback shape of this exact
 library set. It does not prove the internal behavior of the called binary
 entries; Blobray facts and compiled-production comparisons retain that role.
 The next lifecycle slices must therefore implement and verify the remaining
-platform/OSAL, controller-task, interrupt-route, BLE-stack and HCI boundaries
-in outer vendor order, without exposing one premature monolithic powered
+controller-output, interrupt-route, packet-engine and Link Layer boundaries in
+outer vendor order, without exposing one premature monolithic powered
 capability.
 
 The pinned public-source classification of those lifecycle steps is recorded
@@ -160,13 +159,13 @@ The standalone enable order is also a hard production contract:
 `btdm_lp_reset(true)` calls `esp_phy_enable(PHY_MODEM_BT)` before
 `esp_btbb_enable()`. On the first PHY use, the former reaches
 `register_chipv7_phy`; on the first BT-baseband use, the latter reaches
-`bt_bb_v2_init_cmplx(1)`. The eventual Bluetooth enable API must therefore
-produce a completed common-PHY typestate before it can expose the finite
-BT-baseband transaction. The implemented BTBB component already enforces that
-local order: its edge consumes `BluetoothPhyInitialized`, and its gain byte is
-projected from the owned PHY state rather than supplied as an unrelated
-runtime argument. It will become reachable only after the complete
-controller-init owner exists.
+`bt_bb_v2_init_cmplx(1)`. The Bluetooth enable chain therefore produces a
+completed common-PHY typestate before it exposes the finite BT-baseband
+transaction. The implemented BTBB component enforces that local order: its
+edge consumes `BluetoothPhyInitialized`, and its gain byte is projected from
+the owned PHY state rather than supplied as an unrelated runtime argument.
+The following BLE-PHY transition is likewise reachable only from that
+completed BTBB owner and retains its complete static allocation graph.
 
 The recovered
 BTDM task lifecycle calls coexistence registration hooks even when BLE is the

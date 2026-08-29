@@ -43,7 +43,7 @@ pub struct BluetoothControllerBasebandInitialized<
 > where
     M: RawMutex,
 {
-    initialized: BluetoothControllerPhyInitialized<
+    pub(crate) initialized: BluetoothControllerPhyInitialized<
         P,
         M,
         MODEM_TIMER_CAPACITY,
@@ -51,7 +51,7 @@ pub struct BluetoothControllerBasebandInitialized<
         CONTROLLER_TO_HOST_DEPTH,
         PACKET_CAPACITY,
     >,
-    baseband_report: BluetoothBasebandInitializationReport,
+    pub(crate) baseband_report: BluetoothBasebandInitializationReport,
 }
 
 #[cfg(target_arch = "riscv32")]

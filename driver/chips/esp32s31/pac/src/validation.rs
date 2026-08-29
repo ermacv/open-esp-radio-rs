@@ -12,7 +12,7 @@ use crate::{
     MacPowerInterruptRegisters, RadioHardware, svd,
 };
 
-use crate::bluetooth_phy_init::{BluetoothPhyEnvironmentAddress, BluetoothPhyRegisterInitInputs};
+use crate::{BluetoothPhyEnvironmentAddress, BluetoothPhyRegisterInitInputs};
 
 #[inline(always)]
 fn wifi_interrupts() -> svd::peripheral_ownership::WifiInterruptPeripherals {

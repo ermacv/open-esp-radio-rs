@@ -7,6 +7,7 @@ required-capabilities = [
   "controller-initialization",
   "controller-timebase",
   "common-phy-baseband",
+  "ble-phy-engine",
   "interrupt-runtime",
   "controller-memory-lists",
   "dtm-memory-graph",
@@ -197,6 +198,28 @@ vendor-anchors = [
 gaps = [
   { axis = "vendor", id = "common-phy-baseband-composed-trace-missing" },
   { axis = "hil", id = "bluetooth-phy-baseband-cell-missing" },
+]
+
+[[capabilities]]
+id = "ble-phy-engine"
+title = "BLE PHY engine register initialization"
+scope = "Complete reviewed BLE PHY register transaction with affine static environment and resolving-list storage"
+depends-on = ["common-phy-baseband"]
+owners = [
+  { path = "driver/chips/esp32s31/bluetooth/memory/src/ble_phy_engine.rs", token = "BluetoothBlePhyEngineCpuOwned" },
+  { path = "driver/chips/esp32s31/pac/src/bluetooth_phy_init.rs", token = "BluetoothPhyRegisterInitInputs" },
+  { path = "driver/chips/esp32s31/bluetooth/src/ble_phy.rs", token = "BluetoothControllerBlePhyEngineInitialized" },
+]
+tests = [
+  { path = "driver/chips/esp32s31/bluetooth/memory/src/ble_phy_engine.rs", token = "failed_binding_returns_the_same_opaque_allocation" },
+  { path = "driver/chips/esp32s31/bluetooth/src/ble_phy.rs", token = "register_transition_consumes_one_complete_input_set" },
+]
+vendor-anchors = [
+  { path = "verification/vendor/targets/esp32s31/verification-policy.toml", token = "ble-phy-register-init-ordered-mmio" },
+]
+gaps = [
+  { axis = "implementation", id = "ble-environment-word-semantics-controller-output-and-packet-engine-missing" },
+  { axis = "hil", id = "ble-phy-register-init-and-storage-publication-cell-missing" },
 ]
 
 [[capabilities]]

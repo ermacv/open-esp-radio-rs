@@ -112,6 +112,10 @@ pub use bluetooth_modem_lp_timer::{
     BluetoothModemLpTimerRegisters, BluetoothModemLpTimerRegistersPrepared,
     BluetoothModemLpTimerSoftwarePending,
 };
+pub use bluetooth_phy_init::{
+    BluetoothPhyEnvironmentAddress, BluetoothPhyEnvironmentAddressError,
+    BluetoothPhyRegisterInitInputs,
+};
 pub use bluetooth_scheduler::{
     BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadError,
     BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHardwareRunCommandPublished,

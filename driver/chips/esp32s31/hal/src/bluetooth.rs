@@ -34,7 +34,8 @@ pub use open_esp_radio_esp32s31_pac::{
     BluetoothModemLpTimerCounterStarted, BluetoothModemLpTimerEpoch,
     BluetoothModemLpTimerHandlerRegisterObservation, BluetoothModemLpTimerInstant,
     BluetoothModemLpTimerInterruptObservation, BluetoothModemLpTimerOwnerError,
-    BluetoothNrtInterruptAcknowledged,
+    BluetoothNrtInterruptAcknowledged, BluetoothPhyEnvironmentAddress,
+    BluetoothPhyEnvironmentAddressError, BluetoothPhyRegisterInitInputs,
     BluetoothSchedulerDisableBeginError as BluetoothControllerSchedulerDisableBeginError,
     BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
     BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadError,
@@ -289,6 +290,25 @@ impl BluetoothTaskOwner {
         self.reunitable = false;
         self.registers
             .initialize_baseband_v2_arg_one(gain_parameter);
+    }
+
+    /// Execute the complete reviewed BLE PHY register-initialization body.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the completed common-PHY and BTBB owners, the
+    /// initialized source-owned controller software, an inactive IRQ route,
+    /// and both pointed storage objects for every hardware consumer.
+    #[doc(hidden)]
+    #[allow(
+        unsafe_code,
+        reason = "the caller must retain external lifecycle and pointed-storage owners"
+    )]
+    pub unsafe fn initialize_ble_phy_registers(&mut self, inputs: BluetoothPhyRegisterInitInputs) {
+        self.reunitable = false;
+        unsafe {
+            self.registers.initialize_ble_phy_registers(inputs);
+        }
     }
 
     /// Execute the complete reviewed 50-operation controller HAL-init body

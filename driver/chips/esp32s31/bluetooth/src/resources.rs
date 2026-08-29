@@ -14,6 +14,7 @@ use open_esp_radio_esp32s31_hal::{
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::{
     BluetoothModemLpTimerLowPowerHardwareInitializedOwner, BluetoothModemLpTimerOwnerError,
+    BluetoothPhyRegisterInitInputs,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_esp32s31_hal::{BluetoothSharedPhyBorrow, SharedPhyHal};
@@ -329,6 +330,28 @@ impl BluetoothTaskResources {
         unsafe {
             self.registers
                 .initialize_baseband_v2_arg_one(gain_parameter);
+        }
+    }
+
+    /// Publish the complete BLE PHY register-init transaction for a lifecycle
+    /// that retains both address-bound storage objects.
+    ///
+    /// # Safety
+    ///
+    /// The caller must retain the exact completed common-PHY and BTBB owner,
+    /// the inactive interrupt bank, and the storage represented by `inputs`
+    /// until all controller consumers are stopped by a verified transition.
+    #[cfg(target_arch = "riscv32")]
+    #[allow(
+        unsafe_code,
+        reason = "the upper typestate retains the complete PAC lifecycle and storage prerequisites"
+    )]
+    pub(crate) unsafe fn initialize_ble_phy_registers(
+        &mut self,
+        inputs: BluetoothPhyRegisterInitInputs,
+    ) {
+        unsafe {
+            self.registers.initialize_ble_phy_registers(inputs);
         }
     }
 

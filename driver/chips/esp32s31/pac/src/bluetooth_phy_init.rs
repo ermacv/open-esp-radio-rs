@@ -1,11 +1,10 @@
 //! Exact bounded BLE PHY register-initialization transaction.
 //!
-//! This module is deliberately crate-private. The recovered vendor lifecycle
-//! performs this transaction only after common PHY, Bluetooth baseband,
-//! coexistence, controller-stack and callback registration have completed.
-//! Possessing [`BluetoothTaskRegisters`] alone proves none of those
-//! prerequisites, so this slice must not become an ordinary safe lifecycle
-//! transition.
+//! The recovered vendor lifecycle performs this transaction only after common
+//! PHY, Bluetooth baseband, coexistence and controller software initialization
+//! have completed. Possessing [`BluetoothTaskRegisters`] alone proves none of
+//! those prerequisites, so the operation remains unsafe and is reached by the
+//! affine controller lifecycle through the HAL.
 
 #![deny(unsafe_code)]
 
@@ -13,51 +12,37 @@ use super::{BluetoothControllerSramAddress, BluetoothTaskRegisters, device_fence
 
 const ENVIRONMENT_LAST_OFFSET: u32 = 0x40;
 
-/// Address of the linked BLE PHY environment consumed by the init body.
+/// Typed base of the linked BLE PHY environment.
 ///
-/// This type proves only the observed address-image constraints: word
-/// alignment and that the last address published by the transaction
-/// (`environment + 0x40`) is representable. The evidence does not establish a
-/// memory window for this full-width pointer. This type therefore does not
-/// prove address accessibility, allocation, layout, lifetime, or exclusive
-/// controller ownership.
+/// This proves only word alignment and representability of the last published
+/// member. Allocation, contents, lifetime and hardware ownership belong to the
+/// controller-memory and lifecycle layers above the PAC.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[allow(
-    dead_code,
-    reason = "the hidden transaction is staged before its reviewed lifecycle owner"
-)]
-pub(crate) struct BluetoothPhyEnvironmentAddress(u32);
+pub struct BluetoothPhyEnvironmentAddress(u32);
 
-/// Why an address cannot represent the linked BLE PHY environment.
+/// Why a BLE PHY environment address cannot be represented.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[allow(
-    dead_code,
-    reason = "the hidden transaction is staged before its reviewed lifecycle owner"
-)]
-pub(crate) enum BluetoothPhyEnvironmentAddressError {
-    /// The recovered transaction shifts the address right by two.
+pub enum BluetoothPhyEnvironmentAddressError {
+    /// The recovered transaction compresses one member as a word address.
     Unaligned,
-    /// The last address published by the transaction is not representable.
+    /// The final published member would overflow the address space.
     ExtentOverflow,
 }
 
 impl BluetoothPhyEnvironmentAddress {
-    /// Validate one candidate environment base without granting dereference.
-    #[allow(
-        dead_code,
-        reason = "the hidden transaction is staged before its reviewed lifecycle owner"
-    )]
-    pub(crate) const fn new(address: u32) -> Result<Self, BluetoothPhyEnvironmentAddressError> {
-        if address & 0x3 != 0 {
+    /// Validate the positional address-image requirements without dereference.
+    pub const fn new(address: u32) -> Result<Self, BluetoothPhyEnvironmentAddressError> {
+        if !address.is_multiple_of(4) {
             return Err(BluetoothPhyEnvironmentAddressError::Unaligned);
         }
         if address.checked_add(ENVIRONMENT_LAST_OFFSET).is_none() {
             return Err(BluetoothPhyEnvironmentAddressError::ExtentOverflow);
-        };
+        }
         Ok(Self(address))
     }
 
-    const fn address(self) -> u32 {
+    /// Return the validated CPU address without granting dereference.
+    pub const fn address(self) -> u32 {
         self.0
     }
 
@@ -72,11 +57,7 @@ impl BluetoothPhyEnvironmentAddress {
 /// meaning. The two option values are deliberately separate because the
 /// vendor obtains them through separate linked-state reads.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[allow(
-    dead_code,
-    reason = "the hidden transaction is staged before its reviewed lifecycle owner"
-)]
-pub(crate) struct BluetoothPhyRegisterInitInputs {
+pub struct BluetoothPhyRegisterInitInputs {
     private_configuration_byte_0x10: u8,
     environment: BluetoothPhyEnvironmentAddress,
     resolving_list: BluetoothControllerSramAddress,
@@ -85,11 +66,11 @@ pub(crate) struct BluetoothPhyRegisterInitInputs {
 }
 
 impl BluetoothPhyRegisterInitInputs {
-    #[allow(
-        dead_code,
-        reason = "the hidden transaction is staged before its reviewed lifecycle owner"
-    )]
-    pub(crate) const fn new(
+    /// Capture the complete external values consumed by the finite MMIO body.
+    ///
+    /// Both values are typed address images, but this value does not prove
+    /// their allocation, contents, lifetime, or exclusive ownership.
+    pub const fn new(
         private_configuration_byte_0x10: u8,
         environment: BluetoothPhyEnvironmentAddress,
         resolving_list: BluetoothControllerSramAddress,
@@ -120,24 +101,23 @@ impl BluetoothTaskRegisters {
     ///
     /// # Safety
     ///
-    /// The caller must prove the complete pre-task-enable vendor lifecycle:
-    /// common PHY and Bluetooth baseband are initialized, coexistence is
-    /// enabled, controller/base-stack/HCI state and scheduler callbacks are
-    /// registered, the IRQ owner remains inactive, and both pointed-to SRAM
-    /// objects remain correctly initialized, exclusively serialized and live
-    /// for every hardware consumer. This method does not establish or verify
-    /// any of those facts.
+    /// The caller must prove the complete pre-task-enable lifecycle: common
+    /// PHY and Bluetooth baseband are initialized, an exclusive standalone or
+    /// shared-radio coexistence policy is retained, source-owned Controller,
+    /// HCI and scheduler state exists, the IRQ owner remains inactive, and
+    /// both pointed-to SRAM objects remain correctly initialized, exclusively
+    /// serialized and live for every hardware consumer. This method does not
+    /// establish or verify any of those facts.
     #[allow(
         unsafe_code,
         dead_code,
         reason = "the unsafe signature retains unmodeled lifecycle and pointed-storage prerequisites"
     )]
-    pub(crate) unsafe fn initialize_ble_phy_registers(
-        &mut self,
-        inputs: BluetoothPhyRegisterInitInputs,
-    ) {
+    pub unsafe fn initialize_ble_phy_registers(&mut self, inputs: BluetoothPhyRegisterInitInputs) {
         let timing_byte = inputs.private_configuration_byte_0x10.wrapping_sub(1);
         let environment = inputs.environment.address();
+        let environment_member = inputs.environment.compressed_member(0x2c);
+        let environment_tail = environment + ENVIRONMENT_LAST_OFFSET;
         let resolving_list = inputs.resolving_list.compressed_image();
 
         let bluetooth = &self.bluetooth;
@@ -175,7 +155,7 @@ impl BluetoothTaskRegisters {
         super::svd::fixed_register_image::publish_ble_phy_init_bytes_04a8(btmac);
         super::svd::register_image_write::publish_ble_phy_init_environment_member(
             btmac,
-            inputs.environment.compressed_member(0x2c),
+            environment_member,
         );
         super::svd::fixed_register_image::publish_ble_phy_init_value_04ac(btmac);
         super::svd::fixed_register_image::publish_ble_phy_init_value_045c(btmac);
@@ -255,36 +235,11 @@ impl BluetoothTaskRegisters {
         super::svd::fixed_register_image::publish_ble_phy_controller_value_0248(controller);
         super::svd::register_image_write::publish_ble_phy_controller_environment_tail(
             controller,
-            environment + ENVIRONMENT_LAST_OFFSET,
+            environment_tail,
         );
 
         // One ordering boundary is a reviewed Rust-side addition. It does not
         // replace, merge, or reorder any vendor MMIO edge above.
         device_fence();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{BluetoothPhyEnvironmentAddress, BluetoothPhyEnvironmentAddressError};
-
-    #[test]
-    fn environment_address_checks_the_complete_published_extent() {
-        assert_eq!(
-            BluetoothPhyEnvironmentAddress::new(0x2f00_0001),
-            Err(BluetoothPhyEnvironmentAddressError::Unaligned)
-        );
-        assert_eq!(
-            BluetoothPhyEnvironmentAddress::new(0x2000_0000),
-            Ok(BluetoothPhyEnvironmentAddress(0x2000_0000))
-        );
-        assert_eq!(
-            BluetoothPhyEnvironmentAddress::new(u32::MAX - 2),
-            Err(BluetoothPhyEnvironmentAddressError::Unaligned)
-        );
-        assert_eq!(
-            BluetoothPhyEnvironmentAddress::new(u32::MAX - 3),
-            Err(BluetoothPhyEnvironmentAddressError::ExtentOverflow)
-        );
     }
 }

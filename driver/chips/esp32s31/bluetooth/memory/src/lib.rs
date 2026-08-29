@@ -13,11 +13,20 @@
 #[cfg(test)]
 extern crate std;
 
+mod ble_phy_engine;
 mod dtm_event_image;
 mod dtm_rx_result;
 mod dtm_storage;
 mod rx_memory_list;
 mod sram_link;
+
+#[cfg(not(target_arch = "riscv32"))]
+pub use ble_phy_engine::BluetoothBlePhyEngineModelAddress;
+pub use ble_phy_engine::{
+    BLUETOOTH_BLE_PHY_ENVIRONMENT_BYTES, BLUETOOTH_BLE_PHY_RESOLVING_LIST_BYTES,
+    BluetoothBlePhyEngineBindError, BluetoothBlePhyEngineBindFailure, BluetoothBlePhyEngineBinding,
+    BluetoothBlePhyEngineCpuOwned, BluetoothBlePhyEngineStorage,
+};
 
 pub use dtm_event_image::{
     BluetoothDtmLinkStateReviewedWords, BluetoothDtmPositionalEventWords, BluetoothDtmRole,

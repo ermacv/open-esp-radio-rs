@@ -98,7 +98,9 @@ pub use controller_hal::BluetoothControllerHalInitialized;
 pub use controller_start::{
     BluetoothControllerInterruptOwnerPublicationFailure,
     BluetoothControllerInterruptOwnersPublished, BluetoothControllerInterruptOwnersReady,
-    BluetoothControllerOutputTimerStarted, BluetoothInterruptOwnerStorage,
+    BluetoothControllerModemLpTimerRestoreFailure, BluetoothControllerModemLpTimerSoftwareStep,
+    BluetoothControllerModemLpTimerSoftwareWork, BluetoothControllerOutputTimerStarted,
+    BluetoothInterruptOwnerStorage, BluetoothModemLpTimerSoftwareOwnerStorage,
 };
 pub use controller_time::{BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample};
 pub use dtm_event_prepare::{

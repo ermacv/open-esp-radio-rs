@@ -47,6 +47,13 @@ pub(crate) enum BluetoothModemLpTimerInterruptAdmission {
     AwaitSoftware,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BluetoothModemLpTimerTaskTakeAdmission {
+    Missing,
+    NotSoftwarePending,
+    Acquire,
+}
+
 pub(crate) const fn classify_modem_lp_timer_interrupt(
     phase: BluetoothModemLpTimerStoragePhase,
 ) -> BluetoothModemLpTimerInterruptAdmission {
@@ -61,6 +68,26 @@ pub(crate) const fn classify_modem_lp_timer_interrupt(
             BluetoothModemLpTimerInterruptAdmission::AwaitSoftware
         }
     }
+}
+
+pub(crate) const fn classify_modem_lp_timer_task_take(
+    phase: BluetoothModemLpTimerStoragePhase,
+) -> BluetoothModemLpTimerTaskTakeAdmission {
+    match phase {
+        BluetoothModemLpTimerStoragePhase::Missing => {
+            BluetoothModemLpTimerTaskTakeAdmission::Missing
+        }
+        BluetoothModemLpTimerStoragePhase::Ready => {
+            BluetoothModemLpTimerTaskTakeAdmission::NotSoftwarePending
+        }
+        BluetoothModemLpTimerStoragePhase::SoftwarePending => {
+            BluetoothModemLpTimerTaskTakeAdmission::Acquire
+        }
+    }
+}
+
+pub(crate) const fn ready_owner_restore_is_admitted(slot_occupied: bool) -> bool {
+    !slot_occupied
 }
 
 /// Validate the complete route set before any route can be installed.
@@ -95,9 +122,11 @@ pub(crate) const fn validate_quiesce_core(
 mod tests {
     use super::{
         BluetoothInterruptRouteError, BluetoothModemLpTimerInterruptAdmission,
-        BluetoothModemLpTimerStoragePhase, EspHalBluetoothInterruptStorageError,
-        REQUIRED_PRIORITY_LEVEL, classify_modem_lp_timer_interrupt, validate_interrupt_storage,
-        validate_quiesce_core, validate_route_priorities,
+        BluetoothModemLpTimerStoragePhase, BluetoothModemLpTimerTaskTakeAdmission,
+        EspHalBluetoothInterruptStorageError, REQUIRED_PRIORITY_LEVEL,
+        classify_modem_lp_timer_interrupt, classify_modem_lp_timer_task_take,
+        ready_owner_restore_is_admitted, validate_interrupt_storage, validate_quiesce_core,
+        validate_route_priorities,
     };
 
     #[test]
@@ -168,5 +197,23 @@ mod tests {
             classify_modem_lp_timer_interrupt(BluetoothModemLpTimerStoragePhase::SoftwarePending),
             BluetoothModemLpTimerInterruptAdmission::AwaitSoftware
         );
+    }
+
+    #[test]
+    fn source_127_task_can_take_only_pending_work_and_restore_only_into_the_empty_slot() {
+        assert_eq!(
+            classify_modem_lp_timer_task_take(BluetoothModemLpTimerStoragePhase::Missing),
+            BluetoothModemLpTimerTaskTakeAdmission::Missing
+        );
+        assert_eq!(
+            classify_modem_lp_timer_task_take(BluetoothModemLpTimerStoragePhase::Ready),
+            BluetoothModemLpTimerTaskTakeAdmission::NotSoftwarePending
+        );
+        assert_eq!(
+            classify_modem_lp_timer_task_take(BluetoothModemLpTimerStoragePhase::SoftwarePending),
+            BluetoothModemLpTimerTaskTakeAdmission::Acquire
+        );
+        assert!(ready_owner_restore_is_admitted(false));
+        assert!(!ready_owner_restore_is_admitted(true));
     }
 }

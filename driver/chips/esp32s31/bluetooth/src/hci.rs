@@ -464,6 +464,19 @@ where
         )
     }
 
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn modem_lp_timer_software_parts_mut(
+        &mut self,
+    ) -> (
+        &mut crate::BluetoothModemLpTimerQueue<MODEM_TIMER_CAPACITY>,
+        &mut open_esp_radio_esp32s31_hal::BluetoothModemLpTimerEpoch,
+        &crate::BluetoothModemLpTimerEventCell,
+    ) {
+        self.controller
+            .scheduler
+            .modem_lp_timer_software_parts_mut()
+    }
+
     /// Conditional runtime-control branch observed by the exact hardware
     /// component.
     pub const fn runtime_control_observation(&self) -> BluetoothLowPowerRuntimeControlObservation {

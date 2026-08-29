@@ -168,6 +168,21 @@ impl<const MODEM_TIMER_CAPACITY: usize> BluetoothControllerRuntimeResources<MODE
             },
         )
     }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn modem_lp_timer_software_parts_mut(
+        &mut self,
+    ) -> (
+        &mut BluetoothModemLpTimerQueue<MODEM_TIMER_CAPACITY>,
+        &mut BluetoothModemLpTimerEpoch,
+        &BluetoothModemLpTimerEventCell,
+    ) {
+        (
+            &mut self.modem_lp_timer_queue,
+            &mut self.modem_lp_timer_epoch,
+            &self.modem_lp_timer_events,
+        )
+    }
 }
 
 impl<const MODEM_TIMER_CAPACITY: usize> Default

@@ -139,6 +139,19 @@ where
         let timer = controller.take_timer_hardware();
         (interrupts, timer)
     }
+
+    pub(crate) fn modem_lp_timer_software_parts_mut(
+        &mut self,
+    ) -> (
+        &mut crate::BluetoothModemLpTimerQueue<MODEM_TIMER_CAPACITY>,
+        &mut open_esp_radio_esp32s31_hal::BluetoothModemLpTimerEpoch,
+        &crate::BluetoothModemLpTimerEventCell,
+    ) {
+        self.initialized
+            .initialized
+            .controller
+            .modem_lp_timer_software_parts_mut()
+    }
 }
 
 #[cfg(target_arch = "riscv32")]

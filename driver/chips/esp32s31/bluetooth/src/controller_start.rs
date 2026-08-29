@@ -6,11 +6,16 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_esp32s31_hal::{
     BluetoothInterruptOutputPreparedOwner, BluetoothInterruptRegistersOwner,
     BluetoothLowPowerRuntimeControlObservation, BluetoothModemLpTimerCounterStartedOwner,
-    BluetoothModemLpTimerInterruptReadyOwner,
+    BluetoothModemLpTimerInterruptReadyOwner, BluetoothModemLpTimerSoftwarePendingOwner,
 };
 
 #[cfg(target_arch = "riscv32")]
-use crate::BluetoothControllerBlePhyEngineInitialized;
+use crate::{
+    BluetoothControllerBlePhyEngineInitialized, BluetoothModemLpTimerEventCell,
+    BluetoothModemLpTimerEventPublication, BluetoothModemLpTimerExpiration,
+    BluetoothModemLpTimerExpirationPending, BluetoothModemLpTimerSoftwareStep,
+    BluetoothModemLpTimerSoftwareWork,
+};
 
 /// Powered Controller after IRQ-output preparation and runtime-timer start.
 ///
@@ -99,6 +104,177 @@ pub trait BluetoothInterruptOwnerStorage: Sized {
             BluetoothModemLpTimerInterruptReadyOwner,
         ),
     >;
+}
+
+/// Stable-storage boundary for source-127 task ownership.
+///
+/// The interrupt platform implements this trait for the same affine lease
+/// returned by [`BluetoothInterruptOwnerStorage`]. Taking an owner leaves the
+/// stable ISR slot empty, so repeated interrupt entry cannot touch MMIO while
+/// task work owns the timer. Only a fully rearmed owner may be restored.
+#[cfg(target_arch = "riscv32")]
+pub trait BluetoothModemLpTimerSoftwareOwnerStorage {
+    /// Exact reason task context could not acquire pending work.
+    type TakeError;
+    /// Exact reason the fully rearmed owner could not return to ISR storage.
+    type RestoreError;
+
+    /// Move software-pending ownership out of stable ISR storage.
+    fn take_modem_lp_timer_software_pending(
+        &self,
+    ) -> Result<BluetoothModemLpTimerSoftwarePendingOwner, Self::TakeError>;
+
+    /// Restore only a fully rearmed owner, retaining it on rejection.
+    fn restore_modem_lp_timer_ready(
+        &self,
+        owner: BluetoothModemLpTimerInterruptReadyOwner,
+    ) -> Result<(), (Self::RestoreError, BluetoothModemLpTimerInterruptReadyOwner)>;
+}
+
+#[cfg(target_arch = "riscv32")]
+enum BluetoothControllerModemLpTimerSoftwarePhase<'runtime, const CAPACITY: usize> {
+    Work(BluetoothModemLpTimerSoftwareWork<'runtime, CAPACITY>),
+    Expiration(BluetoothModemLpTimerExpirationPending<'runtime, CAPACITY>),
+}
+
+/// One borrowed source-127 task epoch tied to Controller runtime and ISR storage.
+///
+/// This value retains the unique HAL owner, mutable queue/epoch borrows and the
+/// stable-storage lease. It can advance only one bounded queue or publication
+/// edge per [`step`](Self::step) call.
+#[must_use = "source-127 task ownership must reach publication and rearm"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothControllerModemLpTimerSoftwareWork<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothModemLpTimerSoftwareOwnerStorage,
+{
+    phase: BluetoothControllerModemLpTimerSoftwarePhase<'runtime, CAPACITY>,
+    events: &'runtime BluetoothModemLpTimerEventCell,
+    storage: &'runtime S,
+}
+
+/// Result of one Controller-level source-127 task step.
+#[must_use = "retain the returned task work or the failed ready owner"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothControllerModemLpTimerSoftwareStep<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothModemLpTimerSoftwareOwnerStorage,
+{
+    /// One due expiration now owns the publication edge.
+    ExpirationPending(BluetoothControllerModemLpTimerSoftwareWork<'runtime, S, CAPACITY>),
+    /// The durable cell accepted one expiration and task work may continue.
+    Published {
+        /// Retained timer work after successful publication.
+        work: BluetoothControllerModemLpTimerSoftwareWork<'runtime, S, CAPACITY>,
+        /// Wake disposition for the event consumer.
+        publication: BluetoothModemLpTimerEventPublication,
+    },
+    /// The event cell is occupied; no expiration or owner was lost.
+    Backpressured(BluetoothControllerModemLpTimerSoftwareWork<'runtime, S, CAPACITY>),
+    /// Immediate compare programming requires one later fresh recheck.
+    Recheck(BluetoothControllerModemLpTimerSoftwareWork<'runtime, S, CAPACITY>),
+    /// Queue work completed and the ready owner returned to stable ISR storage.
+    Rearmed,
+    /// Stable storage rejected the fully rearmed owner and it remains retained.
+    RestoreFailed(BluetoothControllerModemLpTimerRestoreFailure<S::RestoreError>),
+}
+
+/// Failed source-127 stable restore retaining the unique ready owner.
+#[must_use = "a failed source-127 restore still owns the timer registers"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothControllerModemLpTimerRestoreFailure<E> {
+    error: E,
+    owner: BluetoothModemLpTimerInterruptReadyOwner,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<E> BluetoothControllerModemLpTimerRestoreFailure<E> {
+    /// Inspect the exact platform rejection.
+    pub const fn error(&self) -> &E {
+        &self.error
+    }
+
+    /// Recover the platform error and unchanged ready owner.
+    pub fn into_parts(self) -> (E, BluetoothModemLpTimerInterruptReadyOwner) {
+        (self.error, self.owner)
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'runtime, S, const CAPACITY: usize>
+    BluetoothControllerModemLpTimerSoftwareWork<'runtime, S, CAPACITY>
+where
+    S: BluetoothModemLpTimerSoftwareOwnerStorage,
+{
+    /// Inspect an expiration blocked on durable publication, if any.
+    pub const fn pending_expiration(&self) -> Option<BluetoothModemLpTimerExpiration> {
+        match &self.phase {
+            BluetoothControllerModemLpTimerSoftwarePhase::Work(_) => None,
+            BluetoothControllerModemLpTimerSoftwarePhase::Expiration(pending) => {
+                Some(pending.event())
+            }
+        }
+    }
+
+    /// Execute one bounded queue, publication or rearm edge.
+    pub fn step(self) -> BluetoothControllerModemLpTimerSoftwareStep<'runtime, S, CAPACITY> {
+        let Self {
+            phase,
+            events,
+            storage,
+        } = self;
+        match phase {
+            BluetoothControllerModemLpTimerSoftwarePhase::Work(work) => match work.step() {
+                BluetoothModemLpTimerSoftwareStep::Expiration(pending) => {
+                    BluetoothControllerModemLpTimerSoftwareStep::ExpirationPending(Self {
+                        phase: BluetoothControllerModemLpTimerSoftwarePhase::Expiration(pending),
+                        events,
+                        storage,
+                    })
+                }
+                BluetoothModemLpTimerSoftwareStep::Recheck(work) => {
+                    BluetoothControllerModemLpTimerSoftwareStep::Recheck(Self {
+                        phase: BluetoothControllerModemLpTimerSoftwarePhase::Work(work),
+                        events,
+                        storage,
+                    })
+                }
+                BluetoothModemLpTimerSoftwareStep::Rearmed(owner) => {
+                    match storage.restore_modem_lp_timer_ready(owner) {
+                        Ok(()) => BluetoothControllerModemLpTimerSoftwareStep::Rearmed,
+                        Err((error, owner)) => {
+                            BluetoothControllerModemLpTimerSoftwareStep::RestoreFailed(
+                                BluetoothControllerModemLpTimerRestoreFailure { error, owner },
+                            )
+                        }
+                    }
+                }
+            },
+            BluetoothControllerModemLpTimerSoftwarePhase::Expiration(pending) => {
+                match pending.publish(events) {
+                    Ok((work, publication)) => {
+                        BluetoothControllerModemLpTimerSoftwareStep::Published {
+                            work: Self {
+                                phase: BluetoothControllerModemLpTimerSoftwarePhase::Work(work),
+                                events,
+                                storage,
+                            },
+                            publication,
+                        }
+                    }
+                    Err(pending) => {
+                        BluetoothControllerModemLpTimerSoftwareStep::Backpressured(Self {
+                            phase: BluetoothControllerModemLpTimerSoftwarePhase::Expiration(
+                                pending,
+                            ),
+                            events,
+                            storage,
+                        })
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Powered Controller after atomic stable publication of both ISR owners.
@@ -238,6 +414,31 @@ where
     /// Conditional runtime-control branch retained across publication.
     pub const fn runtime_control_observation(&self) -> BluetoothLowPowerRuntimeControlObservation {
         self.runtime_control
+    }
+
+    /// Acquire source-127 task ownership from stable ISR storage.
+    ///
+    /// Success borrows this complete Controller state until queue work has
+    /// durably published every expiration and restored the fully rearmed owner.
+    /// The CPU routes remain inactive in this lifecycle state.
+    pub fn begin_modem_lp_timer_software_work(
+        &mut self,
+    ) -> Result<
+        BluetoothControllerModemLpTimerSoftwareWork<'_, S, MODEM_TIMER_CAPACITY>,
+        S::TakeError,
+    >
+    where
+        S: BluetoothModemLpTimerSoftwareOwnerStorage,
+    {
+        let owner = self._storage.take_modem_lp_timer_software_pending()?;
+        let (queue, epoch, events) = self.initialized.modem_lp_timer_software_parts_mut();
+        Ok(BluetoothControllerModemLpTimerSoftwareWork {
+            phase: BluetoothControllerModemLpTimerSoftwarePhase::Work(
+                BluetoothModemLpTimerSoftwareWork::begin(queue, epoch, owner),
+            ),
+            events,
+            storage: &self._storage,
+        })
     }
 }
 

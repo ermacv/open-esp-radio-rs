@@ -23,11 +23,14 @@ The pinned ESP32-S31 PAC names all three Controller sources as `BT_MAC`,
 `MODEM_LP_TIMER`, and `BT_MAC_INT1`. This adapter compile-checks those
 identities against the reviewed source-124/source-127/source-133 policies and
 contains one same-core, level-three bind/disable set. The primitives remain
-crate-private: stable ISR register storage, timer/NRT dispatch and
-scheduler-list drain must exist before a public live interrupt epoch can
-safely enable any route. The chip crate already owns the positional
-dynamic-scheduler classifier, bounded modem-timer queue and RTOS-free
-coalesced wake state; this adapter does not duplicate them.
+crate-private: timer/NRT dispatch and scheduler-list drain must be composed
+before a public live interrupt epoch can safely enable any route. Both unique
+register owners are already published atomically in stable process-wide
+slots. The timer slot performs only finite register work; the published lease
+lets Controller task code take a software-pending owner and return only its
+fully rearmed successor. The chip crate owns the bounded modem-timer queue,
+epoch and backpressured event handoff, so this adapter does not duplicate
+Controller policy.
 
 The Bluetooth clock/reset sequence is pinned to the reviewed ESP-IDF source:
 

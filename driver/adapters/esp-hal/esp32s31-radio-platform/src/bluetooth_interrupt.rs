@@ -3,8 +3,8 @@
 //! Stable publication is deliberately separate from a live interrupt epoch.
 //! Both unique HAL owners are installed atomically before any CPU route can be
 //! enabled. All three finite Controller dispositions can now reuse those
-//! stable owners, but selector-6 recovery, durable primary outcome publication
-//! and the scheduler-list drain still block a live route epoch.
+//! stable owners, but handler notification, selector-6 recovery and the
+//! scheduler-list drain still block a live route epoch.
 
 #![forbid(unsafe_code)]
 #![allow(
@@ -22,7 +22,8 @@ use esp_hal::{
 };
 use open_esp_radio_esp32s31_bluetooth::{
     BluetoothCpuInterruptRoutePolicy, BluetoothInterruptOwnerStorage,
-    BluetoothModemLpTimerSoftwareOwnerStorage, BluetoothNrtDefaultInterruptEpoch,
+    BluetoothModemLpTimerInterruptDispatchStorage, BluetoothModemLpTimerSoftwareOwnerStorage,
+    BluetoothModemLpTimerStableInterruptStep, BluetoothNrtDefaultInterruptEpoch,
     BluetoothPrimaryInterruptStep, BluetoothSharedInterruptDispatchStorage,
     step_nrt_default_interrupt, step_primary_interrupt,
 };
@@ -344,6 +345,32 @@ impl BluetoothModemLpTimerSoftwareOwnerStorage for PublishedEspHalBluetoothInter
     ) -> Result<(), (Self::RestoreError, BluetoothModemLpTimerInterruptReadyOwner)> {
         PublishedEspHalBluetoothInterruptOwners::restore_modem_lp_timer_ready(self, owner)
             .map_err(|failure| (failure.error, failure.owner))
+    }
+}
+
+impl BluetoothModemLpTimerInterruptDispatchStorage for PublishedEspHalBluetoothInterruptOwners {
+    type Error = EspHalBluetoothModemLpTimerStorageError;
+
+    fn service_modem_lp_timer_interrupt(
+        &self,
+    ) -> Result<BluetoothModemLpTimerStableInterruptStep, Self::Error> {
+        match PublishedEspHalBluetoothInterruptOwners::service_modem_lp_timer_interrupt(self) {
+            EspHalBluetoothModemLpTimerInterruptStep::Unavailable => {
+                Err(EspHalBluetoothModemLpTimerStorageError::Missing)
+            }
+            EspHalBluetoothModemLpTimerInterruptStep::AwaitingSoftware => {
+                Ok(BluetoothModemLpTimerStableInterruptStep::AwaitingSoftware)
+            }
+            EspHalBluetoothModemLpTimerInterruptStep::Spurious => {
+                Ok(BluetoothModemLpTimerStableInterruptStep::Spurious)
+            }
+            EspHalBluetoothModemLpTimerInterruptStep::Rearmed => {
+                Ok(BluetoothModemLpTimerStableInterruptStep::Rearmed)
+            }
+            EspHalBluetoothModemLpTimerInterruptStep::SoftwarePending => {
+                Ok(BluetoothModemLpTimerStableInterruptStep::SoftwarePending)
+            }
+        }
     }
 }
 

@@ -13,8 +13,9 @@ use open_esp_radio_esp32s31_hal::{
 use crate::{
     BluetoothControllerBlePhyEngineInitialized, BluetoothModemLpTimerEventCell,
     BluetoothModemLpTimerEventPublication, BluetoothModemLpTimerExpiration,
-    BluetoothModemLpTimerExpirationPending, BluetoothModemLpTimerSoftwareStep,
-    BluetoothModemLpTimerSoftwareWork, BluetoothNrtDefaultInterruptEpoch,
+    BluetoothModemLpTimerExpirationPending, BluetoothModemLpTimerPublishedInterruptStep,
+    BluetoothModemLpTimerSoftwareStep, BluetoothModemLpTimerSoftwareWork,
+    BluetoothModemLpTimerStableInterruptStep, BluetoothNrtDefaultInterruptEpoch,
     BluetoothPrimaryInterruptStep, BluetoothPrimaryPublishedInterruptStep,
 };
 
@@ -130,6 +131,21 @@ pub trait BluetoothModemLpTimerSoftwareOwnerStorage {
         &self,
         owner: BluetoothModemLpTimerInterruptReadyOwner,
     ) -> Result<(), (Self::RestoreError, BluetoothModemLpTimerInterruptReadyOwner)>;
+}
+
+/// Stable platform dispatch over the published source-127 interrupt owner.
+///
+/// Implementations retain either the ready or software-pending affine owner
+/// in process-wide storage and perform no executor notification themselves.
+#[cfg(target_arch = "riscv32")]
+pub trait BluetoothModemLpTimerInterruptDispatchStorage {
+    /// Exact reason the stable owner could not service this entry.
+    type Error;
+
+    /// Execute one finite register entry and return its semantic disposition.
+    fn service_modem_lp_timer_interrupt(
+        &self,
+    ) -> Result<BluetoothModemLpTimerStableInterruptStep, Self::Error>;
 }
 
 /// Stable platform dispatch over the published shared interrupt owner.
@@ -451,6 +467,7 @@ where
         S: BluetoothModemLpTimerSoftwareOwnerStorage,
     {
         let owner = self._storage.take_modem_lp_timer_software_pending()?;
+        self.initialized.modem_lp_timer_worker_wake().take();
         let (queue, epoch, events) = self.initialized.modem_lp_timer_software_parts_mut();
         Ok(BluetoothControllerModemLpTimerSoftwareWork {
             phase: BluetoothControllerModemLpTimerSoftwarePhase::Work(
@@ -476,6 +493,21 @@ where
         let (scheduler_wake, lock_modify_events) =
             self.initialized.primary_interrupt_publications();
         Ok(step.publish(scheduler_wake, lock_modify_events))
+    }
+
+    /// Service and durably publish one modem-timer source-127 epoch.
+    ///
+    /// A software-pending owner remains affine in stable platform storage.
+    /// Its matching Controller wake cell is published before this method
+    /// returns, so later task registration cannot lose the work request.
+    pub fn service_modem_lp_timer_interrupt(
+        &self,
+    ) -> Result<BluetoothModemLpTimerPublishedInterruptStep, S::Error>
+    where
+        S: BluetoothModemLpTimerInterruptDispatchStorage,
+    {
+        let step = self._storage.service_modem_lp_timer_interrupt()?;
+        Ok(step.publish(self.initialized.modem_lp_timer_worker_wake()))
     }
 
     /// Service one opaque default-profile NRT source-133 epoch.

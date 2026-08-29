@@ -7,7 +7,7 @@
 
 #![forbid(unsafe_code)]
 
-use core::sync::atomic::{AtomicU8, AtomicU32, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicUsize, Ordering};
 
 use open_esp_radio_esp32s31_hal::{
     BluetoothModemLpTimerCompareDisposition, BluetoothModemLpTimerEpoch,
@@ -21,6 +21,105 @@ const EVENT_WRITING: u8 = 1;
 const EVENT_READY: u8 = 2;
 const EVENT_READING: u8 = 3;
 const MAX_FORWARD_DELAY: u32 = i32::MAX as u32;
+
+/// Result of publishing source-127 task readiness from interrupt context.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothModemLpTimerWorkerWakePublication {
+    /// This entry opened a new wake epoch and must notify the worker.
+    WakeWorker,
+    /// Task readiness was already durable; an additional notification is not required.
+    Coalesced,
+}
+
+/// Durable, coalescing source-127 ISR-to-task readiness cell.
+///
+/// Stable platform storage retains the affine software-pending timer owner;
+/// this cell independently retains the fact that task context must acquire it.
+/// A worker can therefore register after the interrupt without losing work.
+pub struct BluetoothModemLpTimerWorkerWakeCell {
+    pending: AtomicBool,
+}
+
+impl BluetoothModemLpTimerWorkerWakeCell {
+    /// Construct one idle wake epoch.
+    pub const fn new() -> Self {
+        Self {
+            pending: AtomicBool::new(false),
+        }
+    }
+
+    fn publish_from_interrupt(&self) -> BluetoothModemLpTimerWorkerWakePublication {
+        if self.pending.swap(true, Ordering::AcqRel) {
+            BluetoothModemLpTimerWorkerWakePublication::Coalesced
+        } else {
+            BluetoothModemLpTimerWorkerWakePublication::WakeWorker
+        }
+    }
+
+    /// Close the current wake epoch after task context acquired the owner.
+    pub(crate) fn take(&self) -> bool {
+        self.pending.swap(false, Ordering::AcqRel)
+    }
+
+    /// Whether stable source-127 task work is waiting for acquisition.
+    pub fn is_pending(&self) -> bool {
+        self.pending.load(Ordering::Acquire)
+    }
+}
+
+impl Default for BluetoothModemLpTimerWorkerWakeCell {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Exact stable-storage result of one finite source-127 interrupt entry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothModemLpTimerStableInterruptStep {
+    /// The interrupt status was empty and the ready owner was restored.
+    Spurious,
+    /// Register work completed and restored the ready owner.
+    Rearmed,
+    /// A preceding entry already left task-owned work in stable storage.
+    AwaitingSoftware,
+    /// This entry moved the owner into stable software-pending state.
+    SoftwarePending,
+}
+
+/// Controller publication result of one finite source-127 interrupt entry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[must_use = "a source-127 wake disposition must reach the executor boundary"]
+pub enum BluetoothModemLpTimerPublishedInterruptStep {
+    /// No task work was created by an empty status observation.
+    Spurious,
+    /// Register work completed without task work.
+    Rearmed,
+    /// Existing task work remains durable with this wake disposition.
+    AwaitingSoftware(BluetoothModemLpTimerWorkerWakePublication),
+    /// Newly pending task work is durable with this wake disposition.
+    SoftwarePending(BluetoothModemLpTimerWorkerWakePublication),
+}
+
+impl BluetoothModemLpTimerStableInterruptStep {
+    /// Publish task readiness while preserving the exact register disposition.
+    pub(crate) fn publish(
+        self,
+        worker_wake: &BluetoothModemLpTimerWorkerWakeCell,
+    ) -> BluetoothModemLpTimerPublishedInterruptStep {
+        match self {
+            Self::Spurious => BluetoothModemLpTimerPublishedInterruptStep::Spurious,
+            Self::Rearmed => BluetoothModemLpTimerPublishedInterruptStep::Rearmed,
+            Self::AwaitingSoftware => {
+                BluetoothModemLpTimerPublishedInterruptStep::AwaitingSoftware(
+                    worker_wake.publish_from_interrupt(),
+                )
+            }
+            Self::SoftwarePending => BluetoothModemLpTimerPublishedInterruptStep::SoftwarePending(
+                worker_wake.publish_from_interrupt(),
+            ),
+        }
+    }
+}
 
 #[derive(Clone, Copy)]
 struct BluetoothModemLpTimerSlot {
@@ -523,5 +622,33 @@ mod tests {
             Ok(BluetoothModemLpTimerEventPublication::WakeWorker)
         );
         assert_eq!(cell.take(), Some(second));
+    }
+
+    #[test]
+    fn source_127_task_readiness_survives_late_acquisition_and_coalesces_reentry() {
+        let cell = BluetoothModemLpTimerWorkerWakeCell::new();
+
+        assert_eq!(
+            BluetoothModemLpTimerStableInterruptStep::SoftwarePending.publish(&cell),
+            BluetoothModemLpTimerPublishedInterruptStep::SoftwarePending(
+                BluetoothModemLpTimerWorkerWakePublication::WakeWorker,
+            )
+        );
+        assert!(cell.is_pending());
+        assert_eq!(
+            BluetoothModemLpTimerStableInterruptStep::AwaitingSoftware.publish(&cell),
+            BluetoothModemLpTimerPublishedInterruptStep::AwaitingSoftware(
+                BluetoothModemLpTimerWorkerWakePublication::Coalesced,
+            )
+        );
+
+        assert!(cell.take());
+        assert!(!cell.is_pending());
+        assert_eq!(
+            BluetoothModemLpTimerStableInterruptStep::SoftwarePending.publish(&cell),
+            BluetoothModemLpTimerPublishedInterruptStep::SoftwarePending(
+                BluetoothModemLpTimerWorkerWakePublication::WakeWorker,
+            )
+        );
     }
 }

@@ -164,6 +164,15 @@ where
             .controller
             .primary_interrupt_publications()
     }
+
+    pub(crate) const fn modem_lp_timer_worker_wake(
+        &self,
+    ) -> &crate::BluetoothModemLpTimerWorkerWakeCell {
+        self.initialized
+            .initialized
+            .controller
+            .modem_lp_timer_worker_wake()
+    }
 }
 
 #[cfg(target_arch = "riscv32")]

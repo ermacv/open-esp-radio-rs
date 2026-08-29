@@ -32,8 +32,9 @@ while retaining their owners in those slots. The chip Controller consumes
 that semantic primary result and durably updates both scheduler cells from the
 same temporal observation. It also lets Controller task code take a
 software-pending timer owner and return only its fully rearmed successor. The
-chip crate owns the bounded modem-timer queue, epoch and backpressured event
-handoff, so this adapter does not duplicate Controller policy.
+chip crate durably coalesces source-127 task readiness before exposing a wake
+disposition, and owns the bounded modem-timer queue, epoch and backpressured
+expiration handoff, so this adapter does not duplicate Controller policy.
 
 The Bluetooth clock/reset sequence is pinned to the reviewed ESP-IDF source:
 

@@ -139,6 +139,13 @@ impl<P, const MODEM_TIMER_CAPACITY: usize> BluetoothSchedulerInitialized<P, MODE
     ) {
         self.runtime.primary_interrupt_publications()
     }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) const fn modem_lp_timer_worker_wake(
+        &self,
+    ) -> &crate::BluetoothModemLpTimerWorkerWakeCell {
+        self.runtime.modem_lp_timer_worker_wake()
+    }
 }
 
 impl<P> BluetoothControllerHalInitialized<P> {

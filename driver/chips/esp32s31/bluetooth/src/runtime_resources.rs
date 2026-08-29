@@ -10,6 +10,8 @@
 
 use open_esp_radio_esp32s31_hal::BluetoothModemLpTimerEpoch;
 
+#[cfg(any(target_arch = "riscv32", test))]
+use crate::resources::BluetoothTaskResources;
 use crate::{
     BluetoothModemLpTimerEventCell, BluetoothModemLpTimerQueue,
     BluetoothModemLpTimerWorkerWakeCell, BluetoothSchedulerFinishedListWorker,
@@ -124,6 +126,93 @@ impl<const SCHEDULER_CAPACITY: usize> BluetoothControllerTaskRuntime<'_, SCHEDUL
     /// Durable modem LP timer expiration handoff for this epoch.
     pub const fn modem_lp_timer_events(&self) -> &BluetoothModemLpTimerEventCell {
         self.modem_lp_timer_events
+    }
+}
+
+/// Task-side software and register ownership for one powered Controller epoch.
+///
+/// This endpoint is produced only by the initialized scheduler lifecycle. It
+/// joins the sole software workers and timeline with the exact task-side HAL
+/// owner, so a live worker step never requires an independently recovered
+/// register capability. The software-only [`BluetoothControllerTaskRuntime`]
+/// remains useful to executor adapters that do not perform hardware work.
+#[must_use = "the powered task endpoint retains the Controller task owner"]
+#[cfg(any(target_arch = "riscv32", test))]
+pub struct BluetoothControllerPoweredTaskRuntime<'runtime, const SCHEDULER_CAPACITY: usize = 4> {
+    software: BluetoothControllerTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
+    hardware: &'runtime mut BluetoothTaskResources,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl<const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY>
+{
+    pub(crate) const fn new<'runtime>(
+        software: BluetoothControllerTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
+        hardware: &'runtime mut BluetoothTaskResources,
+    ) -> BluetoothControllerPoweredTaskRuntime<'runtime, SCHEDULER_CAPACITY> {
+        BluetoothControllerPoweredTaskRuntime { software, hardware }
+    }
+
+    /// Durable general scheduler handoff for this epoch.
+    pub const fn scheduler_wake(&self) -> &BluetoothSchedulerWakeCell {
+        self.software.scheduler_wake()
+    }
+
+    /// Durable scheduler lock/modify handoff for this epoch.
+    pub const fn scheduler_lock_modify_events(&self) -> &BluetoothSchedulerLockModifyEventCell {
+        self.software.scheduler_lock_modify_events()
+    }
+
+    /// The sole scheduler lock/modify worker for this powered epoch.
+    pub fn scheduler_lock_modify_worker(&mut self) -> &mut BluetoothSchedulerLockModifyWorker {
+        self.software.scheduler_lock_modify_worker()
+    }
+
+    /// The sole bounded finished-list worker for this powered epoch.
+    pub fn scheduler_finished_lists(&mut self) -> &mut BluetoothSchedulerFinishedListWorker {
+        self.software.scheduler_finished_lists()
+    }
+
+    /// The sole source-owned scheduler timeline for this powered epoch.
+    pub fn scheduler_timeline(&mut self) -> &mut BluetoothSchedulerTimeline<SCHEDULER_CAPACITY> {
+        self.software.scheduler_timeline()
+    }
+
+    /// Durable source-127 task-readiness handoff for this epoch.
+    pub const fn modem_lp_timer_worker_wake(&self) -> &BluetoothModemLpTimerWorkerWakeCell {
+        self.software.modem_lp_timer_worker_wake()
+    }
+
+    /// Durable modem LP timer expiration handoff for this epoch.
+    pub const fn modem_lp_timer_events(&self) -> &BluetoothModemLpTimerEventCell {
+        self.software.modem_lp_timer_events()
+    }
+
+    /// Current logical phase of the powered Controller-time worker.
+    pub const fn controller_time_phase(
+        &self,
+    ) -> crate::controller_time::BluetoothControllerTimeWorkerPhase {
+        self.hardware.controller_time_phase()
+    }
+
+    /// Whether the powered Controller-time worker requires another event.
+    pub const fn controller_time_needs_recheck(&self) -> bool {
+        self.hardware.controller_time_needs_recheck()
+    }
+
+    /// Advance one scheduler lock/modify transaction using the matching HAL
+    /// task owner and exactly one interrupt-side observation.
+    ///
+    /// This operation is finite. A hardware-owned wait returns to the caller;
+    /// no polling loop or executor-specific wake primitive is hidden here.
+    #[cfg(target_arch = "riscv32")]
+    pub fn step_scheduler_lock_modify(
+        &mut self,
+        event: crate::BluetoothSchedulerLockModifyEvent,
+    ) -> crate::BluetoothSchedulerLockModifyWorkerStep {
+        self.hardware
+            .step_scheduler_lock_modify(self.software.scheduler_lock_modify_worker, event)
     }
 }
 

@@ -259,6 +259,18 @@ impl BluetoothTaskResources {
         controller_time.on_recheck_event(&mut controller)
     }
 
+    /// Advance one scheduler lock/modify worker with this exact task-side HAL
+    /// owner and no exported register capability.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn step_scheduler_lock_modify(
+        &mut self,
+        worker: &mut crate::BluetoothSchedulerLockModifyWorker,
+        event: crate::BluetoothSchedulerLockModifyEvent,
+    ) -> crate::BluetoothSchedulerLockModifyWorkerStep {
+        let mut controller = self.registers.borrow_bluetooth_controller();
+        worker.step(event, &mut controller)
+    }
+
     /// Execute the complete reviewed controller HAL-init component.
     ///
     /// The owning lifecycle invokes this component after clocks and before

@@ -2,8 +2,8 @@
 
 use crate::BluetoothSchedulerSoftwareConfig;
 use crate::{
-    BluetoothControllerInterruptRuntime, BluetoothControllerRuntimeResources,
-    BluetoothControllerTaskRuntime,
+    BluetoothControllerInterruptRuntime, BluetoothControllerPoweredTaskRuntime,
+    BluetoothControllerRuntimeResources,
     controller_hal::BluetoothControllerHalInitialized,
     resources::{
         BluetoothInterruptBankOwner, BluetoothTaskResources, BluetoothTeardownPendingPlatform,
@@ -107,9 +107,14 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         &mut self,
     ) -> (
         BluetoothControllerInterruptRuntime<'_>,
-        BluetoothControllerTaskRuntime<'_, SCHEDULER_CAPACITY>,
+        BluetoothControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY>,
     ) {
-        self.runtime.split()
+        let task = &mut self.task;
+        let (interrupt, software) = self.runtime.split();
+        (
+            interrupt,
+            BluetoothControllerPoweredTaskRuntime::new(software, task),
+        )
     }
 
     #[cfg(target_arch = "riscv32")]
@@ -260,6 +265,11 @@ mod tests {
             interrupt.scheduler_wake(),
             task.scheduler_wake()
         ));
+        assert_eq!(
+            task.controller_time_phase(),
+            crate::controller_time::BluetoothControllerTimeWorkerPhase::Idle
+        );
+        assert!(!task.controller_time_needs_recheck());
         drop((interrupt, task));
         drop(scheduler);
         assert_eq!(PLATFORM_DROPS.load(Ordering::Relaxed), 0);

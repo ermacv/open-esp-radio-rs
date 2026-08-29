@@ -25,9 +25,12 @@
 //! `open-esp-radio-esp32s31-bluetooth-memory` layer below this LLL boundary;
 //! one bounded DTM RX transition accounts a result word without claiming its
 //! still-missing completed-header ownership or visibility fence.
-//! These components are deliberately not connected across the missing
-//! selector-6 invariant, affine item/completion-list owner, primary-ISR worker
-//! composition, feature-specific NRT classification and live-route
+//! The initialized scheduler now joins its software task endpoint to the exact
+//! task-side HAL owner, so one lock/modify event step can reach the restricted
+//! PAC without exporting register authority. The remaining components are not
+//! connected across the missing selector-6 invariant, affine
+//! item/completion-list owner, live primary-ISR/executor composition,
+//! feature-specific NRT classification and live-route
 //! prerequisites. Stable two-owner ISR publication is connected, but no
 //! current finite state
 //! claims that the complete controller lifecycle, HCI transport, task or live
@@ -200,6 +203,8 @@ pub use primary_interrupt::{
     BluetoothPrimarySchedulerEvent, step_primary_interrupt,
 };
 pub use resources::{BluetoothStopped, BluetoothStoppedReleaseFailure};
+#[cfg(any(target_arch = "riscv32", test))]
+pub use runtime_resources::BluetoothControllerPoweredTaskRuntime;
 pub use runtime_resources::{
     BluetoothControllerInterruptRuntime, BluetoothControllerRuntimeResources,
     BluetoothControllerTaskRuntime,

@@ -7,7 +7,7 @@ use open_esp_radio_bluetooth_hci::{
 };
 
 use crate::{
-    BluetoothControllerInterruptRuntime, BluetoothControllerTaskRuntime,
+    BluetoothControllerInterruptRuntime, BluetoothControllerPoweredTaskRuntime,
     BluetoothSchedulerInitialized, BluetoothSchedulerSoftwareConfig,
 };
 use open_esp_radio_esp32s31_hal::{
@@ -232,7 +232,7 @@ pub struct BluetoothControllerRuntimeEndpoints<
     /// Interrupt-side scheduler publications.
     pub interrupt: BluetoothControllerInterruptRuntime<'runtime>,
     /// Task-side scheduler workers.
-    pub task: BluetoothControllerTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
+    pub task: BluetoothControllerPoweredTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
     /// Host-facing typed HCI transport.
     pub hci_host: InProcessHciHostTransport<
         'runtime,

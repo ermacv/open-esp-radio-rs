@@ -6,9 +6,12 @@ including the two conditional diagnostic captures, while its dynamic suffix
 retains two temporally distinct scheduler-state observations, affine MMIO
 ownership and a coalesced deferred-work contract. The exact software-list
 producer/consumer graph and the default BLE consumers of selectors 4 and 6
-are recovered. Their open scheduler actions, NRT feature meanings and the live
-async ISR owner remain unresolved, so neither CPU route may yet form a live
-production interrupt epoch.
+are recovered. The initialized scheduler now returns a powered task endpoint
+that keeps the sole lock/modify worker beside the exact task-side HAL owner;
+one finite event step can therefore reach the restricted PAC without an MMIO
+capability escaping into executor code. Selector actions, NRT feature meanings
+and the live async ISR owner remain unresolved, so neither CPU route may yet
+form a live production interrupt epoch.
 
 This review separates silicon behavior from the internal callback and RTOS
 architecture of the reference Controller. The Rust driver does not reproduce
@@ -203,9 +206,9 @@ them.
   status-to-finished-list edge, memory fence, abort and shutdown drain;
 - executor-neutral waker registration with a register-then-recheck poll
   protocol and a quiescent teardown barrier;
-- composition of the staged interrupt-bank plus scheduler-runtime owner into
-  the same-core primary ISR, without returning either MMIO capability to task
-  code while the routes are live;
+- live same-core composition of the staged interrupt-bank, scheduler runtime
+  and powered task endpoint, including stable waker registration, without
+  returning either MMIO capability while the routes are live;
 - compiled-production trace and HIL for simultaneous, repeated and teardown
   interrupt epochs.
 

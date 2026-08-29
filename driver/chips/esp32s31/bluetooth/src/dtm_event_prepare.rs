@@ -20,9 +20,9 @@ use open_esp_radio_esp32s31_hal::{
 };
 
 use crate::{
-    BluetoothControllerSchedulerEpoch, BluetoothDtmLinkStateReset, BluetoothDtmPayloadLength,
-    BluetoothDtmPayloadPattern, BluetoothDtmPreparedTxGraph, BluetoothDtmRole,
-    BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerSequenceLead,
+    BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample, BluetoothDtmLinkStateReset,
+    BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern, BluetoothDtmPreparedTxGraph,
+    BluetoothDtmRole, BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerTimingPolicy,
     dtm_scheduler_item::apply_overlap_insertion_power,
 };
 
@@ -46,17 +46,22 @@ pub enum BluetoothDtmReviewedEventWordsPlanError {
         /// Role selected by the scheduler-item transform.
         scheduler_item: BluetoothDtmRole,
     },
+    /// The first common-scheduler deadline gate rejected the item.
+    InitialDeadlineExpired,
 }
 
 /// Validated role-consistent plan for the nineteen reviewed event words.
 ///
 /// Private chain links are deliberately absent from plan identity. They are
 /// replaced inside `prepare` with fresh links sampled from the consumed graph.
+/// Construction also consumes the fresh Controller-time sample used by the
+/// first common-scheduler late-start gate. The later post-overlap gate remains
+/// a separate scheduler-list responsibility.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothDtmReviewedEventWordsPlan<Role> {
     link_state: BluetoothDtmLinkStateReset,
     scheduler_item: BluetoothDtmSchedulerItemEvent,
-    sequence_lead: BluetoothDtmSchedulerSequenceLead,
+    timing_policy: BluetoothDtmSchedulerTimingPolicy,
     epoch: BluetoothControllerSchedulerEpoch,
     _role: PhantomData<Role>,
 }
@@ -65,7 +70,8 @@ impl<Role> BluetoothDtmReviewedEventWordsPlan<Role> {
     fn new_for_role(
         link_state: BluetoothDtmLinkStateReset,
         scheduler_item: BluetoothDtmSchedulerItemEvent,
-        sequence_lead: BluetoothDtmSchedulerSequenceLead,
+        timing_policy: BluetoothDtmSchedulerTimingPolicy,
+        admission_sample: BluetoothControllerTimeSample,
         epoch: BluetoothControllerSchedulerEpoch,
         expected: BluetoothDtmRole,
     ) -> Result<Self, BluetoothDtmReviewedEventWordsPlanError> {
@@ -78,10 +84,15 @@ impl<Role> BluetoothDtmReviewedEventWordsPlan<Role> {
                 scheduler_item: scheduler_role,
             });
         }
+        if !timing_policy
+            .initial_deadline_is_open(admission_sample, scheduler_item.raw_start(epoch))
+        {
+            return Err(BluetoothDtmReviewedEventWordsPlanError::InitialDeadlineExpired);
+        }
         Ok(Self {
             link_state,
             scheduler_item,
-            sequence_lead,
+            timing_policy,
             epoch,
             _role: PhantomData,
         })
@@ -103,24 +114,27 @@ impl<Role> BluetoothDtmReviewedEventWordsPlan<Role> {
         let scheduler_item = self
             .scheduler_item
             .apply(current.scheduler_item(), self.epoch);
-        let scheduler_item = scheduler_item.apply_sequence_timing(self.sequence_lead.raw_image());
+        let scheduler_item =
+            scheduler_item.apply_sequence_timing(self.timing_policy.sequence_lead_raw_delta());
         let scheduler_item = apply_overlap_insertion_power(scheduler_item, link_state);
         BluetoothDtmPositionalEventWords::new(link_state, scheduler_item)
     }
 }
 
 impl BluetoothDtmReviewedEventWordsPlan<BluetoothDtmTransmitterEvent> {
-    /// Pair two transmitter transforms into a packet-gated event plan.
+    /// Pair two transmitter transforms and one fresh deadline sample.
     pub fn new_transmitter(
         link_state: BluetoothDtmLinkStateReset,
         scheduler_item: BluetoothDtmSchedulerItemEvent,
-        sequence_lead: BluetoothDtmSchedulerSequenceLead,
+        timing_policy: BluetoothDtmSchedulerTimingPolicy,
+        admission_sample: BluetoothControllerTimeSample,
         epoch: BluetoothControllerSchedulerEpoch,
     ) -> Result<Self, BluetoothDtmReviewedEventWordsPlanError> {
         Self::new_for_role(
             link_state,
             scheduler_item,
-            sequence_lead,
+            timing_policy,
+            admission_sample,
             epoch,
             BluetoothDtmRole::Transmitter,
         )
@@ -150,17 +164,19 @@ impl BluetoothDtmReviewedEventWordsPlan<BluetoothDtmTransmitterEvent> {
 }
 
 impl BluetoothDtmReviewedEventWordsPlan<BluetoothDtmReceiverEvent> {
-    /// Pair two receiver transforms into an RX event plan.
+    /// Pair two receiver transforms and one fresh deadline sample.
     pub fn new_receiver(
         link_state: BluetoothDtmLinkStateReset,
         scheduler_item: BluetoothDtmSchedulerItemEvent,
-        sequence_lead: BluetoothDtmSchedulerSequenceLead,
+        timing_policy: BluetoothDtmSchedulerTimingPolicy,
+        admission_sample: BluetoothControllerTimeSample,
         epoch: BluetoothControllerSchedulerEpoch,
     ) -> Result<Self, BluetoothDtmReviewedEventWordsPlanError> {
         Self::new_for_role(
             link_state,
             scheduler_item,
-            sequence_lead,
+            timing_policy,
+            admission_sample,
             epoch,
             BluetoothDtmRole::Receiver,
         )
@@ -353,7 +369,7 @@ mod tests {
         BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample, BluetoothDtmChannel,
         BluetoothDtmLinkStateReset, BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern,
         BluetoothDtmPhy, BluetoothDtmRole, BluetoothDtmSchedulerItemEvent,
-        BluetoothDtmSchedulerSequenceLead, BluetoothDtmTxGraphPrepare,
+        BluetoothDtmSchedulerTimingPolicy, BluetoothDtmTxGraphPrepare,
     };
 
     fn owner(base: u32) -> crate::BluetoothDtmMemoryGraphCpuOwned {
@@ -391,11 +407,15 @@ mod tests {
         .expect("selected PHY is valid for its role")
     }
 
-    fn sequence_lead() -> BluetoothDtmSchedulerSequenceLead {
-        BluetoothDtmSchedulerSequenceLead::from_scheduler_config(
+    fn timing_policy() -> BluetoothDtmSchedulerTimingPolicy {
+        BluetoothDtmSchedulerTimingPolicy::from_scheduler_config(
             crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
             BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale(),
         )
+    }
+
+    fn admission_sample() -> BluetoothControllerTimeSample {
+        BluetoothControllerTimeSample::for_validation(92)
     }
 
     #[test]
@@ -413,7 +433,8 @@ mod tests {
         let plan = BluetoothDtmReviewedEventWordsPlan::new_transmitter(
             reset,
             item(BluetoothDtmRole::Transmitter),
-            sequence_lead(),
+            timing_policy(),
+            admission_sample(),
             epoch(),
         )
         .expect("both transforms encode TX");
@@ -463,7 +484,8 @@ mod tests {
         let plan = BluetoothDtmReviewedEventWordsPlan::new_receiver(
             reset,
             item(BluetoothDtmRole::Receiver),
-            sequence_lead(),
+            timing_policy(),
+            admission_sample(),
             epoch(),
         )
         .expect("both transforms encode RX");
@@ -497,7 +519,8 @@ mod tests {
             BluetoothDtmReviewedEventWordsPlan::new_transmitter(
                 reset,
                 item(BluetoothDtmRole::Receiver),
-                sequence_lead(),
+                timing_policy(),
+                admission_sample(),
                 epoch(),
             ),
             Err(BluetoothDtmReviewedEventWordsPlanError::RoleMismatch {
@@ -505,6 +528,23 @@ mod tests {
                 link_state: BluetoothDtmRole::Transmitter,
                 scheduler_item: BluetoothDtmRole::Receiver,
             })
+        );
+    }
+
+    #[test]
+    fn plan_rejects_an_item_at_the_first_guarded_deadline() {
+        let reset = BluetoothDtmLinkStateReset::new(None, None, 0, 0, BluetoothDtmRole::Receiver)
+            .expect("zero dynamic fields are valid");
+
+        assert_eq!(
+            BluetoothDtmReviewedEventWordsPlan::new_receiver(
+                reset,
+                item(BluetoothDtmRole::Receiver),
+                timing_policy(),
+                BluetoothControllerTimeSample::for_validation(93),
+                epoch(),
+            ),
+            Err(BluetoothDtmReviewedEventWordsPlanError::InitialDeadlineExpired)
         );
     }
 }

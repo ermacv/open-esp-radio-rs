@@ -103,7 +103,12 @@ to environment `+0x0c/+0x10`; the first word feeds both late-start checks and
 the second feeds this sequence lead through `r_btdm_hal_util_us_to_ticks`.
 The Rust plan therefore derives its typed raw lead from the source-owned
 scheduler config and retained Controller time scale instead of accepting an
-unrelated raw image. Before common scheduler bookkeeping,
+unrelated raw image. The same typed policy now consumes a fresh live
+Controller-time sample and rejects a start at or before the guarded current
+time, matching the initial deadline gate at the top of complete
+`r_btdm_sched_check_overlap_in_list`. Its second sample and identical check in
+`r_btdm_sched_calc_seq_time` stay closed until overlap traversal has an owned
+list. Before common scheduler bookkeeping,
 complete current `r_sym_ble_iHRqSCIgChmgSHj5W8W3` and named same-chip
 `r_sched_txn_rmOverlapInsert` copy the link-state five-bit rounded-power image
 into scheduler-item bits 24:20 while clearing bits 27:25; the composed Rust

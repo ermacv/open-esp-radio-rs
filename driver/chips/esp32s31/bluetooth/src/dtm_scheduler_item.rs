@@ -13,8 +13,8 @@ use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmLinkStateReviewedWords
 use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
 
 use crate::{
-    BluetoothControllerSchedulerEpoch, BluetoothDtmChannel, BluetoothDtmPhy, BluetoothDtmRole,
-    BluetoothDtmTxEventWindow, BluetoothSchedulerSoftwareConfig,
+    BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample, BluetoothDtmChannel,
+    BluetoothDtmPhy, BluetoothDtmRole, BluetoothDtmTxEventWindow, BluetoothSchedulerSoftwareConfig,
 };
 
 /// Why one DTM scheduler-item event cannot be represented exactly.
@@ -24,31 +24,50 @@ pub enum BluetoothDtmSchedulerItemEventError {
     LeCodedS2RequiresTransmitter,
 }
 
-/// Raw controller-time lead derived from the common scheduler epoch.
+/// Raw insertion timing policy derived from the common scheduler epoch.
 ///
-/// Complete `r_btdm_sched_calc_seq_time` converts the scheduler environment's
-/// second policy delta through the live Controller time scale before adding it
-/// to every item. Construction therefore requires both source-owned values;
-/// callers cannot supply an unrelated raw image.
+/// Complete overlap admission converts the scheduler environment's first
+/// policy delta through the live Controller time scale for its late-start
+/// guard. `r_btdm_sched_calc_seq_time` converts the second delta before adding
+/// it to every item. Construction requires both source-owned values, so the two
+/// decisions cannot be drawn from different scheduler epochs.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothDtmSchedulerSequenceLead(u32);
+pub struct BluetoothDtmSchedulerTimingPolicy {
+    late_start_guard_raw_delta: u32,
+    sequence_lead_raw_delta: u32,
+}
 
-impl BluetoothDtmSchedulerSequenceLead {
-    /// Derive the raw lead for one initialized scheduler epoch.
+impl BluetoothDtmSchedulerTimingPolicy {
+    /// Derive both raw timing deltas for one initialized scheduler epoch.
     pub const fn from_scheduler_config(
         config: BluetoothSchedulerSoftwareConfig,
         scale: BluetoothControllerTimeScale,
     ) -> Self {
-        Self(
-            scale
+        Self {
+            late_start_guard_raw_delta: scale
+                .raw_delta_from_scheduler(config.late_start_guard_scheduler_delta())
+                .whole,
+            sequence_lead_raw_delta: scale
                 .raw_delta_from_scheduler(config.sequence_lead_scheduler_delta())
                 .whole,
-        )
+        }
     }
 
-    /// Return the complete raw-domain lead image.
-    pub const fn raw_image(self) -> u32 {
-        self.0
+    /// Whether one fresh sample still precedes the guarded item start.
+    pub(crate) const fn initial_deadline_is_open(
+        self,
+        sample: BluetoothControllerTimeSample,
+        raw_item_start: u32,
+    ) -> bool {
+        (sample
+            .raw_time()
+            .wrapping_add(self.late_start_guard_raw_delta)
+            .wrapping_sub(raw_item_start) as i32)
+            < 0
+    }
+
+    pub(crate) const fn sequence_lead_raw_delta(self) -> u32 {
+        self.sequence_lead_raw_delta
     }
 }
 
@@ -120,6 +139,10 @@ impl BluetoothDtmSchedulerItemEvent {
     pub const fn role(self) -> BluetoothDtmRole {
         self.role
     }
+
+    pub(crate) const fn raw_start(self, epoch: BluetoothControllerSchedulerEpoch) -> u32 {
+        epoch.raw_time_for_scheduler_time(self.scheduler_start)
+    }
 }
 
 /// Apply the common scheduler overlap-insertion power projection.
@@ -142,7 +165,7 @@ mod tests {
 
     use super::{
         BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerItemEventError,
-        BluetoothDtmSchedulerItemReviewedWords, BluetoothDtmSchedulerSequenceLead,
+        BluetoothDtmSchedulerItemReviewedWords, BluetoothDtmSchedulerTimingPolicy,
         apply_overlap_insertion_power,
     };
     use crate::{
@@ -175,13 +198,20 @@ mod tests {
     }
 
     #[test]
-    fn sequence_lead_uses_the_initialized_scheduler_epoch_scale() {
-        let lead = BluetoothDtmSchedulerSequenceLead::from_scheduler_config(
+    fn insertion_policy_uses_one_initialized_scheduler_epoch_scale() {
+        let policy = BluetoothDtmSchedulerTimingPolicy::from_scheduler_config(
             BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
             BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale(),
         );
 
-        assert_eq!(lead.raw_image(), 11);
+        assert_eq!(policy.sequence_lead_raw_delta(), 11);
+        assert!(
+            policy.initial_deadline_is_open(BluetoothControllerTimeSample::for_validation(92), 103)
+        );
+        assert!(
+            !policy
+                .initial_deadline_is_open(BluetoothControllerTimeSample::for_validation(93), 103)
+        );
     }
 
     #[test]

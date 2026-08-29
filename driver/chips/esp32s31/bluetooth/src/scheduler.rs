@@ -10,72 +10,63 @@ use crate::{
 };
 use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
 
-/// Bluetooth hardware after all sixteen scheduler hardware-list heads were
-/// removed.
+/// Source-owned scheduler policy copied by the reviewed controller init path.
 ///
-/// This is a deliberately terminal research frontier. The vendor function
-/// continues with software event/list initialization, and the outer
-/// controller-init path still requires LP, BLE-stack and HCI initialization.
-/// Consequently this state exposes neither common-PHY enable nor task, IRQ,
-/// HCI, controller or Link-Layer readiness. Dropping it is fail-stop because
-/// no verified rollback exists after the scheduler MMIO mutation.
-#[must_use = "the scheduler-prefix state retains every powered Bluetooth owner"]
-pub struct BluetoothSchedulerHardwareListHeadsCleared<P> {
-    task: BluetoothTaskResources,
-    interrupts: BluetoothInterruptBankOwner,
-    platform: BluetoothTeardownPendingPlatform<P>,
-    time_scale: BluetoothControllerTimeScale,
+/// The current archive proves two complete integer values but does not expose
+/// their physical units or independent field meanings. Keeping them in a
+/// software type prevents the vendor's private eight-byte structure layout
+/// from becoming part of the open Controller ABI.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BluetoothSchedulerSoftwareConfig {
+    value_0: u32,
+    value_1: u32,
 }
 
-/// Scheduler-prefix hardware ownership paired with one pristine static
-/// Controller runtime epoch.
+impl BluetoothSchedulerSoftwareConfig {
+    /// Configuration constructed by the complete ESP32-S31 standalone task.
+    pub const fn reviewed_standalone() -> Self {
+        Self {
+            value_0: 40,
+            value_1: 46,
+        }
+    }
+
+    /// First positional scheduler policy value.
+    pub const fn value_0(self) -> u32 {
+        self.value_0
+    }
+
+    /// Second positional scheduler policy value.
+    pub const fn value_1(self) -> u32 {
+        self.value_1
+    }
+}
+
+/// Hardware and source-owned software state after scheduler initialization.
 ///
-/// This state replaces the vendor task/event container but still exposes no
-/// PHY, BTBB, IRQ, HCI or Link-Layer readiness. The open scheduler item queue,
-/// remaining hardware initialization and stable ISR publication are missing.
-#[must_use = "the bound runtime retains every powered Bluetooth owner"]
-pub struct BluetoothSchedulerRuntimeResourcesBound<P, const MODEM_TIMER_CAPACITY: usize> {
+/// This transition replaces the complete reviewed scheduler-init function:
+/// all sixteen hardware list heads are removed, the scheduler policy is
+/// retained without copying the vendor structure ABI, and one pristine static
+/// Rust runtime replaces the vendor event object and generic broker nodes.
+/// Typed event cells and workers make numeric broker source identifiers and an
+/// intrusive callback list unnecessary.
+///
+/// The open scheduler item queue, remaining hardware initialization and stable
+/// ISR publication are still missing, so this state exposes no PHY, BTBB, IRQ,
+/// HCI, Controller or Link-Layer readiness. Dropping it is fail-stop because
+/// no verified rollback exists after scheduler MMIO mutation.
+#[must_use = "the initialized scheduler retains every powered Bluetooth owner"]
+pub struct BluetoothSchedulerInitialized<P, const MODEM_TIMER_CAPACITY: usize> {
     _task: BluetoothTaskResources,
     _interrupts: BluetoothInterruptBankOwner,
     _platform: BluetoothTeardownPendingPlatform<P>,
     time_scale: BluetoothControllerTimeScale,
+    config: BluetoothSchedulerSoftwareConfig,
     runtime: BluetoothControllerRuntimeResources<MODEM_TIMER_CAPACITY>,
 }
 
-impl<P> BluetoothSchedulerHardwareListHeadsCleared<P> {
-    /// Return the scheduler scale established by the preceding HAL component.
-    pub const fn controller_time_scale(&self) -> BluetoothControllerTimeScale {
-        self.time_scale
-    }
-
-    /// Bind one freshly constructed no-RTOS runtime aggregate to this exact
-    /// powered hardware epoch.
-    ///
-    /// The operation performs no MMIO. Resources are consumed by value so
-    /// workers, queues and event cells from another epoch cannot be paired
-    /// with the retained task/interrupt partitions.
-    pub fn bind_runtime_resources<const MODEM_TIMER_CAPACITY: usize>(
-        self,
-        runtime: BluetoothControllerRuntimeResources<MODEM_TIMER_CAPACITY>,
-    ) -> BluetoothSchedulerRuntimeResourcesBound<P, MODEM_TIMER_CAPACITY> {
-        assert!(
-            runtime.is_pristine(),
-            "only a pristine Controller runtime can enter a hardware epoch"
-        );
-        BluetoothSchedulerRuntimeResourcesBound {
-            _task: self.task,
-            _interrupts: self.interrupts,
-            _platform: self.platform,
-            time_scale: self.time_scale,
-            runtime,
-        }
-    }
-}
-
-impl<P, const MODEM_TIMER_CAPACITY: usize>
-    BluetoothSchedulerRuntimeResourcesBound<P, MODEM_TIMER_CAPACITY>
-{
-    /// Number of fixed modem timer slots retained by the bound epoch.
+impl<P, const MODEM_TIMER_CAPACITY: usize> BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY> {
+    /// Number of fixed modem timer slots retained by the initialized epoch.
     pub const fn modem_timer_capacity(&self) -> usize {
         self.runtime.modem_timer_capacity()
     }
@@ -85,13 +76,18 @@ impl<P, const MODEM_TIMER_CAPACITY: usize>
         self.time_scale
     }
 
-    /// Whether no software event has entered the bound epoch.
+    /// Return the source-owned scheduler policy for this hardware epoch.
+    pub const fn scheduler_config(&self) -> BluetoothSchedulerSoftwareConfig {
+        self.config
+    }
+
+    /// Whether no software event has entered the initialized epoch.
     pub fn runtime_is_pristine(&self) -> bool {
         self.runtime.is_pristine()
     }
 
     /// Borrow the matching interrupt and task runtime endpoints from this
-    /// hardware-bound epoch.
+    /// initialized hardware epoch.
     ///
     /// This is the production entry into an executor adapter. The retained
     /// task, interrupt and platform owners cannot move or be rebound while
@@ -107,37 +103,45 @@ impl<P, const MODEM_TIMER_CAPACITY: usize>
 }
 
 impl<P> BluetoothControllerHalInitialized<P> {
-    /// Remove all sixteen scheduler hardware-list heads in positional order.
+    /// Initialize scheduler hardware and bind one static no-RTOS runtime.
     ///
     /// This consumes the completed controller HAL state before the first
-    /// scheduler-table write. The result intentionally has no next hardware
-    /// transition until the remaining scheduler lifecycle has independent
-    /// evidence and production owners.
+    /// scheduler-table write. The supplied runtime must be pristine and is
+    /// consumed into the same powered ownership epoch; it replaces the vendor
+    /// event, broker-node and task containers instead of emulating their ABI.
     #[cfg(target_arch = "riscv32")]
-    pub fn clear_scheduler_hardware_list_heads(
+    pub fn initialize_scheduler<const MODEM_TIMER_CAPACITY: usize>(
         self,
-    ) -> BluetoothSchedulerHardwareListHeadsCleared<P> {
-        self.clear_scheduler_hardware_list_heads_with(|task| {
+        runtime: BluetoothControllerRuntimeResources<MODEM_TIMER_CAPACITY>,
+    ) -> BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY> {
+        self.initialize_scheduler_with(runtime, |task| {
             task.clear_scheduler_hardware_list_heads();
         })
     }
 
-    fn clear_scheduler_hardware_list_heads_with(
+    fn initialize_scheduler_with<const MODEM_TIMER_CAPACITY: usize>(
         self,
-        clear: impl FnOnce(&mut BluetoothTaskResources),
-    ) -> BluetoothSchedulerHardwareListHeadsCleared<P> {
+        runtime: BluetoothControllerRuntimeResources<MODEM_TIMER_CAPACITY>,
+        initialize_hardware: impl FnOnce(&mut BluetoothTaskResources),
+    ) -> BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY> {
+        assert!(
+            runtime.is_pristine(),
+            "only a pristine Controller runtime can initialize a scheduler epoch"
+        );
         let Self {
             mut task,
             interrupts,
             platform,
             time_scale,
         } = self;
-        clear(&mut task);
-        BluetoothSchedulerHardwareListHeadsCleared {
-            task,
-            interrupts,
-            platform,
+        initialize_hardware(&mut task);
+        BluetoothSchedulerInitialized {
+            _task: task,
+            _interrupts: interrupts,
+            _platform: platform,
             time_scale,
+            config: BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
+            runtime,
         }
     }
 }
@@ -163,7 +167,7 @@ mod tests {
     }
 
     #[test]
-    fn controller_hal_precedes_scheduler_prefix_and_arms_fail_stop() {
+    fn controller_hal_precedes_complete_scheduler_init_and_arms_fail_stop() {
         PLATFORM_DROPS.store(0, Ordering::Relaxed);
         let stopped =
             BluetoothStopped::from_hardware(FakePlatform, RadioHardware::for_validation());
@@ -176,26 +180,26 @@ mod tests {
         });
         let time_scale = initialized.controller_time_scale();
         let scheduler_operations = Rc::clone(&operations);
-        let scheduler = initialized.clear_scheduler_hardware_list_heads_with(|_| {
-            scheduler_operations.borrow_mut().push("scheduler-prefix");
-        });
+        let mut scheduler = initialized.initialize_scheduler_with(
+            BluetoothControllerRuntimeResources::<4>::new(),
+            |_| {
+                scheduler_operations.borrow_mut().push("scheduler-hardware");
+            },
+        );
         assert_eq!(
             operations.borrow().as_slice(),
-            ["controller-hal", "scheduler-prefix"]
+            ["controller-hal", "scheduler-hardware"]
         );
         assert_eq!(scheduler.controller_time_scale(), time_scale);
-        let mut bound =
-            scheduler.bind_runtime_resources(BluetoothControllerRuntimeResources::<4>::new());
-        assert_eq!(bound.modem_timer_capacity(), 4);
-        assert_eq!(bound.controller_time_scale(), time_scale);
-        assert!(bound.runtime_is_pristine());
-        let (interrupt, task) = bound.split_runtime();
+        assert_eq!(scheduler.modem_timer_capacity(), 4);
+        assert!(scheduler.runtime_is_pristine());
+        let (interrupt, task) = scheduler.split_runtime();
         assert!(core::ptr::eq(
             interrupt.scheduler_wake(),
             task.scheduler_wake()
         ));
         drop((interrupt, task));
-        drop(bound);
+        drop(scheduler);
         assert_eq!(PLATFORM_DROPS.load(Ordering::Relaxed), 0);
     }
 }

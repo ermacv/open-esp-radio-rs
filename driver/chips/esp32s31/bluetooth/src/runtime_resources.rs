@@ -1,9 +1,10 @@
 //! Fixed no-RTOS software state for one future powered Controller epoch.
 //!
-//! These resources replace independently allocated vendor event, queue and
-//! task objects with one affine Rust owner. They contain no HCI Host state and
-//! do not make the radio operational; the open scheduler item queue, stable
-//! ISR placement and powered hardware transitions remain separate stages.
+//! These resources replace independently allocated vendor event, queue, task
+//! and generic broker-node objects with one affine Rust owner. They contain no
+//! HCI Host state and do not make the radio operational; the open scheduler
+//! item queue, stable ISR placement and powered hardware transitions remain
+//! separate stages.
 
 #![forbid(unsafe_code)]
 

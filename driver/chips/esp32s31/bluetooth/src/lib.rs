@@ -3,7 +3,9 @@
 //! This crate is intentionally below HCI and the Bluetooth Link Layer. The
 //! implemented slices establish lossless physical ownership, the route-owned
 //! clock/reset prerequisite, the complete 50-operation BTDM HAL-init body and
-//! the following finite scheduler-table transaction of controller init.
+//! the following complete scheduler-init component. The latter retains its
+//! source-owned software policy and replaces vendor broker/event containers
+//! with one pristine static Rust runtime epoch.
 //! Common PHY and BT-baseband remain later enable-stage components. The
 //! two Controller interrupt sources, level/residency policies, baseline masks,
 //! snapshot modes, positional dynamic scheduler classifier, coalesced wake
@@ -148,10 +150,8 @@ pub use runtime_resources::{
     BluetoothControllerInterruptRuntime, BluetoothControllerRuntimeResources,
     BluetoothControllerTaskRuntime,
 };
-#[cfg(target_arch = "riscv32")]
-pub use scheduler::{
-    BluetoothSchedulerHardwareListHeadsCleared, BluetoothSchedulerRuntimeResourcesBound,
-};
+#[cfg(any(target_arch = "riscv32", test))]
+pub use scheduler::{BluetoothSchedulerInitialized, BluetoothSchedulerSoftwareConfig};
 pub use scheduler_finished_lists::{
     BluetoothSchedulerFinishedListCaptureError, BluetoothSchedulerFinishedListWorker,
     BluetoothSchedulerFinishedListWorkerStep, BluetoothSchedulerHardwareListIndex,

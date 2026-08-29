@@ -88,11 +88,11 @@ depends-on = ["clock-reset-prerequisite"]
 owners = [
   { path = "driver/chips/esp32s31/hal/src/bluetooth.rs", token = "BluetoothControllerHal" },
   { path = "driver/chips/esp32s31/bluetooth/src/controller_hal.rs", token = "BluetoothControllerHalInitialized" },
-  { path = "driver/chips/esp32s31/bluetooth/src/scheduler.rs", token = "BluetoothSchedulerHardwareListHeadsCleared" },
+  { path = "driver/chips/esp32s31/bluetooth/src/scheduler.rs", token = "BluetoothSchedulerSoftwareConfig" },
   { path = "driver/chips/esp32s31/bluetooth/src/runtime_resources.rs", token = "BluetoothControllerRuntimeResources" },
   { path = "driver/chips/esp32s31/bluetooth/src/runtime_resources.rs", token = "BluetoothControllerInterruptRuntime" },
   { path = "driver/chips/esp32s31/bluetooth/src/runtime_resources.rs", token = "BluetoothControllerTaskRuntime" },
-  { path = "driver/chips/esp32s31/bluetooth/src/scheduler.rs", token = "BluetoothSchedulerRuntimeResourcesBound" },
+  { path = "driver/chips/esp32s31/bluetooth/src/scheduler.rs", token = "BluetoothSchedulerInitialized" },
   { path = "driver/chips/esp32s31/bluetooth/src/scheduler.rs", token = "split_runtime" },
   { path = "driver/chips/esp32s31/pac/src/bluetooth_controller_hal_init.rs", token = "BluetoothControllerHalInitConfig" },
   { path = "driver/chips/esp32s31/pac/src/bluetooth_modem_lp_timer.rs", token = "BluetoothModemLpTimerRegistersPrepared" },
@@ -102,7 +102,7 @@ tests = [
   { path = "driver/chips/esp32s31/hal/src/bluetooth.rs", token = "untouched_task_owner_reconstructs_the_neutral_root" },
   { path = "driver/chips/esp32s31/hal/src/bluetooth.rs", token = "mutable_controller_borrow_arms_fail_stop_reunion" },
   { path = "driver/chips/esp32s31/hal/src/bluetooth.rs", token = "non_pristine_interrupt_history_blocks_neutral_reunion" },
-  { path = "driver/chips/esp32s31/bluetooth/src/scheduler.rs", token = "controller_hal_precedes_scheduler_prefix_and_arms_fail_stop" },
+  { path = "driver/chips/esp32s31/bluetooth/src/scheduler.rs", token = "controller_hal_precedes_complete_scheduler_init_and_arms_fail_stop" },
   { path = "driver/chips/esp32s31/bluetooth/src/runtime_resources.rs", token = "one_aggregate_starts_as_one_pristine_bounded_epoch" },
   { path = "driver/chips/esp32s31/bluetooth/src/runtime_resources.rs", token = "zero_capacity_profile_is_rejected" },
   { path = "driver/chips/esp32s31/bluetooth/src/runtime_resources.rs", token = "split_borrows_one_matching_interrupt_and_task_epoch" },
@@ -795,7 +795,7 @@ title = "Powered Controller and last-owner PHY teardown"
 scope = "Disable interrupts quiesce tasks and lists shut down baseband and PHY reverse clocks and recover the neutral radio owner"
 depends-on = ["async-controller-runtime"]
 owners = [
-  { path = "driver/chips/esp32s31/bluetooth/src/scheduler.rs", token = "BluetoothSchedulerHardwareListHeadsCleared" },
+  { path = "driver/chips/esp32s31/bluetooth/src/scheduler.rs", token = "BluetoothSchedulerInitialized" },
   { path = "driver/chips/esp32s31/pac/src/bluetooth_scheduler_stop.rs", token = "BluetoothSchedulerDisableRequest" },
   { path = "driver/chips/esp32s31/pac/src/bluetooth_scheduler_stop.rs", token = "BluetoothSchedulerDisableStep" },
   { path = "driver/chips/esp32s31/pac/src/bluetooth_scheduler_stop.rs", token = "BluetoothSchedulerDisableBusyObserved" },
@@ -808,7 +808,7 @@ owners = [
   { path = "driver/chips/esp32s31/hal/src/bluetooth.rs", token = "BluetoothControllerSchedulerDisableBeginFailure" },
 ]
 tests = [
-  { path = "driver/chips/esp32s31/bluetooth/src/scheduler.rs", token = "controller_hal_precedes_scheduler_prefix_and_arms_fail_stop" },
+  { path = "driver/chips/esp32s31/bluetooth/src/scheduler.rs", token = "controller_hal_precedes_complete_scheduler_init_and_arms_fail_stop" },
   { path = "driver/chips/esp32s31/pac/src/bluetooth_scheduler_stop.rs", token = "stop_publication_precedes_one_idle_observation" },
   { path = "driver/chips/esp32s31/pac/src/bluetooth_scheduler_stop.rs", token = "busy_observation_is_one_read_without_an_invented_recheck" },
   { path = "driver/chips/esp32s31/pac/src/bluetooth_scheduler_stop.rs", token = "in_flight_time_latch_rejects_before_command_or_fence" },

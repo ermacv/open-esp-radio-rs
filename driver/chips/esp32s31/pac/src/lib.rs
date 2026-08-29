@@ -144,7 +144,7 @@ pub use frequency::PhyFrequencyI2cNumberAddresses;
 /// ```
 pub use generated::MacInterruptMask;
 pub use generated::{
-    CoexTimerClientValue, CoexTimerPtiValue, CoexTimerTickImage, MacAssociationId,
+    CoexTimerClientValue, CoexTimerPtiValue, CoexTimerTickInput, MacAssociationId,
     MacExtraSoftApRxBlockAckEntryIndex, MacHeBssColor, MacHeDefaultPacketExtensionDuration,
     MacHePacketPaddingDuration, MacInterface, MacItwtClearIndex, MacKeyEntryIndex,
     MacMinimumMpduStartSpacing, MacPti, MacRxBlockAckEntryIndex, MacRxBlockAckStartingSequence,

@@ -66862,6 +66862,122 @@ pub mod field_replace_modify {
             unsafe { writer.force_value().bits((input & 0x00000fff) as u16) }
         });
     }
+
+    /// Replace COEX_HW_TIMER.DISABLE_CONTROL%s fields [DISABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_coex_timer_disable(registers: &crate::CoexHwTimer, index: usize) {
+        registers.disable_control(index).modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.disable().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace COEX_HW_TIMER.ENABLE_CONTROL%s fields [ENABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_coex_timer_enable(registers: &crate::CoexHwTimer, index: usize) {
+        registers.enable_control(index).modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.enable().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace COEX_HW_TIMER.ENABLE_CONTROL%s fields [ENABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_coex_timer_enable(registers: &crate::CoexHwTimer, index: usize) {
+        registers.enable_control(index).modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.enable().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace COEX_HW_TIMER.DISABLE_CONTROL%s fields [DISABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_coex_timer_disable(registers: &crate::CoexHwTimer, index: usize) {
+        registers.disable_control(index).modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.disable().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace COEX_HW_TIMER.CONFIGURATION%s fields [PRIMARY_TICK_IMAGE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn force_coex_timer(registers: &crate::CoexHwTimer, index: usize) {
+        registers.configuration(index).modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.primary_tick_image().bits(input & 0x00ffffff) }
+        });
+    }
+
+    /// Replace COEX_HW_TIMER.CONFIGURATION%s fields [PRIMARY_TICK_IMAGE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn unforce_coex_timer(registers: &crate::CoexHwTimer, index: usize) {
+        registers.configuration(index).modify(|_, writer| {
+            let input = 0x000003e8_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.primary_tick_image().bits(input & 0x00ffffff) }
+        });
+    }
+
+    /// Replace COEX_HW_TIMER.CONFIGURATION%s fields [PARAMETER_1] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_coex_timer_client(registers: &crate::CoexHwTimer, index: usize, input: u32) {
+        registers.configuration(index).modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.parameter_1().bits((input & 0x00000003) as u8) }
+        });
+    }
+
+    /// Replace COEX_HW_TIMER.CONFIGURATION%s fields [PARAMETER_2] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_coex_timer_pti(registers: &crate::CoexHwTimer, index: usize, input: u32) {
+        registers.configuration(index).modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.parameter_2().bits((input & 0x0000000f) as u8) }
+        });
+    }
+
+    /// Replace COEX_HW_TIMER.CONFIGURATION%s fields [PRIMARY_TICK_IMAGE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_coex_timer_primary_target(
+        registers: &crate::CoexHwTimer,
+        index: usize,
+        input: u32,
+    ) {
+        registers.configuration(index).modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x00ffffff;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.primary_tick_image().bits(input & 0x00ffffff) }
+        });
+    }
+
+    /// Replace COEX_HW_TIMER.SECONDARY_TARGET%s fields [SECONDARY_TICK_IMAGE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_coex_timer_secondary_target(
+        registers: &crate::CoexHwTimer,
+        index: usize,
+        input: u32,
+    ) {
+        registers.secondary_target(index).modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x00ffffff;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.secondary_tick_image().bits(input & 0x00ffffff) }
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.

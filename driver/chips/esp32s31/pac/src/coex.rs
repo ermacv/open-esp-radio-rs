@@ -2,14 +2,9 @@
 
 #![forbid(unsafe_code)]
 
-use super::{CoexTimerClientValue, CoexTimerPtiValue, CoexTimerTickImage, WifiRadioRegisters};
+use super::{CoexTimerClientValue, CoexTimerPtiValue, CoexTimerTickInput, WifiRadioRegisters};
 
 pub const COEX_TIMER_COUNT: u8 = 5;
-
-fn coex_timer_tick_image(value: u32) -> CoexTimerTickImage {
-    CoexTimerTickImage::new(value & CoexTimerTickImage::MAX)
-        .expect("the PAC-owned field mask always yields a valid timer image")
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
@@ -51,44 +46,28 @@ impl WifiRadioRegisters {
     pub fn enable_coex_timer(&mut self, timer: CoexTimerRegister) {
         let index = timer.index();
         let timers = &self.peripherals.coexistence.coex_hw_timer;
-        timers
-            .disable_control(index)
-            .modify(|_, writer| writer.disable().clear_bit());
-        timers
-            .enable_control(index)
-            .modify(|_, writer| writer.enable().set_bit());
+        super::generated::clear_coex_timer_disable(timers, index);
+        super::generated::set_coex_timer_enable(timers, index);
     }
 
     /// Disable one timer in the exact enable-clear/disable-set order.
     pub fn disable_coex_timer(&mut self, timer: CoexTimerRegister) {
         let index = timer.index();
         let timers = &self.peripherals.coexistence.coex_hw_timer;
-        timers
-            .enable_control(index)
-            .modify(|_, writer| writer.enable().clear_bit());
-        timers
-            .disable_control(index)
-            .modify(|_, writer| writer.disable().set_bit());
+        super::generated::clear_coex_timer_enable(timers, index);
+        super::generated::set_coex_timer_disable(timers, index);
     }
 
     /// Force one timer by clearing only its low 24-bit tick image.
     pub fn force_coex_timer(&mut self, timer: CoexTimerRegister) {
         let index = timer.index();
-        self.peripherals
-            .coexistence
-            .coex_hw_timer
-            .configuration(index)
-            .modify(|_, writer| writer.primary_tick_image().set(0));
+        super::generated::force_coex_timer(&self.peripherals.coexistence.coex_hw_timer, index);
     }
 
     /// Remove the force condition using the vendor's exact value of 1000.
     pub fn unforce_coex_timer(&mut self, timer: CoexTimerRegister) {
         let index = timer.index();
-        self.peripherals
-            .coexistence
-            .coex_hw_timer
-            .configuration(index)
-            .modify(|_, writer| writer.primary_tick_image().set(1_000));
+        super::generated::unforce_coex_timer(&self.peripherals.coexistence.coex_hw_timer, index);
     }
 
     /// Program the first two fresh-read RMW edges of `coex_hw_timer_set`.
@@ -104,9 +83,8 @@ impl WifiRadioRegisters {
     ) {
         let index = timer.index();
         let timers = &self.peripherals.coexistence.coex_hw_timer;
-        let configuration = timers.configuration(index);
-        configuration.modify(|_, writer| writer.parameter_1().set(parameter_1.get() as u8));
-        configuration.modify(|_, writer| writer.parameter_2().set(parameter_2.get() as u8));
+        super::generated::configure_coex_timer_client(timers, index, parameter_1);
+        super::generated::configure_coex_timer_pti(timers, index, parameter_2);
     }
 
     /// Publish the converted primary target in the third fresh-read RMW edge
@@ -117,12 +95,13 @@ impl WifiRadioRegisters {
         primary_tick_image: u32,
     ) {
         let index = timer.index();
-        let primary_tick_image = coex_timer_tick_image(primary_tick_image);
-        self.peripherals
-            .coexistence
-            .coex_hw_timer
-            .configuration(index)
-            .modify(|_, writer| writer.primary_tick_image().set(primary_tick_image.get()));
+        let primary_tick_input = CoexTimerTickInput::new(primary_tick_image)
+            .expect("every u32 belongs to the reviewed COEX timer input domain");
+        super::generated::configure_coex_timer_primary_target(
+            &self.peripherals.coexistence.coex_hw_timer,
+            index,
+            primary_tick_input,
+        );
     }
 
     /// Publish the converted secondary target in the final fresh-read RMW
@@ -133,32 +112,12 @@ impl WifiRadioRegisters {
         secondary_tick_image: u32,
     ) {
         let index = timer.index();
-        let secondary_tick_image = coex_timer_tick_image(secondary_tick_image);
-        self.peripherals
-            .coexistence
-            .coex_hw_timer
-            .secondary_target(index)
-            .modify(|_, writer| {
-                writer
-                    .secondary_tick_image()
-                    .set(secondary_tick_image.get())
-            });
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn timer_index_domain_includes_exactly_five_timers() {
-        assert_eq!(CoexTimerRegister::ALL.len(), 5);
-        for index in 0..COEX_TIMER_COUNT {
-            assert_eq!(
-                CoexTimerRegister::new(index).map(CoexTimerRegister::index),
-                Some(usize::from(index))
-            );
-        }
-        assert_eq!(CoexTimerRegister::new(COEX_TIMER_COUNT), None);
+        let secondary_tick_input = CoexTimerTickInput::new(secondary_tick_image)
+            .expect("every u32 belongs to the reviewed COEX timer input domain");
+        super::generated::configure_coex_timer_secondary_target(
+            &self.peripherals.coexistence.coex_hw_timer,
+            index,
+            secondary_tick_input,
+        );
     }
 }

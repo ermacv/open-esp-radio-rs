@@ -503,10 +503,10 @@ max = 15
 sources = ["BLOB_LIBCOEX_HW_TIMER"]
 
 [[bounded-domains]]
-name = "CoexTimerTickImage"
-description = "Twenty-four-bit converted coexistence timer target image."
+name = "CoexTimerTickInput"
+description = "Complete converted coexistence timer value before the reviewed low-24-bit hardware projection."
 min = 0
-max = 0x00ff_ffff
+max = 0xffff_ffff
 sources = ["BLOB_LIBCOEX_HW_TIMER"]
 
 [[bounded-domains]]
@@ -7294,3 +7294,95 @@ fields = [{ field = "FORCE_VALUE", source-bit-offset = 0 }]
 domain = "CfrValue"
 exposure = "facade"
 sources = ["BLOB_LIBPHY_PHY_CFR_CONTROL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_coex_timer_disable"
+peripheral = "COEX_HW_TIMER"
+register = "DISABLE_CONTROL%s"
+fields = [{ field = "DISABLE", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_HW_TIMER", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_coex_timer_enable"
+peripheral = "COEX_HW_TIMER"
+register = "ENABLE_CONTROL%s"
+fields = [{ field = "ENABLE", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_HW_TIMER", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_coex_timer_enable"
+peripheral = "COEX_HW_TIMER"
+register = "ENABLE_CONTROL%s"
+fields = [{ field = "ENABLE", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_HW_TIMER", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_coex_timer_disable"
+peripheral = "COEX_HW_TIMER"
+register = "DISABLE_CONTROL%s"
+fields = [{ field = "DISABLE", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_HW_TIMER", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "force_coex_timer"
+peripheral = "COEX_HW_TIMER"
+register = "CONFIGURATION%s"
+fields = [{ field = "PRIMARY_TICK_IMAGE", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_HW_TIMER", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "unforce_coex_timer"
+peripheral = "COEX_HW_TIMER"
+register = "CONFIGURATION%s"
+fields = [{ field = "PRIMARY_TICK_IMAGE", source-bit-offset = 0 }]
+value = 1000
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_HW_TIMER", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_coex_timer_client"
+peripheral = "COEX_HW_TIMER"
+register = "CONFIGURATION%s"
+fields = [{ field = "PARAMETER_1", source-bit-offset = 0 }]
+domain = "CoexTimerClientValue"
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_HW_TIMER", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_coex_timer_pti"
+peripheral = "COEX_HW_TIMER"
+register = "CONFIGURATION%s"
+fields = [{ field = "PARAMETER_2", source-bit-offset = 0 }]
+domain = "CoexTimerPtiValue"
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_HW_TIMER", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_coex_timer_primary_target"
+peripheral = "COEX_HW_TIMER"
+register = "CONFIGURATION%s"
+fields = [{ field = "PRIMARY_TICK_IMAGE", source-bit-offset = 0 }]
+domain = "CoexTimerTickInput"
+input-transform = { wrapping-subtract = 0, retain-mask = 0x00ffffff }
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_HW_TIMER", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_coex_timer_secondary_target"
+peripheral = "COEX_HW_TIMER"
+register = "SECONDARY_TARGET%s"
+fields = [{ field = "SECONDARY_TICK_IMAGE", source-bit-offset = 0 }]
+domain = "CoexTimerTickInput"
+input-transform = { wrapping-subtract = 0, retain-mask = 0x00ffffff }
+exposure = "facade"
+sources = ["BLOB_LIBCOEX_HW_TIMER", "S31_ESP_PACS_SVD"]

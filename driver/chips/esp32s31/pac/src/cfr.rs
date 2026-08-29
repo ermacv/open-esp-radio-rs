@@ -6,9 +6,9 @@
 
 #![forbid(unsafe_code)]
 
+use super::RadioPhyRegisters;
 pub use super::generated::CfrValue;
 use super::generated::{CfrEnableState, CfrForceMode, IccfrGateState};
-use super::RadioPhyRegisters;
 
 const fn cfr_enable_state(enabled: bool) -> CfrEnableState {
     if enabled {

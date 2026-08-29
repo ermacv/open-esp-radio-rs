@@ -1024,21 +1024,17 @@ impl CoexTimerPtiValue {
     }
 }
 
-/// Twenty-four-bit converted coexistence timer target image.
+/// Complete converted coexistence timer value before the reviewed low-24-bit hardware projection.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct CoexTimerTickImage(u32);
+pub struct CoexTimerTickInput(u32);
 
-impl CoexTimerTickImage {
+impl CoexTimerTickInput {
     pub const MIN: u32 = 0x00000000;
-    pub const MAX: u32 = 0x00ffffff;
+    pub const MAX: u32 = 0xffffffff;
 
     /// Construct a value only when it lies in the reviewed inclusive range.
     pub const fn new(value: u32) -> Option<Self> {
-        if value <= 0x00ffffff {
-            Some(Self(value))
-        } else {
-            None
-        }
+        Some(Self(value))
     }
 
     /// Return the checked numeric value.
@@ -5179,6 +5175,90 @@ pub(crate) fn configure_forced_iccfr_value(
     value: CfrValue,
 ) {
     crate::svd::field_replace_modify::configure_forced_iccfr_value(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `clear_coex_timer_disable` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_coex_timer_disable(registers: &crate::svd::CoexHwTimer, index: usize) {
+    crate::svd::field_replace_modify::clear_coex_timer_disable(registers, index);
+}
+
+/// Typed bridge for the reviewed `set_coex_timer_enable` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn set_coex_timer_enable(registers: &crate::svd::CoexHwTimer, index: usize) {
+    crate::svd::field_replace_modify::set_coex_timer_enable(registers, index);
+}
+
+/// Typed bridge for the reviewed `clear_coex_timer_enable` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_coex_timer_enable(registers: &crate::svd::CoexHwTimer, index: usize) {
+    crate::svd::field_replace_modify::clear_coex_timer_enable(registers, index);
+}
+
+/// Typed bridge for the reviewed `set_coex_timer_disable` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn set_coex_timer_disable(registers: &crate::svd::CoexHwTimer, index: usize) {
+    crate::svd::field_replace_modify::set_coex_timer_disable(registers, index);
+}
+
+/// Typed bridge for the reviewed `force_coex_timer` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn force_coex_timer(registers: &crate::svd::CoexHwTimer, index: usize) {
+    crate::svd::field_replace_modify::force_coex_timer(registers, index);
+}
+
+/// Typed bridge for the reviewed `unforce_coex_timer` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn unforce_coex_timer(registers: &crate::svd::CoexHwTimer, index: usize) {
+    crate::svd::field_replace_modify::unforce_coex_timer(registers, index);
+}
+
+/// Typed bridge for the reviewed `configure_coex_timer_client` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_coex_timer_client(
+    registers: &crate::svd::CoexHwTimer,
+    index: usize,
+    value: CoexTimerClientValue,
+) {
+    crate::svd::field_replace_modify::configure_coex_timer_client(registers, index, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_coex_timer_pti` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_coex_timer_pti(
+    registers: &crate::svd::CoexHwTimer,
+    index: usize,
+    value: CoexTimerPtiValue,
+) {
+    crate::svd::field_replace_modify::configure_coex_timer_pti(registers, index, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_coex_timer_primary_target` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_coex_timer_primary_target(
+    registers: &crate::svd::CoexHwTimer,
+    index: usize,
+    value: CoexTimerTickInput,
+) {
+    crate::svd::field_replace_modify::configure_coex_timer_primary_target(
+        registers,
+        index,
+        value.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `configure_coex_timer_secondary_target` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_coex_timer_secondary_target(
+    registers: &crate::svd::CoexHwTimer,
+    index: usize,
+    value: CoexTimerTickInput,
+) {
+    crate::svd::field_replace_modify::configure_coex_timer_secondary_target(
+        registers,
+        index,
+        value.get(),
+    );
 }
 
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.

@@ -27,8 +27,9 @@
 //! still-missing completed-header ownership or visibility fence.
 //! These components are deliberately not connected across the missing
 //! selector-6 invariant, affine item/completion-list owner, primary-ISR worker
-//! composition, feature-specific NRT classification, stable ISR storage and
-//! live-route prerequisites. No current finite state
+//! composition, feature-specific NRT classification and live-route
+//! prerequisites. Stable two-owner ISR publication is connected, but no
+//! current finite state
 //! claims that the complete controller lifecycle, HCI transport, task or live
 //! interrupt epoch has completed.
 //! The public lifecycle begins with one [`BluetoothStopped`] aggregate; the
@@ -95,7 +96,9 @@ pub use common_phy_state::{BluetoothControllerPhyInitialized, BluetoothPhyInitia
 pub use controller_hal::BluetoothControllerHalInitialized;
 #[cfg(target_arch = "riscv32")]
 pub use controller_start::{
-    BluetoothControllerInterruptOwnersReady, BluetoothControllerOutputTimerStarted,
+    BluetoothControllerInterruptOwnerPublicationFailure,
+    BluetoothControllerInterruptOwnersPublished, BluetoothControllerInterruptOwnersReady,
+    BluetoothControllerOutputTimerStarted, BluetoothInterruptOwnerStorage,
 };
 pub use controller_time::{BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample};
 pub use dtm_event_prepare::{

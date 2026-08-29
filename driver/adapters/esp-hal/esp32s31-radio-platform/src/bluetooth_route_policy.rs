@@ -12,6 +12,27 @@ pub(crate) enum BluetoothInterruptRouteError {
     WrongCore,
 }
 
+/// Why both Bluetooth ISR owners could not be published atomically.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EspHalBluetoothInterruptStorageError {
+    /// Both slots already retain a preceding powered Controller epoch.
+    AlreadyPublished,
+    /// Exactly one slot was occupied, so the process-wide invariant is broken.
+    StorageInvariant,
+}
+
+/// Validate both process-wide slots before either owner is moved into storage.
+pub(crate) const fn validate_interrupt_storage(
+    interrupt_occupied: bool,
+    timer_occupied: bool,
+) -> Result<(), EspHalBluetoothInterruptStorageError> {
+    match (interrupt_occupied, timer_occupied) {
+        (false, false) => Ok(()),
+        (true, true) => Err(EspHalBluetoothInterruptStorageError::AlreadyPublished),
+        _ => Err(EspHalBluetoothInterruptStorageError::StorageInvariant),
+    }
+}
+
 /// Validate the complete route set before any route can be installed.
 pub(crate) const fn validate_route_priorities(
     primary: u8,
@@ -43,7 +64,8 @@ pub(crate) const fn validate_quiesce_core(
 #[cfg(test)]
 mod tests {
     use super::{
-        BluetoothInterruptRouteError, REQUIRED_PRIORITY_LEVEL, validate_quiesce_core,
+        BluetoothInterruptRouteError, EspHalBluetoothInterruptStorageError,
+        REQUIRED_PRIORITY_LEVEL, validate_interrupt_storage, validate_quiesce_core,
         validate_route_priorities,
     };
 
@@ -81,6 +103,23 @@ mod tests {
         assert_eq!(
             validate_quiesce_core(false),
             Err(BluetoothInterruptRouteError::WrongCore)
+        );
+    }
+
+    #[test]
+    fn both_isr_owner_slots_publish_or_reject_as_one_invariant() {
+        assert_eq!(validate_interrupt_storage(false, false), Ok(()));
+        assert_eq!(
+            validate_interrupt_storage(true, true),
+            Err(EspHalBluetoothInterruptStorageError::AlreadyPublished)
+        );
+        assert_eq!(
+            validate_interrupt_storage(true, false),
+            Err(EspHalBluetoothInterruptStorageError::StorageInvariant)
+        );
+        assert_eq!(
+            validate_interrupt_storage(false, true),
+            Err(EspHalBluetoothInterruptStorageError::StorageInvariant)
         );
     }
 }

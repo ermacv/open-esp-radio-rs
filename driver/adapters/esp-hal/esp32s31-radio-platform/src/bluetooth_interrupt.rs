@@ -1,11 +1,9 @@
 //! Typed ESP-HAL routing primitives for all three Bluetooth interrupts.
 //!
-//! This module deliberately stops below a live interrupt epoch. The caller
-//! must first publish the unique Bluetooth interrupt-register owner in stable
-//! ISR storage; primary semantic fault/dynamic and opaque NRT acknowledgement plus the scheduler-list
-//! drain remain incomplete. Keeping these primitives crate-private makes the
-//! PAC-to-ESP-HAL mapping compile checked without exposing a safe API that
-//! could enable any route prematurely.
+//! Stable publication is deliberately separate from a live interrupt epoch.
+//! Both unique HAL owners are installed atomically before any CPU route can be
+//! enabled. Primary semantic fault/dynamic dispatch, source-127 software work,
+//! opaque NRT acknowledgement plus the scheduler-list drain remain incomplete.
 
 #![forbid(unsafe_code)]
 #![allow(
@@ -13,16 +11,24 @@
     reason = "typed route primitives await stable ISR storage and complete three-source dispatch"
 )]
 
+use core::cell::RefCell;
+
+use critical_section::Mutex;
 use esp_hal::{
     interrupt::{self, InterruptHandler, Priority},
     peripherals::Interrupt,
     system::Cpu,
 };
-use open_esp_radio_esp32s31_bluetooth::BluetoothCpuInterruptRoutePolicy;
+use open_esp_radio_esp32s31_bluetooth::{
+    BluetoothCpuInterruptRoutePolicy, BluetoothInterruptOwnerStorage,
+};
+use open_esp_radio_esp32s31_hal::{
+    BluetoothInterruptRegistersOwner, BluetoothModemLpTimerInterruptReadyOwner,
+};
 
 use crate::bluetooth_route_policy::{
-    BluetoothInterruptRouteError, REQUIRED_PRIORITY_LEVEL, validate_quiesce_core,
-    validate_route_priorities,
+    BluetoothInterruptRouteError, EspHalBluetoothInterruptStorageError, REQUIRED_PRIORITY_LEVEL,
+    validate_interrupt_storage, validate_quiesce_core, validate_route_priorities,
 };
 
 pub(crate) const PRIMARY_INTERRUPT: Interrupt = Interrupt::BT_MAC;
@@ -47,6 +53,66 @@ const _: () = assert!(BluetoothCpuInterruptRoutePolicy::PRIMARY.priority_level()
 const _: () = assert!(BluetoothCpuInterruptRoutePolicy::MODEM_LP_TIMER.priority_level() == 3);
 const _: () = assert!(BluetoothCpuInterruptRoutePolicy::NRT.priority_level() == 3);
 const _: () = assert!(ROUTE_PRIORITY as u8 == REQUIRED_PRIORITY_LEVEL);
+
+static INTERRUPT_REGISTERS: Mutex<RefCell<Option<BluetoothInterruptRegistersOwner>>> =
+    Mutex::new(RefCell::new(None));
+static MODEM_LP_TIMER: Mutex<RefCell<Option<BluetoothModemLpTimerInterruptReadyOwner>>> =
+    Mutex::new(RefCell::new(None));
+
+/// Stable process-wide slots for both Bluetooth ISR register owners.
+///
+/// Constructing this value performs no claim. Publication rejects any second
+/// value while either process-wide slot is occupied.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct EspHalBluetoothInterruptStorage;
+
+impl EspHalBluetoothInterruptStorage {
+    /// Construct an unclaimed reference to the process-wide storage boundary.
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+/// Affine proof that both Bluetooth owners remain in stable ISR storage.
+///
+/// Dropping the lease is fail-stop: the owners remain published because no
+/// verified live-route shutdown and Controller teardown path exists yet.
+#[must_use = "published Bluetooth ISR owners remain process-wide until verified teardown"]
+pub struct PublishedEspHalBluetoothInterruptOwners {
+    _private: (),
+}
+
+impl BluetoothInterruptOwnerStorage for EspHalBluetoothInterruptStorage {
+    type Published = PublishedEspHalBluetoothInterruptOwners;
+    type Error = EspHalBluetoothInterruptStorageError;
+
+    fn publish(
+        self,
+        interrupts: BluetoothInterruptRegistersOwner,
+        timer: BluetoothModemLpTimerInterruptReadyOwner,
+    ) -> Result<
+        Self::Published,
+        (
+            Self::Error,
+            Self,
+            BluetoothInterruptRegistersOwner,
+            BluetoothModemLpTimerInterruptReadyOwner,
+        ),
+    > {
+        critical_section::with(|critical_section| {
+            let mut interrupt_slot = INTERRUPT_REGISTERS.borrow_ref_mut(critical_section);
+            let mut timer_slot = MODEM_LP_TIMER.borrow_ref_mut(critical_section);
+            match validate_interrupt_storage(interrupt_slot.is_some(), timer_slot.is_some()) {
+                Ok(()) => {
+                    *interrupt_slot = Some(interrupts);
+                    *timer_slot = Some(timer);
+                    Ok(PublishedEspHalBluetoothInterruptOwners { _private: () })
+                }
+                Err(error) => Err((error, self, interrupts, timer)),
+            }
+        })
+    }
+}
 
 /// Proof that all Bluetooth routes were bound on the same CPU core.
 ///

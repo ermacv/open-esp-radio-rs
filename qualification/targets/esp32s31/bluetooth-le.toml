@@ -107,6 +107,8 @@ owners = [
   { path = "driver/chips/esp32s31/hal/src/bluetooth.rs", token = "BluetoothModemLpTimerCounterStartedOwner" },
   { path = "driver/chips/esp32s31/bluetooth/src/controller_start.rs", token = "BluetoothControllerOutputTimerStarted" },
   { path = "driver/chips/esp32s31/bluetooth/src/controller_start.rs", token = "BluetoothControllerInterruptOwnersReady" },
+  { path = "driver/chips/esp32s31/bluetooth/src/controller_start.rs", token = "BluetoothControllerInterruptOwnersPublished" },
+  { path = "driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_interrupt.rs", token = "EspHalBluetoothInterruptStorage" },
 ]
 tests = [
   { path = "driver/chips/esp32s31/hal/src/bluetooth.rs", token = "untouched_task_owner_reconstructs_the_neutral_root" },
@@ -132,7 +134,7 @@ vendor-anchors = [
   { path = "verification/vendor/targets/esp32s31/analysis/bluetooth-controller-boundary.md", token = "r_sym_bt_AJP6s1I6EhaAHnz8n72F" },
 ]
 gaps = [
-  { axis = "implementation", id = "interrupt-owners-ready-but-stable-publication-route-and-open-scheduler-item-stages-missing" },
+  { axis = "implementation", id = "interrupt-owners-published-but-live-route-and-open-scheduler-item-stages-missing" },
   { axis = "vendor", id = "complete-controller-init-production-trace-missing" },
   { axis = "hil", id = "initialized-controller-cell-missing" },
   { axis = "async", id = "stable-route-and-controller-task-wake-composition-missing" },

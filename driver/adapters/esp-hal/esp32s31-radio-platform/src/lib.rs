@@ -31,6 +31,13 @@ mod esp32s31;
 pub use coordinator::BluetoothPlatformBusy;
 
 #[cfg(feature = "esp32s31")]
+pub use bluetooth_interrupt::{
+    EspHalBluetoothInterruptStorage, PublishedEspHalBluetoothInterruptOwners,
+};
+#[cfg(feature = "esp32s31")]
+pub use bluetooth_route_policy::EspHalBluetoothInterruptStorageError;
+
+#[cfg(feature = "esp32s31")]
 pub use esp32s31::{EspHalBluetoothPlatform, EspHalRadioPlatform};
 
 #[cfg(test)]

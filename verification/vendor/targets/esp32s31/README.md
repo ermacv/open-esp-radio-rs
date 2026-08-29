@@ -116,9 +116,10 @@ controller-output preparation, the one-shot runtime-timer start and both
 ownership-only pre-route staging transitions. The BLE
 PHY transition consumes one pinned static graph containing the recovered
 environment, its auxiliary allocations and resolving-list object, so no raw
-caller address or vendor allocator ABI enters production. The chain still
-stops before stable ISR storage, live IRQ routing, scheduler-item publication
-or Link Layer work. Once the first powered MMIO mutation occurs,
+caller address or vendor allocator ABI enters production. The chain atomically
+publishes both disjoint HAL owners in process-wide ESP-HAL ISR storage, then
+stops before live IRQ routing, scheduler-item publication or Link Layer work.
+Once the first powered MMIO mutation occurs,
 every owner is retained fail-stop because complete rollback and last-owner PHY
 teardown remain unrecovered. The interrupt slice now
 preserves two distinct vendor paths: primary source 124 samples masked status,

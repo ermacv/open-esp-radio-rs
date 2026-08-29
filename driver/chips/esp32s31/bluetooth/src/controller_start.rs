@@ -73,6 +73,90 @@ pub struct BluetoothControllerInterruptOwnersReady<
     runtime_control: BluetoothLowPowerRuntimeControlObservation,
 }
 
+/// Platform boundary that publishes both disjoint owners in stable ISR slots.
+///
+/// Implementations must either publish both owners atomically and return one
+/// affine lease, or return the storage value and both unchanged owners. This
+/// transition must not enable a CPU route; routing is a later lifecycle edge.
+#[cfg(target_arch = "riscv32")]
+pub trait BluetoothInterruptOwnerStorage: Sized {
+    /// Affine proof that both owners remain in the implementation's storage.
+    type Published;
+    /// Exact pre-publication rejection reason.
+    type Error;
+
+    /// Publish both owners without enabling any interrupt source.
+    fn publish(
+        self,
+        interrupts: BluetoothInterruptRegistersOwner,
+        timer: BluetoothModemLpTimerInterruptReadyOwner,
+    ) -> Result<
+        Self::Published,
+        (
+            Self::Error,
+            Self,
+            BluetoothInterruptRegistersOwner,
+            BluetoothModemLpTimerInterruptReadyOwner,
+        ),
+    >;
+}
+
+/// Powered Controller after atomic stable publication of both ISR owners.
+///
+/// The platform lease retains stable placement, but no CPU route is active and
+/// no hard-handler entry is possible from this state.
+#[must_use = "published Bluetooth interrupt owners must remain retained through route setup"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothControllerInterruptOwnersPublished<
+    P,
+    M,
+    S,
+    const MODEM_TIMER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+> where
+    M: RawMutex,
+{
+    initialized: BluetoothControllerBlePhyEngineInitialized<
+        P,
+        M,
+        MODEM_TIMER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >,
+    _storage: S,
+    runtime_control: BluetoothLowPowerRuntimeControlObservation,
+}
+
+/// Failed stable publication retaining the complete Controller and storage.
+#[must_use = "failed ISR publication returns every affine owner for inspection or retry"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothControllerInterruptOwnerPublicationFailure<
+    P,
+    M,
+    S,
+    const MODEM_TIMER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+> where
+    M: RawMutex,
+    S: BluetoothInterruptOwnerStorage,
+{
+    controller: BluetoothControllerInterruptOwnersReady<
+        P,
+        M,
+        MODEM_TIMER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >,
+    storage: S,
+    error: S::Error,
+}
+
 #[cfg(target_arch = "riscv32")]
 impl<
     P,
@@ -118,6 +202,96 @@ where
 impl<
     P,
     M,
+    S,
+    const MODEM_TIMER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+>
+    BluetoothControllerInterruptOwnersPublished<
+        P,
+        M,
+        S,
+        MODEM_TIMER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >
+where
+    M: RawMutex,
+{
+    /// Inspect the BLE PHY input retained by this exact powered epoch.
+    pub const fn ble_phy_report(&self) -> crate::BluetoothBlePhyInitializationReport {
+        self.initialized.report()
+    }
+
+    /// Inspect the preceding finite BTBB transition.
+    pub const fn baseband_report(&self) -> crate::BluetoothBasebandInitializationReport {
+        self.initialized.baseband_report()
+    }
+
+    /// Inspect the complete common-PHY transition.
+    pub const fn phy_report(&self) -> crate::BluetoothPhyInitializationReport {
+        self.initialized.phy_report()
+    }
+
+    /// Conditional runtime-control branch retained across publication.
+    pub const fn runtime_control_observation(&self) -> BluetoothLowPowerRuntimeControlObservation {
+        self.runtime_control
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<
+    P,
+    M,
+    S,
+    const MODEM_TIMER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+>
+    BluetoothControllerInterruptOwnerPublicationFailure<
+        P,
+        M,
+        S,
+        MODEM_TIMER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >
+where
+    M: RawMutex,
+    S: BluetoothInterruptOwnerStorage,
+{
+    /// Inspect the exact platform rejection.
+    pub const fn error(&self) -> &S::Error {
+        &self.error
+    }
+
+    /// Recover the complete pre-publication Controller and storage value.
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothControllerInterruptOwnersReady<
+            P,
+            M,
+            MODEM_TIMER_CAPACITY,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+        S,
+        S::Error,
+    ) {
+        (self.controller, self.storage, self.error)
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<
+    P,
+    M,
     const MODEM_TIMER_CAPACITY: usize,
     const HOST_TO_CONTROLLER_DEPTH: usize,
     const CONTROLLER_TO_HOST_DEPTH: usize,
@@ -152,6 +326,71 @@ where
     /// Conditional runtime-control branch retained by the ISR-ready timer.
     pub const fn runtime_control_observation(&self) -> BluetoothLowPowerRuntimeControlObservation {
         self.runtime_control
+    }
+
+    /// Atomically publish both owners in caller-selected stable ISR storage.
+    ///
+    /// Rejection occurs before publication and returns this exact state plus
+    /// the storage capability. Success still leaves every CPU route inactive.
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc failure must return every affine powered owner"
+    )]
+    #[expect(
+        clippy::type_complexity,
+        reason = "the return type preserves the exact Controller and platform-storage states"
+    )]
+    pub fn publish_interrupt_owners<S>(
+        self,
+        storage: S,
+    ) -> Result<
+        BluetoothControllerInterruptOwnersPublished<
+            P,
+            M,
+            S::Published,
+            MODEM_TIMER_CAPACITY,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+        BluetoothControllerInterruptOwnerPublicationFailure<
+            P,
+            M,
+            S,
+            MODEM_TIMER_CAPACITY,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    >
+    where
+        S: BluetoothInterruptOwnerStorage,
+    {
+        let Self {
+            initialized,
+            _interrupts: interrupts,
+            _timer: timer,
+            runtime_control,
+        } = self;
+        match storage.publish(interrupts, timer) {
+            Ok(published) => Ok(BluetoothControllerInterruptOwnersPublished {
+                initialized,
+                _storage: published,
+                runtime_control,
+            }),
+            Err((error, storage, interrupts, timer)) => {
+                Err(BluetoothControllerInterruptOwnerPublicationFailure {
+                    controller: BluetoothControllerInterruptOwnersReady {
+                        initialized,
+                        _interrupts: interrupts,
+                        _timer: timer,
+                        runtime_control,
+                    },
+                    storage,
+                    error,
+                })
+            }
+        }
     }
 }
 

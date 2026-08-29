@@ -7854,3 +7854,39 @@ domain = "PhyRxGainTableLastIndex"
 input-transform = { wrapping-subtract = 0, clamp-maximum = 0x4c, retain-mask = 0x7f }
 exposure = "facade"
 sources = ["BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_phy_agc_post_initialization_flag"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_SATURATION_CONTROL"
+fields = [{ field = "POST_INIT_SET_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_agc_post_initialization_window"
+peripheral = "PHY_AGC_ORACLE"
+register = "RX_11B_WINDOW_CONTROL"
+fields = [{ field = "WINDOW_UNKNOWN", source-bit-offset = 0 }]
+value = 0x1c0
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_agc_post_initialization_low"
+peripheral = "PHY_AGC_ORACLE"
+register = "POST_INIT_RX_CONTROL"
+fields = [{ field = "LOW_UNKNOWN", source-bit-offset = 0 }]
+value = 0x17
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_agc_post_initialization_high"
+peripheral = "PHY_AGC_ORACLE"
+register = "POST_INIT_RX_CONTROL"
+fields = [{ field = "HIGH_UNKNOWN", source-bit-offset = 0 }]
+value = 0x17
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW", "S31_ESP_PACS_SVD"]

@@ -5707,6 +5707,30 @@ pub(crate) fn configure_phy_rx_gain_table_final_limit(
     );
 }
 
+/// Typed bridge for the reviewed `set_phy_agc_post_initialization_flag` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_agc_post_initialization_flag(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::set_phy_agc_post_initialization_flag(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_agc_post_initialization_window` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_agc_post_initialization_window(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::configure_phy_agc_post_initialization_window(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_agc_post_initialization_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_agc_post_initialization_low(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::configure_phy_agc_post_initialization_low(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_agc_post_initialization_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_agc_post_initialization_high(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::configure_phy_agc_post_initialization_high(registers);
+}
+
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
 #[inline]
 pub(crate) fn configure_shared_modem_low_power_timer(

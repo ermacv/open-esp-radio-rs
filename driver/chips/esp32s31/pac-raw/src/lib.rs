@@ -67543,6 +67543,52 @@ pub mod field_replace_modify {
             }
         });
     }
+
+    /// Replace PHY_AGC_ORACLE.AGC_SATURATION_CONTROL fields [POST_INIT_SET_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_agc_post_initialization_flag(registers: &crate::PhyAgcOracle) {
+        registers.agc_saturation_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .post_init_set_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.RX_11B_WINDOW_CONTROL fields [WINDOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_agc_post_initialization_window(registers: &crate::PhyAgcOracle) {
+        registers.rx_11b_window_control().modify(|_, writer| {
+            let input = 0x000001c0_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.window_unknown().bits((input & 0x000001ff) as u16) }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.POST_INIT_RX_CONTROL fields [LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_agc_post_initialization_low(registers: &crate::PhyAgcOracle) {
+        registers.post_init_rx_control().modify(|_, writer| {
+            let input = 0x00000017_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.low_unknown().bits((input & 0x0000007f) as u8) }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.POST_INIT_RX_CONTROL fields [HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_agc_post_initialization_high(registers: &crate::PhyAgcOracle) {
+        registers.post_init_rx_control().modify(|_, writer| {
+            let input = 0x00000017_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.high_unknown().bits((input & 0x0000007f) as u8) }
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.

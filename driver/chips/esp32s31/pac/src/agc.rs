@@ -195,18 +195,13 @@ impl RadioPhyRegisters {
 
     /// Apply complete pinned `phy_reg_update_new` and both finite children.
     pub fn update_agc_post_initialization(&mut self) {
-        self.peripherals
-            .phy_agc_oracle
-            .agc_saturation_control()
-            .modify(|_, w| w.post_init_set_unknown().set_bit());
+        let agc = &self.peripherals.phy_agc_oracle;
+        super::generated::set_phy_agc_post_initialization_flag(agc);
         self.set_agc_saturation_gain(0x0818_212d);
         let agc = &self.peripherals.phy_agc_oracle;
-        agc.rx_11b_window_control()
-            .modify(|_, w| w.window_unknown().set(0x1c0));
-        agc.post_init_rx_control()
-            .modify(|_, w| w.low_unknown().set(0x17));
-        agc.post_init_rx_control()
-            .modify(|_, w| w.high_unknown().set(0x17));
+        super::generated::configure_phy_agc_post_initialization_window(agc);
+        super::generated::configure_phy_agc_post_initialization_low(agc);
+        super::generated::configure_phy_agc_post_initialization_high(agc);
         self.set_ftm_enabled(true);
     }
 

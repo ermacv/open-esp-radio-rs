@@ -8298,3 +8298,39 @@ fields = [{ field = "HE_RU26_GOOD_RESPONSE_DISABLE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_noise_floor_auto_control_low"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "NOISE_FLOOR_CONTROL"
+fields = [{ field = "AUTO_CONTROL_LOW_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_noise_floor_auto_control_high"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "NOISE_FLOOR_CONTROL"
+fields = [{ field = "AUTO_CONTROL_HIGH_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_noise_floor_auto_path_0"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "NOISE_FLOOR_ENABLE_0"
+fields = [{ field = "AUTO_ENABLE_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_noise_floor_auto_path_1"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "NOISE_FLOOR_ENABLE_1"
+fields = [{ field = "AUTO_ENABLE_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]

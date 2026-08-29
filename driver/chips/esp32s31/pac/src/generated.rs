@@ -6027,6 +6027,32 @@ pub(crate) fn clear_phy_he_ru26_good_response_disable(
     crate::svd::field_replace_modify::clear_phy_he_ru26_good_response_disable(registers);
 }
 
+/// Typed bridge for the reviewed `enable_noise_floor_auto_control_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_noise_floor_auto_control_low(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::enable_noise_floor_auto_control_low(registers);
+}
+
+/// Typed bridge for the reviewed `enable_noise_floor_auto_control_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_noise_floor_auto_control_high(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::enable_noise_floor_auto_control_high(registers);
+}
+
+/// Typed bridge for the reviewed `enable_noise_floor_auto_path_0` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_noise_floor_auto_path_0(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::enable_noise_floor_auto_path_0(registers);
+}
+
+/// Typed bridge for the reviewed `enable_noise_floor_auto_path_1` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_noise_floor_auto_path_1(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::enable_noise_floor_auto_path_1(registers);
+}
+
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
 #[inline]
 pub(crate) fn configure_shared_modem_low_power_timer(

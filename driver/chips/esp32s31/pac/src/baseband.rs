@@ -613,14 +613,10 @@ impl RadioPhyRegisters {
     /// Enable all four recovered automatic noise-floor controls.
     pub fn configure_noise_floor_auto(&mut self) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        bb.noise_floor_control()
-            .modify(|_, w| w.auto_control_low_unknown().set_bit());
-        bb.noise_floor_control()
-            .modify(|_, w| w.auto_control_high_unknown().set_bit());
-        bb.noise_floor_enable_0()
-            .modify(|_, w| w.auto_enable_unknown().set_bit());
-        bb.noise_floor_enable_1()
-            .modify(|_, w| w.auto_enable_unknown().set_bit());
+        super::generated::enable_noise_floor_auto_control_low(bb);
+        super::generated::enable_noise_floor_auto_control_high(bb);
+        super::generated::enable_noise_floor_auto_path_0(bb);
+        super::generated::enable_noise_floor_auto_path_1(bb);
     }
 
     /// Read the current hardware noise floor as the signed byte used by MAC

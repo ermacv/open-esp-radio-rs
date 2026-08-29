@@ -68165,6 +68165,54 @@ pub mod field_replace_modify {
                 .bit((input & 0x00000001) != 0)
         });
     }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.NOISE_FLOOR_CONTROL fields [AUTO_CONTROL_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_noise_floor_auto_control_low(registers: &crate::PhyBasebandConfigOracle) {
+        registers.noise_floor_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .auto_control_low_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.NOISE_FLOOR_CONTROL fields [AUTO_CONTROL_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_noise_floor_auto_control_high(registers: &crate::PhyBasebandConfigOracle) {
+        registers.noise_floor_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .auto_control_high_unknown()
+                .bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.NOISE_FLOOR_ENABLE_0 fields [AUTO_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_noise_floor_auto_path_0(registers: &crate::PhyBasebandConfigOracle) {
+        registers.noise_floor_enable_0().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.auto_enable_unknown().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.NOISE_FLOOR_ENABLE_1 fields [AUTO_ENABLE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_noise_floor_auto_path_1(registers: &crate::PhyBasebandConfigOracle) {
+        registers.noise_floor_enable_1().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.auto_enable_unknown().bit((input & 0x00000001) != 0)
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.

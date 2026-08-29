@@ -43,7 +43,7 @@ use open_esp_radio_esp32s31_wifi_embassy::{
         compose_sta_ap_datapath_runner, compose_sta_ap_datapath_services,
     },
     roles::station::connected::{
-        ConnectedWpa2Security, Esp32s31AlreadyStoppedRx, Esp32s31ConnectedEpochResources,
+        ConnectedWpa2Security, Esp32s31AlreadyParkedRx, Esp32s31ConnectedEpochResources,
         Esp32s31ConnectedEpochStarted, Esp32s31ConnectedNetworkStartedParts,
         Esp32s31ConnectedStaControlResources, Esp32s31ConnectedStaDriverParts,
         Esp32s31ConnectedStaNetworkTxDomain, Esp32s31ConnectedStaPort,
@@ -55,6 +55,13 @@ use open_esp_radio_esp32s31_wifi_embassy::{
     roles::station::runtime::{
         Esp32s31StaApStationPrepared, finish_sta_ap_station, prepare_sta_ap_station,
     },
+};
+use open_esp_radio_esp32s31_wifi_esp_hal::mac_interrupt_epoch::{
+    prepare_active_connected_sta_without_power_save,
+    prepare_active_connected_sta_without_power_save_with_access,
+};
+use open_esp_radio_esp32s31_wifi_mac::sta_ap_registers::{
+    disable_access_point_receive_registers, disable_station_receive_registers,
 };
 use open_esp_radio_esp32s31_wifi_sta::{
     attempt::{Esp32s31StaAttemptSecurityMaterial, Esp32s31StaInstalledSecurity},
@@ -166,10 +173,9 @@ impl ProductionWifiEpochRunner {
 
     /// Run the one production same-channel STA+AP epoch.
     ///
-    /// Capability publication remains false until this transaction and its
-    /// inverse pass the full HIL matrix. The implementation nevertheless
-    /// exists in production code so HIL exercises the compiled owner graph,
-    /// not a shadow harness.
+    /// The published simultaneous-STA+AP capability is backed by this exact
+    /// production transaction and its inverse. HIL exercises this owner graph,
+    /// not a shadow composition.
     pub(super) async fn run_station_access_point_service(
         &mut self,
         endpoint: &mut EmbassyWifiSupervisorEndpoint<
@@ -296,9 +302,20 @@ impl ProductionWifiEpochRunner {
             let (runtime, epoch) = started.runtime_and_epoch_mut();
             let (radio, _storage, _board) = runtime.split_mut();
             let (_phy, platform, interrupt) = radio.parts_mut();
-            match interrupt.setup_mut() {
-                Ok(setup) => {
-                    let prepared = match epoch {
+            let prepared = if interrupt.is_active() {
+                match epoch {
+                    Esp32s31ConnectedEpochResources::Initial { hardware, .. } => {
+                        prepare_active_connected_sta_without_power_save(hardware)
+                    }
+                    Esp32s31ConnectedEpochResources::Reconnected(reconnected) => {
+                        let access = reconnected.hardware_mut().register_access();
+                        prepare_active_connected_sta_without_power_save_with_access(&access)
+                    }
+                }
+                .map_err(|_| ())
+            } else {
+                match interrupt.setup_mut() {
+                    Ok(setup) => match epoch {
                         Esp32s31ConnectedEpochResources::Initial { hardware, .. } => {
                             Ok(setup.prepare_connected_sta_without_power_save(hardware))
                         }
@@ -307,14 +324,13 @@ impl ProductionWifiEpochRunner {
                             .register_access()
                             .try_prepare_connected_sta_without_power_save(setup)
                             .map_err(|_| ()),
-                    };
-                    prepared.map_err(|_| ()).and_then(|prepared| {
-                        activate_esp32s31_connected_epoch(interrupt, platform, prepared)
-                            .map_err(|_| ())
-                    })
+                    },
+                    Err(_) => Err(()),
                 }
-                Err(_) => Err(()),
-            }
+            };
+            prepared.and_then(|prepared| {
+                activate_esp32s31_connected_epoch(interrupt, platform, prepared).map_err(|_| ())
+            })
         };
         if activation.is_err() {
             endpoint
@@ -410,12 +426,8 @@ impl ProductionWifiEpochRunner {
                     EmbassyEsp32s31RxDmaObservationDelay,
                 );
                 (
-                    start_esp32s31_initial_connected_epoch(
-                        hardware,
-                        receive,
-                        initial.with_rx(rx),
-                    )
-                    .await,
+                    start_esp32s31_initial_connected_epoch(hardware, receive, initial.with_rx(rx))
+                        .await,
                     Some(standalone_receiver),
                 )
             }
@@ -425,7 +437,7 @@ impl ProductionWifiEpochRunner {
             ),
         };
         let Esp32s31ConnectedEpochStarted {
-            mut hardware,
+            hardware,
             rx,
             aggregate_tx: aggregate,
             control: control_resources,
@@ -594,19 +606,6 @@ impl ProductionWifiEpochRunner {
             }
             _ => unreachable!("paired security modes were validated before owner split"),
         };
-        let mut live_rx = rx;
-        let stopped_rx = loop {
-            match live_rx.try_stop(&mut hardware) {
-                Ok(stopped) => break stopped,
-                Err((returned, error)) => {
-                    diagnostics_event!(
-                        "open-radio: paired RX cutover stop still pending: {error:?}"
-                    );
-                    live_rx = returned;
-                    Timer::after_millis(1).await;
-                }
-            }
-        };
         drop(standalone_receiver);
         let (paired_sender, paired_consumer) = STA_AP_STAGED_RX_QUEUE.split();
         let receive_identities = StaApReceiveIdentities {
@@ -614,8 +613,8 @@ impl ProductionWifiEpochRunner {
             station_bssid: plan.link().bssid,
             access_point_address: access_point.address,
         };
-        let paired_rx = Esp32s31StagedRxEpoch::try_from_stopped_sta_ap(
-            stopped_rx,
+        let paired_rx = Esp32s31StagedRxEpoch::try_from_live_sta_ap(
+            rx,
             paired_sender,
             plan.rx_config().ingress,
             StaApRxAddresses {
@@ -913,16 +912,24 @@ impl ProductionWifiEpochRunner {
             }
         }
 
-        let (_, platform) = role.radio_mut();
+        // Both logical roles are leaving this one physical RX epoch. Revoke
+        // their disjoint admission banks while the common descriptor ring is
+        // still armed and the IRQ bottom half still has a valid owner.
+        {
+            let hardware = paired_runner.services_mut().hardware_mut();
+            disable_access_point_receive_registers(hardware);
+            disable_station_receive_registers(hardware);
+        }
+
         loop {
-            match interrupt_epoch.quiesce(&*platform) {
+            match interrupt_epoch.park() {
                 Ok(_) => break,
                 Err(open_esp_radio_esp32s31_wifi_embassy::datapath::irq::Esp32s31MacInterruptEpochQuiesceError::AlreadyQuiesced) => {
                     break;
                 }
                 Err(open_esp_radio_esp32s31_wifi_embassy::datapath::irq::Esp32s31MacInterruptEpochQuiesceError::Route(error)) => {
                     diagnostics_event!(
-                        "open-radio: paired MAC interrupt quiescence still pending: {error:?}"
+                        "open-radio: paired MAC interrupt park unexpectedly failed: {error:?}"
                     );
                     Timer::after_millis(1).await;
                 }
@@ -932,14 +939,11 @@ impl ProductionWifiEpochRunner {
         let (
             mut hardware,
             physical_tx,
-            mut common_rx,
+            common_rx,
             station_role,
             access_point_role,
             _control_arbiter,
         ) = services.into_parts();
-        common_rx
-            .stop(&mut hardware)
-            .unwrap_or_else(|_| unreachable!("stopped paired DATAPATH has no live RX transaction"));
         let route_report = common_rx.route_report();
         diagnostics_event!(
             "open-radio: paired RX routes total={} sta={} ap={} foreign={} ambiguous={} malformed={} hardware_error={}",
@@ -952,10 +956,20 @@ impl ProductionWifiEpochRunner {
             route_report.hardware_error,
         );
         #[cfg(feature = "diagnostics")]
-        let rx_statistics_delta = hardware
-            .receive_statistics_snapshot()
-            .primary
-            .wrapping_delta_since(rx_statistics_before.primary);
+        {
+            let after = hardware.receive_statistics_snapshot();
+            super::access_point::store_access_point_rx_hardware_observation(
+                crate::Esp32s31DiagnosticRxStatistics::from_deltas(
+                    after
+                        .primary
+                        .wrapping_delta_since(rx_statistics_before.primary),
+                    after
+                        .decode_errors
+                        .wrapping_delta_since(rx_statistics_before.decode_errors),
+                    after.hang.wrapping_delta_since(rx_statistics_before.hang),
+                ),
+            )
+        }
         let (paired_rx, mut paired_consumer) = common_rx.into_parts();
         diagnostics_event!(
             "open-radio: paired RX producer serviced_descriptors={}",
@@ -968,8 +982,8 @@ impl ProductionWifiEpochRunner {
             paired_rx.serviced_descriptors(),
         );
         let (standalone_sender, _standalone_receiver) = STAGED_RX_QUEUE.split();
-        let stopped_rx = paired_rx
-            .try_into_standalone_stopped(standalone_sender)
+        let parked_rx = paired_rx
+            .try_into_standalone_live(standalone_sender)
             .unwrap_or_else(|_| unreachable!("paired queue was drained before standalone restore"));
 
         let access_point_finished =
@@ -997,8 +1011,6 @@ impl ProductionWifiEpochRunner {
             super::access_point::publish_stored_access_point_observation(
                 hooks.access_point,
                 station_channel,
-                rx_statistics_delta.buffer_full,
-                rx_statistics_delta.fifo_overflow,
             );
         }
         let prepared_station = Esp32s31StaApStationPrepared {
@@ -1015,8 +1027,7 @@ impl ProductionWifiEpochRunner {
             services: station_services,
             report: _,
         } = station_drivers;
-        let (hardware, station_rx, station_tx, mut station_control) =
-            station_services.into_parts();
+        let (hardware, station_rx, station_tx, mut station_control) = station_services.into_parts();
         let ((), station_protocol) = station_rx.into_parts();
         let group_security = match &mut station_security_material {
             Esp32s31StaAttemptSecurityMaterial::Open => group_security
@@ -1037,7 +1048,7 @@ impl ProductionWifiEpochRunner {
         let teardown = Esp32s31ConnectedStaTeardownPort::try_teardown(
             SingleRoleServices::with_control(
                 hardware,
-                Esp32s31AlreadyStoppedRx::new(stopped_rx),
+                Esp32s31AlreadyParkedRx::new(parked_rx),
                 station_tx,
                 station_control,
             ),
@@ -1052,7 +1063,7 @@ impl ProductionWifiEpochRunner {
         let disconnected = ConnectedDisconnectedEpoch::new(
             RunningStationNetwork::new((), network_runner),
             teardown.hardware,
-            teardown.stopped_rx,
+            teardown.parked_rx,
             teardown.aggregate,
             control_resources,
         );

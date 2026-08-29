@@ -17,6 +17,39 @@ use crate::diagnostics::core0_rx_performance::Core0PerformanceDmaProfile as Core
 /// protocol and network capacity.
 const RX_DMA_SERVICE_BUDGET_UNITS: usize = 32;
 
+#[cfg(feature = "diagnostics")]
+#[inline(never)]
+fn log_rx_service_busy(
+    stage: &'static str,
+    error: RxRingError,
+    head: usize,
+    descriptors: usize,
+    detached: usize,
+    released: usize,
+) {
+    log::error!(
+        "open-radio: RX service failed stage={stage} error={error:?} head={head} descriptors={descriptors} detached={detached} released={released}"
+    );
+}
+
+#[cfg(feature = "diagnostics")]
+#[inline(never)]
+#[allow(clippy::too_many_arguments)]
+fn log_frozen_rx_recycle_refused(
+    descriptor_count: usize,
+    recycle_start: usize,
+    accepted_tail: usize,
+    observed: u32,
+    cursor_last: u32,
+    cursor_next: u32,
+    software_reload_pending: bool,
+    hardware_reload_pending: bool,
+) {
+    log::error!(
+        "open-radio: RX service failed stage=frozen-recycle count={descriptor_count} recycle_start={recycle_start} accepted_tail={accepted_tail} observed={observed} cursor_last={cursor_last:#07x} cursor_next={cursor_next:#07x} software_reload_pending={software_reload_pending} hardware_reload_pending={hardware_reload_pending}"
+    );
+}
+
 impl<
     'storage,
     'pool,
@@ -84,7 +117,7 @@ where
             let hardware_buffer_full_before = self
                 .pipeline_observer
                 .and_then(|_| hardware.buffer_full_count());
-            #[cfg(feature = "core0-rx-coarse-telemetry")]
+            #[cfg(any(feature = "core0-rx-coarse-telemetry", feature = "task-poll-telemetry"))]
             crate::diagnostics::core0_rx_performance::CORE0_PERFORMANCE.record_dma_entry_remaining(
                 self.ring
                     .accepted_list_remaining_from_next(hardware.next_descriptor()),
@@ -102,21 +135,82 @@ where
             // domain. They are not necessarily armed while a delayed masked
             // epoch accumulates completions; accepted-list pressure records
             // that separate hardware condition.
-            if let Some(append) = self
-                .storage
-                .recycle_released_prefix::<RX_DMA_SERVICE_BUDGET_UNITS, _>(&mut self.ring, hardware)
-                .map_err(RxStageTransactionError::Ring)?
-            {
-                recycled_descriptors = append.descriptor_count;
-                self.ring
-                    .complete_pending_reload(hardware)
+            let mut released_append = None;
+            for _ in 0..2 {
+                released_append = self
+                    .storage
+                    .recycle_released_prefix::<RX_DMA_SERVICE_BUDGET_UNITS, _>(
+                        &mut self.ring,
+                        hardware,
+                    )
                     .map_err(RxStageTransactionError::Ring)?;
+                if released_append.is_some() || !self.ring.completion_release_probe_pending() {
+                    break;
+                }
+                // `RX_DONE` may precede the cursor edge which releases its
+                // link word. The vendor worker refreshes that cursor without
+                // returning to its scheduler; retain the same two bounded
+                // observations here instead of manufacturing an executor
+                // round trip.
+            }
+            if let Some(append) = released_append {
+                recycled_descriptors = append.descriptor_count;
+                if let Err(error) = self.ring.complete_pending_reload(hardware) {
+                    #[cfg(feature = "diagnostics")]
+                    log_rx_service_busy("entry-reload", error, 0, 0, 0, 0);
+                    return Err(RxStageTransactionError::Ring(error));
+                }
                 self.ring.observe_exhausted_republication(hardware);
             }
             // Freeze the completion frontier before any descriptor is rearmed.
             // A saturated producer can therefore only create a later epoch; it
             // cannot make this service call unbounded by refilling the ring.
             let mut frozen_cursor = self.ring.freeze_cursor(hardware);
+            let mut deferred_recycle_pending = false;
+            // A discard which followed a detached valid frame could not be
+            // appended in the earlier service transaction without recycling
+            // that still-owned prefix. Once returned frames above have moved
+            // the recycle frontier, bind each ring-owned discard to this fresh
+            // LAST generation before publishing it. This mirrors the vendor's
+            // one-unit discard/append transaction and remains bounded by the
+            // same per-service descriptor budget.
+            let mut deferred_recycled = 0_usize;
+            while deferred_recycled < RX_DMA_SERVICE_BUDGET_UNITS {
+                let Some(descriptor_count) = self
+                    .storage
+                    .first_observed_ring_unit_descriptor_count(&self.ring)
+                    .map_err(RxStageTransactionError::Ring)?
+                else {
+                    break;
+                };
+                if deferred_recycled.saturating_add(descriptor_count) > RX_DMA_SERVICE_BUDGET_UNITS
+                {
+                    deferred_recycle_pending = true;
+                    break;
+                }
+                let append = self
+                    .storage
+                    .recycle_completed_unit_through_frozen_last(
+                        &mut self.ring,
+                        hardware,
+                        frozen_cursor,
+                        descriptor_count,
+                    )
+                    .map_err(RxStageTransactionError::Ring)?;
+                let Some(append) = append else {
+                    deferred_recycle_pending = true;
+                    break;
+                };
+                recycled_descriptors = recycled_descriptors.saturating_add(append.descriptor_count);
+                deferred_recycled = deferred_recycled.saturating_add(append.descriptor_count);
+                if let Err(error) = self.ring.complete_pending_reload(hardware) {
+                    #[cfg(feature = "diagnostics")]
+                    log_rx_service_busy("deferred-discard-reload", error, 0, 0, 0, 0);
+                    return Err(RxStageTransactionError::Ring(error));
+                }
+                self.ring.observe_exhausted_republication(hardware);
+                frozen_cursor = self.ring.freeze_cursor(hardware);
+            }
             let frontier_snapshot = self
                 .storage
                 .completed_unit_frontier_through_cursor(
@@ -298,6 +392,7 @@ where
                 let descriptor_limit = preflight
                     .map(|(descriptor_count, _, _)| descriptor_count)
                     .unwrap_or(remaining_descriptors);
+                let recycle_start_before_take = self.ring.recycle_start();
                 let unit = self
                     .storage
                     .take_completed_unit(&mut self.ring, descriptor_limit)
@@ -333,10 +428,15 @@ where
 
                 let (frame, descriptor_replenished) = if overload_drop {
                     unit.retain_for_deferred_recycle();
+                    let descriptor_replenished =
+                        unit_observation.head_index == recycle_start_before_take;
+                    deferred_recycle_pending |= !descriptor_replenished;
                     discarded_units = discarded_units.saturating_add(1);
                     overload_discarded = overload_discarded.saturating_add(1);
-                    overload_recycled_descriptors =
-                        overload_recycled_descriptors.saturating_add(unit_descriptor_count);
+                    if descriptor_replenished {
+                        overload_recycled_descriptors =
+                            overload_recycled_descriptors.saturating_add(unit_descriptor_count);
+                    }
                     #[cfg(any(feature = "diagnostics", test))]
                     if let Some(observer) = self.pipeline_observer {
                         observer.observe(RxPipelineObservation::StageDiscarded(
@@ -348,9 +448,12 @@ where
                             unavailable_preview.expect("overload discard has a preview"),
                         ),
                     );
-                    (None, true)
+                    (None, descriptor_replenished)
                 } else if let Some(error) = recoverable_discard {
                     unit.retain_for_deferred_recycle();
+                    let descriptor_replenished =
+                        unit_observation.head_index == recycle_start_before_take;
+                    deferred_recycle_pending |= !descriptor_replenished;
                     discarded_units = discarded_units.saturating_add(1);
                     #[cfg(any(feature = "diagnostics", test))]
                     if let Some(observer) = self.pipeline_observer {
@@ -374,7 +477,7 @@ where
                                 }
                             },
                         });
-                    (None, true)
+                    (None, descriptor_replenished)
                 } else {
                     if stage_with_reserved_credit {
                         critical_reserve_admitted = critical_reserve_admitted.saturating_add(1);
@@ -387,10 +490,24 @@ where
                     }
                     #[cfg(feature = "task-poll-telemetry")]
                     core0_cycles.switch_to(Core0RxCyclePhase::StagePool);
-                    match self
+                    let stage = self
                         .pool
-                        .stage_dma_unit_deferred_bounded(unit, maximum_payload_length)?
-                    {
+                        .stage_dma_unit_deferred_bounded(unit, maximum_payload_length);
+                    #[cfg(feature = "diagnostics")]
+                    if let Err(error) = &stage {
+                        log_rx_service_busy(
+                            "detach",
+                            match error {
+                                RxStageTransactionError::Ring(error) => *error,
+                                RxStageTransactionError::Stage(_) => RxRingError::Corrupt,
+                            },
+                            unit_observation.head_index,
+                            unit_descriptor_count,
+                            self.storage.detached_buffer_count(),
+                            self.storage.released_buffer_count(),
+                        );
+                    }
+                    match stage? {
                         RxDmaDeferredStageUnitOutcome::Staged(frame) => (Some(frame), false),
                         RxDmaDeferredStageUnitOutcome::Discarded(_) => {
                             return Err(RxStageTransactionError::Ring(RxRingError::Corrupt));
@@ -409,8 +526,21 @@ where
                             frozen_cursor,
                             unit_descriptor_count,
                         )
-                        .map_err(RxStageTransactionError::Ring)?
-                        .ok_or(RxStageTransactionError::Ring(RxRingError::Busy))?;
+                        .map_err(RxStageTransactionError::Ring)?;
+                    let Some(append) = append else {
+                        #[cfg(feature = "diagnostics")]
+                        log_frozen_rx_recycle_refused(
+                            unit_descriptor_count,
+                            self.ring.recycle_start(),
+                            self.ring.accepted_tail(),
+                            self.ring.observed_mask().count_ones(),
+                            frozen_cursor.last_descriptor_low(),
+                            frozen_cursor.next_descriptor_low(),
+                            self.ring.reload_pending(),
+                            hardware.reload_pending(),
+                        );
+                        return Err(RxStageTransactionError::Ring(RxRingError::Busy));
+                    };
                     if append.descriptor_count != unit_descriptor_count {
                         return Err(RxStageTransactionError::Ring(RxRingError::Corrupt));
                     }
@@ -425,9 +555,11 @@ where
                     let reload_started = self.pipeline_observer.map(RxPipelineObserver::now_micros);
                     #[cfg(feature = "task-poll-telemetry")]
                     core0_cycles.switch_to(Core0RxCyclePhase::Reload);
-                    self.ring
-                        .complete_pending_reload(hardware)
-                        .map_err(RxStageTransactionError::Ring)?;
+                    if let Err(error) = self.ring.complete_pending_reload(hardware) {
+                        #[cfg(feature = "diagnostics")]
+                        log_rx_service_busy("discard-reload", error, 0, 0, 0, 0);
+                        return Err(RxStageTransactionError::Ring(error));
+                    }
                     #[cfg(any(feature = "diagnostics", test))]
                     if let (Some(observer), Some(started)) =
                         (self.pipeline_observer, reload_started)
@@ -564,7 +696,7 @@ where
                 || exhausted_republication_probe_pending
             {
                 DatapathRxProgress::ProbePending
-            } else if recycled_probe_pending {
+            } else if recycled_probe_pending || deferred_recycle_pending {
                 DatapathRxProgress::RecycledAppendPending
             } else if overload_discarded != 0 {
                 DatapathRxProgress::UpperLayerBlockedButDroppable

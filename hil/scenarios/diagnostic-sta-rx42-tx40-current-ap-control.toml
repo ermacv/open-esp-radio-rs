@@ -1,0 +1,29 @@
+schema = 3
+id = "diagnostic-sta-rx42-tx40-current-ap-control"
+description = "Same diagnostic image station control for the AP 42/40 duplex failure"
+repetitions = 1
+image = "diagnostic-rx-delivery"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic", "station", "udp", "bidirectional", "ap-control"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "udp"
+direction = "bidirectional"
+duration_seconds = 10
+rx_rate_bps = 42000000
+tx_rate_bps = 40000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = false
+minimum_rx_bps = 1000000
+minimum_tx_bps = 1000000
+require_no_beacon_loss = true
+
+[evidence]
+openwrt_tx_monitor_rx = true
+independent_laptop_monitor_rx = true

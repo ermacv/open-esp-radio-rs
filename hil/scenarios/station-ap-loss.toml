@@ -3,6 +3,7 @@ id = "station-ap-loss"
 description = "Station detects controlled AP loss and reconnects"
 image = "correctness"
 isolation = "reset"
+data_plane = "split-radio-network"
 tags = ["diagnostic", "psram-stack", "station", "lifecycle"]
 
 [link]

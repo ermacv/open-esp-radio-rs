@@ -4,6 +4,7 @@ description = "Single-client AP full-duplex RX delivery-frontier diagnostic"
 repetitions = 1
 image = "diagnostic-rx-delivery"
 isolation = "reset"
+data_plane = "split-radio-network"
 tags = ["diagnostic", "wifi", "access-point", "network", "single-client", "load", "bidirectional", "rx-delivery"]
 
 [workload]

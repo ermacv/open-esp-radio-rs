@@ -4,6 +4,7 @@ description = "Observer-free sustained single-client AP inbound performance base
 repetitions = 1
 image = "performance"
 isolation = "reset"
+data_plane = "split-radio-network"
 tags = ["characterization", "wifi", "access-point", "network", "single-client", "load", "rx"]
 
 [workload]

@@ -4,6 +4,7 @@ description = "Sustained two-client AP inbound baseline with exact delivery"
 repetitions = 5
 image = "correctness"
 isolation = "reset"
+data_plane = "split-radio-network"
 tags = ["qualification", "wifi", "access-point", "network", "load", "rx"]
 
 [workload]

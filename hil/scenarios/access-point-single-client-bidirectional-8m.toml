@@ -4,6 +4,7 @@ description = "Single-client AP 8+8 Mbit/s bidirectional baseline"
 repetitions = 1
 image = "correctness"
 isolation = "reset"
+data_plane = "split-radio-network"
 tags = ["characterization", "wifi", "access-point", "network", "single-client", "bidirectional"]
 
 [workload]

@@ -127,7 +127,9 @@ fn qualify(
         if !capabilities.features.wifi_access_point {
             return Err("firmware does not advertise the access-point role".into());
         }
-        let mut request = lab.access_point.protocol_request()?;
+        let mut request = lab
+            .access_point
+            .protocol_request(open_esp_radio_hil_protocol::WifiAccessPointSecurity::Wpa2Personal)?;
         if let Some(channel) = options.monitor_channel {
             request.channel = channel;
         }
@@ -178,8 +180,8 @@ fn qualify(
             stopped.completed_rx_descriptors,
             stopped.recycled_rx_descriptors,
             stopped.retained_rx_descriptors,
-            stopped.rx_hardware_buffer_full,
-            stopped.rx_hardware_fifo_overflow,
+            stopped.rx_hardware.buffer_full,
+            stopped.rx_hardware.fifo_overflow,
             stopped.discarded_rx_units,
             stopped.rx_overload_discarded_units,
             stopped.rx_critical_reserve_admissions,
@@ -211,7 +213,9 @@ fn qualify(
         if !capabilities.features.simultaneous_station_access_point {
             return Err("firmware does not advertise simultaneous STA+AP".into());
         }
-        let mut access_point = lab.access_point.protocol_request()?;
+        let mut access_point = lab
+            .access_point
+            .protocol_request(open_esp_radio_hil_protocol::WifiAccessPointSecurity::Wpa2Personal)?;
         if let Some(channel) = options.monitor_channel {
             access_point.channel = channel;
         }
@@ -262,8 +266,8 @@ fn qualify(
             stopped.access_point.beacons_transmitted,
             stopped.access_point.missed_beacon_intervals,
             stopped.access_point.maximum_beacon_lateness_micros,
-            stopped.access_point.rx_hardware_buffer_full,
-            stopped.access_point.rx_hardware_fifo_overflow,
+            stopped.access_point.rx_hardware.buffer_full,
+            stopped.access_point.rx_hardware.fifo_overflow,
         );
         return Ok(());
     }

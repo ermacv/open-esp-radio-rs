@@ -2,6 +2,7 @@
 
 use open_esp_radio_esp32s31_hal::{MacInterruptEnableState, MacInterruptSetup, RadioRuntimeOwner};
 use open_esp_radio_esp32s31_phy::{PhyCalibrationCache, PhyState};
+use open_esp_radio_esp32s31_wifi_mac::sta_ap_registers::disable_all_role_receive_registers;
 use open_esp_radio_ieee80211::channel::WifiChannel;
 
 use crate::mac_start::{Esp32s31WifiMacReady, Esp32s31WifiMacStartReport};
@@ -140,6 +141,14 @@ pub struct Esp32s31WifiRoleOwner<P> {
 }
 
 impl<P> Esp32s31WifiRoleOwner<P> {
+    pub const fn start_report(&self) -> Esp32s31WifiMacStartReport {
+        self.context.start_report
+    }
+
+    pub const fn transition_report(&self) -> Esp32s31WifiRuntimeTransitionReport {
+        self.context.transition_report
+    }
+
     pub fn radio_mut(&mut self) -> (&mut PhyState, &mut P) {
         (self.context.phy_mut(), &mut self.platform)
     }
@@ -150,6 +159,19 @@ impl<P> Esp32s31WifiRoleOwner<P> {
 
     pub fn set_current_channel(&mut self, channel: WifiChannel) {
         self.context.set_current_channel(channel);
+    }
+
+    /// Split the role-neutral logical owner from the platform value while a
+    /// concrete role owns the physical register and interrupt epochs.
+    #[doc(hidden)]
+    pub fn into_runtime_parts(self) -> (P, Esp32s31WifiRuntimeContext) {
+        (self.platform, self.context)
+    }
+
+    /// Rejoin the exact platform and logical context returned by a role.
+    #[doc(hidden)]
+    pub fn from_runtime_parts(platform: P, context: Esp32s31WifiRuntimeContext) -> Self {
+        Self { platform, context }
     }
 
     /// Reassemble stopped Wi-Fi only after the exact register and interrupt
@@ -217,7 +239,20 @@ pub fn enter_esp32s31_wifi_runtime<P>(
 ) -> Esp32s31WifiRuntimeStart<P> {
     let cold_interrupt_mask = { mac.radio_mut().close_cold_interrupt_phase() };
     let (radio, phy, calibration_cache, start_report) = mac.into_parts();
-    let (platform, registers, interrupt_setup) = radio.into_running().into_runtime_parts();
+    let (platform, mut registers, interrupt_setup) = radio.into_running().into_runtime_parts();
+    // Cold `wifi_set_rx_policy(0)` first publishes both interface addresses,
+    // then disables their receive policies. Our cold address transaction is
+    // already complete; finish that exact role-neutral suffix before exposing
+    // a stopped runtime. Scan/monitor subsequently own only queue three's
+    // explicit promiscuous admission, while STA/AP reopen their own context.
+    {
+        let mut mac = registers.wifi_mac_hal();
+        disable_all_role_receive_registers(&mut mac);
+        // Complete the role-neutral half of the vendor no-power-save lifecycle.
+        // The first role arms its replacement RX ring while this request remains
+        // asserted and resumes the frontend only after those credits are live.
+        mac.request_channel_stop();
+    }
     let current_channel = start_report.wifi.initial_channel;
     Esp32s31WifiRuntimeStart {
         wifi: Esp32s31WifiStopped {

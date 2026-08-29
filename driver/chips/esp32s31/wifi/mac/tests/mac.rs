@@ -455,6 +455,8 @@ impl MacSnifferHardware for MockMmio {
         self.operations
             .push(Operation::ConfigureOpenPromiscuousReceive);
     }
+
+    fn disable_open_promiscuous_receive(&mut self) {}
 }
 
 impl MacColdCryptoHardware for MockMmio {

@@ -9,6 +9,7 @@ use open_esp_radio_esp32s31_hal::types::MacStaReceivePolicySnapshot;
 use open_esp_radio_esp32s31_wifi::cooperative_hardware::CooperativeRadioHardware;
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::{StaGroupCcmpKeyMaterial, StaGroupCcmpReplaceError, StaGroupCcmpSlot},
+    init::MacRuntimeStopHardware,
     rx_ampdu_hw::{RxBlockAckHardware, S31RxBlockAckAgreementError},
     tx::TxHardware,
 };
@@ -120,8 +121,15 @@ pub enum StationIndividualTwtHardwareError {
 }
 
 /// ESP32-S31 register operations required by connected BlockAck control.
-pub trait ConnectedControlHardware: TxHardware + RxBlockAckHardware {
+pub trait ConnectedControlHardware:
+    TxHardware + RxBlockAckHardware + MacRuntimeStopHardware
+{
     fn station_tsf(&mut self) -> u64;
+
+    /// Close interface-zero RX admission while its descriptor ring is still
+    /// live. This is a lifecycle edge, not control cleanup: callers must
+    /// perform it before interrupt quiescence or DMA walker stop.
+    fn disable_station_receive_policy(&mut self);
 
     /// Read the reviewed interface-zero RX identity/filter projection used by
     /// automatic beacon-monitor admission.
@@ -219,6 +227,10 @@ pub trait ConnectedControlHardware: TxHardware + RxBlockAckHardware {
 impl ConnectedControlHardware for CooperativeRadioHardware<'_> {
     fn station_tsf(&mut self) -> u64 {
         CooperativeRadioHardware::station_tsf(self)
+    }
+
+    fn disable_station_receive_policy(&mut self) {
+        CooperativeRadioHardware::disable_station_receive_policy(self);
     }
 
     fn station_beacon_monitor_readback(&mut self) -> Option<MacStaReceivePolicySnapshot> {

@@ -3,6 +3,7 @@ id = "access-point-rx"
 description = "Two AP ownership epochs with exact inbound UDP delivery"
 image = "correctness"
 isolation = "reset"
+data_plane = "split-radio-network"
 tags = ["qualification", "wifi", "access-point", "network", "rx"]
 
 [workload]

@@ -21,8 +21,8 @@ client = "open-wrt"
 kind = "udp"
 direction = "bidirectional"
 duration_seconds = 16
-rx_rate_bps = 100000000
-tx_rate_bps = 100000000
+rx_rate_bps = 65000000
+tx_rate_bps = 65000000
 payload_bytes = 1472
 
 [criteria]

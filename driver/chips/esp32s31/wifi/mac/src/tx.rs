@@ -194,6 +194,15 @@ pub trait TxHardware {
     }
 
     fn start_bound_he_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8) {}
+    /// Sample one ordinary queue without changing or acknowledging it.
+    ///
+    /// Pure/model backends may omit this low-frequency hardware diagnostic.
+    fn ordinary_tx_queue_snapshot(
+        &mut self,
+        _queue: u8,
+    ) -> Option<open_esp_radio_esp32s31_hal::MacOrdinaryTxQueueSnapshot> {
+        None
+    }
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation>;
     fn begin_tx_timeout_abort(&mut self, queue: u8) -> bool;
     fn with_tx_queue_detached<R>(
@@ -249,6 +258,13 @@ impl TxHardware for WifiMacHal<'_> {
 
     fn start_bound_he_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8) {
         WifiMacHal::start_bound_tx(self, dma, queue);
+    }
+
+    fn ordinary_tx_queue_snapshot(
+        &mut self,
+        queue: u8,
+    ) -> Option<open_esp_radio_esp32s31_hal::MacOrdinaryTxQueueSnapshot> {
+        Some(WifiMacHal::ordinary_tx_queue_snapshot(self, queue))
     }
 
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation> {
@@ -314,6 +330,13 @@ impl TxHardware for RadioRuntimeOwner {
 
     fn start_bound_he_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8) {
         TxHardware::start_bound_he_tx(&mut self.wifi_mac_hal(), dma, queue);
+    }
+
+    fn ordinary_tx_queue_snapshot(
+        &mut self,
+        queue: u8,
+    ) -> Option<open_esp_radio_esp32s31_hal::MacOrdinaryTxQueueSnapshot> {
+        Some(self.wifi_mac_hal().ordinary_tx_queue_snapshot(queue))
     }
 
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation> {

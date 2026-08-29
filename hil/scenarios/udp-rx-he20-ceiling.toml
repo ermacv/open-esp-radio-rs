@@ -3,6 +3,7 @@ id = "udp-rx-he20-ceiling"
 description = "Sustained HE20 UDP host-to-station receive ceiling"
 image = "correctness"
 isolation = "reset"
+data_plane = "split-radio-network"
 tags = ["qualification", "udp", "station"]
 
 [link]

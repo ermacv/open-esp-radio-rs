@@ -15,7 +15,6 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::{future::Future, marker::PhantomData};
 
-use embassy_sync::channel::{Sender, TrySendError};
 use embassy_time::Instant;
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_dma::rx_storage::{RxDmaBuffer, RxDmaStorage};
@@ -44,7 +43,7 @@ use crate::{
     datapath::services::DatapathRxService,
     datapath::{DatapathRxProgress, DatapathRxWorkCounters},
     diagnostics::rx_pipeline::RxStageDiscard,
-    roles::concurrent::Esp32s31StaApStagedRxFrame,
+    roles::concurrent::{Esp32s31StaApStagedRxFrame, Esp32s31StaApStagedRxSender},
 };
 
 /// Descriptor count and allocation geometry qualified by the ordinary S31
@@ -195,7 +194,7 @@ pub trait Esp32s31RxStageAdmissionPolicy {
     ) -> RxStageUnavailableDisposition {
         match preview.class {
             Esp32s31RxIngressClass::BulkProtectedData => {
-                RxStageUnavailableDisposition::PreserveForCapacity
+                RxStageUnavailableDisposition::DiscardAndRecycle
             }
             Esp32s31RxIngressClass::Critical | Esp32s31RxIngressClass::Unclassified => {
                 RxStageUnavailableDisposition::PreserveForCriticalAdmission
@@ -251,12 +250,8 @@ pub enum Esp32s31StagedRxPublisher<
 > {
     Standalone(Esp32s31StagedRxSender<'queue, 'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>),
     StaAp {
-        frames: Sender<
-            'queue,
-            M,
-            Esp32s31StaApStagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
-            QUEUE_DEPTH,
-        >,
+        frames:
+            Esp32s31StaApStagedRxSender<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
         ingress: open_esp_radio_esp32s31_wifi_mac::rx::RxIngressConfig,
         addresses: open_esp_radio_ieee80211::vif::StaApRxAddresses,
     },
@@ -278,11 +273,13 @@ impl<
     }
 
     pub const fn sta_ap(
-        frames: Sender<
+        frames: Esp32s31StaApStagedRxSender<
+            'pool,
             'queue,
             M,
-            Esp32s31StaApStagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
             QUEUE_DEPTH,
+            STAGE_CAPACITY,
+            STAGE_SLOTS,
         >,
         ingress: open_esp_radio_esp32s31_wifi_mac::rx::RxIngressConfig,
         addresses: open_esp_radio_ieee80211::vif::StaApRxAddresses,
@@ -386,9 +383,7 @@ impl<
                 .try_send(Esp32s31StaApStagedRxFrame::classify(
                     frame, *ingress, *addresses,
                 ))
-                .map_err(|error| match error {
-                    TrySendError::Full(frame) => frame.into_frame(),
-                }),
+                .map_err(|error| error.0.into_frame()),
         }
     }
 }

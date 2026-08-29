@@ -26,6 +26,31 @@ fn observe_ht_rx_data_frame(
         && let Some(count) = observation.rx_ht40_mcs_frames.get_mut(signal.mcs as usize)
     {
         *count = count.saturating_add(1);
+        let guard_interval_count = if signal.short_guard_interval {
+            &mut observation.rx_ht40_short_gi_frames
+        } else {
+            &mut observation.rx_ht40_long_gi_frames
+        };
+        *guard_interval_count = guard_interval_count.saturating_add(1);
+    }
+}
+
+fn ap_security_material_for_management<S>(
+    security_mode: WifiSecurityMode,
+    request: Option<ApManagementRequest<'_>>,
+    peer_phase: Option<ApPeerPhase>,
+    source: &mut S,
+) -> ([u8; 32], u64)
+where
+    S: FnMut() -> ([u8; 32], u64),
+{
+    if security_mode == WifiSecurityMode::Wpa2Personal
+        && matches!(request, Some(ApManagementRequest::Association { .. }))
+        && peer_phase == Some(ApPeerPhase::Authenticated)
+    {
+        source()
+    } else {
+        ([0; 32], 0)
     }
 }
 
@@ -69,6 +94,70 @@ mod ht_rx_observation_tests {
         assert_eq!(observation.rx_ht40_mcs32_frames, 1);
         assert_eq!(observation.rx_ht_mcs32_width_mismatches, 1);
         assert_eq!(observation.rx_ht40_mcs_frames[7], 1);
+        assert_eq!(observation.rx_ht40_long_gi_frames, 0);
+        assert_eq!(observation.rx_ht40_short_gi_frames, 1);
+    }
+
+    #[test]
+    fn ap_entropy_is_consumed_only_for_a_fresh_wpa2_association() {
+        use core::cell::Cell;
+
+        let association = ApManagementRequest::Association {
+            peer: [2, 0, 0, 0, 0, 1],
+            security: open_esp_radio_ieee80211::ap::ApAssociationSecurityObservation {
+                privacy: true,
+                rsn_ie: Some(&[1]),
+                rsn_ie_count: 1,
+                rsnxe: None,
+                rsnxe_count: 0,
+                legacy_wpa_present: false,
+                malformed_elements: false,
+            },
+            maximum_legacy_rate_500kbps: 108,
+            ht_capabilities: None,
+            qos_supported: true,
+        };
+        let expected = ([0xa5; 32], 0x1234_5678_9abc_def0);
+        let calls = Cell::new(0);
+        let mut source = || {
+            calls.set(calls.get() + 1);
+            expected
+        };
+
+        assert_eq!(
+            ap_security_material_for_management(
+                WifiSecurityMode::Wpa2Personal,
+                Some(association),
+                Some(ApPeerPhase::Authenticated),
+                &mut source,
+            ),
+            expected
+        );
+        assert_eq!(calls.get(), 1);
+
+        for (mode, request, phase) in [
+            (
+                WifiSecurityMode::Wpa2Personal,
+                Some(association),
+                Some(ApPeerPhase::Securing),
+            ),
+            (
+                WifiSecurityMode::Wpa2Personal,
+                None,
+                Some(ApPeerPhase::Authenticated),
+            ),
+            (
+                WifiSecurityMode::Open,
+                Some(association),
+                Some(ApPeerPhase::Authenticated),
+            ),
+        ] {
+            assert_eq!(
+                ap_security_material_for_management(mode, request, phase, &mut source),
+                ([0; 32], 0)
+            );
+        }
+        assert_eq!(calls.get(), 1);
     }
 }
 
@@ -304,12 +393,11 @@ where
     /// is the protocol boundary used by same-channel STA+AP composition. If
     /// ordering or an active hardware TX prevents safe processing, the exact
     /// staging lease is returned instead of copied or dropped.
-    pub fn service_routed_rx<H, F, Q>(
+    pub fn service_routed_rx<H, F, Q, S>(
         &mut self,
         hardware: &mut H,
         frame: F,
-        authenticator_nonce: [u8; 32],
-        initial_replay_counter: u64,
+        security_material: &mut S,
         now_micros: u64,
         publish_shared_rx: &mut Q,
         #[cfg(feature = "diagnostics")] delivery_observer: Option<&dyn RxNetworkDeliveryObserver>,
@@ -321,6 +409,7 @@ where
         H: TxHardware + Esp32s31ApRuntimeHardware + RxBlockAckHardware,
         F: AccessPointStagedRxFrame,
         Q: FnMut(u8),
+        S: FnMut() -> ([u8; 32], u64),
     {
         let tx_pending = self.mac.tx_pending();
         self.apply_protocol_actions(hardware)?;
@@ -328,19 +417,25 @@ where
             return Ok(crate::roles::concurrent::Esp32s31RoutedRxDisposition::Deferred(frame));
         }
 
-        if tx_pending && !rx_pipeline::is_protected_data(frame.segment()) {
+        if tx_pending
+            && !rx_pipeline::can_process_ap_frame_during_tx(
+                frame.segment(),
+                self.mac.engine().security_mode(),
+            )
+        {
             return Ok(crate::roles::concurrent::Esp32s31RoutedRxDisposition::Deferred(frame));
         }
 
         self.serviced_rx_frames = self.serviced_rx_frames.saturating_add(1);
+        #[cfg(feature = "diagnostics")]
+        self.sample_rx_block_ack_hardware(hardware);
         #[cfg(feature = "diagnostics")]
         let protocol_started = Instant::now().as_micros();
         let protocol_class = self.service_staged_rx(
             rx_protocol_consumer_has_hardware(tx_pending).then_some(hardware),
             frame,
             AccessPointRxPublication::OwnedNetworkPool,
-            authenticator_nonce,
-            initial_replay_counter,
+            security_material,
             now_micros,
             publish_shared_rx,
             #[cfg(feature = "diagnostics")]
@@ -358,6 +453,65 @@ where
         Ok(crate::roles::concurrent::Esp32s31RoutedRxDisposition::Processed)
     }
 
+    #[cfg(feature = "diagnostics")]
+    pub(super) fn sample_rx_block_ack_hardware<H: RxBlockAckHardware>(
+        &mut self,
+        hardware: &mut H,
+    ) {
+        // Four or five samples cover a ten-second HT40 ceiling interval while
+        // keeping the bounded UART log well below per-frame instrumentation.
+        if self.serviced_rx_frames < self.observer.next_rx_block_ack_hardware_sample {
+            return;
+        }
+        self.observer.next_rx_block_ack_hardware_sample = self
+            .serviced_rx_frames
+            .saturating_div(8_192)
+            .saturating_add(1)
+            .saturating_mul(8_192);
+        for agreement in self
+            .rx_block_ack
+            .snapshots_for(MacInterface::AccessPoint)
+            .into_iter()
+            .flatten()
+        {
+            let Some(snapshot) =
+                hardware.diagnostic_rx_block_ack_entry_snapshot(agreement.hardware_index)
+            else {
+                log::warn!(
+                    "open-radio: AP live RX BA sample={} bank={} unavailable",
+                    self.serviced_rx_frames,
+                    agreement.hardware_index,
+                );
+                continue;
+            };
+            let configuration_matches = snapshot.enabled
+                && snapshot.write_enabled
+                && snapshot.valid
+                && snapshot.control_unknown_clear
+                && snapshot.peer == agreement.peer
+                && snapshot.interface == agreement.interface
+                && snapshot.tid == agreement.tid
+                && u16::from(snapshot.window) == RX_BLOCK_ACK_MAX_WINDOW;
+            log::info!(
+                "open-radio: AP live RX BA sample={} bank={} matches={} enabled={} write={} valid={} clean={} interface={:?} tid={} window={} current={} loaded_start={} bitmap_status={:016x} bitmap_load={:016x}",
+                self.serviced_rx_frames,
+                agreement.hardware_index,
+                configuration_matches,
+                snapshot.enabled,
+                snapshot.write_enabled,
+                snapshot.valid,
+                snapshot.control_unknown_clear,
+                snapshot.interface,
+                snapshot.tid,
+                snapshot.window,
+                snapshot.current_sequence,
+                snapshot.loaded_start_sequence,
+                snapshot.bitmap_status,
+                snapshot.bitmap_load,
+            );
+        }
+    }
+
     /// Consume only protected data while another transaction owns the
     /// physical TX domain.
     ///
@@ -365,11 +519,10 @@ where
     /// value-only mailbox actions. It cannot borrow MMIO or publish a frame;
     /// management and EAPOL owners are returned unchanged for the first idle
     /// transaction boundary.
-    pub fn service_routed_rx_during_tx<H, F, Q>(
+    pub fn service_routed_rx_during_tx<H, F, Q, S>(
         &mut self,
         frame: F,
-        authenticator_nonce: [u8; 32],
-        initial_replay_counter: u64,
+        security_material: &mut S,
         now_micros: u64,
         publish_shared_rx: &mut Q,
         #[cfg(feature = "diagnostics")] delivery_observer: Option<&dyn RxNetworkDeliveryObserver>,
@@ -381,8 +534,14 @@ where
         H: TxHardware + Esp32s31ApRuntimeHardware + RxBlockAckHardware,
         F: AccessPointStagedRxFrame,
         Q: FnMut(u8),
+        S: FnMut() -> ([u8; 32], u64),
     {
-        if self.rx_batch_pending() || !rx_pipeline::is_protected_data(frame.segment()) {
+        if self.rx_batch_pending()
+            || !rx_pipeline::can_process_ap_frame_during_tx(
+                frame.segment(),
+                self.mac.engine().security_mode(),
+            )
+        {
             return Ok(crate::roles::concurrent::Esp32s31RoutedRxDisposition::Deferred(frame));
         }
         // Do not consume the affine staging lease unless every value-only
@@ -404,12 +563,11 @@ where
         self.serviced_rx_frames = self.serviced_rx_frames.saturating_add(1);
         #[cfg(feature = "diagnostics")]
         let protocol_started = Instant::now().as_micros();
-        let protocol_class = self.service_staged_rx::<H, _, _>(
+        let protocol_class = self.service_staged_rx::<H, _, _, _>(
             None,
             frame,
             AccessPointRxPublication::OwnedNetworkPool,
-            authenticator_nonce,
-            initial_replay_counter,
+            security_material,
             now_micros,
             publish_shared_rx,
             #[cfg(feature = "diagnostics")]
@@ -434,6 +592,8 @@ where
     where
         H: RxBlockAckHardware,
     {
+        #[cfg(feature = "diagnostics")]
+        self.sample_rx_block_ack_hardware(hardware);
         self.apply_protocol_actions(hardware)
     }
 
@@ -552,13 +712,12 @@ where
         unsafe(link_section = ".hot.text.open_radio_ap_rx")
     )]
     #[inline(never)]
-    fn service_staged_rx<H, F, Q>(
+    fn service_staged_rx<H, F, Q, S>(
         &mut self,
         mut hardware: Option<&mut H>,
         staged_frame: F,
         publication: AccessPointRxPublication,
-        authenticator_nonce: [u8; 32],
-        initial_replay_counter: u64,
+        security_material: &mut S,
         now_micros: u64,
         publish_shared_rx: &mut Q,
         #[cfg(feature = "diagnostics")] delivery_observer: Option<&dyn RxNetworkDeliveryObserver>,
@@ -567,7 +726,11 @@ where
         H: TxHardware + Esp32s31ApRuntimeHardware + RxBlockAckHardware,
         F: AccessPointStagedRxFrame,
         Q: FnMut(u8),
+        S: FnMut() -> ([u8; 32], u64),
     {
+        #[cfg(feature = "task-poll-telemetry")]
+        let mut core0_ap_rx =
+            crate::diagnostics::core0_ap_rx_cycles::Core0ApRxCycleProfile::begin();
         let mut staged_frame = Some(staged_frame);
         let segment = staged_frame
             .as_ref()
@@ -642,6 +805,8 @@ where
         let protocol_class = if data_frame
             && (security_mode == WifiSecurityMode::Open || protected)
         {
+            #[cfg(feature = "task-poll-telemetry")]
+            core0_ap_rx.view_complete();
             observe_access_point!(self, observation, {
                 observation.protected_data_frames =
                     observation.protected_data_frames.saturating_add(1);
@@ -664,6 +829,8 @@ where
                     observe_ht_rx_data_frame(observation, signal);
                 }
             });
+            #[cfg(feature = "task-poll-telemetry")]
+            let mut protected_dispatch_cycles = 0_u32;
             let (
                 reorder_progress,
                 batch_used,
@@ -679,7 +846,21 @@ where
                 let mut deferred = DeferredAccessPointRxSink::new(processor.rx_frame);
                 let mut in_place = InPlaceAccessPointRxSink::new(segment.buffer);
                 let mut produced_data = false;
+                #[cfg(feature = "task-poll-telemetry")]
+                let reorder_key_started =
+                    crate::diagnostics::core0_rx_cycles::cycle_count();
                 let key = data_rx.reorder_key(segment);
+                let peer = key.map(|key| key.peer).or_else(|| {
+                    frame
+                        .mpdu
+                        .get(10..16)
+                        .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok())
+                });
+                #[cfg(feature = "task-poll-telemetry")]
+                core0_ap_rx.record_reorder_key(
+                    crate::diagnostics::core0_rx_cycles::cycle_count()
+                        .wrapping_sub(reorder_key_started),
+                );
                 let current_buffer = segment.buffer.as_ptr();
                 let qos_control_offset = 24
                     + if frame_control & 0x0300 == 0x0300 {
@@ -695,10 +876,14 @@ where
                 let reorder_progress = {
                     let mut dispatch =
                         |ordered: open_esp_radio_esp32s31_wifi_mac::rx::RxSegment<'_>| {
+                            #[cfg(feature = "task-poll-telemetry")]
+                            let dispatch_started =
+                                crate::diagnostics::core0_rx_cycles::cycle_count();
                             AccessPointProtectedFrameDispatch::dispatch(
                                 data_rx,
                                 ordered,
                                 |request| mac.engine_mut().admit_rx_data(request),
+                                peer,
                                 publication,
                                 current_buffer as usize,
                                 current_is_amsdu,
@@ -709,7 +894,17 @@ where
                                 report,
                                 &mut activity_peer,
                                 &mut produced_data,
+                                #[cfg(feature = "task-poll-telemetry")]
+                                &mut core0_ap_rx,
                             );
+                            #[cfg(feature = "task-poll-telemetry")]
+                            {
+                                protected_dispatch_cycles = protected_dispatch_cycles
+                                    .wrapping_add(
+                                        crate::diagnostics::core0_rx_cycles::cycle_count()
+                                            .wrapping_sub(dispatch_started),
+                                    );
+                            }
                         };
                     if let Some(key) = key {
                         processor.rx_reorder.ingest(
@@ -733,6 +928,8 @@ where
                     produced_data,
                 )
             };
+            #[cfg(feature = "task-poll-telemetry")]
+            core0_ap_rx.dispatch_complete(protected_dispatch_cycles);
             if let Some(reset) = reorder_progress.hardware_window_reset {
                 observe_access_point!(self, observation, {
                     observation.rx_reorder_hardware_window_resets = observation
@@ -775,7 +972,7 @@ where
             batch_exhausted = current_batch_exhausted;
             // Protocol parsing has released all frame and scratch borrows.
             // Only the radio owner now translates the value-only request.
-            if let Some(hardware) = hardware.as_deref_mut() {
+            if let Some(hardware) = hardware.take() {
                 self.apply_protocol_actions(hardware)?;
             }
             if batch_used != 0 {
@@ -829,16 +1026,17 @@ where
                     observation.ignored_rx_frames = observation.ignored_rx_frames.saturating_add(1);
                 });
             }
+            #[cfg(feature = "task-poll-telemetry")]
+            core0_ap_rx.publication_complete();
             AccessPointRxProtocolClass::ProtectedData
         } else if frame_control & 0x000c == 0 {
             let hardware = hardware
-                .as_deref_mut()
+                .take()
                 .ok_or(Esp32s31AccessPointControlError::ProtocolFrameRequiresHardware)?;
             if self.service_management(
                 hardware,
                 frame.mpdu,
-                authenticator_nonce,
-                initial_replay_counter,
+                security_material,
                 now_micros,
             )? {
                 observe_access_point!(self, observation, {
@@ -849,7 +1047,7 @@ where
             AccessPointRxProtocolClass::Management
         } else if data_frame {
             let hardware = hardware
-                .as_deref_mut()
+                .take()
                 .ok_or(Esp32s31AccessPointControlError::ProtocolFrameRequiresHardware)?;
             if self.service_eapol(hardware, frame.mpdu, now_micros)? {
                 AccessPointRxProtocolClass::Eapol
@@ -900,19 +1098,7 @@ where
             _ => None,
         };
         if let Some((peer, power_state)) = payload_activity.or(null_data_activity) {
-            self.protocol_actions
-                .publisher()
-                .try_publish(Esp32s31AccessPointProtocolAction::Control(
-                    Esp32s31AccessPointControlAction::ObservePeerActivity {
-                        peer,
-                        at_micros: now_micros,
-                        power_state,
-                    },
-                ))
-                .map_err(|_| Esp32s31AccessPointControlError::ProtocolActionCapacity)?;
-            if let Some(hardware) = hardware {
-                self.apply_protocol_actions(hardware)?;
-            }
+            self.observe_rx_peer_activity(peer, power_state, now_micros)?;
         }
         if let Some(observation @ ApPowerSaveObservation::PsPoll { .. }) = power_save_observation {
             let action = self
@@ -920,6 +1106,10 @@ where
                 .engine_mut()
                 .observe_power_save(observation, now_micros)?;
             self.retain_power_save_action(action)?;
+        }
+        #[cfg(feature = "task-poll-telemetry")]
+        if protocol_class == AccessPointRxProtocolClass::ProtectedData {
+            core0_ap_rx.finish();
         }
         Ok(protocol_class)
     }
@@ -946,47 +1136,50 @@ where
                     starting_sequence,
                     window,
                 )?,
-                Esp32s31AccessPointProtocolAction::Control(
-                    Esp32s31AccessPointControlAction::ObservePeerActivity {
-                        peer,
-                        at_micros,
-                        power_state,
-                    },
-                ) => match power_state {
-                    Some(ApPeerPowerState::Active) => {
-                        let action = self.mac.engine_mut().observe_power_save(
-                            ApPowerSaveObservation::Active { peer },
-                            at_micros,
-                        )?;
-                        self.retain_power_save_action(action)?;
-                    }
-                    Some(ApPeerPowerState::Sleeping) => {
-                        let action = self.mac.engine_mut().observe_power_save(
-                            ApPowerSaveObservation::Sleeping { peer },
-                            at_micros,
-                        )?;
-                        self.retain_power_save_action(action)?;
-                    }
-                    None => self
-                        .mac
-                        .engine_mut()
-                        .observe_peer_activity(peer, at_micros)?,
-                },
             }
         }
         Ok(())
     }
 
-    fn service_management<H>(
+    fn observe_rx_peer_activity(
+        &mut self,
+        peer: [u8; 6],
+        power_state: Option<ApPeerPowerState>,
+        at_micros: u64,
+    ) -> Result<(), Esp32s31AccessPointControlError> {
+        match power_state {
+            Some(ApPeerPowerState::Active) => {
+                let action = self
+                    .mac
+                    .engine_mut()
+                    .observe_power_save(ApPowerSaveObservation::Active { peer }, at_micros)?;
+                self.retain_power_save_action(action)?;
+            }
+            Some(ApPeerPowerState::Sleeping) => {
+                let action = self
+                    .mac
+                    .engine_mut()
+                    .observe_power_save(ApPowerSaveObservation::Sleeping { peer }, at_micros)?;
+                self.retain_power_save_action(action)?;
+            }
+            None => self
+                .mac
+                .engine_mut()
+                .observe_peer_activity(peer, at_micros)?,
+        }
+        Ok(())
+    }
+
+    fn service_management<H, S>(
         &mut self,
         hardware: &mut H,
         mpdu: &[u8],
-        authenticator_nonce: [u8; 32],
-        initial_replay_counter: u64,
+        security_material: &mut S,
         now_micros: u64,
     ) -> Result<bool, Esp32s31AccessPointControlError>
     where
         H: TxHardware + Esp32s31ApRuntimeHardware + RxBlockAckHardware,
+        S: FnMut() -> ([u8; 32], u64),
     {
         let request = parse_ap_management_request(mpdu, self.mac.engine().service_address());
         if let Some(ApManagementRequest::BlockAck { peer, action }) = request {
@@ -1065,6 +1258,25 @@ where
             }
         }
 
+        // Entropy belongs to the transition which creates a fresh WPA2
+        // authenticator, not to generic RX ingress.  The old call topology
+        // generated ten TRNG words before classifying every MPDU, including
+        // ordinary protected UDP data.  Only a new WPA2 association from an
+        // authenticated peer can consume these values; retries in Securing
+        // phase preserve their existing handshake epoch.
+        let peer_phase = match request {
+            Some(ApManagementRequest::Association { peer, .. }) => {
+                self.mac.engine().peer_status(peer).map(|status| status.phase)
+            }
+            _ => None,
+        };
+        let (authenticator_nonce, initial_replay_counter) =
+            ap_security_material_for_management(
+                self.mac.engine().security_mode(),
+                request,
+                peer_phase,
+                security_material,
+            );
         let processor = &mut *self;
         let outcome = processor.mac.publish_management(
             hardware,

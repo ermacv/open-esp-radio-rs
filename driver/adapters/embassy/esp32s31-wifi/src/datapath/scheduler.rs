@@ -74,6 +74,8 @@ where
     {
         let mut stop = core::pin::pin!(stop);
         let mut stopping = false;
+        #[cfg(feature = "diagnostics")]
+        let mut stop_iterations = 0_u8;
         let mut tx_batch_states = [TxBatchState::new(); 2];
         loop {
             #[cfg(feature = "task-poll-telemetry")]
@@ -88,6 +90,12 @@ where
             // exact tie before another transaction can begin.
             if !stopping && matches!(select(stop.as_mut(), ready(())).await, Either::First(())) {
                 stopping = true;
+                #[cfg(feature = "diagnostics")]
+                log::info!(
+                    "open-radio: DATAPATH stop observed active_tx={} prepared_tx={}",
+                    self.active_tx_interface.is_some(),
+                    self.prepared_tx_interface.is_some(),
+                );
             }
             #[cfg(feature = "task-poll-telemetry")]
             core0_scheduler_cycles.stop_completed();
@@ -97,6 +105,19 @@ where
                 Instant::now().as_micros(),
             );
             if stopping {
+                #[cfg(feature = "diagnostics")]
+                {
+                    if stop_iterations < 16 {
+                        log::info!(
+                            "open-radio: DATAPATH stop turn={} active_tx={} prepared_tx={} control_before_stop={}",
+                            stop_iterations,
+                            self.active_tx_interface.is_some(),
+                            self.prepared_tx_interface.is_some(),
+                            self.services.control_required_before_stop(),
+                        );
+                    }
+                    stop_iterations = stop_iterations.saturating_add(1);
+                }
                 // An error returned from RX-during-TX retains the exact live
                 // transaction. Resume it to its terminal IRQ/deadline edge
                 // before asking either paired role to acquire physical TX
@@ -286,6 +307,7 @@ where
                 self.rx_progress,
                 DatapathRxProgress::Drained
                     | DatapathRxProgress::ProbePending
+                    | DatapathRxProgress::ProtocolBlockedByTx
                     | DatapathRxProgress::RecycledAppendPending
                     | DatapathRxProgress::BudgetExhausted
                     | DatapathRxProgress::UpperLayerBlockedButDroppable
@@ -401,6 +423,7 @@ where
                     DatapathRxProgress::ProbePending
                     | DatapathRxProgress::RecycledAppendPending => irq.wait_rx().await,
                     DatapathRxProgress::Drained
+                    | DatapathRxProgress::ProtocolBlockedByTx
                     | DatapathRxProgress::BudgetExhausted
                     | DatapathRxProgress::UpperLayerBlockedButDroppable => irq.wait_rx().await,
                 }

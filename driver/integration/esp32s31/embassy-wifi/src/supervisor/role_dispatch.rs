@@ -43,13 +43,13 @@ impl ProductionWifiEpochRunner {
         generation: open_esp_radio::RadioSubsystemGeneration,
     ) -> EmbassyWifiRoleEpochOutcome<ProductionSupervisorStopped, ProductionWifiFault> {
         let (wifi, physical, mut station, access_point, monitor) = stopped.into_parts();
-        let mut materialized = materialize_esp32s31_wifi_role(wifi, physical);
+        let mut materialized = materialize_production_wifi(wifi, physical);
         let (dma, rx_ring, tx, aggregate_tx) = materialized.resources.into_parts();
         let (phy, platform) = materialized.owner.radio_mut();
         let tx_epoch = self.initialize_tx_epoch(tx, phy.tx_target_power_profile());
         activate_promiscuous_receive(&mut materialized.registers);
         let receive = match rx_ring {
-            Some(ring) => Esp32s31ScanRx::from_halted(ring, dma.storage()),
+            Some(ring) => ring.into_scan(dma.storage()),
             None => match Esp32s31ScanRx::prepare_initial(
                 &mut materialized.registers,
                 dma.storage(),
@@ -61,7 +61,7 @@ impl ProductionWifiEpochRunner {
                     let faulted = ProductionWifiFault::StandaloneScanInitialRx {
                         _owner: materialized.owner,
                         _registers: materialized.registers,
-                        _interrupt_setup: materialized.interrupt_setup,
+                        _interrupts: materialized.interrupts,
                         _physical: ProductionWifiPhysicalResources::new(
                             dma,
                             None,
@@ -119,7 +119,6 @@ impl ProductionWifiEpochRunner {
                 hardware: materialized.registers,
                 receive,
                 control,
-                interrupt_setup: &materialized.interrupt_setup,
                 table: scan_table,
                 frame: scan_frame,
                 scan_observer: ProductionScanObserver,
@@ -152,7 +151,7 @@ impl ProductionWifiEpochRunner {
                 _fault: ProductionStandaloneScanReturnFault::TxRestore {
                     _owner: materialized.owner,
                     _registers: registers,
-                    _interrupt_setup: materialized.interrupt_setup,
+                    _interrupts: materialized.interrupts,
                     _dma: dma,
                     _receive: receive,
                     _tx_epoch: tx_epoch,
@@ -173,14 +172,14 @@ impl ProductionWifiEpochRunner {
                 .await;
             return EmbassyWifiRoleEpochOutcome::Faulted(faulted);
         }
-        let ring = match receive.into_halted() {
+        let ring = match receive.into_live() {
             Ok(ring) => ring,
             Err(receive) => {
                 let faulted = ProductionWifiFault::StandaloneScanReturn {
-                    _fault: ProductionStandaloneScanReturnFault::ReceiveStillActive {
+                    _fault: ProductionStandaloneScanReturnFault::ReceiveNotLive {
                         _owner: materialized.owner,
                         _registers: registers,
-                        _interrupt_setup: materialized.interrupt_setup,
+                        _interrupts: materialized.interrupts,
                         _dma: dma,
                         _receive: receive,
                         _tx_epoch: tx_epoch,
@@ -201,14 +200,12 @@ impl ProductionWifiEpochRunner {
             }
         };
         let report = standalone_scan_report(station.scan_table(), generation);
-        let wifi = materialized
-            .owner
-            .into_stopped(registers, materialized.interrupt_setup, ());
+        let wifi = park_production_wifi(materialized.owner, registers, materialized.interrupts);
         let stopped = Esp32s31WifiSupervisorStopped::new(
-            wifi.wifi,
+            wifi,
             ProductionWifiPhysicalResources::new(
                 dma,
-                Some(ring),
+                Some(ProductionRxRing::Live(ring)),
                 ProductionOrdinaryTxResources::Epoch(tx_epoch),
                 aggregate_tx,
             ),
@@ -369,13 +366,19 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                         access_point_resources,
                         monitor_resources,
                     ) = stopped.into_parts();
-                    let (physical_resources, halted_ring) = physical_resources.take_halted_rx();
+                    let (physical_resources, rx_ring) = physical_resources.take_rx_ring();
+                    let materialized = materialize_production_wifi(wifi, ());
+                    let radio = Esp32s31MonitorRadio::new(
+                        materialized.owner,
+                        materialized.registers,
+                        materialized.interrupts,
+                    );
                     let discarded = self.monitor_capture.discard_queued();
                     crate::monitor::record_discarded_monitor_frames(discarded);
                     let (mut controller, mut task) = match prepare_esp32s31_monitor_task(
                         monitor_plan,
-                        wifi,
-                        monitor_resources.bind(generation, snapshot_length, halted_ring),
+                        radio,
+                        monitor_resources.bind(generation, snapshot_length, rx_ring),
                     ) {
                         Ok(prepared) => prepared,
                         Err(failure) => {
@@ -431,12 +434,17 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                             Esp32s31MonitorTaskExit::Stopped { stopped, .. } => {
                                 let discarded = self.monitor_capture.discard_queued();
                                 crate::monitor::record_discarded_monitor_frames(discarded);
-                                let (monitor, halted_ring) =
+                                let (monitor, rx_ring) =
                                     ProductionMonitorResources::from_stopped(stopped.resources);
+                                let radio = stopped.radio;
                                 EmbassyWifiRoleFrontier::Stopped(
                                     Esp32s31WifiSupervisorStopped::new(
-                                        stopped.wifi,
-                                        physical_resources.restore_halted_rx(halted_ring),
+                                        ProductionWifiOwner::Live {
+                                            owner: radio.owner,
+                                            registers: radio.registers,
+                                            interrupts: radio.interrupts,
+                                        },
+                                        physical_resources.restore_rx_ring(rx_ring),
                                         station_resources,
                                         access_point_resources,
                                         monitor,

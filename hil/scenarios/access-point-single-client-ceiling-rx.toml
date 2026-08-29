@@ -1,6 +1,6 @@
 schema = 3
 id = "access-point-single-client-ceiling-rx"
-description = "Observer-free single-client AP HT40 sustained 95 Mbit/s UDP receive gate"
+description = "Observer-free single-client AP HT40 UDP receive ceiling gate with 130 Mbit/s offer"
 repetitions = 3
 image = "performance"
 isolation = "reset"
@@ -21,7 +21,7 @@ client = "open-wrt"
 kind = "udp"
 direction = "rx"
 duration_seconds = 16
-rx_rate_bps = 120000000
+rx_rate_bps = 130000000
 payload_bytes = 1472
 
 [criteria]

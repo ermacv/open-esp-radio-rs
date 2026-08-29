@@ -7,8 +7,8 @@ use std::{
 };
 
 use open_esp_radio_hil_protocol::{
-    WifiDataPlanePlacement, WifiRxAdmissionPolicy, WifiRxChecksumPolicy, WifiRxContinuationPolicy,
-    WifiRxDispatchPolicy, WifiTxUdpChecksumPolicy,
+    WifiAccessPointSecurity, WifiDataPlanePlacement, WifiRxAdmissionPolicy, WifiRxChecksumPolicy,
+    WifiRxContinuationPolicy, WifiRxDispatchPolicy, WifiTxUdpChecksumPolicy,
 };
 use serde::{Deserialize, Serialize};
 
@@ -170,6 +170,10 @@ pub enum AccessPointClient {
     OpenWrt,
 }
 
+const fn default_access_point_security() -> WifiAccessPointSecurity {
+    WifiAccessPointSecurity::Wpa2Personal
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum AccessPointTraffic {
@@ -309,6 +313,8 @@ pub enum Workload {
         timeout_seconds: u16,
         #[serde(default)]
         client: AccessPointClient,
+        #[serde(default = "default_access_point_security")]
+        security: WifiAccessPointSecurity,
         traffic: AccessPointTraffic,
     },
     /// One equal-offer UDP bidirectional session on each endpoint of a live
@@ -363,6 +369,14 @@ pub struct EvidenceConfig {
 #[serde(default, deny_unknown_fields)]
 pub struct FixtureMutationConfig {
     pub openwrt_fixed_guard_interval: HtGuardIntervalExpectation,
+    /// Fix the controlled OpenWrt AP client's HT transmit MCS.
+    ///
+    /// This is an explicit diagnostic mutation, not a link expectation. The
+    /// scoped client interface owns the mask and deleting that interface
+    /// restores automatic rate control.
+    pub openwrt_client_fixed_ht_mcs: Option<u8>,
+    /// Fix the controlled OpenWrt AP client's transmit guard interval.
+    pub openwrt_client_fixed_guard_interval: HtGuardIntervalExpectation,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -600,9 +614,23 @@ impl Scenario {
             )
             .into());
         }
-        if self.evidence.independent_laptop_monitor_rx && !self.evidence.openwrt_tx_monitor_rx {
+        let independent_ap_uplink = matches!(
+            &self.workload,
+            Workload::AccessPoint {
+                client: AccessPointClient::OpenWrt,
+                traffic: AccessPointTraffic::Udp {
+                    direction: Direction::Rx | Direction::Bidirectional,
+                    ..
+                },
+                ..
+            }
+        );
+        if self.evidence.independent_laptop_monitor_rx
+            && !self.evidence.openwrt_tx_monitor_rx
+            && !independent_ap_uplink
+        {
             return Err(format!(
-                "{}: independent laptop RX evidence requires OpenWrt TX-monitor evidence for correlation",
+                "{}: independent laptop RX evidence requires either correlated OpenWrt TX-monitor evidence or an RX-bearing OpenWrt-client AP workload",
                 self.source.display()
             )
             .into());
@@ -639,6 +667,75 @@ impl Scenario {
             {
                 return Err(format!(
                     "{}: OpenWrt fixed-GI mutation requires AP and independent air evidence",
+                    self.source.display(),
+                )
+                .into());
+            }
+        }
+        if let Some(mcs) = self.fixture_mutation.openwrt_client_fixed_ht_mcs {
+            if mcs > 7 {
+                return Err(format!(
+                    "{}: OpenWrt AP-client fixed HT MCS must be within 0..=7",
+                    self.source.display(),
+                )
+                .into());
+            }
+            if !matches!(
+                self.workload,
+                Workload::AccessPoint {
+                    client: AccessPointClient::OpenWrt,
+                    ..
+                }
+            ) || self
+                .link
+                .is_none_or(|link| link.phy != PhyExpectation::Ht40)
+            {
+                return Err(format!(
+                    "{}: OpenWrt AP-client fixed HT MCS requires an HT40 AP workload with the controlled OpenWrt client",
+                    self.source.display(),
+                )
+                .into());
+            }
+            if !self.image.requires_driver_observation()
+                || !self.evidence.independent_laptop_monitor_rx
+            {
+                return Err(format!(
+                    "{}: OpenWrt AP-client fixed HT MCS requires driver and independent-air evidence",
+                    self.source.display(),
+                )
+                .into());
+            }
+        }
+        if self.fixture_mutation.openwrt_client_fixed_guard_interval
+            != HtGuardIntervalExpectation::Any
+        {
+            let Some(link) = self.link else {
+                return Err(format!(
+                    "{}: OpenWrt AP-client fixed GI requires an HT link expectation",
+                    self.source.display(),
+                )
+                .into());
+            };
+            if !matches!(
+                self.workload,
+                Workload::AccessPoint {
+                    client: AccessPointClient::OpenWrt,
+                    ..
+                }
+            ) || link.phy != PhyExpectation::Ht40
+                || link.guard_interval != self.fixture_mutation.openwrt_client_fixed_guard_interval
+            {
+                return Err(format!(
+                    "{}: OpenWrt AP-client fixed GI must equal the strict GI expectation of an HT40 AP workload",
+                    self.source.display(),
+                )
+                .into());
+            }
+            if !self.image.requires_driver_observation()
+                || !self.evidence.independent_laptop_monitor_rx
+            {
+                return Err(format!(
+                    "{}: OpenWrt AP-client fixed GI requires driver and independent-air evidence",
                     self.source.display(),
                 )
                 .into());
@@ -861,12 +958,20 @@ impl Scenario {
                 boots,
                 timeout_seconds,
                 client,
+                security,
                 traffic,
             } => {
                 bounded(*cycles, 2, 8, self, "cycles")?;
                 bounded(*boots, 1, 20, self, "boots")?;
                 bounded(*timeout_seconds, 20, 180, self, "timeout_seconds")?;
                 validate_access_point_traffic(traffic, self)?;
+                if *security == WifiAccessPointSecurity::Open
+                    && *client != AccessPointClient::OpenWrt
+                {
+                    return self.criteria_error(
+                        "open AP qualification requires the controlled OpenWrt client",
+                    );
+                }
                 if *client == AccessPointClient::OpenWrt {
                     if self.criteria.minimum_concurrent_ap_clients.unwrap_or(1) != 1 {
                         return self.criteria_error(
@@ -1240,6 +1345,27 @@ mod tests {
                 .maximum_idle_channel_utilization_255,
             Some(64)
         );
+        for id in [
+            "udp-rx-ht40-ceiling",
+            "udp-rx-ht40-performance-ceiling",
+            "udp-tx-ht40-ceiling",
+            "udp-tx-ht40-performance-ceiling",
+        ] {
+            let scenario = catalog.get(id).unwrap();
+            let Workload::Udp {
+                rx_rate_bps,
+                tx_rate_bps,
+                ..
+            } = scenario.workload
+            else {
+                panic!("{id} must remain a UDP workload")
+            };
+            assert_eq!(
+                rx_rate_bps.unwrap_or(0) + tx_rate_bps.unwrap_or(0),
+                130_000_000,
+                "{id}",
+            );
+        }
         let tx_task_poll = catalog
             .get("udp-tx-ht40-split-task-poll-diagnostic")
             .unwrap();
@@ -1251,13 +1377,6 @@ mod tests {
         assert_eq!(
             tx_task_poll.criteria.maximum_idle_channel_utilization_255,
             Some(64)
-        );
-        assert_eq!(
-            catalog
-                .get("udp-bidirectional-ht40-single-core-baseline")
-                .unwrap()
-                .data_plane,
-            WifiDataPlanePlacement::SingleCore
         );
         assert_eq!(
             catalog
@@ -1276,6 +1395,12 @@ mod tests {
         assert!(catalog.get("access-point-rx").is_ok());
         assert!(catalog.get("access-point-tx").is_ok());
         assert!(catalog.get("access-point-bidirectional").is_ok());
+        assert!(
+            catalog
+                .all()
+                .iter()
+                .all(|scenario| scenario.data_plane == WifiDataPlanePlacement::SplitRadioNetwork)
+        );
         for id in [
             "access-point-load-rx",
             "access-point-load-tx",
@@ -1434,6 +1559,19 @@ mod tests {
             );
             assert_eq!(
                 scenario.fixture_mutation.openwrt_fixed_guard_interval,
+                HtGuardIntervalExpectation::Any,
+                "{}",
+                scenario.id,
+            );
+            assert_eq!(
+                scenario.fixture_mutation.openwrt_client_fixed_ht_mcs, None,
+                "{}",
+                scenario.id,
+            );
+            assert_eq!(
+                scenario
+                    .fixture_mutation
+                    .openwrt_client_fixed_guard_interval,
                 HtGuardIntervalExpectation::Any,
                 "{}",
                 scenario.id,
@@ -1686,6 +1824,28 @@ mod tests {
         let bidirectional = catalog
             .get("access-point-single-client-ceiling-bidirectional")
             .unwrap();
+        let offered = |scenario: &Scenario| match scenario.workload {
+            Workload::AccessPoint {
+                traffic:
+                    AccessPointTraffic::Udp {
+                        rx_rate_bps,
+                        tx_rate_bps,
+                        ..
+                    },
+                ..
+            } => rx_rate_bps.unwrap_or(0) + tx_rate_bps.unwrap_or(0),
+            _ => panic!("AP ceiling must remain a UDP workload"),
+        };
+        for id in [
+            "access-point-single-client-ceiling-rx",
+            "access-point-single-client-ceiling-tx",
+            "access-point-single-client-ceiling-bidirectional",
+            "access-point-single-client-ceiling-tx-diagnostic",
+            "access-point-single-client-ceiling-tx-task-poll",
+            "access-point-single-client-ceiling-bidirectional-task-poll",
+        ] {
+            assert_eq!(offered(catalog.get(id).unwrap()), 130_000_000, "{id}");
+        }
         assert_eq!(bidirectional.criteria.minimum_rx_bps, Some(40_000_000));
         assert_eq!(bidirectional.criteria.minimum_tx_bps, Some(40_000_000));
         assert_eq!(
@@ -1707,6 +1867,47 @@ mod tests {
         ));
         assert_eq!(icmp.criteria.maximum_lost, Some(0));
         assert_eq!(icmp.criteria.maximum_p95_ms, Some(20));
+    }
+
+    #[test]
+    fn ap_single_client_load_matches_the_station_split_core_baseline() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+        let catalog = Catalog::load(&root).unwrap();
+        let ap = catalog
+            .get("access-point-single-client-load-bidirectional")
+            .unwrap();
+        let station = catalog
+            .get("udp-bidirectional-ht40-split-baseline")
+            .unwrap();
+
+        let offered = |scenario: &Scenario| match scenario.workload {
+            Workload::AccessPoint {
+                traffic:
+                    AccessPointTraffic::Udp {
+                        direction: Direction::Bidirectional,
+                        rx_rate_bps,
+                        tx_rate_bps,
+                        ..
+                    },
+                ..
+            } => (rx_rate_bps, tx_rate_bps),
+            Workload::Udp {
+                direction: Direction::Bidirectional,
+                rx_rate_bps: Some(rx_rate_bps),
+                tx_rate_bps: Some(tx_rate_bps),
+                ..
+            } => (Some(rx_rate_bps), Some(tx_rate_bps)),
+            _ => panic!("station-level comparison requires bidirectional UDP"),
+        };
+
+        assert_eq!(offered(ap), offered(station));
+        assert_eq!(ap.criteria.minimum_rx_bps, station.criteria.minimum_rx_bps);
+        assert_eq!(ap.criteria.minimum_tx_bps, station.criteria.minimum_tx_bps);
+        assert_eq!(
+            ap.criteria.minimum_combined_bps,
+            station.criteria.minimum_combined_bps
+        );
+        assert_eq!(ap.image, ImageClass::Performance);
     }
 
     #[test]

@@ -85,11 +85,11 @@ where
         Esp32s31ScanRx::observe_management(self, hardware, context)
     }
 
-    fn stop(&mut self, hardware: &mut H) -> Result<(), Self::Error> {
-        Esp32s31ScanRx::stop(self, hardware)
+    fn park(&mut self) -> Result<(), Self::Error> {
+        Esp32s31ScanRx::park(self)
     }
 
-    fn prepare_next(&mut self, hardware: &mut H) -> Result<(), Self::Error> {
+    fn prepare_next_channel(&mut self, hardware: &mut H) -> Result<(), Self::Error> {
         Esp32s31ScanRx::prepare_next(self, hardware)
     }
 }

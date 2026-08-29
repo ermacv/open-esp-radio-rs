@@ -12,21 +12,9 @@ pub enum Esp32s31AccessPointHardwareAction {
     },
 }
 
-/// Control actions inferred by RX protocol processing. These contain values,
-/// never PAC references, descriptor owners, or borrowed frame bytes.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Esp32s31AccessPointControlAction {
-    ObservePeerActivity {
-        peer: [u8; 6],
-        at_micros: u64,
-        power_state: Option<open_esp_radio_esp32s31_wifi_ap::protocol::ApPeerPowerState>,
-    },
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31AccessPointProtocolAction {
     Hardware(Esp32s31AccessPointHardwareAction),
-    Control(Esp32s31AccessPointControlAction),
 }
 
 /// Bounded value-only handoff from the protocol consumer to the radio owner.
@@ -144,8 +132,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mailbox_preserves_typed_hardware_and_control_order() {
-        let mut mailbox = Esp32s31AccessPointProtocolMailbox::<2>::new();
+    fn mailbox_preserves_typed_hardware_order_and_capacity() {
+        let mut mailbox = Esp32s31AccessPointProtocolMailbox::<1>::new();
         let reset = Esp32s31AccessPointProtocolAction::Hardware(
             Esp32s31AccessPointHardwareAction::ResetRxBlockAckWindow {
                 hardware_index: 2,
@@ -154,23 +142,13 @@ mod tests {
                 window: 64,
             },
         );
-        let activity = Esp32s31AccessPointProtocolAction::Control(
-            Esp32s31AccessPointControlAction::ObservePeerActivity {
-                peer: [1, 2, 3, 4, 5, 6],
-                at_micros: 77,
-                power_state: None,
-            },
-        );
-
         {
             let mut publisher = mailbox.publisher();
             publisher.try_publish(reset).unwrap();
-            publisher.try_publish(activity).unwrap();
             assert_eq!(publisher.try_publish(reset), Err(reset));
         }
         let mut receiver = mailbox.receiver();
         assert_eq!(receiver.try_receive(), Some(reset));
-        assert_eq!(receiver.try_receive(), Some(activity));
         assert_eq!(receiver.try_receive(), None);
     }
 }

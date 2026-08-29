@@ -167,6 +167,7 @@ mod in_place_rx_sink_tests {
             0
         ));
     }
+
 }
 
 fn observe_protected_dispatch(
@@ -266,6 +267,7 @@ impl AccessPointProtectedFrameDispatch {
         data_rx: &mut Esp32s31ApRxDispatcher,
         ordered: open_esp_radio_esp32s31_wifi_mac::rx::RxSegment<'_>,
         mut admit: impl FnMut(Esp32s31ApRxAdmissionRequest) -> Esp32s31ApRxAdmission,
+        peer: Option<[u8; 6]>,
         publication: AccessPointRxPublication,
         current_buffer: usize,
         current_is_amsdu: bool,
@@ -276,23 +278,17 @@ impl AccessPointProtectedFrameDispatch {
         report: &mut Esp32s31AccessPointControlObservation,
         activity_peer: &mut Option<[u8; 6]>,
         produced_data: &mut bool,
+        #[cfg(feature = "task-poll-telemetry")]
+        core0_ap_rx: &mut crate::diagnostics::core0_ap_rx_cycles::Core0ApRxCycleProfile,
     ) {
-        let peer = data_rx
-            .reorder_key(ordered)
-            .map(|key| key.peer)
-            .or_else(|| {
-                view_normalized_rx_frame(
-                    &ordered,
-                    RxIngressConfig {
-                        ring_entry_limit: 1,
-                        csi_config: 0,
-                        flags: 0,
-                    },
-                )
-                .ok()
-                .and_then(|frame| frame.mpdu.get(10..16))
-                .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok())
-            });
+        #[cfg(feature = "task-poll-telemetry")]
+        let phase_started = crate::diagnostics::core0_rx_cycles::cycle_count();
+        #[cfg(feature = "task-poll-telemetry")]
+        let publish_check_started = {
+            let now = crate::diagnostics::core0_rx_cycles::cycle_count();
+            core0_ap_rx.record_leaf_peer(now.wrapping_sub(phase_started));
+            now
+        };
         let current = ordered.buffer.as_ptr() as usize == current_buffer;
         let current_can_publish_in_place = can_publish_ap_rx_in_place(
             publication,
@@ -300,10 +296,38 @@ impl AccessPointProtectedFrameDispatch {
             current_is_amsdu,
             deferred.used(),
         );
-        let outcome = if data_rx.may_publish_in_place(ordered) && current_can_publish_in_place {
-            data_rx.dispatch_at(ordered, now_micros, &mut admit, in_place)
+        let may_publish_in_place = data_rx.may_publish_in_place(ordered);
+        #[cfg(feature = "task-poll-telemetry")]
+        let body_started = {
+            let now = crate::diagnostics::core0_rx_cycles::cycle_count();
+            core0_ap_rx.record_leaf_publish_check(now.wrapping_sub(publish_check_started));
+            now
+        };
+        #[cfg(feature = "task-poll-telemetry")]
+        let mut admission_cycles = 0_u32;
+        let mut measured_admit = |request| {
+            #[cfg(feature = "task-poll-telemetry")]
+            let started = crate::diagnostics::core0_rx_cycles::cycle_count();
+            let outcome = admit(request);
+            #[cfg(feature = "task-poll-telemetry")]
+            {
+                admission_cycles = admission_cycles.wrapping_add(
+                    crate::diagnostics::core0_rx_cycles::cycle_count().wrapping_sub(started),
+                );
+            }
+            outcome
+        };
+        let outcome = if may_publish_in_place && current_can_publish_in_place {
+            data_rx.dispatch_at(ordered, now_micros, &mut measured_admit, in_place)
         } else {
-            data_rx.dispatch_at(ordered, now_micros, &mut admit, deferred)
+            data_rx.dispatch_at(ordered, now_micros, &mut measured_admit, deferred)
+        };
+        #[cfg(feature = "task-poll-telemetry")]
+        let observe_started = {
+            let now = crate::diagnostics::core0_rx_cycles::cycle_count();
+            core0_ap_rx.record_leaf_body(now.wrapping_sub(body_started));
+            core0_ap_rx.record_leaf_admission(admission_cycles);
+            now
         };
         *produced_data |= observe_protected_dispatch(
             outcome,
@@ -311,6 +335,10 @@ impl AccessPointProtectedFrameDispatch {
             #[cfg(any(feature = "diagnostics", test))]
             report,
             activity_peer,
+        );
+        #[cfg(feature = "task-poll-telemetry")]
+        core0_ap_rx.record_leaf_observe(
+            crate::diagnostics::core0_rx_cycles::cycle_count().wrapping_sub(observe_started),
         );
     }
 }

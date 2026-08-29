@@ -64,9 +64,10 @@ pub trait Esp32s31ScanReceivePort<H> {
     where
         O: Esp32s31ScanFrameObserver;
 
-    fn stop(&mut self, hardware: &mut H) -> Result<(), Self::Error>;
+    /// Close the logical channel epoch without stopping the physical walker.
+    fn park(&mut self) -> Result<(), Self::Error>;
 
-    fn prepare_next(&mut self, hardware: &mut H) -> Result<(), Self::Error>;
+    fn prepare_next_channel(&mut self, hardware: &mut H) -> Result<(), Self::Error>;
 }
 
 /// Polling control-TX capability available only after connected IRQ teardown.
@@ -195,7 +196,8 @@ pub enum Esp32s31ScanPortError<P, R, T> {
     Transmit(T),
 }
 
-/// Owners returned after the scan service has stopped RX.
+/// Owners returned after the scan service has parked logical RX while keeping
+/// the physical descriptor frontier live.
 pub struct Esp32s31ScanPortParts<'resources, 'sequence, P, H, R, T, W, O, const RECORDS: usize> {
     pub phy: P,
     pub hardware: H,

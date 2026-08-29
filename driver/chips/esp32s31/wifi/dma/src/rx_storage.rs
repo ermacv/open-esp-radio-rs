@@ -76,8 +76,47 @@ impl<const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> RxDmaBuffer<BUFFER_SIZ
     /// only from the ring's rearm closure.
     #[allow(unsafe_code, reason = "ring rearm owns the DMA buffer transition")]
     pub(crate) unsafe fn prepare_for_recycle(&self) -> Result<(), RxRingError> {
+        match self.1.load(Ordering::Acquire) {
+            RX_BUFFER_RING => {}
+            RX_BUFFER_DETACHED | RX_BUFFER_RELEASED => return Err(RxRingError::Busy),
+            _ => return Err(RxRingError::Corrupt),
+        }
         // SAFETY: ring ownership makes this the only CPU or DMA writer.
         unsafe { prepare_recycled_buffer(&mut *self.0.get(), BUFFER_SIZE) }
+    }
+
+    /// Normalize an observed buffer before a role-neutral frontier republishes
+    /// its descriptor.
+    ///
+    /// A staged role may hand a live ring to a finite scan/join frontier after
+    /// every upper lease has returned but before the next staged service pass
+    /// recycled the released prefix. The descriptor remains observed and is
+    /// therefore safe to republish, but its allocation still carries the
+    /// durable `Released` state. Normalize that state in the same transaction;
+    /// otherwise the descriptor becomes DMA-visible while a later detach sees
+    /// the stale release and rejects a real completion as `Busy`.
+    #[allow(
+        unsafe_code,
+        reason = "the observed live-ring prefix excludes DMA and detached upper ownership"
+    )]
+    unsafe fn prepare_observed_for_recycle(&self) -> Result<(), RxRingError> {
+        match self.1.load(Ordering::Acquire) {
+            RX_BUFFER_RING => {}
+            RX_BUFFER_RELEASED => {
+                self.1
+                    .compare_exchange(
+                        RX_BUFFER_RELEASED,
+                        RX_BUFFER_RING,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    )
+                    .map_err(|_| RxRingError::Busy)?;
+            }
+            RX_BUFFER_DETACHED => return Err(RxRingError::Busy),
+            _ => return Err(RxRingError::Corrupt),
+        }
+        // SAFETY: the state check/transition excludes every external owner.
+        unsafe { self.prepare_for_recycle() }
     }
 
     fn detach(&self, length: usize, index: usize) -> Result<ExternalRxBuffer, RxRingError> {
@@ -119,24 +158,6 @@ impl<const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> RxDmaBuffer<BUFFER_SIZ
 
     fn state(&self) -> u8 {
         self.1.load(Ordering::Acquire)
-    }
-
-    #[allow(
-        unsafe_code,
-        reason = "released affine buffer is returned to its descriptor owner"
-    )]
-    unsafe fn prepare_released_for_recycle(&self) -> Result<(), RxRingError> {
-        self.1
-            .compare_exchange(
-                RX_BUFFER_RELEASED,
-                RX_BUFFER_RING,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            )
-            .map_err(|_| RxRingError::Busy)?;
-        // SAFETY: the successful state transition proves that neither upper
-        // software nor DMA owns the buffer while the ring prepares it.
-        unsafe { self.prepare_for_recycle() }
     }
 
     #[allow(
@@ -795,7 +816,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
             unsafe {
                 self.buffer_for_descriptor(index)
                     .ok_or(RxRingError::Count)?
-                    .prepare_for_recycle()
+                    .prepare_observed_for_recycle()
             }
         })
     }
@@ -816,7 +837,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
             unsafe {
                 self.buffer_for_descriptor(index)
                     .ok_or(RxRingError::Count)?
-                    .prepare_for_recycle()
+                    .prepare_observed_for_recycle()
             }
         })
     }
@@ -825,8 +846,9 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
     /// all released their original DMA buffers.
     ///
     /// A still-retained descriptor terminates the prefix even if later frames
-    /// have already returned. This preserves hardware list order while making
-    /// network-token release the only authorization for descriptor reuse.
+    /// have already returned. Ring-owned staged discards are deliberately not
+    /// included: after the released prefix advances, the caller must bind each
+    /// such unit to a fresh frozen-LAST proof before republishing it.
     #[allow(
         unsafe_code,
         reason = "released buffer state authorizes the ring rearm transition"
@@ -865,7 +887,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
             unsafe {
                 self.buffer_for_descriptor(index)
                     .ok_or(RxRingError::Count)?
-                    .prepare_released_for_recycle()
+                    .prepare_observed_for_recycle()
             }
         })
     }
@@ -877,6 +899,42 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
             .iter()
             .filter(|buffer| buffer.is_released())
             .count()
+    }
+
+    /// Return the descriptor count of the first already-observed unit when it
+    /// never detached from the ring.
+    ///
+    /// This is the deferred-discard counterpart to released-prefix reclaim. A
+    /// returned network buffer (`Released`) and a live upper lease
+    /// (`Detached`) are excluded; the caller must first advance those owners
+    /// in ring order. A terminal is required so a partial chain can never be
+    /// republished.
+    pub fn first_observed_ring_unit_descriptor_count(
+        &self,
+        ring: &RxRingLive<'_, COUNT>,
+    ) -> Result<Option<usize>, RxRingError> {
+        self.validate_live_ring(ring)?;
+        let start = ring.recycle_start();
+        let observed = ring.observed_mask();
+        for step in 0..COUNT.min(64) {
+            let index = wrap_index::<COUNT>(start, step);
+            if !observed.contains(index) {
+                return Ok(None);
+            }
+            match self
+                .buffer_for_descriptor(index)
+                .ok_or(RxRingError::Count)?
+                .state()
+            {
+                RX_BUFFER_RING => {}
+                RX_BUFFER_DETACHED | RX_BUFFER_RELEASED => return Ok(None),
+                _ => return Err(RxRingError::Corrupt),
+            }
+            if crate::descriptor::rx_done(self.descriptors[index].word0()) {
+                return Ok(Some(step + 1));
+            }
+        }
+        Ok(None)
     }
 
     pub fn completed_unit_frontier(
@@ -1471,6 +1529,61 @@ mod tests {
             .expect("one descriptor appended");
         assert_eq!(append.descriptor_count, 1);
         assert_eq!(storage.released_buffer_count(), 0);
+        assert_eq!(
+            storage.descriptors()[0].word0() & crate::descriptor::BIT_30,
+            0
+        );
+    }
+
+    #[test]
+    fn role_neutral_prefix_recycle_normalizes_a_returned_staged_buffer() {
+        const COUNT: usize = 2;
+        const BASE: u32 = 0x2f00_1000;
+        const ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
+        let buffers = [0x2f00_2000, 0x2f00_2200];
+        let storage = Box::leak(Box::new(RxDmaStorage::<COUNT, 16, 20>::new()));
+        let mut mmio = MockRxDma::default();
+        let prepared = storage
+            .prepare_ring(&mut mmio, BASE, &buffers)
+            .expect("prepared owner");
+        let mut live = prepared
+            .try_start(&mut mmio)
+            .map_err(|(_, error)| error)
+            .expect("live epoch");
+        storage.descriptors()[0].write_word0(
+            16 | (8 << crate::descriptor::LENGTH_SHIFT)
+                | crate::descriptor::BIT_30
+                | crate::descriptor::BIT_31,
+        );
+        mmio.last_descriptor_low = (BASE + crate::descriptor::DESCRIPTOR_BYTES) & ADDRESS_LOW_MASK;
+        mmio.next_descriptor_low = 0;
+
+        let detached = storage
+            .take_completed_unit(&mut live, 1)
+            .unwrap()
+            .expect("completed unit")
+            .detach_single()
+            .expect("single descriptor detaches");
+        let pool = open_esp_radio_dma::ExternalRxHandoffPool::<16, 1>::new();
+        let radio = pool
+            .try_claim_radio(detached.into_buffer(), 0)
+            .map_err(drop)
+            .expect("external handoff slot");
+        let length = radio.frame().len();
+        drop(pool.claim_network(radio.republish(0, length)));
+        assert_eq!(storage.released_buffer_count(), 1);
+
+        let append = storage
+            .recycle_completed_prefix::<COUNT, _>(&mut live, &mut mmio)
+            .expect("role-neutral prefix reclaim")
+            .expect("observed returned descriptor appends");
+        assert_eq!(append.descriptor_count, 1);
+        assert_eq!(storage.released_buffer_count(), 0);
+        assert_eq!(
+            storage.buffer_for_descriptor(0).unwrap().state(),
+            RX_BUFFER_RING,
+            "republished DMA descriptor and buffer state must move together"
+        );
         assert_eq!(
             storage.descriptors()[0].word0() & crate::descriptor::BIT_30,
             0

@@ -119,8 +119,8 @@ reason = "connected epoch future owns the recoverable DMA, VIF-scoped BlockAck i
 [[reviewed_frames]]
 function_contains = "::advance_station_to_paired_frontier::{closure#0}"
 source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/supervisor/concurrent.rs"
-max_bytes = 16384
-reason = "finite paired cutover reuses the complete production STA lifecycle and returns either the exact connected owner graph or the reusable stopped frontier"
+max_bytes = 17408
+reason = "finite paired cutover reuses the complete production STA lifecycle and returns either the exact connected owner graph or the reusable stopped frontier while retaining the installed physical IRQ epoch across the logical role boundary; the 48-KiB hard ceiling, 4-KiB move limit and 192-KiB runtime stack painting remain independent bounds"
 
 [[reviewed_frames]]
 function_contains = "::run_station_access_point_service::{closure#0}"
@@ -149,8 +149,8 @@ reason = "chip station supervisor retains the typed dual-VIF role return, shared
 [[reviewed_frames]]
 function_contains = "::run_standalone_scan::{closure#0}"
 source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/supervisor/role_dispatch.rs"
-max_bytes = 8960
-reason = "standalone scan retains the role-neutral stopped owner graph while the shared RX BlockAck allocator remains statically rooted; runtime painting independently enforces PSRAM stack headroom"
+max_bytes = 11264
+reason = "standalone scan retains the role-neutral owner, continuous live RX ring and installed physical IRQ epoch across its asynchronous channel dwell while the shared RX BlockAck allocator remains statically rooted; the 48-KiB hard ceiling, 4-KiB move limit and runtime PSRAM-stack painting independently bound the complete call chain"
 
 [[reviewed_frames]]
 function_contains = "::station::lifecycle::Esp32s31StationTask<"
@@ -191,8 +191,8 @@ reason = "reconnect future retains the recoverable connected owner, split pairwi
 [[reviewed_frames]]
 function_contains = "::run_connected_epoch::{closure#0}"
 source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/supervisor/station_epoch.rs"
-max_bytes = 10240
-reason = "station engine connected edge retains the exact connected owner or paired-cutover return while preserving every protocol frontier"
+max_bytes = 10752
+reason = "station engine connected edge retains the exact connected owner or paired-cutover return while preserving every protocol frontier; the MAC-IRQ diagnostic image adds its value-only observer edge to the same static PSRAM-owned future"
 
 [[reviewed_frames]]
 function_contains = "::connected::transaction::run_and_quiesce_esp32s31_connected_epoch"

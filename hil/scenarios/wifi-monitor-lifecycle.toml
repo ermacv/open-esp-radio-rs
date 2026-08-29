@@ -3,6 +3,7 @@ id = "wifi-monitor-lifecycle"
 description = "Station to monitor ownership transition and station restoration"
 image = "correctness"
 isolation = "reset"
+data_plane = "split-radio-network"
 tags = ["qualification", "wifi", "monitor", "lifecycle"]
 
 [link]

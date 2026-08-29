@@ -44,7 +44,7 @@ pub use preparation::{
     Esp32s31ConnectedServicePrepareFailure, Esp32s31PreparedConnectedService,
     Esp32s31PreparedConnectedServiceParts, prepare_esp32s31_connected_service,
 };
-pub use rx_service::{Esp32s31ConnectedStaRxService, Esp32s31ConnectedStaRxStopped};
+pub use rx_service::{Esp32s31ConnectedStaRxParked, Esp32s31ConnectedStaRxService};
 pub use shutdown::{
     Esp32s31ConnectedEpochQuiesceFailure, Esp32s31ConnectedEpochQuiesced,
     Esp32s31ConnectedEpochRunnerOwner, Esp32s31ConnectedEpochTeardown,
@@ -88,7 +88,7 @@ pub use super::rx_protocol::{
     Esp32s31ConnectedRxProtocolStorage,
 };
 pub use super::teardown::{
-    Esp32s31AlreadyStoppedRx, Esp32s31ConnectedStaGroupSecurity,
+    Esp32s31AlreadyParkedRx, Esp32s31ConnectedStaGroupSecurity,
     Esp32s31ConnectedStaSecurityStopReport, Esp32s31ConnectedStaTeardownFailure,
     Esp32s31ConnectedStaTeardownPort,
 };

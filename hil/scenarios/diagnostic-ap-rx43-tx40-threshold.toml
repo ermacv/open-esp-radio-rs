@@ -1,0 +1,35 @@
+schema = 3
+id = "diagnostic-ap-rx43-tx40-threshold"
+description = "Temporary AP duplex threshold probe with 43 Mbit/s uplink and 40 Mbit/s downlink"
+repetitions = 1
+image = "correctness"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic-ap-airtime-threshold"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "access-point"
+cycles = 2
+boots = 1
+timeout_seconds = 120
+client = "open-wrt"
+
+[workload.traffic]
+kind = "udp"
+direction = "bidirectional"
+duration_seconds = 10
+rx_rate_bps = 43000000
+tx_rate_bps = 40000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = false
+minimum_rx_bps = 1
+minimum_tx_bps = 1
+minimum_concurrent_ap_clients = 1
+
+[evidence]
+independent_laptop_monitor_rx = true

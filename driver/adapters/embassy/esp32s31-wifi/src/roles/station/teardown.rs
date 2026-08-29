@@ -22,7 +22,7 @@ use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::ConnectedTxSecurity;
 use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::WifiTxResources;
 
 use crate::{
-    datapath::rx::dma::{Esp32s31StagedRxProducer, Esp32s31StoppedRx},
+    datapath::rx::dma::Esp32s31StagedRxProducer,
     datapath::services::SingleRoleServices,
     datapath::tx::resources::AggregateTxResources,
     roles::station::control::{
@@ -32,17 +32,17 @@ use crate::{
     roles::station::tx::{Esp32s31ConnectedTx, Esp32s31ConnectedTxTeardownParts},
 };
 
-/// RX owner already stopped by a wider physical composition.
+/// RX owner already parked by a wider physical composition.
 ///
 /// STA+AP has one common DMA producer, so the paired boundary must stop it
 /// before either logical role is dismantled. Wrapping that exact stopped
 /// owner lets the ordinary STA teardown retain its control/TX/key ordering
 /// without attempting to stop the hardware a second time.
-pub struct Esp32s31AlreadyStoppedRx<R>(R);
+pub struct Esp32s31AlreadyParkedRx<R>(R);
 
-impl<R> Esp32s31AlreadyStoppedRx<R> {
-    pub const fn new(stopped: R) -> Self {
-        Self(stopped)
+impl<R> Esp32s31AlreadyParkedRx<R> {
+    pub const fn new(parked: R) -> Self {
+        Self(parked)
     }
 
     pub fn into_inner(self) -> R {
@@ -50,11 +50,11 @@ impl<R> Esp32s31AlreadyStoppedRx<R> {
     }
 }
 
-impl<H, R> Esp32s31ConnectedStaRxTeardown<H> for Esp32s31AlreadyStoppedRx<R> {
-    type Stopped = R;
+impl<H, R> Esp32s31ConnectedStaRxPark<H> for Esp32s31AlreadyParkedRx<R> {
+    type Parked = R;
     type Error = core::convert::Infallible;
 
-    fn try_stop(self, _hardware: &mut H) -> Result<Self::Stopped, (Self, Self::Error)> {
+    fn try_park(self, _hardware: &mut H) -> Result<Self::Parked, (Self, Self::Error)> {
         Ok(self.0)
     }
 }
@@ -113,12 +113,15 @@ where
     }
 }
 
-/// RX-DMA stop capability used by the connected teardown port.
-pub trait Esp32s31ConnectedStaRxTeardown<H>: Sized {
-    type Stopped;
+/// Logical RX parking capability used by the connected teardown port.
+///
+/// Parking ends peer/protocol ownership but deliberately leaves the physical
+/// DMA walker live for the next Wi-Fi role.
+pub trait Esp32s31ConnectedStaRxPark<H>: Sized {
+    type Parked;
     type Error;
 
-    fn try_stop(self, hardware: &mut H) -> Result<Self::Stopped, (Self, Self::Error)>;
+    fn try_park(self, hardware: &mut H) -> Result<Self::Parked, (Self, Self::Error)>;
 }
 
 impl<
@@ -135,7 +138,7 @@ impl<
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
     P,
-> Esp32s31ConnectedStaRxTeardown<H>
+> Esp32s31ConnectedStaRxPark<H>
     for Esp32s31StagedRxProducer<
         'storage,
         'pool,
@@ -153,23 +156,15 @@ impl<
 where
     H: RxDma,
 {
-    type Stopped = Esp32s31StoppedRx<
-        'storage,
-        'pool,
-        'queue,
-        D,
-        M,
-        QUEUE_DEPTH,
-        COUNT,
-        STAGE_CAPACITY,
-        STAGE_SLOTS,
-        DMA_BUFFER_SIZE,
-        DMA_STORAGE_SIZE,
-    >;
+    type Parked = Self;
     type Error = RxRingError;
 
-    fn try_stop(self, hardware: &mut H) -> Result<Self::Stopped, (Self, Self::Error)> {
-        Esp32s31StagedRxProducer::try_stop(self, hardware)
+    fn try_park(self, _hardware: &mut H) -> Result<Self::Parked, (Self, Self::Error)> {
+        if self.can_park_for_role_handoff() {
+            Ok(self)
+        } else {
+            Err((self, RxRingError::Busy))
+        }
     }
 }
 
@@ -239,7 +234,7 @@ where
 /// Complete successful driver frontier after one connected epoch.
 pub struct Esp32s31ConnectedStaTeardownSuccess<H, R, T, A, C> {
     pub hardware: H,
-    pub stopped_rx: R,
+    pub parked_rx: R,
     pub tx_resources: T,
     pub sequences: StaTxSequenceCounters,
     pub aggregate: A,
@@ -293,7 +288,7 @@ pub enum Esp32s31ConnectedStaTeardownFailure<H, R, S, X, C, CE, RE> {
     },
     TxActive {
         hardware: H,
-        stopped_rx: S,
+        parked_rx: S,
         tx: X,
         control: C,
         group_security: Esp32s31ConnectedStaGroupSecurity,
@@ -310,13 +305,13 @@ impl Esp32s31ConnectedStaTeardownPort {
         services: SingleRoleServices<H, R, X, C>,
         group_security: Esp32s31ConnectedStaGroupSecurity,
     ) -> Result<
-        Esp32s31ConnectedStaTeardownSuccess<H, R::Stopped, X::Resources, X::Aggregate, C::Report>,
-        Esp32s31ConnectedStaTeardownFailure<H, R, R::Stopped, X, C, C::Error, R::Error>,
+        Esp32s31ConnectedStaTeardownSuccess<H, R::Parked, X::Resources, X::Aggregate, C::Report>,
+        Esp32s31ConnectedStaTeardownFailure<H, R, R::Parked, X, C, C::Error, R::Error>,
     >
     where
         H: CcmpKeyHardware,
         C: Esp32s31ConnectedStaControlTeardown<H, X>,
-        R: Esp32s31ConnectedStaRxTeardown<H>,
+        R: Esp32s31ConnectedStaRxPark<H>,
         X: Esp32s31ConnectedStaTxTeardown,
     {
         let (mut hardware, rx, mut tx, mut control) = services.into_parts();
@@ -330,8 +325,8 @@ impl Esp32s31ConnectedStaTeardownPort {
                 });
             }
         };
-        let stopped_rx = match rx.try_stop(&mut hardware) {
-            Ok(stopped) => stopped,
+        let parked_rx = match rx.try_park(&mut hardware) {
+            Ok(parked) => parked,
             Err((rx, error)) => {
                 return Err(Esp32s31ConnectedStaTeardownFailure::Rx {
                     error,
@@ -348,7 +343,7 @@ impl Esp32s31ConnectedStaTeardownPort {
             Err(tx) => {
                 return Err(Esp32s31ConnectedStaTeardownFailure::TxActive {
                     hardware,
-                    stopped_rx,
+                    parked_rx,
                     tx,
                     control,
                     group_security,
@@ -409,7 +404,7 @@ impl Esp32s31ConnectedStaTeardownPort {
         drop(control);
         Ok(Esp32s31ConnectedStaTeardownSuccess {
             hardware,
-            stopped_rx,
+            parked_rx,
             tx_resources: returned_tx.resources,
             sequences: returned_tx.sequences,
             aggregate: returned_tx.aggregate,
@@ -464,11 +459,11 @@ mod tests {
 
     struct Rx(bool);
 
-    impl Esp32s31ConnectedStaRxTeardown<Hardware> for Rx {
-        type Stopped = u8;
+    impl Esp32s31ConnectedStaRxPark<Hardware> for Rx {
+        type Parked = u8;
         type Error = u8;
 
-        fn try_stop(self, _hardware: &mut Hardware) -> Result<Self::Stopped, (Self, Self::Error)> {
+        fn try_park(self, _hardware: &mut Hardware) -> Result<Self::Parked, (Self, Self::Error)> {
             if self.0 { Err((self, 3)) } else { Ok(4) }
         }
     }
@@ -532,7 +527,7 @@ mod tests {
         let (services, group) = services(&mut hardware, false, false, false);
         let stopped = Esp32s31ConnectedStaTeardownPort::try_teardown(services, group)
             .unwrap_or_else(|_| panic!("idle mock owners must stop"));
-        assert_eq!(stopped.stopped_rx, 4);
+        assert_eq!(stopped.parked_rx, 4);
         assert_eq!(stopped.tx_resources, 5);
         assert_eq!(stopped.sequences.peek_non_qos(), 6);
         assert_eq!(stopped.aggregate, 7);
@@ -541,14 +536,14 @@ mod tests {
     }
 
     #[test]
-    fn already_stopped_rx_crosses_teardown_without_a_second_hardware_stop() {
-        let stopped = Esp32s31AlreadyStoppedRx::new(9_u8);
+    fn already_parked_rx_crosses_teardown_without_touching_hardware() {
+        let parked = Esp32s31AlreadyParkedRx::new(9_u8);
         let returned =
-            <Esp32s31AlreadyStoppedRx<u8> as Esp32s31ConnectedStaRxTeardown<Hardware>>::try_stop(
-                stopped,
+            <Esp32s31AlreadyParkedRx<u8> as Esp32s31ConnectedStaRxPark<Hardware>>::try_park(
+                parked,
                 &mut Hardware::default(),
             )
-            .unwrap_or_else(|_| unreachable!("already-stopped RX is infallible"));
+            .unwrap_or_else(|_| unreachable!("already-parked RX is infallible"));
 
         assert_eq!(returned, 9);
     }

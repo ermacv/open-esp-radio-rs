@@ -92,7 +92,7 @@ where
         // stages a response, `active_tx_interface` below owns it immediately;
         // mailbox and deadline changes are exposed by `control_ready` /
         // `wait_control_ready` at the next scheduler boundary.
-        if self.services.active_tx_interface().is_some() {
+        if self.services.has_active_tx() {
             self.begin_active_tx(
                 self.reported_active_tx_interface(),
                 DatapathTxOrigin::Control,
@@ -149,7 +149,9 @@ where
         self.clear_recycled_rx_probe_deadline();
         if matches!(
             progress,
-            DatapathRxProgress::Drained | DatapathRxProgress::UpperLayerBlockedButDroppable
+            DatapathRxProgress::Drained
+                | DatapathRxProgress::ProtocolBlockedByTx
+                | DatapathRxProgress::UpperLayerBlockedButDroppable
         ) {
             // S31 exposes a level CPU route. A completion racing the final
             // ownership probe stays latched while masked and asserts the
@@ -340,7 +342,10 @@ where
         // retaining a second DMA arena across completion would postpone the
         // other VIF's protocol/control work and can exhaust the shared RX
         // staging pool. Single-VIF runners keep the throughput look-ahead.
-        let allow_standby = tx_lookahead_allowed(allow_standby, self.interfaces);
+        let active_tx_origin = self
+            .active_tx_origin
+            .expect("active TX drive retains its semantic origin");
+        let allow_standby = tx_lookahead_allowed(allow_standby, self.interfaces, active_tx_origin);
         let mut progress = WifiTxProgress::Pending;
         let mut rx_producer_serviced = false;
         while progress == WifiTxProgress::Pending {
@@ -358,6 +363,23 @@ where
                 rx_producer_serviced = false;
                 continue;
             }
+            // A continuously reasserted RX level can remain the first ready
+            // branch in the ordered select below. Once one producer pass has
+            // released that durable RX frontier, also probe the transaction's
+            // executor deadline without blocking. Otherwise RX traffic can
+            // starve the sole fallback which polls a physically completed TX
+            // whose interrupt edge was coalesced with RX.
+            if rx_producer_serviced
+                && matches!(
+                    select(self.services.wait_tx_deadline(), ready(())).await,
+                    Either::First(())
+                )
+            {
+                progress = self.service_active_tx(WifiTxWake::Deadline).await?;
+                rx_producer_serviced = false;
+                continue;
+            }
+            rx_producer_serviced = false;
             let irq = self.irq;
             let rx_progress = self.rx_progress;
             let recycled_rx_probe_deadline = self.recycled_rx_probe_deadline();
@@ -391,6 +413,7 @@ where
                         DatapathRxProgress::ProbePending
                         | DatapathRxProgress::RecycledAppendPending => irq.wait_rx().await,
                         DatapathRxProgress::Drained
+                        | DatapathRxProgress::ProtocolBlockedByTx
                         | DatapathRxProgress::BudgetExhausted
                         | DatapathRxProgress::UpperLayerBlockedButDroppable => irq.wait_rx().await,
                     }

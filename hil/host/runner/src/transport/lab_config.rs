@@ -8,9 +8,9 @@ use std::{
 };
 
 use open_esp_radio_hil_protocol::{
-    NetworkCredentials, NetworkIpv4Configuration, WifiChannelWidth, WifiDataPlanePlacement,
-    WifiRxAdmissionPolicy, WifiRxChecksumPolicy, WifiRxContinuationPolicy, WifiRxDispatchPolicy,
-    WifiTxUdpChecksumPolicy,
+    NetworkCredentials, NetworkIpv4Configuration, WifiAccessPointSecurity, WifiChannelWidth,
+    WifiDataPlanePlacement, WifiRxAdmissionPolicy, WifiRxChecksumPolicy, WifiRxContinuationPolicy,
+    WifiRxDispatchPolicy, WifiTxUdpChecksumPolicy,
 };
 use serde::Deserialize;
 use zeroize::{Zeroize, Zeroizing};
@@ -336,7 +336,7 @@ impl LabConfig {
                     StationFixtureConfig::External(ExternalConfig { phys })
                 }
             },
-            data_plane: Cell::new(WifiDataPlanePlacement::SingleCore),
+            data_plane: Cell::new(WifiDataPlanePlacement::SplitRadioNetwork),
             rx_checksum: Cell::new(WifiRxChecksumPolicy::Software),
             tx_udp_checksum: Cell::new(WifiTxUdpChecksumPolicy::Software),
             rx_admission: Cell::new(WifiRxAdmissionPolicy::SynchronousShared),
@@ -388,7 +388,7 @@ impl LabConfig {
                 phys: vec![PhyExpectation::Ht40],
                 independent_laptop_monitor: true,
             }),
-            data_plane: Cell::new(WifiDataPlanePlacement::SingleCore),
+            data_plane: Cell::new(WifiDataPlanePlacement::SplitRadioNetwork),
             rx_checksum: Cell::new(WifiRxChecksumPolicy::Software),
             tx_udp_checksum: Cell::new(WifiTxUdpChecksumPolicy::Software),
             rx_admission: Cell::new(WifiRxAdmissionPolicy::SynchronousShared),
@@ -503,6 +503,7 @@ impl StationConfig {
 impl AccessPointConfig {
     pub(crate) fn protocol_request(
         &self,
+        security: WifiAccessPointSecurity,
     ) -> Result<open_esp_radio_hil_protocol::WifiAccessPointRequest> {
         Ok(open_esp_radio_hil_protocol::WifiAccessPointRequest {
             credentials: NetworkCredentials::try_new(
@@ -510,6 +511,7 @@ impl AccessPointConfig {
                 self.passphrase.as_bytes(),
             )
             .map_err(|error| format!("invalid HIL AP credentials: {error}"))?,
+            security,
             channel: self.channel,
             channel_width: self.channel_width,
             client_limit: self.client_limit,

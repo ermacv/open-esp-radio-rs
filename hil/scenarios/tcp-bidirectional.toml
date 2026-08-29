@@ -3,6 +3,7 @@ id = "tcp-bidirectional"
 description = "Simultaneous TCP receive and transmit"
 image = "correctness"
 isolation = "reset"
+data_plane = "split-radio-network"
 tags = ["qualification", "tcp", "station", "full-duplex"]
 
 [link]

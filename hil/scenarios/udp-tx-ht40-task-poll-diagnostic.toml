@@ -1,10 +1,10 @@
 schema = 3
 id = "udp-tx-ht40-task-poll-diagnostic"
-description = "Single-core HT40 saturated TX executor-residence diagnostic"
+description = "Split radio/network HT40 saturated TX executor-residence diagnostic"
 image = "diagnostic-task-poll"
 isolation = "reset"
-data_plane = "single-core"
-tags = ["diagnostic", "udp", "station", "tx", "ht40", "single-core", "task-poll"]
+data_plane = "split-radio-network"
+tags = ["diagnostic", "udp", "station", "tx", "ht40", "split-core", "task-poll"]
 
 [link]
 phy = "ht40"

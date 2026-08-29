@@ -49,6 +49,10 @@ pub struct Esp32s31AccessPointControlObservation {
     pub rx_rssi_max_dbm: i8,
     /// Protected HT40 data MPDUs grouped by hardware-observed MCS0..MCS7.
     pub rx_ht40_mcs_frames: [u32; 8],
+    /// Protected HT40 data MPDUs observed with the 800 ns guard interval.
+    pub rx_ht40_long_gi_frames: u32,
+    /// Protected HT40 data MPDUs observed with the 400 ns guard interval.
+    pub rx_ht40_short_gi_frames: u32,
     /// Protected HT40 data MPDUs carrying the independent MCS32 selector.
     pub rx_ht40_mcs32_frames: u32,
     /// Protected HT data MPDUs carrying MCS32 without its required HT40 CBW.

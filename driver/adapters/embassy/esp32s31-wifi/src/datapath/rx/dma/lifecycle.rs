@@ -220,15 +220,13 @@ impl<
     pub fn new_sta_ap(
         storage: &'static Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
-        frames: Sender<
+        frames: crate::roles::concurrent::Esp32s31StaApStagedRxSender<
+            'pool,
             'queue,
             M,
-            crate::roles::concurrent::Esp32s31StaApStagedRxFrame<
-                'pool,
-                STAGE_CAPACITY,
-                STAGE_SLOTS,
-            >,
             QUEUE_DEPTH,
+            STAGE_CAPACITY,
+            STAGE_SLOTS,
         >,
         ingress: open_esp_radio_esp32s31_wifi_mac::rx::RxIngressConfig,
         addresses: open_esp_radio_ieee80211::vif::StaApRxAddresses,
@@ -269,6 +267,15 @@ impl<
 
     pub fn queued_frames(&self) -> usize {
         self.frames.len()
+    }
+
+    /// Reacquire the sole standalone protocol consumer while the physical
+    /// producer is detached from a logical DMA role.
+    pub fn try_resume_standalone_receiver(
+        &self,
+    ) -> Option<Esp32s31StagedRxReceiver<'queue, 'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>>
+    {
+        self.frames.try_resume_standalone_receiver()
     }
 
     /// Reassemble the stopped production owner after a finite join attempt.
@@ -492,15 +499,13 @@ impl<
         storage: &'static Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
         delay: D,
-        frames: Sender<
+        frames: crate::roles::concurrent::Esp32s31StaApStagedRxSender<
+            'pool,
             'queue,
             M,
-            crate::roles::concurrent::Esp32s31StaApStagedRxFrame<
-                'pool,
-                STAGE_CAPACITY,
-                STAGE_SLOTS,
-            >,
             QUEUE_DEPTH,
+            STAGE_CAPACITY,
+            STAGE_SLOTS,
         >,
         ingress: open_esp_radio_esp32s31_wifi_mac::rx::RxIngressConfig,
         addresses: open_esp_radio_ieee80211::vif::StaApRxAddresses,
@@ -613,6 +618,74 @@ impl<
 
     pub fn queued_frames(&self) -> usize {
         self.frames.len()
+    }
+
+    /// Return whether this physical producer can cross a logical role edge
+    /// without stopping the descriptor walker.
+    ///
+    /// Every staged lease must already have returned to the common pool and
+    /// the producer queue must be empty. The live ring itself is deliberately
+    /// not inspected or modified: its DMA frontier continues unchanged.
+    pub fn can_park_for_role_handoff(&self) -> bool {
+        self.pool.claimed_slots() == 0 && self.frames.len() == 0
+    }
+
+    /// Split a quiescent logical producer from the still-running physical RX
+    /// ring.
+    ///
+    /// This is the inverse of [`Esp32s31RxEpochResources::with_live_ring`]. It
+    /// changes only software ownership; WALKER_ENABLE, NEXT, LAST and every
+    /// descriptor word remain owned by the same continuous DMA epoch.
+    #[allow(clippy::type_complexity, clippy::result_large_err)]
+    pub fn try_into_live_epoch_parts(
+        self,
+    ) -> Result<
+        (
+            RxRingLive<'storage, COUNT>,
+            Esp32s31RxEpochResources<
+                'storage,
+                'pool,
+                'queue,
+                D,
+                M,
+                QUEUE_DEPTH,
+                COUNT,
+                STAGE_CAPACITY,
+                STAGE_SLOTS,
+                DMA_BUFFER_SIZE,
+                DMA_STORAGE_SIZE,
+            >,
+        ),
+        (Self, RxRingError),
+    > {
+        if !self.can_park_for_role_handoff() {
+            return Err((self, RxRingError::Busy));
+        }
+        let Self {
+            ring,
+            storage,
+            pool,
+            frames,
+            delay,
+            #[cfg(any(feature = "diagnostics", test))]
+            pipeline_observer,
+            admission: _,
+            serviced_descriptors: _,
+            serviced_units: _,
+            serviced_bytes: _,
+        } = self;
+        Ok((
+            ring,
+            Esp32s31RxEpochResources {
+                ring_lifetime: PhantomData,
+                storage,
+                pool,
+                frames,
+                delay,
+                #[cfg(any(feature = "diagnostics", test))]
+                pipeline_observer,
+            },
+        ))
     }
 
     /// Reacquire the sole standalone protocol consumer retained by neither

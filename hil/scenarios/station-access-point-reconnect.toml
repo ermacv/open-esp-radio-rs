@@ -3,6 +3,7 @@ id = "station-access-point-reconnect"
 description = "Upstream beacon loss tears down the complete STA+AP owner and a restored fixture permits one explicit fresh pair"
 image = "correctness"
 isolation = "reset"
+data_plane = "split-radio-network"
 tags = ["wifi", "sta-ap", "reconnect", "beacon-loss", "psram-stack"]
 
 [link]

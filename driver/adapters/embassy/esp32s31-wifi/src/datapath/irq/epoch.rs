@@ -52,6 +52,7 @@ where
     setup: Option<R::Setup>,
     mac_runtime: &'runtime EmbassyMacIrqRuntime<M>,
     power_runtime: &'runtime EmbassyPowerIrqRuntime<M>,
+    rx_moderated: bool,
 }
 
 impl<'runtime, R, M> Esp32s31MacInterruptEpoch<'runtime, R, M>
@@ -70,6 +71,7 @@ where
             setup: Some(setup),
             mac_runtime,
             power_runtime,
+            rx_moderated: false,
         }
     }
 
@@ -84,6 +86,15 @@ where
     /// probes through the matching coalesced wake state.
     pub const fn mac_runtime(&self) -> &'runtime EmbassyMacIrqRuntime<M> {
         self.mac_runtime
+    }
+
+    /// Whether this active route owns the RX source-moderation contract.
+    ///
+    /// The bit is lifecycle state retained by the IRQ epoch, not a caller
+    /// convention. A successful [`Self::quiesce`] always clears it after the
+    /// hardware route has returned its setup token.
+    pub const fn is_rx_moderated(&self) -> bool {
+        self.rx_moderated
     }
 
     /// Borrow the task-side capability for polling-only scan/auth phases.
@@ -122,6 +133,74 @@ where
         }
     }
 
+    /// Activate one RX source-moderated interrupt epoch.
+    ///
+    /// Moderation is enabled before the route becomes visible to hardware, so
+    /// the first RX success cannot race ahead of the mask-on-ack policy. An
+    /// activation failure restores both the setup token and the inactive
+    /// moderation state. Quiescence owns the sole inverse transition.
+    pub fn activate_rx_moderated(
+        &mut self,
+        platform: &R::Platform,
+        event_mask: MacInterruptMask,
+    ) -> Result<(), Esp32s31MacInterruptEpochActivateError<R::Error>> {
+        if self.is_active() {
+            return Err(Esp32s31MacInterruptEpochActivateError::AlreadyActive);
+        }
+        debug_assert!(!self.rx_moderated);
+        self.mac_runtime.begin_rx_moderation();
+        match self.activate(platform, event_mask) {
+            Ok(()) => {
+                self.rx_moderated = true;
+                Ok(())
+            }
+            Err(error) => {
+                self.mac_runtime.end_rx_moderation();
+                Err(error)
+            }
+        }
+    }
+
+    /// Enter or resume a logical RX role on the already-installed route.
+    ///
+    /// The first role consumes the setup token and installs the physical CPU
+    /// route. Later STA/AP/monitor cutovers keep that route live and reuse the
+    /// same moderation domain; they must not manufacture a deactivate/activate
+    /// cycle around a MAC which is still powered and clocked.
+    pub fn activate_or_resume_rx_moderated(
+        &mut self,
+        platform: &R::Platform,
+        event_mask: MacInterruptMask,
+    ) -> Result<(), Esp32s31MacInterruptEpochActivateError<R::Error>> {
+        if self.is_active() {
+            assert!(
+                self.rx_moderated,
+                "an active production MAC route retains RX moderation"
+            );
+            return Ok(());
+        }
+        self.activate_rx_moderated(platform, event_mask)
+    }
+
+    /// Close only the current logical consumer epoch.
+    ///
+    /// Hardware publication remains active. Draining coalesced executor state
+    /// gives the next role a clean ownership boundary while a concurrently
+    /// arriving edge remains durable in the same runtime and is therefore
+    /// observed by the next consumer.
+    pub fn park(
+        &mut self,
+    ) -> Result<Esp32s31MacInterruptEpochDrain, Esp32s31MacInterruptEpochQuiesceError<R::Error>>
+    {
+        if !self.is_active() {
+            return Err(Esp32s31MacInterruptEpochQuiesceError::AlreadyQuiesced);
+        }
+        Ok(Esp32s31MacInterruptEpochDrain {
+            mac: self.mac_runtime.drain_pending(),
+            power_events: self.power_runtime.drain_pending(),
+        })
+    }
+
     pub fn quiesce(
         &mut self,
         platform: &R::Platform,
@@ -137,6 +216,10 @@ where
             .quiesce(platform)
             .map_err(Esp32s31MacInterruptEpochQuiesceError::Route)?;
         self.setup = Some(setup);
+        if self.rx_moderated {
+            self.mac_runtime.end_rx_moderation();
+            self.rx_moderated = false;
+        }
         Ok(Esp32s31MacInterruptEpochDrain {
             mac: self.mac_runtime.drain_pending(),
             power_events: self.power_runtime.drain_pending(),

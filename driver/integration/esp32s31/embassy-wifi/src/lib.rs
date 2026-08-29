@@ -113,14 +113,21 @@ pub use monitor::{
     Esp32s31MonitorPhyInfo, MONITOR_CHANNEL_SEQUENCE_CAPACITY, MonitorCapturePolicy,
     MonitorChannelPolicy, MonitorChannelSequence, MonitorChannelSequenceError, MonitorRequest,
 };
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+pub use open_esp_radio_esp32s31_wifi_embassy::datapath::configure_adaptive_recycled_rx_probe_for_diagnostics;
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+pub use open_esp_radio_esp32s31_wifi_embassy::datapath::configure_recycled_rx_probe_delay_for_diagnostics;
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+pub use open_esp_radio_esp32s31_wifi_embassy::datapath::rx::dma::configure_interrupt_driven_recycled_append_for_diagnostics;
+#[cfg(feature = "task-poll-telemetry")]
+pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_ap_rx_cycles::{
+    CORE0_AP_RX_CYCLES, Core0ApRxCycleSnapshot,
+};
 #[cfg(feature = "task-poll-telemetry")]
 pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_rx_cycles::{
     CORE0_RX_CYCLES, Core0RxCycleSnapshot, cycle_count,
 };
-#[cfg(any(
-    feature = "task-poll-telemetry",
-    feature = "core0-rx-coarse-telemetry"
-))]
+#[cfg(any(feature = "task-poll-telemetry", feature = "core0-rx-coarse-telemetry"))]
 pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_rx_performance::{
     CORE0_PERFORMANCE, Core0PerformanceSample, Core0PerformanceSnapshot,
 };
@@ -130,23 +137,17 @@ pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_rx_reorder_cycl
 };
 #[cfg(feature = "task-poll-telemetry")]
 pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::core0_rx_service_histogram::{
-    CORE0_RX_SERVICE_HISTOGRAM, CORE0_RX_SERVICE_HISTOGRAM_BINS,
-    Core0RxServiceBinSnapshot, Core0RxServiceHistogramSnapshot,
+    CORE0_RX_SERVICE_HISTOGRAM, CORE0_RX_SERVICE_HISTOGRAM_BINS, Core0RxServiceBinSnapshot,
+    Core0RxServiceHistogramSnapshot,
 };
 #[cfg(feature = "diagnostics")]
 pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::network::{
     RxNetworkDeliveryEvent, RxNetworkDeliveryObserver, RxObservedEthernetFrame,
     RxQosSequenceObservation,
 };
-pub use open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason;
-#[cfg(feature = "core0-rx-coarse-telemetry")]
-pub use open_esp_radio_esp32s31_wifi_embassy::datapath::configure_adaptive_recycled_rx_probe_for_diagnostics;
-#[cfg(feature = "core0-rx-coarse-telemetry")]
-pub use open_esp_radio_esp32s31_wifi_embassy::datapath::configure_recycled_rx_probe_delay_for_diagnostics;
-#[cfg(feature = "core0-rx-coarse-telemetry")]
-pub use open_esp_radio_esp32s31_wifi_embassy::datapath::rx::dma::configure_interrupt_driven_recycled_append_for_diagnostics;
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 pub use open_esp_radio_esp32s31_wifi_embassy::roles::station::rx_protocol::configure_direct_immediate_rx_dispatch_for_diagnostics;
+pub use open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason;
 pub use radio_resources::{Esp32s31WifiDevice, Esp32s31WifiDevices};
 pub use status::{
     Esp32s31AccessPointStatus, Esp32s31AccessPointStatusSnapshot, Esp32s31StationLinkState,
@@ -309,10 +310,8 @@ pub struct Esp32s31AccessPointObservation {
     pub tx_block_ack_negotiation_timeouts: u32,
     /// Peer-originated RX ADDBA responses that reached terminal TX success.
     pub rx_block_ack_responses_transmitted: u32,
-    /// Hardware MAC RX BUFFER_FULL increments across the complete AP epoch.
-    pub rx_hardware_buffer_full: u16,
-    /// Hardware MAC RX FIFO overflow increments across the complete AP epoch.
-    pub rx_hardware_fifo_overflow: u16,
+    /// Hardware MAC/baseband counter increments across the complete AP epoch.
+    pub rx_hardware: Esp32s31DiagnosticRxStatistics,
     pub retained_rx_descriptors: u32,
     pub ignored_rx_frames: u32,
     pub rx_mic_failures: u32,
@@ -338,6 +337,8 @@ pub struct Esp32s31AccessPointObservation {
     pub rx_rssi_min_dbm: i8,
     pub rx_rssi_max_dbm: i8,
     pub rx_ht40_mcs_frames: [u32; 8],
+    pub rx_ht40_long_gi_frames: u32,
+    pub rx_ht40_short_gi_frames: u32,
     pub rx_ht40_mcs32_frames: u32,
     pub rx_ht_mcs32_width_mismatches: u32,
     pub tx_ht_aggregates: u32,

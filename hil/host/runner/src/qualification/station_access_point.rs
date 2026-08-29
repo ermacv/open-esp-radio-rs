@@ -95,7 +95,9 @@ fn qualify(capture: &SerialCapture, config: Config, lab: &LabConfig) -> Result<R
     }
     let _ = stop_station(capture, config.timeout)?;
 
-    let access_point_request = lab.access_point.protocol_request()?;
+    let access_point_request = lab
+        .access_point
+        .protocol_request(open_esp_radio_hil_protocol::WifiAccessPointSecurity::Wpa2Personal)?;
     let request = WifiStationAccessPointRequest {
         station_credentials: lab.station.protocol_credentials()?,
         access_point: access_point_request.clone(),
@@ -435,16 +437,16 @@ fn validate_access_point_epoch(
     if evidence.beacons_transmitted == 0
         || evidence.missed_beacon_intervals != 0
         || evidence.maximum_beacon_lateness_micros >= 102_400
-        || evidence.rx_hardware_buffer_full != 0
-        || evidence.rx_hardware_fifo_overflow != 0
+        || evidence.rx_hardware.buffer_full != 0
+        || evidence.rx_hardware.fifo_overflow != 0
     {
         return Err(format!(
             "paired AP timing/RX health failed: beacons={} missed={} maximum_lateness_us={} buffer_full={} fifo_overflow={}",
             evidence.beacons_transmitted,
             evidence.missed_beacon_intervals,
             evidence.maximum_beacon_lateness_micros,
-            evidence.rx_hardware_buffer_full,
-            evidence.rx_hardware_fifo_overflow,
+            evidence.rx_hardware.buffer_full,
+            evidence.rx_hardware.fifo_overflow,
         )
         .into());
     }

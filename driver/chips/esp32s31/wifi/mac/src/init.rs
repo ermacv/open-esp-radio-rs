@@ -38,6 +38,49 @@ pub use open_esp_radio_esp32s31_hal::types::{MacInterruptMask, MacTxPowerPair, M
 /// part of the MAC lifecycle recovered from `libpp.a[hal_mac.o]::hal_init`.
 pub const MAC_COLD_RX_INTERRUPT_MASK: MacInterruptMask = MacInterruptMask::COLD_RX;
 
+/// Vendor-proven outer MAC quiescence used while no RX descriptor epoch is
+/// allowed to exist.
+///
+/// This is the `WIFI_PS_NONE` stop-request transaction from complete
+/// `hal_mac_deinit`/`hal_mac_init`, not the four undocumented global MAC
+/// disable gates. A caller must request stop while its RX walker is still
+/// live, wait until [`Self::mac_runtime_active_state`] reaches zero, and only
+/// then withdraw DMA credits. Resume is legal only after a replacement ring
+/// is live again.
+pub trait MacRuntimeStopHardware {
+    fn request_mac_runtime_stop(&mut self);
+    fn mac_runtime_active_state(&mut self) -> u8;
+    fn resume_mac_runtime(&mut self);
+}
+
+impl MacRuntimeStopHardware for open_esp_radio_esp32s31_hal::wifi_mac::WifiMacHal<'_> {
+    fn request_mac_runtime_stop(&mut self) {
+        self.request_channel_stop();
+    }
+
+    fn mac_runtime_active_state(&mut self) -> u8 {
+        self.channel_active_state()
+    }
+
+    fn resume_mac_runtime(&mut self) {
+        let _ = self.restart_after_channel_switch();
+    }
+}
+
+impl MacRuntimeStopHardware for open_esp_radio_esp32s31_hal::RadioRuntimeOwner {
+    fn request_mac_runtime_stop(&mut self) {
+        self.wifi_mac_hal().request_channel_stop();
+    }
+
+    fn mac_runtime_active_state(&mut self) -> u8 {
+        self.wifi_mac_hal().channel_active_state()
+    }
+
+    fn resume_mac_runtime(&mut self) {
+        let _ = self.wifi_mac_hal().restart_after_channel_switch();
+    }
+}
+
 /// Route-owned shared clock operations required before touching MAC-local MMIO.
 pub trait MacSharedClockHardware {
     fn retain_coexistence_clock(&mut self);
@@ -199,4 +242,9 @@ pub fn initialize_wifi_mac<
 /// It deliberately leaves queue 0..2 defaults intact.
 pub fn activate_promiscuous_receive<M: MacSnifferHardware>(mmio: &mut M) {
     mmio.configure_open_promiscuous_receive();
+}
+
+/// Restore queue three's normal filters before its RX DMA epoch stops.
+pub fn deactivate_promiscuous_receive<M: MacSnifferHardware>(mmio: &mut M) {
+    mmio.disable_open_promiscuous_receive();
 }

@@ -8,7 +8,6 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_esp32s31_hal::MacInterruptSetup;
 use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver};
-use open_esp_radio_esp32s31_wifi::runtime::Esp32s31WifiStopped;
 use open_esp_radio_esp32s31_wifi_embassy::{
     roles::monitor::{
         Esp32s31MonitorController, Esp32s31MonitorStopped, Esp32s31MonitorTask,
@@ -73,22 +72,16 @@ where
 /// epochs. Starting a role consumes the corresponding resource graph together
 /// with `wifi`; a clean exit must return both before this value can exist
 /// again.
-pub struct Esp32s31WifiSupervisorStopped<P, H, S, A, M> {
-    pub wifi: Esp32s31WifiStopped<P>,
+pub struct Esp32s31WifiSupervisorStopped<W, H, S, A, M> {
+    pub wifi: W,
     pub physical: H,
     pub station: S,
     pub access_point: A,
     pub monitor: M,
 }
 
-impl<P, H, S, A, M> Esp32s31WifiSupervisorStopped<P, H, S, A, M> {
-    pub const fn new(
-        wifi: Esp32s31WifiStopped<P>,
-        physical: H,
-        station: S,
-        access_point: A,
-        monitor: M,
-    ) -> Self {
+impl<W, H, S, A, M> Esp32s31WifiSupervisorStopped<W, H, S, A, M> {
+    pub const fn new(wifi: W, physical: H, station: S, access_point: A, monitor: M) -> Self {
         Self {
             wifi,
             physical,
@@ -98,7 +91,7 @@ impl<P, H, S, A, M> Esp32s31WifiSupervisorStopped<P, H, S, A, M> {
         }
     }
 
-    pub fn into_parts(self) -> (Esp32s31WifiStopped<P>, H, S, A, M) {
+    pub fn into_parts(self) -> (W, H, S, A, M) {
         (
             self.wifi,
             self.physical,

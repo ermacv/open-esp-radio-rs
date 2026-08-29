@@ -142,8 +142,8 @@ pub use open_esp_radio_esp32s31_pac::{
 pub use power::{PowerCheckpoint, PowerClockReadback, PowerError};
 pub use types::{
     CfrValue, ForcedRxGain, MacInterruptEnableState, MacInterruptEvents, MacInterruptMask,
-    MacInterruptObservation, MacInterruptSnapshot, MacPowerInterruptObservation,
-    MacPowerInterruptSnapshot,
+    MacInterruptObservation, MacInterruptSnapshot, MacOrdinaryTxQueueSnapshot,
+    MacPowerInterruptObservation, MacPowerInterruptSnapshot,
 };
 
 /// Powered-lifecycle PHY capability.
@@ -589,6 +589,14 @@ impl RadioRuntimeOwner {
         self.registers.rx_statistics_snapshot()
     }
 
+    pub fn transmit_statistics_snapshot(&self) -> wifi_mac::MacTxStatisticsSnapshot {
+        self.registers.tx_statistics_snapshot()
+    }
+
+    pub fn coex_priority_snapshot(&self) -> wifi_mac::MacCoexPrioritySnapshot {
+        self.registers.mac_coex_priority_snapshot()
+    }
+
     pub fn receive_dma_snapshot(&self) -> wifi_mac::MacRxDmaSnapshot {
         self.registers.mac_rx_dma_snapshot()
     }
@@ -657,6 +665,29 @@ pub struct MacInterruptRegisters {
 }
 
 impl MacInterruptRegisters {
+    /// Apply connected-STA interrupt policy while the physical route remains
+    /// installed. The platform adapter must exclude the ISR while lending
+    /// this capability to task context.
+    pub fn prepare_connected_sta_without_power_save(
+        &mut self,
+        radio: &mut RadioRuntimeOwner,
+    ) -> ConnectedStaInterruptPrepared {
+        let _ = self
+            .inner
+            .prepare_connected_sta_without_power_save(&mut radio.registers);
+        ConnectedStaInterruptPrepared { _private: () }
+    }
+
+    pub(crate) fn prepare_connected_sta_with_pac(
+        &mut self,
+        registers: &mut WifiRadioRegisters,
+    ) -> ConnectedStaInterruptPrepared {
+        let _ = self
+            .inner
+            .prepare_connected_sta_without_power_save(registers);
+        ConnectedStaInterruptPrepared { _private: () }
+    }
+
     pub fn mac_interrupt_status(&self) -> MacInterruptSnapshot {
         self.inner.mac_interrupt_status()
     }

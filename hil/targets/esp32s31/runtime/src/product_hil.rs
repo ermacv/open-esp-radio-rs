@@ -99,7 +99,8 @@ use open_esp_radio_hil_protocol::{
     Capabilities, Event as HilEvent, FeatureCapabilities, MAX_WIRE_FRAME_BYTES,
     NetworkCredentials, NetworkInfo, NetworkIpv4Configuration, StartupArtifactDisposition,
     StationDisconnectReason, StationEpochEvidence, WIFI_MONITOR_FRAME_CHUNK_MAX_LEN,
-    WifiAccessPointEvidence, WifiChannelWidth as HilWifiChannelWidth, WifiDataPlanePlacement,
+    WifiAccessPointEvidence, WifiAccessPointSecurity as HilWifiAccessPointSecurity,
+    WifiChannelWidth as HilWifiChannelWidth, WifiDataPlanePlacement, WifiMacRxHardwareEvidence,
     WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorEvidenceSource, WifiMonitorFrameChunk,
     WifiMonitorObserved, WifiMonitorPhyEvidence, WifiMonitorPhyFormat, WifiNetworkInterface,
     WifiRole, WifiRoleFailureEvidence, WifiRoleFailureReason, WifiRoleOperation,
@@ -368,6 +369,52 @@ impl From<open_esp_radio_esp32s31_embassy_wifi::Esp32s31DiagnosticRxStatistics>
     }
 }
 
+#[cfg(feature = "driver-observation")]
+impl From<ObservedRxStatistics> for WifiMacRxHardwareEvidence {
+    fn from(statistics: ObservedRxStatistics) -> Self {
+        Self {
+            mpdu_count: statistics.mpdu_count,
+            data_success: statistics.data_success,
+            fcs_error: statistics.fcs_error,
+            abort: statistics.abort,
+            abort_fcs_pass: statistics.abort_fcs_pass,
+            power_drop_error: statistics.power_drop_error,
+            he_sig_b_error: statistics.he_sig_b_error,
+            same_bm_error: statistics.same_bm_error,
+            signal_field: statistics.signal_field,
+            end: statistics.end,
+            other_unicast: statistics.other_unicast,
+            buffer_full: statistics.buffer_full,
+            fifo_overflow: statistics.fifo_overflow,
+            tkip_error: statistics.tkip_error,
+            bluetooth_block_error: statistics.bt_block_error,
+            frequency_hop_error: statistics.frequency_hop_error,
+            last_unmatched_error: statistics.last_unmatched_error,
+            ack_interrupt: statistics.ack_interrupt,
+            rts_interrupt: statistics.rts_interrupt,
+            brx_agc_error: statistics.brx_agc_error,
+            brx_error: statistics.brx_error,
+            nrx_error: statistics.nrx_error,
+            nrx_abort: statistics.nrx_abort,
+            nrx_agc_exit: statistics.nrx_agc_exit,
+            nrx_baseband_off: statistics.nrx_baseband_off,
+            nrx_fdm_watchdog: statistics.nrx_fdm_watchdog,
+            nrx_restart: statistics.nrx_restart,
+            nrx_service: statistics.nrx_service,
+            nrx_tx_over: statistics.nrx_tx_over,
+            nrx_unsupported: statistics.nrx_unsupported,
+            nrx_he_format: statistics.nrx_he_format,
+            nrx_ht_sig: statistics.nrx_ht_sig,
+            nrx_he_unsupported: statistics.nrx_he_unsupported,
+            nrx_he_sig_a_crc: statistics.nrx_he_sig_a_crc,
+            rx_hang: statistics.rx_hang,
+            tx_hang: statistics.tx_hang,
+            rx_tx_hang: statistics.rx_tx_hang,
+            rx_tx_panic: statistics.rx_tx_panic,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::product_hil) struct ObservedTxVector {
     pub bandwidth_mhz: u16,
@@ -460,8 +507,8 @@ static AP_RX_BLOCK_ACK_RESPONSES_TRANSMITTED: AtomicU32 = AtomicU32::new(0);
 static AP_RX_COMPLETED_UNITS_BASELINE: AtomicU32 = AtomicU32::new(0);
 static AP_RX_COMPLETED_DESCRIPTORS_BASELINE: AtomicU32 = AtomicU32::new(0);
 static AP_RX_RECYCLED_DESCRIPTORS_BASELINE: AtomicU32 = AtomicU32::new(0);
-static AP_RX_HARDWARE_BUFFER_FULL: AtomicU32 = AtomicU32::new(0);
-static AP_RX_HARDWARE_FIFO_OVERFLOW: AtomicU32 = AtomicU32::new(0);
+#[cfg(feature = "driver-observation")]
+static AP_RX_HARDWARE: Signal<CriticalSectionRawMutex, ObservedRxStatistics> = Signal::new();
 static AP_RETAINED_RX_DESCRIPTORS: AtomicU32 = AtomicU32::new(0);
 static AP_RX_DISCARDED_UNITS_BASELINE: AtomicU32 = AtomicU32::new(0);
 static AP_RX_OVERLOAD_DISCARDED_UNITS_BASELINE: AtomicU32 = AtomicU32::new(0);
@@ -489,6 +536,8 @@ static AP_RX_RSSI_SUM_DBM: AtomicU32 = AtomicU32::new(0);
 static AP_RX_RSSI_MIN_DBM: AtomicU32 = AtomicU32::new(0);
 static AP_RX_RSSI_MAX_DBM: AtomicU32 = AtomicU32::new(0);
 static AP_RX_HT40_MCS_FRAMES: [AtomicU32; 8] = [const { AtomicU32::new(0) }; 8];
+static AP_RX_HT40_LONG_GI_FRAMES: AtomicU32 = AtomicU32::new(0);
+static AP_RX_HT40_SHORT_GI_FRAMES: AtomicU32 = AtomicU32::new(0);
 static AP_TX_HT_AGGREGATES: AtomicU32 = AtomicU32::new(0);
 static AP_TX_HT40_MCS7_AGGREGATES: AtomicU32 = AtomicU32::new(0);
 static AP_DATA_FRAMES_TRANSMITTED: AtomicU32 = AtomicU32::new(0);
@@ -619,14 +668,7 @@ fn observe_access_point(observation: Esp32s31AccessPointObservation) {
         observation.rx_block_ack_responses_transmitted,
         Ordering::Release,
     );
-    AP_RX_HARDWARE_BUFFER_FULL.store(
-        u32::from(observation.rx_hardware_buffer_full),
-        Ordering::Release,
-    );
-    AP_RX_HARDWARE_FIFO_OVERFLOW.store(
-        u32::from(observation.rx_hardware_fifo_overflow),
-        Ordering::Release,
-    );
+    AP_RX_HARDWARE.signal(observation.rx_hardware.into());
     AP_RETAINED_RX_DESCRIPTORS.store(observation.retained_rx_descriptors, Ordering::Release);
     AP_IGNORED_RX_FRAMES.store(observation.ignored_rx_frames, Ordering::Release);
     AP_RX_MIC_FAILURES.store(observation.rx_mic_failures, Ordering::Release);
@@ -666,6 +708,8 @@ fn observe_access_point(observation: Esp32s31AccessPointObservation) {
     {
         target.store(observed, Ordering::Release);
     }
+    AP_RX_HT40_LONG_GI_FRAMES.store(observation.rx_ht40_long_gi_frames, Ordering::Release);
+    AP_RX_HT40_SHORT_GI_FRAMES.store(observation.rx_ht40_short_gi_frames, Ordering::Release);
     AP_TX_HT_AGGREGATES.store(observation.tx_ht_aggregates, Ordering::Release);
     AP_TX_HT40_MCS7_AGGREGATES.store(observation.tx_ht40_mcs7_aggregates, Ordering::Release);
     AP_DATA_FRAMES_TRANSMITTED.store(observation.data_frames_transmitted, Ordering::Release);
@@ -746,6 +790,10 @@ fn access_point_evidence(
     let observed_bandwidth_mhz = AP_BANDWIDTH_MHZ.load(Ordering::Acquire) as u16;
     let tx_failures = AP_TX_FAILURES.load(Ordering::Acquire);
     let rx = RX_PIPELINE.snapshot();
+    #[cfg(feature = "driver-observation")]
+    let rx_hardware = AP_RX_HARDWARE.try_take().unwrap_or_default().into();
+    #[cfg(not(feature = "driver-observation"))]
+    let rx_hardware = WifiMacRxHardwareEvidence::default();
     WifiAccessPointEvidence {
         generation,
         channel: if observed_channel == 0 {
@@ -820,8 +868,7 @@ fn access_point_evidence(
         recycled_rx_descriptors: rx
             .recycled_descriptors
             .wrapping_sub(AP_RX_RECYCLED_DESCRIPTORS_BASELINE.load(Ordering::Acquire)),
-        rx_hardware_buffer_full: AP_RX_HARDWARE_BUFFER_FULL.load(Ordering::Acquire) as u16,
-        rx_hardware_fifo_overflow: AP_RX_HARDWARE_FIFO_OVERFLOW.load(Ordering::Acquire) as u16,
+        rx_hardware,
         retained_rx_descriptors: AP_RETAINED_RX_DESCRIPTORS.load(Ordering::Acquire),
         discarded_rx_units: rx
             .discarded_units
@@ -861,6 +908,8 @@ fn access_point_evidence(
         rx_ht40_mcs_frames: core::array::from_fn(|index| {
             AP_RX_HT40_MCS_FRAMES[index].load(Ordering::Acquire)
         }),
+        rx_ht40_long_gi_frames: AP_RX_HT40_LONG_GI_FRAMES.load(Ordering::Acquire),
+        rx_ht40_short_gi_frames: AP_RX_HT40_SHORT_GI_FRAMES.load(Ordering::Acquire),
         tx_ht_aggregates: AP_TX_HT_AGGREGATES.load(Ordering::Acquire),
         tx_ht40_mcs7_aggregates: AP_TX_HT40_MCS7_AGGREGATES.load(Ordering::Acquire),
         data_frames_transmitted: AP_DATA_FRAMES_TRANSMITTED.load(Ordering::Acquire),
@@ -1326,13 +1375,13 @@ async fn network_config_task(stack: Stack<'static>, network_interface: WifiNetwo
     }
 }
 
-/// CPU1-local network composition used only by the explicit split topology.
+/// CPU1-local network composition used by the production split topology.
 #[embassy_executor::task]
 pub(crate) async fn secondary_network_task(spawner: Spawner) {
     run_network_composition(spawner, APP_NETWORK_START.receive().await).await
 }
 
-/// CPU0-local network composition used by the default single-core topology.
+/// CPU0-local network composition retained only for explicit placement diagnostics.
 #[embassy_executor::task]
 async fn primary_network_task(spawner: Spawner) {
     run_network_composition(spawner, PRIMARY_NETWORK_START.receive().await).await
@@ -1609,8 +1658,14 @@ fn access_point_request(
 ) -> AccessPointRequest {
     let ssid = WifiSsid::new(request.credentials.ssid())
         .expect("validated HIL AP SSID must fit the driver request");
-    let pmk = Pmk::derive(request.credentials.passphrase(), ssid.as_bytes())
-        .expect("validated HIL AP credentials must derive a PMK");
+    let security = match request.security {
+        HilWifiAccessPointSecurity::Open => AccessPointSecurity::open(),
+        HilWifiAccessPointSecurity::Wpa2Personal => {
+            let pmk = Pmk::derive(request.credentials.passphrase(), ssid.as_bytes())
+                .expect("validated HIL AP credentials must derive a PMK");
+            AccessPointSecurity::wpa2_personal(pmk)
+        }
+    };
     let width = match request.channel_width {
         HilWifiChannelWidth::Mhz20 => DriverWifiChannelWidth::Mhz20,
         HilWifiChannelWidth::Mhz40Above => DriverWifiChannelWidth::Mhz40Above,
@@ -1618,7 +1673,7 @@ fn access_point_request(
     };
     AccessPointRequest::new(
         ssid,
-        AccessPointSecurity::wpa2_personal(pmk),
+        security,
         WifiChannel::new_2_4_ghz(request.channel, width)
             .expect("console validates the AP channel geometry"),
         AccessPointClientLimit::new(request.client_limit)
@@ -2871,17 +2926,25 @@ async fn wifi_role_task(
                     request,
                 } => {
                     reset_access_point_evidence();
+                    DIAGNOSTIC_STAGE.store(40, Ordering::Release);
                     let channel = request.channel;
                     let bandwidth_mhz = request.channel_width.bandwidth_mhz();
+                    runtime_log(format_args!("OPEN_RADIO_HIL AP start request entering supervisor"));
                     match await_stack_boundary!(
                         idle.start_access_point(access_point_request(&request))
                     ) {
                         Ok(owner) => {
+                            runtime_log(format_args!(
+                                "OPEN_RADIO_HIL AP supervisor start completed"
+                            ));
                             apply_network_config(
                                 WifiNetworkInterface::AccessPoint,
                                 NetworkConfigCommand::Set(request.ipv4),
                             )
                             .await;
+                            runtime_log(format_args!(
+                                "OPEN_RADIO_HIL AP network configuration applied"
+                            ));
                             set_wifi_role(WifiRole::AccessPoint);
                             complete_access_point_start(
                                 request_id,

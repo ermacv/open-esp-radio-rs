@@ -30,6 +30,50 @@ static ACCESS_POINT_TERMINAL_OBSERVATION: Mutex<
     CriticalSectionRawMutex,
     RefCell<Option<AccessPointTerminalObservation>>,
 > = Mutex::new(RefCell::new(None));
+#[cfg(feature = "diagnostics")]
+static ACCESS_POINT_RX_HARDWARE_OBSERVATION: Mutex<
+    CriticalSectionRawMutex,
+    RefCell<crate::Esp32s31DiagnosticRxStatistics>,
+> = Mutex::new(RefCell::new(crate::Esp32s31DiagnosticRxStatistics {
+    mpdu_count: 0,
+    data_success: 0,
+    fcs_error: 0,
+    abort: 0,
+    abort_fcs_pass: 0,
+    power_drop_error: 0,
+    he_sig_b_error: 0,
+    same_bm_error: 0,
+    signal_field: 0,
+    end: 0,
+    other_unicast: 0,
+    buffer_full: 0,
+    fifo_overflow: 0,
+    tkip_error: 0,
+    bt_block_error: 0,
+    frequency_hop_error: 0,
+    last_unmatched_error: 0,
+    ack_interrupt: 0,
+    rts_interrupt: 0,
+    brx_agc_error: 0,
+    brx_error: 0,
+    nrx_error: 0,
+    nrx_abort: 0,
+    nrx_agc_exit: 0,
+    nrx_baseband_off: 0,
+    nrx_fdm_watchdog: 0,
+    nrx_restart: 0,
+    nrx_service: 0,
+    nrx_tx_over: 0,
+    nrx_unsupported: 0,
+    nrx_he_format: 0,
+    nrx_ht_sig: 0,
+    nrx_he_unsupported: 0,
+    nrx_he_sig_a_crc: 0,
+    rx_hang: 0,
+    tx_hang: 0,
+    rx_tx_hang: 0,
+    rx_tx_panic: 0,
+}));
 
 #[cfg(feature = "diagnostics")]
 impl AccessPointTerminalObserver for ProductionAccessPointTerminalObserver {
@@ -45,7 +89,24 @@ pub(super) fn begin_access_point_observation() -> &'static dyn AccessPointTermin
     ACCESS_POINT_TERMINAL_OBSERVATION.lock(|slot| {
         slot.replace(None);
     });
+    ACCESS_POINT_RX_HARDWARE_OBSERVATION.lock(|slot| {
+        slot.replace(crate::Esp32s31DiagnosticRxStatistics::default());
+    });
     &ACCESS_POINT_TERMINAL_OBSERVER
+}
+
+#[cfg(feature = "diagnostics")]
+pub(super) fn store_access_point_rx_hardware_observation(
+    observation: crate::Esp32s31DiagnosticRxStatistics,
+) {
+    ACCESS_POINT_RX_HARDWARE_OBSERVATION.lock(|slot| {
+        slot.replace(observation);
+    });
+}
+
+#[cfg(feature = "diagnostics")]
+fn access_point_rx_hardware_observation() -> crate::Esp32s31DiagnosticRxStatistics {
+    ACCESS_POINT_RX_HARDWARE_OBSERVATION.lock(|slot| *slot.borrow())
 }
 
 #[cfg(feature = "diagnostics")]
@@ -69,6 +130,22 @@ type ProductionAccessPointControl = Esp32s31AccessPointControl<
 >;
 type ProductionHaltedRx =
     open_esp_radio_esp32s31_wifi_mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>;
+type ProductionLiveRx =
+    open_esp_radio_esp32s31_wifi_mac::rx::RxRingLive<'static, RX_DESCRIPTOR_COUNT>;
+
+pub(crate) enum ProductionRxRing {
+    Halted(ProductionHaltedRx),
+    Live(ProductionLiveRx),
+}
+
+impl ProductionRxRing {
+    pub(super) fn into_scan(self, storage: &'static RxStorage) -> ProductionScanRx {
+        match self {
+            Self::Halted(ring) => Esp32s31ScanRx::from_halted(ring, storage),
+            Self::Live(ring) => Esp32s31ScanRx::from_live(ring, storage),
+        }
+    }
+}
 type ProductionScanRx =
     Esp32s31ScanRx<'static, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE, RX_BUFFER_STORAGE_SIZE>;
 type ProductionWifiTxResources = WifiTxResources<
@@ -118,8 +195,7 @@ pub(super) fn publish_access_point_observation(
     hook: fn(crate::Esp32s31AccessPointObservation),
     channel: WifiChannel,
     observation: &AccessPointTerminalObservation,
-    rx_hardware_buffer_full: u16,
-    rx_hardware_fifo_overflow: u16,
+    rx_hardware: crate::Esp32s31DiagnosticRxStatistics,
 ) {
     let control = &observation.control;
     let mac = &observation.mac;
@@ -170,8 +246,7 @@ pub(super) fn publish_access_point_observation(
         tx_block_ack_responses_rejected: engine.tx_block_ack_responses_rejected,
         tx_block_ack_negotiation_timeouts: engine.tx_block_ack_negotiation_timeouts,
         rx_block_ack_responses_transmitted: mac.rx_block_ack_responses_transmitted,
-        rx_hardware_buffer_full,
-        rx_hardware_fifo_overflow,
+        rx_hardware,
         retained_rx_descriptors: control.retained_rx_descriptors,
         ignored_rx_frames: control.ignored_rx_frames,
         rx_mic_failures: control.rx_mic_failures,
@@ -195,6 +270,8 @@ pub(super) fn publish_access_point_observation(
         rx_rssi_min_dbm: control.rx_rssi_min_dbm,
         rx_rssi_max_dbm: control.rx_rssi_max_dbm,
         rx_ht40_mcs_frames: control.rx_ht40_mcs_frames,
+        rx_ht40_long_gi_frames: control.rx_ht40_long_gi_frames,
+        rx_ht40_short_gi_frames: control.rx_ht40_short_gi_frames,
         rx_ht40_mcs32_frames: control.rx_ht40_mcs32_frames,
         rx_ht_mcs32_width_mismatches: control.rx_ht_mcs32_width_mismatches,
         tx_ht_aggregates: control.tx_ht_aggregates,
@@ -235,8 +312,6 @@ pub(super) fn publish_access_point_observation(
 pub(super) fn publish_stored_access_point_observation(
     hook: fn(crate::Esp32s31AccessPointObservation),
     channel: WifiChannel,
-    rx_hardware_buffer_full: u16,
-    rx_hardware_fifo_overflow: u16,
 ) {
     let observation = take_access_point_observation()
         .expect("successful AP teardown emits one terminal observation");
@@ -244,8 +319,7 @@ pub(super) fn publish_stored_access_point_observation(
         hook,
         channel,
         &observation,
-        rx_hardware_buffer_full,
-        rx_hardware_fifo_overflow,
+        access_point_rx_hardware_observation(),
     );
 }
 
@@ -292,9 +366,6 @@ enum ProductionStationRoleResume {
     Returned {
         phase: ProductionStationReturnedPhase,
         security: Esp32s31StaAttemptSecurity<'static>,
-        interrupt_route: EspHalMacInterruptRoute,
-        mac_runtime: &'static EmbassyMacIrqRuntime<CriticalSectionRawMutex>,
-        power_runtime: &'static EmbassyPowerIrqRuntime<CriticalSectionRawMutex>,
     },
 }
 
@@ -309,14 +380,14 @@ enum ProductionStationReturnedPhase {
     },
     Disconnected {
         network: RunningWifiNetwork,
-        rx: ConnectedRxEpochResources,
+        rx: Option<ConnectedRxEpochResources>,
         control: &'static ControlResources,
         station: Esp32s31StaAttemptStation,
         registers: Esp32s31RadioOwnerRepublish<'static>,
     },
     Reconnected {
         network: WifiNetworkResources,
-        rx: ConnectedRxEpochResources,
+        rx: Option<ConnectedRxEpochResources>,
         control: &'static ControlResources,
         station: Esp32s31StaAttemptStation,
         registers: Esp32s31RadioOwnerRepublish<'static>,
@@ -340,12 +411,58 @@ impl ProductionStationRoleResume {
             } => network.radio_runner(),
         }
     }
+
+    /// Move the persistent standalone RX publisher into a role which stages
+    /// through the same queue. Initial scan/join phases have not created that
+    /// publisher yet.
+    fn take_retained_rx(&mut self) -> Option<ConnectedRxEpochResources> {
+        match self {
+            Self::Returned {
+                phase:
+                    ProductionStationReturnedPhase::Disconnected { rx, .. }
+                    | ProductionStationReturnedPhase::Reconnected { rx, .. },
+                ..
+            } => rx.take(),
+            Self::Fresh { .. }
+            | Self::Returned {
+                phase:
+                    ProductionStationReturnedPhase::InitialScan { .. }
+                    | ProductionStationReturnedPhase::InitialJoin { .. },
+                ..
+            } => None,
+        }
+    }
+
+    /// Restore the persistent producer after a temporary role. A producer
+    /// first created by AP before the station's initial connection is dropped
+    /// here so the later connected epoch may perform the sole initial split.
+    fn restore_retained_rx(&mut self, rx: ConnectedRxEpochResources) {
+        match self {
+            Self::Returned {
+                phase:
+                    ProductionStationReturnedPhase::Disconnected { rx: slot, .. }
+                    | ProductionStationReturnedPhase::Reconnected { rx: slot, .. },
+                ..
+            } => {
+                assert!(
+                    slot.replace(rx).is_none(),
+                    "station RX publisher is already restored"
+                );
+            }
+            Self::Fresh { .. }
+            | Self::Returned {
+                phase:
+                    ProductionStationReturnedPhase::InitialScan { .. }
+                    | ProductionStationReturnedPhase::InitialJoin { .. },
+                ..
+            } => drop(rx),
+        }
+    }
 }
 
 pub(super) struct ProductionWifiPhysicalResources {
     dma: Esp32s31StationDmaResources<'static, RxStorage, RX_DESCRIPTOR_COUNT>,
-    rx_ring:
-        Option<open_esp_radio_esp32s31_wifi_mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>>,
+    rx_ring: Option<ProductionRxRing>,
     tx: ProductionOrdinaryTxResources,
     aggregate_tx: RadioAmpduStorage,
 }
@@ -353,9 +470,7 @@ pub(super) struct ProductionWifiPhysicalResources {
 impl ProductionWifiPhysicalResources {
     pub(super) const fn new(
         dma: Esp32s31StationDmaResources<'static, RxStorage, RX_DESCRIPTOR_COUNT>,
-        rx_ring: Option<
-            open_esp_radio_esp32s31_wifi_mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>,
-        >,
+        rx_ring: Option<ProductionRxRing>,
         tx: ProductionOrdinaryTxResources,
         aggregate_tx: RadioAmpduStorage,
     ) -> Self {
@@ -371,14 +486,14 @@ impl ProductionWifiPhysicalResources {
         self,
     ) -> (
         Esp32s31StationDmaResources<'static, RxStorage, RX_DESCRIPTOR_COUNT>,
-        Option<open_esp_radio_esp32s31_wifi_mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>>,
+        Option<ProductionRxRing>,
         ProductionOrdinaryTxResources,
         RadioAmpduStorage,
     ) {
         (self.dma, self.rx_ring, self.tx, self.aggregate_tx)
     }
 
-    pub(super) fn take_halted_rx(self) -> (Self, Option<ProductionHaltedRx>) {
+    pub(super) fn take_rx_ring(self) -> (Self, Option<ProductionRxRing>) {
         let Self {
             dma,
             rx_ring,
@@ -396,7 +511,7 @@ impl ProductionWifiPhysicalResources {
         )
     }
 
-    pub(super) fn restore_halted_rx(self, rx_ring: ProductionHaltedRx) -> Self {
+    pub(super) fn restore_rx_ring(self, rx_ring: ProductionRxRing) -> Self {
         let Self {
             dma,
             rx_ring: previous,
@@ -426,31 +541,20 @@ pub(super) struct ProductionAccessPointTask {
 pub(super) struct ProductionAccessPointPreflightFault {
     _owner: Esp32s31WifiRoleOwner<EspHalRadioPeripheral>,
     _registers: RadioRuntimeOwner,
-    _interrupt_setup: open_esp_radio_esp32s31_hal::MacInterruptSetup,
+    _interrupts: MacInterruptEpoch,
     _physical: ProductionWifiPhysicalResources,
     _station_role: ProductionStationRoleResources,
     _access_point: ProductionAccessPointResources,
     _monitor: ProductionMonitorResources,
     _detached_control: Option<ControlTx>,
-    _ring: Option<ProductionHaltedRx>,
-}
-
-pub(super) struct ProductionAccessPointRxOwnerFault {
-    _owner: Esp32s31WifiRoleOwner<EspHalRadioPeripheral>,
-    _registers: RadioRuntimeOwner,
-    _interrupt_setup: open_esp_radio_esp32s31_hal::MacInterruptSetup,
-    _scan_rx: ProductionScanRx,
-    _physical: ProductionWifiPhysicalResources,
-    _station_role: ProductionStationRoleResources,
-    _access_point: ProductionAccessPointResources,
-    _monitor: ProductionMonitorResources,
+    _ring: Option<ProductionRxRing>,
 }
 
 pub(super) struct ProductionAccessPointEngineFault {
     _owner: Esp32s31WifiRoleOwner<EspHalRadioPeripheral>,
     _registers: RadioRuntimeOwner,
-    _interrupt_setup: open_esp_radio_esp32s31_hal::MacInterruptSetup,
-    _ring: ProductionHaltedRx,
+    _interrupts: MacInterruptEpoch,
+    _ring: ProductionRxRing,
     _transmit: ProductionWifiTxResources,
     _engine: open_esp_radio_esp32s31_wifi_ap::engine::Esp32s31ApEngineStartFailure<'static>,
     _parked: ProductionAccessPointParked,
@@ -468,26 +572,16 @@ pub(super) enum ProductionAccessPointPreparationFault {
     Preflight {
         _fault: ProductionAccessPointPreflightFault,
     },
-    RxOwner {
-        _fault: ProductionAccessPointRxOwnerFault,
-    },
     Engine {
         _fault: ProductionAccessPointEngineFault,
     },
 }
 
 pub(super) enum ProductionAccessPointTeardownFault {
-    Interrupt {
-        _owner: Esp32s31WifiRoleOwner<EspHalRadioPeripheral>,
-        _registers: RadioRuntimeOwner,
-        _interrupts: MacInterruptEpoch,
-        _stopped: ProductionAccessPointStopped,
-        _parked: ProductionAccessPointParked,
-    },
     Aggregate {
         _owner: Esp32s31WifiRoleOwner<EspHalRadioPeripheral>,
         _registers: RadioRuntimeOwner,
-        _interrupt_setup: open_esp_radio_esp32s31_hal::MacInterruptSetup,
+        _interrupts: MacInterruptEpoch,
         _stopped: ProductionAccessPointStopped,
         _aggregate: ProductionAccessPointAmpdu,
         _parked: ProductionAccessPointParked,
@@ -495,8 +589,8 @@ pub(super) enum ProductionAccessPointTeardownFault {
     TxRestore {
         _owner: Esp32s31WifiRoleOwner<EspHalRadioPeripheral>,
         _registers: RadioRuntimeOwner,
-        _interrupt_setup: open_esp_radio_esp32s31_hal::MacInterruptSetup,
-        _ring: open_esp_radio_esp32s31_wifi_mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>,
+        _interrupts: MacInterruptEpoch,
+        _ring: ProductionRxRing,
         _storage: &'static RxStorage,
         _rx_frame: &'static mut [u8],
         _tx_frame: &'static mut [u8],
@@ -564,9 +658,6 @@ pub(super) fn try_split_wifi_stopped_resources(
         mut board,
         phase,
         security,
-        interrupt_route,
-        mac_runtime,
-        power_runtime,
     } = returned;
     let (dma, tx_epoch, scan_table, scan_frame, ethernet) = storage.into_parts();
     let station_address = board.interface.interface.address;
@@ -575,76 +666,46 @@ pub(super) fn try_split_wifi_stopped_resources(
             receive,
             network,
             identity,
-        } => match receive.into_halted() {
-            Ok(ring) => {
-                let aggregate_tx = board
-                    .initial_connected
-                    .as_mut()
-                    .expect("initial scan retains initial connected resources")
-                    .take_aggregate();
-                (
-                    ring,
-                    ProductionStationReturnedPhase::InitialScan { network, identity },
-                    aggregate_tx,
-                )
-            }
-            Err(receive) => {
-                return Err(ProductionWifiStoppedResources::Returned(
-                    ProductionWifiReusableResources {
-                        storage: ProductionStationStorage::new(
-                            dma, tx_epoch, scan_table, scan_frame, ethernet,
-                        ),
-                        board,
-                        phase: Esp32s31StationStoppedPhaseResources::InitialScan {
-                            receive,
-                            network,
-                            identity,
-                        },
-                        security,
-                        interrupt_route,
-                        mac_runtime,
-                        power_runtime,
-                    },
-                ));
-            }
-        },
+        } => {
+            let ring = match receive.phase() {
+                open_esp_radio_esp32s31_wifi_embassy::datapath::rx::frontier::Esp32s31RxFrontierPhase::Live => {
+                    ProductionRxRing::Live(receive.into_live().unwrap_or_else(|_| unreachable!("live scan phase owns a live ring")))
+                }
+                _ => ProductionRxRing::Halted(receive.into_halted().unwrap_or_else(|_| unreachable!("quiescent scan phase owns a halted ring"))),
+            };
+            let aggregate_tx = board
+                .initial_connected
+                .as_mut()
+                .expect("initial scan retains initial connected resources")
+                .take_aggregate();
+            (
+                ring,
+                ProductionStationReturnedPhase::InitialScan { network, identity },
+                aggregate_tx,
+            )
+        }
         Esp32s31StationStoppedPhaseResources::InitialJoin {
             receive,
             network,
             station,
-        } => match receive.try_into_halted() {
-            Ok(ring) => {
-                let aggregate_tx = board
-                    .initial_connected
-                    .as_mut()
-                    .expect("initial join retains initial connected resources")
-                    .take_aggregate();
-                (
-                    ring,
-                    ProductionStationReturnedPhase::InitialJoin { network, station },
-                    aggregate_tx,
-                )
-            }
-            Err(receive) => {
-                return Err(ProductionWifiStoppedResources::Returned(
-                    ProductionWifiReusableResources {
-                        storage: ProductionStationStorage::new(
-                            dma, tx_epoch, scan_table, scan_frame, ethernet,
-                        ),
-                        board,
-                        phase: Esp32s31StationStoppedPhaseResources::InitialJoin {
-                            receive,
-                            network,
-                            station,
-                        },
-                        security,
-                        interrupt_route,
-                        mac_runtime,
-                        power_runtime,
-                    },
-                ));
-            }
-        },
+        } => {
+            let ring = match receive.phase() {
+                open_esp_radio_esp32s31_wifi_embassy::datapath::rx::frontier::Esp32s31RxFrontierPhase::Live => {
+                    ProductionRxRing::Live(receive.try_into_live().unwrap_or_else(|_| unreachable!("live join phase owns a live ring")))
+                }
+                _ => ProductionRxRing::Halted(receive.try_into_halted().unwrap_or_else(|_| unreachable!("quiescent join phase owns a halted ring"))),
+            };
+            let aggregate_tx = board
+                .initial_connected
+                .as_mut()
+                .expect("initial join retains initial connected resources")
+                .take_aggregate();
+            (
+                ring,
+                ProductionStationReturnedPhase::InitialJoin { network, station },
+                aggregate_tx,
+            )
+        }
         Esp32s31StationStoppedPhaseResources::Disconnected {
             network,
             receive,
@@ -653,12 +714,14 @@ pub(super) fn try_split_wifi_stopped_resources(
             station,
             registers,
         } => {
-            let (ring, rx) = receive.into_epoch_parts();
+            let (ring, rx) = receive
+                .try_into_live_epoch_parts()
+                .unwrap_or_else(|_| panic!("parked station RX retained a staging lease"));
             (
-                ring,
+                ProductionRxRing::Live(ring),
                 ProductionStationReturnedPhase::Disconnected {
                     network,
-                    rx,
+                    rx: Some(rx),
                     control,
                     station,
                     registers,
@@ -674,42 +737,25 @@ pub(super) fn try_split_wifi_stopped_resources(
             control,
             station,
             registers,
-        } => match receive.try_into_halted() {
-            Ok(ring) => (
+        } => {
+            let ring = match receive.phase() {
+                open_esp_radio_esp32s31_wifi_embassy::datapath::rx::frontier::Esp32s31RxFrontierPhase::Live => {
+                    ProductionRxRing::Live(receive.try_into_live().unwrap_or_else(|_| unreachable!("live reconnect phase owns a live ring")))
+                }
+                _ => ProductionRxRing::Halted(receive.try_into_halted().unwrap_or_else(|_| unreachable!("quiescent reconnect phase owns a halted ring"))),
+            };
+            (
                 ring,
                 ProductionStationReturnedPhase::Reconnected {
                     network,
-                    rx,
+                    rx: Some(rx),
                     control,
                     station,
                     registers,
                 },
                 aggregate_tx,
-            ),
-            Err(receive) => {
-                return Err(ProductionWifiStoppedResources::Returned(
-                    ProductionWifiReusableResources {
-                        storage: ProductionStationStorage::new(
-                            dma, tx_epoch, scan_table, scan_frame, ethernet,
-                        ),
-                        board,
-                        phase: Esp32s31StationStoppedPhaseResources::Reconnected {
-                            network,
-                            receive,
-                            rx,
-                            aggregate_tx,
-                            control,
-                            station,
-                            registers,
-                        },
-                        security,
-                        interrupt_route,
-                        mac_runtime,
-                        power_runtime,
-                    },
-                ));
-            }
-        },
+            )
+        }
     };
     Ok((
         ProductionWifiPhysicalResources {
@@ -722,13 +768,7 @@ pub(super) fn try_split_wifi_stopped_resources(
             scan_table,
             scan_frame,
             ethernet,
-            resume: ProductionStationRoleResume::Returned {
-                phase,
-                security,
-                interrupt_route,
-                mac_runtime,
-                power_runtime,
-            },
+            resume: ProductionStationRoleResume::Returned { phase, security },
             board,
             station_address,
         },
@@ -772,14 +812,8 @@ pub(super) fn join_station_activation_resources(
                 station_address,
             })
         }
-        ProductionStationRoleResume::Returned {
-            phase,
-            security,
-            interrupt_route,
-            mac_runtime,
-            power_runtime,
-        } => {
-            let ring = rx_ring.expect("returned physical Wi-Fi resources own a halted RX ring");
+        ProductionStationRoleResume::Returned { phase, security } => {
+            let ring = rx_ring.expect("returned physical Wi-Fi resources own an RX ring");
             let tx_epoch = match tx {
                 ProductionOrdinaryTxResources::Epoch(tx_epoch) => tx_epoch,
                 ProductionOrdinaryTxResources::Uninitialized(_) => {
@@ -805,14 +839,17 @@ pub(super) fn join_station_activation_resources(
             let phase = match phase {
                 ProductionStationReturnedPhase::InitialScan { network, identity } => {
                     Esp32s31StationStoppedPhaseResources::InitialScan {
-                        receive: Esp32s31ScanRx::from_halted(ring, dma.storage()),
+                        receive: ring.into_scan(dma.storage()),
                         network,
                         identity,
                     }
                 }
                 ProductionStationReturnedPhase::InitialJoin { network, station } => {
                     Esp32s31StationStoppedPhaseResources::InitialJoin {
-                        receive: Esp32s31RxFrontier::from_halted(ring),
+                        receive: match ring {
+                            ProductionRxRing::Halted(ring) => Esp32s31RxFrontier::from_halted(ring),
+                            ProductionRxRing::Live(ring) => Esp32s31RxFrontier::from_live(ring),
+                        },
                         network,
                         station,
                     }
@@ -825,7 +862,14 @@ pub(super) fn join_station_activation_resources(
                     registers,
                 } => Esp32s31StationStoppedPhaseResources::Disconnected {
                     network,
-                    receive: rx.with_halted_ring(ring),
+                    receive: match ring {
+                        ProductionRxRing::Halted(_) => unreachable!(
+                            "a disconnected station never receives a halted AP handoff"
+                        ),
+                        ProductionRxRing::Live(ring) => rx
+                            .expect("disconnected station must reclaim its RX publisher")
+                            .with_live_ring(ring),
+                    },
                     aggregate_tx: aggregate_tx
                         .take()
                         .expect("disconnected phase reclaims AP aggregate owner"),
@@ -841,8 +885,11 @@ pub(super) fn join_station_activation_resources(
                     registers,
                 } => Esp32s31StationStoppedPhaseResources::Reconnected {
                     network,
-                    receive: Esp32s31RxFrontier::from_halted(ring),
-                    rx,
+                    receive: match ring {
+                        ProductionRxRing::Halted(ring) => Esp32s31RxFrontier::from_halted(ring),
+                        ProductionRxRing::Live(ring) => Esp32s31RxFrontier::from_live(ring),
+                    },
+                    rx: rx.expect("reconnected station must reclaim its RX publisher"),
                     aggregate_tx: aggregate_tx
                         .take()
                         .expect("reconnected phase reclaims AP aggregate owner"),
@@ -858,9 +905,6 @@ pub(super) fn join_station_activation_resources(
                 board,
                 phase,
                 security,
-                interrupt_route,
-                mac_runtime,
-                power_runtime,
             })
         }
     }
@@ -893,7 +937,7 @@ pub(super) struct ProductionAccessPointResources {
 impl ProductionWifiEpochRunner {
     pub(super) async fn prepare_access_point_task(
         &self,
-        wifi: open_esp_radio_esp32s31_wifi::runtime::Esp32s31WifiStopped<EspHalRadioPeripheral>,
+        wifi: ProductionWifiOwner,
         physical: ProductionWifiPhysicalResources,
         station: ProductionStationRoleResources,
         access_point: ProductionAccessPointResources,
@@ -901,9 +945,14 @@ impl ProductionWifiEpochRunner {
         request: AccessPointRequest,
     ) -> Result<ProductionAccessPointTask, ProductionAccessPointPreparationFault> {
         let current_channel = wifi.current_channel();
-        let mut materialized = materialize_esp32s31_wifi_role(wifi, physical);
+        diagnostics_event!(
+            "open-radio: AP prepare begin current_channel={current_channel:?} requested_channel={:?}",
+            request.channel()
+        );
+        let mut materialized = materialize_production_wifi(wifi, physical);
         let requested_channel = request.channel();
         if requested_channel != current_channel {
+            diagnostics_event!("open-radio: AP prepare channel switch begin");
             let lowered_channel = lower_wifi_channel(requested_channel);
             let observer = NoopPhyTargetObserver;
             let (phy, platform) = materialized.owner.radio_mut();
@@ -920,7 +969,7 @@ impl ProductionWifiEpochRunner {
                     _fault: ProductionAccessPointPreflightFault {
                         _owner: materialized.owner,
                         _registers: materialized.registers,
-                        _interrupt_setup: materialized.interrupt_setup,
+                        _interrupts: materialized.interrupts,
                         _physical: materialized.resources,
                         _station_role: station,
                         _access_point: access_point,
@@ -931,6 +980,7 @@ impl ProductionWifiEpochRunner {
                 });
             }
             materialized.owner.set_current_channel(requested_channel);
+            diagnostics_event!("open-radio: AP prepare channel switch complete");
         }
 
         let ProductionWifiPhysicalResources {
@@ -943,27 +993,31 @@ impl ProductionWifiEpochRunner {
             scan_table,
             scan_frame,
             ethernet,
-            resume,
+            mut resume,
             board,
             station_address,
         } = station;
         let power = materialized.owner.radio_mut().0.tx_target_power_profile();
         let tx_epoch = self.initialize_tx_epoch(tx, power);
-        let scan_rx = match rx_ring {
-            Some(ring) => Esp32s31ScanRx::from_halted(ring, dma.storage()),
+        let ring = match rx_ring {
+            Some(ring) => ring,
             None => match Esp32s31ScanRx::prepare_initial(
                 &mut materialized.registers,
                 dma.storage(),
                 dma.descriptor_base(),
                 dma.buffer_addresses(),
             ) {
-                Ok(receive) => receive,
+                Ok(receive) => ProductionRxRing::Halted(
+                    receive
+                        .into_halted()
+                        .unwrap_or_else(|_| unreachable!("fresh AP RX is prepared but not live")),
+                ),
                 Err(_) => {
                     return Err(ProductionAccessPointPreparationFault::Preflight {
                         _fault: ProductionAccessPointPreflightFault {
                             _owner: materialized.owner,
                             _registers: materialized.registers,
-                            _interrupt_setup: materialized.interrupt_setup,
+                            _interrupts: materialized.interrupts,
                             _physical: ProductionWifiPhysicalResources {
                                 dma,
                                 rx_ring: None,
@@ -987,35 +1041,7 @@ impl ProductionWifiEpochRunner {
                 }
             },
         };
-        let halted = match scan_rx.into_halted() {
-            Ok(halted) => halted,
-            Err(scan_rx) => {
-                return Err(ProductionAccessPointPreparationFault::RxOwner {
-                    _fault: ProductionAccessPointRxOwnerFault {
-                        _owner: materialized.owner,
-                        _registers: materialized.registers,
-                        _interrupt_setup: materialized.interrupt_setup,
-                        _scan_rx: scan_rx,
-                        _physical: ProductionWifiPhysicalResources {
-                            dma,
-                            rx_ring: None,
-                            tx: ProductionOrdinaryTxResources::Epoch(tx_epoch),
-                            aggregate_tx,
-                        },
-                        _station_role: ProductionStationRoleResources {
-                            scan_table,
-                            scan_frame,
-                            ethernet,
-                            resume,
-                            board,
-                            station_address,
-                        },
-                        _access_point: access_point,
-                        _monitor: monitor,
-                    },
-                });
-            }
-        };
+        diagnostics_event!("open-radio: AP prepare RX ring acquired");
         let control = match tx_epoch.take_control() {
             Ok(control) => control,
             Err(_) => {
@@ -1023,7 +1049,7 @@ impl ProductionWifiEpochRunner {
                     _fault: ProductionAccessPointPreflightFault {
                         _owner: materialized.owner,
                         _registers: materialized.registers,
-                        _interrupt_setup: materialized.interrupt_setup,
+                        _interrupts: materialized.interrupts,
                         _physical: ProductionWifiPhysicalResources {
                             dma,
                             rx_ring: None,
@@ -1041,7 +1067,7 @@ impl ProductionWifiEpochRunner {
                         _access_point: access_point,
                         _monitor: monitor,
                         _detached_control: None,
-                        _ring: Some(halted),
+                        _ring: Some(ring),
                     },
                 });
             }
@@ -1053,7 +1079,7 @@ impl ProductionWifiEpochRunner {
                     _fault: ProductionAccessPointPreflightFault {
                         _owner: materialized.owner,
                         _registers: materialized.registers,
-                        _interrupt_setup: materialized.interrupt_setup,
+                        _interrupts: materialized.interrupts,
                         _physical: ProductionWifiPhysicalResources {
                             dma,
                             rx_ring: None,
@@ -1071,11 +1097,12 @@ impl ProductionWifiEpochRunner {
                         _access_point: access_point,
                         _monitor: monitor,
                         _detached_control: Some(control),
-                        _ring: Some(halted),
+                        _ring: Some(ring),
                     },
                 });
             }
         };
+        diagnostics_event!("open-radio: AP prepare TX resources idle");
 
         let (ssid, security, channel, client_limit, inactive_timeout, beacon_interval, dtim_period) =
             request.into_parts();
@@ -1130,8 +1157,8 @@ impl ProductionWifiEpochRunner {
                     _fault: ProductionAccessPointEngineFault {
                         _owner: materialized.owner,
                         _registers: materialized.registers,
-                        _interrupt_setup: materialized.interrupt_setup,
-                        _ring: halted,
+                        _interrupts: materialized.interrupts,
+                        _ring: ring,
                         _transmit: transmit,
                         _engine: engine,
                         _parked: ProductionAccessPointParked {
@@ -1160,6 +1187,7 @@ impl ProductionWifiEpochRunner {
                 });
             }
         };
+        diagnostics_event!("open-radio: AP prepare engine started");
         let maximum_aggregate_bytes = transmit.policy.ht_ampdu().maximum_aggregate_bytes();
         let aggregate = ProductionAccessPointAmpdu::new(
             aggregate_tx,
@@ -1174,8 +1202,9 @@ impl ProductionWifiEpochRunner {
             },
         );
         let (receive, protocol_rx) = access_point_rx_pipeline(
-            halted,
+            ring,
             dma.storage(),
+            resume.take_retained_rx(),
             #[cfg(feature = "diagnostics")]
             board
                 .diagnostics
@@ -1197,11 +1226,12 @@ impl ProductionWifiEpochRunner {
         );
         #[cfg(feature = "diagnostics")]
         let service = service.with_terminal_observer(begin_access_point_observation());
+        diagnostics_event!("open-radio: AP prepare complete");
         Ok(ProductionAccessPointTask {
             channel,
             owner: materialized.owner,
             registers: materialized.registers,
-            interrupts: mac_interrupt_epoch(materialized.interrupt_setup),
+            interrupts: materialized.interrupts,
             service,
             aggregate,
             parked: ProductionAccessPointParked {
@@ -1250,25 +1280,10 @@ impl ProductionWifiEpochRunner {
                 });
             }
         };
-        let (_route, interrupt_setup, _mac_runtime, _power_runtime) =
-            match interrupts.try_into_inactive_parts() {
-                Ok(parts) => parts,
-                Err(interrupts) => {
-                    return Err(ProductionWifiFault::AccessPointTeardown {
-                        _fault: ProductionAccessPointTeardownFault::Interrupt {
-                            _owner: owner,
-                            _registers: registers,
-                            _interrupts: interrupts,
-                            _stopped: stopped,
-                            _parked: parked,
-                        },
-                    });
-                }
-            };
         let ProductionAccessPointParked {
             dma,
             tx_epoch,
-            station,
+            mut station,
             monitor,
             aggregate_tx: parked_aggregate,
         } = parked;
@@ -1280,7 +1295,7 @@ impl ProductionWifiEpochRunner {
                     _fault: ProductionAccessPointTeardownFault::Aggregate {
                         _owner: owner,
                         _registers: registers,
-                        _interrupt_setup: interrupt_setup,
+                        _interrupts: interrupts,
                         _stopped: stopped,
                         _aggregate: aggregate,
                         _parked: ProductionAccessPointParked {
@@ -1294,17 +1309,22 @@ impl ProductionWifiEpochRunner {
                 });
             }
         };
-        let ring = match stopped.receive.try_into_halted() {
-            Ok(ring) => ring,
-            Err(_) => unreachable!("completed AP run returns a halted staged-RX producer"),
+        // The AP consumer must release its endpoint before the same affine
+        // producer is detached from this role and restored to the station
+        // resume frontier.
+        drop(stopped.protocol_rx);
+        let (ring, retained_rx) = match stopped.receive.try_into_live_epoch_parts() {
+            Ok(parts) => parts,
+            Err(_) => unreachable!("completed AP run returns a parked live staged-RX producer"),
         };
+        station.resume.restore_retained_rx(retained_rx);
         if let Err((_error, returned_control)) = tx_epoch.restore_resources(stopped.transmit) {
             return Err(ProductionWifiFault::AccessPointTeardown {
                 _fault: ProductionAccessPointTeardownFault::TxRestore {
                     _owner: owner,
                     _registers: registers,
-                    _interrupt_setup: interrupt_setup,
-                    _ring: ring,
+                    _interrupts: interrupts,
+                    _ring: ProductionRxRing::Live(ring),
                     _storage: dma.storage(),
                     _rx_frame: stopped.rx_frame,
                     _tx_frame: stopped.tx_frame,
@@ -1350,13 +1370,13 @@ impl ProductionWifiEpochRunner {
         };
         let physical = ProductionWifiPhysicalResources {
             dma,
-            rx_ring: Some(ring),
+            rx_ring: Some(ProductionRxRing::Live(ring)),
             tx: ProductionOrdinaryTxResources::Epoch(tx_epoch),
             aggregate_tx,
         };
-        let wifi = owner.into_stopped(registers, interrupt_setup, ());
+        let wifi = park_production_wifi(owner, registers, interrupts);
         Ok(Esp32s31WifiSupervisorStopped::new(
-            wifi.wifi,
+            wifi,
             physical,
             station,
             access_point,
@@ -1460,6 +1480,7 @@ impl ProductionWifiEpochRunner {
                 return EmbassyWifiRoleEpochOutcome::Faulted(faulted);
             }
         };
+        diagnostics_event!("open-radio: AP supervisor publishing start completion");
         endpoint
             .respond(EmbassyWifiSupervisorResponse::AccessPoint(Ok(
                 WifiStartReport::new(generation),
@@ -1467,6 +1488,8 @@ impl ProductionWifiEpochRunner {
             .await;
         #[cfg(feature = "diagnostics")]
         let rx_statistics_before = task.registers.receive_statistics_snapshot();
+        #[cfg(feature = "diagnostics")]
+        let tx_statistics_before = task.registers.transmit_statistics_snapshot();
         #[cfg(feature = "diagnostics")]
         let rx_policy_before = task.registers.access_point_receive_policy_snapshot();
         #[cfg(feature = "diagnostics")]
@@ -1494,6 +1517,38 @@ impl ProductionWifiEpochRunner {
                         .map(|hooks| hooks.aggregate_tx),
                     #[cfg(feature = "diagnostics")]
                     rx_delivery_observer,
+                    #[cfg(feature = "diagnostics")]
+                    |hardware| {
+                        let priority = hardware.coex_priority_snapshot();
+                        diagnostics_event!(
+                            "open-radio: access-point live COEX priority rx_active={} rx_ack={} wifi_default={}",
+                            priority.rx_active,
+                            priority.rx_ack,
+                            priority.wifi_default,
+                        );
+                        for index in 0..8 {
+                            if let Some(snapshot) = hardware.rx_block_ack_entry_snapshot(index)
+                                && snapshot.write_enabled
+                            {
+                                diagnostics_event!(
+                                    "open-radio: access-point live RX BA bank={} enabled={} tid={} write={} valid={} control_clean={} peer={:02x?} interface={:?} window={} current={} loaded_start={} bitmap_status={:016x} bitmap_load={:016x}",
+                                    index,
+                                    snapshot.enabled,
+                                    snapshot.tid,
+                                    snapshot.write_enabled,
+                                    snapshot.valid,
+                                    snapshot.control_unknown_clear,
+                                    snapshot.peer,
+                                    snapshot.interface,
+                                    snapshot.window,
+                                    snapshot.current_sequence,
+                                    snapshot.loaded_start_sequence,
+                                    snapshot.bitmap_status,
+                                    snapshot.bitmap_load,
+                                );
+                            }
+                        }
+                    },
                     publish_access_point_shared_network_rx,
                     wait_for_active_wifi_role_stop(endpoint),
                     |status| crate::status::publish_access_point_status(generation, status),
@@ -1518,13 +1573,17 @@ impl ProductionWifiEpochRunner {
             log::error!("open-radio: access-point runtime fault: {error:?}");
         }
         #[cfg(feature = "diagnostics")]
-        let (rx_hardware_buffer_full, rx_hardware_fifo_overflow) = {
+        {
             // A rare repeated STA/AP lifecycle failure leaves the AP receive
             // path after exactly one completed descriptor. Capture the
             // hardware-owned frontier before teardown republishes the ring;
             // production images compile this one-shot diagnostic out.
             let rx_dma = task.registers.receive_dma_snapshot();
             let rx_statistics_after = task.registers.receive_statistics_snapshot();
+            let tx_delta = task
+                .registers
+                .transmit_statistics_snapshot()
+                .wrapping_delta_since(tx_statistics_before);
             let rx_delta = rx_statistics_after
                 .primary
                 .wrapping_delta_since(rx_statistics_before.primary);
@@ -1536,6 +1595,63 @@ impl ProductionWifiEpochRunner {
                 .wrapping_delta_since(rx_statistics_before.hang);
             let rx_policy_after = task.registers.access_point_receive_policy_snapshot();
             let rx_match_after = task.registers.he_trigger_receive_diagnostics();
+            // Keep the compact discriminating counters ahead of descriptor
+            // and register dumps.  Saturated AP diagnostics use a bounded
+            // logger; placing these observations at the tail silently lost
+            // the only TX/RX-response correlation in precisely the overload
+            // runs for which it is needed.
+            diagnostics_event!(
+                "open-radio: access-point TX hardware delta txrts={} txcts={} track={} trcts={}",
+                tx_delta.tx_rts,
+                tx_delta.tx_cts,
+                tx_delta.track,
+                tx_delta.trcts,
+            );
+            diagnostics_event!(
+                "open-radio: access-point RX hardware faults buffer_full={} fifo_overflow={} tkip={} bt_block={} freq_hop={} last_unmatched={} ack_irq={} rts_irq={}",
+                rx_delta.buffer_full,
+                rx_delta.fifo_overflow,
+                rx_delta.tkip_error,
+                rx_delta.bt_block_error,
+                rx_delta.frequency_hop_error,
+                rx_delta.last_unmatched_error,
+                rx_delta.ack_interrupt,
+                rx_delta.rts_interrupt,
+            );
+            diagnostics_event!(
+                "open-radio: access-point RX policy before={:?} after={:?}",
+                rx_policy_before,
+                rx_policy_after,
+            );
+            diagnostics_event!(
+                "open-radio: access-point RX match ax_bssid1={} ax_bssid0={} color_valid={} ampdu_auto_ack_valid={}",
+                rx_match_after.ax_match_bssid1,
+                rx_match_after.ax_match_bssid0,
+                rx_match_after.bss_color_valid,
+                rx_match_after.rx_ampdu_auto_ack_valid,
+            );
+            diagnostics_event!(
+                "open-radio: access-point RX decode delta brx_agc={} brx={} nrx={} nrx_abort={} nrx_agc_exit={} nrx_baseband_off={} nrx_fdm_watchdog={} nrx_restart={} nrx_service={} nrx_tx_over={} nrx_unsupported={} nrx_he_format={} nrx_ht_sig={} nrx_he_unsupported={} nrx_he_sig_a_crc={} hang_rx={} hang_tx={} rx_tx_hang={} rx_tx_panic={}",
+                rx_decode_delta.brx_agc,
+                rx_decode_delta.brx,
+                rx_decode_delta.nrx,
+                rx_decode_delta.nrx_abort,
+                rx_decode_delta.nrx_agc_exit,
+                rx_decode_delta.nrx_baseband_off,
+                rx_decode_delta.nrx_fdm_watchdog,
+                rx_decode_delta.nrx_restart,
+                rx_decode_delta.nrx_service,
+                rx_decode_delta.nrx_tx_over,
+                rx_decode_delta.nrx_unsupported,
+                rx_decode_delta.nrx_he_format,
+                rx_decode_delta.nrx_ht_sig,
+                rx_decode_delta.nrx_he_unsupported,
+                rx_decode_delta.nrx_he_sig_a_crc,
+                rx_hang_delta.rx,
+                rx_hang_delta.tx,
+                rx_hang_delta.rx_tx_hang,
+                rx_hang_delta.rx_tx_panic,
+            );
             for index in 0..8 {
                 if let Some(snapshot) = task.registers.rx_block_ack_entry_snapshot(index)
                     && snapshot.write_enabled
@@ -1612,52 +1728,13 @@ impl ProductionWifiEpochRunner {
                 rx_delta.signal_field,
                 rx_delta.end,
             );
-            diagnostics_event!(
-                "open-radio: access-point RX hardware faults buffer_full={} fifo_overflow={} tkip={} bt_block={} freq_hop={} last_unmatched={} ack_irq={} rts_irq={}",
-                rx_delta.buffer_full,
-                rx_delta.fifo_overflow,
-                rx_delta.tkip_error,
-                rx_delta.bt_block_error,
-                rx_delta.frequency_hop_error,
-                rx_delta.last_unmatched_error,
-                rx_delta.ack_interrupt,
-                rx_delta.rts_interrupt,
+            store_access_point_rx_hardware_observation(
+                crate::Esp32s31DiagnosticRxStatistics::from_deltas(
+                rx_delta,
+                rx_decode_delta,
+                rx_hang_delta,
+                ),
             );
-            diagnostics_event!(
-                "open-radio: access-point RX policy before={:?} after={:?}",
-                rx_policy_before,
-                rx_policy_after,
-            );
-            diagnostics_event!(
-                "open-radio: access-point RX match ax_bssid1={} ax_bssid0={} color_valid={} ampdu_auto_ack_valid={}",
-                rx_match_after.ax_match_bssid1,
-                rx_match_after.ax_match_bssid0,
-                rx_match_after.bss_color_valid,
-                rx_match_after.rx_ampdu_auto_ack_valid,
-            );
-            diagnostics_event!(
-                "open-radio: access-point RX decode delta brx_agc={} brx={} nrx={} nrx_abort={} nrx_agc_exit={} nrx_baseband_off={} nrx_fdm_watchdog={} nrx_restart={} nrx_service={} nrx_tx_over={} nrx_unsupported={} nrx_he_format={} nrx_ht_sig={} nrx_he_unsupported={} nrx_he_sig_a_crc={} hang_rx={} hang_tx={} rx_tx_hang={} rx_tx_panic={}",
-                rx_decode_delta.brx_agc,
-                rx_decode_delta.brx,
-                rx_decode_delta.nrx,
-                rx_decode_delta.nrx_abort,
-                rx_decode_delta.nrx_agc_exit,
-                rx_decode_delta.nrx_baseband_off,
-                rx_decode_delta.nrx_fdm_watchdog,
-                rx_decode_delta.nrx_restart,
-                rx_decode_delta.nrx_service,
-                rx_decode_delta.nrx_tx_over,
-                rx_decode_delta.nrx_unsupported,
-                rx_decode_delta.nrx_he_format,
-                rx_decode_delta.nrx_ht_sig,
-                rx_decode_delta.nrx_he_unsupported,
-                rx_decode_delta.nrx_he_sig_a_crc,
-                rx_hang_delta.rx,
-                rx_hang_delta.tx,
-                rx_hang_delta.rx_tx_hang,
-                rx_hang_delta.rx_tx_panic,
-            );
-            (rx_delta.buffer_full, rx_delta.fifo_overflow)
         };
         #[cfg(feature = "diagnostics")]
         if let Ok(report) = &result {
@@ -1692,12 +1769,11 @@ impl ProductionWifiEpochRunner {
         };
         #[cfg(feature = "diagnostics")]
         if let (Some(hooks), channel) = diagnostic_destination {
-            publish_stored_access_point_observation(
-                hooks.access_point,
-                channel,
-                rx_hardware_buffer_full,
-                rx_hardware_fifo_overflow,
-            );
+            // `finish_access_point_task` emits the terminal protocol/MAC
+            // observation. The larger register snapshot stays in its static
+            // value slot, so only this small destination crosses the affine
+            // owner-return boundary.
+            publish_stored_access_point_observation(hooks.access_point, channel);
         }
         endpoint
             .respond(EmbassyWifiSupervisorResponse::Stop(Ok(

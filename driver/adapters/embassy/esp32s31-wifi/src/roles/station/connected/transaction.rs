@@ -18,11 +18,12 @@ use crate::{
     datapath::irq::Esp32s31MacInterruptEpochDrain,
     datapath::services::SingleRoleServices,
     roles::station::teardown::{
-        Esp32s31ConnectedStaControlTeardown, Esp32s31ConnectedStaRxTeardown,
+        Esp32s31ConnectedStaControlTeardown, Esp32s31ConnectedStaRxPark,
         Esp32s31ConnectedStaTeardownFailure, Esp32s31ConnectedStaTeardownSuccess,
         Esp32s31ConnectedStaTxTeardown,
     },
 };
+use open_esp_radio_esp32s31_wifi_sta::connected_control_hardware::ConnectedControlHardware;
 
 use super::{
     Esp32s31ConnectedEpochQuiesceFailure, Esp32s31ConnectedEpochQuiesced,
@@ -44,6 +45,39 @@ pub trait Esp32s31ConnectedStationRunner<M: RawMutex>: Esp32s31ConnectedEpochRun
         &'a mut self,
         control: &'a mut Esp32s31StationCommandReceiver<'_, M>,
     ) -> impl Future<Output = Esp32s31ConnectedStationExit<Self::Error>> + 'a;
+
+    /// Revoke station RX admission after the finite runner exits but before
+    /// its interrupt route is quiesced.
+    ///
+    /// This is a logical role boundary. It must not begin the outer-MAC
+    /// channel-stop transaction: vendor `ic_mac_deinit` pairs that request
+    /// synchronously with `ic_mac_init` around an actual PHY retune.
+    fn close_station_rx_admission(&mut self);
+
+    /// Observe natural MAC activity drain after station admission is closed.
+    /// IRQ and DMA ownership remain live until the last accepted RX/TX work
+    /// reaches the idle frontier.
+    fn station_rx_frontend_quiescent(&mut self) -> bool;
+}
+
+/// Service graph operation required at the connected RX ingress frontier.
+#[doc(hidden)]
+pub trait Esp32s31ConnectedStationIngress {
+    fn close_station_rx_admission(&mut self);
+    fn station_rx_frontend_quiescent(&mut self) -> bool;
+}
+
+impl<H, R, X, C> Esp32s31ConnectedStationIngress for SingleRoleServices<H, R, X, C>
+where
+    H: ConnectedControlHardware,
+{
+    fn close_station_rx_admission(&mut self) {
+        self.hardware_mut().disable_station_receive_policy();
+    }
+
+    fn station_rx_frontend_quiescent(&mut self) -> bool {
+        self.hardware_mut().mac_runtime_active_state() == 0
+    }
 }
 
 impl<
@@ -91,7 +125,7 @@ where
             TRAILER,
             TX_QUEUE_DEPTH,
             Exit = open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason,
-        >,
+        > + Esp32s31ConnectedStationIngress,
 {
     type Error = B::Error;
 
@@ -100,6 +134,14 @@ where
         control: &'a mut Esp32s31StationCommandReceiver<'_, CM>,
     ) -> impl Future<Output = Esp32s31ConnectedStationExit<Self::Error>> + 'a {
         run_esp32s31_connected_station_epoch(self, control)
+    }
+
+    fn close_station_rx_admission(&mut self) {
+        self.services_mut().close_station_rx_admission();
+    }
+
+    fn station_rx_frontend_quiescent(&mut self) -> bool {
+        self.services_mut().station_rx_frontend_quiescent()
     }
 }
 
@@ -226,7 +268,7 @@ impl<X, I, N, H, R, A, C> Esp32s31ConnectedEpochStopped<X, I, N, SingleRoleServi
 where
     H: CcmpKeyHardware,
     C: Esp32s31ConnectedStaControlTeardown<H, A>,
-    R: Esp32s31ConnectedStaRxTeardown<H>,
+    R: Esp32s31ConnectedStaRxPark<H>,
     A: Esp32s31ConnectedStaTxTeardown,
 {
     /// Complete the mandatory control/RX/TX/key teardown while retaining the
@@ -242,7 +284,7 @@ where
             N,
             Esp32s31ConnectedStaTeardownSuccess<
                 H,
-                R::Stopped,
+                R::Parked,
                 A::Resources,
                 A::Aggregate,
                 C::Report,
@@ -252,7 +294,7 @@ where
             X,
             I,
             N,
-            Esp32s31ConnectedStaTeardownFailure<H, R, R::Stopped, A, C, C::Error, R::Error>,
+            Esp32s31ConnectedStaTeardownFailure<H, R, R::Parked, A, C, C::Error, R::Error>,
         >,
     > {
         let Self { exit, quiesced } = self;
@@ -313,6 +355,16 @@ where
     // one 10-KiB CPU stack frame.
     let raw_exit = await_stack_boundary!(observer.observe(runner.run_station_epoch(control)));
     let exit = classify(raw_exit, &runner);
+    runner.close_station_rx_admission();
+    // Let already-accepted RX/TX work leave the MAC pipeline before closing
+    // its ordinary interrupt route. The physical descriptor walker remains
+    // live, but this logical role handoff deliberately does not assert the
+    // channel-stop request: that request is legal only inside the paired
+    // stop/retune/restart transaction owned by a real channel switch.
+    embassy_time::Timer::after_micros(20).await;
+    while !runner.station_rx_frontend_quiescent() {
+        embassy_time::Timer::after_micros(1).await;
+    }
     match quiesce_esp32s31_connected_epoch(interrupt, platform, runner) {
         Ok(quiesced) => Ok(Esp32s31ConnectedEpochStopped { exit, quiesced }),
         Err(Esp32s31ConnectedEpochQuiesceFailure::Interrupt {
@@ -342,7 +394,7 @@ mod tests {
         roles::station::Esp32s31StationControlResources,
     };
 
-    struct TestRoute;
+    struct TestRoute(Rc<Cell<bool>>);
 
     impl MacInterruptRoute for TestRoute {
         type Platform = ();
@@ -360,11 +412,15 @@ mod tests {
         }
 
         fn quiesce(&mut self, _platform: &Self::Platform) -> Result<Self::Setup, Self::Error> {
+            assert!(self.0.get(), "RX admission must close before IRQ quiesce");
             Ok(19)
         }
     }
 
-    struct RetryRoute(Rc<Cell<u8>>);
+    struct RetryRoute {
+        attempts: Rc<Cell<u8>>,
+        admission_closed: Rc<Cell<bool>>,
+    }
 
     impl MacInterruptRoute for RetryRoute {
         type Platform = ();
@@ -381,8 +437,12 @@ mod tests {
         }
 
         fn quiesce(&mut self, _platform: &Self::Platform) -> Result<Self::Setup, Self::Error> {
-            let attempt = self.0.get();
-            self.0.set(attempt + 1);
+            assert!(
+                self.admission_closed.get(),
+                "RX admission must close before every IRQ quiesce attempt"
+            );
+            let attempt = self.attempts.get();
+            self.attempts.set(attempt + 1);
             if attempt == 0 { Err(9) } else { Ok(19) }
         }
     }
@@ -390,6 +450,7 @@ mod tests {
     struct TestRunner {
         network: u32,
         services: u16,
+        admission_closed: Rc<Cell<bool>>,
     }
 
     impl Esp32s31ConnectedEpochRunnerOwner for TestRunner {
@@ -412,6 +473,14 @@ mod tests {
                 open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::BeaconLoss,
             ))
         }
+
+        fn close_station_rx_admission(&mut self) {
+            assert!(!self.admission_closed.replace(true));
+        }
+
+        fn station_rx_frontend_quiescent(&mut self) -> bool {
+            self.admission_closed.get()
+        }
     }
 
     struct OrderObserver(Rc<Cell<u8>>);
@@ -430,10 +499,12 @@ mod tests {
     }
 
     #[test]
-    fn transaction_classifies_the_live_exit_before_revealing_quiesced_owners() {
+    fn transaction_classifies_the_live_exit_before_revealing_parked_owners() {
         let mac = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
         let power = EmbassyPowerIrqRuntime::<NoopRawMutex>::new();
-        let mut interrupt = Esp32s31MacInterruptEpoch::new(TestRoute, 18, &mac, &power);
+        let admission_closed = Rc::new(Cell::new(false));
+        let mut interrupt =
+            Esp32s31MacInterruptEpoch::new(TestRoute(admission_closed.clone()), 18, &mac, &power);
         interrupt
             .activate(
                 &(),
@@ -450,6 +521,7 @@ mod tests {
             TestRunner {
                 network: 29,
                 services: 31,
+                admission_closed: admission_closed.clone(),
             },
             &mut receiver,
             &mut observer,
@@ -472,16 +544,25 @@ mod tests {
         assert_eq!(stopped.exit, 37);
         assert_eq!(stopped.quiesced.network, 29);
         assert_eq!(stopped.quiesced.services, 31);
-        assert!(!stopped.quiesced.interrupt.is_active());
+        assert!(stopped.quiesced.interrupt.is_active());
+        assert!(admission_closed.get());
     }
 
     #[test]
-    fn quiesce_retry_preserves_exit_and_runner_owners() {
+    fn logical_park_does_not_call_physical_route_quiesce() {
         let mac = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
         let power = EmbassyPowerIrqRuntime::<NoopRawMutex>::new();
         let route_attempts = Rc::new(Cell::new(0));
-        let mut interrupt =
-            Esp32s31MacInterruptEpoch::new(RetryRoute(route_attempts.clone()), 18, &mac, &power);
+        let admission_closed = Rc::new(Cell::new(false));
+        let mut interrupt = Esp32s31MacInterruptEpoch::new(
+            RetryRoute {
+                attempts: route_attempts.clone(),
+                admission_closed: admission_closed.clone(),
+            },
+            18,
+            &mac,
+            &power,
+        );
         interrupt
             .activate(
                 &(),
@@ -492,12 +573,13 @@ mod tests {
         let (_controller, mut receiver) = control.split().expect("fresh control owner");
         let order = Rc::new(Cell::new(0));
         let mut observer = OrderObserver(order.clone());
-        let pending = match block_on(run_and_quiesce_esp32s31_connected_epoch(
+        let stopped = block_on(run_and_quiesce_esp32s31_connected_epoch(
             interrupt,
             &(),
             TestRunner {
                 network: 29,
                 services: 31,
+                admission_closed: admission_closed.clone(),
             },
             &mut receiver,
             &mut observer,
@@ -505,25 +587,19 @@ mod tests {
                 order.set(3);
                 37_u8
             },
-        )) {
-            Ok(_) => panic!("first route quiesce must remain pending"),
-            Err(pending) => pending,
-        };
+        ))
+        .unwrap_or_else(|_| panic!("logical park must not call the route quiesce hook"));
 
-        assert_eq!(pending.exit, 37);
-        assert_eq!(route_attempts.get(), 1);
+        assert_eq!(stopped.exit, 37);
+        assert_eq!(route_attempts.get(), 0);
         assert_eq!(
             order.get(),
             3,
             "classified exit must remain stable after IRQ failure"
         );
-        let stopped = pending
-            .retry_quiesce(&())
-            .unwrap_or_else(|_| panic!("second route quiesce must finish"));
-        assert_eq!(route_attempts.get(), 2);
-        assert_eq!(stopped.exit, 37);
         assert_eq!(stopped.quiesced.network, 29);
         assert_eq!(stopped.quiesced.services, 31);
+        assert!(stopped.quiesced.interrupt.is_active());
         assert_eq!(order.get(), 3);
     }
 }

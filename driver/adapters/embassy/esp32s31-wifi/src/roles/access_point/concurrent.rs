@@ -1357,7 +1357,6 @@ where
             self.activate_tx(physical_tx)
                 .map_err(Esp32s31StaApAccessPointPairedRxError::Ownership)?;
         }
-        let (nonce, replay_counter) = (self.security_material)();
         let result = self
             .protocol
             .active_mut()
@@ -1366,8 +1365,7 @@ where
             .service_routed_rx(
                 hardware,
                 frame,
-                nonce,
-                replay_counter,
+                &mut self.security_material,
                 Instant::now().as_micros(),
                 &mut self.publish_shared_rx,
                 #[cfg(feature = "diagnostics")]
@@ -1418,13 +1416,11 @@ where
             // recovering AP TX resources here would violate affine ownership.
             return Ok(crate::roles::concurrent::Esp32s31RoutedRxDisposition::Deferred(frame));
         };
-        let (nonce, replay_counter) = (self.security_material)();
         active
             .processor
-            .service_routed_rx_during_tx::<H, _, _>(
+            .service_routed_rx_during_tx::<H, _, _, _>(
                 frame,
-                nonce,
-                replay_counter,
+                &mut self.security_material,
                 Instant::now().as_micros(),
                 &mut self.publish_shared_rx,
                 #[cfg(feature = "diagnostics")]

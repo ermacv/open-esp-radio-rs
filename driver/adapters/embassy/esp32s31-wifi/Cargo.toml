@@ -26,6 +26,7 @@ open-esp-radio-wifi-sta = { path = "../../../wifi/sta" }
 open-esp-radio-wpa2 = { path = "../../../wifi/wpa2" }
 open-esp-radio-wifi-embassy = { path = "../wifi" }
 static_cell = "2.1.1"
+log = { version = "0.4", optional = true }
 
 [dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }
@@ -38,6 +39,7 @@ default = []
 # Value-only driver observers. Ordinary/performance builds do not retain
 # diagnostic counters or invoke observation clocks.
 diagnostics = [
+    "dep:log",
     "open-esp-radio-embassy-net/diagnostics",
     "open-esp-radio-esp32s31-wifi-ap/diagnostics",
 ]

@@ -7,10 +7,10 @@
 
 #![forbid(unsafe_code)]
 
-use open_esp_radio_esp32s31_wifi_mac::rx::RxRingHalted;
 use open_esp_radio_esp32s31_wifi_mac::rx::{
     RxDma, RxDmaBufferAddresses, RxIngressConfig, RxPhyInfo, RxRingError, view_normalized_rx_frame,
 };
+use open_esp_radio_esp32s31_wifi_mac::rx::{RxRingHalted, RxRingLive};
 use open_esp_radio_wifi_softmac::{
     MonitorDropReason, MonitorFilter, MonitorFrame, MonitorPublishOutcome, MonitorSink,
     WifiStandaloneMonitorPlan,
@@ -115,6 +115,25 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         })
     }
 
+    pub fn from_live(
+        plan: WifiStandaloneMonitorPlan,
+        ring: RxRingLive<'storage, COUNT>,
+        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    ) -> Result<Self, (RxRingLive<'storage, COUNT>, Esp32s31MonitorPrepareError)> {
+        let (channel_context, filter) = match monitor_context(plan) {
+            Ok(context) => context,
+            Err(error) => {
+                return Err((ring, Esp32s31MonitorPrepareError::Configuration(error)));
+            }
+        };
+        Ok(Self {
+            receive: Esp32s31RxFrontier::from_live(ring),
+            storage,
+            channel_context,
+            filter,
+        })
+    }
+
     #[cfg(target_pointer_width = "32")]
     pub fn prepare_initial<H: RxDma>(
         plan: WifiStandaloneMonitorPlan,
@@ -150,7 +169,11 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
     }
 
     pub fn start<H: RxDma>(&mut self, hardware: &mut H) -> Result<(), Esp32s31RxFrontierError> {
-        self.receive.start_prepared(hardware)
+        if self.phase() == Esp32s31RxFrontierPhase::Live {
+            Ok(())
+        } else {
+            self.receive.start_prepared(hardware)
+        }
     }
 
     pub fn service<H: RxDma, S: MonitorSink<RxPhyInfo>>(
@@ -214,10 +237,6 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         Ok(progress)
     }
 
-    pub fn stop<H: RxDma>(&mut self, hardware: &mut H) -> Result<(), Esp32s31RxFrontierError> {
-        self.receive.stop(hardware)
-    }
-
     /// Rebuild a halted ring before publishing another capture epoch.
     pub fn prepare_next<H: RxDma>(
         &mut self,
@@ -230,14 +249,14 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         self.receive.require_reset();
     }
 
-    pub fn into_halted(self) -> Result<RxRingHalted<'storage, COUNT>, Self> {
+    pub fn into_live(self) -> Result<RxRingLive<'storage, COUNT>, Self> {
         let Self {
-            receive,
+            mut receive,
             storage,
             channel_context,
             filter,
         } = self;
-        receive.try_into_halted().map_err(|receive| Self {
+        receive.take_live().map_err(|_| Self {
             receive,
             storage,
             channel_context,

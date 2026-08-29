@@ -1,5 +1,6 @@
 #![no_main]
 #![no_std]
+#![recursion_limit = "256"]
 
 use esp_backtrace as _;
 use esp_hal::{
@@ -10,10 +11,9 @@ use esp_hal::{
     timer::{OneShotTimer, timg::TimerGroup},
 };
 use open_esp_radio::{
-    MonitorRequest, WifiMacAddress, WifiMonitorConfig,
-    esp32s31::phy::{PhyCalibrationIdentity, phy_rfpll::phy_get_rf_cal_version},
-    wifi::ieee80211::channel::WifiChannel,
+    MonitorRequest, WifiChannel, WifiMacAddress, WifiMonitorConfig,
 };
+use open_esp_radio_esp32s31_phy::{PhyCalibrationIdentity, phy_rfpll::phy_get_rf_cal_version};
 use open_esp_radio_esp32s31_embassy_runtime::Executor;
 use open_esp_radio_esp32s31_embassy_wifi::{Esp32s31RadioConfig, new};
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
@@ -84,7 +84,6 @@ async fn monitor_task(
             .expect("radio initialization must succeed once");
     let open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioRunners {
         hardware: radio_runner,
-        wifi_protocol,
     } = runners;
     let open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioParts {
         wifi,
@@ -124,7 +123,7 @@ async fn monitor_task(
             }
         }
     };
-    let (_application, hardware_never, _protocol_never) =
-        embassy_futures::join::join3(application, radio_runner.run(), wifi_protocol.run()).await;
+    let (_application, hardware_never) =
+        embassy_futures::join::join(application, radio_runner.run()).await;
     match hardware_never {}
 }

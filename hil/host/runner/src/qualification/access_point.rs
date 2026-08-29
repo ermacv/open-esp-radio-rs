@@ -13,14 +13,15 @@ use serde::Serialize;
 
 use open_esp_radio_hil_protocol::{
     Completion, Direction as ProtocolDirection, FlowConfig, Ipv4Endpoint, SessionConfig,
-    SessionLinkRequirements, Transport, WifiRole,
+    SessionLinkRequirements, Transport, WifiAccessPointSecurity, WifiRole,
 };
 
 use crate::{
     Result, evidence,
     evidence::traffic_capture::{SerialCapture, SessionEvidence, probe_udp_rx_ready_via},
     qualification::scenario::{
-        AccessPointClient, AccessPointTraffic, Criteria, Direction, LinkExpectation, PhyExpectation,
+        AccessPointClient, AccessPointTraffic, Criteria, Direction, HtGuardIntervalExpectation,
+        LinkExpectation, PhyExpectation,
     },
     traffic::paced_tcp::{
         Config as TcpConfig, HostReception as TcpReception, HostTransmission as TcpTransmission,
@@ -36,6 +37,7 @@ use crate::{
         SecondaryClientProbeEvidence,
     },
     transport::lab_config::{LabConfig, StationFixtureConfig},
+    transport::local_air_monitor::{LocalAirMonitorCapture, LocalAirMonitorEvidence},
     transport::udp_socket::{configure_qualification_receive_buffer, open_reverse_flow},
     transport::wifi_control::{report_stack, require_transition, start_station, stop_station},
 };
@@ -51,11 +53,15 @@ pub(crate) struct Config {
     pub(crate) boots: u8,
     pub(crate) timeout: Duration,
     pub(crate) client: AccessPointClient,
+    pub(crate) security: WifiAccessPointSecurity,
     pub(crate) traffic: AccessPointTraffic,
     pub(crate) criteria: Criteria,
     pub(crate) expected_link: Option<LinkExpectation>,
     pub(crate) require_driver_observation: bool,
     pub(crate) require_rx_delivery_evidence: bool,
+    pub(crate) capture_independent_laptop_monitor_rx: bool,
+    pub(crate) openwrt_client_fixed_ht_mcs: Option<u8>,
+    pub(crate) openwrt_client_fixed_guard_interval: HtGuardIntervalExpectation,
 }
 
 enum ConnectedClients {
@@ -117,6 +123,7 @@ struct CycleReport {
     traffic: TrafficReport,
     secondary_client: Option<SecondaryClientProbeEvidence>,
     primary_client_link: Option<OpenWrtClientLinkEvidence>,
+    independent_air_rx: Option<LocalAirMonitorEvidence>,
     /// Intrusive driver-internal evidence is absent from observer-free
     /// performance images. An omitted field is deliberately different from a
     /// diagnostic snapshot whose counters all happened to be zero.
@@ -207,7 +214,7 @@ pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> 
         };
         fs::create_dir_all(&boot_output)?;
         let capture = SerialCapture::start_with_reset(&lab.device.serial);
-        let cycles = qualify(&capture, &config, lab);
+        let cycles = qualify(&capture, &config, lab, &boot_output);
         let capture_result = capture.finish_to(&boot_output);
         let cycles = cycles?;
         capture_result?;
@@ -220,7 +227,12 @@ pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> 
     Ok(())
 }
 
-fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<Vec<CycleReport>> {
+fn qualify(
+    capture: &SerialCapture,
+    config: &Config,
+    lab: &LabConfig,
+    output: &Path,
+) -> Result<Vec<CycleReport>> {
     let capabilities = capture.prepare_station(lab, config.timeout)?;
     if !capabilities.features.wifi_role_control || !capabilities.features.wifi_access_point {
         return Err("firmware does not advertise AP role control".into());
@@ -239,7 +251,7 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
     for cycle in 0..config.cycles {
         // Validate all host-owned inputs before releasing the connected STA.
         // An invalid AP request must not strand the target in Idle.
-        let request = lab.access_point.protocol_request()?;
+        let request = lab.access_point.protocol_request(config.security)?;
         let _ = stop_station(capture, config.timeout)?;
         if let Err(error) = report_stack(capture, config.timeout, "ap-station-stopped") {
             let restart = restore_connected_station(capture, config.timeout, lab).err();
@@ -279,7 +291,14 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
             ));
         }
 
-        let clients = match connect_clients(config.client, minimum_clients, lab) {
+        let clients = match connect_clients(
+            config.client,
+            config.security,
+            minimum_clients,
+            config.openwrt_client_fixed_ht_mcs,
+            config.openwrt_client_fixed_guard_interval,
+            lab,
+        ) {
             Ok(clients) => clients,
             Err(error) => {
                 return Err(cleanup_after_client_failure(
@@ -298,7 +317,28 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
             )
         });
         let primary_link_observation = clients.begin_primary_link_observation();
-        let data_result = qualify_data_plane(capture, config, lab, &clients);
+        let air_output = output.join(format!("cycle-{cycle:02}"));
+        let independent_air_capture = if config.capture_independent_laptop_monitor_rx {
+            fs::create_dir_all(&air_output)?;
+            let StationFixtureConfig::OpenWrt(openwrt) = &lab.station_fixture else {
+                unreachable!("scenario validation constrains independent AP air evidence")
+            };
+            LocalAirMonitorCapture::start(
+                openwrt,
+                lab.access_point.target_address(),
+                traffic_duration(&config.traffic),
+                &air_output,
+            )
+            .map(Some)
+        } else {
+            Ok(None)
+        };
+        let data_result = match independent_air_capture.as_ref() {
+            Ok(_) => qualify_data_plane(capture, config, lab, &clients),
+            Err(error) => Err(error.to_string().into()),
+        };
+        let independent_air_result = independent_air_capture
+            .and_then(|capture| capture.map(LocalAirMonitorCapture::finish).transpose());
         let primary_link_result = primary_link_observation.and_then(|observation| {
             observation
                 .map(OpenWrtClientLinkObservation::finish)
@@ -337,10 +377,10 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
                      hardware_timeouts={} collision_limits={} last_hardware_status={} beacons={}; AP RX evidence: \
                      units={} descriptors={} recycled_descriptors={} retained_descriptors={} discarded_units={} overload_dropped={} critical_reserve={} critical_blocked={} \
                      max_service_us={}/{}/{} data/management/eapol={}/{}/{} dma_total_us/calls={}/{} data_total_us={} \
-                     rx_ht40_mcs={:?} total_ht={} ht_ampdu={} rssi={}/{}/{}/{} protected={} mic_failures={} quarantined={} duplicates={} \
+                     rx_ht40_mcs={:?} rx_ht40_gi_lgi/sgi={}/{} total_ht={} ht_ampdu={} rssi={}/{}/{}/{} protected={} mic_failures={} quarantined={} duplicates={} \
                      radio_rejected={} protocol_rejected={} ethernet_staged={} tcp_staged={}",
-                    stopped.rx_hardware_buffer_full,
-                    stopped.rx_hardware_fifo_overflow,
+                    stopped.rx_hardware.buffer_full,
+                    stopped.rx_hardware.fifo_overflow,
                     stopped.data_frames_transmitted,
                     stopped.data_tx_attempts,
                     stopped.data_tx_retried_frames,
@@ -377,6 +417,8 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
                     stopped.rx_dma_service_calls,
                     stopped.total_rx_protected_data_service_micros,
                     stopped.rx_ht40_mcs_frames,
+                    stopped.rx_ht40_long_gi_frames,
+                    stopped.rx_ht40_short_gi_frames,
                     stopped.rx_ht_data_frames,
                     stopped.rx_ht_mpdus_with_aggregation_bit,
                     stopped.rx_rssi_samples,
@@ -400,13 +442,14 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
             }
             match &primary_link_result {
                 Ok(Some(evidence)) => data_error.push_str(&format!(
-                    "; OpenWrt AP-client link: rx_packets={} rx_bytes={} rx_duration_us={:?} rx_bitrate={:?} tx_packets={} tx_bytes={} retries={} failed={} tx_duration_us={} tid0_aqm_drops={}",
+                    "; OpenWrt AP-client link: rx_packets={} rx_bytes={} rx_duration_us={:?} rx_bitrate={:?} tx_packets={} tx_bytes={} tx_bitrate={:?} retries={} failed={} tx_duration_us={} tid0_aqm_drops={}",
                     evidence.rx_packets,
                     evidence.rx_bytes,
                     evidence.rx_duration_micros,
                     evidence.rx_bitrate,
                     evidence.tx_packets,
                     evidence.tx_bytes,
+                    evidence.tx_bitrate,
                     evidence.tx_retries,
                     evidence.tx_failed,
                     evidence.tx_duration_micros,
@@ -416,6 +459,11 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
                     "; OpenWrt AP-client link observation failed: {observation_error}"
                 )),
                 Ok(None) => {}
+            }
+            if let Err(observation_error) = &independent_air_result {
+                data_error.push_str(&format!(
+                    "; independent AP air observation failed: {observation_error}"
+                ));
             }
             return Err(with_cleanup_errors(
                 data_error,
@@ -437,13 +485,14 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
         let traffic = data_result?;
         let secondary_client = secondary_probe_result.transpose()?;
         let primary_client_link = primary_link_result?;
+        let independent_air_rx = independent_air_result?;
         client_restore?;
         let stopped = stop_result?;
         stop_stack_result?;
         restart_result?;
         if config.require_driver_observation {
             validate_mcs_evidence(&config.traffic, config.expected_link, &stopped)?;
-            validate_access_point_observation(cycle, minimum_clients, &stopped)?;
+            validate_access_point_observation(cycle, config.security, minimum_clients, &stopped)?;
         }
         let access_point = config.require_driver_observation.then_some(stopped);
         cycles.push(CycleReport {
@@ -451,6 +500,7 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
             traffic,
             secondary_client,
             primary_client_link,
+            independent_air_rx,
             access_point,
         });
     }
@@ -459,6 +509,7 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
 
 fn validate_access_point_observation(
     cycle: u8,
+    security: WifiAccessPointSecurity,
     minimum_clients: u8,
     stopped: &open_esp_radio_hil_protocol::WifiAccessPointEvidence,
 ) -> Result<()> {
@@ -476,7 +527,8 @@ fn validate_access_point_observation(
             || stopped.maximum_beacon_lateness_micros >= 102_400
             || stopped.authentication_responses == 0
             || stopped.association_responses == 0
-            || stopped.wpa2_response_windows < 2
+            || (security == WifiAccessPointSecurity::Wpa2Personal
+                && stopped.wpa2_response_windows < 2)
             || stopped.wpa2_pending_on_stop != 0
             || stopped.wpa2_handshake_failures != 0
             || stopped.wpa2_handshake_timeouts != 0
@@ -492,11 +544,11 @@ fn validate_access_point_observation(
             || stopped.deauthentications_prepared < u32::from(minimum_clients)
             || stopped.deauthentications_published < u32::from(minimum_clients)
             || stopped.deauthentications_prepared != stopped.deauthentications_published
-            || stopped.completed_rx_units == 0
-            || stopped.completed_rx_descriptors
-                != stopped
-                    .recycled_rx_descriptors
-                    .saturating_add(stopped.retained_rx_descriptors)
+            // `completed_rx_*` comes from the optional HIL pipeline observer,
+            // not from the production AP owner. Functional qualification is
+            // already fail-closed on peer authorization, protected protocol
+            // RX, hardware-capacity counters and ordered teardown above; it
+            // must not require a separately generated diagnostics report.
             // Complete vendor `wifi_softap_stop` submits disassociation and
             // deauthentication back-to-back and does not make peer removal
             // conditional on their ACKs. Our owner waits for each terminal
@@ -523,10 +575,10 @@ fn validate_rx_hardware_health(
     cycle: u8,
     evidence: &open_esp_radio_hil_protocol::WifiAccessPointEvidence,
 ) -> Result<()> {
-    if evidence.rx_hardware_buffer_full != 0 || evidence.rx_hardware_fifo_overflow != 0 {
+    if evidence.rx_hardware.buffer_full != 0 || evidence.rx_hardware.fifo_overflow != 0 {
         return Err(format!(
             "AP cycle {cycle} exhausted hardware RX capacity: buffer_full={} fifo_overflow={}",
-            evidence.rx_hardware_buffer_full, evidence.rx_hardware_fifo_overflow,
+            evidence.rx_hardware.buffer_full, evidence.rx_hardware.fifo_overflow,
         )
         .into());
     }
@@ -541,7 +593,7 @@ fn validate_mcs_evidence(
     let Some(LinkExpectation {
         phy,
         minimum_mcs: Some(minimum_mcs),
-        ..
+        guard_interval,
     }) = expected_link
     else {
         return Ok(());
@@ -576,6 +628,29 @@ fn validate_mcs_evidence(
         )
         .into());
     }
+    if require_rx {
+        let long = evidence.rx_ht40_long_gi_frames;
+        let short = evidence.rx_ht40_short_gi_frames;
+        let (expected, unexpected) = match guard_interval {
+            HtGuardIntervalExpectation::Any => (1, 0),
+            HtGuardIntervalExpectation::Long => (long, short),
+            HtGuardIntervalExpectation::Short => (short, long),
+        };
+        let total = u64::from(long).saturating_add(u64::from(short));
+        // AP observations span the whole ownership epoch. A bounded number of
+        // association/warm-up data MPDUs can precede the scoped peer rate mask,
+        // so require the selected GI to dominate instead of requiring an
+        // impossible zero count for the other GI.
+        if expected == 0 || u64::from(unexpected).saturating_mul(100) > total {
+            return Err(format!(
+                "AP client-to-target guard interval mismatch: required={} long={} short={} (required GI must cover at least 99% of observed HT40 data)",
+                guard_interval.id(),
+                long,
+                short,
+            )
+            .into());
+        }
+    }
     if require_tx && evidence.tx_ht40_mcs7_aggregates == 0 {
         return Err(format!(
             "AP target-to-client path did not publish an HT40 MCS7 aggregate (HT aggregates={})",
@@ -604,7 +679,10 @@ fn traffic_duration(traffic: &AccessPointTraffic) -> Duration {
 
 fn connect_clients(
     client: AccessPointClient,
+    security: WifiAccessPointSecurity,
     minimum_clients: u8,
+    openwrt_client_fixed_ht_mcs: Option<u8>,
+    openwrt_client_fixed_guard_interval: HtGuardIntervalExpectation,
     lab: &LabConfig,
 ) -> Result<ConnectedClients> {
     let openwrt_fixture = || -> Result<&crate::transport::lab_config::OpenWrtConfig> {
@@ -618,6 +696,9 @@ fn connect_clients(
             primary: ControlledOpenWrtClient::connect_primary(
                 &lab.access_point,
                 openwrt_fixture()?,
+                security,
+                openwrt_client_fixed_ht_mcs,
+                openwrt_client_fixed_guard_interval,
             )?,
         }),
         AccessPointClient::Laptop => {
@@ -628,10 +709,16 @@ fn connect_clients(
                 Some(ControlledOpenWrtClient::connect(
                     &lab.access_point,
                     openwrt_fixture()?,
+                    security,
+                    openwrt_client_fixed_ht_mcs,
+                    openwrt_client_fixed_guard_interval,
                 )?)
             } else {
                 None
             };
+            if security == WifiAccessPointSecurity::Open {
+                return Err("open AP qualification requires the controlled OpenWrt client".into());
+            }
             let primary = match ControlledClient::connect(&lab.access_point) {
                 Ok(primary) => primary,
                 Err(error) => {
@@ -1713,20 +1800,88 @@ mod tests {
     }
 
     #[test]
+    fn ap_guard_interval_gate_tolerates_only_epoch_warmup_frames() {
+        let link = Some(LinkExpectation {
+            phy: PhyExpectation::Ht40,
+            minimum_mcs: Some(7),
+            guard_interval: HtGuardIntervalExpectation::Short,
+        });
+        let rx = AccessPointTraffic::Udp {
+            direction: Direction::Rx,
+            duration_seconds: 1,
+            rx_rate_bps: Some(1),
+            tx_rate_bps: None,
+            payload_bytes: 1,
+        };
+        let mut observed = open_esp_radio_hil_protocol::WifiAccessPointEvidence {
+            rx_ht_data_frames: 100,
+            rx_ht40_short_gi_frames: 99,
+            rx_ht40_long_gi_frames: 1,
+            ..Default::default()
+        };
+        observed.rx_ht40_mcs_frames[7] = 100;
+        assert!(validate_mcs_evidence(&rx, link, &observed).is_ok());
+
+        observed.rx_ht40_short_gi_frames = 98;
+        observed.rx_ht40_long_gi_frames = 2;
+        assert!(validate_mcs_evidence(&rx, link, &observed).is_err());
+    }
+
+    #[test]
     fn ap_hardware_rx_health_uses_terminal_mac_counters() {
         let mut observed = open_esp_radio_hil_protocol::WifiAccessPointEvidence::default();
         assert!(validate_rx_hardware_health(0, &observed).is_ok());
 
-        observed.rx_hardware_buffer_full = 1;
+        observed.rx_hardware.buffer_full = 1;
         let error = validate_rx_hardware_health(2, &observed)
             .unwrap_err()
             .to_string();
         assert!(error.contains("cycle 2"));
         assert!(error.contains("buffer_full=1"));
 
-        observed.rx_hardware_buffer_full = 0;
-        observed.rx_hardware_fifo_overflow = 1;
+        observed.rx_hardware.buffer_full = 0;
+        observed.rx_hardware.fifo_overflow = 1;
         assert!(validate_rx_hardware_health(3, &observed).is_err());
+    }
+
+    #[test]
+    fn functional_ap_observation_does_not_require_optional_pipeline_report() {
+        let observed = open_esp_radio_hil_protocol::WifiAccessPointEvidence {
+            beacons_transmitted: 1,
+            authentication_responses: 1,
+            association_responses: 1,
+            authorized_peers: 1,
+            maximum_associated_peers: 1,
+            maximum_authorized_peers: 1,
+            peer_removals: 1,
+            wpa2_response_windows: 2,
+            disassociations_prepared: 1,
+            disassociations_published: 1,
+            disassociations_acknowledged: 1,
+            deauthentications_prepared: 1,
+            deauthentications_published: 1,
+            deauthentications_acknowledged: 1,
+            completed_rx_units: 0,
+            completed_rx_descriptors: 0,
+            recycled_rx_descriptors: 0,
+            ..Default::default()
+        };
+
+        assert!(
+            validate_access_point_observation(
+                0,
+                WifiAccessPointSecurity::Wpa2Personal,
+                1,
+                &observed,
+            )
+            .is_ok()
+        );
+
+        let mut open = observed;
+        open.wpa2_response_windows = 0;
+        assert!(
+            validate_access_point_observation(0, WifiAccessPointSecurity::Open, 1, &open).is_ok()
+        );
     }
 
     #[test]
@@ -1740,6 +1895,7 @@ mod tests {
                     traffic: TrafficReport::None,
                     secondary_client: None,
                     primary_client_link: None,
+                    independent_air_rx: None,
                     access_point: None,
                 }],
             }],

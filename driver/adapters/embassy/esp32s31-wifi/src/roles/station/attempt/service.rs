@@ -40,6 +40,7 @@ where
         + He20PeerHardware
         + BeamformingReportHardware
         + CcmpKeyHardware
+        + MacRuntimeStopHardware
         + 'hardware,
     C: Esp32s31StaAttemptChannel<H>,
     D: Esp32s31RxFrontierDelay,

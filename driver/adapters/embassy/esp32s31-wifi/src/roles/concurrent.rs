@@ -4,11 +4,13 @@
 //! logical interfaces consume them. Role-local protocol state must not create
 //! another physical owner.
 
-use core::{cell::RefCell, future::Future};
+use core::{cell::RefCell, future::Future, marker::PhantomData};
 
 use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
-use embassy_sync::channel::{Channel, Receiver, Sender};
-use open_esp_radio_dma::TaggedStableDmaBacking;
+use open_esp_radio_dma::{
+    AffineSpscQueue, AffineSpscReceiver, AffineSpscSender, AffineSpscTryReceiveError,
+    AffineSpscTrySendError, TaggedStableDmaBacking,
+};
 use open_esp_radio_embassy_net::{NetworkInterfaceId, PinnedRxPublisher, RawMutex};
 use open_esp_radio_esp32s31_wifi_mac::MacInterface;
 use open_esp_radio_esp32s31_wifi_mac::rx::{
@@ -429,7 +431,55 @@ pub struct Esp32s31StaApStagedRxQueue<
     const CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
     const SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
 > {
-    frames: Channel<M, Esp32s31StaApStagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
+    frames: AffineSpscQueue<Esp32s31StaApStagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
+    mutex: PhantomData<M>,
+}
+
+/// Sole physical-DMA producer for one ordered paired RX epoch.
+pub struct Esp32s31StaApStagedRxSender<
+    'pool,
+    'queue,
+    M: RawMutex,
+    const DEPTH: usize,
+    const CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
+    const SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
+> {
+    frames: AffineSpscSender<'queue, Esp32s31StaApStagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
+    mutex: PhantomData<M>,
+}
+
+impl<'pool, 'queue, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, const SLOTS: usize>
+    Esp32s31StaApStagedRxSender<'pool, 'queue, M, DEPTH, CAPACITY, SLOTS>
+{
+    #[inline]
+    pub fn try_send(
+        &self,
+        frame: Esp32s31StaApStagedRxFrame<'pool, CAPACITY, SLOTS>,
+    ) -> Result<(), AffineSpscTrySendError<Esp32s31StaApStagedRxFrame<'pool, CAPACITY, SLOTS>>>
+    {
+        #[cfg(feature = "task-poll-telemetry")]
+        let started = crate::diagnostics::core0_rx_cycles::cycle_count();
+        let result = self.frames.try_send(frame);
+        #[cfg(feature = "task-poll-telemetry")]
+        crate::diagnostics::core0_rx_service_histogram::CORE0_RX_SERVICE_HISTOGRAM
+            .record_spsc_push(
+                crate::diagnostics::core0_rx_cycles::cycle_count().wrapping_sub(started),
+                result.is_err(),
+            );
+        result
+    }
+
+    pub fn len(&self) -> usize {
+        self.frames.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.frames.is_empty()
+    }
+
+    pub fn free_capacity(&self) -> usize {
+        self.frames.free_capacity()
+    }
 }
 
 /// Protocol-side ownership result from the common ordered RX stream.
@@ -501,7 +551,8 @@ pub struct Esp32s31StaApRxConsumer<
     const CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
     const SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
 > {
-    frames: Receiver<'queue, M, Esp32s31StaApStagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
+    frames: AffineSpscReceiver<'queue, Esp32s31StaApStagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
+    mutex: PhantomData<M>,
     deferred: Option<Esp32s31StaApRxDispatch<'pool, CAPACITY, SLOTS>>,
 }
 
@@ -512,17 +563,18 @@ impl<'pool, 'queue, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, cons
         if let Some(frame) = self.deferred.take() {
             return Some(frame);
         }
-        self.frames
-            .try_receive()
-            .ok()
-            .map(Esp32s31StaApRxDispatch::from_staged)
-    }
-
-    pub async fn receive(&mut self) -> Esp32s31StaApRxDispatch<'pool, CAPACITY, SLOTS> {
-        if let Some(frame) = self.deferred.take() {
-            return frame;
+        #[cfg(feature = "task-poll-telemetry")]
+        let started = crate::diagnostics::core0_rx_cycles::cycle_count();
+        let received = self.frames.try_receive();
+        #[cfg(feature = "task-poll-telemetry")]
+        crate::diagnostics::core0_rx_service_histogram::CORE0_RX_SERVICE_HISTOGRAM.record_spsc_pop(
+            crate::diagnostics::core0_rx_cycles::cycle_count().wrapping_sub(started),
+            received.is_err(),
+        );
+        match received {
+            Ok(frame) => Some(Esp32s31StaApRxDispatch::from_staged(frame)),
+            Err(AffineSpscTryReceiveError::Empty) => None,
         }
-        Esp32s31StaApRxDispatch::from_staged(self.frames.receive().await)
     }
 
     /// Restore a frame that the selected role could not process without
@@ -616,20 +668,26 @@ impl<'pool, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, const SLOTS:
             "STA+AP staged RX queue cannot outgrow its ownership pool"
         );
         Self {
-            frames: Channel::new(),
+            frames: AffineSpscQueue::new(),
+            mutex: PhantomData,
         }
     }
 
     pub fn split(
         &self,
     ) -> (
-        Sender<'_, M, Esp32s31StaApStagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
+        Esp32s31StaApStagedRxSender<'pool, '_, M, DEPTH, CAPACITY, SLOTS>,
         Esp32s31StaApRxConsumer<'pool, '_, M, DEPTH, CAPACITY, SLOTS>,
     ) {
+        let (sender, receiver) = self.frames.split();
         (
-            self.frames.sender(),
+            Esp32s31StaApStagedRxSender {
+                frames: sender,
+                mutex: PhantomData,
+            },
             Esp32s31StaApRxConsumer {
-                frames: self.frames.receiver(),
+                frames: receiver,
+                mutex: PhantomData,
                 deferred: None,
             },
         )
@@ -647,6 +705,7 @@ impl<'pool, M: RawMutex, const DEPTH: usize, const CAPACITY: usize, const SLOTS:
 #[cfg(test)]
 mod tests {
     use super::*;
+    use open_esp_radio_embassy_net::NoopRawMutex;
     use open_esp_radio_esp32s31_wifi_dma::descriptor::{BIT_30, BIT_31, LENGTH_SHIFT};
 
     const STA: [u8; 6] = [0x02, 0, 0, 0, 0, 1];
@@ -765,6 +824,17 @@ mod tests {
             classify_sta_ap_segment(&invalid, INGRESS, ADDRESSES),
             Err(RxError::Invalid)
         );
+    }
+
+    #[test]
+    fn paired_rx_queue_has_one_affine_endpoint_pair_per_drained_epoch() {
+        let queue = Esp32s31StaApStagedRxQueue::<NoopRawMutex, 2, 128, 2>::new();
+        let endpoints = queue.split();
+        let duplicate = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| queue.split()));
+        assert!(duplicate.is_err());
+        drop(endpoints);
+        let reused = queue.split();
+        drop(reused);
     }
 
     #[test]

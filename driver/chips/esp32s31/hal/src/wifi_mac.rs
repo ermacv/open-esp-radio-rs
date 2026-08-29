@@ -7,20 +7,21 @@
 use core::cell::RefMut;
 
 pub use crate::types::{
-    ExtraSoftApRxBlockAckEntrySnapshot, MacApReceivePolicySnapshot, MacInterface,
-    MacItwtClearIndex, MacKeyInstallOutcome, MacPti, MacRoleReceivePolicy,
+    ExtraSoftApRxBlockAckEntrySnapshot, MacApReceivePolicySnapshot, MacCoexPrioritySnapshot,
+    MacInterface, MacItwtClearIndex, MacKeyInstallOutcome, MacPti, MacRoleReceivePolicy,
     MacRxDecodeErrorStatistics, MacRxDecodeErrorStatisticsDelta, MacRxDmaSnapshot,
-    MacRxHangStatistics, MacRxHangStatisticsDelta, MacRxPrimaryStatistics, MacRxStatisticsSnapshot,
-    MacStaApReceivePlan, MacStaPolicyMode, MacStaReceivePolicySnapshot, MacTxPowerTable,
-    MacTxPtiCount, MacTxPtiProgram, MacTxQueueIndex, RxBlockAckEntrySnapshot,
+    MacRxHangStatistics, MacRxHangStatisticsDelta, MacRxPrimaryStatistics,
+    MacRxPrimaryStatisticsDelta, MacRxStatisticsSnapshot, MacStaApReceivePlan, MacStaPolicyMode,
+    MacStaReceivePolicySnapshot, MacTxPowerTable, MacTxPtiCount, MacTxPtiProgram, MacTxQueueIndex,
+    MacTxStatisticsSnapshot, RxBlockAckEntrySnapshot,
 };
 use crate::types::{
     MacAssociationId, MacExtraSoftApRxBlockAckEntryIndex, MacHe20PeerConfig, MacHe20PeerError,
     MacHeBeamformingReportProfile, MacHeErSuAckRateProfile, MacHeTbLinkReservation,
     MacHeTbProgramError, MacHeTbTidLimit, MacHeTid, MacHeTriggerRxDiagnostics,
     MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHtAmpduCompletionObservation, MacHtTxProgram,
-    MacKeyEntryIndex, MacLegacyTxProgram, MacMinimumMpduStartSpacing, MacRxBlockAckEntryIndex,
-    MacRxBlockAckStartingSequence, MacRxBlockAckTid, MacRxBlockAckWindow,
+    MacKeyEntryIndex, MacLegacyTxProgram, MacMinimumMpduStartSpacing, MacOrdinaryTxQueueSnapshot,
+    MacRxBlockAckEntryIndex, MacRxBlockAckStartingSequence, MacRxBlockAckTid, MacRxBlockAckWindow,
     MacTxCompletionObservation, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
 };
 use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma, StableDmaRange};
@@ -276,6 +277,12 @@ impl<'registers> WifiMacColdHal<'registers> {
             .radio_mut()
             .configure_open_mac_promiscuous_receive();
     }
+
+    pub fn disable_open_mac_promiscuous_receive(&mut self) {
+        self.registers
+            .radio_mut()
+            .disable_open_mac_promiscuous_receive();
+    }
 }
 
 impl CoexClockHardware for WifiMacColdHal<'_> {
@@ -336,6 +343,10 @@ impl<'registers> WifiMacHal<'registers> {
 
     pub fn configure_open_promiscuous_receive(&mut self) {
         self.pac_mut().configure_open_mac_promiscuous_receive();
+    }
+
+    pub fn disable_open_mac_promiscuous_receive(&mut self) {
+        self.pac_mut().disable_open_mac_promiscuous_receive();
     }
 
     /// Read the calibrated baseband noise-floor observation used by link
@@ -457,6 +468,14 @@ impl<'registers> WifiMacHal<'registers> {
 
     pub fn receive_statistics_snapshot(&self) -> MacRxStatisticsSnapshot {
         self.pac().rx_statistics_snapshot()
+    }
+
+    pub fn transmit_statistics_snapshot(&self) -> MacTxStatisticsSnapshot {
+        self.pac().tx_statistics_snapshot()
+    }
+
+    pub fn coex_priority_snapshot(&self) -> MacCoexPrioritySnapshot {
+        self.pac().mac_coex_priority_snapshot()
     }
 
     /// Read the bounded hardware-owned RX walker projection without exposing
@@ -633,6 +652,10 @@ impl<'registers> WifiMacHal<'registers> {
 
     pub fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionObservation> {
         self.pac_mut().take_mac_tx_completion(queue)
+    }
+
+    pub fn ordinary_tx_queue_snapshot(&self, queue: u8) -> MacOrdinaryTxQueueSnapshot {
+        self.registers.pac().ordinary_tx_queue_snapshot(queue)
     }
 
     pub fn begin_tx_timeout_abort(&mut self, queue: u8) -> bool {

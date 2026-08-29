@@ -29,6 +29,14 @@ pub enum DatapathRxProgress {
     NetworkBackpressured,
     /// A republished terminal descriptor needs another hardware observation.
     ProbePending,
+    /// Ordered protocol work is retained until the active physical TX owner
+    /// reaches its terminal edge.
+    ///
+    /// This is not a descriptor-writeback probe and must not manufacture a
+    /// software RX repost. New hardware completions may still wake the DMA
+    /// producer; after TX completion the role's software-work predicate makes
+    /// the retained head runnable without another MAC interrupt.
+    ProtocolBlockedByTx,
     /// Descriptors were recycled while the RX interrupt source was masked.
     ///
     /// No completed descriptor or terminal writeback was observed at the end

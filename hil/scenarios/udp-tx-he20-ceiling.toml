@@ -3,6 +3,7 @@ id = "udp-tx-he20-ceiling"
 description = "HE20 UDP station-to-host transmit ceiling with exact delivery"
 image = "correctness"
 isolation = "reset"
+data_plane = "split-radio-network"
 tags = ["qualification", "udp", "station", "ceiling"]
 
 [link]

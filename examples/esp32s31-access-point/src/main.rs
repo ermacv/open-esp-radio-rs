@@ -1,5 +1,6 @@
 #![no_main]
 #![no_std]
+#![recursion_limit = "256"]
 
 use embassy_executor::Spawner;
 use embassy_net::{Config, Ipv4Address, Ipv4Cidr, StackResources, StaticConfigV4};
@@ -12,10 +13,10 @@ use esp_hal::{
     timer::{OneShotTimer, timg::TimerGroup},
 };
 use open_esp_radio::{
-    AccessPointClientLimit, AccessPointRequest, AccessPointSecurity, WifiMacAddress, WifiSsid,
-    esp32s31::phy::{PhyCalibrationIdentity, phy_rfpll::phy_get_rf_cal_version},
-    wifi::{ieee80211::channel::WifiChannel, wpa2::Pmk},
+    AccessPointClientLimit, AccessPointRequest, AccessPointSecurity, Pmk, WifiChannel,
+    WifiMacAddress, WifiSsid,
 };
+use open_esp_radio_esp32s31_phy::{PhyCalibrationIdentity, phy_rfpll::phy_get_rf_cal_version};
 use open_esp_radio_esp32s31_access_point::{dhcp, services};
 use open_esp_radio_esp32s31_embassy_runtime::Executor;
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
@@ -109,7 +110,6 @@ async fn access_point_task(_spawner: Spawner, radio: EspHalRadioPeripheral, trng
             .expect("radio initialization must succeed once");
     let open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioRunners {
         hardware: radio_runner,
-        wifi_protocol,
     } = runners;
     let open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioParts {
         wifi,
@@ -177,13 +177,11 @@ async fn access_point_task(_spawner: Spawner, radio: EspHalRadioPeripheral, trng
         let (_ap, _status, _dhcp, _echoes) =
             embassy_futures::join::join4(access_point, status, dhcp::run(stack), echoes).await;
     };
-    let (_application, hardware_never, _protocol_never, _network_never) =
-        embassy_futures::join::join4(
-            application,
-            radio_runner.run(),
-            wifi_protocol.run(),
-            network_runner.run(),
-        )
-        .await;
+    let (_application, hardware_never, _network_never) = embassy_futures::join::join3(
+        application,
+        radio_runner.run(),
+        network_runner.run(),
+    )
+    .await;
     match hardware_never {}
 }

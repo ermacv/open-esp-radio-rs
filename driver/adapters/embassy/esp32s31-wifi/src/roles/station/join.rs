@@ -9,7 +9,7 @@ use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyState, PhyTargetObserver};
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::CcmpKeyHardware,
     he::He20PeerHardware,
-    init::{StaLinkRxPolicyHardware, StaNoiseFloorHardware},
+    init::{MacRuntimeStopHardware, StaLinkRxPolicyHardware, StaNoiseFloorHardware},
     rate_control::BeamformingReportHardware,
     rx::RxDma,
     tx::TxHardware,
@@ -174,6 +174,7 @@ where
         + He20PeerHardware
         + BeamformingReportHardware
         + CcmpKeyHardware
+        + MacRuntimeStopHardware
         + 'hardware,
     PO: PhyTargetObserver,
     PD: PhyAsyncDelay,

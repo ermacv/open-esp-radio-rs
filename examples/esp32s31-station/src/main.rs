@@ -1,5 +1,6 @@
 #![no_main]
 #![no_std]
+#![recursion_limit = "256"]
 
 use core::num::NonZeroU16;
 
@@ -18,15 +19,10 @@ use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use static_cell::StaticCell;
 
 use open_esp_radio::{
-    StationRequest, StationScanChannels, StationScanPolicy, StationSecurity, WifiMacAddress,
-    WifiSsid,
-    esp32s31::phy::{PhyCalibrationIdentity, phy_rfpll::phy_get_rf_cal_version},
-    wifi::{
-        ieee80211::{channel::WifiChannel, station::StaAssociationPreference},
-        sta::station::StaReconnectPolicy,
-        wpa2::Pmk,
-    },
+    Pmk, StaAssociationPreference, StaReconnectPolicy, StationRequest, StationScanChannels,
+    StationScanPolicy, StationSecurity, WifiChannel, WifiMacAddress, WifiScanRequest, WifiSsid,
 };
+use open_esp_radio_esp32s31_phy::{PhyCalibrationIdentity, phy_rfpll::phy_get_rf_cal_version};
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -123,7 +119,6 @@ async fn station_task(_spawner: Spawner, radio: EspHalRadioPeripheral, trng: Trn
             .expect("radio initialization must succeed once");
     let open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioRunners {
         hardware: radio_runner,
-        wifi_protocol,
     } = runners;
     let open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioParts {
         wifi,
@@ -158,6 +153,19 @@ async fn station_task(_spawner: Spawner, radio: EspHalRadioPeripheral, trng: Trn
         runner.run().await;
     };
     let application = async move {
+        let completed = wifi
+            .scan(WifiScanRequest::new(
+                StationScanChannels::CHANNELS_1_TO_13,
+                NonZeroU16::new(50).expect("standalone scan dwell is nonzero"),
+            ))
+            .await
+            .unwrap_or_else(|error| panic!("standalone scan failed: {error:?}"));
+        let (wifi, report) = completed.into_parts();
+        esp_println::println!(
+            "open-radio: scan generation={} networks={}",
+            report.generation().value(),
+            report.results().len(),
+        );
         match wifi.start_station(request).await {
             Ok(station) => {
                 esp_println::println!(
@@ -170,12 +178,7 @@ async fn station_task(_spawner: Spawner, radio: EspHalRadioPeripheral, trng: Trn
         }
         core::future::pending::<()>().await;
     };
-    let (_application, hardware_never, _protocol_never, _network) = embassy_futures::join::join4(
-        application,
-        radio_runner.run(),
-        wifi_protocol.run(),
-        network,
-    )
-    .await;
+    let (_application, hardware_never, _network) =
+        embassy_futures::join::join3(application, radio_runner.run(), network).await;
     match hardware_never {}
 }

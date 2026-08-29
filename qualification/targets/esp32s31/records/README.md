@@ -7,6 +7,7 @@ record are therefore evidence, not current usage instructions.
 
 Current records:
 
+- [ESP32-S31 STA, AP and STA+AP datapath state](2026-08-29-esp32s31-sta-ap-current-state.md);
 - [ESP32-S31 station TX ceiling analysis](2026-08-28-esp32s31-sta-tx-ceiling-analysis.md);
 - [ESP32-S31 Core0 RX load reduction](2026-08-28-esp32s31-core0-rx-load-reduction.md);
 - [ESP32-S31 STA RX degradation investigation checkpoint](2026-08-26-esp32s31-sta-rx-degradation-investigation.md);

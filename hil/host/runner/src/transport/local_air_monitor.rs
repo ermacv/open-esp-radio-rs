@@ -21,17 +21,19 @@ const MONITOR_INTERFACE: &str = "mon0";
 const MAX_CAPTURE_BYTES: u64 = 128 * 1024 * 1024;
 const RETRY_GROUP_SECONDS: f64 = 0.100;
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize)]
 pub(crate) struct LocalAirMonitorEvidence {
     pub(crate) captured_frames: u64,
     pub(crate) kernel_dropped: u64,
     pub(crate) logical_data_units: u32,
     pub(crate) retry_attempts: u32,
     pub(crate) missing_mac_metadata: u32,
+    #[serde(skip)]
     pub(crate) mac_units: BTreeMap<MacFrameKey, u32>,
     pub(crate) block_ack_frames: u32,
     pub(crate) full_block_ack_frames: u32,
-    pub(crate) partial_block_ack_frames: u32,
+    pub(crate) tail_block_ack_frames: u32,
+    pub(crate) hole_block_ack_frames: u32,
     pub(crate) unique_block_acked_mpdus: u32,
     pub(crate) backward_block_ack_starts: u32,
 }
@@ -65,7 +67,7 @@ impl LocalAirMonitorCapture {
             // A-MPDU records on this radiotap interface. Capture the bounded
             // channel view and apply the exact target-MAC display filter in
             // `parse_capture` instead.
-            .args(["-q", "-i", MONITOR_INTERFACE, "-s", "128"])
+            .args(["-q", "-i", MONITOR_INTERFACE, "-s", "512"])
             .args(["-a", &format!("duration:{}", timeout.as_secs().max(1))])
             .arg("-w")
             .arg(&capture_path)
@@ -323,7 +325,8 @@ fn parse_block_ack_capture(
     }
     evidence.block_ack_frames = tracker.frames;
     evidence.full_block_ack_frames = tracker.full_frames;
-    evidence.partial_block_ack_frames = tracker.partial_frames;
+    evidence.tail_block_ack_frames = tracker.tail_frames;
+    evidence.hole_block_ack_frames = tracker.hole_frames;
     evidence.unique_block_acked_mpdus =
         u32::try_from(tracker.acknowledged.len()).unwrap_or(u32::MAX);
     evidence.backward_block_ack_starts = tracker.backward_starts;
@@ -334,7 +337,8 @@ fn parse_block_ack_capture(
 struct BlockAckTracker {
     frames: u32,
     full_frames: u32,
-    partial_frames: u32,
+    tail_frames: u32,
+    hole_frames: u32,
     backward_starts: u32,
     previous_start: Option<u16>,
     unwrapped_start: u64,
@@ -358,8 +362,10 @@ impl BlockAckTracker {
         self.frames = self.frames.saturating_add(1);
         if bitmap == [u8::MAX; 8] {
             self.full_frames = self.full_frames.saturating_add(1);
+        } else if block_ack_bitmap_has_internal_hole(bitmap) {
+            self.hole_frames = self.hole_frames.saturating_add(1);
         } else {
-            self.partial_frames = self.partial_frames.saturating_add(1);
+            self.tail_frames = self.tail_frames.saturating_add(1);
         }
         for (byte_index, byte) in bitmap.into_iter().enumerate() {
             for bit in 0..8_u8 {
@@ -372,6 +378,26 @@ impl BlockAckTracker {
             }
         }
     }
+}
+
+/// Return true when a later MPDU is acknowledged after an earlier zero bit.
+///
+/// A non-full compressed BlockAck bitmap is not itself loss evidence. During
+/// window growth or at the tail of a transfer it normally contains a prefix
+/// of set bits followed by zeroes. Only a set bit after the first zero proves
+/// that the receiver observed a hole inside the represented sequence range.
+fn block_ack_bitmap_has_internal_hole(bitmap: [u8; 8]) -> bool {
+    let mut observed_zero = false;
+    for byte in bitmap {
+        for bit in 0..8_u8 {
+            if byte & (1_u8 << bit) == 0 {
+                observed_zero = true;
+            } else if observed_zero {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn decode_block_ack_bitmap(value: &str) -> Option<[u8; 8]> {
@@ -480,7 +506,8 @@ mod tests {
         tracker.observe(10, [u8::MAX; 8]);
         assert_eq!(tracker.frames, 2);
         assert_eq!(tracker.full_frames, 2);
-        assert_eq!(tracker.partial_frames, 0);
+        assert_eq!(tracker.tail_frames, 0);
+        assert_eq!(tracker.hole_frames, 0);
         assert_eq!(tracker.backward_starts, 0);
         assert_eq!(tracker.acknowledged.len(), 80);
 
@@ -494,7 +521,25 @@ mod tests {
         let bitmap = decode_block_ack_bitmap("7f00000000000000").unwrap();
         let mut tracker = BlockAckTracker::default();
         tracker.observe(1, bitmap);
-        assert_eq!(tracker.partial_frames, 1);
+        assert_eq!(tracker.tail_frames, 1);
+        assert_eq!(tracker.hole_frames, 0);
         assert_eq!(tracker.acknowledged.len(), 7);
+    }
+
+    #[test]
+    fn distinguishes_normal_block_ack_tail_from_internal_loss_hole() {
+        assert!(!block_ack_bitmap_has_internal_hole([
+            0xff, 0x7f, 0, 0, 0, 0, 0, 0,
+        ]));
+        assert!(block_ack_bitmap_has_internal_hole([
+            0xff, 0xf7, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        ]));
+
+        let mut tracker = BlockAckTracker::default();
+        tracker.observe(1, [0xff, 0x7f, 0, 0, 0, 0, 0, 0]);
+        tracker.observe(16, [0xff, 0xf7, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]);
+        assert_eq!(tracker.full_frames, 0);
+        assert_eq!(tracker.tail_frames, 1);
+        assert_eq!(tracker.hole_frames, 1);
     }
 }

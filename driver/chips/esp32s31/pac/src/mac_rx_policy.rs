@@ -266,13 +266,21 @@ impl WifiRadioRegisters {
     /// queue three's promiscuous path, so the associated transition must
     /// restore its normal filtering and hardware auto-ACK policy.
     pub fn apply_sta_link_receive_policy(&mut self, bssid_address: [u8; 6]) {
+        self.disable_open_mac_promiscuous_receive();
+
+        self.apply_sta_policy_six(bssid_address, MacStaPolicyMode::Mode1);
+    }
+
+    /// Close queue three's promiscuous role admission.
+    ///
+    /// This is the complete pinned `hal_sniffer_disable` leaf and the explicit
+    /// inverse of monitor/scan admission. Role-neutral parking also disables
+    /// both ordinary interface policies before the RX ring is stopped.
+    pub fn disable_open_mac_promiscuous_receive(&mut self) {
         let sniffer = self.peripherals.wifi_mac.wifi_mac_rx_filter.policy(3);
 
-        // Complete `hal_sniffer_disable`, size 0x44. Preserve its seven
-        // separate fresh-read RMW edges: clear AUTOACK_DISABLE, then restore
-        // the six address/rejection checks in exact blob order.
-        //
-        // SOURCE: `libpp.a[hal_sniffer.o]::hal_sniffer_disable`.
+        // SOURCE: `libpp.a[hal_sniffer.o]::hal_sniffer_disable`, size 0x44.
+        // Preserve all seven fresh-read RMW edges in blob order.
         sniffer.modify(|_, w| w.auto_ack_disable().clear_bit());
         sniffer.modify(|_, w| w.dump_unicast_check_da().set_bit());
         sniffer.modify(|_, w| w.dump_unicast_check_bssid().set_bit());
@@ -285,8 +293,6 @@ impl WifiRadioRegisters {
                 .receive_unicast_check_da()
                 .set_bit()
         });
-
-        self.apply_sta_policy_six(bssid_address, MacStaPolicyMode::Mode1);
     }
 
     /// Apply exactly `wifi_set_rx_policy(6)` after scan ownership has already

@@ -16,7 +16,7 @@ use core::marker::PhantomData;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use crate::{
-    datapath::rx::dma::{Esp32s31RxEpochResources, Esp32s31StoppedRx},
+    datapath::rx::dma::{Esp32s31RxEpochResources, Esp32s31StagedRxProducer, Esp32s31StoppedRx},
     datapath::rx::frontier::{Esp32s31RxFrontier, Esp32s31RxFrontierDelay},
 };
 
@@ -87,6 +87,64 @@ impl<
     {
         let (ring, resources) = self.into_epoch_parts();
         (Esp32s31RxFrontier::from_halted(ring), resources)
+    }
+}
+
+impl<
+    'storage,
+    'pool,
+    'queue,
+    D,
+    M: RawMutex,
+    const QUEUE_DEPTH: usize,
+    const COUNT: usize,
+    const STAGE_CAPACITY: usize,
+    const STAGE_SLOTS: usize,
+    const DMA_BUFFER_SIZE: usize,
+    const DMA_STORAGE_SIZE: usize,
+    P,
+> Esp32s31StoppedStaRx
+    for Esp32s31StagedRxProducer<
+        'storage,
+        'pool,
+        'queue,
+        D,
+        M,
+        QUEUE_DEPTH,
+        COUNT,
+        STAGE_CAPACITY,
+        STAGE_SLOTS,
+        DMA_BUFFER_SIZE,
+        DMA_STORAGE_SIZE,
+        P,
+    >
+{
+    type Preconnected<F>
+        = Esp32s31RxFrontier<'storage, F, COUNT, DMA_BUFFER_SIZE>
+    where
+        F: Esp32s31RxFrontierDelay;
+    type Persistent = Esp32s31RxEpochResources<
+        'storage,
+        'pool,
+        'queue,
+        D,
+        M,
+        QUEUE_DEPTH,
+        COUNT,
+        STAGE_CAPACITY,
+        STAGE_SLOTS,
+        DMA_BUFFER_SIZE,
+        DMA_STORAGE_SIZE,
+    >;
+
+    fn split_for_reconnect<F>(self) -> (Self::Preconnected<F>, Self::Persistent)
+    where
+        F: Esp32s31RxFrontierDelay,
+    {
+        let (ring, resources) = self
+            .try_into_live_epoch_parts()
+            .unwrap_or_else(|_| panic!("parked station RX retained a staging lease"));
+        (Esp32s31RxFrontier::from_live(ring), resources)
     }
 }
 

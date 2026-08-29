@@ -148,7 +148,9 @@ fn start_pair(
     let transition = capture.wait_wifi_role_transition(
         capture.request_station_access_point_start(WifiStationAccessPointRequest {
             station_credentials: lab.station.protocol_credentials()?,
-            access_point: lab.access_point.protocol_request()?,
+            access_point: lab.access_point.protocol_request(
+                open_esp_radio_hil_protocol::WifiAccessPointSecurity::Wpa2Personal,
+            )?,
         })?,
         timeout,
     )?;

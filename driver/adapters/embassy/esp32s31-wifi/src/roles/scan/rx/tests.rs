@@ -234,8 +234,22 @@ fn monitor_plan() -> open_esp_radio_wifi_softmac::WifiStandaloneMonitorPlan {
         .unwrap()
 }
 
+fn finish_monitor_with_live_handoff(
+    monitor: Esp32s31MonitorRx<'_, RX_TEST_COUNT, RX_TEST_BUFFER_SIZE, RX_TEST_STORAGE_SIZE>,
+    hardware: &mut MockRxDma,
+) {
+    let live = monitor
+        .into_live()
+        .unwrap_or_else(|_| panic!("monitor role must return a live physical ring"));
+    assert!(hardware.walker, "logical monitor stop keeps RX DMA live");
+    match live.try_stop(hardware) {
+        Ok(_halted) => {}
+        Err(_) => panic!("test cleanup must stop the extracted physical ring"),
+    }
+}
+
 #[test]
-fn scan_rx_hands_the_exact_halted_ring_to_the_next_phase() {
+fn scan_rx_hands_the_exact_live_ring_to_the_next_role() {
     let mut storage =
         Esp32s31RxDmaStorage::<RX_TEST_COUNT, RX_TEST_BUFFER_SIZE, RX_TEST_STORAGE_SIZE>::new();
     write_test_beacon(&mut storage);
@@ -265,13 +279,17 @@ fn scan_rx_hands_the_exact_halted_ring_to_the_next_phase() {
     assert_eq!(table.records()[0].ssid_bytes(), b"ap");
     assert_eq!(table.records()[0].channel, 6);
 
-    rx.stop(&mut hardware).unwrap();
-    let halted = match rx.into_halted() {
-        Ok(halted) => halted,
-        Err(_) => panic!("completed scan must expose its halted owner"),
+    rx.park().unwrap();
+    let live = match rx.into_live() {
+        Ok(live) => live,
+        Err(_) => panic!("completed scan must expose its live owner"),
     };
-    assert_eq!(halted.descriptor_base(), RX_TEST_BASE);
-    assert_eq!(halted.buffer_addresses(), &RX_TEST_BUFFERS);
+    assert!(hardware.walker);
+    assert_eq!(live.descriptor_base(), RX_TEST_BASE);
+    assert_eq!(live.buffer_addresses(), &RX_TEST_BUFFERS);
+    let _halted = live
+        .try_stop(&mut hardware)
+        .unwrap_or_else(|_| panic!("test cleanup must stop the physical ring"));
 }
 
 #[test]
@@ -304,11 +322,11 @@ fn normalized_monitor_borrows_the_mpdu_and_retains_current_last_until_stop() {
     assert_eq!(release.recycled_descriptors, 0);
     assert_eq!(sink.frames, 1);
     assert_eq!(sink.first_byte, Some(0x80));
-    monitor.stop(&mut hardware).unwrap();
+    finish_monitor_with_live_handoff(monitor, &mut hardware);
 }
 
 #[test]
-fn halted_scan_ring_is_prepared_before_monitor_restarts_the_walker() {
+fn live_scan_ring_is_rebound_to_monitor_without_restarting_the_walker() {
     let mut storage =
         Esp32s31RxDmaStorage::<RX_TEST_COUNT, RX_TEST_BUFFER_SIZE, RX_TEST_STORAGE_SIZE>::new();
     write_test_beacon(&mut storage);
@@ -317,15 +335,14 @@ fn halted_scan_ring_is_prepared_before_monitor_restarts_the_walker() {
         Esp32s31ScanRx::prepare_initial(&mut hardware, &storage, RX_TEST_BASE, &RX_TEST_BUFFERS)
             .unwrap();
     scan.start(&mut hardware).unwrap();
-    scan.stop(&mut hardware).unwrap();
-    let halted = scan
-        .into_halted()
-        .unwrap_or_else(|_| panic!("stopped scan must return its halted ring"));
+    scan.park().unwrap();
+    let live = scan
+        .into_live()
+        .unwrap_or_else(|_| panic!("parked scan must return its live ring"));
 
-    let mut monitor =
-        Esp32s31MonitorRx::prepare_halted(monitor_plan(), halted, &mut hardware, &storage)
-            .unwrap_or_else(|_| panic!("monitor must accept the exact stopped scan ring"));
-    assert_eq!(monitor.phase(), Esp32s31RxFrontierPhase::Prepared);
+    let mut monitor = Esp32s31MonitorRx::from_live(monitor_plan(), live, &storage)
+        .unwrap_or_else(|_| panic!("monitor must accept the exact live scan ring"));
+    assert_eq!(monitor.phase(), Esp32s31RxFrontierPhase::Live);
     monitor.start(&mut hardware).unwrap();
     complete_test_beacon(&storage);
 
@@ -333,7 +350,7 @@ fn halted_scan_ring_is_prepared_before_monitor_restarts_the_walker() {
     let progress = monitor.service(&mut hardware, &mut sink).unwrap();
     assert_eq!(progress.published_frames, 1);
     assert_eq!(sink.frames, 1);
-    monitor.stop(&mut hardware).unwrap();
+    finish_monitor_with_live_handoff(monitor, &mut hardware);
 }
 
 #[test]
@@ -370,7 +387,7 @@ fn full_monitor_sink_drops_observation_without_backpressuring_the_ring() {
     assert_eq!(release.dropped_frames, 0);
     assert_eq!(release.recycled_descriptors, 0);
     assert_eq!(hardware.reload_requests, 0);
-    monitor.stop(&mut hardware).unwrap();
+    finish_monitor_with_live_handoff(monitor, &mut hardware);
 }
 
 #[test]
@@ -418,7 +435,7 @@ fn monitor_capture_owns_its_copy_while_current_last_remains_dma_visible() {
     );
     drop(captured);
     assert_eq!(pool.claimed_slots(), 0);
-    monitor.stop(&mut hardware).unwrap();
+    finish_monitor_with_live_handoff(monitor, &mut hardware);
 }
 
 #[test]
@@ -441,12 +458,11 @@ fn monitor_only_wifi_plan_materializes_the_promiscuous_ring_owner() {
     let mut sink = MonitorObserver::default();
     let progress = monitor.service(&mut hardware, &mut sink).unwrap();
     assert_eq!(progress.published_frames, 1);
-    monitor.stop(&mut hardware).unwrap();
-    assert!(monitor.into_halted().is_ok());
+    finish_monitor_with_live_handoff(monitor, &mut hardware);
 }
 
 #[test]
-fn complete_initial_scan_can_prepare_the_same_ring_for_a_retry() {
+fn complete_scan_can_start_another_channel_without_rebuilding_the_ring() {
     let storage = Box::leak(Box::new(Esp32s31RxDmaStorage::<
         RX_TEST_COUNT,
         RX_TEST_BUFFER_SIZE,
@@ -460,15 +476,17 @@ fn complete_initial_scan_can_prepare_the_same_ring_for_a_retry() {
     rx.prepare_initial_or_retry(&mut hardware).unwrap();
     assert_eq!(rx.phase(), Esp32s31RxFrontierPhase::Prepared);
     rx.start(&mut hardware).unwrap();
-    rx.stop(&mut hardware).unwrap();
-    assert_eq!(rx.phase(), Esp32s31RxFrontierPhase::Halted);
+    rx.park().unwrap();
+    assert_eq!(rx.phase(), Esp32s31RxFrontierPhase::Live);
 
     rx.prepare_initial_or_retry(&mut hardware).unwrap();
-    assert_eq!(rx.phase(), Esp32s31RxFrontierPhase::Prepared);
+    assert_eq!(rx.phase(), Esp32s31RxFrontierPhase::Live);
+    rx.start(&mut hardware).unwrap();
+    assert_eq!(rx.phase(), Esp32s31RxFrontierPhase::Live);
 }
 
 #[test]
-fn scan_rx_retains_its_typed_phase_across_enable_and_disable_failure() {
+fn scan_rx_retains_its_typed_phase_across_enable_failure_and_logical_park() {
     let storage = Box::leak(Box::new(Esp32s31RxDmaStorage::<
         RX_TEST_COUNT,
         RX_TEST_BUFFER_SIZE,
@@ -489,15 +507,9 @@ fn scan_rx_retains_its_typed_phase_across_enable_and_disable_failure() {
     hardware.fail_enable = false;
     rx.start(&mut hardware).unwrap();
     hardware.fail_disable = true;
-    assert_eq!(
-        rx.stop(&mut hardware),
-        Err(Esp32s31RxFrontierError::Ring(RxRingError::Busy))
-    );
+    rx.park().unwrap();
     assert_eq!(rx.phase(), Esp32s31RxFrontierPhase::Live);
-
-    hardware.fail_disable = false;
-    rx.stop(&mut hardware).unwrap();
-    assert_eq!(rx.phase(), Esp32s31RxFrontierPhase::Halted);
+    assert!(hardware.walker, "logical park does not touch walker enable");
 }
 
 #[test]
@@ -536,33 +548,34 @@ fn running_scan_rx_returns_the_exact_connected_epoch_resources() {
         Esp32s31StagedRxQueue::<NoopRawMutex, STAGE_SLOTS, STAGE_CAPACITY, STAGE_SLOTS>::new();
     let (sender, _receiver) = queue.split();
     let connected = Esp32s31StagedRxProducer::new(ring, storage, &pool, TestDelay, sender);
-    let stopped = connected
-        .try_stop(&mut hardware)
-        .unwrap_or_else(|_| panic!("mock connected ring must stop"));
-    let pool_address = stopped.pool() as *const _;
+    let storage_address = connected.storage() as *const _;
 
-    let mut running = Esp32s31RunningScanRx::from_stopped(stopped);
-    assert_eq!(running.phase(), Esp32s31RxFrontierPhase::Halted);
+    let mut running = Esp32s31RunningScanRx::from_parked(connected)
+        .unwrap_or_else(|_| panic!("running scan must accept the live connected producer"));
+    assert_eq!(running.phase(), Esp32s31RxFrontierPhase::Live);
     running.prepare_initial(&mut hardware).unwrap();
-    assert_eq!(running.phase(), Esp32s31RxFrontierPhase::Prepared);
+    assert_eq!(running.phase(), Esp32s31RxFrontierPhase::Live);
 
-    let stopped = running
-        .into_stopped()
-        .unwrap_or_else(|_| panic!("prepared running scan must discard its unstarted epoch"));
-    assert_eq!(stopped.pool() as *const _, pool_address);
-    assert_eq!(stopped.ring().descriptor_base(), RX_TEST_BASE);
+    let parked = running
+        .into_parked()
+        .unwrap_or_else(|_| panic!("running scan must return the live connected producer"));
+    assert_eq!(parked.storage() as *const _, storage_address);
+    assert_eq!(parked.ring().descriptor_base(), RX_TEST_BASE);
 
-    let mut running = Esp32s31RunningScanRx::from_stopped(stopped);
+    let mut running = Esp32s31RunningScanRx::from_parked(parked)
+        .unwrap_or_else(|_| panic!("running scan must rebind the live connected producer"));
     running.prepare_initial(&mut hardware).unwrap();
     block_on(running.start(&mut hardware)).unwrap();
-    running.stop(&mut hardware).unwrap();
+    running.park().unwrap();
 
-    let stopped = running
-        .into_stopped()
-        .unwrap_or_else(|_| panic!("halted running scan must restore connected resources"));
-    assert_eq!(stopped.pool() as *const _, pool_address);
-    assert_eq!(stopped.ring().descriptor_base(), RX_TEST_BASE);
-    assert_eq!(stopped.ring().buffer_addresses(), &RX_TEST_BUFFERS);
-    assert_eq!(stopped.buffers().as_ptr(), storage.buffers().as_ptr());
-    assert_eq!(stopped.queued_frames(), 0);
+    let parked = running
+        .into_parked()
+        .unwrap_or_else(|_| panic!("parked running scan must restore connected resources"));
+    assert_eq!(parked.storage() as *const _, storage_address);
+    assert_eq!(parked.ring().descriptor_base(), RX_TEST_BASE);
+    assert_eq!(
+        parked.storage().buffers().as_ptr(),
+        storage.buffers().as_ptr()
+    );
+    assert_eq!(parked.queued_frames(), 0);
 }

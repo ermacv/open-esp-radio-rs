@@ -3,6 +3,7 @@ id = "access-point-bidirectional"
 description = "Two AP ownership epochs with exact simultaneous UDP delivery"
 image = "correctness"
 isolation = "reset"
+data_plane = "split-radio-network"
 tags = ["qualification", "wifi", "access-point", "network", "bidirectional"]
 
 [workload]

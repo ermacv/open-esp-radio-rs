@@ -1,0 +1,38 @@
+schema = 3
+id = "diagnostic-ap-rx42-tx40-fixed-client-mcs7"
+description = "Same-ELF AP duplex threshold probe with the controlled client TX fixed at HT40 MCS7"
+repetitions = 1
+image = "diagnostic-rx-delivery"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic", "access-point", "udp", "bidirectional", "fixed-client-mcs"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "access-point"
+cycles = 2
+boots = 1
+timeout_seconds = 120
+client = "open-wrt"
+
+[workload.traffic]
+kind = "udp"
+direction = "bidirectional"
+duration_seconds = 10
+rx_rate_bps = 42000000
+tx_rate_bps = 40000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = false
+minimum_rx_bps = 1
+minimum_tx_bps = 1
+minimum_concurrent_ap_clients = 1
+
+[evidence]
+independent_laptop_monitor_rx = true
+
+[fixture_mutation]
+openwrt_client_fixed_ht_mcs = 7

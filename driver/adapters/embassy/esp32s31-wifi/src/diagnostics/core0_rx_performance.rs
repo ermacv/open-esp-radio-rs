@@ -93,6 +93,7 @@ pub struct Core0PerformanceSnapshot {
     pub tx_commit_instructions: u32,
     pub rx_progress_drained: u32,
     pub rx_progress_probe_pending: u32,
+    pub rx_progress_protocol_tx_blocked: u32,
     pub rx_progress_recycled_append_pending: u32,
     pub rx_progress_budget_exhausted: u32,
     pub rx_progress_stage_blocked: u32,
@@ -229,6 +230,9 @@ impl Core0PerformanceSnapshot {
             rx_progress_probe_pending: self
                 .rx_progress_probe_pending
                 .wrapping_sub(earlier.rx_progress_probe_pending),
+            rx_progress_protocol_tx_blocked: self
+                .rx_progress_protocol_tx_blocked
+                .wrapping_sub(earlier.rx_progress_protocol_tx_blocked),
             rx_progress_recycled_append_pending: self
                 .rx_progress_recycled_append_pending
                 .wrapping_sub(earlier.rx_progress_recycled_append_pending),
@@ -376,6 +380,7 @@ pub struct Core0PerformanceCounters {
     active_protocol_instructions: AtomicU32,
     rx_progress_drained: AtomicU32,
     rx_progress_probe_pending: AtomicU32,
+    rx_progress_protocol_tx_blocked: AtomicU32,
     rx_progress_recycled_append_pending: AtomicU32,
     rx_progress_budget_exhausted: AtomicU32,
     rx_progress_stage_blocked: AtomicU32,
@@ -405,9 +410,9 @@ pub struct Core0PerformanceCounters {
     dma_exhaustion_resolved_le_256us: AtomicU32,
     dma_exhaustion_resolved_le_1024us: AtomicU32,
     dma_exhaustion_resolved_gt_1024us: AtomicU32,
-    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    #[cfg(any(feature = "core0-rx-coarse-telemetry", feature = "task-poll-telemetry"))]
     dma_exhaustion_active: AtomicU32,
-    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    #[cfg(any(feature = "core0-rx-coarse-telemetry", feature = "task-poll-telemetry"))]
     dma_exhaustion_started_cycles: AtomicU32,
 }
 
@@ -469,6 +474,7 @@ impl Core0PerformanceCounters {
             active_protocol_instructions: AtomicU32::new(0),
             rx_progress_drained: AtomicU32::new(0),
             rx_progress_probe_pending: AtomicU32::new(0),
+            rx_progress_protocol_tx_blocked: AtomicU32::new(0),
             rx_progress_recycled_append_pending: AtomicU32::new(0),
             rx_progress_budget_exhausted: AtomicU32::new(0),
             rx_progress_stage_blocked: AtomicU32::new(0),
@@ -498,9 +504,9 @@ impl Core0PerformanceCounters {
             dma_exhaustion_resolved_le_256us: AtomicU32::new(0),
             dma_exhaustion_resolved_le_1024us: AtomicU32::new(0),
             dma_exhaustion_resolved_gt_1024us: AtomicU32::new(0),
-            #[cfg(feature = "core0-rx-coarse-telemetry")]
+            #[cfg(any(feature = "core0-rx-coarse-telemetry", feature = "task-poll-telemetry"))]
             dma_exhaustion_active: AtomicU32::new(0),
-            #[cfg(feature = "core0-rx-coarse-telemetry")]
+            #[cfg(any(feature = "core0-rx-coarse-telemetry", feature = "task-poll-telemetry"))]
             dma_exhaustion_started_cycles: AtomicU32::new(0),
         }
     }
@@ -651,6 +657,7 @@ impl Core0PerformanceCounters {
         let counter = match progress {
             DatapathRxProgress::Drained => &self.rx_progress_drained,
             DatapathRxProgress::ProbePending => &self.rx_progress_probe_pending,
+            DatapathRxProgress::ProtocolBlockedByTx => &self.rx_progress_protocol_tx_blocked,
             DatapathRxProgress::RecycledAppendPending => &self.rx_progress_recycled_append_pending,
             DatapathRxProgress::BudgetExhausted => &self.rx_progress_budget_exhausted,
             DatapathRxProgress::StageCapacityBlocked => &self.rx_progress_stage_blocked,
@@ -714,7 +721,7 @@ impl Core0PerformanceCounters {
     /// begins. This is deliberately bucketed: it is diagnostic pressure
     /// evidence and never participates in the descriptor ownership protocol.
     #[inline(always)]
-    #[cfg(feature = "core0-rx-coarse-telemetry")]
+    #[cfg(any(feature = "core0-rx-coarse-telemetry", feature = "task-poll-telemetry"))]
     pub(crate) fn record_dma_entry_remaining(&self, remaining: Option<usize>) {
         match remaining {
             Some(0) if self.dma_exhaustion_active.load(Ordering::Relaxed) == 0 => {
@@ -867,6 +874,9 @@ impl Core0PerformanceCounters {
             tx_commit_instructions: self.tx_commit_instructions.load(Ordering::Relaxed),
             rx_progress_drained: self.rx_progress_drained.load(Ordering::Relaxed),
             rx_progress_probe_pending: self.rx_progress_probe_pending.load(Ordering::Relaxed),
+            rx_progress_protocol_tx_blocked: self
+                .rx_progress_protocol_tx_blocked
+                .load(Ordering::Relaxed),
             rx_progress_recycled_append_pending: self
                 .rx_progress_recycled_append_pending
                 .load(Ordering::Relaxed),

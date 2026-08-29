@@ -1404,6 +1404,7 @@ dependencies = [
  "open-esp-radio",
  "open-esp-radio-esp32s31-embassy-runtime",
  "open-esp-radio-esp32s31-embassy-wifi",
+ "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-wifi-esp-hal",
  "static_cell",
 ]

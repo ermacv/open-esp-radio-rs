@@ -107,12 +107,19 @@ where
         hardware: &'a mut H,
     ) -> impl Future<Output = Result<(), Self::Error>> + 'a {
         async move {
-            self.owner.stop(hardware)?;
-            self.owner.start_with_storage(hardware, self.storage).await
+            if self.owner.phase() == crate::datapath::rx::frontier::Esp32s31RxFrontierPhase::Live {
+                Ok(())
+            } else {
+                self.owner.start_with_storage(hardware, self.storage).await
+            }
         }
     }
 
-    fn stop(&mut self, hardware: &mut H) -> Result<(), Self::Error> {
-        self.owner.stop(hardware)
+    fn stop(&mut self, _hardware: &mut H) -> Result<(), Self::Error> {
+        if self.owner.phase() == crate::datapath::rx::frontier::Esp32s31RxFrontierPhase::Live {
+            Ok(())
+        } else {
+            Err(Esp32s31RxFrontierError::OwnerUnavailable)
+        }
     }
 }

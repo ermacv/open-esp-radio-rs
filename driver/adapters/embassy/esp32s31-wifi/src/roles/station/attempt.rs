@@ -12,7 +12,7 @@ use open_esp_radio_esp32s31_wifi::cooperative_hardware::CooperativeRadioHardware
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::CcmpKeyHardware,
     he::He20PeerHardware,
-    init::{StaLinkRxPolicyHardware, StaNoiseFloorHardware},
+    init::{MacRuntimeStopHardware, StaLinkRxPolicyHardware, StaNoiseFloorHardware},
     rate_control::BeamformingReportHardware,
     rx::RxDma,
     tx::TxHardware,

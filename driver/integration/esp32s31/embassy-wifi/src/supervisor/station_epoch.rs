@@ -98,14 +98,11 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
     > {
         let (mut runtime, hardware, receive, network, identity, mut security) = phase.into_parts();
         let (radio_resources, storage_resources, _) = runtime.split_mut();
-        let (phy, platform, interrupt_epoch) = radio_resources.parts_mut();
+        let (phy, platform, _interrupt_epoch) = radio_resources.parts_mut();
         let (_, tx_storage, scan_table, frame, _) = storage_resources.parts_mut();
         let control = tx_storage
             .take_control()
             .expect("initial scan owns the ordinary TX owner");
-        let interrupt_setup = interrupt_epoch
-            .setup()
-            .expect("initial scan requires a quiesced interrupt epoch");
         let scan_plan = Esp32s31StationScanPlan::new(discovery, None, security.mode());
         let scan_request = scan_plan.request(identity.station_address);
         let scan = run_esp32s31_station_scan(
@@ -117,7 +114,6 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                 hardware,
                 receive,
                 control,
-                interrupt_setup,
                 table: scan_table,
                 frame,
                 scan_observer: ProductionScanObserver,
@@ -155,7 +151,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                 security,
             },
             decision,
-            |receive| receive.into_halted().map(Esp32s31RxFrontier::from_halted),
+            |receive| receive.into_live().map(Esp32s31RxFrontier::from_live),
             |runtime, hardware, receive, network, identity, security| {
                 ProductionStationOwner::new(
                     runtime,
@@ -280,7 +276,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
     > {
         let (mut runtime, disconnected, station, mut security) = phase.into_parts();
         let (radio_resources, storage_resources, _) = runtime.split_mut();
-        let (phy, platform, interrupt_epoch) = radio_resources.parts_mut();
+        let (phy, platform, _interrupt_epoch) = radio_resources.parts_mut();
         let (_, tx_storage, scan_table, frame, _) = storage_resources.parts_mut();
         let Esp32s31RunningScanEpochParts {
             retained,
@@ -290,9 +286,6 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
         let control = tx_storage
             .take_control()
             .expect("connected teardown returned the ordinary TX owner");
-        let interrupt_setup = interrupt_epoch
-            .setup()
-            .expect("running scan requires a quiesced interrupt epoch");
         let scan_plan = Esp32s31StationScanPlan::new(discovery, None, security.mode());
         let scan_request = scan_plan.request(station.station_address);
         let scan = run_esp32s31_station_scan(
@@ -302,9 +295,9 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                 phy_observer: NoopPhyTargetObserver,
                 phy_delay: EmbassyEsp32s31PhyDelay,
                 hardware,
-                receive: Esp32s31RunningScanRx::from_stopped(rx),
+                receive: Esp32s31RunningScanRx::from_parked(rx)
+                    .unwrap_or_else(|_| panic!("parked station RX retained a staging lease")),
                 control,
-                interrupt_setup,
                 table: scan_table,
                 frame,
                 scan_observer: ProductionScanObserver,
@@ -355,9 +348,9 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             telemetry: _,
             transmit: _,
         } = scan.returned;
-        let rx = receive.into_stopped().unwrap_or_else(|rx| {
+        let rx = receive.into_parked().unwrap_or_else(|rx| {
             panic!(
-                "running scan did not return a halted RX owner: {:?}",
+                "running scan did not return a live RX owner: {:?}",
                 rx.phase()
             )
         });
@@ -961,7 +954,7 @@ impl ProductionWifiEpochRunner {
         let requested_security = security.mode();
         let owner = match station_resources {
             ProductionWifiStoppedResources::Fresh(fresh) => {
-                let mut materialized = materialize_esp32s31_wifi_role(wifi, fresh);
+                let mut materialized = materialize_production_wifi(wifi, fresh);
                 let ProductionWifiFreshResources {
                     dma,
                     rx_ring,
@@ -976,9 +969,8 @@ impl ProductionWifiEpochRunner {
                 let mut registers = materialized.registers;
                 let (phy, _) = materialized.owner.radio_mut();
                 let tx_storage = self.initialize_tx_epoch(tx, phy.tx_target_power_profile());
-                activate_promiscuous_receive(&mut registers);
                 let scan_rx = match rx_ring {
-                    Some(ring) => Esp32s31ScanRx::from_halted(ring, dma.storage()),
+                    Some(ring) => ring.into_scan(dma.storage()),
                     None => match Esp32s31ScanRx::prepare_initial(
                         &mut registers,
                         dma.storage(),
@@ -992,7 +984,7 @@ impl ProductionWifiEpochRunner {
                                     _error: error,
                                     _owner: materialized.owner,
                                     _registers: registers,
-                                    _interrupt_setup: materialized.interrupt_setup,
+                                    _interrupts: materialized.interrupts,
                                     _dma: dma,
                                     _tx_storage: tx_storage,
                                     _scan_table: scan_table,
@@ -1010,7 +1002,7 @@ impl ProductionWifiEpochRunner {
                 ProductionStationOwner::new(
                     production_station_runtime(
                         materialized.owner,
-                        mac_interrupt_epoch(materialized.interrupt_setup),
+                        materialized.interrupts,
                         dma,
                         tx_storage,
                         scan_table,
@@ -1032,15 +1024,12 @@ impl ProductionWifiEpochRunner {
                 )
             }
             ProductionWifiStoppedResources::Returned(returned) => {
-                let materialized = materialize_esp32s31_wifi_role(wifi, returned);
+                let materialized = materialize_production_wifi(wifi, returned);
                 let ProductionWifiReusableResources {
                     storage,
                     board,
                     phase,
                     security: previous_security,
-                    interrupt_route,
-                    mac_runtime,
-                    power_runtime,
                 } = materialized.resources;
                 let rx_storage = storage.parts().0.storage();
                 let identity = Esp32s31StaIdentity {
@@ -1055,15 +1044,12 @@ impl ProductionWifiEpochRunner {
                             _fault: ProductionStationResumeFault {
                                 _owner: materialized.owner,
                                 _registers: materialized.registers,
-                                _interrupt_setup: materialized.interrupt_setup,
+                                _interrupts: materialized.interrupts,
                                 _storage: storage,
                                 _board: board,
                                 _phase: failure.resources,
                                 _previous_security: previous_security,
                                 _requested_security: security,
-                                _interrupt_route: interrupt_route,
-                                _mac_runtime: mac_runtime,
-                                _power_runtime: power_runtime,
                             },
                         });
                     }
@@ -1076,25 +1062,17 @@ impl ProductionWifiEpochRunner {
                             _fault: ProductionStationResumeFault {
                                 _owner: materialized.owner,
                                 _registers: failure.registers,
-                                _interrupt_setup: materialized.interrupt_setup,
+                                _interrupts: materialized.interrupts,
                                 _storage: storage,
                                 _board: board,
                                 _phase: failure.resources,
                                 _previous_security: previous_security,
                                 _requested_security: security,
-                                _interrupt_route: interrupt_route,
-                                _mac_runtime: mac_runtime,
-                                _power_runtime: power_runtime,
                             },
                         });
                     }
                 };
-                let interrupt = MacInterruptEpoch::new(
-                    interrupt_route,
-                    materialized.interrupt_setup,
-                    mac_runtime,
-                    power_runtime,
-                );
+                let interrupt = materialized.interrupts;
                 // Dropping the previous security value here zeroizes its PMK
                 // only after the old finite station task returned completely.
                 drop(previous_security);

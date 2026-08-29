@@ -10,7 +10,7 @@ use embassy_net::{Stack, udp::UdpSocket};
 use embassy_time::{Duration, Instant, with_timeout};
 #[cfg(feature = "core0-rx-cycle-telemetry")]
 use open_esp_radio_esp32s31_embassy_wifi::{
-    CORE0_REORDER_CYCLES, CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM,
+    CORE0_AP_RX_CYCLES, CORE0_REORDER_CYCLES, CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM,
 };
 #[cfg(any(
     feature = "core0-rx-cycle-telemetry",
@@ -170,6 +170,8 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         let task_poll_start = telemetry.task_polls.snapshot();
         #[cfg(feature = "core0-rx-cycle-telemetry")]
         let core0_rx_cycle_start = CORE0_RX_CYCLES.snapshot();
+        #[cfg(feature = "core0-rx-cycle-telemetry")]
+        let core0_ap_rx_cycle_start = CORE0_AP_RX_CYCLES.snapshot();
         #[cfg(any(
             feature = "core0-rx-cycle-telemetry",
             feature = "core0-rx-coarse-telemetry"
@@ -558,6 +560,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         #[cfg(feature = "core0-rx-cycle-telemetry")]
         log_open_radio_core0_rx_cycles(
             core0_rx_cycle_start,
+            core0_ap_rx_cycle_start,
             core0_performance_start,
             core0_reorder_start,
             cache_interval,

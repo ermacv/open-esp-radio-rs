@@ -6297,3 +6297,172 @@ fields = [
     "RST_MODEM_SEC",
 ]
 sources = ["ESP_IDF_7B9CC1AC_S31_MODEM_CLOCK", "S31_MODEM_SYSCON_STRUCT"]
+
+[[enum-domains]]
+name = "PhyI2cBbpllCalibrationState"
+description = "Reviewed BBPLL calibration modes selected through the shared analog-I2C master."
+
+[[enum-domains.values]]
+name = "Disabled"
+value = 1
+description = "Select the complete-ROM disabled BBPLL calibration mode."
+sources = ["ROM_REV0_PHY_I2C", "S31_ESP_PACS_SVD"]
+
+[[enum-domains.values]]
+name = "Enabled"
+value = 2
+description = "Select the complete-ROM enabled BBPLL calibration mode."
+sources = ["ROM_REV0_PHY_I2C", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_i2c_host_map"
+peripheral = "I2C_ANA_MST"
+register = "ANA_CONF2"
+fields = [{ field = "PHY_HOST_MAP", source-bit-offset = 0 }]
+value = 0x3fa0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_I2C", "S31_ESP_PACS_SVD"]
+
+[[fixed-register-images]]
+name = "pulse_phy_i2c_host0_reset"
+peripheral = "I2C_ANA_MST"
+register = "I2C0_CTRL"
+value = 0x04000000
+sources = ["ROM_REV0_PHY_I2C", "S31_ESP_PACS_SVD"]
+
+[[fixed-register-images]]
+name = "pulse_phy_i2c_host1_reset"
+peripheral = "I2C_ANA_MST"
+register = "I2C1_CTRL"
+value = 0x04000000
+sources = ["ROM_REV0_PHY_I2C", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_phy_i2c_host0_busy"
+peripheral = "I2C_ANA_MST"
+register = "I2C0_CTRL"
+field = "BUSY"
+sources = ["ROM_REV0_PHY_I2C", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_phy_i2c_host1_busy"
+peripheral = "I2C_ANA_MST"
+register = "I2C1_CTRL"
+field = "BUSY"
+sources = ["ROM_REV0_PHY_I2C", "S31_ESP_PACS_SVD"]
+
+[[zero-based-field-writes]]
+name = "publish_phy_i2c_read_mask"
+peripheral = "I2C_ANA_MST"
+register = "ANA_CONF1"
+fields = ["READ_MASK_COMPLEMENT_LOW", "READ_MASK_COMPLEMENT_HIGH"]
+sources = ["ROM_REV0_PHY_I2C", "S31_ESP_PACS_SVD"]
+
+[[zero-based-field-writes]]
+name = "publish_phy_i2c_host0_command"
+peripheral = "I2C_ANA_MST"
+register = "I2C0_CTRL"
+fields = ["SLAVE_ADDR", "SLAVE_REG_ADDR", "DATA", "READ_WRITE", "START_OR_RESET"]
+sources = ["ROM_REV0_PHY_I2C", "BLOB_LIBPHY_PHY_I2C", "S31_ESP_PACS_SVD"]
+
+[[zero-based-field-writes]]
+name = "publish_phy_i2c_host1_command"
+peripheral = "I2C_ANA_MST"
+register = "I2C1_CTRL"
+fields = ["SLAVE_ADDR", "SLAVE_REG_ADDR", "DATA", "READ_WRITE", "START_OR_RESET"]
+sources = ["ROM_REV0_PHY_I2C", "BLOB_LIBPHY_PHY_I2C", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_phy_i2c_host0_data"
+peripheral = "I2C_ANA_MST"
+register = "I2C0_CTRL"
+field = "DATA"
+sources = ["ROM_REV0_PHY_I2C", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_phy_i2c_host1_data"
+peripheral = "I2C_ANA_MST"
+register = "I2C1_CTRL"
+field = "DATA"
+sources = ["ROM_REV0_PHY_I2C", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_i2c_host0_sda_guard"
+peripheral = "I2C_ANA_MST"
+register = "I2C0_CTRL1"
+fields = [{ field = "SDA_SIDE_GUARD", source-bit-offset = 0 }]
+value = 2
+exposure = "facade"
+sources = ["ROM_REV0_PHY_I2C", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_i2c_host0_scl_duration"
+peripheral = "I2C_ANA_MST"
+register = "I2C0_CTRL1"
+fields = [{ field = "SCL_PULSE_DURATION", source-bit-offset = 0 }]
+value = 4
+exposure = "facade"
+sources = ["ROM_REV0_PHY_I2C", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_i2c_host1_sda_guard"
+peripheral = "I2C_ANA_MST"
+register = "I2C1_CTRL1"
+fields = [{ field = "SDA_SIDE_GUARD", source-bit-offset = 0 }]
+value = 2
+exposure = "facade"
+sources = ["ROM_REV0_PHY_I2C", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_i2c_host1_scl_duration"
+peripheral = "I2C_ANA_MST"
+register = "I2C1_CTRL1"
+fields = [{ field = "SCL_PULSE_DURATION", source-bit-offset = 0 }]
+value = 4
+exposure = "facade"
+sources = ["ROM_REV0_PHY_I2C", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_i2c_hardware_sda_guard"
+peripheral = "I2C_ANA_MST"
+register = "HW_I2C_CTRL"
+fields = [{ field = "SDA_SIDE_GUARD", source-bit-offset = 0 }]
+value = 2
+exposure = "facade"
+sources = ["ROM_REV0_PHY_I2C", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_i2c_hardware_scl_duration"
+peripheral = "I2C_ANA_MST"
+register = "HW_I2C_CTRL"
+fields = [{ field = "SCL_PULSE_DURATION", source-bit-offset = 0 }]
+value = 4
+exposure = "facade"
+sources = ["ROM_REV0_PHY_I2C", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "select_phy_i2c_register_mode"
+peripheral = "I2C_ANA_MST"
+register = "ANA_CONF0"
+fields = [{ field = "PHY_REGISTER_MODE", source-bit-offset = 0 }]
+value = 2
+exposure = "facade"
+sources = ["ROM_REV0_PHY_I2C", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_phy_i2c_register_access"
+peripheral = "I2C_ANA_MST"
+register = "ANA_CONF0"
+fields = [{ field = "PHY_REGISTER_ENABLE", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_I2C", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "set_phy_i2c_bbpll_calibration"
+peripheral = "I2C_ANA_MST"
+register = "ANA_CONF0"
+fields = [{ field = "BBPLL_CAL_MODE", source-bit-offset = 0 }]
+domain = "PhyI2cBbpllCalibrationState"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_I2C", "S31_ESP_PACS_SVD"]

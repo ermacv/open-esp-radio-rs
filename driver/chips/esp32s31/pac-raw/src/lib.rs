@@ -58437,6 +58437,30 @@ pub mod field_read {
     pub fn observe_wifi_baseband_enable(registers: &crate::ModemSysconRadio) -> bool {
         registers.wifi_bb_cfg().read().wifi_enable().bit()
     }
+
+    /// Read `I2C_ANA_MST`.`I2C0_CTRL`.`BUSY` without exposing its register block.
+    #[inline]
+    pub fn observe_phy_i2c_host0_busy(registers: &crate::I2cAnaMst) -> bool {
+        registers.i2c0_ctrl().read().busy().bit()
+    }
+
+    /// Read `I2C_ANA_MST`.`I2C1_CTRL`.`BUSY` without exposing its register block.
+    #[inline]
+    pub fn observe_phy_i2c_host1_busy(registers: &crate::I2cAnaMst) -> bool {
+        registers.i2c1_ctrl().read().busy().bit()
+    }
+
+    /// Read `I2C_ANA_MST`.`I2C0_CTRL`.`DATA` without exposing its register block.
+    #[inline]
+    pub fn observe_phy_i2c_host0_data(registers: &crate::I2cAnaMst) -> u8 {
+        registers.i2c0_ctrl().read().data().bits()
+    }
+
+    /// Read `I2C_ANA_MST`.`I2C1_CTRL`.`DATA` without exposing its register block.
+    #[inline]
+    pub fn observe_phy_i2c_host1_data(registers: &crate::I2cAnaMst) -> u8 {
+        registers.i2c1_ctrl().read().data().bits()
+    }
 }
 
 /// Safe same-sample observations through reviewed SVD fields.
@@ -59692,6 +59716,32 @@ pub mod fixed_register_image {
             registers
                 .imm_sleep_sysclk()
                 .write_with_zero(|writer| writer.bits(0x10000000));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x04000000` to `I2C_ANA_MST`.`I2C0_CTRL`.
+    #[inline]
+    pub fn pulse_phy_i2c_host0_reset(registers: &crate::I2cAnaMst) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .i2c0_ctrl()
+                .write_with_zero(|writer| writer.bits(0x04000000));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x04000000` to `I2C_ANA_MST`.`I2C1_CTRL`.
+    #[inline]
+    pub fn pulse_phy_i2c_host1_reset(registers: &crate::I2cAnaMst) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .i2c1_ctrl()
+                .write_with_zero(|writer| writer.bits(0x04000000));
         }
     }
 }
@@ -61137,6 +61187,87 @@ pub mod zero_based_field_write {
                         .config_8()
                         .bit(config_8_value)
                 });
+        }
+    }
+
+    /// Write `READ_MASK_COMPLEMENT_LOW`, `READ_MASK_COMPLEMENT_HIGH` in `I2C_ANA_MST`.`ANA_CONF1` while publishing zero to every other register bit.
+    #[inline]
+    pub fn publish_phy_i2c_read_mask(
+        registers: &crate::I2cAnaMst,
+        read_mask_complement_low_value: u32,
+        read_mask_complement_high_value: u8,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.ana_conf1().write_with_zero(|writer| {
+                writer
+                    .read_mask_complement_low()
+                    .set(read_mask_complement_low_value)
+                    .read_mask_complement_high()
+                    .set(read_mask_complement_high_value)
+            });
+        }
+    }
+
+    /// Write `SLAVE_ADDR`, `SLAVE_REG_ADDR`, `DATA`, `READ_WRITE`, `START_OR_RESET` in `I2C_ANA_MST`.`I2C0_CTRL` while publishing zero to every other register bit.
+    #[inline]
+    pub fn publish_phy_i2c_host0_command(
+        registers: &crate::I2cAnaMst,
+        slave_addr_value: u8,
+        slave_reg_addr_value: u8,
+        data_value: u8,
+        read_write_value: bool,
+        start_or_reset_value: bool,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.i2c0_ctrl().write_with_zero(|writer| {
+                writer
+                    .slave_addr()
+                    .set(slave_addr_value)
+                    .slave_reg_addr()
+                    .set(slave_reg_addr_value)
+                    .data()
+                    .set(data_value)
+                    .read_write()
+                    .bit(read_write_value)
+                    .start_or_reset()
+                    .bit(start_or_reset_value)
+            });
+        }
+    }
+
+    /// Write `SLAVE_ADDR`, `SLAVE_REG_ADDR`, `DATA`, `READ_WRITE`, `START_OR_RESET` in `I2C_ANA_MST`.`I2C1_CTRL` while publishing zero to every other register bit.
+    #[inline]
+    pub fn publish_phy_i2c_host1_command(
+        registers: &crate::I2cAnaMst,
+        slave_addr_value: u8,
+        slave_reg_addr_value: u8,
+        data_value: u8,
+        read_write_value: bool,
+        start_or_reset_value: bool,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.i2c1_ctrl().write_with_zero(|writer| {
+                writer
+                    .slave_addr()
+                    .set(slave_addr_value)
+                    .slave_reg_addr()
+                    .set(slave_reg_addr_value)
+                    .data()
+                    .set(data_value)
+                    .read_write()
+                    .bit(read_write_value)
+                    .start_or_reset()
+                    .bit(start_or_reset_value)
+            });
         }
     }
 }
@@ -65943,6 +66074,115 @@ pub mod field_replace_modify {
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             writer.rst_modem_sec().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace I2C_ANA_MST.ANA_CONF2 fields [PHY_HOST_MAP] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_i2c_host_map(registers: &crate::I2cAnaMst) {
+        registers.ana_conf2().modify(|_, writer| {
+            let input = 0x00003fa0_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.phy_host_map().bits((input & 0x00003fff) as u16) }
+        });
+    }
+
+    /// Replace I2C_ANA_MST.I2C0_CTRL1 fields [SDA_SIDE_GUARD] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_i2c_host0_sda_guard(registers: &crate::I2cAnaMst) {
+        registers.i2c0_ctrl1().modify(|_, writer| {
+            let input = 0x00000002_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.sda_side_guard().bits((input & 0x0000001f) as u8) }
+        });
+    }
+
+    /// Replace I2C_ANA_MST.I2C0_CTRL1 fields [SCL_PULSE_DURATION] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_i2c_host0_scl_duration(registers: &crate::I2cAnaMst) {
+        registers.i2c0_ctrl1().modify(|_, writer| {
+            let input = 0x00000004_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.scl_pulse_duration().bits((input & 0x0000003f) as u8) }
+        });
+    }
+
+    /// Replace I2C_ANA_MST.I2C1_CTRL1 fields [SDA_SIDE_GUARD] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_i2c_host1_sda_guard(registers: &crate::I2cAnaMst) {
+        registers.i2c1_ctrl1().modify(|_, writer| {
+            let input = 0x00000002_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.sda_side_guard().bits((input & 0x0000001f) as u8) }
+        });
+    }
+
+    /// Replace I2C_ANA_MST.I2C1_CTRL1 fields [SCL_PULSE_DURATION] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_i2c_host1_scl_duration(registers: &crate::I2cAnaMst) {
+        registers.i2c1_ctrl1().modify(|_, writer| {
+            let input = 0x00000004_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.scl_pulse_duration().bits((input & 0x0000003f) as u8) }
+        });
+    }
+
+    /// Replace I2C_ANA_MST.HW_I2C_CTRL fields [SDA_SIDE_GUARD] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_i2c_hardware_sda_guard(registers: &crate::I2cAnaMst) {
+        registers.hw_i2c_ctrl().modify(|_, writer| {
+            let input = 0x00000002_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.sda_side_guard().bits((input & 0x0000001f) as u8) }
+        });
+    }
+
+    /// Replace I2C_ANA_MST.HW_I2C_CTRL fields [SCL_PULSE_DURATION] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_i2c_hardware_scl_duration(registers: &crate::I2cAnaMst) {
+        registers.hw_i2c_ctrl().modify(|_, writer| {
+            let input = 0x00000004_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.scl_pulse_duration().bits((input & 0x0000003f) as u8) }
+        });
+    }
+
+    /// Replace I2C_ANA_MST.ANA_CONF0 fields [PHY_REGISTER_MODE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn select_phy_i2c_register_mode(registers: &crate::I2cAnaMst) {
+        registers.ana_conf0().modify(|_, writer| {
+            let input = 0x00000002_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.phy_register_mode().bits((input & 0x00000003) as u8) }
+        });
+    }
+
+    /// Replace I2C_ANA_MST.ANA_CONF0 fields [PHY_REGISTER_ENABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_phy_i2c_register_access(registers: &crate::I2cAnaMst) {
+        registers.ana_conf0().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.phy_register_enable().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace I2C_ANA_MST.ANA_CONF0 fields [BBPLL_CAL_MODE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn set_phy_i2c_bbpll_calibration(registers: &crate::I2cAnaMst, input: u32) {
+        registers.ana_conf0().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.bbpll_cal_mode().bits((input & 0x00000003) as u8) }
         });
     }
 }

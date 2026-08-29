@@ -315,6 +315,23 @@ impl WifiBasebandAgcUpdateMode {
     }
 }
 
+/// Reviewed BBPLL calibration modes selected through the shared analog-I2C master.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PhyI2cBbpllCalibrationState {
+    /// Select the complete-ROM disabled BBPLL calibration mode.
+    Disabled = 0x00000001,
+    /// Select the complete-ROM enabled BBPLL calibration mode.
+    Enabled = 0x00000002,
+}
+
+impl PhyI2cBbpllCalibrationState {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
 /// One reviewed four-bit Wi-Fi packet-traffic-information value. Its scheduling policy remains outside the PAC.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MacPti(u32);
@@ -4343,6 +4360,69 @@ pub(crate) fn set_bluetooth_modem_security_reset(
     value: ModemSysconResetState,
 ) {
     crate::svd::field_replace_modify::set_bluetooth_modem_security_reset(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `configure_phy_i2c_host_map` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_i2c_host_map(registers: &crate::svd::I2cAnaMst) {
+    crate::svd::field_replace_modify::configure_phy_i2c_host_map(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_i2c_host0_sda_guard` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_i2c_host0_sda_guard(registers: &crate::svd::I2cAnaMst) {
+    crate::svd::field_replace_modify::configure_phy_i2c_host0_sda_guard(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_i2c_host0_scl_duration` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_i2c_host0_scl_duration(registers: &crate::svd::I2cAnaMst) {
+    crate::svd::field_replace_modify::configure_phy_i2c_host0_scl_duration(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_i2c_host1_sda_guard` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_i2c_host1_sda_guard(registers: &crate::svd::I2cAnaMst) {
+    crate::svd::field_replace_modify::configure_phy_i2c_host1_sda_guard(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_i2c_host1_scl_duration` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_i2c_host1_scl_duration(registers: &crate::svd::I2cAnaMst) {
+    crate::svd::field_replace_modify::configure_phy_i2c_host1_scl_duration(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_i2c_hardware_sda_guard` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_i2c_hardware_sda_guard(registers: &crate::svd::I2cAnaMst) {
+    crate::svd::field_replace_modify::configure_phy_i2c_hardware_sda_guard(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_i2c_hardware_scl_duration` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_i2c_hardware_scl_duration(registers: &crate::svd::I2cAnaMst) {
+    crate::svd::field_replace_modify::configure_phy_i2c_hardware_scl_duration(registers);
+}
+
+/// Typed bridge for the reviewed `select_phy_i2c_register_mode` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn select_phy_i2c_register_mode(registers: &crate::svd::I2cAnaMst) {
+    crate::svd::field_replace_modify::select_phy_i2c_register_mode(registers);
+}
+
+/// Typed bridge for the reviewed `enable_phy_i2c_register_access` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_phy_i2c_register_access(registers: &crate::svd::I2cAnaMst) {
+    crate::svd::field_replace_modify::enable_phy_i2c_register_access(registers);
+}
+
+/// Typed bridge for the reviewed `set_phy_i2c_bbpll_calibration` field-replacement transaction.
+#[inline]
+pub(crate) fn set_phy_i2c_bbpll_calibration(
+    registers: &crate::svd::I2cAnaMst,
+    value: PhyI2cBbpllCalibrationState,
+) {
+    crate::svd::field_replace_modify::set_phy_i2c_bbpll_calibration(registers, value.bits());
 }
 
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.

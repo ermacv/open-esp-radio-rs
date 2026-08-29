@@ -68,86 +68,82 @@ impl PlatformClockPowerState {
 
 impl RadioPhyRegisters {
     pub(crate) fn select_hp_active_modem_icg(&mut self) {
-        self.peripherals
-            .pmu_radio
-            .hp_active_icg_modem()
-            .write(|w| w.hp_active_dig_icg_modem_code().active());
+        crate::svd::fixed_register_image::select_hp_active_modem_icg(&self.peripherals.pmu_radio);
     }
 
     pub(crate) fn apply_modem_icg_selection(&mut self) {
-        self.peripherals
-            .pmu_radio
-            .imm_modem_icg()
-            .write(|w| w.update_dig_icg_modem_en().set_bit());
+        crate::svd::fixed_register_image::apply_modem_icg_selection(&self.peripherals.pmu_radio);
     }
 
     pub(crate) fn apply_sleep_icg_selection(&mut self) {
-        self.peripherals
-            .pmu_radio
-            .imm_sleep_sysclk()
-            .write(|w| w.update_dig_icg_switch().set_bit());
+        crate::svd::fixed_register_image::apply_sleep_icg_selection(&self.peripherals.pmu_radio);
     }
 
     pub(crate) fn enable_modem_register_bus_clock(&mut self) {
-        self.peripherals
-            .hp_sys_clkrst_radio
-            .modem_ctrl0()
-            .modify(|_, w| w.modem_clk_en().set_bit());
+        crate::generated::enable_modem_register_bus_clock(&self.peripherals.hp_sys_clkrst_radio);
     }
 
     pub(crate) fn configure_modem_source_clocks(&mut self) {
-        self.peripherals
-            .hp_sys_clkrst_radio
-            .ref_160m_ctrl0()
-            .modify(|_, w| w.ref_160m_clk_en().set_bit());
-        self.peripherals
-            .hp_sys_clkrst_radio
-            .modem_conf()
-            .modify(|_, w| {
-                w.modem_apb_clk_en()
-                    .set_bit()
-                    .modem_rst_en()
-                    .clear_bit()
-                    .modem_clk_en()
-                    .set_bit()
-                    .modem_clk_source_sel()
-                    .set_bit()
-                    .modem_pll_clk_en()
-                    .set_bit()
-                    .modem_xtal_clk_en()
-                    .set_bit()
-            });
+        crate::generated::enable_modem_reference_160m_clock(&self.peripherals.hp_sys_clkrst_radio);
+        crate::generated::configure_modem_source_clocks(&self.peripherals.hp_sys_clkrst_radio);
     }
 
     pub(crate) fn platform_clock_power_observation(&self) -> PlatformClockPowerObservation {
-        let hp_active_icg = self.peripherals.pmu_radio.hp_active_icg_modem().read();
-        let modem_bus = self.peripherals.hp_sys_clkrst_radio.modem_ctrl0().read();
-        let ref_160m = self.peripherals.hp_sys_clkrst_radio.ref_160m_ctrl0().read();
-        let modem_source = self.peripherals.hp_sys_clkrst_radio.modem_conf().read();
+        let hp_active_icg_code =
+            crate::svd::field_read::observe_hp_active_modem_icg_code(&self.peripherals.pmu_radio);
+        let modem_register_bus_clock_enabled =
+            crate::svd::field_read::observe_modem_register_bus_clock(
+                &self.peripherals.hp_sys_clkrst_radio,
+            );
+        let ref_160m_clock_enabled = crate::svd::field_read::observe_modem_reference_160m_clock(
+            &self.peripherals.hp_sys_clkrst_radio,
+        );
+        let (
+            modem_apb_clock_enabled,
+            modem_reset_asserted,
+            modem_source_clock_enabled,
+            modem_pll_selected,
+            modem_pll_clock_enabled,
+            modem_xtal_clock_enabled,
+        ) = crate::svd::field_snapshot_read::observe_modem_source_clocks(
+            &self.peripherals.hp_sys_clkrst_radio,
+        );
         PlatformClockPowerObservation {
-            hp_active_icg_selected: hp_active_icg.hp_active_dig_icg_modem_code().is_active(),
-            modem_register_bus_clock_enabled: modem_bus.modem_clk_en().bit_is_set(),
-            ref_160m_clock_enabled: ref_160m.ref_160m_clk_en().bit_is_set(),
-            modem_source_clocks_configured: modem_source.modem_apb_clk_en().bit_is_set()
-                && modem_source.modem_rst_en().bit_is_clear()
-                && modem_source.modem_clk_en().bit_is_set()
-                && modem_source.modem_clk_source_sel().bit_is_set()
-                && modem_source.modem_pll_clk_en().bit_is_set()
-                && modem_source.modem_xtal_clk_en().bit_is_set(),
+            hp_active_icg_selected: hp_active_icg_code
+                == u8::from(crate::svd::pmu_radio::hp_active_icg_modem::ActiveModemIcgCode::Active),
+            modem_register_bus_clock_enabled,
+            ref_160m_clock_enabled,
+            modem_source_clocks_configured: modem_apb_clock_enabled
+                && !modem_reset_asserted
+                && modem_source_clock_enabled
+                && modem_pll_selected
+                && modem_pll_clock_enabled
+                && modem_xtal_clock_enabled,
         }
     }
 
     fn platform_pll_source_baseline(&self) -> PlatformPllSourceBaseline {
-        let ref_160m = self.peripherals.hp_sys_clkrst_radio.ref_160m_ctrl0().read();
-        let modem = self.peripherals.hp_sys_clkrst_radio.modem_conf().read();
+        let ref_160m_clock_enabled = crate::svd::field_read::observe_modem_reference_160m_clock(
+            &self.peripherals.hp_sys_clkrst_radio,
+        );
+        let (
+            modem_apb_clock_enabled,
+            modem_reset_asserted,
+            modem_source_clock_enabled,
+            modem_pll_selected,
+            modem_pll_clock_enabled,
+            modem_xtal_clock_enabled,
+        ) = crate::svd::field_snapshot_read::observe_modem_source_clocks(
+            &self.peripherals.hp_sys_clkrst_radio,
+        );
         PlatformPllSourceBaseline {
-            ref_160m_clock_enabled: ref_160m.ref_160m_clk_en().bit_is_set(),
-            modem_apb_clock_enabled: modem.modem_apb_clk_en().bit_is_set(),
-            modem_reset_asserted: modem.modem_rst_en().bit_is_set(),
-            modem_source_clock_enabled: modem.modem_clk_en().bit_is_set(),
-            modem_pll_selected: modem.modem_clk_source_sel().bit_is_set(),
-            modem_pll_clock_enabled: modem.modem_pll_clk_en().bit_is_set(),
-            modem_xtal_clock_enabled: modem.modem_xtal_clk_en().bit_is_set(),
+            ref_160m_clock_enabled,
+            modem_apb_clock_enabled,
+            modem_reset_asserted,
+            modem_source_clock_enabled,
+            modem_pll_selected,
+            modem_pll_clock_enabled,
+            modem_xtal_clock_enabled,
         }
     }
 
@@ -163,95 +159,75 @@ impl RadioPhyRegisters {
         let Some(baseline) = self.platform_clock_power.release() else {
             return;
         };
-        self.peripherals
-            .hp_sys_clkrst_radio
-            .ref_160m_ctrl0()
-            .modify(|_, w| w.ref_160m_clk_en().bit(baseline.ref_160m_clock_enabled));
-        self.peripherals
-            .hp_sys_clkrst_radio
-            .modem_conf()
-            .modify(|_, w| {
-                w.modem_apb_clk_en()
-                    .bit(baseline.modem_apb_clock_enabled)
-                    .modem_rst_en()
-                    .bit(baseline.modem_reset_asserted)
-                    .modem_clk_en()
-                    .bit(baseline.modem_source_clock_enabled)
-                    .modem_clk_source_sel()
-                    .bit(baseline.modem_pll_selected)
-                    .modem_pll_clk_en()
-                    .bit(baseline.modem_pll_clock_enabled)
-                    .modem_xtal_clk_en()
-                    .bit(baseline.modem_xtal_clock_enabled)
-            });
+        if baseline.ref_160m_clock_enabled {
+            crate::generated::enable_modem_reference_160m_clock(
+                &self.peripherals.hp_sys_clkrst_radio,
+            );
+        } else {
+            crate::generated::disable_modem_reference_160m_clock(
+                &self.peripherals.hp_sys_clkrst_radio,
+            );
+        }
+        crate::generated::restore_modem_source_clocks(
+            &self.peripherals.hp_sys_clkrst_radio,
+            baseline.modem_apb_clock_enabled,
+            baseline.modem_reset_asserted,
+            baseline.modem_source_clock_enabled,
+            baseline.modem_pll_selected,
+            baseline.modem_pll_clock_enabled,
+            baseline.modem_xtal_clock_enabled,
+        );
     }
 
     #[doc(hidden)]
     pub fn set_rf_circuit_power(&mut self, enabled: bool) {
-        self.peripherals.pmu_radio.rf_pwc().modify(|_, w| {
-            if enabled {
-                w.xpd_rf_circuit().powered_on()
-            } else {
-                w.xpd_rf_circuit().powered_off()
-            }
-        });
+        if enabled {
+            crate::generated::power_on_rf_circuits(&self.peripherals.pmu_radio);
+        } else {
+            crate::generated::power_off_rf_circuits(&self.peripherals.pmu_radio);
+        }
     }
 
     #[doc(hidden)]
     pub fn set_bb_i2c_power_tie(&mut self, enabled: bool) {
-        self.peripherals
-            .pmu_radio
-            .imm_hp_ck_power_0()
-            .modify(|_, w| w.tie_high_xpd_bb_i2c().bit(enabled));
+        if enabled {
+            crate::generated::enable_baseband_i2c_power_tie(&self.peripherals.pmu_radio);
+        } else {
+            crate::generated::disable_baseband_i2c_power_tie(&self.peripherals.pmu_radio);
+        }
     }
 
     #[doc(hidden)]
     pub fn analog_i2c_is_powered(&self) -> bool {
-        self.peripherals
-            .pmu_radio
-            .ana_peri_pwr_ctrl()
-            .read()
-            .xpd_perif_i2c()
-            .bit_is_set()
+        crate::svd::field_read::observe_analog_i2c_power(&self.peripherals.pmu_radio)
     }
 
     #[doc(hidden)]
     pub fn set_analog_i2c_power(&mut self, enabled: bool) {
-        self.peripherals
-            .pmu_radio
-            .ana_peri_pwr_ctrl()
-            .modify(|_, w| w.xpd_perif_i2c().bit(enabled));
+        if enabled {
+            crate::generated::power_on_analog_i2c(&self.peripherals.pmu_radio);
+        } else {
+            crate::generated::power_off_analog_i2c(&self.peripherals.pmu_radio);
+        }
     }
 
     #[doc(hidden)]
     pub fn analog_i2c_reset_is_released(&self) -> bool {
-        self.peripherals
-            .pmu_radio
-            .ana_peri_pwr_ctrl()
-            .read()
-            .rstb_perif_i2c()
-            .bit_is_set()
+        crate::svd::field_read::observe_analog_i2c_reset_release(&self.peripherals.pmu_radio)
     }
 
     #[doc(hidden)]
     pub fn set_analog_i2c_reset_released(&mut self, released: bool) {
-        self.peripherals
-            .pmu_radio
-            .ana_peri_pwr_ctrl()
-            .modify(|_, w| w.rstb_perif_i2c().bit(released));
+        if released {
+            crate::generated::release_analog_i2c_reset(&self.peripherals.pmu_radio);
+        } else {
+            crate::generated::assert_analog_i2c_reset(&self.peripherals.pmu_radio);
+        }
     }
 
     #[doc(hidden)]
     pub fn enable_frontend_baseband_power(&mut self) {
-        self.peripherals
-            .pmu_radio
-            .hp_active_hp_ck_power()
-            .modify(|_, w| {
-                w.rom_open_fe_bb_unknown_low()
-                    .rom_required()
-                    .hp_active_xpd_bb_i2c()
-                    .set_bit()
-            });
+        crate::generated::enable_frontend_baseband_power(&self.peripherals.pmu_radio);
     }
 }
 

@@ -5433,3 +5433,215 @@ field = "REQUESTS_UNKNOWN"
 domain = "MacItwtClearIndex"
 exposure = "facade"
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
+
+[[fixed-register-images]]
+name = "select_hp_active_modem_icg"
+peripheral = "PMU_RADIO"
+register = "HP_ACTIVE_ICG_MODEM"
+value = 0x80000000
+sources = ["ESP_HAL_63E97BE_S31_MODEM_CLOCK_MAP", "S31_PMU_HEADERS"]
+
+[[fixed-register-images]]
+name = "apply_modem_icg_selection"
+peripheral = "PMU_RADIO"
+register = "IMM_MODEM_ICG"
+value = 0x80000000
+sources = ["ESP_HAL_63E97BE_S31_MODEM_CLOCK_MAP", "S31_PMU_HEADERS"]
+
+[[fixed-register-images]]
+name = "apply_sleep_icg_selection"
+peripheral = "PMU_RADIO"
+register = "IMM_SLEEP_SYSCLK"
+value = 0x10000000
+sources = ["ESP_HAL_63E97BE_S31_MODEM_CLOCK_MAP", "S31_PMU_HEADERS"]
+
+[[field-replace-modifies]]
+name = "enable_modem_register_bus_clock"
+peripheral = "HP_SYS_CLKRST_RADIO"
+register = "MODEM_CTRL0"
+fields = [{ field = "MODEM_CLK_EN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_modem_reference_160m_clock"
+peripheral = "HP_SYS_CLKRST_RADIO"
+register = "REF_160M_CTRL0"
+fields = [{ field = "REF_160M_CLK_EN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_modem_source_clocks"
+peripheral = "HP_SYS_CLKRST_RADIO"
+register = "MODEM_CONF"
+fields = [
+    { field = "MODEM_APB_CLK_EN", source-bit-offset = 0 },
+    { field = "MODEM_RST_EN", source-bit-offset = 1 },
+    { field = "MODEM_CLK_EN", source-bit-offset = 2 },
+    { field = "MODEM_CLK_SOURCE_SEL", source-bit-offset = 3 },
+    { field = "MODEM_PLL_CLK_EN", source-bit-offset = 4 },
+    { field = "MODEM_XTAL_CLK_EN", source-bit-offset = 5 },
+]
+value = 0x3d
+exposure = "facade"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_hp_active_modem_icg_code"
+peripheral = "PMU_RADIO"
+register = "HP_ACTIVE_ICG_MODEM"
+field = "HP_ACTIVE_DIG_ICG_MODEM_CODE"
+sources = ["ESP_HAL_63E97BE_S31_MODEM_CLOCK_MAP", "S31_PMU_HEADERS"]
+
+[[field-reads]]
+name = "observe_modem_register_bus_clock"
+peripheral = "HP_SYS_CLKRST_RADIO"
+register = "MODEM_CTRL0"
+field = "MODEM_CLK_EN"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_modem_reference_160m_clock"
+peripheral = "HP_SYS_CLKRST_RADIO"
+register = "REF_160M_CTRL0"
+field = "REF_160M_CLK_EN"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[field-snapshot-reads]]
+name = "observe_modem_source_clocks"
+peripheral = "HP_SYS_CLKRST_RADIO"
+register = "MODEM_CONF"
+fields = [
+    "MODEM_APB_CLK_EN",
+    "MODEM_RST_EN",
+    "MODEM_CLK_EN",
+    "MODEM_CLK_SOURCE_SEL",
+    "MODEM_PLL_CLK_EN",
+    "MODEM_XTAL_CLK_EN",
+]
+sources = ["S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "disable_modem_reference_160m_clock"
+peripheral = "HP_SYS_CLKRST_RADIO"
+register = "REF_160M_CTRL0"
+fields = [{ field = "REF_160M_CLK_EN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[field-argument-modifies]]
+name = "restore_modem_source_clocks"
+peripheral = "HP_SYS_CLKRST_RADIO"
+register = "MODEM_CONF"
+arguments = [
+    { name = "apb_clock_enabled", field = "MODEM_APB_CLK_EN" },
+    { name = "reset_asserted", field = "MODEM_RST_EN" },
+    { name = "source_clock_enabled", field = "MODEM_CLK_EN" },
+    { name = "pll_selected", field = "MODEM_CLK_SOURCE_SEL" },
+    { name = "pll_clock_enabled", field = "MODEM_PLL_CLK_EN" },
+    { name = "xtal_clock_enabled", field = "MODEM_XTAL_CLK_EN" },
+]
+exposure = "facade"
+sources = ["S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "power_on_rf_circuits"
+peripheral = "PMU_RADIO"
+register = "RF_PWC"
+fields = [{ field = "XPD_RF_CIRCUIT", source-bit-offset = 0 }]
+value = 0xffff
+exposure = "facade"
+sources = ["S31_PMU_HEADERS"]
+
+[[field-replace-modifies]]
+name = "power_off_rf_circuits"
+peripheral = "PMU_RADIO"
+register = "RF_PWC"
+fields = [{ field = "XPD_RF_CIRCUIT", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["S31_PMU_HEADERS"]
+
+[[field-replace-modifies]]
+name = "enable_baseband_i2c_power_tie"
+peripheral = "PMU_RADIO"
+register = "IMM_HP_CK_POWER_0"
+fields = [{ field = "TIE_HIGH_XPD_BB_I2C", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW", "S31_PMU_HEADERS"]
+
+[[field-replace-modifies]]
+name = "disable_baseband_i2c_power_tie"
+peripheral = "PMU_RADIO"
+register = "IMM_HP_CK_POWER_0"
+fields = [{ field = "TIE_HIGH_XPD_BB_I2C", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW", "S31_PMU_HEADERS"]
+
+[[field-reads]]
+name = "observe_analog_i2c_power"
+peripheral = "PMU_RADIO"
+register = "ANA_PERI_PWR_CTRL"
+field = "XPD_PERIF_I2C"
+sources = ["BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW", "S31_PMU_HEADERS"]
+
+[[field-replace-modifies]]
+name = "power_on_analog_i2c"
+peripheral = "PMU_RADIO"
+register = "ANA_PERI_PWR_CTRL"
+fields = [{ field = "XPD_PERIF_I2C", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW", "S31_PMU_HEADERS"]
+
+[[field-replace-modifies]]
+name = "power_off_analog_i2c"
+peripheral = "PMU_RADIO"
+register = "ANA_PERI_PWR_CTRL"
+fields = [{ field = "XPD_PERIF_I2C", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW", "S31_PMU_HEADERS"]
+
+[[field-reads]]
+name = "observe_analog_i2c_reset_release"
+peripheral = "PMU_RADIO"
+register = "ANA_PERI_PWR_CTRL"
+field = "RSTB_PERIF_I2C"
+sources = ["BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW", "S31_PMU_HEADERS"]
+
+[[field-replace-modifies]]
+name = "release_analog_i2c_reset"
+peripheral = "PMU_RADIO"
+register = "ANA_PERI_PWR_CTRL"
+fields = [{ field = "RSTB_PERIF_I2C", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW", "S31_PMU_HEADERS"]
+
+[[field-replace-modifies]]
+name = "assert_analog_i2c_reset"
+peripheral = "PMU_RADIO"
+register = "ANA_PERI_PWR_CTRL"
+fields = [{ field = "RSTB_PERIF_I2C", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW", "S31_PMU_HEADERS"]
+
+[[field-replace-modifies]]
+name = "enable_frontend_baseband_power"
+peripheral = "PMU_RADIO"
+register = "HP_ACTIVE_HP_CK_POWER"
+fields = [
+    { field = "ROM_OPEN_FE_BB_UNKNOWN_LOW", source-bit-offset = 0 },
+    { field = "HP_ACTIVE_XPD_BB_I2C", source-bit-offset = 4 },
+]
+value = 0x1f
+exposure = "facade"
+sources = ["ROM_REV0_PHY_OPEN_FE_BB_CLK", "S31_PMU_HEADERS"]

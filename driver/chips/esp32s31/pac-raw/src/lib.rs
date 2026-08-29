@@ -58391,6 +58391,40 @@ pub mod field_read {
     ) -> bool {
         registers.scheduler_state().read().busy().bit()
     }
+
+    /// Read `PMU_RADIO`.`HP_ACTIVE_ICG_MODEM`.`HP_ACTIVE_DIG_ICG_MODEM_CODE` without exposing its register block.
+    #[inline]
+    pub fn observe_hp_active_modem_icg_code(registers: &crate::PmuRadio) -> u8 {
+        registers
+            .hp_active_icg_modem()
+            .read()
+            .hp_active_dig_icg_modem_code()
+            .bits()
+    }
+
+    /// Read `HP_SYS_CLKRST_RADIO`.`MODEM_CTRL0`.`MODEM_CLK_EN` without exposing its register block.
+    #[inline]
+    pub fn observe_modem_register_bus_clock(registers: &crate::HpSysClkrstRadio) -> bool {
+        registers.modem_ctrl0().read().modem_clk_en().bit()
+    }
+
+    /// Read `HP_SYS_CLKRST_RADIO`.`REF_160M_CTRL0`.`REF_160M_CLK_EN` without exposing its register block.
+    #[inline]
+    pub fn observe_modem_reference_160m_clock(registers: &crate::HpSysClkrstRadio) -> bool {
+        registers.ref_160m_ctrl0().read().ref_160m_clk_en().bit()
+    }
+
+    /// Read `PMU_RADIO`.`ANA_PERI_PWR_CTRL`.`XPD_PERIF_I2C` without exposing its register block.
+    #[inline]
+    pub fn observe_analog_i2c_power(registers: &crate::PmuRadio) -> bool {
+        registers.ana_peri_pwr_ctrl().read().xpd_perif_i2c().bit()
+    }
+
+    /// Read `PMU_RADIO`.`ANA_PERI_PWR_CTRL`.`RSTB_PERIF_I2C` without exposing its register block.
+    #[inline]
+    pub fn observe_analog_i2c_reset_release(registers: &crate::PmuRadio) -> bool {
+        registers.ana_peri_pwr_ctrl().read().rstb_perif_i2c().bit()
+    }
 }
 
 /// Safe same-sample observations through reviewed SVD fields.
@@ -58500,6 +58534,22 @@ pub mod field_snapshot_read {
     ) -> (bool, u8) {
         let sample = registers.scheduler_lock_modify_request().read();
         (sample.start().bit(), sample.result().bits())
+    }
+
+    /// Read `MODEM_APB_CLK_EN`, `MODEM_RST_EN`, `MODEM_CLK_EN`, `MODEM_CLK_SOURCE_SEL`, `MODEM_PLL_CLK_EN`, `MODEM_XTAL_CLK_EN` from one `HP_SYS_CLKRST_RADIO`.`MODEM_CONF` sample.
+    #[inline]
+    pub fn observe_modem_source_clocks(
+        registers: &crate::HpSysClkrstRadio,
+    ) -> (bool, bool, bool, bool, bool, bool) {
+        let sample = registers.modem_conf().read();
+        (
+            sample.modem_apb_clk_en().bit(),
+            sample.modem_rst_en().bit(),
+            sample.modem_clk_en().bit(),
+            sample.modem_clk_source_sel().bit(),
+            sample.modem_pll_clk_en().bit(),
+            sample.modem_xtal_clk_en().bit(),
+        )
     }
 }
 
@@ -59418,6 +59468,45 @@ pub mod fixed_register_image {
             registers
                 .scheduler_sram_pointer_prefix()
                 .write_with_zero(|writer| writer.bits(0x2f000000));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x80000000` to `PMU_RADIO`.`HP_ACTIVE_ICG_MODEM`.
+    #[inline]
+    pub fn select_hp_active_modem_icg(registers: &crate::PmuRadio) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .hp_active_icg_modem()
+                .write_with_zero(|writer| writer.bits(0x80000000));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x80000000` to `PMU_RADIO`.`IMM_MODEM_ICG`.
+    #[inline]
+    pub fn apply_modem_icg_selection(registers: &crate::PmuRadio) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .imm_modem_icg()
+                .write_with_zero(|writer| writer.bits(0x80000000));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x10000000` to `PMU_RADIO`.`IMM_SLEEP_SYSCLK`.
+    #[inline]
+    pub fn apply_sleep_icg_selection(registers: &crate::PmuRadio) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .imm_sleep_sysclk()
+                .write_with_zero(|writer| writer.bits(0x10000000));
         }
     }
 }
@@ -64960,6 +65049,167 @@ pub mod field_replace_modify {
             }
         });
     }
+
+    /// Replace HP_SYS_CLKRST_RADIO.MODEM_CTRL0 fields [MODEM_CLK_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_modem_register_bus_clock(registers: &crate::HpSysClkrstRadio) {
+        registers.modem_ctrl0().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.modem_clk_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace HP_SYS_CLKRST_RADIO.REF_160M_CTRL0 fields [REF_160M_CLK_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_modem_reference_160m_clock(registers: &crate::HpSysClkrstRadio) {
+        registers.ref_160m_ctrl0().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.ref_160m_clk_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace HP_SYS_CLKRST_RADIO.MODEM_CONF fields [MODEM_APB_CLK_EN, MODEM_RST_EN, MODEM_CLK_EN, MODEM_CLK_SOURCE_SEL, MODEM_PLL_CLK_EN, MODEM_XTAL_CLK_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_modem_source_clocks(registers: &crate::HpSysClkrstRadio) {
+        registers.modem_conf().modify(|_, writer| {
+            let input = 0x0000003d_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .modem_apb_clk_en()
+                .bit((input & 0x00000001) != 0)
+                .modem_rst_en()
+                .bit(((input >> 1) & 0x00000001) != 0)
+                .modem_clk_en()
+                .bit(((input >> 2) & 0x00000001) != 0)
+                .modem_clk_source_sel()
+                .bit(((input >> 3) & 0x00000001) != 0)
+                .modem_pll_clk_en()
+                .bit(((input >> 4) & 0x00000001) != 0)
+                .modem_xtal_clk_en()
+                .bit(((input >> 5) & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace HP_SYS_CLKRST_RADIO.REF_160M_CTRL0 fields [REF_160M_CLK_EN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn disable_modem_reference_160m_clock(registers: &crate::HpSysClkrstRadio) {
+        registers.ref_160m_ctrl0().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.ref_160m_clk_en().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PMU_RADIO.RF_PWC fields [XPD_RF_CIRCUIT] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn power_on_rf_circuits(registers: &crate::PmuRadio) {
+        registers.rf_pwc().modify(|_, writer| {
+            let input = 0x0000ffff_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.xpd_rf_circuit().bits((input & 0x0000ffff) as u16) }
+        });
+    }
+
+    /// Replace PMU_RADIO.RF_PWC fields [XPD_RF_CIRCUIT] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn power_off_rf_circuits(registers: &crate::PmuRadio) {
+        registers.rf_pwc().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.xpd_rf_circuit().bits((input & 0x0000ffff) as u16) }
+        });
+    }
+
+    /// Replace PMU_RADIO.IMM_HP_CK_POWER_0 fields [TIE_HIGH_XPD_BB_I2C] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_baseband_i2c_power_tie(registers: &crate::PmuRadio) {
+        registers.imm_hp_ck_power_0().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.tie_high_xpd_bb_i2c().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PMU_RADIO.IMM_HP_CK_POWER_0 fields [TIE_HIGH_XPD_BB_I2C] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn disable_baseband_i2c_power_tie(registers: &crate::PmuRadio) {
+        registers.imm_hp_ck_power_0().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.tie_high_xpd_bb_i2c().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PMU_RADIO.ANA_PERI_PWR_CTRL fields [XPD_PERIF_I2C] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn power_on_analog_i2c(registers: &crate::PmuRadio) {
+        registers.ana_peri_pwr_ctrl().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.xpd_perif_i2c().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PMU_RADIO.ANA_PERI_PWR_CTRL fields [XPD_PERIF_I2C] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn power_off_analog_i2c(registers: &crate::PmuRadio) {
+        registers.ana_peri_pwr_ctrl().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.xpd_perif_i2c().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PMU_RADIO.ANA_PERI_PWR_CTRL fields [RSTB_PERIF_I2C] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn release_analog_i2c_reset(registers: &crate::PmuRadio) {
+        registers.ana_peri_pwr_ctrl().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.rstb_perif_i2c().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PMU_RADIO.ANA_PERI_PWR_CTRL fields [RSTB_PERIF_I2C] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn assert_analog_i2c_reset(registers: &crate::PmuRadio) {
+        registers.ana_peri_pwr_ctrl().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.rstb_perif_i2c().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PMU_RADIO.HP_ACTIVE_HP_CK_POWER fields [ROM_OPEN_FE_BB_UNKNOWN_LOW, HP_ACTIVE_XPD_BB_I2C] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_frontend_baseband_power(registers: &crate::PmuRadio) {
+        registers.hp_active_hp_ck_power().modify(|_, writer| {
+            let input = 0x0000001f_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .rom_open_fe_bb_unknown_low()
+                    .bits((input & 0x0000000f) as u8)
+                    .hp_active_xpd_bb_i2c()
+                    .bit(((input >> 4) & 0x00000001) != 0)
+            }
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.
@@ -64991,6 +65241,36 @@ pub mod field_argument_modify {
                     .clk_lp_timer_div_num()
                     .bits(divider_minus_one as u16)
             }
+        });
+    }
+
+    /// Replace HP_SYS_CLKRST_RADIO.MODEM_CONF fields [apb_clock_enabled -> MODEM_APB_CLK_EN, reset_asserted -> MODEM_RST_EN, source_clock_enabled -> MODEM_CLK_EN, pll_selected -> MODEM_CLK_SOURCE_SEL, pll_clock_enabled -> MODEM_PLL_CLK_EN, xtal_clock_enabled -> MODEM_XTAL_CLK_EN] from independently typed arguments while preserving every other bit.
+    #[inline]
+    pub fn restore_modem_source_clocks(
+        registers: &crate::HpSysClkrstRadio,
+        apb_clock_enabled: bool,
+        reset_asserted: bool,
+        source_clock_enabled: bool,
+        pll_selected: bool,
+        pll_clock_enabled: bool,
+        xtal_clock_enabled: bool,
+    ) {
+        registers.modem_conf().modify(|_, writer| {
+            // SAFETY: generator validation proves every typed argument fits its named SVD field;
+            // no whole-register image crosses this API.
+            writer
+                .modem_apb_clk_en()
+                .bit(apb_clock_enabled)
+                .modem_rst_en()
+                .bit(reset_asserted)
+                .modem_clk_en()
+                .bit(source_clock_enabled)
+                .modem_clk_source_sel()
+                .bit(pll_selected)
+                .modem_pll_clk_en()
+                .bit(pll_clock_enabled)
+                .modem_xtal_clk_en()
+                .bit(xtal_clock_enabled)
         });
     }
 }

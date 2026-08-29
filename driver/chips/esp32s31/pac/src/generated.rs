@@ -3859,6 +3859,84 @@ pub(crate) fn publish_bluetooth_scheduler_lock_modify_argument(
     );
 }
 
+/// Typed bridge for the reviewed `enable_modem_register_bus_clock` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_modem_register_bus_clock(registers: &crate::svd::HpSysClkrstRadio) {
+    crate::svd::field_replace_modify::enable_modem_register_bus_clock(registers);
+}
+
+/// Typed bridge for the reviewed `enable_modem_reference_160m_clock` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_modem_reference_160m_clock(registers: &crate::svd::HpSysClkrstRadio) {
+    crate::svd::field_replace_modify::enable_modem_reference_160m_clock(registers);
+}
+
+/// Typed bridge for the reviewed `configure_modem_source_clocks` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_modem_source_clocks(registers: &crate::svd::HpSysClkrstRadio) {
+    crate::svd::field_replace_modify::configure_modem_source_clocks(registers);
+}
+
+/// Typed bridge for the reviewed `disable_modem_reference_160m_clock` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn disable_modem_reference_160m_clock(registers: &crate::svd::HpSysClkrstRadio) {
+    crate::svd::field_replace_modify::disable_modem_reference_160m_clock(registers);
+}
+
+/// Typed bridge for the reviewed `power_on_rf_circuits` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn power_on_rf_circuits(registers: &crate::svd::PmuRadio) {
+    crate::svd::field_replace_modify::power_on_rf_circuits(registers);
+}
+
+/// Typed bridge for the reviewed `power_off_rf_circuits` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn power_off_rf_circuits(registers: &crate::svd::PmuRadio) {
+    crate::svd::field_replace_modify::power_off_rf_circuits(registers);
+}
+
+/// Typed bridge for the reviewed `enable_baseband_i2c_power_tie` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_baseband_i2c_power_tie(registers: &crate::svd::PmuRadio) {
+    crate::svd::field_replace_modify::enable_baseband_i2c_power_tie(registers);
+}
+
+/// Typed bridge for the reviewed `disable_baseband_i2c_power_tie` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn disable_baseband_i2c_power_tie(registers: &crate::svd::PmuRadio) {
+    crate::svd::field_replace_modify::disable_baseband_i2c_power_tie(registers);
+}
+
+/// Typed bridge for the reviewed `power_on_analog_i2c` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn power_on_analog_i2c(registers: &crate::svd::PmuRadio) {
+    crate::svd::field_replace_modify::power_on_analog_i2c(registers);
+}
+
+/// Typed bridge for the reviewed `power_off_analog_i2c` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn power_off_analog_i2c(registers: &crate::svd::PmuRadio) {
+    crate::svd::field_replace_modify::power_off_analog_i2c(registers);
+}
+
+/// Typed bridge for the reviewed `release_analog_i2c_reset` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn release_analog_i2c_reset(registers: &crate::svd::PmuRadio) {
+    crate::svd::field_replace_modify::release_analog_i2c_reset(registers);
+}
+
+/// Typed bridge for the reviewed `assert_analog_i2c_reset` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn assert_analog_i2c_reset(registers: &crate::svd::PmuRadio) {
+    crate::svd::field_replace_modify::assert_analog_i2c_reset(registers);
+}
+
+/// Typed bridge for the reviewed `enable_frontend_baseband_power` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_frontend_baseband_power(registers: &crate::svd::PmuRadio) {
+    crate::svd::field_replace_modify::enable_frontend_baseband_power(registers);
+}
+
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
 #[inline]
 pub(crate) fn configure_shared_modem_low_power_timer(
@@ -3876,6 +3954,28 @@ pub(crate) fn configure_shared_modem_low_power_timer(
         crystal_selected,
         crystal_32khz_selected,
         divider_minus_one.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `restore_modem_source_clocks` multi-argument field-replacement transaction.
+#[inline]
+pub(crate) fn restore_modem_source_clocks(
+    registers: &crate::svd::HpSysClkrstRadio,
+    apb_clock_enabled: bool,
+    reset_asserted: bool,
+    source_clock_enabled: bool,
+    pll_selected: bool,
+    pll_clock_enabled: bool,
+    xtal_clock_enabled: bool,
+) {
+    crate::svd::field_argument_modify::restore_modem_source_clocks(
+        registers,
+        apb_clock_enabled,
+        reset_asserted,
+        source_clock_enabled,
+        pll_selected,
+        pll_clock_enabled,
+        xtal_clock_enabled,
     );
 }
 

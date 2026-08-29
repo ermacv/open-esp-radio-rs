@@ -211,7 +211,10 @@ pub use runtime_resources::{
     BluetoothControllerTaskRuntime,
 };
 #[cfg(any(target_arch = "riscv32", test))]
-pub use scheduler::BluetoothSchedulerInitialized;
+pub use scheduler::{
+    BluetoothDtmEmptySchedulerMergeError, BluetoothDtmEmptySchedulerMergeFailure,
+    BluetoothDtmEmptySchedulerMergePrepared, BluetoothSchedulerInitialized,
+};
 pub use scheduler_config::BluetoothSchedulerSoftwareConfig;
 pub use scheduler_finished_lists::{
     BluetoothSchedulerFinishedListCaptureError, BluetoothSchedulerFinishedListWorker,

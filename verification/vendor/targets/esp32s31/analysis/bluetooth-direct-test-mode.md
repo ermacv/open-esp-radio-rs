@@ -479,9 +479,16 @@ The controller-memory layer now implements the item half of that first merge
 as a separate cancellable typestate. It clears the submitted item's compressed
 hardware-next link while preserving the allocation image and clears the
 source software-next link. The Rust scheduler epoch intentionally replaces the
-three vendor manager pointers instead of materializing their private ABI. No
-public Controller path consumes both halves yet, so this state still performs
-neither a visibility fence nor an MMIO publication.
+three vendor manager pointers instead of materializing their private ABI. At
+this controller-memory boundary alone, the state performs neither a visibility
+fence nor an MMIO publication.
+
+The initialized scheduler now supplies that consuming join. It advances its
+exclusive list from `Empty` to the exact prepared item identity at the same
+time that the controller-memory state applies the empty-list links. A second
+item is rejected unchanged, and pre-publication cancellation requires the
+same identity before restoring both the list epoch and descriptor state. The
+joined state still remains CPU-owned and cannot call a register accessor.
 
 The later common insertion edge supplies the missing source-program order but
 not yet its memory-model contract. It clears item byte `+0x4e`, writes

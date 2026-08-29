@@ -10,6 +10,8 @@
 
 use core::{convert::Infallible, marker::PhantomData};
 
+#[cfg(any(target_arch = "riscv32", test))]
+use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmMemoryGraphEmptyListLinkPrepared;
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphPositionalEventPrepared,
     BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphPrepareFailure,
@@ -372,9 +374,59 @@ impl<Role> BluetoothDtmSchedulerBookkeepingPrepared<Role> {
         BluetoothSchedulerHardwareListIndex::ZERO
     }
 
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) fn prepare_empty_list_link(self) -> BluetoothDtmEmptyListLinkPrepared<Role> {
+        BluetoothDtmEmptyListLinkPrepared {
+            memory: self.memory.prepare_empty_list_link(),
+            packet: self.packet,
+            reservation: self.reservation,
+            _role: PhantomData,
+        }
+    }
+
     /// Cancel before publication and recover the prepared event words.
     pub fn cancel(self) -> BluetoothDtmReviewedEventWordsPrepared<Role> {
         BluetoothDtmReviewedEventWordsPrepared {
+            memory: self.memory.cancel(),
+            packet: self.packet,
+            reservation: self.reservation,
+            _role: PhantomData,
+        }
+    }
+}
+
+/// Internal join candidate after the item-side empty-list transform.
+///
+/// Only the scheduler module can combine this memory owner with its affine
+/// exclusive empty-list epoch. Keeping this type crate-private prevents a
+/// memory-only transition from being mistaken for list ownership.
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) struct BluetoothDtmEmptyListLinkPrepared<Role> {
+    memory: BluetoothDtmMemoryGraphEmptyListLinkPrepared,
+    packet: BluetoothDtmEventPacket,
+    reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+    _role: PhantomData<Role>,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl<Role> BluetoothDtmEmptyListLinkPrepared<Role> {
+    pub(crate) const fn role(&self) -> BluetoothDtmRole {
+        match self.packet {
+            BluetoothDtmEventPacket::Transmitter { .. } => BluetoothDtmRole::Transmitter,
+            BluetoothDtmEventPacket::Receiver => BluetoothDtmRole::Receiver,
+        }
+    }
+
+    pub(crate) const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.memory.scheduler_item_address()
+    }
+
+    pub(crate) const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        BluetoothSchedulerHardwareListIndex::ZERO
+    }
+
+    pub(crate) fn cancel(self) -> BluetoothDtmSchedulerBookkeepingPrepared<Role> {
+        BluetoothDtmSchedulerBookkeepingPrepared {
             memory: self.memory.cancel(),
             packet: self.packet,
             reservation: self.reservation,

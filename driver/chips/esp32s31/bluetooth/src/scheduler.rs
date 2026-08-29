@@ -3,13 +3,18 @@
 use crate::BluetoothSchedulerSoftwareConfig;
 use crate::{
     BluetoothControllerInterruptRuntime, BluetoothControllerPoweredTaskRuntime,
-    BluetoothControllerRuntimeResources,
+    BluetoothControllerRuntimeResources, BluetoothDtmRole,
+    BluetoothDtmSchedulerBookkeepingPrepared,
     controller_hal::BluetoothControllerHalInitialized,
+    dtm_event_prepare::BluetoothDtmEmptyListLinkPrepared,
     resources::{
         BluetoothInterruptBankOwner, BluetoothTaskResources, BluetoothTeardownPendingPlatform,
     },
 };
-use open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareListsCleared;
+use open_esp_radio_esp32s31_hal::{
+    BluetoothControllerSramAddress, BluetoothSchedulerHardwareListIndex,
+    BluetoothSchedulerHardwareListsCleared,
+};
 use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
 
 /// Exclusive empty scheduler-list epoch owned by the source controller.
@@ -19,13 +24,95 @@ use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
 /// which starts empty and cannot be aliased through a vendor container.
 struct BluetoothSchedulerExclusiveListEpoch {
     _hardware_lists_cleared: BluetoothSchedulerHardwareListsCleared,
+    state: BluetoothSchedulerExclusiveListState,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BluetoothSchedulerExclusiveListState {
+    Empty,
+    FirstItemPrepared {
+        address: BluetoothControllerSramAddress,
+    },
 }
 
 impl BluetoothSchedulerExclusiveListEpoch {
     const fn new(hardware_lists_cleared: BluetoothSchedulerHardwareListsCleared) -> Self {
         Self {
             _hardware_lists_cleared: hardware_lists_cleared,
+            state: BluetoothSchedulerExclusiveListState::Empty,
         }
+    }
+
+    fn prepare_first_item(
+        &mut self,
+        address: BluetoothControllerSramAddress,
+    ) -> Result<(), BluetoothDtmEmptySchedulerMergeError> {
+        if self.state != BluetoothSchedulerExclusiveListState::Empty {
+            return Err(BluetoothDtmEmptySchedulerMergeError::ListNotEmpty);
+        }
+        self.state = BluetoothSchedulerExclusiveListState::FirstItemPrepared { address };
+        Ok(())
+    }
+
+    fn cancel_first_item(&mut self, address: BluetoothControllerSramAddress) -> bool {
+        if self.state != (BluetoothSchedulerExclusiveListState::FirstItemPrepared { address }) {
+            return false;
+        }
+        self.state = BluetoothSchedulerExclusiveListState::Empty;
+        true
+    }
+}
+
+/// Why the first DTM item could not consume the exclusive empty-list epoch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothDtmEmptySchedulerMergeError {
+    /// Another item already consumed this scheduler epoch's empty-list proof.
+    ListNotEmpty,
+}
+
+/// Lossless failure to join a DTM item to the exclusive empty scheduler list.
+#[must_use = "the unchanged scheduler-prepared item remains CPU-owned"]
+pub struct BluetoothDtmEmptySchedulerMergeFailure<Role> {
+    error: BluetoothDtmEmptySchedulerMergeError,
+    item: BluetoothDtmSchedulerBookkeepingPrepared<Role>,
+}
+
+impl<Role> BluetoothDtmEmptySchedulerMergeFailure<Role> {
+    /// Exact reason the list owner rejected this item.
+    pub const fn error(&self) -> BluetoothDtmEmptySchedulerMergeError {
+        self.error
+    }
+
+    /// Recover the unchanged CPU-owned item for retry or cancellation.
+    pub fn into_item(self) -> BluetoothDtmSchedulerBookkeepingPrepared<Role> {
+        self.item
+    }
+}
+
+/// First DTM item joined to one exclusive, previously empty scheduler epoch.
+///
+/// The item-side descriptor transform and source-owned list state now agree on
+/// one exact identity. This remains CPU-owned: no visibility fence, hardware
+/// head, RUN command or radio-completion authority has been granted.
+#[must_use = "the merged item must be published through the same scheduler or cancelled"]
+pub struct BluetoothDtmEmptySchedulerMergePrepared<Role> {
+    item: BluetoothDtmEmptyListLinkPrepared<Role>,
+}
+
+impl<Role> BluetoothDtmEmptySchedulerMergePrepared<Role> {
+    /// Role retained by the exact prepared graph.
+    pub const fn role(&self) -> BluetoothDtmRole {
+        self.item.role()
+    }
+
+    /// Address selected by this first-item merge.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.item.scheduler_item_address()
+    }
+
+    /// Hardware list assigned to DTM by its zeroed private context.
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.item.hardware_list_index()
     }
 }
 
@@ -114,6 +201,55 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     /// Whether no software event has entered the initialized epoch.
     pub fn runtime_is_pristine(&self) -> bool {
         self.runtime.is_pristine()
+    }
+
+    /// Join one prepared DTM item to this epoch's still-empty scheduler list.
+    ///
+    /// This consumes no hardware permission. The returned state merely proves
+    /// that the source-owned list and the item-side empty-list links were
+    /// advanced together.
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc failure returns the complete affine CPU-owned DTM item"
+    )]
+    pub fn prepare_dtm_empty_list_merge<Role>(
+        &mut self,
+        item: BluetoothDtmSchedulerBookkeepingPrepared<Role>,
+    ) -> Result<
+        BluetoothDtmEmptySchedulerMergePrepared<Role>,
+        BluetoothDtmEmptySchedulerMergeFailure<Role>,
+    > {
+        let address = item.scheduler_item_address();
+        if let Err(error) = self._scheduler_list.prepare_first_item(address) {
+            return Err(BluetoothDtmEmptySchedulerMergeFailure { error, item });
+        }
+        Ok(BluetoothDtmEmptySchedulerMergePrepared {
+            item: item.prepare_empty_list_link(),
+        })
+    }
+
+    /// Cancel a not-yet-published first-item merge through the same epoch.
+    ///
+    /// A state from another or already advanced scheduler is returned
+    /// unchanged and cannot reopen this list.
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc identity failure returns the complete affine merged item"
+    )]
+    pub fn cancel_dtm_empty_list_merge<Role>(
+        &mut self,
+        merged: BluetoothDtmEmptySchedulerMergePrepared<Role>,
+    ) -> Result<
+        BluetoothDtmSchedulerBookkeepingPrepared<Role>,
+        BluetoothDtmEmptySchedulerMergePrepared<Role>,
+    > {
+        if !self
+            ._scheduler_list
+            .cancel_first_item(merged.scheduler_item_address())
+        {
+            return Err(merged);
+        }
+        Ok(merged.item.cancel())
     }
 
     /// Borrow the matching interrupt and task runtime endpoints from this
@@ -239,7 +375,10 @@ mod tests {
 
     use crate::{BluetoothClockedResources, BluetoothControllerRuntimeResources, BluetoothStopped};
 
-    use super::BluetoothSchedulerHardwareListsCleared;
+    use super::{
+        BluetoothDtmEmptySchedulerMergeError, BluetoothSchedulerExclusiveListEpoch,
+        BluetoothSchedulerHardwareListsCleared,
+    };
 
     static PLATFORM_DROPS: AtomicUsize = AtomicUsize::new(0);
 
@@ -249,6 +388,26 @@ mod tests {
         fn drop(&mut self) {
             PLATFORM_DROPS.fetch_add(1, Ordering::Relaxed);
         }
+    }
+
+    #[test]
+    fn exclusive_empty_epoch_rejects_alias_and_wrong_identity_cancel() {
+        let mut list = BluetoothSchedulerExclusiveListEpoch::new(
+            BluetoothSchedulerHardwareListsCleared::for_validation(),
+        );
+        let first = open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress::new(0x2f00_0100)
+            .expect("first item lies in controller SRAM");
+        let other = open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress::new(0x2f00_0200)
+            .expect("second item lies in controller SRAM");
+
+        assert_eq!(list.prepare_first_item(first), Ok(()));
+        assert_eq!(
+            list.prepare_first_item(other),
+            Err(BluetoothDtmEmptySchedulerMergeError::ListNotEmpty)
+        );
+        assert!(!list.cancel_first_item(other));
+        assert!(list.cancel_first_item(first));
+        assert_eq!(list.prepare_first_item(other), Ok(()));
     }
 
     #[test]

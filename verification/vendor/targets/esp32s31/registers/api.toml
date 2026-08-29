@@ -2006,6 +2006,24 @@ value = 0
 exposure = "facade"
 sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
 
+[[field-replace-modifies]]
+name = "configure_phy_rx_compensation_low"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_SHARED_CONTROL"
+fields = [{ field = "RX_COMPENSATION_LOW_UNKNOWN", source-bit-offset = 0 }]
+value = 0xed
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_rx_compensation_high"
+peripheral = "PHY_AGC_ORACLE"
+register = "RX_COMPENSATION_HIGH_CONTROL"
+fields = [{ field = "RX_COMPENSATION_HIGH_UNKNOWN", source-bit-offset = 0 }]
+value = 0xed
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
 [[fixed-register-images]]
 name = "initialize_rf_rx_saturation_config"
 peripheral = "PHY_AGC_ORACLE"

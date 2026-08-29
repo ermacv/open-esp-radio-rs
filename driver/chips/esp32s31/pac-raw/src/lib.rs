@@ -62490,6 +62490,38 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [RX_COMPENSATION_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_rx_compensation_low(registers: &crate::PhyAgcOracle) {
+        registers.agc_shared_control().modify(|_, writer| {
+            let input = 0x000000ed_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .rx_compensation_low_unknown()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.RX_COMPENSATION_HIGH_CONTROL fields [RX_COMPENSATION_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_rx_compensation_high(registers: &crate::PhyAgcOracle) {
+        registers
+            .rx_compensation_high_control()
+            .modify(|_, writer| {
+                let input = 0x000000ed_u32;
+                // SAFETY: generator validation proves every logical input projection
+                // fits its named SVD field; no whole-register image crosses this API.
+                unsafe {
+                    writer
+                        .rx_compensation_high_unknown()
+                        .bits((input & 0x000000ff) as u8)
+                }
+            });
+    }
+
     /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A fields [COMPRESSED_SRAM_POINTER] from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_memory_list_1_pointer_a(registers: &crate::BluetoothControllerCore) {

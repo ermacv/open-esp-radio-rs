@@ -79,10 +79,8 @@ impl RadioPhyRegisters {
     /// Publish both complete pinned RX-compensation fields in order.
     pub fn configure_rx_compensation(&mut self) {
         let agc = &self.peripherals.phy_agc_oracle;
-        agc.agc_shared_control()
-            .modify(|_, w| w.rx_compensation_low_unknown().set(0xed));
-        agc.rx_compensation_high_control()
-            .modify(|_, w| w.rx_compensation_high_unknown().set(0xed));
+        super::generated::configure_phy_rx_compensation_low(agc);
+        super::generated::configure_phy_rx_compensation_high(agc);
     }
 
     /// Pulse the generated DC-memory clear field through two fresh RMWs.

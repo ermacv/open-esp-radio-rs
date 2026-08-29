@@ -644,17 +644,12 @@ impl RadioPhyRegisters {
     /// Apply all six ordered PA-on configuration operations.
     pub fn configure_tx_pa_on(&mut self) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        bb.baseband_tx_pa_control()
-            .modify(|_, w| w.pa_on_field_unknown().set(0x14));
-        bb.tx_pa_control_0()
-            .modify(|_, w| w.pa_on_high_unknown().set(0x78));
+        super::generated::configure_phy_tx_pa_on_field(bb);
+        super::generated::configure_phy_tx_pa_on_high_0(bb);
         super::svd::fixed_register_image::initialize_tx_pa_table(bb);
-        bb.baseband_tx_pa_timing()
-            .modify(|_, w| w.pa_on_timing_unknown().set(0x1e));
-        bb.tx_pa_control_1()
-            .modify(|_, w| w.pa_on_high_unknown().set(0x0a0e));
-        bb.tx_pa_control_1()
-            .modify(|_, w| w.pa_on_bt_delay().set(0xc8));
+        super::generated::configure_phy_tx_pa_on_timing(bb);
+        super::generated::configure_phy_tx_pa_on_high_1(bb);
+        super::generated::configure_phy_tx_pa_on_bt_delay(bb);
     }
 
     /// Apply the local prefix of complete rev0 ROM `phy_bb_reg_init`.

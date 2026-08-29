@@ -68243,6 +68243,73 @@ pub mod field_replace_modify {
             }
         });
     }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_TX_PA_CONTROL fields [PA_ON_FIELD_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_tx_pa_on_field(registers: &crate::PhyBasebandConfigOracle) {
+        registers.baseband_tx_pa_control().modify(|_, writer| {
+            let input = 0x00000014_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .pa_on_field_unknown()
+                    .bits((input & 0x000003ff) as u16)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_PA_CONTROL_0 fields [PA_ON_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_tx_pa_on_high_0(registers: &crate::PhyBasebandConfigOracle) {
+        registers.tx_pa_control_0().modify(|_, writer| {
+            let input = 0x00000078_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.pa_on_high_unknown().bits((input & 0x000000ff) as u8) }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_TX_PA_TIMING fields [PA_ON_TIMING_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_tx_pa_on_timing(registers: &crate::PhyBasebandConfigOracle) {
+        registers.baseband_tx_pa_timing().modify(|_, writer| {
+            let input = 0x0000001e_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .pa_on_timing_unknown()
+                    .bits((input & 0x000003ff) as u16)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_PA_CONTROL_1 fields [PA_ON_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_tx_pa_on_high_1(registers: &crate::PhyBasebandConfigOracle) {
+        registers.tx_pa_control_1().modify(|_, writer| {
+            let input = 0x00000a0e_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .pa_on_high_unknown()
+                    .bits((input & 0x0000ffff) as u16)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.TX_PA_CONTROL_1 fields [PA_ON_BT_DELAY] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_tx_pa_on_bt_delay(registers: &crate::PhyBasebandConfigOracle) {
+        registers.tx_pa_control_1().modify(|_, writer| {
+            let input = 0x000000c8_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.pa_on_bt_delay().bits((input & 0x000000ff) as u8) }
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.

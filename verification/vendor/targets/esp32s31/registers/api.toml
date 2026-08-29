@@ -8352,3 +8352,48 @@ fields = [{ field = "TX_RATE_LOW_UNKNOWN", source-bit-offset = 0 }]
 value = 2
 exposure = "facade"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_tx_pa_on_field"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_TX_PA_CONTROL"
+fields = [{ field = "PA_ON_FIELD_UNKNOWN", source-bit-offset = 0 }]
+value = 0x14
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_tx_pa_on_high_0"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_PA_CONTROL_0"
+fields = [{ field = "PA_ON_HIGH_UNKNOWN", source-bit-offset = 0 }]
+value = 0x78
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_tx_pa_on_timing"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_TX_PA_TIMING"
+fields = [{ field = "PA_ON_TIMING_UNKNOWN", source-bit-offset = 0 }]
+value = 0x1e
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_tx_pa_on_high_1"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_PA_CONTROL_1"
+fields = [{ field = "PA_ON_HIGH_UNKNOWN", source-bit-offset = 0 }]
+value = 0x0a0e
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_tx_pa_on_bt_delay"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_PA_CONTROL_1"
+fields = [{ field = "PA_ON_BT_DELAY", source-bit-offset = 0 }]
+value = 0xc8
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]

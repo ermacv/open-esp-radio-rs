@@ -6065,6 +6065,36 @@ pub(crate) fn configure_phy_i2c_tx_rate_low(registers: &crate::svd::PhyBasebandC
     crate::svd::field_replace_modify::configure_phy_i2c_tx_rate_low(registers);
 }
 
+/// Typed bridge for the reviewed `configure_phy_tx_pa_on_field` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_tx_pa_on_field(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::configure_phy_tx_pa_on_field(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_tx_pa_on_high_0` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_tx_pa_on_high_0(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::configure_phy_tx_pa_on_high_0(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_tx_pa_on_timing` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_tx_pa_on_timing(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::configure_phy_tx_pa_on_timing(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_tx_pa_on_high_1` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_tx_pa_on_high_1(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::configure_phy_tx_pa_on_high_1(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_tx_pa_on_bt_delay` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_tx_pa_on_bt_delay(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::configure_phy_tx_pa_on_bt_delay(registers);
+}
+
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
 #[inline]
 pub(crate) fn configure_shared_modem_low_power_timer(

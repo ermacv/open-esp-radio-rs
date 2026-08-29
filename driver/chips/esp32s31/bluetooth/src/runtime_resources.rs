@@ -164,11 +164,6 @@ impl<const SCHEDULER_CAPACITY: usize>
         self.software.scheduler_lock_modify_events()
     }
 
-    /// The sole scheduler lock/modify worker for this powered epoch.
-    pub fn scheduler_lock_modify_worker(&mut self) -> &mut BluetoothSchedulerLockModifyWorker {
-        self.software.scheduler_lock_modify_worker()
-    }
-
     /// The sole bounded finished-list worker for this powered epoch.
     pub fn scheduler_finished_lists(&mut self) -> &mut BluetoothSchedulerFinishedListWorker {
         self.software.scheduler_finished_lists()

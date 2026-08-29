@@ -5731,6 +5731,72 @@ pub(crate) fn configure_phy_agc_post_initialization_high(registers: &crate::svd:
     crate::svd::field_replace_modify::configure_phy_agc_post_initialization_high(registers);
 }
 
+/// Typed bridge for the reviewed `configure_enabled_rx_11b_path_0_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_enabled_rx_11b_path_0_high(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::configure_enabled_rx_11b_path_0_high(registers);
+}
+
+/// Typed bridge for the reviewed `configure_enabled_rx_11b_path_0_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_enabled_rx_11b_path_0_low(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::configure_enabled_rx_11b_path_0_low(registers);
+}
+
+/// Typed bridge for the reviewed `configure_enabled_rx_11b_path_1_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_enabled_rx_11b_path_1_high(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::configure_enabled_rx_11b_path_1_high(registers);
+}
+
+/// Typed bridge for the reviewed `configure_enabled_rx_11b_path_1_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_enabled_rx_11b_path_1_low(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::configure_enabled_rx_11b_path_1_low(registers);
+}
+
+/// Typed bridge for the reviewed `configure_enabled_rx_11b_mode` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_enabled_rx_11b_mode(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::configure_enabled_rx_11b_mode(registers);
+}
+
+/// Typed bridge for the reviewed `configure_disabled_rx_11b_path_0_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_disabled_rx_11b_path_0_high(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::configure_disabled_rx_11b_path_0_high(registers);
+}
+
+/// Typed bridge for the reviewed `configure_disabled_rx_11b_path_0_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_disabled_rx_11b_path_0_low(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::configure_disabled_rx_11b_path_0_low(registers);
+}
+
+/// Typed bridge for the reviewed `configure_disabled_rx_11b_path_1_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_disabled_rx_11b_path_1_high(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::configure_disabled_rx_11b_path_1_high(registers);
+}
+
+/// Typed bridge for the reviewed `configure_disabled_rx_11b_path_1_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_disabled_rx_11b_path_1_low(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::configure_disabled_rx_11b_path_1_low(registers);
+}
+
+/// Typed bridge for the reviewed `configure_disabled_rx_11b_mode` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_disabled_rx_11b_mode(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::configure_disabled_rx_11b_mode(registers);
+}
+
+/// Typed bridge for the reviewed `configure_rx_11b_optimization_window` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_rx_11b_optimization_window(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::configure_rx_11b_optimization_window(registers);
+}
+
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
 #[inline]
 pub(crate) fn configure_shared_modem_low_power_timer(

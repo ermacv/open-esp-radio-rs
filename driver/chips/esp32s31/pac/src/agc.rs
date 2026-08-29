@@ -15,14 +15,6 @@ const fn phy_low_rate_state(enabled: bool) -> PhyLowRateState {
     }
 }
 
-const fn rx_11b_values(enabled: bool) -> (u8, u8, u8, u8, u8) {
-    if enabled {
-        (0x3f, 0x21, 0x21, 0x03, 0x09)
-    } else {
-        (0x3e, 0x18, 0x18, 0x04, 0x06)
-    }
-}
-
 impl RadioPhyRegisters {
     /// Enable or disable the complete three-edge PHY low-rate path.
     ///
@@ -208,29 +200,19 @@ impl RadioPhyRegisters {
     /// Apply either complete branch of rev0 ROM `phy_rx_11b_opt`.
     pub fn configure_rx_11b_optimization(&mut self, enabled: bool) {
         let agc = &self.peripherals.phy_agc_oracle;
-        let (path0_high, path0_low, path1_high, path1_low, mode) = rx_11b_values(enabled);
-        agc.rx_11b_path_control_0()
-            .modify(|_, w| w.rx_11b_high_unknown().set(path0_high));
-        agc.rx_11b_path_control_0()
-            .modify(|_, w| w.rx_11b_low_unknown().set(path0_low));
-        agc.rx_11b_path_control_1()
-            .modify(|_, w| w.rx_11b_high_unknown().set(path1_high));
-        agc.rx_11b_path_control_1()
-            .modify(|_, w| w.rx_11b_low_unknown().set(path1_low));
-        agc.rx_11b_mode_control()
-            .modify(|_, w| w.rx_11b_mode_unknown().set(mode));
-        agc.rx_11b_window_control()
-            .modify(|_, w| w.window_unknown().set(0x1c8));
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::rx_11b_values;
-
-    #[test]
-    fn both_rx_11b_branches_keep_complete_rom_values() {
-        assert_eq!(rx_11b_values(true), (0x3f, 0x21, 0x21, 3, 9));
-        assert_eq!(rx_11b_values(false), (0x3e, 0x18, 0x18, 4, 6));
+        if enabled {
+            super::generated::configure_enabled_rx_11b_path_0_high(agc);
+            super::generated::configure_enabled_rx_11b_path_0_low(agc);
+            super::generated::configure_enabled_rx_11b_path_1_high(agc);
+            super::generated::configure_enabled_rx_11b_path_1_low(agc);
+            super::generated::configure_enabled_rx_11b_mode(agc);
+        } else {
+            super::generated::configure_disabled_rx_11b_path_0_high(agc);
+            super::generated::configure_disabled_rx_11b_path_0_low(agc);
+            super::generated::configure_disabled_rx_11b_path_1_high(agc);
+            super::generated::configure_disabled_rx_11b_path_1_low(agc);
+            super::generated::configure_disabled_rx_11b_mode(agc);
+        }
+        super::generated::configure_rx_11b_optimization_window(agc);
     }
 }

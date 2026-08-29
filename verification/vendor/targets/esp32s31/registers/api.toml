@@ -7890,3 +7890,102 @@ fields = [{ field = "HIGH_UNKNOWN", source-bit-offset = 0 }]
 value = 0x17
 exposure = "facade"
 sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_enabled_rx_11b_path_0_high"
+peripheral = "PHY_AGC_ORACLE"
+register = "RX_11B_PATH_CONTROL_0"
+fields = [{ field = "RX_11B_HIGH_UNKNOWN", source-bit-offset = 0 }]
+value = 0x3f
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_enabled_rx_11b_path_0_low"
+peripheral = "PHY_AGC_ORACLE"
+register = "RX_11B_PATH_CONTROL_0"
+fields = [{ field = "RX_11B_LOW_UNKNOWN", source-bit-offset = 0 }]
+value = 0x21
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_enabled_rx_11b_path_1_high"
+peripheral = "PHY_AGC_ORACLE"
+register = "RX_11B_PATH_CONTROL_1"
+fields = [{ field = "RX_11B_HIGH_UNKNOWN", source-bit-offset = 0 }]
+value = 0x21
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_enabled_rx_11b_path_1_low"
+peripheral = "PHY_AGC_ORACLE"
+register = "RX_11B_PATH_CONTROL_1"
+fields = [{ field = "RX_11B_LOW_UNKNOWN", source-bit-offset = 0 }]
+value = 0x03
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_enabled_rx_11b_mode"
+peripheral = "PHY_AGC_ORACLE"
+register = "RX_11B_MODE_CONTROL"
+fields = [{ field = "RX_11B_MODE_UNKNOWN", source-bit-offset = 0 }]
+value = 0x09
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_disabled_rx_11b_path_0_high"
+peripheral = "PHY_AGC_ORACLE"
+register = "RX_11B_PATH_CONTROL_0"
+fields = [{ field = "RX_11B_HIGH_UNKNOWN", source-bit-offset = 0 }]
+value = 0x3e
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_disabled_rx_11b_path_0_low"
+peripheral = "PHY_AGC_ORACLE"
+register = "RX_11B_PATH_CONTROL_0"
+fields = [{ field = "RX_11B_LOW_UNKNOWN", source-bit-offset = 0 }]
+value = 0x18
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_disabled_rx_11b_path_1_high"
+peripheral = "PHY_AGC_ORACLE"
+register = "RX_11B_PATH_CONTROL_1"
+fields = [{ field = "RX_11B_HIGH_UNKNOWN", source-bit-offset = 0 }]
+value = 0x18
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_disabled_rx_11b_path_1_low"
+peripheral = "PHY_AGC_ORACLE"
+register = "RX_11B_PATH_CONTROL_1"
+fields = [{ field = "RX_11B_LOW_UNKNOWN", source-bit-offset = 0 }]
+value = 0x04
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_disabled_rx_11b_mode"
+peripheral = "PHY_AGC_ORACLE"
+register = "RX_11B_MODE_CONTROL"
+fields = [{ field = "RX_11B_MODE_UNKNOWN", source-bit-offset = 0 }]
+value = 0x06
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_rx_11b_optimization_window"
+peripheral = "PHY_AGC_ORACLE"
+register = "RX_11B_WINDOW_CONTROL"
+fields = [{ field = "WINDOW_UNKNOWN", source-bit-offset = 0 }]
+value = 0x1c8
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]

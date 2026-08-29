@@ -67589,6 +67589,151 @@ pub mod field_replace_modify {
             unsafe { writer.high_unknown().bits((input & 0x0000007f) as u8) }
         });
     }
+
+    /// Replace PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_0 fields [RX_11B_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_enabled_rx_11b_path_0_high(registers: &crate::PhyAgcOracle) {
+        registers.rx_11b_path_control_0().modify(|_, writer| {
+            let input = 0x0000003f_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .rx_11b_high_unknown()
+                    .bits((input & 0x0000003f) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_0 fields [RX_11B_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_enabled_rx_11b_path_0_low(registers: &crate::PhyAgcOracle) {
+        registers.rx_11b_path_control_0().modify(|_, writer| {
+            let input = 0x00000021_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.rx_11b_low_unknown().bits((input & 0x0000003f) as u8) }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_1 fields [RX_11B_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_enabled_rx_11b_path_1_high(registers: &crate::PhyAgcOracle) {
+        registers.rx_11b_path_control_1().modify(|_, writer| {
+            let input = 0x00000021_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .rx_11b_high_unknown()
+                    .bits((input & 0x0000003f) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_1 fields [RX_11B_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_enabled_rx_11b_path_1_low(registers: &crate::PhyAgcOracle) {
+        registers.rx_11b_path_control_1().modify(|_, writer| {
+            let input = 0x00000003_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.rx_11b_low_unknown().bits((input & 0x0000000f) as u8) }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.RX_11B_MODE_CONTROL fields [RX_11B_MODE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_enabled_rx_11b_mode(registers: &crate::PhyAgcOracle) {
+        registers.rx_11b_mode_control().modify(|_, writer| {
+            let input = 0x00000009_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .rx_11b_mode_unknown()
+                    .bits((input & 0x0000000f) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_0 fields [RX_11B_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_disabled_rx_11b_path_0_high(registers: &crate::PhyAgcOracle) {
+        registers.rx_11b_path_control_0().modify(|_, writer| {
+            let input = 0x0000003e_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .rx_11b_high_unknown()
+                    .bits((input & 0x0000003f) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_0 fields [RX_11B_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_disabled_rx_11b_path_0_low(registers: &crate::PhyAgcOracle) {
+        registers.rx_11b_path_control_0().modify(|_, writer| {
+            let input = 0x00000018_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.rx_11b_low_unknown().bits((input & 0x0000003f) as u8) }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_1 fields [RX_11B_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_disabled_rx_11b_path_1_high(registers: &crate::PhyAgcOracle) {
+        registers.rx_11b_path_control_1().modify(|_, writer| {
+            let input = 0x00000018_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .rx_11b_high_unknown()
+                    .bits((input & 0x0000003f) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_1 fields [RX_11B_LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_disabled_rx_11b_path_1_low(registers: &crate::PhyAgcOracle) {
+        registers.rx_11b_path_control_1().modify(|_, writer| {
+            let input = 0x00000004_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.rx_11b_low_unknown().bits((input & 0x0000000f) as u8) }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.RX_11B_MODE_CONTROL fields [RX_11B_MODE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_disabled_rx_11b_mode(registers: &crate::PhyAgcOracle) {
+        registers.rx_11b_mode_control().modify(|_, writer| {
+            let input = 0x00000006_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .rx_11b_mode_unknown()
+                    .bits((input & 0x0000000f) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.RX_11B_WINDOW_CONTROL fields [WINDOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_rx_11b_optimization_window(registers: &crate::PhyAgcOracle) {
+        registers.rx_11b_window_control().modify(|_, writer| {
+            let input = 0x000001c8_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.window_unknown().bits((input & 0x000001ff) as u16) }
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.

@@ -31,9 +31,10 @@
 //! The exact item can then leave the source-owned software list once and a
 //! fresh primary scheduler event drives the finite post-unlink return gate;
 //! busy or command-pending events retain ownership without polling, while
-//! ready permits TX and RX-non-success recycle to return the CPU graph and its
-//! exact timeline reservation. RX success remains hardware-owned until its
-//! returned-header and swap-reserve ownership is closed.
+//! ready permits TX and RX-non-success recycle to release the exact timeline
+//! reservation before returning the CPU graph. RX success remains
+//! hardware-owned until its returned-header and swap-reserve ownership is
+//! closed.
 //! Controller-SRAM allocation geometry and result parsing live in the separate
 //! `open-esp-radio-esp32s31-bluetooth-memory` layer below this LLL boundary;
 //! one bounded DTM RX transition accounts a result word without claiming its

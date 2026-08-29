@@ -1326,7 +1326,7 @@ impl BluetoothDtmMemoryGraphRecyclePrepared {
     /// Vendor order removes the completed-queue link first and then clears the
     /// compressed hardware-next link while preserving its non-link prefix.
     #[doc(hidden)]
-    pub fn commit(self) -> BluetoothDtmMemoryGraphRecycled {
+    pub fn commit(self) -> BluetoothDtmMemoryGraphRecycleCleaned {
         let Self {
             completed,
             removal: _,
@@ -1344,9 +1344,38 @@ impl BluetoothDtmMemoryGraphRecyclePrepared {
             hardware_next & !LOW_TWENTY_MASK,
         );
 
-        BluetoothDtmMemoryGraphRecycled {
-            owner: BluetoothDtmMemoryGraphCpuOwned { storage, binding },
+        BluetoothDtmMemoryGraphRecycleCleaned {
+            storage,
+            binding,
             status,
+        }
+    }
+}
+
+/// Graph whose reviewed SRAM recycle suffix is complete while upper scheduler
+/// ownership is still being released.
+///
+/// This state deliberately exposes no CPU-owned graph. The composing
+/// scheduler must release the exact timeline reservation and source-list epoch
+/// before converting it into [`BluetoothDtmMemoryGraphRecycled`].
+#[must_use = "the cleaned graph must wait for complete scheduler release"]
+pub struct BluetoothDtmMemoryGraphRecycleCleaned {
+    storage: Pin<&'static mut BluetoothDtmMemoryGraphStorage>,
+    binding: BluetoothDtmMemoryGraphBinding,
+    status: BluetoothDtmSchedulerItemCompletionStatus,
+}
+
+impl BluetoothDtmMemoryGraphRecycleCleaned {
+    /// Complete the lower memory transition after the upper scheduler has
+    /// released both its timeline reservation and source-list epoch.
+    #[doc(hidden)]
+    pub fn finish_after_scheduler_release(self) -> BluetoothDtmMemoryGraphRecycled {
+        BluetoothDtmMemoryGraphRecycled {
+            owner: BluetoothDtmMemoryGraphCpuOwned {
+                storage: self.storage,
+                binding: self.binding,
+            },
+            status: self.status,
         }
     }
 }
@@ -2286,7 +2315,8 @@ mod tests {
             Ok(prepared) => prepared,
             Err(_) => panic!("the bound removal proof must authorize the exact completed graph"),
         };
-        let (owner, status) = prepared.commit().into_parts();
+        let cleaned = prepared.commit();
+        let (owner, status) = cleaned.finish_after_scheduler_release().into_parts();
         assert_eq!(
             status,
             BluetoothDtmSchedulerItemCompletionStatus::NonSuccess(

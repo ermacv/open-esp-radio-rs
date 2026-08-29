@@ -1015,9 +1015,11 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
 
         let BluetoothDtmSchedulerSoftwareListRemovalReady { item, _removal } = ready;
         match item.recycle(self.runtime.scheduler_timeline_mut(), _removal) {
-            Ok(recycled) => {
+            Ok(timeline_released) => {
                 self._scheduler_list.commit_recycled_first_item();
-                BluetoothDtmSchedulerRecycleStep::Recycled(recycled)
+                BluetoothDtmSchedulerRecycleStep::Recycled(
+                    timeline_released.finish_source_list_release(),
+                )
             }
             Err(failure) => {
                 let (error, item, removal) = failure.into_parts();

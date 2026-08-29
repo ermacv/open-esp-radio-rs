@@ -13,7 +13,8 @@ use core::{convert::Infallible, marker::PhantomData};
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmMemoryGraphCompletionObservation, BluetoothDtmMemoryGraphCompletionObserved,
-    BluetoothDtmMemoryGraphRecycleError, BluetoothDtmSchedulerItemCompletionStatus,
+    BluetoothDtmMemoryGraphRecycleCleaned, BluetoothDtmMemoryGraphRecycleError,
+    BluetoothDtmSchedulerItemCompletionStatus,
 };
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphPositionalEventPrepared,
@@ -571,7 +572,10 @@ impl<Role> BluetoothDtmCompletionObservedEvent<Role> {
         self,
         timeline: &mut crate::BluetoothSchedulerTimeline<CAPACITY>,
         removal: BluetoothSchedulerSoftwareListRemovalReady,
-    ) -> Result<BluetoothDtmRecycledEvent<Role>, BluetoothDtmCompletionRecycleFailure<Role>> {
+    ) -> Result<
+        BluetoothDtmRecycleTimelineReleasedEvent<Role>,
+        BluetoothDtmCompletionRecycleFailure<Role>,
+    > {
         let Self {
             memory,
             packet,
@@ -612,13 +616,11 @@ impl<Role> BluetoothDtmCompletionObservedEvent<Role> {
                 });
             }
         };
-        let recycled = prepared.commit();
+        let memory = prepared.commit();
         release.commit();
-        let (memory, status) = recycled.into_parts();
-        Ok(BluetoothDtmRecycledEvent {
+        Ok(BluetoothDtmRecycleTimelineReleasedEvent {
             memory,
             packet,
-            status,
             _role: PhantomData,
         })
     }
@@ -650,6 +652,30 @@ impl<Role> BluetoothDtmCompletionRecycleFailure<Role> {
         BluetoothSchedulerSoftwareListRemovalReady,
     ) {
         (self.error, self.item, self.removal)
+    }
+}
+
+/// SRAM-cleaned event after the exact timeline reservation was released.
+///
+/// CPU graph ownership is still withheld until the source scheduler list has
+/// committed its removal-ready epoch back to Empty.
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct BluetoothDtmRecycleTimelineReleasedEvent<Role> {
+    memory: BluetoothDtmMemoryGraphRecycleCleaned,
+    packet: BluetoothDtmEventPacket,
+    _role: PhantomData<Role>,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<Role> BluetoothDtmRecycleTimelineReleasedEvent<Role> {
+    pub(crate) fn finish_source_list_release(self) -> BluetoothDtmRecycledEvent<Role> {
+        let (memory, status) = self.memory.finish_after_scheduler_release().into_parts();
+        BluetoothDtmRecycledEvent {
+            memory,
+            packet: self.packet,
+            status,
+            _role: PhantomData,
+        }
     }
 }
 

@@ -80,10 +80,10 @@ pub use bluetooth::{
     BluetoothSchedulerLockModifyPublished, BluetoothSchedulerLockModifyRequest,
     BluetoothSchedulerLockModifyTaskObservation, BluetoothSchedulerReferenceGateObservation,
     BluetoothSchedulerRunEventPublished, BluetoothSchedulerRunInterruptsPrepared,
-    BluetoothSchedulerSoftwareListRemovalDisposition,
-    BluetoothSchedulerSoftwareListRemovalObservation,
-    BluetoothSchedulerSoftwareListRemovalTaskObservation, BluetoothSchedulerWorkObservation,
-    BluetoothTaskOwner, BluetoothTaskOwnerReuniteError, BluetoothTaskOwnerReuniteFailure,
+    BluetoothSchedulerSoftwareListRemovalIdle, BluetoothSchedulerSoftwareListRemovalInterruptStep,
+    BluetoothSchedulerSoftwareListRemovalJoin, BluetoothSchedulerSoftwareListRemovalReady,
+    BluetoothSchedulerWorkObservation, BluetoothTaskOwner, BluetoothTaskOwnerReuniteError,
+    BluetoothTaskOwnerReuniteFailure,
 };
 #[cfg(feature = "validation-probes")]
 pub use ieee802154_ed_event_probe::{

@@ -83,6 +83,24 @@ impl BluetoothDtmLinkStateReviewedWords {
         }
     }
 
+    /// Apply the role-specific link-state write performed while constructing
+    /// one event after reset.
+    ///
+    /// The reviewed receiver path replaces word `+0x34` with the raw
+    /// controller-time projection of scheduler origin zero. The transmitter
+    /// path does not write this word. This remains a CPU-owned positional
+    /// transform and grants no descriptor-publication authority.
+    pub const fn apply_event_context(
+        mut self,
+        role: BluetoothDtmRole,
+        raw_scheduler_origin: u32,
+    ) -> Self {
+        if matches!(role, BluetoothDtmRole::Receiver) {
+            self.word_34 = raw_scheduler_origin;
+        }
+        self
+    }
+
     /// Return the five-bit rounded-power value consumed by scheduler insert.
     pub const fn rounded_power(self) -> u8 {
         ((self.word_04 & LINK_STATE_POWER_MASK) >> 23) as u8

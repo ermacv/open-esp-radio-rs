@@ -83,6 +83,13 @@ at `+0x50`. Bounded inputs are rejected before any transform. The type exposes
 no controller address, storage publication or hardware-ownership transition,
 because the omitted descriptor words and their hardware consumer remain open.
 
+Receiver event construction subsequently replaces link-state word `+0x34`
+with `r_sched_timer_convertTimeToTicks(0)`, using the same retained
+raw/scheduler epoch that projects the scheduler-item window. The transmitter
+event does not write this word. The composed Rust plan now retains that
+post-reset distinction; the value remains a CPU-owned positional word rather
+than a named packet-engine field.
+
 The scheduler-item update is now a second non-publishable reviewed region.
 It reproduces the role byte at `+0x02`, bit-31 publication prerequisite at
 `+0x04`, four-bit clear at `+0x08`, repeated two-bit rate image at `+0x14`,

@@ -302,13 +302,14 @@ mod worker {
 
 #[cfg(test)]
 pub(crate) use worker::BluetoothControllerTimeHardware;
+#[cfg(target_arch = "riscv32")]
+pub use worker::BluetoothControllerTimeRequest;
 #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 pub(crate) use worker::BluetoothControllerTimeWorker;
 #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
 pub use worker::{
     BluetoothControllerTimeEventError, BluetoothControllerTimeEventStep,
-    BluetoothControllerTimeRequest, BluetoothControllerTimeRequestError,
-    BluetoothControllerTimeWorkerPhase,
+    BluetoothControllerTimeRequestError, BluetoothControllerTimeWorkerPhase,
 };
 
 /// Raw-time anchor paired with the BLE scheduler's positional epoch.

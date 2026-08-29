@@ -91,7 +91,11 @@ impl<Role> BluetoothDtmReviewedEventWordsPlan<Role> {
         let link_state = self
             .link_state
             .with_private_links(seed.tx_head(), seed.rx_tail())
-            .apply(current.link_state());
+            .apply(current.link_state())
+            .apply_event_context(
+                self.link_state.role(),
+                self.epoch.raw_time_for_scheduler_time(0),
+            );
         let scheduler_item = self
             .scheduler_item
             .apply(current.scheduler_item(), self.epoch);
@@ -458,6 +462,10 @@ mod tests {
         assert_eq!(words.scheduler_item().word_2c, 0x000f_0001);
         assert_eq!(words.scheduler_item().word_44, 103);
         assert_eq!(words.scheduler_item().word_48, 105);
+        assert_eq!(
+            words.link_state().word_34,
+            epoch().raw_time_for_scheduler_time(0)
+        );
     }
 
     #[test]

@@ -72,6 +72,11 @@ impl<P, const MODEM_TIMER_CAPACITY: usize> BluetoothSchedulerInitialized<P, MODE
         &mut self.task
     }
 
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn common_phy_parts_mut(&mut self) -> (&mut BluetoothTaskResources, &mut P) {
+        (&mut self.task, self._platform.platform_mut())
+    }
+
     /// Number of fixed modem timer slots retained by the initialized epoch.
     pub const fn modem_timer_capacity(&self) -> usize {
         self.runtime.modem_timer_capacity()

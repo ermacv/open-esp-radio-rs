@@ -180,13 +180,13 @@ title = "Common PHY and Bluetooth baseband enable"
 scope = "Ordered common PHY registration followed by the finite Bluetooth baseband initialization transaction"
 depends-on = ["controller-initialization"]
 owners = [
-  { path = "driver/chips/esp32s31/bluetooth/src/common_phy_state.rs", token = "BluetoothPhyInitialized" },
-  { path = "driver/chips/esp32s31/bluetooth/src/baseband.rs", token = "BluetoothBasebandInitialized" },
+  { path = "driver/chips/esp32s31/bluetooth/src/common_phy_state.rs", token = "BluetoothControllerPhyInitialized" },
+  { path = "driver/chips/esp32s31/bluetooth/src/baseband.rs", token = "BluetoothControllerBasebandInitialized" },
   { path = "driver/chips/esp32s31/phy/src/phy_txdc_pwdet.rs", token = "PhyTxDcPwdetTransition" },
   { path = "driver/chips/esp32s31/pac/src/baseband.rs", token = "prepare_txdc_power_detector" },
 ]
 tests = [
-  { path = "driver/chips/esp32s31/bluetooth/src/baseband.rs", token = "transition_consumes_terminal_phy_projection_and_retains_reports" },
+  { path = "driver/chips/esp32s31/bluetooth/src/baseband.rs", token = "baseband_transition_forwards_terminal_phy_input_once" },
   { path = "driver/chips/esp32s31/phy/src/phy_txdc_pwdet.rs", token = "root_cleanup_restores_registers_before_terminal_failure" },
   { path = "driver/chips/esp32s31/pac/src/baseband.rs", token = "txdc_restore_slot_rejects_interlopers_and_preserves_operation_order" },
   { path = "driver/chips/esp32s31/pac/src/lib.rs", token = "pending_txdc_restore_survives_same_route_transitions_and_blocks_release" },
@@ -195,10 +195,8 @@ vendor-anchors = [
   { path = "verification/vendor/targets/esp32s31/README.md", token = "bt_bb_v2_init_cmplx(1)" },
 ]
 gaps = [
-  { axis = "implementation", id = "enable-components-disconnected-from-controller-init" },
   { axis = "vendor", id = "common-phy-baseband-composed-trace-missing" },
   { axis = "hil", id = "bluetooth-phy-baseband-cell-missing" },
-  { axis = "async", id = "complete-controller-prerequisite-owner-missing" },
 ]
 
 [[capabilities]]

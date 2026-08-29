@@ -9,8 +9,9 @@
 //! source-owned software policy and replaces vendor broker/event containers
 //! with one pristine static Rust runtime epoch. The following HCI software
 //! initialization binds that powered epoch to one bounded portable transport
-//! and bootstrap dispatcher; it does not claim operational Link-Layer work.
-//! Common PHY and BT-baseband remain later enable-stage components. The
+//! and bootstrap dispatcher. The following modem low-power, common-PHY and
+//! finite BT-baseband transitions are now one connected affine enable chain;
+//! they still do not claim operational Link-Layer work. The
 //! two Controller interrupt sources, level/residency policies, baseline masks,
 //! snapshot modes, positional dynamic scheduler classifier, coalesced wake
 //! state, affine ISR scheduler-register staging and one live finite
@@ -39,7 +40,7 @@ extern crate std;
 #[cfg(any(target_arch = "riscv32", test))]
 mod baseband;
 mod clock;
-#[cfg(any(target_arch = "riscv32", test))]
+#[cfg(target_arch = "riscv32")]
 mod common_phy_state;
 #[cfg(any(target_arch = "riscv32", test))]
 mod controller_hal;
@@ -73,10 +74,14 @@ mod scheduler_lock_modify;
 #[doc(hidden)]
 pub mod validation;
 
+#[cfg(target_arch = "riscv32")]
+pub use baseband::{BluetoothBasebandInitializationReport, BluetoothControllerBasebandInitialized};
 pub use clock::{
     BluetoothClockCheckpoint, BluetoothClockEnableFailure, BluetoothClockError,
     BluetoothClockState, BluetoothClockedResources,
 };
+#[cfg(target_arch = "riscv32")]
+pub use common_phy_state::{BluetoothControllerPhyInitialized, BluetoothPhyInitializationReport};
 #[cfg(target_arch = "riscv32")]
 pub use controller_hal::BluetoothControllerHalInitialized;
 pub use controller_time::{BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample};
@@ -151,6 +156,11 @@ pub use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmMemoryGraphPrepareFailure, BluetoothDtmPositionalEventWords,
     BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError,
     BluetoothRxMemoryListClass,
+};
+#[cfg(target_arch = "riscv32")]
+pub use phy::{
+    BluetoothControllerPhyInitializationFailure, BluetoothPhyInitializationConfig,
+    BluetoothPhyInitializationError,
 };
 pub use primary_interrupt::{
     BluetoothPrimaryInterruptStep, BluetoothPrimaryNoSchedulerWork,

@@ -303,6 +303,13 @@ where
         }
     }
 
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn common_phy_parts_mut(
+        &mut self,
+    ) -> (&mut crate::resources::BluetoothTaskResources, &mut P) {
+        self.scheduler.common_phy_parts_mut()
+    }
+
     #[expect(
         clippy::result_large_err,
         reason = "the no-alloc test seam returns the complete affine powered owner"
@@ -429,6 +436,18 @@ where
         PACKET_CAPACITY,
     > {
         self.controller.split_runtime()
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn common_phy_parts_mut(
+        &mut self,
+    ) -> (&mut crate::resources::BluetoothTaskResources, &mut P) {
+        self.controller.common_phy_parts_mut()
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn task_mut(&mut self) -> &mut crate::resources::BluetoothTaskResources {
+        self.controller.scheduler.task_mut()
     }
 
     /// Conditional runtime-control branch observed by the exact hardware

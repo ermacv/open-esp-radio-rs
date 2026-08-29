@@ -5,6 +5,7 @@
 //! module reuses that one recovered transition and its target port; it does
 //! not maintain a Bluetooth-specific shadow of common PHY initialization.
 
+use embassy_sync::blocking_mutex::raw::RawMutex;
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_phy::{
     PhyAsyncDelay, PhyRegisterRunError, PhyRegisterTransition, PhyTargetObserver,
@@ -13,10 +14,8 @@ use open_esp_radio_esp32s31_phy::{
 use open_esp_radio_esp32s31_phy::{PhyCalibrationCache, PhyCalibrationIdentity};
 
 use crate::{
-    common_phy_state::{BluetoothPhyInitializationReport, BluetoothPhyInitialized},
-    resources::{
-        BluetoothInterruptBankOwner, BluetoothTaskResources, BluetoothTeardownPendingPlatform,
-    },
+    common_phy_state::{BluetoothControllerPhyInitialized, BluetoothPhyInitializationReport},
+    hci::BluetoothControllerLowPowerHardwareInitialized,
 };
 
 /// Caller-owned inputs for one full common-PHY registration.
@@ -79,17 +78,49 @@ pub enum BluetoothPhyInitializationError {
 /// is likewise fail-stop and does not release the platform lease.
 #[cfg(target_arch = "riscv32")]
 #[must_use = "failed common PHY initialization still owns Bluetooth hardware"]
-pub struct BluetoothPhyInitializationFailure<P> {
-    _task: BluetoothTaskResources,
-    _interrupts: BluetoothInterruptBankOwner,
-    _platform: BluetoothTeardownPendingPlatform<P>,
+pub struct BluetoothControllerPhyInitializationFailure<
+    P,
+    M,
+    const MODEM_TIMER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+> where
+    M: RawMutex,
+{
+    _controller: BluetoothControllerLowPowerHardwareInitialized<
+        P,
+        M,
+        MODEM_TIMER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >,
     _transition: PhyRegisterTransition,
     port_counters: PhyTargetPortCounters,
     error: BluetoothPhyInitializationError,
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<P> BluetoothPhyInitializationFailure<P> {
+impl<
+    P,
+    M,
+    const MODEM_TIMER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+>
+    BluetoothControllerPhyInitializationFailure<
+        P,
+        M,
+        MODEM_TIMER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >
+where
+    M: RawMutex,
+{
     /// Inspect the exact typed failure without releasing an owner.
     pub const fn error(&self) -> BluetoothPhyInitializationError {
         self.error
@@ -101,81 +132,103 @@ impl<P> BluetoothPhyInitializationFailure<P> {
     }
 }
 
-/// Execute the already recovered common-PHY enable component for a future
-/// owner that has completed every controller-init prerequisite.
+/// Complete common-PHY initialization for this exact powered Controller.
 ///
-/// This helper is intentionally crate-private and currently has no caller.
-/// Attaching it to the scheduler-prefix state would falsely skip the remaining
-/// task, LP, BLE-stack and HCI initialization stages.
-#[cfg(target_arch = "riscv32")]
-#[allow(
-    dead_code,
-    reason = "verified enable-stage component awaits a complete controller-init owner"
-)]
-pub(crate) async fn initialize_common_phy<D, O, P>(
-    mut task: BluetoothTaskResources,
-    interrupts: BluetoothInterruptBankOwner,
-    mut platform: BluetoothTeardownPendingPlatform<P>,
-    config: BluetoothPhyInitializationConfig,
-    observer: O,
-) -> Result<BluetoothPhyInitialized<P>, BluetoothPhyInitializationFailure<P>>
+/// The future must be driven to a terminal result. Once polled, cancellation
+/// can strand a partially applied hardware edge; reset the chip before trying
+/// to construct another radio owner.
+impl<
+    P,
+    M,
+    const MODEM_TIMER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+>
+    BluetoothControllerLowPowerHardwareInitialized<
+        P,
+        M,
+        MODEM_TIMER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >
 where
-    D: PhyAsyncDelay,
-    O: PhyTargetObserver,
+    M: RawMutex,
 {
-    let mut transition = PhyRegisterTransition::with_production_config_and_calibration(
-        config.calibration_identity,
-        config.calibration_cache,
-    );
-
-    let registration = {
-        let mut shared_phy = task.shared_phy_hal();
-        let mut port = TargetPhyRegisterPort::<_, _, D, _>::new(
-            platform.platform_mut(),
-            &mut shared_phy,
-            observer,
+    #[must_use = "common PHY initialization must be driven to a terminal result"]
+    pub async fn initialize_common_phy<D, O>(
+        mut self,
+        config: BluetoothPhyInitializationConfig,
+        observer: O,
+    ) -> Result<
+        BluetoothControllerPhyInitialized<
+            P,
+            M,
+            MODEM_TIMER_CAPACITY,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+        BluetoothControllerPhyInitializationFailure<
+            P,
+            M,
+            MODEM_TIMER_CAPACITY,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    >
+    where
+        D: PhyAsyncDelay,
+        O: PhyTargetObserver,
+    {
+        let mut transition = PhyRegisterTransition::with_production_config_and_calibration(
+            config.calibration_identity,
+            config.calibration_cache,
         );
-        let result = run_phy_register(&mut transition, &mut port).await;
-        let port_counters = port.counters();
-        match result {
-            Ok(registration) => Ok((registration, port_counters)),
-            Err(error) => Err((error, port_counters)),
-        }
-    };
 
-    let (registration, port_counters) = match registration {
-        Ok(result) => result,
-        Err((error, port_counters)) => {
-            return Err(BluetoothPhyInitializationFailure {
-                _task: task,
-                _interrupts: interrupts,
-                _platform: platform,
-                _transition: transition,
-                port_counters,
-                error: BluetoothPhyInitializationError::Registration(error),
-            });
-        }
-    };
-    let (phy, calibration_cache) = match transition.into_model_parts() {
-        Ok(parts) => parts,
-        Err(transition) => {
-            return Err(BluetoothPhyInitializationFailure {
-                _task: task,
-                _interrupts: interrupts,
-                _platform: platform,
-                _transition: transition,
-                port_counters,
-                error: BluetoothPhyInitializationError::MissingPhyOwner,
-            });
-        }
-    };
+        let registration = {
+            let (task, platform) = self.common_phy_parts_mut();
+            let mut shared_phy = task.shared_phy_hal();
+            let mut port =
+                TargetPhyRegisterPort::<_, _, D, _>::new(platform, &mut shared_phy, observer);
+            let result = run_phy_register(&mut transition, &mut port).await;
+            let port_counters = port.counters();
+            match result {
+                Ok(registration) => Ok((registration, port_counters)),
+                Err(error) => Err((error, port_counters)),
+            }
+        };
 
-    Ok(BluetoothPhyInitialized {
-        task,
-        interrupts,
-        platform,
-        phy,
-        calibration_cache,
-        report: BluetoothPhyInitializationReport::from_target(registration, port_counters),
-    })
+        let (registration, port_counters) = match registration {
+            Ok(result) => result,
+            Err((error, port_counters)) => {
+                return Err(BluetoothControllerPhyInitializationFailure {
+                    _controller: self,
+                    _transition: transition,
+                    port_counters,
+                    error: BluetoothPhyInitializationError::Registration(error),
+                });
+            }
+        };
+        let (phy, calibration_cache) = match transition.into_model_parts() {
+            Ok(parts) => parts,
+            Err(transition) => {
+                return Err(BluetoothControllerPhyInitializationFailure {
+                    _controller: self,
+                    _transition: transition,
+                    port_counters,
+                    error: BluetoothPhyInitializationError::MissingPhyOwner,
+                });
+            }
+        };
+
+        Ok(BluetoothControllerPhyInitialized {
+            controller: self,
+            phy,
+            calibration_cache,
+            report: BluetoothPhyInitializationReport::from_target(registration, port_counters),
+        })
+    }
 }

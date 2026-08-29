@@ -60,7 +60,7 @@ pub fn configure_and_select_phy_i2c_host(block: u8) -> u32 {
 ///
 /// This validation-only bridge cannot bypass the production Bluetooth
 /// lifecycle in an ordinary build because it is absent there. The production
-/// edge consumes `BluetoothPhyInitialized` after common-PHY
+/// edge consumes `BluetoothControllerPhyInitialized` after common-PHY
 /// calibration and projects this byte from the owned PHY state; no pre-PHY
 /// production transition is exposed.
 ///

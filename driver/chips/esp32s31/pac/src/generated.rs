@@ -1041,6 +1041,98 @@ impl PhyFrequencyBasebandMode {
     }
 }
 
+/// Complete eleven-bit address accepted by reviewed PHY frequency-memory transactions.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyFrequencyMemoryAddress(u32);
+
+impl PhyFrequencyMemoryAddress {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x000007ff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x000007ff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Complete two-bit read mode accepted by the reviewed PHY frequency-memory transaction.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyFrequencyMemoryReadMode(u32);
+
+impl PhyFrequencyMemoryReadMode {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x00000003;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x00000003 {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Complete eight-bit frequency-table index accepted by reviewed channel switch transactions.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyFrequencyChannelIndex(u32);
+
+impl PhyFrequencyChannelIndex {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x000000ff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x000000ff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// One complete five-bit PHY-I2C number address from the reviewed descriptor sequence.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyFrequencyI2cNumberAddress(u32);
+
+impl PhyFrequencyI2cNumberAddress {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x0000001f;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x0000001f {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Runtime-derived byte ORed into both BLE link-controller transmit-delay fields by one fresh-read transaction.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct BluetoothPhyInitTimingByte(u32);
@@ -7127,6 +7219,87 @@ pub(crate) fn clear_phy_bt_filter_mode(registers: &crate::svd::PhyFrequencyChann
     crate::svd::field_replace_modify::clear_phy_bt_filter_mode(registers);
 }
 
+/// Typed bridge for the reviewed `configure_phy_frequency_memory_address` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_frequency_memory_address(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+    value: PhyFrequencyMemoryAddress,
+) {
+    crate::svd::field_replace_modify::configure_phy_frequency_memory_address(
+        registers,
+        value.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `raise_phy_frequency_memory_write_pulse` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn raise_phy_frequency_memory_write_pulse(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+) {
+    crate::svd::field_replace_modify::raise_phy_frequency_memory_write_pulse(registers);
+}
+
+/// Typed bridge for the reviewed `lower_phy_frequency_memory_write_pulse` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn lower_phy_frequency_memory_write_pulse(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+) {
+    crate::svd::field_replace_modify::lower_phy_frequency_memory_write_pulse(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_frequency_memory_read_mode` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_frequency_memory_read_mode(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+    value: PhyFrequencyMemoryReadMode,
+) {
+    crate::svd::field_replace_modify::configure_phy_frequency_memory_read_mode(
+        registers,
+        value.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `raise_phy_frequency_memory_read_pulse` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn raise_phy_frequency_memory_read_pulse(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+) {
+    crate::svd::field_replace_modify::raise_phy_frequency_memory_read_pulse(registers);
+}
+
+/// Typed bridge for the reviewed `lower_phy_frequency_memory_read_pulse` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn lower_phy_frequency_memory_read_pulse(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+) {
+    crate::svd::field_replace_modify::lower_phy_frequency_memory_read_pulse(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_frequency_channel_index` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_frequency_channel_index(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+    value: PhyFrequencyChannelIndex,
+) {
+    crate::svd::field_replace_modify::configure_phy_frequency_channel_index(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `raise_phy_frequency_channel_switch_pulse` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn raise_phy_frequency_channel_switch_pulse(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+) {
+    crate::svd::field_replace_modify::raise_phy_frequency_channel_switch_pulse(registers);
+}
+
+/// Typed bridge for the reviewed `lower_phy_frequency_channel_switch_pulse` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn lower_phy_frequency_channel_switch_pulse(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+) {
+    crate::svd::field_replace_modify::lower_phy_frequency_channel_switch_pulse(registers);
+}
+
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
 #[inline]
 pub(crate) fn configure_shared_modem_low_power_timer(
@@ -7214,6 +7387,20 @@ pub(crate) fn configure_phy_tone_path_0(
         mismatch_mode.get(),
         middle_reserved.get(),
         polarity.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `configure_phy_frequency_i2c_number_prefix` multi-argument field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_frequency_i2c_number_prefix(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+    address_0: PhyFrequencyI2cNumberAddress,
+    address_1: PhyFrequencyI2cNumberAddress,
+) {
+    crate::svd::field_argument_modify::configure_phy_frequency_i2c_number_prefix(
+        registers,
+        address_0.get(),
+        address_1.get(),
     );
 }
 

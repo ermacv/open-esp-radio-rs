@@ -141,61 +141,40 @@ impl RadioPhyRegisters {
     /// Apply complete rev0 ROM `phy_freq_i2c_mem_write`.
     pub fn write_frequency_memory(&mut self, address: u16, value: u32, mode: u8) {
         assert!(
-            address <= 0x07ff,
-            "frequency-memory address must fit eleven bits"
-        );
-        assert!(
             value <= 0x00ff_ffff,
             "frequency-memory data must fit 24 bits"
         );
         let frequency = &self.peripherals.phy_frequency_channel_oracle;
-        frequency.frequency_control().modify(|_, w| {
-            w.memory_address_low_unknown()
-                .set(address & 0x03ff)
-                .memory_address_high_or_module_reset_unknown()
-                .bit(address & 0x0400 != 0)
-        });
+        let address = super::generated::PhyFrequencyMemoryAddress::new(u32::from(address))
+            .expect("frequency-memory address must fit its generated eleven-bit domain");
+        super::generated::configure_phy_frequency_memory_address(frequency, address);
         super::svd::zero_based_field_write::frequency_memory_data(frequency, value, mode);
-        frequency
-            .frequency_control()
-            .modify(|_, w| w.memory_write_pulse().set_bit());
-        frequency
-            .frequency_control()
-            .modify(|_, w| w.memory_write_pulse().clear_bit());
+        super::generated::raise_phy_frequency_memory_write_pulse(frequency);
+        super::generated::lower_phy_frequency_memory_write_pulse(frequency);
     }
 
     /// Apply complete rev0 ROM `phy_read_rf_freq_mem`.
     pub fn read_frequency_memory(&mut self, address: u16, mode: u8) -> u32 {
-        assert!(
-            address <= 0x07ff,
-            "frequency-memory address must fit eleven bits"
-        );
-        assert!(mode <= 3, "frequency-memory read mode must fit two bits");
         let frequency = &self.peripherals.phy_frequency_channel_oracle;
-        frequency.frequency_control().modify(|_, w| {
-            w.memory_address_low_unknown()
-                .set(address & 0x03ff)
-                .memory_address_high_or_module_reset_unknown()
-                .bit(address & 0x0400 != 0)
-        });
-        frequency
-            .i2c_number_control()
-            .modify(|_, w| w.memory_read_mode().set(mode));
-        frequency
-            .frequency_memory_read_control()
-            .modify(|_, w| w.read_pulse().set_bit());
-        frequency
-            .frequency_memory_read_control()
-            .modify(|_, w| w.read_pulse().clear_bit());
+        let address = super::generated::PhyFrequencyMemoryAddress::new(u32::from(address))
+            .expect("frequency-memory address must fit its generated eleven-bit domain");
+        let mode = super::generated::PhyFrequencyMemoryReadMode::new(u32::from(mode))
+            .expect("frequency-memory read mode must fit its generated two-bit domain");
+        super::generated::configure_phy_frequency_memory_address(frequency, address);
+        super::generated::configure_phy_frequency_memory_read_mode(frequency, mode);
+        super::generated::raise_phy_frequency_memory_read_pulse(frequency);
+        super::generated::lower_phy_frequency_memory_read_pulse(frequency);
         super::svd::field_read::observe_phy_frequency_memory_result(frequency)
     }
 
     /// Restore the low frequency-control channel index without pulsing a switch.
     pub fn set_frequency_channel_index(&mut self, frequency_index: u8) {
-        self.peripherals
-            .phy_frequency_channel_oracle
-            .frequency_control()
-            .modify(|_, w| w.channel_index().set(frequency_index));
+        let index = super::generated::PhyFrequencyChannelIndex::new(u32::from(frequency_index))
+            .expect("one byte fits the complete generated channel-index domain");
+        super::generated::configure_phy_frequency_channel_index(
+            &self.peripherals.phy_frequency_channel_oracle,
+            index,
+        );
     }
 
     /// Publish the complete semantic `phy_freq_i2c_num_addr` sequence.
@@ -204,12 +183,15 @@ impl RadioPhyRegisters {
         addresses: PhyFrequencyI2cNumberAddresses,
     ) {
         let frequency = &self.peripherals.phy_frequency_channel_oracle;
-        frequency.i2c_number_control().modify(|_, w| {
-            w.number_address_0_unknown()
-                .set(addresses.values[0])
-                .number_address_1_unknown()
-                .set(addresses.values[1])
-        });
+        let address_0 =
+            super::generated::PhyFrequencyI2cNumberAddress::new(u32::from(addresses.values[0]))
+                .expect("validated PHY-I2C address fits its generated domain");
+        let address_1 =
+            super::generated::PhyFrequencyI2cNumberAddress::new(u32::from(addresses.values[1]))
+                .expect("validated PHY-I2C address fits its generated domain");
+        super::generated::configure_phy_frequency_i2c_number_prefix(
+            frequency, address_0, address_1,
+        );
         super::svd::zero_based_field_write::frequency_i2c_number_word(
             frequency,
             0,
@@ -239,20 +221,17 @@ impl RadioPhyRegisters {
 
     /// Publish the two pre-delay edges of `phy_freq_chan_en_sw`.
     pub fn start_frequency_channel_switch(&mut self, frequency_index: u8) {
-        let control = self
-            .peripherals
-            .phy_frequency_channel_oracle
-            .frequency_control();
-        control.modify(|_, w| w.channel_index().set(frequency_index));
-        control.modify(|_, w| w.channel_switch_pulse().set_bit());
+        self.set_frequency_channel_index(frequency_index);
+        super::generated::raise_phy_frequency_channel_switch_pulse(
+            &self.peripherals.phy_frequency_channel_oracle,
+        );
     }
 
     /// Complete the caller-delayed clear of `phy_freq_chan_en_sw`.
     pub fn clear_frequency_channel_switch(&mut self) {
-        self.peripherals
-            .phy_frequency_channel_oracle
-            .frequency_control()
-            .modify(|_, w| w.channel_switch_pulse().clear_bit());
+        super::generated::lower_phy_frequency_channel_switch_pulse(
+            &self.peripherals.phy_frequency_channel_oracle,
+        );
     }
 
     /// Sample the generated frequency-ready field exactly once.

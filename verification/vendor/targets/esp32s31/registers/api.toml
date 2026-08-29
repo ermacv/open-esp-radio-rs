@@ -538,6 +538,34 @@ description = "Register-mode image selected by the parameter override."
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 
 [[bounded-domains]]
+name = "PhyFrequencyMemoryAddress"
+description = "Complete eleven-bit address accepted by reviewed PHY frequency-memory transactions."
+min = 0
+max = 0x07ff
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
+
+[[bounded-domains]]
+name = "PhyFrequencyMemoryReadMode"
+description = "Complete two-bit read mode accepted by the reviewed PHY frequency-memory transaction."
+min = 0
+max = 3
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
+
+[[bounded-domains]]
+name = "PhyFrequencyChannelIndex"
+description = "Complete eight-bit frequency-table index accepted by reviewed channel switch transactions."
+min = 0
+max = 0xff
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
+
+[[bounded-domains]]
+name = "PhyFrequencyI2cNumberAddress"
+description = "One complete five-bit PHY-I2C number address from the reviewed descriptor sequence."
+min = 0
+max = 0x1f
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
+
+[[bounded-domains]]
 name = "BluetoothPhyInitTimingByte"
 description = "Runtime-derived byte ORed into both BLE link-controller transmit-delay fields by one fresh-read transaction."
 min = 0
@@ -9612,6 +9640,101 @@ name = "clear_phy_bt_filter_mode"
 peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
 register = "FBW_BT_FILTER_CONTROL"
 fields = [{ field = "BT_FILTER_MODE_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_frequency_memory_address"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FREQUENCY_CONTROL"
+fields = [
+    { field = "MEMORY_ADDRESS_LOW_UNKNOWN", source-bit-offset = 0 },
+    { field = "MEMORY_ADDRESS_HIGH_OR_MODULE_RESET_UNKNOWN", source-bit-offset = 10 },
+]
+domain = "PhyFrequencyMemoryAddress"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "raise_phy_frequency_memory_write_pulse"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FREQUENCY_CONTROL"
+fields = [{ field = "MEMORY_WRITE_PULSE", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "lower_phy_frequency_memory_write_pulse"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FREQUENCY_CONTROL"
+fields = [{ field = "MEMORY_WRITE_PULSE", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_frequency_memory_read_mode"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "I2C_NUMBER_CONTROL"
+fields = [{ field = "MEMORY_READ_MODE", source-bit-offset = 0 }]
+domain = "PhyFrequencyMemoryReadMode"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "raise_phy_frequency_memory_read_pulse"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FREQUENCY_MEMORY_READ_CONTROL"
+fields = [{ field = "READ_PULSE", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "lower_phy_frequency_memory_read_pulse"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FREQUENCY_MEMORY_READ_CONTROL"
+fields = [{ field = "READ_PULSE", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_frequency_channel_index"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FREQUENCY_CONTROL"
+fields = [{ field = "CHANNEL_INDEX", source-bit-offset = 0 }]
+domain = "PhyFrequencyChannelIndex"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-argument-modifies]]
+name = "configure_phy_frequency_i2c_number_prefix"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "I2C_NUMBER_CONTROL"
+arguments = [
+    { name = "address_0", field = "NUMBER_ADDRESS_0_UNKNOWN", domain = "PhyFrequencyI2cNumberAddress" },
+    { name = "address_1", field = "NUMBER_ADDRESS_1_UNKNOWN", domain = "PhyFrequencyI2cNumberAddress" },
+]
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "raise_phy_frequency_channel_switch_pulse"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FREQUENCY_CONTROL"
+fields = [{ field = "CHANNEL_SWITCH_PULSE", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "lower_phy_frequency_channel_switch_pulse"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FREQUENCY_CONTROL"
+fields = [{ field = "CHANNEL_SWITCH_PULSE", source-bit-offset = 0 }]
 value = 0
 exposure = "facade"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL", "S31_ESP_PACS_SVD"]

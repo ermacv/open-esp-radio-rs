@@ -108,25 +108,6 @@ impl<const SCHEDULER_CAPACITY: usize> BluetoothControllerTaskRuntime<'_, SCHEDUL
         self.scheduler_lock_modify_worker
     }
 
-    /// Bind one fully prepared DTM graph to this epoch's sole scheduler
-    /// worker without touching MMIO.
-    pub fn admit_dtm_lock_modify<Role>(
-        &mut self,
-        prepared: crate::BluetoothDtmSchedulerBookkeepingPrepared<Role>,
-    ) -> crate::BluetoothDtmLockModifyAdmission<Role> {
-        prepared.begin_lock_modify(self.scheduler_lock_modify_worker)
-    }
-
-    /// Attempt once to join a pending DTM graph to this epoch's worker result.
-    ///
-    /// `Waiting` performs no polling and returns the unchanged graph owner.
-    pub fn take_dtm_lock_modify_completion<Role>(
-        &mut self,
-        pending: crate::BluetoothDtmLockModifyPending<Role>,
-    ) -> crate::BluetoothDtmLockModifyCompletion<Role> {
-        pending.take_completion(self.scheduler_lock_modify_worker)
-    }
-
     /// The sole bounded finished-list worker for this epoch.
     pub fn scheduler_finished_lists(&mut self) -> &mut BluetoothSchedulerFinishedListWorker {
         self.scheduler_finished_lists
@@ -227,28 +208,6 @@ impl<const SCHEDULER_CAPACITY: usize>
     ) -> crate::BluetoothSchedulerLockModifyWorkerStep {
         self.hardware
             .step_scheduler_lock_modify(self.software.scheduler_lock_modify_worker, event)
-    }
-
-    /// Bind one fully prepared DTM graph to this powered epoch's sole
-    /// scheduler worker without touching MMIO.
-    ///
-    /// The admitted state retains the pinned descriptor graph while later
-    /// interrupt events drive the request through [`Self::step_scheduler_lock_modify`].
-    pub fn admit_dtm_lock_modify<Role>(
-        &mut self,
-        prepared: crate::BluetoothDtmSchedulerBookkeepingPrepared<Role>,
-    ) -> crate::BluetoothDtmLockModifyAdmission<Role> {
-        self.software.admit_dtm_lock_modify(prepared)
-    }
-
-    /// Attempt once to join a pending DTM graph to this epoch's worker result.
-    ///
-    /// `Waiting` performs no polling and returns the unchanged graph owner.
-    pub fn take_dtm_lock_modify_completion<Role>(
-        &mut self,
-        pending: crate::BluetoothDtmLockModifyPending<Role>,
-    ) -> crate::BluetoothDtmLockModifyCompletion<Role> {
-        self.software.take_dtm_lock_modify_completion(pending)
     }
 }
 

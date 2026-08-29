@@ -17,18 +17,12 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
 };
 use open_esp_radio_esp32s31_hal::{
     BluetoothControllerSramAddress, BluetoothSchedulerHardwareListIndex,
-    BluetoothSchedulerLockModifyRequest,
 };
 
 use crate::{
     BluetoothDtmLinkStateReset, BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern,
     BluetoothDtmPreparedTxGraph, BluetoothDtmRole, BluetoothSchedulerReservation,
-    BluetoothSchedulerSequenceReady,
-    dtm_scheduler_item::apply_overlap_insertion_power,
-    scheduler_lock_modify::{
-        BluetoothSchedulerLockModifyBeginError, BluetoothSchedulerLockModifyPublicationResult,
-        BluetoothSchedulerLockModifyWorker,
-    },
+    BluetoothSchedulerSequenceReady, dtm_scheduler_item::apply_overlap_insertion_power,
 };
 
 /// Type marker for a transmitter event with a prepared packet prerequisite.
@@ -348,203 +342,15 @@ impl BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmTransmitterEvent> {
 
 /// CPU-owned DTM graph after the reviewed scheduler bookkeeping prefix.
 ///
-/// Forming its lock/modify request is still not hardware publication. The
-/// complete descriptor, private packet-engine latch and visibility fence are
-/// deliberately absent from this state.
+/// The complete descriptor, common-scheduler insertion/merge transaction,
+/// private packet-engine latch and visibility fence are deliberately absent
+/// from this state.
 #[must_use = "the scheduler-prepared DTM graph must remain owned or be cancelled"]
 pub struct BluetoothDtmSchedulerBookkeepingPrepared<Role> {
     memory: BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared,
     packet: BluetoothDtmEventPacket,
     reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
     _role: PhantomData<Role>,
-}
-
-/// Rejected admission retaining the exact CPU-owned DTM graph.
-#[must_use = "a rejected DTM scheduler admission still owns its prepared graph"]
-pub struct BluetoothDtmLockModifyAdmissionFailure<Role> {
-    prepared: BluetoothDtmSchedulerBookkeepingPrepared<Role>,
-    error: BluetoothSchedulerLockModifyBeginError,
-}
-
-impl<Role> BluetoothDtmLockModifyAdmissionFailure<Role> {
-    /// Why the sole scheduler worker rejected this graph.
-    pub const fn error(&self) -> BluetoothSchedulerLockModifyBeginError {
-        self.error
-    }
-
-    /// Recover the unchanged, still-cancellable graph.
-    pub fn into_prepared(self) -> BluetoothDtmSchedulerBookkeepingPrepared<Role> {
-        self.prepared
-    }
-}
-
-impl<Role> core::fmt::Debug for BluetoothDtmLockModifyAdmissionFailure<Role> {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter
-            .debug_struct("BluetoothDtmLockModifyAdmissionFailure")
-            .field("error", &self.error)
-            .finish_non_exhaustive()
-    }
-}
-
-/// Result of binding one prepared DTM graph to the sole scheduler worker.
-#[must_use = "the admitted or rejected DTM graph must remain owned"]
-pub enum BluetoothDtmLockModifyAdmission<Role> {
-    /// The worker owns the exact request while this value retains its graph.
-    Admitted(BluetoothDtmLockModifyPending<Role>),
-    /// Another request or unconsumed result already occupies the worker.
-    Rejected(BluetoothDtmLockModifyAdmissionFailure<Role>),
-}
-
-/// Prepared DTM graph retained while its exact lock/modify request is active.
-///
-/// Dropping this value can leak logical progress but cannot expose or move its
-/// pinned static backing allocation. No cancellation transition exists after
-/// admission because a later worker event may cross the MMIO boundary.
-#[must_use = "the pending DTM request must be joined to its worker result"]
-pub struct BluetoothDtmLockModifyPending<Role> {
-    prepared: BluetoothDtmSchedulerBookkeepingPrepared<Role>,
-}
-
-impl<Role> BluetoothDtmLockModifyPending<Role> {
-    /// DTM role retained while the worker owns the request.
-    pub const fn role(&self) -> BluetoothDtmRole {
-        self.prepared.role()
-    }
-
-    /// Exact pinned scheduler-item identity retained by this pending request.
-    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.prepared.scheduler_item_address()
-    }
-
-    /// Exact hardware-list identity retained by this pending request.
-    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
-        self.prepared.hardware_list_index()
-    }
-
-    pub(crate) fn take_completion(
-        self,
-        worker: &mut BluetoothSchedulerLockModifyWorker,
-    ) -> BluetoothDtmLockModifyCompletion<Role> {
-        match worker.take_result() {
-            Some(publication) => BluetoothDtmLockModifyCompletion::Complete(
-                self.prepared.join_lock_modify_publication(publication),
-            ),
-            None => BluetoothDtmLockModifyCompletion::Waiting(self),
-        }
-    }
-}
-
-/// One bounded attempt to consume the scheduler worker's publication result.
-#[must_use = "a waiting or complete DTM lock/modify state must remain owned"]
-pub enum BluetoothDtmLockModifyCompletion<Role> {
-    /// The worker has not produced its terminal publication result yet.
-    Waiting(BluetoothDtmLockModifyPending<Role>),
-    /// A result was consumed and checked against the retained graph identity.
-    Complete(BluetoothDtmLockModifyJoin<Role>),
-}
-
-/// Why a completed lock/modify transaction cannot belong to a prepared DTM
-/// graph.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothDtmLockModifyJoinError {
-    /// The transaction names a different scheduler-item allocation.
-    SchedulerItemIdentityMismatch,
-    /// The transaction names a different scheduler hardware list.
-    HardwareListMismatch,
-}
-
-/// Rejected lock/modify join retaining both affine inputs.
-#[must_use = "a rejected scheduler publication still owns the prepared graph and result"]
-pub struct BluetoothDtmLockModifyJoinFailure<Role> {
-    prepared: BluetoothDtmSchedulerBookkeepingPrepared<Role>,
-    publication: BluetoothSchedulerLockModifyPublicationResult,
-    error: BluetoothDtmLockModifyJoinError,
-}
-
-/// Outcome of joining one prepared DTM graph with a lock/modify result.
-///
-/// A dedicated enum keeps both large affine states inline without turning the
-/// failure into an oversized `Result::Err` ABI or requiring allocation.
-#[must_use = "the joined or rejected DTM scheduler state must remain owned"]
-pub enum BluetoothDtmLockModifyJoin<Role> {
-    /// The exact graph address and hardware-list identity matched.
-    Joined(BluetoothDtmLockModifyCompleted<Role>),
-    /// The graph and result remain separately recoverable after a mismatch.
-    Rejected(BluetoothDtmLockModifyJoinFailure<Role>),
-}
-
-impl<Role> BluetoothDtmLockModifyJoinFailure<Role> {
-    /// Exact identity mismatch that rejected the join.
-    pub const fn error(&self) -> BluetoothDtmLockModifyJoinError {
-        self.error
-    }
-
-    /// Recover both unchanged affine inputs.
-    pub fn into_parts(
-        self,
-    ) -> (
-        BluetoothDtmSchedulerBookkeepingPrepared<Role>,
-        BluetoothSchedulerLockModifyPublicationResult,
-    ) {
-        (self.prepared, self.publication)
-    }
-}
-
-impl<Role> core::fmt::Debug for BluetoothDtmLockModifyJoinFailure<Role> {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter
-            .debug_struct("BluetoothDtmLockModifyJoinFailure")
-            .field("error", &self.error)
-            .finish_non_exhaustive()
-    }
-}
-
-/// CPU-owned DTM graph joined to its exact completed lock/modify transaction.
-///
-/// This state cannot be cancelled back to an unpublished graph because the
-/// request has crossed the MMIO boundary. It still proves neither hardware-
-/// list head publication nor descriptor visibility, RUN, hardware ownership,
-/// radio completion or ownership return.
-#[must_use = "the joined DTM scheduler transaction must advance through head publication"]
-pub struct BluetoothDtmLockModifyCompleted<Role> {
-    memory: BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared,
-    packet: BluetoothDtmEventPacket,
-    reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
-    publication: BluetoothSchedulerLockModifyPublicationResult,
-    _role: PhantomData<Role>,
-}
-
-impl<Role> BluetoothDtmLockModifyCompleted<Role> {
-    /// DTM role retained by the joined graph.
-    pub const fn role(&self) -> BluetoothDtmRole {
-        match self.packet {
-            BluetoothDtmEventPacket::Transmitter { .. } => BluetoothDtmRole::Transmitter,
-            BluetoothDtmEventPacket::Receiver => BluetoothDtmRole::Receiver,
-        }
-    }
-
-    /// Source-owned scheduler window retained until completion or abort.
-    pub const fn scheduler_window(&self) -> crate::BluetoothSchedulerRawWindow {
-        self.reservation.window()
-    }
-
-    /// Scheduler-item address retained by both joined inputs.
-    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
-        self.memory.scheduler_item_address()
-    }
-
-    /// Hardware list retained by both joined inputs.
-    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
-        self.publication.request().hardware_list_index()
-    }
-
-    /// Positional result of the completed request-publication transaction.
-    ///
-    /// This is diagnostic information, not a radio or descriptor status.
-    pub const fn publication_result_code(&self) -> u8 {
-        self.publication.code()
-    }
 }
 
 impl<Role> BluetoothDtmSchedulerBookkeepingPrepared<Role> {
@@ -564,82 +370,6 @@ impl<Role> BluetoothDtmSchedulerBookkeepingPrepared<Role> {
     /// Hardware list assigned to the zeroed DTM scheduler context.
     pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
         BluetoothSchedulerHardwareListIndex::ZERO
-    }
-
-    /// Form the reviewed list-zero DTM insertion request for this graph.
-    ///
-    /// The separately allocated 0x48-byte DTM scheduler context is zeroed and
-    /// embeds its scheduler manager at +0x2c. The manager hardware-list index
-    /// at context +0x44 is therefore zero. This method performs no MMIO and
-    /// does not change CPU ownership.
-    ///
-    /// This remains crate-private until the lower memory layer represents the
-    /// complete hardware-consumed descriptor and publication boundary. It is
-    /// currently used only to retain the exact request identity in ownership
-    /// tests; external controller code cannot submit an incomplete graph.
-    #[allow(
-        dead_code,
-        reason = "publication stays closed until the complete hardware-consumed descriptor exists"
-    )]
-    pub(crate) const fn scheduler_lock_modify_request(
-        &self,
-    ) -> BluetoothSchedulerLockModifyRequest {
-        BluetoothSchedulerLockModifyRequest::new(
-            self.scheduler_item_address(),
-            self.hardware_list_index(),
-        )
-    }
-
-    pub(crate) fn begin_lock_modify(
-        self,
-        worker: &mut BluetoothSchedulerLockModifyWorker,
-    ) -> BluetoothDtmLockModifyAdmission<Role> {
-        match worker.begin(self.scheduler_lock_modify_request()) {
-            Ok(()) => BluetoothDtmLockModifyAdmission::Admitted(BluetoothDtmLockModifyPending {
-                prepared: self,
-            }),
-            Err(error) => {
-                BluetoothDtmLockModifyAdmission::Rejected(BluetoothDtmLockModifyAdmissionFailure {
-                    prepared: self,
-                    error,
-                })
-            }
-        }
-    }
-
-    /// Join the graph to the exact completed lock/modify request.
-    ///
-    /// A result for another address or hardware list is returned with this
-    /// graph unchanged. Success deliberately exposes no cancellation or
-    /// hardware-owned transition: head publication and the descriptor memory
-    /// contract are still separate prerequisites.
-    pub fn join_lock_modify_publication(
-        self,
-        publication: BluetoothSchedulerLockModifyPublicationResult,
-    ) -> BluetoothDtmLockModifyJoin<Role> {
-        let request = publication.request();
-        let error = if request.address() != self.scheduler_item_address() {
-            Some(BluetoothDtmLockModifyJoinError::SchedulerItemIdentityMismatch)
-        } else if request.hardware_list_index() != self.hardware_list_index() {
-            Some(BluetoothDtmLockModifyJoinError::HardwareListMismatch)
-        } else {
-            None
-        };
-        if let Some(error) = error {
-            return BluetoothDtmLockModifyJoin::Rejected(BluetoothDtmLockModifyJoinFailure {
-                prepared: self,
-                publication,
-                error,
-            });
-        }
-
-        BluetoothDtmLockModifyJoin::Joined(BluetoothDtmLockModifyCompleted {
-            memory: self.memory,
-            packet: self.packet,
-            reservation: self.reservation,
-            publication,
-            _role: PhantomData,
-        })
     }
 
     /// Cancel before publication and recover the prepared event words.
@@ -677,22 +407,17 @@ mod tests {
         BluetoothDtmBoundSramLinkAddress, BluetoothDtmMemoryGraphModelAddress,
         BluetoothDtmMemoryGraphStorage, BluetoothDtmSchedulerAllocationConfig,
     };
-    use open_esp_radio_esp32s31_hal::{
-        BluetoothControllerSramAddress, BluetoothSchedulerHardwareListIndex,
-        BluetoothSchedulerLockModifyRequest,
-    };
+    use open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareListIndex;
     use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
 
     use super::{BluetoothDtmReviewedEventWordsPlan, BluetoothDtmReviewedEventWordsPlanError};
     use crate::{
         BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample, BluetoothDtmChannel,
-        BluetoothDtmLinkStateReset, BluetoothDtmLockModifyJoinError, BluetoothDtmPayloadLength,
-        BluetoothDtmPayloadPattern, BluetoothDtmPhy, BluetoothDtmRole,
-        BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerTimingPolicy,
-        BluetoothDtmTxGraphPrepare, BluetoothSchedulerLockModifyPublicationResult,
-        BluetoothSchedulerLockModifyWorker, BluetoothSchedulerReservation,
-        BluetoothSchedulerSequenceAuthorizationError, BluetoothSchedulerSequenceReady,
-        BluetoothSchedulerTimeline,
+        BluetoothDtmLinkStateReset, BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern,
+        BluetoothDtmPhy, BluetoothDtmRole, BluetoothDtmSchedulerItemEvent,
+        BluetoothDtmSchedulerTimingPolicy, BluetoothDtmTxGraphPrepare,
+        BluetoothSchedulerReservation, BluetoothSchedulerSequenceAuthorizationError,
+        BluetoothSchedulerSequenceReady, BluetoothSchedulerTimeline,
     };
 
     fn owner(base: u32) -> crate::BluetoothDtmMemoryGraphCpuOwned {
@@ -792,54 +517,10 @@ mod tests {
             BluetoothDtmPayloadPattern::Repeated11110000
         );
         assert_eq!(scheduler_prepared.packet_length().hci_image(), 3);
-        let request = scheduler_prepared.scheduler_lock_modify_request();
         assert_eq!(
-            request.address(),
-            scheduler_prepared.scheduler_item_address()
-        );
-        assert_eq!(
-            request.hardware_list_index(),
-            scheduler_prepared.hardware_list_index()
-        );
-        assert_eq!(
-            request.hardware_list_index(),
+            scheduler_prepared.hardware_list_index(),
             BluetoothSchedulerHardwareListIndex::ZERO
         );
-        let wrong_address = BluetoothControllerSramAddress::new(0x2f00_0040)
-            .expect("test address is representable");
-        let wrong_request = BluetoothSchedulerLockModifyRequest::new(
-            wrong_address,
-            BluetoothSchedulerHardwareListIndex::ZERO,
-        );
-        let failure = match scheduler_prepared.join_lock_modify_publication(
-            BluetoothSchedulerLockModifyPublicationResult::for_validation(0, wrong_request),
-        ) {
-            super::BluetoothDtmLockModifyJoin::Rejected(failure) => failure,
-            super::BluetoothDtmLockModifyJoin::Joined(_) => {
-                panic!("a result for another scheduler item consumed this graph")
-            }
-        };
-        assert_eq!(
-            failure.error(),
-            BluetoothDtmLockModifyJoinError::SchedulerItemIdentityMismatch
-        );
-        let (scheduler_prepared, _wrong_publication) = failure.into_parts();
-        let wrong_list = BluetoothSchedulerHardwareListIndex::new(1)
-            .expect("list one is in the scheduler domain");
-        let wrong_request = BluetoothSchedulerLockModifyRequest::new(request.address(), wrong_list);
-        let failure = match scheduler_prepared.join_lock_modify_publication(
-            BluetoothSchedulerLockModifyPublicationResult::for_validation(0, wrong_request),
-        ) {
-            super::BluetoothDtmLockModifyJoin::Rejected(failure) => failure,
-            super::BluetoothDtmLockModifyJoin::Joined(_) => {
-                panic!("a result for another hardware list consumed this graph")
-            }
-        };
-        assert_eq!(
-            failure.error(),
-            BluetoothDtmLockModifyJoinError::HardwareListMismatch
-        );
-        let (scheduler_prepared, _wrong_publication) = failure.into_parts();
         let prepared = scheduler_prepared.cancel();
         let words = prepared.words();
         assert_eq!(words.link_state().word_00, 0x8ff1_c057);
@@ -851,69 +532,6 @@ mod tests {
         let (_owner, reservation) = prepared.cancel();
         assert!(timeline.release(reservation));
         assert!(timeline.is_empty());
-    }
-
-    #[test]
-    fn completed_lock_modify_transaction_retains_the_exact_dtm_graph_identity() {
-        let mut timeline = BluetoothSchedulerTimeline::<1>::new();
-        let reset = BluetoothDtmLinkStateReset::new(None, None, 0, 0, BluetoothDtmRole::Receiver)
-            .expect("zero dynamic fields are valid");
-        let plan = BluetoothDtmReviewedEventWordsPlan::new_receiver(
-            reset,
-            reservation(&mut timeline, BluetoothDtmRole::Receiver),
-        )
-        .expect("both transforms encode RX");
-        let scheduler_prepared = plan
-            .prepare(owner(0x2f00_2100))
-            .expect("current graph anchors satisfy the generated RX image")
-            .prepare_scheduler_bookkeeping();
-        let request = scheduler_prepared.scheduler_lock_modify_request();
-        let mut worker = BluetoothSchedulerLockModifyWorker::new();
-
-        let pending = match scheduler_prepared.begin_lock_modify(&mut worker) {
-            super::BluetoothDtmLockModifyAdmission::Admitted(pending) => pending,
-            super::BluetoothDtmLockModifyAdmission::Rejected(_) => {
-                panic!("an idle worker rejected the bound graph")
-            }
-        };
-        assert!(worker.is_active());
-        assert_eq!(pending.role(), BluetoothDtmRole::Receiver);
-        assert_eq!(pending.scheduler_item_address(), request.address());
-        assert_eq!(
-            pending.hardware_list_index(),
-            BluetoothSchedulerHardwareListIndex::ZERO
-        );
-        let pending = match pending.take_completion(&mut worker) {
-            super::BluetoothDtmLockModifyCompletion::Waiting(pending) => pending,
-            super::BluetoothDtmLockModifyCompletion::Complete(_) => {
-                panic!("an awaiting worker fabricated a result")
-            }
-        };
-        worker.complete_for_validation(
-            BluetoothSchedulerLockModifyPublicationResult::for_validation(7, request),
-        );
-
-        let completed = match pending.take_completion(&mut worker) {
-            super::BluetoothDtmLockModifyCompletion::Complete(
-                super::BluetoothDtmLockModifyJoin::Joined(completed),
-            ) => completed,
-            super::BluetoothDtmLockModifyCompletion::Complete(
-                super::BluetoothDtmLockModifyJoin::Rejected(_),
-            ) => panic!("the exact worker result did not rejoin its retained graph"),
-            super::BluetoothDtmLockModifyCompletion::Waiting(_) => {
-                panic!("the completed worker did not yield its result")
-            }
-        };
-
-        assert!(!worker.is_active());
-        assert_eq!(completed.role(), BluetoothDtmRole::Receiver);
-        assert_eq!(completed.scheduler_window().start(), 103);
-        assert_eq!(completed.scheduler_item_address(), request.address());
-        assert_eq!(
-            completed.hardware_list_index(),
-            BluetoothSchedulerHardwareListIndex::ZERO
-        );
-        assert_eq!(completed.publication_result_code(), 7);
     }
 
     #[test]

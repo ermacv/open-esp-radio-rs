@@ -2362,7 +2362,7 @@ name = "publish_bluetooth_scheduler_lock_modify_request"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "SCHEDULER_LOCK_MODIFY_REQUEST"
 fields = ["COMPRESSED_SRAM_POINTER", "START"]
-sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "BLOB_LIBBTDM_SCHEDULER_INSERTION_BRANCH", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 
 [[zero-based-field-writes]]
 name = "initialize_bluetooth_hal_latch"
@@ -5792,7 +5792,7 @@ name = "observe_bluetooth_scheduler_lock_modify_request"
 peripheral = "BLUETOOTH_CONTROLLER_CORE"
 register = "SCHEDULER_LOCK_MODIFY_REQUEST"
 fields = ["START", "RESULT"]
-sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
+sources = ["BLOB_LIBBTDM_SCHEDULER_OPERATIONAL_GAPS", "BLOB_LIBBTDM_SCHEDULER_INSERTION_BRANCH", "PUBLIC_ESP32S31_BT_SCHEDULER_ROLES"]
 
 [[field-reads]]
 name = "observe_bluetooth_scheduler_lock_modify_busy"

@@ -116,14 +116,10 @@ pub use controller_time::{
     BluetoothControllerTimeWorkerPhase,
 };
 pub use dtm_event_prepare::{
-    BluetoothDtmLockModifyAdmission, BluetoothDtmLockModifyAdmissionFailure,
-    BluetoothDtmLockModifyCompleted, BluetoothDtmLockModifyCompletion, BluetoothDtmLockModifyJoin,
-    BluetoothDtmLockModifyJoinError, BluetoothDtmLockModifyJoinFailure,
-    BluetoothDtmLockModifyPending, BluetoothDtmReceiverEvent,
-    BluetoothDtmReviewedEventPrepareFailure, BluetoothDtmReviewedEventWordsPlan,
-    BluetoothDtmReviewedEventWordsPlanError, BluetoothDtmReviewedEventWordsPlanFailure,
-    BluetoothDtmReviewedEventWordsPrepared, BluetoothDtmSchedulerBookkeepingPrepared,
-    BluetoothDtmTransmitterEvent,
+    BluetoothDtmReceiverEvent, BluetoothDtmReviewedEventPrepareFailure,
+    BluetoothDtmReviewedEventWordsPlan, BluetoothDtmReviewedEventWordsPlanError,
+    BluetoothDtmReviewedEventWordsPlanFailure, BluetoothDtmReviewedEventWordsPrepared,
+    BluetoothDtmSchedulerBookkeepingPrepared, BluetoothDtmTransmitterEvent,
 };
 pub use dtm_event_timing::{
     BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerMargin, BluetoothDtmTxEventAdvance,

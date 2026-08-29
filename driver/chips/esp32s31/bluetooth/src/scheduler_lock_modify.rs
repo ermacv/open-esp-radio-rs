@@ -182,16 +182,16 @@ impl BluetoothSchedulerLockModifyBackend for BluetoothControllerHal<'_> {
 
     #[allow(
         unsafe_code,
-        reason = "worker admission is reachable only while the bound DTM graph owner is retained"
+        reason = "the worker can publish only after unsafe admission binds the selected scheduler item lifetime"
     )]
     fn publish(
         &mut self,
         request: BluetoothSchedulerLockModifyRequest,
     ) -> BluetoothSchedulerLockModifyPublished {
-        // SAFETY: production worker admission is crate-private and consumes a
-        // prepared DTM graph into the pending owner that keeps its pinned
-        // scheduler item alive. The powered runtime retains the sole task and
-        // interrupt endpoints for the same scheduler epoch.
+        // SAFETY: entering Awaiting requires the caller of `begin` to retain
+        // the exact merge-selected scheduler item and serialize its list until
+        // `take_result` returns it to that caller. The powered runtime retains
+        // the sole task and interrupt endpoints for the same scheduler epoch.
         unsafe { self.publish_scheduler_lock_modify(request) }
     }
 }
@@ -236,22 +236,12 @@ pub struct BluetoothSchedulerLockModifyPublicationResult {
 }
 
 impl BluetoothSchedulerLockModifyPublicationResult {
-    /// Construct one opaque publication result for host-side ownership tests.
-    ///
-    /// The test seam deliberately does not repeat the generated PAC field
-    /// width or validate register geometry in hand-written controller code.
-    #[cfg(any(feature = "validation-probes", test))]
-    #[doc(hidden)]
-    pub const fn for_validation(code: u8, request: BluetoothSchedulerLockModifyRequest) -> Self {
-        Self { code, request }
-    }
-
     /// Return the exact item identity and hardware-list index carried by this
     /// completed publication transaction.
     ///
-    /// Retaining the request prevents a later scheduler stage from combining
-    /// a result with a different prepared graph. It does not turn the
-    /// publication result into radio completion.
+    /// Retaining the request lets the affine insertion owner recover the exact
+    /// merge-selected item/list identity. It does not turn the publication
+    /// result into scheduler-item or radio completion.
     pub const fn request(self) -> BluetoothSchedulerLockModifyRequest {
         self.request
     }
@@ -320,8 +310,28 @@ impl BluetoothSchedulerLockModifyWorker {
         matches!(self.state, BluetoothSchedulerLockModifyWorkerState::Idle)
     }
 
-    /// Admit one validated request without touching hardware.
-    pub(crate) fn begin(
+    /// Admit one common-scheduler merge result without touching hardware.
+    ///
+    /// # Safety
+    ///
+    /// `request.address()` must identify the exact scheduler item selected by
+    /// the insertion merge stage, not merely the item originally submitted for
+    /// insertion. The caller must retain that pinned item and exclusive access
+    /// to its hardware list until [`Self::take_result`] returns the matching
+    /// request. Dropping the logical owner while the worker remains active is
+    /// a contract violation even before the request crosses the MMIO boundary.
+    #[allow(
+        unsafe_code,
+        reason = "the merge-selected SRAM item lifetime is not yet representable by this low-level worker"
+    )]
+    pub unsafe fn begin(
+        &mut self,
+        request: BluetoothSchedulerLockModifyRequest,
+    ) -> Result<(), BluetoothSchedulerLockModifyBeginError> {
+        self.begin_inner(request)
+    }
+
+    fn begin_inner(
         &mut self,
         request: BluetoothSchedulerLockModifyRequest,
     ) -> Result<(), BluetoothSchedulerLockModifyBeginError> {
@@ -406,7 +416,7 @@ impl BluetoothSchedulerLockModifyWorker {
     }
 
     /// Consume the stored result and make the worker idle again.
-    pub(crate) fn take_result(&mut self) -> Option<BluetoothSchedulerLockModifyPublicationResult> {
+    pub fn take_result(&mut self) -> Option<BluetoothSchedulerLockModifyPublicationResult> {
         let state = mem::replace(
             &mut self.state,
             BluetoothSchedulerLockModifyWorkerState::Idle,
@@ -423,23 +433,6 @@ impl BluetoothSchedulerLockModifyWorker {
     /// Whether publication or its result remains owned by the worker.
     pub const fn is_active(&self) -> bool {
         !matches!(self.state, BluetoothSchedulerLockModifyWorkerState::Idle)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn complete_for_validation(
-        &mut self,
-        result: BluetoothSchedulerLockModifyPublicationResult,
-    ) {
-        let request = match self.state {
-            BluetoothSchedulerLockModifyWorkerState::Awaiting(awaiting) => awaiting.request,
-            BluetoothSchedulerLockModifyWorkerState::InFlight(ref in_flight) => in_flight.request,
-            BluetoothSchedulerLockModifyWorkerState::Idle
-            | BluetoothSchedulerLockModifyWorkerState::Complete(_) => {
-                panic!("validation completion requires one active request")
-            }
-        };
-        assert_eq!(request, result.request());
-        self.state = BluetoothSchedulerLockModifyWorkerState::Complete(result);
     }
 }
 
@@ -607,7 +600,9 @@ mod tests {
             published: 0,
         };
         let mut worker = BluetoothSchedulerLockModifyWorker::new();
-        worker.begin(request()).expect("idle worker admits request");
+        worker
+            .begin_inner(request())
+            .expect("idle worker admits request");
 
         assert_eq!(
             worker.step_with(event(&cell, true), &mut backend),
@@ -619,7 +614,7 @@ mod tests {
         );
         assert_eq!(backend.published, 1);
         assert_eq!(
-            worker.begin(request()),
+            worker.begin_inner(request()),
             Err(BluetoothSchedulerLockModifyBeginError::AlreadyInFlight)
         );
 
@@ -632,7 +627,7 @@ mod tests {
             BluetoothSchedulerLockModifyWorkerStep::Ready
         );
         assert_eq!(
-            worker.begin(request()),
+            worker.begin_inner(request()),
             Err(BluetoothSchedulerLockModifyBeginError::ResultPending)
         );
         let result = worker.take_result().expect("result is durable");

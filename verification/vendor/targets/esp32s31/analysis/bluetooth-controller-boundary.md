@@ -295,8 +295,9 @@ The implementation order is:
    insertion and selector two to admitted non-scan insertion. DTM deliberately
    bypasses both and publishes its private TX head/RX tail through its link
    state. The
-   lock/modify head request already has exact images, predicate, diagnostic
-   publication-result projection and affine event phases, while the
+   conditional lock/modify request already has exact images, predicate,
+   diagnostic publication-result projection and affine event phases, but safe
+   admission still requires the merge-selected item/list owner. The
    controller-time latch has exact always-awake request/self-clear/read phases
    and a pure epoch projection. Both interrupt
    snapshot modes, baseline setup/teardown masks, route identities, policies

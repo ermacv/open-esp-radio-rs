@@ -67734,6 +67734,36 @@ pub mod field_replace_modify {
             unsafe { writer.window_unknown().bits((input & 0x000001ff) as u16) }
         });
     }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL fields [RX_IQ_CORRECTION_MODE_LOW, RX_IQ_CORRECTION_MODE_HIGH] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_rx_iq_correction_modes(registers: &crate::PhyBasebandConfigOracle) {
+        registers.iq_correction_control().modify(|_, writer| {
+            let input = 0x00000003_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .rx_iq_correction_mode_low()
+                .bit((input & 0x00000001) != 0)
+                .rx_iq_correction_mode_high()
+                .bit(((input >> 1) & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX fields [TX_IQ_CORRECTION_MODE_LOW, TX_IQ_CORRECTION_MODE_HIGH] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_tx_iq_correction_modes(registers: &crate::PhyBasebandConfigOracle) {
+        registers.iq_correction_aux().modify(|_, writer| {
+            let input = 0x00000003_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .tx_iq_correction_mode_low()
+                .bit((input & 0x00000001) != 0)
+                .tx_iq_correction_mode_high()
+                .bit(((input >> 1) & 0x00000001) != 0)
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.

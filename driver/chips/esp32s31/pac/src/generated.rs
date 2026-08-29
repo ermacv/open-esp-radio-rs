@@ -5797,6 +5797,18 @@ pub(crate) fn configure_rx_11b_optimization_window(registers: &crate::svd::PhyAg
     crate::svd::field_replace_modify::configure_rx_11b_optimization_window(registers);
 }
 
+/// Typed bridge for the reviewed `enable_rx_iq_correction_modes` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_rx_iq_correction_modes(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::enable_rx_iq_correction_modes(registers);
+}
+
+/// Typed bridge for the reviewed `enable_tx_iq_correction_modes` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_tx_iq_correction_modes(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::enable_tx_iq_correction_modes(registers);
+}
+
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
 #[inline]
 pub(crate) fn configure_shared_modem_low_power_timer(

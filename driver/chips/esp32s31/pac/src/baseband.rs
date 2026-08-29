@@ -427,18 +427,8 @@ impl RadioPhyRegisters {
     /// recovered mode bits in each word while preserving all coefficients.
     pub fn enable_iq_correction_modes(&mut self) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        bb.iq_correction_control().modify(|_, w| {
-            w.rx_iq_correction_mode_low()
-                .set_bit()
-                .rx_iq_correction_mode_high()
-                .set_bit()
-        });
-        bb.iq_correction_aux().modify(|_, w| {
-            w.tx_iq_correction_mode_low()
-                .set_bit()
-                .tx_iq_correction_mode_high()
-                .set_bit()
-        });
+        super::generated::enable_rx_iq_correction_modes(bb);
+        super::generated::enable_tx_iq_correction_modes(bb);
     }
 
     /// Publish both RXIQ root status bits through independent fresh RMWs.

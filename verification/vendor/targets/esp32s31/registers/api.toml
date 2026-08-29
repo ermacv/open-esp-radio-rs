@@ -7989,3 +7989,27 @@ fields = [{ field = "WINDOW_UNKNOWN", source-bit-offset = 0 }]
 value = 0x1c8
 exposure = "facade"
 sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_rx_iq_correction_modes"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "IQ_CORRECTION_CONTROL"
+fields = [
+    { field = "RX_IQ_CORRECTION_MODE_LOW", source-bit-offset = 0 },
+    { field = "RX_IQ_CORRECTION_MODE_HIGH", source-bit-offset = 1 },
+]
+value = 3
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_tx_iq_correction_modes"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "IQ_CORRECTION_AUX"
+fields = [
+    { field = "TX_IQ_CORRECTION_MODE_LOW", source-bit-offset = 0 },
+    { field = "TX_IQ_CORRECTION_MODE_HIGH", source-bit-offset = 1 },
+]
+value = 3
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]

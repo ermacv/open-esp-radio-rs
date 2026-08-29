@@ -27,55 +27,63 @@ bitWidth = 32
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "INIT_CONTROL_00B4"
-description = "BLE PHY register initialization first applies a fresh-read RMW with mask 0x00020000, preserving only bit 17 and clearing every other bit. Its conditional tail later performs a second fresh-read RMW that sets exactly bits 11, 15, 20 and 24 with mask 0x01108800. The five evidenced bit positions have neutral initialization names; all omitted bit ranges retain unknown hardware semantics."
+name = "INTERRUPT_ENABLE"
+description = "BLE base-stack interrupt enable bank. BLE PHY initialization preserves only source 17 and later enables sources 11, 15, 20 and 24. The synchronous scheduler-run subscriber clears stale source 14 before enabling it here. All omitted source identities remain unknown."
 addressOffset = 0xB4
 size = 32
 access = "read-write"
 
 [[peripherals.registers.register.fields]]
-name = "INIT_SET_11"
-description = "The conditional initialization tail sets bit 11. Its hardware meaning remains unknown."
+name = "SOURCE_11"
+description = "The conditional BLE PHY initialization tail enables source 11. Its feature identity remains unknown."
 bitOffset = 11
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "INIT_SET_15"
-description = "The conditional initialization tail sets bit 15. Its hardware meaning remains unknown."
+name = "SCHEDULER_RUN"
+description = "The synchronous base-stack subscriber enables source 14 immediately before the scheduler RUN command."
+bitOffset = 14
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "SOURCE_15"
+description = "The conditional BLE PHY initialization tail enables source 15. Its feature identity remains unknown."
 bitOffset = 15
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "INIT_PRESERVE_17"
-description = "The first initialization RMW preserves bit 17 while clearing every other bit. Its hardware meaning remains unknown."
+name = "SOURCE_17"
+description = "BLE PHY initialization preserves source 17 while disabling every other interrupt source. Its feature identity remains unknown."
 bitOffset = 17
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "INIT_SET_20"
-description = "The conditional initialization tail sets bit 20. Its hardware meaning remains unknown."
+name = "SOURCE_20"
+description = "The conditional BLE PHY initialization tail enables source 20. Its feature identity remains unknown."
 bitOffset = 20
 bitWidth = 1
 
 [[peripherals.registers.register.fields]]
-name = "INIT_SET_24"
-description = "The conditional initialization tail sets bit 24. Its hardware meaning remains unknown."
+name = "SOURCE_24"
+description = "The conditional BLE PHY initialization tail enables source 24. Its feature identity remains unknown."
 bitOffset = 24
 bitWidth = 1
 
 [[peripherals.registers]]
 
 [peripherals.registers.register]
-name = "INIT_ONES_00B8"
-description = "BLE PHY register initialization writes the complete all-ones image."
+name = "INTERRUPT_CLEAR"
+description = "Write-one-to-clear BLE base-stack interrupt bank. Initialization acknowledges every source with an all-ones image; the synchronous scheduler-run subscriber acknowledges source 14 before enabling it."
 addressOffset = 0xB8
 size = 32
-access = "read-write"
+access = "write-only"
+modifiedWriteValues = "oneToClear"
 
 [[peripherals.registers.register.fields]]
-name = "INIT_IMAGE"
-bitOffset = 0
-bitWidth = 32
+name = "SCHEDULER_RUN"
+description = "A one acknowledges stale scheduler-run source 14 before that source is enabled."
+bitOffset = 14
+bitWidth = 1
 
 [[peripherals.registers]]
 
@@ -492,57 +500,64 @@ accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_00B4"
-sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+entity = "BTMAC_BLE_PHY_INIT.INTERRUPT_ENABLE"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS", "BLOB_LIBBTDM_SCHEDULER_RUN_EVENT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_00B4.INIT_SET_11"
+entity = "BTMAC_BLE_PHY_INIT.INTERRUPT_ENABLE.SOURCE_11"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_00B4.INIT_SET_15"
+entity = "BTMAC_BLE_PHY_INIT.INTERRUPT_ENABLE.SCHEDULER_RUN"
+sources = ["BLOB_LIBBTDM_SCHEDULER_RUN_EVENT"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
+
+[[review]]
+entity = "BTMAC_BLE_PHY_INIT.INTERRUPT_ENABLE.SOURCE_15"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_00B4.INIT_PRESERVE_17"
+entity = "BTMAC_BLE_PHY_INIT.INTERRUPT_ENABLE.SOURCE_17"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_00B4.INIT_SET_20"
+entity = "BTMAC_BLE_PHY_INIT.INTERRUPT_ENABLE.SOURCE_20"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_00B4.INIT_SET_24"
+entity = "BTMAC_BLE_PHY_INIT.INTERRUPT_ENABLE.SOURCE_24"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_ONES_00B8"
-sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+entity = "BTMAC_BLE_PHY_INIT.INTERRUPT_CLEAR"
+sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS", "BLOB_LIBBTDM_SCHEDULER_RUN_EVENT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "partial"
 
 [[review]]
-entity = "BTMAC_BLE_PHY_INIT.INIT_ONES_00B8.INIT_IMAGE"
-sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+entity = "BTMAC_BLE_PHY_INIT.INTERRUPT_CLEAR.SCHEDULER_RUN"
+sources = ["BLOB_LIBBTDM_SCHEDULER_RUN_EVENT"]
 provenance = "observed"
 accuracy = "exact"
 completeness = "complete"

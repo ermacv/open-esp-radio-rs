@@ -4737,44 +4737,51 @@ access = "read-write"
 address = 537924788
 width = 32
 access = "read-write"
-identity = "BTMAC_BLE_PHY_INIT.INIT_CONTROL_00B4"
+identity = "BTMAC_BLE_PHY_INIT.INTERRUPT_ENABLE"
 peripheral = "BTMAC_BLE_PHY_INIT"
 peripheral-type = "BtmacBlePhyInit"
 peripheral-module = "btmac_ble_phy_init"
 scope = []
-register-method = "init_control_00b4"
+register-method = "interrupt_enable"
 
 [[registers.fields]]
-svd-name = "INIT_SET_11"
-method = "init_set_11"
+svd-name = "SOURCE_11"
+method = "source_11"
 bit-offset = 11
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "INIT_SET_15"
-method = "init_set_15"
+svd-name = "SCHEDULER_RUN"
+method = "scheduler_run"
+bit-offset = 14
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "SOURCE_15"
+method = "source_15"
 bit-offset = 15
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "INIT_PRESERVE_17"
-method = "init_preserve_17"
+svd-name = "SOURCE_17"
+method = "source_17"
 bit-offset = 17
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "INIT_SET_20"
-method = "init_set_20"
+svd-name = "SOURCE_20"
+method = "source_20"
 bit-offset = 20
 bit-width = 1
 access = "read-write"
 
 [[registers.fields]]
-svd-name = "INIT_SET_24"
-method = "init_set_24"
+svd-name = "SOURCE_24"
+method = "source_24"
 bit-offset = 24
 bit-width = 1
 access = "read-write"
@@ -4782,20 +4789,20 @@ access = "read-write"
 [[registers]]
 address = 537924792
 width = 32
-access = "read-write"
-identity = "BTMAC_BLE_PHY_INIT.INIT_ONES_00B8"
+access = "write-only"
+identity = "BTMAC_BLE_PHY_INIT.INTERRUPT_CLEAR"
 peripheral = "BTMAC_BLE_PHY_INIT"
 peripheral-type = "BtmacBlePhyInit"
 peripheral-module = "btmac_ble_phy_init"
 scope = []
-register-method = "init_ones_00b8"
+register-method = "interrupt_clear"
 
 [[registers.fields]]
-svd-name = "INIT_IMAGE"
-method = "init_image"
-bit-offset = 0
-bit-width = 32
-access = "read-write"
+svd-name = "SCHEDULER_RUN"
+method = "scheduler_run"
+bit-offset = 14
+bit-width = 1
+access = "write-only"
 
 [[registers]]
 address = 537924804

@@ -3,8 +3,8 @@
 #![deny(unsafe_code)]
 
 use super::{
-    BluetoothControllerSramAddress, BluetoothSchedulerHardwareListIndex, BluetoothTaskRegisters,
-    device_fence,
+    BluetoothControllerSramAddress, BluetoothSchedulerHardwareListIndex,
+    BluetoothSchedulerRunInterruptsPrepared, BluetoothTaskRegisters, device_fence,
 };
 
 trait BluetoothSchedulerHardwareListHeadControl {
@@ -51,6 +51,34 @@ fn execute_scheduler_hardware_list_head_publication(
     control.publish_head(index, head);
     control.order_after_publication();
     BluetoothSchedulerHardwareListHeadPublished { index, head }
+}
+
+trait BluetoothSchedulerRunEventControl {
+    fn clear_scheduler_run_event_source(&mut self);
+    fn enable_scheduler_run_event_source(&mut self);
+    fn order_after_scheduler_run_event(&mut self);
+}
+
+impl BluetoothSchedulerRunEventControl for BluetoothTaskRegisters {
+    fn clear_scheduler_run_event_source(&mut self) {
+        super::svd::fixed_register_image::clear_ble_scheduler_run_event_source(
+            &self.bluetooth.btmac_ble_phy_init,
+        );
+    }
+
+    fn enable_scheduler_run_event_source(&mut self) {
+        super::generated::enable_ble_scheduler_run_event_source(&self.bluetooth.btmac_ble_phy_init);
+    }
+
+    fn order_after_scheduler_run_event(&mut self) {
+        device_fence();
+    }
+}
+
+fn execute_scheduler_run_event_publication(control: &mut impl BluetoothSchedulerRunEventControl) {
+    control.clear_scheduler_run_event_source();
+    control.enable_scheduler_run_event_source();
+    control.order_after_scheduler_run_event();
 }
 
 /// Head published to one scheduler hardware list.
@@ -174,16 +202,54 @@ impl BluetoothSchedulerHardwareListsCleared {
     }
 }
 
+/// Affine evidence that the synchronous scheduler-run subscriber completed.
+///
+/// The exact current subscriber acknowledges stale BTMAC source 14, enables
+/// that source through a fresh-read field update and completes a trailing
+/// device fence. The value also retains the matching head and dynamic
+/// interrupt proof, so the final RUN command cannot be reached with a partial
+/// or reordered prologue.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "the complete scheduler-run event must feed the hardware RUN command"]
+pub struct BluetoothSchedulerRunEventPublished {
+    head: BluetoothSchedulerHardwareListHeadPublished,
+    _interrupts: BluetoothSchedulerRunInterruptsPrepared,
+}
+
+impl BluetoothSchedulerRunEventPublished {
+    /// Hardware list whose head remains retained through the run prologue.
+    pub const fn index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.head.index()
+    }
+
+    /// Exact head retained through the run prologue.
+    pub const fn head(&self) -> BluetoothSchedulerHardwareListHead {
+        self.head.head()
+    }
+}
+
 /// Affine evidence that the hardware RUN command and trailing device fence
 /// completed.
 ///
-/// This is deliberately not evidence of the complete vendor scheduler-run
-/// operation. Dynamic interrupt preparation and software broker publication
-/// precede this final MMIO command and remain separately owned.
+/// This value retains the complete typed run prologue: hardware-list head,
+/// dynamic interrupt preparation and the synchronous BTMAC scheduler event.
+/// It is not evidence of radio completion.
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "the hardware run command must feed controller ownership"]
 pub struct BluetoothSchedulerHardwareRunCommandPublished {
-    _private: (),
+    event: BluetoothSchedulerRunEventPublished,
+}
+
+impl BluetoothSchedulerHardwareRunCommandPublished {
+    /// Hardware list now admitted to scheduler execution.
+    pub const fn index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.event.index()
+    }
+
+    /// Exact head retained while hardware owns scheduler execution.
+    pub const fn head(&self) -> BluetoothSchedulerHardwareListHead {
+        self.event.head()
+    }
 }
 
 impl BluetoothTaskRegisters {
@@ -287,26 +353,42 @@ impl BluetoothTaskRegisters {
         BluetoothSchedulerInsertionCommandStartCleared { command }
     }
 
+    /// Publish the synchronous base-stack scheduler event required before RUN.
+    ///
+    /// SOURCE: complete current `r_sym_bt_PVKilXLQPu1BjRkm4C6O` publishes
+    /// broker selector two after dynamic interrupt preparation. Its complete
+    /// registered subscriber `r_sym_ble_uwrf0kLZsRbzFJ7u8SEr` acknowledges
+    /// BTMAC source 14 before enabling it through a fresh-read RMW. This typed
+    /// transaction replaces the generic callback list without making the
+    /// synchronous hardware effect asynchronous.
+    #[doc(hidden)]
+    pub fn publish_scheduler_run_event(
+        &mut self,
+        head: BluetoothSchedulerHardwareListHeadPublished,
+        interrupts: BluetoothSchedulerRunInterruptsPrepared,
+    ) -> BluetoothSchedulerRunEventPublished {
+        execute_scheduler_run_event_publication(self);
+        BluetoothSchedulerRunEventPublished {
+            head,
+            _interrupts: interrupts,
+        }
+    }
+
     /// Publish the finite scheduler hardware RUN command.
     ///
-    /// # Safety
-    ///
-    /// The caller must have completed the required head publication, dynamic
-    /// interrupt preparation and software broker publication before issuing
-    /// this final command.
+    /// Consuming [`BluetoothSchedulerRunEventPublished`] proves that head
+    /// publication, dynamic interrupt preparation and the synchronous BTMAC
+    /// subscriber all completed in the required order.
     #[doc(hidden)]
-    #[allow(
-        unsafe_code,
-        reason = "the caller retains the complete scheduler-run prefix and insertion ownership"
-    )]
-    pub unsafe fn publish_scheduler_hardware_run_command(
+    pub fn publish_scheduler_hardware_run_command(
         &mut self,
+        event: BluetoothSchedulerRunEventPublished,
     ) -> BluetoothSchedulerHardwareRunCommandPublished {
         super::svd::fixed_register_write::publish_bluetooth_scheduler_hardware_run_command(
             &self.bluetooth.bluetooth_controller_core,
         );
         device_fence();
-        BluetoothSchedulerHardwareRunCommandPublished { _private: () }
+        BluetoothSchedulerHardwareRunCommandPublished { event }
     }
 }
 
@@ -315,7 +397,8 @@ mod tests {
     use super::{
         BluetoothControllerSramAddress, BluetoothSchedulerHardwareListHead,
         BluetoothSchedulerHardwareListHeadControl, BluetoothSchedulerHardwareListHeadError,
-        BluetoothSchedulerHardwareListIndex, execute_scheduler_hardware_list_head_publication,
+        BluetoothSchedulerHardwareListIndex, BluetoothSchedulerRunEventControl,
+        execute_scheduler_hardware_list_head_publication, execute_scheduler_run_event_publication,
     };
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -349,6 +432,49 @@ mod tests {
         fn order_after_publication(&mut self) {
             self.operations.push(PublicationOperation::DeviceFence);
         }
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum RunEventOperation {
+        ClearStaleSource,
+        EnableSource,
+        DeviceFence,
+    }
+
+    struct RunEventRecorder {
+        operations: std::vec::Vec<RunEventOperation>,
+    }
+
+    impl BluetoothSchedulerRunEventControl for RunEventRecorder {
+        fn clear_scheduler_run_event_source(&mut self) {
+            self.operations.push(RunEventOperation::ClearStaleSource);
+        }
+
+        fn enable_scheduler_run_event_source(&mut self) {
+            self.operations.push(RunEventOperation::EnableSource);
+        }
+
+        fn order_after_scheduler_run_event(&mut self) {
+            self.operations.push(RunEventOperation::DeviceFence);
+        }
+    }
+
+    #[test]
+    fn scheduler_run_event_clears_stale_source_before_enabling_it() {
+        let mut recorder = RunEventRecorder {
+            operations: std::vec::Vec::new(),
+        };
+
+        execute_scheduler_run_event_publication(&mut recorder);
+
+        assert_eq!(
+            recorder.operations,
+            [
+                RunEventOperation::ClearStaleSource,
+                RunEventOperation::EnableSource,
+                RunEventOperation::DeviceFence,
+            ]
+        );
     }
 
     #[test]

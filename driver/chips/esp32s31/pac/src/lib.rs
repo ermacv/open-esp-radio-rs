@@ -121,7 +121,7 @@ pub use bluetooth_scheduler::{
     BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadError,
     BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHardwareListsCleared,
     BluetoothSchedulerHardwareRunCommandPublished, BluetoothSchedulerInsertionCommand,
-    BluetoothSchedulerInsertionCommandStartCleared,
+    BluetoothSchedulerInsertionCommandStartCleared, BluetoothSchedulerRunEventPublished,
 };
 pub use bluetooth_scheduler_insertion::{
     BluetoothSchedulerExecutionLockDisposition, BluetoothSchedulerExecutionLockPublished,

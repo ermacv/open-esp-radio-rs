@@ -3082,10 +3082,18 @@ pub(crate) fn enable_ble_phy_init_branch_control_0470(registers: &crate::svd::Bt
     crate::svd::field_or_modify::enable_ble_phy_init_branch_control_0470(registers);
 }
 
-/// Typed bridge for the reviewed `publish_ble_phy_init_control_00b4_tail` fixed field-OR transaction.
+/// Typed bridge for the reviewed `enable_ble_phy_interrupt_sources_11_15_20_24` fixed field-OR transaction.
 #[inline]
-pub(crate) fn publish_ble_phy_init_control_00b4_tail(registers: &crate::svd::BtmacBlePhyInit) {
-    crate::svd::field_or_modify::publish_ble_phy_init_control_00b4_tail(registers);
+pub(crate) fn enable_ble_phy_interrupt_sources_11_15_20_24(
+    registers: &crate::svd::BtmacBlePhyInit,
+) {
+    crate::svd::field_or_modify::enable_ble_phy_interrupt_sources_11_15_20_24(registers);
+}
+
+/// Typed bridge for the reviewed `enable_ble_scheduler_run_event_source` fixed field-OR transaction.
+#[inline]
+pub(crate) fn enable_ble_scheduler_run_event_source(registers: &crate::svd::BtmacBlePhyInit) {
+    crate::svd::field_or_modify::enable_ble_scheduler_run_event_source(registers);
 }
 
 /// Typed bridge for the reviewed `enable_ble_phy_init_control_00c4` fixed field-OR transaction.

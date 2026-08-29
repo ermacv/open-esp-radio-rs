@@ -1849,11 +1849,18 @@ value = 0x00000001
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[fixed-register-images]]
-name = "fill_ble_phy_init_ones_00b8"
+name = "clear_all_ble_base_stack_interrupt_sources"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_ONES_00B8"
+register = "INTERRUPT_CLEAR"
 value = 0xffffffff
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[fixed-register-images]]
+name = "clear_ble_scheduler_run_event_source"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INTERRUPT_CLEAR"
+value = 0x00004000
+sources = ["BLOB_LIBBTDM_SCHEDULER_RUN_EVENT"]
 
 [[fixed-register-images]]
 name = "publish_ble_phy_init_value_0138"
@@ -3212,18 +3219,27 @@ exposure = "facade"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[field-or-modifies]]
-name = "publish_ble_phy_init_control_00b4_tail"
+name = "enable_ble_phy_interrupt_sources_11_15_20_24"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_CONTROL_00B4"
+register = "INTERRUPT_ENABLE"
 fields = [
-    { field = "INIT_SET_11", source-bit-offset = 0 },
-    { field = "INIT_SET_15", source-bit-offset = 0 },
-    { field = "INIT_SET_20", source-bit-offset = 0 },
-    { field = "INIT_SET_24", source-bit-offset = 0 },
+    { field = "SOURCE_11", source-bit-offset = 0 },
+    { field = "SOURCE_15", source-bit-offset = 0 },
+    { field = "SOURCE_20", source-bit-offset = 0 },
+    { field = "SOURCE_24", source-bit-offset = 0 },
 ]
 value = 1
 exposure = "facade"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
+
+[[field-or-modifies]]
+name = "enable_ble_scheduler_run_event_source"
+peripheral = "BTMAC_BLE_PHY_INIT"
+register = "INTERRUPT_ENABLE"
+fields = [{ field = "SCHEDULER_RUN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBTDM_SCHEDULER_RUN_EVENT"]
 
 [[field-or-modifies]]
 name = "enable_ble_phy_init_control_00c4"
@@ -3433,10 +3449,10 @@ exposure = "facade"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[sampled-bit-zero-writes]]
-name = "preserve_ble_phy_init_control_00b4_bit_17"
+name = "preserve_ble_phy_interrupt_source_17"
 peripheral = "BTMAC_BLE_PHY_INIT"
-register = "INIT_CONTROL_00B4"
-field = "INIT_PRESERVE_17"
+register = "INTERRUPT_ENABLE"
+field = "SOURCE_17"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[register-image-writes]]

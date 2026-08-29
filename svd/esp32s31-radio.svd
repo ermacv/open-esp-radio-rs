@@ -16886,55 +16886,63 @@ the exact operation without promoting the cross-chip hint to hardware truth.</de
           </fields>
         </register>
         <register>
-          <name>INIT_CONTROL_00B4</name>
-          <description>BLE PHY register initialization first applies a fresh-read RMW with mask 0x00020000, preserving only bit 17 and clearing every other bit. Its conditional tail later performs a second fresh-read RMW that sets exactly bits 11, 15, 20 and 24 with mask 0x01108800. The five evidenced bit positions have neutral initialization names; all omitted bit ranges retain unknown hardware semantics.</description>
+          <name>INTERRUPT_ENABLE</name>
+          <description>BLE base-stack interrupt enable bank. BLE PHY initialization preserves only source 17 and later enables sources 11, 15, 20 and 24. The synchronous scheduler-run subscriber clears stale source 14 before enabling it here. All omitted source identities remain unknown.</description>
           <addressOffset>0xB4</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
           <fields>
             <field>
-              <name>INIT_SET_11</name>
-              <description>The conditional initialization tail sets bit 11. Its hardware meaning remains unknown.</description>
+              <name>SOURCE_11</name>
+              <description>The conditional BLE PHY initialization tail enables source 11. Its feature identity remains unknown.</description>
               <bitOffset>11</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>INIT_SET_15</name>
-              <description>The conditional initialization tail sets bit 15. Its hardware meaning remains unknown.</description>
+              <name>SCHEDULER_RUN</name>
+              <description>The synchronous base-stack subscriber enables source 14 immediately before the scheduler RUN command.</description>
+              <bitOffset>14</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>SOURCE_15</name>
+              <description>The conditional BLE PHY initialization tail enables source 15. Its feature identity remains unknown.</description>
               <bitOffset>15</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>INIT_PRESERVE_17</name>
-              <description>The first initialization RMW preserves bit 17 while clearing every other bit. Its hardware meaning remains unknown.</description>
+              <name>SOURCE_17</name>
+              <description>BLE PHY initialization preserves source 17 while disabling every other interrupt source. Its feature identity remains unknown.</description>
               <bitOffset>17</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>INIT_SET_20</name>
-              <description>The conditional initialization tail sets bit 20. Its hardware meaning remains unknown.</description>
+              <name>SOURCE_20</name>
+              <description>The conditional BLE PHY initialization tail enables source 20. Its feature identity remains unknown.</description>
               <bitOffset>20</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
             <field>
-              <name>INIT_SET_24</name>
-              <description>The conditional initialization tail sets bit 24. Its hardware meaning remains unknown.</description>
+              <name>SOURCE_24</name>
+              <description>The conditional BLE PHY initialization tail enables source 24. Its feature identity remains unknown.</description>
               <bitOffset>24</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>
         <register>
-          <name>INIT_ONES_00B8</name>
-          <description>BLE PHY register initialization writes the complete all-ones image.</description>
+          <name>INTERRUPT_CLEAR</name>
+          <description>Write-one-to-clear BLE base-stack interrupt bank. Initialization acknowledges every source with an all-ones image; the synchronous scheduler-run subscriber acknowledges source 14 before enabling it.</description>
           <addressOffset>0xB8</addressOffset>
           <size>0x20</size>
-          <access>read-write</access>
+          <access>write-only</access>
+          <modifiedWriteValues>oneToClear</modifiedWriteValues>
           <fields>
             <field>
-              <name>INIT_IMAGE</name>
-              <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
+              <name>SCHEDULER_RUN</name>
+              <description>A one acknowledges stale scheduler-run source 14 before that source is enabled.</description>
+              <bitOffset>14</bitOffset>
+              <bitWidth>1</bitWidth>
             </field>
           </fields>
         </register>

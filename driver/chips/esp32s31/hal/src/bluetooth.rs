@@ -49,8 +49,8 @@ pub use open_esp_radio_esp32s31_pac::{
     BluetoothSchedulerLockModifyInterruptObservation, BluetoothSchedulerLockModifyObservation,
     BluetoothSchedulerLockModifyPublished, BluetoothSchedulerLockModifyRequest,
     BluetoothSchedulerLockModifyTaskObservation, BluetoothSchedulerReferenceCleared,
-    BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerRunInterruptsPrepared,
-    BluetoothSchedulerSoftwareListRemovalDisposition,
+    BluetoothSchedulerReferenceGateObservation, BluetoothSchedulerRunEventPublished,
+    BluetoothSchedulerRunInterruptsPrepared, BluetoothSchedulerSoftwareListRemovalDisposition,
     BluetoothSchedulerSoftwareListRemovalObservation,
     BluetoothSchedulerSoftwareListRemovalTaskObservation, BluetoothSchedulerWorkObservation,
 };
@@ -1049,22 +1049,25 @@ impl BluetoothControllerHal<'_> {
         self.registers.observe_scheduler_execution_modify(scheduler)
     }
 
-    /// Publish the finite scheduler hardware RUN command through the
-    /// restricted PAC.
-    ///
-    /// # Safety
-    ///
-    /// The caller must retain the required hardware-list publication, dynamic
-    /// interrupt preparation and software broker publication.
+    /// Publish the synchronous BTMAC scheduler event through the restricted
+    /// PAC after the matching head and dynamic interrupts are prepared.
     #[doc(hidden)]
-    #[allow(
-        unsafe_code,
-        reason = "the caller retains the complete scheduler-run prefix and insertion ownership"
-    )]
-    pub unsafe fn publish_scheduler_hardware_run_command(
+    pub fn publish_scheduler_run_event(
         &mut self,
+        head: BluetoothSchedulerHardwareListHeadPublished,
+        interrupts: BluetoothSchedulerRunInterruptsPrepared,
+    ) -> BluetoothSchedulerRunEventPublished {
+        self.registers.publish_scheduler_run_event(head, interrupts)
+    }
+
+    /// Publish the final scheduler hardware RUN command through the
+    /// restricted PAC. The consumed event retains the complete run prologue.
+    #[doc(hidden)]
+    pub fn publish_scheduler_hardware_run_command(
+        &mut self,
+        event: BluetoothSchedulerRunEventPublished,
     ) -> BluetoothSchedulerHardwareRunCommandPublished {
-        unsafe { self.registers.publish_scheduler_hardware_run_command() }
+        self.registers.publish_scheduler_hardware_run_command(event)
     }
 
     /// Capture task-owned START and RESULT fields for one scheduler

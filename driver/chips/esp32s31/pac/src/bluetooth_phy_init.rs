@@ -130,8 +130,8 @@ impl BluetoothTaskRegisters {
         super::svd::fixed_register_image::latch_ble_phy_register_initialization_entry(
             &bluetooth.ble_phy_init_toggle,
         );
-        super::svd::sampled_bit_zero_write::preserve_ble_phy_init_control_00b4_bit_17(btmac);
-        super::svd::fixed_register_image::fill_ble_phy_init_ones_00b8(btmac);
+        super::svd::sampled_bit_zero_write::preserve_ble_phy_interrupt_source_17(btmac);
+        super::svd::fixed_register_image::clear_all_ble_base_stack_interrupt_sources(btmac);
         super::generated::clear_ble_phy_lc_tx_on_delay_fields(btmac);
         super::generated::or_ble_phy_init_tx_on_delay(
             btmac,
@@ -226,7 +226,7 @@ impl BluetoothTaskRegisters {
         super::svd::fixed_register_image::latch_ble_phy_runtime_configuration(
             &bluetooth.ble_hw_runtime_control,
         );
-        super::generated::publish_ble_phy_init_control_00b4_tail(btmac);
+        super::generated::enable_ble_phy_interrupt_sources_11_15_20_24(btmac);
         super::generated::enable_ble_phy_init_control_00c4(btmac);
 
         let controller = &bluetooth.bluetooth_controller_core;

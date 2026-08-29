@@ -39446,8 +39446,8 @@ pub mod btmac_ble_phy_init {
         _reserved0: [u8; 0x74],
         init_zero_0074: InitZero0074,
         _reserved1: [u8; 0x3c],
-        init_control_00b4: InitControl00b4,
-        init_ones_00b8: InitOnes00b8,
+        interrupt_enable: InterruptEnable,
+        interrupt_clear: InterruptClear,
         _reserved3: [u8; 0x08],
         init_control_00c4: InitControl00c4,
         _reserved4: [u8; 0x70],
@@ -39482,15 +39482,15 @@ pub mod btmac_ble_phy_init {
         pub const fn init_zero_0074(&self) -> &InitZero0074 {
             &self.init_zero_0074
         }
-        #[doc = "0xb4 - BLE PHY register initialization first applies a fresh-read RMW with mask 0x00020000, preserving only bit 17 and clearing every other bit. Its conditional tail later performs a second fresh-read RMW that sets exactly bits 11, 15, 20 and 24 with mask 0x01108800. The five evidenced bit positions have neutral initialization names; all omitted bit ranges retain unknown hardware semantics."]
+        #[doc = "0xb4 - BLE base-stack interrupt enable bank. BLE PHY initialization preserves only source 17 and later enables sources 11, 15, 20 and 24. The synchronous scheduler-run subscriber clears stale source 14 before enabling it here. All omitted source identities remain unknown."]
         #[inline(always)]
-        pub const fn init_control_00b4(&self) -> &InitControl00b4 {
-            &self.init_control_00b4
+        pub const fn interrupt_enable(&self) -> &InterruptEnable {
+            &self.interrupt_enable
         }
-        #[doc = "0xb8 - BLE PHY register initialization writes the complete all-ones image."]
+        #[doc = "0xb8 - Write-one-to-clear BLE base-stack interrupt bank. Initialization acknowledges every source with an all-ones image; the synchronous scheduler-run subscriber acknowledges source 14 before enabling it."]
         #[inline(always)]
-        pub const fn init_ones_00b8(&self) -> &InitOnes00b8 {
-            &self.init_ones_00b8
+        pub const fn interrupt_clear(&self) -> &InterruptClear {
+            &self.interrupt_clear
         }
         #[doc = "0xc4 - The conditional tail of complete BLE PHY register initialization sets bit 9 through a fresh-read RMW. All other bits are preserved and their meanings remain unknown."]
         #[inline(always)]
@@ -39622,138 +39622,140 @@ pub mod btmac_ble_phy_init {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "INIT_CONTROL_00B4 (rw) register accessor: BLE PHY register initialization first applies a fresh-read RMW with mask 0x00020000, preserving only bit 17 and clearing every other bit. Its conditional tail later performs a second fresh-read RMW that sets exactly bits 11, 15, 20 and 24 with mask 0x01108800. The five evidenced bit positions have neutral initialization names; all omitted bit ranges retain unknown hardware semantics.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_control_00b4::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_control_00b4::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_control_00b4`] module"]
-    #[doc(alias = "INIT_CONTROL_00B4")]
-    pub type InitControl00b4 = crate::Reg<init_control_00b4::InitControl00b4Spec>;
-    #[doc = "BLE PHY register initialization first applies a fresh-read RMW with mask 0x00020000, preserving only bit 17 and clearing every other bit. Its conditional tail later performs a second fresh-read RMW that sets exactly bits 11, 15, 20 and 24 with mask 0x01108800. The five evidenced bit positions have neutral initialization names; all omitted bit ranges retain unknown hardware semantics."]
-    pub mod init_control_00b4 {
-        #[doc = "Register `INIT_CONTROL_00B4` reader"]
-        pub type R = crate::R<InitControl00b4Spec>;
-        #[doc = "Register `INIT_CONTROL_00B4` writer"]
-        pub type W = crate::W<InitControl00b4Spec>;
-        #[doc = "Field `INIT_SET_11` reader - The conditional initialization tail sets bit 11. Its hardware meaning remains unknown."]
-        pub type InitSet11R = crate::BitReader;
-        #[doc = "Field `INIT_SET_11` writer - The conditional initialization tail sets bit 11. Its hardware meaning remains unknown."]
-        pub type InitSet11W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `INIT_SET_15` reader - The conditional initialization tail sets bit 15. Its hardware meaning remains unknown."]
-        pub type InitSet15R = crate::BitReader;
-        #[doc = "Field `INIT_SET_15` writer - The conditional initialization tail sets bit 15. Its hardware meaning remains unknown."]
-        pub type InitSet15W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `INIT_PRESERVE_17` reader - The first initialization RMW preserves bit 17 while clearing every other bit. Its hardware meaning remains unknown."]
-        pub type InitPreserve17R = crate::BitReader;
-        #[doc = "Field `INIT_PRESERVE_17` writer - The first initialization RMW preserves bit 17 while clearing every other bit. Its hardware meaning remains unknown."]
-        pub type InitPreserve17W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `INIT_SET_20` reader - The conditional initialization tail sets bit 20. Its hardware meaning remains unknown."]
-        pub type InitSet20R = crate::BitReader;
-        #[doc = "Field `INIT_SET_20` writer - The conditional initialization tail sets bit 20. Its hardware meaning remains unknown."]
-        pub type InitSet20W<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `INIT_SET_24` reader - The conditional initialization tail sets bit 24. Its hardware meaning remains unknown."]
-        pub type InitSet24R = crate::BitReader;
-        #[doc = "Field `INIT_SET_24` writer - The conditional initialization tail sets bit 24. Its hardware meaning remains unknown."]
-        pub type InitSet24W<'a, REG> = crate::BitWriter<'a, REG>;
+    #[doc = "INTERRUPT_ENABLE (rw) register accessor: BLE base-stack interrupt enable bank. BLE PHY initialization preserves only source 17 and later enables sources 11, 15, 20 and 24. The synchronous scheduler-run subscriber clears stale source 14 before enabling it here. All omitted source identities remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`interrupt_enable::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`interrupt_enable::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@interrupt_enable`] module"]
+    #[doc(alias = "INTERRUPT_ENABLE")]
+    pub type InterruptEnable = crate::Reg<interrupt_enable::InterruptEnableSpec>;
+    #[doc = "BLE base-stack interrupt enable bank. BLE PHY initialization preserves only source 17 and later enables sources 11, 15, 20 and 24. The synchronous scheduler-run subscriber clears stale source 14 before enabling it here. All omitted source identities remain unknown."]
+    pub mod interrupt_enable {
+        #[doc = "Register `INTERRUPT_ENABLE` reader"]
+        pub type R = crate::R<InterruptEnableSpec>;
+        #[doc = "Register `INTERRUPT_ENABLE` writer"]
+        pub type W = crate::W<InterruptEnableSpec>;
+        #[doc = "Field `SOURCE_11` reader - The conditional BLE PHY initialization tail enables source 11. Its feature identity remains unknown."]
+        pub type Source11R = crate::BitReader;
+        #[doc = "Field `SOURCE_11` writer - The conditional BLE PHY initialization tail enables source 11. Its feature identity remains unknown."]
+        pub type Source11W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `SCHEDULER_RUN` reader - The synchronous base-stack subscriber enables source 14 immediately before the scheduler RUN command."]
+        pub type SchedulerRunR = crate::BitReader;
+        #[doc = "Field `SCHEDULER_RUN` writer - The synchronous base-stack subscriber enables source 14 immediately before the scheduler RUN command."]
+        pub type SchedulerRunW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `SOURCE_15` reader - The conditional BLE PHY initialization tail enables source 15. Its feature identity remains unknown."]
+        pub type Source15R = crate::BitReader;
+        #[doc = "Field `SOURCE_15` writer - The conditional BLE PHY initialization tail enables source 15. Its feature identity remains unknown."]
+        pub type Source15W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `SOURCE_17` reader - BLE PHY initialization preserves source 17 while disabling every other interrupt source. Its feature identity remains unknown."]
+        pub type Source17R = crate::BitReader;
+        #[doc = "Field `SOURCE_17` writer - BLE PHY initialization preserves source 17 while disabling every other interrupt source. Its feature identity remains unknown."]
+        pub type Source17W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `SOURCE_20` reader - The conditional BLE PHY initialization tail enables source 20. Its feature identity remains unknown."]
+        pub type Source20R = crate::BitReader;
+        #[doc = "Field `SOURCE_20` writer - The conditional BLE PHY initialization tail enables source 20. Its feature identity remains unknown."]
+        pub type Source20W<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `SOURCE_24` reader - The conditional BLE PHY initialization tail enables source 24. Its feature identity remains unknown."]
+        pub type Source24R = crate::BitReader;
+        #[doc = "Field `SOURCE_24` writer - The conditional BLE PHY initialization tail enables source 24. Its feature identity remains unknown."]
+        pub type Source24W<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bit 11 - The conditional initialization tail sets bit 11. Its hardware meaning remains unknown."]
+            #[doc = "Bit 11 - The conditional BLE PHY initialization tail enables source 11. Its feature identity remains unknown."]
             #[inline(always)]
-            pub fn init_set_11(&self) -> InitSet11R {
-                InitSet11R::new(((self.bits >> 11) & 1) != 0)
+            pub fn source_11(&self) -> Source11R {
+                Source11R::new(((self.bits >> 11) & 1) != 0)
             }
-            #[doc = "Bit 15 - The conditional initialization tail sets bit 15. Its hardware meaning remains unknown."]
+            #[doc = "Bit 14 - The synchronous base-stack subscriber enables source 14 immediately before the scheduler RUN command."]
             #[inline(always)]
-            pub fn init_set_15(&self) -> InitSet15R {
-                InitSet15R::new(((self.bits >> 15) & 1) != 0)
+            pub fn scheduler_run(&self) -> SchedulerRunR {
+                SchedulerRunR::new(((self.bits >> 14) & 1) != 0)
             }
-            #[doc = "Bit 17 - The first initialization RMW preserves bit 17 while clearing every other bit. Its hardware meaning remains unknown."]
+            #[doc = "Bit 15 - The conditional BLE PHY initialization tail enables source 15. Its feature identity remains unknown."]
             #[inline(always)]
-            pub fn init_preserve_17(&self) -> InitPreserve17R {
-                InitPreserve17R::new(((self.bits >> 17) & 1) != 0)
+            pub fn source_15(&self) -> Source15R {
+                Source15R::new(((self.bits >> 15) & 1) != 0)
             }
-            #[doc = "Bit 20 - The conditional initialization tail sets bit 20. Its hardware meaning remains unknown."]
+            #[doc = "Bit 17 - BLE PHY initialization preserves source 17 while disabling every other interrupt source. Its feature identity remains unknown."]
             #[inline(always)]
-            pub fn init_set_20(&self) -> InitSet20R {
-                InitSet20R::new(((self.bits >> 20) & 1) != 0)
+            pub fn source_17(&self) -> Source17R {
+                Source17R::new(((self.bits >> 17) & 1) != 0)
             }
-            #[doc = "Bit 24 - The conditional initialization tail sets bit 24. Its hardware meaning remains unknown."]
+            #[doc = "Bit 20 - The conditional BLE PHY initialization tail enables source 20. Its feature identity remains unknown."]
             #[inline(always)]
-            pub fn init_set_24(&self) -> InitSet24R {
-                InitSet24R::new(((self.bits >> 24) & 1) != 0)
+            pub fn source_20(&self) -> Source20R {
+                Source20R::new(((self.bits >> 20) & 1) != 0)
+            }
+            #[doc = "Bit 24 - The conditional BLE PHY initialization tail enables source 24. Its feature identity remains unknown."]
+            #[inline(always)]
+            pub fn source_24(&self) -> Source24R {
+                Source24R::new(((self.bits >> 24) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bit 11 - The conditional initialization tail sets bit 11. Its hardware meaning remains unknown."]
+            #[doc = "Bit 11 - The conditional BLE PHY initialization tail enables source 11. Its feature identity remains unknown."]
             #[inline(always)]
-            pub fn init_set_11(&mut self) -> InitSet11W<'_, InitControl00b4Spec> {
-                InitSet11W::new(self, 11)
+            pub fn source_11(&mut self) -> Source11W<'_, InterruptEnableSpec> {
+                Source11W::new(self, 11)
             }
-            #[doc = "Bit 15 - The conditional initialization tail sets bit 15. Its hardware meaning remains unknown."]
+            #[doc = "Bit 14 - The synchronous base-stack subscriber enables source 14 immediately before the scheduler RUN command."]
             #[inline(always)]
-            pub fn init_set_15(&mut self) -> InitSet15W<'_, InitControl00b4Spec> {
-                InitSet15W::new(self, 15)
+            pub fn scheduler_run(&mut self) -> SchedulerRunW<'_, InterruptEnableSpec> {
+                SchedulerRunW::new(self, 14)
             }
-            #[doc = "Bit 17 - The first initialization RMW preserves bit 17 while clearing every other bit. Its hardware meaning remains unknown."]
+            #[doc = "Bit 15 - The conditional BLE PHY initialization tail enables source 15. Its feature identity remains unknown."]
             #[inline(always)]
-            pub fn init_preserve_17(&mut self) -> InitPreserve17W<'_, InitControl00b4Spec> {
-                InitPreserve17W::new(self, 17)
+            pub fn source_15(&mut self) -> Source15W<'_, InterruptEnableSpec> {
+                Source15W::new(self, 15)
             }
-            #[doc = "Bit 20 - The conditional initialization tail sets bit 20. Its hardware meaning remains unknown."]
+            #[doc = "Bit 17 - BLE PHY initialization preserves source 17 while disabling every other interrupt source. Its feature identity remains unknown."]
             #[inline(always)]
-            pub fn init_set_20(&mut self) -> InitSet20W<'_, InitControl00b4Spec> {
-                InitSet20W::new(self, 20)
+            pub fn source_17(&mut self) -> Source17W<'_, InterruptEnableSpec> {
+                Source17W::new(self, 17)
             }
-            #[doc = "Bit 24 - The conditional initialization tail sets bit 24. Its hardware meaning remains unknown."]
+            #[doc = "Bit 20 - The conditional BLE PHY initialization tail enables source 20. Its feature identity remains unknown."]
             #[inline(always)]
-            pub fn init_set_24(&mut self) -> InitSet24W<'_, InitControl00b4Spec> {
-                InitSet24W::new(self, 24)
+            pub fn source_20(&mut self) -> Source20W<'_, InterruptEnableSpec> {
+                Source20W::new(self, 20)
+            }
+            #[doc = "Bit 24 - The conditional BLE PHY initialization tail enables source 24. Its feature identity remains unknown."]
+            #[inline(always)]
+            pub fn source_24(&mut self) -> Source24W<'_, InterruptEnableSpec> {
+                Source24W::new(self, 24)
             }
         }
-        #[doc = "BLE PHY register initialization first applies a fresh-read RMW with mask 0x00020000, preserving only bit 17 and clearing every other bit. Its conditional tail later performs a second fresh-read RMW that sets exactly bits 11, 15, 20 and 24 with mask 0x01108800. The five evidenced bit positions have neutral initialization names; all omitted bit ranges retain unknown hardware semantics.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_control_00b4::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_control_00b4::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitControl00b4Spec;
-        impl crate::RegisterSpec for InitControl00b4Spec {
+        #[doc = "BLE base-stack interrupt enable bank. BLE PHY initialization preserves only source 17 and later enables sources 11, 15, 20 and 24. The synchronous scheduler-run subscriber clears stale source 14 before enabling it here. All omitted source identities remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`interrupt_enable::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`interrupt_enable::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct InterruptEnableSpec;
+        impl crate::RegisterSpec for InterruptEnableSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`init_control_00b4::R`](R) reader structure"]
-        impl crate::Readable for InitControl00b4Spec {}
-        #[doc = "`write(|w| ..)` method takes [`init_control_00b4::W`](W) writer structure"]
-        impl crate::Writable for InitControl00b4Spec {
+        #[doc = "`read()` method returns [`interrupt_enable::R`](R) reader structure"]
+        impl crate::Readable for InterruptEnableSpec {}
+        #[doc = "`write(|w| ..)` method takes [`interrupt_enable::W`](W) writer structure"]
+        impl crate::Writable for InterruptEnableSpec {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "INIT_ONES_00B8 (rw) register accessor: BLE PHY register initialization writes the complete all-ones image.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_ones_00b8::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_ones_00b8::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_ones_00b8`] module"]
-    #[doc(alias = "INIT_ONES_00B8")]
-    pub type InitOnes00b8 = crate::Reg<init_ones_00b8::InitOnes00b8Spec>;
-    #[doc = "BLE PHY register initialization writes the complete all-ones image."]
-    pub mod init_ones_00b8 {
-        #[doc = "Register `INIT_ONES_00B8` reader"]
-        pub type R = crate::R<InitOnes00b8Spec>;
-        #[doc = "Register `INIT_ONES_00B8` writer"]
-        pub type W = crate::W<InitOnes00b8Spec>;
-        #[doc = "Field `INIT_IMAGE` reader - "]
-        pub type InitImageR = crate::FieldReader<u32>;
-        #[doc = "Field `INIT_IMAGE` writer - "]
-        pub type InitImageW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
-        impl R {
-            #[doc = "Bits 0:31"]
-            #[inline(always)]
-            pub fn init_image(&self) -> InitImageR {
-                InitImageR::new(self.bits)
-            }
-        }
+    #[doc = "INTERRUPT_CLEAR (w) register accessor: Write-one-to-clear BLE base-stack interrupt bank. Initialization acknowledges every source with an all-ones image; the synchronous scheduler-run subscriber acknowledges source 14 before enabling it.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`interrupt_clear::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@interrupt_clear`] module"]
+    #[doc(alias = "INTERRUPT_CLEAR")]
+    pub type InterruptClear = crate::Reg<interrupt_clear::InterruptClearSpec>;
+    #[doc = "Write-one-to-clear BLE base-stack interrupt bank. Initialization acknowledges every source with an all-ones image; the synchronous scheduler-run subscriber acknowledges source 14 before enabling it."]
+    pub mod interrupt_clear {
+        #[doc = "Register `INTERRUPT_CLEAR` writer"]
+        pub type W = crate::W<InterruptClearSpec>;
+        #[doc = "Field `SCHEDULER_RUN` writer - A one acknowledges stale scheduler-run source 14 before that source is enabled."]
+        pub type SchedulerRunW<'a, REG> = crate::BitWriter1C<'a, REG>;
         impl W {
-            #[doc = "Bits 0:31"]
+            #[doc = "Bit 14 - A one acknowledges stale scheduler-run source 14 before that source is enabled."]
             #[inline(always)]
-            pub fn init_image(&mut self) -> InitImageW<'_, InitOnes00b8Spec> {
-                InitImageW::new(self, 0)
+            pub fn scheduler_run(&mut self) -> SchedulerRunW<'_, InterruptClearSpec> {
+                SchedulerRunW::new(self, 14)
             }
         }
-        #[doc = "BLE PHY register initialization writes the complete all-ones image.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_ones_00b8::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_ones_00b8::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
-        pub struct InitOnes00b8Spec;
-        impl crate::RegisterSpec for InitOnes00b8Spec {
+        #[doc = "Write-one-to-clear BLE base-stack interrupt bank. Initialization acknowledges every source with an all-ones image; the synchronous scheduler-run subscriber acknowledges source 14 before enabling it.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`interrupt_clear::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct InterruptClearSpec;
+        impl crate::RegisterSpec for InterruptClearSpec {
             type Ux = u32;
         }
-        #[doc = "`read()` method returns [`init_ones_00b8::R`](R) reader structure"]
-        impl crate::Readable for InitOnes00b8Spec {}
-        #[doc = "`write(|w| ..)` method takes [`init_ones_00b8::W`](W) writer structure"]
-        impl crate::Writable for InitOnes00b8Spec {
+        #[doc = "`write(|w| ..)` method takes [`interrupt_clear::W`](W) writer structure"]
+        impl crate::Writable for InterruptClearSpec {
             type Safety = crate::Unsafe;
+            const ONE_TO_MODIFY_FIELDS_BITMAP: u32 = 0x4000;
         }
     }
     #[doc = "INIT_CONTROL_00C4 (rw) register accessor: The conditional tail of complete BLE PHY register initialization sets bit 9 through a fresh-read RMW. All other bits are preserved and their meanings remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`init_control_00c4::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`init_control_00c4::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@init_control_00c4`] module"]
@@ -59605,16 +59607,29 @@ pub mod fixed_register_image {
         }
     }
 
-    /// Publish the SVD-qualified image `0xffffffff` to `BTMAC_BLE_PHY_INIT`.`INIT_ONES_00B8`.
+    /// Publish the SVD-qualified image `0xffffffff` to `BTMAC_BLE_PHY_INIT`.`INTERRUPT_CLEAR`.
     #[inline]
-    pub fn fill_ble_phy_init_ones_00b8(registers: &crate::BtmacBlePhyInit) {
+    pub fn clear_all_ble_base_stack_interrupt_sources(registers: &crate::BtmacBlePhyInit) {
         // SAFETY: generator validation proves that the target is a
         // writable 32-bit ordinary or write-one-to-clear register,
         // while reviewed provenance qualifies this exact image.
         unsafe {
             registers
-                .init_ones_00b8()
+                .interrupt_clear()
                 .write_with_zero(|writer| writer.bits(0xffffffff));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00004000` to `BTMAC_BLE_PHY_INIT`.`INTERRUPT_CLEAR`.
+    #[inline]
+    pub fn clear_ble_scheduler_run_event_source(registers: &crate::BtmacBlePhyInit) {
+        // SAFETY: generator validation proves that the target is a
+        // writable 32-bit ordinary or write-one-to-clear register,
+        // while reviewed provenance qualifies this exact image.
+        unsafe {
+            registers
+                .interrupt_clear()
+                .write_with_zero(|writer| writer.bits(0x00004000));
         }
     }
 
@@ -62018,21 +62033,17 @@ pub mod zero_based_field_write {
 /// Safe fresh one-bit samples republished over otherwise zero register images.
 pub mod sampled_bit_zero_write {
 
-    /// Sample `BTMAC_BLE_PHY_INIT`.`INIT_CONTROL_00B4`.`INIT_PRESERVE_17` and write only that bit into a fresh zero image.
+    /// Sample `BTMAC_BLE_PHY_INIT`.`INTERRUPT_ENABLE`.`SOURCE_17` and write only that bit into a fresh zero image.
     #[inline]
-    pub fn preserve_ble_phy_init_control_00b4_bit_17(registers: &crate::BtmacBlePhyInit) {
-        let sampled = registers
-            .init_control_00b4()
-            .read()
-            .init_preserve_17()
-            .bit();
+    pub fn preserve_ble_phy_interrupt_source_17(registers: &crate::BtmacBlePhyInit) {
+        let sampled = registers.interrupt_enable().read().source_17().bit();
         // SAFETY: generator validation proves that the target is one
         // ordinary readable/writable bit. Every other register bit is
         // intentionally published as zero by this reviewed transaction.
         unsafe {
             registers
-                .init_control_00b4()
-                .write_with_zero(|writer| writer.init_preserve_17().bit(sampled));
+                .interrupt_enable()
+                .write_with_zero(|writer| writer.source_17().bit(sampled));
         }
     }
 }
@@ -62733,22 +62744,35 @@ pub mod field_or_modify {
             });
     }
 
-    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INIT_CONTROL_00B4 fields [INIT_SET_11, INIT_SET_15, INIT_SET_20, INIT_SET_24] while preserving the fresh register observation.
+    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INTERRUPT_ENABLE fields [SOURCE_11, SOURCE_15, SOURCE_20, SOURCE_24] while preserving the fresh register observation.
     #[inline]
-    pub fn publish_ble_phy_init_control_00b4_tail(registers: &crate::BtmacBlePhyInit) {
-        registers.init_control_00b4().modify(|reader, writer| {
+    pub fn enable_ble_phy_interrupt_sources_11_15_20_24(registers: &crate::BtmacBlePhyInit) {
+        registers.interrupt_enable().modify(|reader, writer| {
             let input = 0x00000001_u32;
             // SAFETY: generator validation proves every logical input projection
             // fits its named SVD field; no whole-register image crosses this API.
             writer
-                .init_set_11()
-                .bit(reader.init_set_11().bit() || (input & 0x00000001) != 0)
-                .init_set_15()
-                .bit(reader.init_set_15().bit() || (input & 0x00000001) != 0)
-                .init_set_20()
-                .bit(reader.init_set_20().bit() || (input & 0x00000001) != 0)
-                .init_set_24()
-                .bit(reader.init_set_24().bit() || (input & 0x00000001) != 0)
+                .source_11()
+                .bit(reader.source_11().bit() || (input & 0x00000001) != 0)
+                .source_15()
+                .bit(reader.source_15().bit() || (input & 0x00000001) != 0)
+                .source_20()
+                .bit(reader.source_20().bit() || (input & 0x00000001) != 0)
+                .source_24()
+                .bit(reader.source_24().bit() || (input & 0x00000001) != 0)
+        });
+    }
+
+    /// OR one reviewed logical image into BTMAC_BLE_PHY_INIT.INTERRUPT_ENABLE fields [SCHEDULER_RUN] while preserving the fresh register observation.
+    #[inline]
+    pub fn enable_ble_scheduler_run_event_source(registers: &crate::BtmacBlePhyInit) {
+        registers.interrupt_enable().modify(|reader, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer
+                .scheduler_run()
+                .bit(reader.scheduler_run().bit() || (input & 0x00000001) != 0)
         });
     }
 

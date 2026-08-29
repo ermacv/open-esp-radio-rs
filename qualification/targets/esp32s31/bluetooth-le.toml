@@ -284,6 +284,8 @@ owners = [
   { path = "driver/adapters/embassy/esp32s31-bluetooth/src/lib.rs", token = "wait_timer_expiration" },
   { path = "driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_interrupt.rs", token = "BoundBluetoothInterruptRoutes" },
   { path = "driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_interrupt.rs", token = "PublishedEspHalBluetoothInterruptOwners" },
+  { path = "driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_interrupt.rs", token = "EspHalBluetoothPrimaryInterruptStep" },
+  { path = "driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_interrupt.rs", token = "EspHalBluetoothNrtInterruptStep" },
 ]
 tests = [
   { path = "driver/chips/esp32s31/pac/src/bluetooth_interrupt.rs", token = "primary_epoch_acknowledges_before_conditional_fault_capture" },
@@ -333,6 +335,7 @@ tests = [
   { path = "driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_route_policy.rs", token = "any_invalid_priority_rejects_the_route_set_before_binding" },
   { path = "driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_route_policy.rs", token = "quiesce_is_affine_to_the_binding_core" },
   { path = "driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_route_policy.rs", token = "source_127_task_can_take_only_pending_work_and_restore_only_into_the_empty_slot" },
+  { path = "driver/adapters/esp-hal/esp32s31-radio-platform/src/bluetooth_route_policy.rs", token = "shared_interrupt_service_retains_and_reuses_the_stable_owner" },
 ]
 async-contracts = [
   { path = "driver/chips/esp32s31/bluetooth/src/interrupt_wake.rs", token = "dequeue_closes_the_epoch_and_the_next_publication_wakes_again" },

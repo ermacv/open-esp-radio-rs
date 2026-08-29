@@ -2,8 +2,9 @@
 //!
 //! Stable publication is deliberately separate from a live interrupt epoch.
 //! Both unique HAL owners are installed atomically before any CPU route can be
-//! enabled. Primary semantic fault/dynamic dispatch, source-127 software work,
-//! opaque NRT acknowledgement plus the scheduler-list drain remain incomplete.
+//! enabled. All three finite Controller dispositions can now reuse those
+//! stable owners, but selector-6 recovery, durable primary outcome publication
+//! and the scheduler-list drain still block a live route epoch.
 
 #![forbid(unsafe_code)]
 #![allow(
@@ -21,7 +22,8 @@ use esp_hal::{
 };
 use open_esp_radio_esp32s31_bluetooth::{
     BluetoothCpuInterruptRoutePolicy, BluetoothInterruptOwnerStorage,
-    BluetoothModemLpTimerSoftwareOwnerStorage,
+    BluetoothModemLpTimerSoftwareOwnerStorage, BluetoothNrtDefaultInterruptEpoch,
+    BluetoothPrimaryInterruptStep, step_nrt_default_interrupt, step_primary_interrupt,
 };
 use open_esp_radio_esp32s31_hal::{
     BluetoothInterruptRegistersOwner, BluetoothModemLpTimerHandlerRegisterStep,
@@ -34,8 +36,8 @@ use crate::bluetooth_route_policy::{
     BluetoothModemLpTimerStoragePhase, BluetoothModemLpTimerTaskTakeAdmission,
     EspHalBluetoothInterruptStorageError, REQUIRED_PRIORITY_LEVEL,
     classify_modem_lp_timer_interrupt, classify_modem_lp_timer_task_take,
-    ready_owner_restore_is_admitted, validate_interrupt_storage, validate_quiesce_core,
-    validate_route_priorities,
+    ready_owner_restore_is_admitted, service_stable_owner, validate_interrupt_storage,
+    validate_quiesce_core, validate_route_priorities,
 };
 
 pub(crate) const PRIMARY_INTERRUPT: Interrupt = Interrupt::BT_MAC;
@@ -118,6 +120,24 @@ pub enum EspHalBluetoothModemLpTimerInterruptStep {
     SoftwarePending,
 }
 
+/// Result of one finite primary source-124 register/classifier entry.
+#[must_use = "a serviced primary epoch must reach fault or scheduler policy"]
+pub enum EspHalBluetoothPrimaryInterruptStep {
+    /// The shared primary/NRT owner is absent from stable storage.
+    Unavailable,
+    /// The Controller completed one bounded acknowledged primary disposition.
+    Serviced(BluetoothPrimaryInterruptStep),
+}
+
+/// Result of one finite default-profile NRT source-133 entry.
+#[must_use = "retain the acknowledged NRT epoch"]
+pub enum EspHalBluetoothNrtInterruptStep {
+    /// The shared primary/NRT owner is absent from stable storage.
+    Unavailable,
+    /// The default Controller profile acknowledged one opaque NRT epoch.
+    Serviced(BluetoothNrtDefaultInterruptEpoch),
+}
+
 /// Why task-side source-127 ownership could not enter or leave stable storage.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EspHalBluetoothModemLpTimerStorageError {
@@ -139,6 +159,35 @@ pub struct EspHalBluetoothModemLpTimerRestoreFailure {
 }
 
 impl PublishedEspHalBluetoothInterruptOwners {
+    /// Capture, acknowledge and classify one primary source-124 epoch.
+    ///
+    /// The unique shared register owner remains in its process-wide slot for
+    /// later NRT and primary entries. This method publishes no executor wake
+    /// and does not make either CPU route live.
+    pub fn service_primary_interrupt(&self) -> EspHalBluetoothPrimaryInterruptStep {
+        critical_section::with(|critical_section| {
+            let mut slot = INTERRUPT_REGISTERS.borrow_ref_mut(critical_section);
+            service_stable_owner(&mut slot, step_primary_interrupt).map_or(
+                EspHalBluetoothPrimaryInterruptStep::Unavailable,
+                EspHalBluetoothPrimaryInterruptStep::Serviced,
+            )
+        })
+    }
+
+    /// Capture and acknowledge one source-133 epoch for the default profile.
+    ///
+    /// The same shared owner stays published. No synthetic Link-Layer or
+    /// executor work is produced by the reviewed default NRT policy.
+    pub fn service_nrt_default_interrupt(&self) -> EspHalBluetoothNrtInterruptStep {
+        critical_section::with(|critical_section| {
+            let mut slot = INTERRUPT_REGISTERS.borrow_ref_mut(critical_section);
+            service_stable_owner(&mut slot, step_nrt_default_interrupt).map_or(
+                EspHalBluetoothNrtInterruptStep::Unavailable,
+                EspHalBluetoothNrtInterruptStep::Serviced,
+            )
+        })
+    }
+
     /// Execute at most the source-127 classifier and common register phase.
     ///
     /// A software-pending result leaves the unique owner in stable storage for

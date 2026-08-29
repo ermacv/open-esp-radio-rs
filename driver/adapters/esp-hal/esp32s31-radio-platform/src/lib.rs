@@ -34,6 +34,7 @@ pub use coordinator::BluetoothPlatformBusy;
 pub use bluetooth_interrupt::{
     EspHalBluetoothInterruptStorage, EspHalBluetoothModemLpTimerInterruptStep,
     EspHalBluetoothModemLpTimerRestoreFailure, EspHalBluetoothModemLpTimerStorageError,
+    EspHalBluetoothNrtInterruptStep, EspHalBluetoothPrimaryInterruptStep,
     PublishedEspHalBluetoothInterruptOwners,
 };
 #[cfg(feature = "esp32s31")]

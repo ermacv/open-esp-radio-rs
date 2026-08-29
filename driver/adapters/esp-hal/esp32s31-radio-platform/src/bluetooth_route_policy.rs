@@ -90,6 +90,13 @@ pub(crate) const fn ready_owner_restore_is_admitted(slot_occupied: bool) -> bool
     !slot_occupied
 }
 
+pub(crate) fn service_stable_owner<Owner, Output>(
+    slot: &mut Option<Owner>,
+    service: impl FnOnce(&mut Owner) -> Output,
+) -> Option<Output> {
+    slot.as_mut().map(service)
+}
+
 /// Validate the complete route set before any route can be installed.
 pub(crate) const fn validate_route_priorities(
     primary: u8,
@@ -125,8 +132,8 @@ mod tests {
         BluetoothModemLpTimerStoragePhase, BluetoothModemLpTimerTaskTakeAdmission,
         EspHalBluetoothInterruptStorageError, REQUIRED_PRIORITY_LEVEL,
         classify_modem_lp_timer_interrupt, classify_modem_lp_timer_task_take,
-        ready_owner_restore_is_admitted, validate_interrupt_storage, validate_quiesce_core,
-        validate_route_priorities,
+        ready_owner_restore_is_admitted, service_stable_owner, validate_interrupt_storage,
+        validate_quiesce_core, validate_route_priorities,
     };
 
     #[test]
@@ -215,5 +222,34 @@ mod tests {
         );
         assert!(ready_owner_restore_is_admitted(false));
         assert!(!ready_owner_restore_is_admitted(true));
+    }
+
+    #[test]
+    fn shared_interrupt_service_retains_and_reuses_the_stable_owner() {
+        let mut slot = Some(0_u8);
+
+        assert_eq!(
+            service_stable_owner(&mut slot, |owner| {
+                *owner += 1;
+                *owner
+            }),
+            Some(1)
+        );
+        assert_eq!(
+            service_stable_owner(&mut slot, |owner| {
+                *owner += 1;
+                *owner
+            }),
+            Some(2)
+        );
+        assert_eq!(slot, Some(2));
+
+        let mut missing: Option<u8> = None;
+        assert_eq!(
+            service_stable_owner(&mut missing, |_| panic!(
+                "missing owner must not be serviced"
+            )),
+            None
+        );
     }
 }

@@ -17,6 +17,30 @@ const EXTERNAL_CALL_MODEL_SETS: &[open_radio_vendor_contracts::ExternalCallModel
     external_abi::BLE_EXTERNAL_FUNCTION_MODELS_20250819,
 ];
 const DIAGNOSTIC_CALLS: &[DiagnosticCallSpec] = &[
+    // The complete BLE log wrappers only filter, timestamp and publish one
+    // diagnostic record through the separately reviewed BLE logging ABI.
+    // Keep their stable payload arity visible without importing the private
+    // nullable logging environment into Controller behavior.
+    DiagnosticCallSpec {
+        symbol: "r_ble_log_internal_hex",
+        argument_count: 3,
+    },
+    DiagnosticCallSpec {
+        symbol: "r_ble_log_internal_x0",
+        argument_count: 1,
+    },
+    DiagnosticCallSpec {
+        symbol: "r_ble_log_internal_x1",
+        argument_count: 2,
+    },
+    DiagnosticCallSpec {
+        symbol: "r_ble_log_internal_x2",
+        argument_count: 3,
+    },
+    DiagnosticCallSpec {
+        symbol: "r_ble_log_internal_x3",
+        argument_count: 4,
+    },
     DiagnosticCallSpec {
         symbol: "wifi_log",
         argument_count: 6,
@@ -68,20 +92,29 @@ mod tests {
 
     #[test]
     fn diagnostic_abi_keeps_assertion_and_logging_distinct() {
-        assert_eq!(DIAGNOSTIC_CALLS[0].symbol, "wifi_log");
-        assert_eq!(DIAGNOSTIC_CALLS[0].argument_count, 6);
-        assert_eq!(DIAGNOSTIC_CALLS[1].symbol, "wifi_assert");
-        assert_eq!(DIAGNOSTIC_CALLS[1].argument_count, 4);
-        assert_eq!(DIAGNOSTIC_CALLS[2].symbol, "phy_printf");
-        assert_eq!(DIAGNOSTIC_CALLS[2].argument_count, 1);
-        assert_eq!(DIAGNOSTIC_CALLS[3].symbol, "pp_printf");
-        assert_eq!(DIAGNOSTIC_CALLS[4].symbol, "net80211_printf");
-        assert_eq!(DIAGNOSTIC_CALLS[5].symbol, "coexist_printf");
-        assert_eq!(DIAGNOSTIC_CALLS[6].symbol, "ets_printf");
-        assert!(
-            DIAGNOSTIC_CALLS[3..]
+        let call = |symbol| {
+            DIAGNOSTIC_CALLS
                 .iter()
-                .all(|call| call.argument_count == 1)
+                .find(|call| call.symbol == symbol)
+                .expect("reviewed diagnostic call")
+        };
+        assert_eq!(call("wifi_log").argument_count, 6);
+        assert_eq!(call("wifi_assert").argument_count, 4);
+        assert_eq!(call("phy_printf").argument_count, 1);
+        assert_eq!(call("r_ble_log_internal_hex").argument_count, 3);
+        assert_eq!(call("r_ble_log_internal_x0").argument_count, 1);
+        assert_eq!(call("r_ble_log_internal_x1").argument_count, 2);
+        assert_eq!(call("r_ble_log_internal_x2").argument_count, 3);
+        assert_eq!(call("r_ble_log_internal_x3").argument_count, 4);
+        assert!(
+            [
+                "pp_printf",
+                "net80211_printf",
+                "coexist_printf",
+                "ets_printf"
+            ]
+            .iter()
+            .all(|symbol| call(symbol).argument_count == 1)
         );
     }
 

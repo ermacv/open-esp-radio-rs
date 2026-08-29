@@ -62544,6 +62544,43 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [CONTROL_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_pbus_work_mode_control(registers: &crate::PhyAgcOracle) {
+        registers.agc_shared_control().modify(|_, writer| {
+            let input = 0x00000032_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .control_high_unknown()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [PULSE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn raise_phy_pbus_work_mode_pulse(registers: &crate::PhyAgcOracle) {
+        registers.agc_shared_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.pulse_unknown().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [PULSE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn lower_phy_pbus_work_mode_pulse(registers: &crate::PhyAgcOracle) {
+        registers.agc_shared_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.pulse_unknown().bit((input & 0x00000001) != 0)
+        });
+    }
+
     /// Replace BLUETOOTH_CONTROLLER_CORE.MMGMT_LIST_1_POINTER_A fields [COMPRESSED_SRAM_POINTER] from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_bluetooth_memory_list_1_pointer_a(registers: &crate::BluetoothControllerCore) {

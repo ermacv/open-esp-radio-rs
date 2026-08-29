@@ -92,17 +92,14 @@ impl RadioPhyRegisters {
 
     /// Apply the two MMIO edges after the PBus work-mode 1 µs delay.
     pub fn configure_pbus_work_mode_pulse(&mut self) {
-        let control = self.peripherals.phy_agc_oracle.agc_shared_control();
-        control.modify(|_, w| w.control_high_unknown().set(0x32));
-        control.modify(|_, w| w.pulse_unknown().set_bit());
+        let agc = &self.peripherals.phy_agc_oracle;
+        super::generated::configure_phy_pbus_work_mode_control(agc);
+        super::generated::raise_phy_pbus_work_mode_pulse(agc);
     }
 
     /// Clear the PBus work-mode pulse after the caller-owned 2 µs delay.
     pub fn clear_pbus_work_mode_pulse(&mut self) {
-        self.peripherals
-            .phy_agc_oracle
-            .agc_shared_control()
-            .modify(|_, w| w.pulse_unknown().clear_bit());
+        super::generated::lower_phy_pbus_work_mode_pulse(&self.peripherals.phy_agc_oracle);
     }
 
     /// Apply all ten fresh-read updates of complete `phy_agc_reg_init`.

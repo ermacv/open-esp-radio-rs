@@ -2042,6 +2042,33 @@ value = 0
 exposure = "facade"
 sources = ["BLOB_LIBPHY_PHY_DC_MEM_CLR", "S31_ESP_PACS_SVD"]
 
+[[field-replace-modifies]]
+name = "configure_phy_pbus_work_mode_control"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_SHARED_CONTROL"
+fields = [{ field = "CONTROL_HIGH_UNKNOWN", source-bit-offset = 0 }]
+value = 0x32
+exposure = "facade"
+sources = ["ROM_REV0_PHY_PBUS", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "raise_phy_pbus_work_mode_pulse"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_SHARED_CONTROL"
+fields = [{ field = "PULSE_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_PBUS", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "lower_phy_pbus_work_mode_pulse"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_SHARED_CONTROL"
+fields = [{ field = "PULSE_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_PBUS", "S31_ESP_PACS_SVD"]
+
 [[fixed-register-images]]
 name = "initialize_rf_rx_saturation_config"
 peripheral = "PHY_AGC_ORACLE"

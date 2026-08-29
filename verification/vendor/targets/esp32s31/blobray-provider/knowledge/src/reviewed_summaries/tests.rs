@@ -1,7 +1,8 @@
 //! Reviewed summary identity and trace regression tests.
 
 use super::{
-    body_identity::*, direct_semantic::*, i2c::*, intrinsics::*, reference_intrinsic_trace,
+    body_identity::*, direct_semantic::*, fail_stop::*, i2c::*, intrinsics::*,
+    reference_intrinsic_trace,
 };
 use crate::*;
 
@@ -34,6 +35,18 @@ fn pp_post_symbol() -> artifact::ArtifactSymbolDefinition {
                 addend: 0,
             })
             .collect(),
+    }
+}
+
+fn btdm_assert_symbol(address: u64) -> artifact::ArtifactSymbolDefinition {
+    artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "wr_btdm_assert".to_owned(),
+        address,
+        bytes: BTDM_ASSERT_BODY.to_vec(),
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
     }
 }
 
@@ -114,6 +127,49 @@ fn changed_host_id_body_does_not_receive_the_reviewed_summary() {
     assert!(
         reference_intrinsic_trace(&symbol(bytes), &map(), &StructuralPointerContext::default())
             .is_none()
+    );
+}
+
+#[test]
+fn btdm_assert_preserves_its_level_gated_fail_stop() {
+    for address in [BLE_BTDM_ASSERT_ADDRESS, BREDR_BTDM_ASSERT_ADDRESS] {
+        let symbol = btdm_assert_symbol(address);
+        let trace =
+            reference_intrinsic_trace(&symbol, &map(), &StructuralPointerContext::default())
+                .expect("the exact controller assertion body must have a summary");
+
+        assert!(trace.is_reference_eligible(), "{trace:#?}");
+        let flow = trace
+            .reference_flow
+            .expect("the assertion level check must remain structured");
+        let DraftReferenceTerminator::Branch {
+            condition,
+            taken,
+            not_taken,
+        } = flow.terminator
+        else {
+            panic!("the assertion summary must branch on its level argument");
+        };
+        assert_eq!(condition.left, SymbolicValue::input(4));
+        assert_eq!(condition.right, SymbolicValue::Constant(3));
+        assert!(matches!(
+            taken.terminator,
+            DraftReferenceTerminator::FailStop { .. }
+        ));
+        assert!(matches!(
+            not_taken.terminator,
+            DraftReferenceTerminator::Return(SymbolicValue::Unknown)
+        ));
+    }
+}
+
+#[test]
+fn changed_btdm_assert_body_is_not_treated_as_a_fail_stop() {
+    let mut symbol = btdm_assert_symbol(BLE_BTDM_ASSERT_ADDRESS);
+    symbol.bytes[0] ^= 1;
+
+    assert!(
+        reference_intrinsic_trace(&symbol, &map(), &StructuralPointerContext::default()).is_none()
     );
 }
 

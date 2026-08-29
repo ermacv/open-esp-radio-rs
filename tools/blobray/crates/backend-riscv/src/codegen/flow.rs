@@ -64,6 +64,30 @@ pub(super) fn render_flow(
                 Ok(())
             }
         },
+        ResolvedReferenceTerminator::FailStop {
+            site,
+            function,
+            argument_count,
+            arguments,
+        } => {
+            let arguments = arguments
+                .iter()
+                .take(usize::from(*argument_count))
+                .map(|value| render_state_value(value, &state))
+                .collect::<Result<Vec<_>, _>>()?;
+            writeln!(
+                output,
+                "{indent}// Reviewed non-returning fail-stop at {site:#010x}."
+            )
+            .unwrap();
+            writeln!(
+                output,
+                "{indent}platform.fail_stop({function:?}, &[{}])",
+                arguments.join(", ")
+            )
+            .unwrap();
+            Ok(())
+        }
         ResolvedReferenceTerminator::Branch {
             condition,
             taken,

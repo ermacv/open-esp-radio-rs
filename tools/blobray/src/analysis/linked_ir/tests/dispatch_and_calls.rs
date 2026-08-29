@@ -152,6 +152,67 @@ fn recovered_indexed_dispatch_removes_its_duplicate_call_graph_diagnostic() {
 }
 
 #[test]
+fn reviewed_fail_stop_retires_only_the_covered_store() {
+    let trace = FunctionAnalysis {
+        symbol: "reviewed_assert".to_owned(),
+        events: Vec::new(),
+        located_events: Vec::new(),
+        located_reference_events: Vec::new(),
+        reference_events: Vec::new(),
+        reference_dependencies: Vec::new(),
+        blockers: Vec::new(),
+        reference_blockers: Vec::new(),
+        return_value: SymbolicValue::Unknown,
+        reference_flow: Some(DraftReferenceFlow {
+            events: Vec::new(),
+            terminator: DraftReferenceTerminator::FailStop {
+                site: 0x1008,
+                function: "reviewed_assert".to_owned(),
+                argument_count: 0,
+                arguments: Box::new([]),
+            },
+        }),
+        unresolved_branch: None,
+    };
+    let mut diagnostics = vec![
+        LinkedDiagnostic {
+            root_id: "covered".to_owned(),
+            kind: "memory-store",
+            site: Some(0x1008),
+            rendered: "covered trap store".to_owned(),
+            original_fragments: 1,
+            fragments: Vec::new(),
+        },
+        LinkedDiagnostic {
+            root_id: "different-site".to_owned(),
+            kind: "memory-store",
+            site: Some(0x2008),
+            rendered: "unrelated store".to_owned(),
+            original_fragments: 1,
+            fragments: Vec::new(),
+        },
+        LinkedDiagnostic {
+            root_id: "different-kind".to_owned(),
+            kind: "control-flow",
+            site: Some(0x1008),
+            rendered: "unrelated control-flow limitation".to_owned(),
+            original_fragments: 1,
+            fragments: Vec::new(),
+        },
+    ];
+
+    remove_reviewed_fail_stop_call_graph_diagnostics(&mut diagnostics, &trace);
+
+    assert_eq!(
+        diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.root_id.as_str())
+            .collect::<Vec<_>>(),
+        ["different-site", "different-kind"]
+    );
+}
+
+#[test]
 fn recovered_indexed_dispatch_is_visible_without_case_callees() {
     let pseudo = annotate_indexed_dispatch_pseudo(
         "// vendor symbol: choose\nfn choose() {}\n".to_owned(),

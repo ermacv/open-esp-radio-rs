@@ -137,6 +137,12 @@ pub enum ResolvedReferenceEvent {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ResolvedReferenceTerminator {
     Return(SymbolicValue),
+    FailStop {
+        site: u32,
+        function: String,
+        argument_count: u8,
+        arguments: Box<[SymbolicValue]>,
+    },
     Branch {
         condition: BranchCondition,
         taken: Box<ResolvedReferenceFlow>,
@@ -296,6 +302,15 @@ fn collect_resolved_flow_inputs(flow: &ResolvedReferenceFlow, output: &mut BTree
     }
     match &flow.terminator {
         ResolvedReferenceTerminator::Return(value) => collect_value_inputs(value, output),
+        ResolvedReferenceTerminator::FailStop {
+            argument_count,
+            arguments,
+            ..
+        } => {
+            for value in arguments.iter().take(usize::from(*argument_count)) {
+                collect_value_inputs(value, output);
+            }
+        }
         ResolvedReferenceTerminator::Branch {
             condition,
             taken,
@@ -571,6 +586,17 @@ impl ResolvedReferenceFlow {
             DraftReferenceTerminator::Return(value) => {
                 ResolvedReferenceTerminator::Return(value.clone())
             }
+            DraftReferenceTerminator::FailStop {
+                site,
+                function,
+                argument_count,
+                arguments,
+            } => ResolvedReferenceTerminator::FailStop {
+                site: *site,
+                function: function.clone(),
+                argument_count: *argument_count,
+                arguments: arguments.clone(),
+            },
             DraftReferenceTerminator::Branch {
                 condition,
                 taken,

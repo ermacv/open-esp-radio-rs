@@ -44,7 +44,7 @@ const RISCV_SUMMARIES: RiscvSummaryHooks = RiscvSummaryHooks {
 };
 
 pub static RISCV_HARNESS: RiscvHarnessSpec = RiscvHarnessSpec {
-    semantic_cache_domain: "blobray/riscv-harness/esp32s31-rev0-chip/v1+radio-investigation-overlay/v3",
+    semantic_cache_domain: "blobray/riscv-harness/esp32s31-rev0-chip/v1+radio-investigation-overlay/v4",
     contracts: &CONTRACTS,
     summaries: &RISCV_SUMMARIES,
 };

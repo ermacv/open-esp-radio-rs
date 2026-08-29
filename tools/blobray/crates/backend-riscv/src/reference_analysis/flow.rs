@@ -643,6 +643,7 @@ pub(super) fn compose_calls_in_reference_flow(
     flow.events = events;
     flow.terminator = match flow.terminator {
         DraftReferenceTerminator::Return(value) => DraftReferenceTerminator::Return(value),
+        terminator @ DraftReferenceTerminator::FailStop { .. } => terminator,
         DraftReferenceTerminator::Branch {
             condition,
             taken,

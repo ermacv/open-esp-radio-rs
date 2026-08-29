@@ -126,6 +126,64 @@ fn rejects_incomplete_control_flow_instead_of_emitting_a_partial_function() {
 }
 
 #[test]
+fn renders_conditional_fail_stop_as_a_diverging_platform_boundary() {
+    let trace = FunctionAnalysis {
+        symbol: "conditional_assert".to_owned(),
+        events: Vec::new(),
+        located_events: Vec::new(),
+        located_reference_events: Vec::new(),
+        reference_events: Vec::new(),
+        reference_dependencies: Vec::new(),
+        blockers: Vec::new(),
+        reference_blockers: Vec::new(),
+        return_value: SymbolicValue::Unknown,
+        reference_flow: Some(DraftReferenceFlow {
+            events: Vec::new(),
+            terminator: DraftReferenceTerminator::Branch {
+                condition: BranchCondition {
+                    site: 0x1002,
+                    operation: BranchOperation::Equal,
+                    left: SymbolicValue::input(4),
+                    right: SymbolicValue::Constant(3),
+                },
+                taken: Box::new(DraftReferenceFlow {
+                    events: Vec::new(),
+                    terminator: DraftReferenceTerminator::FailStop {
+                        site: 0x100c,
+                        function: "controller_assert".to_owned(),
+                        argument_count: 1,
+                        arguments: Box::new([SymbolicValue::input(4)]),
+                    },
+                }),
+                not_taken: Box::new(DraftReferenceFlow {
+                    events: Vec::new(),
+                    terminator: DraftReferenceTerminator::Return(SymbolicValue::Unknown),
+                }),
+            },
+        }),
+        unresolved_branch: None,
+    };
+
+    let generated = generate_from_trace(&trace, "oracle.elf", "abc123", None, &[]).unwrap();
+
+    assert!(
+        generated
+            .source
+            .contains("fn fail_stop(&mut self, function: &str, arguments: &[u32]) -> !;")
+    );
+    assert!(
+        generated
+            .source
+            .contains("if (args[4] & 0xffffffff_u32) == (0x00000003_u32)")
+    );
+    assert!(
+        generated
+            .source
+            .contains("platform.fail_stop(\"controller_assert\", &[args[4] & 0xffffffff_u32])")
+    );
+}
+
+#[test]
 fn preserves_ordered_elf_ram_reads_and_writes() {
     let address = 0x3fcd_0010;
     let trace = FunctionAnalysis {

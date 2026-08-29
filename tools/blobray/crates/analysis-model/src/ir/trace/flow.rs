@@ -23,6 +23,17 @@ pub struct BranchCondition {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DraftReferenceTerminator {
     Return(SymbolicValue),
+    /// A reviewed path that deliberately cannot return to its caller.
+    ///
+    /// This is distinct from a diagnostic call: a fail-stop boundary is an
+    /// executable control-flow outcome, so composition must not continue with
+    /// events that follow the call site.
+    FailStop {
+        site: u32,
+        function: String,
+        argument_count: u8,
+        arguments: Box<[SymbolicValue]>,
+    },
     Branch {
         condition: BranchCondition,
         taken: Box<DraftReferenceFlow>,
@@ -166,6 +177,15 @@ pub fn collect_reference_flow_inputs(flow: &DraftReferenceFlow, output: &mut BTr
     }
     match &flow.terminator {
         DraftReferenceTerminator::Return(value) => collect_value_inputs(value, output),
+        DraftReferenceTerminator::FailStop {
+            argument_count,
+            arguments,
+            ..
+        } => {
+            for value in arguments.iter().take(usize::from(*argument_count)) {
+                collect_value_inputs(value, output);
+            }
+        }
         DraftReferenceTerminator::Branch {
             condition,
             taken,

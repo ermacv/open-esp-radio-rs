@@ -427,6 +427,11 @@ pub fn generate(
         "    fn diagnostic_call(&mut self, function: &str, arguments: &[u32]);"
     )
     .unwrap();
+    writeln!(
+        output,
+        "    fn fail_stop(&mut self, function: &str, arguments: &[u32]) -> !;"
+    )
+    .unwrap();
     writeln!(output, "}}").unwrap();
     writeln!(output).unwrap();
     writeln!(output, "#[allow(dead_code)]").unwrap();

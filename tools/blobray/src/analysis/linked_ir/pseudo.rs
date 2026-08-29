@@ -936,6 +936,24 @@ fn render_flow(
         DraftReferenceTerminator::Return(value) => {
             writeln!(output, "{prefix}return {};", pseudo_value(value)).unwrap();
         }
+        DraftReferenceTerminator::FailStop {
+            site,
+            function,
+            argument_count,
+            arguments,
+        } => {
+            let arguments = arguments
+                .iter()
+                .take(usize::from(*argument_count))
+                .map(pseudo_value)
+                .collect::<Vec<_>>()
+                .join(", ");
+            writeln!(
+                output,
+                "{prefix}fail_stop {function}({arguments}); // site {site:#010x}"
+            )
+            .unwrap();
+        }
         DraftReferenceTerminator::Branch {
             condition,
             taken,

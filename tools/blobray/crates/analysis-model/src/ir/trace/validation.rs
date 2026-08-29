@@ -17,6 +17,14 @@ pub fn reference_flow_exit_modeled_with_calls(
         DraftReferenceTerminator::Return(value) => {
             value.is_resolved() && value_call_results_available(value, &available)
         }
+        DraftReferenceTerminator::FailStop {
+            argument_count,
+            arguments,
+            ..
+        } => arguments
+            .iter()
+            .take(usize::from(*argument_count))
+            .all(|value| value_is_reference_ready(value, &available)),
         DraftReferenceTerminator::Branch {
             condition,
             taken,
@@ -445,6 +453,25 @@ pub(super) fn validate_reference_flow_with_calls_detailed(
     let available = validate_reference_events_detailed(&flow.events, available)?;
     match &flow.terminator {
         DraftReferenceTerminator::Return(_) => Ok(()),
+        DraftReferenceTerminator::FailStop {
+            site,
+            argument_count,
+            arguments,
+            ..
+        } => {
+            for (index, argument) in arguments
+                .iter()
+                .take(usize::from(*argument_count))
+                .enumerate()
+            {
+                if let Some(error) = reference_value_error(argument, &available) {
+                    return Err(format!(
+                        "fail-stop at {site:#010x} argument {index}: {error}"
+                    ));
+                }
+            }
+            Ok(())
+        }
         DraftReferenceTerminator::Branch {
             condition,
             taken,

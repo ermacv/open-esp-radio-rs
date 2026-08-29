@@ -147,7 +147,8 @@ impl FunctionAnalysis {
                 .sum::<usize>();
             events
                 + match &flow.terminator {
-                    DraftReferenceTerminator::Return(_) => 0,
+                    DraftReferenceTerminator::Return(_)
+                    | DraftReferenceTerminator::FailStop { .. } => 0,
                     DraftReferenceTerminator::Branch {
                         taken, not_taken, ..
                     } => flow_count(taken) + flow_count(not_taken),
@@ -211,7 +212,8 @@ impl FunctionAnalysis {
                 .iter()
                 .any(event_contains_reference_only_control_flow)
                 || match &flow.terminator {
-                    DraftReferenceTerminator::Return(_) => false,
+                    DraftReferenceTerminator::Return(_)
+                    | DraftReferenceTerminator::FailStop { .. } => false,
                     DraftReferenceTerminator::Branch {
                         taken, not_taken, ..
                     } => {
@@ -265,7 +267,9 @@ impl FunctionAnalysis {
                 }
                 _ => true,
             }) && match &flow.terminator {
-                DraftReferenceTerminator::Return(_) => true,
+                DraftReferenceTerminator::Return(_) | DraftReferenceTerminator::FailStop { .. } => {
+                    true
+                }
                 DraftReferenceTerminator::Branch {
                     taken, not_taken, ..
                 } => flow_is_mapped(taken) && flow_is_mapped(not_taken),

@@ -10,6 +10,7 @@ use crate::*;
 mod body_identity;
 mod direct_semantic;
 pub(crate) use direct_semantic::direct_external_semantic_function;
+mod fail_stop;
 mod i2c;
 mod intrinsics;
 mod rf;
@@ -48,6 +49,10 @@ pub(super) fn reference_intrinsic_trace(
             reference_flow: None,
             unresolved_branch: None,
         });
+    }
+
+    if fail_stop::exact_btdm_assert(symbol) {
+        return Some(fail_stop::btdm_assert_trace(symbol));
     }
 
     if exact_rfpll_calibration_poll(symbol) {

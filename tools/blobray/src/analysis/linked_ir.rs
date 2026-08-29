@@ -442,6 +442,61 @@ fn remove_recovered_indexed_dispatch_call_graph_blockers(
     });
 }
 
+fn collect_reviewed_fail_stop_sites(flow: &DraftReferenceFlow, sites: &mut BTreeSet<u32>) {
+    for event in &flow.events {
+        match event {
+            DraftReferenceEvent::BoundedPoll { body, .. }
+            | DraftReferenceEvent::PollFlow { body, .. }
+            | DraftReferenceEvent::ComposedCall { flow: body, .. }
+            | DraftReferenceEvent::ComposedCallWithScratch { flow: body, .. } => {
+                collect_reviewed_fail_stop_sites(body, sites);
+            }
+            DraftReferenceEvent::SymmetricCalibrationSearch {
+                initial_read,
+                setup,
+                write_candidate,
+                sample,
+                ..
+            } => {
+                for body in [initial_read, setup, write_candidate, sample] {
+                    collect_reviewed_fail_stop_sites(body, sites);
+                }
+            }
+            _ => {}
+        }
+    }
+    match &flow.terminator {
+        DraftReferenceTerminator::FailStop { site, .. } => {
+            sites.insert(*site);
+        }
+        DraftReferenceTerminator::Branch {
+            taken, not_taken, ..
+        } => {
+            collect_reviewed_fail_stop_sites(taken, sites);
+            collect_reviewed_fail_stop_sites(not_taken, sites);
+        }
+        DraftReferenceTerminator::Return(_) => {}
+    }
+}
+
+/// An exact provider summary may classify a structurally invalid store as the
+/// first instruction of a deliberate non-returning trap sequence. Retire only
+/// the memory diagnostic at that explicitly reviewed site; other blockers in
+/// the same function remain fail-closed.
+fn remove_reviewed_fail_stop_call_graph_diagnostics(
+    diagnostics: &mut Vec<LinkedDiagnostic>,
+    trace: &FunctionAnalysis,
+) {
+    let mut sites = BTreeSet::new();
+    if let Some(flow) = trace.reference_flow.as_ref() {
+        collect_reviewed_fail_stop_sites(flow, &mut sites);
+    }
+    diagnostics.retain(|diagnostic| {
+        !(diagnostic.kind == "memory-store"
+            && diagnostic.site.is_some_and(|site| sites.contains(&site)))
+    });
+}
+
 fn annotate_direct_semantic_calls(
     calls: &mut [LinkedCall],
     owner: &artifact::ArtifactSymbolDefinition,
@@ -807,7 +862,6 @@ fn build_linked_functions_for_roots(
             function_cache.load_symbols(discovered, fact_store);
         }
         let call_graph_messages = blockers.into_iter().collect::<Vec<_>>();
-        let call_graph_diagnostics = compact_diagnostics(&call_graph_messages);
         let reference_trace_started = std::time::Instant::now();
         match resolver.trace_symbol_bounded_with_memo(
             symbol,
@@ -819,6 +873,11 @@ fn build_linked_functions_for_roots(
             &reference_memo,
         ) {
             Ok(mut trace) => {
+                let mut call_graph_diagnostics = compact_diagnostics(&call_graph_messages);
+                remove_reviewed_fail_stop_call_graph_diagnostics(
+                    &mut call_graph_diagnostics,
+                    &trace,
+                );
                 remove_recovered_indexed_dispatch_diagnostics(
                     &mut trace,
                     &recovered_indexed_dispatch_sites,
@@ -940,6 +999,7 @@ fn build_linked_functions_for_roots(
                 });
             }
             Err(error) => {
+                let call_graph_diagnostics = compact_diagnostics(&call_graph_messages);
                 let direct_diagnostics = vec![compact_diagnostic(&error.to_string())];
                 let mut calls = direct_calls;
                 annotate_direct_semantic_calls(&mut calls, symbol, resolver, &identities);

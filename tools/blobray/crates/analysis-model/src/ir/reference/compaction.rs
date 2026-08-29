@@ -278,6 +278,9 @@ pub(super) fn terminator_uses_memory_tokens(
 ) -> bool {
     match terminator {
         ResolvedReferenceTerminator::Return(value) => value_uses_memory_tokens(value, start, end),
+        ResolvedReferenceTerminator::FailStop { arguments, .. } => arguments
+            .iter()
+            .any(|value| value_uses_memory_tokens(value, start, end)),
         ResolvedReferenceTerminator::Branch {
             condition,
             taken,
@@ -574,6 +577,9 @@ pub(super) fn terminator_uses_call_tokens(
 ) -> bool {
     match terminator {
         ResolvedReferenceTerminator::Return(value) => value_uses_call_tokens(value, start, end),
+        ResolvedReferenceTerminator::FailStop { arguments, .. } => arguments
+            .iter()
+            .any(|value| value_uses_call_tokens(value, start, end)),
         ResolvedReferenceTerminator::Branch {
             condition,
             taken,

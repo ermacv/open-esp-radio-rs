@@ -147,6 +147,18 @@ the domain by one value fails closed. This removes the former table-load
 blocker without moving the target-specific channel fact into generic analysis
 or duplicating it in project TOML.
 
+The common controller assertion wrapper is also modeled as control flow rather
+than writable memory. The exact current BLE and BR/EDR linked bodies return
+when argument four is not level three; level three executes the deliberate
+null-store/`ebreak` fail-stop sequence and cannot return to its caller. Blobray
+now carries that outcome as a divergent platform boundary in generated
+references. Only the exact reviewed bodies and linked addresses receive the
+summary, and only the memory diagnostic at the explicitly covered fail-stop
+site is retired. Other stores and control-flow limitations remain fail-closed.
+This removes the former assertion-store blockers from both controller graphs
+without pretending that address zero is RAM or flattening non-assert logging
+levels into an unconditional trap.
+
 The current TX/RX validators additionally agree instruction-for-instruction
 with their named initial S31 roles over the accepted PHY domains. TX accepts
 HCI selectors one through four, maps selector four to internal mode zero and

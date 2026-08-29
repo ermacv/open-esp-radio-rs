@@ -518,14 +518,8 @@ impl RadioPhyRegisters {
     /// Configure the complete baseband watchdog leaf.
     pub fn configure_baseband_watchdog(&mut self) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        bb.baseband_watchdog_control().modify(|_, w| {
-            w.watchdog_config_unknown()
-                .set(0x00aa)
-                .watchdog_control_unknown()
-                .set_bit()
-        });
-        bb.baseband_watchdog_enable()
-            .modify(|_, w| w.watchdog_enable().set_bit());
+        super::generated::configure_phy_baseband_watchdog_control(bb);
+        super::generated::enable_phy_baseband_watchdog(bb);
     }
 
     /// Replace the standalone PHY VHT-support bit through one fresh RMW.

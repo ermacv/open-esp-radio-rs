@@ -5999,6 +5999,20 @@ pub(crate) fn configure_bt_wifi_baseband_fields(registers: &crate::svd::PhyBaseb
     crate::svd::field_replace_modify::configure_bt_wifi_baseband_fields(registers);
 }
 
+/// Typed bridge for the reviewed `configure_phy_baseband_watchdog_control` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_baseband_watchdog_control(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+) {
+    crate::svd::field_replace_modify::configure_phy_baseband_watchdog_control(registers);
+}
+
+/// Typed bridge for the reviewed `enable_phy_baseband_watchdog` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_phy_baseband_watchdog(registers: &crate::svd::PhyBasebandConfigOracle) {
+    crate::svd::field_replace_modify::enable_phy_baseband_watchdog(registers);
+}
+
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
 #[inline]
 pub(crate) fn configure_shared_modem_low_power_timer(

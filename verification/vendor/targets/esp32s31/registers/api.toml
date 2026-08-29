@@ -8259,3 +8259,24 @@ fields = [
 value = 0x7f
 exposure = "facade"
 sources = ["ROM_REV0_PHY_BTBB_WIFI_BB_CFG2", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_baseband_watchdog_control"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_WATCHDOG_CONTROL"
+fields = [
+    { field = "WATCHDOG_CONFIG_UNKNOWN", source-bit-offset = 0 },
+    { field = "WATCHDOG_CONTROL_UNKNOWN", source-bit-offset = 16 },
+]
+value = 0x100aa
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "enable_phy_baseband_watchdog"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "BASEBAND_WATCHDOG_ENABLE"
+fields = [{ field = "WATCHDOG_ENABLE", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION", "S31_ESP_PACS_SVD"]

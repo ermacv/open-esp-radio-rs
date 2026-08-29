@@ -68111,6 +68111,34 @@ pub mod field_replace_modify {
             }
         });
     }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_WATCHDOG_CONTROL fields [WATCHDOG_CONFIG_UNKNOWN, WATCHDOG_CONTROL_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_baseband_watchdog_control(registers: &crate::PhyBasebandConfigOracle) {
+        registers.baseband_watchdog_control().modify(|_, writer| {
+            let input = 0x000100aa_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .watchdog_config_unknown()
+                    .bits((input & 0x0000ffff) as u16)
+                    .watchdog_control_unknown()
+                    .bit(((input >> 16) & 0x00000001) != 0)
+            }
+        });
+    }
+
+    /// Replace PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_WATCHDOG_ENABLE fields [WATCHDOG_ENABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_phy_baseband_watchdog(registers: &crate::PhyBasebandConfigOracle) {
+        registers.baseband_watchdog_enable().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.watchdog_enable().bit((input & 0x00000001) != 0)
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.

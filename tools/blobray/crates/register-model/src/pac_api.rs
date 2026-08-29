@@ -463,6 +463,8 @@ pub struct FieldReplaceModify {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct FieldInputTransform {
+    #[serde(default)]
+    pub wrapping_add: u32,
     pub wrapping_subtract: u32,
     pub retain_mask: u32,
 }
@@ -645,6 +647,14 @@ impl PacApiPack {
             {
                 return Err(Error::message(format!(
                     "PAC API field-replace-modify {:?} input transform requires a non-zero retain mask",
+                    operation.name
+                )));
+            }
+            if operation.input_transform.is_some_and(|transform| {
+                transform.wrapping_add != 0 && transform.wrapping_subtract != 0
+            }) {
+                return Err(Error::message(format!(
+                    "PAC API field-replace-modify {:?} input transform cannot combine wrapping addition and subtraction",
                     operation.name
                 )));
             }

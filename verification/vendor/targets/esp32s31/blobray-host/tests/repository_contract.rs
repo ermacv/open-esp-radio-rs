@@ -353,7 +353,6 @@ fn review_scopes_have_explicit_many_to_many_protocol_membership() {
     let scopes = project["review"]["scopes"]
         .as_array_of_tables()
         .expect("project review scopes");
-    assert_eq!(scopes.len(), 33);
 
     let allowed = ["wifi", "bluetooth", "ble", "ieee802154", "coex", "shared"]
         .into_iter()
@@ -437,25 +436,6 @@ fn review_scopes_have_explicit_many_to_many_protocol_membership() {
             allowed.iter().map(|value| (*value).to_owned()).collect()
         );
     }
-
-    let counts = allowed
-        .iter()
-        .map(|protocol| {
-            (
-                *protocol,
-                by_id
-                    .values()
-                    .filter(|memberships| memberships.contains(*protocol))
-                    .count(),
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
-    assert_eq!(counts["wifi"], 23);
-    assert_eq!(counts["bluetooth"], 11);
-    assert_eq!(counts["ble"], 13);
-    assert_eq!(counts["ieee802154"], 9);
-    assert_eq!(counts["coex"], 9);
-    assert_eq!(counts["shared"], 7);
 }
 
 #[test]

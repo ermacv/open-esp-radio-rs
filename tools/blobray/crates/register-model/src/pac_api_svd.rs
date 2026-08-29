@@ -1680,6 +1680,13 @@ peripherals = ["INTERRUPT"]
             .validate_against_svd(SAMPLED_BIT_ZERO_WRITE_SVD)
             .is_ok()
         );
+        assert!(
+            transformed_field_replace_pack(
+                "input-transform = { wrapping-add = 5, wrapping-subtract = 0, retain-mask = 3 }"
+            )
+            .validate_against_svd(SAMPLED_BIT_ZERO_WRITE_SVD)
+            .is_ok()
+        );
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::generated::PhyLowRateState;
+use super::generated::{PhyAgcParameterByte, PhyLowRateState};
 use super::{PhyFtmEnableVendorArgument, RadioPhyRegisters};
 
 const fn phy_low_rate_state(enabled: bool) -> PhyLowRateState {
@@ -11,10 +11,6 @@ const fn phy_low_rate_state(enabled: bool) -> PhyLowRateState {
     } else {
         PhyLowRateState::Disabled
     }
-}
-
-const fn agc_parameter_offset(parameter: u8) -> u8 {
-    parameter.wrapping_add(0x50)
 }
 
 const fn rx_11b_values(enabled: bool) -> (u8, u8, u8, u8, u8) {
@@ -105,29 +101,20 @@ impl RadioPhyRegisters {
     /// Apply all ten fresh-read updates of complete `phy_agc_reg_init`.
     pub fn initialize_agc_registers(&mut self, parameter_121: u8, parameter_120: u8) {
         let agc = &self.peripherals.phy_agc_oracle;
-        let gain_minus_one = parameter_121.wrapping_sub(1) & 0x7f;
-        agc.rx_gain_limit_control()
-            .modify(|_, w| w.rx_gain_limit_unknown().set(gain_minus_one));
-        agc.agc_gain_limit_low()
-            .modify(|_, w| w.parameter_minus_one_unknown().set(gain_minus_one));
-        agc.agc_shared_control()
-            .modify(|_, w| w.rx_gain_index_unknown().set(parameter_121 & 0x7f));
-        agc.agc_saturation_control()
-            .modify(|_, w| w.low_unknown().set(0x0bb8));
-        agc.agc_parameter_control()
-            .modify(|_, w| w.parameter_121_unknown().set(parameter_121));
-        agc.agc_parameter_control().modify(|_, w| {
-            w.parameter_120_offset_unknown()
-                .set(agc_parameter_offset(parameter_120))
-        });
-        agc.agc_shared_control()
-            .modify(|_, w| w.control_high_unknown().set(0x32));
-        agc.agc_shared_control()
-            .modify(|_, w| w.pulse_unknown().set_bit());
-        agc.agc_shared_control()
-            .modify(|_, w| w.pulse_unknown().clear_bit());
-        agc.agc_init_high_control()
-            .modify(|_, w| w.init_high_unknown().set(0xd2));
+        let parameter_121 = PhyAgcParameterByte::new(u32::from(parameter_121))
+            .expect("every u8 is a complete PHY AGC parameter byte");
+        let parameter_120 = PhyAgcParameterByte::new(u32::from(parameter_120))
+            .expect("every u8 is a complete PHY AGC parameter byte");
+        super::generated::configure_phy_agc_initial_rx_gain_limit(agc, parameter_121);
+        super::generated::configure_phy_agc_initial_gain_limit_low(agc, parameter_121);
+        super::generated::configure_phy_agc_initial_rx_gain_index(agc, parameter_121);
+        super::generated::configure_phy_agc_initial_saturation_low(agc);
+        super::generated::configure_phy_agc_parameter_121(agc, parameter_121);
+        super::generated::configure_phy_agc_parameter_120_offset(agc, parameter_120);
+        super::generated::configure_phy_agc_initial_control_high(agc);
+        super::generated::raise_phy_agc_initial_pulse(agc);
+        super::generated::lower_phy_agc_initial_pulse(agc);
+        super::generated::configure_phy_agc_initial_high(agc);
     }
 
     /// Apply all three fresh-read antenna initialization updates.
@@ -262,13 +249,7 @@ impl RadioPhyRegisters {
 
 #[cfg(test)]
 mod tests {
-    use super::{agc_parameter_offset, rx_11b_values};
-
-    #[test]
-    fn parameter_offset_retains_rom_u8_wrapping() {
-        assert_eq!(agc_parameter_offset(0x20), 0x70);
-        assert_eq!(agc_parameter_offset(0xe0), 0x30);
-    }
+    use super::rx_11b_values;
 
     #[test]
     fn both_rx_11b_branches_keep_complete_rom_values() {

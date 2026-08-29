@@ -1307,6 +1307,29 @@ impl ForcedRxGain {
     }
 }
 
+/// Complete caller byte accepted by the reviewed rev0 PHY AGC register initializer.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyAgcParameterByte(u32);
+
+impl PhyAgcParameterByte {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x000000ff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x000000ff {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Register-specific complete TIMER0 threshold word accepted by the public common LL; no clock source, unit, or deadline policy is assigned at the PAC boundary.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Ieee802154Timer0ThresholdWord(u32);
@@ -5451,6 +5474,93 @@ pub(crate) fn configure_phy_low_rate_secondary_state(
         registers,
         value.bits(),
     );
+}
+
+/// Typed bridge for the reviewed `configure_phy_agc_initial_rx_gain_limit` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_agc_initial_rx_gain_limit(
+    registers: &crate::svd::PhyAgcOracle,
+    value: PhyAgcParameterByte,
+) {
+    crate::svd::field_replace_modify::configure_phy_agc_initial_rx_gain_limit(
+        registers,
+        value.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `configure_phy_agc_initial_gain_limit_low` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_agc_initial_gain_limit_low(
+    registers: &crate::svd::PhyAgcOracle,
+    value: PhyAgcParameterByte,
+) {
+    crate::svd::field_replace_modify::configure_phy_agc_initial_gain_limit_low(
+        registers,
+        value.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `configure_phy_agc_initial_rx_gain_index` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_agc_initial_rx_gain_index(
+    registers: &crate::svd::PhyAgcOracle,
+    value: PhyAgcParameterByte,
+) {
+    crate::svd::field_replace_modify::configure_phy_agc_initial_rx_gain_index(
+        registers,
+        value.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `configure_phy_agc_initial_saturation_low` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_agc_initial_saturation_low(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::configure_phy_agc_initial_saturation_low(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_agc_parameter_121` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_agc_parameter_121(
+    registers: &crate::svd::PhyAgcOracle,
+    value: PhyAgcParameterByte,
+) {
+    crate::svd::field_replace_modify::configure_phy_agc_parameter_121(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `configure_phy_agc_parameter_120_offset` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_agc_parameter_120_offset(
+    registers: &crate::svd::PhyAgcOracle,
+    value: PhyAgcParameterByte,
+) {
+    crate::svd::field_replace_modify::configure_phy_agc_parameter_120_offset(
+        registers,
+        value.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `configure_phy_agc_initial_control_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_agc_initial_control_high(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::configure_phy_agc_initial_control_high(registers);
+}
+
+/// Typed bridge for the reviewed `raise_phy_agc_initial_pulse` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn raise_phy_agc_initial_pulse(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::raise_phy_agc_initial_pulse(registers);
+}
+
+/// Typed bridge for the reviewed `lower_phy_agc_initial_pulse` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn lower_phy_agc_initial_pulse(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::lower_phy_agc_initial_pulse(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_agc_initial_high` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_agc_initial_high(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::configure_phy_agc_initial_high(registers);
 }
 
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.

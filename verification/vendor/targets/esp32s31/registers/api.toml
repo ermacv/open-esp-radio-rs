@@ -7603,3 +7603,104 @@ peripheral = "PHY_AGC_ORACLE"
 register = "LOW_RATE_PRIMARY_CONTROL"
 field = "LOW_RATE_ENABLE_FIRST"
 sources = ["ROM_REV0_PHY_LOW_RATE", "S31_ESP_PACS_SVD"]
+
+[[bounded-domains]]
+name = "PhyAgcParameterByte"
+description = "Complete caller byte accepted by the reviewed rev0 PHY AGC register initializer."
+min = 0
+max = 0xff
+sources = ["ROM_REV0_PHY_AGC"]
+
+[[field-replace-modifies]]
+name = "configure_phy_agc_initial_rx_gain_limit"
+peripheral = "PHY_AGC_ORACLE"
+register = "RX_GAIN_LIMIT_CONTROL"
+fields = [{ field = "RX_GAIN_LIMIT_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyAgcParameterByte"
+input-transform = { wrapping-subtract = 1, retain-mask = 0x7f }
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_agc_initial_gain_limit_low"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_GAIN_LIMIT_LOW"
+fields = [{ field = "PARAMETER_MINUS_ONE_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyAgcParameterByte"
+input-transform = { wrapping-subtract = 1, retain-mask = 0x7f }
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_agc_initial_rx_gain_index"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_SHARED_CONTROL"
+fields = [{ field = "RX_GAIN_INDEX_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyAgcParameterByte"
+input-transform = { wrapping-subtract = 0, retain-mask = 0x7f }
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_agc_initial_saturation_low"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_SATURATION_CONTROL"
+fields = [{ field = "LOW_UNKNOWN", source-bit-offset = 0 }]
+value = 0x0bb8
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_agc_parameter_121"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_PARAMETER_CONTROL"
+fields = [{ field = "PARAMETER_121_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyAgcParameterByte"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_agc_parameter_120_offset"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_PARAMETER_CONTROL"
+fields = [{ field = "PARAMETER_120_OFFSET_UNKNOWN", source-bit-offset = 0 }]
+domain = "PhyAgcParameterByte"
+input-transform = { wrapping-add = 0x50, wrapping-subtract = 0, retain-mask = 0xff }
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_agc_initial_control_high"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_SHARED_CONTROL"
+fields = [{ field = "CONTROL_HIGH_UNKNOWN", source-bit-offset = 0 }]
+value = 0x32
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "raise_phy_agc_initial_pulse"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_SHARED_CONTROL"
+fields = [{ field = "PULSE_UNKNOWN", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "lower_phy_agc_initial_pulse"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_SHARED_CONTROL"
+fields = [{ field = "PULSE_UNKNOWN", source-bit-offset = 0 }]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_agc_initial_high"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_INIT_HIGH_CONTROL"
+fields = [{ field = "INIT_HIGH_UNKNOWN", source-bit-offset = 0 }]
+value = 0xd2
+exposure = "facade"
+sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]

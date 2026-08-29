@@ -1502,12 +1502,16 @@ impl PacApiPack {
                 ("", "")
             };
             let (input_parameter, fixed_input) = if binding.domain.is_some() {
-                let input_transform = binding.input_transform.map_or_else(String::new, |transform| {
-                    format!(
-                        "let input = input.wrapping_sub(0x{:08x}) & 0x{:08x};\n                         ",
-                        transform.wrapping_subtract, transform.retain_mask,
-                    )
-                });
+                let input_transform =
+                    binding
+                        .input_transform
+                        .map_or_else(String::new, |transform| {
+                            field_input_transform_expression(
+                                transform.wrapping_add,
+                                transform.wrapping_subtract,
+                                transform.retain_mask,
+                            )
+                        });
                 ("input: u32", input_transform)
             } else {
                 (
@@ -1734,6 +1738,22 @@ impl PacApiPack {
     }
 }
 
+fn field_input_transform_expression(
+    wrapping_add: u32,
+    wrapping_subtract: u32,
+    retain_mask: u32,
+) -> String {
+    if wrapping_add != 0 {
+        format!(
+            "let input = input.wrapping_add(0x{wrapping_add:08x}) & 0x{retain_mask:08x};\n                         "
+        )
+    } else {
+        format!(
+            "let input = input.wrapping_sub(0x{wrapping_subtract:08x}) & 0x{retain_mask:08x};\n                         "
+        )
+    }
+}
+
 fn domain_value_expression(domain: &str, flag_or_enum_domains: &BTreeSet<&str>) -> &'static str {
     if flag_or_enum_domains.contains(domain) {
         "value.bits()"
@@ -1834,6 +1854,18 @@ mod tests {
     fn type_binding_matches_svd2rust_for_adjacent_numeric_segments() {
         assert_eq!(type_binding_name("BT_V3_2_BASEBAND"), "BtV3_2Baseband");
         assert_eq!(type_binding_name("UART0_CONTROL"), "Uart0Control");
+    }
+
+    #[test]
+    fn field_input_transform_renders_the_selected_wrapping_operation() {
+        assert_eq!(
+            field_input_transform_expression(0x50, 0, 0xff),
+            "let input = input.wrapping_add(0x00000050) & 0x000000ff;\n                         "
+        );
+        assert_eq!(
+            field_input_transform_expression(0, 1, 0x7f),
+            "let input = input.wrapping_sub(0x00000001) & 0x0000007f;\n                         "
+        );
     }
 
     #[test]

@@ -67221,6 +67221,139 @@ pub mod field_replace_modify {
             writer.low_rate_enable().bit((input & 0x00000001) != 0)
         });
     }
+
+    /// Replace PHY_AGC_ORACLE.RX_GAIN_LIMIT_CONTROL fields [RX_GAIN_LIMIT_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_agc_initial_rx_gain_limit(registers: &crate::PhyAgcOracle, input: u32) {
+        registers.rx_gain_limit_control().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000001) & 0x0000007f;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .rx_gain_limit_unknown()
+                    .bits((input & 0x0000007f) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.AGC_GAIN_LIMIT_LOW fields [PARAMETER_MINUS_ONE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_agc_initial_gain_limit_low(registers: &crate::PhyAgcOracle, input: u32) {
+        registers.agc_gain_limit_low().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000001) & 0x0000007f;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .parameter_minus_one_unknown()
+                    .bits((input & 0x0000007f) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [RX_GAIN_INDEX_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_agc_initial_rx_gain_index(registers: &crate::PhyAgcOracle, input: u32) {
+        registers.agc_shared_control().modify(|_, writer| {
+            let input = input.wrapping_sub(0x00000000) & 0x0000007f;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .rx_gain_index_unknown()
+                    .bits((input & 0x0000007f) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.AGC_SATURATION_CONTROL fields [LOW_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_agc_initial_saturation_low(registers: &crate::PhyAgcOracle) {
+        registers.agc_saturation_control().modify(|_, writer| {
+            let input = 0x00000bb8_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.low_unknown().bits(input & 0x0007ffff) }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.AGC_PARAMETER_CONTROL fields [PARAMETER_121_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_agc_parameter_121(registers: &crate::PhyAgcOracle, input: u32) {
+        registers.agc_parameter_control().modify(|_, writer| {
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .parameter_121_unknown()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.AGC_PARAMETER_CONTROL fields [PARAMETER_120_OFFSET_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_agc_parameter_120_offset(registers: &crate::PhyAgcOracle, input: u32) {
+        registers.agc_parameter_control().modify(|_, writer| {
+            let input = input.wrapping_add(0x00000050) & 0x000000ff;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .parameter_120_offset_unknown()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [CONTROL_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_agc_initial_control_high(registers: &crate::PhyAgcOracle) {
+        registers.agc_shared_control().modify(|_, writer| {
+            let input = 0x00000032_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .control_high_unknown()
+                    .bits((input & 0x000000ff) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [PULSE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn raise_phy_agc_initial_pulse(registers: &crate::PhyAgcOracle) {
+        registers.agc_shared_control().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.pulse_unknown().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.AGC_SHARED_CONTROL fields [PULSE_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn lower_phy_agc_initial_pulse(registers: &crate::PhyAgcOracle) {
+        registers.agc_shared_control().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.pulse_unknown().bit((input & 0x00000001) != 0)
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.AGC_INIT_HIGH_CONTROL fields [INIT_HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_agc_initial_high(registers: &crate::PhyAgcOracle) {
+        registers.agc_init_high_control().modify(|_, writer| {
+            let input = 0x000000d2_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe { writer.init_high_unknown().bits((input & 0x000000ff) as u8) }
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.

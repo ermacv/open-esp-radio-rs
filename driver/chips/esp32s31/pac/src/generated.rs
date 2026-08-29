@@ -489,6 +489,23 @@ impl AgcRuntimeEnableState {
     }
 }
 
+/// Boolean state shared by the three separately ordered low-rate control edges.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PhyLowRateState {
+    /// Disable the selected PHY low-rate control edge.
+    Disabled = 0x00000000,
+    /// Enable the selected PHY low-rate control edge.
+    Enabled = 0x00000001,
+}
+
+impl PhyLowRateState {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
 /// One reviewed four-bit Wi-Fi packet-traffic-information value. Its scheduling policy remains outside the PAC.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MacPti(u32);
@@ -5326,6 +5343,36 @@ pub(crate) fn configure_forced_rx_gain_state(
     value: AgcRuntimeEnableState,
 ) {
     crate::svd::field_replace_modify::configure_forced_rx_gain_state(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `configure_phy_low_rate_first_state` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_low_rate_first_state(
+    registers: &crate::svd::PhyAgcOracle,
+    value: PhyLowRateState,
+) {
+    crate::svd::field_replace_modify::configure_phy_low_rate_first_state(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `configure_phy_low_rate_second_state` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_low_rate_second_state(
+    registers: &crate::svd::PhyAgcOracle,
+    value: PhyLowRateState,
+) {
+    crate::svd::field_replace_modify::configure_phy_low_rate_second_state(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `configure_phy_low_rate_secondary_state` field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_low_rate_secondary_state(
+    registers: &crate::svd::PhyAgcOracle,
+    value: PhyLowRateState,
+) {
+    crate::svd::field_replace_modify::configure_phy_low_rate_secondary_state(
+        registers,
+        value.bits(),
+    );
 }
 
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.

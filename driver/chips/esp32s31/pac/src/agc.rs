@@ -2,7 +2,16 @@
 
 #![forbid(unsafe_code)]
 
+use super::generated::PhyLowRateState;
 use super::{PhyFtmEnableVendorArgument, RadioPhyRegisters};
+
+const fn phy_low_rate_state(enabled: bool) -> PhyLowRateState {
+    if enabled {
+        PhyLowRateState::Enabled
+    } else {
+        PhyLowRateState::Disabled
+    }
+}
 
 const fn agc_parameter_offset(parameter: u8) -> u8 {
     parameter.wrapping_add(0x50)
@@ -24,31 +33,15 @@ impl RadioPhyRegisters {
     /// The two primary-word bits remain separate RMWs exactly as in ROM.
     pub fn configure_phy_low_rate(&mut self, enabled: bool) {
         let agc = &self.peripherals.phy_agc_oracle;
-        if enabled {
-            agc.low_rate_primary_control()
-                .modify(|_, w| w.low_rate_enable_first().set_bit());
-            agc.low_rate_primary_control()
-                .modify(|_, w| w.low_rate_enable_second().set_bit());
-            agc.low_rate_secondary_control()
-                .modify(|_, w| w.low_rate_enable().set_bit());
-        } else {
-            agc.low_rate_primary_control()
-                .modify(|_, w| w.low_rate_enable_first().clear_bit());
-            agc.low_rate_primary_control()
-                .modify(|_, w| w.low_rate_enable_second().clear_bit());
-            agc.low_rate_secondary_control()
-                .modify(|_, w| w.low_rate_enable().clear_bit());
-        }
+        let state = phy_low_rate_state(enabled);
+        super::generated::configure_phy_low_rate_first_state(agc, state);
+        super::generated::configure_phy_low_rate_second_state(agc, state);
+        super::generated::configure_phy_low_rate_secondary_state(agc, state);
     }
 
     /// Read the complete ROM `phy_is_low_rate_enabled` status bit.
     pub fn phy_low_rate_enabled(&self) -> bool {
-        self.peripherals
-            .phy_agc_oracle
-            .low_rate_primary_control()
-            .read()
-            .low_rate_enable_first()
-            .bit_is_set()
+        super::svd::field_read::observe_phy_low_rate_enabled(&self.peripherals.phy_agc_oracle)
     }
 
     /// Apply all fourteen internal MMIO edges of `phy_bb_agc_reg_update`.

@@ -7436,3 +7436,53 @@ fields = [{ field = "PULSE_UNKNOWN", source-bit-offset = 0 }]
 domain = "AgcRuntimeEnableState"
 exposure = "facade"
 sources = ["ROM_REV0_PHY_FORCE_RX_GAIN", "S31_ESP_PACS_SVD"]
+
+[[enum-domains]]
+name = "PhyLowRateState"
+description = "Boolean state shared by the three separately ordered low-rate control edges."
+
+[[enum-domains.values]]
+name = "Disabled"
+value = 0
+description = "Disable the selected PHY low-rate control edge."
+sources = ["ROM_REV0_PHY_LOW_RATE", "S31_ESP_PACS_SVD"]
+
+[[enum-domains.values]]
+name = "Enabled"
+value = 1
+description = "Enable the selected PHY low-rate control edge."
+sources = ["ROM_REV0_PHY_LOW_RATE", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_low_rate_first_state"
+peripheral = "PHY_AGC_ORACLE"
+register = "LOW_RATE_PRIMARY_CONTROL"
+fields = [{ field = "LOW_RATE_ENABLE_FIRST", source-bit-offset = 0 }]
+domain = "PhyLowRateState"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_LOW_RATE", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_low_rate_second_state"
+peripheral = "PHY_AGC_ORACLE"
+register = "LOW_RATE_PRIMARY_CONTROL"
+fields = [{ field = "LOW_RATE_ENABLE_SECOND", source-bit-offset = 0 }]
+domain = "PhyLowRateState"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_LOW_RATE", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_low_rate_secondary_state"
+peripheral = "PHY_AGC_ORACLE"
+register = "LOW_RATE_SECONDARY_CONTROL"
+fields = [{ field = "LOW_RATE_ENABLE", source-bit-offset = 0 }]
+domain = "PhyLowRateState"
+exposure = "facade"
+sources = ["ROM_REV0_PHY_LOW_RATE", "S31_ESP_PACS_SVD"]
+
+[[field-reads]]
+name = "observe_phy_low_rate_enabled"
+peripheral = "PHY_AGC_ORACLE"
+register = "LOW_RATE_PRIMARY_CONTROL"
+field = "LOW_RATE_ENABLE_FIRST"
+sources = ["ROM_REV0_PHY_LOW_RATE", "S31_ESP_PACS_SVD"]

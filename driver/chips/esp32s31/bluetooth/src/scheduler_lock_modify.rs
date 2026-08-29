@@ -235,6 +235,16 @@ pub struct BluetoothSchedulerLockModifyPublicationResult {
 }
 
 impl BluetoothSchedulerLockModifyPublicationResult {
+    /// Construct one opaque publication result for host-side ownership tests.
+    ///
+    /// The test seam deliberately does not repeat the generated PAC field
+    /// width or validate register geometry in hand-written controller code.
+    #[cfg(any(feature = "validation-probes", test))]
+    #[doc(hidden)]
+    pub const fn for_validation(code: u8, request: BluetoothSchedulerLockModifyRequest) -> Self {
+        Self { code, request }
+    }
+
     /// Return the exact item identity and hardware-list index carried by this
     /// completed publication transaction.
     ///

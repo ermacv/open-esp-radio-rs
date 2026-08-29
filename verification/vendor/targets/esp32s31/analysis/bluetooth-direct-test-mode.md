@@ -468,16 +468,20 @@ base scheduler subscribes to broker type zero, while the optional named
 event one, changes no scheduler or DTM state and returns zero. The exact
 meaning of the sixteen diagnostic values remains unknown.
 
-The restricted PAC now validates the pointer/argument, builds the two ordered
-fresh-read argument images and the complete request image, and represents the
-two-word decision observation without joining their physical owners. The
-Bluetooth crate adds affine `awaiting publication` and `in flight` phases.
+The restricted PAC now validates the pointer and typed hardware-list index,
+performs the two ordered fresh-read field updates and the complete request
+publication through generated accessors, and represents the two-word decision
+observation without joining their physical owners. The Bluetooth crate adds
+affine `awaiting publication` and `in flight` phases.
 Each `observe` call evaluates exactly one fresh event and returns `Waiting` to
 the executor when the conjunction remains active; it contains no polling loop,
 allocator, waker or RTOS dependency. Its terminal value is consequently named
-a publication result, not a completion. Live MMIO remains deliberately absent
-until the task-side request owner and ISR-side state owner are composed without
-stale cross-owner observations.
+a publication result, not a completion. A prepared DTM graph can consume that
+result only when both the scheduler-item address and typed hardware-list index
+match. Success enters a non-cancellable CPU-owned join state: it still grants
+no hardware-head, RUN, descriptor-visibility or radio-completion authority.
+Live MMIO remains deliberately absent until the task-side request owner and
+ISR-side state owner are composed without stale cross-owner observations.
 
 ## Radio completion and ownership return
 

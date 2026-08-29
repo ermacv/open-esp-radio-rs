@@ -86,6 +86,16 @@ pub struct RiscvSummaryHooks {
         &MmioMap,
         &StructuralPointerContext,
     ) -> Option<FunctionAnalysis>,
+    /// Optional reviewed value domain for a load from caller-owned memory.
+    ///
+    /// The provider must match the exact artifact function, affine argument
+    /// field and access width. The backend retains the load as a real memory
+    /// read and uses this fact only to prove bounded dependent accesses.
+    pub caller_memory_input_domain: fn(
+        &artifact::ArtifactSymbolDefinition,
+        &MemoryObjectLocation,
+        u8,
+    ) -> Option<ReviewedMemoryValueDomain>,
     /// Optional language add-on mapping from an exact public symbol to a
     /// standardized memory contract. The backend interprets the contract for
     /// RV32; it never infers one from symbol spelling on its own.
@@ -94,6 +104,69 @@ pub struct RiscvSummaryHooks {
         &artifact::ArtifactSymbolDefinition,
         &Rv32CallArguments,
     ) -> Option<(SymbolicValue, SymbolicValue)>,
+}
+
+/// Finite inclusive value domain for one reviewed caller-memory input.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ReviewedMemoryValueDomain {
+    id: &'static str,
+    minimum: u32,
+    maximum: u32,
+}
+
+impl ReviewedMemoryValueDomain {
+    pub const fn inclusive(id: &'static str, minimum: u32, maximum: u32) -> Self {
+        Self {
+            id,
+            minimum,
+            maximum,
+        }
+    }
+
+    pub const fn id(self) -> &'static str {
+        self.id
+    }
+
+    const fn minimum(self) -> u32 {
+        self.minimum
+    }
+
+    const fn maximum(self) -> u32 {
+        self.maximum
+    }
+
+    fn validate(self, width: u8) -> std::result::Result<(), String> {
+        const MAXIMUM_VALUES: u32 = 256;
+
+        let width_maximum = match width {
+            8 => u8::MAX.into(),
+            16 => u16::MAX.into(),
+            32 => u32::MAX,
+            _ => return Err(format!("unsupported input width {width}")),
+        };
+        if self.id.is_empty() {
+            return Err("domain ID is empty".to_owned());
+        }
+        if self.minimum > self.maximum {
+            return Err(format!(
+                "empty inclusive range {:#x}..={:#x}",
+                self.minimum, self.maximum
+            ));
+        }
+        if self.maximum > width_maximum {
+            return Err(format!(
+                "maximum {:#x} exceeds {width}-bit input",
+                self.maximum
+            ));
+        }
+        if self.maximum - self.minimum >= MAXIMUM_VALUES {
+            return Err(format!(
+                "range {:#x}..={:#x} exceeds the {MAXIMUM_VALUES}-value proof bound",
+                self.minimum, self.maximum
+            ));
+        }
+        Ok(())
+    }
 }
 
 pub struct RiscvHarnessSpec {

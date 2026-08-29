@@ -88,8 +88,8 @@ pub use interface_discovery::{
 };
 pub use reference_analysis::{ReferenceAnalysisMemo, ReferenceResolver, ReferenceSymbolKey};
 pub use static_analysis::{
-    RiscvHarnessSpec, RiscvSummaryHooks, StructuralCallSite, StructuralPointerContext,
-    StructuralProjectedRelocation, SymbolicStack, trace_binary_symbol,
+    ReviewedMemoryValueDomain, RiscvHarnessSpec, RiscvSummaryHooks, StructuralCallSite,
+    StructuralPointerContext, StructuralProjectedRelocation, SymbolicStack, trace_binary_symbol,
 };
 
 #[cfg(test)]

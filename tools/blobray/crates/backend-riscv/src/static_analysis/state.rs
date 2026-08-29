@@ -17,6 +17,7 @@ pub(super) struct StructuralTraceState {
     pub(super) next_mmio_read_token: u32,
     pub(super) next_memory_read_token: u32,
     pub(super) memory_read_sources: std::sync::Arc<BTreeMap<u32, MemoryObjectLocation>>,
+    pub(super) reviewed_memory_domains: std::sync::Arc<BTreeMap<u32, ReviewedMemoryValueDomain>>,
     /// Exact fresh-allocation pointers most recently stored in statically
     /// identified global pointer cells on this one explored path.
     ///
@@ -122,6 +123,7 @@ impl StructuralTraceState {
             next_mmio_read_token: 0,
             next_memory_read_token: 0,
             memory_read_sources: std::sync::Arc::default(),
+            reviewed_memory_domains: std::sync::Arc::default(),
             allocation_pointer_cells: std::sync::Arc::default(),
             next_call_token: 0,
             next_external_call_token: 0,

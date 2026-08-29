@@ -190,6 +190,7 @@ fn opaque_runtime_body_is_not_an_artifact_wide_analysis_root() {
         direct_external_semantic: |_| None,
         direct_external_intrinsic: |_, _| None,
         reference_intrinsic: |_, _, _| None,
+        caller_memory_input_domain: |_, _, _| None,
         standard_memory_function: |_| None,
         wide_signed_divide: |_, _| None,
     }));
@@ -219,6 +220,7 @@ fn authoritative_link_unit_symbol_names_and_types_a_direct_external_call() {
         },
         direct_external_intrinsic: |_, _| None,
         reference_intrinsic: |_, _, _| None,
+        caller_memory_input_domain: |_, _, _| None,
         standard_memory_function: |_| None,
         wide_signed_divide: |_, _| None,
     }));
@@ -280,6 +282,7 @@ fn unique_archive_origin_can_name_a_relaxed_internal_definition() {
         direct_external_semantic: |_| None,
         direct_external_intrinsic: |_, _| None,
         reference_intrinsic: |_, _, _| None,
+        caller_memory_input_domain: |_, _, _| None,
         standard_memory_function: |_| None,
         wide_signed_divide: |_, _| None,
     }));
@@ -990,6 +993,7 @@ fn indexed_dispatch_standard_memory_call_is_a_semantic_boundary_independent_of_i
         direct_external_semantic: |name| (name == "memcpy").then_some(&C_MEMCPY_SEMANTIC),
         direct_external_intrinsic: |_, _| None,
         reference_intrinsic: |_, _, _| None,
+        caller_memory_input_domain: |_, _, _| None,
         standard_memory_function: |_| None,
         wide_signed_divide: |_, _| None,
     }));

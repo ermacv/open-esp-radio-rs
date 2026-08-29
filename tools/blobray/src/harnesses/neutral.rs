@@ -69,6 +69,7 @@ static SUMMARIES: RiscvSummaryHooks = RiscvSummaryHooks {
     direct_external_semantic: no_direct_external_semantic,
     direct_external_intrinsic: no_direct_external_intrinsic,
     reference_intrinsic: no_reference_intrinsic,
+    caller_memory_input_domain: |_, _, _| None,
     standard_memory_function: no_standard_memory_function,
     wide_signed_divide: no_wide_signed_divide,
 };

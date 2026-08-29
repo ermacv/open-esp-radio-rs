@@ -67,6 +67,7 @@ pub static SUMMARIES: RiscvSummaryHooks = RiscvSummaryHooks {
     direct_external_semantic,
     direct_external_intrinsic,
     reference_intrinsic,
+    caller_memory_input_domain: |_, _, _| None,
     standard_memory_function: open_radio_vendor_addon_c::standard_memory_function,
     wide_signed_divide: no_wide_divide,
 };

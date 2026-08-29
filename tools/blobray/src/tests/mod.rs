@@ -382,6 +382,7 @@ static TEST_SUMMARIES: RiscvSummaryHooks = RiscvSummaryHooks {
     direct_external_semantic: test_direct_external_semantic,
     direct_external_intrinsic: no_test_direct_external_intrinsic,
     reference_intrinsic: test_reference_intrinsic,
+    caller_memory_input_domain: |_, _, _| None,
     standard_memory_function: test_standard_memory_function,
     wide_signed_divide: no_test_wide_divide,
 };

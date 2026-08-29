@@ -1297,6 +1297,7 @@ mod tests {
         direct_external_semantic: |_| None,
         direct_external_intrinsic: |_, _| None,
         reference_intrinsic: |_, _, _| None,
+        caller_memory_input_domain: |_, _, _| None,
         standard_memory_function: |_| None,
         wide_signed_divide: |_, _| None,
     };

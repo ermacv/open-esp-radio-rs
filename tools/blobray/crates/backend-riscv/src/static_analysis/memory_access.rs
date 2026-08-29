@@ -35,6 +35,34 @@ fn remember_absolute_pointer_read_source(
     }
 }
 
+fn remember_reviewed_caller_memory_domain(
+    state: &mut StructuralTraceState,
+    read_token: u32,
+    width: u8,
+    address: &SymbolicValue,
+    symbol: &artifact::ArtifactSymbolDefinition,
+    pointer_context: &StructuralPointerContext,
+) {
+    let Some(location) = address.memory_object_location_with_reads(&state.memory_read_sources)
+    else {
+        return;
+    };
+    let Some(domain) = pointer_context
+        .summary_hooks
+        .and_then(|hooks| (hooks.caller_memory_input_domain)(symbol, &location, width))
+    else {
+        return;
+    };
+    if let Err(error) = domain.validate(width) {
+        state.reference_blockers.push(format!(
+            "invalid-reviewed-caller-memory-domain at read {read_token}: {}: {error}",
+            domain.id()
+        ));
+        return;
+    }
+    std::sync::Arc::make_mut(&mut state.reviewed_memory_domains).insert(read_token, domain);
+}
+
 fn projected_relocation(
     symbol: &artifact::ArtifactSymbolDefinition,
     pointer_context: &StructuralPointerContext,
@@ -386,6 +414,14 @@ pub(super) fn apply_memory_instruction(
                     let read_token = state.next_memory_read_token;
                     state.next_memory_read_token += 1;
                     remember_pointer_read_source(state, read_token, width, &address);
+                    remember_reviewed_caller_memory_domain(
+                        state,
+                        read_token,
+                        width,
+                        &address,
+                        symbol,
+                        pointer_context,
+                    );
                     state.push_reference_event(
                         pc as u32,
                         DraftReferenceEvent::Memory {
@@ -529,6 +565,7 @@ pub(super) fn apply_memory_instruction(
                             width,
                             symbol,
                             &state.reference_events,
+                            &state.reviewed_memory_domains,
                         )
                     {
                         let read_token = state.next_memory_read_token;

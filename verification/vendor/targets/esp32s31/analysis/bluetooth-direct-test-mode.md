@@ -138,6 +138,15 @@ frequency image `2*n` for all `0..=39`. Complete
 `r_sym_ble_c4Wk4lIgPXJQLMwbA2Zp` and named `r_ble_phy_chan_to_freq` bodies
 confirm the table consumer.
 
+The executable target knowledge provider now binds only the exact current
+linked event body and its byte load at caller-owned `arg0+0x0e` to the
+reviewed inclusive channel domain `0..=39`. Generic Blobray retains that byte
+as a real caller-memory read and uses the provider fact solely to prove that
+all resulting accesses remain inside the immutable forty-byte table. Expanding
+the domain by one value fails closed. This removes the former table-load
+blocker without moving the target-specific channel fact into generic analysis
+or duplicating it in project TOML.
+
 The current TX/RX validators additionally agree instruction-for-instruction
 with their named initial S31 roles over the accepted PHY domains. TX accepts
 HCI selectors one through four, maps selector four to internal mode zero and

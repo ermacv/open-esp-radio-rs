@@ -10,6 +10,11 @@
 
 use core::{convert::Infallible, marker::PhantomData};
 
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothDtmMemoryGraphCompletionObservation, BluetoothDtmMemoryGraphCompletionObserved,
+    BluetoothDtmSchedulerItemCompletionStatus,
+};
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphPositionalEventPrepared,
     BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphPrepareFailure,
@@ -19,10 +24,12 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmMemoryGraphEmptyListLinkPrepared, BluetoothDtmMemoryGraphHardwareOwned,
 };
-#[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareListHeadPublished;
 use open_esp_radio_esp32s31_hal::{
     BluetoothControllerSramAddress, BluetoothSchedulerHardwareListIndex,
+};
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_esp32s31_hal::{
+    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListHeadPublished,
 };
 
 use crate::{
@@ -476,6 +483,87 @@ impl<Role> BluetoothDtmHardwareOwnedEvent<Role> {
 
     pub(crate) const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
         self.memory.scheduler_item_address()
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn observe_completion(
+        self,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    ) -> BluetoothDtmHardwareOwnedEventCompletionObservation<Role> {
+        let Self {
+            memory,
+            packet,
+            _reservation: reservation,
+            _role: _,
+        } = self;
+        match memory.observe_completion(observed) {
+            BluetoothDtmMemoryGraphCompletionObservation::ListMismatch { owner, observed } => {
+                BluetoothDtmHardwareOwnedEventCompletionObservation::ListMismatch {
+                    item: Self {
+                        memory: owner,
+                        packet,
+                        _reservation: reservation,
+                        _role: PhantomData,
+                    },
+                    observed,
+                }
+            }
+            BluetoothDtmMemoryGraphCompletionObservation::StillInFlight(memory) => {
+                BluetoothDtmHardwareOwnedEventCompletionObservation::StillInFlight(Self {
+                    memory,
+                    packet,
+                    _reservation: reservation,
+                    _role: PhantomData,
+                })
+            }
+            BluetoothDtmMemoryGraphCompletionObservation::CompletionObserved(memory) => {
+                BluetoothDtmHardwareOwnedEventCompletionObservation::CompletionObserved(
+                    BluetoothDtmCompletionObservedEvent {
+                        memory,
+                        packet,
+                        _reservation: reservation,
+                        _role: PhantomData,
+                    },
+                )
+            }
+        }
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) enum BluetoothDtmHardwareOwnedEventCompletionObservation<Role> {
+    ListMismatch {
+        item: BluetoothDtmHardwareOwnedEvent<Role>,
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    StillInFlight(BluetoothDtmHardwareOwnedEvent<Role>),
+    CompletionObserved(BluetoothDtmCompletionObservedEvent<Role>),
+}
+
+/// Internal event retaining every owner after a non-sentinel status read.
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct BluetoothDtmCompletionObservedEvent<Role> {
+    memory: BluetoothDtmMemoryGraphCompletionObserved,
+    packet: BluetoothDtmEventPacket,
+    _reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+    _role: PhantomData<Role>,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<Role> BluetoothDtmCompletionObservedEvent<Role> {
+    pub(crate) const fn role(&self) -> BluetoothDtmRole {
+        match self.packet {
+            BluetoothDtmEventPacket::Transmitter { .. } => BluetoothDtmRole::Transmitter,
+            BluetoothDtmEventPacket::Receiver => BluetoothDtmRole::Receiver,
+        }
+    }
+
+    pub(crate) const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.memory.scheduler_item_address()
+    }
+
+    pub(crate) const fn status(&self) -> BluetoothDtmSchedulerItemCompletionStatus {
+        self.memory.status()
     }
 }
 

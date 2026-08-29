@@ -22,8 +22,11 @@
 //! also represented. The terminal pre-route Controller can additionally
 //! consume one identity-checked DTM graph through descriptor/head visibility,
 //! stable-owner dynamic interrupt preparation, the synchronous BTMAC event
-//! and RUN as one affine chain. A sampled
-//! sixteen-list finished mask can be drained one bit per bounded event step.
+//! and RUN as one affine chain. A sampled sixteen-list finished mask can be
+//! drained one bit per bounded event step. The terminal Controller can also
+//! perform one fresh transfer and immediately join list zero to its exact
+//! running DTM epoch; a non-sentinel status advances to a hardware-owned
+//! completion observation.
 //! Controller-SRAM allocation geometry and result parsing live in the separate
 //! `open-esp-radio-esp32s31-bluetooth-memory` layer below this LLL boundary;
 //! one bounded DTM RX transition accounts a result word without claiming its
@@ -31,8 +34,8 @@
 //! The initialized scheduler now joins its software task endpoint to the exact
 //! task-side HAL owner, so one lock/modify event step can reach the restricted
 //! PAC without exporting register authority. The remaining components are not
-//! connected across the missing selector-6 invariant, affine
-//! item/completion-list owner, live primary-ISR/executor composition,
+//! connected across the missing selector-6 invariant, completion unlink and
+//! recycle owner, live primary-ISR/executor composition,
 //! feature-specific NRT classification and live-route
 //! prerequisites. Stable two-owner ISR publication is connected, but no
 //! current finite state
@@ -189,6 +192,8 @@ pub use modem_lp_timer_queue::{
     step_modem_lp_timer_interrupt,
 };
 pub use nrt_interrupt::{BluetoothNrtDefaultInterruptEpoch, step_nrt_default_interrupt};
+#[cfg(target_arch = "riscv32")]
+pub use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmSchedulerItemCompletionStatus;
 pub use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothBlePhyEngineBindError, BluetoothBlePhyEngineBindFailure,
     BluetoothBlePhyEngineCpuOwned, BluetoothBlePhyEngineStorage, BluetoothDtmBoundSramLinkAddress,
@@ -221,6 +226,8 @@ pub use scheduler::{
     BluetoothDtmSchedulerHeadPublicationFailure, BluetoothDtmSchedulerHeadPublished,
     BluetoothDtmSchedulerRunning, BluetoothSchedulerInitialized,
 };
+#[cfg(target_arch = "riscv32")]
+pub use scheduler::{BluetoothDtmSchedulerCompletionObserved, BluetoothDtmSchedulerCompletionStep};
 pub use scheduler_config::BluetoothSchedulerSoftwareConfig;
 pub use scheduler_finished_lists::{
     BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerFinishedListCaptureError,

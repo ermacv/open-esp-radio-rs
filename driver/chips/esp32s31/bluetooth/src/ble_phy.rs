@@ -207,6 +207,17 @@ where
             .retain_running_dtm_first_item(address);
     }
 
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn observe_dtm_completion<Role>(
+        &mut self,
+        running: crate::BluetoothDtmSchedulerRunning<Role>,
+    ) -> crate::BluetoothDtmSchedulerCompletionStep<Role> {
+        self.initialized
+            .initialized
+            .controller
+            .observe_dtm_completion(running)
+    }
+
     pub(crate) fn request_controller_time(
         &mut self,
     ) -> Result<crate::BluetoothControllerTimeRequest, crate::BluetoothControllerTimeRequestError>

@@ -325,6 +325,13 @@ impl<const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
             &self.modem_lp_timer_events,
         )
     }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn scheduler_finished_lists_mut(
+        &mut self,
+    ) -> &mut BluetoothSchedulerFinishedListWorker {
+        &mut self.scheduler_finished_lists
+    }
 }
 
 impl<const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize> Default

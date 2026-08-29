@@ -1,6 +1,10 @@
 //! Fact-bounded scheduler initialization after the controller HAL component.
 
 use crate::BluetoothSchedulerSoftwareConfig;
+#[cfg(target_arch = "riscv32")]
+use crate::dtm_event_prepare::{
+    BluetoothDtmCompletionObservedEvent, BluetoothDtmHardwareOwnedEventCompletionObservation,
+};
 use crate::{
     BluetoothControllerInterruptRuntime, BluetoothControllerPoweredTaskRuntime,
     BluetoothControllerRuntimeResources, BluetoothDtmRole,
@@ -12,11 +16,15 @@ use crate::{
     },
 };
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareListHead;
+use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmSchedulerItemCompletionStatus;
 use open_esp_radio_esp32s31_hal::{
     BluetoothControllerSramAddress, BluetoothSchedulerHardwareListHeadError,
     BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHardwareListIndex,
     BluetoothSchedulerHardwareListsCleared, BluetoothSchedulerHardwareRunCommandPublished,
+};
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_esp32s31_hal::{
+    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListHead,
 };
 use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
 
@@ -40,6 +48,9 @@ enum BluetoothSchedulerExclusiveListState {
         address: BluetoothControllerSramAddress,
     },
     FirstItemRunning {
+        address: BluetoothControllerSramAddress,
+    },
+    FirstItemCompletionObserved {
         address: BluetoothControllerSramAddress,
     },
 }
@@ -95,6 +106,18 @@ impl BluetoothSchedulerExclusiveListEpoch {
             "only the published first item can enter the running scheduler phase"
         );
         self.state = BluetoothSchedulerExclusiveListState::FirstItemRunning { address };
+    }
+
+    fn retains_running_first_item(&self, address: BluetoothControllerSramAddress) -> bool {
+        self.state == BluetoothSchedulerExclusiveListState::FirstItemRunning { address }
+    }
+
+    fn retain_completion_observed_first_item(&mut self, address: BluetoothControllerSramAddress) {
+        assert!(
+            self.retains_running_first_item(address),
+            "only the running first item can enter completion-observed"
+        );
+        self.state = BluetoothSchedulerExclusiveListState::FirstItemCompletionObserved { address };
     }
 }
 
@@ -260,6 +283,76 @@ impl<Role> BluetoothDtmSchedulerRunning<Role> {
     pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
         self.run.index()
     }
+}
+
+/// DTM graph with a non-sentinel status observed after a fresh fenced transfer.
+///
+/// The source-owned scheduler epoch remains occupied and the graph remains
+/// hardware-owned. This state does not expose packet memory, cancellation or
+/// reclamation before the hardware/software unlink path is completed.
+#[must_use = "the completion-observed graph must advance through unlink and recycle"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothDtmSchedulerCompletionObserved<Role> {
+    item: BluetoothDtmCompletionObservedEvent<Role>,
+    run: BluetoothSchedulerHardwareRunCommandPublished,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<Role> BluetoothDtmSchedulerCompletionObserved<Role> {
+    /// Role retained by the completed scheduler item.
+    pub const fn role(&self) -> BluetoothDtmRole {
+        self.item.role()
+    }
+
+    /// Exact scheduler-item identity whose status was observed.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.item.scheduler_item_address()
+    }
+
+    /// Semantic non-sentinel completion status.
+    pub const fn status(&self) -> BluetoothDtmSchedulerItemCompletionStatus {
+        self.item.status()
+    }
+
+    /// Hardware list retained through RUN and completion observation.
+    pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
+        self.run.index()
+    }
+}
+
+/// One bounded Controller-owned DTM completion attempt.
+#[must_use = "the returned DTM graph and any unrelated affine list must be retained"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothDtmSchedulerCompletionStep<Role> {
+    /// A generic finished-list drain is already active; no new transfer ran.
+    DrainAlreadyActive(BluetoothDtmSchedulerRunning<Role>),
+    /// The supplied running graph does not belong to this Controller epoch.
+    SchedulerIdentityMismatch(BluetoothDtmSchedulerRunning<Role>),
+    /// The fresh transfer contained no finished hardware list.
+    NoFinishedList(BluetoothDtmSchedulerRunning<Role>),
+    /// The selected list is not DTM list zero and remains available to dispatch.
+    UnrelatedList {
+        /// Unchanged running DTM graph.
+        running: BluetoothDtmSchedulerRunning<Role>,
+        /// Affine observation for the actual list owner.
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+        /// Whether the captured transfer retains another list.
+        more: bool,
+    },
+    /// DTM list zero was reported but its status remains the in-flight sentinel.
+    StillInFlight {
+        /// Unchanged running DTM graph; a later attempt requires a fresh transfer.
+        running: BluetoothDtmSchedulerRunning<Role>,
+        /// Whether the captured transfer retains another list.
+        more: bool,
+    },
+    /// One non-sentinel status was observed without returning CPU ownership.
+    CompletionObserved {
+        /// Hardware-owned completion observation retaining every graph owner.
+        completed: BluetoothDtmSchedulerCompletionObserved<Role>,
+        /// Whether the captured transfer retains another list.
+        more: bool,
+    },
 }
 
 /// Hardware and source-owned software state after scheduler initialization.
@@ -453,6 +546,64 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         self._scheduler_list.retain_running_first_item(address);
     }
 
+    /// Perform one fresh, bounded DTM completion observation.
+    ///
+    /// The affine list token never crosses this Controller operation before it
+    /// is joined to the matching running epoch. This prevents a caller from
+    /// retaining a list-zero token and replaying it against a later DTM event.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn observe_dtm_completion<Role>(
+        &mut self,
+        running: BluetoothDtmSchedulerRunning<Role>,
+    ) -> BluetoothDtmSchedulerCompletionStep<Role> {
+        let address = running.scheduler_item_address();
+        if running.hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || !self._scheduler_list.retains_running_first_item(address)
+        {
+            return BluetoothDtmSchedulerCompletionStep::SchedulerIdentityMismatch(running);
+        }
+        if self.runtime.scheduler_finished_lists_mut().is_active() {
+            return BluetoothDtmSchedulerCompletionStep::DrainAlreadyActive(running);
+        }
+
+        let capture = self
+            .task
+            .capture_scheduler_finished_lists(self.runtime.scheduler_finished_lists_mut());
+        if capture.is_err() {
+            return BluetoothDtmSchedulerCompletionStep::DrainAlreadyActive(running);
+        }
+        let step = self.runtime.scheduler_finished_lists_mut().step();
+        let crate::BluetoothSchedulerFinishedListWorkerStep::List { observed, more } = step else {
+            return BluetoothDtmSchedulerCompletionStep::NoFinishedList(running);
+        };
+
+        let BluetoothDtmSchedulerRunning { item, run } = running;
+        match item.observe_completion(observed) {
+            BluetoothDtmHardwareOwnedEventCompletionObservation::ListMismatch {
+                item,
+                observed,
+            } => BluetoothDtmSchedulerCompletionStep::UnrelatedList {
+                running: BluetoothDtmSchedulerRunning { item, run },
+                observed,
+                more,
+            },
+            BluetoothDtmHardwareOwnedEventCompletionObservation::StillInFlight(item) => {
+                BluetoothDtmSchedulerCompletionStep::StillInFlight {
+                    running: BluetoothDtmSchedulerRunning { item, run },
+                    more,
+                }
+            }
+            BluetoothDtmHardwareOwnedEventCompletionObservation::CompletionObserved(item) => {
+                self._scheduler_list
+                    .retain_completion_observed_first_item(address);
+                BluetoothDtmSchedulerCompletionStep::CompletionObserved {
+                    completed: BluetoothDtmSchedulerCompletionObserved { item, run },
+                    more,
+                }
+            }
+        }
+    }
+
     /// Borrow the matching interrupt and task runtime endpoints from this
     /// initialized hardware epoch.
     ///
@@ -629,6 +780,14 @@ mod tests {
         assert!(!list.can_publish_first_item(first));
         assert!(!list.cancel_first_item(first));
         list.retain_running_first_item(first);
+        assert!(list.retains_running_first_item(first));
+        assert_eq!(
+            list.prepare_first_item(other),
+            Err(BluetoothDtmEmptySchedulerMergeError::ListNotEmpty)
+        );
+        list.retain_completion_observed_first_item(first);
+        assert!(!list.retains_running_first_item(first));
+        assert!(!list.cancel_first_item(first));
         assert_eq!(
             list.prepare_first_item(other),
             Err(BluetoothDtmEmptySchedulerMergeError::ListNotEmpty)

@@ -617,6 +617,19 @@ where
         Ok(crate::BluetoothDtmSchedulerRunning::new(item, run))
     }
 
+    /// Perform one fresh fenced completion-list transfer and immediately join
+    /// its affine result to this exact running DTM graph.
+    ///
+    /// A non-sentinel item status advances only to completion-observed. The
+    /// descriptor, packet and scheduler reservation remain hardware-owned
+    /// until the later unlink and recycle transaction is complete.
+    pub fn observe_dtm_completion<Role>(
+        &mut self,
+        running: crate::BluetoothDtmSchedulerRunning<Role>,
+    ) -> crate::BluetoothDtmSchedulerCompletionStep<Role> {
+        self.initialized.observe_dtm_completion(running)
+    }
+
     /// Service and durably publish one primary source-124 epoch.
     ///
     /// Both Controller cells are selected from this exact powered runtime.

@@ -326,6 +326,16 @@ impl BluetoothTaskResources {
         worker.step(event, &mut controller)
     }
 
+    /// Capture one fenced finished-list transfer into the sole bounded worker.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn capture_scheduler_finished_lists(
+        &mut self,
+        worker: &mut crate::BluetoothSchedulerFinishedListWorker,
+    ) -> Result<(), crate::BluetoothSchedulerFinishedListCaptureError> {
+        let mut controller = self.registers.borrow_bluetooth_controller();
+        worker.capture(&mut controller)
+    }
+
     /// Execute the complete reviewed controller HAL-init component.
     ///
     /// The owning lifecycle invokes this component after clocks and before

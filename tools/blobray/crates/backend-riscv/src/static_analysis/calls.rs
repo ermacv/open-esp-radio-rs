@@ -99,65 +99,76 @@ fn common_reviewed_execution_model(
         .then_some(model)
 }
 
-fn model_reviewed_memory_output(
-    symbol: &artifact::ArtifactSymbolDefinition,
-    memory_read_sources: &BTreeMap<u32, MemoryObjectLocation>,
+struct ReviewedMemoryOutputContext<'a> {
+    symbol: &'a artifact::ArtifactSymbolDefinition,
+    memory_read_sources: &'a BTreeMap<u32, MemoryObjectLocation>,
+    stack: &'a mut SymbolicStack,
+    events: &'a mut Vec<DraftReferenceEvent>,
+}
+
+struct ReviewedMemoryOutput {
     base: SymbolicValue,
     byte_offset: u16,
     width: u8,
     value: SymbolicValue,
-    stack: &mut SymbolicStack,
-    events: &mut Vec<DraftReferenceEvent>,
+}
+
+fn model_reviewed_memory_output(
+    context: &mut ReviewedMemoryOutputContext<'_>,
+    output: ReviewedMemoryOutput,
 ) -> std::result::Result<(), String> {
-    let address = base.add_constant(u32::from(byte_offset));
-    let event = match structural_value_address_with_reads(&address, memory_read_sources) {
+    let address = output.base.add_constant(u32::from(output.byte_offset));
+    let event = match structural_value_address_with_reads(&address, context.memory_read_sources) {
         Some(StructuralAddress::PrivateStack(offset)) => {
-            stack.store(offset, width, &value);
+            context.stack.store(offset, output.width, &output.value);
             DraftReferenceEvent::PrivateStackStore {
                 offset,
-                width,
-                value,
+                width: output.width,
+                value: output.value,
             }
         }
         Some(StructuralAddress::CallerMemory(address)) => DraftReferenceEvent::Memory {
             access: MemoryAccess::Write,
-            width,
+            width: output.width,
             address,
             region: "caller-owned ABI argument RAM".to_owned(),
-            value: Some(value),
+            value: Some(output.value),
         },
         Some(StructuralAddress::SymbolMemory(address)) => DraftReferenceEvent::Memory {
             access: MemoryAccess::Write,
-            width,
+            width: output.width,
             region: address.canonical(),
             address,
-            value: Some(value),
+            value: Some(output.value),
         },
         Some(StructuralAddress::DereferencedMemory(address)) => DraftReferenceEvent::Memory {
             access: MemoryAccess::Write,
-            width,
+            width: output.width,
             address,
             region: "dereferenced known pointer RAM".to_owned(),
-            value: Some(value),
+            value: Some(output.value),
         },
         Some(StructuralAddress::IndexedMemory(address)) => DraftReferenceEvent::Memory {
             access: MemoryAccess::Write,
-            width,
+            width: output.width,
             address,
             region: "indexed RAM object".to_owned(),
-            value: Some(value),
+            value: Some(output.value),
         },
         Some(StructuralAddress::DynamicMemory(address)) => DraftReferenceEvent::Memory {
             access: MemoryAccess::Write,
-            width,
+            width: output.width,
             address,
             region: "dynamic RAM address".to_owned(),
-            value: Some(value),
+            value: Some(output.value),
         },
         Some(StructuralAddress::Absolute(address)) => {
-            let region = symbol.memory_region(address, width).ok_or_else(|| {
-                format!("destination {address:#010x} is not mapped normal ELF RAM")
-            })?;
+            let region = context
+                .symbol
+                .memory_region(address, output.width)
+                .ok_or_else(|| {
+                    format!("destination {address:#010x} is not mapped normal ELF RAM")
+                })?;
             if !region.writable {
                 return Err(format!(
                     "destination {address:#010x} is in read-only region {}",
@@ -166,10 +177,10 @@ fn model_reviewed_memory_output(
             }
             DraftReferenceEvent::Memory {
                 access: MemoryAccess::Write,
-                width,
+                width: output.width,
                 address: SymbolicValue::Constant(address),
                 region: region.name.clone(),
-                value: Some(value),
+                value: Some(output.value),
             }
         }
         Some(
@@ -183,20 +194,32 @@ fn model_reviewed_memory_output(
             ));
         }
     };
-    events.push(event);
+    context.events.push(event);
     Ok(())
 }
 
-fn apply_reviewed_external_call(
+#[derive(Clone, Copy)]
+struct ReviewedExternalCallSite {
     pc: u32,
     width: u8,
     instruction: Inst,
-    symbol: &artifact::ArtifactSymbolDefinition,
     offset: u32,
     dest: Reg,
+}
+
+fn apply_reviewed_external_call(
+    call: ReviewedExternalCallSite,
+    symbol: &artifact::ArtifactSymbolDefinition,
     mut candidates: Vec<ReviewedExternalCall>,
     state: &mut StructuralTraceState,
 ) -> StructuralCallControl {
+    let ReviewedExternalCallSite {
+        pc,
+        width,
+        instruction,
+        offset,
+        dest,
+    } = call;
     if offset != 0 || !matches!(dest, Reg::ZERO | Reg::RA) {
         state.blockers.push(format!(
             "unsupported reviewed external ABI call shape at {pc:#x}: {instruction}"
@@ -353,15 +376,20 @@ fn apply_reviewed_external_call(
                 16 => 0xffff,
                 _ => u32::MAX,
             });
-            if let Err(error) = model_reviewed_memory_output(
+            let mut context = ReviewedMemoryOutputContext {
                 symbol,
-                &state.memory_read_sources,
-                pointer,
-                byte_offset,
-                width,
-                output,
-                &mut pending_stack,
-                &mut pending_output_events,
+                memory_read_sources: &state.memory_read_sources,
+                stack: &mut pending_stack,
+                events: &mut pending_output_events,
+            };
+            if let Err(error) = model_reviewed_memory_output(
+                &mut context,
+                ReviewedMemoryOutput {
+                    base: pointer,
+                    byte_offset,
+                    width,
+                    value: output,
+                },
             ) {
                 state.reference_blockers.push(format!(
                     "unsupported-reviewed-external-output-pointer at {pc:#x}: {} ({}) argument a{pointer_argument}: {error}",
@@ -937,12 +965,14 @@ pub(super) fn apply_call_instruction(
                 .expect("reviewed external slot pointer requires registered ABI candidates")
                 .clone();
             apply_reviewed_external_call(
-                pc as u32,
-                width,
-                instruction,
+                ReviewedExternalCallSite {
+                    pc: pc as u32,
+                    width,
+                    instruction,
+                    offset: offset.as_u32(),
+                    dest,
+                },
                 symbol,
-                offset.as_u32(),
-                dest,
                 candidates,
                 state,
             )
@@ -978,12 +1008,14 @@ pub(super) fn apply_call_instruction(
                 .expect("reviewed call site was matched")
                 .clone();
             apply_reviewed_external_call(
-                pc as u32,
-                width,
-                instruction,
+                ReviewedExternalCallSite {
+                    pc: pc as u32,
+                    width,
+                    instruction,
+                    offset: offset.as_u32(),
+                    dest,
+                },
                 symbol,
-                offset.as_u32(),
-                dest,
                 candidates,
                 state,
             )

@@ -112,7 +112,8 @@ Bluetooth init path now consumes that cold owner through clock/reset, the
 complete 50-operation BTDM HAL transaction, scheduler and bounded HCI software
 owners, the source-127 low-power hardware component, common PHY, finite
 `bt_bb_v2_init_cmplx(1)`, the complete BLE PHY register transaction,
-controller-output preparation and the one-shot runtime-timer start. The BLE
+controller-output preparation, the one-shot runtime-timer start and both
+ownership-only pre-route staging transitions. The BLE
 PHY transition consumes one pinned static graph containing the recovered
 environment, its auxiliary allocations and resolving-list object, so no raw
 caller address or vendor allocator ABI enters production. The chain still

@@ -12,8 +12,9 @@
 //! and bootstrap dispatcher. The following modem low-power, common-PHY,
 //! finite BT-baseband, BLE-PHY, controller-output and runtime-timer transitions
 //! are now one connected affine enable chain; the terminal state retains the
-//! complete static BLE environment graph and both disjoint activation owners.
-//! It still does not claim operational Link-Layer work. The
+//! complete static BLE environment graph and advances both disjoint interrupt
+//! owners into their final movable pre-route states. It still does not claim
+//! operational Link-Layer work. The
 //! three Controller interrupt sources, level/residency policies, baseline masks,
 //! snapshot modes, positional dynamic scheduler classifier, coalesced wake
 //! state, affine ISR scheduler-register staging and one live finite
@@ -93,7 +94,9 @@ pub use common_phy_state::{BluetoothControllerPhyInitialized, BluetoothPhyInitia
 #[cfg(target_arch = "riscv32")]
 pub use controller_hal::BluetoothControllerHalInitialized;
 #[cfg(target_arch = "riscv32")]
-pub use controller_start::BluetoothControllerOutputTimerStarted;
+pub use controller_start::{
+    BluetoothControllerInterruptOwnersReady, BluetoothControllerOutputTimerStarted,
+};
 pub use controller_time::{BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample};
 pub use dtm_event_prepare::{
     BluetoothDtmReceiverEvent, BluetoothDtmReviewedEventWordsPlan,

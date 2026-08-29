@@ -4,8 +4,9 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::{
-    BluetoothInterruptOutputPreparedOwner, BluetoothLowPowerRuntimeControlObservation,
-    BluetoothModemLpTimerCounterStartedOwner,
+    BluetoothInterruptOutputPreparedOwner, BluetoothInterruptRegistersOwner,
+    BluetoothLowPowerRuntimeControlObservation, BluetoothModemLpTimerCounterStartedOwner,
+    BluetoothModemLpTimerInterruptReadyOwner,
 };
 
 #[cfg(target_arch = "riscv32")]
@@ -39,6 +40,37 @@ pub struct BluetoothControllerOutputTimerStarted<
     >,
     _interrupt_output: BluetoothInterruptOutputPreparedOwner,
     pub(crate) timer: BluetoothModemLpTimerCounterStartedOwner,
+}
+
+/// Powered Controller with both register owners ready for ISR publication.
+///
+/// The controller interrupt partition and source-127 timer partition have
+/// crossed their final no-MMIO ownership transitions. They remain movable and
+/// no CPU route is active; the next platform composition must publish both in
+/// stable ISR storage before it enables any of the three routes.
+#[must_use = "the prepared Bluetooth interrupt owners must be published before routing"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothControllerInterruptOwnersReady<
+    P,
+    M,
+    const MODEM_TIMER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+> where
+    M: RawMutex,
+{
+    initialized: BluetoothControllerBlePhyEngineInitialized<
+        P,
+        M,
+        MODEM_TIMER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >,
+    _interrupts: BluetoothInterruptRegistersOwner,
+    _timer: BluetoothModemLpTimerInterruptReadyOwner,
+    runtime_control: BluetoothLowPowerRuntimeControlObservation,
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -79,6 +111,96 @@ where
     /// Conditional runtime-control branch retained across the timer start.
     pub const fn runtime_control_observation(&self) -> BluetoothLowPowerRuntimeControlObservation {
         self.timer.runtime_control_observation()
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<
+    P,
+    M,
+    const MODEM_TIMER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+>
+    BluetoothControllerInterruptOwnersReady<
+        P,
+        M,
+        MODEM_TIMER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >
+where
+    M: RawMutex,
+{
+    /// Inspect the BLE PHY input retained by this exact powered epoch.
+    pub const fn ble_phy_report(&self) -> crate::BluetoothBlePhyInitializationReport {
+        self.initialized.report()
+    }
+
+    /// Inspect the preceding finite BTBB transition.
+    pub const fn baseband_report(&self) -> crate::BluetoothBasebandInitializationReport {
+        self.initialized.baseband_report()
+    }
+
+    /// Inspect the complete common-PHY transition.
+    pub const fn phy_report(&self) -> crate::BluetoothPhyInitializationReport {
+        self.initialized.phy_report()
+    }
+
+    /// Conditional runtime-control branch retained by the ISR-ready timer.
+    pub const fn runtime_control_observation(&self) -> BluetoothLowPowerRuntimeControlObservation {
+        self.runtime_control
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<
+    P,
+    M,
+    const MODEM_TIMER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+>
+    BluetoothControllerOutputTimerStarted<
+        P,
+        M,
+        MODEM_TIMER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >
+where
+    M: RawMutex,
+{
+    /// Transfer both disjoint register owners into their pre-route states.
+    ///
+    /// This is an ownership-only transition. It performs no MMIO and does not
+    /// claim stable placement or a live interrupt epoch.
+    pub fn stage_interrupt_owners(
+        self,
+    ) -> BluetoothControllerInterruptOwnersReady<
+        P,
+        M,
+        MODEM_TIMER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    > {
+        let Self {
+            initialized,
+            _interrupt_output: interrupt_output,
+            timer,
+        } = self;
+        let runtime_control = timer.runtime_control_observation();
+        BluetoothControllerInterruptOwnersReady {
+            initialized,
+            _interrupts: interrupt_output.stage_for_cpu_routes(),
+            _timer: timer.stage_for_interrupt(),
+            runtime_control,
+        }
     }
 }
 

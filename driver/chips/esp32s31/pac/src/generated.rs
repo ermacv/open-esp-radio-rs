@@ -5563,6 +5563,24 @@ pub(crate) fn configure_phy_agc_initial_high(registers: &crate::svd::PhyAgcOracl
     crate::svd::field_replace_modify::configure_phy_agc_initial_high(registers);
 }
 
+/// Typed bridge for the reviewed `clear_phy_agc_initial_antenna_fields` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn clear_phy_agc_initial_antenna_fields(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::clear_phy_agc_initial_antenna_fields(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_agc_initial_antenna_control` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_agc_initial_antenna_control(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::configure_phy_agc_initial_antenna_control(registers);
+}
+
+/// Typed bridge for the reviewed `configure_phy_agc_initial_antenna_paths` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn configure_phy_agc_initial_antenna_paths(registers: &crate::svd::PhyAgcOracle) {
+    crate::svd::field_replace_modify::configure_phy_agc_initial_antenna_paths(registers);
+}
+
 /// Typed bridge for the reviewed `configure_shared_modem_low_power_timer` multi-argument field-replacement transaction.
 #[inline]
 pub(crate) fn configure_shared_modem_low_power_timer(

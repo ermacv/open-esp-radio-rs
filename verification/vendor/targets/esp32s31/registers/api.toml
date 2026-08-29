@@ -7704,3 +7704,36 @@ fields = [{ field = "INIT_HIGH_UNKNOWN", source-bit-offset = 0 }]
 value = 0xd2
 exposure = "facade"
 sources = ["ROM_REV0_PHY_AGC", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "clear_phy_agc_initial_antenna_fields"
+peripheral = "PHY_AGC_ORACLE"
+register = "ANTENNA_CONTROL_0"
+fields = [
+    { field = "LOW_CLEAR_UNKNOWN", source-bit-offset = 0 },
+    { field = "BIT_12_CLEAR_UNKNOWN", source-bit-offset = 0 },
+]
+value = 0
+exposure = "facade"
+sources = ["ROM_REV0_PHY_ANT_INIT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_agc_initial_antenna_control"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_ANTENNA_CONTROL"
+fields = [{ field = "ANTENNA_INIT_UNKNOWN", source-bit-offset = 0 }]
+value = 0x34
+exposure = "facade"
+sources = ["ROM_REV0_PHY_ANT_INIT", "S31_ESP_PACS_SVD"]
+
+[[field-replace-modifies]]
+name = "configure_phy_agc_initial_antenna_paths"
+peripheral = "PHY_AGC_ORACLE"
+register = "ANTENNA_CONTROL_2"
+fields = [
+    { field = "LOW_UNKNOWN", source-bit-offset = 0 },
+    { field = "HIGH_UNKNOWN", source-bit-offset = 8 },
+]
+value = 0x1e1e
+exposure = "facade"
+sources = ["ROM_REV0_PHY_ANT_INIT", "S31_ESP_PACS_SVD"]

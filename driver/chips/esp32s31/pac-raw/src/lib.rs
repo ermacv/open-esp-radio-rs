@@ -67354,6 +67354,55 @@ pub mod field_replace_modify {
             unsafe { writer.init_high_unknown().bits((input & 0x000000ff) as u8) }
         });
     }
+
+    /// Replace PHY_AGC_ORACLE.ANTENNA_CONTROL_0 fields [LOW_CLEAR_UNKNOWN, BIT_12_CLEAR_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn clear_phy_agc_initial_antenna_fields(registers: &crate::PhyAgcOracle) {
+        registers.antenna_control_0().modify(|_, writer| {
+            let input = 0x00000000_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .low_clear_unknown()
+                    .bits((input & 0x000007ff) as u16)
+                    .bit_12_clear_unknown()
+                    .bit((input & 0x00000001) != 0)
+            }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.AGC_ANTENNA_CONTROL fields [ANTENNA_INIT_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_agc_initial_antenna_control(registers: &crate::PhyAgcOracle) {
+        registers.agc_antenna_control().modify(|_, writer| {
+            let input = 0x00000034_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .antenna_init_unknown()
+                    .bits((input & 0x0000007f) as u8)
+            }
+        });
+    }
+
+    /// Replace PHY_AGC_ORACLE.ANTENNA_CONTROL_2 fields [LOW_UNKNOWN, HIGH_UNKNOWN] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn configure_phy_agc_initial_antenna_paths(registers: &crate::PhyAgcOracle) {
+        registers.antenna_control_2().modify(|_, writer| {
+            let input = 0x00001e1e_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            unsafe {
+                writer
+                    .low_unknown()
+                    .bits((input & 0x000000ff) as u8)
+                    .high_unknown()
+                    .bits(((input >> 8) & 0x000000ff) as u8)
+            }
+        });
+    }
 }
 
 /// Safe, SVD-declared multi-argument field-replacement transactions.

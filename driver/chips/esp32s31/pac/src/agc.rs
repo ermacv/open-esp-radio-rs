@@ -120,16 +120,9 @@ impl RadioPhyRegisters {
     /// Apply all three fresh-read antenna initialization updates.
     pub fn configure_agc_antenna(&mut self) {
         let agc = &self.peripherals.phy_agc_oracle;
-        agc.antenna_control_0().modify(|_, w| {
-            w.low_clear_unknown()
-                .set(0)
-                .bit_12_clear_unknown()
-                .clear_bit()
-        });
-        agc.agc_antenna_control()
-            .modify(|_, w| w.antenna_init_unknown().set(0x34));
-        agc.antenna_control_2()
-            .modify(|_, w| w.low_unknown().set(0x1e).high_unknown().set(0x1e));
+        super::generated::clear_phy_agc_initial_antenna_fields(agc);
+        super::generated::configure_phy_agc_initial_antenna_control(agc);
+        super::generated::configure_phy_agc_initial_antenna_paths(agc);
     }
 
     /// Apply complete rev0 ROM `phy_rx11blr_cfg` without widening the caller

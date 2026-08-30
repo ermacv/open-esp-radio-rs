@@ -119,7 +119,9 @@ pub(crate) struct HilEvidenceIndex {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct HilEvidenceSummary {
+    pub(crate) directories: usize,
     pub(crate) bundles: usize,
+    pub(crate) incomplete: usize,
     pub(crate) completed: usize,
     pub(crate) passing: usize,
     pub(crate) current_clean_producer: usize,
@@ -185,8 +187,19 @@ impl HilEvidenceIndex {
                 .into());
             }
             let run_directory = entry.path();
+            summary.directories += 1;
+            let Some(manifest): Option<RunManifest> =
+                read_optional_json(&run_directory.join("manifest.json"))?
+            else {
+                // HIL producers can create their output directory before the
+                // first durable run document is published. Such a directory
+                // makes no evidence claim yet, so report it as incomplete and
+                // keep evaluating the target. Once a manifest exists its state
+                // and immutable-bundle contract remain fail-closed below.
+                summary.incomplete += 1;
+                continue;
+            };
             summary.bundles += 1;
-            let manifest: RunManifest = read_json(&run_directory.join("manifest.json"))?;
             if manifest.schema != HIL_RUN_SCHEMA {
                 return Err(format!(
                     "HIL run {} has unsupported manifest schema {}",
@@ -593,6 +606,19 @@ fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
         .map_err(|error| format!("cannot parse HIL evidence {}: {error}", path.display()).into())
 }
 
+fn read_optional_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Option<T>> {
+    let input = match fs::read(path) {
+        Ok(input) => input,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(format!("cannot read HIL evidence {}: {error}", path.display()).into());
+        }
+    };
+    serde_json::from_slice(&input)
+        .map(Some)
+        .map_err(|error| format!("cannot parse HIL evidence {}: {error}", path.display()).into())
+}
+
 fn safe_relative(path: &Path) -> bool {
     !path.as_os_str().is_empty()
         && !path.is_absolute()
@@ -821,9 +847,61 @@ mod tests {
         };
         let index =
             HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &repository).unwrap();
+        assert_eq!(index.summary().directories, 1);
         assert_eq!(index.summary().bundles, 1);
+        assert_eq!(index.summary().incomplete, 0);
         assert_eq!(index.summary().completed, 0);
         assert_eq!(index.summary().qualifying, 0);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn manifestless_generated_run_is_incomplete_not_an_error() {
+        let root = std::env::temp_dir().join(format!(
+            "open-radio-qualification-hil-incomplete-{}",
+            std::process::id()
+        ));
+        if root.exists() {
+            fs::remove_dir_all(&root).unwrap();
+        }
+        let run = root.join("runs/run-1");
+        fs::create_dir_all(&run).unwrap();
+        fs::write(run.join("result.json"), b"{}\n").unwrap();
+
+        let repository = RepositoryState {
+            commit: "abc123".to_owned(),
+            dirty: false,
+        };
+        let index =
+            HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &repository).unwrap();
+        assert_eq!(index.summary().directories, 1);
+        assert_eq!(index.summary().bundles, 0);
+        assert_eq!(index.summary().incomplete, 1);
+        assert_eq!(index.summary().completed, 0);
+        assert_eq!(index.summary().qualifying, 0);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn malformed_existing_manifest_still_fails_closed() {
+        let root = std::env::temp_dir().join(format!(
+            "open-radio-qualification-hil-malformed-{}",
+            std::process::id()
+        ));
+        if root.exists() {
+            fs::remove_dir_all(&root).unwrap();
+        }
+        let run = root.join("runs/run-1");
+        fs::create_dir_all(&run).unwrap();
+        fs::write(run.join("manifest.json"), b"not-json\n").unwrap();
+
+        let repository = RepositoryState {
+            commit: "abc123".to_owned(),
+            dirty: false,
+        };
+        let error =
+            HilEvidenceIndex::load(&root, Path::new("runs"), "esp32s31", &repository).unwrap_err();
+        assert!(error.to_string().contains("cannot parse HIL evidence"));
         fs::remove_dir_all(root).unwrap();
     }
 

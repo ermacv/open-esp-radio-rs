@@ -43,7 +43,9 @@ struct EvidenceInputsReport {
 
 #[derive(Serialize)]
 struct HilInputsReport {
+    directories: usize,
     bundles: usize,
+    incomplete: usize,
     completed: usize,
     passing: usize,
     current_clean_producer: usize,
@@ -113,7 +115,7 @@ fn summary(qualification: &Qualification) -> Summary {
 
 fn report(qualification: &Qualification) -> Report<'_> {
     Report {
-        schema: 3,
+        schema: 4,
         target: &qualification.target,
         repository_commit: &qualification.repository.commit,
         repository_dirty: qualification.repository.dirty,
@@ -123,7 +125,9 @@ fn report(qualification: &Qualification) -> Report<'_> {
                 .evidence_inputs
                 .verification_current_release_entries,
             hil: HilInputsReport {
+                directories: qualification.evidence_inputs.hil.directories,
                 bundles: qualification.evidence_inputs.hil.bundles,
+                incomplete: qualification.evidence_inputs.hil.incomplete,
                 completed: qualification.evidence_inputs.hil.completed,
                 passing: qualification.evidence_inputs.hil.passing,
                 current_clean_producer: qualification.evidence_inputs.hil.current_clean_producer,
@@ -163,18 +167,26 @@ fn report(qualification: &Qualification) -> Report<'_> {
 
 pub(crate) fn print(qualification: &Qualification) {
     println!(
-        "INPUT\tverification-entries={}\tverification-current-release={}\thil-bundles={}\thil-completed={}\thil-passing={}\thil-current-clean-producer={}\thil-qualifying={}\tevaluator-dirty={}",
+        "INPUT\tverification-entries={}\tverification-current-release={}\thil-directories={}\thil-bundles={}\thil-incomplete={}\thil-completed={}\thil-passing={}\thil-current-clean-producer={}\thil-qualifying={}\tevaluator-dirty={}",
         qualification.evidence_inputs.verification_entries,
         qualification
             .evidence_inputs
             .verification_current_release_entries,
+        qualification.evidence_inputs.hil.directories,
         qualification.evidence_inputs.hil.bundles,
+        qualification.evidence_inputs.hil.incomplete,
         qualification.evidence_inputs.hil.completed,
         qualification.evidence_inputs.hil.passing,
         qualification.evidence_inputs.hil.current_clean_producer,
         qualification.evidence_inputs.hil.qualifying,
         qualification.evidence_inputs.hil.evaluator_dirty,
     );
+    if qualification.evidence_inputs.hil.incomplete != 0 {
+        println!(
+            "NOTICE\thil-input-incomplete={}\treason=manifest-missing\tdisposition=ignored-as-evidence",
+            qualification.evidence_inputs.hil.incomplete
+        );
+    }
     for capability in qualification.capabilities.values() {
         println!(
             "CAPABILITY\t{}\timplementation={}\thost={}\tvendor={}\thil={}\tasync={}\tproof-ready={}\tready={}",

@@ -70,9 +70,14 @@ Qualification independently checks `integrity.json`, every indexed file hash,
 manifest/suite identity, clean repository provenance, commit equality,
 scenario outcome and repetition count. A Markdown narrative under
 `targets/esp32s31/records/` remains useful review history but is not proof.
-An unsealed bundle whose manifest is still `running` is mutable execution
-state and is ignored as evidence; completed and interrupted bundles must have
-a valid integrity seal and fail closed otherwise.
+A generated run directory without a manifest and an unsealed bundle whose
+manifest is still `running` are incomplete mutable execution state and are
+ignored as evidence. The former is counted as `hil-incomplete` in console
+output and `evidence_inputs.hil.incomplete` in schema-4 JSON reports;
+`hil-directories` counts every entry while `hil-bundles` counts only entries
+that have published a manifest. An existing malformed manifest still fails
+validation, and completed or interrupted bundles must have a valid integrity
+seal and fail closed otherwise.
 
 Use a JSON report for CI and downstream presentation:
 
@@ -83,9 +88,9 @@ cargo qualification evaluate \
 ```
 
 The console `INPUT` row and JSON `evidence_inputs` object expose how many
-verification rows and HIL bundles were observed, how many are current, and
-whether a dirty evaluator worktree prevented otherwise valid evidence from
-entering the verdict.
+verification rows and HIL directories were observed, how many are incomplete
+or current, and whether a dirty evaluator worktree prevented otherwise valid
+evidence from entering the verdict.
 
 See the canonical
 [verification and qualification contract](../docs/VERIFICATION_AND_QUALIFICATION.md)

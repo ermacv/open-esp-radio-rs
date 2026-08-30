@@ -99,6 +99,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
+  { axis = "implementation", id = "live-controller-session-pump-missing" },
   { axis = "vendor", id = "effective-counter-width-physical-unit-and-wake-source-missing" },
   { axis = "hil", id = "controller-time-latch-and-wrap-cell-missing" },
   { axis = "async", id = "live-controller-runner-and-proven-absolute-recheck-source-missing" },
@@ -192,6 +193,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
+  { axis = "implementation", id = "live-runner-publication-and-reclamation-missing" },
   { axis = "vendor", id = "remaining-hardware-consumed-descriptor-semantics-missing" },
   { axis = "hil", id = "dtm-static-graph-placement-and-mutation-cell-missing" },
 ]
@@ -209,6 +211,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
+  { axis = "implementation", id = "live-returned-buffer-drain-and-test-end-loop-missing" },
   { axis = "vendor", id = "rx-result-high-byte-length-crc-and-rssi-semantics-missing" },
   { axis = "hil", id = "dtm-rx-count-and-append-rearm-cell-missing" },
 ]
@@ -262,6 +265,7 @@ vendor-anchors = [
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
+  { axis = "implementation", id = "live-packet-publication-and-test-end-loop-missing" },
   { axis = "vendor", id = "packet-engine-header-consumer-and-publication-order-missing" },
   { axis = "hil", id = "dtm-tx-payload-and-pattern-rf-cell-missing" },
 ]
@@ -279,6 +283,7 @@ vendor-anchors = [
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
+  { axis = "implementation", id = "live-session-recheck-and-event-publication-loop-missing" },
   { axis = "vendor", id = "sleep-enabled-rf-wake-helper-contract-missing" },
   { axis = "hil", id = "dtm-tx-interval-tick-and-deadline-cell-missing" },
 ]

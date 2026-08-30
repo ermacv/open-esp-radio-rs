@@ -357,11 +357,11 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/functions/reviewed.toml",
 ]
 gaps = [
-  { axis = "implementation", id = "post-unlink-command-ready-retry-liveness-and-mailbox-full-ready-edge-recovery-missing" },
+  { axis = "implementation", id = "session-owned-post-unlink-retry-loop-missing" },
   { axis = "vendor", id = "raw-interrupt-origin-and-finished-list-acknowledge-rule-missing" },
   { axis = "vendor", id = "post-unlink-command-ready-source-124-causality-missing" },
   { axis = "hil", id = "scheduler-finished-list-drain-cell-missing" },
-  { axis = "async", id = "post-unlink-consumer-registration-mailbox-full-ready-edge-recovery-and-bounded-role-dispatch-missing" },
+  { axis = "async", id = "session-owned-post-unlink-wait-and-bounded-role-dispatch-missing" },
 ]
 
 [[capabilities]]

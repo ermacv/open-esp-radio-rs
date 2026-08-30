@@ -15,47 +15,93 @@ pub use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmLinkStateReviewedWords, BluetoothDtmRole,
 };
 
-/// Why one reviewed DTM reset input cannot be represented exactly.
+/// Source-level default transmit power consumed by the S31 DTM profile.
+///
+/// The signed dBm value is kept distinct from the private five-bit scheduler
+/// image. Every `i8` value has a defined result in the reviewed vendor
+/// conversion, including saturation below -15 dBm and above 19 dBm.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothDtmLinkStateResetError {
-    /// The rounded power image is wider than its observed five-bit position.
-    RoundedPowerOutsideFiveBits,
-    /// The positional configuration image is wider than six bits.
-    ConfigOutsideSixBits,
+pub struct BluetoothDtmDefaultTxPowerDbm(i8);
+
+impl BluetoothDtmDefaultTxPowerDbm {
+    /// Bind one physical default-power request to this chip-owned DTM profile.
+    pub const fn new(dbm: i8) -> Self {
+        Self(dbm)
+    }
+
+    /// Return the signed dBm request without exposing its hardware encoding.
+    pub const fn dbm(self) -> i8 {
+        self.0
+    }
 }
 
-/// Validated dynamic inputs to one DTM link-state reset.
+/// Private ESP32-S31 DTM hardware policy.
+///
+/// The configuration image remains positional: current evidence proves the
+/// value used by the reviewed standalone profile, but not meanings for its
+/// individual bits.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct BluetoothDtmHardwareProfile {
+    default_tx_power_dbm: BluetoothDtmDefaultTxPowerDbm,
+}
+
+impl BluetoothDtmHardwareProfile {
+    const REVIEWED_CONFIG: u8 = 3;
+
+    const fn reviewed_esp32s31(default_tx_power_dbm: BluetoothDtmDefaultTxPowerDbm) -> Self {
+        Self {
+            default_tx_power_dbm,
+        }
+    }
+
+    /// Reproduce the complete signed-byte conversion used by the current S31
+    /// controller. The result is private to the controller-memory codec.
+    const fn rounded_power(self) -> u8 {
+        match self.default_tx_power_dbm.dbm() {
+            i8::MIN..=-16 => 0,
+            -15..=-13 => 3,
+            -12..=-10 => 4,
+            -9..=-7 => 5,
+            -6..=-4 => 6,
+            -3..=-1 => 7,
+            0..=2 => 8,
+            3..=5 => 9,
+            6..=8 => 10,
+            9..=11 => 11,
+            12..=14 => 12,
+            15..=17 => 13,
+            18..=19 => 14,
+            20..=i8::MAX => 15,
+        }
+    }
+}
+
+/// Typed dynamic inputs to one DTM link-state reset.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothDtmLinkStateReset {
     tx_head: Option<BluetoothDtmBoundSramLinkAddress>,
     rx_tail: Option<BluetoothDtmBoundSramLinkAddress>,
-    rounded_power: u8,
-    config: u8,
+    hardware_profile: BluetoothDtmHardwareProfile,
     role: BluetoothDtmRole,
 }
 
 impl BluetoothDtmLinkStateReset {
-    /// Validate every bounded image before modifying the reviewed region.
+    /// Bind semantic inputs to the reviewed ESP32-S31 hardware profile.
+    ///
+    /// Callers cannot supply either the private rounded-power image or the
+    /// positional configuration image.
     pub const fn new(
         tx_head: Option<BluetoothDtmBoundSramLinkAddress>,
         rx_tail: Option<BluetoothDtmBoundSramLinkAddress>,
-        rounded_power: u8,
-        config: u8,
+        default_tx_power_dbm: BluetoothDtmDefaultTxPowerDbm,
         role: BluetoothDtmRole,
-    ) -> Result<Self, BluetoothDtmLinkStateResetError> {
-        if rounded_power > 0x1f {
-            return Err(BluetoothDtmLinkStateResetError::RoundedPowerOutsideFiveBits);
-        }
-        if config > 0x3f {
-            return Err(BluetoothDtmLinkStateResetError::ConfigOutsideSixBits);
-        }
-        Ok(Self {
+    ) -> Self {
+        Self {
             tx_head,
             rx_tail,
-            rounded_power,
-            config,
+            hardware_profile: BluetoothDtmHardwareProfile::reviewed_esp32s31(default_tx_power_dbm),
             role,
-        })
+        }
     }
 
     /// Apply the complete reviewed reset transforms to the positional words.
@@ -71,8 +117,8 @@ impl BluetoothDtmLinkStateReset {
         current.apply_reset(
             self.tx_head,
             self.rx_tail,
-            self.rounded_power,
-            self.config,
+            self.hardware_profile.rounded_power(),
+            BluetoothDtmHardwareProfile::REVIEWED_CONFIG,
             self.role,
         )
     }
@@ -96,6 +142,56 @@ impl BluetoothDtmLinkStateReset {
             tx_head: Some(tx_head),
             rx_tail: Some(rx_tail),
             ..self
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BluetoothDtmDefaultTxPowerDbm, BluetoothDtmHardwareProfile};
+
+    #[test]
+    fn reviewed_profile_preserves_the_complete_signed_dbm_bucketing() {
+        let cases = [
+            (i8::MIN, 0),
+            (-16, 0),
+            (-15, 3),
+            (-13, 3),
+            (-12, 4),
+            (-10, 4),
+            (-9, 5),
+            (-7, 5),
+            (-6, 6),
+            (-4, 6),
+            (-3, 7),
+            (-1, 7),
+            (0, 8),
+            (2, 8),
+            (3, 9),
+            (5, 9),
+            (6, 10),
+            (8, 10),
+            (9, 11),
+            (11, 11),
+            (12, 12),
+            (14, 12),
+            (15, 13),
+            (17, 13),
+            (18, 14),
+            (19, 14),
+            (20, 15),
+            (i8::MAX, 15),
+        ];
+
+        for (dbm, expected_bucket) in cases {
+            assert_eq!(
+                BluetoothDtmHardwareProfile::reviewed_esp32s31(BluetoothDtmDefaultTxPowerDbm::new(
+                    dbm
+                ),)
+                .rounded_power(),
+                expected_bucket,
+                "unexpected reviewed S31 power bucket for {dbm} dBm",
+            );
         }
     }
 }

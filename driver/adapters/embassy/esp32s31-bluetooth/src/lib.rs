@@ -20,16 +20,31 @@ use embassy_futures::select::{Either, select};
 use embassy_sync::{blocking_mutex::raw::RawMutex, waitqueue::GenericAtomicWaker};
 use open_esp_radio_esp32s31_bluetooth::{
     BluetoothControllerInterruptRuntime, BluetoothControllerTaskRuntime,
+    BluetoothDtmPostUnlinkMailboxPublication, BluetoothDtmPostUnlinkWakeCell,
     BluetoothModemLpTimerEventPublication, BluetoothModemLpTimerExpiration,
     BluetoothModemLpTimerExpirationPending, BluetoothModemLpTimerSoftwareWork,
     BluetoothNrtDefaultInterruptEpoch, BluetoothPrimaryControllerFault,
     BluetoothPrimaryInterruptStep, BluetoothPrimaryNoSchedulerWork, BluetoothPrimarySchedulerEvent,
-    BluetoothSchedulerLockModifyEvent, BluetoothSchedulerLockModifyEventPublication,
-    BluetoothSchedulerLockModifyInterruptObservation, BluetoothSchedulerLockModifyWorkerStep,
-    BluetoothSchedulerWakeBatch, BluetoothSchedulerWakePublication,
-    BluetoothSchedulerWorkerWakeClass, step_nrt_default_interrupt, step_primary_interrupt,
+    BluetoothPrimarySerializedServiceStep, BluetoothSchedulerLockModifyEvent,
+    BluetoothSchedulerLockModifyEventPublication, BluetoothSchedulerLockModifyInterruptObservation,
+    BluetoothSchedulerLockModifyWorkerStep, BluetoothSchedulerWakeBatch,
+    BluetoothSchedulerWakePublication, BluetoothSchedulerWorkerWakeClass,
+    step_nrt_default_interrupt, step_primary_interrupt,
 };
 use open_esp_radio_esp32s31_hal::{BluetoothControllerHal, BluetoothInterruptRegistersOwner};
+
+fn poll_post_unlink_ready<M: RawMutex>(
+    waker: &GenericAtomicWaker<M>,
+    context: &mut core::task::Context<'_>,
+    is_pending: impl FnOnce() -> bool,
+) -> Poll<()> {
+    waker.register(context.waker());
+    if is_pending() {
+        Poll::Ready(())
+    } else {
+        Poll::Pending
+    }
+}
 
 /// Embassy wakers for one borrowed Bluetooth Controller runtime epoch.
 ///
@@ -42,6 +57,7 @@ pub struct EmbassyBluetoothRuntimeWakers<M: RawMutex> {
     scheduler_waker: GenericAtomicWaker<M>,
     lock_modify_waker: GenericAtomicWaker<M>,
     timer_event_waker: GenericAtomicWaker<M>,
+    post_unlink_waker: GenericAtomicWaker<M>,
 }
 
 impl<M: RawMutex> EmbassyBluetoothRuntimeWakers<M> {
@@ -51,7 +67,52 @@ impl<M: RawMutex> EmbassyBluetoothRuntimeWakers<M> {
             scheduler_waker: GenericAtomicWaker::new(M::INIT),
             lock_modify_waker: GenericAtomicWaker::new(M::INIT),
             timer_event_waker: GenericAtomicWaker::new(M::INIT),
+            post_unlink_waker: GenericAtomicWaker::new(M::INIT),
         }
+    }
+
+    fn notify_post_unlink(
+        &self,
+        publication: BluetoothDtmPostUnlinkMailboxPublication,
+    ) -> BluetoothDtmPostUnlinkMailboxPublication {
+        if publication == BluetoothDtmPostUnlinkMailboxPublication::WakeConsumer {
+            self.post_unlink_waker.wake();
+        }
+        publication
+    }
+
+    /// Deliver any post-unlink notification carried by one exact serialized
+    /// primary-service result.
+    ///
+    /// General primary work has no post-unlink consumer. Both the first stored
+    /// event and a full mailbox are routed through the same coalescing notifier.
+    pub fn notify_primary_service(
+        &self,
+        step: &BluetoothPrimarySerializedServiceStep,
+    ) -> Option<BluetoothDtmPostUnlinkMailboxPublication> {
+        let publication = match step {
+            BluetoothPrimarySerializedServiceStep::General { .. } => return None,
+            BluetoothPrimarySerializedServiceStep::DtmStored { mailbox, .. }
+            | BluetoothPrimarySerializedServiceStep::MailboxFull { mailbox, .. } => *mailbox,
+        };
+        Some(self.notify_post_unlink(publication))
+    }
+
+    /// Wait until the Controller-owned post-unlink mailbox becomes ready.
+    ///
+    /// The executor waker is registered before the durable lower-cell recheck.
+    /// This future cannot close the wake epoch, so cancellation cannot discard
+    /// readiness; only successful mailbox consumption performs that transition.
+    pub async fn wait_post_unlink_ready(&self, wake: &BluetoothDtmPostUnlinkWakeCell) {
+        poll_fn(|context| {
+            poll_post_unlink_ready(&self.post_unlink_waker, context, || wake.is_pending())
+        })
+        .await
+    }
+
+    /// Whether the post-unlink consumer has durable ready work.
+    pub fn post_unlink_pending(&self, wake: &BluetoothDtmPostUnlinkWakeCell) -> bool {
+        wake.is_pending()
     }
 
     /// Bind Embassy notification to the sole core interrupt/task endpoint pair.
@@ -346,7 +407,7 @@ mod tests {
     use core::{
         future::{Future, ready},
         pin::Pin,
-        sync::atomic::{AtomicUsize, Ordering},
+        sync::atomic::{AtomicBool, AtomicUsize, Ordering},
         task::{Context, Poll, Waker},
     };
     use std::{boxed::Box, sync::Arc, task::Wake};
@@ -553,5 +614,67 @@ mod tests {
         );
 
         assert!(block_on(receiver.wait_scheduler()).is_marked());
+    }
+
+    #[test]
+    fn post_unlink_publication_before_wait_is_rechecked_without_loss() {
+        let wakers = EmbassyBluetoothRuntimeWakers::<NoopRawMutex>::new();
+        let ready = AtomicBool::new(true);
+
+        assert_eq!(
+            wakers.notify_post_unlink(BluetoothDtmPostUnlinkMailboxPublication::WakeConsumer),
+            BluetoothDtmPostUnlinkMailboxPublication::WakeConsumer
+        );
+        block_on(poll_fn(|context| {
+            poll_post_unlink_ready(&wakers.post_unlink_waker, context, || {
+                ready.load(Ordering::Acquire)
+            })
+        }));
+    }
+
+    #[test]
+    fn post_unlink_wait_wakes_once_while_ready_publications_coalesce() {
+        let wakers = EmbassyBluetoothRuntimeWakers::<NoopRawMutex>::new();
+        let ready = AtomicBool::new(false);
+        let (counter, waker) = counting_waker();
+        let mut wait = Box::pin(poll_fn(|context| {
+            poll_post_unlink_ready(&wakers.post_unlink_waker, context, || {
+                ready.load(Ordering::Acquire)
+            })
+        }));
+
+        assert!(poll_once(wait.as_mut(), &waker).is_pending());
+        ready.store(true, Ordering::Release);
+        wakers.notify_post_unlink(BluetoothDtmPostUnlinkMailboxPublication::WakeConsumer);
+        assert_eq!(counter.0.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            wakers.notify_post_unlink(BluetoothDtmPostUnlinkMailboxPublication::AlreadyReady),
+            BluetoothDtmPostUnlinkMailboxPublication::AlreadyReady
+        );
+        assert_eq!(counter.0.load(Ordering::Relaxed), 1);
+        assert!(poll_once(wait.as_mut(), &waker).is_ready());
+    }
+
+    #[test]
+    fn cancelled_post_unlink_wait_leaves_ready_epoch_for_replacement() {
+        let wakers = EmbassyBluetoothRuntimeWakers::<NoopRawMutex>::new();
+        let ready = AtomicBool::new(false);
+        let (_counter, waker) = counting_waker();
+        let mut cancelled = Box::pin(poll_fn(|context| {
+            poll_post_unlink_ready(&wakers.post_unlink_waker, context, || {
+                ready.load(Ordering::Acquire)
+            })
+        }));
+
+        assert!(poll_once(cancelled.as_mut(), &waker).is_pending());
+        drop(cancelled);
+        ready.store(true, Ordering::Release);
+        wakers.notify_post_unlink(BluetoothDtmPostUnlinkMailboxPublication::WakeConsumer);
+
+        block_on(poll_fn(|context| {
+            poll_post_unlink_ready(&wakers.post_unlink_waker, context, || {
+                ready.load(Ordering::Acquire)
+            })
+        }));
     }
 }

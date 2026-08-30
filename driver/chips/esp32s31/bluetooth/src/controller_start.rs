@@ -2289,6 +2289,15 @@ impl<S, const SCHEDULER_CAPACITY: usize>
         self.runtime.modem_lp_timer_events()
     }
 
+    /// Durable ready notification for the Controller-owned post-unlink mailbox.
+    ///
+    /// Executor integrations register their waker before rechecking this cell.
+    /// The mailbox itself closes the epoch only when it consumes the ready
+    /// event, so cancellation of a waiter cannot discard notification state.
+    pub const fn post_unlink_wake(&self) -> &crate::BluetoothDtmPostUnlinkWakeCell {
+        self.mailbox.wake()
+    }
+
     /// Advance one finite scheduler lock/modify transaction.
     pub fn step_scheduler_lock_modify(
         &mut self,

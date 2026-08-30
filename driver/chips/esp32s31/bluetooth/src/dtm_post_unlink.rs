@@ -14,6 +14,7 @@
 use core::cell::Cell;
 #[cfg(target_arch = "riscv32")]
 use core::cell::RefCell;
+use core::sync::atomic::{AtomicU8, Ordering};
 
 #[cfg(target_arch = "riscv32")]
 use critical_section::{CriticalSection, Mutex};
@@ -221,6 +222,58 @@ enum BluetoothDtmPostUnlinkMailboxCancel {
 pub enum BluetoothDtmPostUnlinkMailboxPublication {
     /// The capacity-one slot changed from armed to ready.
     WakeConsumer,
+    /// The slot was already ready and its durable consumer epoch remains open.
+    AlreadyReady,
+}
+
+const POST_UNLINK_WAKE_PENDING: u8 = 1;
+
+/// Durable wake epoch shared by the post-unlink interrupt and task services.
+///
+/// Interrupt publication makes readiness sticky until the matching mailbox
+/// event is consumed. An async adapter must register its executor waker first
+/// and then call [`is_pending`](Self::is_pending); a publication racing before
+/// that recheck remains observable even if the immediate wake callback arrived
+/// before registration.
+pub struct BluetoothDtmPostUnlinkWakeCell {
+    state: AtomicU8,
+}
+
+impl BluetoothDtmPostUnlinkWakeCell {
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) const fn new() -> Self {
+        Self {
+            state: AtomicU8::new(0),
+        }
+    }
+
+    /// Recheck durable readiness after the executor-specific waker is registered.
+    pub fn is_pending(&self) -> bool {
+        self.state.load(Ordering::Acquire) & POST_UNLINK_WAKE_PENDING != 0
+    }
+
+    /// Publish one ready edge while retaining readiness until mailbox close.
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) fn publish_from_interrupt(&self) -> BluetoothDtmPostUnlinkMailboxPublication {
+        let previous = self
+            .state
+            .fetch_or(POST_UNLINK_WAKE_PENDING, Ordering::AcqRel);
+        if previous & POST_UNLINK_WAKE_PENDING != 0 {
+            BluetoothDtmPostUnlinkMailboxPublication::AlreadyReady
+        } else {
+            BluetoothDtmPostUnlinkMailboxPublication::WakeConsumer
+        }
+    }
+
+    /// Close the ready epoch after the matching mailbox event was consumed.
+    ///
+    /// Calling this before consuming the source would discard its notification,
+    /// so the Controller mailbox performs this transition in the same critical
+    /// section as its successful ready take.
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) fn close(&self) -> bool {
+        self.state.swap(0, Ordering::AcqRel) & POST_UNLINK_WAKE_PENDING != 0
+    }
 }
 
 /// Result of one serialized primary service and both ordinary publications.
@@ -239,6 +292,7 @@ pub enum BluetoothPrimarySerializedServiceStep {
     /// A preceding eligible event remains stored; the newer result is returned.
     MailboxFull {
         published: BluetoothPrimaryPublishedInterruptStep,
+        mailbox: BluetoothDtmPostUnlinkMailboxPublication,
         ordinary: BluetoothPrimaryOrdinaryPublication,
     },
 }
@@ -278,6 +332,7 @@ impl BluetoothPrimaryOrdinaryPublication {
 pub(crate) struct BluetoothDtmPostUnlinkMailbox {
     state:
         Mutex<RefCell<BluetoothDtmPostUnlinkMailboxState<BluetoothPrimaryPublishedInterruptStep>>>,
+    wake: BluetoothDtmPostUnlinkWakeCell,
 }
 
 #[cfg(target_arch = "riscv32")]
@@ -288,7 +343,12 @@ impl BluetoothDtmPostUnlinkMailbox {
     pub(crate) const fn new() -> Self {
         Self {
             state: Mutex::new(RefCell::new(BluetoothDtmPostUnlinkMailboxState::new())),
+            wake: BluetoothDtmPostUnlinkWakeCell::new(),
         }
+    }
+
+    pub(crate) const fn wake(&self) -> &BluetoothDtmPostUnlinkWakeCell {
+        &self.wake
     }
 
     pub(crate) fn prepare_arm(
@@ -336,13 +396,14 @@ impl BluetoothDtmPostUnlinkMailbox {
             }
             BluetoothDtmPostUnlinkMailboxPublish::Stored => {
                 BluetoothPrimarySerializedServiceStep::DtmStored {
-                    mailbox: BluetoothDtmPostUnlinkMailboxPublication::WakeConsumer,
+                    mailbox: self.wake.publish_from_interrupt(),
                     ordinary,
                 }
             }
             BluetoothDtmPostUnlinkMailboxPublish::Full(event) => {
                 BluetoothPrimarySerializedServiceStep::MailboxFull {
                     published: event,
+                    mailbox: self.wake.publish_from_interrupt(),
                     ordinary,
                 }
             }
@@ -365,6 +426,7 @@ impl BluetoothDtmPostUnlinkMailbox {
                 BluetoothDtmPostUnlinkTake::Waiting(awaiting)
             }
             BluetoothDtmPostUnlinkMailboxTake::Ready { key, event } => {
+                let _ = self.wake.close();
                 BluetoothDtmPostUnlinkTake::Ready {
                     key,
                     event: BluetoothDtmSoftwareListRemovalPublishedEvent {
@@ -498,8 +560,9 @@ mod tests {
     use super::{
         BluetoothDtmPostUnlinkArmError, BluetoothDtmPostUnlinkArmKey,
         BluetoothDtmPostUnlinkMailboxCancel, BluetoothDtmPostUnlinkMailboxIdentity,
-        BluetoothDtmPostUnlinkMailboxPublish, BluetoothDtmPostUnlinkMailboxState,
-        BluetoothDtmPostUnlinkMailboxTake, allocate_mailbox_identity,
+        BluetoothDtmPostUnlinkMailboxPublication, BluetoothDtmPostUnlinkMailboxPublish,
+        BluetoothDtmPostUnlinkMailboxState, BluetoothDtmPostUnlinkMailboxTake,
+        BluetoothDtmPostUnlinkWakeCell, allocate_mailbox_identity,
     };
 
     #[derive(Debug, Eq, PartialEq)]
@@ -677,5 +740,42 @@ mod tests {
             panic!("cancellation must retain the exact stored event");
         };
         assert_eq!(event, Event(23));
+    }
+
+    #[test]
+    fn ready_before_consumer_recheck_remains_durable_until_close() {
+        let wake = BluetoothDtmPostUnlinkWakeCell::new();
+
+        assert!(!wake.is_pending());
+        assert_eq!(
+            wake.publish_from_interrupt(),
+            BluetoothDtmPostUnlinkMailboxPublication::WakeConsumer
+        );
+        assert!(wake.is_pending());
+        assert!(wake.close());
+        assert!(!wake.is_pending());
+    }
+
+    #[test]
+    fn full_ready_publications_coalesce_and_next_epoch_wakes_again() {
+        let wake = BluetoothDtmPostUnlinkWakeCell::new();
+
+        assert_eq!(
+            wake.publish_from_interrupt(),
+            BluetoothDtmPostUnlinkMailboxPublication::WakeConsumer
+        );
+        assert_eq!(
+            wake.publish_from_interrupt(),
+            BluetoothDtmPostUnlinkMailboxPublication::AlreadyReady
+        );
+        assert!(wake.is_pending());
+        assert!(wake.close());
+        assert!(!wake.close());
+
+        assert_eq!(
+            wake.publish_from_interrupt(),
+            BluetoothDtmPostUnlinkMailboxPublication::WakeConsumer
+        );
+        assert!(wake.is_pending());
     }
 }

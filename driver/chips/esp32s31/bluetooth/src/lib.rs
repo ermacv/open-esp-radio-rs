@@ -171,8 +171,8 @@ pub(crate) use dtm_event_timing::{
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) use dtm_event_timing::{BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerMargin};
 pub use dtm_link_state::{
-    BluetoothDtmLinkStateReset, BluetoothDtmLinkStateResetError,
-    BluetoothDtmLinkStateReviewedWords, BluetoothDtmRole,
+    BluetoothDtmDefaultTxPowerDbm, BluetoothDtmLinkStateReset, BluetoothDtmLinkStateReviewedWords,
+    BluetoothDtmRole,
 };
 pub use dtm_parameters::{
     BluetoothDtmChannel, BluetoothDtmChannelError, BluetoothDtmPhy, BluetoothDtmPhyError,
@@ -185,8 +185,8 @@ pub use dtm_payload::{
 #[cfg(target_arch = "riscv32")]
 pub use dtm_post_unlink::{BluetoothDtmPostUnlinkAwaiting, BluetoothDtmPostUnlinkCancelStep};
 pub use dtm_post_unlink::{
-    BluetoothDtmPostUnlinkMailboxPublication, BluetoothPrimaryOrdinaryPublication,
-    BluetoothPrimarySerializedServiceStep,
+    BluetoothDtmPostUnlinkMailboxPublication, BluetoothDtmPostUnlinkWakeCell,
+    BluetoothPrimaryOrdinaryPublication, BluetoothPrimarySerializedServiceStep,
 };
 pub use dtm_rx_completion::{
     BLUETOOTH_DTM_RX_INITIAL_RETURNED_BYTE, BluetoothDtmReceiverSession,

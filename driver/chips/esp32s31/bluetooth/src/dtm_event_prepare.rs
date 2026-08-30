@@ -1721,9 +1721,10 @@ mod tests {
     use crate::scheduler_timeline::BluetoothSchedulerTimeline;
     use crate::{
         BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample, BluetoothDtmChannel,
-        BluetoothDtmLinkStateReset, BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern,
-        BluetoothDtmPhy, BluetoothDtmRole, BluetoothDtmRxRecurringEventWindow,
-        BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerMargin,
+        BluetoothDtmDefaultTxPowerDbm, BluetoothDtmLinkStateReset, BluetoothDtmPayloadLength,
+        BluetoothDtmPayloadPattern, BluetoothDtmPhy, BluetoothDtmRole,
+        BluetoothDtmRxRecurringEventWindow, BluetoothDtmSchedulerInstant,
+        BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerMargin,
         BluetoothDtmSchedulerTimingPolicy, BluetoothDtmTxGraphPrepare, BluetoothDtmTxTimingMicros,
         BluetoothSchedulerReservation, BluetoothSchedulerSequenceAuthorizationError,
         BluetoothSchedulerSequenceReady,
@@ -1741,6 +1742,10 @@ mod tests {
             .expect("test base has valid compressed-pointer syntax");
         BluetoothDtmMemoryGraphStorage::pin_static_model(storage, base, allocation_config())
             .expect("test graph fits physical controller SRAM")
+    }
+
+    fn link_state(role: BluetoothDtmRole) -> BluetoothDtmLinkStateReset {
+        BluetoothDtmLinkStateReset::new(None, None, BluetoothDtmDefaultTxPowerDbm::new(0), role)
     }
 
     fn epoch() -> BluetoothControllerSchedulerEpoch {
@@ -1848,11 +1853,9 @@ mod tests {
         let reset = BluetoothDtmLinkStateReset::new(
             Some(stale),
             Some(stale),
-            0x15,
-            0x2a,
+            BluetoothDtmDefaultTxPowerDbm::new(20),
             BluetoothDtmRole::Transmitter,
-        )
-        .expect("bounded reset fields are valid");
+        );
         let plan = BluetoothDtmReviewedEventWordsPlan::new_transmitter(
             reset,
             reservation(&mut timeline, BluetoothDtmRole::Transmitter),
@@ -1892,8 +1895,7 @@ mod tests {
     #[test]
     fn receiver_plan_cancellation_preserves_the_session_owner() {
         let mut timeline = BluetoothSchedulerTimeline::<1>::new();
-        let reset = BluetoothDtmLinkStateReset::new(None, None, 0, 0, BluetoothDtmRole::Receiver)
-            .expect("zero dynamic fields are valid");
+        let reset = link_state(BluetoothDtmRole::Receiver);
         let plan = BluetoothDtmReviewedEventWordsPlan::new_receiver(
             reset,
             reservation(&mut timeline, BluetoothDtmRole::Receiver),
@@ -1924,9 +1926,7 @@ mod tests {
     #[test]
     fn recurring_tx_sequence_ready_reservation_enters_plan_and_cancels_losslessly() {
         let mut timeline = BluetoothSchedulerTimeline::<1>::new();
-        let reset =
-            BluetoothDtmLinkStateReset::new(None, None, 0, 0, BluetoothDtmRole::Transmitter)
-                .expect("zero dynamic fields are valid");
+        let reset = link_state(BluetoothDtmRole::Transmitter);
         let pattern = BluetoothDtmPayloadPattern::Repeated11110000;
         let length = BluetoothDtmPayloadLength::from_hci_image(3);
         let memory = owner(0x2f06_0000)
@@ -1993,8 +1993,7 @@ mod tests {
     #[test]
     fn recurring_rx_cancellation_restores_session_and_committed_window() {
         let mut timeline = BluetoothSchedulerTimeline::<1>::new();
-        let reset = BluetoothDtmLinkStateReset::new(None, None, 0, 0, BluetoothDtmRole::Receiver)
-            .expect("zero dynamic fields are valid");
+        let reset = link_state(BluetoothDtmRole::Receiver);
         let committed_window = BluetoothDtmRxCommittedWindow::Initial(rx_initial_window());
         let candidate_window = BluetoothDtmRxRecurringEventWindow::new(
             crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
@@ -2046,9 +2045,7 @@ mod tests {
 
     #[test]
     fn completed_events_commit_only_the_candidate_window_into_active_owners() {
-        let reset_tx =
-            BluetoothDtmLinkStateReset::new(None, None, 0, 0, BluetoothDtmRole::Transmitter)
-                .expect("zero dynamic fields are valid");
+        let reset_tx = link_state(BluetoothDtmRole::Transmitter);
         let tx_candidate = tx_timing()
             .advance_event_window(
                 crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
@@ -2082,9 +2079,7 @@ mod tests {
         assert_eq!(tx.last_committed_window(), tx_candidate);
         assert_eq!(tx.status(), BluetoothDtmSchedulerItemCompletionStatus::Zero);
 
-        let reset_rx =
-            BluetoothDtmLinkStateReset::new(None, None, 0, 0, BluetoothDtmRole::Receiver)
-                .expect("zero dynamic fields are valid");
+        let reset_rx = link_state(BluetoothDtmRole::Receiver);
         let rx_candidate = BluetoothDtmRxRecurringEventWindow::new(
             crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
             BluetoothDtmSchedulerInstant::from_image(1_100),
@@ -2120,9 +2115,7 @@ mod tests {
 
     #[test]
     fn active_roles_hold_the_reclaimed_graph_through_test_end_handoff() {
-        let reset_tx =
-            BluetoothDtmLinkStateReset::new(None, None, 0, 0, BluetoothDtmRole::Transmitter)
-                .expect("zero dynamic fields are valid");
+        let reset_tx = link_state(BluetoothDtmRole::Transmitter);
         let tx = BluetoothDtmActiveTransmitterCpuOwned {
             memory: owner(0x2f02_0000),
             facts: BluetoothDtmTransmitterCommandFacts {
@@ -2151,9 +2144,7 @@ mod tests {
                 ..
             }
         ));
-        let reset_rx =
-            BluetoothDtmLinkStateReset::new(None, None, 0, 0, BluetoothDtmRole::Receiver)
-                .expect("zero dynamic fields are valid");
+        let reset_rx = link_state(BluetoothDtmRole::Receiver);
         let rx = BluetoothDtmActiveReceiverCpuOwned {
             memory: owner(0x2f01_0000),
             facts: BluetoothDtmReceiverCommandFacts {
@@ -2180,9 +2171,7 @@ mod tests {
     #[test]
     fn plan_rejects_mixed_roles_before_it_can_consume_memory() {
         let mut timeline = BluetoothSchedulerTimeline::<1>::new();
-        let reset =
-            BluetoothDtmLinkStateReset::new(None, None, 0, 0, BluetoothDtmRole::Transmitter)
-                .expect("zero dynamic fields are valid");
+        let reset = link_state(BluetoothDtmRole::Transmitter);
         let failure = match BluetoothDtmReviewedEventWordsPlan::new_transmitter(
             reset,
             reservation(&mut timeline, BluetoothDtmRole::Receiver),

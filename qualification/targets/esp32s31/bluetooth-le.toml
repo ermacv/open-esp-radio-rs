@@ -347,7 +347,7 @@ gaps = [
 [[capabilities]]
 id = "scheduler-finished-list-drain"
 title = "Bounded scheduler finished-list event drain"
-scope = "Typed sixteen-list hardware mask transfer, one-list-per-step source-owned continuation retaining affine DTM running or completion ownership, list-zero completion join, fenced head retirement, software unlink, sealed no-constructor pairing and no-replay consumption of an already-published post-unlink primary event, and finite removal-ready observation"
+scope = "Typed sixteen-list hardware mask transfer, one-list-per-step source-owned continuation retaining affine DTM running or completion ownership, list-zero completion join, fenced head retirement, atomic software unlink plus globally identity-branded capacity-one post-unlink arm with identity or generation exhaustion rejection before unlink, serialized primary capture ordinary-cell publication and exact-first-event mailbox storage, same-identity same-generation re-arm after no-work or command-pending observations, single-delivery ISR wake dispositions, and finite removal-ready observation"
 implementation = "incomplete"
 host = "covered"
 async = "incomplete"
@@ -356,11 +356,11 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-interrupt-runtime.md",
 ]
 gaps = [
-  { axis = "implementation", id = "post-unlink-temporal-session-owner-guaranteed-pending-retry-and-selector-6-recovery-missing" },
+  { axis = "implementation", id = "post-unlink-command-ready-retry-liveness-mailbox-full-ready-edge-recovery-and-selector-6-recovery-missing" },
   { axis = "vendor", id = "raw-interrupt-origin-and-finished-list-acknowledge-rule-missing" },
   { axis = "vendor", id = "post-unlink-command-ready-source-124-causality-missing" },
   { axis = "hil", id = "scheduler-finished-list-drain-cell-missing" },
-  { axis = "async", id = "post-unlink-primary-event-temporal-delivery-pending-removal-registered-wake-and-bounded-role-dispatch-missing" },
+  { axis = "async", id = "post-unlink-consumer-registration-mailbox-full-ready-edge-recovery-and-bounded-role-dispatch-missing" },
 ]
 
 [[capabilities]]

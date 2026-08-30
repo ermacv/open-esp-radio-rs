@@ -616,7 +616,7 @@ where
     pub(crate) fn unlink_dtm_software_list<Role>(
         &mut self,
         observed: crate::BluetoothDtmSchedulerHardwareHeadEmptyObserved<Role>,
-    ) -> crate::BluetoothDtmSchedulerSoftwareListUnlinkStep<Role> {
+    ) -> crate::scheduler::BluetoothDtmSchedulerSoftwareListUnlinkStep<Role> {
         self.controller.scheduler.unlink_dtm_software_list(observed)
     }
 

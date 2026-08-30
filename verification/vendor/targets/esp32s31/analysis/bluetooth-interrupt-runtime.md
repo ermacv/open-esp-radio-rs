@@ -10,7 +10,9 @@ exact software-list producer/consumer graph and the default BLE consumers of
 selectors 4 and 6 are recovered. The initialized scheduler now returns a
 powered task endpoint that keeps the sole lock/modify worker beside the exact
 task-side HAL owner; one finite event step can therefore reach the restricted
-PAC without an MMIO capability escaping into executor code. Selector actions,
+PAC without an MMIO capability escaping into executor code. Primary service is
+also serialized with both ordinary durable publications and a capacity-one DTM
+post-unlink mailbox. Selector actions,
 the hardware-list-to-item relation, NRT feature meanings and the live async ISR
 owner remain unresolved, so neither CPU route may yet form a live production
 interrupt epoch.
@@ -125,20 +127,37 @@ selector-6 software path occur between their positions. The Rust classifier
 therefore uses distinct reference-gate and work-observation types.
 
 The post-unlink DTM removal gate does not authorize a second primary
-capture/acknowledgement. Its conservative open carrier is an opaque pair of the
-unlinked graph and the complete `BluetoothPrimaryPublishedInterruptStep`
-already returned after the hard handler captured and acknowledged the epoch
-and durably published both Controller cells. There is no public constructor:
-the missing session owner must first prove that publication followed the exact
-unlink. The later consumer may project BUSY from its scheduler event and, only
-when idle, perform the separate task-owned command-zero then conditional
-command-one reads. A pre-unlink event is temporally stale; the coalesced wake
-cell retains only notification state and cannot recreate that event or prove
-its ordering. Complete vendor removal bodies directly re-read
-BUSY and the command fields, so they prove neither command-ready-to-source-124
-causality nor a guaranteed Pending retry wake. Enforcing post-unlink delivery
-and retry remains session-runtime work rather than an interrupt-classifier
-claim.
+capture/acknowledgement. The Controller atomically consumes the empty-head
+proof into `SoftwareListUnlinked` and arms a capacity-one mailbox under the same
+critical section. On its first arm, that mailbox obtains a checked globally
+unique opaque identity; every arm also carries a checked generation. Identity
+or generation exhaustion rejects before unlink. Every public primary service then
+serializes capture/acknowledgement, both ordinary durable cell publications and
+the mailbox transition under that same boundary. An idle mailbox returns the
+event to the general route; an armed mailbox stores exactly its first later
+`BluetoothPrimaryPublishedInterruptStep`; and a full mailbox returns, but does
+not overwrite with, the newer event. Ordinary scheduler and lock/modify wake
+dispositions are returned immediately even when the affine event payload is
+stored for DTM. Those ISR notification dispositions are not repeated by the
+later DTM consumer; it retains only the event observation needed by the return
+gate. There is no public standalone unlink, primary-service bypass or
+constructor for the internal graph/event pair, so a pre-arm event cannot enter
+the removal consumer through safe public code.
+
+The affine awaiting owner consumes only its matching mailbox identity and
+generation, so equal generation numbers from two Controller instances cannot
+cross-wire an event, cancellation or re-arm. Its later consumer may project
+BUSY from the stored scheduler event and, only when idle,
+perform the separate task-owned command-zero then conditional command-one
+reads. `NoSchedulerWork` and command-pending outcomes re-arm the same owner
+before leaving the serialization boundary. This closes temporal pairing and
+lost-owner holes, but not progress: if the retained first event is not ready, a
+later command-ready edge can arrive while the slot is full and is not retained
+as the next DTM event. Complete vendor removal bodies directly re-read BUSY and
+the command fields, so they prove neither command-ready-to-source-124 causality
+nor a guaranteed retry wake. Source-124 causality, registered consumer wake and
+bounded retry liveness therefore remain session-runtime work rather than an
+interrupt-classifier claim.
 
 ## Event multiplicity and RTOS-free replacement
 
@@ -236,6 +255,9 @@ them.
   finished-list edge, memory fence, abort and shutdown drain;
 - executor-neutral waker registration with a register-then-recheck poll
   protocol and a quiescent teardown barrier;
+- a proven source-124 or other wake for command readiness, plus a bounded
+  policy that cannot lose a later ready edge while the capacity-one DTM slot
+  retains an earlier no-work or command-pending event;
 - live same-core composition of the staged interrupt-bank, scheduler runtime
   and powered task endpoint, including stable waker registration, without
   returning either MMIO capability while the routes are live;

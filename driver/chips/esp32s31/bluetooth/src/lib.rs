@@ -81,6 +81,7 @@ mod dtm_event_timing;
 mod dtm_link_state;
 mod dtm_parameters;
 mod dtm_payload;
+mod dtm_post_unlink;
 mod dtm_rx_completion;
 mod dtm_scheduler_item;
 mod dtm_session;
@@ -143,7 +144,7 @@ pub use controller_start::{
     BluetoothControllerSchedulerNowReady, BluetoothControllerTimeOrphanDrainStep,
     BluetoothDtmControllerPreparationOutcome, BluetoothDtmControllerPreparationPending,
     BluetoothDtmControllerPreparationStep, BluetoothDtmControllerPreparationTerminal,
-    BluetoothDtmSchedulerStartFailure, BluetoothDtmSoftwareListRemovalPublishedEvent,
+    BluetoothDtmPostUnlinkArmStep, BluetoothDtmSchedulerStartFailure,
     BluetoothDtmSoftwareListRemovalPublishedStep, BluetoothInterruptOwnerStorage,
     BluetoothModemLpTimerInterruptDispatchStorage, BluetoothModemLpTimerSoftwareOwnerStorage,
     BluetoothSchedulerRunInterruptStorage, BluetoothSharedInterruptDispatchStorage,
@@ -179,6 +180,12 @@ pub use dtm_parameters::{
 pub use dtm_payload::{
     BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern, BluetoothDtmPayloadPatternError,
     BluetoothDtmPayloadPreparationError, BluetoothDtmPreparedPayload,
+};
+#[cfg(target_arch = "riscv32")]
+pub use dtm_post_unlink::{BluetoothDtmPostUnlinkAwaiting, BluetoothDtmPostUnlinkCancelStep};
+pub use dtm_post_unlink::{
+    BluetoothDtmPostUnlinkMailboxPublication, BluetoothPrimaryOrdinaryPublication,
+    BluetoothPrimarySerializedServiceStep,
 };
 pub use dtm_rx_completion::{
     BLUETOOTH_DTM_RX_INITIAL_RETURNED_BYTE, BluetoothDtmReceiverSession,
@@ -278,7 +285,7 @@ pub use scheduler::{
     BluetoothDtmSchedulerHardwareHeadEmptyObserved,
     BluetoothDtmSchedulerHardwareHeadRetirementStep, BluetoothDtmSchedulerRecycleStep,
     BluetoothDtmSchedulerRxSuccessRecycleStep, BluetoothDtmSchedulerSoftwareListRemovalReady,
-    BluetoothDtmSchedulerSoftwareListUnlinkStep, BluetoothDtmSchedulerSoftwareListUnlinked,
+    BluetoothDtmSchedulerSoftwareListUnlinked,
 };
 #[cfg(target_arch = "riscv32")]
 pub use scheduler::{

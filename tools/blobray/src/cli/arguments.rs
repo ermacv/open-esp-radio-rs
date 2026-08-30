@@ -627,6 +627,12 @@ pub(crate) struct InspectFlowArgs {
     /// List one exact effect class in the bounded reachable subgraph.
     #[arg(long, value_enum, value_name = "KIND")]
     pub(crate) effects: Option<InspectFlowEffectKind>,
+    /// Slice memory reaching one exact operation, call, or MMIO register/address write.
+    #[arg(
+        long,
+        value_name = "operation:NAME|call:TARGET|register:NAME|address:ADDRESS"
+    )]
+    pub(crate) publication: Option<String>,
     /// Follow one reviewed asynchronous event route by stable ID.
     #[arg(long, value_name = "ROUTE")]
     pub(crate) event_route: Option<String>,

@@ -7,6 +7,7 @@ mod cfg;
 mod effects;
 mod event;
 mod model;
+mod operation_memory;
 mod project_graph;
 mod target;
 mod value;
@@ -22,6 +23,9 @@ pub(crate) fn investigate(
     match request {
         FlowInvestigationRequest::Target(request) => target::investigate(request, project),
         FlowInvestigationRequest::Effects(request) => effects::investigate(request, project),
+        FlowInvestigationRequest::Publication(request) => {
+            operation_memory::investigate(request, project)
+        }
         FlowInvestigationRequest::EventRoute(request) => event::investigate(request, project),
     }
 }

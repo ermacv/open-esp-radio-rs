@@ -94,7 +94,7 @@ pub(super) fn investigate(
         });
         effects.dedup();
         reports.push(FlowInvestigationReport {
-            schema_version: 4,
+            schema_version: 5,
             command: "inspect flow",
             mode: "effects",
             status: if blockers.is_empty() {
@@ -122,6 +122,8 @@ pub(super) fn investigate(
             },
             steps: Vec::new(),
             effects,
+            publications: Vec::new(),
+            memory_slice: Vec::new(),
             rust_boundaries: Vec::new(),
             blockers,
         });

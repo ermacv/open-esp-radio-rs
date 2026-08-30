@@ -155,6 +155,10 @@ cargo blobray inspect function libpp:hal_mac_set_bssid \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --replacement --case station-bank-preserves-policy
 
+cargo blobray inspect flow ble-controller:r_sym_bt_DPWY0umixzmXEaFuUyCI \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --publication register:BLUETOOTH_CONTROLLER_CORE.SCHEDULER_CONTROL
+
 cargo blobray project browse \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
@@ -172,6 +176,30 @@ concrete case shows one canonical ordered effect trace with separate vendor
 and Rust instruction provenance; use `--case ID` to select a case and
 `--details` to show all matching cases. `project browse` is the supplementary
 read-only TUI. Both consume the same typed application reports.
+
+`inspect flow --publication` focuses the memory investigation on one selected
+publication boundary instead of listing every effect reachable from a root.
+Selectors are `operation:NAME`, `call:TARGET`, `register:NAME`, or
+`address:ADDRESS`; call targets use the complete linked-IR identity, while
+register and address selectors match MMIO writes only. `selector_exact` and
+`site_authenticated` are independent: an indexed MMIO/dispatch candidate is
+retained with its modes and guards, but returns `INCOMPLETE` rather than being
+promoted to an exact publication. Persisted paths and guards are navigation
+hints only and never participate in CFG ordering or completeness claims.
+
+The report computes reaching SRAM definitions from the authenticated function
+CFG and distinguishes a mandatory last local write, closed branch/loop
+alternatives, and open candidates. An incoming-definition alternative means
+that the last value enters the function from its caller or pre-existing global
+state; it is not an uninitialized-memory claim. A per-location
+`must-last-write` requires one live decoded body, a complete persisted
+local-effect inventory, one exact, authenticated and reachable anchor, and
+closed control-flow, call and alias boundaries for that location. A mandatory
+local write after an unsliced call may close that location while the overall
+report remains `INCOMPLETE` because the complete callee memory inventory is
+unknown. CFG paths remain structural navigation evidence, not path-feasibility
+proof. Unknown control flow, unsliced calls, partially overlapping writes and
+local work limits remain explicit blockers.
 
 Projects with a reviewed interface pack must configure
 `[interfaces.capability-context].output`. `project analyze` generates this

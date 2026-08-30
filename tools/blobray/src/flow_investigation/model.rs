@@ -10,6 +10,7 @@ pub(crate) const MAX_LOADED_FUNCTIONS: usize = 128;
 pub(crate) enum FlowInvestigationRequest<'a> {
     Target(TargetFlowRequest<'a>),
     Effects(EffectFlowRequest<'a>),
+    Publication(PublicationFlowRequest<'a>),
     EventRoute(EventRouteFlowRequest<'a>),
 }
 
@@ -61,6 +62,42 @@ pub(crate) struct EffectFlowRequest<'a> {
     pub(crate) source: &'a str,
     pub(crate) root_symbol: &'a str,
     pub(crate) kind: FlowEffectKind,
+    pub(crate) max_depth: usize,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum PublicationSelectorRequest<'a> {
+    Operation(&'a str),
+    Call(&'a str),
+    Register(&'a str),
+    Address(u32),
+}
+
+impl PublicationSelectorRequest<'_> {
+    pub(crate) const fn kind(&self) -> &'static str {
+        match self {
+            Self::Operation(_) => "operation",
+            Self::Call(_) => "call",
+            Self::Register(_) => "register",
+            Self::Address(_) => "address",
+        }
+    }
+
+    pub(crate) fn label(&self) -> String {
+        match self {
+            Self::Operation(value) | Self::Call(value) | Self::Register(value) => {
+                (*value).to_owned()
+            }
+            Self::Address(value) => format!("{value:#010x}"),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct PublicationFlowRequest<'a> {
+    pub(crate) source: &'a str,
+    pub(crate) root_symbol: &'a str,
+    pub(crate) selector: PublicationSelectorRequest<'a>,
     pub(crate) max_depth: usize,
 }
 
@@ -138,6 +175,8 @@ pub(crate) struct FlowInvestigationReport {
     pub(crate) limits: FlowLimits,
     pub(crate) steps: Vec<FlowStepEvidence>,
     pub(crate) effects: Vec<FlowEffectEvidence>,
+    pub(crate) publications: Vec<FlowPublicationEvidence>,
+    pub(crate) memory_slice: Vec<FlowMemorySliceEvidence>,
     pub(crate) rust_boundaries: Vec<FlowRustBoundaryEvidence>,
     pub(crate) blockers: Vec<FlowBlocker>,
 }
@@ -203,6 +242,71 @@ pub(crate) struct FlowEffectEvidence {
     pub(crate) register: Option<String>,
     pub(crate) value: Option<String>,
     pub(crate) origin_path: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct FlowPublicationEvidence {
+    pub(crate) evidence: EvidenceLevel,
+    pub(crate) function: String,
+    pub(crate) site: Option<u32>,
+    pub(crate) kind: String,
+    pub(crate) target: String,
+    pub(crate) selector_exact: bool,
+    pub(crate) site_authenticated: bool,
+    pub(crate) persisted_blocks: Vec<usize>,
+    pub(crate) persisted_block_complete: bool,
+    pub(crate) tails: Vec<bool>,
+    pub(crate) modes: Vec<String>,
+    pub(crate) paths: Vec<String>,
+    pub(crate) guards: Vec<String>,
+    pub(crate) operation: Option<String>,
+    pub(crate) address: Option<u32>,
+    pub(crate) registers: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub(crate) enum FlowMemoryDefinitionClassification {
+    #[serde(rename = "must-last-write")]
+    Must,
+    #[serde(rename = "alternative-last-write")]
+    Alternative,
+    #[serde(rename = "candidate-last-write")]
+    Candidate,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct FlowCfgPathWitness {
+    pub(crate) blocks: Vec<usize>,
+    pub(crate) proof: &'static str,
+    pub(crate) path_feasibility_claim: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct FlowMemoryDefinitionEvidence {
+    pub(crate) evidence: EvidenceLevel,
+    pub(crate) function: String,
+    pub(crate) site: u32,
+    pub(crate) object: String,
+    pub(crate) offset: i64,
+    pub(crate) width: u8,
+    pub(crate) values: Vec<String>,
+    pub(crate) value_complete: bool,
+    pub(crate) classification: FlowMemoryDefinitionClassification,
+    pub(crate) witness: Option<FlowCfgPathWitness>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct FlowMemorySliceEvidence {
+    pub(crate) publication_function: String,
+    pub(crate) publication_site: u32,
+    pub(crate) object: String,
+    pub(crate) offset: i64,
+    pub(crate) width: u8,
+    pub(crate) alias_complete: bool,
+    pub(crate) definition_set_complete: bool,
+    pub(crate) publication_exact: bool,
+    pub(crate) incoming_definition_possible: bool,
+    pub(crate) definitions: Vec<FlowMemoryDefinitionEvidence>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]

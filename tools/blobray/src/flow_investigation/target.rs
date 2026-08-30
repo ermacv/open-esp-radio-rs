@@ -287,7 +287,7 @@ fn compose_path(
     };
     let (profile, linked_ir) = graph.profile_labels();
     Ok(FlowInvestigationReport {
-        schema_version: 4,
+        schema_version: 5,
         command: "inspect flow",
         mode: "target",
         status,
@@ -312,6 +312,8 @@ fn compose_path(
         },
         steps,
         effects,
+        publications: Vec::new(),
+        memory_slice: Vec::new(),
         rust_boundaries: Vec::new(),
         blockers,
     })
@@ -326,7 +328,7 @@ fn not_reached(
 ) -> FlowInvestigationReport {
     let (profile, linked_ir) = graph.profile_labels();
     FlowInvestigationReport {
-        schema_version: 4,
+        schema_version: 5,
         command: "inspect flow",
         mode: "target",
         status: FlowStatus::NotReached,
@@ -340,6 +342,8 @@ fn not_reached(
         limits: FlowLimits::new(max_depth),
         steps: Vec::new(),
         effects: Vec::new(),
+        publications: Vec::new(),
+        memory_slice: Vec::new(),
         rust_boundaries: Vec::new(),
         blockers: vec![FlowBlocker::manual(
             "target-not-reached",

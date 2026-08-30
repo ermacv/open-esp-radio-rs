@@ -925,6 +925,19 @@ struct StoredExternalOutputModel {
 }
 
 impl StoredCall {
+    /// Whether selecting this stored target identifies one authenticated call
+    /// target rather than one candidate from an indirect/indexed dispatch.
+    pub(crate) fn publication_selector_exact(&self) -> bool {
+        self.direct
+            && !matches!(
+                self.kind.as_str(),
+                "unresolved"
+                    | "ambiguous-project"
+                    | "indexed-dispatch"
+                    | "indexed-dispatch-unresolved"
+            )
+    }
+
     pub(crate) const fn direct(&self) -> bool {
         self.direct
     }

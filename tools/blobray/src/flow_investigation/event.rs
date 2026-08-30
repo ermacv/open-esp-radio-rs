@@ -732,7 +732,7 @@ fn investigate_selector(
     finalize_event_route_semantic_evidence(&route.id, &mut effects)?;
     let structural_navigation = dispatch_observed && delivery.is_some();
     Ok(FlowInvestigationReport {
-        schema_version: 4,
+        schema_version: 5,
         command: "inspect flow",
         mode: "event-route",
         status: if blockers.is_empty() {
@@ -771,6 +771,8 @@ fn investigate_selector(
         },
         steps,
         effects,
+        publications: Vec::new(),
+        memory_slice: Vec::new(),
         rust_boundaries,
         blockers,
     })
@@ -1106,7 +1108,7 @@ fn investigate_static_event_callback(
         Some(route.callback_function.clone())
     };
     Ok(FlowInvestigationReport {
-        schema_version: 4,
+        schema_version: 5,
         command: "inspect flow",
         mode: "event-route",
         status: FlowStatus::Incomplete,
@@ -1127,6 +1129,8 @@ fn investigate_static_event_callback(
         },
         steps,
         effects,
+        publications: Vec::new(),
+        memory_slice: Vec::new(),
         rust_boundaries: Vec::new(),
         blockers,
     })
@@ -1448,7 +1452,7 @@ fn investigate_broker_subscription(
         step.ordinal = ordinal;
     }
     Ok(FlowInvestigationReport {
-        schema_version: 4,
+        schema_version: 5,
         command: "inspect flow",
         mode: "event-route",
         status: FlowStatus::Incomplete,
@@ -1469,6 +1473,8 @@ fn investigate_broker_subscription(
         },
         steps,
         effects,
+        publications: Vec::new(),
+        memory_slice: Vec::new(),
         rust_boundaries: Vec::new(),
         blockers,
     })

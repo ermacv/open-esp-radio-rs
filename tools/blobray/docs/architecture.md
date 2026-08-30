@@ -134,6 +134,7 @@ Query ownership is layered:
 | Semantic projection | Reviewed names/signatures and opaque boundary contracts | Function facts plus versioned add-on inputs | Inventing effects not authorized by a contract |
 | Link projection | Cross-function targets and transitive summaries | Function facts, artifact catalog, semantic projection | Profile presentation choices |
 | Profile projection | Root/reachability selection and generated documents | Cached query results | Re-running backend recovery |
+| Operation memory slice | Last SRAM definitions reaching one selected publication site, with selector exactness separate from live site authentication | Persisted instruction effects plus an authenticated, query-time function CFG; stored paths/guards may be displayed only as non-authoritative navigation hints | Using stored path strings for reachability or ordering, cross-call alias guesses, path-feasibility claims |
 
 A query key contains the query kind and semantic revision, the digest and
 provenance identity of the artifact bytes it owns, target ABI/backend identity,

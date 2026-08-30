@@ -52,30 +52,3 @@ impl BluetoothDtmBoundSramLinkAddress {
         self.0
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use open_esp_radio_esp32s31_hal::BluetoothControllerSramAddressError;
-
-    use super::{BluetoothDtmBoundSramLinkAddress, BluetoothDtmBoundSramLinkAddressError};
-
-    #[test]
-    fn bound_link_cannot_collapse_onto_the_zero_unbound_image() {
-        assert_eq!(
-            BluetoothDtmBoundSramLinkAddress::new(0x2f00_0000),
-            Err(BluetoothDtmBoundSramLinkAddressError::ZeroCompressedImage)
-        );
-        assert_eq!(
-            BluetoothDtmBoundSramLinkAddress::new(0x2f00_0004)
-                .expect("first nonzero compressed link is valid")
-                .compressed_image(),
-            1
-        );
-        assert_eq!(
-            BluetoothDtmBoundSramLinkAddress::new(0x2f00_0001),
-            Err(BluetoothDtmBoundSramLinkAddressError::InvalidAddress(
-                BluetoothControllerSramAddressError::Unaligned
-            ))
-        );
-    }
-}

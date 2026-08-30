@@ -41,15 +41,21 @@ follow `hil/targets/esp32s31/README.md`.
 Use standard `rustfmt` formatting (four-space indentation). Follow Rust naming:
 `snake_case` functions/modules, `UpperCamelCase` types, and `SCREAMING_SNAKE_CASE`
 constants. Prefer typed ownership/state transitions over raw addresses or
-integer register images. Keep `unsafe` narrowly scoped and documented; the
-workspace denies `unsafe_op_in_unsafe_fn` and mutable calls in `debug_assert!`.
+integer register images. Handwritten code outside the generated/restricted PAC
+must access MMIO only through typed PAC accessors; if an accessor is missing,
+review and publish the field in the SVD/PAC instead of adding a local mask or
+shift. Keep `unsafe` narrowly scoped and documented; the workspace denies
+`unsafe_op_in_unsafe_fn` and mutable calls in `debug_assert!`.
 
 ## Testing Guidelines
 
 Every behavioral change needs a focused regression test. Hardware-facing
 changes should pair host tests with dated HIL evidence when qualification is
 claimed. Vendor comparison must fail closed (`MATCH`, `DIFF`, or `INCOMPLETE`)
-and must exercise compiled production code, not a shadow implementation.
+and must exercise compiled production code, not a shadow implementation. Do
+not test generated register addresses, masks, shifts, field positions, or PAC
+type names. Tests for memory protocols should verify behavior and ownership,
+not reproduce the same raw image or layout constants as the implementation.
 
 ## Commit & Pull Request Guidelines
 

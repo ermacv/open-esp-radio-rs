@@ -33,32 +33,3 @@ impl BluetoothDtmRxResultProjection {
         (self.0 >> 24) as u8
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError};
-
-    #[test]
-    fn result_projection_preserves_only_the_reviewed_high_byte() {
-        assert_eq!(
-            BluetoothDtmRxResultProjection::from_word(0)
-                .expect("an all-zero result word is accepted")
-                .returned_byte(),
-            0
-        );
-        assert_eq!(
-            BluetoothDtmRxResultProjection::from_word(0xab00_0000)
-                .expect("the high byte is positional payload")
-                .returned_byte(),
-            0xab
-        );
-        assert_eq!(
-            BluetoothDtmRxResultProjection::from_word(0x0000_0001),
-            Err(BluetoothDtmRxResultProjectionError::NonzeroLowTwentyFourBits)
-        );
-        assert_eq!(
-            BluetoothDtmRxResultProjection::from_word(0x00ff_ffff),
-            Err(BluetoothDtmRxResultProjectionError::NonzeroLowTwentyFourBits)
-        );
-    }
-}

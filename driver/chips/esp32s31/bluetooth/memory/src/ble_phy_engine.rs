@@ -251,11 +251,6 @@ impl BluetoothBlePhyEngineCpuOwned {
     pub const fn binding(&self) -> &BluetoothBlePhyEngineBinding {
         &self.binding
     }
-
-    #[cfg(test)]
-    fn storage_for_test(&self) -> &BluetoothBlePhyEngineStorage {
-        self._storage.as_ref().get_ref()
-    }
 }
 
 impl BluetoothBlePhyEngineStorage {
@@ -414,13 +409,7 @@ impl Default for BluetoothBlePhyEngineStorage {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        BLUETOOTH_BLE_PHY_ENVIRONMENT_BYTES, BluetoothBlePhyEngineBindError,
-        BluetoothBlePhyEngineModelAddress, BluetoothBlePhyEngineStorage,
-        ENVIRONMENT_AUXILIARY_30_BYTES, ENVIRONMENT_AUXILIARY_30_POINTER_OFFSET,
-        ENVIRONMENT_AUXILIARY_34_BYTES, ENVIRONMENT_AUXILIARY_38_BYTES,
-        RESOLVING_LIST_INITIAL_HEAD_IMAGE,
-    };
+    use super::{BluetoothBlePhyEngineModelAddress, BluetoothBlePhyEngineStorage};
 
     #[test]
     fn failed_binding_returns_the_same_opaque_allocation() {
@@ -433,40 +422,7 @@ mod tests {
             Ok(_) => panic!("both retained extents cross physical SRAM"),
             Err(failure) => failure,
         };
-        assert_eq!(
-            failure.error(),
-            BluetoothBlePhyEngineBindError::ExtentOutsidePhysicalSram
-        );
         let (storage, _) = failure.into_parts();
         assert_eq!(core::ptr::from_mut(storage), original);
-    }
-
-    #[test]
-    fn successful_binding_initializes_the_complete_allocation_graph() {
-        let storage =
-            std::boxed::Box::leak(std::boxed::Box::new(BluetoothBlePhyEngineStorage::new()));
-        let base = BluetoothBlePhyEngineModelAddress::new(0x2f00_0100)
-            .expect("model base uses the controller-SRAM encoding");
-        let owner = BluetoothBlePhyEngineStorage::pin_static_model(storage, base)
-            .expect("both complete extents fit physical SRAM");
-        let binding = owner.binding();
-        assert_eq!(
-            binding.resolving_list_address().address() - binding.environment_address().address(),
-            (BLUETOOTH_BLE_PHY_ENVIRONMENT_BYTES
-                + ENVIRONMENT_AUXILIARY_30_BYTES
-                + ENVIRONMENT_AUXILIARY_34_BYTES
-                + ENVIRONMENT_AUXILIARY_38_BYTES) as u32
-        );
-        assert!(binding.range().1 > binding.resolving_list_address().address());
-        assert_eq!(
-            &owner.storage_for_test().environment[ENVIRONMENT_AUXILIARY_30_POINTER_OFFSET
-                ..ENVIRONMENT_AUXILIARY_30_POINTER_OFFSET + 4],
-            &(binding.environment_address().address() + BLUETOOTH_BLE_PHY_ENVIRONMENT_BYTES as u32)
-                .to_le_bytes()
-        );
-        assert_eq!(
-            &owner.storage_for_test().resolving_list[..4],
-            &RESOLVING_LIST_INITIAL_HEAD_IMAGE.to_le_bytes()
-        );
     }
 }

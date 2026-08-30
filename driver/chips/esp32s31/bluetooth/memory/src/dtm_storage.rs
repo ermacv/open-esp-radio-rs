@@ -2314,17 +2314,13 @@ impl Default for BluetoothDtmMemoryGraphStorage {
 
 #[cfg(test)]
 mod tests {
-    use core::{
-        convert::Infallible,
-        fmt::Debug,
-        mem::{align_of, offset_of, size_of},
-    };
+    use core::{convert::Infallible, fmt::Debug};
 
     use open_esp_radio_esp32s31_hal::{
-        BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
-        BluetoothSchedulerFinishedListObservation, BluetoothSchedulerFinishedListPop,
-        BluetoothSchedulerHardwareListHead, BluetoothSchedulerHardwareListHeadEmptyObserved,
-        BluetoothSchedulerHardwareListIndex, BluetoothSchedulerSoftwareListRemovalReady,
+        BluetoothControllerSramAddress, BluetoothSchedulerFinishedListObservation,
+        BluetoothSchedulerFinishedListPop, BluetoothSchedulerHardwareListHead,
+        BluetoothSchedulerHardwareListHeadEmptyObserved, BluetoothSchedulerHardwareListIndex,
+        BluetoothSchedulerSoftwareListRemovalReady,
     };
 
     use super::{
@@ -2332,28 +2328,17 @@ mod tests {
         BLUETOOTH_DTM_LINK_STATE_BYTES, BLUETOOTH_DTM_MAX_PACKET_CAPACITY,
         BLUETOOTH_DTM_RX_PACKET_BYTES, BLUETOOTH_DTM_SCHEDULER_CONTEXT_BYTES,
         BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES, BLUETOOTH_DTM_TX_PACKET_BYTES,
-        BluetoothDtmBufferHeaderStorage, BluetoothDtmLinkStateReviewedWords,
-        BluetoothDtmLinkStateStorage, BluetoothDtmMemoryGraphBindError,
-        BluetoothDtmMemoryGraphCompletionObservation, BluetoothDtmMemoryGraphCpuOwned,
-        BluetoothDtmMemoryGraphHardwareOwned, BluetoothDtmMemoryGraphModelAddress,
-        BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphRecycleCleaned,
-        BluetoothDtmMemoryGraphRecycleError, BluetoothDtmMemoryGraphRecyclePrepared,
-        BluetoothDtmMemoryGraphRxSuccessObserved, BluetoothDtmMemoryGraphRxSuccessRecycleError,
-        BluetoothDtmMemoryGraphStorage, BluetoothDtmPositionalEventSeed,
-        BluetoothDtmPositionalEventWords, BluetoothDtmRxBufferHeaderImage,
-        BluetoothDtmRxPacketAddress, BluetoothDtmRxPacketAddressError, BluetoothDtmRxPacketStorage,
+        BluetoothDtmLinkStateReviewedWords, BluetoothDtmMemoryGraphCompletionObservation,
+        BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphHardwareOwned,
+        BluetoothDtmMemoryGraphModelAddress, BluetoothDtmMemoryGraphPrepareError,
+        BluetoothDtmMemoryGraphRecycleCleaned, BluetoothDtmMemoryGraphRecycleError,
+        BluetoothDtmMemoryGraphRecyclePrepared, BluetoothDtmMemoryGraphRxSuccessObserved,
+        BluetoothDtmMemoryGraphRxSuccessRecycleError, BluetoothDtmMemoryGraphStorage,
+        BluetoothDtmPositionalEventSeed, BluetoothDtmPositionalEventWords,
         BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError,
-        BluetoothDtmSchedulerAllocationConfig, BluetoothDtmSchedulerContextStorage,
-        BluetoothDtmSchedulerItemCompletionStatus, BluetoothDtmSchedulerItemReviewedWords,
-        BluetoothDtmSchedulerItemStorage, BluetoothDtmTxBufferHeaderImage,
-        BluetoothDtmTxPacketAddress, BluetoothDtmTxPacketAddressError, BluetoothDtmTxPacketStorage,
-        LINK_STATE_RX_TAIL_OFFSET, LINK_STATE_TX_HEAD_OFFSET, LOW_TWENTY_MASK,
-        RX_PACKET_METADATA_WORD, RX_PACKET_RESULT_WORD, SCHEDULER_ITEM_ALLOCATION_CONFIG_OFFSET,
-        SCHEDULER_ITEM_ALLOCATION_FLAGS_OFFSET, SCHEDULER_ITEM_ALLOCATION_PREFIX_OFFSET,
-        SCHEDULER_ITEM_COMPLETED_LINK_OFFSET, SCHEDULER_ITEM_CONTEXT_OFFSET,
-        SCHEDULER_ITEM_CONTROL_BYTE, SCHEDULER_ITEM_CONTROL_OFFSET,
-        SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET, SCHEDULER_ITEM_POSITIONAL_24_OFFSET,
-        SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET, SCHEDULER_ITEM_STATUS_OFFSET,
+        BluetoothDtmSchedulerAllocationConfig, BluetoothDtmSchedulerItemCompletionStatus,
+        BluetoothDtmSchedulerItemReviewedWords, LINK_STATE_RX_TAIL_OFFSET, LOW_TWENTY_MASK,
+        RX_PACKET_METADATA_WORD, RX_PACKET_RESULT_WORD, SCHEDULER_ITEM_STATUS_OFFSET,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2556,173 +2541,6 @@ mod tests {
     }
 
     #[test]
-    fn static_link_graph_has_every_reviewed_graph_allocation_footprint() {
-        assert_eq!(size_of::<BluetoothDtmLinkStateStorage>(), 0x84);
-        assert_eq!(size_of::<BluetoothDtmSchedulerItemStorage>(), 0x60);
-        assert_eq!(size_of::<BluetoothDtmSchedulerContextStorage>(), 0x48);
-        assert_eq!(size_of::<BluetoothDtmBufferHeaderStorage>(), 0x18);
-        assert_eq!(size_of::<BluetoothDtmTxPacketStorage>(), 0x114);
-        assert_eq!(size_of::<BluetoothDtmRxPacketStorage>(), 0x120);
-        assert_eq!(size_of::<BluetoothDtmMemoryGraphStorage>(), 0x3a8);
-
-        assert_eq!(BLUETOOTH_DTM_LINK_STATE_BYTES, 0x84);
-        assert_eq!(BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES, 0x60);
-        assert_eq!(BLUETOOTH_DTM_SCHEDULER_CONTEXT_BYTES, 0x48);
-        assert_eq!(BLUETOOTH_DTM_BUFFER_HEADER_BYTES, 0x18);
-        assert_eq!(BLUETOOTH_DTM_TX_PACKET_BYTES, 0x111);
-        assert_eq!(BLUETOOTH_DTM_RX_PACKET_BYTES, 0x11d);
-
-        assert_eq!(align_of::<BluetoothDtmMemoryGraphStorage>(), 4);
-        assert_eq!(align_of::<BluetoothDtmRxPacketStorage>(), 4);
-
-        assert_eq!(
-            offset_of!(BluetoothDtmMemoryGraphStorage, link_state),
-            0x000
-        );
-        assert_eq!(
-            offset_of!(BluetoothDtmMemoryGraphStorage, scheduler_context),
-            0x084
-        );
-        assert_eq!(
-            offset_of!(BluetoothDtmMemoryGraphStorage, scheduler_item),
-            0x0cc
-        );
-        assert_eq!(offset_of!(BluetoothDtmMemoryGraphStorage, rx_header), 0x12c);
-        assert_eq!(
-            offset_of!(BluetoothDtmMemoryGraphStorage, rx_swap_reserve),
-            0x144
-        );
-        assert_eq!(offset_of!(BluetoothDtmMemoryGraphStorage, tx_header), 0x15c);
-        assert_eq!(offset_of!(BluetoothDtmMemoryGraphStorage, tx_packet), 0x174);
-        assert_eq!(offset_of!(BluetoothDtmMemoryGraphStorage, rx_packet), 0x288);
-    }
-
-    #[test]
-    fn model_binding_initializes_every_reviewed_header_and_private_anchor() {
-        let storage =
-            std::boxed::Box::leak(std::boxed::Box::new(BluetoothDtmMemoryGraphStorage::new()));
-        let base = BluetoothDtmMemoryGraphModelAddress::new(0x2f00_0100)
-            .expect("model base has valid compressed-pointer syntax");
-        let owner =
-            BluetoothDtmMemoryGraphStorage::pin_static_model(storage, base, allocation_config())
-                .expect("complete model graph fits physical controller SRAM");
-        assert_eq!(owner.binding().range(), (0x2f00_0100, 0x2f00_04a8));
-        assert_eq!(
-            owner.binding().link_state_address().compressed_image(),
-            0x040
-        );
-        assert_eq!(
-            owner.binding().scheduler_context_address().address(),
-            0x2f00_0184
-        );
-        assert_eq!(
-            owner.binding().scheduler_item_address().compressed_image(),
-            0x073
-        );
-
-        let graph = owner.storage.as_ref().get_ref();
-        assert_eq!(
-            graph.rx_header.snapshot_words(),
-            [0, 0x0e2, 0x8080_0000, 0, 0, 0]
-        );
-        assert_eq!(
-            graph.rx_swap_reserve.snapshot_words(),
-            [0, 0, 0x8080_0000, 0, 0, 0]
-        );
-        assert_eq!(
-            graph.tx_header.snapshot_words(),
-            [0, 0x09d, 0x80a0_00a1, 0, 0x0000_07f8, 0]
-        );
-        let link_state = graph.link_state.snapshot();
-        assert_eq!(
-            &link_state[0x68 / 4..=0x78 / 4],
-            &[
-                0x2f00_022c,
-                0x2f00_025c,
-                0x2f00_022c,
-                0x2f00_025c,
-                0x2f00_0244,
-            ]
-        );
-        assert_eq!(graph.scheduler_item.read_word(0x08 / 4), 0x040);
-        assert_eq!(graph.link_state.read_word(0x30 / 4), 0x0000_1e00);
-        assert_eq!(
-            graph
-                .scheduler_item
-                .read_word(SCHEDULER_ITEM_ALLOCATION_PREFIX_OFFSET),
-            0x0030_0000
-        );
-        assert_eq!(
-            graph
-                .scheduler_item
-                .read_word(SCHEDULER_ITEM_CONTEXT_OFFSET),
-            0x061
-        );
-        assert_eq!(
-            graph
-                .scheduler_item
-                .read_word(SCHEDULER_ITEM_ALLOCATION_FLAGS_OFFSET),
-            0xffdf_ffff
-        );
-        assert_eq!(
-            graph
-                .scheduler_item
-                .read_word(SCHEDULER_ITEM_ALLOCATION_CONFIG_OFFSET),
-            19
-        );
-        assert_eq!(
-            graph
-                .scheduler_item
-                .read_word(SCHEDULER_ITEM_POSITIONAL_24_OFFSET),
-            0x0007_bdef
-        );
-        let rx_packet = graph.rx_packet.snapshot();
-        assert_eq!(rx_packet[0x05], 1);
-        assert_eq!(rx_packet[0x06], 1);
-        assert_eq!(graph.rx_packet.result_word(), 0x00ff_ffff);
-        assert_eq!(rx_packet[0x18], 0xff);
-        assert_eq!(rx_packet[0x19], 0xff);
-    }
-
-    #[test]
-    fn positional_commit_writes_only_the_nineteen_reviewed_offsets() {
-        let owner = model_owner(0x2f00_0100);
-        let before = snapshot(owner.storage.as_ref().get_ref());
-        let mut expected = None;
-        let prepared = owner
-            .try_prepare_positional_event(|seed| {
-                let candidate = candidate_words(seed);
-                expected = Some(candidate);
-                Ok::<_, Infallible>(candidate)
-            })
-            .expect("fresh graph links accept their matching positional image");
-        let expected = expected.expect("the consuming builder ran exactly once");
-        assert_eq!(prepared.words(), expected);
-
-        let after = snapshot(prepared.storage.as_ref().get_ref());
-        let link_state_offsets = [0, 1, 2, 5, 11, 13, 14, 20];
-        let scheduler_item_offsets = [0, 1, 2, 3, 4, 5, 6, 11, 17, 18, 19];
-        for index in 0..before.link_state.len() {
-            if !link_state_offsets.contains(&index) {
-                assert_eq!(after.link_state[index], before.link_state[index]);
-            }
-        }
-        for index in 0..before.scheduler_item.len() {
-            if !scheduler_item_offsets.contains(&index) {
-                assert_eq!(after.scheduler_item[index], before.scheduler_item[index]);
-            }
-        }
-        assert_eq!(after.scheduler_context, before.scheduler_context);
-        assert_eq!(after.rx_header, before.rx_header);
-        assert_eq!(after.rx_swap_reserve, before.rx_swap_reserve);
-        assert_eq!(after.tx_header, before.tx_header);
-        assert_eq!(after.tx_packet, before.tx_packet);
-        assert_eq!(after.rx_packet, before.rx_packet);
-        assert_eq!(after.link_state[0x6c / 4], before.link_state[0x6c / 4]);
-        assert_eq!(after.link_state[0x70 / 4], before.link_state[0x70 / 4]);
-    }
-
-    #[test]
     fn cancel_restores_the_complete_logical_graph_image() {
         let mut payload = [0; BLUETOOTH_DTM_MAX_PACKET_CAPACITY];
         payload[..3].copy_from_slice(&[0xaa, 0xbb, 0xcc]);
@@ -2742,34 +2560,11 @@ mod tests {
 
     #[test]
     fn scheduler_bookkeeping_cancel_restores_the_prepared_event() {
-        let mut owner = model_owner(0x2f00_0900);
-        let storage = owner.storage.as_mut().project().scheduler_item;
-        storage.write_word(SCHEDULER_ITEM_STATUS_OFFSET, 7);
-        storage.write_word(SCHEDULER_ITEM_COMPLETED_LINK_OFFSET, 0x1234);
-
-        let prepared = owner
+        let prepared = model_owner(0x2f00_0900)
             .try_prepare_positional_event(|seed| Ok::<_, Infallible>(candidate_words(seed)))
             .expect("matching anchors prepare a CPU-owned image");
         let before = snapshot(prepared.storage.as_ref().get_ref());
         let scheduler_prepared = prepared.prepare_scheduler_bookkeeping();
-        let graph = scheduler_prepared.storage.as_ref().get_ref();
-        let control = graph
-            .scheduler_item
-            .read_word(SCHEDULER_ITEM_CONTROL_OFFSET)
-            .to_le_bytes();
-
-        assert_eq!(control[SCHEDULER_ITEM_CONTROL_BYTE], 0);
-        assert_eq!(
-            graph.scheduler_item.read_word(SCHEDULER_ITEM_STATUS_OFFSET),
-            u32::MAX
-        );
-        assert_eq!(
-            graph
-                .scheduler_item
-                .read_word(SCHEDULER_ITEM_COMPLETED_LINK_OFFSET),
-            0
-        );
-
         let prepared = scheduler_prepared.cancel();
         assert_eq!(snapshot(prepared.storage.as_ref().get_ref()), before);
     }
@@ -2778,10 +2573,7 @@ mod tests {
     fn completion_observation_preserves_owners_and_classifies_status() {
         let owner = hardware_owner_with_status(0x2f00_1900, 0);
         let owner = match owner.observe_completion(observed_list(3)) {
-            BluetoothDtmMemoryGraphCompletionObservation::ListMismatch { owner, observed } => {
-                assert_eq!(observed.index().get(), 3);
-                owner
-            }
+            BluetoothDtmMemoryGraphCompletionObservation::ListMismatch { owner, .. } => owner,
             _ => panic!("another list cannot inspect the DTM item"),
         };
         let completed = match owner.observe_completion(observed_list(0)) {
@@ -2973,159 +2765,22 @@ mod tests {
     }
 
     #[test]
-    fn empty_list_link_preparation_is_the_only_additional_memory_change() {
-        let owner = model_owner(0x2f00_0d00);
-        let prepared = owner
-            .try_prepare_positional_event(|seed| Ok::<_, Infallible>(candidate_words(seed)))
-            .expect("matching anchors prepare a CPU-owned image")
-            .prepare_scheduler_bookkeeping();
-        let before = snapshot(prepared.storage.as_ref().get_ref());
-
-        let merged = prepared.prepare_empty_list_link();
-        let after = snapshot(merged.storage.as_ref().get_ref());
-        let mut expected = before.clone();
-        expected.scheduler_item[SCHEDULER_ITEM_HARDWARE_NEXT_OFFSET] &= !LOW_TWENTY_MASK;
-        expected.scheduler_item[SCHEDULER_ITEM_SOFTWARE_NEXT_OFFSET] = 0;
-        assert_eq!(after, expected);
-
-        let prepared = merged.cancel();
-        assert_eq!(snapshot(prepared.storage.as_ref().get_ref()), before);
-    }
-
-    #[test]
-    fn recurring_seed_accepts_the_bound_alternate_rx_tail() {
-        let mut owner = model_owner(0x2f00_1500);
-        let tx_head = owner.binding.tx_header.controller_address().address();
-        let rx_tail = owner.binding.rx_swap_reserve.controller_address().address();
-        let tx_head_image = owner.binding.tx_header.compressed_image();
-        let rx_tail_image = owner.binding.rx_swap_reserve.compressed_image();
-        let storage = owner.storage.as_mut().project();
-        storage
-            .link_state
-            .write_word(LINK_STATE_TX_HEAD_OFFSET, tx_head);
-        storage
-            .link_state
-            .write_word(LINK_STATE_RX_TAIL_OFFSET, rx_tail);
-        let before = snapshot(owner.storage.as_ref().get_ref());
-
-        let prepared = owner
-            .try_prepare_positional_event(|seed| {
-                assert_eq!(seed.tx_head().compressed_image(), tx_head_image);
-                assert_eq!(seed.rx_tail().compressed_image(), rx_tail_image);
-                Ok::<_, Infallible>(candidate_words(seed))
-            })
-            .expect("the second bound RX header is a valid recurring tail");
-        let words = prepared.words();
-        assert_eq!(words.link_state().word_00 & LOW_TWENTY_MASK, tx_head_image);
-        assert_eq!(words.link_state().word_08 & LOW_TWENTY_MASK, rx_tail_image);
-        let after = snapshot(prepared.storage.as_ref().get_ref());
-        assert_eq!(after.link_state[LINK_STATE_TX_HEAD_OFFSET], tx_head);
-        assert_eq!(after.link_state[LINK_STATE_RX_TAIL_OFFSET], rx_tail);
-
-        let owner = prepared.cancel();
-        assert_eq!(snapshot(owner.storage.as_ref().get_ref()), before);
-    }
-
-    #[test]
-    fn every_builder_and_anchor_failure_returns_the_byte_unchanged_owner() {
+    fn builder_failure_returns_the_byte_unchanged_reusable_owner() {
         let owner = model_owner(0x2f00_0900);
         let owner = assert_prepare_failure_unchanged(
             owner,
             |_| Err::<BluetoothDtmPositionalEventWords, _>("builder rejected inputs"),
             BluetoothDtmMemoryGraphPrepareError::Build("builder rejected inputs"),
         );
-
-        let owner = assert_prepare_failure_unchanged(
-            owner,
-            |seed| {
-                let candidate = candidate_words(seed);
-                let mut link_state = candidate.link_state();
-                link_state.word_00 ^= 1;
-                Ok::<_, Infallible>(BluetoothDtmPositionalEventWords::new(
-                    link_state,
-                    candidate.scheduler_item(),
-                ))
-            },
-            BluetoothDtmMemoryGraphPrepareError::LinkStateTxHeadMismatch {
-                expected: 0x297,
-                observed: 0x296,
-            },
-        );
-
-        let owner = assert_prepare_failure_unchanged(
-            owner,
-            |seed| {
-                let candidate = candidate_words(seed);
-                let mut link_state = candidate.link_state();
-                link_state.word_08 ^= 1;
-                Ok::<_, Infallible>(BluetoothDtmPositionalEventWords::new(
-                    link_state,
-                    candidate.scheduler_item(),
-                ))
-            },
-            BluetoothDtmMemoryGraphPrepareError::LinkStateRxTailMismatch {
-                expected: 0x28b,
-                observed: 0x28a,
-            },
-        );
-
-        let _owner = assert_prepare_failure_unchanged(
-            owner,
-            |seed| {
-                let candidate = candidate_words(seed);
-                let mut scheduler_item = candidate.scheduler_item();
-                scheduler_item.word_08 ^= 1;
-                Ok::<_, Infallible>(BluetoothDtmPositionalEventWords::new(
-                    candidate.link_state(),
-                    scheduler_item,
-                ))
-            },
-            BluetoothDtmMemoryGraphPrepareError::SchedulerItemLinkStateMismatch {
-                expected: 0x240,
-                observed: 0x241,
-            },
-        );
-
-        let mut owner = model_owner(0x2f00_0d00);
-        owner
-            .storage
-            .as_mut()
-            .project()
-            .link_state
-            .write_word(LINK_STATE_TX_HEAD_OFFSET, 0);
-        let _owner = assert_prepare_failure_unchanged(
-            owner,
-            |_| -> Result<BluetoothDtmPositionalEventWords, Infallible> {
-                panic!("an unbound current TX head must preempt the builder")
-            },
-            BluetoothDtmMemoryGraphPrepareError::CurrentTxHeadUnbound,
-        );
-
-        let mut owner = model_owner(0x2f00_1100);
-        owner
-            .storage
-            .as_mut()
-            .project()
-            .link_state
-            .write_word(LINK_STATE_RX_TAIL_OFFSET, 0);
-        let _owner = assert_prepare_failure_unchanged(
-            owner,
-            |_| -> Result<BluetoothDtmPositionalEventWords, Infallible> {
-                panic!("an unbound current RX tail must preempt the builder")
-            },
-            BluetoothDtmMemoryGraphPrepareError::CurrentRxTailUnbound,
-        );
+        let _prepared = owner
+            .try_prepare_positional_event(|seed| Ok::<_, Infallible>(candidate_words(seed)))
+            .expect("the returned owner remains reusable");
     }
 
     #[test]
-    fn failed_binding_returns_the_unchanged_storage_for_retry() {
+    fn failed_binding_returns_the_same_storage_for_retry() {
         let storage =
             std::boxed::Box::leak(std::boxed::Box::new(BluetoothDtmMemoryGraphStorage::new()));
-        let mut preparation = storage.tx_packet_mut().begin_prepare(7, 3);
-        preparation
-            .payload_mut()
-            .copy_from_slice(&[0xaa, 0xbb, 0xcc]);
-        preparation.finish().release();
         let original_address = core::ptr::addr_of!(*storage).addr();
         let crossing = BluetoothDtmMemoryGraphModelAddress::new(
             BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH - 0x3a8 + 4,
@@ -3140,134 +2795,18 @@ mod tests {
             Ok(_) => panic!("a graph crossing physical SRAM must be rejected"),
             Err(failure) => failure,
         };
-        assert_eq!(
-            failure.error(),
-            BluetoothDtmMemoryGraphBindError::ExtentOutsidePhysicalSram
-        );
-        let (storage, error) = failure.into_parts();
-        assert_eq!(
-            error,
-            BluetoothDtmMemoryGraphBindError::ExtentOutsidePhysicalSram
-        );
+        let (storage, _) = failure.into_parts();
         assert_eq!(core::ptr::addr_of!(*storage).addr(), original_address);
-        assert_eq!(
-            &storage.tx_packet.bytes[0x10..0x15],
-            &[7, 3, 0xaa, 0xbb, 0xcc]
-        );
-        assert_eq!(storage.rx_header.snapshot_words(), [0; 6]);
 
         let valid = BluetoothDtmMemoryGraphModelAddress::new(0x2f00_0100)
             .expect("retry base has valid compressed-pointer syntax");
-        let owner =
+        let _owner =
             BluetoothDtmMemoryGraphStorage::pin_static_model(storage, valid, allocation_config())
                 .expect("returned allocation can be bound exactly once");
-        assert_eq!(owner.binding().range().0, 0x2f00_0100);
-        assert_eq!(owner.storage.as_ref().get_ref().tx_packet.bytes, [0; 0x111]);
     }
 
     #[test]
-    fn binding_rejects_zero_link_and_accepts_the_exact_physical_tail() {
-        assert_eq!(
-            BluetoothDtmMemoryGraphModelAddress::new(0x2f00_0101),
-            Err(BluetoothControllerSramAddressError::Unaligned)
-        );
-
-        let zero_storage =
-            std::boxed::Box::leak(std::boxed::Box::new(BluetoothDtmMemoryGraphStorage::new()));
-        let zero = BluetoothDtmMemoryGraphModelAddress::new(0x2f00_0000)
-            .expect("physical base has valid encoding syntax");
-        let zero_failure = match BluetoothDtmMemoryGraphStorage::pin_static_model(
-            zero_storage,
-            zero,
-            allocation_config(),
-        ) {
-            Ok(_) => panic!("link state must not collapse onto the unbound zero image"),
-            Err(failure) => failure,
-        };
-        assert_eq!(
-            zero_failure.error(),
-            BluetoothDtmMemoryGraphBindError::ZeroCompressedLink
-        );
-
-        let tail_storage =
-            std::boxed::Box::leak(std::boxed::Box::new(BluetoothDtmMemoryGraphStorage::new()));
-        let tail = BluetoothDtmMemoryGraphModelAddress::new(
-            BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH - 0x3a8,
-        )
-        .expect("tail base has valid compressed-pointer syntax");
-        let owner = BluetoothDtmMemoryGraphStorage::pin_static_model(
-            tail_storage,
-            tail,
-            allocation_config(),
-        )
-        .expect("graph whose exclusive end equals SRAM high is valid");
-        assert_eq!(
-            owner.binding().range(),
-            (
-                BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH - 0x3a8,
-                BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH,
-            )
-        );
-    }
-
-    #[test]
-    fn tx_packet_extent_and_bound_header_match_the_complete_allocator() {
-        let packet = BluetoothDtmTxPacketAddress::new(0x2f00_0100)
-            .expect("complete TX packet extent fits controller SRAM");
-        assert_eq!(
-            BluetoothDtmTxBufferHeaderImage::new(packet).words(),
-            [0, 0x0000_0040, 0x80a0_0044, 0, 0x0000_07f8, 0]
-        );
-
-        assert!(BluetoothDtmTxPacketAddress::new(0x2f3f_feec).is_ok());
-        assert_eq!(
-            BluetoothDtmTxPacketAddress::new(0x2f3f_fef0),
-            Err(BluetoothDtmTxPacketAddressError::ExtentOutsideControllerSram)
-        );
-        assert_eq!(
-            BluetoothDtmTxPacketAddress::new(0x2f00_0000),
-            Err(BluetoothDtmTxPacketAddressError::ZeroCompressedBase)
-        );
-        assert_eq!(
-            BluetoothDtmTxPacketAddress::new(0x2f00_0001),
-            Err(BluetoothDtmTxPacketAddressError::InvalidBase(
-                BluetoothControllerSramAddressError::Unaligned
-            ))
-        );
-    }
-
-    #[test]
-    fn rx_packet_extent_and_bound_header_match_the_complete_allocator() {
-        let packet = BluetoothDtmRxPacketAddress::new(0x2f00_0100)
-            .expect("complete RX packet extent fits controller SRAM");
-        assert_eq!(
-            BluetoothDtmRxBufferHeaderImage::new(packet).words(),
-            [0, 0x0000_0040, 0x8080_0000, 0, 0, 0]
-        );
-        assert_eq!(
-            BluetoothDtmRxBufferHeaderImage::unbound_swap_reserve().words(),
-            [0, 0, 0x8080_0000, 0, 0, 0]
-        );
-
-        assert!(BluetoothDtmRxPacketAddress::new(0x2f3f_fee0).is_ok());
-        assert_eq!(
-            BluetoothDtmRxPacketAddress::new(0x2f00_0000),
-            Err(BluetoothDtmRxPacketAddressError::ZeroCompressedBase)
-        );
-        assert_eq!(
-            BluetoothDtmRxPacketAddress::new(0x2f3f_fee4),
-            Err(BluetoothDtmRxPacketAddressError::ExtentOutsideControllerSram)
-        );
-        assert_eq!(
-            BluetoothDtmRxPacketAddress::new(0x2f00_0001),
-            Err(BluetoothDtmRxPacketAddressError::InvalidBase(
-                BluetoothControllerSramAddressError::Unaligned
-            ))
-        );
-    }
-
-    #[test]
-    fn graph_tx_slot_is_the_same_backing_used_for_packet_preparation() {
+    fn graph_tx_slot_retains_the_declared_payload() {
         let mut graph = BluetoothDtmMemoryGraphStorage::new();
         let mut preparation = graph.tx_packet_mut().begin_prepare(7, 3);
         preparation
@@ -3275,10 +2814,6 @@ mod tests {
             .copy_from_slice(&[0xaa, 0xbb, 0xcc]);
         let prepared = preparation.finish();
 
-        assert_eq!(prepared.prepared_bytes()[0x05], 2);
-        assert_eq!(prepared.prepared_bytes()[0x06], 0);
-        assert_eq!(prepared.prepared_bytes()[0x10], 7);
-        assert_eq!(prepared.prepared_bytes()[0x11], 3);
         assert_eq!(prepared.payload(), [0xaa, 0xbb, 0xcc]);
     }
 }

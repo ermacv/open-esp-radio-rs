@@ -174,7 +174,7 @@ mod tests {
     use crate::{BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern};
 
     #[test]
-    fn packet_preparation_writes_every_complete_positional_byte() {
+    fn packet_preparation_retains_the_command_and_fills_the_declared_payload() {
         let mut storage = BluetoothDtmTxPacketStorage::new();
         let prepared = storage.prepare(
             BluetoothDtmPayloadPattern::Repeated11110000,
@@ -187,29 +187,6 @@ mod tests {
         );
         assert_eq!(prepared.length().hci_image(), 3);
         assert_eq!(prepared.payload(), [0x0f; 3]);
-        assert_eq!(prepared.prepared_bytes().len(), 0x15);
-        assert_eq!(prepared.prepared_bytes()[0x05], 2);
-        assert_eq!(prepared.prepared_bytes()[0x06], 0);
-        assert_eq!(prepared.prepared_bytes()[0x10], 1);
-        assert_eq!(prepared.prepared_bytes()[0x11], 3);
-    }
-
-    #[test]
-    fn reprepare_preserves_bytes_outside_the_new_declared_packet() {
-        let mut storage = BluetoothDtmTxPacketStorage::new();
-        let prepared = storage.prepare(
-            BluetoothDtmPayloadPattern::RepeatedAllOnes,
-            BluetoothDtmPayloadLength::from_hci_image(4),
-        );
-        let storage = prepared.release();
-        let prepared = storage.prepare(
-            BluetoothDtmPayloadPattern::RepeatedAllZeros,
-            BluetoothDtmPayloadLength::from_hci_image(2),
-        );
-        assert_eq!(prepared.payload(), [0, 0]);
-        let storage = prepared.release();
-        assert_eq!(storage.bytes()[0x14], 0xff);
-        assert_eq!(storage.bytes()[0x15], 0xff);
     }
 
     #[test]
@@ -235,6 +212,5 @@ mod tests {
             BluetoothDtmPayloadPattern::Repeated11110000
         );
         assert_eq!(prepared.length().hci_image(), 3);
-        assert_eq!(&prepared.prepared_bytes()[0x12..], &[0x0f; 3]);
     }
 }

@@ -6,7 +6,8 @@
 //! intentionally sparse: static graph location, allocation-time links, the
 //! fixed DTM allocator prefix and the first empty-list item-link transform are
 //! bound. A matching affine PAC head-publication token can then consume every
-//! rollback image into a hardware-owned graph. An affine fenced finished-list
+//! rollback image into a controller-visible graph. The exact RUN proof then
+//! advances it to a running graph. An affine fenced finished-list
 //! observation can then drive one volatile semantic item-status read without
 //! granting CPU ownership. Matching empty-head and post-unlink removal proofs
 //! authorize the reviewed cleanup. RX-success additionally validates the
@@ -53,13 +54,13 @@ pub use dtm_storage::{
     BluetoothDtmMemoryGraphBindFailure, BluetoothDtmMemoryGraphBinding,
     BluetoothDtmMemoryGraphCompletionObservation, BluetoothDtmMemoryGraphCompletionObserved,
     BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphEmptyListLinkPrepared,
-    BluetoothDtmMemoryGraphHardwareOwned, BluetoothDtmMemoryGraphPositionalEventPrepared,
+    BluetoothDtmMemoryGraphHeadPublished, BluetoothDtmMemoryGraphPositionalEventPrepared,
     BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphPrepareFailure,
     BluetoothDtmMemoryGraphReclaimed, BluetoothDtmMemoryGraphRecycleCleaned,
     BluetoothDtmMemoryGraphRecycleError, BluetoothDtmMemoryGraphRecycleFailure,
     BluetoothDtmMemoryGraphRecyclePrepared, BluetoothDtmMemoryGraphRecycled,
-    BluetoothDtmMemoryGraphRxSuccessObserved, BluetoothDtmMemoryGraphRxSuccessRecycleError,
-    BluetoothDtmMemoryGraphRxSuccessRecycleFailure,
+    BluetoothDtmMemoryGraphRunning, BluetoothDtmMemoryGraphRxSuccessObserved,
+    BluetoothDtmMemoryGraphRxSuccessRecycleError, BluetoothDtmMemoryGraphRxSuccessRecycleFailure,
     BluetoothDtmMemoryGraphRxSuccessRecyclePrepared,
     BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared, BluetoothDtmMemoryGraphStorage,
     BluetoothDtmMemoryGraphTxPacketPrepared, BluetoothDtmPositionalEventSeed,

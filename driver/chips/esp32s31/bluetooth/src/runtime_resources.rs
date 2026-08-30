@@ -191,7 +191,7 @@ impl<const SCHEDULER_CAPACITY: usize>
     /// Advance one scheduler lock/modify transaction using the matching HAL
     /// task owner and exactly one interrupt-side observation.
     ///
-    /// This operation is finite. A hardware-owned wait returns to the caller;
+    /// This operation is finite. A controller-owned wait returns to the caller;
     /// no polling loop or executor-specific wake primitive is hidden here.
     #[cfg(target_arch = "riscv32")]
     pub fn step_scheduler_lock_modify(

@@ -25,7 +25,7 @@
 //! and RUN as one affine chain. A sampled sixteen-list finished mask can be
 //! drained one bit per bounded event step. The terminal Controller can also
 //! perform one fresh transfer and immediately join list zero to its exact
-//! running DTM epoch; a non-sentinel status advances to a hardware-owned
+//! running DTM epoch; a non-sentinel status advances to a completion-observed
 //! completion observation. A second affine operation performs the mandatory
 //! fresh post-picker head read and advances only after list zero is empty.
 //! The exact item can then leave the source-owned software list once. A sealed

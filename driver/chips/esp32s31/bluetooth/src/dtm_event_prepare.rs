@@ -3,8 +3,8 @@
 //! This layer combines already validated LLL transforms with the lower
 //! consuming memory transaction. The resulting state remains CPU-only and
 //! retains TX packet readiness where that role requires it. It does not prove
-//! list insertion, a visibility fence, a hardware latch or completion
-//! ownership.
+//! the remaining descriptor-consumption contract, list insertion, visibility
+//! fences or completion ownership.
 
 #![forbid(unsafe_code)]
 
@@ -24,7 +24,8 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
 };
 #[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_esp32s31_bluetooth_memory::{
-    BluetoothDtmMemoryGraphEmptyListLinkPrepared, BluetoothDtmMemoryGraphHardwareOwned,
+    BluetoothDtmMemoryGraphEmptyListLinkPrepared, BluetoothDtmMemoryGraphHeadPublished,
+    BluetoothDtmMemoryGraphRunning,
 };
 use open_esp_radio_esp32s31_hal::{
     BluetoothControllerSramAddress, BluetoothSchedulerHardwareListIndex,
@@ -32,7 +33,7 @@ use open_esp_radio_esp32s31_hal::{
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::{
     BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListHeadPublished,
-    BluetoothSchedulerSoftwareListRemovalReady,
+    BluetoothSchedulerHardwareRunCommandPublished, BluetoothSchedulerSoftwareListRemovalReady,
 };
 
 use crate::{
@@ -979,8 +980,8 @@ impl
 
 /// CPU-owned DTM graph after the reviewed scheduler bookkeeping prefix.
 ///
-/// The complete descriptor, common-scheduler insertion/merge transaction,
-/// private packet-engine latch and visibility fence are deliberately absent
+/// The remaining descriptor-consumption contract, common-scheduler
+/// insertion/merge transaction and visibility fence are deliberately absent
 /// from this state.
 #[must_use = "the scheduler-prepared DTM graph must remain owned or be cancelled"]
 pub(crate) struct BluetoothDtmSchedulerBookkeepingPrepared<Role, Phase>
@@ -1087,12 +1088,12 @@ where
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn into_hardware_owned(
+    pub(crate) fn into_head_published(
         self,
         publication: &BluetoothSchedulerHardwareListHeadPublished,
-    ) -> BluetoothDtmHardwareOwnedEvent<Role> {
+    ) -> BluetoothDtmHeadPublishedEvent<Role> {
         // The publication proof is the sole edge that may discard the
-        // pre-publication rollback phase. Hardware-owned events can no longer
+        // pre-publication rollback phase. Head-published events can no longer
         // cancel back into either the fresh or active CPU owner.
         let Self {
             memory,
@@ -1101,8 +1102,8 @@ where
             _reservation,
             _state: _,
         } = self;
-        BluetoothDtmHardwareOwnedEvent {
-            memory: memory.into_hardware_owned(publication),
+        BluetoothDtmHeadPublishedEvent {
+            memory: memory.into_head_published(publication),
             context,
             _reservation,
             _role: PhantomData,
@@ -1127,15 +1128,57 @@ where
 /// event with its exact affine PAC publication. It intentionally has no
 /// cancellation path or mutable access to controller-owned storage.
 #[cfg(any(target_arch = "riscv32", test))]
-pub(crate) struct BluetoothDtmHardwareOwnedEvent<Role> {
-    memory: BluetoothDtmMemoryGraphHardwareOwned,
+pub(crate) struct BluetoothDtmHeadPublishedEvent<Role> {
+    memory: BluetoothDtmMemoryGraphHeadPublished,
     context: BluetoothDtmEventContext,
     _reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
     _role: PhantomData<Role>,
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
-impl<Role> BluetoothDtmHardwareOwnedEvent<Role> {
+impl<Role> BluetoothDtmHeadPublishedEvent<Role> {
+    pub(crate) const fn role(&self) -> BluetoothDtmRole {
+        match &self.context {
+            BluetoothDtmEventContext::Transmitter(_) => BluetoothDtmRole::Transmitter,
+            BluetoothDtmEventContext::Receiver(_) => BluetoothDtmRole::Receiver,
+        }
+    }
+
+    pub(crate) const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.memory.scheduler_item_address()
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn into_running(
+        self,
+        run: &BluetoothSchedulerHardwareRunCommandPublished,
+    ) -> BluetoothDtmRunningEvent<Role> {
+        let Self {
+            memory,
+            context,
+            _reservation,
+            _role: _,
+        } = self;
+        BluetoothDtmRunningEvent {
+            memory: memory.into_running(run),
+            context,
+            _reservation,
+            _role: PhantomData,
+        }
+    }
+}
+
+/// Internal DTM event admitted through the complete scheduler RUN suffix.
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) struct BluetoothDtmRunningEvent<Role> {
+    memory: BluetoothDtmMemoryGraphRunning,
+    context: BluetoothDtmEventContext,
+    _reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+    _role: PhantomData<Role>,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl<Role> BluetoothDtmRunningEvent<Role> {
     pub(crate) const fn role(&self) -> BluetoothDtmRole {
         match &self.context {
             BluetoothDtmEventContext::Transmitter(_) => BluetoothDtmRole::Transmitter,
@@ -1151,7 +1194,7 @@ impl<Role> BluetoothDtmHardwareOwnedEvent<Role> {
     pub(crate) fn observe_completion(
         self,
         observed: BluetoothSchedulerFinishedHardwareListObserved,
-    ) -> BluetoothDtmHardwareOwnedEventCompletionObservation<Role> {
+    ) -> BluetoothDtmRunningEventCompletionObservation<Role> {
         let Self {
             memory,
             context,
@@ -1160,7 +1203,7 @@ impl<Role> BluetoothDtmHardwareOwnedEvent<Role> {
         } = self;
         match memory.observe_completion(observed) {
             BluetoothDtmMemoryGraphCompletionObservation::ListMismatch { owner, observed } => {
-                BluetoothDtmHardwareOwnedEventCompletionObservation::ListMismatch {
+                BluetoothDtmRunningEventCompletionObservation::ListMismatch {
                     item: Self {
                         memory: owner,
                         context,
@@ -1171,7 +1214,7 @@ impl<Role> BluetoothDtmHardwareOwnedEvent<Role> {
                 }
             }
             BluetoothDtmMemoryGraphCompletionObservation::StillInFlight(memory) => {
-                BluetoothDtmHardwareOwnedEventCompletionObservation::StillInFlight(Self {
+                BluetoothDtmRunningEventCompletionObservation::StillInFlight(Self {
                     memory,
                     context,
                     _reservation: reservation,
@@ -1179,7 +1222,7 @@ impl<Role> BluetoothDtmHardwareOwnedEvent<Role> {
                 })
             }
             BluetoothDtmMemoryGraphCompletionObservation::CompletionObserved(memory) => {
-                BluetoothDtmHardwareOwnedEventCompletionObservation::CompletionObserved(
+                BluetoothDtmRunningEventCompletionObservation::CompletionObserved(
                     BluetoothDtmCompletionObservedEvent {
                         memory,
                         context,
@@ -1193,12 +1236,12 @@ impl<Role> BluetoothDtmHardwareOwnedEvent<Role> {
 }
 
 #[cfg(target_arch = "riscv32")]
-pub(crate) enum BluetoothDtmHardwareOwnedEventCompletionObservation<Role> {
+pub(crate) enum BluetoothDtmRunningEventCompletionObservation<Role> {
     ListMismatch {
-        item: BluetoothDtmHardwareOwnedEvent<Role>,
+        item: BluetoothDtmRunningEvent<Role>,
         observed: BluetoothSchedulerFinishedHardwareListObserved,
     },
-    StillInFlight(BluetoothDtmHardwareOwnedEvent<Role>),
+    StillInFlight(BluetoothDtmRunningEvent<Role>),
     CompletionObserved(BluetoothDtmCompletionObservedEvent<Role>),
 }
 
@@ -1910,7 +1953,7 @@ mod tests {
             memory,
             facts,
             last_committed_window: committed_window,
-            status: BluetoothDtmSchedulerItemCompletionStatus::Success,
+            status: BluetoothDtmSchedulerItemCompletionStatus::Zero,
         };
         let event = BluetoothDtmSchedulerItemEvent::new_transmitter(
             channel(),
@@ -1942,7 +1985,7 @@ mod tests {
         assert_eq!(active.last_committed_window, committed_window);
         assert_eq!(
             active.status(),
-            BluetoothDtmSchedulerItemCompletionStatus::Success
+            BluetoothDtmSchedulerItemCompletionStatus::Zero
         );
         assert!(timeline.release(reservation).is_ok());
     }
@@ -2028,7 +2071,7 @@ mod tests {
                 facts: tx_facts,
                 event_window: tx_candidate,
             }),
-            status: BluetoothDtmSchedulerItemCompletionStatus::Success,
+            status: BluetoothDtmSchedulerItemCompletionStatus::Zero,
             _role: core::marker::PhantomData,
         };
         assert_eq!(recycled_tx.packet_pattern(), tx_facts.pattern);
@@ -2037,10 +2080,7 @@ mod tests {
         assert_eq!(tx.packet_pattern(), tx_facts.pattern);
         assert_eq!(tx.packet_length(), tx_facts.length);
         assert_eq!(tx.last_committed_window(), tx_candidate);
-        assert_eq!(
-            tx.status(),
-            BluetoothDtmSchedulerItemCompletionStatus::Success
-        );
+        assert_eq!(tx.status(), BluetoothDtmSchedulerItemCompletionStatus::Zero);
 
         let reset_rx =
             BluetoothDtmLinkStateReset::new(None, None, 0, 0, BluetoothDtmRole::Receiver)
@@ -2062,13 +2102,13 @@ mod tests {
                 session: crate::dtm_rx_completion::BluetoothDtmReceiverSession::new(),
                 event_window: BluetoothDtmRxCommittedWindow::Recurring(rx_candidate),
             }),
-            status: BluetoothDtmSchedulerItemCompletionStatus::Success,
+            status: BluetoothDtmSchedulerItemCompletionStatus::Zero,
             _role: core::marker::PhantomData,
         };
         assert_eq!(recycled_rx.role(), BluetoothDtmRole::Receiver);
         assert_eq!(
             recycled_rx.status(),
-            BluetoothDtmSchedulerItemCompletionStatus::Success
+            BluetoothDtmSchedulerItemCompletionStatus::Zero
         );
         let rx = recycled_rx.into_next();
         assert_eq!(
@@ -2095,7 +2135,7 @@ mod tests {
                 length: BluetoothDtmPayloadLength::from_hci_image(3),
             },
             last_committed_window: tx_window(),
-            status: BluetoothDtmSchedulerItemCompletionStatus::Success,
+            status: BluetoothDtmSchedulerItemCompletionStatus::Zero,
         };
         let ended = tx.into_test_ended();
         let stopping = crate::BluetoothDtmSessionStopping::new(ended);

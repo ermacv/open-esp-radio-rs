@@ -3,8 +3,8 @@
 use crate::BluetoothSchedulerSoftwareConfig;
 #[cfg(target_arch = "riscv32")]
 use crate::dtm_event_prepare::{
-    BluetoothDtmCompletionObservedEvent, BluetoothDtmHardwareOwnedEventCompletionObservation,
-    BluetoothDtmReviewedEventWordsPlan, BluetoothDtmSchedulerBookkeepingPrepared,
+    BluetoothDtmCompletionObservedEvent, BluetoothDtmReviewedEventWordsPlan,
+    BluetoothDtmRunningEventCompletionObservation, BluetoothDtmSchedulerBookkeepingPrepared,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 use crate::scheduler_timeline::{
@@ -16,8 +16,8 @@ use crate::{
     BluetoothControllerRuntimeResources, BluetoothDtmRole,
     controller_hal::BluetoothControllerHalInitialized,
     dtm_event_prepare::{
-        BluetoothDtmEmptyListLinkPrepared, BluetoothDtmHardwareOwnedEvent,
-        BluetoothDtmSchedulerItemPhase,
+        BluetoothDtmEmptyListLinkPrepared, BluetoothDtmHeadPublishedEvent,
+        BluetoothDtmRunningEvent, BluetoothDtmSchedulerItemPhase,
     },
     resources::{
         BluetoothInterruptBankOwner, BluetoothTaskResources, BluetoothTeardownPendingPlatform,
@@ -654,7 +654,7 @@ where
 /// scheduler event publication, RUN and completion ownership remain absent.
 #[must_use = "the published scheduler head must advance to RUN or fail-stop ownership"]
 pub struct BluetoothDtmSchedulerHeadPublished<Role> {
-    item: BluetoothDtmHardwareOwnedEvent<Role>,
+    item: BluetoothDtmHeadPublishedEvent<Role>,
     publication: BluetoothSchedulerHardwareListHeadPublished,
 }
 
@@ -678,7 +678,7 @@ impl<Role> BluetoothDtmSchedulerHeadPublished<Role> {
     pub(crate) fn into_parts(
         self,
     ) -> (
-        BluetoothDtmHardwareOwnedEvent<Role>,
+        BluetoothDtmHeadPublishedEvent<Role>,
         BluetoothSchedulerHardwareListHeadPublished,
     ) {
         (self.item, self.publication)
@@ -692,16 +692,17 @@ impl<Role> BluetoothDtmSchedulerHeadPublished<Role> {
 /// claim that the radio completed the item or that CPU access may resume.
 #[must_use = "the running DTM graph must advance through owned completion or quiescence"]
 pub struct BluetoothDtmSchedulerRunning<Role> {
-    item: BluetoothDtmHardwareOwnedEvent<Role>,
+    item: BluetoothDtmRunningEvent<Role>,
     run: BluetoothSchedulerHardwareRunCommandPublished,
 }
 
 impl<Role> BluetoothDtmSchedulerRunning<Role> {
     #[cfg(target_arch = "riscv32")]
-    pub(crate) const fn new(
-        item: BluetoothDtmHardwareOwnedEvent<Role>,
+    pub(crate) fn new(
+        item: BluetoothDtmHeadPublishedEvent<Role>,
         run: BluetoothSchedulerHardwareRunCommandPublished,
     ) -> Self {
+        let item = item.into_running(&run);
         Self { item, run }
     }
 
@@ -724,7 +725,7 @@ impl<Role> BluetoothDtmSchedulerRunning<Role> {
 /// DTM graph with a non-sentinel status observed after a fresh fenced transfer.
 ///
 /// The source-owned scheduler epoch remains occupied and the graph remains
-/// hardware-owned. This state does not expose packet memory, cancellation or
+/// controller-owned. This state does not expose packet memory, cancellation or
 /// reclamation before the hardware/software unlink path is completed.
 #[must_use = "the completion-observed graph must advance through unlink and recycle"]
 #[cfg(target_arch = "riscv32")]
@@ -2253,7 +2254,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
             self.task
                 .publish_scheduler_hardware_list_head(merged.hardware_list_index(), head)
         };
-        let item = merged.item.into_hardware_owned(&publication);
+        let item = merged.item.into_head_published(&publication);
         self._scheduler_list.retain_published_first_item(address);
         Ok(BluetoothDtmSchedulerHeadPublished { item, publication })
     }
@@ -2300,17 +2301,16 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
 
         let BluetoothDtmSchedulerRunning { item, run } = running;
         match item.observe_completion(observed) {
-            BluetoothDtmHardwareOwnedEventCompletionObservation::ListMismatch {
-                item,
-                observed,
-            } => BluetoothDtmSchedulerCompletionStep::UnrelatedList {
-                drain: BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(
-                    BluetoothDtmSchedulerRunning { item, run },
-                    more,
-                ),
-                observed,
-            },
-            BluetoothDtmHardwareOwnedEventCompletionObservation::StillInFlight(item) => {
+            BluetoothDtmRunningEventCompletionObservation::ListMismatch { item, observed } => {
+                BluetoothDtmSchedulerCompletionStep::UnrelatedList {
+                    drain: BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(
+                        BluetoothDtmSchedulerRunning { item, run },
+                        more,
+                    ),
+                    observed,
+                }
+            }
+            BluetoothDtmRunningEventCompletionObservation::StillInFlight(item) => {
                 BluetoothDtmSchedulerCompletionStep::StillInFlight(
                     BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(
                         BluetoothDtmSchedulerRunning { item, run },
@@ -2318,7 +2318,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
                     ),
                 )
             }
-            BluetoothDtmHardwareOwnedEventCompletionObservation::CompletionObserved(item) => {
+            BluetoothDtmRunningEventCompletionObservation::CompletionObserved(item) => {
                 self._scheduler_list
                     .retain_completion_observed_first_item(address);
                 BluetoothDtmSchedulerCompletionStep::CompletionObserved(
@@ -2360,17 +2360,16 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         let running = pending.into_owner();
         let BluetoothDtmSchedulerRunning { item, run } = running;
         match item.observe_completion(observed) {
-            BluetoothDtmHardwareOwnedEventCompletionObservation::ListMismatch {
-                item,
-                observed,
-            } => BluetoothDtmSchedulerRunningDrainStep::UnrelatedList {
-                drain: BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(
-                    BluetoothDtmSchedulerRunning { item, run },
-                    more,
-                ),
-                observed,
-            },
-            BluetoothDtmHardwareOwnedEventCompletionObservation::StillInFlight(item) => {
+            BluetoothDtmRunningEventCompletionObservation::ListMismatch { item, observed } => {
+                BluetoothDtmSchedulerRunningDrainStep::UnrelatedList {
+                    drain: BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(
+                        BluetoothDtmSchedulerRunning { item, run },
+                        more,
+                    ),
+                    observed,
+                }
+            }
+            BluetoothDtmRunningEventCompletionObservation::StillInFlight(item) => {
                 BluetoothDtmSchedulerRunningDrainStep::StillInFlight(
                     BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(
                         BluetoothDtmSchedulerRunning { item, run },
@@ -2378,7 +2377,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
                     ),
                 )
             }
-            BluetoothDtmHardwareOwnedEventCompletionObservation::CompletionObserved(item) => {
+            BluetoothDtmRunningEventCompletionObservation::CompletionObserved(item) => {
                 self._scheduler_list
                     .retain_completion_observed_first_item(address);
                 BluetoothDtmSchedulerRunningDrainStep::CompletionObserved(
@@ -2594,7 +2593,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
             return BluetoothDtmSchedulerRecycleStep::FinishedListDrainStillActive(ready);
         }
         if ready.role() == BluetoothDtmRole::Receiver
-            && ready.status() == BluetoothDtmSchedulerItemCompletionStatus::Success
+            && ready.status() == BluetoothDtmSchedulerItemCompletionStatus::Zero
         {
             return BluetoothDtmSchedulerRecycleStep::ReceiverSuccessRequiresSpecializedRecycle(
                 ready,
@@ -2650,7 +2649,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         if self.runtime.scheduler_finished_lists_mut().is_active() {
             return BluetoothDtmSchedulerRxSuccessRecycleStep::FinishedListDrainStillActive(ready);
         }
-        if ready.status() != BluetoothDtmSchedulerItemCompletionStatus::Success {
+        if ready.status() != BluetoothDtmSchedulerItemCompletionStatus::Zero {
             return BluetoothDtmSchedulerRxSuccessRecycleStep::CompletionStatusMismatch(ready);
         }
 

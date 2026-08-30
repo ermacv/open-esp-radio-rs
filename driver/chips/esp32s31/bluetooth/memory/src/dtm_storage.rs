@@ -6,7 +6,7 @@
 //! boundary. A target-only binding derives the real addresses of one static
 //! allocation, rejects storage outside physical internal SRAM and retains the
 //! allocation behind one movable owner. A matching affine PAC head-publication
-//! token consumes the last CPU rollback state into a hardware-owned graph.
+//! token consumes the last CPU rollback state into a controller-visible graph.
 //! Four-byte alignment is the minimum proven by compressed controller links;
 //! it is not a cache-coherency claim.
 
@@ -17,7 +17,8 @@ use core::{convert::Infallible, marker::PhantomPinned, num::NonZeroU32, pin::Pin
 use open_esp_radio_esp32s31_hal::{
     BluetoothControllerSramAddress, BluetoothControllerSramAddressError,
     BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerHardwareListHeadPublished,
-    BluetoothSchedulerHardwareListIndex, BluetoothSchedulerSoftwareListRemovalReady,
+    BluetoothSchedulerHardwareListIndex, BluetoothSchedulerHardwareRunCommandPublished,
+    BluetoothSchedulerSoftwareListRemovalReady,
 };
 use pin_project::pin_project;
 use vcell::VolatileCell;
@@ -613,7 +614,7 @@ impl Default for BluetoothDtmRxPacketStorage {
 ///
 /// Fields are private because the link relationships and publishable images
 /// belong to an address-bound owner. In particular, this value has no method
-/// that publishes a raw address or creates a `HardwareOwned` state.
+/// that publishes a raw address or creates a head-published state.
 #[pin_project]
 #[repr(C)]
 pub struct BluetoothDtmMemoryGraphStorage {
@@ -1134,10 +1135,10 @@ impl BluetoothDtmMemoryGraphEmptyListLinkPrepared {
     /// may already retain and mutate the graph, so cancellation and CPU-side
     /// preparation must no longer be expressible.
     #[doc(hidden)]
-    pub fn into_hardware_owned(
+    pub fn into_head_published(
         self,
         publication: &BluetoothSchedulerHardwareListHeadPublished,
-    ) -> BluetoothDtmMemoryGraphHardwareOwned {
+    ) -> BluetoothDtmMemoryGraphHeadPublished {
         assert_eq!(
             publication.index(),
             BluetoothSchedulerHardwareListIndex::ZERO,
@@ -1149,7 +1150,7 @@ impl BluetoothDtmMemoryGraphEmptyListLinkPrepared {
             "the published scheduler head must name the retained DTM graph"
         );
 
-        BluetoothDtmMemoryGraphHardwareOwned {
+        BluetoothDtmMemoryGraphHeadPublished {
             storage: self.storage,
             binding: self.binding,
         }
@@ -1183,14 +1184,70 @@ impl BluetoothDtmMemoryGraphEmptyListLinkPrepared {
 /// and installed this graph as hardware-list zero's head. This type exposes
 /// identity only: it grants neither CPU mutation nor completion visibility,
 /// and it has no cancellation or conversion back into a prepared owner.
-#[must_use = "the hardware-owned graph must advance through proven completion"]
-pub struct BluetoothDtmMemoryGraphHardwareOwned {
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmMemoryGraphHeadPublished;
+/// use open_esp_radio_esp32s31_hal::BluetoothSchedulerFinishedHardwareListObserved;
+///
+/// fn observe_before_run(
+///     graph: BluetoothDtmMemoryGraphHeadPublished,
+///     observed: BluetoothSchedulerFinishedHardwareListObserved,
+/// ) {
+///     graph.observe_completion(observed);
+/// }
+/// ```
+#[must_use = "the published graph must either reach RUN or remain fail-stop owned"]
+pub struct BluetoothDtmMemoryGraphHeadPublished {
     storage: Pin<&'static mut BluetoothDtmMemoryGraphStorage>,
     binding: BluetoothDtmMemoryGraphBinding,
 }
 
-impl BluetoothDtmMemoryGraphHardwareOwned {
-    /// Return the exact scheduler-item identity retained by hardware.
+impl BluetoothDtmMemoryGraphHeadPublished {
+    /// Return the exact scheduler-item identity visible through the list head.
+    pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
+        self.binding.scheduler_item_address().controller_address()
+    }
+
+    /// Consume the exact RUN proof and admit completion observation.
+    ///
+    /// Head publication alone only makes the graph controller-visible. This
+    /// transition requires the complete interrupt-preparation and RUN suffix
+    /// for the same list and head before hardware-written status can be read.
+    #[doc(hidden)]
+    pub fn into_running(
+        self,
+        run: &BluetoothSchedulerHardwareRunCommandPublished,
+    ) -> BluetoothDtmMemoryGraphRunning {
+        assert_eq!(
+            run.index(),
+            BluetoothSchedulerHardwareListIndex::ZERO,
+            "a DTM graph can only run on its fixed hardware list"
+        );
+        assert_eq!(
+            run.head().address(),
+            Some(self.scheduler_item_address()),
+            "the RUN proof must retain the published DTM graph"
+        );
+
+        BluetoothDtmMemoryGraphRunning {
+            storage: self.storage,
+            binding: self.binding,
+        }
+    }
+}
+
+/// Pinned DTM graph admitted through the complete scheduler RUN transaction.
+///
+/// This is the first memory state that may consume a fenced finished-list
+/// observation. It still exposes no CPU mutation or cancellation path.
+#[must_use = "the running graph must advance through proven completion"]
+pub struct BluetoothDtmMemoryGraphRunning {
+    storage: Pin<&'static mut BluetoothDtmMemoryGraphStorage>,
+    binding: BluetoothDtmMemoryGraphBinding,
+}
+
+impl BluetoothDtmMemoryGraphRunning {
+    /// Return the exact scheduler-item identity retained during execution.
     pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
         self.binding.scheduler_item_address().controller_address()
     }
@@ -1225,8 +1282,8 @@ impl BluetoothDtmMemoryGraphHardwareOwned {
             BluetoothDtmMemoryGraphCompletionObservation::StillInFlight(self)
         } else {
             let status = match NonZeroU32::new(status) {
-                None => BluetoothDtmSchedulerItemCompletionStatus::Success,
-                Some(status) => BluetoothDtmSchedulerItemCompletionStatus::NonSuccess(status),
+                None => BluetoothDtmSchedulerItemCompletionStatus::Zero,
+                Some(status) => BluetoothDtmSchedulerItemCompletionStatus::NonZero(status),
             };
             BluetoothDtmMemoryGraphCompletionObservation::CompletionObserved(
                 BluetoothDtmMemoryGraphCompletionObserved {
@@ -1241,10 +1298,10 @@ impl BluetoothDtmMemoryGraphHardwareOwned {
 /// Reviewed DTM interpretation of one non-sentinel scheduler-item status.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothDtmSchedulerItemCompletionStatus {
-    /// The role-specific accounting path accepts status zero.
-    Success,
-    /// Hardware completed the item with a nonzero status.
-    NonSuccess(NonZeroU32),
+    /// The role-specific accounting path accepts positional status zero.
+    Zero,
+    /// Hardware reported a positional nonzero status.
+    NonZero(NonZeroU32),
 }
 
 /// Hardware-owned graph after a non-sentinel status was observed.
@@ -1254,7 +1311,7 @@ pub enum BluetoothDtmSchedulerItemCompletionStatus {
 /// identity only and cannot reclaim, mutate or republish the graph.
 #[must_use = "completion observation must advance through unlink and recycle ownership"]
 pub struct BluetoothDtmMemoryGraphCompletionObserved {
-    owner: BluetoothDtmMemoryGraphHardwareOwned,
+    owner: BluetoothDtmMemoryGraphRunning,
     status: BluetoothDtmSchedulerItemCompletionStatus,
 }
 
@@ -1273,7 +1330,7 @@ impl BluetoothDtmMemoryGraphCompletionObserved {
     pub fn into_parts(
         self,
     ) -> (
-        BluetoothDtmMemoryGraphHardwareOwned,
+        BluetoothDtmMemoryGraphRunning,
         BluetoothDtmSchedulerItemCompletionStatus,
     ) {
         (self.owner, self.status)
@@ -1347,7 +1404,7 @@ impl BluetoothDtmMemoryGraphRecyclePrepared {
             removal: _,
         } = self;
         let BluetoothDtmMemoryGraphCompletionObserved { owner, status } = completed;
-        let BluetoothDtmMemoryGraphHardwareOwned {
+        let BluetoothDtmMemoryGraphRunning {
             mut storage,
             binding,
         } = owner;
@@ -1426,7 +1483,7 @@ impl BluetoothDtmRxRotationPlan {
     fn validate(
         recycle: &BluetoothDtmMemoryGraphRecyclePrepared,
     ) -> Result<Self, BluetoothDtmMemoryGraphRxSuccessRecycleError> {
-        if recycle.completed.status() != BluetoothDtmSchedulerItemCompletionStatus::Success {
+        if recycle.completed.status() != BluetoothDtmSchedulerItemCompletionStatus::Zero {
             return Err(BluetoothDtmMemoryGraphRxSuccessRecycleError::CompletionStatusMismatch);
         }
         let owner = &recycle.completed.owner;
@@ -1891,13 +1948,13 @@ impl BluetoothDtmMemoryGraphRecycled {
 pub enum BluetoothDtmMemoryGraphCompletionObservation {
     /// The token belongs to another list; neither owner was consumed.
     ListMismatch {
-        /// Unchanged DTM hardware owner.
-        owner: BluetoothDtmMemoryGraphHardwareOwned,
+        /// Unchanged running DTM owner.
+        owner: BluetoothDtmMemoryGraphRunning,
         /// Unchanged affine observation for its actual list owner.
         observed: BluetoothSchedulerFinishedHardwareListObserved,
     },
     /// List zero was observed but hardware still reports the in-flight sentinel.
-    StillInFlight(BluetoothDtmMemoryGraphHardwareOwned),
+    StillInFlight(BluetoothDtmMemoryGraphRunning),
     /// A non-sentinel status was observed after the transfer fence.
     CompletionObserved(BluetoothDtmMemoryGraphCompletionObserved),
 }
@@ -1905,8 +1962,8 @@ pub enum BluetoothDtmMemoryGraphCompletionObservation {
 /// Unique CPU owner of one statically located and allocation-initialized graph.
 ///
 /// This state is still unreachable by hardware. It contains no `arm`,
-/// `publish`, raw-pointer or `HardwareOwned` transition; the future LLL must
-/// first prove the private packet-engine latch and visibility fences.
+/// `publish`, raw-pointer or head-published transition; the future LLL must
+/// first prove the remaining descriptor contract and visibility fences.
 ///
 /// ```compile_fail
 /// use open_esp_radio_esp32s31_bluetooth_memory::{
@@ -1933,7 +1990,7 @@ pub struct BluetoothDtmMemoryGraphCpuOwned {
 /// static storage remains owned by this affine value, stays at the same bound
 /// address and is not dropped, unpinned or exposed for mutation. Construction
 /// is available only from [`BluetoothDtmMemoryGraphCpuOwned`], so a graph still
-/// in a prepared, hardware-owned, completion-observed or recycle-intermediate
+/// in a prepared, head-published, running, completion-observed or recycle-intermediate
 /// state cannot enter this edge.
 ///
 /// An upper Test End owner must first establish its scheduler, callback and
@@ -2380,10 +2437,10 @@ mod tests {
         BLUETOOTH_DTM_RX_PACKET_BYTES, BLUETOOTH_DTM_SCHEDULER_CONTEXT_BYTES,
         BLUETOOTH_DTM_SCHEDULER_ITEM_BYTES, BLUETOOTH_DTM_TX_PACKET_BYTES,
         BluetoothDtmLinkStateReviewedWords, BluetoothDtmMemoryGraphCompletionObservation,
-        BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphHardwareOwned,
-        BluetoothDtmMemoryGraphModelAddress, BluetoothDtmMemoryGraphPrepareError,
-        BluetoothDtmMemoryGraphRecycleCleaned, BluetoothDtmMemoryGraphRecycleError,
-        BluetoothDtmMemoryGraphRecyclePrepared, BluetoothDtmMemoryGraphRxSuccessObserved,
+        BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphModelAddress,
+        BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphRecycleCleaned,
+        BluetoothDtmMemoryGraphRecycleError, BluetoothDtmMemoryGraphRecyclePrepared,
+        BluetoothDtmMemoryGraphRunning, BluetoothDtmMemoryGraphRxSuccessObserved,
         BluetoothDtmMemoryGraphRxSuccessRecycleError, BluetoothDtmMemoryGraphStorage,
         BluetoothDtmPositionalEventSeed, BluetoothDtmPositionalEventWords,
         BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError,
@@ -2426,20 +2483,20 @@ mod tests {
             .expect("test graph fits physical controller SRAM")
     }
 
-    fn hardware_owner_with_status(base: u32, status: u32) -> BluetoothDtmMemoryGraphHardwareOwned {
-        hardware_owner_from_cpu(model_owner(base), status)
+    fn running_owner_with_status(base: u32, status: u32) -> BluetoothDtmMemoryGraphRunning {
+        running_owner_from_cpu(model_owner(base), status)
     }
 
-    fn hardware_owner_from_cpu(
+    fn running_owner_from_cpu(
         owner: BluetoothDtmMemoryGraphCpuOwned,
         status: u32,
-    ) -> BluetoothDtmMemoryGraphHardwareOwned {
+    ) -> BluetoothDtmMemoryGraphRunning {
         let prepared = owner
             .try_prepare_positional_event(|seed| Ok::<_, Infallible>(candidate_words(seed)))
             .expect("matching anchors prepare a CPU-owned image")
             .prepare_scheduler_bookkeeping()
             .prepare_empty_list_link();
-        let owner = BluetoothDtmMemoryGraphHardwareOwned {
+        let owner = BluetoothDtmMemoryGraphRunning {
             storage: prepared.storage,
             binding: prepared.binding,
         };
@@ -2453,7 +2510,7 @@ mod tests {
     }
 
     fn script_current_rx_tail_returned(
-        owner: &BluetoothDtmMemoryGraphHardwareOwned,
+        owner: &BluetoothDtmMemoryGraphRunning,
         result_word: u32,
         metadata: u16,
     ) {
@@ -2485,7 +2542,7 @@ mod tests {
     }
 
     fn rx_success_recycle_prepared(
-        owner: BluetoothDtmMemoryGraphHardwareOwned,
+        owner: BluetoothDtmMemoryGraphRunning,
     ) -> BluetoothDtmMemoryGraphRecyclePrepared {
         let completed = match owner.observe_completion(observed_list(0)) {
             BluetoothDtmMemoryGraphCompletionObservation::CompletionObserved(completed) => {
@@ -2622,7 +2679,7 @@ mod tests {
 
     #[test]
     fn completion_observation_preserves_owners_and_classifies_status() {
-        let owner = hardware_owner_with_status(0x2f00_1900, 0);
+        let owner = running_owner_with_status(0x2f00_1900, 0);
         let owner = match owner.observe_completion(observed_list(3)) {
             BluetoothDtmMemoryGraphCompletionObservation::ListMismatch { owner, .. } => owner,
             _ => panic!("another list cannot inspect the DTM item"),
@@ -2635,16 +2692,16 @@ mod tests {
         };
         assert_eq!(
             completed.status(),
-            BluetoothDtmSchedulerItemCompletionStatus::Success
+            BluetoothDtmSchedulerItemCompletionStatus::Zero
         );
 
-        let owner = hardware_owner_with_status(0x2f00_1d00, u32::MAX);
+        let owner = running_owner_with_status(0x2f00_1d00, u32::MAX);
         assert!(matches!(
             owner.observe_completion(observed_list(0)),
             BluetoothDtmMemoryGraphCompletionObservation::StillInFlight(_)
         ));
 
-        let owner = hardware_owner_with_status(0x2f00_2100, 7);
+        let owner = running_owner_with_status(0x2f00_2100, 7);
         let completed = match owner.observe_completion(observed_list(0)) {
             BluetoothDtmMemoryGraphCompletionObservation::CompletionObserved(completed) => {
                 completed
@@ -2653,7 +2710,7 @@ mod tests {
         };
         assert_eq!(
             completed.status(),
-            BluetoothDtmSchedulerItemCompletionStatus::NonSuccess(
+            BluetoothDtmSchedulerItemCompletionStatus::NonZero(
                 core::num::NonZeroU32::new(7).expect("seven is nonzero")
             )
         );
@@ -2661,7 +2718,7 @@ mod tests {
 
     #[test]
     fn recycle_is_lossless_before_commit_and_returns_a_reusable_cpu_graph() {
-        let owner = hardware_owner_with_status(0x2f00_2500, 7);
+        let owner = running_owner_with_status(0x2f00_2500, 7);
         let completed = match owner.observe_completion(observed_list(0)) {
             BluetoothDtmMemoryGraphCompletionObservation::CompletionObserved(completed) => {
                 completed
@@ -2684,7 +2741,7 @@ mod tests {
         let (completed, _wrong_removal) = failure.into_parts();
         assert_eq!(
             completed.status(),
-            BluetoothDtmSchedulerItemCompletionStatus::NonSuccess(
+            BluetoothDtmSchedulerItemCompletionStatus::NonZero(
                 core::num::NonZeroU32::new(7).expect("seven is nonzero")
             )
         );
@@ -2700,7 +2757,7 @@ mod tests {
         let (owner, status) = cleaned.into_cpu_owned().into_parts();
         assert_eq!(
             status,
-            BluetoothDtmSchedulerItemCompletionStatus::NonSuccess(
+            BluetoothDtmSchedulerItemCompletionStatus::NonZero(
                 core::num::NonZeroU32::new(7).expect("seven is nonzero")
             )
         );
@@ -2711,7 +2768,7 @@ mod tests {
 
     #[test]
     fn rx_success_without_a_returned_packet_recycles_for_a_later_event() {
-        let owner = hardware_owner_with_status(0x2f00_2900, 0);
+        let owner = running_owner_with_status(0x2f00_2900, 0);
         let prepared = rx_success_recycle_prepared(owner)
             .prepare_receiver_success()
             .expect("an incomplete initial tail is a valid empty RX result");
@@ -2719,7 +2776,7 @@ mod tests {
 
         assert_eq!(projection, None);
         let (owner, status) = cleaned.into_cpu_owned().into_parts();
-        assert_eq!(status, BluetoothDtmSchedulerItemCompletionStatus::Success);
+        assert_eq!(status, BluetoothDtmSchedulerItemCompletionStatus::Zero);
         let _prepared = owner
             .try_prepare_positional_event(|seed| Ok::<_, Infallible>(candidate_words(seed)))
             .expect("an empty RX completion leaves a reusable graph");
@@ -2727,7 +2784,7 @@ mod tests {
 
     #[test]
     fn rx_success_rotates_both_headers_across_recurring_events() {
-        let first = hardware_owner_with_status(0x2f00_2d00, 0);
+        let first = running_owner_with_status(0x2f00_2d00, 0);
         script_current_rx_tail_returned(&first, 0xa500_0000, 0);
         let (cleaned, first_projection) = commit_rx_observed(
             rx_success_recycle_prepared(first)
@@ -2741,7 +2798,7 @@ mod tests {
         );
 
         let (owner, _) = cleaned.into_cpu_owned().into_parts();
-        let second = hardware_owner_from_cpu(owner, 0);
+        let second = running_owner_from_cpu(owner, 0);
         script_current_rx_tail_returned(&second, 0x3100_0001, 7);
         let (cleaned, second_projection) = commit_rx_observed(
             rx_success_recycle_prepared(second)
@@ -2762,7 +2819,7 @@ mod tests {
 
     #[test]
     fn steady_empty_event_preserves_the_chain_for_the_next_return() {
-        let first = hardware_owner_with_status(0x2f00_3100, 0);
+        let first = running_owner_with_status(0x2f00_3100, 0);
         script_current_rx_tail_returned(&first, 0, 0);
         let (cleaned, _) = commit_rx_observed(
             rx_success_recycle_prepared(first)
@@ -2772,7 +2829,7 @@ mod tests {
         );
 
         let (owner, _) = cleaned.into_cpu_owned().into_parts();
-        let empty = hardware_owner_from_cpu(owner, 0);
+        let empty = running_owner_from_cpu(owner, 0);
         let (cleaned, projection) = commit_rx_observed(
             rx_success_recycle_prepared(empty)
                 .prepare_receiver_success()
@@ -2782,7 +2839,7 @@ mod tests {
         assert_eq!(projection, None);
 
         let (owner, _) = cleaned.into_cpu_owned().into_parts();
-        let returned = hardware_owner_from_cpu(owner, 0);
+        let returned = running_owner_from_cpu(owner, 0);
         script_current_rx_tail_returned(&returned, 0x4200_0000, 3);
         let (cleaned, projection) = commit_rx_observed(
             rx_success_recycle_prepared(returned)
@@ -2796,7 +2853,7 @@ mod tests {
 
     #[test]
     fn rx_success_sentinel_rejection_is_lossless() {
-        let owner = hardware_owner_with_status(0x2f00_3500, 0);
+        let owner = running_owner_with_status(0x2f00_3500, 0);
         script_current_rx_tail_returned(&owner, 0x00ff_ffff, 0);
         let prepared = rx_success_recycle_prepared(owner);
         let before = snapshot(prepared.completed.owner.storage.as_ref().get_ref());

@@ -287,8 +287,7 @@ pub use scheduler_lock_modify::{
 };
 #[cfg(any(target_arch = "riscv32", test))]
 pub use scheduler_timeline::{
-    BluetoothSchedulerOverlapResolved, BluetoothSchedulerRawWindow, BluetoothSchedulerReservation,
-    BluetoothSchedulerReservationError, BluetoothSchedulerReservationReleaseError,
-    BluetoothSchedulerReservationReleaseFailure, BluetoothSchedulerSequenceAuthorizationError,
-    BluetoothSchedulerSequenceAuthorizationFailure, BluetoothSchedulerSequenceReady,
+    BluetoothSchedulerRawWindow, BluetoothSchedulerReservation, BluetoothSchedulerReservationError,
+    BluetoothSchedulerReservationReleaseError, BluetoothSchedulerReservationReleaseFailure,
+    BluetoothSchedulerSequenceAuthorizationError, BluetoothSchedulerSequenceReady,
 };

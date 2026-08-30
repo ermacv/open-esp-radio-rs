@@ -433,12 +433,7 @@ mod tests {
 
         let reservation = resources
             .scheduler_timeline_mut()
-            .reserve_dtm_event(
-                event,
-                epoch,
-                timing_policy,
-                BluetoothControllerTimeSample::for_validation(0),
-            )
+            .reserve_recurring_dtm_event(event, epoch, timing_policy)
             .expect("one runtime-owned scheduler slot is free");
         assert!(!resources.is_pristine());
 

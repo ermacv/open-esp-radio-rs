@@ -44,8 +44,12 @@ are recorded in
 DTM admission ownership is now narrower than the table's historical summary:
 the terminal Controller is the sole owner of the bounded Timeline. Executor
 and task endpoints cannot reserve or release slots, and callers cannot build a
-raw epoch or event plan. Role-specific TX/RX admission performs both deadline
-gates, graph preparation and the first-item merge as one lossless operation.
+raw epoch or event plan. Initial TX/RX admission performs its admission and
+sequence deadline gates before graph preparation and the first-item merge.
+Recurring TX/RX has a distinct exact-window reservation phase and performs only
+the fresh sequence gate; it cannot fabricate or accept an initial-admission
+sample. An occupied recurring collision fails closed without displacement until
+the vendor removal policy has a reviewed affine model.
 Distinct initial and recurring RX-window types select the matching memory-codec
 phase; the first-event edge cannot accept a recurring window.
 

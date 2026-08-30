@@ -1118,7 +1118,8 @@ where
     ///
     /// The Controller forms the initial RX window and its scheduler anchor from
     /// the supplied margin and ordered current/RF-ready instants. Callers cannot
-    /// inject a prebuilt window or cross the separate recurring admission edge.
+    /// inject a prebuilt window or cross the separate recurring
+    /// sequence/preparation edge.
     #[expect(
         clippy::too_many_arguments,
         reason = "each typed input is a distinct reviewed DTM or fresh-time authority"
@@ -1163,7 +1164,6 @@ where
         owner: crate::BluetoothDtmActiveTransmitterCpuOwned,
         current: crate::BluetoothDtmSchedulerInstant,
         epoch_sample: crate::BluetoothControllerTimeSample,
-        admission_sample: crate::BluetoothControllerTimeSample,
         sequence_sample: crate::BluetoothControllerTimeSample,
     ) -> Result<
         crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmTransmitterEvent>,
@@ -1173,7 +1173,6 @@ where
             owner,
             current,
             epoch_sample,
-            admission_sample,
             sequence_sample,
         )
     }
@@ -1182,14 +1181,13 @@ where
     ///
     /// The active owner retains the immutable channel, PHY and margin. The
     /// Controller derives a recurring RX window only from the fresh current and
-    /// RF-ready instants supplied for this admission attempt.
+    /// RF-ready instants supplied for this sequence/preparation attempt.
     pub fn prepare_dtm_receiver_recurring_item(
         &mut self,
         owner: crate::BluetoothDtmActiveReceiverCpuOwned,
         current: crate::BluetoothDtmSchedulerInstant,
         rf_ready: crate::BluetoothDtmSchedulerInstant,
         epoch_sample: crate::BluetoothControllerTimeSample,
-        admission_sample: crate::BluetoothControllerTimeSample,
         sequence_sample: crate::BluetoothControllerTimeSample,
     ) -> Result<
         crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmReceiverEvent>,
@@ -1200,7 +1198,6 @@ where
             current,
             rf_ready,
             epoch_sample,
-            admission_sample,
             sequence_sample,
         )
     }

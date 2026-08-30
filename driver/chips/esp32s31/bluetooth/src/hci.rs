@@ -560,7 +560,6 @@ where
         owner: crate::BluetoothDtmActiveTransmitterCpuOwned,
         current: crate::BluetoothDtmSchedulerInstant,
         epoch_sample: crate::BluetoothControllerTimeSample,
-        admission_sample: crate::BluetoothControllerTimeSample,
         sequence_sample: crate::BluetoothControllerTimeSample,
     ) -> Result<
         crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmTransmitterEvent>,
@@ -568,13 +567,7 @@ where
     > {
         self.controller
             .scheduler
-            .prepare_dtm_transmitter_recurring_item(
-                owner,
-                current,
-                epoch_sample,
-                admission_sample,
-                sequence_sample,
-            )
+            .prepare_dtm_transmitter_recurring_item(owner, current, epoch_sample, sequence_sample)
     }
 
     #[cfg(target_arch = "riscv32")]
@@ -584,7 +577,6 @@ where
         current: crate::BluetoothDtmSchedulerInstant,
         rf_ready: crate::BluetoothDtmSchedulerInstant,
         epoch_sample: crate::BluetoothControllerTimeSample,
-        admission_sample: crate::BluetoothControllerTimeSample,
         sequence_sample: crate::BluetoothControllerTimeSample,
     ) -> Result<
         crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmReceiverEvent>,
@@ -597,7 +589,6 @@ where
                 current,
                 rf_ready,
                 epoch_sample,
-                admission_sample,
                 sequence_sample,
             )
     }

@@ -80,24 +80,30 @@ pub enum BluetoothSchedulerReservationError {
     WindowOutsideForwardHalfRange,
     /// Overlap displacement left the unambiguous forward half-domain.
     OverlapResolutionOutsideForwardHalfRange,
+    /// A recurring exact window collided with an occupied interval.
+    RecurringOverlapUnsupported,
     /// Every fixed reservation slot is occupied.
     TimelineFull,
     /// Reusing every free slot could make an old identity name a new item.
     GenerationExhausted,
 }
 
-/// Reservation state after strict overlap resolution.
+/// Initial-event reservation after the admission sample and overlap resolution.
 #[derive(Debug)]
-pub enum BluetoothSchedulerOverlapResolved {}
+pub(crate) enum BluetoothSchedulerInitialAdmissionResolved {}
 
-/// Reservation state after the post-overlap deadline remains open.
+/// Exact recurring-event reservation formed without initial admission or displacement.
+#[derive(Debug)]
+pub(crate) enum BluetoothSchedulerRecurringReserved {}
+
+/// Reservation state after the phase-appropriate sequence deadline remains open.
 #[derive(Debug)]
 pub enum BluetoothSchedulerSequenceReady {}
 
-/// Why a resolved reservation cannot authorize sequence-time formation.
+/// Why a retained reservation cannot authorize sequence-time formation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothSchedulerSequenceAuthorizationError {
-    /// The second fresh sample reached the guarded resolved start.
+    /// The fresh sequence sample reached the guarded retained start.
     DeadlineExpired,
 }
 
@@ -116,7 +122,7 @@ pub enum BluetoothSchedulerReservationReleaseError {
 /// scheduler lifecycle must return it to the same timeline on cancellation or
 /// completion.
 #[must_use = "the scheduler reservation must be retained until cancellation or completion"]
-pub struct BluetoothSchedulerReservation<State = BluetoothSchedulerOverlapResolved> {
+pub struct BluetoothSchedulerReservation<State> {
     slot: usize,
     generation: u32,
     window: BluetoothSchedulerRawWindow,
@@ -127,7 +133,7 @@ pub struct BluetoothSchedulerReservation<State = BluetoothSchedulerOverlapResolv
 }
 
 impl<State> BluetoothSchedulerReservation<State> {
-    /// Return the resolved raw-time window retained by this reservation.
+    /// Return the phase-bound raw-time window retained by this reservation.
     pub const fn window(&self) -> BluetoothSchedulerRawWindow {
         self.window
     }
@@ -206,27 +212,25 @@ impl<State> core::fmt::Debug for BluetoothSchedulerReservationReleaseFailure<Sta
     }
 }
 
-/// Rejected second deadline retaining the exact overlap reservation.
-pub struct BluetoothSchedulerSequenceAuthorizationFailure {
-    reservation: BluetoothSchedulerReservation<BluetoothSchedulerOverlapResolved>,
+/// Rejected sequence deadline retaining the exact pre-sequence reservation.
+pub(crate) struct BluetoothSchedulerSequenceAuthorizationFailure<State> {
+    reservation: BluetoothSchedulerReservation<State>,
     error: BluetoothSchedulerSequenceAuthorizationError,
 }
 
-impl BluetoothSchedulerSequenceAuthorizationFailure {
+impl<State> BluetoothSchedulerSequenceAuthorizationFailure<State> {
     /// Borrow the finite authorization failure reason.
-    pub const fn error(&self) -> BluetoothSchedulerSequenceAuthorizationError {
+    pub(crate) const fn error(&self) -> BluetoothSchedulerSequenceAuthorizationError {
         self.error
     }
 
-    /// Recover the unchanged overlap reservation for explicit release.
-    pub fn into_reservation(
-        self,
-    ) -> BluetoothSchedulerReservation<BluetoothSchedulerOverlapResolved> {
+    /// Recover the unchanged pre-sequence reservation for explicit release.
+    pub(crate) fn into_reservation(self) -> BluetoothSchedulerReservation<State> {
         self.reservation
     }
 }
 
-impl core::fmt::Debug for BluetoothSchedulerSequenceAuthorizationFailure {
+impl<State> core::fmt::Debug for BluetoothSchedulerSequenceAuthorizationFailure<State> {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         formatter
             .debug_struct("BluetoothSchedulerSequenceAuthorizationFailure")
@@ -235,35 +239,58 @@ impl core::fmt::Debug for BluetoothSchedulerSequenceAuthorizationFailure {
     }
 }
 
-impl BluetoothSchedulerReservation<BluetoothSchedulerOverlapResolved> {
-    /// Consume the second fresh time sample required after overlap traversal.
-    pub fn authorize_sequence(
+impl BluetoothSchedulerReservation<BluetoothSchedulerInitialAdmissionResolved> {
+    /// Consume the second fresh sample after initial admission and overlap traversal.
+    pub(crate) fn authorize_sequence(
         self,
         sample: BluetoothControllerTimeSample,
     ) -> Result<
         BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
-        BluetoothSchedulerSequenceAuthorizationFailure,
+        BluetoothSchedulerSequenceAuthorizationFailure<BluetoothSchedulerInitialAdmissionResolved>,
     > {
-        if !self
-            .timing_policy
-            .initial_deadline_is_open(sample, self.window.start)
-        {
-            return Err(BluetoothSchedulerSequenceAuthorizationFailure {
-                reservation: self,
-                error: BluetoothSchedulerSequenceAuthorizationError::DeadlineExpired,
-            });
-        }
-
-        Ok(BluetoothSchedulerReservation {
-            slot: self.slot,
-            generation: self.generation,
-            window: self.window,
-            event: self.event,
-            epoch: self.epoch,
-            timing_policy: self.timing_policy,
-            _state: PhantomData,
-        })
+        authorize_sequence(self, sample)
     }
+}
+
+impl BluetoothSchedulerReservation<BluetoothSchedulerRecurringReserved> {
+    /// Consume the sole fresh deadline sample used by recurring insertion.
+    pub(crate) fn authorize_sequence(
+        self,
+        sample: BluetoothControllerTimeSample,
+    ) -> Result<
+        BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+        BluetoothSchedulerSequenceAuthorizationFailure<BluetoothSchedulerRecurringReserved>,
+    > {
+        authorize_sequence(self, sample)
+    }
+}
+
+fn authorize_sequence<State>(
+    reservation: BluetoothSchedulerReservation<State>,
+    sample: BluetoothControllerTimeSample,
+) -> Result<
+    BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+    BluetoothSchedulerSequenceAuthorizationFailure<State>,
+> {
+    if !reservation
+        .timing_policy
+        .initial_deadline_is_open(sample, reservation.window.start)
+    {
+        return Err(BluetoothSchedulerSequenceAuthorizationFailure {
+            reservation,
+            error: BluetoothSchedulerSequenceAuthorizationError::DeadlineExpired,
+        });
+    }
+
+    Ok(BluetoothSchedulerReservation {
+        slot: reservation.slot,
+        generation: reservation.generation,
+        window: reservation.window,
+        event: reservation.event,
+        epoch: reservation.epoch,
+        timing_policy: reservation.timing_policy,
+        _state: PhantomData,
+    })
 }
 
 /// Bounded non-allocating owner of pending Bluetooth scheduler windows.
@@ -289,38 +316,66 @@ impl<const CAPACITY: usize> BluetoothSchedulerTimeline<CAPACITY> {
     /// The initial guarded deadline is checked before any overlap mutation.
     /// Each strict overlap moves the candidate to the occupied end while
     /// preserving its wrapping duration. Touching boundaries do not overlap.
-    pub(crate) fn reserve_dtm_event(
+    pub(crate) fn reserve_initial_dtm_event(
         &mut self,
         event: BluetoothDtmSchedulerItemEvent,
         epoch: BluetoothControllerSchedulerEpoch,
         timing_policy: BluetoothDtmSchedulerTimingPolicy,
         admission_sample: BluetoothControllerTimeSample,
-    ) -> Result<BluetoothSchedulerReservation, BluetoothSchedulerReservationError> {
-        self.reserve_raw_window(
+    ) -> Result<
+        BluetoothSchedulerReservation<BluetoothSchedulerInitialAdmissionResolved>,
+        BluetoothSchedulerReservationError,
+    > {
+        let raw_start = event.raw_start(epoch);
+        if !timing_policy.initial_deadline_is_open(admission_sample, raw_start) {
+            return Err(BluetoothSchedulerReservationError::InitialDeadlineExpired);
+        }
+        self.reserve_initial_raw_window(
+            raw_start,
+            event.raw_end(epoch),
+            event,
+            epoch,
+            timing_policy,
+        )
+    }
+
+    /// Reserve one exact recurring event without initial admission or displacement.
+    ///
+    /// The reviewed recurring helper bypasses the delay-if-overlap path. Until
+    /// its removal policy has an affine model, any occupied collision rejects
+    /// the candidate without changing either window.
+    pub(crate) fn reserve_recurring_dtm_event(
+        &mut self,
+        event: BluetoothDtmSchedulerItemEvent,
+        epoch: BluetoothControllerSchedulerEpoch,
+        timing_policy: BluetoothDtmSchedulerTimingPolicy,
+    ) -> Result<
+        BluetoothSchedulerReservation<BluetoothSchedulerRecurringReserved>,
+        BluetoothSchedulerReservationError,
+    > {
+        self.reserve_recurring_raw_window(
             event.raw_start(epoch),
             event.raw_end(epoch),
             event,
             epoch,
             timing_policy,
-            admission_sample,
         )
     }
 
-    fn reserve_raw_window(
+    fn reserve_initial_raw_window(
         &mut self,
         raw_start: u32,
         raw_end: u32,
         event: BluetoothDtmSchedulerItemEvent,
         epoch: BluetoothControllerSchedulerEpoch,
         timing_policy: BluetoothDtmSchedulerTimingPolicy,
-        admission_sample: BluetoothControllerTimeSample,
-    ) -> Result<BluetoothSchedulerReservation, BluetoothSchedulerReservationError> {
+    ) -> Result<
+        BluetoothSchedulerReservation<BluetoothSchedulerInitialAdmissionResolved>,
+        BluetoothSchedulerReservationError,
+    > {
         let Some(mut candidate) = BluetoothSchedulerRawWindow::new(raw_start, raw_end) else {
             return Err(BluetoothSchedulerReservationError::WindowOutsideForwardHalfRange);
         };
-        if !timing_policy.initial_deadline_is_open(admission_sample, raw_start) {
-            return Err(BluetoothSchedulerReservationError::InitialDeadlineExpired);
-        }
 
         let original_start = candidate.start;
         let mut displaced_by = [false; CAPACITY];
@@ -348,6 +403,40 @@ impl<const CAPACITY: usize> BluetoothSchedulerTimeline<CAPACITY> {
             }
         }
 
+        self.reserve_window(candidate, event, epoch, timing_policy)
+    }
+
+    fn reserve_recurring_raw_window(
+        &mut self,
+        raw_start: u32,
+        raw_end: u32,
+        event: BluetoothDtmSchedulerItemEvent,
+        epoch: BluetoothControllerSchedulerEpoch,
+        timing_policy: BluetoothDtmSchedulerTimingPolicy,
+    ) -> Result<
+        BluetoothSchedulerReservation<BluetoothSchedulerRecurringReserved>,
+        BluetoothSchedulerReservationError,
+    > {
+        let Some(candidate) = BluetoothSchedulerRawWindow::new(raw_start, raw_end) else {
+            return Err(BluetoothSchedulerReservationError::WindowOutsideForwardHalfRange);
+        };
+        if self.slots.iter().any(|slot| {
+            slot.window
+                .is_some_and(|occupied| candidate.strictly_overlaps(occupied))
+        }) {
+            return Err(BluetoothSchedulerReservationError::RecurringOverlapUnsupported);
+        }
+
+        self.reserve_window(candidate, event, epoch, timing_policy)
+    }
+
+    fn reserve_window<State>(
+        &mut self,
+        candidate: BluetoothSchedulerRawWindow,
+        event: BluetoothDtmSchedulerItemEvent,
+        epoch: BluetoothControllerSchedulerEpoch,
+        timing_policy: BluetoothDtmSchedulerTimingPolicy,
+    ) -> Result<BluetoothSchedulerReservation<State>, BluetoothSchedulerReservationError> {
         let mut generation_exhausted = false;
         for (slot_index, slot) in self.slots.iter_mut().enumerate() {
             if slot.window.is_some() {
@@ -440,13 +529,15 @@ mod tests {
     };
 
     use super::{
-        BluetoothSchedulerReservationError, BluetoothSchedulerReservationReleaseError,
-        BluetoothSchedulerTimeline, BluetoothSchedulerTimelineSlot,
+        BluetoothSchedulerInitialAdmissionResolved, BluetoothSchedulerRecurringReserved,
+        BluetoothSchedulerReservation, BluetoothSchedulerReservationError,
+        BluetoothSchedulerReservationReleaseError, BluetoothSchedulerTimeline,
+        BluetoothSchedulerTimelineSlot,
     };
     use crate::{
         BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample, BluetoothDtmChannel,
-        BluetoothDtmPhy, BluetoothDtmRxRecurringEventWindow, BluetoothDtmSchedulerInstant,
-        BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerMargin,
+        BluetoothDtmPhy, BluetoothDtmRxInitialEventWindow, BluetoothDtmRxRecurringEventWindow,
+        BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerMargin,
         BluetoothDtmSchedulerTimingPolicy, BluetoothSchedulerSoftwareConfig,
     };
 
@@ -482,8 +573,32 @@ mod tests {
         timeline: &mut BluetoothSchedulerTimeline<CAPACITY>,
         start: u32,
         end: u32,
-        now: u32,
-    ) -> Result<super::BluetoothSchedulerReservation, BluetoothSchedulerReservationError> {
+    ) -> Result<
+        BluetoothSchedulerReservation<BluetoothSchedulerInitialAdmissionResolved>,
+        BluetoothSchedulerReservationError,
+    > {
+        let epoch = BluetoothControllerSchedulerEpoch::new(sample(0), 0, scale());
+        let event = BluetoothDtmSchedulerItemEvent::new_initial_receiver(
+            BluetoothDtmChannel::new(0).expect("channel zero is valid"),
+            BluetoothDtmPhy::Le1M,
+            BluetoothDtmRxInitialEventWindow::new(
+                BluetoothDtmSchedulerInstant::from_image(0),
+                BluetoothDtmSchedulerInstant::from_image(0),
+                BluetoothDtmSchedulerMargin::from_image(0),
+            ),
+        )
+        .expect("placeholder event is valid");
+        timeline.reserve_initial_raw_window(start, end, event, epoch, timing_policy())
+    }
+
+    fn reserve_recurring_raw<const CAPACITY: usize>(
+        timeline: &mut BluetoothSchedulerTimeline<CAPACITY>,
+        start: u32,
+        end: u32,
+    ) -> Result<
+        BluetoothSchedulerReservation<BluetoothSchedulerRecurringReserved>,
+        BluetoothSchedulerReservationError,
+    > {
         let epoch = BluetoothControllerSchedulerEpoch::new(sample(0), 0, scale());
         let event = BluetoothDtmSchedulerItemEvent::new_recurring_receiver(
             BluetoothDtmChannel::new(0).expect("channel zero is valid"),
@@ -491,13 +606,13 @@ mod tests {
             receiver_window(0, 0, 0),
         )
         .expect("placeholder event is valid");
-        timeline.reserve_raw_window(start, end, event, epoch, timing_policy(), sample(now))
+        timeline.reserve_recurring_raw_window(start, end, event, epoch, timing_policy())
     }
 
     #[test]
     fn non_overlapping_window_keeps_its_position() {
         let mut timeline = BluetoothSchedulerTimeline::<2>::new();
-        let reservation = reserve_raw(&mut timeline, 30, 40, 0).expect("window is admissible");
+        let reservation = reserve_raw(&mut timeline, 30, 40).expect("window is admissible");
 
         assert_eq!(reservation.window().start(), 30);
         assert_eq!(reservation.window().end(), 40);
@@ -507,9 +622,9 @@ mod tests {
     #[test]
     fn overlap_chain_delays_once_per_occupied_interval_and_preserves_duration() {
         let mut timeline = BluetoothSchedulerTimeline::<3>::new();
-        let later = reserve_raw(&mut timeline, 40, 50, 0).expect("later window is admissible");
-        let _earlier = reserve_raw(&mut timeline, 20, 30, 0).expect("earlier window is admissible");
-        let delayed = reserve_raw(&mut timeline, 25, 45, 0).expect("overlaps are resolvable");
+        let later = reserve_raw(&mut timeline, 40, 50).expect("later window is admissible");
+        let _earlier = reserve_raw(&mut timeline, 20, 30).expect("earlier window is admissible");
+        let delayed = reserve_raw(&mut timeline, 25, 45).expect("overlaps are resolvable");
 
         assert_eq!(delayed.window().start(), 50);
         assert_eq!(delayed.window().end(), 70);
@@ -518,10 +633,38 @@ mod tests {
     }
 
     #[test]
+    fn recurring_collision_rejects_without_displacing_or_mutating_the_timeline() {
+        let mut timeline = BluetoothSchedulerTimeline::<3>::new();
+        let occupied = reserve_raw(&mut timeline, 20, 30).expect("first window is admissible");
+        let delayed = reserve_raw(&mut timeline, 25, 35)
+            .expect("initial overlap follows the bounded displacement path");
+
+        assert_eq!(delayed.window().start(), 30);
+        assert_eq!(delayed.window().end(), 40);
+        assert!(matches!(
+            reserve_recurring_raw(&mut timeline, 25, 35),
+            Err(BluetoothSchedulerReservationError::RecurringOverlapUnsupported)
+        ));
+        assert_eq!(occupied.window().start(), 20);
+        assert_eq!(occupied.window().end(), 30);
+        assert_eq!(delayed.window().start(), 30);
+        assert_eq!(delayed.window().end(), 40);
+
+        assert!(timeline.release(delayed).is_ok());
+        assert!(timeline.release(occupied).is_ok());
+        let recurring = reserve_recurring_raw(&mut timeline, 25, 35)
+            .expect("the rejected exact candidate did not occupy or move a slot");
+        assert_eq!(recurring.window().start(), 25);
+        assert_eq!(recurring.window().end(), 35);
+        assert!(timeline.release(recurring).is_ok());
+        assert!(timeline.is_empty());
+    }
+
+    #[test]
     fn touching_boundaries_do_not_overlap() {
         let mut timeline = BluetoothSchedulerTimeline::<2>::new();
-        let first = reserve_raw(&mut timeline, 20, 30, 0).expect("first window is admissible");
-        let second = reserve_raw(&mut timeline, 30, 40, 0).expect("touching window is admissible");
+        let first = reserve_raw(&mut timeline, 20, 30).expect("first window is admissible");
+        let second = reserve_raw(&mut timeline, 30, 40).expect("touching window is admissible");
 
         assert_eq!(first.window().end(), second.window().start());
     }
@@ -529,10 +672,9 @@ mod tests {
     #[test]
     fn overlap_resolution_preserves_wrapping_time_semantics() {
         let mut timeline = BluetoothSchedulerTimeline::<2>::new();
-        let now = u32::MAX - 30;
-        let occupied = reserve_raw(&mut timeline, u32::MAX - 15, u32::MAX - 5, now)
+        let occupied = reserve_raw(&mut timeline, u32::MAX - 15, u32::MAX - 5)
             .expect("occupied window is ahead across the wrapping epoch");
-        let delayed = reserve_raw(&mut timeline, u32::MAX - 19, u32::MAX - 10, now)
+        let delayed = reserve_raw(&mut timeline, u32::MAX - 19, u32::MAX - 10)
             .expect("wrapping overlap is resolvable");
 
         assert_eq!(delayed.window().start(), occupied.window().end());
@@ -543,10 +685,10 @@ mod tests {
     #[test]
     fn full_timeline_applies_backpressure_without_replacing_an_owner() {
         let mut timeline = BluetoothSchedulerTimeline::<1>::new();
-        let retained = reserve_raw(&mut timeline, 20, 30, 0).expect("one slot is free");
+        let retained = reserve_raw(&mut timeline, 20, 30).expect("one slot is free");
 
         assert!(matches!(
-            reserve_raw(&mut timeline, 40, 50, 0),
+            reserve_raw(&mut timeline, 40, 50),
             Err(BluetoothSchedulerReservationError::TimelineFull)
         ));
         assert_eq!(retained.window().start(), 20);
@@ -555,22 +697,21 @@ mod tests {
     #[test]
     fn release_reuses_storage_with_a_new_identity() {
         let mut timeline = BluetoothSchedulerTimeline::<1>::new();
-        let first = reserve_raw(&mut timeline, 20, 30, 0).expect("one slot is free");
+        let first = reserve_raw(&mut timeline, 20, 30).expect("one slot is free");
         let first_generation = first.generation();
         assert!(timeline.release(first).is_ok());
         assert!(timeline.is_empty());
 
-        let second = reserve_raw(&mut timeline, 40, 50, 0).expect("released slot is reusable");
+        let second = reserve_raw(&mut timeline, 40, 50).expect("released slot is reusable");
         assert_ne!(second.generation(), first_generation);
     }
 
     #[test]
     fn rejected_release_returns_the_exact_reservation_and_preserves_both_timelines() {
         let mut source = BluetoothSchedulerTimeline::<1>::new();
-        let reservation = reserve_raw(&mut source, 20, 30, 0).expect("source slot is available");
+        let reservation = reserve_raw(&mut source, 20, 30).expect("source slot is available");
         let mut other = BluetoothSchedulerTimeline::<1>::new();
-        let _other_reservation =
-            reserve_raw(&mut other, 40, 50, 0).expect("other slot is available");
+        let _other_reservation = reserve_raw(&mut other, 40, 50).expect("other slot is available");
 
         let failure = other
             .release(reservation)
@@ -587,15 +728,11 @@ mod tests {
     }
 
     #[test]
-    fn invalid_window_and_expired_guard_fail_before_occupying_storage() {
+    fn invalid_window_fails_before_occupying_storage() {
         let mut timeline = BluetoothSchedulerTimeline::<1>::new();
         assert!(matches!(
-            reserve_raw(&mut timeline, 20, 0x8000_0014, 0),
+            reserve_raw(&mut timeline, 20, 0x8000_0014),
             Err(BluetoothSchedulerReservationError::WindowOutsideForwardHalfRange)
-        ));
-        assert!(matches!(
-            reserve_raw(&mut timeline, 20, 30, 10),
-            Err(BluetoothSchedulerReservationError::InitialDeadlineExpired)
         ));
         assert!(timeline.is_empty());
     }
@@ -603,20 +740,66 @@ mod tests {
     #[test]
     fn dtm_event_uses_the_same_epoch_projected_window() {
         let epoch = BluetoothControllerSchedulerEpoch::new(sample(100), 1_000, scale());
-        let event = BluetoothDtmSchedulerItemEvent::new_recurring_receiver(
+        let event = BluetoothDtmSchedulerItemEvent::new_initial_receiver(
+            BluetoothDtmChannel::new(5).expect("channel is valid"),
+            BluetoothDtmPhy::Le1M,
+            BluetoothDtmRxInitialEventWindow::new(
+                BluetoothDtmSchedulerInstant::from_image(900),
+                BluetoothDtmSchedulerInstant::from_image(1_020),
+                BluetoothDtmSchedulerMargin::from_image(8),
+            ),
+        )
+        .expect("initial receiver event is valid");
+        let mut timeline = BluetoothSchedulerTimeline::<1>::new();
+
+        let reservation = timeline
+            .reserve_initial_dtm_event(event, epoch, timing_policy(), sample(92))
+            .expect("projected event passes its initial deadline");
+
+        assert_eq!(reservation.window().start(), 310);
+        assert_eq!(reservation.window().end(), 562);
+    }
+
+    #[test]
+    fn initial_admission_and_recurring_sequence_are_distinct_gates() {
+        let epoch = BluetoothControllerSchedulerEpoch::new(sample(100), 1_000, scale());
+        let initial_event = BluetoothDtmSchedulerItemEvent::new_initial_receiver(
+            BluetoothDtmChannel::new(5).expect("channel is valid"),
+            BluetoothDtmPhy::Le1M,
+            BluetoothDtmRxInitialEventWindow::new(
+                BluetoothDtmSchedulerInstant::from_image(900),
+                BluetoothDtmSchedulerInstant::from_image(1_020),
+                BluetoothDtmSchedulerMargin::from_image(8),
+            ),
+        )
+        .expect("initial receiver event is valid");
+        let recurring_event = BluetoothDtmSchedulerItemEvent::new_recurring_receiver(
             BluetoothDtmChannel::new(5).expect("channel is valid"),
             BluetoothDtmPhy::Le1M,
             receiver_window(900, 1_020, 8),
         )
-        .expect("receiver event is valid");
+        .expect("recurring receiver event is valid");
         let mut timeline = BluetoothSchedulerTimeline::<1>::new();
 
-        let reservation = timeline
-            .reserve_dtm_event(event, epoch, timing_policy(), sample(92))
-            .expect("projected event passes its initial deadline");
+        assert!(matches!(
+            timeline.reserve_initial_dtm_event(
+                initial_event,
+                epoch,
+                timing_policy(),
+                sample(1_000)
+            ),
+            Err(BluetoothSchedulerReservationError::InitialDeadlineExpired)
+        ));
+        assert!(timeline.is_empty());
 
-        assert_eq!(reservation.window().start(), 103);
-        assert_eq!(reservation.window().end(), 355);
+        let recurring = timeline
+            .reserve_recurring_dtm_event(recurring_event, epoch, timing_policy())
+            .expect("recurring reservation has no initial-admission sample");
+        let failure = recurring
+            .authorize_sequence(sample(1_000))
+            .expect_err("recurring insertion still requires its sequence sample");
+        assert!(timeline.release(failure.into_reservation()).is_ok());
+        assert!(timeline.is_empty());
     }
 
     #[test]
@@ -629,7 +812,7 @@ mod tests {
         };
 
         assert!(matches!(
-            reserve_raw(&mut timeline, 20, 30, 0),
+            reserve_raw(&mut timeline, 20, 30),
             Err(BluetoothSchedulerReservationError::GenerationExhausted)
         ));
         assert!(timeline.is_empty());

@@ -6,6 +6,8 @@ use crate::dtm_event_prepare::{
     BluetoothDtmCompletionObservedEvent, BluetoothDtmHardwareOwnedEventCompletionObservation,
     BluetoothDtmReviewedEventWordsPlan, BluetoothDtmSchedulerBookkeepingPrepared,
 };
+#[cfg(any(target_arch = "riscv32", test))]
+use crate::scheduler_timeline::BluetoothSchedulerSequenceAuthorizationFailure;
 use crate::{
     BluetoothControllerInterruptRuntime, BluetoothControllerPoweredTaskRuntime,
     BluetoothControllerRuntimeResources, BluetoothDtmRole,
@@ -246,7 +248,7 @@ pub enum BluetoothDtmControllerEventPreparationError {
     SchedulerItem(BluetoothDtmSchedulerItemEventError),
     /// The Controller-owned bounded timeline rejected the requested window.
     Reservation(BluetoothSchedulerReservationError),
-    /// The second fresh Controller-time sample closed the sequence gate.
+    /// The phase-appropriate fresh Controller-time sample closed the sequence gate.
     SequenceAuthorization(BluetoothSchedulerSequenceAuthorizationError),
     /// The bound SRAM graph rejected the positional event transaction.
     #[cfg(target_arch = "riscv32")]
@@ -978,7 +980,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     }
 
     #[cfg(any(target_arch = "riscv32", test))]
-    fn reserve_and_authorize_dtm_event(
+    fn reserve_and_authorize_initial_dtm_event(
         &mut self,
         event: BluetoothDtmSchedulerItemEvent,
         epoch_sample: BluetoothControllerTimeSample,
@@ -999,9 +1001,49 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         let reservation = self
             .runtime
             .scheduler_timeline_mut()
-            .reserve_dtm_event(event, epoch, timing_policy, admission_sample)
+            .reserve_initial_dtm_event(event, epoch, timing_policy, admission_sample)
             .map_err(BluetoothDtmControllerEventPreparationError::Reservation)?;
-        match reservation.authorize_sequence(sequence_sample) {
+        self.finish_dtm_sequence_authorization(reservation.authorize_sequence(sequence_sample))
+    }
+
+    #[cfg(any(target_arch = "riscv32", test))]
+    fn reserve_and_authorize_recurring_dtm_event(
+        &mut self,
+        event: BluetoothDtmSchedulerItemEvent,
+        epoch_sample: BluetoothControllerTimeSample,
+        scheduler_anchor: BluetoothDtmSchedulerInstant,
+        sequence_sample: BluetoothControllerTimeSample,
+    ) -> Result<
+        BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+        BluetoothDtmControllerEventPreparationError,
+    > {
+        let epoch = BluetoothControllerSchedulerEpoch::new(
+            epoch_sample,
+            scheduler_anchor.image(),
+            self.time_scale,
+        );
+        let timing_policy =
+            BluetoothDtmSchedulerTimingPolicy::from_scheduler_config(self.config, self.time_scale);
+        let reservation = self
+            .runtime
+            .scheduler_timeline_mut()
+            .reserve_recurring_dtm_event(event, epoch, timing_policy)
+            .map_err(BluetoothDtmControllerEventPreparationError::Reservation)?;
+        self.finish_dtm_sequence_authorization(reservation.authorize_sequence(sequence_sample))
+    }
+
+    #[cfg(any(target_arch = "riscv32", test))]
+    fn finish_dtm_sequence_authorization<State>(
+        &mut self,
+        result: Result<
+            BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+            BluetoothSchedulerSequenceAuthorizationFailure<State>,
+        >,
+    ) -> Result<
+        BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+        BluetoothDtmControllerEventPreparationError,
+    > {
+        match result {
             Ok(reservation) => Ok(reservation),
             Err(failure) => {
                 let error = failure.error();
@@ -1073,7 +1115,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
                 ));
             }
         };
-        let reservation = match self.reserve_and_authorize_dtm_event(
+        let reservation = match self.reserve_and_authorize_initial_dtm_event(
             event,
             epoch_sample,
             current,
@@ -1178,7 +1220,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
                 });
             }
         };
-        let reservation = match self.reserve_and_authorize_dtm_event(
+        let reservation = match self.reserve_and_authorize_initial_dtm_event(
             event,
             epoch_sample,
             current,
@@ -1242,7 +1284,6 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         owner: BluetoothDtmActiveTransmitterCpuOwned,
         current: BluetoothDtmSchedulerInstant,
         epoch_sample: BluetoothControllerTimeSample,
-        admission_sample: BluetoothControllerTimeSample,
         sequence_sample: BluetoothControllerTimeSample,
     ) -> Result<
         BluetoothDtmEmptySchedulerMergePrepared<BluetoothDtmTransmitterEvent>,
@@ -1265,11 +1306,10 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
                 });
             }
         };
-        let reservation = match self.reserve_and_authorize_dtm_event(
+        let reservation = match self.reserve_and_authorize_recurring_dtm_event(
             event,
             epoch_sample,
             current,
-            admission_sample,
             sequence_sample,
         ) {
             Ok(reservation) => reservation,
@@ -1332,7 +1372,6 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         current: BluetoothDtmSchedulerInstant,
         rf_ready: BluetoothDtmSchedulerInstant,
         epoch_sample: BluetoothControllerTimeSample,
-        admission_sample: BluetoothControllerTimeSample,
         sequence_sample: BluetoothControllerTimeSample,
     ) -> Result<
         BluetoothDtmEmptySchedulerMergePrepared<BluetoothDtmReceiverEvent>,
@@ -1353,11 +1392,10 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
                 });
             }
         };
-        let reservation = match self.reserve_and_authorize_dtm_event(
+        let reservation = match self.reserve_and_authorize_recurring_dtm_event(
             event,
             epoch_sample,
             current,
-            admission_sample,
             sequence_sample,
         ) {
             Ok(reservation) => reservation,
@@ -1990,8 +2028,9 @@ mod tests {
     use crate::{
         BluetoothClockedResources, BluetoothControllerRuntimeResources,
         BluetoothControllerTimeSample, BluetoothDtmChannel, BluetoothDtmPhy,
-        BluetoothDtmRxRecurringEventWindow, BluetoothDtmSchedulerInstant,
-        BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerMargin, BluetoothStopped,
+        BluetoothDtmRxInitialEventWindow, BluetoothDtmRxRecurringEventWindow,
+        BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerMargin,
+        BluetoothStopped,
     };
 
     use super::{
@@ -2130,11 +2169,53 @@ mod tests {
     }
 
     #[test]
-    fn rejected_sequence_gate_releases_the_controller_owned_reservation() {
+    fn rejected_initial_sequence_gate_releases_the_controller_owned_reservation() {
         struct AdmissionPlatform;
 
         let stopped =
             BluetoothStopped::from_hardware(AdmissionPlatform, RadioHardware::for_validation());
+        let (registers, platform) = stopped.into_parts();
+        let clocked = BluetoothClockedResources::for_validation(registers, platform);
+        let initialized = clocked.initialize_controller_hal_with(|_, _| {});
+        let mut scheduler =
+            initialized
+                .initialize_scheduler_for_validation(
+                    BluetoothControllerRuntimeResources::<1, 1>::new(),
+                );
+        let event = BluetoothDtmSchedulerItemEvent::new_initial_receiver(
+            BluetoothDtmChannel::new(5).expect("channel five is valid"),
+            BluetoothDtmPhy::Le1M,
+            BluetoothDtmRxInitialEventWindow::new(
+                BluetoothDtmSchedulerInstant::from_image(900),
+                BluetoothDtmSchedulerInstant::from_image(1_020),
+                BluetoothDtmSchedulerMargin::from_image(8),
+            ),
+        )
+        .expect("initial receiver event is role-valid");
+
+        let result = scheduler.reserve_and_authorize_initial_dtm_event(
+            event,
+            BluetoothControllerTimeSample::for_validation(100),
+            BluetoothDtmSchedulerInstant::from_image(1_000),
+            BluetoothControllerTimeSample::for_validation(92),
+            BluetoothControllerTimeSample::for_validation(1_000),
+        );
+
+        assert_eq!(
+            result.expect_err("the deliberately late second sample must fail"),
+            BluetoothDtmControllerEventPreparationError::SequenceAuthorization(
+                crate::BluetoothSchedulerSequenceAuthorizationError::DeadlineExpired,
+            )
+        );
+        assert!(scheduler.runtime_is_pristine());
+    }
+
+    #[test]
+    fn rejected_recurring_sequence_gate_releases_the_controller_owned_reservation() {
+        struct RecurringPlatform;
+
+        let stopped =
+            BluetoothStopped::from_hardware(RecurringPlatform, RadioHardware::for_validation());
         let (registers, platform) = stopped.into_parts();
         let clocked = BluetoothClockedResources::for_validation(registers, platform);
         let initialized = clocked.initialize_controller_hal_with(|_, _| {});
@@ -2155,16 +2236,15 @@ mod tests {
         )
         .expect("receiver event is role-valid");
 
-        let result = scheduler.reserve_and_authorize_dtm_event(
+        let result = scheduler.reserve_and_authorize_recurring_dtm_event(
             event,
             BluetoothControllerTimeSample::for_validation(100),
             BluetoothDtmSchedulerInstant::from_image(1_000),
-            BluetoothControllerTimeSample::for_validation(92),
             BluetoothControllerTimeSample::for_validation(1_000),
         );
 
         assert_eq!(
-            result.expect_err("the deliberately late second sample must fail"),
+            result.expect_err("the deliberately late sequence sample must fail"),
             BluetoothDtmControllerEventPreparationError::SequenceAuthorization(
                 crate::BluetoothSchedulerSequenceAuthorizationError::DeadlineExpired,
             )

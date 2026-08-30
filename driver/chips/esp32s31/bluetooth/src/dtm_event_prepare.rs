@@ -177,10 +177,11 @@ impl core::fmt::Debug for BluetoothDtmReviewedEventWordsPlanFailure {
 ///
 /// Private chain links are deliberately absent from plan identity. They are
 /// replaced inside `prepare` with fresh links sampled from the consumed graph.
-/// Construction consumes an affine reservation that already passed strict
-/// overlap resolution and both fresh Controller-time deadline gates. Sequence
-/// timing can therefore only be formed from the resolved window retained by
-/// that reservation.
+/// Construction consumes an affine reservation that already passed its
+/// phase-specific pre-sequence policy and fresh Controller-time sequence gate.
+/// Initial insertion includes admission and bounded overlap displacement;
+/// recurring insertion retains its exact collision-free window. Sequence timing
+/// can therefore only be formed from the window retained by that reservation.
 pub(crate) struct BluetoothDtmReviewedEventWordsPlan<Role> {
     link_state: BluetoothDtmLinkStateReset,
     reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
@@ -226,7 +227,7 @@ impl<Role> BluetoothDtmReviewedEventWordsPlan<Role> {
         let current = seed.words();
         let event = self.reservation.event();
         let epoch = self.reservation.epoch();
-        let resolved_window = self.reservation.window();
+        let retained_window = self.reservation.window();
         let link_state = self
             .link_state
             .with_private_links(seed.tx_head(), seed.rx_tail())
@@ -234,8 +235,8 @@ impl<Role> BluetoothDtmReviewedEventWordsPlan<Role> {
             .apply_event_context(self.link_state.role(), epoch.raw_time_for_scheduler_time(0));
         let scheduler_item = event.apply_raw_window(
             current.scheduler_item(),
-            resolved_window.start(),
-            resolved_window.end(),
+            retained_window.start(),
+            retained_window.end(),
         );
         let scheduler_item = apply_overlap_insertion_power(scheduler_item, link_state)
             .apply_sequence_timing(self.reservation.timing_policy().sequence_lead_raw_delta());
@@ -1656,18 +1657,29 @@ mod tests {
         timeline: &mut BluetoothSchedulerTimeline<CAPACITY>,
         role: BluetoothDtmRole,
     ) -> BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady> {
-        reservation_for_event(timeline, item(role))
+        initial_reservation_for_event(timeline, item(role))
     }
 
-    fn reservation_for_event<const CAPACITY: usize>(
+    fn initial_reservation_for_event<const CAPACITY: usize>(
         timeline: &mut BluetoothSchedulerTimeline<CAPACITY>,
         event: BluetoothDtmSchedulerItemEvent,
     ) -> BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady> {
         timeline
-            .reserve_dtm_event(event, epoch(), timing_policy(), admission_sample())
+            .reserve_initial_dtm_event(event, epoch(), timing_policy(), admission_sample())
             .expect("the first guarded deadline is open")
             .authorize_sequence(admission_sample())
-            .expect("the second guarded deadline is open")
+            .expect("the initial sequence deadline is open")
+    }
+
+    fn recurring_reservation_for_event<const CAPACITY: usize>(
+        timeline: &mut BluetoothSchedulerTimeline<CAPACITY>,
+        event: BluetoothDtmSchedulerItemEvent,
+    ) -> BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady> {
+        timeline
+            .reserve_recurring_dtm_event(event, epoch(), timing_policy())
+            .expect("the exact recurring window is collision-free")
+            .authorize_sequence(admission_sample())
+            .expect("the sole recurring sequence deadline is open")
     }
 
     #[test]
@@ -1745,7 +1757,7 @@ mod tests {
     }
 
     #[test]
-    fn recurring_tx_cancellation_restores_the_last_committed_owner() {
+    fn recurring_tx_sequence_ready_reservation_enters_plan_and_cancels_losslessly() {
         let mut timeline = BluetoothSchedulerTimeline::<1>::new();
         let reset =
             BluetoothDtmLinkStateReset::new(None, None, 0, 0, BluetoothDtmRole::Transmitter)
@@ -1786,7 +1798,7 @@ mod tests {
         .expect("TX event accepts LE 2M");
         let plan = BluetoothDtmReviewedEventWordsPlan::new_transmitter(
             reset,
-            reservation_for_event(&mut timeline, event),
+            recurring_reservation_for_event(&mut timeline, event),
         )
         .expect("both transforms encode TX");
 
@@ -1843,7 +1855,7 @@ mod tests {
         .expect("RX event accepts LE Coded");
         let plan = BluetoothDtmReviewedEventWordsPlan::new_receiver(
             reset,
-            reservation_for_event(&mut timeline, event),
+            recurring_reservation_for_event(&mut timeline, event),
         )
         .expect("both transforms encode RX");
 
@@ -2036,7 +2048,7 @@ mod tests {
     fn sequence_authorization_rejects_the_second_guarded_deadline() {
         let mut timeline = BluetoothSchedulerTimeline::<1>::new();
         let reservation = timeline
-            .reserve_dtm_event(
+            .reserve_initial_dtm_event(
                 item(BluetoothDtmRole::Receiver),
                 epoch(),
                 timing_policy(),

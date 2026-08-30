@@ -133,19 +133,28 @@ word changes solely because of this phase; the timing words change because the
 two phase-specific window policies differ.
 
 The timeline is retained by the powered Controller runtime with an independent
-capacity; neither executor nor task endpoints can borrow it mutably. Its
-retained timing policy consumes the first fresh Controller-time sample and
-rejects a start at or before the guarded current time, matching the initial
-deadline gate at the top of complete `r_btdm_sched_check_overlap_in_list`.
-The timeline preserves duration while moving a candidate after every occupied
-interval, treats touching boundaries as disjoint and applies bounded
-backpressure without importing controller-SRAM links. The resolved affine
-owner then consumes the second fresh sample and applies the identical guarded
-check from `r_btdm_sched_calc_seq_time`; failure returns that owner for
-explicit release. Only the resulting sequence-ready typestate can enter a DTM
-plan, which forms both sequence words from the resolved window and retains the
-reservation through graph and bookkeeping preparation. Before common
-scheduler bookkeeping,
+capacity; neither executor nor task endpoints can borrow it mutably. Initial
+event admission consumes one fresh Controller-time sample and rejects a start
+at or before the guarded current time, matching the deadline gate at the top of
+complete `r_btdm_sched_check_overlap_in_list`. Initial insertion preserves
+duration while moving a candidate after every occupied interval, treats
+touching boundaries as disjoint and applies bounded backpressure without
+importing controller-SRAM links. The resolved initial owner then consumes a
+second fresh sample and applies the guarded check from
+`r_btdm_sched_calc_seq_time`.
+Complete recurring helper `r_sym_ble_huwoa5WRTRrAierQfN3B.part.1` instead
+enters `r_sched_txn_rmOverlapInsert` directly without the initial
+`r_sched_txn_delayIfOverlap` call, so its distinct recurring reservation
+consumes only the fresh sequence sample. No admission sample is fabricated for
+either recurring role. The open recurring path retains the exact raw window and
+rejects an occupied collision without mutation until the vendor removal policy
+has a reviewed affine model; it never borrows initial displacement semantics. A
+rejected sequence gate returns either exact phase owner for explicit release.
+Only the resulting common sequence-ready typestate
+can enter a DTM plan, which forms both sequence words from the phase-bound
+retained window and retains the reservation through graph and bookkeeping
+preparation. Before
+common scheduler bookkeeping,
 complete current `r_sym_ble_iHRqSCIgChmgSHj5W8W3` and named same-chip
 `r_sched_txn_rmOverlapInsert` copy the link-state five-bit rounded-power image
 into scheduler-item bits 24:20 while clearing bits 27:25; the composed Rust

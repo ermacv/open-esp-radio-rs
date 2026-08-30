@@ -161,6 +161,10 @@ impl<const SCHEDULER_CAPACITY: usize> BluetoothControllerTaskRuntime<'_, SCHEDUL
 pub struct BluetoothControllerPoweredTaskRuntime<'runtime, const SCHEDULER_CAPACITY: usize = 4> {
     pub(crate) runtime: BluetoothControllerTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
     pub(crate) task: &'runtime mut BluetoothTaskResources,
+    pub(crate) time_scale: open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale,
+    pub(crate) _standalone_always_awake:
+        &'runtime crate::controller_hal::BluetoothStandaloneAlwaysAwake,
+    pub(crate) config: crate::BluetoothSchedulerSoftwareConfig,
     pub(crate) _scheduler_list: &'runtime mut BluetoothSchedulerExclusiveListEpoch,
 }
 
@@ -171,11 +175,17 @@ impl<const SCHEDULER_CAPACITY: usize>
     pub(crate) const fn new<'runtime>(
         runtime: BluetoothControllerTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
         task: &'runtime mut BluetoothTaskResources,
+        time_scale: open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale,
+        standalone_always_awake: &'runtime crate::controller_hal::BluetoothStandaloneAlwaysAwake,
+        config: crate::BluetoothSchedulerSoftwareConfig,
         scheduler_list: &'runtime mut BluetoothSchedulerExclusiveListEpoch,
     ) -> BluetoothControllerPoweredTaskRuntime<'runtime, SCHEDULER_CAPACITY> {
         BluetoothControllerPoweredTaskRuntime {
             runtime,
             task,
+            time_scale,
+            _standalone_always_awake: standalone_always_awake,
+            config,
             _scheduler_list: scheduler_list,
         }
     }
@@ -190,6 +200,14 @@ impl<const SCHEDULER_CAPACITY: usize>
     #[cfg(test)]
     pub(crate) const fn controller_time_needs_recheck(&self) -> bool {
         self.task.controller_time_needs_recheck()
+    }
+
+    /// Scheduler time scale retained by this exact powered Controller epoch.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) const fn controller_time_scale(
+        &self,
+    ) -> open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale {
+        self.time_scale
     }
 
     /// Durable general scheduler handoff for this epoch.
@@ -301,13 +319,6 @@ impl<const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     /// Number of fixed software scheduler slots owned by this epoch.
     pub const fn scheduler_capacity(&self) -> usize {
         SCHEDULER_CAPACITY
-    }
-
-    #[cfg(any(target_arch = "riscv32", test))]
-    pub(crate) fn scheduler_timeline_mut(
-        &mut self,
-    ) -> &mut BluetoothSchedulerTimeline<SCHEDULER_CAPACITY> {
-        &mut self.scheduler_timeline
     }
 
     /// Whether no event, request, completion drain or timer has entered this
@@ -452,7 +463,7 @@ mod tests {
         assert!(!task.scheduler_finished_lists().is_active());
         assert!(task.scheduler_timeline_mut().is_empty());
         drop((interrupt, task));
-        assert!(resources.scheduler_timeline_mut().is_empty());
+        assert!(resources.is_pristine());
     }
 
     #[test]
@@ -479,18 +490,15 @@ mod tests {
             scale,
         );
 
-        let reservation = resources
+        let (interrupt, mut task) = resources.split();
+        let reservation = task
             .scheduler_timeline_mut()
             .reserve_recurring_dtm_event(event, epoch, timing_policy)
             .expect("one runtime-owned scheduler slot is free");
-        assert!(!resources.is_pristine());
+        assert!(!task.scheduler_timeline_mut().is_empty());
 
-        assert!(
-            resources
-                .scheduler_timeline_mut()
-                .release(reservation)
-                .is_ok()
-        );
+        assert!(task.scheduler_timeline_mut().release(reservation).is_ok());
+        drop((interrupt, task));
         assert!(resources.is_pristine());
     }
 }

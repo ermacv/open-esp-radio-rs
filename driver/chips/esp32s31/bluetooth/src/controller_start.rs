@@ -533,6 +533,8 @@ pub struct BluetoothControllerPublishedTaskService<'runtime, S, const SCHEDULER_
     storage: &'runtime S,
     runtime: BluetoothControllerPoweredTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
     mailbox: &'runtime BluetoothDtmPostUnlinkMailbox,
+    rf_ready: crate::ble_phy::BluetoothDtmRfReadyAuthority,
+    scheduler_epoch: &'runtime mut Option<crate::BluetoothControllerSchedulerEpoch>,
 }
 
 /// Why an affine post-enable controller-time acquisition did not start.
@@ -723,28 +725,12 @@ pub enum BluetoothControllerTimeOrphanDrainStep {
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothAlwaysAwakePostEnableTimePending<
     'controller,
-    P,
-    M,
+    'runtime,
     S,
-    const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> where
-    M: RawMutex,
-{
+> {
     core: BluetoothControllerTimePendingCore<
-        &'controller mut BluetoothControllerInterruptOwnersPublished<
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
+        &'controller mut BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
     >,
 }
 
@@ -758,27 +744,12 @@ pub struct BluetoothAlwaysAwakePostEnableTimePending<
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothAlwaysAwakeTimeObservedAfterEnable<
     'controller,
-    P,
-    M,
+    'runtime,
     S,
-    const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> where
-    M: RawMutex,
-{
-    controller: &'controller mut BluetoothControllerInterruptOwnersPublished<
-        P,
-        M,
-        S,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >,
+> {
+    controller:
+        &'controller mut BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
     sample: crate::BluetoothControllerTimeSample,
 }
 
@@ -794,27 +765,12 @@ pub struct BluetoothAlwaysAwakeTimeObservedAfterEnable<
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothControllerSchedulerNowReady<
     'controller,
-    P,
-    M,
+    'runtime,
     S,
-    const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> where
-    M: RawMutex,
-{
-    controller: &'controller mut BluetoothControllerInterruptOwnersPublished<
-        P,
-        M,
-        S,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >,
+> {
+    controller:
+        &'controller mut BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
     epoch: crate::BluetoothControllerSchedulerEpoch,
     sample: crate::BluetoothControllerTimeSample,
 }
@@ -828,27 +784,12 @@ pub struct BluetoothControllerSchedulerNowReady<
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothControllerSchedulerEpochRetained<
     'controller,
-    P,
-    M,
+    'runtime,
     S,
-    const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> where
-    M: RawMutex,
-{
-    controller: &'controller mut BluetoothControllerInterruptOwnersPublished<
-        P,
-        M,
-        S,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >,
+> {
+    controller:
+        &'controller mut BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
 }
 
 /// One exact in-flight fresh scheduler-current acquisition.
@@ -862,28 +803,12 @@ pub struct BluetoothControllerSchedulerEpochRetained<
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothControllerSchedulerCurrentPending<
     'operation,
-    P,
-    M,
+    'runtime,
     S,
-    const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> where
-    M: RawMutex,
-{
+> {
     core: BluetoothControllerTimePendingCore<
-        &'operation mut BluetoothControllerInterruptOwnersPublished<
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
+        &'operation mut BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
     >,
     epoch: crate::BluetoothControllerSchedulerEpoch,
 }
@@ -893,45 +818,16 @@ pub struct BluetoothControllerSchedulerCurrentPending<
 #[cfg(target_arch = "riscv32")]
 pub enum BluetoothControllerSchedulerCurrentStep<
     'operation,
-    P,
-    M,
+    'runtime,
     S,
-    const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> where
-    M: RawMutex,
-{
+> {
     /// Hardware still owns the exact request and Controller reborrow.
     Waiting(
-        BluetoothControllerSchedulerCurrentPending<
-            'operation,
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
+        BluetoothControllerSchedulerCurrentPending<'operation, 'runtime, S, SCHEDULER_CAPACITY>,
     ),
     /// The exact request completed with one private epoch-bound sample.
-    Ready(
-        BluetoothControllerSchedulerNowReady<
-            'operation,
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
-    ),
+    Ready(BluetoothControllerSchedulerNowReady<'operation, 'runtime, S, SCHEDULER_CAPACITY>),
 }
 
 /// Terminal result of one source-ordered DTM preparation transaction.
@@ -1020,27 +916,12 @@ enum BluetoothDtmControllerPreparationPhase {
 #[cfg(target_arch = "riscv32")]
 struct BluetoothDtmControllerPreparationTimeOwner<
     'controller,
-    P,
-    M,
+    'runtime,
     S,
-    const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> where
-    M: RawMutex,
-{
-    controller: &'controller mut BluetoothControllerInterruptOwnersPublished<
-        P,
-        M,
-        S,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >,
+> {
+    controller:
+        &'controller mut BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
     phase: Option<BluetoothDtmControllerPreparationPhase>,
     cancelled: Option<BluetoothDtmControllerPreparationOutcome>,
 }
@@ -1056,29 +937,12 @@ struct BluetoothDtmControllerPreparationTimeOwner<
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothDtmControllerPreparationPending<
     'controller,
-    P,
-    M,
+    'runtime,
     S,
-    const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> where
-    M: RawMutex,
-{
+> {
     core: BluetoothControllerTimePendingCore<
-        BluetoothDtmControllerPreparationTimeOwner<
-            'controller,
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
+        BluetoothDtmControllerPreparationTimeOwner<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
     >,
 }
 
@@ -1087,28 +951,12 @@ pub struct BluetoothDtmControllerPreparationPending<
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothDtmControllerPreparationTerminal<
     'controller,
-    P,
-    M,
+    'runtime,
     S,
-    const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> where
-    M: RawMutex,
-{
-    controller: BluetoothControllerSchedulerEpochRetained<
-        'controller,
-        P,
-        M,
-        S,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >,
+> {
+    controller:
+        BluetoothControllerSchedulerEpochRetained<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
     outcome: BluetoothDtmControllerPreparationOutcome,
 }
 
@@ -1121,44 +969,15 @@ pub struct BluetoothDtmControllerPreparationTerminal<
 )]
 pub enum BluetoothDtmControllerPreparationStep<
     'controller,
-    P,
-    M,
+    'runtime,
     S,
-    const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> where
-    M: RawMutex,
-{
+> {
     /// Hardware still owns the exact phase request.
-    Pending(
-        BluetoothDtmControllerPreparationPending<
-            'controller,
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
-    ),
+    Pending(BluetoothDtmControllerPreparationPending<'controller, 'runtime, S, SCHEDULER_CAPACITY>),
     /// Preparation completed or failed with every affine owner returned.
     Terminal(
-        BluetoothDtmControllerPreparationTerminal<
-            'controller,
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
+        BluetoothDtmControllerPreparationTerminal<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
     ),
 }
 
@@ -1167,88 +986,29 @@ pub enum BluetoothDtmControllerPreparationStep<
 #[cfg(target_arch = "riscv32")]
 pub enum BluetoothAlwaysAwakePostEnableTimeStep<
     'controller,
-    P,
-    M,
+    'runtime,
     S,
-    const MODEM_TIMER_CAPACITY: usize,
     const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> where
-    M: RawMutex,
-{
+> {
     /// Hardware still owns the same request and complete Controller borrow.
     Waiting(
-        BluetoothAlwaysAwakePostEnableTimePending<
-            'controller,
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
+        BluetoothAlwaysAwakePostEnableTimePending<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
     ),
     /// The exact request completed with a Controller-bound private sample.
     Ready(
-        BluetoothAlwaysAwakeTimeObservedAfterEnable<
-            'controller,
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
+        BluetoothAlwaysAwakeTimeObservedAfterEnable<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
     ),
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    'controller,
-    P,
-    M,
-    S,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothAlwaysAwakePostEnableTimePending<
-        'controller,
-        P,
-        M,
-        S,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
-where
-    M: RawMutex,
+impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothAlwaysAwakePostEnableTimePending<'controller, 'runtime, S, SCHEDULER_CAPACITY>
 {
     /// Perform exactly one observation of this exact latch request.
     pub fn recheck(
         self,
     ) -> Result<
-        BluetoothAlwaysAwakePostEnableTimeStep<
-            'controller,
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
+        BluetoothAlwaysAwakePostEnableTimeStep<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
         BluetoothAlwaysAwakePostEnableTimeError,
     > {
         match self.core.recheck() {
@@ -1281,16 +1041,7 @@ where
     pub fn cancel(
         self,
     ) -> Result<
-        &'controller mut BluetoothControllerInterruptOwnersPublished<
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
+        &'controller mut BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         BluetoothAlwaysAwakePostEnableTimeError,
     > {
         match self.core.cancel() {
@@ -1304,30 +1055,8 @@ where
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    'controller,
-    P,
-    M,
-    S,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothDtmControllerPreparationTerminal<
-        'controller,
-        P,
-        M,
-        S,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
-where
-    M: RawMutex,
+impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothDtmControllerPreparationTerminal<'controller, 'runtime, S, SCHEDULER_CAPACITY>
 {
     /// Borrow the exact role-specific terminal result.
     pub const fn outcome(&self) -> &BluetoothDtmControllerPreparationOutcome {
@@ -1338,17 +1067,7 @@ where
     pub fn into_parts(
         self,
     ) -> (
-        BluetoothControllerSchedulerEpochRetained<
-            'controller,
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
+        BluetoothControllerSchedulerEpochRetained<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
         BluetoothDtmControllerPreparationOutcome,
     ) {
         (self.controller, self.outcome)
@@ -1356,54 +1075,17 @@ where
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    'controller,
-    P,
-    M,
-    S,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothDtmControllerPreparationPending<
-        'controller,
-        P,
-        M,
-        S,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
-where
-    M: RawMutex,
+impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothDtmControllerPreparationPending<'controller, 'runtime, S, SCHEDULER_CAPACITY>
 {
     fn terminal(
-        controller: &'controller mut BluetoothControllerInterruptOwnersPublished<
-            P,
-            M,
+        controller: &'controller mut BluetoothControllerPublishedTaskService<
+            'runtime,
             S,
-            MODEM_TIMER_CAPACITY,
             SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
         >,
         outcome: BluetoothDtmControllerPreparationOutcome,
-    ) -> BluetoothDtmControllerPreparationStep<
-        'controller,
-        P,
-        M,
-        S,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    > {
+    ) -> BluetoothDtmControllerPreparationStep<'controller, 'runtime, S, SCHEDULER_CAPACITY> {
         BluetoothDtmControllerPreparationStep::Terminal(BluetoothDtmControllerPreparationTerminal {
             controller: BluetoothControllerSchedulerEpochRetained { controller },
             outcome,
@@ -1417,17 +1099,7 @@ where
     /// into another `Pending` state without yet producing a terminal result.
     pub fn recheck(
         self,
-    ) -> BluetoothDtmControllerPreparationStep<
-        'controller,
-        P,
-        M,
-        S,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    > {
+    ) -> BluetoothDtmControllerPreparationStep<'controller, 'runtime, S, SCHEDULER_CAPACITY> {
         let (mut owner, sample) = match self.core.recheck() {
             Ok(BluetoothControllerTimePendingCoreStep::Waiting(core)) => {
                 return BluetoothDtmControllerPreparationStep::Pending(Self { core });
@@ -1459,21 +1131,16 @@ where
                 requested_interval_micros,
                 now,
             } => {
-                let rf_ready = controller
-                    .initialized
-                    .complete_standalone_dtm_rf_ready(now.epoch(), sample);
-                let staged = match controller
-                    .initialized
-                    .dtm_scheduler_mut()
-                    .stage_dtm_transmitter_first_item(
-                        owner,
-                        link_state,
-                        channel,
-                        phy,
-                        requested_interval_micros,
-                        now,
-                        rf_ready,
-                    ) {
+                let rf_ready = controller.rf_ready.complete(now.epoch(), sample);
+                let staged = match controller.runtime.stage_dtm_transmitter_first_item(
+                    owner,
+                    link_state,
+                    channel,
+                    phy,
+                    requested_interval_micros,
+                    now,
+                    rf_ready,
+                ) {
                     Ok(staged) => staged,
                     Err(failure) => {
                         return Self::terminal(
@@ -1498,12 +1165,9 @@ where
                 phy,
                 now,
             } => {
-                let rf_ready = controller
-                    .initialized
-                    .complete_standalone_dtm_rf_ready(now.epoch(), sample);
+                let rf_ready = controller.rf_ready.complete(now.epoch(), sample);
                 let staged = match controller
-                    .initialized
-                    .dtm_scheduler_mut()
+                    .runtime
                     .stage_dtm_receiver_first_item(owner, link_state, channel, phy, now, rf_ready)
                 {
                     Ok(staged) => staged,
@@ -1522,9 +1186,7 @@ where
                 }
             }
             BluetoothDtmControllerPreparationPhase::ReceiverRecurringRfReady { owner, epoch } => {
-                let rf_ready = controller
-                    .initialized
-                    .complete_standalone_dtm_rf_ready(epoch, sample);
+                let rf_ready = controller.rf_ready.complete(epoch, sample);
                 match controller.begin_dtm_preparation_time(
                     BluetoothDtmControllerPreparationPhase::ReceiverRecurringCurrent {
                         owner,
@@ -1542,14 +1204,13 @@ where
                 rf_ready,
             } => {
                 let epoch = epoch.reanchor(&sample);
-                controller.scheduler_epoch = Some(epoch);
+                *controller.scheduler_epoch = Some(epoch);
                 let now =
                     crate::controller_time::BluetoothControllerSchedulerNow::from_retained_epoch(
                         epoch, sample,
                     );
                 let staged = match controller
-                    .initialized
-                    .dtm_scheduler_mut()
+                    .runtime
                     .stage_dtm_receiver_recurring_item(owner, now, rf_ready)
                 {
                     Ok(staged) => staged,
@@ -1563,8 +1224,7 @@ where
                     }
                 };
                 let pre_sequence = match controller
-                    .initialized
-                    .dtm_scheduler_mut()
+                    .runtime
                     .reserve_dtm_receiver_recurring_item(staged)
                 {
                     Ok(pre_sequence) => pre_sequence,
@@ -1586,8 +1246,7 @@ where
             }
             BluetoothDtmControllerPreparationPhase::TransmitterFirstAdmission(staged) => {
                 match controller
-                    .initialized
-                    .dtm_scheduler_mut()
+                    .runtime
                     .admit_dtm_transmitter_first_item(staged, sample)
                 {
                     Ok(pre_sequence) => match controller.begin_dtm_preparation_time(
@@ -1606,8 +1265,7 @@ where
             }
             BluetoothDtmControllerPreparationPhase::ReceiverFirstAdmission(staged) => {
                 match controller
-                    .initialized
-                    .dtm_scheduler_mut()
+                    .runtime
                     .admit_dtm_receiver_first_item(staged, sample)
                 {
                     Ok(pre_sequence) => match controller.begin_dtm_preparation_time(
@@ -1624,8 +1282,7 @@ where
             }
             BluetoothDtmControllerPreparationPhase::TransmitterFirstSequence(pre_sequence) => {
                 let result = controller
-                    .initialized
-                    .dtm_scheduler_mut()
+                    .runtime
                     .finish_dtm_transmitter_first_item(pre_sequence, sample);
                 Self::terminal(
                     controller,
@@ -1634,8 +1291,7 @@ where
             }
             BluetoothDtmControllerPreparationPhase::ReceiverFirstSequence(pre_sequence) => {
                 let result = controller
-                    .initialized
-                    .dtm_scheduler_mut()
+                    .runtime
                     .finish_dtm_receiver_first_item(pre_sequence, sample);
                 Self::terminal(
                     controller,
@@ -1644,8 +1300,7 @@ where
             }
             BluetoothDtmControllerPreparationPhase::TransmitterRecurringSequence(pre_sequence) => {
                 let result = controller
-                    .initialized
-                    .dtm_scheduler_mut()
+                    .runtime
                     .finish_dtm_transmitter_recurring_item(pre_sequence, sample);
                 Self::terminal(
                     controller,
@@ -1654,8 +1309,7 @@ where
             }
             BluetoothDtmControllerPreparationPhase::ReceiverRecurringSequence(pre_sequence) => {
                 let result = controller
-                    .initialized
-                    .dtm_scheduler_mut()
+                    .runtime
                     .finish_dtm_receiver_recurring_item(pre_sequence, sample);
                 Self::terminal(
                     controller,
@@ -1668,17 +1322,8 @@ where
     /// Cancel the exact phase, release any reservation and recover retry ownership.
     pub fn cancel(
         self,
-    ) -> BluetoothDtmControllerPreparationTerminal<
-        'controller,
-        P,
-        M,
-        S,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    > {
+    ) -> BluetoothDtmControllerPreparationTerminal<'controller, 'runtime, S, SCHEDULER_CAPACITY>
+    {
         let mut owner = match self.core.cancel() {
             Ok(owner) => owner,
             Err(failure) => failure.into_parts().0,
@@ -1697,30 +1342,8 @@ where
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    'controller,
-    P,
-    M,
-    S,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> BluetoothControllerTimePendingOwner
-    for BluetoothDtmControllerPreparationTimeOwner<
-        'controller,
-        P,
-        M,
-        S,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
-where
-    M: RawMutex,
+impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize> BluetoothControllerTimePendingOwner
+    for BluetoothDtmControllerPreparationTimeOwner<'controller, 'runtime, S, SCHEDULER_CAPACITY>
 {
     fn recheck_owned_controller_time(
         &mut self,
@@ -1760,30 +1383,8 @@ where
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    'operation,
-    P,
-    M,
-    S,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothControllerSchedulerCurrentPending<
-        'operation,
-        P,
-        M,
-        S,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
-where
-    M: RawMutex,
+impl<'operation, 'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerSchedulerCurrentPending<'operation, 'runtime, S, SCHEDULER_CAPACITY>
 {
     /// Perform exactly one observation of this fresh-current request.
     ///
@@ -1796,17 +1397,7 @@ where
     pub fn recheck(
         self,
     ) -> Result<
-        BluetoothControllerSchedulerCurrentStep<
-            'operation,
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
+        BluetoothControllerSchedulerCurrentStep<'operation, 'runtime, S, SCHEDULER_CAPACITY>,
         BluetoothControllerSchedulerCurrentError,
     > {
         let epoch = self.epoch;
@@ -1819,7 +1410,7 @@ where
             }
             Ok(BluetoothControllerTimePendingCoreStep::Ready { owner, sample }) => {
                 let epoch = epoch.reanchor(&sample);
-                owner.scheduler_epoch = Some(epoch);
+                *owner.scheduler_epoch = Some(epoch);
                 Ok(BluetoothControllerSchedulerCurrentStep::Ready(
                     BluetoothControllerSchedulerNowReady {
                         controller: owner,
@@ -1853,28 +1444,8 @@ where
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    P,
-    M,
-    S,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothControllerInterruptOwnersPublished<
-        P,
-        M,
-        S,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
-where
-    M: RawMutex,
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>
 {
     fn cancel_dtm_preparation_phase(
         &mut self,
@@ -1884,57 +1455,48 @@ where
         match phase {
             BluetoothDtmControllerPreparationPhase::TransmitterFirstRfReady { owner, .. } => {
                 BluetoothDtmControllerPreparationOutcome::TransmitterFirst(Err(self
-                    .initialized
-                    .dtm_scheduler_mut()
+                    .runtime
                     .reject_dtm_transmitter_first_before_stage(owner, error)))
             }
             BluetoothDtmControllerPreparationPhase::ReceiverFirstRfReady { owner, .. } => {
                 BluetoothDtmControllerPreparationOutcome::ReceiverFirst(Err(self
-                    .initialized
-                    .dtm_scheduler_mut()
+                    .runtime
                     .reject_dtm_receiver_first_before_stage(owner, error)))
             }
             BluetoothDtmControllerPreparationPhase::ReceiverRecurringRfReady { owner, .. }
             | BluetoothDtmControllerPreparationPhase::ReceiverRecurringCurrent { owner, .. } => {
                 BluetoothDtmControllerPreparationOutcome::ReceiverRecurring(Err(self
-                    .initialized
-                    .dtm_scheduler_mut()
+                    .runtime
                     .reject_dtm_receiver_recurring_before_stage(owner, error)))
             }
             BluetoothDtmControllerPreparationPhase::TransmitterFirstAdmission(staged) => {
                 BluetoothDtmControllerPreparationOutcome::TransmitterFirst(Err(self
-                    .initialized
-                    .dtm_scheduler_mut()
+                    .runtime
                     .cancel_dtm_transmitter_first_staged(staged, error)))
             }
             BluetoothDtmControllerPreparationPhase::ReceiverFirstAdmission(staged) => {
                 BluetoothDtmControllerPreparationOutcome::ReceiverFirst(Err(self
-                    .initialized
-                    .dtm_scheduler_mut()
+                    .runtime
                     .cancel_dtm_receiver_first_staged(staged, error)))
             }
             BluetoothDtmControllerPreparationPhase::TransmitterFirstSequence(pre_sequence) => {
                 BluetoothDtmControllerPreparationOutcome::TransmitterFirst(Err(self
-                    .initialized
-                    .dtm_scheduler_mut()
+                    .runtime
                     .cancel_dtm_transmitter_first_pre_sequence(pre_sequence, error)))
             }
             BluetoothDtmControllerPreparationPhase::ReceiverFirstSequence(pre_sequence) => {
                 BluetoothDtmControllerPreparationOutcome::ReceiverFirst(Err(self
-                    .initialized
-                    .dtm_scheduler_mut()
+                    .runtime
                     .cancel_dtm_receiver_first_pre_sequence(pre_sequence, error)))
             }
             BluetoothDtmControllerPreparationPhase::TransmitterRecurringSequence(pre_sequence) => {
                 BluetoothDtmControllerPreparationOutcome::TransmitterRecurring(Err(self
-                    .initialized
-                    .dtm_scheduler_mut()
+                    .runtime
                     .cancel_dtm_transmitter_recurring_pre_sequence(pre_sequence, error)))
             }
             BluetoothDtmControllerPreparationPhase::ReceiverRecurringSequence(pre_sequence) => {
                 BluetoothDtmControllerPreparationOutcome::ReceiverRecurring(Err(self
-                    .initialized
-                    .dtm_scheduler_mut()
+                    .runtime
                     .cancel_dtm_receiver_recurring_pre_sequence(pre_sequence, error)))
             }
         }
@@ -1948,30 +1510,10 @@ where
         &'controller mut self,
         phase: BluetoothDtmControllerPreparationPhase,
     ) -> Result<
-        BluetoothDtmControllerPreparationPending<
-            'controller,
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
-        BluetoothDtmControllerPreparationTerminal<
-            'controller,
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
+        BluetoothDtmControllerPreparationPending<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothDtmControllerPreparationTerminal<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
     > {
-        let request = match self.initialized.request_standalone_dtm_rf_ready_time() {
+        let request = match self.runtime.request_controller_time() {
             Ok(request) => request,
             Err(error) => {
                 let outcome = self.cancel_dtm_preparation_phase(phase, dtm_time_begin_error(error));
@@ -2001,30 +1543,10 @@ where
         &'controller mut self,
         phase: BluetoothDtmControllerPreparationPhase,
     ) -> Result<
-        BluetoothDtmControllerPreparationPending<
-            'controller,
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
-        BluetoothDtmControllerPreparationTerminal<
-            'controller,
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
+        BluetoothDtmControllerPreparationPending<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothDtmControllerPreparationTerminal<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
     > {
-        let request = match self.initialized.request_controller_time() {
+        let request = match self.runtime.request_controller_time() {
             Ok(request) => request,
             Err(error) => {
                 let outcome = self.cancel_dtm_preparation_phase(phase, dtm_time_begin_error(error));
@@ -2048,34 +1570,14 @@ where
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    P,
-    M,
-    S,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
-> BluetoothControllerTimePendingOwner
-    for BluetoothControllerInterruptOwnersPublished<
-        P,
-        M,
-        S,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
-where
-    M: RawMutex,
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize> BluetoothControllerTimePendingOwner
+    for BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>
 {
     fn recheck_owned_controller_time(
         &mut self,
         request: BluetoothControllerTimeRequest,
     ) -> Result<BluetoothControllerTimePendingOwnerStep, BluetoothControllerTimeEventError> {
-        match self.initialized.recheck_owned_controller_time(request) {
+        match self.runtime.recheck_owned_controller_time(request) {
             Ok(BluetoothControllerTimeEventStep::Waiting) => {
                 Ok(BluetoothControllerTimePendingOwnerStep::Waiting)
             }
@@ -2098,13 +1600,13 @@ where
         &mut self,
         request: BluetoothControllerTimeRequest,
     ) -> Result<(), BluetoothControllerTimeEventError> {
-        self.initialized.cancel_owned_controller_time(request)
+        self.runtime.cancel_owned_controller_time(request)
     }
 
     fn drain_orphan_controller_time(
         &mut self,
     ) -> Result<BluetoothControllerTimePendingOrphanStep, BluetoothControllerTimeEventError> {
-        match self.initialized.drain_orphan_controller_time() {
+        match self.runtime.drain_orphan_controller_time() {
             Ok(BluetoothControllerTimeEventStep::Idle) => {
                 Ok(BluetoothControllerTimePendingOrphanStep::Idle)
             }
@@ -2123,30 +1625,8 @@ where
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    'controller,
-    P,
-    M,
-    S,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothAlwaysAwakeTimeObservedAfterEnable<
-        'controller,
-        P,
-        M,
-        S,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
-where
-    M: RawMutex,
+impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothAlwaysAwakeTimeObservedAfterEnable<'controller, 'runtime, S, SCHEDULER_CAPACITY>
 {
     /// Initialize this Controller's persistent scheduler epoch from the first
     /// live post-enable sample.
@@ -2156,22 +1636,12 @@ where
     /// readiness nor deadline readiness.
     pub fn initialize_scheduler_epoch(
         self,
-    ) -> BluetoothControllerSchedulerNowReady<
-        'controller,
-        P,
-        M,
-        S,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    > {
+    ) -> BluetoothControllerSchedulerNowReady<'controller, 'runtime, S, SCHEDULER_CAPACITY> {
         let epoch = crate::BluetoothControllerSchedulerEpoch::from_first_live_update(
             &self.sample,
-            self.controller.initialized.controller_time_scale(),
+            self.controller.runtime.controller_time_scale(),
         );
-        self.controller.scheduler_epoch = Some(epoch);
+        *self.controller.scheduler_epoch = Some(epoch);
         BluetoothControllerSchedulerNowReady {
             controller: self.controller,
             epoch,
@@ -2181,30 +1651,8 @@ where
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    'controller,
-    P,
-    M,
-    S,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothControllerSchedulerEpochRetained<
-        'controller,
-        P,
-        M,
-        S,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
-where
-    M: RawMutex,
+impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerSchedulerEpochRetained<'controller, 'runtime, S, SCHEDULER_CAPACITY>
 {
     /// Begin one affine fresh scheduler-current acquisition.
     ///
@@ -2216,25 +1664,15 @@ where
     pub fn begin_fresh_scheduler_current<'operation>(
         &'operation mut self,
     ) -> Result<
-        BluetoothControllerSchedulerCurrentPending<
-            'operation,
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
+        BluetoothControllerSchedulerCurrentPending<'operation, 'runtime, S, SCHEDULER_CAPACITY>,
         BluetoothControllerSchedulerCurrentBeginError,
     > {
-        let Some(epoch) = self.controller.scheduler_epoch else {
+        let Some(epoch) = *self.controller.scheduler_epoch else {
             return Err(BluetoothControllerSchedulerCurrentBeginError::EpochUnavailable);
         };
         let request = self
             .controller
-            .initialized
+            .runtime
             .request_controller_time()
             .map_err(BluetoothControllerSchedulerCurrentBeginError::from)?;
         Ok(BluetoothControllerSchedulerCurrentPending {
@@ -2256,32 +1694,11 @@ where
         self,
         owner: crate::BluetoothDtmActiveReceiverCpuOwned,
     ) -> Result<
-        BluetoothDtmControllerPreparationPending<
-            'controller,
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
-        BluetoothDtmControllerPreparationTerminal<
-            'controller,
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
+        BluetoothDtmControllerPreparationPending<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothDtmControllerPreparationTerminal<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
     > {
         let controller = self.controller;
-        let epoch = controller
-            .scheduler_epoch
+        let epoch = (*controller.scheduler_epoch)
             .expect("the retained scheduler epoch cannot lose its stored epoch");
         controller.begin_dtm_rf_ready_time(
             BluetoothDtmControllerPreparationPhase::ReceiverRecurringRfReady { owner, epoch },
@@ -2311,65 +1728,26 @@ where
         }
     }
 
-    /// Release the exact Controller borrow for its ordinary lifecycle APIs.
+    /// Release the exact task-service borrow for its ordinary lifecycle APIs.
     ///
     /// The scheduler epoch remains stored in the Controller. Consequently the
     /// cold initialization path remains rejected with `AlreadyInitialized`.
-    pub fn into_controller(
+    pub fn into_task_service(
         self,
-    ) -> &'controller mut BluetoothControllerInterruptOwnersPublished<
-        P,
-        M,
-        S,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    > {
+    ) -> &'controller mut BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>
+    {
         self.controller
     }
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<
-    'controller,
-    P,
-    M,
-    S,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothControllerSchedulerNowReady<
-        'controller,
-        P,
-        M,
-        S,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
-where
-    M: RawMutex,
+impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerSchedulerNowReady<'controller, 'runtime, S, SCHEDULER_CAPACITY>
 {
     fn into_parts(
         self,
     ) -> (
-        &'controller mut BluetoothControllerInterruptOwnersPublished<
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
+        &'controller mut BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         crate::controller_time::BluetoothControllerSchedulerNow,
     ) {
         (
@@ -2398,28 +1776,8 @@ where
         phy: crate::BluetoothDtmPhy,
         requested_interval_micros: u16,
     ) -> Result<
-        BluetoothDtmControllerPreparationPending<
-            'controller,
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
-        BluetoothDtmControllerPreparationTerminal<
-            'controller,
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
+        BluetoothDtmControllerPreparationPending<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothDtmControllerPreparationTerminal<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
     > {
         let (controller, now) = self.into_parts();
         controller.begin_dtm_rf_ready_time(
@@ -2450,28 +1808,8 @@ where
         channel: crate::BluetoothDtmChannel,
         phy: crate::BluetoothDtmPhy,
     ) -> Result<
-        BluetoothDtmControllerPreparationPending<
-            'controller,
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
-        BluetoothDtmControllerPreparationTerminal<
-            'controller,
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
+        BluetoothDtmControllerPreparationPending<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothDtmControllerPreparationTerminal<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
     > {
         let (controller, now) = self.into_parts();
         controller.begin_dtm_rf_ready_time(
@@ -2497,33 +1835,12 @@ where
         self,
         owner: crate::BluetoothDtmActiveTransmitterCpuOwned,
     ) -> Result<
-        BluetoothDtmControllerPreparationPending<
-            'controller,
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
-        BluetoothDtmControllerPreparationTerminal<
-            'controller,
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
+        BluetoothDtmControllerPreparationPending<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothDtmControllerPreparationTerminal<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
     > {
         let (controller, now) = self.into_parts();
         let staged = match controller
-            .initialized
-            .dtm_scheduler_mut()
+            .runtime
             .stage_dtm_transmitter_recurring_item(owner, now)
         {
             Ok(staged) => staged,
@@ -2537,8 +1854,7 @@ where
             }
         };
         let pre_sequence = match controller
-            .initialized
-            .dtm_scheduler_mut()
+            .runtime
             .reserve_dtm_transmitter_recurring_item(staged)
         {
             Ok(pre_sequence) => pre_sequence,
@@ -2673,13 +1989,17 @@ where
             initialized,
             _storage,
             post_unlink_mailbox,
+            scheduler_epoch,
             ..
         } = self;
-        let BluetoothControllerRuntimeEndpoints {
-            interrupt,
-            task,
-            hci,
-        } = initialized.split_runtime();
+        let (
+            BluetoothControllerRuntimeEndpoints {
+                interrupt,
+                task,
+                hci,
+            },
+            rf_ready,
+        ) = initialized.split_runtime();
         BluetoothControllerPublishedRuntimeEndpoints {
             interrupt: BluetoothControllerPublishedInterruptService {
                 storage: _storage,
@@ -2690,6 +2010,8 @@ where
                 storage: _storage,
                 runtime: task,
                 mailbox: post_unlink_mailbox,
+                rf_ready,
+                scheduler_epoch,
             },
             hci,
         }
@@ -2713,33 +2035,6 @@ where
     /// Conditional runtime-control branch retained across publication.
     pub const fn runtime_control_observation(&self) -> BluetoothLowPowerRuntimeControlObservation {
         self.runtime_control
-    }
-
-    /// Reborrow this exact published Controller with its initialized epoch.
-    ///
-    /// This transition performs no MMIO, exposes no epoch image and cannot
-    /// initialize missing state. It permits lifecycle code which temporarily
-    /// used `into_controller` to re-enter fresh scheduler-current acquisition.
-    pub fn retain_scheduler_epoch(
-        &mut self,
-    ) -> Result<
-        BluetoothControllerSchedulerEpochRetained<
-            '_,
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
-        BluetoothControllerSchedulerEpochUnavailable,
-    > {
-        if self.scheduler_epoch.is_none() {
-            return Err(BluetoothControllerSchedulerEpochUnavailable);
-        }
-        Ok(BluetoothControllerSchedulerEpochRetained { controller: self })
     }
 
     /// Acquire source-127 task ownership from stable ISR storage.
@@ -2767,6 +2062,27 @@ where
             storage: &self._storage,
         })
     }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>
+{
+    /// Reborrow this exact task service with its initialized scheduler epoch.
+    ///
+    /// This transition performs no MMIO, exposes no epoch image and cannot
+    /// initialize missing state.
+    pub fn retain_scheduler_epoch(
+        &mut self,
+    ) -> Result<
+        BluetoothControllerSchedulerEpochRetained<'_, 'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothControllerSchedulerEpochUnavailable,
+    > {
+        if self.scheduler_epoch.is_none() {
+            return Err(BluetoothControllerSchedulerEpochUnavailable);
+        }
+        Ok(BluetoothControllerSchedulerEpochRetained { controller: self })
+    }
 
     /// Begin one affine post-enable controller-time acquisition.
     ///
@@ -2781,24 +2097,14 @@ where
     pub fn begin_always_awake_post_enable_time(
         &mut self,
     ) -> Result<
-        BluetoothAlwaysAwakePostEnableTimePending<
-            '_,
-            P,
-            M,
-            S,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
+        BluetoothAlwaysAwakePostEnableTimePending<'_, 'runtime, S, SCHEDULER_CAPACITY>,
         BluetoothAlwaysAwakePostEnableTimeBeginError,
     > {
         if self.scheduler_epoch.is_some() {
             return Err(BluetoothAlwaysAwakePostEnableTimeBeginError::AlreadyInitialized);
         }
         let request = self
-            .initialized
+            .runtime
             .request_controller_time()
             .map_err(BluetoothAlwaysAwakePostEnableTimeBeginError::from)?;
         Ok(BluetoothAlwaysAwakePostEnableTimePending {
@@ -2855,7 +2161,7 @@ where
             crate::BluetoothDtmInitialSchedulerItemPhase,
         >,
     > {
-        self.initialized.cancel_dtm_transmitter_first_item(merged)
+        self.runtime.cancel_dtm_transmitter_first_item(merged)
     }
 
     /// Cancel one not-yet-published RX item through the same Controller.
@@ -2879,7 +2185,7 @@ where
             crate::BluetoothDtmInitialSchedulerItemPhase,
         >,
     > {
-        self.initialized.cancel_dtm_receiver_first_item(merged)
+        self.runtime.cancel_dtm_receiver_first_item(merged)
     }
 
     /// Cancel one not-yet-published recurring TX item and recover its exact
@@ -2901,8 +2207,7 @@ where
             crate::BluetoothDtmRecurringSchedulerItemPhase,
         >,
     > {
-        self.initialized
-            .cancel_dtm_transmitter_recurring_item(merged)
+        self.runtime.cancel_dtm_transmitter_recurring_item(merged)
     }
 
     /// Cancel one not-yet-published recurring RX item and recover its exact
@@ -2924,7 +2229,7 @@ where
             crate::BluetoothDtmRecurringSchedulerItemPhase,
         >,
     > {
-        self.initialized.cancel_dtm_receiver_recurring_item(merged)
+        self.runtime.cancel_dtm_receiver_recurring_item(merged)
     }
 
     /// Publish the exact merge-selected DTM scheduler head while every CPU
@@ -2949,7 +2254,7 @@ where
     where
         Phase: crate::BluetoothDtmSchedulerItemPhase<Role>,
     {
-        self.initialized.publish_dtm_scheduler_head(merged)
+        self.runtime.publish_dtm_scheduler_head(merged)
     }
 }
 

@@ -1166,46 +1166,6 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         &mut self.task
     }
 
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn request_controller_time(
-        &mut self,
-    ) -> Result<
-        crate::controller_time::BluetoothControllerTimeRequest,
-        crate::controller_time::BluetoothControllerTimeRequestError,
-    > {
-        self._standalone_always_awake.gate_controller_time_request();
-        self.task.request_controller_time()
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn cancel_owned_controller_time(
-        &mut self,
-        request: crate::controller_time::BluetoothControllerTimeRequest,
-    ) -> Result<(), crate::controller_time::BluetoothControllerTimeEventError> {
-        self.task.cancel_owned_controller_time(request)
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn recheck_owned_controller_time(
-        &mut self,
-        request: crate::controller_time::BluetoothControllerTimeRequest,
-    ) -> Result<
-        crate::controller_time::BluetoothControllerTimeEventStep,
-        crate::controller_time::BluetoothControllerTimeEventError,
-    > {
-        self.task.recheck_owned_controller_time(request)
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn drain_orphan_controller_time(
-        &mut self,
-    ) -> Result<
-        crate::controller_time::BluetoothControllerTimeEventStep,
-        crate::controller_time::BluetoothControllerTimeEventError,
-    > {
-        self.task.drain_orphan_controller_time()
-    }
-
     #[cfg(test)]
     pub(crate) const fn controller_time_phase(
         &self,
@@ -1253,6 +1213,51 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     /// Whether no software event has entered the initialized epoch.
     pub fn runtime_is_pristine(&self) -> bool {
         self.runtime.is_pristine()
+    }
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl<const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY>
+{
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn request_controller_time(
+        &mut self,
+    ) -> Result<
+        crate::controller_time::BluetoothControllerTimeRequest,
+        crate::controller_time::BluetoothControllerTimeRequestError,
+    > {
+        self._standalone_always_awake.gate_controller_time_request();
+        self.task.request_controller_time()
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn cancel_owned_controller_time(
+        &mut self,
+        request: crate::controller_time::BluetoothControllerTimeRequest,
+    ) -> Result<(), crate::controller_time::BluetoothControllerTimeEventError> {
+        self.task.cancel_owned_controller_time(request)
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn recheck_owned_controller_time(
+        &mut self,
+        request: crate::controller_time::BluetoothControllerTimeRequest,
+    ) -> Result<
+        crate::controller_time::BluetoothControllerTimeEventStep,
+        crate::controller_time::BluetoothControllerTimeEventError,
+    > {
+        self.task.recheck_owned_controller_time(request)
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn drain_orphan_controller_time(
+        &mut self,
+    ) -> Result<
+        crate::controller_time::BluetoothControllerTimeEventStep,
+        crate::controller_time::BluetoothControllerTimeEventError,
+    > {
+        self.task.drain_orphan_controller_time()
     }
 
     #[cfg(any(target_arch = "riscv32", test))]
@@ -2258,12 +2263,6 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         self._scheduler_list.retain_published_first_item(address);
         Ok(BluetoothDtmSchedulerHeadPublished { item, publication })
     }
-}
-
-#[cfg(target_arch = "riscv32")]
-impl<const SCHEDULER_CAPACITY: usize>
-    BluetoothControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY>
-{
     /// Perform one fresh, bounded DTM completion observation.
     ///
     /// The affine list token never crosses this Controller operation before it
@@ -2701,11 +2700,21 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         BluetoothControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY>,
     ) {
         let task = &mut self.task;
+        let time_scale = self.time_scale;
+        let standalone_always_awake = &self._standalone_always_awake;
+        let config = self.config;
         let scheduler_list = &mut self._scheduler_list;
         let (interrupt, software) = self.runtime.split();
         (
             interrupt,
-            BluetoothControllerPoweredTaskRuntime::new(software, task, scheduler_list),
+            BluetoothControllerPoweredTaskRuntime::new(
+                software,
+                task,
+                time_scale,
+                standalone_always_awake,
+                config,
+                scheduler_list,
+            ),
         )
     }
 
@@ -3048,15 +3057,15 @@ mod tests {
             BluetoothDtmSchedulerInstant::from_image(1_000)
         );
 
-        let reservation = scheduler
+        let (interrupt, mut task) = scheduler.split_runtime();
+        let reservation = task
             .admit_initial_dtm_event(
                 event,
                 &now,
                 BluetoothControllerTimeSample::for_validation(92),
             )
             .expect("the fresh admission sample keeps the initial deadline open");
-        assert!(!scheduler.runtime_is_pristine());
-        let result = scheduler.finish_dtm_sequence_authorization(
+        let result = task.finish_dtm_sequence_authorization(
             reservation.authorize_sequence(BluetoothControllerTimeSample::for_validation(1_000)),
         );
 
@@ -3066,6 +3075,7 @@ mod tests {
                 crate::BluetoothSchedulerSequenceAuthorizationError::DeadlineExpired,
             )
         );
+        drop((interrupt, task));
         assert!(scheduler.runtime_is_pristine());
     }
 
@@ -3107,11 +3117,11 @@ mod tests {
             BluetoothDtmSchedulerInstant::from_image(1_000)
         );
 
-        let reservation = scheduler
+        let (interrupt, mut task) = scheduler.split_runtime();
+        let reservation = task
             .reserve_recurring_dtm_event(event, &now)
             .expect("the exact recurring window is initially free");
-        assert!(!scheduler.runtime_is_pristine());
-        let result = scheduler.finish_dtm_sequence_authorization(
+        let result = task.finish_dtm_sequence_authorization(
             reservation.authorize_sequence(BluetoothControllerTimeSample::for_validation(1_000)),
         );
 
@@ -3121,6 +3131,7 @@ mod tests {
                 crate::BluetoothSchedulerSequenceAuthorizationError::DeadlineExpired,
             )
         );
+        drop((interrupt, task));
         assert!(scheduler.runtime_is_pristine());
     }
 }

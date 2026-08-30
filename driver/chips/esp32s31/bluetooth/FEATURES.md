@@ -42,13 +42,16 @@ Controller software are recorded in
 | Powered teardown | PARTIAL | Opaque HAL owners retain task and interrupt affinity fail-stop. The disconnected bounded scheduler-disable leaf consumes its task owner, writes the exact command image `1`, fences publication, and—only after CPU routes are already disabled—permits one terminal observation of the `BUSY` bit. Its powered lifecycle prerequisite is intentionally not faked by a PAC `assume_satisfied` token; no production controller state reaches the leaf yet. Both busy and idle observations are terminal: there is no recheck/wake source, packet/bottom-half quiescence, IRQ-output release, BTBB/PHY/clock teardown, or cold reconstruction. No comparison or HIL claim is made. |
 
 DTM admission ownership is now narrower than the table's historical summary:
-the terminal Controller is the sole owner of the bounded Timeline. Executor
-and task endpoints cannot reserve or release slots, callers cannot build a raw
-epoch or event plan, and `BluetoothControllerTimeSample` is crate-private.
-The terminal powered BLE-PHY owner is the only standalone RF-ready producer;
-the token is opaque, non-`Copy` and never accepted as a detached scheduler
-instant. Initial TX/RX consume current before RF-ready, recurring RX consumes
-RF-ready before current, and recurring TX consumes current only.
+the published task service is the sole owner of the bounded Timeline and its
+exclusive scheduler-list identity. Its preparation operations never expose
+the Timeline itself; HCI and interrupt endpoints cannot reserve or release
+slots, callers cannot build a raw epoch or event plan, and
+`BluetoothControllerTimeSample` is crate-private. A private authority minted
+only while splitting the terminal powered BLE-PHY owner lets that same task
+service complete standalone RF-ready requests; the resulting token is opaque,
+non-`Copy` and never accepted as a detached scheduler instant. Initial TX/RX
+consume current before RF-ready, recurring RX consumes RF-ready before current,
+and recurring TX consumes current only.
 Initial TX/RX admission and later sequence authorization are distinct affine
 latch requests separated by the actual overlap-resolving reservation.
 Recurring TX/RX has a distinct exact-window reservation phase and performs only
@@ -97,28 +100,30 @@ initial/recurring cancellation boundary. These remain preparation and recovery
 primitives, not a live radio loop. The first post-enable controller sample
 initializes the persistent scheduler epoch, and repeated borrowed acquisitions
 reanchor that epoch before one preparation consumes each private current. The
-same Controller state machine now privately acquires RF-ready, admission and
-sequence in their exact source order. The reviewed standalone margin is
-retained by the source-owned scheduler policy, while the completed powered
-BLE-PHY plus always-awake time request supplies a non-detachable RF-ready
-result. No operational HCI path drives publication and
-RUN, and no recurring runtime loop joins completion, removal and recycle to the
-next preparation. Production HCI start and recurring publication therefore
-remain fail-closed.
+same post-split task service now privately acquires RF-ready, admission and
+sequence in their exact source order, publishes the resulting head and owns the
+existing RUN-through-recycle suffix. The reviewed standalone margin is retained
+by the source-owned scheduler policy, while the completed powered BLE-PHY plus
+always-awake time request supplies a non-detachable RF-ready result. No
+concrete HCI session runner yet sequences those bounded operations, preserves
+the active TX/RX owner across commands and response backpressure, or joins
+completion and Test End to the next state. Production HCI start and recurring
+publication therefore remain fail-closed.
 
 ## Async runtime and coexistence
 
 | Capability | Status | Current production boundary |
 | --- | --- | --- |
-| Executor-neutral controller core | PARTIAL | One final Controller owner now splits into disjoint finite ISR service, mutable DTM/scheduler task service and raw HCI/bootstrap endpoints. The task service retains the sole HAL task owner, exclusive list identity, finished-list worker, scheduler timeline and post-unlink mailbox. A head published before the split can therefore cross dynamic interrupt preparation, synchronous scheduler event, hardware RUN, completion drain, head retirement, unlink/rearm and role-specific recycle without recovering the monolithic owner. Lock-free scheduler, lock/modify and timer cells replace RTOS broker objects; every hardware-owned wait returns control. A post-split HCI command still cannot acquire controller time, prepare its first/recurring event or publish the next head; this prefix and its session owner are the remaining executor-neutral DTM blocker. Lock/modify admission remains an explicit unsafe boundary outside that first empty-list path. Selector-6 policy, registered time-latch notification, Link Layer and live radio input remain absent. The software-only Embassy adapter is unchanged. |
+| Executor-neutral controller core | PARTIAL | One final Controller owner now splits into disjoint finite ISR service, mutable DTM/scheduler task service and raw HCI/bootstrap endpoints. The task service retains the sole HAL task owner, exclusive list identity, finished-list worker, scheduler timeline, scheduler epoch, post-unlink mailbox and private BLE-PHY RF-ready authority. It can acquire controller time, prepare first or recurring TX/RX ownership, publish the exact head, perform dynamic interrupt preparation and RUN, then drive completion drain, head retirement, unlink/rearm and role-specific recycle without recovering the monolithic owner. Lock-free scheduler, lock/modify and timer cells replace RTOS broker objects; every hardware-owned wait returns control. The remaining executor-neutral DTM blocker is a concrete session pump which binds semantic HCI commands to these affine operations while preserving hardware progress under response backpressure and Test End. Lock/modify admission remains an explicit unsafe boundary outside that first empty-list path. Selector-6 policy, durable post-unlink consumer wake, registered time-latch notification, Link Layer and live radio input remain absent. The software-only Embassy adapter is unchanged. |
 | Executor-neutral HCI transport | LIVE | Packet arrival and capacity are wake edges; cancelled reads, writes and publications cannot consume or publish a packet. The mutex domain is selected by the platform and requires no RTOS. |
 | Embassy controller owner | ABSENT | No composed sole hardware task, ISR route binding, timer adapter or powered shutdown exists. The portable HCI endpoints deliberately own none of these platform concerns. |
 | Standalone coexistence hooks | PARTIAL | The source-owned coexistence core and Embassy mailbox accept Bluetooth requests, but are not attached to Bluetooth lifecycle. |
 | Concurrent Wi-Fi + BLE | ABSENT | Wi-Fi still owns the platform singletons independently. Safe joint composition is intentionally impossible until it migrates to the common coordinator. |
 | Bluetooth low power | ABSENT | Low-power clock setup is not sleep ownership. Retention, wake compare, clock drift and exact resume/rollback are absent. |
 
-The software Timeline remains inside the Controller runtime across the whole
-powered epoch. It is no longer exposed through the executor-facing task split.
+The software Timeline remains private inside the Controller task runtime across
+the whole powered epoch. The executor-facing task service can operate on it
+only through phase-ordered affine preparation and recovery transitions.
 
 ## First operational profile
 

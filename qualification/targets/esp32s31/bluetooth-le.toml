@@ -81,7 +81,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-controller-boundary.md",
 ]
 gaps = [
-  { axis = "implementation", id = "live-route-and-post-split-dtm-session-preparation-missing" },
+  { axis = "implementation", id = "live-route-and-concrete-dtm-session-runner-missing" },
   { axis = "vendor", id = "complete-controller-init-production-trace-missing" },
   { axis = "hil", id = "initialized-controller-cell-missing" },
   { axis = "async", id = "stable-route-and-controller-task-wake-composition-missing" },

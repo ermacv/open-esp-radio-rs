@@ -93,6 +93,32 @@ impl BluetoothDtmRfReady {
     }
 }
 
+/// Exclusive BLE-PHY authority for completing standalone RF-ready samples.
+///
+/// This capability is created only while splitting a fully initialized BLE-PHY
+/// owner. It remains private inside the published task service, so a scheduler
+/// or detached controller-time sample cannot manufacture RF readiness.
+#[must_use = "the RF-ready authority must remain owned by the BLE-PHY task service"]
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct BluetoothDtmRfReadyAuthority {
+    _private: (),
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothDtmRfReadyAuthority {
+    const fn new() -> Self {
+        Self { _private: () }
+    }
+
+    pub(crate) fn complete(
+        &mut self,
+        epoch: crate::BluetoothControllerSchedulerEpoch,
+        sample: crate::BluetoothControllerTimeSample,
+    ) -> BluetoothDtmRfReady {
+        BluetoothDtmRfReady::from_completed_sample(epoch, sample)
+    }
+}
+
 /// Powered Controller after the complete BLE PHY register transaction.
 ///
 /// The address-bound environment and resolving-list storage remain nested for
@@ -164,16 +190,6 @@ where
         self.initialized.phy_report()
     }
 
-    /// Scheduler scale retained by this exact initialized Controller epoch.
-    pub(crate) const fn controller_time_scale(
-        &self,
-    ) -> open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale {
-        self.initialized
-            .initialized
-            .controller
-            .controller_time_scale()
-    }
-
     pub(crate) fn take_activation_owners(
         &mut self,
     ) -> (
@@ -212,220 +228,21 @@ where
     /// complete BLE-PHY owner has reached stable final placement.
     pub(crate) fn split_runtime(
         &mut self,
-    ) -> crate::BluetoothControllerRuntimeEndpoints<
-        '_,
-        M,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    > {
-        self.initialized.initialized.controller.split_runtime()
-    }
-
-    /// Borrow the sole scheduler owner for upper phase-ordered DTM preparation.
-    pub(crate) fn dtm_scheduler_mut(
-        &mut self,
-    ) -> &mut crate::BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
-    {
-        self.initialized.initialized.controller.dtm_scheduler_mut()
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    #[expect(
-        clippy::result_large_err,
-        reason = "the internal no-alloc delegation preserves the complete rejected graph"
-    )]
-    pub(crate) fn cancel_dtm_transmitter_first_item(
-        &mut self,
-        merged: crate::BluetoothDtmEmptySchedulerMergePrepared<
-            crate::BluetoothDtmTransmitterEvent,
-            crate::BluetoothDtmInitialSchedulerItemPhase,
+    ) -> (
+        crate::BluetoothControllerRuntimeEndpoints<
+            '_,
+            M,
+            SCHEDULER_CAPACITY,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
         >,
-    ) -> Result<
+        BluetoothDtmRfReadyAuthority,
+    ) {
         (
-            open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmMemoryGraphCpuOwned,
-            crate::BluetoothDtmPayloadPattern,
-            crate::BluetoothDtmPayloadLength,
-        ),
-        crate::BluetoothDtmEmptySchedulerMergePrepared<
-            crate::BluetoothDtmTransmitterEvent,
-            crate::BluetoothDtmInitialSchedulerItemPhase,
-        >,
-    > {
-        self.initialized
-            .initialized
-            .controller
-            .cancel_dtm_transmitter_first_item(merged)
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    #[expect(
-        clippy::result_large_err,
-        reason = "the internal no-alloc delegation preserves the complete rejected graph"
-    )]
-    pub(crate) fn cancel_dtm_receiver_first_item(
-        &mut self,
-        merged: crate::BluetoothDtmEmptySchedulerMergePrepared<
-            crate::BluetoothDtmReceiverEvent,
-            crate::BluetoothDtmInitialSchedulerItemPhase,
-        >,
-    ) -> Result<
-        crate::BluetoothDtmReceiverCpuOwned,
-        crate::BluetoothDtmEmptySchedulerMergePrepared<
-            crate::BluetoothDtmReceiverEvent,
-            crate::BluetoothDtmInitialSchedulerItemPhase,
-        >,
-    > {
-        self.initialized
-            .initialized
-            .controller
-            .cancel_dtm_receiver_first_item(merged)
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    #[expect(
-        clippy::result_large_err,
-        reason = "the internal no-alloc delegation preserves the complete rejected graph"
-    )]
-    pub(crate) fn cancel_dtm_transmitter_recurring_item(
-        &mut self,
-        merged: crate::BluetoothDtmEmptySchedulerMergePrepared<
-            crate::BluetoothDtmTransmitterEvent,
-            crate::BluetoothDtmRecurringSchedulerItemPhase,
-        >,
-    ) -> Result<
-        crate::BluetoothDtmActiveTransmitterCpuOwned,
-        crate::BluetoothDtmEmptySchedulerMergePrepared<
-            crate::BluetoothDtmTransmitterEvent,
-            crate::BluetoothDtmRecurringSchedulerItemPhase,
-        >,
-    > {
-        self.initialized
-            .initialized
-            .controller
-            .cancel_dtm_transmitter_recurring_item(merged)
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    #[expect(
-        clippy::result_large_err,
-        reason = "the internal no-alloc delegation preserves the complete rejected graph"
-    )]
-    pub(crate) fn cancel_dtm_receiver_recurring_item(
-        &mut self,
-        merged: crate::BluetoothDtmEmptySchedulerMergePrepared<
-            crate::BluetoothDtmReceiverEvent,
-            crate::BluetoothDtmRecurringSchedulerItemPhase,
-        >,
-    ) -> Result<
-        crate::BluetoothDtmActiveReceiverCpuOwned,
-        crate::BluetoothDtmEmptySchedulerMergePrepared<
-            crate::BluetoothDtmReceiverEvent,
-            crate::BluetoothDtmRecurringSchedulerItemPhase,
-        >,
-    > {
-        self.initialized
-            .initialized
-            .controller
-            .cancel_dtm_receiver_recurring_item(merged)
-    }
-
-    pub(crate) fn request_controller_time(
-        &mut self,
-    ) -> Result<
-        crate::controller_time::BluetoothControllerTimeRequest,
-        crate::controller_time::BluetoothControllerTimeRequestError,
-    > {
-        self.initialized
-            .initialized
-            .controller
-            .request_controller_time()
-    }
-
-    /// Request the fresh controller-time observation used by standalone DTM
-    /// RF readiness.
-    ///
-    /// The returned identity remains generation-keyed by the sole durable time
-    /// worker. Completion must pass its affine sample back to
-    /// [`Self::complete_standalone_dtm_rf_ready`].
-    pub(crate) fn request_standalone_dtm_rf_ready_time(
-        &mut self,
-    ) -> Result<
-        crate::controller_time::BluetoothControllerTimeRequest,
-        crate::controller_time::BluetoothControllerTimeRequestError,
-    > {
-        self.initialized
-            .initialized
-            .controller
-            .request_controller_time()
-    }
-
-    /// Mint the affine standalone RF-ready token from one completed request.
-    ///
-    /// Projection uses the retained scheduler epoch exactly as observed and
-    /// intentionally does not perform the task-run reanchor transition.
-    pub(crate) fn complete_standalone_dtm_rf_ready(
-        &mut self,
-        epoch: crate::BluetoothControllerSchedulerEpoch,
-        sample: crate::BluetoothControllerTimeSample,
-    ) -> BluetoothDtmRfReady {
-        BluetoothDtmRfReady::from_completed_sample(epoch, sample)
-    }
-
-    #[expect(
-        clippy::result_large_err,
-        reason = "the internal no-alloc delegation preserves the complete rejected graph"
-    )]
-    pub(crate) fn publish_dtm_scheduler_head<Role, Phase>(
-        &mut self,
-        merged: crate::BluetoothDtmEmptySchedulerMergePrepared<Role, Phase>,
-    ) -> Result<
-        crate::BluetoothDtmSchedulerHeadPublished<Role>,
-        crate::BluetoothDtmSchedulerHeadPublicationFailure<Role, Phase>,
-    >
-    where
-        Phase: crate::BluetoothDtmSchedulerItemPhase<Role>,
-    {
-        self.initialized
-            .initialized
-            .controller
-            .publish_dtm_scheduler_head(merged)
-    }
-
-    pub(crate) fn cancel_owned_controller_time(
-        &mut self,
-        request: crate::controller_time::BluetoothControllerTimeRequest,
-    ) -> Result<(), crate::controller_time::BluetoothControllerTimeEventError> {
-        self.initialized
-            .initialized
-            .controller
-            .cancel_owned_controller_time(request)
-    }
-
-    pub(crate) fn recheck_owned_controller_time(
-        &mut self,
-        request: crate::controller_time::BluetoothControllerTimeRequest,
-    ) -> Result<
-        crate::controller_time::BluetoothControllerTimeEventStep,
-        crate::controller_time::BluetoothControllerTimeEventError,
-    > {
-        self.initialized
-            .initialized
-            .controller
-            .recheck_owned_controller_time(request)
-    }
-
-    pub(crate) fn drain_orphan_controller_time(
-        &mut self,
-    ) -> Result<
-        crate::controller_time::BluetoothControllerTimeEventStep,
-        crate::controller_time::BluetoothControllerTimeEventError,
-    > {
-        self.initialized
-            .initialized
-            .controller
-            .drain_orphan_controller_time()
+            self.initialized.initialized.controller.split_runtime(),
+            BluetoothDtmRfReadyAuthority::new(),
+        )
     }
 }
 

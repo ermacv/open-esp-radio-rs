@@ -15,7 +15,10 @@ use embassy_sync::{
 };
 use embedded_io::{ErrorKind, ErrorType, Write};
 
-use crate::{ControllerToHostQueueError, PacketSlot, decode_complete_packet};
+use crate::{
+    ControllerToHostQueueError, LeControllerCommandClassification, PacketSlot,
+    classify_le_controller_command, decode_complete_packet,
+};
 
 /// Opaque identity of one live in-process HCI resource epoch.
 ///
@@ -30,6 +33,91 @@ impl HciEpochIdentity<'_> {
     /// Whether two endpoints originate from the same live channel object.
     pub fn same_epoch(self, other: HciEpochIdentity<'_>) -> bool {
         core::ptr::eq(self.marker, other.marker)
+    }
+}
+
+/// A semantic Controller value proven to originate from one live HCI epoch.
+///
+/// Only [`InProcessHciControllerEndpoint`] can mint this token, immediately
+/// after consuming and classifying a packet from its Host-to-Controller queue.
+/// The epoch marker remains opaque while [`Self::map`] and [`Self::try_map`]
+/// permit ownership-preserving semantic refinement without reconstructing it.
+#[must_use = "the semantic value and its HCI origin proof must remain paired"]
+pub struct HciEpochBound<'epoch, T> {
+    hci_epoch: HciEpochIdentity<'epoch>,
+    value: T,
+}
+
+impl<'epoch, T> HciEpochBound<'epoch, T> {
+    fn bind(hci_epoch: HciEpochIdentity<'epoch>, value: T) -> Self {
+        Self { hci_epoch, value }
+    }
+
+    /// Borrow the semantic value without releasing its origin proof.
+    pub const fn value(&self) -> &T {
+        &self.value
+    }
+
+    /// Transform the semantic owner while preserving its exact origin epoch.
+    pub fn map<U>(self, map: impl FnOnce(T) -> U) -> HciEpochBound<'epoch, U> {
+        HciEpochBound {
+            hci_epoch: self.hci_epoch,
+            value: map(self.value),
+        }
+    }
+
+    /// Attempt one consuming semantic refinement without losing either branch.
+    pub fn try_map<U>(
+        self,
+        map: impl FnOnce(T) -> Result<U, T>,
+    ) -> Result<HciEpochBound<'epoch, U>, Self> {
+        let Self { hci_epoch, value } = self;
+        match map(value) {
+            Ok(value) => Ok(HciEpochBound { hci_epoch, value }),
+            Err(value) => Err(Self { hci_epoch, value }),
+        }
+    }
+
+    /// Whether this value originated from the supplied live Controller endpoint.
+    pub fn originates_from<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        &self,
+        controller: &InProcessHciControllerEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> bool {
+        self.hci_epoch.same_epoch(controller.epoch_identity())
+    }
+
+    /// Release the semantic owner only to its matching live Controller endpoint.
+    pub fn try_into_for_endpoint<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        self,
+        controller: &InProcessHciControllerEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> Result<T, Self> {
+        if self.originates_from(controller) {
+            Ok(self.value)
+        } else {
+            Err(self)
+        }
     }
 }
 
@@ -141,6 +229,15 @@ pub enum HostToControllerFrame<'packet> {
     Sync(SyncPacket<'packet>),
     /// Host isochronous data.
     Iso(IsoPacket<'packet>),
+}
+
+/// Failure to consume one Host packet as an epoch-bound classified command.
+#[must_use = "a non-command frame retains its origin proof and borrowed packet"]
+pub enum HciEpochBoundCommandReceiveError<'epoch, 'packet> {
+    /// The queue or packet boundary failed before an epoch token was created.
+    Channel(HciChannelError),
+    /// The oldest packet was data rather than a command and remains bound to its epoch.
+    NonCommand(HciEpochBound<'epoch, HostToControllerFrame<'packet>>),
 }
 
 struct AsyncPacketQueue<M, const DEPTH: usize, const PACKET_CAPACITY: usize>
@@ -555,6 +652,59 @@ where
         decode_host_slot(slot, buffer)
     }
 
+    /// Await, consume and production-classify the oldest Host command.
+    ///
+    /// Classification is synchronous after queue consumption, so cancellation
+    /// while awaiting data cannot create a token or consume a packet. A data
+    /// packet is returned with the same epoch proof rather than being discarded.
+    pub async fn receive_classified_command<'buffer>(
+        &self,
+        buffer: &'buffer mut [u8],
+    ) -> Result<
+        HciEpochBound<'channel, LeControllerCommandClassification>,
+        HciEpochBoundCommandReceiveError<'channel, 'buffer>,
+    > {
+        let frame = self
+            .receive(buffer)
+            .await
+            .map_err(HciEpochBoundCommandReceiveError::Channel)?;
+        self.bind_classified_command(frame)
+    }
+
+    /// Consume and production-classify the oldest Host command immediately.
+    ///
+    /// `Empty` and every pre-consumption boundary error create no epoch token.
+    pub fn try_receive_classified_command<'buffer>(
+        &self,
+        buffer: &'buffer mut [u8],
+    ) -> Result<
+        HciEpochBound<'channel, LeControllerCommandClassification>,
+        HciEpochBoundCommandReceiveError<'channel, 'buffer>,
+    > {
+        let frame = self
+            .try_receive(buffer)
+            .map_err(HciEpochBoundCommandReceiveError::Channel)?;
+        self.bind_classified_command(frame)
+    }
+
+    fn bind_classified_command<'buffer>(
+        &self,
+        frame: HostToControllerFrame<'buffer>,
+    ) -> Result<
+        HciEpochBound<'channel, LeControllerCommandClassification>,
+        HciEpochBoundCommandReceiveError<'channel, 'buffer>,
+    > {
+        match frame {
+            HostToControllerFrame::Command(command) => Ok(HciEpochBound::bind(
+                self.identity,
+                classify_le_controller_command(command),
+            )),
+            frame => Err(HciEpochBoundCommandReceiveError::NonCommand(
+                HciEpochBound::bind(self.identity, frame),
+            )),
+        }
+    }
+
     /// Validate and asynchronously publish one Controller packet.
     pub async fn publish(&self, kind: PacketKind, bytes: &[u8]) -> Result<(), HciChannelError> {
         let slot = controller_slot::<PACKET_CAPACITY>(kind, bytes)?;
@@ -832,7 +982,7 @@ mod tests {
 
     use bt_hci::{
         ControllerToHostPacket, PacketKind,
-        cmd::{Cmd, SyncCmd, controller_baseband::Reset},
+        cmd::{Cmd, SyncCmd, controller_baseband::Reset, le::LeTestEnd},
         controller::{Controller, ExternalController},
         transport::Transport,
     };
@@ -842,7 +992,11 @@ mod tests {
     };
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
-    use super::{HciChannelError, HostToControllerFrame, InProcessHciChannel};
+    use super::{
+        HciChannelError, HciEpochBoundCommandReceiveError, HostToControllerFrame,
+        InProcessHciChannel,
+    };
+    use crate::{LE_TEST_END_OPCODE, LeControllerCommandClassification, LeDtmCommand};
 
     const RESET_COMMAND_COMPLETE: [u8; 6] = [0x0e, 0x04, 0x01, 0x03, 0x0c, 0x00];
     const HARDWARE_ERROR: [u8; 3] = [0x10, 0x01, 0x42];
@@ -859,6 +1013,111 @@ mod tests {
         let first_identity = first_controller.epoch_identity();
         assert!(first_identity.same_epoch(first_controller.epoch_identity()));
         assert!(!first_identity.same_epoch(second_controller.epoch_identity()));
+    }
+
+    #[test]
+    fn epoch_bound_test_end_rejects_a_live_cross_wired_endpoint() {
+        let mut first_channel = TestChannel::new();
+        let (first_host, first_controller) = first_channel.split();
+        let mut second_channel = TestChannel::new();
+        let (_second_host, second_controller) = second_channel.split();
+
+        block_on(first_host.write(&LeTestEnd::new())).expect("Test End enters its source queue");
+        let mut buffer = [0; 16];
+        let bound = match first_controller.try_receive_classified_command(&mut buffer) {
+            Ok(bound) => bound,
+            Err(_) => panic!("the source endpoint must classify its oldest Test End"),
+        };
+        let bound = match bound.try_into_dtm() {
+            Ok(bound) => bound,
+            Err(_) => panic!("Test End must retain an owned DTM command"),
+        };
+        let bound = match bound.try_into_test_end() {
+            Ok(bound) => bound,
+            Err(_) => panic!("the DTM command must retain semantic Test End ownership"),
+        };
+
+        assert!(bound.originates_from(&first_controller));
+        assert!(!bound.originates_from(&second_controller));
+        let bound = match bound.try_into_for_endpoint(&second_controller) {
+            Ok(_) => panic!("a foreign live endpoint must not consume the semantic owner"),
+            Err(bound) => bound,
+        };
+        let command = match bound.try_into_for_endpoint(&first_controller) {
+            Ok(command) => command,
+            Err(_) => panic!("the source endpoint must recover its semantic owner"),
+        };
+        let response = command.into_ended_command_complete(0x1234);
+        assert_eq!(response.opcode(), LE_TEST_END_OPCODE);
+    }
+
+    #[test]
+    fn empty_and_cancelled_receive_create_no_epoch_token_or_consumption() {
+        let mut channel = TestChannel::new();
+        let (host, controller) = channel.split();
+        let mut buffer = [0; 16];
+
+        assert!(matches!(
+            controller.try_receive_classified_command(&mut buffer),
+            Err(HciEpochBoundCommandReceiveError::Channel(
+                HciChannelError::Empty
+            ))
+        ));
+
+        {
+            let mut cancelled = pin!(controller.receive_classified_command(&mut buffer));
+            assert_pending(cancelled.as_mut());
+        }
+
+        block_on(host.write(&LeTestEnd::new()))
+            .expect("the replacement receive gets one queued command");
+        let bound = match block_on(controller.receive_classified_command(&mut buffer)) {
+            Ok(bound) => bound,
+            Err(_) => panic!("cancelled empty receive must leave the later packet available"),
+        };
+        assert_eq!(bound.value().opcode(), LE_TEST_END_OPCODE);
+        assert!(bound.originates_from(&controller));
+        assert!(matches!(
+            controller.try_receive_classified_command(&mut buffer),
+            Err(HciEpochBoundCommandReceiveError::Channel(
+                HciChannelError::Empty
+            ))
+        ));
+    }
+
+    #[test]
+    fn epoch_bound_classification_preserves_host_command_fifo() {
+        type FifoChannel = InProcessHciChannel<NoopRawMutex, 2, 1, 16>;
+
+        let mut channel = FifoChannel::new();
+        let (host, controller) = channel.split();
+        block_on(async {
+            host.write(&LeTestEnd::new()).await.unwrap();
+            host.write(&Reset::new()).await.unwrap();
+        });
+
+        let mut buffer = [0; 16];
+        let first = match controller.try_receive_classified_command(&mut buffer) {
+            Ok(bound) => bound,
+            Err(_) => panic!("the oldest Test End must be classified first"),
+        };
+        assert_eq!(first.value().opcode(), LE_TEST_END_OPCODE);
+        assert!(matches!(
+            first.value(),
+            LeControllerCommandClassification::Dtm(LeDtmCommand::TestEnd(_))
+        ));
+
+        let second = match controller.try_receive_classified_command(&mut buffer) {
+            Ok(bound) => bound,
+            Err(_) => panic!("Reset must remain second in the Host FIFO"),
+        };
+        assert_eq!(second.value().opcode(), Reset::OPCODE);
+        assert!(matches!(
+            second.value(),
+            LeControllerCommandClassification::Bootstrap(_)
+        ));
+        assert!(first.originates_from(&controller));
+        assert!(second.originates_from(&controller));
     }
 
     #[test]

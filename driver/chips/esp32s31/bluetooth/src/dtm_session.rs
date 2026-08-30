@@ -235,7 +235,7 @@ impl BluetoothDtmSessionGraphReady {
 /// Ended DTM session retaining its graph and report during response backpressure.
 #[cfg(any(target_arch = "riscv32", test))]
 #[must_use = "the Test End response must be published before the graph can be reused"]
-pub struct BluetoothDtmSessionStopping {
+pub(crate) struct BluetoothDtmSessionStopping {
     ended: BluetoothDtmTestEndedCpuOwned,
 }
 
@@ -243,20 +243,19 @@ pub struct BluetoothDtmSessionStopping {
 impl BluetoothDtmSessionStopping {
     /// Retain one lower Test End owner while its response is backpressured.
     ///
-    /// Constructing this bookend does not prove that it belongs to an earlier
-    /// [`BluetoothDtmSessionGraphReady`]. That continuity remains the job of a
-    /// future concrete session pump.
-    pub fn new(ended: BluetoothDtmTestEndedCpuOwned) -> Self {
+    /// The chip stopping runner constructs this bookend only after its exact
+    /// active graph reached the CPU-owned completion boundary.
+    pub(crate) fn new(ended: BluetoothDtmTestEndedCpuOwned) -> Self {
         Self { ended }
     }
 
     /// Borrow the stable role-specific report for response serialization.
-    pub const fn report(&self) -> BluetoothDtmTestEndReport {
+    pub(crate) const fn report(&self) -> BluetoothDtmTestEndReport {
         self.ended.report()
     }
 
     /// Release the reclaimed graph only after the response was published.
-    pub fn response_published(self) -> BluetoothDtmSessionIdle {
+    pub(crate) fn response_published(self) -> BluetoothDtmSessionIdle {
         BluetoothDtmSessionIdle {
             graph: self.ended.into_reclaimed_graph(),
         }

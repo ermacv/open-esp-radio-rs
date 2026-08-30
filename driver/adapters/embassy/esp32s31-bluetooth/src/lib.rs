@@ -11,8 +11,18 @@
 #[cfg(test)]
 extern crate std;
 
+#[cfg(any(target_arch = "riscv32", test))]
+mod dtm_active;
 #[cfg(target_arch = "riscv32")]
 mod dtm_first;
+
+#[cfg(target_arch = "riscv32")]
+pub use dtm_active::EmbassyBluetoothDtmActiveWait;
+#[cfg(any(target_arch = "riscv32", test))]
+pub use dtm_active::{
+    EmbassyBluetoothDtmActivePendingSignal, EmbassyBluetoothDtmActiveRadioSignal,
+    EmbassyBluetoothDtmActiveWaitError,
+};
 
 #[cfg(target_arch = "riscv32")]
 pub use dtm_first::{

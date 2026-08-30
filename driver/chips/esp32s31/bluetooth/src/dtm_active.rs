@@ -1201,6 +1201,19 @@ where
     pub fn retry(self) -> BluetoothDtmRecurringRunner<'runtime, S, CAPACITY> {
         self.runner
     }
+
+    /// Stop recurrence without first advancing the retained retry owner.
+    ///
+    /// Preparation and head-publication rejection retain a cancellable CPU
+    /// owner. Scheduler-start rejection retains an already published head, so
+    /// the returned cancellation disposition reports `HeadPublished` instead
+    /// of fabricating rollback. The Test End runner uses that distinction to
+    /// finish exactly the hardware-visible event.
+    pub(crate) fn cancel_for_test_end(
+        self,
+    ) -> BluetoothDtmRecurringRunnerCancel<'runtime, S, CAPACITY> {
+        self.runner.cancel()
+    }
 }
 
 /// Fail-closed reason recurring ownership cannot advance normally.

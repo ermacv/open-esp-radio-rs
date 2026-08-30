@@ -9,9 +9,9 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_bluetooth_hci::{
-    HciChannelError, InProcessHciControllerEndpoint, LeDtmStartResponsePending as HciStartPending,
-    LeDtmStartResponsePublication as HciStartPublication,
-    LeDtmStartResponsePublished as HciStartPublished,
+    HciChannelError, HciEpochBound, InProcessHciControllerEndpoint, LeDtmCommandCompleteEvent,
+    LeDtmResponsePending as HciStartPending, LeDtmResponsePublication as HciStartPublication,
+    LeDtmResponsePublished as HciStartPublished,
 };
 
 use crate::{
@@ -25,7 +25,7 @@ use crate::{
     BluetoothSchedulerRunInterruptStorage, BluetoothSchedulerWakeCell,
 };
 
-enum BluetoothDtmActiveRadio<'runtime, S, const CAPACITY: usize>
+pub(crate) enum BluetoothDtmActiveRadio<'runtime, S, const CAPACITY: usize>
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
@@ -50,6 +50,18 @@ pub struct BluetoothDtmStartResponsePending<'runtime> {
 #[must_use = "retain the published order proof with the active radio session"]
 pub struct BluetoothDtmStartResponsePublished<'runtime> {
     transaction: HciStartPublished<'runtime, ()>,
+}
+
+impl<'runtime> BluetoothDtmStartResponsePublished<'runtime> {
+    pub(crate) fn begin_next_response<Owner>(
+        self,
+        owner: Owner,
+        response: LeDtmCommandCompleteEvent,
+    ) -> HciStartPending<'runtime, Owner> {
+        self.transaction
+            .map_radio(|()| owner)
+            .begin_next_response(response)
+    }
 }
 
 /// One affine DTM session with independent radio and HCI-order axes.
@@ -268,6 +280,48 @@ where
         >,
     ) -> bool {
         self.order.transaction.accepts_endpoint(controller)
+    }
+
+    /// Latch one endpoint-bound Test End command into the lower stopping
+    /// transaction.
+    ///
+    /// Both the published start-response marker and the command must match the
+    /// supplied endpoint. Rejection returns the unchanged session and command;
+    /// success strips the HCI wrapper only inside this affinity-checked edge.
+    /// Once latched, no path can enter ordinary recurrence again.
+    #[expect(
+        clippy::result_large_err,
+        reason = "no-alloc rejection retains the complete affine session and command owners"
+    )]
+    pub fn begin_test_end<
+        'command,
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        self,
+        controller: &InProcessHciControllerEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+        command: HciEpochBound<'command, open_esp_radio_bluetooth_hci::LeTestEndCommand>,
+    ) -> Result<
+        crate::BluetoothDtmStoppingRunner<'runtime, S, CAPACITY>,
+        crate::BluetoothDtmTestEndBeginFailure<'runtime, 'command, S, CAPACITY>,
+    > {
+        if !self.accepts_hci_endpoint(controller) {
+            return Err(crate::BluetoothDtmTestEndBeginFailure::new(self, command));
+        }
+        match command.try_into_for_endpoint(controller) {
+            Ok(command) => Ok(crate::BluetoothDtmStoppingRunner::new(
+                self.radio, self.order, command,
+            )),
+            Err(command) => Err(crate::BluetoothDtmTestEndBeginFailure::new(self, command)),
+        }
     }
 }
 

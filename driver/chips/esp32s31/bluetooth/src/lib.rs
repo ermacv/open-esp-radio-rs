@@ -92,6 +92,10 @@ mod dtm_runner;
 mod dtm_rx_completion;
 mod dtm_scheduler_item;
 mod dtm_session;
+#[cfg(target_arch = "riscv32")]
+mod dtm_stopping;
+#[cfg(any(target_arch = "riscv32", test))]
+mod dtm_stopping_policy;
 mod dtm_timing;
 mod dtm_tx_packet;
 #[cfg(any(target_arch = "riscv32", test))]
@@ -235,11 +239,19 @@ pub use dtm_scheduler_item::{
     BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerItemEventError,
     BluetoothDtmSchedulerItemReviewedWords, BluetoothDtmSchedulerTimingPolicy,
 };
-#[cfg(any(target_arch = "riscv32", test))]
-pub use dtm_session::BluetoothDtmSessionStopping;
+#[cfg(test)]
+pub(crate) use dtm_session::BluetoothDtmSessionStopping;
 pub use dtm_session::{
     BluetoothDtmRuntimeConfig, BluetoothDtmRuntimeResources, BluetoothDtmRuntimeSessionBeginError,
     BluetoothDtmSessionIdle,
+};
+#[cfg(target_arch = "riscv32")]
+pub use dtm_stopping::{
+    BluetoothDtmStoppingFault, BluetoothDtmStoppingFaultCause, BluetoothDtmStoppingRetryCause,
+    BluetoothDtmStoppingRunner, BluetoothDtmStoppingStep, BluetoothDtmStoppingWait,
+    BluetoothDtmTestEndBeginFailure, BluetoothDtmTestEndComplete, BluetoothDtmTestEndReady,
+    BluetoothDtmTestEndResponsePending, BluetoothDtmTestEndResponsePublication,
+    BluetoothDtmTestEndRestoreFailure, BluetoothDtmTestEndRestoreStep,
 };
 pub use dtm_timing::{BluetoothDtmTxSchedulerTiming, BluetoothDtmTxTimingMicros};
 pub use dtm_tx_packet::{

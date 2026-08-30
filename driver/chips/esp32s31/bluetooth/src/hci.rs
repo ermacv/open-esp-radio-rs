@@ -491,9 +491,11 @@ where
         link_state: crate::BluetoothDtmLinkStateReset,
         channel: crate::BluetoothDtmChannel,
         phy: crate::BluetoothDtmPhy,
-        window: crate::BluetoothDtmTxEventWindow,
+        requested_interval_micros: u16,
+        margin: crate::BluetoothDtmSchedulerMargin,
+        current: crate::BluetoothDtmSchedulerInstant,
+        rf_ready: crate::BluetoothDtmSchedulerInstant,
         epoch_sample: crate::BluetoothControllerTimeSample,
-        scheduler_anchor: crate::BluetoothDtmSchedulerInstant,
         admission_sample: crate::BluetoothControllerTimeSample,
         sequence_sample: crate::BluetoothControllerTimeSample,
     ) -> Result<
@@ -507,9 +509,11 @@ where
                 link_state,
                 channel,
                 phy,
-                window,
+                requested_interval_micros,
+                margin,
+                current,
+                rf_ready,
                 epoch_sample,
-                scheduler_anchor,
                 admission_sample,
                 sequence_sample,
             )
@@ -526,9 +530,10 @@ where
         link_state: crate::BluetoothDtmLinkStateReset,
         channel: crate::BluetoothDtmChannel,
         phy: crate::BluetoothDtmPhy,
-        window: crate::BluetoothDtmRxInitialEventWindow,
+        margin: crate::BluetoothDtmSchedulerMargin,
+        current: crate::BluetoothDtmSchedulerInstant,
+        rf_ready: crate::BluetoothDtmSchedulerInstant,
         epoch_sample: crate::BluetoothControllerTimeSample,
-        scheduler_anchor: crate::BluetoothDtmSchedulerInstant,
         admission_sample: crate::BluetoothControllerTimeSample,
         sequence_sample: crate::BluetoothControllerTimeSample,
     ) -> Result<
@@ -540,12 +545,61 @@ where
             link_state,
             channel,
             phy,
-            window,
+            margin,
+            current,
+            rf_ready,
             epoch_sample,
-            scheduler_anchor,
             admission_sample,
             sequence_sample,
         )
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn prepare_dtm_transmitter_recurring_item(
+        &mut self,
+        owner: crate::BluetoothDtmActiveTransmitterCpuOwned,
+        current: crate::BluetoothDtmSchedulerInstant,
+        epoch_sample: crate::BluetoothControllerTimeSample,
+        admission_sample: crate::BluetoothControllerTimeSample,
+        sequence_sample: crate::BluetoothControllerTimeSample,
+    ) -> Result<
+        crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmTransmitterEvent>,
+        crate::BluetoothDtmControllerTxRecurringPreparationFailure,
+    > {
+        self.controller
+            .scheduler
+            .prepare_dtm_transmitter_recurring_item(
+                owner,
+                current,
+                epoch_sample,
+                admission_sample,
+                sequence_sample,
+            )
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn prepare_dtm_receiver_recurring_item(
+        &mut self,
+        owner: crate::BluetoothDtmActiveReceiverCpuOwned,
+        current: crate::BluetoothDtmSchedulerInstant,
+        rf_ready: crate::BluetoothDtmSchedulerInstant,
+        epoch_sample: crate::BluetoothControllerTimeSample,
+        admission_sample: crate::BluetoothControllerTimeSample,
+        sequence_sample: crate::BluetoothControllerTimeSample,
+    ) -> Result<
+        crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmReceiverEvent>,
+        crate::BluetoothDtmControllerRxRecurringPreparationFailure,
+    > {
+        self.controller
+            .scheduler
+            .prepare_dtm_receiver_recurring_item(
+                owner,
+                current,
+                rf_ready,
+                epoch_sample,
+                admission_sample,
+                sequence_sample,
+            )
     }
 
     #[cfg(target_arch = "riscv32")]
@@ -658,16 +712,14 @@ where
         clippy::result_large_err,
         reason = "the internal no-alloc delegation preserves the complete rejected graph"
     )]
-    pub(crate) fn publish_dtm_first_scheduler_head<Role>(
+    pub(crate) fn publish_dtm_scheduler_head<Role>(
         &mut self,
         merged: crate::BluetoothDtmEmptySchedulerMergePrepared<Role>,
     ) -> Result<
         crate::BluetoothDtmSchedulerHeadPublished<Role>,
         crate::BluetoothDtmSchedulerHeadPublicationFailure<Role>,
     > {
-        self.controller
-            .scheduler
-            .publish_dtm_first_scheduler_head(merged)
+        self.controller.scheduler.publish_dtm_scheduler_head(merged)
     }
 
     #[cfg(target_arch = "riscv32")]

@@ -24,10 +24,12 @@ use crate::{
 };
 #[cfg(target_arch = "riscv32")]
 use crate::{
-    BluetoothDtmChannel, BluetoothDtmLinkStateReset, BluetoothDtmPayloadLength,
-    BluetoothDtmPayloadPattern, BluetoothDtmPhy, BluetoothDtmPreparedTxGraph,
-    BluetoothDtmReceiverCpuOwned, BluetoothDtmReceiverEvent, BluetoothDtmSchedulerItemEventError,
-    BluetoothDtmTransmitterEvent, BluetoothDtmTxEventWindow,
+    BluetoothDtmActiveReceiverCpuOwned, BluetoothDtmActiveTransmitterCpuOwned, BluetoothDtmChannel,
+    BluetoothDtmLinkStateReset, BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern,
+    BluetoothDtmPhy, BluetoothDtmPreparedTxGraph, BluetoothDtmReceiverCpuOwned,
+    BluetoothDtmReceiverEvent, BluetoothDtmRxRecurringEventWindow,
+    BluetoothDtmSchedulerItemEventError, BluetoothDtmSchedulerMargin, BluetoothDtmTransmitterEvent,
+    BluetoothDtmTxTimingMicros,
 };
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth_memory::{
@@ -338,6 +340,68 @@ impl core::fmt::Debug for BluetoothDtmControllerRxPreparationFailure {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         formatter
             .debug_struct("BluetoothDtmControllerRxPreparationFailure")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Lossless terminal-Controller rejection of one recurring TX event.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the active transmitter and its committed phase remain owned"]
+pub struct BluetoothDtmControllerTxRecurringPreparationFailure {
+    error: BluetoothDtmControllerEventPreparationError,
+    owner: BluetoothDtmActiveTransmitterCpuOwned,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothDtmControllerTxRecurringPreparationFailure {
+    /// Exact finite reason no recurring TX merge was returned.
+    pub const fn error(&self) -> BluetoothDtmControllerEventPreparationError {
+        self.error
+    }
+
+    /// Recover the unchanged active transmitter for retry or Test End.
+    pub fn into_owner(self) -> BluetoothDtmActiveTransmitterCpuOwned {
+        self.owner
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl core::fmt::Debug for BluetoothDtmControllerTxRecurringPreparationFailure {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothDtmControllerTxRecurringPreparationFailure")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Lossless terminal-Controller rejection of one recurring RX event.
+#[cfg(target_arch = "riscv32")]
+#[must_use = "the active receiver and its committed phase remain owned"]
+pub struct BluetoothDtmControllerRxRecurringPreparationFailure {
+    error: BluetoothDtmControllerEventPreparationError,
+    owner: BluetoothDtmActiveReceiverCpuOwned,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothDtmControllerRxRecurringPreparationFailure {
+    /// Exact finite reason no recurring RX merge was returned.
+    pub const fn error(&self) -> BluetoothDtmControllerEventPreparationError {
+        self.error
+    }
+
+    /// Recover the unchanged active receiver for retry or Test End.
+    pub fn into_owner(self) -> BluetoothDtmActiveReceiverCpuOwned {
+        self.owner
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl core::fmt::Debug for BluetoothDtmControllerRxRecurringPreparationFailure {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothDtmControllerRxRecurringPreparationFailure")
             .field("error", &self.error)
             .finish_non_exhaustive()
     }
@@ -934,9 +998,11 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         link_state: BluetoothDtmLinkStateReset,
         channel: BluetoothDtmChannel,
         phy: BluetoothDtmPhy,
-        window: BluetoothDtmTxEventWindow,
+        requested_interval_micros: u16,
+        margin: BluetoothDtmSchedulerMargin,
+        current: BluetoothDtmSchedulerInstant,
+        rf_ready: BluetoothDtmSchedulerInstant,
         epoch_sample: BluetoothControllerTimeSample,
-        scheduler_anchor: BluetoothDtmSchedulerInstant,
         admission_sample: BluetoothControllerTimeSample,
         sequence_sample: BluetoothControllerTimeSample,
     ) -> Result<
@@ -952,6 +1018,10 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
                 owner,
             ));
         }
+        let timing =
+            BluetoothDtmTxTimingMicros::new(owner.length(), phy, requested_interval_micros)
+                .scheduler_timing();
+        let window = timing.initial_event_window(current, rf_ready, margin);
         let event = match BluetoothDtmSchedulerItemEvent::new_transmitter(channel, phy, window) {
             Ok(event) => event,
             Err(error) => {
@@ -964,7 +1034,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         let reservation = match self.reserve_and_authorize_dtm_event(
             event,
             epoch_sample,
-            scheduler_anchor,
+            current,
             admission_sample,
             sequence_sample,
         ) {
@@ -990,7 +1060,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
                     ));
                 }
             };
-        let prepared = match plan.prepare(owner) {
+        let prepared = match plan.prepare_first(owner, channel, phy, timing, margin, window) {
             Ok(prepared) => prepared,
             Err(failure) => {
                 let (memory, error, pattern, length, plan) = failure.into_retry();
@@ -1011,7 +1081,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
                 let item = failure.into_item();
                 let pattern = item.packet_pattern();
                 let length = item.packet_length();
-                let (memory, reservation) = item.cancel().cancel();
+                let (memory, reservation) = item.cancel().cancel_first();
                 self.release_dtm_reservation(reservation);
                 Err(BluetoothDtmControllerTxPreparationFailure {
                     error: BluetoothDtmControllerEventPreparationError::EmptyList(error),
@@ -1036,9 +1106,10 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         link_state: BluetoothDtmLinkStateReset,
         channel: BluetoothDtmChannel,
         phy: BluetoothDtmPhy,
-        window: crate::BluetoothDtmRxInitialEventWindow,
+        margin: BluetoothDtmSchedulerMargin,
+        current: BluetoothDtmSchedulerInstant,
+        rf_ready: BluetoothDtmSchedulerInstant,
         epoch_sample: BluetoothControllerTimeSample,
-        scheduler_anchor: BluetoothDtmSchedulerInstant,
         admission_sample: BluetoothControllerTimeSample,
         sequence_sample: BluetoothControllerTimeSample,
     ) -> Result<
@@ -1054,6 +1125,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
                 owner,
             });
         }
+        let window = crate::BluetoothDtmRxInitialEventWindow::new(current, rf_ready, margin);
         let event = match BluetoothDtmSchedulerItemEvent::new_initial_receiver(channel, phy, window)
         {
             Ok(event) => event,
@@ -1067,7 +1139,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         let reservation = match self.reserve_and_authorize_dtm_event(
             event,
             epoch_sample,
-            scheduler_anchor,
+            current,
             admission_sample,
             sequence_sample,
         ) {
@@ -1089,7 +1161,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
                 });
             }
         };
-        let prepared = match plan.prepare(owner) {
+        let prepared = match plan.prepare_first(owner, channel, phy, margin, window) {
             Ok(prepared) => prepared,
             Err(failure) => {
                 let (owner, error, plan) = failure.into_retry();
@@ -1106,9 +1178,186 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
             Err(failure) => {
                 let error = failure.error();
                 let item = failure.into_item();
-                let (owner, reservation) = item.cancel().cancel();
+                let (owner, reservation) = item.cancel().cancel_first();
                 self.release_dtm_reservation(reservation);
                 Err(BluetoothDtmControllerRxPreparationFailure {
+                    error: BluetoothDtmControllerEventPreparationError::EmptyList(error),
+                    owner,
+                })
+            }
+        }
+    }
+
+    /// Compose the next transmitter event from one exact active command.
+    ///
+    /// The active owner retains the last committed phase and every immutable
+    /// command fact. The next window is calculated before graph mutation; all
+    /// rejection paths release their private reservation and return the same
+    /// active owner without committing the candidate phase.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn prepare_dtm_transmitter_recurring_item(
+        &mut self,
+        owner: BluetoothDtmActiveTransmitterCpuOwned,
+        current: BluetoothDtmSchedulerInstant,
+        epoch_sample: BluetoothControllerTimeSample,
+        admission_sample: BluetoothControllerTimeSample,
+        sequence_sample: BluetoothControllerTimeSample,
+    ) -> Result<
+        BluetoothDtmEmptySchedulerMergePrepared<BluetoothDtmTransmitterEvent>,
+        BluetoothDtmControllerTxRecurringPreparationFailure,
+    > {
+        let next_window = owner
+            .timing()
+            .advance_event_window(owner.last_committed_window(), current, owner.margin())
+            .window();
+        let event = match BluetoothDtmSchedulerItemEvent::new_transmitter(
+            owner.channel(),
+            owner.phy(),
+            next_window,
+        ) {
+            Ok(event) => event,
+            Err(error) => {
+                return Err(BluetoothDtmControllerTxRecurringPreparationFailure {
+                    error: BluetoothDtmControllerEventPreparationError::SchedulerItem(error),
+                    owner,
+                });
+            }
+        };
+        let reservation = match self.reserve_and_authorize_dtm_event(
+            event,
+            epoch_sample,
+            current,
+            admission_sample,
+            sequence_sample,
+        ) {
+            Ok(reservation) => reservation,
+            Err(error) => {
+                return Err(BluetoothDtmControllerTxRecurringPreparationFailure { error, owner });
+            }
+        };
+        let plan = match BluetoothDtmReviewedEventWordsPlan::new_transmitter(
+            owner.link_state(),
+            reservation,
+        ) {
+            Ok(plan) => plan,
+            Err(failure) => {
+                self.release_dtm_reservation(failure.into_reservation());
+                return Err(BluetoothDtmControllerTxRecurringPreparationFailure {
+                    error: BluetoothDtmControllerEventPreparationError::LinkStateRoleMismatch {
+                        expected: BluetoothDtmRole::Transmitter,
+                        observed: owner.link_state().role(),
+                    },
+                    owner,
+                });
+            }
+        };
+        let prepared = match plan.prepare_recurring(owner, next_window) {
+            Ok(prepared) => prepared,
+            Err(failure) => {
+                let (owner, error, plan) = failure.into_retry();
+                self.release_dtm_reservation(plan.into_reservation());
+                return Err(BluetoothDtmControllerTxRecurringPreparationFailure {
+                    error: BluetoothDtmControllerEventPreparationError::Graph(error),
+                    owner,
+                });
+            }
+        };
+        let item = prepared.prepare_scheduler_bookkeeping();
+        match self.prepare_dtm_empty_list_merge(item) {
+            Ok(merged) => Ok(merged),
+            Err(failure) => {
+                let error = failure.error();
+                let item = failure.into_item();
+                let (owner, reservation) = item.cancel().cancel_recurring();
+                self.release_dtm_reservation(reservation);
+                Err(BluetoothDtmControllerTxRecurringPreparationFailure {
+                    error: BluetoothDtmControllerEventPreparationError::EmptyList(error),
+                    owner,
+                })
+            }
+        }
+    }
+
+    /// Compose the next receiver event from one exact active command.
+    ///
+    /// RX resamples both current scheduler time and RF-ready time for each
+    /// event. The previously committed phase remains inside the active owner
+    /// until the candidate has completed the entire CPU-side preparation.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn prepare_dtm_receiver_recurring_item(
+        &mut self,
+        owner: BluetoothDtmActiveReceiverCpuOwned,
+        current: BluetoothDtmSchedulerInstant,
+        rf_ready: BluetoothDtmSchedulerInstant,
+        epoch_sample: BluetoothControllerTimeSample,
+        admission_sample: BluetoothControllerTimeSample,
+        sequence_sample: BluetoothControllerTimeSample,
+    ) -> Result<
+        BluetoothDtmEmptySchedulerMergePrepared<BluetoothDtmReceiverEvent>,
+        BluetoothDtmControllerRxRecurringPreparationFailure,
+    > {
+        let next_window =
+            BluetoothDtmRxRecurringEventWindow::new(self.config, current, rf_ready, owner.margin());
+        let event = match BluetoothDtmSchedulerItemEvent::new_recurring_receiver(
+            owner.channel(),
+            owner.phy(),
+            next_window,
+        ) {
+            Ok(event) => event,
+            Err(error) => {
+                return Err(BluetoothDtmControllerRxRecurringPreparationFailure {
+                    error: BluetoothDtmControllerEventPreparationError::SchedulerItem(error),
+                    owner,
+                });
+            }
+        };
+        let reservation = match self.reserve_and_authorize_dtm_event(
+            event,
+            epoch_sample,
+            current,
+            admission_sample,
+            sequence_sample,
+        ) {
+            Ok(reservation) => reservation,
+            Err(error) => {
+                return Err(BluetoothDtmControllerRxRecurringPreparationFailure { error, owner });
+            }
+        };
+        let plan =
+            match BluetoothDtmReviewedEventWordsPlan::new_receiver(owner.link_state(), reservation)
+            {
+                Ok(plan) => plan,
+                Err(failure) => {
+                    self.release_dtm_reservation(failure.into_reservation());
+                    return Err(BluetoothDtmControllerRxRecurringPreparationFailure {
+                        error: BluetoothDtmControllerEventPreparationError::LinkStateRoleMismatch {
+                            expected: BluetoothDtmRole::Receiver,
+                            observed: owner.link_state().role(),
+                        },
+                        owner,
+                    });
+                }
+            };
+        let prepared = match plan.prepare_recurring(owner, next_window) {
+            Ok(prepared) => prepared,
+            Err(failure) => {
+                let (owner, error, plan) = failure.into_retry();
+                self.release_dtm_reservation(plan.into_reservation());
+                return Err(BluetoothDtmControllerRxRecurringPreparationFailure {
+                    error: BluetoothDtmControllerEventPreparationError::Graph(error),
+                    owner,
+                });
+            }
+        };
+        let item = prepared.prepare_scheduler_bookkeeping();
+        match self.prepare_dtm_empty_list_merge(item) {
+            Ok(merged) => Ok(merged),
+            Err(failure) => {
+                let error = failure.error();
+                let item = failure.into_item();
+                let (owner, reservation) = item.cancel().cancel_recurring();
+                self.release_dtm_reservation(reservation);
+                Err(BluetoothDtmControllerRxRecurringPreparationFailure {
                     error: BluetoothDtmControllerEventPreparationError::EmptyList(error),
                     owner,
                 })
@@ -1188,7 +1437,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         let item = self.cancel_dtm_empty_list_merge(merged)?;
         let pattern = item.packet_pattern();
         let length = item.packet_length();
-        let (memory, reservation) = item.cancel().cancel();
+        let (memory, reservation) = item.cancel().cancel_first();
         self.release_dtm_reservation(reservation);
         Ok((memory, pattern, length))
     }
@@ -1208,7 +1457,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         BluetoothDtmEmptySchedulerMergePrepared<BluetoothDtmReceiverEvent>,
     > {
         let item = self.cancel_dtm_empty_list_merge(merged)?;
-        let (owner, reservation) = item.cancel().cancel();
+        let (owner, reservation) = item.cancel().cancel_first();
         self.release_dtm_reservation(reservation);
         Ok(owner)
     }
@@ -1227,7 +1476,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         unsafe_code,
         reason = "the terminal Controller state proves inactive routes while this scheduler retains the graph and exact list identity"
     )]
-    pub(crate) fn publish_dtm_first_scheduler_head<Role>(
+    pub(crate) fn publish_dtm_scheduler_head<Role>(
         &mut self,
         merged: BluetoothDtmEmptySchedulerMergePrepared<Role>,
     ) -> Result<

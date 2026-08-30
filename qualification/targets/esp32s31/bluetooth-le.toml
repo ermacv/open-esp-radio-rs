@@ -173,7 +173,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "selector-three-role-dtm-private-consumer-lifetime-rotation-and-recovery-missing" },
+  { axis = "implementation", id = "normal-scan-and-nonscan-current-next-list-lifecycle-missing" },
   { axis = "vendor", id = "complete-current-next-rx-list-lifecycle-production-trace-missing" },
   { axis = "hil", id = "controller-list-publication-cell-missing" },
   { axis = "async", id = "list-completion-wake-and-backpressure-missing" },
@@ -182,7 +182,7 @@ gaps = [
 [[capabilities]]
 id = "dtm-memory-graph"
 title = "Static DTM controller-memory graph"
-scope = "One-time production SRAM ownership and non-movable no-heap storage for every reviewed per-event DTM allocation with real target-address binding, exact private allocation links and fail-closed CPU-owned RX rearm without publication"
+scope = "One-time production SRAM ownership and non-movable no-heap storage for every reviewed per-event DTM allocation with target-address binding affine first-and-recurring publication completion recycle and fail-closed RX append/re-arm"
 implementation = "incomplete"
 host = "covered"
 async = "not-applicable"
@@ -191,16 +191,16 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "packet-publication-hardware-owned-completion-recycle-and-swap-reserve-owner-missing" },
-  { axis = "vendor", id = "hardware-consumer-cacheability-and-visibility-fence-missing" },
+  { axis = "implementation", id = "test-end-quiescence-and-static-graph-reclamation-missing" },
+  { axis = "vendor", id = "remaining-hardware-consumed-descriptor-semantics-missing" },
   { axis = "hil", id = "dtm-static-graph-placement-and-mutation-cell-missing" },
 ]
-async-not-applicable = "cpu-owned-static-storage-and-pure-initialization"
+async-not-applicable = "bounded-affine-memory-and-ownership-transitions"
 
 [[capabilities]]
 id = "dtm-rx-accounting"
 title = "DTM returned-buffer accounting"
-scope = "Exact one-word low-24/high-byte classification wrapping receive-count transition and unconditional handoff to the separate append decision without fabricating header ownership"
+scope = "Affine returned-header validation low-24/high-byte classification wrapping receive-count transition deterministic capacity-one append/re-arm rotation and active-session return"
 implementation = "incomplete"
 host = "covered"
 async = "not-applicable"
@@ -209,11 +209,11 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "affine-returned-header-owner-reset-append-and-device-fence-missing" },
-  { axis = "vendor", id = "raw-completion-visibility-and-high-byte-semantics-missing" },
-  { axis = "hil", id = "dtm-rx-count-and-append-decision-cell-missing" },
+  { axis = "implementation", id = "test-end-count-handoff-and-session-reclamation-missing" },
+  { axis = "vendor", id = "rx-result-high-byte-length-crc-and-rssi-semantics-missing" },
+  { axis = "hil", id = "dtm-rx-count-and-append-rearm-cell-missing" },
 ]
-async-not-applicable = "one-result-word-pure-transition"
+async-not-applicable = "bounded-synchronous-account-append-rearm-transition"
 
 [[capabilities]]
 id = "dtm-link-state-reset"
@@ -228,7 +228,7 @@ vendor-anchors = [
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
-  { axis = "implementation", id = "remaining-descriptor-fields-publication-and-hardware-lifecycle-missing" },
+  { axis = "implementation", id = "remaining-hardware-consumed-link-state-fields-missing" },
   { axis = "vendor", id = "remaining-hardware-consumed-words-and-field-semantics-missing" },
   { axis = "hil", id = "dtm-link-state-reset-register-and-memory-trace-missing" },
 ]
@@ -246,7 +246,7 @@ vendor-anchors = [
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
-  { axis = "implementation", id = "remaining-item-fields-insertion-publication-and-hardware-lifecycle-missing" },
+  { axis = "implementation", id = "remaining-hardware-consumed-scheduler-item-fields-missing" },
   { axis = "vendor", id = "remaining-hardware-consumed-words-and-packet-field-semantics-missing" },
   { axis = "hil", id = "dtm-scheduler-item-memory-and-insert-trace-missing" },
 ]
@@ -254,7 +254,7 @@ gaps = [
 [[capabilities]]
 id = "dtm-tx-payload"
 title = "Bounded DTM transmitter packet preparation"
-scope = "Full static packet allocation header image and all eight HCI test patterns with complete cross-revision equivalence"
+scope = "Full static packet allocation header image all eight HCI test patterns and affine active-TX retention across first and recurring events"
 implementation = "incomplete"
 host = "covered"
 async = "not-applicable"
@@ -263,7 +263,7 @@ vendor-anchors = [
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
-  { axis = "implementation", id = "packet-header-publication-fence-and-hardware-lifecycle-missing" },
+  { axis = "implementation", id = "test-end-tx-payload-owner-reclamation-missing" },
   { axis = "vendor", id = "packet-engine-header-consumer-and-publication-order-missing" },
   { axis = "hil", id = "dtm-tx-payload-and-pattern-rf-cell-missing" },
 ]
@@ -281,8 +281,8 @@ vendor-anchors = [
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
-  { axis = "implementation", id = "ordered-live-clock-rf-ready-margin-input-and-scheduler-publication-missing" },
-  { axis = "vendor", id = "scheduler-margin-runtime-source-and-publication-order-missing" },
+  { axis = "implementation", id = "live-ordered-rf-ready-and-scheduler-margin-owners-missing" },
+  { axis = "vendor", id = "scheduler-margin-runtime-source-and-rf-ready-order-proof-missing" },
   { axis = "hil", id = "dtm-tx-interval-tick-and-deadline-cell-missing" },
 ]
 
@@ -338,14 +338,14 @@ vendor-anchors = [
 ]
 gaps = [
   { axis = "implementation", id = "powered-controller-runner-and-selector-6-recovery-missing" },
-  { axis = "vendor", id = "publication-result-meaning-and-live-radio-descriptor-recycle-proof-missing" },
+  { axis = "vendor", id = "selector-6-current-revision-trigger-and-recovery-proof-missing" },
   { axis = "hil", id = "scheduler-lock-modify-live-hardware-trace-missing" },
 ]
 
 [[capabilities]]
 id = "scheduler-finished-list-drain"
 title = "Bounded scheduler finished-list event drain"
-scope = "Typed sixteen-list hardware mask transfer and one-list-per-step event drain without polling allocation or RTOS state"
+scope = "Typed sixteen-list hardware mask transfer one-list-per-step drain affine DTM list-zero completion join fenced head retirement software unlink and finite removal-ready observation"
 implementation = "incomplete"
 host = "covered"
 async = "incomplete"
@@ -354,16 +354,16 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-interrupt-runtime.md",
 ]
 gaps = [
-  { axis = "implementation", id = "hardware-list-to-affine-item-completed-queue-visibility-and-recycle-missing" },
-  { axis = "vendor", id = "raw-interrupt-to-finished-list-mask-and-device-fence-missing" },
+  { axis = "implementation", id = "guaranteed-pending-removal-wake-and-selector-6-recovery-missing" },
+  { axis = "vendor", id = "raw-interrupt-origin-and-finished-list-acknowledge-rule-missing" },
   { axis = "hil", id = "scheduler-finished-list-drain-cell-missing" },
-  { axis = "async", id = "registered-waker-and-bounded-role-callback-dispatch-missing" },
+  { axis = "async", id = "pending-removal-registered-wake-and-bounded-role-dispatch-missing" },
 ]
 
 [[capabilities]]
 id = "packet-dataplane"
 title = "BLE packet TX and RX dataplane"
-scope = "One bounded 1M PHY packet from owned storage through radio publication completion and receive recovery"
+scope = "First and recurring bounded PHY events from owned storage through typed publication completion receive accounting append-rearm and active-owner recovery"
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
@@ -372,11 +372,11 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/README.md",
 ]
 gaps = [
-  { axis = "implementation", id = "tx-rx-descriptor-publication-finished-mask-and-recycle-owner-missing" },
-  { axis = "host", id = "packet-dataplane-host-model-missing" },
-  { axis = "vendor", id = "dtm-raw-status-finished-list-visibility-and-affine-recycle-proof-missing" },
+  { axis = "implementation", id = "autonomous-dtm-session-loop-and-test-end-quiescence-missing" },
+  { axis = "host", id = "executor-neutral-dtm-session-model-missing" },
+  { axis = "vendor", id = "live-rf-ready-margin-and-test-end-stop-order-proof-missing" },
   { axis = "hil", id = "direct-test-mode-rf-cell-missing" },
-  { axis = "async", id = "hard-deadline-to-bottom-half-contract-missing" },
+  { axis = "async", id = "pending-removal-wake-and-session-stop-contract-missing" },
 ]
 
 [[capabilities]]
@@ -410,8 +410,8 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/vendor-project.toml",
 ]
 gaps = [
-  { axis = "implementation", id = "controller-and-command-trait-implementations-missing" },
-  { axis = "host", id = "bootstrap-command-conformance-excludes-operational-hci-and-acl" },
+  { axis = "implementation", id = "dtm-command-parser-staged-completion-and-controller-traits-missing" },
+  { axis = "host", id = "dtm-command-state-and-staged-response-tests-missing" },
   { axis = "vendor", id = "hci-command-and-acl-production-contracts-missing" },
   { axis = "hil", id = "external-hci-interoperability-cell-missing" },
   { axis = "async", id = "command-response-and-acl-credit-wakes-missing" },

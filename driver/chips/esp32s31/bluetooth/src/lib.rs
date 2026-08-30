@@ -245,7 +245,10 @@ pub use scheduler::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use scheduler::{
-    BluetoothDtmControllerRxPreparationFailure, BluetoothDtmControllerTxPreparationFailure,
+    BluetoothDtmControllerRxPreparationFailure,
+    BluetoothDtmControllerRxRecurringPreparationFailure,
+    BluetoothDtmControllerTxPreparationFailure,
+    BluetoothDtmControllerTxRecurringPreparationFailure,
     BluetoothDtmSchedulerHardwareHeadEmptyObserved,
     BluetoothDtmSchedulerHardwareHeadRetirementStep, BluetoothDtmSchedulerRecycleStep,
     BluetoothDtmSchedulerRxSuccessRecycleStep, BluetoothDtmSchedulerSoftwareListRemovalReady,

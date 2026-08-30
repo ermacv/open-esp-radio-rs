@@ -13,14 +13,14 @@ use core::{convert::Infallible, marker::PhantomData};
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmMemoryGraphCompletionObservation, BluetoothDtmMemoryGraphCompletionObserved,
-    BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphRecycleCleaned,
-    BluetoothDtmMemoryGraphRecycleError, BluetoothDtmMemoryGraphRxSuccessRecycleError,
-    BluetoothDtmSchedulerItemCompletionStatus,
+    BluetoothDtmMemoryGraphRecycleCleaned, BluetoothDtmMemoryGraphRecycleError,
+    BluetoothDtmMemoryGraphRxSuccessRecycleError,
 };
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphPositionalEventPrepared,
-    BluetoothDtmMemoryGraphPrepareFailure, BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared,
-    BluetoothDtmPositionalEventWords,
+    BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphPrepareFailure,
+    BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared, BluetoothDtmPositionalEventWords,
+    BluetoothDtmSchedulerItemCompletionStatus,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_esp32s31_bluetooth_memory::{
@@ -36,9 +36,12 @@ use open_esp_radio_esp32s31_hal::{
 };
 
 use crate::{
-    BluetoothDtmLinkStateReset, BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern,
-    BluetoothDtmPreparedTxGraph, BluetoothDtmRole, BluetoothSchedulerReservation,
-    BluetoothSchedulerSequenceReady, dtm_rx_completion::BluetoothDtmReceiverSession,
+    BluetoothDtmChannel, BluetoothDtmLinkStateReset, BluetoothDtmPayloadLength,
+    BluetoothDtmPayloadPattern, BluetoothDtmPhy, BluetoothDtmPreparedTxGraph, BluetoothDtmRole,
+    BluetoothDtmRxInitialEventWindow, BluetoothDtmRxRecurringEventWindow,
+    BluetoothDtmSchedulerMargin, BluetoothDtmTxEventWindow, BluetoothDtmTxSchedulerTiming,
+    BluetoothSchedulerReservation, BluetoothSchedulerSequenceReady,
+    dtm_rx_completion::BluetoothDtmReceiverSession,
     dtm_scheduler_item::apply_overlap_insertion_power,
 };
 
@@ -49,6 +52,34 @@ pub enum BluetoothDtmTransmitterEvent {}
 /// Type marker for a receiver event without a transmitter packet prerequisite.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothDtmReceiverEvent {}
+
+/// Immutable command identity retained across every transmitter event.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct BluetoothDtmTransmitterCommandFacts {
+    link_state: BluetoothDtmLinkStateReset,
+    channel: BluetoothDtmChannel,
+    phy: BluetoothDtmPhy,
+    timing: BluetoothDtmTxSchedulerTiming,
+    margin: BluetoothDtmSchedulerMargin,
+    pattern: BluetoothDtmPayloadPattern,
+    length: BluetoothDtmPayloadLength,
+}
+
+/// Immutable command identity retained across every receiver event.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct BluetoothDtmReceiverCommandFacts {
+    link_state: BluetoothDtmLinkStateReset,
+    channel: BluetoothDtmChannel,
+    phy: BluetoothDtmPhy,
+    margin: BluetoothDtmSchedulerMargin,
+}
+
+/// Exact receiver window most recently committed by the scheduler lifecycle.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BluetoothDtmRxCommittedWindow {
+    Initial(BluetoothDtmRxInitialEventWindow),
+    Recurring(BluetoothDtmRxRecurringEventWindow),
+}
 
 /// Why two validated DTM transforms cannot describe one event plan.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -219,15 +250,29 @@ impl BluetoothDtmReviewedEventWordsPlan<BluetoothDtmTransmitterEvent> {
         clippy::result_large_err,
         reason = "no-alloc failure retains both the unchanged SRAM graph and affine reservation"
     )]
-    pub(crate) fn prepare(
+    pub(crate) fn prepare_first(
         self,
         owner: BluetoothDtmPreparedTxGraph,
+        channel: BluetoothDtmChannel,
+        phy: BluetoothDtmPhy,
+        timing: BluetoothDtmTxSchedulerTiming,
+        margin: BluetoothDtmSchedulerMargin,
+        window: BluetoothDtmTxEventWindow,
     ) -> Result<
         BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmTransmitterEvent>,
         BluetoothDtmReviewedEventPrepareFailure<BluetoothDtmTransmitterEvent>,
     > {
         let plan = self;
         let (memory, pattern, length) = owner.into_parts();
+        let facts = BluetoothDtmTransmitterCommandFacts {
+            link_state: plan.link_state,
+            channel,
+            phy,
+            timing,
+            margin,
+            pattern,
+            length,
+        };
         let prepared = match memory
             .try_prepare_positional_event(|seed| Ok::<_, Infallible>(plan.apply_to_seed(seed)))
         {
@@ -244,10 +289,63 @@ impl BluetoothDtmReviewedEventWordsPlan<BluetoothDtmTransmitterEvent> {
 
         Ok(BluetoothDtmReviewedEventWordsPrepared {
             memory: prepared,
-            context: BluetoothDtmEventContext::Transmitter {
-                _pattern: pattern,
-                _length: length,
-            },
+            context: BluetoothDtmEventContext::Transmitter(BluetoothDtmTransmitterEventContext {
+                facts,
+                event_window: window,
+                previous: None,
+            }),
+            reservation: plan.reservation,
+            _role: PhantomData,
+        })
+    }
+
+    /// Apply one recurring TX plan without rebuilding packet readiness or
+    /// crossing the first-event admission edge.
+    #[cfg(any(target_arch = "riscv32", test))]
+    #[expect(
+        clippy::result_large_err,
+        reason = "no-alloc failure retains the active graph, command facts and reservation"
+    )]
+    pub(crate) fn prepare_recurring(
+        self,
+        owner: BluetoothDtmActiveTransmitterCpuOwned,
+        window: BluetoothDtmTxEventWindow,
+    ) -> Result<
+        BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmTransmitterEvent>,
+        BluetoothDtmRecurringTransmitterEventPrepareFailure,
+    > {
+        let plan = self;
+        let BluetoothDtmActiveTransmitterCpuOwned {
+            memory,
+            facts,
+            last_committed_window,
+            status,
+        } = owner;
+        let prepared = match memory
+            .try_prepare_positional_event(|seed| Ok::<_, Infallible>(plan.apply_to_seed(seed)))
+        {
+            Ok(prepared) => prepared,
+            Err(memory) => {
+                return Err(BluetoothDtmRecurringTransmitterEventPrepareFailure {
+                    memory,
+                    plan,
+                    facts,
+                    last_committed_window,
+                    status,
+                });
+            }
+        };
+
+        Ok(BluetoothDtmReviewedEventWordsPrepared {
+            memory: prepared,
+            context: BluetoothDtmEventContext::Transmitter(BluetoothDtmTransmitterEventContext {
+                facts,
+                event_window: window,
+                previous: Some(BluetoothDtmTransmitterPreviousEvent {
+                    window: last_committed_window,
+                    status,
+                }),
+            }),
             reservation: plan.reservation,
             _role: PhantomData,
         })
@@ -268,15 +366,25 @@ impl BluetoothDtmReviewedEventWordsPlan<BluetoothDtmReceiverEvent> {
         clippy::result_large_err,
         reason = "no-alloc failure retains both the unchanged SRAM graph and affine reservation"
     )]
-    pub(crate) fn prepare(
+    pub(crate) fn prepare_first(
         self,
         owner: BluetoothDtmReceiverCpuOwned,
+        channel: BluetoothDtmChannel,
+        phy: BluetoothDtmPhy,
+        margin: BluetoothDtmSchedulerMargin,
+        window: BluetoothDtmRxInitialEventWindow,
     ) -> Result<
         BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmReceiverEvent>,
         BluetoothDtmReceiverEventPrepareFailure,
     > {
         let plan = self;
         let BluetoothDtmReceiverCpuOwned { memory, session } = owner;
+        let facts = BluetoothDtmReceiverCommandFacts {
+            link_state: plan.link_state,
+            channel,
+            phy,
+            margin,
+        };
         let prepared = match memory
             .try_prepare_positional_event(|seed| Ok::<_, Infallible>(plan.apply_to_seed(seed)))
         {
@@ -292,7 +400,62 @@ impl BluetoothDtmReviewedEventWordsPlan<BluetoothDtmReceiverEvent> {
 
         Ok(BluetoothDtmReviewedEventWordsPrepared {
             memory: prepared,
-            context: BluetoothDtmEventContext::Receiver { session },
+            context: BluetoothDtmEventContext::Receiver(BluetoothDtmReceiverEventContext {
+                facts,
+                session,
+                event_window: BluetoothDtmRxCommittedWindow::Initial(window),
+                previous_window: None,
+            }),
+            reservation: plan.reservation,
+            _role: PhantomData,
+        })
+    }
+
+    /// Apply one recurring RX plan without crossing the initial descriptor
+    /// path or detaching the accumulated Test End count from its graph.
+    #[cfg(any(target_arch = "riscv32", test))]
+    #[expect(
+        clippy::result_large_err,
+        reason = "no-alloc failure retains the active graph, command facts and reservation"
+    )]
+    pub(crate) fn prepare_recurring(
+        self,
+        owner: BluetoothDtmActiveReceiverCpuOwned,
+        window: BluetoothDtmRxRecurringEventWindow,
+    ) -> Result<
+        BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmReceiverEvent>,
+        BluetoothDtmRecurringReceiverEventPrepareFailure,
+    > {
+        let plan = self;
+        let BluetoothDtmActiveReceiverCpuOwned {
+            memory,
+            facts,
+            session,
+            last_committed_window,
+        } = owner;
+        let prepared = match memory
+            .try_prepare_positional_event(|seed| Ok::<_, Infallible>(plan.apply_to_seed(seed)))
+        {
+            Ok(prepared) => prepared,
+            Err(memory) => {
+                return Err(BluetoothDtmRecurringReceiverEventPrepareFailure {
+                    memory,
+                    plan,
+                    facts,
+                    session,
+                    last_committed_window,
+                });
+            }
+        };
+
+        Ok(BluetoothDtmReviewedEventWordsPrepared {
+            memory: prepared,
+            context: BluetoothDtmEventContext::Receiver(BluetoothDtmReceiverEventContext {
+                facts,
+                session,
+                event_window: BluetoothDtmRxCommittedWindow::Recurring(window),
+                previous_window: Some(last_committed_window),
+            }),
             reservation: plan.reservation,
             _role: PhantomData,
         })
@@ -312,18 +475,36 @@ pub struct BluetoothDtmReceiverCpuOwned {
 /// CPU-owned receiver graph belonging to an already active DTM session.
 ///
 /// This type deliberately has no conversion back to
-/// [`BluetoothDtmReceiverCpuOwned`]. A future recurring Controller operation
-/// must consume it together with a recurring window and immutable command
-/// identity; until then the session remains fail-closed.
-#[cfg(target_arch = "riscv32")]
+/// [`BluetoothDtmReceiverCpuOwned`]. The immutable command and last committed
+/// window travel with the graph, so only the recurring Controller operation or
+/// a proven Test End path can consume it.
+#[cfg(any(target_arch = "riscv32", test))]
 #[must_use = "the active receiver graph must recur or enter a proven Test End path"]
 pub struct BluetoothDtmActiveReceiverCpuOwned {
-    _memory: BluetoothDtmMemoryGraphCpuOwned,
+    memory: BluetoothDtmMemoryGraphCpuOwned,
+    facts: BluetoothDtmReceiverCommandFacts,
     session: BluetoothDtmReceiverSession,
+    last_committed_window: BluetoothDtmRxCommittedWindow,
 }
 
-#[cfg(target_arch = "riscv32")]
+#[cfg(any(target_arch = "riscv32", test))]
 impl BluetoothDtmActiveReceiverCpuOwned {
+    pub(crate) const fn link_state(&self) -> BluetoothDtmLinkStateReset {
+        self.facts.link_state
+    }
+
+    pub(crate) const fn channel(&self) -> BluetoothDtmChannel {
+        self.facts.channel
+    }
+
+    pub(crate) const fn phy(&self) -> BluetoothDtmPhy {
+        self.facts.phy
+    }
+
+    pub(crate) const fn margin(&self) -> BluetoothDtmSchedulerMargin {
+        self.facts.margin
+    }
+
     /// Current received-packet count retained for LE Test End.
     pub const fn received_packet_count(&self) -> u16 {
         self.session.received_packet_count()
@@ -392,14 +573,143 @@ impl core::fmt::Debug for BluetoothDtmReceiverEventPrepareFailure {
     }
 }
 
+/// Failed recurring TX graph preparation retaining the complete active owner.
+#[cfg(any(target_arch = "riscv32", test))]
+#[cfg_attr(
+    test,
+    allow(
+        dead_code,
+        reason = "target-only scheduler consumes recurring recovery on production builds"
+    )
+)]
+#[must_use = "recurring TX failure retains the active graph and reservation plan"]
+pub(crate) struct BluetoothDtmRecurringTransmitterEventPrepareFailure {
+    memory: BluetoothDtmMemoryGraphPrepareFailure,
+    plan: BluetoothDtmReviewedEventWordsPlan<BluetoothDtmTransmitterEvent>,
+    facts: BluetoothDtmTransmitterCommandFacts,
+    last_committed_window: BluetoothDtmTxEventWindow,
+    status: BluetoothDtmSchedulerItemCompletionStatus,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+#[cfg_attr(
+    test,
+    allow(
+        dead_code,
+        reason = "target-only scheduler consumes recurring recovery on production builds"
+    )
+)]
+impl BluetoothDtmRecurringTransmitterEventPrepareFailure {
+    pub(crate) fn into_retry(
+        self,
+    ) -> (
+        BluetoothDtmActiveTransmitterCpuOwned,
+        BluetoothDtmMemoryGraphPrepareError,
+        BluetoothDtmReviewedEventWordsPlan<BluetoothDtmTransmitterEvent>,
+    ) {
+        let (memory, error) = self.memory.into_parts();
+        (
+            BluetoothDtmActiveTransmitterCpuOwned {
+                memory,
+                facts: self.facts,
+                last_committed_window: self.last_committed_window,
+                status: self.status,
+            },
+            error,
+            self.plan,
+        )
+    }
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl core::fmt::Debug for BluetoothDtmRecurringTransmitterEventPrepareFailure {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothDtmRecurringTransmitterEventPrepareFailure")
+            .field("error", self.memory.error())
+            .finish_non_exhaustive()
+    }
+}
+
+/// Failed recurring RX graph preparation retaining the complete active owner.
+#[cfg(any(target_arch = "riscv32", test))]
+#[cfg_attr(
+    test,
+    allow(
+        dead_code,
+        reason = "target-only scheduler consumes recurring recovery on production builds"
+    )
+)]
+#[must_use = "recurring RX failure retains the active graph and reservation plan"]
+pub(crate) struct BluetoothDtmRecurringReceiverEventPrepareFailure {
+    memory: BluetoothDtmMemoryGraphPrepareFailure,
+    plan: BluetoothDtmReviewedEventWordsPlan<BluetoothDtmReceiverEvent>,
+    facts: BluetoothDtmReceiverCommandFacts,
+    session: BluetoothDtmReceiverSession,
+    last_committed_window: BluetoothDtmRxCommittedWindow,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+#[cfg_attr(
+    test,
+    allow(
+        dead_code,
+        reason = "target-only scheduler consumes recurring recovery on production builds"
+    )
+)]
+impl BluetoothDtmRecurringReceiverEventPrepareFailure {
+    pub(crate) fn into_retry(
+        self,
+    ) -> (
+        BluetoothDtmActiveReceiverCpuOwned,
+        BluetoothDtmMemoryGraphPrepareError,
+        BluetoothDtmReviewedEventWordsPlan<BluetoothDtmReceiverEvent>,
+    ) {
+        let (memory, error) = self.memory.into_parts();
+        (
+            BluetoothDtmActiveReceiverCpuOwned {
+                memory,
+                facts: self.facts,
+                session: self.session,
+                last_committed_window: self.last_committed_window,
+            },
+            error,
+            self.plan,
+        )
+    }
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl core::fmt::Debug for BluetoothDtmRecurringReceiverEventPrepareFailure {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothDtmRecurringReceiverEventPrepareFailure")
+            .field("error", self.memory.error())
+            .finish_non_exhaustive()
+    }
+}
+
+struct BluetoothDtmTransmitterPreviousEvent {
+    window: BluetoothDtmTxEventWindow,
+    status: BluetoothDtmSchedulerItemCompletionStatus,
+}
+
+struct BluetoothDtmTransmitterEventContext {
+    facts: BluetoothDtmTransmitterCommandFacts,
+    event_window: BluetoothDtmTxEventWindow,
+    previous: Option<BluetoothDtmTransmitterPreviousEvent>,
+}
+
+struct BluetoothDtmReceiverEventContext {
+    facts: BluetoothDtmReceiverCommandFacts,
+    session: BluetoothDtmReceiverSession,
+    event_window: BluetoothDtmRxCommittedWindow,
+    previous_window: Option<BluetoothDtmRxCommittedWindow>,
+}
+
 enum BluetoothDtmEventContext {
-    Transmitter {
-        _pattern: BluetoothDtmPayloadPattern,
-        _length: BluetoothDtmPayloadLength,
-    },
-    Receiver {
-        session: BluetoothDtmReceiverSession,
-    },
+    Transmitter(BluetoothDtmTransmitterEventContext),
+    Receiver(BluetoothDtmReceiverEventContext),
 }
 
 /// CPU-owned bound graph containing one role-consistent reviewed word image.
@@ -430,32 +740,93 @@ impl<Role> BluetoothDtmReviewedEventWordsPrepared<Role> {
 }
 
 impl BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmTransmitterEvent> {
-    /// Cancel before publication and recover both TX CPU-owned resources.
-    pub fn cancel(
+    /// Cancel a first event before publication and recover ordinary ownership.
+    pub(crate) fn cancel_first(
         self,
     ) -> (
         BluetoothDtmMemoryGraphCpuOwned,
         BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
     ) {
+        let BluetoothDtmEventContext::Transmitter(context) = self.context else {
+            unreachable!()
+        };
+        assert!(
+            context.previous.is_none(),
+            "a recurring TX event cannot cancel through the first-event path"
+        );
         (self.memory.cancel(), self.reservation)
+    }
+
+    /// Cancel a recurring event and reconstruct the exact prior active owner.
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) fn cancel_recurring(
+        self,
+    ) -> (
+        BluetoothDtmActiveTransmitterCpuOwned,
+        BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+    ) {
+        let BluetoothDtmEventContext::Transmitter(context) = self.context else {
+            unreachable!()
+        };
+        let Some(previous) = context.previous else {
+            panic!("a first TX event cannot cancel through the recurring path")
+        };
+        (
+            BluetoothDtmActiveTransmitterCpuOwned {
+                memory: self.memory.cancel(),
+                facts: context.facts,
+                last_committed_window: previous.window,
+                status: previous.status,
+            },
+            self.reservation,
+        )
     }
 }
 
 impl BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmReceiverEvent> {
-    /// Cancel before publication without detaching the RX session from memory.
-    pub fn cancel(
+    /// Cancel a first event without detaching the RX session from memory.
+    pub(crate) fn cancel_first(
         self,
     ) -> (
         BluetoothDtmReceiverCpuOwned,
         BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
     ) {
-        let BluetoothDtmEventContext::Receiver { session } = self.context else {
+        let BluetoothDtmEventContext::Receiver(context) = self.context else {
             unreachable!()
         };
+        assert!(
+            context.previous_window.is_none(),
+            "a recurring RX event cannot cancel through the first-event path"
+        );
         (
             BluetoothDtmReceiverCpuOwned {
                 memory: self.memory.cancel(),
-                session,
+                session: context.session,
+            },
+            self.reservation,
+        )
+    }
+
+    /// Cancel a recurring event and reconstruct the exact prior active owner.
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) fn cancel_recurring(
+        self,
+    ) -> (
+        BluetoothDtmActiveReceiverCpuOwned,
+        BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+    ) {
+        let BluetoothDtmEventContext::Receiver(context) = self.context else {
+            unreachable!()
+        };
+        let Some(previous_window) = context.previous_window else {
+            panic!("a first RX event cannot cancel through the recurring path")
+        };
+        (
+            BluetoothDtmActiveReceiverCpuOwned {
+                memory: self.memory.cancel(),
+                facts: context.facts,
+                session: context.session,
+                last_committed_window: previous_window,
             },
             self.reservation,
         )
@@ -508,16 +879,16 @@ impl BluetoothDtmSchedulerBookkeepingPrepared<BluetoothDtmTransmitterEvent> {
     /// Return the exact standard pattern retained from packet preparation.
     pub(crate) const fn packet_pattern(&self) -> BluetoothDtmPayloadPattern {
         match &self.context {
-            BluetoothDtmEventContext::Transmitter { _pattern, .. } => *_pattern,
-            BluetoothDtmEventContext::Receiver { .. } => unreachable!(),
+            BluetoothDtmEventContext::Transmitter(context) => context.facts.pattern,
+            BluetoothDtmEventContext::Receiver(_) => unreachable!(),
         }
     }
 
     /// Return the exact payload length retained from packet preparation.
     pub(crate) const fn packet_length(&self) -> BluetoothDtmPayloadLength {
         match &self.context {
-            BluetoothDtmEventContext::Transmitter { _length, .. } => *_length,
-            BluetoothDtmEventContext::Receiver { .. } => unreachable!(),
+            BluetoothDtmEventContext::Transmitter(context) => context.facts.length,
+            BluetoothDtmEventContext::Receiver(_) => unreachable!(),
         }
     }
 }
@@ -539,8 +910,8 @@ pub(crate) struct BluetoothDtmEmptyListLinkPrepared<Role> {
 impl<Role> BluetoothDtmEmptyListLinkPrepared<Role> {
     pub(crate) const fn role(&self) -> BluetoothDtmRole {
         match &self.context {
-            BluetoothDtmEventContext::Transmitter { .. } => BluetoothDtmRole::Transmitter,
-            BluetoothDtmEventContext::Receiver { .. } => BluetoothDtmRole::Receiver,
+            BluetoothDtmEventContext::Transmitter(_) => BluetoothDtmRole::Transmitter,
+            BluetoothDtmEventContext::Receiver(_) => BluetoothDtmRole::Receiver,
         }
     }
 
@@ -593,8 +964,8 @@ pub(crate) struct BluetoothDtmHardwareOwnedEvent<Role> {
 impl<Role> BluetoothDtmHardwareOwnedEvent<Role> {
     pub(crate) const fn role(&self) -> BluetoothDtmRole {
         match &self.context {
-            BluetoothDtmEventContext::Transmitter { .. } => BluetoothDtmRole::Transmitter,
-            BluetoothDtmEventContext::Receiver { .. } => BluetoothDtmRole::Receiver,
+            BluetoothDtmEventContext::Transmitter(_) => BluetoothDtmRole::Transmitter,
+            BluetoothDtmEventContext::Receiver(_) => BluetoothDtmRole::Receiver,
         }
     }
 
@@ -670,8 +1041,8 @@ pub(crate) struct BluetoothDtmCompletionObservedEvent<Role> {
 impl<Role> BluetoothDtmCompletionObservedEvent<Role> {
     pub(crate) const fn role(&self) -> BluetoothDtmRole {
         match &self.context {
-            BluetoothDtmEventContext::Transmitter { .. } => BluetoothDtmRole::Transmitter,
-            BluetoothDtmEventContext::Receiver { .. } => BluetoothDtmRole::Receiver,
+            BluetoothDtmEventContext::Transmitter(_) => BluetoothDtmRole::Transmitter,
+            BluetoothDtmEventContext::Receiver(_) => BluetoothDtmRole::Receiver,
         }
     }
 
@@ -683,6 +1054,10 @@ impl<Role> BluetoothDtmCompletionObservedEvent<Role> {
         self.memory.status()
     }
 
+    #[expect(
+        clippy::result_large_err,
+        reason = "lossless recycle failure retains the affine graph and removal owner"
+    )]
     pub(crate) fn recycle<const CAPACITY: usize>(
         self,
         timeline: &mut crate::scheduler_timeline::BluetoothSchedulerTimeline<CAPACITY>,
@@ -743,6 +1118,10 @@ impl<Role> BluetoothDtmCompletionObservedEvent<Role> {
 
 #[cfg(target_arch = "riscv32")]
 impl BluetoothDtmCompletionObservedEvent<BluetoothDtmReceiverEvent> {
+    #[expect(
+        clippy::result_large_err,
+        reason = "lossless RX recycle failure retains the affine graph, session and removal owner"
+    )]
     pub(crate) fn recycle_receiver_success<const CAPACITY: usize>(
         self,
         timeline: &mut crate::scheduler_timeline::BluetoothSchedulerTimeline<CAPACITY>,
@@ -808,19 +1187,21 @@ impl BluetoothDtmCompletionObservedEvent<BluetoothDtmReceiverEvent> {
                 });
             }
         };
-        let BluetoothDtmEventContext::Receiver { mut session } = context else {
+        let BluetoothDtmEventContext::Receiver(mut context) = context else {
             unreachable!()
         };
         let (memory, outcome) = rx_prepared.observe().consume_then_commit(|projection| {
             projection.map_or(
                 crate::BluetoothDtmRxCompletionOutcome::NoReturnedPacket,
-                |result| session.account_projection(result),
+                |result| context.session.account_projection(result),
             )
         });
         release.commit();
         Ok(BluetoothDtmRxSuccessRecycleTimelineReleasedEvent {
             memory,
-            session,
+            facts: context.facts,
+            session: context.session,
+            last_committed_window: context.event_window,
             outcome,
         })
     }
@@ -883,7 +1264,9 @@ impl<Role> BluetoothDtmRecycleTimelineReleasedEvent<Role> {
 #[cfg(target_arch = "riscv32")]
 pub(crate) struct BluetoothDtmRxSuccessRecycleTimelineReleasedEvent {
     memory: BluetoothDtmMemoryGraphRecycleCleaned,
+    facts: BluetoothDtmReceiverCommandFacts,
     session: BluetoothDtmReceiverSession,
+    last_committed_window: BluetoothDtmRxCommittedWindow,
     outcome: crate::BluetoothDtmRxCompletionOutcome,
 }
 
@@ -893,7 +1276,9 @@ impl BluetoothDtmRxSuccessRecycleTimelineReleasedEvent {
         let (memory, _) = self.memory.into_cpu_owned().into_parts();
         BluetoothDtmRxRearmedEvent {
             memory,
+            facts: self.facts,
             session: self.session,
+            last_committed_window: self.last_committed_window,
             outcome: self.outcome,
         }
     }
@@ -901,7 +1286,7 @@ impl BluetoothDtmRxSuccessRecycleTimelineReleasedEvent {
 
 /// CPU-owned graph after one exact completion/removal/recycle transaction.
 #[must_use = "the recycled DTM graph must be retained by the role owner"]
-#[cfg(target_arch = "riscv32")]
+#[cfg(any(target_arch = "riscv32", test))]
 pub struct BluetoothDtmRecycledEvent<Role> {
     memory: BluetoothDtmMemoryGraphCpuOwned,
     context: BluetoothDtmEventContext,
@@ -909,13 +1294,13 @@ pub struct BluetoothDtmRecycledEvent<Role> {
     _role: PhantomData<Role>,
 }
 
-#[cfg(target_arch = "riscv32")]
+#[cfg(any(target_arch = "riscv32", test))]
 impl<Role> BluetoothDtmRecycledEvent<Role> {
     /// Role retained by the recycled event.
     pub const fn role(&self) -> BluetoothDtmRole {
         match &self.context {
-            BluetoothDtmEventContext::Transmitter { .. } => BluetoothDtmRole::Transmitter,
-            BluetoothDtmEventContext::Receiver { .. } => BluetoothDtmRole::Receiver,
+            BluetoothDtmEventContext::Transmitter(_) => BluetoothDtmRole::Transmitter,
+            BluetoothDtmEventContext::Receiver(_) => BluetoothDtmRole::Receiver,
         }
     }
 
@@ -925,37 +1310,33 @@ impl<Role> BluetoothDtmRecycledEvent<Role> {
     }
 }
 
-#[cfg(target_arch = "riscv32")]
+#[cfg(any(target_arch = "riscv32", test))]
 impl BluetoothDtmRecycledEvent<BluetoothDtmTransmitterEvent> {
     /// Transmitter packet pattern retained by the recycled event.
     pub const fn packet_pattern(&self) -> BluetoothDtmPayloadPattern {
         match &self.context {
-            BluetoothDtmEventContext::Transmitter { _pattern, .. } => *_pattern,
-            BluetoothDtmEventContext::Receiver { .. } => unreachable!(),
+            BluetoothDtmEventContext::Transmitter(context) => context.facts.pattern,
+            BluetoothDtmEventContext::Receiver(_) => unreachable!(),
         }
     }
 
     /// Transmitter payload length retained by the recycled event.
     pub const fn packet_length(&self) -> BluetoothDtmPayloadLength {
         match &self.context {
-            BluetoothDtmEventContext::Transmitter { _length, .. } => *_length,
-            BluetoothDtmEventContext::Receiver { .. } => unreachable!(),
+            BluetoothDtmEventContext::Transmitter(context) => context.facts.length,
+            BluetoothDtmEventContext::Receiver(_) => unreachable!(),
         }
     }
 
     /// Consume this recycle result into the fail-closed active TX owner.
     pub fn into_next(self) -> BluetoothDtmActiveTransmitterCpuOwned {
-        let BluetoothDtmEventContext::Transmitter {
-            _pattern: pattern,
-            _length: length,
-        } = self.context
-        else {
+        let BluetoothDtmEventContext::Transmitter(context) = self.context else {
             unreachable!()
         };
         BluetoothDtmActiveTransmitterCpuOwned {
-            _memory: self.memory,
-            pattern,
-            length,
+            memory: self.memory,
+            facts: context.facts,
+            last_committed_window: context.event_window,
             status: self.status,
         }
     }
@@ -964,27 +1345,51 @@ impl BluetoothDtmRecycledEvent<BluetoothDtmTransmitterEvent> {
 /// CPU-owned transmitter graph belonging to an already active DTM session.
 ///
 /// It cannot be converted back to a fresh graph or passed to the first-event
-/// admission API. Recurrence remains closed until channel, PHY, timing and
-/// packet-readiness identity are retained beside this owner.
-#[cfg(target_arch = "riscv32")]
+/// admission API. Immutable command identity and the last committed phase
+/// anchor remain inseparable from packet readiness and graph ownership.
+#[cfg(any(target_arch = "riscv32", test))]
 #[must_use = "the active transmitter graph must recur or enter a proven Test End path"]
 pub struct BluetoothDtmActiveTransmitterCpuOwned {
-    _memory: BluetoothDtmMemoryGraphCpuOwned,
-    pattern: BluetoothDtmPayloadPattern,
-    length: BluetoothDtmPayloadLength,
+    memory: BluetoothDtmMemoryGraphCpuOwned,
+    facts: BluetoothDtmTransmitterCommandFacts,
+    last_committed_window: BluetoothDtmTxEventWindow,
     status: BluetoothDtmSchedulerItemCompletionStatus,
 }
 
-#[cfg(target_arch = "riscv32")]
+#[cfg(any(target_arch = "riscv32", test))]
 impl BluetoothDtmActiveTransmitterCpuOwned {
+    pub(crate) const fn link_state(&self) -> BluetoothDtmLinkStateReset {
+        self.facts.link_state
+    }
+
+    pub(crate) const fn channel(&self) -> BluetoothDtmChannel {
+        self.facts.channel
+    }
+
+    pub(crate) const fn phy(&self) -> BluetoothDtmPhy {
+        self.facts.phy
+    }
+
+    pub(crate) const fn timing(&self) -> BluetoothDtmTxSchedulerTiming {
+        self.facts.timing
+    }
+
+    pub(crate) const fn margin(&self) -> BluetoothDtmSchedulerMargin {
+        self.facts.margin
+    }
+
+    pub(crate) const fn last_committed_window(&self) -> BluetoothDtmTxEventWindow {
+        self.last_committed_window
+    }
+
     /// Packet pattern retained by the completed active test.
     pub const fn packet_pattern(&self) -> BluetoothDtmPayloadPattern {
-        self.pattern
+        self.facts.pattern
     }
 
     /// Payload length retained by the completed active test.
     pub const fn packet_length(&self) -> BluetoothDtmPayloadLength {
-        self.length
+        self.facts.length
     }
 
     /// Scheduler completion status that returned this graph to CPU ownership.
@@ -993,16 +1398,18 @@ impl BluetoothDtmActiveTransmitterCpuOwned {
     }
 }
 
-#[cfg(target_arch = "riscv32")]
+#[cfg(any(target_arch = "riscv32", test))]
 impl BluetoothDtmRecycledEvent<BluetoothDtmReceiverEvent> {
     /// Recover the unchanged RX session after a non-success scheduler event.
     pub fn into_next(self) -> BluetoothDtmActiveReceiverCpuOwned {
-        let BluetoothDtmEventContext::Receiver { session } = self.context else {
+        let BluetoothDtmEventContext::Receiver(context) = self.context else {
             unreachable!()
         };
         BluetoothDtmActiveReceiverCpuOwned {
-            _memory: self.memory,
-            session,
+            memory: self.memory,
+            facts: context.facts,
+            session: context.session,
+            last_committed_window: context.event_window,
         }
     }
 }
@@ -1012,7 +1419,9 @@ impl BluetoothDtmRecycledEvent<BluetoothDtmReceiverEvent> {
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothDtmRxRearmedEvent {
     memory: BluetoothDtmMemoryGraphCpuOwned,
+    facts: BluetoothDtmReceiverCommandFacts,
     session: BluetoothDtmReceiverSession,
+    last_committed_window: BluetoothDtmRxCommittedWindow,
     outcome: crate::BluetoothDtmRxCompletionOutcome,
 }
 
@@ -1031,8 +1440,10 @@ impl BluetoothDtmRxRearmedEvent {
     /// Consume this re-arm proof into the sole next-event aggregate.
     pub fn into_next(self) -> BluetoothDtmActiveReceiverCpuOwned {
         BluetoothDtmActiveReceiverCpuOwned {
-            _memory: self.memory,
+            memory: self.memory,
+            facts: self.facts,
             session: self.session,
+            last_committed_window: self.last_committed_window,
         }
     }
 }
@@ -1042,16 +1453,16 @@ impl BluetoothDtmSchedulerBookkeepingPrepared<BluetoothDtmTransmitterEvent> {
     /// Return the exact standard pattern retained through bookkeeping.
     pub const fn packet_pattern(&self) -> BluetoothDtmPayloadPattern {
         match &self.context {
-            BluetoothDtmEventContext::Transmitter { _pattern, .. } => *_pattern,
-            BluetoothDtmEventContext::Receiver { .. } => unreachable!(),
+            BluetoothDtmEventContext::Transmitter(context) => context.facts.pattern,
+            BluetoothDtmEventContext::Receiver(_) => unreachable!(),
         }
     }
 
     /// Return the exact payload length retained through bookkeeping.
     pub const fn packet_length(&self) -> BluetoothDtmPayloadLength {
         match &self.context {
-            BluetoothDtmEventContext::Transmitter { _length, .. } => *_length,
-            BluetoothDtmEventContext::Receiver { .. } => unreachable!(),
+            BluetoothDtmEventContext::Transmitter(context) => context.facts.length,
+            BluetoothDtmEventContext::Receiver(_) => unreachable!(),
         }
     }
 }
@@ -1065,8 +1476,13 @@ mod tests {
     use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
 
     use super::{
-        BluetoothDtmReceiverCpuOwned, BluetoothDtmReviewedEventWordsPlan,
-        BluetoothDtmReviewedEventWordsPlanError,
+        BluetoothDtmActiveReceiverCpuOwned, BluetoothDtmActiveTransmitterCpuOwned,
+        BluetoothDtmEventContext, BluetoothDtmReceiverCommandFacts, BluetoothDtmReceiverCpuOwned,
+        BluetoothDtmReceiverEvent, BluetoothDtmReceiverEventContext, BluetoothDtmRecycledEvent,
+        BluetoothDtmReviewedEventWordsPlan, BluetoothDtmReviewedEventWordsPlanError,
+        BluetoothDtmRxCommittedWindow, BluetoothDtmTransmitterCommandFacts,
+        BluetoothDtmTransmitterEvent, BluetoothDtmTransmitterEventContext,
+        BluetoothDtmTransmitterPreviousEvent,
     };
     use crate::scheduler_timeline::BluetoothSchedulerTimeline;
     use crate::{
@@ -1078,6 +1494,7 @@ mod tests {
         BluetoothSchedulerReservation, BluetoothSchedulerSequenceAuthorizationError,
         BluetoothSchedulerSequenceReady,
     };
+    use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmSchedulerItemCompletionStatus;
 
     fn owner(base: u32) -> crate::BluetoothDtmMemoryGraphCpuOwned {
         let storage =
@@ -1100,36 +1517,50 @@ mod tests {
         )
     }
 
+    fn channel() -> BluetoothDtmChannel {
+        BluetoothDtmChannel::new(5).expect("channel five is valid")
+    }
+
+    fn margin() -> BluetoothDtmSchedulerMargin {
+        BluetoothDtmSchedulerMargin::from_image(8)
+    }
+
+    fn tx_timing() -> crate::BluetoothDtmTxSchedulerTiming {
+        BluetoothDtmTxTimingMicros::new(
+            BluetoothDtmPayloadLength::from_hci_image(3),
+            BluetoothDtmPhy::Le2M,
+            0,
+        )
+        .scheduler_timing()
+    }
+
+    fn tx_window() -> crate::BluetoothDtmTxEventWindow {
+        tx_timing().initial_event_window(
+            BluetoothDtmSchedulerInstant::from_image(64),
+            BluetoothDtmSchedulerInstant::from_image(1_020),
+            margin(),
+        )
+    }
+
+    fn rx_initial_window() -> crate::BluetoothDtmRxInitialEventWindow {
+        crate::BluetoothDtmRxInitialEventWindow::new(
+            BluetoothDtmSchedulerInstant::from_image(64),
+            BluetoothDtmSchedulerInstant::from_image(1_020),
+            margin(),
+        )
+    }
+
     fn item(role: BluetoothDtmRole) -> BluetoothDtmSchedulerItemEvent {
-        let channel = BluetoothDtmChannel::new(5).expect("channel five is valid");
         match role {
-            BluetoothDtmRole::Transmitter => {
-                let window = BluetoothDtmTxTimingMicros::new(
-                    BluetoothDtmPayloadLength::from_hci_image(0),
-                    BluetoothDtmPhy::Le2M,
-                    0,
-                )
-                .scheduler_timing()
-                .initial_event_window(
-                    BluetoothDtmSchedulerInstant::from_image(64),
-                    BluetoothDtmSchedulerInstant::from_image(1_020),
-                    BluetoothDtmSchedulerMargin::from_image(8),
-                );
-                BluetoothDtmSchedulerItemEvent::new_transmitter(
-                    channel,
-                    BluetoothDtmPhy::Le2M,
-                    window,
-                )
-            }
-            BluetoothDtmRole::Receiver => BluetoothDtmSchedulerItemEvent::new_recurring_receiver(
-                channel,
+            BluetoothDtmRole::Transmitter => BluetoothDtmSchedulerItemEvent::new_transmitter(
+                channel(),
+                BluetoothDtmPhy::Le2M,
+                tx_window(),
+            ),
+            BluetoothDtmRole::Receiver => BluetoothDtmSchedulerItemEvent::new_initial_receiver(
+                channel(),
                 BluetoothDtmPhy::LeCoded,
-                BluetoothDtmRxRecurringEventWindow::new(
-                    crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
-                    BluetoothDtmSchedulerInstant::from_image(900),
-                    BluetoothDtmSchedulerInstant::from_image(1_020),
-                    BluetoothDtmSchedulerMargin::from_image(8),
-                ),
+                rx_initial_window(),
             ),
         }
         .expect("selected PHY is valid for its role")
@@ -1150,8 +1581,15 @@ mod tests {
         timeline: &mut BluetoothSchedulerTimeline<CAPACITY>,
         role: BluetoothDtmRole,
     ) -> BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady> {
+        reservation_for_event(timeline, item(role))
+    }
+
+    fn reservation_for_event<const CAPACITY: usize>(
+        timeline: &mut BluetoothSchedulerTimeline<CAPACITY>,
+        event: BluetoothDtmSchedulerItemEvent,
+    ) -> BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady> {
         timeline
-            .reserve_dtm_event(item(role), epoch(), timing_policy(), admission_sample())
+            .reserve_dtm_event(event, epoch(), timing_policy(), admission_sample())
             .expect("the first guarded deadline is open")
             .authorize_sequence(admission_sample())
             .expect("the second guarded deadline is open")
@@ -1182,7 +1620,14 @@ mod tests {
         );
 
         let prepared = plan
-            .prepare(packet)
+            .prepare_first(
+                packet,
+                channel(),
+                BluetoothDtmPhy::Le2M,
+                tx_timing(),
+                margin(),
+                tx_window(),
+            )
             .expect("fresh private links replace both stale plan links");
         let scheduler_prepared = prepared.prepare_scheduler_bookkeeping();
         assert_eq!(
@@ -1191,7 +1636,7 @@ mod tests {
         );
         assert_eq!(scheduler_prepared.packet_length().hci_image(), 3);
         let prepared = scheduler_prepared.cancel();
-        let (_owner, reservation) = prepared.cancel();
+        let (_owner, reservation) = prepared.cancel_first();
         assert!(timeline.release(reservation).is_ok());
         assert!(timeline.is_empty());
     }
@@ -1208,14 +1653,225 @@ mod tests {
         .expect("both transforms encode RX");
 
         let prepared = plan
-            .prepare(BluetoothDtmReceiverCpuOwned::new(owner(0x2f00_0100)))
+            .prepare_first(
+                BluetoothDtmReceiverCpuOwned::new(owner(0x2f00_0100)),
+                channel(),
+                BluetoothDtmPhy::LeCoded,
+                margin(),
+                rx_initial_window(),
+            )
             .expect("the bound graph accepts the receiver plan");
         let scheduler_prepared = prepared.prepare_scheduler_bookkeeping();
-        let (owner, reservation) = scheduler_prepared.cancel().cancel();
+        let (owner, reservation) = scheduler_prepared.cancel().cancel_first();
 
         assert_eq!(owner.received_packet_count(), 0);
         assert!(timeline.release(reservation).is_ok());
         assert!(timeline.is_empty());
+    }
+
+    #[test]
+    fn recurring_tx_cancellation_restores_the_last_committed_owner() {
+        let mut timeline = BluetoothSchedulerTimeline::<1>::new();
+        let reset =
+            BluetoothDtmLinkStateReset::new(None, None, 0, 0, BluetoothDtmRole::Transmitter)
+                .expect("zero dynamic fields are valid");
+        let pattern = BluetoothDtmPayloadPattern::Repeated11110000;
+        let length = BluetoothDtmPayloadLength::from_hci_image(3);
+        let memory = owner(0x2f06_0000)
+            .prepare_dtm_tx_packet(pattern, length)
+            .discard();
+        let committed_window = tx_window();
+        let candidate_window = tx_timing()
+            .advance_event_window(
+                committed_window,
+                BluetoothDtmSchedulerInstant::from_image(1_100),
+                margin(),
+            )
+            .window();
+        let facts = BluetoothDtmTransmitterCommandFacts {
+            link_state: reset,
+            channel: channel(),
+            phy: BluetoothDtmPhy::Le2M,
+            timing: tx_timing(),
+            margin: margin(),
+            pattern,
+            length,
+        };
+        let active = BluetoothDtmActiveTransmitterCpuOwned {
+            memory,
+            facts,
+            last_committed_window: committed_window,
+            status: BluetoothDtmSchedulerItemCompletionStatus::Success,
+        };
+        let event = BluetoothDtmSchedulerItemEvent::new_transmitter(
+            channel(),
+            BluetoothDtmPhy::Le2M,
+            candidate_window,
+        )
+        .expect("TX event accepts LE 2M");
+        let plan = BluetoothDtmReviewedEventWordsPlan::new_transmitter(
+            reset,
+            reservation_for_event(&mut timeline, event),
+        )
+        .expect("both transforms encode TX");
+
+        let prepared = plan
+            .prepare_recurring(active, candidate_window)
+            .expect("active TX graph accepts recurring preparation");
+        let (active, reservation) = prepared
+            .prepare_scheduler_bookkeeping()
+            .cancel()
+            .cancel_recurring();
+
+        assert_eq!(active.link_state(), reset);
+        assert_eq!(active.channel(), channel());
+        assert_eq!(active.phy(), BluetoothDtmPhy::Le2M);
+        assert_eq!(active.timing(), tx_timing());
+        assert_eq!(active.margin(), margin());
+        assert_eq!(active.last_committed_window, committed_window);
+        assert_eq!(
+            active.status(),
+            BluetoothDtmSchedulerItemCompletionStatus::Success
+        );
+        assert!(timeline.release(reservation).is_ok());
+    }
+
+    #[test]
+    fn recurring_rx_cancellation_restores_session_and_committed_window() {
+        let mut timeline = BluetoothSchedulerTimeline::<1>::new();
+        let reset = BluetoothDtmLinkStateReset::new(None, None, 0, 0, BluetoothDtmRole::Receiver)
+            .expect("zero dynamic fields are valid");
+        let committed_window = BluetoothDtmRxCommittedWindow::Initial(rx_initial_window());
+        let candidate_window = BluetoothDtmRxRecurringEventWindow::new(
+            crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
+            BluetoothDtmSchedulerInstant::from_image(1_100),
+            BluetoothDtmSchedulerInstant::from_image(1_120),
+            margin(),
+        );
+        let facts = BluetoothDtmReceiverCommandFacts {
+            link_state: reset,
+            channel: channel(),
+            phy: BluetoothDtmPhy::LeCoded,
+            margin: margin(),
+        };
+        let active = BluetoothDtmActiveReceiverCpuOwned {
+            memory: owner(0x2f05_0000),
+            facts,
+            session: crate::dtm_rx_completion::BluetoothDtmReceiverSession::new(),
+            last_committed_window: committed_window,
+        };
+        let event = BluetoothDtmSchedulerItemEvent::new_recurring_receiver(
+            channel(),
+            BluetoothDtmPhy::LeCoded,
+            candidate_window,
+        )
+        .expect("RX event accepts LE Coded");
+        let plan = BluetoothDtmReviewedEventWordsPlan::new_receiver(
+            reset,
+            reservation_for_event(&mut timeline, event),
+        )
+        .expect("both transforms encode RX");
+
+        let prepared = plan
+            .prepare_recurring(active, candidate_window)
+            .expect("active RX graph accepts recurring preparation");
+        let (active, reservation) = prepared
+            .prepare_scheduler_bookkeeping()
+            .cancel()
+            .cancel_recurring();
+
+        assert_eq!(active.link_state(), reset);
+        assert_eq!(active.channel(), channel());
+        assert_eq!(active.phy(), BluetoothDtmPhy::LeCoded);
+        assert_eq!(active.margin(), margin());
+        assert_eq!(active.last_committed_window, committed_window);
+        assert_eq!(active.received_packet_count(), 0);
+        assert!(timeline.release(reservation).is_ok());
+    }
+
+    #[test]
+    fn completed_events_commit_only_the_candidate_window_into_active_owners() {
+        let reset_tx =
+            BluetoothDtmLinkStateReset::new(None, None, 0, 0, BluetoothDtmRole::Transmitter)
+                .expect("zero dynamic fields are valid");
+        let tx_candidate = tx_timing()
+            .advance_event_window(
+                tx_window(),
+                BluetoothDtmSchedulerInstant::from_image(1_100),
+                margin(),
+            )
+            .window();
+        let tx_facts = BluetoothDtmTransmitterCommandFacts {
+            link_state: reset_tx,
+            channel: channel(),
+            phy: BluetoothDtmPhy::Le2M,
+            timing: tx_timing(),
+            margin: margin(),
+            pattern: BluetoothDtmPayloadPattern::Repeated11110000,
+            length: BluetoothDtmPayloadLength::from_hci_image(3),
+        };
+        let recycled_tx = BluetoothDtmRecycledEvent::<BluetoothDtmTransmitterEvent> {
+            memory: owner(0x2f04_0000),
+            context: BluetoothDtmEventContext::Transmitter(BluetoothDtmTransmitterEventContext {
+                facts: tx_facts,
+                event_window: tx_candidate,
+                previous: Some(BluetoothDtmTransmitterPreviousEvent {
+                    window: tx_window(),
+                    status: BluetoothDtmSchedulerItemCompletionStatus::NonSuccess(
+                        core::num::NonZeroU32::new(1).expect("one is nonzero"),
+                    ),
+                }),
+            }),
+            status: BluetoothDtmSchedulerItemCompletionStatus::Success,
+            _role: core::marker::PhantomData,
+        };
+        assert_eq!(recycled_tx.packet_pattern(), tx_facts.pattern);
+        assert_eq!(recycled_tx.packet_length(), tx_facts.length);
+        let tx = recycled_tx.into_next();
+        assert_eq!(tx.packet_pattern(), tx_facts.pattern);
+        assert_eq!(tx.packet_length(), tx_facts.length);
+        assert_eq!(tx.last_committed_window(), tx_candidate);
+        assert_eq!(
+            tx.status(),
+            BluetoothDtmSchedulerItemCompletionStatus::Success
+        );
+
+        let reset_rx =
+            BluetoothDtmLinkStateReset::new(None, None, 0, 0, BluetoothDtmRole::Receiver)
+                .expect("zero dynamic fields are valid");
+        let rx_candidate = BluetoothDtmRxRecurringEventWindow::new(
+            crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
+            BluetoothDtmSchedulerInstant::from_image(1_100),
+            BluetoothDtmSchedulerInstant::from_image(1_120),
+            margin(),
+        );
+        let recycled_rx = BluetoothDtmRecycledEvent::<BluetoothDtmReceiverEvent> {
+            memory: owner(0x2f03_0000),
+            context: BluetoothDtmEventContext::Receiver(BluetoothDtmReceiverEventContext {
+                facts: BluetoothDtmReceiverCommandFacts {
+                    link_state: reset_rx,
+                    channel: channel(),
+                    phy: BluetoothDtmPhy::LeCoded,
+                    margin: margin(),
+                },
+                session: crate::dtm_rx_completion::BluetoothDtmReceiverSession::new(),
+                event_window: BluetoothDtmRxCommittedWindow::Recurring(rx_candidate),
+                previous_window: Some(BluetoothDtmRxCommittedWindow::Initial(rx_initial_window())),
+            }),
+            status: BluetoothDtmSchedulerItemCompletionStatus::Success,
+            _role: core::marker::PhantomData,
+        };
+        assert_eq!(recycled_rx.role(), BluetoothDtmRole::Receiver);
+        assert_eq!(
+            recycled_rx.status(),
+            BluetoothDtmSchedulerItemCompletionStatus::Success
+        );
+        let rx = recycled_rx.into_next();
+        assert_eq!(
+            rx.last_committed_window,
+            BluetoothDtmRxCommittedWindow::Recurring(rx_candidate)
+        );
+        assert_eq!(rx.received_packet_count(), 0);
     }
 
     #[test]

@@ -647,9 +647,11 @@ where
     /// Prepare one transmitter graph through the terminal Controller's private
     /// timeline and exclusive empty scheduler list.
     ///
-    /// The three time samples represent the epoch anchor, first admission gate
-    /// and second sequence gate respectively. A recoverable failure releases
-    /// any private reservation before returning the graph and TX program.
+    /// The Controller derives both the first TX window and scheduler anchor from
+    /// the requested interval, margin and ordered current/RF-ready instants. The
+    /// three hardware samples authorize the epoch, admission and sequence gates.
+    /// A recoverable failure releases any private reservation before returning
+    /// the graph and complete TX program.
     #[expect(
         clippy::too_many_arguments,
         reason = "each typed input is a distinct reviewed DTM or fresh-time authority"
@@ -660,9 +662,11 @@ where
         link_state: crate::BluetoothDtmLinkStateReset,
         channel: crate::BluetoothDtmChannel,
         phy: crate::BluetoothDtmPhy,
-        window: crate::BluetoothDtmTxEventWindow,
+        requested_interval_micros: u16,
+        margin: crate::BluetoothDtmSchedulerMargin,
+        current: crate::BluetoothDtmSchedulerInstant,
+        rf_ready: crate::BluetoothDtmSchedulerInstant,
         epoch_sample: crate::BluetoothControllerTimeSample,
-        scheduler_anchor: crate::BluetoothDtmSchedulerInstant,
         admission_sample: crate::BluetoothControllerTimeSample,
         sequence_sample: crate::BluetoothControllerTimeSample,
     ) -> Result<
@@ -674,9 +678,11 @@ where
             link_state,
             channel,
             phy,
-            window,
+            requested_interval_micros,
+            margin,
+            current,
+            rf_ready,
             epoch_sample,
-            scheduler_anchor,
             admission_sample,
             sequence_sample,
         )
@@ -685,9 +691,9 @@ where
     /// Prepare one receiver graph/session through the terminal Controller's
     /// private timeline and exclusive empty scheduler list.
     ///
-    /// RX window formation remains an upper LLL responsibility. This first
-    /// admission edge accepts only the typed initial window, so a recurring
-    /// window cannot reach it.
+    /// The Controller forms the initial RX window and its scheduler anchor from
+    /// the supplied margin and ordered current/RF-ready instants. Callers cannot
+    /// inject a prebuilt window or cross the separate recurring admission edge.
     #[expect(
         clippy::too_many_arguments,
         reason = "each typed input is a distinct reviewed DTM or fresh-time authority"
@@ -698,9 +704,10 @@ where
         link_state: crate::BluetoothDtmLinkStateReset,
         channel: crate::BluetoothDtmChannel,
         phy: crate::BluetoothDtmPhy,
-        window: crate::BluetoothDtmRxInitialEventWindow,
+        margin: crate::BluetoothDtmSchedulerMargin,
+        current: crate::BluetoothDtmSchedulerInstant,
+        rf_ready: crate::BluetoothDtmSchedulerInstant,
         epoch_sample: crate::BluetoothControllerTimeSample,
-        scheduler_anchor: crate::BluetoothDtmSchedulerInstant,
         admission_sample: crate::BluetoothControllerTimeSample,
         sequence_sample: crate::BluetoothControllerTimeSample,
     ) -> Result<
@@ -712,9 +719,62 @@ where
             link_state,
             channel,
             phy,
-            window,
+            margin,
+            current,
+            rf_ready,
             epoch_sample,
-            scheduler_anchor,
+            admission_sample,
+            sequence_sample,
+        )
+    }
+
+    /// Prepare the next transmitter item from one active CPU-owned session.
+    ///
+    /// The active owner retains the immutable DTM program, interval, margin and
+    /// previous event window. The Controller advances that phase against the
+    /// fresh current instant and keeps reservation rollback private.
+    pub fn prepare_dtm_transmitter_recurring_item(
+        &mut self,
+        owner: crate::BluetoothDtmActiveTransmitterCpuOwned,
+        current: crate::BluetoothDtmSchedulerInstant,
+        epoch_sample: crate::BluetoothControllerTimeSample,
+        admission_sample: crate::BluetoothControllerTimeSample,
+        sequence_sample: crate::BluetoothControllerTimeSample,
+    ) -> Result<
+        crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmTransmitterEvent>,
+        crate::BluetoothDtmControllerTxRecurringPreparationFailure,
+    > {
+        self.initialized.prepare_dtm_transmitter_recurring_item(
+            owner,
+            current,
+            epoch_sample,
+            admission_sample,
+            sequence_sample,
+        )
+    }
+
+    /// Prepare the next receiver item from one active CPU-owned session.
+    ///
+    /// The active owner retains the immutable channel, PHY and margin. The
+    /// Controller derives a recurring RX window only from the fresh current and
+    /// RF-ready instants supplied for this admission attempt.
+    pub fn prepare_dtm_receiver_recurring_item(
+        &mut self,
+        owner: crate::BluetoothDtmActiveReceiverCpuOwned,
+        current: crate::BluetoothDtmSchedulerInstant,
+        rf_ready: crate::BluetoothDtmSchedulerInstant,
+        epoch_sample: crate::BluetoothControllerTimeSample,
+        admission_sample: crate::BluetoothControllerTimeSample,
+        sequence_sample: crate::BluetoothControllerTimeSample,
+    ) -> Result<
+        crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmReceiverEvent>,
+        crate::BluetoothDtmControllerRxRecurringPreparationFailure,
+    > {
+        self.initialized.prepare_dtm_receiver_recurring_item(
+            owner,
+            current,
+            rf_ready,
+            epoch_sample,
             admission_sample,
             sequence_sample,
         )
@@ -760,24 +820,26 @@ where
         self.initialized.cancel_dtm_receiver_first_item(merged)
     }
 
-    /// Publish the exact first DTM scheduler head while every CPU route is
-    /// still inactive and both register owners reside in stable storage.
+    /// Publish the exact merge-selected DTM scheduler head while every CPU
+    /// route is still inactive and both register owners reside in stable
+    /// storage.
     ///
     /// Success advances descriptor ownership irreversibly: the returned graph
     /// can no longer be cancelled or mutated by CPU code. It does not yet
     /// prepare dynamic interrupts, publish the scheduler event or issue RUN.
+    /// Both initial and recurring events cross this same list-head edge.
     #[expect(
         clippy::result_large_err,
         reason = "pre-MMIO rejection returns the complete affine DTM graph"
     )]
-    pub fn publish_dtm_first_scheduler_head<Role>(
+    pub fn publish_dtm_scheduler_head<Role>(
         &mut self,
         merged: crate::BluetoothDtmEmptySchedulerMergePrepared<Role>,
     ) -> Result<
         crate::BluetoothDtmSchedulerHeadPublished<Role>,
         crate::BluetoothDtmSchedulerHeadPublicationFailure<Role>,
     > {
-        self.initialized.publish_dtm_first_scheduler_head(merged)
+        self.initialized.publish_dtm_scheduler_head(merged)
     }
 
     /// Admit one published DTM graph through the complete scheduler-run suffix.
@@ -785,6 +847,10 @@ where
     /// The exact order is dynamic interrupt preparation, synchronous BTMAC
     /// scheduler-event publication and the final RUN command. The returned
     /// state retains the graph and grants no CPU-side completion access.
+    #[expect(
+        clippy::result_large_err,
+        reason = "a start rejection must return the complete affine published graph"
+    )]
     pub fn start_dtm_scheduler<Role>(
         &mut self,
         head: crate::BluetoothDtmSchedulerHeadPublished<Role>,
@@ -853,6 +919,10 @@ where
     /// Busy and command-pending outcomes consume the event and return the
     /// already-unlinked graph. Retry therefore requires another external
     /// event; this method never polls. Selector-6 recovery remains fail-closed.
+    #[expect(
+        clippy::result_large_err,
+        reason = "dispatch failure retains the complete unlinked graph and stable-owner error"
+    )]
     pub fn observe_dtm_software_list_removal<Role>(
         &mut self,
         unlinked: crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>,

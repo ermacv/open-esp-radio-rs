@@ -139,7 +139,8 @@ pub use controller_time::{
 #[cfg(target_arch = "riscv32")]
 pub use dtm_event_prepare::{
     BluetoothDtmActiveReceiverCpuOwned, BluetoothDtmActiveTransmitterCpuOwned,
-    BluetoothDtmRecycledEvent, BluetoothDtmRxRearmedEvent,
+    BluetoothDtmRecycledEvent, BluetoothDtmRxRearmedEvent, BluetoothDtmTestEndReport,
+    BluetoothDtmTestEndedCpuOwned,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 pub use dtm_event_prepare::{
@@ -216,8 +217,9 @@ pub use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothBlePhyEngineCpuOwned, BluetoothBlePhyEngineStorage, BluetoothDtmBoundSramLinkAddress,
     BluetoothDtmBoundSramLinkAddressError, BluetoothDtmMemoryGraphCpuOwned,
     BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphPrepareFailure,
-    BluetoothDtmPositionalEventWords, BluetoothDtmRxResultProjection,
-    BluetoothDtmRxResultProjectionError, BluetoothRxMemoryListClass,
+    BluetoothDtmMemoryGraphReclaimed, BluetoothDtmPositionalEventWords,
+    BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError,
+    BluetoothRxMemoryListClass,
 };
 #[cfg(target_arch = "riscv32")]
 pub use phy::{

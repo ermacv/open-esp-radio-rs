@@ -1922,6 +1922,43 @@ pub struct BluetoothDtmMemoryGraphCpuOwned {
     binding: BluetoothDtmMemoryGraphBinding,
 }
 
+/// Ended CPU-owned DTM allocation awaiting either reuse or permanent retention.
+///
+/// This is not a vendor allocator or `free` operation. The caller's pinned
+/// static storage remains owned by this affine value, stays at the same bound
+/// address and is not dropped, unpinned or exposed for mutation. Construction
+/// is available only from [`BluetoothDtmMemoryGraphCpuOwned`], so a graph still
+/// in a prepared, hardware-owned, completion-observed or recycle-intermediate
+/// state cannot enter this edge.
+///
+/// An upper Test End owner must first establish its scheduler, callback and
+/// source-list quiescence before it exposes the CPU-owned graph consumed here.
+/// This lower memory typestate does not fabricate that upper proof.
+#[must_use = "the reclaimed static graph must be retained or reinitialized"]
+pub struct BluetoothDtmMemoryGraphReclaimed {
+    storage: Pin<&'static mut BluetoothDtmMemoryGraphStorage>,
+    binding: BluetoothDtmMemoryGraphBinding,
+}
+
+impl BluetoothDtmMemoryGraphReclaimed {
+    /// Start a fresh CPU-owned allocation epoch in the same pinned storage.
+    ///
+    /// Reinitialization consumes the reclaimed token exactly once and installs
+    /// the complete reviewed allocation defaults. It performs no MMIO, fence,
+    /// hardware publication, heap allocation or vendor `free`/`alloc` call.
+    pub fn reinitialize(
+        self,
+        config: BluetoothDtmSchedulerAllocationConfig,
+    ) -> BluetoothDtmMemoryGraphCpuOwned {
+        let mut owner = BluetoothDtmMemoryGraphCpuOwned {
+            storage: self.storage,
+            binding: self.binding,
+        };
+        owner.initialize_reviewed_allocation(config);
+        owner
+    }
+}
+
 /// CPU-owned graph whose sole TX packet slot has a complete DTM image.
 ///
 /// Construction consumes the graph owner and copies every declared payload
@@ -1987,6 +2024,19 @@ impl BluetoothDtmMemoryGraphCpuOwned {
     /// Borrow the location proof without granting publication authority.
     pub const fn binding(&self) -> &BluetoothDtmMemoryGraphBinding {
         &self.binding
+    }
+
+    /// End this CPU-owned graph epoch without releasing its static allocation.
+    ///
+    /// The transition is intentionally mutation-free. It consumes the only
+    /// ordinary CPU owner and removes every event-preparation operation until
+    /// [`BluetoothDtmMemoryGraphReclaimed::reinitialize`] starts a fresh epoch.
+    /// No equivalent operation exists on any hardware or completion typestate.
+    pub fn into_reclaimed(self) -> BluetoothDtmMemoryGraphReclaimed {
+        BluetoothDtmMemoryGraphReclaimed {
+            storage: self.storage,
+            binding: self.binding,
+        }
     }
 
     /// Consume this graph and install one complete CPU-owned TX packet image.
@@ -2771,6 +2821,15 @@ mod tests {
         let _prepared = owner
             .try_prepare_positional_event(|seed| Ok::<_, Infallible>(candidate_words(seed)))
             .expect("the returned owner remains reusable");
+    }
+
+    #[test]
+    fn reclaimed_cpu_graph_can_start_another_affine_epoch() {
+        let reclaimed = model_owner(0x2f00_4100).into_reclaimed();
+        let owner = reclaimed.reinitialize(allocation_config());
+
+        let reclaimed = owner.into_reclaimed();
+        let _owner = reclaimed.reinitialize(allocation_config());
     }
 
     #[test]

@@ -19,8 +19,8 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphPositionalEventPrepared,
     BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphPrepareFailure,
-    BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared, BluetoothDtmPositionalEventWords,
-    BluetoothDtmSchedulerItemCompletionStatus,
+    BluetoothDtmMemoryGraphReclaimed, BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared,
+    BluetoothDtmPositionalEventWords, BluetoothDtmSchedulerItemCompletionStatus,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_esp32s31_bluetooth_memory::{
@@ -79,6 +79,54 @@ pub(crate) struct BluetoothDtmReceiverCommandFacts {
 pub(crate) enum BluetoothDtmRxCommittedWindow {
     Initial(BluetoothDtmRxInitialEventWindow),
     Recurring(BluetoothDtmRxRecurringEventWindow),
+}
+
+/// Semantic LE Test End result retained by the affine command owner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(any(target_arch = "riscv32", test))]
+pub enum BluetoothDtmTestEndReport {
+    /// A transmitter test reports zero packets through HCI.
+    Transmitter,
+    /// A receiver test reports its accumulated accepted-packet count.
+    Receiver { received_packets: u16 },
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl BluetoothDtmTestEndReport {
+    /// Packet count serialized in the LE Test End Command Complete event.
+    pub const fn reported_packet_count(self) -> u16 {
+        match self {
+            Self::Transmitter => 0,
+            Self::Receiver { received_packets } => received_packets,
+        }
+    }
+}
+
+/// Completed DTM command retaining its static graph until response handoff.
+///
+/// This state is constructible only from an active role after its event has
+/// completed the hardware-head retirement, software-list removal, timeline
+/// release and memory recycle chain. It therefore cannot end a prepared or
+/// in-flight event. The graph remains pinned and unavailable for another test
+/// until the response owner consumes this value.
+#[cfg(any(target_arch = "riscv32", test))]
+#[must_use = "the Test End result and reclaimed graph must reach the session owner"]
+pub struct BluetoothDtmTestEndedCpuOwned {
+    memory: BluetoothDtmMemoryGraphReclaimed,
+    report: BluetoothDtmTestEndReport,
+}
+
+#[cfg(any(target_arch = "riscv32", test))]
+impl BluetoothDtmTestEndedCpuOwned {
+    /// Borrow the role-specific Test End report without releasing the graph.
+    pub const fn report(&self) -> BluetoothDtmTestEndReport {
+        self.report
+    }
+
+    /// Release the pinned graph to the idle session after response handoff.
+    pub fn into_reclaimed_graph(self) -> BluetoothDtmMemoryGraphReclaimed {
+        self.memory
+    }
 }
 
 /// Why two validated DTM transforms cannot describe one event plan.
@@ -508,6 +556,20 @@ impl BluetoothDtmActiveReceiverCpuOwned {
     /// Current received-packet count retained for LE Test End.
     pub const fn received_packet_count(&self) -> u16 {
         self.session.received_packet_count()
+    }
+
+    /// Finish this receiver test at its fully recycled CPU-owned boundary.
+    ///
+    /// A Test End request received earlier must remain pending until the
+    /// in-flight owner reaches this type. The returned value retains the graph
+    /// while the caller stages the Command Complete response.
+    pub fn into_test_ended(self) -> BluetoothDtmTestEndedCpuOwned {
+        BluetoothDtmTestEndedCpuOwned {
+            memory: self.memory.into_reclaimed(),
+            report: BluetoothDtmTestEndReport::Receiver {
+                received_packets: self.session.received_packet_count(),
+            },
+        }
     }
 }
 
@@ -1396,6 +1458,18 @@ impl BluetoothDtmActiveTransmitterCpuOwned {
     pub const fn status(&self) -> BluetoothDtmSchedulerItemCompletionStatus {
         self.status
     }
+
+    /// Finish this transmitter test at its fully recycled CPU-owned boundary.
+    ///
+    /// LE Test End reports zero packets for a transmitter test. Any separate
+    /// vendor diagnostic event count is deliberately not projected into this
+    /// standardized HCI result.
+    pub fn into_test_ended(self) -> BluetoothDtmTestEndedCpuOwned {
+        BluetoothDtmTestEndedCpuOwned {
+            memory: self.memory.into_reclaimed(),
+            report: BluetoothDtmTestEndReport::Transmitter,
+        }
+    }
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
@@ -1471,7 +1545,8 @@ impl BluetoothDtmSchedulerBookkeepingPrepared<BluetoothDtmTransmitterEvent> {
 mod tests {
     use open_esp_radio_esp32s31_bluetooth_memory::{
         BluetoothDtmBoundSramLinkAddress, BluetoothDtmMemoryGraphModelAddress,
-        BluetoothDtmMemoryGraphStorage, BluetoothDtmSchedulerAllocationConfig,
+        BluetoothDtmMemoryGraphStorage, BluetoothDtmRxResultProjection,
+        BluetoothDtmSchedulerAllocationConfig,
     };
     use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
 
@@ -1480,9 +1555,9 @@ mod tests {
         BluetoothDtmEventContext, BluetoothDtmReceiverCommandFacts, BluetoothDtmReceiverCpuOwned,
         BluetoothDtmReceiverEvent, BluetoothDtmReceiverEventContext, BluetoothDtmRecycledEvent,
         BluetoothDtmReviewedEventWordsPlan, BluetoothDtmReviewedEventWordsPlanError,
-        BluetoothDtmRxCommittedWindow, BluetoothDtmTransmitterCommandFacts,
-        BluetoothDtmTransmitterEvent, BluetoothDtmTransmitterEventContext,
-        BluetoothDtmTransmitterPreviousEvent,
+        BluetoothDtmRxCommittedWindow, BluetoothDtmTestEndReport,
+        BluetoothDtmTransmitterCommandFacts, BluetoothDtmTransmitterEvent,
+        BluetoothDtmTransmitterEventContext, BluetoothDtmTransmitterPreviousEvent,
     };
     use crate::scheduler_timeline::BluetoothSchedulerTimeline;
     use crate::{
@@ -1496,17 +1571,17 @@ mod tests {
     };
     use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmSchedulerItemCompletionStatus;
 
+    fn allocation_config() -> BluetoothDtmSchedulerAllocationConfig {
+        BluetoothDtmSchedulerAllocationConfig::new(2, 3, 5, 4)
+    }
+
     fn owner(base: u32) -> crate::BluetoothDtmMemoryGraphCpuOwned {
         let storage =
             std::boxed::Box::leak(std::boxed::Box::new(BluetoothDtmMemoryGraphStorage::new()));
         let base = BluetoothDtmMemoryGraphModelAddress::new(base)
             .expect("test base has valid compressed-pointer syntax");
-        BluetoothDtmMemoryGraphStorage::pin_static_model(
-            storage,
-            base,
-            BluetoothDtmSchedulerAllocationConfig::new(2, 3, 5, 4),
-        )
-        .expect("test graph fits physical controller SRAM")
+        BluetoothDtmMemoryGraphStorage::pin_static_model(storage, base, allocation_config())
+            .expect("test graph fits physical controller SRAM")
     }
 
     fn epoch() -> BluetoothControllerSchedulerEpoch {
@@ -1872,6 +1947,67 @@ mod tests {
             BluetoothDtmRxCommittedWindow::Recurring(rx_candidate)
         );
         assert_eq!(rx.received_packet_count(), 0);
+    }
+
+    #[test]
+    fn active_roles_hold_the_reclaimed_graph_through_test_end_handoff() {
+        let reset_tx =
+            BluetoothDtmLinkStateReset::new(None, None, 0, 0, BluetoothDtmRole::Transmitter)
+                .expect("zero dynamic fields are valid");
+        let tx = BluetoothDtmActiveTransmitterCpuOwned {
+            memory: owner(0x2f02_0000),
+            facts: BluetoothDtmTransmitterCommandFacts {
+                link_state: reset_tx,
+                channel: channel(),
+                phy: BluetoothDtmPhy::Le2M,
+                timing: tx_timing(),
+                margin: margin(),
+                pattern: BluetoothDtmPayloadPattern::Repeated11110000,
+                length: BluetoothDtmPayloadLength::from_hci_image(3),
+            },
+            last_committed_window: tx_window(),
+            status: BluetoothDtmSchedulerItemCompletionStatus::Success,
+        };
+        let ended = tx.into_test_ended();
+        assert_eq!(ended.report(), BluetoothDtmTestEndReport::Transmitter);
+        assert_eq!(ended.report().reported_packet_count(), 0);
+        let _next_graph = ended
+            .into_reclaimed_graph()
+            .reinitialize(allocation_config());
+
+        let mut session = crate::dtm_rx_completion::BluetoothDtmReceiverSession::new();
+        assert!(matches!(
+            session.account_projection(BluetoothDtmRxResultProjection::from_word(0)),
+            crate::BluetoothDtmRxCompletionOutcome::Counted {
+                received_packet_count: 1,
+                ..
+            }
+        ));
+        let reset_rx =
+            BluetoothDtmLinkStateReset::new(None, None, 0, 0, BluetoothDtmRole::Receiver)
+                .expect("zero dynamic fields are valid");
+        let rx = BluetoothDtmActiveReceiverCpuOwned {
+            memory: owner(0x2f01_0000),
+            facts: BluetoothDtmReceiverCommandFacts {
+                link_state: reset_rx,
+                channel: channel(),
+                phy: BluetoothDtmPhy::LeCoded,
+                margin: margin(),
+            },
+            session,
+            last_committed_window: BluetoothDtmRxCommittedWindow::Initial(rx_initial_window()),
+        };
+        let ended = rx.into_test_ended();
+        assert_eq!(
+            ended.report(),
+            BluetoothDtmTestEndReport::Receiver {
+                received_packets: 1
+            }
+        );
+        assert_eq!(ended.report().reported_packet_count(), 1);
+        let _next_graph = ended
+            .into_reclaimed_graph()
+            .reinitialize(allocation_config());
     }
 
     #[test]

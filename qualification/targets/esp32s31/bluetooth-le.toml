@@ -414,11 +414,11 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/vendor-project.toml",
 ]
 gaps = [
-  { axis = "implementation", id = "hci-command-loop-and-active-command-routing-missing" },
+  { axis = "implementation", id = "sole-hci-command-loop-and-non-dtm-routing-missing" },
   { axis = "host", id = "hardware-radio-axis-and-command-intake-integration-tests-missing" },
   { axis = "vendor", id = "hci-command-and-acl-production-contracts-missing" },
   { axis = "hil", id = "external-hci-interoperability-cell-missing" },
-  { axis = "async", id = "command-intake-active-session-and-acl-credit-wake-selection-missing" },
+  { axis = "async", id = "autonomous-session-task-and-acl-credit-selection-missing" },
 ]
 
 [[capabilities]]

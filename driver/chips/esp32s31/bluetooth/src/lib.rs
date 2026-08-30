@@ -182,11 +182,11 @@ pub use dtm_active::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use dtm_active_session::{
-    BluetoothDtmActiveRadioWait, BluetoothDtmActiveSession, BluetoothDtmActiveSessionFault,
-    BluetoothDtmActiveSessionFaultCause, BluetoothDtmActiveSessionRadioStep,
-    BluetoothDtmCommandReadySession, BluetoothDtmStartResponsePending,
-    BluetoothDtmStartResponsePendingSession, BluetoothDtmStartResponsePublication,
-    BluetoothDtmStartResponsePublished,
+    BluetoothDtmActiveCommandRoute, BluetoothDtmActiveRadioWait, BluetoothDtmActiveSession,
+    BluetoothDtmActiveSessionFault, BluetoothDtmActiveSessionFaultCause,
+    BluetoothDtmActiveSessionRadioStep, BluetoothDtmCommandReadySession,
+    BluetoothDtmResponsePending, BluetoothDtmResponsePendingSession,
+    BluetoothDtmResponsePublication, BluetoothDtmResponsePublished,
 };
 #[cfg(target_arch = "riscv32")]
 pub use dtm_event_prepare::{
@@ -249,9 +249,9 @@ pub use dtm_session::{
 pub use dtm_stopping::{
     BluetoothDtmStoppingFault, BluetoothDtmStoppingFaultCause, BluetoothDtmStoppingRetryCause,
     BluetoothDtmStoppingRunner, BluetoothDtmStoppingStep, BluetoothDtmStoppingWait,
-    BluetoothDtmTestEndBeginFailure, BluetoothDtmTestEndComplete, BluetoothDtmTestEndReady,
-    BluetoothDtmTestEndResponsePending, BluetoothDtmTestEndResponsePublication,
-    BluetoothDtmTestEndRestoreFailure, BluetoothDtmTestEndRestoreStep,
+    BluetoothDtmTestEndComplete, BluetoothDtmTestEndReady, BluetoothDtmTestEndResponsePending,
+    BluetoothDtmTestEndResponsePublication, BluetoothDtmTestEndRestoreFailure,
+    BluetoothDtmTestEndRestoreStep,
 };
 pub use dtm_timing::{BluetoothDtmTxSchedulerTiming, BluetoothDtmTxTimingMicros};
 pub use dtm_tx_packet::{

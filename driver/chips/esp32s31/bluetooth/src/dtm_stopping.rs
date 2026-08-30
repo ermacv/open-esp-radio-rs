@@ -12,7 +12,7 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_bluetooth_hci::{
-    HciChannelError, HciEpochBound, InProcessHciControllerEndpoint, LeDtmCommandCompleteEvent,
+    HciChannelError, InProcessHciControllerEndpoint, LeDtmCommandCompleteEvent,
     LeDtmResponsePending, LeDtmResponsePublication, LeTestEndCommand,
 };
 
@@ -26,15 +26,14 @@ use crate::{
     BluetoothControllerPublishedTaskService, BluetoothDtmActiveCompletion,
     BluetoothDtmActiveCompletionFault, BluetoothDtmActiveCompletionFaultCause,
     BluetoothDtmActiveCompletionStep, BluetoothDtmActiveCpuOwned, BluetoothDtmActivePostUnlinkWait,
-    BluetoothDtmActiveSchedulerWait, BluetoothDtmCommandReadySession,
-    BluetoothDtmPostUnlinkWakeCell, BluetoothDtmRecurringCancellationDrain,
-    BluetoothDtmRecurringCancellationDrainStep, BluetoothDtmRecurringControllerTimeWait,
-    BluetoothDtmRecurringFault, BluetoothDtmRecurringFaultCause, BluetoothDtmRecurringRetry,
-    BluetoothDtmRecurringRetryCause, BluetoothDtmRecurringRunner,
-    BluetoothDtmRecurringRunnerCancel, BluetoothDtmRecurringRunnerStep, BluetoothDtmSessionIdle,
-    BluetoothDtmStartResponsePublished, BluetoothDtmTestEndReport,
-    BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerRunInterruptStorage,
-    BluetoothSchedulerWakeCell,
+    BluetoothDtmActiveSchedulerWait, BluetoothDtmPostUnlinkWakeCell,
+    BluetoothDtmRecurringCancellationDrain, BluetoothDtmRecurringCancellationDrainStep,
+    BluetoothDtmRecurringControllerTimeWait, BluetoothDtmRecurringFault,
+    BluetoothDtmRecurringFaultCause, BluetoothDtmRecurringRetry, BluetoothDtmRecurringRetryCause,
+    BluetoothDtmRecurringRunner, BluetoothDtmRecurringRunnerCancel,
+    BluetoothDtmRecurringRunnerStep, BluetoothDtmResponsePublished, BluetoothDtmSessionIdle,
+    BluetoothDtmTestEndReport, BluetoothSchedulerFinishedHardwareListObserved,
+    BluetoothSchedulerRunInterruptStorage, BluetoothSchedulerWakeCell,
 };
 
 type Task<'runtime, S, const CAPACITY: usize> =
@@ -62,41 +61,8 @@ where
     S: BluetoothSchedulerRunInterruptStorage,
 {
     command: LeTestEndCommand,
-    order: BluetoothDtmStartResponsePublished<'runtime>,
+    order: BluetoothDtmResponsePublished<'runtime>,
     phase: BluetoothDtmStoppingPhase<'runtime, S, CAPACITY>,
-}
-
-/// Lossless rejection of a Test End command from the wrong HCI epoch.
-#[must_use = "retry with a matching endpoint or retain both affine owners"]
-pub struct BluetoothDtmTestEndBeginFailure<'runtime, 'command, S, const CAPACITY: usize>
-where
-    S: BluetoothSchedulerRunInterruptStorage,
-{
-    session: BluetoothDtmCommandReadySession<'runtime, S, CAPACITY>,
-    command: HciEpochBound<'command, LeTestEndCommand>,
-}
-
-impl<'runtime, 'command, S, const CAPACITY: usize>
-    BluetoothDtmTestEndBeginFailure<'runtime, 'command, S, CAPACITY>
-where
-    S: BluetoothSchedulerRunInterruptStorage,
-{
-    pub(crate) fn new(
-        session: BluetoothDtmCommandReadySession<'runtime, S, CAPACITY>,
-        command: HciEpochBound<'command, LeTestEndCommand>,
-    ) -> Self {
-        Self { session, command }
-    }
-
-    /// Recover the unchanged command-ready session and its origin-bound command.
-    pub fn into_parts(
-        self,
-    ) -> (
-        BluetoothDtmCommandReadySession<'runtime, S, CAPACITY>,
-        HciEpochBound<'command, LeTestEndCommand>,
-    ) {
-        (self.session, self.command)
-    }
 }
 
 /// Borrowed wait source for the current stopping phase.
@@ -154,7 +120,7 @@ where
     S: BluetoothSchedulerRunInterruptStorage,
 {
     response: LeDtmCommandCompleteEvent,
-    order: BluetoothDtmStartResponsePublished<'runtime>,
+    order: BluetoothDtmResponsePublished<'runtime>,
     task: Task<'runtime, S, CAPACITY>,
     stopping: BluetoothDtmSessionStopping,
 }
@@ -177,7 +143,7 @@ where
         self,
     ) -> (
         LeDtmCommandCompleteEvent,
-        BluetoothDtmStartResponsePublished<'runtime>,
+        BluetoothDtmResponsePublished<'runtime>,
         Task<'runtime, S, CAPACITY>,
         BluetoothDtmSessionStopping,
     ) {
@@ -405,7 +371,7 @@ where
 {
     cause: BluetoothDtmStoppingFaultCause,
     _command: LeTestEndCommand,
-    _order: BluetoothDtmStartResponsePublished<'runtime>,
+    _order: BluetoothDtmResponsePublished<'runtime>,
     _owner: BluetoothDtmStoppingFaultOwner<'runtime, S, CAPACITY>,
 }
 
@@ -425,7 +391,7 @@ where
 {
     pub(crate) fn new(
         radio: BluetoothDtmActiveRadio<'runtime, S, CAPACITY>,
-        order: BluetoothDtmStartResponsePublished<'runtime>,
+        order: BluetoothDtmResponsePublished<'runtime>,
         command: LeTestEndCommand,
     ) -> Self {
         let phase = match radio {
@@ -549,7 +515,7 @@ where
 
 fn runner<'runtime, S, const CAPACITY: usize>(
     command: LeTestEndCommand,
-    order: BluetoothDtmStartResponsePublished<'runtime>,
+    order: BluetoothDtmResponsePublished<'runtime>,
     phase: BluetoothDtmStoppingPhase<'runtime, S, CAPACITY>,
 ) -> BluetoothDtmStoppingRunner<'runtime, S, CAPACITY>
 where
@@ -564,7 +530,7 @@ where
 
 fn response_ready<'runtime, S, const CAPACITY: usize>(
     command: LeTestEndCommand,
-    order: BluetoothDtmStartResponsePublished<'runtime>,
+    order: BluetoothDtmResponsePublished<'runtime>,
     owner: BluetoothDtmActiveCpuOwned<'runtime, S, CAPACITY>,
 ) -> BluetoothDtmStoppingStep<'runtime, S, CAPACITY>
 where
@@ -591,7 +557,7 @@ where
 
 fn step_completion<'runtime, S, const CAPACITY: usize>(
     command: LeTestEndCommand,
-    order: BluetoothDtmStartResponsePublished<'runtime>,
+    order: BluetoothDtmResponsePublished<'runtime>,
     completion: BluetoothDtmActiveCompletion<'runtime, S, CAPACITY>,
 ) -> BluetoothDtmStoppingStep<'runtime, S, CAPACITY>
 where
@@ -644,7 +610,7 @@ where
 
 fn finish_cancellation<'runtime, S, const CAPACITY: usize>(
     command: LeTestEndCommand,
-    order: BluetoothDtmStartResponsePublished<'runtime>,
+    order: BluetoothDtmResponsePublished<'runtime>,
     cancelled: BluetoothDtmRecurringRunnerCancel<'runtime, S, CAPACITY>,
 ) -> BluetoothDtmStoppingStep<'runtime, S, CAPACITY>
 where
@@ -686,7 +652,7 @@ where
 
 fn step_cancellation_drain<'runtime, S, const CAPACITY: usize>(
     command: LeTestEndCommand,
-    order: BluetoothDtmStartResponsePublished<'runtime>,
+    order: BluetoothDtmResponsePublished<'runtime>,
     drain: BluetoothDtmRecurringCancellationDrain<'runtime, S, CAPACITY>,
 ) -> BluetoothDtmStoppingStep<'runtime, S, CAPACITY>
 where
@@ -716,7 +682,7 @@ where
 
 fn step_published_head<'runtime, S, const CAPACITY: usize>(
     command: LeTestEndCommand,
-    order: BluetoothDtmStartResponsePublished<'runtime>,
+    order: BluetoothDtmResponsePublished<'runtime>,
     recurring: BluetoothDtmRecurringRunner<'runtime, S, CAPACITY>,
 ) -> BluetoothDtmStoppingStep<'runtime, S, CAPACITY>
 where
@@ -770,7 +736,7 @@ where
 
 fn unexpected_published<'runtime, S, const CAPACITY: usize>(
     command: LeTestEndCommand,
-    order: BluetoothDtmStartResponsePublished<'runtime>,
+    order: BluetoothDtmResponsePublished<'runtime>,
     owner: BluetoothDtmStoppingFaultOwner<'runtime, S, CAPACITY>,
 ) -> BluetoothDtmStoppingStep<'runtime, S, CAPACITY>
 where

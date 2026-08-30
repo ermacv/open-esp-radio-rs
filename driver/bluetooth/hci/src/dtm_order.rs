@@ -10,8 +10,9 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use crate::{
-    HciChannelError, HciControllerResponse, HciEpochIdentity, InProcessHciControllerEndpoint,
-    LeDtmCommandCompleteEvent,
+    HciChannelError, HciControllerResponse, HciEpochBound, HciEpochIdentity,
+    InProcessHciControllerEndpoint, LeDtmActiveSessionDisposition, LeDtmCommand,
+    LeDtmCommandCompleteEvent, LeTestEndCommand,
 };
 
 /// A radio owner paired with one exact not-yet-published DTM response.
@@ -44,6 +45,23 @@ impl<'epoch, Radio> LeDtmResponsePending<'epoch, Radio> {
     /// Borrow the independently progressing radio axis.
     pub const fn radio(&self) -> &Radio {
         &self.radio
+    }
+
+    /// Separate the radio from a unit response-order marker for typed composition.
+    ///
+    /// This is a consuming decomposition: the exact response bytes and epoch
+    /// remain in `LeDtmResponsePending<()>`, and neither output can be recreated
+    /// from the other. Chip-specific session aggregates immediately reunite
+    /// both outputs around their independently progressing radio axis.
+    pub fn into_parts(self) -> (Radio, LeDtmResponsePending<'epoch, ()>) {
+        (
+            self.radio,
+            LeDtmResponsePending {
+                radio: (),
+                response: self.response,
+                hci_epoch: self.hci_epoch,
+            },
+        )
     }
 
     /// Whether an endpoint may publish this exact pending response.
@@ -143,6 +161,17 @@ impl<'epoch, Radio> LeDtmResponsePublished<'epoch, Radio> {
         self.radio
     }
 
+    /// Separate the radio from its published unit order proof for typed composition.
+    pub fn into_parts(self) -> (Radio, LeDtmResponsePublished<'epoch, ()>) {
+        (
+            self.radio,
+            LeDtmResponsePublished {
+                radio: (),
+                hci_epoch: self.hci_epoch,
+            },
+        )
+    }
+
     /// Transform only the radio axis while retaining the published order proof.
     pub fn map_radio<Next>(
         self,
@@ -192,6 +221,74 @@ impl<'epoch, Radio> LeDtmResponsePublished<'epoch, Radio> {
     ) -> bool {
         self.hci_epoch.same_epoch(controller.epoch_identity())
     }
+
+    /// Route one endpoint-bound command under the portable active-DTM policy.
+    ///
+    /// The published response order and command must both belong to `controller`.
+    /// A second start is converted into the standard Controller Busy response
+    /// while retaining `Radio` inside the next pending transaction. Test End
+    /// retains the published order proof beside its semantic command so a chip
+    /// runner can quiesce exactly that radio before beginning its response.
+    pub fn route_active_command<
+        'command,
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        self,
+        controller: &InProcessHciControllerEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+        command: HciEpochBound<'command, LeDtmCommand>,
+    ) -> LeDtmActiveCommandRoute<'epoch, 'command, Radio> {
+        if !self.accepts_endpoint(controller) {
+            return LeDtmActiveCommandRoute::EndpointMismatch {
+                published: self,
+                command,
+            };
+        }
+        match command.try_into_for_endpoint(controller) {
+            Ok(command) => match command.into_active_session_disposition() {
+                LeDtmActiveSessionDisposition::RejectControllerBusy(response) => {
+                    LeDtmActiveCommandRoute::BusyResponsePending(self.begin_next_response(response))
+                }
+                LeDtmActiveSessionDisposition::End(command) => LeDtmActiveCommandRoute::TestEnd {
+                    published: self,
+                    command,
+                },
+            },
+            Err(command) => LeDtmActiveCommandRoute::EndpointMismatch {
+                published: self,
+                command,
+            },
+        }
+    }
+}
+
+/// Portable result of routing one endpoint-bound command while DTM is active.
+#[must_use = "publish Busy, run Test End, or retain the exact epoch mismatch"]
+pub enum LeDtmActiveCommandRoute<'epoch, 'command, Radio> {
+    /// A second RX/TX start became an ordered Controller Busy response.
+    BusyResponsePending(LeDtmResponsePending<'epoch, Radio>),
+    /// Test End retains the exact active radio, order proof and semantic command.
+    TestEnd {
+        /// Published prior-response owner retaining the active radio.
+        published: LeDtmResponsePublished<'epoch, Radio>,
+        /// Semantic Test End command released only after epoch validation.
+        command: LeTestEndCommand,
+    },
+    /// Either order or command belongs to another live Controller epoch.
+    EndpointMismatch {
+        /// Unchanged published owner retaining the exact radio.
+        published: LeDtmResponsePublished<'epoch, Radio>,
+        /// Unchanged semantic command retaining its source-epoch proof.
+        command: HciEpochBound<'command, LeDtmCommand>,
+    },
 }
 
 /// Result of one consuming DTM response publication attempt.
@@ -227,10 +324,13 @@ mod tests {
     use super::{LeDtmResponsePending, LeDtmResponsePublication, LeDtmResponsePublished};
     use crate::{
         HciChannelError, InProcessHciChannel, LE_RECEIVER_TEST_V1_OPCODE, LE_TEST_END_OPCODE,
-        LeDtmCommand, LeReceiverTestV1Command, LeTestEndCommand,
+        LeDtmActiveCommandRoute, LeDtmCommand, LeReceiverTestV1Command, LeTestEndCommand,
     };
 
     const HARDWARE_ERROR: [u8; 3] = [0x10, 0x01, 0x42];
+
+    #[derive(Debug, Eq, PartialEq)]
+    struct RadioOwner(u32);
 
     fn receiver_command() -> LeReceiverTestV1Command {
         let LeDtmCommand::ReceiverTestV1(command) =
@@ -403,6 +503,135 @@ mod tests {
         assert_test_end_response(block_on(host.read(&mut buffer)).unwrap());
     }
 
+    #[test]
+    fn active_route_retains_radio_and_fifo_through_busy_backpressure() {
+        type Channel = InProcessHciChannel<NoopRawMutex, 1, 1, 16>;
+
+        let mut channel = Channel::new();
+        let (host, controller) = channel.split();
+        let start = LeDtmResponsePending::new(
+            RadioOwner(53),
+            receiver_command().into_started_command_complete(),
+            controller.epoch_identity(),
+        );
+        let LeDtmResponsePublication::Published(started) = start.try_publish(&controller) else {
+            panic!("the empty queue must accept the start response");
+        };
+
+        block_on(host.write(&LeTestEnd::new()))
+            .expect("the epoch source command enters the real Host queue");
+        let mut command_buffer = [0; 16];
+        let classified = match controller.try_receive_classified_command(&mut command_buffer) {
+            Ok(classified) => classified,
+            Err(_) => panic!("the real Controller endpoint must classify the queued command"),
+        };
+        let command = match classified.try_into_dtm() {
+            Ok(command) => command,
+            Err(_) => panic!("the typed epoch source must refine to DTM"),
+        }
+        .map(|_| {
+            LeDtmCommand::decode_body(LE_RECEIVER_TEST_V1_OPCODE, &[11])
+                .expect("the routed receiver request is semantically valid")
+        });
+        let LeDtmActiveCommandRoute::BusyResponsePending(busy) =
+            started.route_active_command(&controller, command)
+        else {
+            panic!("the portable active route must produce Controller Busy");
+        };
+        let LeDtmResponsePublication::Pending(busy) = busy.try_publish(&controller) else {
+            panic!("the queued start response must backpressure Controller Busy");
+        };
+        assert_eq!(busy.radio(), &RadioOwner(53));
+
+        let mut buffer = [0; 16];
+        assert_start_response(block_on(host.read(&mut buffer)).unwrap());
+        let LeDtmResponsePublication::Published(published) = busy.try_publish(&controller) else {
+            panic!("Controller Busy must publish once capacity returns");
+        };
+        assert_eq!(published.into_radio(), RadioOwner(53));
+        assert_controller_busy(block_on(host.read(&mut buffer)).unwrap());
+    }
+
+    #[test]
+    fn active_route_retains_test_end_radio_command_and_published_order() {
+        type Channel = InProcessHciChannel<NoopRawMutex, 1, 1, 16>;
+
+        let mut channel = Channel::new();
+        let (host, controller) = channel.split();
+        let start = LeDtmResponsePending::new(
+            RadioOwner(59),
+            receiver_command().into_started_command_complete(),
+            controller.epoch_identity(),
+        );
+        let LeDtmResponsePublication::Published(started) = start.try_publish(&controller) else {
+            panic!("the empty queue must accept the start response");
+        };
+        block_on(host.write(&LeTestEnd::new())).expect("Test End enters the real Host queue");
+        let mut command_buffer = [0; 16];
+        let classified = match controller.try_receive_classified_command(&mut command_buffer) {
+            Ok(classified) => classified,
+            Err(_) => panic!("the real Controller endpoint must classify Test End"),
+        };
+        let command = match classified.try_into_dtm() {
+            Ok(command) => command,
+            Err(_) => panic!("Test End must refine to DTM"),
+        };
+
+        let LeDtmActiveCommandRoute::TestEnd { published, command } =
+            started.route_active_command(&controller, command)
+        else {
+            panic!("Test End must remain semantic until hardware quiescence");
+        };
+        assert_eq!(published.radio(), &RadioOwner(59));
+        assert!(published.accepts_endpoint(&controller));
+        let response = command.into_ended_command_complete(0x1234);
+        let observed = parse_command_complete(response.as_bytes());
+        assert_eq!(observed.return_params::<LeTestEnd>().unwrap(), 0x1234);
+    }
+
+    #[test]
+    fn active_route_cross_epoch_rejection_retains_both_exact_owners() {
+        type Channel = InProcessHciChannel<NoopRawMutex, 1, 1, 16>;
+
+        let mut first_channel = Channel::new();
+        let (_first_host, first_controller) = first_channel.split();
+        let start = LeDtmResponsePending::new(
+            RadioOwner(61),
+            receiver_command().into_started_command_complete(),
+            first_controller.epoch_identity(),
+        );
+        let LeDtmResponsePublication::Published(started) = start.try_publish(&first_controller)
+        else {
+            panic!("the first endpoint must publish its start response");
+        };
+
+        let mut second_channel = Channel::new();
+        let (second_host, second_controller) = second_channel.split();
+        block_on(second_host.write(&LeTestEnd::new()))
+            .expect("the foreign DTM command enters its own Host queue");
+        let mut command_buffer = [0; 16];
+        let classified = match second_controller.try_receive_classified_command(&mut command_buffer)
+        {
+            Ok(classified) => classified,
+            Err(_) => panic!("the foreign endpoint must classify its own command"),
+        };
+        let command = match classified.try_into_dtm() {
+            Ok(command) => command,
+            Err(_) => panic!("the foreign DTM command must retain its endpoint proof"),
+        };
+
+        let LeDtmActiveCommandRoute::EndpointMismatch { published, command } =
+            started.route_active_command(&first_controller, command)
+        else {
+            panic!("a foreign command must not consume the first active owner");
+        };
+        assert_eq!(published.radio(), &RadioOwner(61));
+        assert!(published.accepts_endpoint(&first_controller));
+        assert!(!published.accepts_endpoint(&second_controller));
+        assert!(command.originates_from(&second_controller));
+        assert!(!command.originates_from(&first_controller));
+    }
+
     fn assert_start_response(packet: ControllerToHostPacket<'_>) {
         let ControllerToHostPacket::Event(event) = packet else {
             panic!("DTM start response changed packet kind");
@@ -428,5 +657,33 @@ mod tests {
             .expect("response contains standard status");
         assert_eq!(complete.status, Status::SUCCESS);
         assert_eq!(complete.return_params::<LeTestEnd>().unwrap(), 0x3412);
+    }
+
+    fn assert_controller_busy(packet: ControllerToHostPacket<'_>) {
+        let ControllerToHostPacket::Event(event) = packet else {
+            panic!("Controller Busy response changed packet kind");
+        };
+        let complete = CommandComplete::from_hci_bytes_complete(event.data)
+            .expect("response is a complete Command Complete");
+        let complete: CommandCompleteWithStatus<'_> = complete
+            .try_into()
+            .expect("response contains standard status");
+        assert_eq!(complete.cmd_opcode, LE_RECEIVER_TEST_V1_OPCODE);
+        assert_eq!(
+            complete.status,
+            bt_hci::param::Error::CONTROLLER_BUSY.to_status()
+        );
+        assert!(complete.return_param_bytes.is_empty());
+    }
+
+    fn parse_command_complete(bytes: &[u8]) -> CommandCompleteWithStatus<'_> {
+        let (packet, remaining) =
+            ControllerToHostPacket::from_hci_bytes_with_kind(PacketKind::Event, bytes).unwrap();
+        assert!(remaining.is_empty());
+        let ControllerToHostPacket::Event(event) = packet else {
+            panic!("Command Complete changed packet kind");
+        };
+        let complete = CommandComplete::from_hci_bytes_complete(event.data).unwrap();
+        complete.try_into().unwrap()
     }
 }

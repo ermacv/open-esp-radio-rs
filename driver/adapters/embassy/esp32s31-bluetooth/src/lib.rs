@@ -15,13 +15,15 @@ extern crate std;
 mod dtm_active;
 #[cfg(target_arch = "riscv32")]
 mod dtm_first;
+#[cfg(any(target_arch = "riscv32", test))]
+mod dtm_stopping;
 
 #[cfg(target_arch = "riscv32")]
 pub use dtm_active::EmbassyBluetoothDtmActiveWait;
 #[cfg(any(target_arch = "riscv32", test))]
 pub use dtm_active::{
-    EmbassyBluetoothDtmActivePendingSignal, EmbassyBluetoothDtmActiveRadioSignal,
-    EmbassyBluetoothDtmActiveWaitError,
+    EmbassyBluetoothDtmActiveCommandSignal, EmbassyBluetoothDtmActivePendingSignal,
+    EmbassyBluetoothDtmActiveRadioSignal, EmbassyBluetoothDtmActiveWaitError,
 };
 
 #[cfg(target_arch = "riscv32")]
@@ -29,6 +31,14 @@ pub use dtm_first::{
     EmbassyBluetoothDtmFirstControllerTimeWait, EmbassyBluetoothDtmFirstDrive,
     EmbassyBluetoothDtmFirstResume, drive_dtm_first_ready,
 };
+
+#[cfg(any(target_arch = "riscv32", test))]
+pub use dtm_stopping::{
+    EmbassyBluetoothDtmStoppingSignal, EmbassyBluetoothDtmTestEndResponseSignal,
+    EmbassyBluetoothDtmTestEndResponseWaitError,
+};
+#[cfg(target_arch = "riscv32")]
+pub use dtm_stopping::{EmbassyBluetoothDtmStoppingWait, EmbassyBluetoothDtmTestEndResponseWait};
 
 use core::{
     future::{Future, poll_fn},

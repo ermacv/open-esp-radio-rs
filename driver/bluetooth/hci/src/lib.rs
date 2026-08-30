@@ -64,7 +64,9 @@ pub use dtm::{
     LeDtmIdleSessionDisposition, LeDtmPayloadPattern, LeReceiverTestV1Command, LeTestEndCommand,
     LeTransmitterTestV1Command,
 };
-pub use dtm_order::{LeDtmResponsePending, LeDtmResponsePublication, LeDtmResponsePublished};
+pub use dtm_order::{
+    LeDtmActiveCommandRoute, LeDtmResponsePending, LeDtmResponsePublication, LeDtmResponsePublished,
+};
 pub use resources::{
     LeControllerHciEndpoints, LeControllerHciResources, LeControllerHciResourcesError,
 };

@@ -6,7 +6,7 @@ use core::future::Future;
 
 use open_esp_radio_esp32s31_bluetooth::{
     BluetoothDtmFirstRunner, BluetoothDtmFirstRunnerCancel, BluetoothDtmFirstRunnerFailure,
-    BluetoothDtmFirstRunnerStep, BluetoothDtmStartResponsePendingSession,
+    BluetoothDtmFirstRunnerStep, BluetoothDtmResponsePendingSession,
     BluetoothSchedulerRunInterruptStorage,
 };
 
@@ -19,7 +19,7 @@ where
     /// Controller time must be rechecked after yielding to the executor.
     Wait(EmbassyBluetoothDtmFirstControllerTimeWait<'runtime, S, SCHEDULER_CAPACITY>),
     /// Hardware reached `RUN`; radio and pending-response axes now progress independently.
-    Active(BluetoothDtmStartResponsePendingSession<'runtime, S, SCHEDULER_CAPACITY>),
+    Active(BluetoothDtmResponsePendingSession<'runtime, S, SCHEDULER_CAPACITY>),
     /// A finite core transition failed while retaining its owner.
     Failed(BluetoothDtmFirstRunnerFailure<'runtime, S, SCHEDULER_CAPACITY>),
 }

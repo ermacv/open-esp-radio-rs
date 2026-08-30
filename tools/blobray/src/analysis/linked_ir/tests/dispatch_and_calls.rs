@@ -81,6 +81,35 @@ static C_MEMCPY_ARGUMENTS: [crate::ExternalArgumentSpec; 3] = [
         direction: crate::ExternalArgumentDirection::Input,
     },
 ];
+
+#[test]
+fn composed_call_keeps_original_site_and_directness_in_linked_ir() {
+    let event = DraftReferenceEvent::ComposedCall {
+        token: 0,
+        site: 0x1005_9bf2,
+        symbol: "eventq_schedule".to_owned(),
+        direct: true,
+        tail: false,
+        arguments: vec![SymbolicValue::Constant(124)].into_boxed_slice(),
+        flow: Box::new(DraftReferenceFlow {
+            events: Vec::new(),
+            terminator: DraftReferenceTerminator::Return(SymbolicValue::Constant(0)),
+        }),
+        result_modeled: true,
+    };
+    let resolver = empty_resolver();
+    let identities = IrIdentityCatalog::new(&resolver, None);
+    let mut calls = BTreeSet::new();
+
+    collect_call_event(&event, &resolver, &identities, &mut calls);
+
+    let call = calls.first().expect("one composed call");
+    assert_eq!(call.kind, "internal");
+    assert_eq!(call.target, "eventq_schedule");
+    assert_eq!(call.site, Some(0x1005_9bf2));
+    assert!(call.direct);
+    assert!(!call.tail);
+}
 static C_MEMCPY_SEMANTIC: crate::DirectSemanticFunctionSpec = crate::DirectSemanticFunctionSpec {
     id: "test-c-standard-memcpy",
     source: "test-c-addon",
@@ -298,6 +327,7 @@ fn authoritative_link_unit_symbol_names_and_types_a_direct_external_call() {
         kind: "internal",
         target: "ets_delay_us".to_owned(),
         site: Some(0x1004),
+        direct: true,
         tail: false,
         result_modeled: false,
         execution_model: None,
@@ -310,6 +340,7 @@ fn authoritative_link_unit_symbol_names_and_types_a_direct_external_call() {
         trampoline: None,
         argument_shapes: 1,
         arguments: vec!["const:0x0000000a".to_owned()],
+        argument_exact: vec![true],
         argument_bindings: Vec::new(),
         typed_arguments: Vec::new(),
         guard_paths: None,
@@ -356,6 +387,7 @@ fn unique_archive_origin_can_name_a_relaxed_internal_definition() {
         kind: "internal",
         target: identities.symbol(&linked),
         site: Some(0x1004),
+        direct: true,
         tail: false,
         result_modeled: false,
         execution_model: None,
@@ -368,6 +400,7 @@ fn unique_archive_origin_can_name_a_relaxed_internal_definition() {
         trampoline: None,
         argument_shapes: 1,
         arguments: vec!["arg0".to_owned()],
+        argument_exact: vec![true],
         argument_bindings: Vec::new(),
         typed_arguments: Vec::new(),
         guard_paths: None,
@@ -1039,6 +1072,7 @@ fn indexed_dispatch_standard_memory_call_is_a_semantic_boundary_independent_of_i
         token: 0,
         site: 0x40,
         target: 0x2000,
+        direct: false,
         arguments: vec![
             SymbolicValue::input(0),
             SymbolicValue::input(1),
@@ -1109,6 +1143,7 @@ fn call_compaction_keeps_only_bindings_shared_by_every_argument_shape() {
         kind: "internal",
         target: "member.o:callee".to_owned(),
         site: Some(0x24),
+        direct: true,
         tail: false,
         result_modeled: false,
         execution_model: None,
@@ -1121,6 +1156,7 @@ fn call_compaction_keeps_only_bindings_shared_by_every_argument_shape() {
         trampoline: None,
         argument_shapes: 1,
         arguments: vec!["arg0".to_owned(), second_argument.to_owned()],
+        argument_exact: vec![true, true],
         argument_bindings: vec![
             LinkedArgumentBinding {
                 position: 0,
@@ -1151,6 +1187,7 @@ fn call_compaction_keeps_only_bindings_shared_by_every_argument_shape() {
     let call = &calls[0];
     assert_eq!(call.argument_shapes, 2);
     assert_eq!(call.arguments, ["arg0", "varies-across-2-shapes"]);
+    assert_eq!(call.argument_exact, [true, false]);
     assert_eq!(call.typed_arguments[0].value, "varies-across-2-shapes");
     assert_eq!(
         call.argument_bindings,
@@ -1182,6 +1219,44 @@ fn call_compaction_keeps_only_bindings_shared_by_every_argument_shape() {
         guarded[0].guard_paths,
         Some(vec![LinkedCallGuardPath { guards: Vec::new() }])
     );
+}
+
+#[test]
+fn call_compaction_never_merges_conflicting_instruction_provenance() {
+    let call = |direct| LinkedCall {
+        kind: "internal",
+        target: "member.o:callee".to_owned(),
+        site: Some(0x24),
+        direct,
+        tail: false,
+        result_modeled: false,
+        execution_model: None,
+        semantics: None,
+        semantic_operation: None,
+        semantic_contract: None,
+        replacement_hint: None,
+        project_symbol: None,
+        project_candidates: Vec::new(),
+        trampoline: None,
+        argument_shapes: 1,
+        arguments: vec!["arg0".to_owned()],
+        argument_exact: vec![true],
+        argument_bindings: Vec::new(),
+        typed_arguments: Vec::new(),
+        guard_paths: None,
+    };
+
+    let calls = compact_calls([call(true), call(false)]);
+
+    assert_eq!(calls.len(), 2);
+    assert_eq!(
+        calls
+            .iter()
+            .map(|call| call.direct)
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([false, true])
+    );
+    assert!(calls.iter().all(|call| call.argument_shapes == 1));
 }
 
 #[test]
@@ -1408,5 +1483,25 @@ fn pseudo_arguments_compact_exact_and_unknown_abi_slot_runs() {
     assert_eq!(
         pseudo_arguments(&arguments),
         "abi_inputs[0..8], unknown_abi_inputs[8..16]"
+    );
+}
+
+#[test]
+fn call_argument_exactness_comes_from_symbolic_provenance() {
+    let unresolved_symbol = SymbolicValue::SymbolAddress {
+        member: None,
+        symbol: "callback".to_owned(),
+        hi_addend: 0,
+        lo_addend: None,
+        post_offset: 0,
+    };
+    assert_eq!(
+        argument_exactness(&[
+            SymbolicValue::Constant(4),
+            SymbolicValue::input(0),
+            unresolved_symbol,
+            SymbolicValue::Unknown,
+        ]),
+        [true, true, false, false]
     );
 }

@@ -17,6 +17,18 @@ the hardware-list-to-item relation, NRT feature meanings and the live async ISR
 owner remain unresolved, so neither CPU route may yet form a live production
 interrupt epoch.
 
+Blobray schema 10 records the two callback mechanisms separately. The
+source-124 path proves the exact `R9 -> iEs -> gs5` call chain, static event
+initialization and both enqueue sites, but remains `INCOMPLETE` until
+`eventq_get -> event.run` return-pointer and stored-callback execution are
+modeled. The finished-list path proves source-zero attachment, the exact
+subscriber callback-pointer store, selector `0x8000_0004` and its merged-mask
+payload, plus the guarded `uwrf -> rmN` continuation; it remains `INCOMPLETE`
+because dominance of the callback store over subscription and the indirect
+broker walk's listener order/stop semantics are not executable evidence.
+Neither route closes source-124 readiness causality or post-unlink retry
+liveness.
+
 This review separates silicon behavior from the internal callback and RTOS
 architecture of the reference Controller. The Rust driver does not reproduce
 the vendor callback registry or FreeRTOS event queue.
@@ -183,14 +195,16 @@ that task-side scheduler item removal/reordering inserts items into a
 manager-root intrusive completion list through the link at `item+0x54`. On
 every worker pop attempt, `r_sym_bt_WHY...` performs the low-halfword transfer
 from `0x2010_125c` to `0x2010_1260`, merges the pending finished-list mask and
-synchronously publishes broker event `0x8000_0004`. The base scheduler broker
-routes that event to `r_sym_ble_rmN...`, which walks set list bits and calls
+synchronously publishes broker event `0x8000_0004`. Reviewed registration,
+source-domain, selector and continuation facts anchor the intended path to
+`r_sym_ble_rmN...`, which walks set list bits and calls
 `r_sym_bt_M9n...` to move finished hardware-linked items onto that same
 software queue. The worker then pops an item, and `r_sym_bt_QsLK...` invokes
 its role-specific callback at `item+0x58`. For DTM this is the mapped
 `r_ble_lll_dtm_recycle_sch_item` body. Thus the lock/modify request result is
 not a completion signal; finished-mask selection plus item recycle is the
-reference software ownership-return path.
+reference software ownership-return path. Blobray does not label the broker
+delivery complete until the indirect listener walk is modeled.
 
 An open Controller must therefore define its own typed scheduler item
 lifecycle and bounded completion queue, with an explicit hardware-finished to

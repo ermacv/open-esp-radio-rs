@@ -26,6 +26,7 @@ pub(crate) struct TargetFlowRequest<'a> {
     pub(crate) root_symbol: &'a str,
     pub(crate) target: FlowTargetRequest<'a>,
     pub(crate) max_depth: usize,
+    pub(crate) max_loaded_functions: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -151,6 +152,10 @@ impl FlowInvestigationReport {
 pub(crate) struct FlowStepEvidence {
     pub(crate) ordinal: usize,
     pub(crate) evidence: EvidenceLevel,
+    /// Evidence strength for the execution-context label. The call edge and
+    /// its context may come from different sources and must not be flattened
+    /// into one stronger claim.
+    pub(crate) context_evidence: EvidenceLevel,
     pub(crate) context: String,
     pub(crate) caller: String,
     pub(crate) callee: String,

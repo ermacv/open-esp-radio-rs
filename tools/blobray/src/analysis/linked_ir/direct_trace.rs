@@ -699,6 +699,7 @@ pub(super) fn explore_direct_calls(
                         kind: "unresolved",
                         target: relocation.symbol.clone(),
                         site: Some(relocation.address),
+                        direct: true,
                         tail: artifact::relocated_call_is_tail(symbol, relocation.address)
                             .unwrap_or(false),
                         result_modeled: false,
@@ -715,6 +716,7 @@ pub(super) fn explore_direct_calls(
                         trampoline: None,
                         argument_shapes: 1,
                         arguments: Vec::new(),
+                        argument_exact: Vec::new(),
                         argument_bindings: Vec::new(),
                         typed_arguments: Vec::new(),
                         guard_paths: Some(vec![current_guard_path(&evidence.guards)]),

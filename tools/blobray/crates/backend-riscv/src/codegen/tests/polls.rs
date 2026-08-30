@@ -29,7 +29,10 @@ fn resolves_a_bounded_poll_with_an_exhaustion_diagnostic() {
                         },
                         DraftReferenceEvent::ComposedCall {
                             token: 0,
+                            site: 0x1010,
                             symbol: "poll_read".to_owned(),
+                            direct: true,
+                            tail: false,
                             arguments: Box::new(call_arguments),
                             flow: Box::new(DraftReferenceFlow {
                                 events: Vec::new(),

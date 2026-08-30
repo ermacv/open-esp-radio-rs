@@ -1,6 +1,7 @@
 //! Editable function/context pack and its resolved workspace view.
 
 use std::{
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -89,7 +90,54 @@ pub(crate) struct ReviewedPath {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct ReviewedEventRoute {
+pub(crate) enum ReviewedEventRoute {
+    SelectorDelivery(ReviewedSelectorEventRoute),
+    StaticEventCallback(ReviewedStaticEventCallbackRoute),
+    BrokerSubscription(ReviewedBrokerSubscriptionRoute),
+}
+
+impl ReviewedEventRoute {
+    pub(crate) fn id(&self) -> &str {
+        match self {
+            Self::SelectorDelivery(route) => &route.id,
+            Self::StaticEventCallback(route) => &route.id,
+            Self::BrokerSubscription(route) => &route.id,
+        }
+    }
+
+    pub(crate) fn replay(&self) -> Option<&ReviewedEventReplay> {
+        match self {
+            Self::SelectorDelivery(route) => route.replay.as_ref(),
+            Self::StaticEventCallback(_) | Self::BrokerSubscription(_) => None,
+        }
+    }
+
+    fn exact_fact_functions(&self, functions: &mut BTreeMap<String, BTreeSet<String>>) {
+        let mut require = |profile: &str, identity: &str| {
+            functions
+                .entry(profile.to_owned())
+                .or_default()
+                .insert(identity.to_owned());
+        };
+        match self {
+            Self::SelectorDelivery(_) => {}
+            Self::StaticEventCallback(route) => {
+                require(&route.profile, &route.dispatcher);
+                require(&route.binding_profile, &route.binding_entry);
+                require(&route.callback_profile, &route.callback_function);
+            }
+            Self::BrokerSubscription(route) => {
+                require(&route.profile, &route.dispatcher);
+                require(&route.domain.profile, &route.domain.entry);
+                require(&route.binding_profile, &route.binding_entry);
+                require(&route.callback_profile, &route.callback_function);
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReviewedSelectorEventRoute {
     pub(crate) id: String,
     pub(crate) profile: String,
     pub(crate) source: String,
@@ -107,6 +155,87 @@ pub(crate) struct ReviewedEventRoute {
     pub(crate) terminal: Option<ReviewedEventTerminal>,
     pub(crate) replay: Option<ReviewedEventReplay>,
     pub(crate) rationale: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReviewedStaticEventCallbackRoute {
+    pub(crate) id: String,
+    pub(crate) profile: String,
+    pub(crate) source: String,
+    pub(crate) dispatcher: String,
+    pub(crate) mechanism: String,
+    pub(crate) execution_context: String,
+    pub(crate) dispatch_call: ReviewedEventCallMatcher,
+    pub(crate) dispatch_sites: Vec<u32>,
+    pub(crate) upstream_chain: Vec<String>,
+    pub(crate) upstream_sites: Vec<u32>,
+    pub(crate) dispatch_object_argument: u8,
+    pub(crate) binding_profile: String,
+    pub(crate) binding_source: String,
+    pub(crate) binding_entry: String,
+    pub(crate) binding_call: ReviewedEventCallMatcher,
+    pub(crate) binding_site: u32,
+    pub(crate) binding_object_argument: u8,
+    pub(crate) binding_callback_argument: u8,
+    pub(crate) callback_profile: String,
+    pub(crate) callback_source: String,
+    pub(crate) callback_function: String,
+    pub(crate) rationale: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReviewedBrokerSubscriptionRoute {
+    pub(crate) id: String,
+    pub(crate) profile: String,
+    pub(crate) source: String,
+    pub(crate) dispatcher: String,
+    pub(crate) mechanism: String,
+    pub(crate) execution_context: String,
+    pub(crate) dispatch_call: ReviewedEventCallMatcher,
+    pub(crate) dispatch_site: u32,
+    pub(crate) dispatch_selector_argument: u8,
+    pub(crate) selector_role: String,
+    pub(crate) selector_value: u32,
+    pub(crate) dispatch_payload_argument: u8,
+    pub(crate) payload_role: String,
+    pub(crate) payload_value: String,
+    pub(crate) domain: ReviewedEventDomainWitness,
+    pub(crate) binding_profile: String,
+    pub(crate) binding_source: String,
+    pub(crate) binding_entry: String,
+    pub(crate) binding_call: ReviewedEventCallMatcher,
+    pub(crate) binding_site: u32,
+    pub(crate) binding_domain_argument: u8,
+    pub(crate) binding_object_argument: u8,
+    pub(crate) binding_callback_store_site: u32,
+    pub(crate) binding_callback_store_offset: i64,
+    pub(crate) callback_profile: String,
+    pub(crate) callback_source: String,
+    pub(crate) callback_function: String,
+    pub(crate) callback_selector_argument: u8,
+    pub(crate) case_handler: ReviewedEventCaseHandler,
+    pub(crate) case_handler_site: u32,
+    pub(crate) terminal: Option<ReviewedEventTerminal>,
+    pub(crate) rationale: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReviewedEventDomainWitness {
+    pub(crate) profile: String,
+    pub(crate) source: String,
+    pub(crate) entry: String,
+    pub(crate) call: ReviewedEventCallMatcher,
+    pub(crate) call_site: u32,
+    pub(crate) dispatch_argument: u8,
+    pub(crate) call_object_argument: u8,
+    pub(crate) call_selector_argument: u8,
+    pub(crate) selector_value: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum ReviewedEventCallMatcher {
+    Operation(String),
+    Function(String),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -260,12 +389,16 @@ impl FunctionWorkspace {
         })
     }
 
-    pub(crate) fn load_summary(
+    pub(crate) fn load_with_callback_facts(
         reports: &[(String, std::path::PathBuf)],
         pack_path: &Path,
     ) -> Result<Self> {
-        let facts = FunctionFacts::load_summary(reports)?;
         let pack = FunctionPack::load(pack_path)?;
+        let mut exact_functions = BTreeMap::new();
+        for route in &pack.value.event_routes {
+            route.exact_fact_functions(&mut exact_functions);
+        }
+        let facts = FunctionFacts::load_with_functions(reports, &exact_functions)?;
         let summary = super::pack_validate::validate(&pack.value, &facts).map_err(|error| {
             crate::error::BlobrayError::manifest_source(
                 "function pack",
@@ -275,6 +408,29 @@ impl FunctionWorkspace {
                 error.span(&pack.document),
             )
         })?;
+        Ok(Self {
+            facts,
+            pack: pack.value,
+            summary,
+        })
+    }
+
+    pub(crate) fn load_summary(
+        reports: &[(String, std::path::PathBuf)],
+        pack_path: &Path,
+    ) -> Result<Self> {
+        let facts = FunctionFacts::load_summary(reports)?;
+        let pack = FunctionPack::load(pack_path)?;
+        let summary =
+            super::pack_validate::validate_summary(&pack.value, &facts).map_err(|error| {
+                crate::error::BlobrayError::manifest_source(
+                    "function pack",
+                    pack_path,
+                    &pack.input,
+                    &error,
+                    error.span(&pack.document),
+                )
+            })?;
         Ok(Self {
             facts,
             pack: pack.value,
@@ -306,12 +462,12 @@ impl FunctionPack {
             )
         })?;
         let document: DocumentMut = source_document.clone().into_mut();
-        if document.get("schema").and_then(Item::as_integer) != Some(9) {
+        if document.get("schema").and_then(Item::as_integer) != Some(10) {
             return Err(crate::error::BlobrayError::manifest_source(
                 "function pack",
                 path,
                 &input,
-                "requires schema = 9",
+                "requires schema = 10",
                 source_document.get("schema").and_then(Item::span),
             ));
         }
@@ -319,7 +475,9 @@ impl FunctionPack {
             .map_err(|error| crate::error::BlobrayError::manifest("function pack", path, error))?;
         let base = path.parent().unwrap_or_else(|| Path::new("."));
         for route in &mut value.event_routes {
-            if let Some(replay) = &mut route.replay {
+            if let ReviewedEventRoute::SelectorDelivery(route) = route
+                && let Some(replay) = &mut route.replay
+            {
                 if replay.manifest.is_relative() {
                     replay.manifest = base.join(&replay.manifest);
                 }

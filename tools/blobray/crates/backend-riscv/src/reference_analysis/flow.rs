@@ -552,6 +552,7 @@ pub(super) fn compose_calls_in_reference_flow(
                 token,
                 site,
                 target,
+                direct,
                 arguments,
                 scratch_argument,
                 scratch_size,
@@ -563,7 +564,9 @@ pub(super) fn compose_calls_in_reference_flow(
                 dependencies.extend(callee_trace.reference_dependencies.iter().cloned());
                 events.push(DraftReferenceEvent::ComposedCallWithScratch {
                     token,
+                    site,
                     symbol: callee_name,
+                    direct,
                     arguments,
                     flow: Box::new(trace_into_reference_flow(callee_trace)),
                     result_modeled,
@@ -574,19 +577,21 @@ pub(super) fn compose_calls_in_reference_flow(
             }
             other => other,
         };
-        let (token, site, target, arguments) = match event {
+        let (token, site, target, direct, tail, arguments) = match event {
             DraftReferenceEvent::Call {
                 token,
                 site,
                 target,
+                direct,
                 arguments,
-            }
-            | DraftReferenceEvent::TailCall {
+            } => (token, site, target, direct, false, arguments),
+            DraftReferenceEvent::TailCall {
                 token,
                 site,
                 target,
+                direct,
                 arguments,
-            } => (token, site, target, arguments),
+            } => (token, site, target, direct, true, arguments),
             DraftReferenceEvent::BranchDecision { condition, .. } => {
                 return Err(format!(
                     "branch decision at {:#010x} escaped structured flow assembly",
@@ -634,7 +639,10 @@ pub(super) fn compose_calls_in_reference_flow(
         dependencies.extend(callee_trace.reference_dependencies.iter().cloned());
         events.push(DraftReferenceEvent::ComposedCall {
             token,
+            site,
             symbol: callee_name,
+            direct,
+            tail,
             arguments,
             flow: Box::new(trace_into_reference_flow(callee_trace)),
             result_modeled,

@@ -483,6 +483,7 @@ fn apply_reviewed_internal_call(
             token,
             site: pc,
             target,
+            direct: false,
             arguments,
         });
         state.return_value = SymbolicValue::CallResult(token);
@@ -493,6 +494,7 @@ fn apply_reviewed_internal_call(
         token,
         site: pc,
         target,
+        direct: false,
         arguments,
     });
     structural_finish_call(
@@ -781,6 +783,7 @@ pub(super) fn apply_relocated_call(
             token: call_token,
             site: pc as u32,
             target,
+            direct: true,
             arguments,
         });
         state.return_value = SymbolicValue::CallResult(call_token);
@@ -793,6 +796,7 @@ pub(super) fn apply_relocated_call(
             token: call_token,
             site: pc as u32,
             target,
+            direct: true,
             arguments,
         });
         structural_finish_call(
@@ -846,6 +850,7 @@ pub(super) fn apply_call_instruction(
                         token: call_token,
                         site: pc as u32,
                         target,
+                        direct: true,
                         arguments,
                     });
                     state.return_value = SymbolicValue::CallResult(call_token);
@@ -858,6 +863,7 @@ pub(super) fn apply_call_instruction(
                         token: call_token,
                         site: pc as u32,
                         target,
+                        direct: true,
                         arguments,
                     });
                     structural_finish_call(
@@ -907,6 +913,7 @@ pub(super) fn apply_call_instruction(
                     token: call_token,
                     site: pc as u32,
                     target,
+                    direct: false,
                     arguments,
                 });
                 state.return_value = SymbolicValue::CallResult(call_token);
@@ -917,6 +924,7 @@ pub(super) fn apply_call_instruction(
                 token: call_token,
                 site: pc as u32,
                 target,
+                direct: false,
                 arguments,
             });
             structural_finish_call(

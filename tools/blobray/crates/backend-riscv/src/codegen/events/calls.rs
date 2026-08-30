@@ -176,7 +176,10 @@ pub(super) fn render_event(
         }
         ResolvedReferenceEvent::ComposedCall {
             token,
+            site,
             symbol,
+            direct,
+            tail,
             arguments,
             flow,
             result_modeled,
@@ -203,8 +206,10 @@ pub(super) fn render_event(
             }
             writeln!(
                 output,
-                "{indent}// Composed direct call: {}.",
-                comment_text(symbol)
+                "{indent}// Composed {}{} call at {site:#010x}: {}.",
+                if *direct { "direct" } else { "indirect" },
+                if *tail { " tail" } else { "" },
+                comment_text(symbol),
             )
             .unwrap();
             let assignment = if *result_modeled {
@@ -237,7 +242,9 @@ pub(super) fn render_event(
         }
         ResolvedReferenceEvent::ComposedCallWithScratch {
             token,
+            site,
             symbol,
+            direct,
             arguments,
             flow,
             result_modeled,
@@ -268,11 +275,12 @@ pub(super) fn render_event(
                 child_state.arguments[usize::from(index)] = name;
             }
             writeln!(
-                    output,
-                    "{indent}// Composed direct call with {scratch_size}-byte initialized-on-write scratch: {}.",
-                    comment_text(symbol)
-                )
-                .unwrap();
+                output,
+                "{indent}// Composed {} call at {site:#010x} with {scratch_size}-byte initialized-on-write scratch: {}.",
+                if *direct { "direct" } else { "indirect" },
+                comment_text(symbol),
+            )
+            .unwrap();
             let assignment = if *result_modeled {
                 format!("let call_result{token} = ")
             } else {

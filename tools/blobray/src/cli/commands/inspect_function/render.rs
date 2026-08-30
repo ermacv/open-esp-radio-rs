@@ -268,12 +268,13 @@ pub(super) fn human(report: &FunctionInvestigationReport, full: bool) {
             crate::cli::output::line(format_args!("CALL BOUNDARIES"));
             for call in &semantic.calls {
                 crate::cli::output::line(format_args!(
-                    "  - {} {}{} knowledge={}{}{}",
+                    "  - {} {}{} instruction={} knowledge={}{}{}",
                     call.kind,
                     call.target,
                     call.site
                         .map(|site| format!(" @ {site:#010x}"))
                         .unwrap_or_default(),
+                    if call.direct { "direct" } else { "indirect" },
                     call.knowledge,
                     call.semantic_operation
                         .as_deref()
@@ -437,6 +438,18 @@ pub(super) fn human(report: &FunctionInvestigationReport, full: bool) {
                         crate::cli::output::line(format_args!("        ! {blocker}"));
                     }
                 }
+                for blocker in &route.blockers {
+                    crate::cli::output::line(format_args!("      ! {blocker}"));
+                }
+            }
+        }
+        if !semantic.reviewed_callback_routes.is_empty() {
+            crate::cli::output::line(format_args!("REVIEWED CALLBACK ROUTES"));
+            for route in &semantic.reviewed_callback_routes {
+                crate::cli::output::line(format_args!(
+                    "  - {}: {} -> {} [{}]",
+                    route.id, route.kind, route.callback, route.status
+                ));
                 for blocker in &route.blockers {
                     crate::cli::output::line(format_args!("      ! {blocker}"));
                 }
@@ -700,6 +713,21 @@ fn render_summary(report: &FunctionInvestigationReport) {
                     route.consumer_entry,
                     route.execution_context
                 );
+            }
+        }
+        if !semantic.reviewed_callback_routes.is_empty() {
+            outputln!("\n{}", output::heading("Declared callback routes"));
+            for route in &semantic.reviewed_callback_routes {
+                outputln!(
+                    "- {}: {} → {} ({})",
+                    route.id,
+                    route.kind,
+                    route.callback,
+                    route.status
+                );
+                for blocker in &route.blockers {
+                    outputln!("  ! {blocker}");
+                }
             }
         }
     }

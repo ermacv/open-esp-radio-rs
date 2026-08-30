@@ -487,7 +487,7 @@ cargo blobray inspect function archive:phy_chip_set_chan \
 The ordinary view is for understanding vendor behavior. The replacement view
 adds reviewed ownership, production binding, proof strength and verification
 status. These are deliberately separate questions. Function investigation
-schema 16 attaches the same typed blocker-resolution route used by research
+schema 17 attaches the same typed blocker-resolution route used by research
 ranking: owner, producer effect, minimum evidence, optional consumed record
 destination, and exact authenticated root completion predicate. A missing
 backend capability therefore never appears as an instruction to edit the

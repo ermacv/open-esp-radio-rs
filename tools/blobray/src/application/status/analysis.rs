@@ -417,12 +417,7 @@ fn event_replays(context: &ProjectContext<'_>) -> Component {
     let replays = pack
         .event_routes
         .iter()
-        .filter_map(|route| {
-            route
-                .replay
-                .as_ref()
-                .map(|replay| (route.id.as_str(), replay))
-        })
+        .filter_map(|route| route.replay().map(|replay| (route.id(), replay)))
         .collect::<Vec<_>>();
     if replays.is_empty() {
         return Component::new("event_replays", Readiness::NotConfigured)

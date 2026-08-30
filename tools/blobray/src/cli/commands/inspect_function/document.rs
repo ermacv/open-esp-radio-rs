@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn compact_document_counts_the_body_without_serializing_instructions() {
         let report = FunctionInvestigationReport {
-            schema_version: 16,
+            schema_version: 17,
             command: "inspect function",
             source: "fixture".to_owned(),
             symbol: "entry".to_owned(),

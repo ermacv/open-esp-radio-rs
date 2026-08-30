@@ -28,7 +28,7 @@ pub(super) struct ReplayStateProof {
 }
 
 pub(super) fn load_replay_proof(
-    route: &crate::function_workspace::ReviewedEventRoute,
+    route: &crate::function_workspace::ReviewedSelectorEventRoute,
 ) -> Result<Option<ReplayRouteProof>> {
     let Some(binding) = &route.replay else {
         return Ok(None);

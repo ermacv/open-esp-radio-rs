@@ -95,7 +95,7 @@ fn project_analysis_inputs(session: &ProjectSession) -> ProjectAnalysisInputs {
                 let replays = pack
                     .event_routes
                     .iter()
-                    .filter_map(|route| route.replay.as_ref())
+                    .filter_map(crate::function_workspace::ReviewedEventRoute::replay)
                     .collect::<Vec<_>>();
                 let requires_interfaces = replays.iter().any(|replay| {
                     crate::application::event_replay::manifest_requires_reviewed_interfaces(
@@ -160,7 +160,7 @@ fn pipeline_input_paths(session: &ProjectSession) -> Result<Vec<std::path::PathB
         paths.extend(
             pack.event_routes
                 .iter()
-                .filter_map(|route| route.replay.as_ref())
+                .filter_map(crate::function_workspace::ReviewedEventRoute::replay)
                 .map(|replay| replay.manifest.clone()),
         );
     }
@@ -1037,13 +1037,13 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
         ensure_unique_replay_outputs(
             pack.event_routes
                 .iter()
-                .filter_map(|route| route.replay.as_ref()),
+                .filter_map(crate::function_workspace::ReviewedEventRoute::replay),
         )?;
         let mut configured = std::collections::BTreeMap::new();
         for replay in pack
             .event_routes
             .iter()
-            .filter_map(|route| route.replay.as_ref())
+            .filter_map(crate::function_workspace::ReviewedEventRoute::replay)
         {
             configured
                 .entry((

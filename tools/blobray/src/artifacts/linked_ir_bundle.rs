@@ -536,6 +536,10 @@ impl LinkedIrReader {
                     &function.identity,
                     &function.loops,
                 )?;
+                super::linked_ir_read::schema::validate_call_arguments(
+                    &function.identity,
+                    &function.calls,
+                )?;
                 functions.push(function);
             }
         }
@@ -699,6 +703,14 @@ impl LinkedIrReader {
         let mut bytes = vec![0; size];
         file.read_exact(&mut bytes)?;
         let function: StoredFunction = super::json::from_slice(&bytes)?;
+        super::linked_ir_read::schema::validate_function_loops(
+            &function.identity,
+            &function.loops,
+        )?;
+        super::linked_ir_read::schema::validate_call_arguments(
+            &function.identity,
+            &function.calls,
+        )?;
         if function.identity != record.identity
             || function.source != record.source
             || function.member != record.member
@@ -959,7 +971,9 @@ fn fixture_function_overview(encoded: &str) -> Result<String> {
         "direct_calls": full["calls"].as_array().map_or(0, Vec::len),
         "calls": full["calls"].as_array().into_iter().flatten().map(|call| serde_json::json!({
             "kind": call["kind"], "target": call["target"], "site": call["site"],
+            "direct": call["direct"],
             "project_symbol": call["project_symbol"],
+            "semantic_operation": call["semantic_operation"],
         })).collect::<Vec<_>>(),
         "mmio": mmio,
         "mmio_addresses": mmio_addresses,

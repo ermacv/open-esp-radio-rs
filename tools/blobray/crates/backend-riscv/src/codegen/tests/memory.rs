@@ -61,7 +61,10 @@ pub(super) fn bytes_to_word_events(
     vec![
         DraftReferenceEvent::ComposedCall {
             token,
+            site: 0x1000 + token * 4,
             symbol: "phy_byte_to_word".to_owned(),
+            direct: true,
+            tail: false,
             arguments: vec![source].into_boxed_slice(),
             flow: Box::new(little_endian_loader_flow()),
             result_modeled: true,

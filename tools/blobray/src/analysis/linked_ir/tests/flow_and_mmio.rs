@@ -181,7 +181,10 @@ fn pseudo_ir_keeps_a_named_call_and_structured_branch() {
     let flow = DraftReferenceFlow {
         events: vec![DraftReferenceEvent::ComposedCall {
             token: 0,
+            site: 0x100c,
             symbol: "vendor_child".to_owned(),
+            direct: true,
+            tail: false,
             arguments: vec![SymbolicValue::input(0)].into_boxed_slice(),
             flow: Box::new(callee_flow),
             result_modeled: true,
@@ -234,6 +237,7 @@ fn pseudo_ir_does_not_render_a_second_return_after_tail_call() {
             token: 0,
             site: 0x1020,
             target: 0x2040,
+            direct: true,
             arguments: vec![SymbolicValue::input(0)].into_boxed_slice(),
         }],
         terminator: DraftReferenceTerminator::Return(SymbolicValue::CallResult(0)),

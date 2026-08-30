@@ -50,6 +50,7 @@ pub(super) fn run(arguments: InspectFlowArgs, project: &ProjectSpec) -> Result<b
                 root_symbol,
                 target,
                 max_depth: arguments.max_depth,
+                max_loaded_functions: crate::flow_investigation::MAX_LOADED_FUNCTIONS,
             })
         }
         _ => {
@@ -346,6 +347,7 @@ mod tests {
         let step = FlowStepEvidence {
             ordinal: 0,
             evidence: EvidenceLevel::Observed,
+            context_evidence: EvidenceLevel::Observed,
             context: "synchronous".to_owned(),
             caller: "source::caller".to_owned(),
             callee: "source::callee".to_owned(),

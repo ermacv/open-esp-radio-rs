@@ -137,7 +137,10 @@ fn direct_call_to_symbolic_cfg_callee_is_scoped_and_composed() {
         trace.reference_events.as_slice(),
         [DraftReferenceEvent::ComposedCall {
             token: 0,
+            site: 0x1000,
             symbol,
+            direct: true,
+            tail: false,
             result_modeled: true,
             ..
         }] if symbol == "branch_child"
@@ -147,7 +150,7 @@ fn direct_call_to_symbolic_cfg_callee_is_scoped_and_composed() {
     assert!(
         generated
             .source
-            .contains("// Composed direct call: branch_child.")
+            .contains("// Composed direct call at 0x00001000: branch_child.")
     );
     assert!(generated.source.contains("if (call0_arg0"));
     assert!(
@@ -1666,6 +1669,7 @@ fn observed_slot_assignment_promotes_reviewed_indirect_call_to_internal_code() {
         [DraftReferenceEvent::TailCall {
             site: 0x100c,
             target: 0x2000,
+            direct: false,
             arguments,
             ..
         }] if arguments[0] == SymbolicValue::Constant(7)

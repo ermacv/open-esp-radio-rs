@@ -59,6 +59,7 @@ pub(super) fn investigate(
         &request.target,
         path,
         request.max_depth,
+        request.max_loaded_functions.min(MAX_LOADED_FUNCTIONS),
         search.visited_nodes,
         search.examined_edges,
         search.limit,
@@ -72,6 +73,7 @@ fn compose_path(
     target: &FlowTargetRequest<'_>,
     path: &[artifacts::StoredGraphEdge],
     max_depth: usize,
+    max_loaded_functions: usize,
     visited_nodes: usize,
     examined_edges: usize,
     reached_limit: Option<&'static str>,
@@ -83,9 +85,9 @@ fn compose_path(
     let mut selected = BTreeSet::from([root.to_owned(), sink.clone()]);
     selected.extend(path.iter().map(|edge| edge.caller.clone()));
     let mut blockers = Vec::new();
-    if selected.len() > MAX_LOADED_FUNCTIONS {
+    if selected.len() > max_loaded_functions {
         blockers.push(limit_blocker("max-loaded-functions"));
-        selected = selected.into_iter().take(MAX_LOADED_FUNCTIONS).collect();
+        selected = selected.into_iter().take(max_loaded_functions).collect();
     }
     let mut functions = BTreeMap::new();
     for identity in selected {
@@ -161,13 +163,15 @@ fn compose_path(
             ));
         }
         domains = next;
+        let evidence = if edge.kind == PROJECT_ASSOCIATED {
+            EvidenceLevel::Reviewed
+        } else {
+            EvidenceLevel::Observed
+        };
         steps.push(FlowStepEvidence {
             ordinal,
-            evidence: if edge.kind == PROJECT_ASSOCIATED {
-                EvidenceLevel::Reviewed
-            } else {
-                EvidenceLevel::Observed
-            },
+            evidence,
+            context_evidence: evidence,
             context: "synchronous".to_owned(),
             caller: edge.caller.clone(),
             callee: edge.callee.clone(),
@@ -292,6 +296,7 @@ fn compose_path(
         },
         limits: FlowLimits {
             max_depth,
+            max_loaded_functions,
             visited_nodes,
             examined_edges,
             loaded_functions: functions.len(),

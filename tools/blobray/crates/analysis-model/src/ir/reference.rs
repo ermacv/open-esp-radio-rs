@@ -111,14 +111,19 @@ pub enum ResolvedReferenceEvent {
     },
     ComposedCall {
         token: u32,
+        site: u32,
         symbol: String,
+        direct: bool,
+        tail: bool,
         arguments: Box<[SymbolicValue]>,
         flow: Box<ResolvedReferenceFlow>,
         result_modeled: bool,
     },
     ComposedCallWithScratch {
         token: u32,
+        site: u32,
         symbol: String,
+        direct: bool,
         arguments: Box<[SymbolicValue]>,
         flow: Box<ResolvedReferenceFlow>,
         result_modeled: bool,
@@ -509,20 +514,28 @@ impl ResolvedReferenceEvent {
             },
             DraftReferenceEvent::ComposedCall {
                 token,
+                site,
                 symbol,
+                direct,
+                tail,
                 arguments,
                 flow,
                 result_modeled,
             } => Self::ComposedCall {
                 token: *token,
+                site: *site,
                 symbol: symbol.clone(),
+                direct: *direct,
+                tail: *tail,
                 arguments: arguments.clone(),
                 flow: Box::new(ResolvedReferenceFlow::from_draft(flow)?),
                 result_modeled: *result_modeled,
             },
             DraftReferenceEvent::ComposedCallWithScratch {
                 token,
+                site,
                 symbol,
+                direct,
                 arguments,
                 flow,
                 result_modeled,
@@ -530,7 +543,9 @@ impl ResolvedReferenceEvent {
                 scratch_size,
             } => Self::ComposedCallWithScratch {
                 token: *token,
+                site: *site,
                 symbol: symbol.clone(),
+                direct: *direct,
                 arguments: arguments.clone(),
                 flow: Box::new(ResolvedReferenceFlow::from_draft(flow)?),
                 result_modeled: *result_modeled,
@@ -661,5 +676,73 @@ impl TryFrom<&FunctionAnalysis> for ResolvedReferenceProgram {
             body,
             exit_return_modeled: trace.reference_exit_return_modeled(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn empty_flow() -> Box<DraftReferenceFlow> {
+        Box::new(DraftReferenceFlow {
+            events: Vec::new(),
+            terminator: DraftReferenceTerminator::Return(SymbolicValue::Constant(0)),
+        })
+    }
+
+    #[test]
+    fn composed_call_resolution_preserves_instruction_provenance() {
+        let event = DraftReferenceEvent::ComposedCall {
+            token: 3,
+            site: 0x1005_9bf2,
+            symbol: "eventq_schedule".to_owned(),
+            direct: false,
+            tail: true,
+            arguments: vec![SymbolicValue::Constant(124)].into_boxed_slice(),
+            flow: empty_flow(),
+            result_modeled: true,
+        };
+
+        let resolved = ResolvedReferenceEvent::from_draft(&event).unwrap();
+
+        assert!(matches!(
+            resolved,
+            ResolvedReferenceEvent::ComposedCall {
+                token: 3,
+                site: 0x1005_9bf2,
+                direct: false,
+                tail: true,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn composed_scratch_call_resolution_preserves_instruction_provenance() {
+        let event = DraftReferenceEvent::ComposedCallWithScratch {
+            token: 4,
+            site: 0x1004_2000,
+            symbol: "scratch_worker".to_owned(),
+            direct: true,
+            arguments: vec![SymbolicValue::input(0)].into_boxed_slice(),
+            flow: empty_flow(),
+            result_modeled: false,
+            scratch_argument: 0,
+            scratch_size: 32,
+        };
+
+        let resolved = ResolvedReferenceEvent::from_draft(&event).unwrap();
+
+        assert!(matches!(
+            resolved,
+            ResolvedReferenceEvent::ComposedCallWithScratch {
+                token: 4,
+                site: 0x1004_2000,
+                direct: true,
+                scratch_argument: 0,
+                scratch_size: 32,
+                ..
+            }
+        ));
     }
 }

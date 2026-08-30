@@ -3,7 +3,10 @@
 mod parse;
 mod validate;
 
-use std::path::PathBuf;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::PathBuf,
+};
 
 use crate::Result;
 
@@ -72,10 +75,21 @@ pub(crate) struct FunctionMemoryFieldFact {
 pub(crate) struct FunctionCallFact {
     pub(crate) kind: String,
     pub(crate) target: String,
+    pub(crate) direct: bool,
     pub(crate) semantic_operation: Option<String>,
     pub(crate) site: Option<u32>,
     pub(crate) arguments: Vec<String>,
+    pub(crate) argument_exact: Vec<bool>,
     pub(crate) guard_paths: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct FunctionMemoryWriteFact {
+    pub(crate) site: u32,
+    pub(crate) object: FunctionMemoryObjectFact,
+    pub(crate) offset: i64,
+    pub(crate) width: u8,
+    pub(crate) value: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -132,6 +146,7 @@ pub(crate) struct FunctionFact {
     pub(crate) identity: String,
     pub(crate) member: Option<String>,
     pub(crate) symbol: String,
+    pub(crate) address: Option<u32>,
     pub(crate) selection: String,
     pub(crate) body_complete: bool,
     pub(crate) call_targets_complete: bool,
@@ -145,6 +160,7 @@ pub(crate) struct FunctionFact {
     pub(crate) decode_blockers: Vec<FunctionDecodeBlockerFact>,
     pub(crate) direct_calls: usize,
     pub(crate) calls: Vec<FunctionCallFact>,
+    pub(crate) memory_writes: Vec<FunctionMemoryWriteFact>,
     pub(crate) mmio_addresses: Vec<u32>,
     pub(crate) context_fields: Vec<FunctionContextFieldFact>,
     pub(crate) memory_fields: Vec<FunctionMemoryFieldFact>,
@@ -226,6 +242,39 @@ impl FunctionFacts {
         });
         validate::validate(&inputs, &functions)?;
         Ok(Self { inputs, functions })
+    }
+
+    pub(crate) fn load_with_functions(
+        reports: &[(String, PathBuf)],
+        required: &BTreeMap<String, BTreeSet<String>>,
+    ) -> Result<Self> {
+        let mut facts = Self::load_summary(reports)?;
+        for (profile, path) in reports {
+            let Some(identities) = required.get(profile) else {
+                continue;
+            };
+            let reader = crate::artifacts::LinkedIrReader::open(path)?;
+            for identity in identities {
+                let Some(function) = reader.get_function_by_identity(identity)? else {
+                    continue;
+                };
+                let full = parse::parse_function(profile, function);
+                if let Some(existing) = facts.functions.iter_mut().find(|candidate| {
+                    candidate.profile == full.profile
+                        && candidate.source == full.source
+                        && candidate.identity == full.identity
+                }) {
+                    *existing = full;
+                } else {
+                    facts.functions.push(full);
+                }
+            }
+        }
+        facts.functions.sort_by(|left, right| {
+            (&left.profile, &left.identity).cmp(&(&right.profile, &right.identity))
+        });
+        validate::validate(&facts.inputs, &facts.functions)?;
+        Ok(facts)
     }
 
     pub(crate) fn function(

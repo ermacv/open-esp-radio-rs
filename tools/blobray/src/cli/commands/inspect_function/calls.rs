@@ -80,11 +80,12 @@ pub(super) fn render(report: &FunctionInvestigationReport, filter: Option<&str>)
             outputln!("\nCalls:");
             for (_, call) in &calls {
                 outputln!(
-                    "  {}  target={}  arguments={}",
+                    "  {}  target={}  instruction={}  arguments={}",
                     call.site
                         .map(|site| format!("{site:#010x}"))
                         .unwrap_or_else(|| "composed".to_owned()),
                     call.target_status,
+                    if call.direct { "direct" } else { "indirect" },
                     argument_summary(call).replace('\n', ", ")
                 );
                 outputln!("    {}", call.target);
@@ -96,7 +97,7 @@ pub(super) fn render(report: &FunctionInvestigationReport, filter: Option<&str>)
             outputln!(
                 "\n{}",
                 crate::cli::table::render(
-                    ["Site", "Target", "Target proof", "Arguments"],
+                    ["Site", "Target", "Target proof", "Instruction", "Arguments"],
                     calls.iter().map(|(_, call)| [
                         call.site
                             .map(|site| format!("{site:#010x}"))
@@ -106,6 +107,11 @@ pub(super) fn render(report: &FunctionInvestigationReport, filter: Option<&str>)
                             |operation| { format!("{}\n→ {operation}", call.target) }
                         ),
                         call.target_status.to_owned(),
+                        if call.direct {
+                            "direct".to_owned()
+                        } else {
+                            "indirect".to_owned()
+                        },
                         argument_summary(call),
                     ]),
                 )
@@ -133,6 +139,10 @@ pub(super) fn render(report: &FunctionInvestigationReport, filter: Option<&str>)
         );
         outputln!("Profile: {profile}");
         outputln!("Target:  {} ({})", call.target, call.target_status);
+        outputln!(
+            "Instruction: {}",
+            if call.direct { "direct" } else { "indirect" }
+        );
         if !call.target_candidates.is_empty() {
             outputln!("Candidates: {}", call.target_candidates.join(", "));
         }

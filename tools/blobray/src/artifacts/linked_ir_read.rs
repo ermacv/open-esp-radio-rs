@@ -20,6 +20,7 @@ pub(crate) fn parse_linked_ir(input: &str) -> Result<LinkedIrStoredDocument> {
     }
     for function in &document.functions {
         schema::validate_function_loops(&function.identity, &function.loops)?;
+        schema::validate_call_arguments(&function.identity, &function.calls)?;
     }
     Ok(document)
 }

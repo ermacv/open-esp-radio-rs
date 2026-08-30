@@ -1,4 +1,4 @@
-//! Complete owned DTO for linked-IR schema v62.
+//! Complete owned DTO for linked-IR schema v63.
 
 #![allow(
     dead_code,
@@ -507,6 +507,7 @@ pub(crate) struct StoredReviewCall {
     pub(crate) kind: String,
     pub(crate) target: String,
     pub(crate) site: Option<u32>,
+    pub(crate) direct: bool,
     pub(crate) project_symbol: Option<String>,
     pub(crate) semantic_operation: Option<String>,
 }
@@ -705,6 +706,7 @@ pub(crate) struct StoredCall {
     pub(crate) kind: String,
     pub(crate) target: String,
     pub(crate) site: Option<u32>,
+    direct: bool,
     tail: bool,
     result_modeled: bool,
     execution_model: Option<StoredExternalExecutionModel>,
@@ -717,6 +719,7 @@ pub(crate) struct StoredCall {
     trampoline: Option<StoredTrampoline>,
     argument_shapes: usize,
     pub(crate) arguments: Vec<String>,
+    argument_exact: Vec<bool>,
     argument_bindings: Vec<StoredArgumentBinding>,
     typed_arguments: Vec<StoredCallArgument>,
     pub(crate) guard_paths: Option<Vec<StoredGuardPath>>,
@@ -740,6 +743,14 @@ struct StoredExternalOutputModel {
 }
 
 impl StoredCall {
+    pub(crate) const fn direct(&self) -> bool {
+        self.direct
+    }
+
+    pub(crate) fn argument_is_exact(&self, position: usize) -> bool {
+        self.argument_exact.get(position).copied() == Some(true)
+    }
+
     pub(crate) fn project_symbol(&self) -> Option<&str> {
         self.project_symbol.as_deref()
     }
@@ -829,6 +840,20 @@ impl StoredCall {
             })
             .collect()
     }
+}
+
+pub(crate) fn validate_call_arguments(identity: &str, calls: &[StoredCall]) -> crate::Result<()> {
+    for call in calls {
+        if call.argument_exact.len() != call.arguments.len() {
+            return Err(crate::Error::invalid(format!(
+                "linked-IR function {identity:?} call to {:?} has {} arguments but {} exactness records",
+                call.target,
+                call.arguments.len(),
+                call.argument_exact.len()
+            )));
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Deserialize, Serialize)]

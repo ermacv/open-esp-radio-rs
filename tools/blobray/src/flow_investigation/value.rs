@@ -61,7 +61,14 @@ pub(super) fn compose_call_arguments(
     let next = call
         .arguments
         .iter()
-        .map(|value| resolve_value(value, domains))
+        .enumerate()
+        .map(|(position, value)| {
+            if call.argument_is_exact(position) {
+                resolve_value(value, domains)
+            } else {
+                ValueDomain::Unknown
+            }
+        })
         .collect::<Vec<_>>();
     let arguments = call
         .arguments

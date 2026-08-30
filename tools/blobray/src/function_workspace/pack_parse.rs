@@ -3,13 +3,19 @@
 use toml_edit::{ArrayOfTables, DocumentMut, Item, Table};
 
 use super::{
-    FunctionPack, FunctionReviewStatus, ReviewedContext, ReviewedContextField,
-    ReviewedEventCaseHandler, ReviewedEventDelivery, ReviewedEventReplay, ReviewedEventRoute,
-    ReviewedEventStateModel, ReviewedEventTerminal, ReviewedFunction, ReviewedFunctionArgument,
-    ReviewedFunctionInput, ReviewedFunctionSignature, ReviewedLogicalType, ReviewedMemoryObject,
-    ReviewedPath, ReviewedPrecondition, ReviewedTypeBinding, ReviewedTypeField,
+    FunctionPack, FunctionReviewStatus, ReviewedBrokerSubscriptionRoute, ReviewedContext,
+    ReviewedContextField, ReviewedEventCallMatcher, ReviewedEventCaseHandler,
+    ReviewedEventDelivery, ReviewedEventReplay, ReviewedEventRoute, ReviewedEventStateModel,
+    ReviewedEventTerminal, ReviewedFunction, ReviewedFunctionArgument, ReviewedFunctionInput,
+    ReviewedFunctionSignature, ReviewedLogicalType, ReviewedMemoryObject, ReviewedPath,
+    ReviewedPrecondition, ReviewedSelectorEventRoute, ReviewedStaticEventCallbackRoute,
+    ReviewedTypeBinding, ReviewedTypeField,
 };
 use crate::Result;
+
+const MAX_REVIEWED_EVENT_ROUTES: usize = 256;
+const MAX_REVIEWED_ROUTE_SITES: usize = 64;
+const MAX_REVIEWED_ROUTE_CHAIN: usize = 64;
 
 pub(super) fn parse(document: &DocumentMut) -> Result<FunctionPack> {
     Ok(FunctionPack {
@@ -42,6 +48,36 @@ pub(super) fn parse(document: &DocumentMut) -> Result<FunctionPack> {
 }
 
 fn parse_event_routes(tables: &ArrayOfTables) -> Result<Vec<ReviewedEventRoute>> {
+    if tables.len() > MAX_REVIEWED_EVENT_ROUTES {
+        return Err(crate::Error::invalid(format!(
+            "function pack contains {} event routes; maximum is {MAX_REVIEWED_EVENT_ROUTES}",
+            tables.len()
+        )));
+    }
+    tables
+        .iter()
+        .enumerate()
+        .map(|(index, table)| {
+            let context = format!("event-routes[{index}]");
+            match required_table_string(table, "kind", &context)?.as_str() {
+                "selector-delivery" => {
+                    let mut one = ArrayOfTables::new();
+                    one.push(table.clone());
+                    Ok(parse_selector_event_routes(&one)?
+                        .pop()
+                        .expect("one selector route was parsed"))
+                }
+                "static-event-callback" => parse_static_event_callback_route(table, &context),
+                "broker-subscription" => parse_broker_subscription_route(table, &context),
+                kind => Err(crate::Error::invalid(format!(
+                    "{context}.kind must be selector-delivery, static-event-callback, or broker-subscription, got {kind:?}"
+                ))),
+            }
+        })
+        .collect()
+}
+
+fn parse_selector_event_routes(tables: &ArrayOfTables) -> Result<Vec<ReviewedEventRoute>> {
     tables
         .iter()
         .enumerate()
@@ -127,7 +163,7 @@ fn parse_event_routes(tables: &ArrayOfTables) -> Result<Vec<ReviewedEventRoute>>
                     )));
                 }
             };
-            Ok(ReviewedEventRoute {
+            Ok(ReviewedEventRoute::SelectorDelivery(ReviewedSelectorEventRoute {
                 id: required_table_string(table, "id", &context)?,
                 profile: required_table_string(table, "profile", &context)?,
                 source: required_table_string(table, "source", &context)?,
@@ -160,9 +196,157 @@ fn parse_event_routes(tables: &ArrayOfTables) -> Result<Vec<ReviewedEventRoute>>
                 terminal,
                 replay,
                 rationale: required_table_string(table, "rationale", &context)?,
-            })
+            }))
         })
         .collect()
+}
+
+fn parse_static_event_callback_route(table: &Table, context: &str) -> Result<ReviewedEventRoute> {
+    Ok(ReviewedEventRoute::StaticEventCallback(
+        ReviewedStaticEventCallbackRoute {
+            id: required_table_string(table, "id", context)?,
+            profile: required_table_string(table, "profile", context)?,
+            source: required_table_string(table, "source", context)?,
+            dispatcher: required_table_string(table, "dispatcher", context)?,
+            mechanism: required_table_string(table, "mechanism", context)?,
+            execution_context: required_table_string(table, "execution-context", context)?,
+            dispatch_call: parse_call_matcher(table, "dispatch", context)?,
+            dispatch_sites: required_u32_array(table, "dispatch-sites", context)?,
+            upstream_chain: required_string_array(table, "upstream-chain", context)?,
+            upstream_sites: required_u32_array(table, "upstream-sites", context)?,
+            dispatch_object_argument: required_u8(table, "dispatch-object-argument", context)?,
+            binding_profile: required_table_string(table, "binding-profile", context)?,
+            binding_source: required_table_string(table, "binding-source", context)?,
+            binding_entry: required_table_string(table, "binding-entry", context)?,
+            binding_call: parse_call_matcher(table, "binding", context)?,
+            binding_site: required_u32(table, "binding-site", context)?,
+            binding_object_argument: required_u8(table, "binding-object-argument", context)?,
+            binding_callback_argument: required_u8(table, "binding-callback-argument", context)?,
+            callback_profile: required_table_string(table, "callback-profile", context)?,
+            callback_source: required_table_string(table, "callback-source", context)?,
+            callback_function: required_table_string(table, "callback-function", context)?,
+            rationale: required_table_string(table, "rationale", context)?,
+        },
+    ))
+}
+
+fn parse_broker_subscription_route(table: &Table, context: &str) -> Result<ReviewedEventRoute> {
+    let case_handler = parse_case_handler(table, context)?.ok_or_else(|| {
+        crate::Error::invalid(format!(
+            "{context} broker subscription requires a case handler"
+        ))
+    })?;
+    Ok(ReviewedEventRoute::BrokerSubscription(
+        ReviewedBrokerSubscriptionRoute {
+            id: required_table_string(table, "id", context)?,
+            profile: required_table_string(table, "profile", context)?,
+            source: required_table_string(table, "source", context)?,
+            dispatcher: required_table_string(table, "dispatcher", context)?,
+            mechanism: required_table_string(table, "mechanism", context)?,
+            execution_context: required_table_string(table, "execution-context", context)?,
+            dispatch_call: parse_call_matcher(table, "dispatch", context)?,
+            dispatch_site: required_u32(table, "dispatch-site", context)?,
+            dispatch_selector_argument: required_u8(table, "dispatch-selector-argument", context)?,
+            selector_role: required_table_string(table, "selector-role", context)?,
+            selector_value: required_u32(table, "selector-value", context)?,
+            dispatch_payload_argument: required_u8(table, "dispatch-payload-argument", context)?,
+            payload_role: required_table_string(table, "payload-role", context)?,
+            payload_value: required_table_string(table, "payload-value", context)?,
+            domain: super::ReviewedEventDomainWitness {
+                profile: required_table_string(table, "domain-profile", context)?,
+                source: required_table_string(table, "domain-source", context)?,
+                entry: required_table_string(table, "domain-entry", context)?,
+                call: parse_call_matcher(table, "domain", context)?,
+                call_site: required_u32(table, "domain-site", context)?,
+                dispatch_argument: required_u8(table, "domain-dispatch-argument", context)?,
+                call_object_argument: required_u8(table, "domain-call-object-argument", context)?,
+                call_selector_argument: required_u8(
+                    table,
+                    "domain-call-selector-argument",
+                    context,
+                )?,
+                selector_value: required_u32(table, "domain-selector-value", context)?,
+            },
+            binding_profile: required_table_string(table, "binding-profile", context)?,
+            binding_source: required_table_string(table, "binding-source", context)?,
+            binding_entry: required_table_string(table, "binding-entry", context)?,
+            binding_call: parse_call_matcher(table, "binding", context)?,
+            binding_site: required_u32(table, "binding-site", context)?,
+            binding_domain_argument: required_u8(table, "binding-domain-argument", context)?,
+            binding_object_argument: required_u8(table, "binding-object-argument", context)?,
+            binding_callback_store_site: required_u32(
+                table,
+                "binding-callback-store-site",
+                context,
+            )?,
+            binding_callback_store_offset: required_integer(
+                table,
+                "binding-callback-store-offset",
+                context,
+            )?,
+            callback_profile: required_table_string(table, "callback-profile", context)?,
+            callback_source: required_table_string(table, "callback-source", context)?,
+            callback_function: required_table_string(table, "callback-function", context)?,
+            callback_selector_argument: required_u8(table, "callback-selector-argument", context)?,
+            case_handler,
+            case_handler_site: required_u32(table, "case-handler-site", context)?,
+            terminal: parse_terminal(table, context)?,
+            rationale: required_table_string(table, "rationale", context)?,
+        },
+    ))
+}
+
+fn parse_call_matcher(
+    table: &Table,
+    prefix: &str,
+    context: &str,
+) -> Result<ReviewedEventCallMatcher> {
+    match (
+        optional_string(table, &format!("{prefix}-operation")),
+        optional_string(table, &format!("{prefix}-function")),
+    ) {
+        (Some(operation), None) => Ok(ReviewedEventCallMatcher::Operation(operation)),
+        (None, Some(function)) => Ok(ReviewedEventCallMatcher::Function(function)),
+        _ => Err(crate::Error::invalid(format!(
+            "{context} requires exactly one {prefix} operation or function"
+        ))),
+    }
+}
+
+fn parse_case_handler(table: &Table, context: &str) -> Result<Option<ReviewedEventCaseHandler>> {
+    match [
+        optional_string(table, "case-handler-profile"),
+        optional_string(table, "case-handler-source"),
+        optional_string(table, "case-handler-function"),
+    ] {
+        [None, None, None] => Ok(None),
+        [Some(profile), Some(source), Some(function)] => Ok(Some(ReviewedEventCaseHandler {
+            profile,
+            source,
+            function,
+        })),
+        _ => Err(crate::Error::invalid(format!(
+            "{context} case handler requires profile, source, and function together"
+        ))),
+    }
+}
+
+fn parse_terminal(table: &Table, context: &str) -> Result<Option<ReviewedEventTerminal>> {
+    match [
+        optional_string(table, "terminal-profile"),
+        optional_string(table, "terminal-source"),
+        optional_string(table, "terminal-function"),
+    ] {
+        [None, None, None] => Ok(None),
+        [Some(profile), Some(source), Some(function)] => Ok(Some(ReviewedEventTerminal {
+            profile,
+            source,
+            function,
+        })),
+        _ => Err(crate::Error::invalid(format!(
+            "{context} terminal requires profile, source, and function together"
+        ))),
+    }
 }
 
 fn parse_types(tables: &ArrayOfTables) -> Result<Vec<ReviewedLogicalType>> {
@@ -501,6 +685,65 @@ fn required_integer(table: &Table, key: &str, context: &str) -> Result<i64> {
         .get(key)
         .and_then(Item::as_integer)
         .ok_or_else(|| crate::Error::invalid(format!("{context} requires integer {key:?}")))
+}
+
+fn required_u8(table: &Table, key: &str, context: &str) -> Result<u8> {
+    required_integer(table, key, context)?
+        .try_into()
+        .map_err(|_| crate::Error::invalid(format!("{context}.{key} must fit u8")))
+}
+
+fn required_u32(table: &Table, key: &str, context: &str) -> Result<u32> {
+    required_integer(table, key, context)?
+        .try_into()
+        .map_err(|_| crate::Error::invalid(format!("{context}.{key} must fit u32")))
+}
+
+fn required_string_array(table: &Table, key: &str, context: &str) -> Result<Vec<String>> {
+    let array = table
+        .get(key)
+        .and_then(Item::as_array)
+        .ok_or_else(|| crate::Error::invalid(format!("{context} requires array {key:?}")))?;
+    if array.len() > MAX_REVIEWED_ROUTE_CHAIN {
+        return Err(crate::Error::invalid(format!(
+            "{context}.{key} contains {} entries; maximum is {MAX_REVIEWED_ROUTE_CHAIN}",
+            array.len()
+        )));
+    }
+    array
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            value.as_str().map(str::to_owned).ok_or_else(|| {
+                crate::Error::invalid(format!("{context}.{key}[{index}] must be a string"))
+            })
+        })
+        .collect()
+}
+
+fn required_u32_array(table: &Table, key: &str, context: &str) -> Result<Vec<u32>> {
+    let array = table
+        .get(key)
+        .and_then(Item::as_array)
+        .ok_or_else(|| crate::Error::invalid(format!("{context} requires array {key:?}")))?;
+    if array.len() > MAX_REVIEWED_ROUTE_SITES {
+        return Err(crate::Error::invalid(format!(
+            "{context}.{key} contains {} entries; maximum is {MAX_REVIEWED_ROUTE_SITES}",
+            array.len()
+        )));
+    }
+    array
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            value
+                .as_integer()
+                .and_then(|value| value.try_into().ok())
+                .ok_or_else(|| {
+                    crate::Error::invalid(format!("{context}.{key}[{index}] must fit u32"))
+                })
+        })
+        .collect()
 }
 
 fn optional_bool(table: &Table, key: &str, context: &str) -> Result<Option<bool>> {

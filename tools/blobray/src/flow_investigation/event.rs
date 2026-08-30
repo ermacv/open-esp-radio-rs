@@ -24,23 +24,28 @@ pub(super) fn investigate(
     request: EventRouteFlowRequest<'_>,
     project: &ProjectSpec,
 ) -> Result<FlowInvestigationReport> {
-    let workspace = project.functions.as_ref().ok_or_else(|| {
+    let workspace_paths = project.functions.as_ref().ok_or_else(|| {
         crate::Error::invalid(
             "inspect flow --event-route requires a configured [functions] workspace",
         )
     })?;
-    let pack = crate::function_workspace::FunctionPack::load_reviewed(&workspace.pack)?;
+    let reports = project.function_ir_reports()?;
+    let workspace = crate::function_workspace::FunctionWorkspace::load_with_callback_facts(
+        &reports,
+        &workspace_paths.pack,
+    )?;
+    let pack = &workspace.pack;
     let matches = pack
         .event_routes
         .iter()
-        .filter(|route| route.id == request.route)
+        .filter(|route| route.id() == request.route)
         .collect::<Vec<_>>();
     let route = match matches.as_slice() {
         [] => {
             return Err(crate::Error::invalid(format!(
                 "reviewed event route {:?} is not configured in {}",
                 request.route,
-                workspace.pack.display()
+                workspace_paths.pack.display()
             )));
         }
         [route] => *route,
@@ -48,10 +53,33 @@ pub(super) fn investigate(
             return Err(crate::Error::invalid(format!(
                 "reviewed event route {:?} is duplicated in {}",
                 request.route,
-                workspace.pack.display()
+                workspace_paths.pack.display()
             )));
         }
     };
+    match route {
+        crate::function_workspace::ReviewedEventRoute::SelectorDelivery(route) => {
+            investigate_selector(request, project, route)
+        }
+        crate::function_workspace::ReviewedEventRoute::StaticEventCallback(route) => {
+            investigate_static_event_callback(request, project, route)
+        }
+        crate::function_workspace::ReviewedEventRoute::BrokerSubscription(route) => {
+            investigate_broker_subscription(request, project, route)
+        }
+    }
+}
+
+fn investigate_selector(
+    request: EventRouteFlowRequest<'_>,
+    project: &ProjectSpec,
+    route: &crate::function_workspace::ReviewedSelectorEventRoute,
+) -> Result<FlowInvestigationReport> {
+    let workspace = project.functions.as_ref().ok_or_else(|| {
+        crate::Error::invalid(
+            "inspect flow --event-route requires a configured [functions] workspace",
+        )
+    })?;
     let mut blockers = Vec::new();
     let replay = match load_replay_proof(route) {
         Ok(proof) => proof,
@@ -188,7 +216,9 @@ pub(super) fn investigate(
         .or_else(|| direct_dispatches.first().and_then(|call| call.site));
     let mut effects = vec![FlowEffectEvidence {
         kind: "event".to_owned(),
-        evidence: EvidenceLevel::Observed,
+        // The selector value and exact call site are generated observations,
+        // but assigning the call its event mechanism is reviewed knowledge.
+        evidence: EvidenceLevel::Reviewed,
         function: route.dispatcher.clone(),
         site: dispatch_site,
         operation: Some(route.mechanism.clone()),
@@ -267,6 +297,7 @@ pub(super) fn investigate(
         steps.push(FlowStepEvidence {
             ordinal: steps.len(),
             evidence: EvidenceLevel::Reviewed,
+            context_evidence: EvidenceLevel::Reviewed,
             context: route.execution_context.clone(),
             caller: route.dispatcher.clone(),
             callee: route.consumer_entry.clone(),
@@ -321,11 +352,15 @@ pub(super) fn investigate(
             } else if delivery_modeled {
                 EvidenceLevel::Modeled
             } else {
-                EvidenceLevel::Observed
+                // The direct call edge is observed.  Its delivery role comes
+                // from the reviewed semantic catalog and must not inherit the
+                // stronger-looking observed label.
+                EvidenceLevel::Reviewed
             };
             steps.push(FlowStepEvidence {
                 ordinal: steps.len(),
                 evidence,
+                context_evidence: EvidenceLevel::Reviewed,
                 context: route.execution_context.clone(),
                 caller: route.consumer_entry.clone(),
                 callee: delivery.target.clone(),
@@ -430,6 +465,7 @@ pub(super) fn investigate(
                 } else {
                     EvidenceLevel::Reviewed
                 },
+                context_evidence: EvidenceLevel::Reviewed,
                 context: route.execution_context.clone(),
                 caller: route.consumer_entry.clone(),
                 callee: handler.function.clone(),
@@ -509,6 +545,8 @@ pub(super) fn investigate(
                         root_symbol: identity_symbol(&handler.function),
                         target: FlowTargetRequest::Function(&terminal.function),
                         max_depth: remaining_depth,
+                        max_loaded_functions: super::MAX_LOADED_FUNCTIONS
+                            .saturating_sub(loaded_functions),
                     },
                     project,
                 )?;
@@ -579,6 +617,7 @@ pub(super) fn investigate(
         ))
     });
     effects.dedup();
+    finalize_event_route_semantic_evidence(&route.id, &mut effects)?;
     let structural_navigation = dispatch_observed && delivery.is_some();
     Ok(FlowInvestigationReport {
         schema_version: 4,
@@ -623,6 +662,887 @@ pub(super) fn investigate(
         rust_boundaries,
         blockers,
     })
+}
+
+fn investigate_static_event_callback(
+    request: EventRouteFlowRequest<'_>,
+    project: &ProjectSpec,
+    route: &crate::function_workspace::ReviewedStaticEventCallbackRoute,
+) -> Result<FlowInvestigationReport> {
+    let _workspace = project.functions.as_ref().ok_or_else(|| {
+        crate::Error::invalid("callback event route requires a [functions] workspace")
+    })?;
+    if route.upstream_chain.len() < 2
+        || route.upstream_chain.last() != Some(&route.dispatcher)
+        || route.upstream_sites.len() != route.upstream_chain.len() - 1
+        || route.dispatch_sites.is_empty()
+    {
+        return Err(route_mismatch(
+            &route.id,
+            "requires a non-empty dispatch-site set and an upstream chain ending at the dispatcher",
+        ));
+    }
+    let dispatch_profile = profile(project, &route.profile)?;
+    let reader = artifacts::LinkedIrReader::open(&dispatch_profile.output)?;
+    let dispatcher = route_function(
+        &reader,
+        &route.id,
+        &route.source,
+        &route.dispatcher,
+        "dispatcher",
+    )?;
+    let binding_profile = profile(project, &route.binding_profile)?;
+    let binding_reader = artifacts::LinkedIrReader::open(&binding_profile.output)?;
+    let binding = route_function(
+        &binding_reader,
+        &route.id,
+        &route.binding_source,
+        &route.binding_entry,
+        "binding entry",
+    )?;
+    let callback_profile = profile(project, &route.callback_profile)?;
+    let callback_reader = artifacts::LinkedIrReader::open(&callback_profile.output)?;
+    let callback = route_function(
+        &callback_reader,
+        &route.id,
+        &route.callback_source,
+        &route.callback_function,
+        "callback",
+    )?;
+    let callback_address = callback.address.ok_or_else(|| {
+        crate::Error::invalid(format!(
+            "event route {:?} callback has no linked address",
+            route.id
+        ))
+    })?;
+    let binding_call = stored_exact_call(
+        &binding,
+        &route.binding_call,
+        route.binding_site,
+        &route.id,
+        "binding",
+    )?;
+    let bound_object = stored_exact_argument(
+        binding_call,
+        route.binding_object_argument,
+        &route.id,
+        "binding object",
+    )?;
+    let expected_callback = format!("const:{callback_address:#010x}");
+    if stored_exact_argument(
+        binding_call,
+        route.binding_callback_argument,
+        &route.id,
+        "binding callback",
+    )? != expected_callback
+    {
+        return Err(route_mismatch(
+            &route.id,
+            "event initializer callback no longer resolves to the reviewed function",
+        ));
+    }
+    let mut steps = Vec::new();
+    for (edge, site) in route.upstream_chain.windows(2).zip(&route.upstream_sites) {
+        let owner = route_function(
+            &reader,
+            &route.id,
+            &route.source,
+            &edge[0],
+            "upstream stage",
+        )?;
+        let call = stored_exact_direct_call(&owner, &edge[1], *site, &route.id, "upstream direct")?;
+        if call.kind != "internal" || !call.direct() {
+            return Err(route_mismatch(
+                &route.id,
+                format!(
+                    "upstream edge {:?} -> {:?} at {site:#010x} is not an internal direct call",
+                    edge[0], edge[1]
+                ),
+            ));
+        }
+        steps.push(observed_direct_call_step(
+            &route.execution_context,
+            &edge[0],
+            &edge[1],
+            call,
+            &dispatch_profile.output,
+        ));
+    }
+    steps.push(observed_direct_call_step(
+        &route.execution_context,
+        &route.binding_entry,
+        &binding_call.target,
+        binding_call,
+        &binding_profile.output,
+    ));
+    let mut effects = vec![FlowEffectEvidence {
+        kind: "event".to_owned(),
+        evidence: EvidenceLevel::Reviewed,
+        function: route.binding_entry.clone(),
+        site: binding_call.site,
+        operation: binding_call.semantic_operation.clone(),
+        detail: format!(
+            "reviewed event-init role; exact call binds static object {bound_object} to callback pointer {expected_callback} ({})",
+            route.callback_function
+        ),
+        constant: Some(u64::from(callback_address)),
+        access: Some("bind".to_owned()),
+        width: Some(32),
+        address: Some(callback_address),
+        register: None,
+        value: Some(expected_callback),
+        origin_path: None,
+    }];
+    for site in &route.dispatch_sites {
+        let call = stored_exact_call(
+            &dispatcher,
+            &route.dispatch_call,
+            *site,
+            &route.id,
+            "event enqueue",
+        )?;
+        let object = stored_exact_argument(
+            call,
+            route.dispatch_object_argument,
+            &route.id,
+            "dispatch object",
+        )?;
+        if object != bound_object {
+            return Err(route_mismatch(
+                &route.id,
+                "event enqueue object differs from initialized callback object",
+            ));
+        }
+        steps.push(observed_direct_call_step(
+            &route.execution_context,
+            &route.dispatcher,
+            &call.target,
+            call,
+            &dispatch_profile.output,
+        ));
+        effects.push(FlowEffectEvidence {
+            kind: "queue".to_owned(),
+            evidence: EvidenceLevel::Reviewed,
+            function: route.dispatcher.clone(),
+            site: call.site,
+            operation: call.semantic_operation.clone(),
+            detail: format!(
+                "reviewed source124/event-enqueue association; exact R9 call chain reaches a call carrying static object {object}"
+            ),
+            constant: parse_constant(object).map(u64::from),
+            access: None,
+            width: Some(32),
+            address: parse_constant(object),
+            register: None,
+            value: Some(object.to_owned()),
+            origin_path: None,
+        });
+    }
+    let mut blockers = vec![FlowBlocker::manual(
+        "static-event-delivery-unmodeled",
+        "event initialization and enqueue are exact, but eventq_get return-pointer flow through event.run into the stored callback is not modeled",
+        "model the generic eventq_get return pointer plus stateful event.init/event.run callback dispatch, then replay the exact queue instance",
+    )];
+    let examined_edges = steps.len();
+    let loaded_functions = route.upstream_chain.len() + 2;
+    let analysis_limited =
+        enforce_reviewed_route_limit(&mut steps, &mut effects, request.max_depth, &mut blockers);
+    finalize_event_route_semantic_evidence(&route.id, &mut effects)?;
+    for (ordinal, step) in steps.iter_mut().enumerate() {
+        step.ordinal = ordinal;
+    }
+    let target = if analysis_limited {
+        steps.last().map(|step| step.callee.clone())
+    } else {
+        Some(route.callback_function.clone())
+    };
+    Ok(FlowInvestigationReport {
+        schema_version: 4,
+        command: "inspect flow",
+        mode: "event-route",
+        status: FlowStatus::Incomplete,
+        profile: route.profile.clone(),
+        linked_ir: dispatch_profile.output.display().to_string(),
+        root: route.upstream_chain[0].clone(),
+        target_kind: Some("static-event-callback".to_owned()),
+        target,
+        route: Some(route.id.clone()),
+        claims: FlowClaims {
+            structural_navigation: !analysis_limited,
+            path_feasibility: false,
+            event_delivery: false,
+            executable_equivalence: false,
+        },
+        limits: FlowLimits {
+            max_depth: request.max_depth,
+            visited_nodes: loaded_functions,
+            examined_edges,
+            loaded_functions,
+            reached: analysis_limited.then(|| "max-depth".to_owned()),
+            ..FlowLimits::new(request.max_depth)
+        },
+        steps,
+        effects,
+        rust_boundaries: Vec::new(),
+        blockers,
+    })
+}
+
+fn investigate_broker_subscription(
+    request: EventRouteFlowRequest<'_>,
+    project: &ProjectSpec,
+    route: &crate::function_workspace::ReviewedBrokerSubscriptionRoute,
+) -> Result<FlowInvestigationReport> {
+    let dispatch_profile = profile(project, &route.profile)?;
+    let reader = artifacts::LinkedIrReader::open(&dispatch_profile.output)?;
+    let dispatcher = route_function(
+        &reader,
+        &route.id,
+        &route.source,
+        &route.dispatcher,
+        "broker publisher",
+    )?;
+    let publish = stored_exact_call(
+        &dispatcher,
+        &route.dispatch_call,
+        route.dispatch_site,
+        &route.id,
+        "broker publish",
+    )?;
+    let selector = format!("const:{:#010x}", route.selector_value);
+    if stored_exact_argument(
+        publish,
+        route.dispatch_selector_argument,
+        &route.id,
+        "broker selector",
+    )? != selector
+    {
+        return Err(route_mismatch(&route.id, "broker selector changed"));
+    }
+    let payload = stored_exact_argument(
+        publish,
+        route.dispatch_payload_argument,
+        &route.id,
+        "broker payload",
+    )?;
+    if payload != route.payload_value {
+        return Err(route_mismatch(&route.id, "broker payload changed"));
+    }
+    let domain_profile = profile(project, &route.domain.profile)?;
+    let domain_reader = artifacts::LinkedIrReader::open(&domain_profile.output)?;
+    let domain_owner = route_function(
+        &domain_reader,
+        &route.id,
+        &route.domain.source,
+        &route.domain.entry,
+        "broker domain owner",
+    )?;
+    let domain = stored_exact_call(
+        &domain_owner,
+        &route.domain.call,
+        route.domain.call_site,
+        &route.id,
+        "broker attach",
+    )?;
+    if stored_exact_argument(
+        publish,
+        route.domain.dispatch_argument,
+        &route.id,
+        "published broker object",
+    )? != stored_exact_argument(
+        domain,
+        route.domain.call_object_argument,
+        &route.id,
+        "attached broker object",
+    )? || stored_exact_argument(
+        domain,
+        route.domain.call_selector_argument,
+        &route.id,
+        "attached source id",
+    )? != format!("const:{:#010x}", route.domain.selector_value)
+    {
+        return Err(route_mismatch(
+            &route.id,
+            "broker publish is not tied to the reviewed attached source domain",
+        ));
+    }
+    let binding_profile = profile(project, &route.binding_profile)?;
+    let binding_reader = artifacts::LinkedIrReader::open(&binding_profile.output)?;
+    let binding = route_function(
+        &binding_reader,
+        &route.id,
+        &route.binding_source,
+        &route.binding_entry,
+        "broker subscription owner",
+    )?;
+    let subscribe = stored_exact_call(
+        &binding,
+        &route.binding_call,
+        route.binding_site,
+        &route.id,
+        "broker subscribe",
+    )?;
+    let subscriber_object = stored_exact_argument(
+        subscribe,
+        route.binding_object_argument,
+        &route.id,
+        "subscriber object",
+    )?;
+    if !stored_call_argument_establishes_constant(
+        subscribe,
+        route.binding_domain_argument,
+        route.domain.selector_value,
+        &route.id,
+        "subscriber domain",
+    )? {
+        return Err(route_mismatch(
+            &route.id,
+            "broker subscription is not proven to use the attached source domain",
+        ));
+    }
+    let callback_profile = profile(project, &route.callback_profile)?;
+    let callback_reader = artifacts::LinkedIrReader::open(&callback_profile.output)?;
+    let callback = route_function(
+        &callback_reader,
+        &route.id,
+        &route.callback_source,
+        &route.callback_function,
+        "broker callback",
+    )?;
+    let callback_address = callback
+        .address
+        .ok_or_else(|| route_mismatch(&route.id, "broker callback has no linked address"))?;
+    let callback_value = format!("const:{callback_address:#010x}");
+    let callback_stores = binding
+        .instruction_effects
+        .iter()
+        .filter_map(|effect| {
+            callback_write_matches(
+                effect,
+                route.binding_callback_store_site,
+                route.binding_callback_store_offset,
+                &callback_value,
+                subscriber_object,
+            )
+        })
+        .collect::<BTreeSet<_>>()
+        .len();
+    if callback_stores != 1 {
+        return Err(route_mismatch(
+            &route.id,
+            format!(
+                "expected one callback-pointer store at {:#010x}, found {callback_stores}",
+                route.binding_callback_store_site
+            ),
+        ));
+    }
+    let case = stored_exact_direct_call(
+        &callback,
+        &route.case_handler.function,
+        route.case_handler_site,
+        &route.id,
+        "selector case",
+    )?;
+    let case_guards = case.guard_expressions();
+    if case_guards.is_empty()
+        || !case_guards.iter().all(|path| {
+            guard_establishes_selector(path, route.callback_selector_argument, route.selector_value)
+        })
+    {
+        return Err(route_mismatch(&route.id, "callback selector guard changed"));
+    }
+    let mut steps = vec![
+        observed_direct_call_step(
+            &route.execution_context,
+            &route.domain.entry,
+            &domain.target,
+            domain,
+            &domain_profile.output,
+        ),
+        observed_direct_call_step(
+            &route.execution_context,
+            &route.binding_entry,
+            &subscribe.target,
+            subscribe,
+            &binding_profile.output,
+        ),
+        observed_direct_call_step(
+            &route.execution_context,
+            &route.dispatcher,
+            &publish.target,
+            publish,
+            &dispatch_profile.output,
+        ),
+        observed_direct_call_step(
+            &route.execution_context,
+            &route.callback_function,
+            &route.case_handler.function,
+            case,
+            &callback_profile.output,
+        ),
+    ];
+    let mut effects = vec![
+        FlowEffectEvidence {
+            kind: "memory".to_owned(),
+            evidence: EvidenceLevel::Reviewed,
+            function: route.binding_entry.clone(),
+            site: Some(route.binding_callback_store_site),
+            operation: Some("callback-pointer-store".to_owned()),
+            detail: format!(
+                "store {} into the exact subscribed object at offset {:#x}",
+                route.callback_function, route.binding_callback_store_offset
+            ),
+            constant: Some(u64::from(callback_address)),
+            access: Some("write".to_owned()),
+            width: Some(32),
+            address: None,
+            register: None,
+            value: Some(callback_value),
+            origin_path: None,
+        },
+        FlowEffectEvidence {
+            kind: "event".to_owned(),
+            evidence: EvidenceLevel::Reviewed,
+            function: route.dispatcher.clone(),
+            site: publish.site,
+            operation: publish
+                .semantic_operation
+                .clone()
+                .or_else(|| Some(publish.target.clone())),
+            detail: format!(
+                "reviewed {} publication: {}={selector}, {}={payload}",
+                route.mechanism, route.selector_role, route.payload_role
+            ),
+            constant: Some(u64::from(route.selector_value)),
+            access: None,
+            width: Some(32),
+            address: None,
+            register: None,
+            value: Some(payload.to_owned()),
+            origin_path: None,
+        },
+    ];
+    let mut target = Some(route.case_handler.function.clone());
+    let mut loaded_functions = 4;
+    let mut blockers = Vec::new();
+    let mut analysis_limited = false;
+    if let Some(terminal) = &route.terminal {
+        let remaining_depth = request.max_depth.saturating_sub(steps.len());
+        if remaining_depth == 0 {
+            analysis_limited = true;
+            blockers.push(FlowBlocker::manual(
+                "analysis-limit",
+                format!(
+                    "reviewed broker route consumes the requested {} edges before its terminal continuation",
+                    request.max_depth
+                ),
+                "increase --max-depth to inspect the terminal continuation",
+            ));
+        } else {
+            let mut segment = super::target::investigate(
+                TargetFlowRequest {
+                    source: &route.case_handler.source,
+                    root_symbol: identity_symbol(&route.case_handler.function),
+                    target: FlowTargetRequest::Function(&terminal.function),
+                    max_depth: remaining_depth,
+                    max_loaded_functions: super::MAX_LOADED_FUNCTIONS
+                        .saturating_sub(loaded_functions),
+                },
+                project,
+            )?;
+            let base = steps.len();
+            for (index, step) in segment.steps.iter_mut().enumerate() {
+                step.ordinal = base + index;
+            }
+            steps.extend(segment.steps);
+            effects.extend(segment.effects);
+            analysis_limited |= segment
+                .blockers
+                .iter()
+                .any(|blocker| blocker.kind == "analysis-limit");
+            blockers.extend(segment.blockers);
+            loaded_functions += segment.limits.loaded_functions;
+            target = Some(terminal.function.clone());
+        }
+    }
+    blockers.push(FlowBlocker::manual(
+        "callback-store-dominance-unproven",
+        "the callback store and subscription object are exact, but the reviewed structural facts do not prove that the store dominates every subscription path",
+        "preserve a common CFG/path witness for the callback store and subscription call",
+    ));
+    let examined_edges = steps.len();
+    analysis_limited |=
+        enforce_reviewed_route_limit(&mut steps, &mut effects, request.max_depth, &mut blockers);
+    finalize_event_route_semantic_evidence(&route.id, &mut effects)?;
+    if analysis_limited {
+        target = steps.last().map(|step| step.callee.clone());
+    }
+    blockers.push(FlowBlocker::manual(
+        "broker-listener-order-unproven",
+        "attach, subscription, selector guard and continuation are exact, but listener ordering and callback stop/continue semantics of the indirect broker walk are not executable evidence",
+        "model or replay the generic broker listener walk with the reviewed source domain and registered listener object",
+    ));
+    for (ordinal, step) in steps.iter_mut().enumerate() {
+        step.ordinal = ordinal;
+    }
+    Ok(FlowInvestigationReport {
+        schema_version: 4,
+        command: "inspect flow",
+        mode: "event-route",
+        status: FlowStatus::Incomplete,
+        profile: route.profile.clone(),
+        linked_ir: dispatch_profile.output.display().to_string(),
+        root: route.dispatcher.clone(),
+        target_kind: Some("broker-subscription".to_owned()),
+        target,
+        route: Some(route.id.clone()),
+        claims: FlowClaims {
+            structural_navigation: !analysis_limited,
+            path_feasibility: false,
+            event_delivery: false,
+            executable_equivalence: false,
+        },
+        limits: FlowLimits {
+            max_depth: request.max_depth,
+            visited_nodes: loaded_functions,
+            examined_edges,
+            loaded_functions,
+            reached: analysis_limited.then(|| "max-depth".to_owned()),
+            ..FlowLimits::new(request.max_depth)
+        },
+        steps,
+        effects,
+        rust_boundaries: Vec::new(),
+        blockers,
+    })
+}
+
+fn route_function(
+    reader: &artifacts::LinkedIrReader,
+    route: &str,
+    source: &str,
+    identity: &str,
+    role: &str,
+) -> Result<artifacts::StoredFunction> {
+    match reader.get_function_by_identity(identity)? {
+        Some(function) if function.source == source => Ok(function),
+        Some(_) => Err(route_mismatch(route, format!("{role} source changed"))),
+        None => Err(route_mismatch(
+            route,
+            format!("{role} {identity:?} is absent"),
+        )),
+    }
+}
+
+fn stored_exact_call<'a>(
+    function: &'a artifacts::StoredFunction,
+    matcher: &crate::function_workspace::ReviewedEventCallMatcher,
+    site: u32,
+    route: &str,
+    role: &str,
+) -> Result<&'a artifacts::StoredCall> {
+    let matches = function
+        .calls
+        .iter()
+        .filter(|call| {
+            call.site == Some(site)
+                && match matcher {
+                    crate::function_workspace::ReviewedEventCallMatcher::Operation(operation) => {
+                        call.semantic_operation.as_deref() == Some(operation)
+                    }
+                    crate::function_workspace::ReviewedEventCallMatcher::Function(target) => {
+                        call.target == *target
+                    }
+                }
+        })
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [call] if call.direct() => Ok(*call),
+        [_call] => Err(route_mismatch(
+            route,
+            format!("{role} call at {site:#010x} is indirect"),
+        )),
+        _ => Err(route_mismatch(
+            route,
+            format!(
+                "expected one {role} call at {site:#010x}, found {}",
+                matches.len()
+            ),
+        )),
+    }
+}
+
+fn stored_exact_direct_call<'a>(
+    function: &'a artifacts::StoredFunction,
+    target: &str,
+    site: u32,
+    route: &str,
+    role: &str,
+) -> Result<&'a artifacts::StoredCall> {
+    let call = stored_exact_call(
+        function,
+        &crate::function_workspace::ReviewedEventCallMatcher::Function(target.to_owned()),
+        site,
+        route,
+        role,
+    )?;
+    if call.kind != "internal" {
+        return Err(route_mismatch(
+            route,
+            format!("{role} call at {site:#010x} is not internal"),
+        ));
+    }
+    Ok(call)
+}
+
+fn stored_exact_argument<'a>(
+    call: &'a artifacts::StoredCall,
+    argument: u8,
+    route: &str,
+    role: &str,
+) -> Result<&'a str> {
+    let value = call
+        .arguments
+        .get(usize::from(argument))
+        .map(String::as_str)
+        .ok_or_else(|| route_mismatch(route, format!("{role} argument is absent")))?;
+    if !call.argument_is_exact(usize::from(argument)) {
+        return Err(route_mismatch(
+            route,
+            format!("{role} is unresolved: {value}"),
+        ));
+    }
+    Ok(value)
+}
+
+fn guard_establishes_selector(path: &str, argument: u8, selector: u32) -> bool {
+    let left = format!("arg{argument} == {selector:#010x}");
+    let right = format!("{selector:#010x} == arg{argument}");
+    path.split(" && ").any(|clause| {
+        let clause = clause.trim().trim_start_matches('(').trim_end_matches(')');
+        clause == left || clause == right
+    })
+}
+
+fn stored_call_argument_establishes_constant(
+    call: &artifacts::StoredCall,
+    argument: u8,
+    constant: u32,
+    route: &str,
+    role: &str,
+) -> Result<bool> {
+    let value = stored_exact_argument(call, argument, route, role)?;
+    if value == format!("const:{constant:#010x}") {
+        return Ok(true);
+    }
+    let paths = call.guard_expressions();
+    Ok(!paths.is_empty()
+        && paths
+            .iter()
+            .all(|path| guard_establishes_value(path, value, constant)))
+}
+
+fn guard_establishes_value(path: &str, value: &str, constant: u32) -> bool {
+    let equal = format!("({value} == {constant:#010x})");
+    let reverse_equal = format!("({constant:#010x} == {value})");
+    let negated_unequal = format!("!({value} != {constant:#010x})");
+    let reverse_negated_unequal = format!("!({constant:#010x} != {value})");
+    path.split(" && ").any(|clause| {
+        let clause = clause.trim();
+        clause == equal
+            || clause == reverse_equal
+            || clause == negated_unequal
+            || clause == reverse_negated_unequal
+    })
+}
+
+fn normalize_word_value(value: &str) -> &str {
+    value
+        .strip_suffix("&0xffffffff|0x00000000")
+        .unwrap_or(value)
+}
+
+fn callback_write_matches<'a>(
+    effect: &'a artifacts::StoredInstructionEffect,
+    site: u32,
+    offset: i64,
+    callback: &str,
+    subscriber_object: &str,
+) -> Option<(u32, i64, &'a str)> {
+    let artifacts::StoredInstructionEffect::Memory {
+        site: observed_site,
+        access,
+        width: 32,
+        object,
+        offset: observed_offset,
+        value: Some(value),
+        ..
+    } = effect
+    else {
+        return None;
+    };
+    (*observed_site == site
+        && access == "write"
+        && *observed_offset == offset
+        && value == callback
+        && stored_memory_object_value_expression(object)
+            .is_some_and(|object| object == normalize_word_value(subscriber_object)))
+    .then_some((*observed_site, *observed_offset, value.as_str()))
+}
+
+fn stored_memory_object_value_expression(object: &artifacts::StoredMemoryObject) -> Option<String> {
+    let artifacts::StoredMemoryObject::Dereferenced {
+        pointer,
+        pointer_offset,
+    } = object
+    else {
+        return None;
+    };
+    Some(format!(
+        "memory:{}{}",
+        stored_memory_address_expression(pointer)?,
+        signed_offset(*pointer_offset)
+    ))
+}
+
+fn stored_memory_address_expression(object: &artifacts::StoredMemoryObject) -> Option<String> {
+    match object {
+        artifacts::StoredMemoryObject::Absolute { address, .. } => {
+            Some(format!("absolute:{address:#010x}"))
+        }
+        artifacts::StoredMemoryObject::Dereferenced {
+            pointer,
+            pointer_offset,
+        } => Some(format!(
+            "*({}{})",
+            stored_memory_address_expression(pointer)?,
+            signed_offset(*pointer_offset)
+        )),
+        _ => None,
+    }
+}
+
+fn enforce_reviewed_route_limit(
+    steps: &mut Vec<FlowStepEvidence>,
+    effects: &mut Vec<FlowEffectEvidence>,
+    max_depth: usize,
+    blockers: &mut Vec<FlowBlocker>,
+) -> bool {
+    if steps.len() <= max_depth {
+        return false;
+    }
+    steps.truncate(max_depth);
+    let retained_sites = steps
+        .iter()
+        .filter_map(|step| step.site)
+        .collect::<BTreeSet<_>>();
+    effects.retain(|effect| {
+        effect
+            .site
+            .is_some_and(|site| retained_sites.contains(&site))
+    });
+    if !blockers
+        .iter()
+        .any(|blocker| blocker.kind == "analysis-limit")
+    {
+        blockers.push(FlowBlocker::manual(
+            "analysis-limit",
+            format!("reviewed route requires more than the requested {max_depth} edges"),
+            "increase --max-depth to inspect the remaining reviewed route stages",
+        ));
+    }
+    true
+}
+
+fn signed_offset(offset: i64) -> String {
+    if offset < 0 {
+        format!("-{:#x}", offset.unsigned_abs())
+    } else {
+        format!("+{:#x}", offset as u64)
+    }
+}
+
+/// Preserve the generated exact call edge without projecting a reviewed route
+/// role (enqueue, subscription, callback, and so on) into observed evidence.
+fn observed_direct_call_step(
+    context: &str,
+    caller: &str,
+    callee: &str,
+    call: &artifacts::StoredCall,
+    origin: &std::path::Path,
+) -> FlowStepEvidence {
+    FlowStepEvidence {
+        ordinal: 0,
+        evidence: EvidenceLevel::Observed,
+        context_evidence: EvidenceLevel::Reviewed,
+        context: context.to_owned(),
+        caller: caller.to_owned(),
+        callee: callee.to_owned(),
+        site: call.site,
+        kind: "direct-call".to_owned(),
+        tail: call.tail(),
+        argument_shapes: call.argument_shapes(),
+        arguments: call
+            .arguments
+            .iter()
+            .enumerate()
+            .map(|(position, value)| FlowArgumentEvidence {
+                position,
+                local: format!("a{position}"),
+                resolved: value.clone(),
+                constants: parse_constant(value).into_iter().collect(),
+                provenance: "generated-linked-ir",
+                pointee: Vec::new(),
+            })
+            .collect(),
+        guards: call.guard_expressions(),
+        origin: origin.display().to_string(),
+    }
+}
+
+/// Semantic operation names in an event-route report originate in reviewed
+/// interface/route knowledge. Generated IR can independently prove an exact
+/// call edge or raw instruction effect, but it cannot promote that reviewed
+/// interpretation to `Observed`.
+fn finalize_event_route_semantic_evidence(
+    route: &str,
+    effects: &mut [FlowEffectEvidence],
+) -> Result<()> {
+    for effect in effects.iter_mut() {
+        if effect.operation.is_some() && effect.evidence == EvidenceLevel::Observed {
+            effect.evidence = EvidenceLevel::Reviewed;
+        }
+    }
+    validate_event_route_semantic_evidence(route, effects)
+}
+
+fn validate_event_route_semantic_evidence(
+    route: &str,
+    effects: &[FlowEffectEvidence],
+) -> Result<()> {
+    if let Some(effect) = effects
+        .iter()
+        .find(|effect| effect.operation.is_some() && effect.evidence == EvidenceLevel::Observed)
+    {
+        return Err(route_mismatch(
+            route,
+            format!(
+                "semantic operation {:?} at {:?} is incorrectly labeled observed",
+                effect.operation, effect.site
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn parse_constant(value: &str) -> Option<u32> {
+    value
+        .strip_prefix("const:0x")
+        .and_then(|value| u32::from_str_radix(value, 16).ok())
+}
+
+fn route_mismatch(route: &str, message: impl std::fmt::Display) -> crate::Error {
+    crate::Error::invalid(format!("event route {route:?} {message}"))
 }
 
 fn identity_symbol(identity: &str) -> &str {
@@ -700,7 +1620,7 @@ fn semantic_catalogs(project: &ProjectSpec) -> Result<SemanticCatalogs> {
 
 fn direct_dispatch_matches(
     call: &artifacts::StoredCall,
-    route: &crate::function_workspace::ReviewedEventRoute,
+    route: &crate::function_workspace::ReviewedSelectorEventRoute,
     selector: &str,
     catalogs: &SemanticCatalogs,
 ) -> bool {
@@ -769,8 +1689,8 @@ fn selector_argument(value: u32, role: &str) -> FlowArgumentEvidence {
 mod tests {
     use super::*;
     use crate::function_workspace::{
-        ReviewedEventCaseHandler, ReviewedEventDelivery, ReviewedEventReplay, ReviewedEventRoute,
-        ReviewedEventStateModel,
+        ReviewedEventCaseHandler, ReviewedEventDelivery, ReviewedEventReplay,
+        ReviewedEventStateModel, ReviewedSelectorEventRoute,
     };
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -792,6 +1712,133 @@ mod tests {
                 ),
             }
         }
+    }
+
+    fn fixture_step(site: u32) -> FlowStepEvidence {
+        FlowStepEvidence {
+            ordinal: 0,
+            evidence: EvidenceLevel::Observed,
+            context_evidence: EvidenceLevel::Reviewed,
+            context: "fixture".to_owned(),
+            caller: "fixture::caller".to_owned(),
+            callee: "fixture::callee".to_owned(),
+            site: Some(site),
+            kind: "direct-call".to_owned(),
+            tail: false,
+            argument_shapes: 1,
+            arguments: Vec::new(),
+            guards: Vec::new(),
+            origin: "fixture.ir".to_owned(),
+        }
+    }
+
+    fn fixture_effect(operation: Option<&str>, evidence: EvidenceLevel) -> FlowEffectEvidence {
+        FlowEffectEvidence {
+            kind: "event".to_owned(),
+            evidence,
+            function: "fixture::caller".to_owned(),
+            site: Some(0x1000),
+            operation: operation.map(str::to_owned),
+            detail: "fixture".to_owned(),
+            constant: None,
+            access: None,
+            width: None,
+            address: None,
+            register: None,
+            value: None,
+            origin_path: None,
+        }
+    }
+
+    #[test]
+    fn event_route_rejects_observed_semantic_operation_claims() {
+        let effects = vec![fixture_effect(
+            Some("rtos.event-queue.send"),
+            EvidenceLevel::Observed,
+        )];
+
+        let error = validate_event_route_semantic_evidence("fixture-route", &effects)
+            .expect_err("reviewed semantic operation must not be observed evidence");
+        assert!(error.to_string().contains("incorrectly labeled observed"));
+    }
+
+    #[test]
+    fn event_route_output_separates_reviewed_semantics_from_observed_raw_effects() {
+        let mut effects = vec![
+            fixture_effect(Some("rtos.event-queue.send"), EvidenceLevel::Observed),
+            fixture_effect(None, EvidenceLevel::Observed),
+        ];
+
+        finalize_event_route_semantic_evidence("fixture-route", &mut effects).unwrap();
+
+        assert_eq!(effects[0].evidence, EvidenceLevel::Reviewed);
+        assert_eq!(effects[1].evidence, EvidenceLevel::Observed);
+        let output = serde_json::json!({
+            "steps": [fixture_step(0x1000)],
+            "effects": effects,
+        });
+        assert_eq!(output["steps"][0]["evidence"], "observed");
+        assert_eq!(output["steps"][0]["kind"], "direct-call");
+        assert_eq!(output["effects"][0]["evidence"], "reviewed");
+        assert_eq!(output["effects"][1]["evidence"], "observed");
+    }
+
+    #[test]
+    fn reviewed_route_steps_obey_the_requested_depth() {
+        let mut steps = vec![fixture_step(0x1000), fixture_step(0x1004)];
+        let mut effects = Vec::new();
+        let mut blockers = Vec::new();
+        assert!(enforce_reviewed_route_limit(
+            &mut steps,
+            &mut effects,
+            1,
+            &mut blockers
+        ));
+        assert_eq!(steps.len(), 1);
+        assert_eq!(blockers.len(), 1);
+        assert_eq!(blockers[0].kind, "analysis-limit");
+    }
+
+    #[test]
+    fn callback_store_must_target_the_subscribed_object() {
+        let effect = artifacts::StoredInstructionEffect::Memory {
+            site: 0x1000,
+            block: Some(1),
+            access: "write".to_owned(),
+            width: 32,
+            object: artifacts::StoredMemoryObject::Dereferenced {
+                pointer: Box::new(artifacts::StoredMemoryObject::Dereferenced {
+                    pointer: Box::new(artifacts::StoredMemoryObject::Absolute {
+                        address_space: "ram".to_owned(),
+                        address: 0x2000,
+                    }),
+                    pointer_offset: 0,
+                }),
+                pointer_offset: 8,
+            },
+            offset: 0,
+            paths: Vec::new(),
+            value: Some("const:0x00003000".to_owned()),
+            value_pseudo: None,
+            write_mask: Some(u32::MAX),
+            preserved_mask: None,
+            forced_zero_mask: None,
+            forced_one_mask: None,
+        };
+        let subscribed = "memory:*(absolute:0x00002000+0x0)+0x8&0xffffffff|0x00000000";
+        assert!(
+            callback_write_matches(&effect, 0x1000, 0, "const:0x00003000", subscribed).is_some()
+        );
+        assert!(
+            callback_write_matches(
+                &effect,
+                0x1000,
+                0,
+                "const:0x00003000",
+                "memory:*(absolute:0x00002000+0x0)+0xc&0xffffffff|0x00000000",
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -875,7 +1922,7 @@ mod tests {
             "complete": true,
         });
         std::fs::write(&evidence, serde_json::to_vec(&document).unwrap()).unwrap();
-        let mut route = ReviewedEventRoute {
+        let mut route = ReviewedSelectorEventRoute {
             id: "route".to_owned(),
             profile: "linked".to_owned(),
             source: "vendor".to_owned(),

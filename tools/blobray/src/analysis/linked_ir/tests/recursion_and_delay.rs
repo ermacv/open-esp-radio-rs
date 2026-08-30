@@ -8,6 +8,7 @@ fn recursive_effect_summary_reaches_a_fixed_point() {
         kind: "internal",
         target: target.to_owned(),
         site: Some(0),
+        direct: true,
         tail: false,
         result_modeled: false,
         execution_model: None,
@@ -20,6 +21,7 @@ fn recursive_effect_summary_reaches_a_fixed_point() {
         trampoline: None,
         argument_shapes: 1,
         arguments: vec!["arg0".to_owned()],
+        argument_exact: vec![true],
         argument_bindings: vec![LinkedArgumentBinding {
             position: 0,
             caller_argument: 0,
@@ -85,7 +87,10 @@ fn delay_inventory_preserves_nested_path_and_constant() {
     let flow = DraftReferenceFlow {
         events: vec![DraftReferenceEvent::ComposedCall {
             token: 1,
+            site: 0x1020,
             symbol: "delay_child".to_owned(),
+            direct: true,
+            tail: false,
             arguments: Box::new([]),
             flow: Box::new(DraftReferenceFlow {
                 events: vec![DraftReferenceEvent::DelayMicros {

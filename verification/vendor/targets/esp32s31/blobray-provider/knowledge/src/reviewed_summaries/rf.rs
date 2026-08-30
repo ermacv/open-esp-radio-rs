@@ -105,6 +105,7 @@ pub(super) fn rf_frequency_offset_scratch_trace(
                 token: 0,
                 site: 0x2f82_5c16,
                 target: ROM_PHY_SET_RFPLL_FREQ_ADDRESS,
+                direct: true,
                 arguments: Box::new(arguments),
                 scratch_argument: 3,
                 scratch_size: 5,
@@ -293,6 +294,7 @@ pub(super) fn one_call_flow(
             token: 0,
             site,
             target,
+            direct: true,
             arguments: Box::new(arguments),
         }],
         terminator: DraftReferenceTerminator::Return(if return_modeled {
@@ -389,6 +391,7 @@ pub(super) fn rfpll_calibration_poll_trace(
                 token: 0,
                 site: 0x2f82_58a0,
                 target: ROM_PHY_I2C_READ_REG_MASK_ADDRESS,
+                direct: true,
                 arguments: Box::new(read_arguments),
             },
         ],

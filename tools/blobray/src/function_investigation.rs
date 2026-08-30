@@ -87,7 +87,7 @@ pub(crate) fn investigate(
         }
     };
     let report = FunctionInvestigationReport {
-        schema_version: 16,
+        schema_version: 17,
         command: "inspect function",
         source: request.source.to_owned(),
         symbol: request.symbol.to_owned(),
@@ -143,7 +143,7 @@ pub(crate) fn investigate(
 }
 
 fn validate_report(report: &FunctionInvestigationReport) -> Result<()> {
-    if report.schema_version != 16 || report.command != "inspect function" {
+    if report.schema_version != 17 || report.command != "inspect function" {
         return Err(crate::Error::invalid(
             "function investigation report uses an unsupported schema or command",
         ));
@@ -501,6 +501,13 @@ fn semantic_evidence(
             .as_ref()
             .into_iter()
             .flat_map(|pack| &pack.event_routes)
+            .filter_map(|route| match route {
+                crate::function_workspace::ReviewedEventRoute::SelectorDelivery(route) => {
+                    Some(route)
+                }
+                crate::function_workspace::ReviewedEventRoute::StaticEventCallback(_)
+                | crate::function_workspace::ReviewedEventRoute::BrokerSubscription(_) => None,
+            })
             .filter(|route| {
                 route.profile == profile.id
                     && route.source == source
@@ -509,6 +516,12 @@ fn semantic_evidence(
         {
             reviewed_event_routes.push(event_route_evidence(route, &event_dispatches, project)?);
         }
+        let reviewed_callback_routes = function_pack
+            .as_ref()
+            .into_iter()
+            .flat_map(|pack| &pack.event_routes)
+            .filter_map(|route| callback_route_evidence(route, profile, source, &function.identity))
+            .collect();
         let linked_ir = include_linked_ir_record
             .then(|| StoredLinkedIrRecord::from_function(&function))
             .transpose()?;
@@ -536,10 +549,71 @@ fn semantic_evidence(
             },
             event_dispatches,
             reviewed_event_routes,
+            reviewed_callback_routes,
             linked_ir,
         });
     }
     Ok(evidence)
+}
+
+fn callback_route_evidence(
+    route: &crate::function_workspace::ReviewedEventRoute,
+    profile: &crate::project_ir::ProjectIrProfile,
+    source: &str,
+    identity: &str,
+) -> Option<ReviewedCallbackRouteEvidence> {
+    match route {
+        crate::function_workspace::ReviewedEventRoute::SelectorDelivery(_) => None,
+        crate::function_workspace::ReviewedEventRoute::StaticEventCallback(route)
+            if route.profile == profile.id
+                && route.source == source
+                && route.dispatcher == identity =>
+        {
+            Some(ReviewedCallbackRouteEvidence {
+                id: route.id.clone(),
+                kind: "static-event-callback",
+                status: "unvalidated",
+                mechanism: route.mechanism.clone(),
+                execution_context: route.execution_context.clone(),
+                callback: route.callback_function.clone(),
+                declared_stages: vec![
+                    "upstream-call-chain",
+                    "event-initialization-binding",
+                    "static-event-enqueue-sites",
+                ],
+                blockers: vec![
+                    "this is a parsed review declaration, not validated evidence; run inspect flow to validate current structural facts; eventq-get/event-run callback delivery is unmodeled",
+                ],
+                rationale: route.rationale.clone(),
+            })
+        }
+        crate::function_workspace::ReviewedEventRoute::BrokerSubscription(route)
+            if route.profile == profile.id
+                && route.source == source
+                && route.dispatcher == identity =>
+        {
+            Some(ReviewedCallbackRouteEvidence {
+                id: route.id.clone(),
+                kind: "broker-subscription",
+                status: "unvalidated",
+                mechanism: route.mechanism.clone(),
+                execution_context: route.execution_context.clone(),
+                callback: route.callback_function.clone(),
+                declared_stages: vec![
+                    "source-domain-attachment",
+                    "subscriber-callback-store",
+                    "selector-and-payload-publication",
+                    "guarded-continuation",
+                ],
+                blockers: vec![
+                    "this is a parsed review declaration, not validated evidence; run inspect flow to validate current structural facts; callback-store dominance and broker listener ordering are unmodeled",
+                ],
+                rationale: route.rationale.clone(),
+            })
+        }
+        crate::function_workspace::ReviewedEventRoute::StaticEventCallback(_)
+        | crate::function_workspace::ReviewedEventRoute::BrokerSubscription(_) => None,
+    }
 }
 
 fn abi_pseudo_type(abi: &str) -> &str {
@@ -759,15 +833,12 @@ fn call_knowledge(
         .iter()
         .enumerate()
         .map(|(position, value)| {
-            let status = if value == "unknown"
-                || value.contains("varies-across")
-                || value.contains("bits:0=?")
-            {
-                "unresolved"
-            } else if value.starts_with("one-of(") || value.contains("unknown") {
+            let status = if call.argument_is_exact(position) {
+                "exact"
+            } else if value.starts_with("one-of(") {
                 "partial"
             } else {
-                "exact"
+                "unresolved"
             };
             CallArgumentEvidence {
                 position,
@@ -826,6 +897,7 @@ fn call_knowledge(
         kind: call.kind.clone(),
         target: call.target.clone(),
         site: call.site,
+        direct: call.direct(),
         target_status,
         target_candidates,
         target_blocker,
@@ -889,7 +961,7 @@ fn compact_argument_value(value: &str) -> String {
 }
 
 fn event_route_evidence(
-    route: &crate::function_workspace::ReviewedEventRoute,
+    route: &crate::function_workspace::ReviewedSelectorEventRoute,
     dispatches: &[EventDispatchEvidence],
     project: &ProjectSpec,
 ) -> Result<ReviewedEventRouteEvidence> {
@@ -1018,7 +1090,7 @@ fn event_function_analysis(
 }
 
 fn reviewed_event_route(
-    route: &crate::function_workspace::ReviewedEventRoute,
+    route: &crate::function_workspace::ReviewedSelectorEventRoute,
     dispatch_constraint_matched: bool,
     consumer_analysis: Option<EventHandlerAnalysisEvidence>,
     case_handler_analysis: Option<EventHandlerAnalysisEvidence>,
@@ -1271,6 +1343,58 @@ mod tests {
         assert_eq!(
             truncate_call_arguments("return libpp__rcAttach(call5, arg1);", "libpp__rcAttach", 0),
             "return libpp__rcAttach();"
+        );
+    }
+
+    #[test]
+    fn inspect_function_marks_parse_only_callback_routes_as_unvalidated() {
+        let route = crate::function_workspace::ReviewedEventRoute::StaticEventCallback(
+            crate::function_workspace::ReviewedStaticEventCallbackRoute {
+                id: "route".to_owned(),
+                profile: "controller".to_owned(),
+                source: "vendor".to_owned(),
+                dispatcher: "vendor::dispatch".to_owned(),
+                mechanism: "event".to_owned(),
+                execution_context: "task".to_owned(),
+                dispatch_call: crate::function_workspace::ReviewedEventCallMatcher::Operation(
+                    "event.send".to_owned(),
+                ),
+                dispatch_sites: vec![0x1000],
+                upstream_chain: vec!["vendor::root".to_owned(), "vendor::dispatch".to_owned()],
+                upstream_sites: vec![0x0ffc],
+                dispatch_object_argument: 0,
+                binding_profile: "controller".to_owned(),
+                binding_source: "vendor".to_owned(),
+                binding_entry: "vendor::init".to_owned(),
+                binding_call: crate::function_workspace::ReviewedEventCallMatcher::Operation(
+                    "event.init".to_owned(),
+                ),
+                binding_site: 0x1004,
+                binding_object_argument: 0,
+                binding_callback_argument: 1,
+                callback_profile: "controller".to_owned(),
+                callback_source: "vendor".to_owned(),
+                callback_function: "vendor::callback".to_owned(),
+                rationale: "fixture".to_owned(),
+            },
+        );
+        let profile = crate::project_ir::ProjectIrProfile {
+            id: "controller".to_owned(),
+            sources: vec!["vendor".to_owned()],
+            roots: crate::project_ir::ProjectIrRoots::All,
+            include_reachable: true,
+            entry_contract: "none".to_owned(),
+            output: std::path::PathBuf::from("fixture.ir"),
+        };
+
+        let evidence =
+            callback_route_evidence(&route, &profile, "vendor", "vendor::dispatch").unwrap();
+        assert_eq!(evidence.status, "unvalidated");
+        assert!(
+            evidence
+                .blockers
+                .iter()
+                .any(|blocker| blocker.contains("not validated evidence"))
         );
     }
 }

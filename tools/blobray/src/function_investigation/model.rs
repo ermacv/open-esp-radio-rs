@@ -142,11 +142,25 @@ pub struct SemanticFunctionEvidence {
     pub graph_limits: InvestigationGraphLimits,
     pub event_dispatches: Vec<EventDispatchEvidence>,
     pub reviewed_event_routes: Vec<ReviewedEventRouteEvidence>,
+    pub reviewed_callback_routes: Vec<ReviewedCallbackRouteEvidence>,
     /// Complete schema-validated persistent record, included only for an
     /// explicitly lossless investigation. Normal JSON remains a compact
     /// evidence report and points at `report` for indexed retrieval.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub linked_ir: Option<StoredLinkedIrRecord>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ReviewedCallbackRouteEvidence {
+    pub id: String,
+    pub kind: &'static str,
+    pub status: &'static str,
+    pub mechanism: String,
+    pub execution_context: String,
+    pub callback: String,
+    pub declared_stages: Vec<&'static str>,
+    pub blockers: Vec<&'static str>,
+    pub rationale: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -295,6 +309,7 @@ pub struct CallKnowledgeEvidence {
     pub kind: String,
     pub target: String,
     pub site: Option<u32>,
+    pub direct: bool,
     pub target_status: &'static str,
     pub target_candidates: Vec<String>,
     pub target_blocker: Option<String>,

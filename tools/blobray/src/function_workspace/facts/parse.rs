@@ -7,8 +7,8 @@ use crate::{Result, artifacts::StoredMemoryObject};
 use super::{
     FunctionCallFact, FunctionContextFieldFact, FunctionDecodeBlockerFact,
     FunctionEventDispatchFact, FunctionFact, FunctionInputFact, FunctionMemoryFieldFact,
-    FunctionMemoryObjectFact, ScenarioArgumentFact, ScenarioMmioReadFact, ScenarioSuggestionFact,
-    ScenarioSuggestionVariantFact,
+    FunctionMemoryObjectFact, FunctionMemoryWriteFact, ScenarioArgumentFact, ScenarioMmioReadFact,
+    ScenarioSuggestionFact, ScenarioSuggestionVariantFact,
 };
 
 pub(super) fn parse_document(
@@ -46,6 +46,7 @@ pub(super) fn parse_function(
         identity: function.identity,
         member: function.member,
         symbol: function.symbol,
+        address: function.address,
         selection: function.selection,
         body_complete: function.completeness.body_complete,
         call_targets_complete: function.completeness.call_targets_complete,
@@ -69,6 +70,28 @@ pub(super) fn parse_function(
             .collect(),
         direct_calls: function.calls.len(),
         calls: function.calls.into_iter().map(call_fact).collect(),
+        memory_writes: function
+            .instruction_effects
+            .into_iter()
+            .filter_map(|effect| match effect {
+                crate::artifacts::StoredInstructionEffect::Memory {
+                    site,
+                    access,
+                    width,
+                    object,
+                    offset,
+                    value,
+                    ..
+                } if access == "write" => Some(FunctionMemoryWriteFact {
+                    site,
+                    object: memory_object_fact(object),
+                    offset,
+                    width,
+                    value,
+                }),
+                _ => None,
+            })
+            .collect(),
         mmio_addresses: function
             .mmio_accesses
             .into_iter()
@@ -187,6 +210,7 @@ pub(super) fn parse_review_projection(
                 identity: function.identity,
                 member: function.member,
                 symbol: function.symbol,
+                address: None,
                 selection: function.selection,
                 body_complete: function.completeness.body_complete,
                 call_targets_complete: function.completeness.call_targets_complete,
@@ -215,12 +239,15 @@ pub(super) fn parse_review_projection(
                     .map(|call| FunctionCallFact {
                         kind: call.kind,
                         target: call.target,
+                        direct: call.direct,
                         semantic_operation: call.semantic_operation,
                         site: call.site,
                         arguments: Vec::new(),
+                        argument_exact: Vec::new(),
                         guard_paths: None,
                     })
                     .collect(),
+                memory_writes: Vec::new(),
                 mmio_addresses: function.mmio_addresses,
                 context_fields: summary
                     .context_fields
@@ -273,12 +300,18 @@ pub(super) fn parse_review_projection(
 }
 
 fn call_fact(call: crate::artifacts::StoredCall) -> FunctionCallFact {
+    let direct = call.direct();
+    let argument_exact = (0..call.arguments.len())
+        .map(|position| call.argument_is_exact(position))
+        .collect();
     FunctionCallFact {
         kind: call.kind,
         target: call.target,
+        direct,
         semantic_operation: call.semantic_operation,
         site: call.site,
         arguments: call.arguments,
+        argument_exact,
         guard_paths: call.guard_paths.map(|paths| {
             paths
                 .into_iter()

@@ -21,7 +21,7 @@ use super::*;
 
 // Hard-cut whenever direct structural exploration or its projection changes.
 // Project-stage revisions do not invalidate these content-addressed facts.
-const FUNCTION_FACT_DOMAIN: &[u8] = b"blobray/direct-function-facts/v15\0";
+const FUNCTION_FACT_DOMAIN: &[u8] = b"blobray/direct-function-facts/v17\0";
 const MAX_CACHED_CALL_VARIANTS: usize = 1_024;
 const MAX_COMPRESSED_FACT_BYTES: usize = 4 * 1024 * 1024;
 
@@ -656,6 +656,7 @@ fn show_instruction_sites(value: &str, symbol: &artifact::ArtifactSymbolDefiniti
 struct PortableCall {
     target: String,
     site_offset: Option<u32>,
+    direct: bool,
     tail: bool,
     result_modeled: bool,
     semantics: Option<String>,
@@ -663,6 +664,7 @@ struct PortableCall {
     replacement_hint: Option<String>,
     argument_shapes: usize,
     arguments: Vec<String>,
+    argument_exact: Vec<bool>,
     argument_bindings: Vec<PortableArgumentBinding>,
     typed_arguments: Vec<PortableCallArgument>,
     guard_paths: Option<Vec<Vec<u32>>>,
@@ -682,6 +684,7 @@ impl PortableCall {
                 Some(site) => Some(site.checked_sub(base)?),
                 None => None,
             },
+            direct: call.direct,
             tail: call.tail,
             result_modeled: call.result_modeled,
             semantics: call
@@ -696,6 +699,7 @@ impl PortableCall {
                 .iter()
                 .map(|value| hide_namespace(value, namespace))
                 .collect(),
+            argument_exact: call.argument_exact.clone(),
             argument_bindings: call
                 .argument_bindings
                 .iter()
@@ -756,6 +760,7 @@ impl PortableCall {
                 Some(offset) => Some(base.checked_add(offset)?),
                 None => None,
             },
+            direct: self.direct,
             tail: self.tail,
             result_modeled: self.result_modeled,
             execution_model: None,
@@ -775,6 +780,7 @@ impl PortableCall {
                 .iter()
                 .map(|value| show_namespace(value, namespace))
                 .collect(),
+            argument_exact: self.argument_exact.clone(),
             argument_bindings: self
                 .argument_bindings
                 .iter()
@@ -1380,6 +1386,7 @@ mod tests {
                 kind: "internal",
                 target: "first::callee".to_owned(),
                 site: Some(0x4000),
+                direct: true,
                 tail: false,
                 result_modeled: false,
                 execution_model: None,
@@ -1392,6 +1399,7 @@ mod tests {
                 trampoline: None,
                 argument_shapes: 1,
                 arguments: vec!["first::callee(arg0)".to_owned()],
+                argument_exact: vec![true],
                 argument_bindings: Vec::new(),
                 typed_arguments: Vec::new(),
                 guard_paths: Some(vec![LinkedCallGuardPath { guards: Vec::new() }]),
@@ -1425,6 +1433,7 @@ mod tests {
         assert_eq!(call.site, Some(0x8000));
         assert_eq!(call.target, "second::callee");
         assert_eq!(call.arguments, ["second::callee(arg0)"]);
+        assert_eq!(call.argument_exact, [true]);
         assert_eq!(
             rebound.blockers,
             BTreeSet::from([

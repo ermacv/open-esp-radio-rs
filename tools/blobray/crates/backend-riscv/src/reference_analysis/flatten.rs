@@ -444,12 +444,14 @@ pub(super) fn flatten_reference_trace(
                 token: source_call_token,
                 site,
                 target,
+                direct,
                 arguments,
             }
             | DraftReferenceEvent::TailCall {
                 token: source_call_token,
                 site,
                 target,
+                direct,
                 arguments,
             } => {
                 let is_tail = matches!(event, DraftReferenceEvent::TailCall { .. });
@@ -552,7 +554,10 @@ pub(super) fn flatten_reference_trace(
                                 .count() as u32;
                             output.push(DraftReferenceEvent::ComposedCall {
                                 token: mapped_token,
+                                site: *site,
                                 symbol: callee_name,
+                                direct: *direct,
+                                tail: is_tail,
                                 arguments: Box::new(arguments),
                                 flow: Box::new(trace_into_reference_flow(callee_trace)),
                                 result_modeled,

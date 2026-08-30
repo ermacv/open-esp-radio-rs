@@ -673,6 +673,7 @@ struct FunctionOverviewCall<'a> {
     kind: &'a str,
     target: &'a str,
     site: Option<u32>,
+    direct: bool,
     project_symbol: &'a Option<String>,
     semantic_operation: &'a Option<String>,
 }
@@ -887,6 +888,7 @@ impl<'a> FunctionOverviewDocument<'a> {
                     kind: call.kind,
                     target: &call.target,
                     site: call.site,
+                    direct: call.direct,
                     project_symbol: &call.project_symbol,
                     semantic_operation: &call.semantic_operation,
                 })

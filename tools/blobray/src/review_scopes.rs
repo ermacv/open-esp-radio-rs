@@ -1104,6 +1104,7 @@ mod tests {
             kind: "semantic-boundary".to_owned(),
             target: "vendor::memcpy".to_owned(),
             site: Some(0x1000),
+            direct: true,
             project_symbol: None,
             semantic_operation: Some("memory.copy".to_owned()),
         }];

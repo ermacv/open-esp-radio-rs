@@ -151,6 +151,7 @@ async = "incomplete"
 depends-on = ["controller-initialization"]
 vendor-anchors = [
   "verification/vendor/targets/esp32s31/README.md",
+  "verification/vendor/targets/esp32s31/functions/reviewed.toml",
   "verification/vendor/targets/esp32s31/registers/evidence/vendor-radio-libraries.toml",
 ]
 gaps = [
@@ -354,6 +355,7 @@ async = "incomplete"
 depends-on = ["interrupt-runtime"]
 vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-interrupt-runtime.md",
+  "verification/vendor/targets/esp32s31/functions/reviewed.toml",
 ]
 gaps = [
   { axis = "implementation", id = "post-unlink-command-ready-retry-liveness-mailbox-full-ready-edge-recovery-and-selector-6-recovery-missing" },

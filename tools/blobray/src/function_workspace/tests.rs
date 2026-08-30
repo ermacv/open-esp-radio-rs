@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn schema_v9_parses_reviewed_event_delivery_and_case_handler() {
+fn schema_v10_parses_reviewed_event_delivery_and_case_handler() {
     let directory = std::env::temp_dir().join(format!(
         "blobray-function-event-route-{}",
         std::process::id()
@@ -10,10 +10,11 @@ fn schema_v9_parses_reviewed_event_delivery_and_case_handler() {
     let pack_path = directory.join("functions.toml");
     std::fs::write(
         &pack_path,
-        r#"schema = 9
+        r#"schema = 10
 id = "fixture"
 
 [[event-routes]]
+kind = "selector-delivery"
 id = "rx-ready"
 profile = "linked"
 source = "vendor"
@@ -43,17 +44,133 @@ rationale = "Reviewed scheduler table maps signal 25 to the worker entry."
     .unwrap();
     let pack = FunctionPack::load_reviewed(&pack_path).unwrap();
     assert_eq!(pack.event_routes.len(), 1);
-    assert_eq!(pack.event_routes[0].selector_value, 25);
-    assert_eq!(pack.event_routes[0].consumer_entry, "vendor::worker");
+    let ReviewedEventRoute::SelectorDelivery(route) = &pack.event_routes[0] else {
+        panic!("expected selector delivery route");
+    };
+    assert_eq!(route.selector_value, 25);
+    assert_eq!(route.consumer_entry, "vendor::worker");
     assert_eq!(
-        pack.event_routes[0].case_handler.as_ref().unwrap().function,
+        route.case_handler.as_ref().unwrap().function,
         "vendor::handle_rx"
     );
     assert_eq!(
-        pack.event_routes[0].terminal.as_ref().unwrap().function,
+        route.terminal.as_ref().unwrap().function,
         "vendor::recycle_rx"
     );
-    assert!(pack.event_routes[0].replay.is_none());
+    assert!(route.replay.is_none());
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn schema_v10_parses_distinct_callback_route_kinds() {
+    let directory = std::env::temp_dir().join(format!(
+        "blobray-function-callback-routes-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let pack_path = directory.join("functions.toml");
+    std::fs::write(
+        &pack_path,
+        r#"schema = 10
+id = "fixture"
+
+[[event-routes]]
+kind = "static-event-callback"
+id = "static"
+profile = "controller"
+source = "vendor"
+dispatcher = "vendor::enqueue"
+mechanism = "event-queue"
+execution-context = "interrupt-to-task"
+dispatch-operation = "event.send"
+dispatch-sites = [0x1010, 0x1020]
+upstream-chain = ["vendor::isr", "vendor::enqueue"]
+upstream-sites = [0x1010]
+dispatch-object-argument = 1
+binding-profile = "controller"
+binding-source = "vendor"
+binding-entry = "vendor::init"
+binding-operation = "event.init"
+binding-site = 0x1030
+binding-object-argument = 0
+binding-callback-argument = 1
+callback-profile = "controller"
+callback-source = "vendor"
+callback-function = "vendor::callback"
+rationale = "The initialized event object is enqueued at both reviewed sites."
+
+[[event-routes]]
+kind = "broker-subscription"
+id = "broker"
+profile = "controller"
+source = "vendor"
+dispatcher = "vendor::publish"
+mechanism = "broker"
+execution-context = "task"
+dispatch-function = "vendor::broker_publish"
+dispatch-site = 0x2010
+dispatch-selector-argument = 1
+selector-role = "event"
+selector-value = 4
+dispatch-payload-argument = 2
+payload-role = "mask"
+payload-value = "expr:mask"
+domain-profile = "controller"
+domain-source = "vendor"
+domain-entry = "vendor::init"
+domain-function = "vendor::attach"
+domain-site = 0x2020
+domain-dispatch-argument = 0
+domain-call-object-argument = 0
+domain-call-selector-argument = 1
+domain-selector-value = 0
+binding-profile = "controller"
+binding-source = "vendor"
+binding-entry = "vendor::enable"
+binding-function = "vendor::subscribe"
+binding-site = 0x2030
+binding-domain-argument = 0
+binding-object-argument = 1
+binding-callback-store-site = 0x202c
+binding-callback-store-offset = 0
+callback-profile = "controller"
+callback-source = "vendor"
+callback-function = "vendor::listener"
+callback-selector-argument = 0
+case-handler-profile = "controller"
+case-handler-source = "vendor"
+case-handler-function = "vendor::handle"
+case-handler-site = 0x2040
+rationale = "The reviewed source domain, subscription, selector and handler are structurally bound."
+"#,
+    )
+    .unwrap();
+
+    let pack = FunctionPack::load_reviewed(&pack_path).unwrap();
+    assert!(matches!(
+        &pack.event_routes[0],
+        ReviewedEventRoute::StaticEventCallback(route)
+            if route.dispatch_sites.len() == 2 && route.callback_function == "vendor::callback"
+    ));
+    assert!(matches!(
+        &pack.event_routes[1],
+        ReviewedEventRoute::BrokerSubscription(route)
+            if route.payload_role == "mask"
+                && route.case_handler.function == "vendor::handle"
+    ));
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn schema_v9_is_rejected_without_a_compatibility_path() {
+    let directory = std::env::temp_dir().join(format!(
+        "blobray-function-schema-cutover-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let pack_path = directory.join("functions.toml");
+    std::fs::write(&pack_path, "schema = 9\nid = \"fixture\"\n").unwrap();
+    assert!(FunctionPack::load_reviewed(&pack_path).is_err());
     std::fs::remove_dir_all(directory).unwrap();
 }
 
@@ -68,6 +185,7 @@ fn write_ir(path: &std::path::Path) {
         kind,
         target: target.to_owned(),
         site: Some(site),
+        direct: true,
         tail: false,
         result_modeled: false,
         execution_model: None,
@@ -79,6 +197,7 @@ fn write_ir(path: &std::path::Path) {
         project_candidates: Vec::new(),
         trampoline: None,
         argument_shapes: 1,
+        argument_exact: vec![true; arguments.len()],
         arguments,
         argument_bindings: Vec::new(),
         typed_arguments: Vec::new(),
@@ -290,6 +409,32 @@ fn write_ir(path: &std::path::Path) {
 }
 
 #[test]
+fn split_linked_ir_rejects_call_argument_proof_drift() {
+    let directory = std::env::temp_dir().join(format!(
+        "blobray-function-call-proof-drift-{}",
+        std::process::id()
+    ));
+    write_ir(&directory);
+    let functions_path = directory.join("functions.jsonl");
+    let functions = std::fs::read_to_string(&functions_path).unwrap().replacen(
+        "\"argument_exact\":[true,true]",
+        "\"argument_exact\":[true]     ",
+        1,
+    );
+    std::fs::write(&functions_path, functions).unwrap();
+
+    let reader = crate::artifacts::LinkedIrReader::open(&directory).unwrap();
+    let all_error = reader.read_all_functions().unwrap_err();
+    assert!(all_error.to_string().contains("exactness records"));
+    let one_error = reader
+        .get_function_by_identity("rom::vendor_helper")
+        .unwrap_err();
+    assert!(one_error.to_string().contains("exactness records"));
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn generated_template_is_valid_unreviewed_workspace() {
     let directory = std::env::temp_dir().join(format!(
         "blobray-function-pack-template-{}",
@@ -342,7 +487,7 @@ fn reviewed_names_require_matching_digest_and_complete_explicit_claims() {
     let pack = directory.join("functions.toml");
     write_ir(&report);
     let reports = vec![("rom-phy".to_owned(), report)];
-    let reviewed = r#"schema = 9
+    let reviewed = r#"schema = 10
 id = "fixture"
 
 [[inputs]]
@@ -566,7 +711,7 @@ fn ignored_context_covers_its_observed_fields_without_claiming_names() {
     let pack = directory.join("functions.toml");
     write_ir(&report);
     let reports = vec![("rom-phy".to_owned(), report)];
-    let ignored = r#"schema = 9
+    let ignored = r#"schema = 10
 id = "fixture"
 
 [[inputs]]

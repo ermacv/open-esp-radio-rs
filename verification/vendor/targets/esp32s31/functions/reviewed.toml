@@ -1,5 +1,5 @@
 # Human-reviewed function and context names. Generated linked IR stays separate.
-schema = 9
+schema = 10
 id = "esp32s31-radio-rev0"
 
 [[inputs]]
@@ -60,6 +60,7 @@ artifact-sha256 = "5dbd91c45d13a2afc99e5414732aaffe1230737b471ddcf0bbe7e17a9d98e
 # the task entry only; the signal-specific branch inside ppTask remains a
 # separate path-analysis obligation.
 [[event-routes]]
+kind = "selector-delivery"
 id = "rx-success-to-pp-task"
 profile = "wifi-sta-lifecycle"
 source = "wifi-sta-lifecycle"
@@ -97,6 +98,7 @@ rationale = "Signal 0x19 is posted by lmacProcessRxSucData, received by ppTask i
 # keeping both edges avoids flattening two ownership transitions into one
 # invented direct call.
 [[event-routes]]
+kind = "selector-delivery"
 id = "rx-done-to-pp-task"
 profile = "wifi-sta-lifecycle"
 source = "wifi-sta-lifecycle"
@@ -131,6 +133,7 @@ rationale = "lmacRxDone posts signal 0x11 to the reviewed pp-task receiver; the 
 # of flattening lmacPostTxComplete into a synchronous lmacProcessTxComplete
 # call.
 [[event-routes]]
+kind = "selector-delivery"
 id = "tx-complete-to-pp-task"
 profile = "wifi-sta-lifecycle"
 source = "wifi-sta-lifecycle"
@@ -159,6 +162,91 @@ replay-consumer-phase = "dispatch-signal-23"
 replay-state-observation = "signal-23-count"
 replay-state-model = "counted-latch"
 rationale = "lmacPostTxComplete posts signal 0x17 to the reviewed pp-task receiver; the relocated ppTask jump table maps selector 0x17 to lmacProcessTxComplete, and the bound replay must execute that exact queue and case transition."
+
+# Generated linked IR proves the exact R9 -> iEs -> gs5 direct-call chain and
+# both dispatcher call sites carrying the same static object that scheduler
+# initialization binds to the task callback. Associating the R9 entry with
+# controller source 124 and assigning event-init/enqueue roles to the callees
+# remain reviewed knowledge. This route stops before claiming
+# eventq_get/event.run delivery.
+[[event-routes]]
+kind = "static-event-callback"
+id = "btdm-source124-to-recycle-event-binding"
+profile = "ble-controller-all"
+source = "ble-controller"
+dispatcher = "ble-controller::r_sym_bt_gs5GeSH15pdzrMDbb7oK"
+mechanism = "static-event-callback"
+execution-context = "interrupt-to-task"
+dispatch-operation = "rtos.event-queue.send"
+dispatch-sites = [0x10059bf2, 0x10059c0e]
+upstream-chain = [
+    "ble-controller::r_sym_bt_R9GZfnUbtn7k6mHtoZbv",
+    "ble-controller::r_sym_bt_iEsFo1nbR5S71P2lMKhY",
+    "ble-controller::r_sym_bt_gs5GeSH15pdzrMDbb7oK",
+]
+upstream-sites = [0x10055f8c, 0x1005514a]
+dispatch-object-argument = 1
+binding-profile = "ble-controller-all"
+binding-source = "ble-controller"
+binding-entry = "ble-controller::r_sym_bt_XPuqTHliEO5V9xpR7aJR"
+binding-operation = "rtos.event.init"
+binding-site = 0x10051b50
+binding-object-argument = 0
+binding-callback-argument = 1
+callback-profile = "ble-controller-all"
+callback-source = "ble-controller"
+callback-function = "ble-controller::r_sym_bt_uNi9OHmE7XdXfGqTelU5"
+rationale = "Current linked IR proves the exact R9 -> iEs -> gs5 direct-call chain, both downstream calls carrying one static object, and the scheduler-init call carrying that object plus the exact callback address. The R9-to-controller-source-124 association and the event-init/enqueue/callback roles are reviewed knowledge, not generated observations. eventq_get return flow and event.run callback execution remain unmodeled."
+
+# Finished-list publication uses broker source zero. Scheduler init attaches
+# that exact source object, while base-stack enable contains the reviewed
+# callback store into its subscriber object and the exact subscription call.
+[[event-routes]]
+kind = "broker-subscription"
+id = "btdm-finished-list-to-ble-scheduler-callback"
+profile = "ble-controller-all"
+source = "ble-controller"
+dispatcher = "ble-controller::r_sym_bt_WHYoiw8ufY0AEM2KSRK1"
+mechanism = "broker-publish-subscription"
+execution-context = "controller-task"
+dispatch-function = "ble-controller::r_sym_bt_3DcjgYC1ikQrP7jNyXGR"
+dispatch-site = 0x10051040
+dispatch-selector-argument = 1
+selector-role = "broker-event"
+selector-value = 0x80000004
+dispatch-payload-argument = 2
+payload-role = "finished-list-mask"
+payload-value = "expr:BitOr(memory:*(absolute:0x10061438+0x0)+0x14&0x0000ffff|0x00000000,rmw:read0[0x2010125c]&0x0000ffff|0x00000000)"
+domain-profile = "ble-controller-all"
+domain-source = "ble-controller"
+domain-entry = "ble-controller::r_sym_bt_XPuqTHliEO5V9xpR7aJR"
+domain-function = "ble-controller::r_sym_bt_kNIbP2qfZqaMNyimIzAy"
+domain-site = 0x10051b5a
+domain-dispatch-argument = 0
+domain-call-object-argument = 0
+domain-call-selector-argument = 1
+domain-selector-value = 0
+binding-profile = "ble-controller-all"
+binding-source = "ble-controller"
+binding-entry = "ble-controller::r_base_stack_enable"
+binding-function = "ble-controller::r_sym_bt_Hl337IkWeUHjq0EeK30W"
+binding-site = 0x1000f7a6
+binding-domain-argument = 0
+binding-object-argument = 1
+binding-callback-store-site = 0x1000f7a4
+binding-callback-store-offset = 0
+callback-profile = "ble-controller-all"
+callback-source = "ble-controller"
+callback-function = "ble-controller::r_sym_ble_uwrf0kLZsRbzFJ7u8SEr"
+callback-selector-argument = 0
+case-handler-profile = "ble-controller-all"
+case-handler-source = "ble-controller"
+case-handler-function = "ble-controller::r_sym_ble_rmNuzAO8kQQQXQIpTzGZ"
+case-handler-site = 0x100572b8
+terminal-profile = "ble-controller-all"
+terminal-source = "ble-controller"
+terminal-function = "ble-controller::r_sym_bt_FCfM3hAXphsk1qERleGZ"
+rationale = "Current linked IR proves source-zero attachment, exact selector publication, callback storage in the subscribed object, the source-zero subscription argument, and the selector-guarded BLE scheduler continuation; callback-store dominance plus broker listener ordering and stop semantics remain unmodeled."
 
 [[functions]]
 profile = "archive-all"

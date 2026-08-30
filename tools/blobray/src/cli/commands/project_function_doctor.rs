@@ -36,10 +36,12 @@ impl FunctionDoctorReport {
 
     pub(super) fn render_human(&self) {
         outputln!(
-            "Function workspace: {} — profiles={} roots={} errors={} warnings={}",
+            "Function workspace: {} — profiles={} functions={} roots={} context-fields={} errors={} warnings={}",
             self.status,
             self.profiles,
+            self.functions,
             self.root_functions,
+            self.context_fields,
             self.errors,
             self.warnings
         );
@@ -161,12 +163,18 @@ pub(super) fn inspect(project: &ProjectSpec) -> FunctionDoctorReport {
         report.warnings = 1;
         return report;
     }
-    match FunctionWorkspace::load_summary(&reports, &paths.pack) {
+    match FunctionWorkspace::load_with_callback_facts(&reports, &paths.pack) {
         Ok(workspace) => {
             let summary = workspace.summary();
             let mut report = FunctionDoctorReport::new("available");
             report.profiles = reports.len();
+            report.functions = workspace.facts.functions.len();
             report.root_functions = summary.observed_functions;
+            report.context_fields = workspace
+                .facts
+                .root_functions()
+                .map(|function| function.context_fields.len())
+                .sum();
             report.review = Some(FunctionReviewCounts {
                 reviewed_functions: summary.reviewed_functions,
                 ignored_functions: summary.ignored_functions,

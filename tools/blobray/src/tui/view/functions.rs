@@ -419,6 +419,21 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
                             );
                         }
                     }
+                    if !semantic.reviewed_callback_routes.is_empty() {
+                        lines.push(Line::from("Declared callback routes:"));
+                        for route in &semantic.reviewed_callback_routes {
+                            lines.push(Line::from(format!(
+                                "  {}: {} -> {} [{}]",
+                                route.id, route.kind, route.callback, route.status
+                            )));
+                            lines.extend(
+                                route
+                                    .blockers
+                                    .iter()
+                                    .map(|blocker| Line::from(format!("    ! {blocker}"))),
+                            );
+                        }
+                    }
                 }
                 if !investigation.replacements.is_empty() {
                     lines.push(Line::from(""));

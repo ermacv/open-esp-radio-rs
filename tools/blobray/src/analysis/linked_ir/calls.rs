@@ -15,6 +15,10 @@ pub(super) fn canonical_arguments(arguments: &[SymbolicValue]) -> Vec<String> {
     arguments.iter().map(SymbolicValue::canonical).collect()
 }
 
+pub(super) fn argument_exactness(arguments: &[SymbolicValue]) -> Vec<bool> {
+    arguments.iter().map(SymbolicValue::is_resolved).collect()
+}
+
 fn linked_flow_value(value: &SymbolicValue) -> LinkedFlowValue {
     LinkedFlowValue {
         expression: value.canonical(),
@@ -175,6 +179,7 @@ pub(super) struct LinkedCallIdentity {
     kind: &'static str,
     target: String,
     site: Option<u32>,
+    direct: bool,
     tail: bool,
     result_modeled: bool,
     execution_model: Option<LinkedExternalExecutionModel>,
@@ -194,6 +199,7 @@ impl From<&LinkedCall> for LinkedCallIdentity {
             kind: call.kind,
             target: call.target.clone(),
             site: call.site,
+            direct: call.direct,
             tail: call.tail,
             result_modeled: call.result_modeled,
             execution_model: call.execution_model.clone(),
@@ -360,6 +366,7 @@ pub(super) fn distinct_argument_shape_count(calls: &[LinkedCall]) -> usize {
     let mut shapes = BTreeMap::<
         (
             Vec<String>,
+            Vec<bool>,
             Vec<LinkedArgumentBinding>,
             Vec<(usize, String)>,
         ),
@@ -368,6 +375,7 @@ pub(super) fn distinct_argument_shape_count(calls: &[LinkedCall]) -> usize {
     for call in calls {
         let shape = (
             call.arguments.clone(),
+            call.argument_exact.clone(),
             call.argument_bindings.clone(),
             call.typed_arguments
                 .iter()
@@ -402,6 +410,14 @@ pub(super) fn compact_calls(calls: impl IntoIterator<Item = LinkedCall>) -> Vec<
                 .unwrap_or_default();
             let arguments = (0..argument_count)
                 .map(|position| merged_argument_value(&calls, position, argument_shapes))
+                .collect::<Vec<_>>();
+            let argument_exact = (0..argument_count)
+                .map(|position| {
+                    calls.iter().all(|call| {
+                        call.argument_exact.get(position).copied() == Some(true)
+                            && call.arguments.get(position) == arguments.get(position)
+                    })
+                })
                 .collect();
             let argument_bindings = calls[0]
                 .argument_bindings
@@ -420,6 +436,7 @@ pub(super) fn compact_calls(calls: impl IntoIterator<Item = LinkedCall>) -> Vec<
             }
             call.argument_shapes = argument_shapes;
             call.arguments = arguments;
+            call.argument_exact = argument_exact;
             call.argument_bindings = argument_bindings;
             call.guard_paths = merged_guard_paths(&calls);
             call
@@ -474,6 +491,7 @@ pub(super) fn collect_call_event(
                     .collect::<Vec<_>>()
                     .join(" | "),
                 site: Some(*site),
+                direct: false,
                 tail: tails.len() == 1 && *tails.first().expect("one reviewed call shape"),
                 result_modeled: execution_model
                     .is_some_and(|model| external_return_is_modeled(model.return_model)),
@@ -517,6 +535,7 @@ pub(super) fn collect_call_event(
                 trampoline: None,
                 argument_shapes: 1,
                 arguments: canonical_arguments(arguments),
+                argument_exact: argument_exactness(arguments),
                 argument_bindings: affine_argument_bindings(arguments),
                 typed_arguments: reviewed_external_typed_arguments(candidates, arguments),
                 guard_paths: None,
@@ -531,6 +550,7 @@ pub(super) fn collect_call_event(
             kind: "modeled-direct-external",
             target: function.name.clone(),
             site: Some(*site),
+            direct: true,
             tail: false,
             result_modeled: external_return_is_modeled(function.return_model),
             execution_model: None,
@@ -555,6 +575,7 @@ pub(super) fn collect_call_event(
             trampoline: None,
             argument_shapes: 1,
             arguments: canonical_arguments(arguments),
+            argument_exact: argument_exactness(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
             guard_paths: None,
@@ -568,6 +589,7 @@ pub(super) fn collect_call_event(
             kind: "diagnostic",
             target: function.clone(),
             site: Some(*site),
+            direct: false,
             tail: false,
             result_modeled: false,
             execution_model: None,
@@ -586,6 +608,7 @@ pub(super) fn collect_call_event(
             trampoline: None,
             argument_shapes: 1,
             arguments: canonical_arguments(arguments),
+            argument_exact: argument_exactness(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
             guard_paths: None,
@@ -593,6 +616,7 @@ pub(super) fn collect_call_event(
         DraftReferenceEvent::Call {
             site,
             target,
+            direct,
             arguments,
             ..
         } => Some(LinkedCall {
@@ -603,6 +627,7 @@ pub(super) fn collect_call_event(
             },
             target: identities.target(*target),
             site: Some(*site),
+            direct: *direct,
             tail: false,
             result_modeled: false,
             execution_model: None,
@@ -615,6 +640,7 @@ pub(super) fn collect_call_event(
             trampoline: None,
             argument_shapes: 1,
             arguments: canonical_arguments(arguments),
+            argument_exact: argument_exactness(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
             guard_paths: None,
@@ -622,6 +648,7 @@ pub(super) fn collect_call_event(
         DraftReferenceEvent::TailCall {
             site,
             target,
+            direct,
             arguments,
             ..
         } => Some(LinkedCall {
@@ -632,6 +659,7 @@ pub(super) fn collect_call_event(
             },
             target: identities.target(*target),
             site: Some(*site),
+            direct: *direct,
             tail: true,
             result_modeled: false,
             execution_model: None,
@@ -644,20 +672,25 @@ pub(super) fn collect_call_event(
             trampoline: None,
             argument_shapes: 1,
             arguments: canonical_arguments(arguments),
+            argument_exact: argument_exactness(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
             guard_paths: None,
         }),
         DraftReferenceEvent::ComposedCall {
+            site,
             symbol,
+            direct,
+            tail,
             arguments,
             result_modeled,
             ..
         } => Some(LinkedCall {
             kind: "internal",
             target: symbol.clone(),
-            site: None,
-            tail: false,
+            site: Some(*site),
+            direct: *direct,
+            tail: *tail,
             result_modeled: *result_modeled,
             execution_model: None,
             semantics: Some("callee body was composed by the reference resolver".to_owned()),
@@ -669,6 +702,7 @@ pub(super) fn collect_call_event(
             trampoline: None,
             argument_shapes: 1,
             arguments: canonical_arguments(arguments),
+            argument_exact: argument_exactness(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
             guard_paths: None,
@@ -676,6 +710,7 @@ pub(super) fn collect_call_event(
         DraftReferenceEvent::ScratchCall {
             site,
             target,
+            direct,
             arguments,
             scratch_argument,
             scratch_size,
@@ -688,6 +723,7 @@ pub(super) fn collect_call_event(
             },
             target: identities.target(*target),
             site: Some(*site),
+            direct: *direct,
             tail: false,
             result_modeled: false,
             execution_model: None,
@@ -702,12 +738,15 @@ pub(super) fn collect_call_event(
             trampoline: None,
             argument_shapes: 1,
             arguments: canonical_arguments(arguments),
+            argument_exact: argument_exactness(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
             guard_paths: None,
         }),
         DraftReferenceEvent::ComposedCallWithScratch {
+            site,
             symbol,
+            direct,
             arguments,
             result_modeled,
             scratch_argument,
@@ -716,7 +755,8 @@ pub(super) fn collect_call_event(
         } => Some(LinkedCall {
             kind: "internal",
             target: symbol.clone(),
-            site: None,
+            site: Some(*site),
+            direct: *direct,
             tail: false,
             result_modeled: *result_modeled,
             execution_model: None,
@@ -731,6 +771,7 @@ pub(super) fn collect_call_event(
             trampoline: None,
             argument_shapes: 1,
             arguments: canonical_arguments(arguments),
+            argument_exact: argument_exactness(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
             guard_paths: None,

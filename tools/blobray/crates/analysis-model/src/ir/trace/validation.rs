@@ -523,7 +523,10 @@ mod tests {
         let flow = DraftReferenceFlow {
             events: vec![DraftReferenceEvent::ComposedCall {
                 token: 0,
+                site: 0x4000_1200,
                 symbol: "opaque_callback".to_owned(),
+                direct: true,
+                tail: false,
                 arguments: Box::new([]),
                 flow: Box::new(DraftReferenceFlow {
                     events: Vec::new(),

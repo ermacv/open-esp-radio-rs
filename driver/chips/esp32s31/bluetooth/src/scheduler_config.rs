@@ -14,6 +14,8 @@
 pub struct BluetoothSchedulerSoftwareConfig {
     late_start_guard_scheduler_delta: u32,
     sequence_lead_scheduler_delta: u32,
+    #[cfg(any(target_arch = "riscv32", test))]
+    dtm_scheduler_margin: crate::dtm_event_timing::BluetoothDtmSchedulerMargin,
 }
 
 impl BluetoothSchedulerSoftwareConfig {
@@ -22,7 +24,18 @@ impl BluetoothSchedulerSoftwareConfig {
         Self {
             late_start_guard_scheduler_delta: 40,
             sequence_lead_scheduler_delta: 46,
+            #[cfg(any(target_arch = "riscv32", test))]
+            dtm_scheduler_margin:
+                crate::dtm_event_timing::BluetoothDtmSchedulerMargin::reviewed_standalone(),
         }
+    }
+
+    /// Return the source-owned standalone DTM scheduler margin.
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) const fn dtm_scheduler_margin(
+        self,
+    ) -> crate::dtm_event_timing::BluetoothDtmSchedulerMargin {
+        self.dtm_scheduler_margin
     }
 
     /// Scheduler-domain guard used by both insertion deadline checks.

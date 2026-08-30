@@ -99,7 +99,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "source-owned-rf-ready-and-standalone-margin-producers-missing" },
+  { axis = "implementation", id = "source-owned-rf-ready-producer-missing" },
   { axis = "vendor", id = "effective-counter-width-physical-unit-and-wake-source-missing" },
   { axis = "hil", id = "controller-time-latch-and-wrap-cell-missing" },
   { axis = "async", id = "live-controller-runner-and-proven-absolute-recheck-source-missing" },
@@ -280,7 +280,7 @@ vendor-anchors = [
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
-  { axis = "implementation", id = "standalone-rf-ready-and-margin-policy-not-composed" },
+  { axis = "implementation", id = "standalone-rf-ready-policy-not-composed" },
   { axis = "vendor", id = "sleep-enabled-rf-wake-helper-contract-missing" },
   { axis = "hil", id = "dtm-tx-interval-tick-and-deadline-cell-missing" },
 ]

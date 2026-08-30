@@ -562,6 +562,7 @@ impl BluetoothDtmActiveReceiverCpuOwned {
         self.facts.phy
     }
 
+    #[cfg(test)]
     pub(crate) const fn margin(&self) -> BluetoothDtmSchedulerMargin {
         self.facts.margin
     }
@@ -1547,6 +1548,7 @@ impl BluetoothDtmActiveTransmitterCpuOwned {
         self.facts.timing
     }
 
+    #[cfg(test)]
     pub(crate) const fn margin(&self) -> BluetoothDtmSchedulerMargin {
         self.facts.margin
     }
@@ -1711,7 +1713,7 @@ mod tests {
     }
 
     fn margin() -> BluetoothDtmSchedulerMargin {
-        BluetoothDtmSchedulerMargin::from_image(8)
+        crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone().dtm_scheduler_margin()
     }
 
     fn tx_timing() -> crate::BluetoothDtmTxSchedulerTiming {
@@ -1725,17 +1727,17 @@ mod tests {
 
     fn tx_window() -> crate::BluetoothDtmTxEventWindow {
         tx_timing().initial_event_window(
+            crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
             BluetoothDtmSchedulerInstant::from_image(64),
-            BluetoothDtmSchedulerInstant::from_image(1_020),
-            margin(),
+            BluetoothDtmSchedulerInstant::from_image(1_118),
         )
     }
 
     fn rx_initial_window() -> crate::BluetoothDtmRxInitialEventWindow {
         crate::BluetoothDtmRxInitialEventWindow::new(
+            crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
             BluetoothDtmSchedulerInstant::from_image(64),
-            BluetoothDtmSchedulerInstant::from_image(1_020),
-            margin(),
+            BluetoothDtmSchedulerInstant::from_image(1_118),
         )
     }
 
@@ -1890,9 +1892,9 @@ mod tests {
         let committed_window = tx_window();
         let candidate_window = tx_timing()
             .advance_event_window(
+                crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
                 committed_window,
                 BluetoothDtmSchedulerInstant::from_image(1_100),
-                margin(),
             )
             .window();
         let facts = BluetoothDtmTransmitterCommandFacts {
@@ -1955,7 +1957,6 @@ mod tests {
             crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
             BluetoothDtmSchedulerInstant::from_image(1_100),
             BluetoothDtmSchedulerInstant::from_image(1_120),
-            margin(),
         );
         let facts = BluetoothDtmReceiverCommandFacts {
             link_state: reset,
@@ -2007,9 +2008,9 @@ mod tests {
                 .expect("zero dynamic fields are valid");
         let tx_candidate = tx_timing()
             .advance_event_window(
+                crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
                 tx_window(),
                 BluetoothDtmSchedulerInstant::from_image(1_100),
-                margin(),
             )
             .window();
         let tx_facts = BluetoothDtmTransmitterCommandFacts {
@@ -2048,7 +2049,6 @@ mod tests {
             crate::BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
             BluetoothDtmSchedulerInstant::from_image(1_100),
             BluetoothDtmSchedulerInstant::from_image(1_120),
-            margin(),
         );
         let recycled_rx = BluetoothDtmRecycledEvent::<BluetoothDtmReceiverEvent> {
             memory: owner(0x2f03_0000),

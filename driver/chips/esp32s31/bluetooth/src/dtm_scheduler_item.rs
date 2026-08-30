@@ -217,8 +217,7 @@ mod tests {
     use crate::{
         BluetoothControllerTimeSample, BluetoothDtmChannel, BluetoothDtmPhy, BluetoothDtmRole,
         BluetoothDtmRxInitialEventWindow, BluetoothDtmRxRecurringEventWindow,
-        BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerMargin,
-        BluetoothSchedulerSoftwareConfig,
+        BluetoothDtmSchedulerInstant, BluetoothSchedulerSoftwareConfig,
     };
     use open_esp_radio_esp32s31_bluetooth_memory::{
         BluetoothDtmReceiverEventPhase, BluetoothDtmSchedulerItemEventType,
@@ -229,7 +228,6 @@ mod tests {
             BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
             BluetoothDtmSchedulerInstant::from_image(900),
             BluetoothDtmSchedulerInstant::from_image(1_020),
-            BluetoothDtmSchedulerMargin::from_image(8),
         )
     }
 
@@ -272,9 +270,9 @@ mod tests {
             BluetoothDtmChannel::new(21).expect("channel is in the DTM domain"),
             BluetoothDtmPhy::LeCoded,
             BluetoothDtmRxInitialEventWindow::new(
+                BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
                 BluetoothDtmSchedulerInstant::from_image(64),
                 BluetoothDtmSchedulerInstant::from_image(1_020),
-                BluetoothDtmSchedulerMargin::from_image(8),
             ),
         )
         .expect("coded RX is accepted");

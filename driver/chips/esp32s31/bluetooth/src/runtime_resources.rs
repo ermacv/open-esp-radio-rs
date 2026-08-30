@@ -354,8 +354,8 @@ mod tests {
     use crate::{
         BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample, BluetoothDtmChannel,
         BluetoothDtmPhy, BluetoothDtmRxRecurringEventWindow, BluetoothDtmSchedulerInstant,
-        BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerMargin,
-        BluetoothDtmSchedulerTimingPolicy, BluetoothSchedulerSoftwareConfig,
+        BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerTimingPolicy,
+        BluetoothSchedulerSoftwareConfig,
     };
 
     #[test]
@@ -422,7 +422,6 @@ mod tests {
                 BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
                 BluetoothDtmSchedulerInstant::from_image(45),
                 BluetoothDtmSchedulerInstant::from_image(100),
-                BluetoothDtmSchedulerMargin::from_image(0),
             ),
         )
         .expect("receiver event is valid");

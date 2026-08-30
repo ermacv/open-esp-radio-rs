@@ -159,10 +159,11 @@ pub use dtm_event_prepare::{
     BluetoothDtmReceiverCpuOwned, BluetoothDtmReceiverEvent, BluetoothDtmRxCommittedWindow,
     BluetoothDtmSchedulerItemPhase, BluetoothDtmTransmitterEvent,
 };
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) use dtm_event_timing::BluetoothDtmSchedulerMargin;
 pub use dtm_event_timing::{
     BluetoothDtmRxInitialEventWindow, BluetoothDtmRxRecurringEventWindow,
-    BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerMargin, BluetoothDtmTxEventAdvance,
-    BluetoothDtmTxEventWindow,
+    BluetoothDtmSchedulerInstant, BluetoothDtmTxEventAdvance, BluetoothDtmTxEventWindow,
 };
 pub use dtm_link_state::{
     BluetoothDtmLinkStateReset, BluetoothDtmLinkStateResetError,

@@ -537,7 +537,7 @@ mod tests {
     use crate::{
         BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample, BluetoothDtmChannel,
         BluetoothDtmPhy, BluetoothDtmRxInitialEventWindow, BluetoothDtmRxRecurringEventWindow,
-        BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerMargin,
+        BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerItemEvent,
         BluetoothDtmSchedulerTimingPolicy, BluetoothSchedulerSoftwareConfig,
     };
 
@@ -556,16 +556,11 @@ mod tests {
         BluetoothControllerTimeSample::for_validation(raw_time)
     }
 
-    fn receiver_window(
-        current: u32,
-        rf_ready: u32,
-        margin: u8,
-    ) -> BluetoothDtmRxRecurringEventWindow {
+    fn receiver_window(current: u32, rf_ready: u32) -> BluetoothDtmRxRecurringEventWindow {
         BluetoothDtmRxRecurringEventWindow::new(
             BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
             BluetoothDtmSchedulerInstant::from_image(current),
             BluetoothDtmSchedulerInstant::from_image(rf_ready),
-            BluetoothDtmSchedulerMargin::from_image(margin),
         )
     }
 
@@ -582,9 +577,9 @@ mod tests {
             BluetoothDtmChannel::new(0).expect("channel zero is valid"),
             BluetoothDtmPhy::Le1M,
             BluetoothDtmRxInitialEventWindow::new(
+                BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
                 BluetoothDtmSchedulerInstant::from_image(0),
                 BluetoothDtmSchedulerInstant::from_image(0),
-                BluetoothDtmSchedulerMargin::from_image(0),
             ),
         )
         .expect("placeholder event is valid");
@@ -603,7 +598,7 @@ mod tests {
         let event = BluetoothDtmSchedulerItemEvent::new_recurring_receiver(
             BluetoothDtmChannel::new(0).expect("channel zero is valid"),
             BluetoothDtmPhy::Le1M,
-            receiver_window(0, 0, 0),
+            receiver_window(0, 0),
         )
         .expect("placeholder event is valid");
         timeline.reserve_recurring_raw_window(start, end, event, epoch, timing_policy())
@@ -744,9 +739,9 @@ mod tests {
             BluetoothDtmChannel::new(5).expect("channel is valid"),
             BluetoothDtmPhy::Le1M,
             BluetoothDtmRxInitialEventWindow::new(
+                BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
                 BluetoothDtmSchedulerInstant::from_image(900),
                 BluetoothDtmSchedulerInstant::from_image(1_020),
-                BluetoothDtmSchedulerMargin::from_image(8),
             ),
         )
         .expect("initial receiver event is valid");
@@ -757,7 +752,7 @@ mod tests {
             .expect("projected event passes its initial deadline");
 
         assert_eq!(reservation.window().start(), 310);
-        assert_eq!(reservation.window().end(), 562);
+        assert_eq!(reservation.window().end(), 586);
     }
 
     #[test]
@@ -767,16 +762,16 @@ mod tests {
             BluetoothDtmChannel::new(5).expect("channel is valid"),
             BluetoothDtmPhy::Le1M,
             BluetoothDtmRxInitialEventWindow::new(
+                BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
                 BluetoothDtmSchedulerInstant::from_image(900),
                 BluetoothDtmSchedulerInstant::from_image(1_020),
-                BluetoothDtmSchedulerMargin::from_image(8),
             ),
         )
         .expect("initial receiver event is valid");
         let recurring_event = BluetoothDtmSchedulerItemEvent::new_recurring_receiver(
             BluetoothDtmChannel::new(5).expect("channel is valid"),
             BluetoothDtmPhy::Le1M,
-            receiver_window(900, 1_020, 8),
+            receiver_window(900, 1_020),
         )
         .expect("recurring receiver event is valid");
         let mut timeline = BluetoothSchedulerTimeline::<1>::new();

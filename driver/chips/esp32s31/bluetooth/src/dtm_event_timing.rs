@@ -9,10 +9,14 @@
 
 #![forbid(unsafe_code)]
 
+#[cfg(any(target_arch = "riscv32", test))]
 use crate::BluetoothDtmTxSchedulerTiming;
 
+#[cfg(any(target_arch = "riscv32", test))]
 const INITIAL_ANCHOR_BASE_LEAD_TICKS: u32 = 440 + 500;
+#[cfg(any(target_arch = "riscv32", test))]
 const RX_RECURRING_ANCHOR_EXTRA_LEAD_TICKS: u32 = 15;
+#[cfg(any(target_arch = "riscv32", test))]
 const RX_EVENT_WINDOW_TICKS: u32 = 1_000;
 
 /// One positional instant in the BLE software-scheduler domain.
@@ -24,6 +28,7 @@ pub struct BluetoothDtmSchedulerInstant(u32);
 
 impl BluetoothDtmSchedulerInstant {
     /// Preserve one complete positional scheduler-time image.
+    #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) const fn from_image(image: u32) -> Self {
         Self(image)
     }
@@ -36,18 +41,18 @@ impl BluetoothDtmSchedulerInstant {
 
 /// The one-byte scheduler lead subtracted from a DTM event anchor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothDtmSchedulerMargin(u8);
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) struct BluetoothDtmSchedulerMargin(u8);
 
+#[cfg(any(target_arch = "riscv32", test))]
 impl BluetoothDtmSchedulerMargin {
-    /// Preserve the complete scheduler-environment byte image.
-    #[cfg(test)]
-    pub(crate) const fn from_image(image: u8) -> Self {
-        Self(image)
+    /// Construct the exact margin initialized by the reviewed standalone LLL.
+    pub(crate) const fn reviewed_standalone() -> Self {
+        Self(106)
     }
 
-    /// Return the complete scheduler-environment byte image.
-    pub const fn image(self) -> u8 {
-        self.0
+    const fn scheduler_delta(self) -> u32 {
+        self.0 as u32
     }
 }
 
@@ -104,11 +109,13 @@ struct BluetoothDtmRxEventWindowData {
 }
 
 impl BluetoothDtmRxEventWindowData {
-    const fn at(anchor: u32, margin: BluetoothDtmSchedulerMargin) -> Self {
+    #[cfg(any(target_arch = "riscv32", test))]
+    const fn at(anchor: u32, config: crate::BluetoothSchedulerSoftwareConfig) -> Self {
+        let margin = config.dtm_scheduler_margin();
         Self {
             anchor: BluetoothDtmSchedulerInstant::from_image(anchor),
             start: BluetoothDtmSchedulerInstant::from_image(
-                anchor.wrapping_sub(margin.image() as u32),
+                anchor.wrapping_sub(margin.scheduler_delta()),
             ),
             end: BluetoothDtmSchedulerInstant::from_image(
                 anchor.wrapping_add(RX_EVENT_WINDOW_TICKS),
@@ -130,18 +137,20 @@ impl BluetoothDtmRxInitialEventWindow {
     /// The first receiver event shares the reviewed 940-tick base lead with
     /// initial TX scheduling. This transform does not establish sample
     /// freshness.
-    pub const fn new(
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) const fn new(
+        config: crate::BluetoothSchedulerSoftwareConfig,
         current: BluetoothDtmSchedulerInstant,
         rf_ready: BluetoothDtmSchedulerInstant,
-        margin: BluetoothDtmSchedulerMargin,
     ) -> Self {
+        let margin = config.dtm_scheduler_margin();
         let nominal_anchor = current
             .image()
             .wrapping_add(INITIAL_ANCHOR_BASE_LEAD_TICKS)
-            .wrapping_add(margin.image() as u32);
+            .wrapping_add(margin.scheduler_delta());
         let anchor = later(nominal_anchor, rf_ready.image());
 
-        Self(BluetoothDtmRxEventWindowData::at(anchor, margin))
+        Self(BluetoothDtmRxEventWindowData::at(anchor, config))
     }
 
     /// Return the first receiver phase anchor retained for publication.
@@ -175,20 +184,21 @@ impl BluetoothDtmRxRecurringEventWindow {
     /// and the reviewed RX recurrence lead to a fresh current-time sample. A
     /// later fresh RF-ready image wins under the complete signed wrapping
     /// comparison. This pure transform does not establish sample freshness.
-    pub const fn new(
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) const fn new(
         config: crate::BluetoothSchedulerSoftwareConfig,
         current: BluetoothDtmSchedulerInstant,
         rf_ready: BluetoothDtmSchedulerInstant,
-        margin: BluetoothDtmSchedulerMargin,
     ) -> Self {
+        let margin = config.dtm_scheduler_margin();
         let nominal_anchor = current
             .image()
             .wrapping_add(config.late_start_guard_scheduler_delta())
-            .wrapping_add(margin.image() as u32)
+            .wrapping_add(margin.scheduler_delta())
             .wrapping_add(RX_RECURRING_ANCHOR_EXTRA_LEAD_TICKS);
         let anchor = later(nominal_anchor, rf_ready.image());
 
-        Self(BluetoothDtmRxEventWindowData::at(anchor, margin))
+        Self(BluetoothDtmRxEventWindowData::at(anchor, config))
     }
 
     /// Return the recurring receiver phase anchor retained for publication.
@@ -207,6 +217,7 @@ impl BluetoothDtmRxRecurringEventWindow {
     }
 }
 
+#[cfg(any(target_arch = "riscv32", test))]
 impl BluetoothDtmTxSchedulerTiming {
     /// Form the first TX window from ordered current-time and RF-ready images.
     ///
@@ -214,23 +225,24 @@ impl BluetoothDtmTxSchedulerTiming {
     /// 440-tick LLL setup image, the DTM body's literal 500 ticks and the
     /// scheduler margin. A later RF-ready image wins under the complete signed
     /// wrapping comparison.
-    pub const fn initial_event_window(
+    pub(crate) const fn initial_event_window(
         self,
+        config: crate::BluetoothSchedulerSoftwareConfig,
         current: BluetoothDtmSchedulerInstant,
         rf_ready: BluetoothDtmSchedulerInstant,
-        margin: BluetoothDtmSchedulerMargin,
     ) -> BluetoothDtmTxEventWindow {
+        let margin = config.dtm_scheduler_margin();
         let nominal_anchor = current
             .image()
             .wrapping_add(INITIAL_ANCHOR_BASE_LEAD_TICKS)
-            .wrapping_add(margin.image() as u32);
+            .wrapping_add(margin.scheduler_delta());
         let anchor = if is_before(nominal_anchor, rf_ready.image()) {
             rf_ready.image()
         } else {
             nominal_anchor
         };
 
-        self.window_at(anchor, margin)
+        self.window_at(config, anchor)
     }
 
     /// Advance one recurring TX window without the vendor's catch-up loop.
@@ -238,15 +250,16 @@ impl BluetoothDtmTxSchedulerTiming {
     /// At least one interval is always consumed. If that first start is late,
     /// unsigned ceiling division computes exactly how many additional phase-
     /// preserving intervals the complete body would add before returning.
-    pub const fn advance_event_window(
+    pub(crate) const fn advance_event_window(
         self,
+        config: crate::BluetoothSchedulerSoftwareConfig,
         previous: BluetoothDtmTxEventWindow,
         current: BluetoothDtmSchedulerInstant,
-        margin: BluetoothDtmSchedulerMargin,
     ) -> BluetoothDtmTxEventAdvance {
+        let margin = config.dtm_scheduler_margin();
         let interval = self.interval_ticks();
         let first_anchor = previous.anchor().image().wrapping_add(interval);
-        let first_start = first_anchor.wrapping_sub(margin.image() as u32);
+        let first_start = first_anchor.wrapping_sub(margin.scheduler_delta());
         let delta = first_start.wrapping_sub(current.image()) as i32;
         let extra_intervals = if delta < 0 {
             (delta.wrapping_neg() as u32).div_ceil(interval)
@@ -256,20 +269,21 @@ impl BluetoothDtmTxSchedulerTiming {
         let anchor = first_anchor.wrapping_add(extra_intervals * interval);
 
         BluetoothDtmTxEventAdvance {
-            window: self.window_at(anchor, margin),
+            window: self.window_at(config, anchor),
             intervals_advanced: extra_intervals + 1,
         }
     }
 
     const fn window_at(
         self,
+        config: crate::BluetoothSchedulerSoftwareConfig,
         anchor: u32,
-        margin: BluetoothDtmSchedulerMargin,
     ) -> BluetoothDtmTxEventWindow {
+        let margin = config.dtm_scheduler_margin();
         BluetoothDtmTxEventWindow {
             anchor: BluetoothDtmSchedulerInstant::from_image(anchor),
             start: BluetoothDtmSchedulerInstant::from_image(
-                anchor.wrapping_sub(margin.image() as u32),
+                anchor.wrapping_sub(margin.scheduler_delta()),
             ),
             end: BluetoothDtmSchedulerInstant::from_image(
                 anchor.wrapping_add(self.packet_window_ticks()),
@@ -278,10 +292,12 @@ impl BluetoothDtmTxSchedulerTiming {
     }
 }
 
+#[cfg(any(target_arch = "riscv32", test))]
 const fn is_before(lhs: u32, rhs: u32) -> bool {
     (lhs.wrapping_sub(rhs) as i32) < 0
 }
 
+#[cfg(any(target_arch = "riscv32", test))]
 const fn later(lhs: u32, rhs: u32) -> u32 {
     if is_before(lhs, rhs) { rhs } else { lhs }
 }
@@ -290,7 +306,7 @@ const fn later(lhs: u32, rhs: u32) -> u32 {
 mod tests {
     use super::{
         BluetoothDtmRxInitialEventWindow, BluetoothDtmRxRecurringEventWindow,
-        BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerMargin, BluetoothDtmTxEventWindow,
+        BluetoothDtmSchedulerInstant, BluetoothDtmTxEventWindow,
     };
     use crate::{
         BluetoothDtmPayloadLength, BluetoothDtmPhy, BluetoothDtmTxTimingMicros,
@@ -314,122 +330,106 @@ mod tests {
         BluetoothDtmSchedulerInstant::from_image(image)
     }
 
-    fn margin(image: u8) -> BluetoothDtmSchedulerMargin {
-        BluetoothDtmSchedulerMargin::from_image(image)
+    const fn config() -> BluetoothSchedulerSoftwareConfig {
+        BluetoothSchedulerSoftwareConfig::reviewed_standalone()
     }
 
     #[test]
     fn initial_receiver_window_selects_the_later_fresh_anchor() {
         let nominal =
-            BluetoothDtmRxInitialEventWindow::new(instant(1_000), instant(1_959), margin(20));
-        assert_eq!(nominal.anchor().image(), 1_960);
+            BluetoothDtmRxInitialEventWindow::new(config(), instant(1_000), instant(2_045));
+        assert_eq!(nominal.anchor().image(), 2_046);
         assert_eq!(nominal.start().image(), 1_940);
-        assert_eq!(nominal.end().image(), 2_960);
+        assert_eq!(nominal.end().image(), 3_046);
 
         let rf_limited =
-            BluetoothDtmRxInitialEventWindow::new(instant(1_000), instant(1_961), margin(20));
-        assert_eq!(rf_limited.anchor().image(), 1_961);
+            BluetoothDtmRxInitialEventWindow::new(config(), instant(1_000), instant(2_047));
+        assert_eq!(rf_limited.anchor().image(), 2_047);
         assert_eq!(rf_limited.start().image(), 1_941);
-        assert_eq!(rf_limited.end().image(), 2_961);
+        assert_eq!(rf_limited.end().image(), 3_047);
     }
 
     #[test]
     fn initial_receiver_window_uses_signed_wrapping_order() {
         let nominal =
-            BluetoothDtmRxInitialEventWindow::new(instant(0xffff_ffe0), instant(915), margin(8));
-        assert_eq!(nominal.anchor().image(), 916);
+            BluetoothDtmRxInitialEventWindow::new(config(), instant(0xffff_ffe0), instant(1_013));
+        assert_eq!(nominal.anchor().image(), 1_014);
         assert_eq!(nominal.start().image(), 908);
-        assert_eq!(nominal.end().image(), 1_916);
+        assert_eq!(nominal.end().image(), 2_014);
 
         let rf_limited =
-            BluetoothDtmRxInitialEventWindow::new(instant(0xffff_ffe0), instant(917), margin(8));
-        assert_eq!(rf_limited.anchor().image(), 917);
+            BluetoothDtmRxInitialEventWindow::new(config(), instant(0xffff_ffe0), instant(1_015));
+        assert_eq!(rf_limited.anchor().image(), 1_015);
     }
 
     #[test]
     fn recurring_receiver_window_selects_the_later_fresh_anchor() {
         let config = BluetoothSchedulerSoftwareConfig::reviewed_standalone();
 
-        let nominal = BluetoothDtmRxRecurringEventWindow::new(
-            config,
-            instant(1_000),
-            instant(1_074),
-            margin(20),
-        );
-        assert_eq!(nominal.anchor().image(), 1_075);
+        let nominal =
+            BluetoothDtmRxRecurringEventWindow::new(config, instant(1_000), instant(1_160));
+        assert_eq!(nominal.anchor().image(), 1_161);
         assert_eq!(nominal.start().image(), 1_055);
-        assert_eq!(nominal.end().image(), 2_075);
+        assert_eq!(nominal.end().image(), 2_161);
 
-        let rf_limited = BluetoothDtmRxRecurringEventWindow::new(
-            config,
-            instant(1_000),
-            instant(1_076),
-            margin(20),
-        );
-        assert_eq!(rf_limited.anchor().image(), 1_076);
+        let rf_limited =
+            BluetoothDtmRxRecurringEventWindow::new(config, instant(1_000), instant(1_162));
+        assert_eq!(rf_limited.anchor().image(), 1_162);
         assert_eq!(rf_limited.start().image(), 1_056);
-        assert_eq!(rf_limited.end().image(), 2_076);
+        assert_eq!(rf_limited.end().image(), 2_162);
     }
 
     #[test]
     fn recurring_receiver_window_uses_signed_wrapping_order() {
         let config = BluetoothSchedulerSoftwareConfig::reviewed_standalone();
 
-        let nominal = BluetoothDtmRxRecurringEventWindow::new(
-            config,
-            instant(0xffff_ffe0),
-            instant(30),
-            margin(8),
-        );
-        assert_eq!(nominal.anchor().image(), 31);
+        let nominal =
+            BluetoothDtmRxRecurringEventWindow::new(config, instant(0xffff_ffe0), instant(128));
+        assert_eq!(nominal.anchor().image(), 129);
         assert_eq!(nominal.start().image(), 23);
-        assert_eq!(nominal.end().image(), 1_031);
+        assert_eq!(nominal.end().image(), 1_129);
 
-        let rf_limited = BluetoothDtmRxRecurringEventWindow::new(
-            config,
-            instant(0xffff_ffe0),
-            instant(32),
-            margin(8),
-        );
-        assert_eq!(rf_limited.anchor().image(), 32);
+        let rf_limited =
+            BluetoothDtmRxRecurringEventWindow::new(config, instant(0xffff_ffe0), instant(130));
+        assert_eq!(rf_limited.anchor().image(), 130);
     }
 
     #[test]
     fn initial_window_selects_the_later_nominal_or_rf_ready_anchor() {
         let timing = timing(0, BluetoothDtmPhy::Le1M, 0);
 
-        let nominal = timing.initial_event_window(instant(1_000), instant(1_900), margin(20));
-        assert_eq!(nominal.anchor().image(), 1_960);
+        let nominal = timing.initial_event_window(config(), instant(1_000), instant(2_045));
+        assert_eq!(nominal.anchor().image(), 2_046);
         assert_eq!(nominal.start().image(), 1_940);
-        assert_eq!(nominal.end().image(), 4_096);
+        assert_eq!(nominal.end().image(), 4_182);
 
-        let rf_limited = timing.initial_event_window(instant(1_000), instant(2_000), margin(20));
-        assert_eq!(rf_limited.anchor().image(), 2_000);
-        assert_eq!(rf_limited.start().image(), 1_980);
-        assert_eq!(rf_limited.end().image(), 4_136);
+        let rf_limited = timing.initial_event_window(config(), instant(1_000), instant(2_100));
+        assert_eq!(rf_limited.anchor().image(), 2_100);
+        assert_eq!(rf_limited.start().image(), 1_994);
+        assert_eq!(rf_limited.end().image(), 4_236);
     }
 
     #[test]
     fn on_time_recurring_window_advances_exactly_one_interval() {
         let timing = timing(0, BluetoothDtmPhy::Le1M, 0);
-        let previous = timing.initial_event_window(instant(1_000), instant(2_000), margin(20));
-        let advance = timing.advance_event_window(previous, instant(2_600), margin(20));
+        let previous = timing.initial_event_window(config(), instant(1_000), instant(2_100));
+        let advance = timing.advance_event_window(config(), previous, instant(2_600));
 
         assert_eq!(advance.intervals_advanced(), 1);
-        assert_eq!(advance.window().anchor().image(), 2_625);
-        assert_eq!(advance.window().start().image(), 2_605);
-        assert_eq!(advance.window().end().image(), 4_761);
+        assert_eq!(advance.window().anchor().image(), 2_725);
+        assert_eq!(advance.window().start().image(), 2_619);
+        assert_eq!(advance.window().end().image(), 4_861);
     }
 
     #[test]
     fn late_recurring_window_preserves_phase_and_skips_in_constant_time() {
         let timing = timing(0, BluetoothDtmPhy::Le1M, 0);
-        let previous = timing.initial_event_window(instant(1_000), instant(2_000), margin(20));
-        let advance = timing.advance_event_window(previous, instant(4_000), margin(20));
+        let previous = timing.initial_event_window(config(), instant(1_000), instant(2_100));
+        let advance = timing.advance_event_window(config(), previous, instant(4_000));
 
         assert_eq!(advance.intervals_advanced(), 4);
-        assert_eq!(advance.window().anchor().image(), 4_500);
-        assert_eq!(advance.window().start().image(), 4_480);
+        assert_eq!(advance.window().anchor().image(), 4_600);
+        assert_eq!(advance.window().start().image(), 4_494);
     }
 
     #[test]
@@ -446,39 +446,32 @@ mod tests {
             for length in [0, 1, 37, 254, 255] {
                 for request in [0, 626, 17_501, u16::MAX] {
                     let timing = timing(length, phy, request);
-                    for margin in [0, 1, 31, u8::MAX] {
-                        let previous = BluetoothDtmTxEventWindow {
-                            anchor: instant(0xffff_f000),
-                            start: instant(0),
-                            end: instant(0),
-                        };
-                        for offset in current_offsets {
-                            let current = instant(previous.anchor().image().wrapping_add(offset));
-                            let actual = timing.advance_event_window(
-                                previous,
-                                current,
-                                super::BluetoothDtmSchedulerMargin::from_image(margin),
-                            );
+                    let previous = BluetoothDtmTxEventWindow {
+                        anchor: instant(0xffff_f000),
+                        start: instant(0),
+                        end: instant(0),
+                    };
+                    let margin = config().dtm_scheduler_margin().scheduler_delta();
+                    for offset in current_offsets {
+                        let current = instant(previous.anchor().image().wrapping_add(offset));
+                        let actual = timing.advance_event_window(config(), previous, current);
 
-                            let mut expected_anchor = previous
-                                .anchor()
-                                .image()
-                                .wrapping_add(timing.interval_ticks());
-                            let mut intervals = 1;
-                            while (expected_anchor
-                                .wrapping_sub(u32::from(margin))
-                                .wrapping_sub(current.image())
-                                as i32)
-                                < 0
-                            {
-                                expected_anchor =
-                                    expected_anchor.wrapping_add(timing.interval_ticks());
-                                intervals += 1;
-                            }
-
-                            assert_eq!(actual.window().anchor().image(), expected_anchor);
-                            assert_eq!(actual.intervals_advanced(), intervals);
+                        let mut expected_anchor = previous
+                            .anchor()
+                            .image()
+                            .wrapping_add(timing.interval_ticks());
+                        let mut intervals = 1;
+                        while (expected_anchor
+                            .wrapping_sub(margin)
+                            .wrapping_sub(current.image()) as i32)
+                            < 0
+                        {
+                            expected_anchor = expected_anchor.wrapping_add(timing.interval_ticks());
+                            intervals += 1;
                         }
+
+                        assert_eq!(actual.window().anchor().image(), expected_anchor);
+                        assert_eq!(actual.intervals_advanced(), intervals);
                     }
                 }
             }

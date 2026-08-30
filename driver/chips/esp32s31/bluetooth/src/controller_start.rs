@@ -2056,10 +2056,6 @@ where
     /// started here; its completion resolves overlap before a later private
     /// sequence request can be published.
     #[expect(
-        clippy::too_many_arguments,
-        reason = "the transaction retains the exact generic Controller and typed DTM inputs"
-    )]
-    #[expect(
         clippy::result_large_err,
         reason = "no-alloc begin failure retains the Controller and complete TX retry owner"
     )]
@@ -2070,7 +2066,6 @@ where
         channel: crate::BluetoothDtmChannel,
         phy: crate::BluetoothDtmPhy,
         requested_interval_micros: u16,
-        margin: crate::BluetoothDtmSchedulerMargin,
         rf_ready: crate::BluetoothDtmSchedulerInstant,
     ) -> Result<
         BluetoothDtmControllerPreparationPending<
@@ -2106,7 +2101,6 @@ where
                 channel,
                 phy,
                 requested_interval_micros,
-                margin,
                 now,
                 rf_ready,
             ) {
@@ -2139,7 +2133,6 @@ where
         link_state: crate::BluetoothDtmLinkStateReset,
         channel: crate::BluetoothDtmChannel,
         phy: crate::BluetoothDtmPhy,
-        margin: crate::BluetoothDtmSchedulerMargin,
         rf_ready: crate::BluetoothDtmSchedulerInstant,
     ) -> Result<
         BluetoothDtmControllerPreparationPending<
@@ -2169,7 +2162,7 @@ where
         let staged = match controller
             .initialized
             .dtm_scheduler_mut()
-            .stage_dtm_receiver_first_item(owner, link_state, channel, phy, margin, now, rf_ready)
+            .stage_dtm_receiver_first_item(owner, link_state, channel, phy, now, rf_ready)
         {
             Ok(staged) => staged,
             Err(failure) => {

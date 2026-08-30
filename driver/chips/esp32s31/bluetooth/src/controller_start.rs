@@ -1095,7 +1095,10 @@ where
         admission_sample: crate::BluetoothControllerTimeSample,
         sequence_sample: crate::BluetoothControllerTimeSample,
     ) -> Result<
-        crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmTransmitterEvent>,
+        crate::BluetoothDtmEmptySchedulerMergePrepared<
+            crate::BluetoothDtmTransmitterEvent,
+            crate::BluetoothDtmInitialSchedulerItemPhase,
+        >,
         crate::BluetoothDtmControllerTxPreparationFailure,
     > {
         self.initialized.prepare_dtm_transmitter_first_item(
@@ -1137,7 +1140,10 @@ where
         admission_sample: crate::BluetoothControllerTimeSample,
         sequence_sample: crate::BluetoothControllerTimeSample,
     ) -> Result<
-        crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmReceiverEvent>,
+        crate::BluetoothDtmEmptySchedulerMergePrepared<
+            crate::BluetoothDtmReceiverEvent,
+            crate::BluetoothDtmInitialSchedulerItemPhase,
+        >,
         crate::BluetoothDtmControllerRxPreparationFailure,
     > {
         self.initialized.prepare_dtm_receiver_first_item(
@@ -1166,7 +1172,10 @@ where
         epoch_sample: crate::BluetoothControllerTimeSample,
         sequence_sample: crate::BluetoothControllerTimeSample,
     ) -> Result<
-        crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmTransmitterEvent>,
+        crate::BluetoothDtmEmptySchedulerMergePrepared<
+            crate::BluetoothDtmTransmitterEvent,
+            crate::BluetoothDtmRecurringSchedulerItemPhase,
+        >,
         crate::BluetoothDtmControllerTxRecurringPreparationFailure,
     > {
         self.initialized.prepare_dtm_transmitter_recurring_item(
@@ -1190,7 +1199,10 @@ where
         epoch_sample: crate::BluetoothControllerTimeSample,
         sequence_sample: crate::BluetoothControllerTimeSample,
     ) -> Result<
-        crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmReceiverEvent>,
+        crate::BluetoothDtmEmptySchedulerMergePrepared<
+            crate::BluetoothDtmReceiverEvent,
+            crate::BluetoothDtmRecurringSchedulerItemPhase,
+        >,
         crate::BluetoothDtmControllerRxRecurringPreparationFailure,
     > {
         self.initialized.prepare_dtm_receiver_recurring_item(
@@ -1212,14 +1224,20 @@ where
     )]
     pub fn cancel_dtm_transmitter_first_item(
         &mut self,
-        merged: crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmTransmitterEvent>,
+        merged: crate::BluetoothDtmEmptySchedulerMergePrepared<
+            crate::BluetoothDtmTransmitterEvent,
+            crate::BluetoothDtmInitialSchedulerItemPhase,
+        >,
     ) -> Result<
         (
             open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmMemoryGraphCpuOwned,
             crate::BluetoothDtmPayloadPattern,
             crate::BluetoothDtmPayloadLength,
         ),
-        crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmTransmitterEvent>,
+        crate::BluetoothDtmEmptySchedulerMergePrepared<
+            crate::BluetoothDtmTransmitterEvent,
+            crate::BluetoothDtmInitialSchedulerItemPhase,
+        >,
     > {
         self.initialized.cancel_dtm_transmitter_first_item(merged)
     }
@@ -1234,12 +1252,63 @@ where
     )]
     pub fn cancel_dtm_receiver_first_item(
         &mut self,
-        merged: crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmReceiverEvent>,
+        merged: crate::BluetoothDtmEmptySchedulerMergePrepared<
+            crate::BluetoothDtmReceiverEvent,
+            crate::BluetoothDtmInitialSchedulerItemPhase,
+        >,
     ) -> Result<
         crate::BluetoothDtmReceiverCpuOwned,
-        crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmReceiverEvent>,
+        crate::BluetoothDtmEmptySchedulerMergePrepared<
+            crate::BluetoothDtmReceiverEvent,
+            crate::BluetoothDtmInitialSchedulerItemPhase,
+        >,
     > {
         self.initialized.cancel_dtm_receiver_first_item(merged)
+    }
+
+    /// Cancel one not-yet-published recurring TX item and recover its exact
+    /// active command owner.
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc identity failure retains the complete affine merged graph"
+    )]
+    pub fn cancel_dtm_transmitter_recurring_item(
+        &mut self,
+        merged: crate::BluetoothDtmEmptySchedulerMergePrepared<
+            crate::BluetoothDtmTransmitterEvent,
+            crate::BluetoothDtmRecurringSchedulerItemPhase,
+        >,
+    ) -> Result<
+        crate::BluetoothDtmActiveTransmitterCpuOwned,
+        crate::BluetoothDtmEmptySchedulerMergePrepared<
+            crate::BluetoothDtmTransmitterEvent,
+            crate::BluetoothDtmRecurringSchedulerItemPhase,
+        >,
+    > {
+        self.initialized
+            .cancel_dtm_transmitter_recurring_item(merged)
+    }
+
+    /// Cancel one not-yet-published recurring RX item and recover its exact
+    /// active command owner.
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc identity failure retains the complete affine merged graph"
+    )]
+    pub fn cancel_dtm_receiver_recurring_item(
+        &mut self,
+        merged: crate::BluetoothDtmEmptySchedulerMergePrepared<
+            crate::BluetoothDtmReceiverEvent,
+            crate::BluetoothDtmRecurringSchedulerItemPhase,
+        >,
+    ) -> Result<
+        crate::BluetoothDtmActiveReceiverCpuOwned,
+        crate::BluetoothDtmEmptySchedulerMergePrepared<
+            crate::BluetoothDtmReceiverEvent,
+            crate::BluetoothDtmRecurringSchedulerItemPhase,
+        >,
+    > {
+        self.initialized.cancel_dtm_receiver_recurring_item(merged)
     }
 
     /// Publish the exact merge-selected DTM scheduler head while every CPU
@@ -1254,13 +1323,16 @@ where
         clippy::result_large_err,
         reason = "pre-MMIO rejection returns the complete affine DTM graph"
     )]
-    pub fn publish_dtm_scheduler_head<Role>(
+    pub fn publish_dtm_scheduler_head<Role, Phase>(
         &mut self,
-        merged: crate::BluetoothDtmEmptySchedulerMergePrepared<Role>,
+        merged: crate::BluetoothDtmEmptySchedulerMergePrepared<Role, Phase>,
     ) -> Result<
         crate::BluetoothDtmSchedulerHeadPublished<Role>,
-        crate::BluetoothDtmSchedulerHeadPublicationFailure<Role>,
-    > {
+        crate::BluetoothDtmSchedulerHeadPublicationFailure<Role, Phase>,
+    >
+    where
+        Phase: crate::BluetoothDtmSchedulerItemPhase<Role>,
+    {
         self.initialized.publish_dtm_scheduler_head(merged)
     }
 

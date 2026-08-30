@@ -36,8 +36,9 @@ use open_esp_radio_esp32s31_hal::{
 };
 
 use crate::{
-    BluetoothDtmChannel, BluetoothDtmLinkStateReset, BluetoothDtmPayloadLength,
-    BluetoothDtmPayloadPattern, BluetoothDtmPhy, BluetoothDtmPreparedTxGraph, BluetoothDtmRole,
+    BluetoothDtmChannel, BluetoothDtmInitialSchedulerItemPhase, BluetoothDtmLinkStateReset,
+    BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern, BluetoothDtmPhy,
+    BluetoothDtmPreparedTxGraph, BluetoothDtmRecurringSchedulerItemPhase, BluetoothDtmRole,
     BluetoothDtmRxInitialEventWindow, BluetoothDtmRxRecurringEventWindow,
     BluetoothDtmSchedulerMargin, BluetoothDtmTxEventWindow, BluetoothDtmTxSchedulerTiming,
     BluetoothSchedulerReservation, BluetoothSchedulerSequenceReady,
@@ -76,8 +77,10 @@ pub(crate) struct BluetoothDtmReceiverCommandFacts {
 
 /// Exact receiver window most recently committed by the scheduler lifecycle.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum BluetoothDtmRxCommittedWindow {
+pub enum BluetoothDtmRxCommittedWindow {
+    /// Initial-window identity committed by the first completed RX event.
     Initial(BluetoothDtmRxInitialEventWindow),
+    /// Recurring-window identity committed by a later completed RX event.
     Recurring(BluetoothDtmRxRecurringEventWindow),
 }
 
@@ -308,7 +311,10 @@ impl BluetoothDtmReviewedEventWordsPlan<BluetoothDtmTransmitterEvent> {
         margin: BluetoothDtmSchedulerMargin,
         window: BluetoothDtmTxEventWindow,
     ) -> Result<
-        BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmTransmitterEvent>,
+        BluetoothDtmReviewedEventWordsPrepared<
+            BluetoothDtmTransmitterEvent,
+            BluetoothDtmInitialSchedulerItemPhase,
+        >,
         BluetoothDtmReviewedEventPrepareFailure<BluetoothDtmTransmitterEvent>,
     > {
         let plan = self;
@@ -341,10 +347,10 @@ impl BluetoothDtmReviewedEventWordsPlan<BluetoothDtmTransmitterEvent> {
             context: BluetoothDtmEventContext::Transmitter(BluetoothDtmTransmitterEventContext {
                 facts,
                 event_window: window,
-                previous: None,
             }),
+            rollback: (),
             reservation: plan.reservation,
-            _role: PhantomData,
+            _state: PhantomData,
         })
     }
 
@@ -360,7 +366,10 @@ impl BluetoothDtmReviewedEventWordsPlan<BluetoothDtmTransmitterEvent> {
         owner: BluetoothDtmActiveTransmitterCpuOwned,
         window: BluetoothDtmTxEventWindow,
     ) -> Result<
-        BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmTransmitterEvent>,
+        BluetoothDtmReviewedEventWordsPrepared<
+            BluetoothDtmTransmitterEvent,
+            BluetoothDtmRecurringSchedulerItemPhase,
+        >,
         BluetoothDtmRecurringTransmitterEventPrepareFailure,
     > {
         let plan = self;
@@ -390,13 +399,10 @@ impl BluetoothDtmReviewedEventWordsPlan<BluetoothDtmTransmitterEvent> {
             context: BluetoothDtmEventContext::Transmitter(BluetoothDtmTransmitterEventContext {
                 facts,
                 event_window: window,
-                previous: Some(BluetoothDtmTransmitterPreviousEvent {
-                    window: last_committed_window,
-                    status,
-                }),
             }),
+            rollback: (last_committed_window, status),
             reservation: plan.reservation,
-            _role: PhantomData,
+            _state: PhantomData,
         })
     }
 }
@@ -423,7 +429,10 @@ impl BluetoothDtmReviewedEventWordsPlan<BluetoothDtmReceiverEvent> {
         margin: BluetoothDtmSchedulerMargin,
         window: BluetoothDtmRxInitialEventWindow,
     ) -> Result<
-        BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmReceiverEvent>,
+        BluetoothDtmReviewedEventWordsPrepared<
+            BluetoothDtmReceiverEvent,
+            BluetoothDtmInitialSchedulerItemPhase,
+        >,
         BluetoothDtmReceiverEventPrepareFailure,
     > {
         let plan = self;
@@ -453,10 +462,10 @@ impl BluetoothDtmReviewedEventWordsPlan<BluetoothDtmReceiverEvent> {
                 facts,
                 session,
                 event_window: BluetoothDtmRxCommittedWindow::Initial(window),
-                previous_window: None,
             }),
+            rollback: (),
             reservation: plan.reservation,
-            _role: PhantomData,
+            _state: PhantomData,
         })
     }
 
@@ -472,7 +481,10 @@ impl BluetoothDtmReviewedEventWordsPlan<BluetoothDtmReceiverEvent> {
         owner: BluetoothDtmActiveReceiverCpuOwned,
         window: BluetoothDtmRxRecurringEventWindow,
     ) -> Result<
-        BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmReceiverEvent>,
+        BluetoothDtmReviewedEventWordsPrepared<
+            BluetoothDtmReceiverEvent,
+            BluetoothDtmRecurringSchedulerItemPhase,
+        >,
         BluetoothDtmRecurringReceiverEventPrepareFailure,
     > {
         let plan = self;
@@ -503,10 +515,10 @@ impl BluetoothDtmReviewedEventWordsPlan<BluetoothDtmReceiverEvent> {
                 facts,
                 session,
                 event_window: BluetoothDtmRxCommittedWindow::Recurring(window),
-                previous_window: Some(last_committed_window),
             }),
+            rollback: last_committed_window,
             reservation: plan.reservation,
-            _role: PhantomData,
+            _state: PhantomData,
         })
     }
 }
@@ -752,22 +764,15 @@ impl core::fmt::Debug for BluetoothDtmRecurringReceiverEventPrepareFailure {
     }
 }
 
-struct BluetoothDtmTransmitterPreviousEvent {
-    window: BluetoothDtmTxEventWindow,
-    status: BluetoothDtmSchedulerItemCompletionStatus,
-}
-
 struct BluetoothDtmTransmitterEventContext {
     facts: BluetoothDtmTransmitterCommandFacts,
     event_window: BluetoothDtmTxEventWindow,
-    previous: Option<BluetoothDtmTransmitterPreviousEvent>,
 }
 
 struct BluetoothDtmReceiverEventContext {
     facts: BluetoothDtmReceiverCommandFacts,
     session: BluetoothDtmReceiverSession,
     event_window: BluetoothDtmRxCommittedWindow,
-    previous_window: Option<BluetoothDtmRxCommittedWindow>,
 }
 
 enum BluetoothDtmEventContext {
@@ -775,34 +780,103 @@ enum BluetoothDtmEventContext {
     Receiver(BluetoothDtmReceiverEventContext),
 }
 
+mod phase_sealed {
+    pub trait Sealed<Role> {}
+}
+
+impl phase_sealed::Sealed<BluetoothDtmTransmitterEvent> for BluetoothDtmInitialSchedulerItemPhase {}
+
+impl phase_sealed::Sealed<BluetoothDtmTransmitterEvent>
+    for BluetoothDtmRecurringSchedulerItemPhase
+{
+}
+
+impl phase_sealed::Sealed<BluetoothDtmReceiverEvent> for BluetoothDtmInitialSchedulerItemPhase {}
+
+impl phase_sealed::Sealed<BluetoothDtmReceiverEvent> for BluetoothDtmRecurringSchedulerItemPhase {}
+
+/// Valid relation between a DTM event role and its preparation phase.
+///
+/// Initial preparation has no prior active owner. Recurring preparation must
+/// retain the committed window (and TX completion status) until publication,
+/// so cancellation can reconstruct that owner without inspecting runtime
+/// phase data. This trait is sealed: only the four supported TX/RX and
+/// initial/recurring relations can be formed.
+pub trait BluetoothDtmSchedulerItemPhase<Role>: phase_sealed::Sealed<Role> {
+    #[doc(hidden)]
+    type Rollback;
+}
+
+impl BluetoothDtmSchedulerItemPhase<BluetoothDtmTransmitterEvent>
+    for BluetoothDtmInitialSchedulerItemPhase
+{
+    type Rollback = ();
+}
+
+impl BluetoothDtmSchedulerItemPhase<BluetoothDtmTransmitterEvent>
+    for BluetoothDtmRecurringSchedulerItemPhase
+{
+    type Rollback = (
+        BluetoothDtmTxEventWindow,
+        BluetoothDtmSchedulerItemCompletionStatus,
+    );
+}
+
+impl BluetoothDtmSchedulerItemPhase<BluetoothDtmReceiverEvent>
+    for BluetoothDtmInitialSchedulerItemPhase
+{
+    type Rollback = ();
+}
+
+impl BluetoothDtmSchedulerItemPhase<BluetoothDtmReceiverEvent>
+    for BluetoothDtmRecurringSchedulerItemPhase
+{
+    type Rollback = BluetoothDtmRxCommittedWindow;
+}
+
 /// CPU-owned bound graph containing one role-consistent reviewed word image.
 ///
 /// The role marker preserves whether TX packet readiness was consumed into the
 /// event. This type exposes no packet mutation or publication operation.
-pub(crate) struct BluetoothDtmReviewedEventWordsPrepared<Role> {
+pub(crate) struct BluetoothDtmReviewedEventWordsPrepared<Role, Phase>
+where
+    Phase: BluetoothDtmSchedulerItemPhase<Role>,
+{
     memory: BluetoothDtmMemoryGraphPositionalEventPrepared,
     context: BluetoothDtmEventContext,
+    rollback: Phase::Rollback,
     reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
-    _role: PhantomData<Role>,
+    _state: PhantomData<(Role, Phase)>,
 }
 
-impl<Role> BluetoothDtmReviewedEventWordsPrepared<Role> {
+impl<Role, Phase> BluetoothDtmReviewedEventWordsPrepared<Role, Phase>
+where
+    Phase: BluetoothDtmSchedulerItemPhase<Role>,
+{
     /// Install the common scheduler bookkeeping prefix for this exact graph.
     ///
     /// The resulting state remains CPU-owned and cancellable. Only that later
     /// state may form a scheduler request; this prevents event words without
     /// the in-flight sentinel and cleared completion link from being admitted.
-    pub fn prepare_scheduler_bookkeeping(self) -> BluetoothDtmSchedulerBookkeepingPrepared<Role> {
+    pub fn prepare_scheduler_bookkeeping(
+        self,
+    ) -> BluetoothDtmSchedulerBookkeepingPrepared<Role, Phase> {
         BluetoothDtmSchedulerBookkeepingPrepared {
             memory: self.memory.prepare_scheduler_bookkeeping(),
             context: self.context,
+            rollback: self.rollback,
             reservation: self.reservation,
-            _role: PhantomData,
+            _state: PhantomData,
         }
     }
 }
 
-impl BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmTransmitterEvent> {
+impl
+    BluetoothDtmReviewedEventWordsPrepared<
+        BluetoothDtmTransmitterEvent,
+        BluetoothDtmInitialSchedulerItemPhase,
+    >
+{
     /// Cancel a first event before publication and recover ordinary ownership.
     pub(crate) fn cancel_first(
         self,
@@ -810,18 +884,21 @@ impl BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmTransmitterEvent> {
         BluetoothDtmMemoryGraphCpuOwned,
         BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
     ) {
-        let BluetoothDtmEventContext::Transmitter(context) = self.context else {
+        let BluetoothDtmEventContext::Transmitter(_) = self.context else {
             unreachable!()
         };
-        assert!(
-            context.previous.is_none(),
-            "a recurring TX event cannot cancel through the first-event path"
-        );
         (self.memory.cancel(), self.reservation)
     }
+}
 
+#[cfg(any(target_arch = "riscv32", test))]
+impl
+    BluetoothDtmReviewedEventWordsPrepared<
+        BluetoothDtmTransmitterEvent,
+        BluetoothDtmRecurringSchedulerItemPhase,
+    >
+{
     /// Cancel a recurring event and reconstruct the exact prior active owner.
-    #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) fn cancel_recurring(
         self,
     ) -> (
@@ -831,22 +908,25 @@ impl BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmTransmitterEvent> {
         let BluetoothDtmEventContext::Transmitter(context) = self.context else {
             unreachable!()
         };
-        let Some(previous) = context.previous else {
-            panic!("a first TX event cannot cancel through the recurring path")
-        };
+        let (last_committed_window, status) = self.rollback;
         (
             BluetoothDtmActiveTransmitterCpuOwned {
                 memory: self.memory.cancel(),
                 facts: context.facts,
-                last_committed_window: previous.window,
-                status: previous.status,
+                last_committed_window,
+                status,
             },
             self.reservation,
         )
     }
 }
 
-impl BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmReceiverEvent> {
+impl
+    BluetoothDtmReviewedEventWordsPrepared<
+        BluetoothDtmReceiverEvent,
+        BluetoothDtmInitialSchedulerItemPhase,
+    >
+{
     /// Cancel a first event without detaching the RX session from memory.
     pub(crate) fn cancel_first(
         self,
@@ -857,10 +937,6 @@ impl BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmReceiverEvent> {
         let BluetoothDtmEventContext::Receiver(context) = self.context else {
             unreachable!()
         };
-        assert!(
-            context.previous_window.is_none(),
-            "a recurring RX event cannot cancel through the first-event path"
-        );
         (
             BluetoothDtmReceiverCpuOwned {
                 memory: self.memory.cancel(),
@@ -869,9 +945,16 @@ impl BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmReceiverEvent> {
             self.reservation,
         )
     }
+}
 
+#[cfg(any(target_arch = "riscv32", test))]
+impl
+    BluetoothDtmReviewedEventWordsPrepared<
+        BluetoothDtmReceiverEvent,
+        BluetoothDtmRecurringSchedulerItemPhase,
+    >
+{
     /// Cancel a recurring event and reconstruct the exact prior active owner.
-    #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) fn cancel_recurring(
         self,
     ) -> (
@@ -881,15 +964,12 @@ impl BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmReceiverEvent> {
         let BluetoothDtmEventContext::Receiver(context) = self.context else {
             unreachable!()
         };
-        let Some(previous_window) = context.previous_window else {
-            panic!("a first RX event cannot cancel through the recurring path")
-        };
         (
             BluetoothDtmActiveReceiverCpuOwned {
                 memory: self.memory.cancel(),
                 facts: context.facts,
                 session: context.session,
-                last_committed_window: previous_window,
+                last_committed_window: self.rollback,
             },
             self.reservation,
         )
@@ -902,43 +982,55 @@ impl BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmReceiverEvent> {
 /// private packet-engine latch and visibility fence are deliberately absent
 /// from this state.
 #[must_use = "the scheduler-prepared DTM graph must remain owned or be cancelled"]
-pub(crate) struct BluetoothDtmSchedulerBookkeepingPrepared<Role> {
+pub(crate) struct BluetoothDtmSchedulerBookkeepingPrepared<Role, Phase>
+where
+    Phase: BluetoothDtmSchedulerItemPhase<Role>,
+{
     memory: BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared,
     context: BluetoothDtmEventContext,
+    rollback: Phase::Rollback,
     reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
-    _role: PhantomData<Role>,
+    _state: PhantomData<(Role, Phase)>,
 }
 
-impl<Role> BluetoothDtmSchedulerBookkeepingPrepared<Role> {
+impl<Role, Phase> BluetoothDtmSchedulerBookkeepingPrepared<Role, Phase>
+where
+    Phase: BluetoothDtmSchedulerItemPhase<Role>,
+{
     /// Return the typed controller-SRAM identity of the retained item.
     #[cfg(target_arch = "riscv32")]
     pub const fn scheduler_item_address(&self) -> BluetoothControllerSramAddress {
         self.memory.scheduler_item_address()
     }
 
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn prepare_empty_list_link(self) -> BluetoothDtmEmptyListLinkPrepared<Role> {
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) fn prepare_empty_list_link(self) -> BluetoothDtmEmptyListLinkPrepared<Role, Phase> {
         BluetoothDtmEmptyListLinkPrepared {
             memory: self.memory.prepare_empty_list_link(),
             context: self.context,
+            rollback: self.rollback,
             _reservation: self.reservation,
-            _role: PhantomData,
+            _state: PhantomData,
         }
     }
 
     /// Cancel before publication and recover the prepared event words.
-    pub fn cancel(self) -> BluetoothDtmReviewedEventWordsPrepared<Role> {
+    pub fn cancel(self) -> BluetoothDtmReviewedEventWordsPrepared<Role, Phase> {
         BluetoothDtmReviewedEventWordsPrepared {
             memory: self.memory.cancel(),
             context: self.context,
+            rollback: self.rollback,
             reservation: self.reservation,
-            _role: PhantomData,
+            _state: PhantomData,
         }
     }
 }
 
 #[cfg(target_arch = "riscv32")]
-impl BluetoothDtmSchedulerBookkeepingPrepared<BluetoothDtmTransmitterEvent> {
+impl<Phase> BluetoothDtmSchedulerBookkeepingPrepared<BluetoothDtmTransmitterEvent, Phase>
+where
+    Phase: BluetoothDtmSchedulerItemPhase<BluetoothDtmTransmitterEvent>,
+{
     /// Return the exact standard pattern retained from packet preparation.
     pub(crate) const fn packet_pattern(&self) -> BluetoothDtmPayloadPattern {
         match &self.context {
@@ -962,15 +1054,22 @@ impl BluetoothDtmSchedulerBookkeepingPrepared<BluetoothDtmTransmitterEvent> {
 /// exclusive empty-list epoch. Keeping this type crate-private prevents a
 /// memory-only transition from being mistaken for list ownership.
 #[cfg(any(target_arch = "riscv32", test))]
-pub(crate) struct BluetoothDtmEmptyListLinkPrepared<Role> {
+pub(crate) struct BluetoothDtmEmptyListLinkPrepared<Role, Phase>
+where
+    Phase: BluetoothDtmSchedulerItemPhase<Role>,
+{
     memory: BluetoothDtmMemoryGraphEmptyListLinkPrepared,
     context: BluetoothDtmEventContext,
+    rollback: Phase::Rollback,
     _reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
-    _role: PhantomData<Role>,
+    _state: PhantomData<(Role, Phase)>,
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
-impl<Role> BluetoothDtmEmptyListLinkPrepared<Role> {
+impl<Role, Phase> BluetoothDtmEmptyListLinkPrepared<Role, Phase>
+where
+    Phase: BluetoothDtmSchedulerItemPhase<Role>,
+{
     pub(crate) const fn role(&self) -> BluetoothDtmRole {
         match &self.context {
             BluetoothDtmEventContext::Transmitter(_) => BluetoothDtmRole::Transmitter,
@@ -991,21 +1090,32 @@ impl<Role> BluetoothDtmEmptyListLinkPrepared<Role> {
         self,
         publication: &BluetoothSchedulerHardwareListHeadPublished,
     ) -> BluetoothDtmHardwareOwnedEvent<Role> {
+        // The publication proof is the sole edge that may discard the
+        // pre-publication rollback phase. Hardware-owned events can no longer
+        // cancel back into either the fresh or active CPU owner.
+        let Self {
+            memory,
+            context,
+            rollback: _,
+            _reservation,
+            _state: _,
+        } = self;
         BluetoothDtmHardwareOwnedEvent {
-            memory: self.memory.into_hardware_owned(publication),
-            context: self.context,
-            _reservation: self._reservation,
+            memory: memory.into_hardware_owned(publication),
+            context,
+            _reservation,
             _role: PhantomData,
         }
     }
 
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn cancel(self) -> BluetoothDtmSchedulerBookkeepingPrepared<Role> {
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) fn cancel(self) -> BluetoothDtmSchedulerBookkeepingPrepared<Role, Phase> {
         BluetoothDtmSchedulerBookkeepingPrepared {
             memory: self.memory.cancel(),
             context: self.context,
+            rollback: self.rollback,
             reservation: self._reservation,
-            _role: PhantomData,
+            _state: PhantomData,
         }
     }
 }
@@ -1524,7 +1634,10 @@ impl BluetoothDtmRxRearmedEvent {
 }
 
 #[cfg(test)]
-impl BluetoothDtmSchedulerBookkeepingPrepared<BluetoothDtmTransmitterEvent> {
+impl<Phase> BluetoothDtmSchedulerBookkeepingPrepared<BluetoothDtmTransmitterEvent, Phase>
+where
+    Phase: BluetoothDtmSchedulerItemPhase<BluetoothDtmTransmitterEvent>,
+{
     /// Return the exact standard pattern retained through bookkeeping.
     pub const fn packet_pattern(&self) -> BluetoothDtmPayloadPattern {
         match &self.context {
@@ -1558,7 +1671,7 @@ mod tests {
         BluetoothDtmReviewedEventWordsPlan, BluetoothDtmReviewedEventWordsPlanError,
         BluetoothDtmRxCommittedWindow, BluetoothDtmTestEndReport,
         BluetoothDtmTransmitterCommandFacts, BluetoothDtmTransmitterEvent,
-        BluetoothDtmTransmitterEventContext, BluetoothDtmTransmitterPreviousEvent,
+        BluetoothDtmTransmitterEventContext,
     };
     use crate::scheduler_timeline::BluetoothSchedulerTimeline;
     use crate::{
@@ -1722,7 +1835,10 @@ mod tests {
             BluetoothDtmPayloadPattern::Repeated11110000
         );
         assert_eq!(scheduler_prepared.packet_length().hci_image(), 3);
-        let prepared = scheduler_prepared.cancel();
+        let prepared = scheduler_prepared
+            .prepare_empty_list_link()
+            .cancel()
+            .cancel();
         let (_owner, reservation) = prepared.cancel_first();
         assert!(timeline.release(reservation).is_ok());
         assert!(timeline.is_empty());
@@ -1749,7 +1865,11 @@ mod tests {
             )
             .expect("the bound graph accepts the receiver plan");
         let scheduler_prepared = prepared.prepare_scheduler_bookkeeping();
-        let (owner, reservation) = scheduler_prepared.cancel().cancel_first();
+        let (owner, reservation) = scheduler_prepared
+            .prepare_empty_list_link()
+            .cancel()
+            .cancel()
+            .cancel_first();
 
         assert_eq!(owner.received_packet_count(), 0);
         assert!(timeline.release(reservation).is_ok());
@@ -1807,6 +1927,8 @@ mod tests {
             .expect("active TX graph accepts recurring preparation");
         let (active, reservation) = prepared
             .prepare_scheduler_bookkeeping()
+            .prepare_empty_list_link()
+            .cancel()
             .cancel()
             .cancel_recurring();
 
@@ -1864,6 +1986,8 @@ mod tests {
             .expect("active RX graph accepts recurring preparation");
         let (active, reservation) = prepared
             .prepare_scheduler_bookkeeping()
+            .prepare_empty_list_link()
+            .cancel()
             .cancel()
             .cancel_recurring();
 
@@ -1902,12 +2026,6 @@ mod tests {
             context: BluetoothDtmEventContext::Transmitter(BluetoothDtmTransmitterEventContext {
                 facts: tx_facts,
                 event_window: tx_candidate,
-                previous: Some(BluetoothDtmTransmitterPreviousEvent {
-                    window: tx_window(),
-                    status: BluetoothDtmSchedulerItemCompletionStatus::NonSuccess(
-                        core::num::NonZeroU32::new(1).expect("one is nonzero"),
-                    ),
-                }),
             }),
             status: BluetoothDtmSchedulerItemCompletionStatus::Success,
             _role: core::marker::PhantomData,
@@ -1943,7 +2061,6 @@ mod tests {
                 },
                 session: crate::dtm_rx_completion::BluetoothDtmReceiverSession::new(),
                 event_window: BluetoothDtmRxCommittedWindow::Recurring(rx_candidate),
-                previous_window: Some(BluetoothDtmRxCommittedWindow::Initial(rx_initial_window())),
             }),
             status: BluetoothDtmSchedulerItemCompletionStatus::Success,
             _role: core::marker::PhantomData,

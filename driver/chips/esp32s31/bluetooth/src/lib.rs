@@ -147,7 +147,8 @@ pub use dtm_event_prepare::{
 };
 #[cfg(any(target_arch = "riscv32", test))]
 pub use dtm_event_prepare::{
-    BluetoothDtmReceiverCpuOwned, BluetoothDtmReceiverEvent, BluetoothDtmTransmitterEvent,
+    BluetoothDtmReceiverCpuOwned, BluetoothDtmReceiverEvent, BluetoothDtmRxCommittedWindow,
+    BluetoothDtmSchedulerItemPhase, BluetoothDtmTransmitterEvent,
 };
 pub use dtm_event_timing::{
     BluetoothDtmRxInitialEventWindow, BluetoothDtmRxRecurringEventWindow,
@@ -249,7 +250,8 @@ pub use runtime_resources::{
 #[cfg(any(target_arch = "riscv32", test))]
 pub use scheduler::{
     BluetoothDtmControllerEventPreparationError, BluetoothDtmEmptySchedulerMergeError,
-    BluetoothDtmEmptySchedulerMergePrepared, BluetoothDtmSchedulerHeadPublicationError,
+    BluetoothDtmEmptySchedulerMergePrepared, BluetoothDtmInitialSchedulerItemPhase,
+    BluetoothDtmRecurringSchedulerItemPhase, BluetoothDtmSchedulerHeadPublicationError,
     BluetoothDtmSchedulerHeadPublicationFailure, BluetoothDtmSchedulerHeadPublished,
     BluetoothDtmSchedulerRunning, BluetoothSchedulerInitialized,
 };

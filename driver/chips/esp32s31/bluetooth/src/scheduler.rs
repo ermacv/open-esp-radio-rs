@@ -12,7 +12,10 @@ use crate::{
     BluetoothControllerInterruptRuntime, BluetoothControllerPoweredTaskRuntime,
     BluetoothControllerRuntimeResources, BluetoothDtmRole,
     controller_hal::BluetoothControllerHalInitialized,
-    dtm_event_prepare::{BluetoothDtmEmptyListLinkPrepared, BluetoothDtmHardwareOwnedEvent},
+    dtm_event_prepare::{
+        BluetoothDtmEmptyListLinkPrepared, BluetoothDtmHardwareOwnedEvent,
+        BluetoothDtmSchedulerItemPhase,
+    },
     resources::{
         BluetoothInterruptBankOwner, BluetoothTaskResources, BluetoothTeardownPendingPlatform,
     },
@@ -412,35 +415,47 @@ impl core::fmt::Debug for BluetoothDtmControllerRxRecurringPreparationFailure {
 /// Lossless failure to join a DTM item to the exclusive empty scheduler list.
 #[must_use = "the unchanged scheduler-prepared item remains CPU-owned"]
 #[cfg(target_arch = "riscv32")]
-pub(crate) struct BluetoothDtmEmptySchedulerMergeFailure<Role> {
+pub(crate) struct BluetoothDtmEmptySchedulerMergeFailure<Role, Phase>
+where
+    Phase: BluetoothDtmSchedulerItemPhase<Role>,
+{
     error: BluetoothDtmEmptySchedulerMergeError,
-    item: BluetoothDtmSchedulerBookkeepingPrepared<Role>,
+    item: BluetoothDtmSchedulerBookkeepingPrepared<Role, Phase>,
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<Role> BluetoothDtmEmptySchedulerMergeFailure<Role> {
+impl<Role, Phase> BluetoothDtmEmptySchedulerMergeFailure<Role, Phase>
+where
+    Phase: BluetoothDtmSchedulerItemPhase<Role>,
+{
     /// Exact reason the list owner rejected this item.
     pub(crate) const fn error(&self) -> BluetoothDtmEmptySchedulerMergeError {
         self.error
     }
 
     /// Recover the unchanged CPU-owned item for retry or cancellation.
-    pub(crate) fn into_item(self) -> BluetoothDtmSchedulerBookkeepingPrepared<Role> {
+    pub(crate) fn into_item(self) -> BluetoothDtmSchedulerBookkeepingPrepared<Role, Phase> {
         self.item
     }
 }
 
-/// First DTM item joined to one exclusive, previously empty scheduler epoch.
+/// Sole DTM item joined to one exclusive, previously empty scheduler epoch.
 ///
 /// The item-side descriptor transform and source-owned list state now agree on
 /// one exact identity. This remains CPU-owned: no visibility fence, hardware
 /// head, RUN command or radio-completion authority has been granted.
 #[must_use = "the merged item must be published through the same scheduler or cancelled"]
-pub struct BluetoothDtmEmptySchedulerMergePrepared<Role> {
-    item: BluetoothDtmEmptyListLinkPrepared<Role>,
+pub struct BluetoothDtmEmptySchedulerMergePrepared<Role, Phase>
+where
+    Phase: BluetoothDtmSchedulerItemPhase<Role>,
+{
+    item: BluetoothDtmEmptyListLinkPrepared<Role, Phase>,
 }
 
-impl<Role> BluetoothDtmEmptySchedulerMergePrepared<Role> {
+impl<Role, Phase> BluetoothDtmEmptySchedulerMergePrepared<Role, Phase>
+where
+    Phase: BluetoothDtmSchedulerItemPhase<Role>,
+{
     /// Role retained by the exact prepared graph.
     pub const fn role(&self) -> BluetoothDtmRole {
         self.item.role()
@@ -455,6 +470,23 @@ impl<Role> BluetoothDtmEmptySchedulerMergePrepared<Role> {
     pub const fn hardware_list_index(&self) -> BluetoothSchedulerHardwareListIndex {
         self.item.hardware_list_index()
     }
+}
+
+/// Type-level proof that a merged DTM item is the command's first event.
+///
+/// The marker is created only by the Controller preparation transaction. It
+/// keeps lossless first-event cancellation separate from recurring-session
+/// recovery before the scheduler head becomes visible to hardware.
+pub struct BluetoothDtmInitialSchedulerItemPhase {
+    _private: (),
+}
+
+/// Type-level proof that a merged DTM item belongs to an active command.
+///
+/// A recurring merge can only cancel back into its exact active owner; it
+/// cannot cross the first-event recovery edge.
+pub struct BluetoothDtmRecurringSchedulerItemPhase {
+    _private: (),
 }
 
 /// Why a prepared first-item merge could not publish its scheduler head.
@@ -476,19 +508,25 @@ impl From<BluetoothSchedulerHardwareListHeadError> for BluetoothDtmSchedulerHead
 
 /// Lossless rejection before scheduler-head MMIO publication.
 #[must_use = "the unchanged CPU-owned merge can still be retried or cancelled"]
-pub struct BluetoothDtmSchedulerHeadPublicationFailure<Role> {
+pub struct BluetoothDtmSchedulerHeadPublicationFailure<Role, Phase>
+where
+    Phase: BluetoothDtmSchedulerItemPhase<Role>,
+{
     error: BluetoothDtmSchedulerHeadPublicationError,
-    merged: BluetoothDtmEmptySchedulerMergePrepared<Role>,
+    merged: BluetoothDtmEmptySchedulerMergePrepared<Role, Phase>,
 }
 
-impl<Role> BluetoothDtmSchedulerHeadPublicationFailure<Role> {
+impl<Role, Phase> BluetoothDtmSchedulerHeadPublicationFailure<Role, Phase>
+where
+    Phase: BluetoothDtmSchedulerItemPhase<Role>,
+{
     /// Exact reason no scheduler head was published.
     pub const fn error(&self) -> BluetoothDtmSchedulerHeadPublicationError {
         self.error
     }
 
     /// Recover the unchanged CPU-owned merge.
-    pub fn into_merged(self) -> BluetoothDtmEmptySchedulerMergePrepared<Role> {
+    pub fn into_merged(self) -> BluetoothDtmEmptySchedulerMergePrepared<Role, Phase> {
         self.merged
     }
 }
@@ -1090,7 +1128,10 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         admission_sample: BluetoothControllerTimeSample,
         sequence_sample: BluetoothControllerTimeSample,
     ) -> Result<
-        BluetoothDtmEmptySchedulerMergePrepared<BluetoothDtmTransmitterEvent>,
+        BluetoothDtmEmptySchedulerMergePrepared<
+            BluetoothDtmTransmitterEvent,
+            BluetoothDtmInitialSchedulerItemPhase,
+        >,
         BluetoothDtmControllerTxPreparationFailure,
     > {
         if link_state.role() != BluetoothDtmRole::Transmitter {
@@ -1197,7 +1238,10 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         admission_sample: BluetoothControllerTimeSample,
         sequence_sample: BluetoothControllerTimeSample,
     ) -> Result<
-        BluetoothDtmEmptySchedulerMergePrepared<BluetoothDtmReceiverEvent>,
+        BluetoothDtmEmptySchedulerMergePrepared<
+            BluetoothDtmReceiverEvent,
+            BluetoothDtmInitialSchedulerItemPhase,
+        >,
         BluetoothDtmControllerRxPreparationFailure,
     > {
         if link_state.role() != BluetoothDtmRole::Receiver {
@@ -1286,7 +1330,10 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         epoch_sample: BluetoothControllerTimeSample,
         sequence_sample: BluetoothControllerTimeSample,
     ) -> Result<
-        BluetoothDtmEmptySchedulerMergePrepared<BluetoothDtmTransmitterEvent>,
+        BluetoothDtmEmptySchedulerMergePrepared<
+            BluetoothDtmTransmitterEvent,
+            BluetoothDtmRecurringSchedulerItemPhase,
+        >,
         BluetoothDtmControllerTxRecurringPreparationFailure,
     > {
         let next_window = owner
@@ -1374,7 +1421,10 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         epoch_sample: BluetoothControllerTimeSample,
         sequence_sample: BluetoothControllerTimeSample,
     ) -> Result<
-        BluetoothDtmEmptySchedulerMergePrepared<BluetoothDtmReceiverEvent>,
+        BluetoothDtmEmptySchedulerMergePrepared<
+            BluetoothDtmReceiverEvent,
+            BluetoothDtmRecurringSchedulerItemPhase,
+        >,
         BluetoothDtmControllerRxRecurringPreparationFailure,
     > {
         let next_window =
@@ -1455,13 +1505,16 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         reason = "the no-alloc failure returns the complete affine CPU-owned DTM item"
     )]
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn prepare_dtm_empty_list_merge<Role>(
+    pub(crate) fn prepare_dtm_empty_list_merge<Role, Phase>(
         &mut self,
-        item: BluetoothDtmSchedulerBookkeepingPrepared<Role>,
+        item: BluetoothDtmSchedulerBookkeepingPrepared<Role, Phase>,
     ) -> Result<
-        BluetoothDtmEmptySchedulerMergePrepared<Role>,
-        BluetoothDtmEmptySchedulerMergeFailure<Role>,
-    > {
+        BluetoothDtmEmptySchedulerMergePrepared<Role, Phase>,
+        BluetoothDtmEmptySchedulerMergeFailure<Role, Phase>,
+    >
+    where
+        Phase: BluetoothDtmSchedulerItemPhase<Role>,
+    {
         let address = item.scheduler_item_address();
         if let Err(error) = self._scheduler_list.prepare_first_item(address) {
             return Err(BluetoothDtmEmptySchedulerMergeFailure { error, item });
@@ -1471,7 +1524,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         })
     }
 
-    /// Cancel a not-yet-published first-item merge through the same epoch.
+    /// Cancel a not-yet-published sole-item merge through the same epoch.
     ///
     /// A state from another or already advanced scheduler is returned
     /// unchanged and cannot reopen this list.
@@ -1480,13 +1533,16 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         reason = "the no-alloc identity failure returns the complete affine merged item"
     )]
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn cancel_dtm_empty_list_merge<Role>(
+    pub(crate) fn cancel_dtm_empty_list_merge<Role, Phase>(
         &mut self,
-        merged: BluetoothDtmEmptySchedulerMergePrepared<Role>,
+        merged: BluetoothDtmEmptySchedulerMergePrepared<Role, Phase>,
     ) -> Result<
-        BluetoothDtmSchedulerBookkeepingPrepared<Role>,
-        BluetoothDtmEmptySchedulerMergePrepared<Role>,
-    > {
+        BluetoothDtmSchedulerBookkeepingPrepared<Role, Phase>,
+        BluetoothDtmEmptySchedulerMergePrepared<Role, Phase>,
+    >
+    where
+        Phase: BluetoothDtmSchedulerItemPhase<Role>,
+    {
         if !self
             ._scheduler_list
             .cancel_first_item(merged.scheduler_item_address())
@@ -1505,14 +1561,20 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     )]
     pub(crate) fn cancel_dtm_transmitter_first_item(
         &mut self,
-        merged: BluetoothDtmEmptySchedulerMergePrepared<BluetoothDtmTransmitterEvent>,
+        merged: BluetoothDtmEmptySchedulerMergePrepared<
+            BluetoothDtmTransmitterEvent,
+            BluetoothDtmInitialSchedulerItemPhase,
+        >,
     ) -> Result<
         (
             BluetoothDtmMemoryGraphCpuOwned,
             BluetoothDtmPayloadPattern,
             BluetoothDtmPayloadLength,
         ),
-        BluetoothDtmEmptySchedulerMergePrepared<BluetoothDtmTransmitterEvent>,
+        BluetoothDtmEmptySchedulerMergePrepared<
+            BluetoothDtmTransmitterEvent,
+            BluetoothDtmInitialSchedulerItemPhase,
+        >,
     > {
         let item = self.cancel_dtm_empty_list_merge(merged)?;
         let pattern = item.packet_pattern();
@@ -1531,10 +1593,16 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     )]
     pub(crate) fn cancel_dtm_receiver_first_item(
         &mut self,
-        merged: BluetoothDtmEmptySchedulerMergePrepared<BluetoothDtmReceiverEvent>,
+        merged: BluetoothDtmEmptySchedulerMergePrepared<
+            BluetoothDtmReceiverEvent,
+            BluetoothDtmInitialSchedulerItemPhase,
+        >,
     ) -> Result<
         BluetoothDtmReceiverCpuOwned,
-        BluetoothDtmEmptySchedulerMergePrepared<BluetoothDtmReceiverEvent>,
+        BluetoothDtmEmptySchedulerMergePrepared<
+            BluetoothDtmReceiverEvent,
+            BluetoothDtmInitialSchedulerItemPhase,
+        >,
     > {
         let item = self.cancel_dtm_empty_list_merge(merged)?;
         let (owner, reservation) = item.cancel().cancel_first();
@@ -1542,7 +1610,59 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         Ok(owner)
     }
 
-    /// Publish the merge-selected first item after the complete hardware
+    /// Cancel one not-yet-published recurring TX event and recover the exact
+    /// active command owner retained before this candidate was prepared.
+    #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc identity failure retains the complete affine merged graph"
+    )]
+    pub(crate) fn cancel_dtm_transmitter_recurring_item(
+        &mut self,
+        merged: BluetoothDtmEmptySchedulerMergePrepared<
+            BluetoothDtmTransmitterEvent,
+            BluetoothDtmRecurringSchedulerItemPhase,
+        >,
+    ) -> Result<
+        BluetoothDtmActiveTransmitterCpuOwned,
+        BluetoothDtmEmptySchedulerMergePrepared<
+            BluetoothDtmTransmitterEvent,
+            BluetoothDtmRecurringSchedulerItemPhase,
+        >,
+    > {
+        let item = self.cancel_dtm_empty_list_merge(merged)?;
+        let (owner, reservation) = item.cancel().cancel_recurring();
+        self.release_dtm_reservation(reservation);
+        Ok(owner)
+    }
+
+    /// Cancel one not-yet-published recurring RX event and recover the exact
+    /// active command owner retained before this candidate was prepared.
+    #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc identity failure retains the complete affine merged graph"
+    )]
+    pub(crate) fn cancel_dtm_receiver_recurring_item(
+        &mut self,
+        merged: BluetoothDtmEmptySchedulerMergePrepared<
+            BluetoothDtmReceiverEvent,
+            BluetoothDtmRecurringSchedulerItemPhase,
+        >,
+    ) -> Result<
+        BluetoothDtmActiveReceiverCpuOwned,
+        BluetoothDtmEmptySchedulerMergePrepared<
+            BluetoothDtmReceiverEvent,
+            BluetoothDtmRecurringSchedulerItemPhase,
+        >,
+    > {
+        let item = self.cancel_dtm_empty_list_merge(merged)?;
+        let (owner, reservation) = item.cancel().cancel_recurring();
+        self.release_dtm_reservation(reservation);
+        Ok(owner)
+    }
+
+    /// Publish the merge-selected sole item after the complete hardware
     /// initialization chain has made interrupt routes stable but inactive.
     ///
     /// This remains crate-private so an early scheduler state cannot publish a
@@ -1556,13 +1676,16 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         unsafe_code,
         reason = "the terminal Controller state proves inactive routes while this scheduler retains the graph and exact list identity"
     )]
-    pub(crate) fn publish_dtm_scheduler_head<Role>(
+    pub(crate) fn publish_dtm_scheduler_head<Role, Phase>(
         &mut self,
-        merged: BluetoothDtmEmptySchedulerMergePrepared<Role>,
+        merged: BluetoothDtmEmptySchedulerMergePrepared<Role, Phase>,
     ) -> Result<
         BluetoothDtmSchedulerHeadPublished<Role>,
-        BluetoothDtmSchedulerHeadPublicationFailure<Role>,
-    > {
+        BluetoothDtmSchedulerHeadPublicationFailure<Role, Phase>,
+    >
+    where
+        Phase: BluetoothDtmSchedulerItemPhase<Role>,
+    {
         let address = merged.scheduler_item_address();
         if !self._scheduler_list.can_publish_first_item(address) {
             return Err(BluetoothDtmSchedulerHeadPublicationFailure {

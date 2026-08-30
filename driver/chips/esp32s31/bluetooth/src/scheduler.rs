@@ -887,14 +887,55 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         &mut self.task
     }
 
-    #[cfg(any(target_arch = "riscv32", test))]
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn request_post_enable_controller_time(
+        &mut self,
+    ) -> Result<
+        crate::controller_time::BluetoothControllerTimeRequest,
+        crate::controller_time::BluetoothControllerTimeRequestError,
+    > {
+        self._standalone_always_awake
+            .gate_post_enable_time_request();
+        self.task.request_controller_time()
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn cancel_owned_post_enable_controller_time(
+        &mut self,
+        request: crate::controller_time::BluetoothControllerTimeRequest,
+    ) -> Result<(), crate::controller_time::BluetoothControllerTimeEventError> {
+        self.task.cancel_owned_controller_time(request)
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn recheck_owned_post_enable_controller_time(
+        &mut self,
+        request: crate::controller_time::BluetoothControllerTimeRequest,
+    ) -> Result<
+        crate::controller_time::BluetoothControllerTimeEventStep,
+        crate::controller_time::BluetoothControllerTimeEventError,
+    > {
+        self.task.recheck_owned_controller_time(request)
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn drain_orphan_post_enable_controller_time(
+        &mut self,
+    ) -> Result<
+        crate::controller_time::BluetoothControllerTimeEventStep,
+        crate::controller_time::BluetoothControllerTimeEventError,
+    > {
+        self.task.drain_orphan_controller_time()
+    }
+
+    #[cfg(test)]
     pub(crate) const fn controller_time_phase(
         &self,
     ) -> crate::controller_time::BluetoothControllerTimeWorkerPhase {
         self.task.controller_time_phase()
     }
 
-    #[cfg(any(target_arch = "riscv32", test))]
+    #[cfg(test)]
     pub(crate) const fn controller_time_needs_recheck(&self) -> bool {
         self.task.controller_time_needs_recheck()
     }

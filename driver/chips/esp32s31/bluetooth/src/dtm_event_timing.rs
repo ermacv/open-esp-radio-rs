@@ -17,13 +17,14 @@ const RX_EVENT_WINDOW_TICKS: u32 = 1_000;
 
 /// One positional instant in the BLE software-scheduler domain.
 ///
-/// Construction does not prove that the image came from a live clock.
+/// This type is retained for internal DTM arithmetic; external callers cannot
+/// manufacture an instant from a detached integer image.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothDtmSchedulerInstant(u32);
 
 impl BluetoothDtmSchedulerInstant {
     /// Preserve one complete positional scheduler-time image.
-    pub const fn from_image(image: u32) -> Self {
+    pub(crate) const fn from_image(image: u32) -> Self {
         Self(image)
     }
 

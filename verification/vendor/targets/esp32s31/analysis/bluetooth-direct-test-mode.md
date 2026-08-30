@@ -784,8 +784,10 @@ The remaining work should proceed in narrow, testable increments:
    immutable command identity and committed phase. The private affine
    standalone always-awake marker is now retained from Controller-HAL profile
    selection through the pre-route BLE-PHY owner, but performs no RF MMIO and
-   supplies no RF-ready or time-pending authority. Connect the typed current,
-   RF-ready and scheduler-margin facts to live single-owner producers while
+   gates a terminal affine post-enable time request, whose completed sample
+   remains inseparable from the exact Controller and is not RF-ready. Connect
+   that proof plus typed RF-ready and scheduler-margin facts to phase-specific
+   single-owner producers while
    preserving initial TX/RX and recurring RX acquisition order. A caller-
    supplied instant is not proof of that live order.
 2. **Close the controller timebase source.** The latch address/order,

@@ -32,6 +32,12 @@ impl BluetoothStandaloneAlwaysAwake {
     const fn mint() -> Self {
         Self { _private: () }
     }
+
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) const fn gate_post_enable_time_request(&self) {
+        // Presence of this private affine value in the structural owner is the
+        // gate. The marker never accepts an independently supplied task owner.
+    }
 }
 
 /// Bluetooth hardware after the complete controller HAL-init component.

@@ -31,13 +31,15 @@ use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
 use open_esp_radio_esp32s31_pac::RadioHardware;
 use open_esp_radio_esp32s31_pac::RadioPhyReleaseError;
 
+#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
+use crate::controller_time::BluetoothControllerTimeWorker;
+#[cfg(test)]
+use crate::controller_time::BluetoothControllerTimeWorkerPhase;
 #[cfg(target_arch = "riscv32")]
 use crate::controller_time::{
     BluetoothControllerTimeEventError, BluetoothControllerTimeEventStep,
     BluetoothControllerTimeRequest, BluetoothControllerTimeRequestError,
 };
-#[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
-use crate::controller_time::{BluetoothControllerTimeWorker, BluetoothControllerTimeWorkerPhase};
 
 /// Complete cold Bluetooth owner before any powered lifecycle transaction.
 ///
@@ -271,11 +273,13 @@ impl BluetoothTaskResources {
     }
 
     /// Durable logical phase paired with this unique task owner.
+    #[cfg(test)]
     pub(crate) const fn controller_time_phase(&self) -> BluetoothControllerTimeWorkerPhase {
         self.controller_time.phase()
     }
 
     /// Whether the runner must retain a durable recheck event or deadline.
+    #[cfg(test)]
     pub(crate) const fn controller_time_needs_recheck(&self) -> bool {
         self.controller_time.needs_recheck()
     }
@@ -293,18 +297,32 @@ impl BluetoothTaskResources {
         controller_time.request(&mut controller)
     }
 
-    /// Abandon only the matching logical request; late cancellation is inert.
+    /// Cancel only the matching logical request; a mismatch faults the worker.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn abandon_controller_time(
+    pub(crate) fn cancel_owned_controller_time(
         &mut self,
         request: BluetoothControllerTimeRequest,
-    ) -> bool {
-        self.controller_time.abandon(request)
+    ) -> Result<(), BluetoothControllerTimeEventError> {
+        self.controller_time.cancel_owned(request)
     }
 
-    /// Perform one bounded hardware recheck with a short HAL borrow.
+    /// Recheck one exact request with a short HAL borrow.
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn recheck_controller_time(
+    pub(crate) fn recheck_owned_controller_time(
+        &mut self,
+        request: BluetoothControllerTimeRequest,
+    ) -> Result<BluetoothControllerTimeEventStep, BluetoothControllerTimeEventError> {
+        let Self {
+            registers,
+            controller_time,
+        } = self;
+        let mut controller = registers.borrow_bluetooth_controller();
+        controller_time.recheck_owned(request, &mut controller)
+    }
+
+    /// Drain one abandoned request without creating a reusable sample.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn drain_orphan_controller_time(
         &mut self,
     ) -> Result<BluetoothControllerTimeEventStep, BluetoothControllerTimeEventError> {
         let Self {
@@ -312,7 +330,7 @@ impl BluetoothTaskResources {
             controller_time,
         } = self;
         let mut controller = registers.borrow_bluetooth_controller();
-        controller_time.on_recheck_event(&mut controller)
+        controller_time.drain_orphan(&mut controller)
     }
 
     /// Advance one scheduler lock/modify worker with this exact task-side HAL

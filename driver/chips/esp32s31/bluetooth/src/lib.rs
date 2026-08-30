@@ -126,6 +126,9 @@ pub use common_phy_state::{
 pub use controller_hal::BluetoothControllerHalInitialized;
 #[cfg(target_arch = "riscv32")]
 pub use controller_start::{
+    BluetoothAlwaysAwakePostEnableTimeBeginError, BluetoothAlwaysAwakePostEnableTimeError,
+    BluetoothAlwaysAwakePostEnableTimeOrphanDrainStep, BluetoothAlwaysAwakePostEnableTimePending,
+    BluetoothAlwaysAwakePostEnableTimeStep, BluetoothAlwaysAwakeTimeObservedAfterEnable,
     BluetoothControllerInterruptOwnerPublicationFailure,
     BluetoothControllerInterruptOwnersPublished, BluetoothControllerInterruptOwnersReady,
     BluetoothControllerModemLpTimerRestoreFailure, BluetoothControllerModemLpTimerSoftwareStep,
@@ -136,12 +139,6 @@ pub use controller_start::{
     BluetoothSchedulerRunInterruptStorage, BluetoothSharedInterruptDispatchStorage,
 };
 pub use controller_time::{BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample};
-#[cfg(target_arch = "riscv32")]
-pub use controller_time::{
-    BluetoothControllerTimeEventError, BluetoothControllerTimeEventStep,
-    BluetoothControllerTimeRequest, BluetoothControllerTimeRequestError,
-    BluetoothControllerTimeWorkerPhase,
-};
 #[cfg(target_arch = "riscv32")]
 pub use dtm_event_prepare::{
     BluetoothDtmActiveReceiverCpuOwned, BluetoothDtmActiveTransmitterCpuOwned,

@@ -11,16 +11,21 @@ use open_esp_radio_esp32s31_hal::{
 };
 
 #[cfg(target_arch = "riscv32")]
+use crate::controller_time::{
+    BluetoothControllerTimeEventError, BluetoothControllerTimeEventStep,
+    BluetoothControllerTimeRequest, BluetoothControllerTimeRequestError,
+    BluetoothPostEnableTimeOrphanStep, BluetoothPostEnableTimeOwner,
+    BluetoothPostEnableTimeOwnerStep, BluetoothPostEnableTimePendingCore,
+    BluetoothPostEnableTimePendingCoreStep, drain_post_enable_time_orphan,
+};
+#[cfg(target_arch = "riscv32")]
 use crate::{
-    BluetoothControllerBlePhyEngineInitialized, BluetoothControllerTimeEventError,
-    BluetoothControllerTimeEventStep, BluetoothControllerTimeRequest,
-    BluetoothControllerTimeRequestError, BluetoothControllerTimeWorkerPhase,
-    BluetoothModemLpTimerEventCell, BluetoothModemLpTimerEventPublication,
-    BluetoothModemLpTimerExpiration, BluetoothModemLpTimerExpirationPending,
-    BluetoothModemLpTimerPublishedInterruptStep, BluetoothModemLpTimerSoftwareStep,
-    BluetoothModemLpTimerSoftwareWork, BluetoothModemLpTimerStableInterruptStep,
-    BluetoothNrtDefaultInterruptEpoch, BluetoothPrimaryInterruptStep,
-    BluetoothPrimaryPublishedInterruptStep,
+    BluetoothControllerBlePhyEngineInitialized, BluetoothModemLpTimerEventCell,
+    BluetoothModemLpTimerEventPublication, BluetoothModemLpTimerExpiration,
+    BluetoothModemLpTimerExpirationPending, BluetoothModemLpTimerPublishedInterruptStep,
+    BluetoothModemLpTimerSoftwareStep, BluetoothModemLpTimerSoftwareWork,
+    BluetoothModemLpTimerStableInterruptStep, BluetoothNrtDefaultInterruptEpoch,
+    BluetoothPrimaryInterruptStep, BluetoothPrimaryPublishedInterruptStep,
 };
 
 /// Powered Controller after IRQ-output preparation and runtime-timer start.
@@ -472,6 +477,399 @@ pub struct BluetoothControllerInterruptOwnersPublished<
     runtime_control: BluetoothLowPowerRuntimeControlObservation,
 }
 
+/// Why an affine post-enable controller-time acquisition did not start.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothAlwaysAwakePostEnableTimeBeginError {
+    /// Another acquisition or abandoned hardware request is still active.
+    Busy,
+    /// The private worker and lower sticky owner disagreed at publication.
+    OwnershipCollision,
+    /// The private non-repeating request identity space was exhausted.
+    GenerationExhausted,
+    /// An earlier ownership mismatch already stopped this worker.
+    Faulted,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl From<BluetoothControllerTimeRequestError> for BluetoothAlwaysAwakePostEnableTimeBeginError {
+    fn from(error: BluetoothControllerTimeRequestError) -> Self {
+        match error {
+            BluetoothControllerTimeRequestError::Busy => Self::Busy,
+            BluetoothControllerTimeRequestError::OwnershipCollision => Self::OwnershipCollision,
+            BluetoothControllerTimeRequestError::GenerationExhausted => Self::GenerationExhausted,
+            BluetoothControllerTimeRequestError::Faulted => Self::Faulted,
+        }
+    }
+}
+
+/// Fail-stop result of rechecking one affine post-enable time acquisition.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothAlwaysAwakePostEnableTimeError {
+    /// The affine identity no longer matched the private worker owner.
+    RequestMismatch,
+    /// The lower sticky owner disappeared while the request was active.
+    OwnershipLost,
+    /// An earlier ownership mismatch already stopped this worker.
+    Faulted,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl From<BluetoothControllerTimeEventError> for BluetoothAlwaysAwakePostEnableTimeError {
+    fn from(error: BluetoothControllerTimeEventError) -> Self {
+        match error {
+            BluetoothControllerTimeEventError::RequestMismatch => Self::RequestMismatch,
+            BluetoothControllerTimeEventError::OwnershipLost => Self::OwnershipLost,
+            BluetoothControllerTimeEventError::Faulted => Self::Faulted,
+        }
+    }
+}
+
+/// Result of one bounded abandoned-request drain observation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[must_use = "a waiting orphan requires one later bounded drain observation"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothAlwaysAwakePostEnableTimeOrphanDrainStep {
+    /// No abandoned request existed; no hardware was touched.
+    Idle,
+    /// Hardware still owns the abandoned request; arrange one later recheck.
+    Waiting,
+    /// The abandoned result was discarded and the worker is idle again.
+    Drained,
+}
+
+/// One exact in-flight post-enable controller-time request.
+///
+/// This affine value borrows the complete published Controller, so no second
+/// operation can use that Controller while the request is pending. Dropping or
+/// cancelling it abandons the exact identity into the private orphan drain.
+#[must_use = "recheck, cancel, or drop the exact post-enable time request"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothAlwaysAwakePostEnableTimePending<
+    'controller,
+    P,
+    M,
+    S,
+    const MODEM_TIMER_CAPACITY: usize,
+    const SCHEDULER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+> where
+    M: RawMutex,
+{
+    core: BluetoothPostEnableTimePendingCore<
+        &'controller mut BluetoothControllerInterruptOwnersPublished<
+            P,
+            M,
+            S,
+            MODEM_TIMER_CAPACITY,
+            SCHEDULER_CAPACITY,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    >,
+}
+
+/// Controller-bound proof that the post-enable latch request completed.
+///
+/// The sample remains private and inseparable from the exact borrowed
+/// Controller. This is not an RF-ready instant: this path neither performs nor
+/// proves a sleep/wake transition, and it applies no recovered RF-settling
+/// interval.
+#[must_use = "finish the bound proof before reusing the Controller"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothAlwaysAwakeTimeObservedAfterEnable<
+    'controller,
+    P,
+    M,
+    S,
+    const MODEM_TIMER_CAPACITY: usize,
+    const SCHEDULER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+> where
+    M: RawMutex,
+{
+    controller: &'controller mut BluetoothControllerInterruptOwnersPublished<
+        P,
+        M,
+        S,
+        MODEM_TIMER_CAPACITY,
+        SCHEDULER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >,
+    _sample: crate::BluetoothControllerTimeSample,
+}
+
+/// Result of rechecking one exact post-enable controller-time request.
+#[must_use = "retain Waiting or consume the Controller-bound Ready proof"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothAlwaysAwakePostEnableTimeStep<
+    'controller,
+    P,
+    M,
+    S,
+    const MODEM_TIMER_CAPACITY: usize,
+    const SCHEDULER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+> where
+    M: RawMutex,
+{
+    /// Hardware still owns the same request and complete Controller borrow.
+    Waiting(
+        BluetoothAlwaysAwakePostEnableTimePending<
+            'controller,
+            P,
+            M,
+            S,
+            MODEM_TIMER_CAPACITY,
+            SCHEDULER_CAPACITY,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ),
+    /// The exact request completed with a Controller-bound private sample.
+    Ready(
+        BluetoothAlwaysAwakeTimeObservedAfterEnable<
+            'controller,
+            P,
+            M,
+            S,
+            MODEM_TIMER_CAPACITY,
+            SCHEDULER_CAPACITY,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ),
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<
+    'controller,
+    P,
+    M,
+    S,
+    const MODEM_TIMER_CAPACITY: usize,
+    const SCHEDULER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+>
+    BluetoothAlwaysAwakePostEnableTimePending<
+        'controller,
+        P,
+        M,
+        S,
+        MODEM_TIMER_CAPACITY,
+        SCHEDULER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >
+where
+    M: RawMutex,
+{
+    /// Perform exactly one observation of this exact latch request.
+    pub fn recheck(
+        self,
+    ) -> Result<
+        BluetoothAlwaysAwakePostEnableTimeStep<
+            'controller,
+            P,
+            M,
+            S,
+            MODEM_TIMER_CAPACITY,
+            SCHEDULER_CAPACITY,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+        BluetoothAlwaysAwakePostEnableTimeError,
+    > {
+        match self.core.recheck() {
+            Ok(BluetoothPostEnableTimePendingCoreStep::Waiting(core)) => {
+                Ok(BluetoothAlwaysAwakePostEnableTimeStep::Waiting(Self {
+                    core,
+                }))
+            }
+            Ok(BluetoothPostEnableTimePendingCoreStep::Ready { owner, sample }) => {
+                Ok(BluetoothAlwaysAwakePostEnableTimeStep::Ready(
+                    BluetoothAlwaysAwakeTimeObservedAfterEnable {
+                        controller: owner,
+                        _sample: sample,
+                    },
+                ))
+            }
+            Err(failure) => {
+                let (_controller, error) = failure.into_parts();
+                Err(error.into())
+            }
+        }
+    }
+
+    /// Abandon this exact request and release the Controller borrow.
+    ///
+    /// The returned Controller cannot begin another acquisition until
+    /// `drain_abandoned_always_awake_post_enable_time` reports `Drained` (or
+    /// `Idle`). An ownership mismatch is returned explicitly and leaves the
+    /// private worker fail-stop; the error variant retains no Controller borrow.
+    pub fn cancel(
+        self,
+    ) -> Result<
+        &'controller mut BluetoothControllerInterruptOwnersPublished<
+            P,
+            M,
+            S,
+            MODEM_TIMER_CAPACITY,
+            SCHEDULER_CAPACITY,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+        BluetoothAlwaysAwakePostEnableTimeError,
+    > {
+        match self.core.cancel() {
+            Ok(controller) => Ok(controller),
+            Err(failure) => {
+                let (_controller, error) = failure.into_parts();
+                Err(error.into())
+            }
+        }
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<
+    P,
+    M,
+    S,
+    const MODEM_TIMER_CAPACITY: usize,
+    const SCHEDULER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+> BluetoothPostEnableTimeOwner
+    for BluetoothControllerInterruptOwnersPublished<
+        P,
+        M,
+        S,
+        MODEM_TIMER_CAPACITY,
+        SCHEDULER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >
+where
+    M: RawMutex,
+{
+    fn recheck_owned_post_enable_time(
+        &mut self,
+        request: BluetoothControllerTimeRequest,
+    ) -> Result<BluetoothPostEnableTimeOwnerStep, BluetoothControllerTimeEventError> {
+        match self
+            .initialized
+            .recheck_owned_post_enable_controller_time(request)
+        {
+            Ok(BluetoothControllerTimeEventStep::Waiting) => {
+                Ok(BluetoothPostEnableTimeOwnerStep::Waiting)
+            }
+            Ok(BluetoothControllerTimeEventStep::Sample {
+                request: completed,
+                sample,
+            }) if completed == request => Ok(BluetoothPostEnableTimeOwnerStep::Ready(sample)),
+            Ok(
+                BluetoothControllerTimeEventStep::Idle
+                | BluetoothControllerTimeEventStep::OrphanDrained
+                | BluetoothControllerTimeEventStep::Sample { .. },
+            ) => Err(BluetoothControllerTimeEventError::RequestMismatch),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn cancel_owned_post_enable_time(
+        &mut self,
+        request: BluetoothControllerTimeRequest,
+    ) -> Result<(), BluetoothControllerTimeEventError> {
+        self.initialized
+            .cancel_owned_post_enable_controller_time(request)
+    }
+
+    fn drain_orphan_post_enable_time(
+        &mut self,
+    ) -> Result<BluetoothPostEnableTimeOrphanStep, BluetoothControllerTimeEventError> {
+        match self.initialized.drain_orphan_post_enable_controller_time() {
+            Ok(BluetoothControllerTimeEventStep::Idle) => {
+                Ok(BluetoothPostEnableTimeOrphanStep::Idle)
+            }
+            Ok(BluetoothControllerTimeEventStep::Waiting) => {
+                Ok(BluetoothPostEnableTimeOrphanStep::Waiting)
+            }
+            Ok(BluetoothControllerTimeEventStep::OrphanDrained) => {
+                Ok(BluetoothPostEnableTimeOrphanStep::Drained)
+            }
+            Ok(BluetoothControllerTimeEventStep::Sample { .. }) => {
+                Err(BluetoothControllerTimeEventError::RequestMismatch)
+            }
+            Err(error) => Err(error),
+        }
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<
+    'controller,
+    P,
+    M,
+    S,
+    const MODEM_TIMER_CAPACITY: usize,
+    const SCHEDULER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+>
+    BluetoothAlwaysAwakeTimeObservedAfterEnable<
+        'controller,
+        P,
+        M,
+        S,
+        MODEM_TIMER_CAPACITY,
+        SCHEDULER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >
+where
+    M: RawMutex,
+{
+    /// Consume the bound proof and release the exact Controller borrow.
+    ///
+    /// The private sample is deliberately not returned as a reusable instant.
+    pub fn finish(
+        self,
+    ) -> &'controller mut BluetoothControllerInterruptOwnersPublished<
+        P,
+        M,
+        S,
+        MODEM_TIMER_CAPACITY,
+        SCHEDULER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    > {
+        self.controller
+    }
+}
+
 /// Failed stable publication retaining the complete Controller and storage.
 #[must_use = "failed ISR publication returns every affine owner for inspection or retry"]
 #[cfg(target_arch = "riscv32")]
@@ -614,37 +1012,61 @@ where
         })
     }
 
-    /// Inspect the durable always-awake controller-time worker phase.
-    pub const fn controller_time_phase(&self) -> BluetoothControllerTimeWorkerPhase {
-        self.initialized.controller_time_phase()
-    }
-
-    /// Whether a bounded external event must recheck the hardware latch.
-    pub const fn controller_time_needs_recheck(&self) -> bool {
-        self.initialized.controller_time_needs_recheck()
-    }
-
-    /// Publish one controller-time latch request without polling.
+    /// Begin one affine post-enable controller-time acquisition.
     ///
-    /// The returned identity must be matched by a later sample or explicit
-    /// abandonment. `recheck_controller_time` performs at most one fresh
-    /// hardware observation per call.
-    pub fn request_controller_time(
+    /// The nested standalone always-awake selection gates publication through
+    /// the complete BLE-PHY chain. The returned pending value borrows this exact
+    /// Controller until it is rechecked, cancelled or dropped. Completion proves
+    /// only that the latch request completed after enable. This path neither
+    /// performs nor proves a sleep/wake transition, and no RF-settling interval
+    /// is recovered here; the proof therefore is not RF-ready authority.
+    pub fn begin_always_awake_post_enable_time(
         &mut self,
-    ) -> Result<BluetoothControllerTimeRequest, BluetoothControllerTimeRequestError> {
-        self.initialized.request_controller_time()
+    ) -> Result<
+        BluetoothAlwaysAwakePostEnableTimePending<
+            '_,
+            P,
+            M,
+            S,
+            MODEM_TIMER_CAPACITY,
+            SCHEDULER_CAPACITY,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+        BluetoothAlwaysAwakePostEnableTimeBeginError,
+    > {
+        let request = self
+            .initialized
+            .request_post_enable_controller_time()
+            .map_err(BluetoothAlwaysAwakePostEnableTimeBeginError::from)?;
+        Ok(BluetoothAlwaysAwakePostEnableTimePending {
+            core: BluetoothPostEnableTimePendingCore::new(self, request),
+        })
     }
 
-    /// Abandon only the matching logical request while retaining any hardware work.
-    pub fn abandon_controller_time(&mut self, request: BluetoothControllerTimeRequest) -> bool {
-        self.initialized.abandon_controller_time(request)
-    }
-
-    /// Perform one bounded controller-time latch recheck.
-    pub fn recheck_controller_time(
+    /// Perform one bounded observation of an abandoned post-enable request.
+    ///
+    /// `Waiting` requires one later call. A completed orphan is discarded and
+    /// never becomes a sample or readiness instant for a subsequent operation.
+    pub fn drain_abandoned_always_awake_post_enable_time(
         &mut self,
-    ) -> Result<BluetoothControllerTimeEventStep, BluetoothControllerTimeEventError> {
-        self.initialized.recheck_controller_time()
+    ) -> Result<
+        BluetoothAlwaysAwakePostEnableTimeOrphanDrainStep,
+        BluetoothAlwaysAwakePostEnableTimeError,
+    > {
+        match drain_post_enable_time_orphan(self) {
+            Ok(BluetoothPostEnableTimeOrphanStep::Idle) => {
+                Ok(BluetoothAlwaysAwakePostEnableTimeOrphanDrainStep::Idle)
+            }
+            Ok(BluetoothPostEnableTimeOrphanStep::Waiting) => {
+                Ok(BluetoothAlwaysAwakePostEnableTimeOrphanDrainStep::Waiting)
+            }
+            Ok(BluetoothPostEnableTimeOrphanStep::Drained) => {
+                Ok(BluetoothAlwaysAwakePostEnableTimeOrphanDrainStep::Drained)
+            }
+            Err(error) => Err(error.into()),
+        }
     }
 
     /// Prepare one transmitter graph through the terminal Controller's private

@@ -71,7 +71,7 @@ gaps = [
 [[capabilities]]
 id = "controller-initialization"
 title = "Complete LE Controller initialization"
-scope = "Powered controller initialization through BLE PHY controller-output preparation and runtime-timer start while retaining a private affine standalone always-awake policy selection that performs no RF MMIO and grants no RF-ready or time-pending authority"
+scope = "Powered controller initialization through BLE PHY controller-output preparation runtime-timer start and stable interrupt-owner publication while retaining a private affine standalone always-awake selection and exposing only a Controller-bound post-enable time observation rather than RF-ready authority"
 implementation = "incomplete"
 host = "covered"
 async = "incomplete"
@@ -90,7 +90,7 @@ gaps = [
 [[capabilities]]
 id = "controller-timebase"
 title = "Event-driven controller scheduler timebase"
-scope = "Live bounded always-awake latch MMIO with generation-scoped cancellation drain durable Embassy recheck rendezvous and bidirectional wrapping raw scheduler epoch projection"
+scope = "Live bounded always-awake latch MMIO with keyed affine request ownership same-Controller Waiting rechecks non-decomposable time-observed-after-enable proof sample-discarding cancellation drain and bidirectional wrapping raw scheduler epoch projection"
 implementation = "incomplete"
 host = "covered"
 async = "incomplete"
@@ -99,7 +99,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "powered-time-api-composed-but-live-scheduling-client-missing" },
+  { axis = "implementation", id = "controller-bound-post-enable-observation-not-yet-consumed-by-phase-specific-scheduling" },
   { axis = "vendor", id = "effective-counter-width-physical-unit-and-wake-source-missing" },
   { axis = "hil", id = "controller-time-latch-and-wrap-cell-missing" },
   { axis = "async", id = "live-controller-runner-and-proven-absolute-recheck-source-missing" },

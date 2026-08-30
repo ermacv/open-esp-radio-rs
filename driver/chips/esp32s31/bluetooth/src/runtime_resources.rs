@@ -151,6 +151,18 @@ impl<const SCHEDULER_CAPACITY: usize>
         BluetoothControllerPoweredTaskRuntime { software, hardware }
     }
 
+    #[cfg(test)]
+    pub(crate) const fn controller_time_phase(
+        &self,
+    ) -> crate::controller_time::BluetoothControllerTimeWorkerPhase {
+        self.hardware.controller_time_phase()
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn controller_time_needs_recheck(&self) -> bool {
+        self.hardware.controller_time_needs_recheck()
+    }
+
     /// Durable general scheduler handoff for this epoch.
     pub const fn scheduler_wake(&self) -> &BluetoothSchedulerWakeCell {
         self.software.scheduler_wake()
@@ -174,18 +186,6 @@ impl<const SCHEDULER_CAPACITY: usize>
     /// Durable modem LP timer expiration handoff for this epoch.
     pub const fn modem_lp_timer_events(&self) -> &BluetoothModemLpTimerEventCell {
         self.software.modem_lp_timer_events()
-    }
-
-    /// Current logical phase of the powered Controller-time worker.
-    pub const fn controller_time_phase(
-        &self,
-    ) -> crate::controller_time::BluetoothControllerTimeWorkerPhase {
-        self.hardware.controller_time_phase()
-    }
-
-    /// Whether the powered Controller-time worker requires another event.
-    pub const fn controller_time_needs_recheck(&self) -> bool {
-        self.hardware.controller_time_needs_recheck()
     }
 
     /// Advance one scheduler lock/modify transaction using the matching HAL

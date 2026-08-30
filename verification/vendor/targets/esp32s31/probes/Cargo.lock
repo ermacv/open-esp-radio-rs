@@ -845,7 +845,6 @@ name = "open-esp-radio-bluetooth-hci"
 version = "0.1.0"
 dependencies = [
  "bt-hci",
- "embassy-futures",
  "embassy-sync 0.8.0",
  "embedded-io 0.7.1",
 ]

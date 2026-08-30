@@ -579,8 +579,9 @@ mod tests {
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use open_esp_radio_bluetooth_hci::{
         BluetoothPublicDeviceAddress, HostToControllerFrame, LeControllerBootstrapConfig,
-        LeControllerHciEndpoints, LeControllerHciResources,
+        LeControllerCommandClassification, LeControllerHciEndpoints, LeControllerHciResources,
         bt_hci::{PacketKind, cmd::controller_baseband::Reset, transport::Transport},
+        classify_le_controller_command,
     };
     use open_esp_radio_esp32s31_pac::RadioHardware;
 
@@ -645,7 +646,12 @@ mod tests {
             else {
                 panic!("Reset changed HCI packet class");
             };
-            let response = bootstrap.dispatch(command);
+            let LeControllerCommandClassification::Bootstrap(command) =
+                classify_le_controller_command(command)
+            else {
+                panic!("Reset did not decode as a bootstrap command");
+            };
+            let response = bootstrap.dispatch_owned(command);
             controller
                 .publish(PacketKind::Event, response.as_bytes())
                 .await
@@ -674,7 +680,12 @@ mod tests {
                 else {
                     panic!("Reset changed HCI packet class");
                 };
-                let response = bootstrap.dispatch(command);
+                let LeControllerCommandClassification::Bootstrap(command) =
+                    classify_le_controller_command(command)
+                else {
+                    panic!("Reset did not decode as a bootstrap command");
+                };
+                let response = bootstrap.dispatch_owned(command);
                 controller
                     .publish(PacketKind::Event, response.as_bytes())
                     .await

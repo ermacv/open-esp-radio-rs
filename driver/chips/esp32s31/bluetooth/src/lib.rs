@@ -130,7 +130,8 @@ pub use common_phy_state::{
 pub use controller_hal::BluetoothControllerHalInitialized;
 #[cfg(target_arch = "riscv32")]
 pub use controller_start::{
-    BluetoothAlwaysAwakePostEnableTimeBeginError, BluetoothAlwaysAwakePostEnableTimeError,
+    BluetoothAlwaysAwakePostEnableTimeBeginError, BluetoothAlwaysAwakePostEnableTimeBeginFailure,
+    BluetoothAlwaysAwakePostEnableTimeError, BluetoothAlwaysAwakePostEnableTimeFailure,
     BluetoothAlwaysAwakePostEnableTimeOrphanDrainStep, BluetoothAlwaysAwakePostEnableTimePending,
     BluetoothAlwaysAwakePostEnableTimeStep, BluetoothAlwaysAwakeTimeObservedAfterEnable,
     BluetoothControllerInterruptOwnerPublicationFailure,
@@ -139,7 +140,8 @@ pub use controller_start::{
     BluetoothControllerModemLpTimerSoftwareWork, BluetoothControllerOutputTimerStarted,
     BluetoothControllerPublishedInterruptService, BluetoothControllerPublishedRuntimeEndpoints,
     BluetoothControllerPublishedTaskService, BluetoothControllerSchedulerCurrentBeginError,
-    BluetoothControllerSchedulerCurrentError, BluetoothControllerSchedulerCurrentPending,
+    BluetoothControllerSchedulerCurrentBeginFailure, BluetoothControllerSchedulerCurrentError,
+    BluetoothControllerSchedulerCurrentFailure, BluetoothControllerSchedulerCurrentPending,
     BluetoothControllerSchedulerCurrentStep, BluetoothControllerSchedulerEpochRetained,
     BluetoothControllerSchedulerEpochUnavailable, BluetoothControllerSchedulerNowReady,
     BluetoothControllerTimeOrphanDrainStep, BluetoothDtmControllerPreparationOutcome,

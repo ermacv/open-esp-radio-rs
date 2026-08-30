@@ -10,15 +10,17 @@
 //! framing exists inside the process. Both directions have statically bounded
 //! storage, wake-driven backpressure and cancellation-safe waits.
 //! [`LeControllerBootstrap`] implements a closed software-only HCI command
-//! subset for Host initialization and rejects Link-Layer commands.
+//! subset for Host initialization; Link-Layer commands remain owned by an
+//! outer router.
 //! The separate closed LE DTM codec validates Receiver Test v1, Transmitter
 //! Test v1 and Test End into owned semantic commands and builds their staged
 //! Command Complete events; it does not dispatch them or claim radio work.
 //! [`classify_le_controller_command`] joins those two portable policies at a
-//! finite command boundary: bootstrap commands become owned software
-//! responses, accepted DTM commands become owned semantic tokens, malformed
-//! known DTM commands become owned error responses, and every other command
-//! remains borrowed for an outer router.
+//! finite command boundary: valid bootstrap and DTM commands become owned
+//! semantic tokens, malformed known commands become owned error responses,
+//! and every other command remains borrowed for an outer router. Classification
+//! never advances bootstrap state, leaving Reset and other bootstrap commands
+//! available to session-aware policy before explicit dispatch.
 //! [`LeControllerHciResources`] binds transport storage and bootstrap state to
 //! one affine Controller epoch. Its sole split exposes disjoint Host, raw
 //! Controller and bootstrap endpoints so a hardware session runner can retain
@@ -42,7 +44,7 @@ mod response;
 pub use bootstrap::{
     BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY, BluetoothPublicDeviceAddress, BootstrapCommand,
     BootstrapCommandCompleteEvent, BootstrapConfigError, BootstrapHostBuffers, BootstrapPhase,
-    LeControllerBootstrap, LeControllerBootstrapConfig,
+    LeControllerBootstrap, LeControllerBootstrapConfig, OwnedBootstrapCommand,
 };
 pub use bt_hci;
 pub use channel::{

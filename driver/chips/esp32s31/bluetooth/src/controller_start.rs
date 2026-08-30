@@ -568,8 +568,8 @@ impl From<BluetoothControllerTimeRequestError> for BluetoothAlwaysAwakePostEnabl
 /// Why a fresh scheduler-current acquisition did not start.
 ///
 /// The already-initialized scheduler epoch and exact Controller remain owned
-/// by the borrowed [`BluetoothControllerSchedulerEpochRetained`] value on every
-/// variant.
+/// by the corresponding [`BluetoothControllerSchedulerCurrentBeginFailure`]
+/// on every variant.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[cfg(target_arch = "riscv32")]
 pub enum BluetoothControllerSchedulerCurrentBeginError {
@@ -587,10 +587,29 @@ pub enum BluetoothControllerSchedulerCurrentBeginError {
 
 /// The published Controller has not initialized its scheduler epoch yet.
 ///
-/// This error performs no MMIO and leaves the complete Controller unchanged.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// This failure performs no MMIO and retains the complete task service for a
+/// later cold scheduler-time acquisition.
+#[must_use = "the unchanged task service must remain owned"]
 #[cfg(target_arch = "riscv32")]
-pub struct BluetoothControllerSchedulerEpochUnavailable;
+pub struct BluetoothControllerSchedulerEpochUnavailable<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerSchedulerEpochUnavailable<'runtime, S, SCHEDULER_CAPACITY>
+{
+    /// Recover the unchanged task service.
+    pub fn into_task_service(
+        self,
+    ) -> BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY> {
+        self.controller
+    }
+}
 
 #[cfg(target_arch = "riscv32")]
 impl From<BluetoothControllerTimeRequestError> for BluetoothControllerSchedulerCurrentBeginError {
@@ -629,8 +648,8 @@ impl From<BluetoothControllerTimeEventError> for BluetoothAlwaysAwakePostEnableT
 
 /// Fail-stop result of rechecking or cancelling a fresh scheduler current.
 ///
-/// The operation's reborrow ends on every error, leaving the exact retained
-/// Controller available to its caller. Faulted ownership never yields a sample.
+/// Every public failure retains the exact owned scheduler epoch. Faulted
+/// ownership never yields a sample.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[cfg(target_arch = "riscv32")]
 pub enum BluetoothControllerSchedulerCurrentError {
@@ -650,6 +669,127 @@ impl From<BluetoothControllerTimeEventError> for BluetoothControllerSchedulerCur
             BluetoothControllerTimeEventError::OwnershipLost => Self::OwnershipLost,
             BluetoothControllerTimeEventError::Faulted => Self::Faulted,
         }
+    }
+}
+
+/// Rejected cold post-enable acquisition retaining the complete task service.
+#[must_use = "the task service retained by a rejected acquisition must be handled"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothAlwaysAwakePostEnableTimeBeginFailure<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+    error: BluetoothAlwaysAwakePostEnableTimeBeginError,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothAlwaysAwakePostEnableTimeBeginFailure<'runtime, S, SCHEDULER_CAPACITY>
+{
+    /// Exact reason the cold acquisition did not start.
+    pub const fn error(&self) -> BluetoothAlwaysAwakePostEnableTimeBeginError {
+        self.error
+    }
+
+    /// Recover the unchanged task service and exact rejection.
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothAlwaysAwakePostEnableTimeBeginError,
+    ) {
+        (self.controller, self.error)
+    }
+}
+
+/// Failed cold post-enable recheck or cancellation retaining the task service.
+#[must_use = "the fail-stop task service must remain owned"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothAlwaysAwakePostEnableTimeFailure<'runtime, S, const SCHEDULER_CAPACITY: usize> {
+    controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+    error: BluetoothAlwaysAwakePostEnableTimeError,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothAlwaysAwakePostEnableTimeFailure<'runtime, S, SCHEDULER_CAPACITY>
+{
+    /// Exact fail-stop observation.
+    pub const fn error(&self) -> BluetoothAlwaysAwakePostEnableTimeError {
+        self.error
+    }
+
+    /// Recover the task service and exact fail-stop observation.
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothAlwaysAwakePostEnableTimeError,
+    ) {
+        (self.controller, self.error)
+    }
+}
+
+/// Rejected fresh-current acquisition retaining the epoch owner.
+#[must_use = "the retained scheduler epoch must remain owned"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothControllerSchedulerCurrentBeginFailure<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    controller: BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>,
+    error: BluetoothControllerSchedulerCurrentBeginError,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerSchedulerCurrentBeginFailure<'runtime, S, SCHEDULER_CAPACITY>
+{
+    /// Exact reason the fresh acquisition did not start.
+    pub const fn error(&self) -> BluetoothControllerSchedulerCurrentBeginError {
+        self.error
+    }
+
+    /// Recover the retained epoch and exact rejection.
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothControllerSchedulerCurrentBeginError,
+    ) {
+        (self.controller, self.error)
+    }
+}
+
+/// Failed fresh-current recheck or cancellation retaining the epoch owner.
+#[must_use = "the fail-stop scheduler epoch must remain owned"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothControllerSchedulerCurrentFailure<'runtime, S, const SCHEDULER_CAPACITY: usize>
+{
+    controller: BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>,
+    error: BluetoothControllerSchedulerCurrentError,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerSchedulerCurrentFailure<'runtime, S, SCHEDULER_CAPACITY>
+{
+    /// Exact fail-stop observation.
+    pub const fn error(&self) -> BluetoothControllerSchedulerCurrentError {
+        self.error
+    }
+
+    /// Recover the retained epoch and exact fail-stop observation.
+    pub fn into_parts(
+        self,
+    ) -> (
+        BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothControllerSchedulerCurrentError,
+    ) {
+        (self.controller, self.error)
     }
 }
 
@@ -718,38 +858,29 @@ pub enum BluetoothControllerTimeOrphanDrainStep {
 
 /// One exact in-flight post-enable controller-time request.
 ///
-/// This affine value borrows the complete published Controller, so no second
-/// operation can use that Controller while the request is pending. Dropping or
-/// cancelling it abandons the exact identity into the private orphan drain.
+/// This affine value owns the complete published task service, so no second
+/// operation can use that Controller while the request is pending. Dropping it
+/// abandons the exact identity into the private orphan drain and drops the
+/// fail-stop task owner; explicit cancellation returns that owner by value.
 #[must_use = "recheck, cancel, or drop the exact post-enable time request"]
 #[cfg(target_arch = "riscv32")]
-pub struct BluetoothAlwaysAwakePostEnableTimePending<
-    'controller,
-    'runtime,
-    S,
-    const SCHEDULER_CAPACITY: usize,
-> {
+pub struct BluetoothAlwaysAwakePostEnableTimePending<'runtime, S, const SCHEDULER_CAPACITY: usize> {
     core: BluetoothControllerTimePendingCore<
-        &'controller mut BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
     >,
 }
 
 /// Controller-bound proof that the post-enable latch request completed.
 ///
-/// The sample remains private and inseparable from the exact borrowed
+/// The sample remains private and inseparable from the exact owned
 /// Controller. This is not an RF-ready instant: this path neither performs nor
 /// proves a sleep/wake transition, and it applies no recovered RF-settling
 /// interval.
 #[must_use = "initialize the persistent scheduler epoch from the bound first-live sample"]
 #[cfg(target_arch = "riscv32")]
-pub struct BluetoothAlwaysAwakeTimeObservedAfterEnable<
-    'controller,
-    'runtime,
-    S,
-    const SCHEDULER_CAPACITY: usize,
-> {
-    controller:
-        &'controller mut BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+pub struct BluetoothAlwaysAwakeTimeObservedAfterEnable<'runtime, S, const SCHEDULER_CAPACITY: usize>
+{
+    controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
     sample: crate::BluetoothControllerTimeSample,
 }
 
@@ -759,18 +890,12 @@ pub struct BluetoothAlwaysAwakeTimeObservedAfterEnable<
 /// fresh currents re-enter through the retained epoch without repeating cold
 /// initialization. Neither path grants RF-ready authority. Admission and
 /// sequence time are acquired privately after this state consumes one typed
-/// role request, and every terminal outcome returns the same Controller borrow
+/// role request, and every terminal outcome returns the same owned Controller
 /// in the retained epoch state.
 #[must_use = "consume the epoch-bound live sample through one DTM preparation attempt"]
 #[cfg(target_arch = "riscv32")]
-pub struct BluetoothControllerSchedulerNowReady<
-    'controller,
-    'runtime,
-    S,
-    const SCHEDULER_CAPACITY: usize,
-> {
-    controller:
-        &'controller mut BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+pub struct BluetoothControllerSchedulerNowReady<'runtime, S, const SCHEDULER_CAPACITY: usize> {
+    controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
     epoch: crate::BluetoothControllerSchedulerEpoch,
     sample: crate::BluetoothControllerTimeSample,
 }
@@ -780,35 +905,25 @@ pub struct BluetoothControllerSchedulerNowReady<
 /// The epoch remains stored inside the same Controller and cannot detach or be
 /// paired with another owner. This state carries no fresh current-time sample;
 /// another source-owned observation is required before another preparation.
-#[must_use = "the retained scheduler epoch owns the published Controller borrow"]
+#[must_use = "the retained scheduler epoch owns the published Controller"]
 #[cfg(target_arch = "riscv32")]
-pub struct BluetoothControllerSchedulerEpochRetained<
-    'controller,
-    'runtime,
-    S,
-    const SCHEDULER_CAPACITY: usize,
-> {
-    controller:
-        &'controller mut BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+pub struct BluetoothControllerSchedulerEpochRetained<'runtime, S, const SCHEDULER_CAPACITY: usize> {
+    controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
 }
 
 /// One exact in-flight fresh scheduler-current acquisition.
 ///
-/// This value borrows an already initialized scheduler-epoch owner. Waiting,
-/// cancellation and Drop retain or release only that short reborrow; they never
-/// construct a cold epoch. Only a completed fresh observation advances the
-/// retained epoch to its source-owned task-run anchor. A cancelled or dropped
-/// request must be drained before another acquisition can begin.
+/// This value owns an already initialized scheduler-epoch owner. Waiting and
+/// cancellation retain or return that complete owner; they never construct a
+/// cold epoch. Only a completed fresh observation advances the retained epoch
+/// to its source-owned task-run anchor. A cancelled request must be drained
+/// before another acquisition can begin. Dropping is an explicit fail-stop.
 #[must_use = "recheck, cancel, or drop the exact fresh scheduler-current request"]
 #[cfg(target_arch = "riscv32")]
-pub struct BluetoothControllerSchedulerCurrentPending<
-    'operation,
-    'runtime,
-    S,
-    const SCHEDULER_CAPACITY: usize,
-> {
+pub struct BluetoothControllerSchedulerCurrentPending<'runtime, S, const SCHEDULER_CAPACITY: usize>
+{
     core: BluetoothControllerTimePendingCore<
-        &'operation mut BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
     >,
     epoch: crate::BluetoothControllerSchedulerEpoch,
 }
@@ -816,18 +931,11 @@ pub struct BluetoothControllerSchedulerCurrentPending<
 /// Result of exactly one fresh scheduler-current recheck.
 #[must_use = "retain Waiting or consume Ready through one DTM preparation"]
 #[cfg(target_arch = "riscv32")]
-pub enum BluetoothControllerSchedulerCurrentStep<
-    'operation,
-    'runtime,
-    S,
-    const SCHEDULER_CAPACITY: usize,
-> {
-    /// Hardware still owns the exact request and Controller reborrow.
-    Waiting(
-        BluetoothControllerSchedulerCurrentPending<'operation, 'runtime, S, SCHEDULER_CAPACITY>,
-    ),
+pub enum BluetoothControllerSchedulerCurrentStep<'runtime, S, const SCHEDULER_CAPACITY: usize> {
+    /// Hardware still owns the exact request and complete Controller owner.
+    Waiting(BluetoothControllerSchedulerCurrentPending<'runtime, S, SCHEDULER_CAPACITY>),
     /// The exact request completed with one private epoch-bound sample.
-    Ready(BluetoothControllerSchedulerNowReady<'operation, 'runtime, S, SCHEDULER_CAPACITY>),
+    Ready(BluetoothControllerSchedulerNowReady<'runtime, S, SCHEDULER_CAPACITY>),
 }
 
 /// Terminal result of one source-ordered DTM preparation transaction.
@@ -914,14 +1022,8 @@ enum BluetoothDtmControllerPreparationPhase {
 }
 
 #[cfg(target_arch = "riscv32")]
-struct BluetoothDtmControllerPreparationTimeOwner<
-    'controller,
-    'runtime,
-    S,
-    const SCHEDULER_CAPACITY: usize,
-> {
-    controller:
-        &'controller mut BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+struct BluetoothDtmControllerPreparationTimeOwner<'runtime, S, const SCHEDULER_CAPACITY: usize> {
+    controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
     phase: Option<BluetoothDtmControllerPreparationPhase>,
     cancelled: Option<BluetoothDtmControllerPreparationOutcome>,
 }
@@ -931,32 +1033,23 @@ struct BluetoothDtmControllerPreparationTimeOwner<
 /// Initial operations acquire RF-ready after their current, then admission
 /// before reservation and sequence only after reservation. Recurring RX
 /// acquires RF-ready before current; recurring TX starts after current without
-/// RF-ready. Drop cancels the exact latch request, releases any retained
-/// reservation and leaves a late result for explicit controller-time drain.
+/// RF-ready. Explicit cancellation returns the task owner and releases any
+/// retained reservation. Dropping cancels the exact latch request but also
+/// drops the sole task owner as a deliberate fail-stop; the long-lived runner
+/// must therefore retain this state and use its explicit cancellation edge.
 #[must_use = "recheck, cancel, or drop the exact DTM time request"]
 #[cfg(target_arch = "riscv32")]
-pub struct BluetoothDtmControllerPreparationPending<
-    'controller,
-    'runtime,
-    S,
-    const SCHEDULER_CAPACITY: usize,
-> {
+pub struct BluetoothDtmControllerPreparationPending<'runtime, S, const SCHEDULER_CAPACITY: usize> {
     core: BluetoothControllerTimePendingCore<
-        BluetoothDtmControllerPreparationTimeOwner<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothDtmControllerPreparationTimeOwner<'runtime, S, SCHEDULER_CAPACITY>,
     >,
 }
 
 /// Terminal DTM preparation result with the exact Controller epoch retained.
 #[must_use = "the Controller and role-specific preparation result must be handled"]
 #[cfg(target_arch = "riscv32")]
-pub struct BluetoothDtmControllerPreparationTerminal<
-    'controller,
-    'runtime,
-    S,
-    const SCHEDULER_CAPACITY: usize,
-> {
-    controller:
-        BluetoothControllerSchedulerEpochRetained<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
+pub struct BluetoothDtmControllerPreparationTerminal<'runtime, S, const SCHEDULER_CAPACITY: usize> {
+    controller: BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>,
     outcome: BluetoothDtmControllerPreparationOutcome,
 }
 
@@ -967,49 +1060,33 @@ pub struct BluetoothDtmControllerPreparationTerminal<
     clippy::large_enum_variant,
     reason = "no-alloc affine variants retain the complete in-flight or terminal DTM transaction"
 )]
-pub enum BluetoothDtmControllerPreparationStep<
-    'controller,
-    'runtime,
-    S,
-    const SCHEDULER_CAPACITY: usize,
-> {
+pub enum BluetoothDtmControllerPreparationStep<'runtime, S, const SCHEDULER_CAPACITY: usize> {
     /// Hardware still owns the exact phase request.
-    Pending(BluetoothDtmControllerPreparationPending<'controller, 'runtime, S, SCHEDULER_CAPACITY>),
+    Pending(BluetoothDtmControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>),
     /// Preparation completed or failed with every affine owner returned.
-    Terminal(
-        BluetoothDtmControllerPreparationTerminal<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
-    ),
+    Terminal(BluetoothDtmControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>),
 }
 
 /// Result of rechecking one exact post-enable controller-time request.
 #[must_use = "retain Waiting or consume the Controller-bound Ready proof"]
 #[cfg(target_arch = "riscv32")]
-pub enum BluetoothAlwaysAwakePostEnableTimeStep<
-    'controller,
-    'runtime,
-    S,
-    const SCHEDULER_CAPACITY: usize,
-> {
-    /// Hardware still owns the same request and complete Controller borrow.
-    Waiting(
-        BluetoothAlwaysAwakePostEnableTimePending<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
-    ),
+pub enum BluetoothAlwaysAwakePostEnableTimeStep<'runtime, S, const SCHEDULER_CAPACITY: usize> {
+    /// Hardware still owns the same request and complete Controller owner.
+    Waiting(BluetoothAlwaysAwakePostEnableTimePending<'runtime, S, SCHEDULER_CAPACITY>),
     /// The exact request completed with a Controller-bound private sample.
-    Ready(
-        BluetoothAlwaysAwakeTimeObservedAfterEnable<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
-    ),
+    Ready(BluetoothAlwaysAwakeTimeObservedAfterEnable<'runtime, S, SCHEDULER_CAPACITY>),
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
-    BluetoothAlwaysAwakePostEnableTimePending<'controller, 'runtime, S, SCHEDULER_CAPACITY>
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothAlwaysAwakePostEnableTimePending<'runtime, S, SCHEDULER_CAPACITY>
 {
     /// Perform exactly one observation of this exact latch request.
     pub fn recheck(
         self,
     ) -> Result<
-        BluetoothAlwaysAwakePostEnableTimeStep<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
-        BluetoothAlwaysAwakePostEnableTimeError,
+        BluetoothAlwaysAwakePostEnableTimeStep<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothAlwaysAwakePostEnableTimeFailure<'runtime, S, SCHEDULER_CAPACITY>,
     > {
         match self.core.recheck() {
             Ok(BluetoothControllerTimePendingCoreStep::Waiting(core)) => {
@@ -1026,37 +1103,43 @@ impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
                 ))
             }
             Err(failure) => {
-                let (_controller, error) = failure.into_parts();
-                Err(error.into())
+                let (controller, error) = failure.into_parts();
+                Err(BluetoothAlwaysAwakePostEnableTimeFailure {
+                    controller,
+                    error: error.into(),
+                })
             }
         }
     }
 
-    /// Abandon this exact request and release the Controller borrow.
+    /// Abandon this exact request and return the complete Controller owner.
     ///
     /// The returned Controller cannot begin another acquisition until
     /// `drain_abandoned_always_awake_post_enable_time` reports `Drained` (or
     /// `Idle`). An ownership mismatch is returned explicitly and leaves the
-    /// private worker fail-stop; the error variant retains no Controller borrow.
+    /// private worker fail-stop while the failure retains the complete owner.
     pub fn cancel(
         self,
     ) -> Result<
-        &'controller mut BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-        BluetoothAlwaysAwakePostEnableTimeError,
+        BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothAlwaysAwakePostEnableTimeFailure<'runtime, S, SCHEDULER_CAPACITY>,
     > {
         match self.core.cancel() {
             Ok(controller) => Ok(controller),
             Err(failure) => {
-                let (_controller, error) = failure.into_parts();
-                Err(error.into())
+                let (controller, error) = failure.into_parts();
+                Err(BluetoothAlwaysAwakePostEnableTimeFailure {
+                    controller,
+                    error: error.into(),
+                })
             }
         }
     }
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
-    BluetoothDtmControllerPreparationTerminal<'controller, 'runtime, S, SCHEDULER_CAPACITY>
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothDtmControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>
 {
     /// Borrow the exact role-specific terminal result.
     pub const fn outcome(&self) -> &BluetoothDtmControllerPreparationOutcome {
@@ -1067,7 +1150,7 @@ impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
     pub fn into_parts(
         self,
     ) -> (
-        BluetoothControllerSchedulerEpochRetained<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>,
         BluetoothDtmControllerPreparationOutcome,
     ) {
         (self.controller, self.outcome)
@@ -1075,17 +1158,13 @@ impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
-    BluetoothDtmControllerPreparationPending<'controller, 'runtime, S, SCHEDULER_CAPACITY>
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothDtmControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>
 {
     fn terminal(
-        controller: &'controller mut BluetoothControllerPublishedTaskService<
-            'runtime,
-            S,
-            SCHEDULER_CAPACITY,
-        >,
+        controller: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         outcome: BluetoothDtmControllerPreparationOutcome,
-    ) -> BluetoothDtmControllerPreparationStep<'controller, 'runtime, S, SCHEDULER_CAPACITY> {
+    ) -> BluetoothDtmControllerPreparationStep<'runtime, S, SCHEDULER_CAPACITY> {
         BluetoothDtmControllerPreparationStep::Terminal(BluetoothDtmControllerPreparationTerminal {
             controller: BluetoothControllerSchedulerEpochRetained { controller },
             outcome,
@@ -1097,9 +1176,7 @@ impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Completing an initial admission reserves the resolved window and only
     /// then publishes the sequence request. Consequently one call may advance
     /// into another `Pending` state without yet producing a terminal result.
-    pub fn recheck(
-        self,
-    ) -> BluetoothDtmControllerPreparationStep<'controller, 'runtime, S, SCHEDULER_CAPACITY> {
+    pub fn recheck(self) -> BluetoothDtmControllerPreparationStep<'runtime, S, SCHEDULER_CAPACITY> {
         let (mut owner, sample) = match self.core.recheck() {
             Ok(BluetoothControllerTimePendingCoreStep::Waiting(core)) => {
                 return BluetoothDtmControllerPreparationStep::Pending(Self { core });
@@ -1121,7 +1198,7 @@ impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
             .phase
             .take()
             .expect("completed DTM time request retains its exact phase");
-        let controller = owner.controller;
+        let mut controller = owner.controller;
         match phase {
             BluetoothDtmControllerPreparationPhase::TransmitterFirstRfReady {
                 owner,
@@ -1322,8 +1399,7 @@ impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Cancel the exact phase, release any reservation and recover retry ownership.
     pub fn cancel(
         self,
-    ) -> BluetoothDtmControllerPreparationTerminal<'controller, 'runtime, S, SCHEDULER_CAPACITY>
-    {
+    ) -> BluetoothDtmControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY> {
         let mut owner = match self.core.cancel() {
             Ok(owner) => owner,
             Err(failure) => failure.into_parts().0,
@@ -1342,15 +1418,15 @@ impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize> BluetoothControllerTimePendingOwner
-    for BluetoothDtmControllerPreparationTimeOwner<'controller, 'runtime, S, SCHEDULER_CAPACITY>
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize> BluetoothControllerTimePendingOwner
+    for BluetoothDtmControllerPreparationTimeOwner<'runtime, S, SCHEDULER_CAPACITY>
 {
     fn recheck_owned_controller_time(
         &mut self,
         request: BluetoothControllerTimeRequest,
     ) -> Result<BluetoothControllerTimePendingOwnerStep, BluetoothControllerTimeEventError> {
         BluetoothControllerTimePendingOwner::recheck_owned_controller_time(
-            &mut *self.controller,
+            &mut self.controller,
             request,
         )
     }
@@ -1360,7 +1436,7 @@ impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize> BluetoothControl
         request: BluetoothControllerTimeRequest,
     ) -> Result<(), BluetoothControllerTimeEventError> {
         let result = BluetoothControllerTimePendingOwner::cancel_owned_controller_time(
-            &mut *self.controller,
+            &mut self.controller,
             request,
         );
         let error = match result {
@@ -1378,27 +1454,26 @@ impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize> BluetoothControl
     fn drain_orphan_controller_time(
         &mut self,
     ) -> Result<BluetoothControllerTimePendingOrphanStep, BluetoothControllerTimeEventError> {
-        BluetoothControllerTimePendingOwner::drain_orphan_controller_time(&mut *self.controller)
+        BluetoothControllerTimePendingOwner::drain_orphan_controller_time(&mut self.controller)
     }
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<'operation, 'runtime, S, const SCHEDULER_CAPACITY: usize>
-    BluetoothControllerSchedulerCurrentPending<'operation, 'runtime, S, SCHEDULER_CAPACITY>
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerSchedulerCurrentPending<'runtime, S, SCHEDULER_CAPACITY>
 {
     /// Perform exactly one observation of this fresh-current request.
     ///
-    /// `Waiting` retains the same request, prior epoch and Controller reborrow.
+    /// `Waiting` retains the same request, prior epoch and Controller owner.
     /// `Ready` applies the reference-update arithmetic recovered from the
     /// vendor task-run path and binds the same private sample to the resulting
     /// current. This does not prove that a vendor task-run event occurred. On
-    /// error the reborrow is released and the caller's exact epoch-retained
-    /// owner remains available.
+    /// error the exact epoch-retained owner is returned in the failure.
     pub fn recheck(
         self,
     ) -> Result<
-        BluetoothControllerSchedulerCurrentStep<'operation, 'runtime, S, SCHEDULER_CAPACITY>,
-        BluetoothControllerSchedulerCurrentError,
+        BluetoothControllerSchedulerCurrentStep<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothControllerSchedulerCurrentFailure<'runtime, S, SCHEDULER_CAPACITY>,
     > {
         let epoch = self.epoch;
         match self.core.recheck() {
@@ -1420,24 +1495,35 @@ impl<'operation, 'runtime, S, const SCHEDULER_CAPACITY: usize>
                 ))
             }
             Err(failure) => {
-                let (_controller, error) = failure.into_parts();
-                Err(error.into())
+                let (controller, error) = failure.into_parts();
+                Err(BluetoothControllerSchedulerCurrentFailure {
+                    controller: BluetoothControllerSchedulerEpochRetained { controller },
+                    error: error.into(),
+                })
             }
         }
     }
 
-    /// Abandon this exact request and release the epoch owner's short reborrow.
+    /// Abandon this exact request and return the complete retained epoch.
     ///
     /// Success leaves the worker in orphan-drain state. The caller must drive
     /// `drain_abandoned_controller_time` before beginning another fresh
     /// acquisition. An error preserves the same retained Controller but leaves
     /// the private worker fail-stop.
-    pub fn cancel(self) -> Result<(), BluetoothControllerSchedulerCurrentError> {
+    pub fn cancel(
+        self,
+    ) -> Result<
+        BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothControllerSchedulerCurrentFailure<'runtime, S, SCHEDULER_CAPACITY>,
+    > {
         match self.core.cancel() {
-            Ok(_controller) => Ok(()),
+            Ok(controller) => Ok(BluetoothControllerSchedulerEpochRetained { controller }),
             Err(failure) => {
-                let (_controller, error) = failure.into_parts();
-                Err(error.into())
+                let (controller, error) = failure.into_parts();
+                Err(BluetoothControllerSchedulerCurrentFailure {
+                    controller: BluetoothControllerSchedulerEpochRetained { controller },
+                    error: error.into(),
+                })
             }
         }
     }
@@ -1506,12 +1592,12 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         clippy::result_large_err,
         reason = "no-alloc begin failure retains the Controller and complete role retry owner"
     )]
-    fn begin_dtm_rf_ready_time<'controller>(
-        &'controller mut self,
+    fn begin_dtm_rf_ready_time(
+        mut self,
         phase: BluetoothDtmControllerPreparationPhase,
     ) -> Result<
-        BluetoothDtmControllerPreparationPending<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
-        BluetoothDtmControllerPreparationTerminal<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothDtmControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothDtmControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>,
     > {
         let request = match self.runtime.request_controller_time() {
             Ok(request) => request,
@@ -1539,12 +1625,12 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         clippy::result_large_err,
         reason = "no-alloc begin failure retains the Controller and complete role retry owner"
     )]
-    fn begin_dtm_preparation_time<'controller>(
-        &'controller mut self,
+    fn begin_dtm_preparation_time(
+        mut self,
         phase: BluetoothDtmControllerPreparationPhase,
     ) -> Result<
-        BluetoothDtmControllerPreparationPending<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
-        BluetoothDtmControllerPreparationTerminal<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothDtmControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothDtmControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>,
     > {
         let request = match self.runtime.request_controller_time() {
             Ok(request) => request,
@@ -1625,8 +1711,8 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize> BluetoothControllerTimePendin
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
-    BluetoothAlwaysAwakeTimeObservedAfterEnable<'controller, 'runtime, S, SCHEDULER_CAPACITY>
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothAlwaysAwakeTimeObservedAfterEnable<'runtime, S, SCHEDULER_CAPACITY>
 {
     /// Initialize this Controller's persistent scheduler epoch from the first
     /// live post-enable sample.
@@ -1636,7 +1722,7 @@ impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// readiness nor deadline readiness.
     pub fn initialize_scheduler_epoch(
         self,
-    ) -> BluetoothControllerSchedulerNowReady<'controller, 'runtime, S, SCHEDULER_CAPACITY> {
+    ) -> BluetoothControllerSchedulerNowReady<'runtime, S, SCHEDULER_CAPACITY> {
         let epoch = crate::BluetoothControllerSchedulerEpoch::from_first_live_update(
             &self.sample,
             self.controller.runtime.controller_time_scale(),
@@ -1651,32 +1737,40 @@ impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
-    BluetoothControllerSchedulerEpochRetained<'controller, 'runtime, S, SCHEDULER_CAPACITY>
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>
 {
     /// Begin one affine fresh scheduler-current acquisition.
     ///
-    /// This only borrows the retained owner for the duration of the request.
-    /// Begin failure leaves that owner immediately reusable. Completion advances
-    /// the persistent epoch with the arithmetic recovered from the task-run
-    /// reference update before the private sample can enter one DTM preparation;
-    /// it does not itself prove that a vendor task-run event occurred.
-    pub fn begin_fresh_scheduler_current<'operation>(
-        &'operation mut self,
+    /// The request consumes and retains the complete epoch owner. Begin failure
+    /// returns that owner unchanged. Completion advances the persistent epoch
+    /// with the arithmetic recovered from the task-run reference update before
+    /// the private sample can enter one DTM preparation; it does not itself
+    /// prove that a vendor task-run event occurred.
+    pub fn begin_fresh_scheduler_current(
+        mut self,
     ) -> Result<
-        BluetoothControllerSchedulerCurrentPending<'operation, 'runtime, S, SCHEDULER_CAPACITY>,
-        BluetoothControllerSchedulerCurrentBeginError,
+        BluetoothControllerSchedulerCurrentPending<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothControllerSchedulerCurrentBeginFailure<'runtime, S, SCHEDULER_CAPACITY>,
     > {
         let Some(epoch) = *self.controller.scheduler_epoch else {
-            return Err(BluetoothControllerSchedulerCurrentBeginError::EpochUnavailable);
+            return Err(BluetoothControllerSchedulerCurrentBeginFailure {
+                controller: self,
+                error: BluetoothControllerSchedulerCurrentBeginError::EpochUnavailable,
+            });
         };
-        let request = self
-            .controller
-            .runtime
-            .request_controller_time()
-            .map_err(BluetoothControllerSchedulerCurrentBeginError::from)?;
+        let request = match self.controller.runtime.request_controller_time() {
+            Ok(request) => request,
+            Err(error) => {
+                return Err(BluetoothControllerSchedulerCurrentBeginFailure {
+                    controller: self,
+                    error: error.into(),
+                });
+            }
+        };
+        let controller = self.controller;
         Ok(BluetoothControllerSchedulerCurrentPending {
-            core: BluetoothControllerTimePendingCore::new(&mut *self.controller, request),
+            core: BluetoothControllerTimePendingCore::new(controller, request),
             epoch,
         })
     }
@@ -1694,8 +1788,8 @@ impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
         self,
         owner: crate::BluetoothDtmActiveReceiverCpuOwned,
     ) -> Result<
-        BluetoothDtmControllerPreparationPending<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
-        BluetoothDtmControllerPreparationTerminal<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothDtmControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothDtmControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>,
     > {
         let controller = self.controller;
         let epoch = (*controller.scheduler_epoch)
@@ -1714,7 +1808,7 @@ impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
         &mut self,
     ) -> Result<BluetoothControllerTimeOrphanDrainStep, BluetoothControllerSchedulerCurrentError>
     {
-        match drain_controller_time_orphan(&mut *self.controller) {
+        match drain_controller_time_orphan(&mut self.controller) {
             Ok(BluetoothControllerTimePendingOrphanStep::Idle) => {
                 Ok(BluetoothControllerTimeOrphanDrainStep::Idle)
             }
@@ -1728,26 +1822,39 @@ impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
         }
     }
 
-    /// Release the exact task-service borrow for its ordinary lifecycle APIs.
+    /// Release the exact task service for its ordinary lifecycle APIs.
     ///
     /// The scheduler epoch remains stored in the Controller. Consequently the
     /// cold initialization path remains rejected with `AlreadyInitialized`.
     pub fn into_task_service(
         self,
-    ) -> &'controller mut BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>
-    {
+    ) -> BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY> {
         self.controller
     }
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
-    BluetoothControllerSchedulerNowReady<'controller, 'runtime, S, SCHEDULER_CAPACITY>
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerSchedulerNowReady<'runtime, S, SCHEDULER_CAPACITY>
 {
+    /// Discard this unused current sample while retaining the initialized
+    /// scheduler epoch and the exact published task service.
+    ///
+    /// This is the lossless abort edge before a DTM preparation starts. The
+    /// next attempt must acquire a fresh scheduler current; it cannot reuse
+    /// the discarded sample.
+    pub fn into_retained_epoch(
+        self,
+    ) -> BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY> {
+        BluetoothControllerSchedulerEpochRetained {
+            controller: self.controller,
+        }
+    }
+
     fn into_parts(
         self,
     ) -> (
-        &'controller mut BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         crate::controller_time::BluetoothControllerSchedulerNow,
     ) {
         (
@@ -1776,8 +1883,8 @@ impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
         phy: crate::BluetoothDtmPhy,
         requested_interval_micros: u16,
     ) -> Result<
-        BluetoothDtmControllerPreparationPending<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
-        BluetoothDtmControllerPreparationTerminal<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothDtmControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothDtmControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>,
     > {
         let (controller, now) = self.into_parts();
         controller.begin_dtm_rf_ready_time(
@@ -1808,8 +1915,8 @@ impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
         channel: crate::BluetoothDtmChannel,
         phy: crate::BluetoothDtmPhy,
     ) -> Result<
-        BluetoothDtmControllerPreparationPending<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
-        BluetoothDtmControllerPreparationTerminal<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothDtmControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothDtmControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>,
     > {
         let (controller, now) = self.into_parts();
         controller.begin_dtm_rf_ready_time(
@@ -1835,10 +1942,10 @@ impl<'controller, 'runtime, S, const SCHEDULER_CAPACITY: usize>
         self,
         owner: crate::BluetoothDtmActiveTransmitterCpuOwned,
     ) -> Result<
-        BluetoothDtmControllerPreparationPending<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
-        BluetoothDtmControllerPreparationTerminal<'controller, 'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothDtmControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothDtmControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>,
     > {
-        let (controller, now) = self.into_parts();
+        let (mut controller, now) = self.into_parts();
         let staged = match controller
             .runtime
             .stage_dtm_transmitter_recurring_item(owner, now)
@@ -2068,18 +2175,18 @@ where
 impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>
 {
-    /// Reborrow this exact task service with its initialized scheduler epoch.
+    /// Move this exact task service into its initialized scheduler epoch.
     ///
     /// This transition performs no MMIO, exposes no epoch image and cannot
     /// initialize missing state.
     pub fn retain_scheduler_epoch(
-        &mut self,
+        self,
     ) -> Result<
-        BluetoothControllerSchedulerEpochRetained<'_, 'runtime, S, SCHEDULER_CAPACITY>,
-        BluetoothControllerSchedulerEpochUnavailable,
+        BluetoothControllerSchedulerEpochRetained<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothControllerSchedulerEpochUnavailable<'runtime, S, SCHEDULER_CAPACITY>,
     > {
         if self.scheduler_epoch.is_none() {
-            return Err(BluetoothControllerSchedulerEpochUnavailable);
+            return Err(BluetoothControllerSchedulerEpochUnavailable { controller: self });
         }
         Ok(BluetoothControllerSchedulerEpochRetained { controller: self })
     }
@@ -2087,7 +2194,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// Begin one affine post-enable controller-time acquisition.
     ///
     /// The nested standalone always-awake selection gates publication through
-    /// the complete BLE-PHY chain. The returned pending value borrows this exact
+    /// the complete BLE-PHY chain. The returned pending value owns this exact
     /// Controller until it is rechecked, cancelled or dropped. Completion proves
     /// only that the latch request completed after enable. This path neither
     /// performs nor proves a sleep/wake transition, and no RF-settling interval
@@ -2095,18 +2202,26 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     /// its first live sample initializes the persistent scheduler epoch, this
     /// cold acquisition path rejects every later attempt as `AlreadyInitialized`.
     pub fn begin_always_awake_post_enable_time(
-        &mut self,
+        mut self,
     ) -> Result<
-        BluetoothAlwaysAwakePostEnableTimePending<'_, 'runtime, S, SCHEDULER_CAPACITY>,
-        BluetoothAlwaysAwakePostEnableTimeBeginError,
+        BluetoothAlwaysAwakePostEnableTimePending<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothAlwaysAwakePostEnableTimeBeginFailure<'runtime, S, SCHEDULER_CAPACITY>,
     > {
         if self.scheduler_epoch.is_some() {
-            return Err(BluetoothAlwaysAwakePostEnableTimeBeginError::AlreadyInitialized);
+            return Err(BluetoothAlwaysAwakePostEnableTimeBeginFailure {
+                controller: self,
+                error: BluetoothAlwaysAwakePostEnableTimeBeginError::AlreadyInitialized,
+            });
         }
-        let request = self
-            .runtime
-            .request_controller_time()
-            .map_err(BluetoothAlwaysAwakePostEnableTimeBeginError::from)?;
+        let request = match self.runtime.request_controller_time() {
+            Ok(request) => request,
+            Err(error) => {
+                return Err(BluetoothAlwaysAwakePostEnableTimeBeginFailure {
+                    controller: self,
+                    error: error.into(),
+                });
+            }
+        };
         Ok(BluetoothAlwaysAwakePostEnableTimePending {
             core: BluetoothControllerTimePendingCore::new(self, request),
         })

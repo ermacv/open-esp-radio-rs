@@ -34,9 +34,9 @@ pub enum LeControllerHciResourcesError {
 /// Complete disjoint endpoints borrowed from one HCI resource epoch.
 ///
 /// The raw Controller endpoint and bootstrap state are deliberately separate.
-/// An operational runner may dispatch a pure bootstrap command immediately or
-/// retain a semantic hardware command while it advances another subsystem. The
-/// shared lifetime prevents a second split until every endpoint is returned.
+/// An operational runner may retain any classified command while session
+/// policy decides when the matching state transition is safe. The shared
+/// lifetime prevents a second split until every endpoint is returned.
 #[must_use = "all HCI endpoints belong to one resource epoch"]
 pub struct LeControllerHciEndpoints<
     'resources,
@@ -169,7 +169,8 @@ mod tests {
     use super::{LeControllerHciResources, LeControllerHciResourcesError};
     use crate::{
         BluetoothPublicDeviceAddress, HciChannelError, HostToControllerFrame,
-        LeControllerBootstrapConfig,
+        LeControllerBootstrapConfig, LeControllerCommandClassification,
+        classify_le_controller_command,
     };
 
     const HARDWARE_ERROR: [u8; 3] = [0x10, 0x01, 0x42];
@@ -224,7 +225,12 @@ mod tests {
                 else {
                     panic!("Reset changed HCI packet class");
                 };
-                let response = endpoints.bootstrap.dispatch(command);
+                let LeControllerCommandClassification::Bootstrap(command) =
+                    classify_le_controller_command(command)
+                else {
+                    panic!("Reset did not become an owned bootstrap command");
+                };
+                let response = endpoints.bootstrap.dispatch_owned(command);
                 endpoints
                     .controller
                     .publish(PacketKind::Event, response.as_bytes())
@@ -309,7 +315,12 @@ mod tests {
         else {
             panic!("Reset changed HCI packet class");
         };
-        let response = endpoints.bootstrap.dispatch(command);
+        let LeControllerCommandClassification::Bootstrap(command) =
+            classify_le_controller_command(command)
+        else {
+            panic!("Reset did not become an owned bootstrap command");
+        };
+        let response = endpoints.bootstrap.dispatch_owned(command);
 
         assert_eq!(
             endpoints

@@ -2,8 +2,10 @@
 //!
 //! This module owns only the command subset needed to configure the initial
 //! direct HCI boundary. It never starts advertising, scanning, a connection,
-//! encryption or radio work. Unknown and Link-Layer commands fail closed with
-//! the standard Unknown HCI Command status.
+//! encryption or radio work. Unknown and Link-Layer commands remain unclaimed
+//! for an outer router; they never fall through to guessed hardware behavior.
+
+use core::num::NonZeroU16;
 
 use bt_hci::{
     FromHciBytes,
@@ -203,6 +205,170 @@ impl BootstrapCommand {
     pub const fn supports(opcode: Opcode) -> bool {
         Self::from_opcode(opcode).is_some()
     }
+
+    /// Exact HCI opcode represented by this command kind.
+    pub const fn opcode(self) -> Opcode {
+        match self {
+            Self::Reset => Reset::OPCODE,
+            Self::SetEventMask => SetEventMask::OPCODE,
+            Self::SetControllerToHostFlowControl => SetControllerToHostFlowControl::OPCODE,
+            Self::HostBufferSize => HostBufferSize::OPCODE,
+            Self::ReadBdAddr => ReadBdAddr::OPCODE,
+            Self::LeSetEventMask => LeSetEventMask::OPCODE,
+            Self::LeReadBufferSize => LeReadBufferSize::OPCODE,
+            Self::LeReadLocalSupportedFeatures => LeReadLocalSupportedFeatures::OPCODE,
+            Self::LeSetRandomAddress => LeSetRandomAddr::OPCODE,
+            Self::LeReadFilterAcceptListSize => LeReadFilterAcceptListSize::OPCODE,
+        }
+    }
+}
+
+/// One fully decoded, owned command in the software bootstrap subset.
+///
+/// Classification constructs this value without observing or changing a
+/// bootstrap epoch. A session owner may therefore retain a Reset until active
+/// radio work is quiescent, or apply another session-aware policy, before
+/// consuming it through [`LeControllerBootstrap::dispatch_owned`].
+#[derive(Debug, Eq, PartialEq)]
+pub enum OwnedBootstrapCommand {
+    /// HCI Reset.
+    Reset,
+    /// Replace the base HCI event mask.
+    SetEventMask(EventMask),
+    /// Select the requested Controller-to-Host flow-control mode.
+    SetControllerToHostFlowControl(ControllerToHostFlowControl),
+    /// Publish the Host's bounded ACL buffer declaration.
+    HostBufferSize {
+        /// Maximum Controller-to-Host ACL packet length offered by the Host.
+        acl_data_packet_length: NonZeroU16,
+        /// Number of Controller-to-Host ACL packet slots offered by the Host.
+        total_acl_data_packets: NonZeroU16,
+    },
+    /// Read the configured public device address.
+    ReadBdAddr,
+    /// Replace the LE Meta event mask.
+    LeSetEventMask(LeEventMask),
+    /// Read the configured LE ACL buffer profile.
+    LeReadBufferSize,
+    /// Read the conservative LE feature set.
+    LeReadLocalSupportedFeatures,
+    /// Retain a requested random address for the current software epoch.
+    LeSetRandomAddress(BdAddr),
+    /// Read the implemented filter accept list capacity.
+    LeReadFilterAcceptListSize,
+}
+
+impl OwnedBootstrapCommand {
+    /// Closed bootstrap command identity.
+    pub const fn kind(&self) -> BootstrapCommand {
+        match self {
+            Self::Reset => BootstrapCommand::Reset,
+            Self::SetEventMask(_) => BootstrapCommand::SetEventMask,
+            Self::SetControllerToHostFlowControl(_) => {
+                BootstrapCommand::SetControllerToHostFlowControl
+            }
+            Self::HostBufferSize { .. } => BootstrapCommand::HostBufferSize,
+            Self::ReadBdAddr => BootstrapCommand::ReadBdAddr,
+            Self::LeSetEventMask(_) => BootstrapCommand::LeSetEventMask,
+            Self::LeReadBufferSize => BootstrapCommand::LeReadBufferSize,
+            Self::LeReadLocalSupportedFeatures => BootstrapCommand::LeReadLocalSupportedFeatures,
+            Self::LeSetRandomAddress(_) => BootstrapCommand::LeSetRandomAddress,
+            Self::LeReadFilterAcceptListSize => BootstrapCommand::LeReadFilterAcceptListSize,
+        }
+    }
+
+    /// Exact HCI opcode represented by this semantic command.
+    pub const fn opcode(&self) -> Opcode {
+        self.kind().opcode()
+    }
+
+    /// Whether this command starts a new bootstrap epoch.
+    pub const fn is_reset(&self) -> bool {
+        matches!(self, Self::Reset)
+    }
+
+    pub(crate) fn decode(
+        command: HciCommandPacket<'_>,
+    ) -> Result<Self, BootstrapCommandDecodeError> {
+        let Some(kind) = BootstrapCommand::from_opcode(command.opcode()) else {
+            return Err(BootstrapCommandDecodeError::Unsupported);
+        };
+        let parameters = command.parameters();
+        let decoded = match kind {
+            BootstrapCommand::Reset => {
+                if !parameters.is_empty() {
+                    return Err(BootstrapCommandDecodeError::Malformed(kind));
+                }
+                Self::Reset
+            }
+            BootstrapCommand::SetEventMask => Self::SetEventMask(
+                parse_complete(parameters).ok_or(BootstrapCommandDecodeError::Malformed(kind))?,
+            ),
+            BootstrapCommand::SetControllerToHostFlowControl => {
+                Self::SetControllerToHostFlowControl(
+                    parse_complete(parameters)
+                        .ok_or(BootstrapCommandDecodeError::Malformed(kind))?,
+                )
+            }
+            BootstrapCommand::HostBufferSize => {
+                let host = parse_complete::<HostBufferSizeParams>(parameters)
+                    .ok_or(BootstrapCommandDecodeError::Malformed(kind))?;
+                let Some(acl_data_packet_length) = NonZeroU16::new(host.host_acl_data_packet_len)
+                else {
+                    return Err(BootstrapCommandDecodeError::Malformed(kind));
+                };
+                let Some(total_acl_data_packets) =
+                    NonZeroU16::new(host.host_total_acl_data_packets)
+                else {
+                    return Err(BootstrapCommandDecodeError::Malformed(kind));
+                };
+                if host.host_sync_data_packet_len != 0 || host.host_total_sync_data_packets != 0 {
+                    return Err(BootstrapCommandDecodeError::Malformed(kind));
+                }
+                Self::HostBufferSize {
+                    acl_data_packet_length,
+                    total_acl_data_packets,
+                }
+            }
+            BootstrapCommand::ReadBdAddr => {
+                if !parameters.is_empty() {
+                    return Err(BootstrapCommandDecodeError::Malformed(kind));
+                }
+                Self::ReadBdAddr
+            }
+            BootstrapCommand::LeSetEventMask => Self::LeSetEventMask(
+                parse_complete(parameters).ok_or(BootstrapCommandDecodeError::Malformed(kind))?,
+            ),
+            BootstrapCommand::LeReadBufferSize => {
+                if !parameters.is_empty() {
+                    return Err(BootstrapCommandDecodeError::Malformed(kind));
+                }
+                Self::LeReadBufferSize
+            }
+            BootstrapCommand::LeReadLocalSupportedFeatures => {
+                if !parameters.is_empty() {
+                    return Err(BootstrapCommandDecodeError::Malformed(kind));
+                }
+                Self::LeReadLocalSupportedFeatures
+            }
+            BootstrapCommand::LeSetRandomAddress => Self::LeSetRandomAddress(
+                parse_complete(parameters).ok_or(BootstrapCommandDecodeError::Malformed(kind))?,
+            ),
+            BootstrapCommand::LeReadFilterAcceptListSize => {
+                if !parameters.is_empty() {
+                    return Err(BootstrapCommandDecodeError::Malformed(kind));
+                }
+                Self::LeReadFilterAcceptListSize
+            }
+        };
+        Ok(decoded)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BootstrapCommandDecodeError {
+    Unsupported,
+    Malformed(BootstrapCommand),
 }
 
 /// Complete, validated Command Complete HCI Event emitted by bootstrap.
@@ -325,48 +491,30 @@ impl LeControllerBootstrap {
         self.controller_to_host_flow_control
     }
 
-    /// Dispatch one packet decoded by the affine Controller HCI endpoint.
-    pub fn dispatch(&mut self, command: HciCommandPacket<'_>) -> BootstrapCommandCompleteEvent {
-        self.dispatch_raw(command.opcode(), command.parameters())
-    }
-
-    /// Dispatch an opcode and its exact HCI parameter bytes.
+    /// Consume one classified bootstrap command under the current epoch policy.
     ///
-    /// This raw entry is useful to unit-test malformed known commands without
-    /// creating a shadow packet parser. Controller owners normally use
-    /// [`Self::dispatch`].
-    pub fn dispatch_raw(
+    /// Classification is deliberately separate and immutable. A session owner
+    /// decides when this method may run, in particular whether Reset must wait
+    /// for active radio work to quiesce.
+    pub fn dispatch_owned(
         &mut self,
-        opcode: Opcode,
-        parameters: &[u8],
+        command: OwnedBootstrapCommand,
     ) -> BootstrapCommandCompleteEvent {
-        let Some(command) = BootstrapCommand::from_opcode(opcode) else {
-            return command_error(opcode, HciError::UNKNOWN_CMD);
-        };
-
-        if command != BootstrapCommand::Reset && self.phase == BootstrapPhase::AwaitingReset {
+        let opcode = command.opcode();
+        if !command.is_reset() && self.phase == BootstrapPhase::AwaitingReset {
             return command_error(opcode, HciError::CMD_DISALLOWED);
         }
 
         match command {
-            BootstrapCommand::Reset => {
-                if !parameters.is_empty() {
-                    return invalid_parameters(opcode);
-                }
+            OwnedBootstrapCommand::Reset => {
                 self.reset_epoch();
                 command_success(opcode, &[])
             }
-            BootstrapCommand::SetEventMask => {
-                let Some(mask) = parse_complete::<EventMask>(parameters) else {
-                    return invalid_parameters(opcode);
-                };
+            OwnedBootstrapCommand::SetEventMask(mask) => {
                 self.event_mask = mask;
                 command_success(opcode, &[])
             }
-            BootstrapCommand::SetControllerToHostFlowControl => {
-                let Some(mode) = parse_complete::<ControllerToHostFlowControl>(parameters) else {
-                    return invalid_parameters(opcode);
-                };
+            OwnedBootstrapCommand::SetControllerToHostFlowControl(mode) => {
                 if !matches!(
                     mode,
                     ControllerToHostFlowControl::Off | ControllerToHostFlowControl::AclOnSyncOff
@@ -376,65 +524,40 @@ impl LeControllerBootstrap {
                 self.controller_to_host_flow_control = mode;
                 command_success(opcode, &[])
             }
-            BootstrapCommand::HostBufferSize => {
-                let Some(host) = parse_complete::<HostBufferSizeParams>(parameters) else {
-                    return invalid_parameters(opcode);
-                };
-                if host.host_acl_data_packet_len == 0
-                    || host.host_total_acl_data_packets == 0
-                    || host.host_sync_data_packet_len != 0
-                    || host.host_total_sync_data_packets != 0
-                {
-                    return invalid_parameters(opcode);
-                }
+            OwnedBootstrapCommand::HostBufferSize {
+                acl_data_packet_length,
+                total_acl_data_packets,
+            } => {
                 self.host_buffers = Some(BootstrapHostBuffers {
-                    acl_data_packet_length: host.host_acl_data_packet_len,
-                    total_acl_data_packets: host.host_total_acl_data_packets,
+                    acl_data_packet_length: acl_data_packet_length.get(),
+                    total_acl_data_packets: total_acl_data_packets.get(),
                 });
                 command_success(opcode, &[])
             }
-            BootstrapCommand::ReadBdAddr => {
-                if !parameters.is_empty() {
-                    return invalid_parameters(opcode);
-                }
+            OwnedBootstrapCommand::ReadBdAddr => {
                 command_success(opcode, self.config.public_address.hci_wire_address().raw())
             }
-            BootstrapCommand::LeSetEventMask => {
-                let Some(mask) = parse_complete::<LeEventMask>(parameters) else {
-                    return invalid_parameters(opcode);
-                };
+            OwnedBootstrapCommand::LeSetEventMask(mask) => {
                 self.le_event_mask = mask;
                 command_success(opcode, &[])
             }
-            BootstrapCommand::LeReadBufferSize => {
-                if !parameters.is_empty() {
-                    return invalid_parameters(opcode);
-                }
+            OwnedBootstrapCommand::LeReadBufferSize => {
                 let mut response = [0; 3];
                 response[..2].copy_from_slice(&self.config.le_acl_data_packet_length.to_le_bytes());
                 response[2] = self.config.total_num_le_acl_data_packets;
                 command_success(opcode, &response)
             }
-            BootstrapCommand::LeReadLocalSupportedFeatures => {
-                if !parameters.is_empty() {
-                    return invalid_parameters(opcode);
-                }
+            OwnedBootstrapCommand::LeReadLocalSupportedFeatures => {
                 // The initial profile advertises no optional LE features. A
                 // backend must close each independent feature before setting
                 // its bit here.
                 command_success(opcode, &[0; 8])
             }
-            BootstrapCommand::LeSetRandomAddress => {
-                let Some(address) = parse_complete::<BdAddr>(parameters) else {
-                    return invalid_parameters(opcode);
-                };
+            OwnedBootstrapCommand::LeSetRandomAddress(address) => {
                 self.requested_random_address = Some(address);
                 command_success(opcode, &[])
             }
-            BootstrapCommand::LeReadFilterAcceptListSize => {
-                if !parameters.is_empty() {
-                    return invalid_parameters(opcode);
-                }
+            OwnedBootstrapCommand::LeReadFilterAcceptListSize => {
                 command_success(opcode, &[self.config.filter_accept_list_size()])
             }
         }
@@ -462,7 +585,7 @@ fn command_error(opcode: Opcode, error: HciError) -> BootstrapCommandCompleteEve
     BootstrapCommandCompleteEvent::new(opcode, error.to_status(), &[])
 }
 
-fn invalid_parameters(opcode: Opcode) -> BootstrapCommandCompleteEvent {
+pub(crate) fn invalid_parameters(opcode: Opcode) -> BootstrapCommandCompleteEvent {
     command_error(opcode, HciError::INVALID_HCI_PARAMETERS)
 }
 
@@ -499,13 +622,15 @@ mod tests {
     use trouble_host::{BleHostError, Error as TroubleError, HostResources, Packet, PacketPool};
 
     use crate::{
-        HostToControllerFrame, InProcessHciChannel, InProcessHciControllerEndpoint,
-        InProcessHciHostTransport,
+        HciCommandPacket, HostToControllerFrame, InProcessHciChannel,
+        InProcessHciControllerEndpoint, InProcessHciHostTransport,
+        LeControllerCommandClassification, classify_le_controller_command,
     };
 
     use super::{
         BluetoothPublicDeviceAddress, BootstrapCommand, BootstrapConfigError, BootstrapHostBuffers,
-        BootstrapPhase, LeControllerBootstrap, LeControllerBootstrapConfig,
+        BootstrapPhase, LeControllerBootstrap, LeControllerBootstrapConfig, OwnedBootstrapCommand,
+        command_error,
     };
 
     type TestChannel = InProcessHciChannel<NoopRawMutex, 1, 1, 32>;
@@ -712,10 +837,12 @@ mod tests {
 
         let mut bootstrap = LeControllerBootstrap::new(config);
         assert_eq!(
-            bootstrap.dispatch_raw(Reset::OPCODE, &[]).status(),
+            bootstrap
+                .dispatch_owned(OwnedBootstrapCommand::Reset)
+                .status(),
             Status::SUCCESS
         );
-        let response = bootstrap.dispatch_raw(ReadBdAddr::OPCODE, &[]);
+        let response = bootstrap.dispatch_owned(OwnedBootstrapCommand::ReadBdAddr);
         assert_eq!(response.status(), Status::SUCCESS);
         assert_eq!(&response.as_bytes()[6..], &[6, 5, 4, 3, 2, 1]);
     }
@@ -745,7 +872,7 @@ mod tests {
                 else {
                     panic!("Reset changed packet kind");
                 };
-                let response = bootstrap.dispatch(command);
+                let response = dispatch_test_packet(&mut bootstrap, command);
                 controller
                     .publish(bt_hci::PacketKind::Event, response.as_bytes())
                     .await
@@ -845,7 +972,7 @@ mod tests {
                 }
                 Either::Second(Err(error)) => panic!("bootstrap receive failed: {error:?}"),
             };
-            let response = bootstrap.dispatch(command);
+            let response = dispatch_test_packet(bootstrap, command);
             controller
                 .publish(bt_hci::PacketKind::Event, response.as_bytes())
                 .await
@@ -863,11 +990,15 @@ mod tests {
         .unwrap();
         let mut bootstrap = LeControllerBootstrap::new(config);
 
-        let before_reset = bootstrap.dispatch_raw(SetEventMask::OPCODE, &[0; 8]);
+        let before_reset =
+            bootstrap.dispatch_owned(OwnedBootstrapCommand::SetEventMask(EventMask::new()));
         assert_eq!(before_reset.status(), HciError::CMD_DISALLOWED.to_status());
         assert_eq!(bootstrap.phase(), BootstrapPhase::AwaitingReset);
 
-        let malformed_reset = bootstrap.dispatch_raw(Reset::OPCODE, &[0]);
+        let malformed_reset = dispatch_test_packet(
+            &mut bootstrap,
+            HciCommandPacket::for_test(Reset::OPCODE, &[0]),
+        );
         assert_eq!(
             malformed_reset.status(),
             HciError::INVALID_HCI_PARAMETERS.to_status()
@@ -875,10 +1006,15 @@ mod tests {
         assert_eq!(bootstrap.phase(), BootstrapPhase::AwaitingReset);
 
         assert_eq!(
-            bootstrap.dispatch_raw(Reset::OPCODE, &[]).status(),
+            bootstrap
+                .dispatch_owned(OwnedBootstrapCommand::Reset)
+                .status(),
             Status::SUCCESS
         );
-        let malformed_mask = bootstrap.dispatch_raw(SetEventMask::OPCODE, &[0; 7]);
+        let malformed_mask = dispatch_test_packet(
+            &mut bootstrap,
+            HciCommandPacket::for_test(SetEventMask::OPCODE, &[0; 7]),
+        );
         assert_eq!(
             malformed_mask.status(),
             HciError::INVALID_HCI_PARAMETERS.to_status()
@@ -887,17 +1023,21 @@ mod tests {
 
         let sync_host_buffers = [0xff, 0x00, 1, 1, 0, 1, 0];
         assert_eq!(
-            bootstrap
-                .dispatch_raw(HostBufferSize::OPCODE, &sync_host_buffers)
-                .status(),
+            dispatch_test_packet(
+                &mut bootstrap,
+                HciCommandPacket::for_test(HostBufferSize::OPCODE, &sync_host_buffers),
+            )
+            .status(),
             HciError::INVALID_HCI_PARAMETERS.to_status()
         );
         assert_eq!(bootstrap.host_buffers(), None);
 
         assert_eq!(
-            bootstrap
-                .dispatch_raw(SetControllerToHostFlowControl::OPCODE, &[2])
-                .status(),
+            dispatch_test_packet(
+                &mut bootstrap,
+                HciCommandPacket::for_test(SetControllerToHostFlowControl::OPCODE, &[2]),
+            )
+            .status(),
             HciError::UNSUPPORTED.to_status()
         );
         assert_eq!(
@@ -907,7 +1047,8 @@ mod tests {
 
         let unknown = Opcode::new(OpcodeGroup::VENDOR_SPECIFIC, 1);
         assert_eq!(
-            bootstrap.dispatch_raw(unknown, &[]).status(),
+            dispatch_test_packet(&mut bootstrap, HciCommandPacket::for_test(unknown, &[]),)
+                .status(),
             HciError::UNKNOWN_CMD.to_status()
         );
     }
@@ -979,7 +1120,7 @@ mod tests {
         else {
             panic!("bootstrap command changed packet kind");
         };
-        let response = bootstrap.dispatch(command);
+        let response = dispatch_test_packet(bootstrap, command);
         controller
             .publish(bt_hci::PacketKind::Event, response.as_bytes())
             .await
@@ -1006,5 +1147,26 @@ mod tests {
     fn assert_success(observed: ObservedCommandComplete, parameters: &[u8]) {
         assert_eq!(observed.status, Status::SUCCESS);
         assert_eq!(observed.parameters(), parameters);
+    }
+
+    fn dispatch_test_packet(
+        bootstrap: &mut LeControllerBootstrap,
+        command: HciCommandPacket<'_>,
+    ) -> super::BootstrapCommandCompleteEvent {
+        match classify_le_controller_command(command) {
+            LeControllerCommandClassification::Bootstrap(command) => {
+                bootstrap.dispatch_owned(command)
+            }
+            LeControllerCommandClassification::MalformedBootstrap(response) => response,
+            LeControllerCommandClassification::Dtm(command) => {
+                command_error(command.kind().opcode(), HciError::UNKNOWN_CMD)
+            }
+            LeControllerCommandClassification::MalformedDtm(response) => {
+                command_error(response.opcode(), HciError::UNKNOWN_CMD)
+            }
+            LeControllerCommandClassification::Unsupported(command) => {
+                command_error(command.opcode(), HciError::UNKNOWN_CMD)
+            }
+        }
     }
 }

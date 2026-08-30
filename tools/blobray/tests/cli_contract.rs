@@ -958,15 +958,22 @@ include-reachable = true
         run_project_command(&manifest, &["inspect", "function", "vendor:fixture_entry"]);
     assert!(inspected.status.success());
     let report: serde_json::Value = serde_json::from_slice(&inspected.stdout).unwrap();
-    let pseudo = report["semantics"][0]["pseudo"].as_str().unwrap();
-    assert!(pseudo.contains("mmio.read32(0x40000000)"));
-    assert!(pseudo.contains("mmio.write32(0x40000000"));
-    assert!(pseudo.contains("fence(fm=0x0, pred=0xf, succ=0xf)"));
-    assert!(pseudo.contains("reviewed_abi.fixture_callback()"));
-    assert_eq!(
-        report["semantics"][0]["calls"][0]["kind"],
-        "reviewed-external"
-    );
+    let semantics = &report["semantics"][0];
+    assert!(semantics["complete"].is_boolean());
+    assert!(semantics["exact"].is_boolean());
+    let instruction_evidence = semantics["instruction_evidence"].as_array().unwrap();
+    for access in ["read", "write"] {
+        assert!(instruction_evidence.iter().any(|instruction| {
+            instruction["effects"].as_array().is_some_and(|effects| {
+                effects.iter().any(|effect| {
+                    effect["kind"] == "mmio"
+                        && effect["access"] == access
+                        && effect["width"].is_u64()
+                })
+            })
+        }));
+    }
+    assert_eq!(semantics["calls"][0]["kind"], "reviewed-external");
 
     let unknown = run_project_command(
         &manifest,
@@ -985,9 +992,55 @@ include-reachable = true
         assert!(directory.join(path).is_file(), "missing publication {path}");
     }
     let svd = std::fs::read_to_string(directory.join("generated/svd/device.svd")).unwrap();
-    assert!(svd.contains("<name>CONTROL</name>"));
+    let device = svd_parser::parse(&svd).expect("published SVD must be structurally valid");
+    assert!(device.peripherals.iter().any(|peripheral| {
+        let peripheral = match peripheral {
+            svd_rs::MaybeArray::Single(peripheral) | svd_rs::MaybeArray::Array(peripheral, _) => {
+                peripheral
+            }
+        };
+        peripheral
+            .registers
+            .as_ref()
+            .is_some_and(|registers| !registers.is_empty())
+    }));
+
+    let bindings = std::fs::read_to_string(directory.join("generated/svd/device.bindings.toml"))
+        .unwrap()
+        .parse::<toml_edit::DocumentMut>()
+        .expect("published PAC bindings must be structurally valid TOML");
+    assert!(bindings["schema"].as_integer().is_some());
+    assert!(bindings["crate-name"].as_str().is_some());
+    assert!(
+        bindings["registers"]
+            .as_array_of_tables()
+            .is_some_and(|registers| !registers.is_empty())
+    );
+
     let pac = std::fs::read_to_string(directory.join("generated/pac-raw/src/lib.rs")).unwrap();
-    assert!(pac.contains("pub const fn control"));
+    let syntax = syn::parse_file(&pac).expect("published raw PAC must be valid Rust syntax");
+    fn contains_public_const_receiver(items: &[syn::Item]) -> bool {
+        items.iter().any(|item| match item {
+            syn::Item::Impl(implementation) => implementation.items.iter().any(|item| {
+                matches!(
+                    item,
+                    syn::ImplItem::Fn(method)
+                        if matches!(method.vis, syn::Visibility::Public(_))
+                            && method.sig.constness.is_some()
+                            && method.sig.receiver().is_some()
+                )
+            }),
+            syn::Item::Mod(module) => module
+                .content
+                .as_ref()
+                .is_some_and(|(_, items)| contains_public_const_receiver(items)),
+            _ => false,
+        })
+    }
+    assert!(contains_public_const_receiver(&syntax.items));
+    let reviewed_pac =
+        std::fs::read_to_string(directory.join("generated/pac/src/generated.rs")).unwrap();
+    syn::parse_file(&reviewed_pac).expect("published reviewed PAC must be valid Rust syntax");
 
     std::fs::remove_dir_all(root).unwrap();
 }

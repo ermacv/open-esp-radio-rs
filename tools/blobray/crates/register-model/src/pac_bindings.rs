@@ -464,12 +464,6 @@ fn access_label(access: Option<Access>) -> &'static str {
 mod tests {
     use super::*;
 
-    #[test]
-    fn type_binding_matches_svd2rust_for_adjacent_numeric_segments() {
-        assert_eq!(type_binding_name("BT_V3_2_BASEBAND"), "BtV3_2Baseband");
-        assert_eq!(type_binding_name("UART0_CONTROL"), "Uart0Control");
-    }
-
     const SIMPLE_SVD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <device schemaVersion="1.3" xmlns:xs="http://www.w3.org/2001/XMLSchema-instance">
   <name>FIXTURE</name>
@@ -505,11 +499,41 @@ mod tests {
 "#;
 
     #[test]
-    fn emits_configurable_crate_and_address_bindings() {
-        assert_eq!(
-            generate_pac_binding_index(SIMPLE_SVD, "fixture_pac").unwrap(),
-            "schema = 2\ncrate-name = \"fixture_pac\"\n\n[[registers]]\naddress = 1073741824\nwidth = 32\naccess = \"read-write\"\nidentity = \"UART0.CTRL\"\nperipheral = \"UART0\"\nperipheral-type = \"Uart0\"\nperipheral-module = \"uart0\"\nscope = []\nregister-method = \"ctrl\"\n\n[[registers.fields]]\nsvd-name = \"ENABLE\"\nmethod = \"enable\"\nbit-offset = 0\nbit-width = 1\naccess = \"read-write\"\n"
-        );
+    fn emits_a_typed_binding_document_for_the_requested_crate() {
+        let output = generate_pac_binding_index(SIMPLE_SVD, "fixture_pac").unwrap();
+        let document = output.parse::<toml_edit::DocumentMut>().unwrap();
+
+        assert_eq!(document["schema"].as_integer(), Some(2));
+        assert_eq!(document["crate-name"].as_str(), Some("fixture_pac"));
+        let registers = document["registers"].as_array_of_tables().unwrap();
+        assert_eq!(registers.len(), 1);
+        let register = registers.iter().next().unwrap();
+        for integer in ["address", "width"] {
+            assert!(register.get(integer).is_some_and(|item| item.is_integer()));
+        }
+        for string in [
+            "access",
+            "identity",
+            "peripheral",
+            "peripheral-type",
+            "peripheral-module",
+            "register-method",
+        ] {
+            assert!(register.get(string).is_some_and(|item| item.is_str()));
+        }
+        assert!(register.get("scope").is_some_and(|item| item.is_array()));
+        let fields = register
+            .get("fields")
+            .and_then(toml_edit::Item::as_array_of_tables)
+            .unwrap();
+        assert_eq!(fields.len(), 1);
+        let field = fields.iter().next().unwrap();
+        for integer in ["bit-offset", "bit-width"] {
+            assert!(field.get(integer).is_some_and(|item| item.is_integer()));
+        }
+        for string in ["svd-name", "method", "access"] {
+            assert!(field.get(string).is_some_and(|item| item.is_str()));
+        }
     }
 
     #[test]

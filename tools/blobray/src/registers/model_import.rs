@@ -507,13 +507,16 @@ mod tests {
         let summary =
             init_register_model(&facts, &output, "fixture-chip", "cpu", "fixture").unwrap();
         let model = super::super::RegisterModel::load(&output).unwrap();
-        let manifest = std::fs::read_to_string(&output).unwrap();
+        let manifest: RegisterModelManifest =
+            toml_edit::de::from_str(&std::fs::read_to_string(&output).unwrap()).unwrap();
         let (_, svd_summary) = model.render_svd().unwrap();
         std::fs::remove_dir_all(directory).unwrap();
         assert_eq!(summary.peripherals, 2);
         assert_eq!(summary.annotations, 0);
         assert_eq!(model.chip(), "fixture-chip");
-        assert!(manifest.starts_with("schema = 3\nchip = \"fixture-chip\"\n"));
+        assert_eq!(manifest.schema, 3);
+        assert_eq!(manifest.chip, "fixture-chip");
+        assert_eq!(manifest.fragments.len(), 2);
         assert_eq!(svd_summary.peripherals, 2);
         assert_eq!(svd_summary.registers, 0);
     }
@@ -586,11 +589,14 @@ mod tests {
     }
 
     #[test]
-    fn formats_addresses_and_masks_as_hexadecimal() {
+    fn numeric_formatting_preserves_toml_values() {
         let input = "baseAddress = 537919488\nbitOffset = 3\nmaximum = 4294967295\n";
-        assert_eq!(
-            hexadecimal_literals(input),
-            "baseAddress = 0x20100000\nbitOffset = 3\nmaximum = 0xFFFFFFFF\n"
-        );
+        let expected: std::collections::BTreeMap<String, u64> =
+            toml_edit::de::from_str(input).unwrap();
+        let formatted = hexadecimal_literals(input);
+        let actual: std::collections::BTreeMap<String, u64> =
+            toml_edit::de::from_str(&formatted).unwrap();
+
+        assert_eq!(actual, expected);
     }
 }

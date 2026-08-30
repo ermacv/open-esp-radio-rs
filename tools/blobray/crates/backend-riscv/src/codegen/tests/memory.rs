@@ -99,21 +99,20 @@ fn compacts_complete_word_to_bytes_groups_without_changing_the_access_shape() {
         unresolved_branch: None,
     };
 
-    let generated = generate_from_trace(&trace, "oracle.elf", "abc123", None, &[]).unwrap();
-
-    assert!(
-        generated
-            .source
-            .contains("Proven 8-byte CPU-RAM word-to-bytes loop")
-    );
-    assert!(
-        generated
-            .source
-            .contains("for memory_transfer_word_offset0 in (0..8_u32).step_by(4)")
-    );
-    assert!(generated.source.contains("memory.read(32,"));
-    assert!(generated.source.contains("memory.write(8,"));
-    assert!(!generated.source.contains("memory.read(8,"));
+    let program = ResolvedReferenceProgram::try_from(&trace).unwrap();
+    let ResolvedReferenceBody::Linear { events, .. } = program.body else {
+        panic!("linear trace resolved to a flow body");
+    };
+    assert!(matches!(
+        events.as_slice(),
+        [ResolvedReferenceEvent::WordToBytesMemoryLoop {
+            source_region,
+            destination_region,
+            length: 8,
+            ..
+        }] if source_region == ".data"
+            && destination_region == "caller-owned ABI argument RAM"
+    ));
 }
 
 #[test]
@@ -137,20 +136,25 @@ fn does_not_compact_a_memory_read_token_that_escapes_the_loop() {
         unresolved_branch: None,
     };
 
-    let generated = generate_from_trace(&trace, "oracle.elf", "abc123", None, &[]).unwrap();
-
-    assert!(!generated.source.contains("word-to-bytes loop"));
+    let program = ResolvedReferenceProgram::try_from(&trace).unwrap();
+    let ResolvedReferenceBody::Linear {
+        events,
+        return_value,
+    } = program.body
+    else {
+        panic!("linear trace resolved to a flow body");
+    };
+    assert_eq!(events.len(), 8);
     assert!(
-        generated
-            .source
-            .contains("let memory_read3 = memory.read(32,")
+        events
+            .iter()
+            .all(|event| matches!(event, ResolvedReferenceEvent::Memory { .. }))
     );
-    let outcome = generated.source.rsplit("ReferenceOutcome").next().unwrap();
-    assert!(outcome.contains("memory_read3"), "{outcome}");
+    assert_eq!(return_value, trace.return_value);
 }
 
 #[test]
-fn compacts_proven_little_endian_loaders_and_preserves_read_order() {
+fn compacts_complete_little_endian_loader_groups() {
     let source = SymbolicValue::input(0).add_constant(12);
     let mut reference_events = bytes_to_word_events(source.clone(), 0x1000_8000, 0);
     reference_events.extend(bytes_to_word_events(source.add_constant(4), 0x1000_8004, 1));
@@ -168,23 +172,19 @@ fn compacts_proven_little_endian_loaders_and_preserves_read_order() {
         unresolved_branch: None,
     };
 
-    let generated = generate_from_trace(&trace, "oracle.elf", "abc123", None, &[]).unwrap();
-
-    assert!(
-        generated
-            .source
-            .contains("Proven 8-byte CPU-RAM bytes-to-word loop")
-    );
-    let byte1 = generated.source.find("memory_transfer_byte1_0").unwrap();
-    let byte0 = generated.source.find("memory_transfer_byte0_0").unwrap();
-    let byte2 = generated.source.find("memory_transfer_byte2_0").unwrap();
-    let byte3 = generated.source.find("memory_transfer_byte3_0").unwrap();
-    assert!(byte1 < byte0 && byte0 < byte2 && byte2 < byte3);
-    assert_eq!(
-        generated
-            .source
-            .matches("Composed direct-call dependency: phy_byte_to_word")
-            .count(),
-        1
-    );
+    let program = ResolvedReferenceProgram::try_from(&trace).unwrap();
+    assert_eq!(program.dependencies.len(), 1);
+    let ResolvedReferenceBody::Linear { events, .. } = program.body else {
+        panic!("linear trace resolved to a flow body");
+    };
+    assert!(matches!(
+        events.as_slice(),
+        [ResolvedReferenceEvent::BytesToWordMemoryLoop {
+            source_region,
+            destination_region,
+            length: 8,
+            ..
+        }] if source_region == "caller-owned ABI argument RAM"
+            && destination_region == ".data"
+    ));
 }

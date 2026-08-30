@@ -1895,6 +1895,61 @@ mod tests {
     use super::*;
     use open_radio_vendor_review::ReviewPack;
 
+    fn parse_rendered_model(model: &RegisterModel) -> (Device, SvdExportSummary) {
+        let (svd, summary) = model.render_svd().unwrap();
+        let device = svd_parser::parse(&svd).unwrap();
+        (device, summary)
+    }
+
+    fn find_singular_register<'a>(
+        device: &'a Device,
+        peripheral_name: &str,
+        register_name: &str,
+    ) -> Option<&'a RegisterInfo> {
+        let peripheral = device
+            .peripherals
+            .iter()
+            .find_map(|peripheral| match peripheral {
+                MaybeArray::Single(peripheral) if peripheral.name == peripheral_name => {
+                    Some(peripheral)
+                }
+                _ => None,
+            })?;
+        peripheral
+            .registers
+            .as_ref()?
+            .iter()
+            .find_map(|register| match register {
+                RegisterCluster::Register(MaybeArray::Single(register))
+                    if register.name == register_name =>
+                {
+                    Some(register)
+                }
+                _ => None,
+            })
+    }
+
+    fn singular_register<'a>(
+        device: &'a Device,
+        peripheral_name: &str,
+        register_name: &str,
+    ) -> &'a RegisterInfo {
+        find_singular_register(device, peripheral_name, register_name).unwrap()
+    }
+
+    fn singular_field<'a>(register: &'a RegisterInfo, field_name: &str) -> &'a FieldInfo {
+        register
+            .fields
+            .as_ref()
+            .unwrap()
+            .iter()
+            .find_map(|field| match field {
+                MaybeArray::Single(field) if field.name == field_name => Some(field),
+                _ => None,
+            })
+            .unwrap()
+    }
+
     fn fixture_model(name: &str, modified_write_values: Option<&str>) -> (PathBuf, RegisterModel) {
         let directory = std::env::temp_dir().join(format!(
             "open-radio-register-overlay-{}-{name}",
@@ -2006,7 +2061,7 @@ locator = "function"
         );
 
         let summary = model.apply_review_knowledge(&knowledge).unwrap();
-        let (svd, _) = model.render_svd().unwrap();
+        let (rendered, _) = parse_rendered_model(&model);
         fs::remove_dir_all(directory).unwrap();
 
         assert_eq!(
@@ -2018,9 +2073,12 @@ locator = "function"
                 materialized: 0,
             }
         );
-        assert!(svd.contains("<name>EVENT_STATUS</name>"));
-        assert!(svd.contains("<name>PENDING</name>"));
-        assert!(svd.contains("<modifiedWriteValues>oneToClear</modifiedWriteValues>"));
+        let register = singular_register(&rendered, "RADIO", "EVENT_STATUS");
+        let field = singular_field(register, "PENDING");
+        assert_eq!(
+            field.modified_write_values,
+            Some(ModifiedWriteValues::OneToClear)
+        );
         assert_eq!(model.reviewed_register_facts().len(), 3);
         assert_eq!(
             model
@@ -2160,10 +2218,10 @@ locator = "manual"
             })
             .unwrap();
         model.apply_review_knowledge(&selected).unwrap();
-        let (svd, _) = model.render_svd().unwrap();
+        let (rendered, _) = parse_rendered_model(&model);
         fs::remove_dir_all(directory).unwrap();
-        assert!(svd.contains("<name>STATUS_REV0</name>"));
-        assert!(!svd.contains("STATUS_REV1"));
+        singular_register(&rendered, "RADIO", "STATUS_REV0");
+        assert!(find_singular_register(&rendered, "RADIO", "STATUS_REV1").is_none());
     }
 
     #[test]
@@ -2183,12 +2241,15 @@ locator = "write"
         );
 
         let summary = model.apply_review_knowledge(&knowledge).unwrap();
-        let (svd, _) = model.render_svd().unwrap();
+        let (rendered, _) = parse_rendered_model(&model);
         fs::remove_dir_all(directory).unwrap();
 
         assert_eq!(summary.matched, 1);
         assert_eq!(summary.changed, 1);
-        assert!(!svd.contains("modifiedWriteValues"));
+        assert_eq!(
+            singular_register(&rendered, "RADIO", "STATUS").modified_write_values,
+            None
+        );
     }
 
     #[test]
@@ -2212,7 +2273,7 @@ locator = "identity"
 
         let summary = model.apply_review_knowledge(&knowledge).unwrap();
         let identities = model.register_identities().unwrap();
-        let (svd, export) = model.render_svd().unwrap();
+        let (rendered, export) = parse_rendered_model(&model);
         let retained = &model.reviewed_register_facts()[0];
         let MaybeArray::Single(peripheral) = &model.device.peripherals[0] else {
             panic!("fixture peripheral must be singular")
@@ -2238,7 +2299,7 @@ locator = "identity"
             Some(&"RADIO.EVENT_STATUS".to_owned())
         );
         assert_eq!(export.registers, 2);
-        assert!(svd.contains("<name>EVENT_STATUS</name>"));
+        singular_register(&rendered, "RADIO", "EVENT_STATUS");
         assert_eq!(register.properties.size, Some(32));
         assert_eq!(register.properties.access, None);
         assert_eq!(register.modified_write_values, None);
@@ -2596,11 +2657,16 @@ locator = "access"
 "#,
         );
         let summary = access_model.apply_review_knowledge(&with_access).unwrap();
-        let (svd, _) = access_model.render_svd().unwrap();
+        let (rendered, _) = parse_rendered_model(&access_model);
         fs::remove_dir_all(access_directory).unwrap();
         assert_eq!(summary.matched, 2);
         assert_eq!(summary.materialized, 1);
-        assert!(svd.contains("<access>read-write</access>"));
+        assert_eq!(
+            singular_register(&rendered, "RADIO", "EVENT_STATUS")
+                .properties
+                .access,
+            Some(Access::ReadWrite)
+        );
 
         let rename = || {
             knowledge(

@@ -3,7 +3,7 @@
 use super::*;
 
 #[test]
-fn renders_a_compact_bounded_poll_with_an_exhaustion_diagnostic() {
+fn resolves_a_bounded_poll_with_an_exhaustion_diagnostic() {
     let mut call_arguments: Rv32CallArguments = core::array::from_fn(|_| SymbolicValue::Unknown);
     call_arguments[0] = SymbolicValue::input(0);
     let mut diagnostic_arguments: [SymbolicValue; 8] =
@@ -56,21 +56,36 @@ fn renders_a_compact_bounded_poll_with_an_exhaustion_diagnostic() {
         unresolved_branch: None,
     };
 
-    let generated = generate_from_trace(&trace, "rom.elf", "digest", None, &[]).unwrap();
-    assert!(
-        generated
-            .source
-            .contains("for bounded_poll_attempt0 in 0..100_u16")
-    );
-    assert!(generated.source.contains("io.delay_micros(0x00000014_u32)"));
-    assert!(
-        generated
-            .source
-            .contains("if bounded_poll_value0 & 0xffffffff_u32 != 0x00000000_u32 { break; }")
-    );
-    assert!(
-        generated
-            .source
-            .contains("platform.diagnostic_call(\"ets_printf\", &[0x2f84d9cc_u32])")
-    );
+    let program = ResolvedReferenceProgram::try_from(&trace).unwrap();
+    let ResolvedReferenceBody::Flow(flow) = program.body else {
+        panic!("flow trace resolved to a linear body");
+    };
+    let [
+        ResolvedReferenceEvent::BoundedPoll {
+            maximum_attempts: 100,
+            body,
+            on_exhausted: Some(on_exhausted),
+            ..
+        },
+    ] = flow.events.as_slice()
+    else {
+        panic!("bounded poll was not retained as one resolved event");
+    };
+    assert!(matches!(
+        body.events.as_slice(),
+        [
+            ResolvedReferenceEvent::DelayMicros { .. },
+            ResolvedReferenceEvent::ComposedCall {
+                result_modeled: true,
+                ..
+            }
+        ]
+    ));
+    assert!(matches!(
+        on_exhausted.as_ref(),
+        ResolvedReferenceEvent::DiagnosticCall {
+            argument_count: 1,
+            ..
+        }
+    ));
 }

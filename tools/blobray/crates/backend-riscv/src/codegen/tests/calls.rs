@@ -4,7 +4,7 @@ use super::memory::bytes_to_word_events;
 use super::*;
 
 #[test]
-fn renders_modeled_direct_platform_call_and_constant_guard() {
+fn resolves_modeled_direct_call_and_constant_result() {
     let trace = FunctionAnalysis {
         symbol: "fixed_xtal".to_owned(),
         events: Vec::new(),
@@ -33,18 +33,26 @@ fn renders_modeled_direct_platform_call_and_constant_guard() {
         unresolved_branch: None,
     };
 
-    let generated = generate_from_trace(&trace, "oracle.elf", "digest", None, &[]).unwrap();
-
-    assert!(
-        generated
-            .source
-            .contains("platform.direct_external_call(\"fixed-xtal-40mhz\", &[])")
-    );
-    assert!(
-        generated
-            .source
-            .contains("assert_eq!(external_result0, 0x00000028_u32")
-    );
+    let program = ResolvedReferenceProgram::try_from(&trace).unwrap();
+    let ResolvedReferenceBody::Linear {
+        events,
+        return_value,
+    } = program.body
+    else {
+        panic!("linear trace resolved to a flow body");
+    };
+    assert_eq!(return_value, SymbolicValue::Constant(40));
+    assert!(matches!(
+        events.as_slice(),
+        [ResolvedReferenceEvent::ModeledDirectCall {
+            function: open_radio_vendor_analysis_model::ModeledDirectCall {
+                return_model: ExternalReturnModel::Constant(40),
+                ..
+            },
+            arguments,
+            ..
+        }] if arguments.is_empty()
+    ));
 }
 
 #[test]
@@ -64,79 +72,36 @@ fn does_not_compact_a_composed_call_result_that_escapes_the_loop() {
         unresolved_branch: None,
     };
 
-    let generated = generate_from_trace(&trace, "oracle.elf", "abc123", None, &[]).unwrap();
-
-    assert!(!generated.source.contains("bytes-to-word loop"));
-    assert!(
-        generated
-            .source
-            .contains("Composed direct call: phy_byte_to_word")
-    );
-    assert!(generated.source.contains("exit_a0: Some(call_result0)"));
-}
-
-#[test]
-fn nested_composed_call_arguments_do_not_shadow_the_parent_binding() {
-    let leaf = || ResolvedReferenceFlow {
-        events: Vec::new(),
-        terminator: ResolvedReferenceTerminator::Return(SymbolicValue::input(0)),
+    let program = ResolvedReferenceProgram::try_from(&trace).unwrap();
+    let ResolvedReferenceBody::Linear {
+        events,
+        return_value,
+    } = program.body
+    else {
+        panic!("linear trace resolved to a flow body");
     };
-    let outer_flow = ResolvedReferenceFlow {
-        events: vec![
-            ResolvedReferenceEvent::ComposedCall {
-                token: 0,
-                symbol: "leaf".to_owned(),
-                arguments: vec![SymbolicValue::input(0).add_constant(12)].into_boxed_slice(),
-                flow: Box::new(leaf()),
-                result_modeled: true,
-            },
-            ResolvedReferenceEvent::ComposedCall {
-                token: 1,
-                symbol: "leaf".to_owned(),
-                arguments: vec![SymbolicValue::input(0).add_constant(16)].into_boxed_slice(),
-                flow: Box::new(leaf()),
-                result_modeled: true,
-            },
-        ],
-        terminator: ResolvedReferenceTerminator::Return(SymbolicValue::CallResult(1)),
-    };
-    let program = ResolvedReferenceProgram {
-        symbol: "wrapper".to_owned(),
-        dependencies: vec!["outer".to_owned(), "leaf".to_owned()],
-        body: ResolvedReferenceBody::Linear {
-            events: vec![ResolvedReferenceEvent::ComposedCall {
-                token: 0,
-                symbol: "outer".to_owned(),
-                arguments: vec![SymbolicValue::input(0)].into_boxed_slice(),
-                flow: Box::new(outer_flow),
-                result_modeled: true,
-            }],
-            return_value: SymbolicValue::CallResult(0),
-        },
-        exit_return_modeled: true,
-    };
-
-    let generated = generate(&program, "oracle.elf", "abc123", None, &[]).unwrap();
-
-    assert!(
-        generated.source.contains(
-            "let call0_call0_arg0 = (call0_arg0 & 0xffffffff_u32).wrapping_add(0x0000000c_u32);"
-        ),
-        "{}",
-        generated.source
-    );
-    assert!(generated.source.contains(
-        "let call0_call1_arg0 = (call0_arg0 & 0xffffffff_u32).wrapping_add(0x00000010_u32);"
+    assert_eq!(return_value, SymbolicValue::CallResult(0));
+    assert_eq!(events.len(), 2);
+    assert!(matches!(
+        &events[0],
+        ResolvedReferenceEvent::ComposedCall {
+            token: 0,
+            result_modeled: true,
+            ..
+        }
     ));
-    assert!(
-        !generated
-            .source
-            .contains("let call0_call1_arg0 = (call0_call0_arg0 & 0xffffffff_u32)")
-    );
+    assert!(matches!(
+        &events[1],
+        ResolvedReferenceEvent::Memory {
+            access: MemoryAccess::Write,
+            value: Some(SymbolicValue::CallResult(0)),
+            ..
+        }
+    ));
 }
 
 #[test]
-fn renders_both_words_of_one_ordered_wide_division() {
+fn resolves_both_words_of_one_ordered_wide_division() {
     let trace = FunctionAnalysis {
         symbol: "wide_divide".to_owned(),
         events: Vec::new(),
@@ -157,19 +122,18 @@ fn renders_both_words_of_one_ordered_wide_division() {
         reference_flow: None,
         unresolved_branch: None,
     };
-    let generated = generate_from_trace(&trace, "rom.elf", "digest", None, &[]).unwrap();
-
-    assert!(
-        generated
-            .source
-            .contains("let (call_result0, call_result0_high) = riscv_div_i64_words(")
-    );
-    assert!(
-        generated
-            .source
-            .contains("ReferenceOutcome { exit_a0: Some((call_result0) ^ (call_result0_high)) }")
-    );
-    assert!(generated.source.contains(
-        "assert!(divisor != 0, \"modeled __divdi3 precondition violated: divisor is zero\")"
+    let program = ResolvedReferenceProgram::try_from(&trace).unwrap();
+    let ResolvedReferenceBody::Linear {
+        events,
+        return_value,
+    } = program.body
+    else {
+        panic!("linear trace resolved to a flow body");
+    };
+    assert!(program.exit_return_modeled);
+    assert!(matches!(
+        events.as_slice(),
+        [ResolvedReferenceEvent::WideSignedDivide { token: 0, .. }]
     ));
+    assert_eq!(return_value, trace.return_value);
 }

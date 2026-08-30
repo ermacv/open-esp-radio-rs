@@ -85,9 +85,11 @@ fn creates_a_valid_project_and_refuses_to_overwrite_it() {
         project.reviewed_knowledge_default.as_deref(),
         Some(directory.join("reviewed/project-facts.toml").as_path())
     );
-    let sparse_review = fs::read_to_string(directory.join("reviewed/project-facts.toml")).unwrap();
-    assert!(sparse_review.contains("schema = 2"));
-    assert!(!sparse_review.contains("[[assertions]]"));
+    let sparse_review =
+        open_radio_vendor_review::ReviewPack::load(&directory.join("reviewed/project-facts.toml"))
+            .unwrap();
+    assert_eq!(sparse_review.schema, 2);
+    assert!(sparse_review.assertions.is_empty());
     assert_eq!(project.registers.as_ref().unwrap().owned_ranges, ["radio"]);
     assert_eq!(
         project

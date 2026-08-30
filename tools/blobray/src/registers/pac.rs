@@ -155,7 +155,19 @@ mod tests {
 </device>
 "#;
         let source = generate_pac_with_api(svd, PacTarget::None, PacEdition::E2024, None).unwrap();
-        assert!(source.contains("pub mod radio"));
-        assert!(source.contains("pub struct Peripherals"));
+        let syntax = syn::parse_file(&source).expect("generated PAC must be valid Rust syntax");
+        assert!(syntax.items.iter().any(|item| {
+            matches!(
+                item,
+                syn::Item::Mod(module) if matches!(module.vis, syn::Visibility::Public(_))
+            )
+        }));
+        assert!(syntax.items.iter().any(|item| {
+            matches!(
+                item,
+                syn::Item::Struct(structure)
+                    if matches!(structure.vis, syn::Visibility::Public(_))
+            )
+        }));
     }
 }

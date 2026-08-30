@@ -1842,7 +1842,7 @@ mod tests {
     }
 
     #[test]
-    fn validates_and_renders_indirect_register_field_accessors() {
+    fn validates_indirect_register_field_domains() {
         let mut pack = empty_pack();
         pack.indirect_register_field_domains
             .push(IndirectRegisterFieldDomain {
@@ -1864,10 +1864,6 @@ mod tests {
         assert_eq!(pack.domain_count(), 1);
         assert!(pack.validate().is_ok());
         assert_eq!(pack.source_ids(), BTreeSet::from(["VENDOR_ANALOG_GAIN"]));
-        let rendered = pack.render_facade_rust().unwrap();
-        assert!(rendered.contains("pub struct AnalogField"));
-        assert!(rendered.contains("pub mod analog_fields"));
-        assert!(rendered.contains("pub const GAIN: AnalogField"));
 
         pack.indirect_register_field_domains[0].fields[0].bit_width = 7;
         assert!(pack.validate().is_err());

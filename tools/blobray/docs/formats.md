@@ -185,7 +185,7 @@ state and capture a fresh baseline from the live typed vendor bindings.
   reviewed-record IDs. `@live` is a read-only operand for validating and
   comparing current analyzed bindings before publishing a new immutable
   snapshot;
-- research-next reports (`schema_version = 13`) contain one deterministic,
+- research-next reports (`schema_version = 16`) contain one deterministic,
   SHA-256-identified full inventory of findings, actions and prerequisites.
   Actions refer to the single typed finding catalog by ID and prerequisites
   carry no rank; the bounded `selection.steps` list contains only ordered typed
@@ -203,7 +203,11 @@ state and capture a fresh baseline from the live typed vendor bindings.
   boundaries, the absolute invocation working directory and its project-context
   level; rendered shell text is never part of the machine schema. Capability matches and
   verification surfaces are context-only links with zero ranking weight, and
-  the report makes no completion claim.
+  the report makes no completion claim. Typed incomplete event-route blockers
+  retain their route ID, blocker kind, exact `inspect flow --event-route`
+  action and current-report absence predicate. Until the producer publishes
+  typed impact evidence, they retain scope and function-inspection navigation
+  but expose no affected roots, publication scopes, or function-unlock weight.
 - project-status reports (`schema = 11`) keep shallow artifact readiness
   separate from generated freshness, open research debt and verification
   readiness; review-scope details expose their explicit protocol memberships,

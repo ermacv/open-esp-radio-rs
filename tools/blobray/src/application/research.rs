@@ -22,7 +22,8 @@ use crate::{
     review_scopes::{ReviewScopeReport, ReviewScopesDocument},
 };
 
-pub(crate) const RESEARCH_SCHEMA: u32 = 15;
+pub(crate) const RESEARCH_SCHEMA: u32 = 16;
+const MAX_RESEARCH_EVENT_ROUTES: usize = 256;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -167,6 +168,10 @@ pub(crate) struct ResearchScoreExplanation {
 pub(crate) enum ResearchSubject {
     AnalysisRoot {
         root_id: String,
+    },
+    EventRouteBlocker {
+        route_id: String,
+        blocker_kind: String,
     },
     MmioRegister {
         address_space: String,
@@ -355,6 +360,7 @@ pub(crate) struct ResearchFinding {
     pub(crate) consumers: Vec<ResearchConsumer>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) blocker_resolution_route: Option<crate::BlockerResolutionRoute>,
+    pub(crate) resolution_owner: crate::BlockerResolutionOwner,
     pub(crate) actionability: ResearchActionability,
     pub(crate) prerequisite_ids: Vec<String>,
     pub(crate) evidence_sites: Vec<u32>,
@@ -419,6 +425,8 @@ pub(crate) struct ResearchActionCatalogEntry {
     pub(crate) next_action: ExecutableAction,
     pub(crate) estimated_cost: String,
     pub(crate) confidence: String,
+    pub(crate) resolution_owner: crate::BlockerResolutionOwner,
+    pub(crate) required_model: String,
     pub(crate) score_breakdown: ResearchScoreBreakdown,
     pub(crate) score_explanation: ResearchScoreExplanation,
     pub(crate) finding_ids: Vec<String>,
@@ -613,6 +621,7 @@ pub(crate) fn next(
             &mut candidates,
         )?;
     }
+    add_incomplete_event_route_blockers(session, &scopes, &graphs, &mut candidates)?;
     if options.scope.is_none() {
         add_required_analysis_surface_findings(session, selected_protocol, &mut candidates)?;
     }
@@ -822,6 +831,11 @@ fn build_inventory(
     let mut action_catalog = Vec::with_capacity(actions.len());
     for mut action in actions {
         let action_findings = std::mem::take(&mut action.findings);
+        let resolution = finding_action_resolution_key(
+            action_findings
+                .first()
+                .expect("every research action owns one or more findings"),
+        );
         let mut finding_ids = action_findings
             .iter()
             .map(|finding| finding.id.clone())
@@ -836,6 +850,8 @@ fn build_inventory(
             next_action: action.next_action,
             estimated_cost: action.estimated_cost,
             confidence: action.confidence,
+            resolution_owner: resolution.owner,
+            required_model: resolution.required_model,
             score_breakdown: action.score_breakdown,
             score_explanation: action.score_explanation,
             finding_ids,
@@ -1055,6 +1071,7 @@ fn validate_report(report: &ResearchNextReport) -> Result<()> {
     }
     for finding in &inventory.findings {
         validate_blocker_resolution_route(finding)?;
+        validate_finding_resolution_identity(finding)?;
         validate_executable_action("finding requery", &finding.requery_action)?;
         for action in &finding.revalidation_actions {
             validate_executable_action("finding revalidation", action)?;
@@ -1101,12 +1118,6 @@ fn validate_report(report: &ResearchNextReport) -> Result<()> {
     let mut action_by_finding = BTreeMap::new();
     for action in &inventory.actions {
         validate_executable_action("catalog next", &action.next_action)?;
-        if action.id != stable_id("action", &action.next_action.canonical_execution_key()) {
-            return Err(crate::Error::invalid(format!(
-                "research action {:?} does not match its canonical executable identity",
-                action.id
-            )));
-        }
         validate_sorted_unique_ids(
             "action finding reference",
             action.finding_ids.iter().map(String::as_str),
@@ -1117,13 +1128,52 @@ fn validate_report(report: &ResearchNextReport) -> Result<()> {
                 action.id
             )));
         }
+        let mut action_resolution = None;
         for finding in &action.finding_ids {
-            if !finding_ids.contains(finding.as_str()) {
+            let finding_entry = inventory
+                .findings
+                .binary_search_by(|entry| entry.id.cmp(finding))
+                .ok()
+                .map(|index| &inventory.findings[index])
+                .ok_or_else(|| {
+                    crate::Error::invalid(format!(
+                        "research action {:?} references missing finding {finding:?}",
+                        action.id
+                    ))
+                })?;
+            let resolution = finding_action_resolution_key(finding_entry);
+            if action_resolution
+                .as_ref()
+                .is_some_and(|existing| existing != &resolution)
+            {
                 return Err(crate::Error::invalid(format!(
-                    "research action {:?} references missing finding {finding:?}",
+                    "research action {:?} coalesces findings with different resolution owners or models",
                     action.id
                 )));
             }
+            action_resolution = Some(resolution);
+        }
+        let action_resolution = action_resolution.expect("non-empty action checked above");
+        if action.resolution_owner != action_resolution.owner
+            || action.required_model != action_resolution.required_model
+        {
+            return Err(crate::Error::invalid(format!(
+                "research action {:?} does not publish its findings' exact resolution owner and model",
+                action.id
+            )));
+        }
+        if action.id
+            != stable_id(
+                "action",
+                &action_canonical_identity(&action.next_action, &action_resolution),
+            )
+        {
+            return Err(crate::Error::invalid(format!(
+                "research action {:?} does not match its canonical executable identity and resolution model",
+                action.id
+            )));
+        }
+        for finding in &action.finding_ids {
             if !referenced_findings.insert(finding.as_str()) {
                 return Err(crate::Error::invalid(format!(
                     "research finding {finding:?} belongs to more than one action"
@@ -1136,6 +1186,7 @@ fn validate_report(report: &ResearchNextReport) -> Result<()> {
                 .map(|index| &inventory.findings[index])
                 .expect("finding membership checked above");
             validate_analysis_surface_next_action(finding_entry, &action.next_action)?;
+            validate_event_route_next_action(finding_entry, &action.next_action)?;
             action_by_finding.insert(finding.as_str(), action.id.as_str());
         }
     }
@@ -1234,6 +1285,41 @@ fn validate_report(report: &ResearchNextReport) -> Result<()> {
     Ok(())
 }
 
+fn validate_finding_resolution_identity(finding: &ResearchFinding) -> Result<()> {
+    if matches!(&finding.subject, ResearchSubject::EventRouteBlocker { .. })
+        && (!finding.direct_function_ids.is_empty()
+            || !finding.guaranteed_function_ids.is_empty()
+            || !finding.optimistic_function_ids.is_empty()
+            || !finding.marginal_function_ids.is_empty()
+            || !finding.affected_scope_roots.is_empty()
+            || !finding.publication_scopes.is_empty())
+    {
+        return Err(crate::Error::invalid(format!(
+            "event-route finding {:?} publishes impact without typed affected-function evidence",
+            finding.id
+        )));
+    }
+    let expected_owner = finding.blocker_resolution_route.as_ref().map_or_else(
+        || subject_resolution_owner(&finding.subject),
+        |route| route.owner,
+    );
+    if finding.resolution_owner != expected_owner {
+        return Err(crate::Error::invalid(format!(
+            "research finding {:?} does not publish its typed resolution owner",
+            finding.id
+        )));
+    }
+    if finding.blocker_resolution_route.is_none()
+        && finding.knowledge_required != knowledge_required(&finding.kind)
+    {
+        return Err(crate::Error::invalid(format!(
+            "research finding {:?} does not publish its exact required model",
+            finding.id
+        )));
+    }
+    Ok(())
+}
+
 fn validate_blocker_resolution_route(finding: &ResearchFinding) -> Result<()> {
     let route = match (&finding.subject, &finding.blocker_resolution_route) {
         (ResearchSubject::AnalysisRoot { root_id }, Some(route)) => {
@@ -1243,6 +1329,30 @@ fn validate_blocker_resolution_route(finding: &ResearchFinding) -> Result<()> {
         (ResearchSubject::AnalysisRoot { .. }, None) => {
             return Err(crate::Error::invalid(format!(
                 "research blocker {:?} has no typed resolution route",
+                finding.id
+            )));
+        }
+        (
+            ResearchSubject::EventRouteBlocker {
+                route_id,
+                blocker_kind,
+            },
+            Some(route),
+        ) => {
+            route.validate_event_route(route_id, blocker_kind)?;
+            if finding.id != event_route_finding_id(route_id, blocker_kind)
+                || finding.kind != *blocker_kind
+            {
+                return Err(crate::Error::invalid(format!(
+                    "event-route research blocker {:?} does not match its typed subject",
+                    finding.id
+                )));
+            }
+            route
+        }
+        (ResearchSubject::EventRouteBlocker { .. }, None) => {
+            return Err(crate::Error::invalid(format!(
+                "event-route research blocker {:?} has no typed resolution route",
                 finding.id
             )));
         }
@@ -1263,6 +1373,32 @@ fn validate_blocker_resolution_route(finding: &ResearchFinding) -> Result<()> {
     if route.evidence_required != finding.evidence_required {
         return Err(crate::Error::invalid(format!(
             "research blocker {:?} evidence requirement diverges from its typed route",
+            finding.id
+        )));
+    }
+    Ok(())
+}
+
+fn validate_event_route_next_action(
+    finding: &ResearchFinding,
+    action: &ExecutableAction,
+) -> Result<()> {
+    let ResearchSubject::EventRouteBlocker { route_id, .. } = &finding.subject else {
+        return Ok(());
+    };
+    let prefix = ["blobray", "inspect", "flow", "--event-route", route_id];
+    let Some(suffix) = action.argv.get(prefix.len()..) else {
+        return Err(crate::Error::invalid(format!(
+            "event-route finding {:?} has an incomplete inspect action",
+            finding.id
+        )));
+    };
+    if action.argv[..prefix.len()] != prefix
+        || !valid_analysis_context_suffix(suffix)
+        || action.context != ProjectContextRequirement::Analysis
+    {
+        return Err(crate::Error::invalid(format!(
+            "event-route finding {:?} does not use its exact typed inspect action",
             finding.id
         )));
     }
@@ -2450,6 +2586,145 @@ fn add_blockers(
     Ok(())
 }
 
+fn add_incomplete_event_route_blockers(
+    session: &ProjectSession,
+    scopes: &[&ReviewScopeReport],
+    graphs: &BTreeMap<String, ScopeGraph>,
+    candidates: &mut BTreeMap<String, Accumulator>,
+) -> Result<()> {
+    let Some(workspace) = session.function_workspace()? else {
+        return Ok(());
+    };
+    let route_ids = workspace
+        .pack
+        .event_routes
+        .iter()
+        .map(|route| route.id().to_owned())
+        .collect::<Vec<_>>();
+    if route_ids.len() > MAX_RESEARCH_EVENT_ROUTES {
+        return Err(crate::Error::invalid(format!(
+            "research event-route inventory contains {} routes, exceeding the bounded limit {MAX_RESEARCH_EVENT_ROUTES}",
+            route_ids.len()
+        )));
+    }
+    let reports = crate::flow_investigation::investigate_event_routes_with_workspace(
+        &route_ids,
+        12,
+        &session.project,
+        workspace,
+    )?;
+    for report in reports {
+        add_incomplete_event_route_report(&report, scopes, graphs, candidates)?;
+    }
+    Ok(())
+}
+
+fn add_incomplete_event_route_report(
+    report: &crate::flow_investigation::FlowInvestigationReport,
+    scopes: &[&ReviewScopeReport],
+    graphs: &BTreeMap<String, ScopeGraph>,
+    candidates: &mut BTreeMap<String, Accumulator>,
+) -> Result<()> {
+    if report.status != crate::flow_investigation::FlowStatus::Incomplete {
+        return Ok(());
+    }
+    let route_id = report.route.as_deref().ok_or_else(|| {
+        crate::Error::invalid("incomplete event-route report has no typed route identity")
+    })?;
+    let route_functions = event_route_report_functions(report);
+    let evidence_sites = report
+        .steps
+        .iter()
+        .filter_map(|step| step.site)
+        .chain(report.effects.iter().filter_map(|effect| effect.site))
+        .collect::<BTreeSet<_>>();
+    let blocker_ids = report
+        .blockers
+        .iter()
+        .map(|blocker| event_route_finding_id(route_id, &blocker.kind))
+        .collect::<BTreeSet<_>>();
+    for scope in scopes {
+        let graph = &graphs[&scope.id];
+        let Some(inspection) = event_route_scope_inspection(&route_functions, graph) else {
+            continue;
+        };
+        for blocker in &report.blockers {
+            let id = event_route_finding_id(route_id, &blocker.kind);
+            merge(
+                candidates,
+                Seed {
+                    id: id.clone(),
+                    kind: blocker.kind.clone(),
+                    severity: "warning".to_owned(),
+                    message: format!(
+                        "event route {route_id:?} remains incomplete: {}",
+                        blocker.message
+                    ),
+                    subject: ResearchSubject::EventRouteBlocker {
+                        route_id: route_id.to_owned(),
+                        blocker_kind: blocker.kind.clone(),
+                    },
+                    consumers: Vec::new(),
+                    blocker_resolution_route: Some(
+                        crate::blocker_resolution::event_route_blocker_resolution_route(
+                            route_id,
+                            &blocker.kind,
+                        ),
+                    ),
+                    evidence_sites: evidence_sites.clone(),
+                    evidence_channels: ["event-route".to_owned()].into(),
+                    inspection: inspection.clone(),
+                    direct: BTreeSet::new(),
+                    guaranteed: BTreeSet::new(),
+                    optimistic: BTreeSet::new(),
+                    marginal: BTreeSet::new(),
+                    co_blockers: blocker_ids
+                        .iter()
+                        .filter(|other| *other != &id)
+                        .cloned()
+                        .collect(),
+                    roots: BTreeSet::new(),
+                },
+                scope,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn event_route_scope_inspection(
+    route_functions: &BTreeSet<String>,
+    graph: &ScopeGraph,
+) -> Option<BTreeSet<String>> {
+    let inspection = route_functions
+        .iter()
+        .filter_map(|function| resolve_function(graph, function))
+        .collect::<BTreeSet<_>>();
+    (!inspection.is_empty()).then_some(inspection)
+}
+
+fn event_route_report_functions(
+    report: &crate::flow_investigation::FlowInvestigationReport,
+) -> BTreeSet<String> {
+    std::iter::once(report.root.clone())
+        .chain(report.target.iter().cloned())
+        .chain(
+            report
+                .steps
+                .iter()
+                .flat_map(|step| [step.caller.clone(), step.callee.clone()]),
+        )
+        .chain(report.effects.iter().map(|effect| effect.function.clone()))
+        .collect()
+}
+
+fn event_route_finding_id(route_id: &str, blocker_kind: &str) -> String {
+    stable_id(
+        "event-route-blocker",
+        &crate::blocker_resolution::event_route_blocker_root(route_id, blocker_kind),
+    )
+}
+
 fn required_analysis_surface_state(
     source_available: bool,
     inventory_available: bool,
@@ -2713,7 +2988,7 @@ fn merge(
     item.co_blockers.extend(seed.co_blockers);
     item.roots.extend(seed.roots);
     item.scopes.insert(scope.id.clone());
-    if scope.publication {
+    if scope.publication && !matches!(&item.subject, ResearchSubject::EventRouteBlocker { .. }) {
         item.publication_scopes.insert(scope.id.clone());
     }
     Ok(())
@@ -4210,6 +4485,14 @@ fn finalize(
         || knowledge_required(&kind).to_owned(),
         |route| route.required_model.clone(),
     );
+    let resolution_owner = candidate.blocker_resolution_route.as_ref().map_or_else(
+        || subject_resolution_owner(&candidate.subject),
+        |route| route.owner,
+    );
+    let event_route = matches!(
+        &candidate.subject,
+        ResearchSubject::EventRouteBlocker { .. }
+    );
     let evidence_required = candidate.blocker_resolution_route.as_ref().map_or_else(
         || evidence_required(&kind),
         |route| route.evidence_required.clone(),
@@ -4227,6 +4510,7 @@ fn finalize(
         subject: candidate.subject,
         consumers: candidate.consumers,
         blocker_resolution_route: candidate.blocker_resolution_route,
+        resolution_owner,
         actionability,
         prerequisite_ids,
         evidence_sites: candidate.evidence_sites.into_iter().collect(),
@@ -4241,16 +4525,24 @@ fn finalize(
         scopes: candidate.scopes.into_iter().collect(),
         capability_links,
         verification_links,
-        publication_scopes: candidate.publication_scopes.into_iter().collect(),
+        publication_scopes: if event_route {
+            Vec::new()
+        } else {
+            candidate.publication_scopes.into_iter().collect()
+        },
         knowledge_required,
         evidence_required,
         revalidation_actions: vec![revalidation_action],
         requery_action,
         summary: candidate.message,
     };
+    let action_resolution = finding_action_resolution_key(&finding);
     let mut result = ResearchAction {
         rank: 0,
-        id: stable_id("action", &next_action.canonical_execution_key()),
+        id: stable_id(
+            "action",
+            &action_canonical_identity(&next_action, &action_resolution),
+        ),
         kinds: vec![kind],
         score: 0,
         inspection_function_ids: finding.inspection_function_ids.clone(),
@@ -4296,11 +4588,58 @@ fn finalize(
     result
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct ActionResolutionKey {
+    owner: crate::BlockerResolutionOwner,
+    required_model: String,
+}
+
+fn finding_action_resolution_key(finding: &ResearchFinding) -> ActionResolutionKey {
+    ActionResolutionKey {
+        owner: finding.resolution_owner,
+        required_model: finding.knowledge_required.clone(),
+    }
+}
+
+fn subject_resolution_owner(subject: &ResearchSubject) -> crate::BlockerResolutionOwner {
+    match subject {
+        ResearchSubject::AnalysisRoot { .. } | ResearchSubject::EventRouteBlocker { .. } => {
+            crate::BlockerResolutionOwner::Unsupported
+        }
+        ResearchSubject::MmioRegister { .. } => crate::BlockerResolutionOwner::ReviewedKnowledge,
+        ResearchSubject::InterfaceObservation { .. } => {
+            crate::BlockerResolutionOwner::InterfacePack
+        }
+        ResearchSubject::PublicSymbolFamily { .. } => {
+            crate::BlockerResolutionOwner::ProjectComposition
+        }
+    }
+}
+
+fn action_canonical_identity(
+    action: &ExecutableAction,
+    resolution: &ActionResolutionKey,
+) -> String {
+    format!(
+        "{}\0{}\0{}",
+        action.canonical_execution_key(),
+        resolution.owner.label(),
+        resolution.required_model
+    )
+}
+
 fn coalesce_actions(candidates: Vec<ResearchAction>) -> Vec<ResearchAction> {
     let mut actions = Vec::<ResearchAction>::new();
-    let mut by_action = BTreeMap::<ExecutableAction, usize>::new();
+    let mut by_action = BTreeMap::<(ExecutableAction, ActionResolutionKey), usize>::new();
     for candidate in candidates {
-        if let Some(index) = by_action.get(&candidate.next_action).copied() {
+        let resolution = finding_action_resolution_key(
+            candidate
+                .findings
+                .first()
+                .expect("every research action owns one or more findings"),
+        );
+        let key = (candidate.next_action.clone(), resolution);
+        if let Some(index) = by_action.get(&key).copied() {
             let action = &mut actions[index];
             action.findings.extend(candidate.findings);
             action
@@ -4348,10 +4687,11 @@ fn coalesce_actions(candidates: Vec<ResearchAction>) -> Vec<ResearchAction> {
             action.prerequisite_ids = collect_prerequisite_ids(&action.findings);
             refresh_action_score(action);
         } else {
-            by_action.insert(candidate.next_action.clone(), actions.len());
+            by_action.insert(key, actions.len());
             actions.push(candidate);
         }
     }
+    actions.sort_by(|left, right| left.id.cmp(&right.id));
     actions
 }
 
@@ -4374,11 +4714,19 @@ fn refresh_action_score(candidate: &mut ResearchAction) {
     }
     .to_owned();
     candidate.confidence = confidence(&candidate.kinds, candidate.co_blockers).to_owned();
+    let event_route_only = candidate
+        .findings
+        .iter()
+        .all(|finding| matches!(finding.subject, ResearchSubject::EventRouteBlocker { .. }));
     candidate.score_breakdown = ResearchScoreBreakdown {
         guaranteed_weight: candidate.guaranteed_unlock as u64 * 20,
         optimistic_weight: candidate.optimistic_unlock as u64 * 3,
         marginal_weight: candidate.marginal_unlock_after_co_blockers as u64 * 5,
-        root_weight: candidate.affected_scope_roots.len() as u64 * 10,
+        root_weight: if event_route_only {
+            0
+        } else {
+            candidate.affected_scope_roots.len() as u64 * 10
+        },
         capability_weight: 0,
         verification_weight: 0,
         publication_weight: candidate.publication_scopes.len() as u64 * 20,
@@ -4540,6 +4888,14 @@ fn analysis_surface_next_action_tokens(
 }
 
 fn next_action_tokens(candidate: &Accumulator) -> Vec<String> {
+    if let ResearchSubject::EventRouteBlocker { route_id, .. } = &candidate.subject {
+        return vec![
+            "inspect".to_owned(),
+            "flow".to_owned(),
+            "--event-route".to_owned(),
+            route_id.clone(),
+        ];
+    }
     if let ResearchSubject::PublicSymbolFamily { profile, state, .. } = &candidate.subject {
         return analysis_surface_next_action_tokens(*state, profile.as_deref());
     }
@@ -4859,11 +5215,19 @@ mod tests {
 
     fn refresh_first_action_identity(report: &mut ResearchNextReport) {
         let old = report.inventory.actions[0].id.clone();
+        let finding_id = &report.inventory.actions[0].finding_ids[0];
+        let finding = report
+            .inventory
+            .findings
+            .iter()
+            .find(|finding| &finding.id == finding_id)
+            .unwrap();
         let new = stable_id(
             "action",
-            &report.inventory.actions[0]
-                .next_action
-                .canonical_execution_key(),
+            &action_canonical_identity(
+                &report.inventory.actions[0].next_action,
+                &finding_action_resolution_key(finding),
+            ),
         );
         report.inventory.actions[0].id = new.clone();
         for prerequisite in &mut report.inventory.prerequisites {
@@ -5388,7 +5752,7 @@ mod tests {
             None,
         );
 
-        assert_eq!(report.schema_version, 15);
+        assert_eq!(report.schema_version, 16);
         assert_eq!(report.selection.steps.len(), 1);
         assert_eq!(report.inventory.actions.len(), 3);
         assert_eq!(report.inventory.findings.len(), 3);
@@ -5928,6 +6292,8 @@ mod tests {
                 next_action,
                 estimated_cost: "low".to_owned(),
                 confidence: "high".to_owned(),
+                resolution_owner: crate::BlockerResolutionOwner::ProjectComposition,
+                required_model: knowledge_required("analysis-surface").to_owned(),
                 score_breakdown: ResearchScoreBreakdown {
                     guaranteed_weight: 0,
                     optimistic_weight: 0,
@@ -6450,6 +6816,112 @@ locator = "RADIO.STATUS"
     }
 
     #[test]
+    fn event_route_blocker_is_visible_to_dtm_without_claiming_function_unlocks() {
+        let route_id = "btdm-source124-to-recycle-event-binding";
+        let blocker_kind = "event-queue-instance-unresolved";
+        let root = "ble-controller::dtm-root";
+        let producer = "ble-controller::r_sym_bt_gs5";
+        let mut graph = ScopeGraph::default();
+        graph.nodes.insert(
+            root.to_owned(),
+            GraphNode {
+                source: "ble-controller".to_owned(),
+                symbol: "dtm-root".to_owned(),
+                dependencies: [producer.to_owned()].into(),
+                direct_diagnostic_roots: BTreeSet::new(),
+                complete: true,
+            },
+        );
+        graph.nodes.insert(
+            producer.to_owned(),
+            GraphNode {
+                source: "ble-controller".to_owned(),
+                symbol: "r_sym_bt_gs5".to_owned(),
+                dependencies: BTreeSet::new(),
+                direct_diagnostic_roots: BTreeSet::new(),
+                complete: true,
+            },
+        );
+        build_graph_edges(&mut graph);
+        let inspection =
+            event_route_scope_inspection(&[producer.to_owned()].into(), &graph).unwrap();
+        assert_eq!(inspection, [producer.to_owned()].into());
+
+        let finding_id = event_route_finding_id(route_id, blocker_kind);
+        let mut candidate = accumulator(&finding_id, blocker_kind);
+        candidate.subject = ResearchSubject::EventRouteBlocker {
+            route_id: route_id.to_owned(),
+            blocker_kind: blocker_kind.to_owned(),
+        };
+        candidate.blocker_resolution_route = Some(
+            crate::blocker_resolution::event_route_blocker_resolution_route(route_id, blocker_kind),
+        );
+        candidate.inspection = inspection;
+        candidate.scopes = ["ble-direct-test-mode".to_owned()].into();
+        candidate.publication_scopes = ["ble-direct-test-mode".to_owned()].into();
+        assert_eq!(
+            next_action_tokens(&candidate),
+            ["inspect", "flow", "--event-route", route_id]
+        );
+
+        let action = finalize_test(
+            candidate,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &format!("blobray inspect flow --event-route {route_id} --project project.toml"),
+        );
+        let finding = &action.findings[0];
+        assert!(finding.affected_scope_roots.is_empty());
+        assert_eq!(finding.scopes, ["ble-direct-test-mode"]);
+        assert!(finding.direct_function_ids.is_empty());
+        assert!(finding.guaranteed_function_ids.is_empty());
+        assert!(finding.optimistic_function_ids.is_empty());
+        assert!(finding.marginal_function_ids.is_empty());
+        assert!(finding.publication_scopes.is_empty());
+        assert_eq!(action.direct_functions, 0);
+        assert_eq!(action.guaranteed_unlock, 0);
+        assert_eq!(action.optimistic_unlock, 0);
+        assert_eq!(action.marginal_unlock_after_co_blockers, 0);
+        assert_eq!(action.score_breakdown.root_weight, 0);
+        assert_eq!(action.score_breakdown.publication_weight, 0);
+        assert_eq!(action.score_explanation.benefit_points, 0);
+        let resolution = finding.blocker_resolution_route.as_ref().unwrap();
+        assert_eq!(
+            resolution.completion_predicate.kind,
+            crate::BlockerCompletionKind::EventRouteBlockerAbsent
+        );
+        assert_eq!(
+            resolution.completion_predicate.root_id,
+            crate::blocker_resolution::event_route_blocker_root(route_id, blocker_kind)
+        );
+    }
+
+    #[test]
+    fn one_event_route_action_does_not_coalesce_distinct_resolution_models() {
+        let mut first = accumulator("first", "event-queue-instance-unresolved");
+        first.blocker_resolution_route = Some(
+            crate::blocker_resolution::event_route_blocker_resolution_route(
+                "route-a",
+                "event-queue-instance-unresolved",
+            ),
+        );
+        let mut second = accumulator("second", "event-receive-run-order-unproven");
+        second.blocker_resolution_route = Some(
+            crate::blocker_resolution::event_route_blocker_resolution_route(
+                "route-a",
+                "event-receive-run-order-unproven",
+            ),
+        );
+        let command = "blobray inspect flow --event-route route-a --project project.toml";
+        let actions = coalesce_actions(vec![
+            finalize_test(first, &BTreeMap::new(), &BTreeMap::new(), command),
+            finalize_test(second, &BTreeMap::new(), &BTreeMap::new(), command),
+        ]);
+        assert_eq!(actions.len(), 2);
+        assert_ne!(actions[0].id, actions[1].id);
+    }
+
+    #[test]
     fn analysis_surface_next_actions_only_offer_executable_state_transitions() {
         for state in [
             ResearchAnalysisSurfaceState::MissingVendorArtifact,
@@ -6724,7 +7196,7 @@ locator = "RADIO.STATUS"
     }
 
     #[test]
-    fn schema_fifteen_serializes_routes_query_and_executable_actions() {
+    fn schema_sixteen_serializes_routes_query_and_executable_actions() {
         let mut candidate = accumulator("register", "register-model");
         candidate.subject = ResearchSubject::MmioRegister {
             address_space: "radio".to_owned(),
@@ -6749,7 +7221,7 @@ locator = "RADIO.STATUS"
 
         let report = report_from_actions(vec![action], ResearchRankingStrategy::Impact, 10, None);
         let value = serde_json::to_value(report).unwrap();
-        assert_eq!(value["schema_version"], 15);
+        assert_eq!(value["schema_version"], 16);
         assert_eq!(value["finding_query"]["state"], "all");
         assert_eq!(value["finding_query"]["completion_claim"], false);
         assert_eq!(
@@ -6767,6 +7239,18 @@ locator = "RADIO.STATUS"
         assert_eq!(
             value["inventory"]["findings"][0]["actionability"],
             "needs-destination"
+        );
+        assert_eq!(
+            value["inventory"]["findings"][0]["resolution_owner"],
+            "reviewed-knowledge"
+        );
+        assert_eq!(
+            value["inventory"]["actions"][0]["resolution_owner"],
+            "reviewed-knowledge"
+        );
+        assert_eq!(
+            value["inventory"]["actions"][0]["required_model"],
+            knowledge_required("register-model")
         );
         assert_eq!(
             value["inventory"]["actions"][0]["finding_ids"]
@@ -6855,6 +7339,13 @@ locator = "RADIO.STATUS"
         let command = "blobray inspect function radio:worker --project project.toml";
         let action_for = |id: &str, kind: &str| {
             let mut candidate = accumulator(id, kind);
+            candidate.subject = ResearchSubject::MmioRegister {
+                address_space: "radio".to_owned(),
+                address: 0x6000_1000,
+                width: 32,
+                assertion: None,
+            };
+            candidate.blocker_resolution_route = None;
             candidate.direct = ["radio::worker".to_owned()].into();
             finalize_test(candidate, &BTreeMap::new(), &BTreeMap::new(), command)
         };
@@ -6865,11 +7356,76 @@ locator = "RADIO.STATUS"
         let reverse = coalesce_actions(vec![semantics, analysis]);
 
         assert_eq!(forward, reverse);
+        assert_eq!(forward.len(), 2);
+        let semantics = forward
+            .iter()
+            .find(|action| action.kinds == ["register-write-semantics"])
+            .unwrap();
+        assert_eq!(semantics.score_explanation.estimated_cost_units, 6);
+        assert_eq!(semantics.confidence, "low-until-hil");
+        let analysis = forward
+            .iter()
+            .find(|action| action.kinds == ["unresolved-call"])
+            .unwrap();
+        assert_eq!(analysis.score_explanation.estimated_cost_units, 2);
+    }
+
+    #[test]
+    fn action_identity_uses_typed_owner_and_required_model_for_every_finding() {
+        let command = "blobray inspect function radio:worker --project project.toml";
+        let action_for = |id: &str, subject: ResearchSubject, kind: &str| {
+            let mut candidate = accumulator(id, kind);
+            candidate.subject = subject;
+            candidate.blocker_resolution_route = None;
+            finalize_test(candidate, &BTreeMap::new(), &BTreeMap::new(), command)
+        };
+        let register_subject = |address| ResearchSubject::MmioRegister {
+            address_space: "radio".to_owned(),
+            address,
+            width: 32,
+            assertion: None,
+        };
+        let public_surface = ResearchSubject::PublicSymbolFamily {
+            surface: "controller".to_owned(),
+            protocols: vec!["ble".to_owned()],
+            source: "controller".to_owned(),
+            symbol_prefix: "r_".to_owned(),
+            profile: Some("controller".to_owned()),
+            state: ResearchAnalysisSurfaceState::MissingSymbolInventory,
+        };
+
+        let same_pair = coalesce_actions(vec![
+            action_for("first", register_subject(0x6000_1000), "register-model"),
+            action_for("second", register_subject(0x6000_1004), "register-model"),
+        ]);
+        assert_eq!(same_pair.len(), 1);
+        assert_eq!(same_pair[0].findings.len(), 2);
+
+        let different_model = coalesce_actions(vec![
+            action_for("identity", register_subject(0x6000_1000), "register-model"),
+            action_for(
+                "semantics",
+                register_subject(0x6000_1004),
+                "register-write-semantics",
+            ),
+        ]);
+        assert_eq!(different_model.len(), 2);
+
+        let different_owner = coalesce_actions(vec![
+            action_for("register", register_subject(0x6000_1000), "unresolved-call"),
+            action_for("surface", public_surface, "unresolved-call"),
+        ]);
+        assert_eq!(different_owner.len(), 2);
         assert_eq!(
-            forward[0].kinds,
-            ["register-write-semantics", "unresolved-call"]
+            different_owner
+                .iter()
+                .map(|action| action.findings[0].resolution_owner)
+                .collect::<BTreeSet<_>>(),
+            [
+                crate::BlockerResolutionOwner::ProjectComposition,
+                crate::BlockerResolutionOwner::ReviewedKnowledge,
+            ]
+            .into()
         );
-        assert_eq!(forward[0].score_explanation.estimated_cost_units, 6);
-        assert_eq!(forward[0].confidence, "low-until-hil");
     }
 }

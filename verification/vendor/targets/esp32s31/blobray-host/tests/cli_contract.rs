@@ -219,7 +219,7 @@ fn inspect_register_schema_seven_exposes_typed_validation_actions() {
 
 #[test]
 #[ignore = "requires local vendor artifacts and generated Blobray findings"]
-fn research_schema_fifteen_exact_finding_resolution_is_current_and_not_a_completion_verdict() {
+fn research_schema_sixteen_exact_finding_resolution_is_current_and_not_a_completion_verdict() {
     let lookup = |scope: &str, finding: &str| {
         let output = blobray()
             .args([
@@ -252,7 +252,7 @@ fn research_schema_fifteen_exact_finding_resolution_is_current_and_not_a_complet
     };
 
     let open = lookup("ieee802154-baseband-leaves", "register-0x20103100-32");
-    assert_eq!(open["schema_version"], 15);
+    assert_eq!(open["schema_version"], 16);
     assert_eq!(open["completion_claim"], false);
     assert_eq!(open["finding_query"]["state"], "open");
     assert_eq!(open["finding_query"]["completion_claim"], false);
@@ -306,7 +306,7 @@ fn research_schema_fifteen_exact_finding_resolution_is_current_and_not_a_complet
     );
 
     let missing = lookup("ieee802154-baseband-leaves", "register-not-current");
-    assert_eq!(missing["schema_version"], 15);
+    assert_eq!(missing["schema_version"], 16);
     assert_eq!(missing["completion_claim"], false);
     assert_eq!(missing["finding_query"]["state"], "not-present");
     assert_eq!(missing["finding_query"]["completion_claim"], false);

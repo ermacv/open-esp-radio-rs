@@ -1,4 +1,8 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::{
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    path::Path,
+    sync::Arc,
+};
 
 use crate::{ProjectSpec, Result, artifacts};
 
@@ -14,7 +18,7 @@ pub(super) struct ProjectGraph<'project> {
 
 struct ProfileReader<'project> {
     profile: &'project crate::project_ir::ProjectIrProfile,
-    reader: artifacts::LinkedIrReader,
+    reader: Arc<artifacts::LinkedIrReader>,
 }
 
 pub(super) struct ProjectGraphSearch {
@@ -26,6 +30,15 @@ pub(super) struct ProjectGraphSearch {
 
 impl<'project> ProjectGraph<'project> {
     pub(super) fn open(project: &'project ProjectSpec) -> Result<Self> {
+        Self::open_with(project, |path| {
+            artifacts::LinkedIrReader::open(path).map(Arc::new)
+        })
+    }
+
+    pub(super) fn open_with(
+        project: &'project ProjectSpec,
+        mut open_reader: impl FnMut(&Path) -> Result<Arc<artifacts::LinkedIrReader>>,
+    ) -> Result<Self> {
         let mut profiles = Vec::new();
         let mut locations = BTreeMap::<String, Vec<usize>>::new();
         let mut definitions = BTreeMap::<String, Vec<String>>::new();
@@ -34,7 +47,7 @@ impl<'project> ProjectGraph<'project> {
             .iter()
             .filter(|profile| profile.output.is_dir())
         {
-            let reader = artifacts::LinkedIrReader::open(&profile.output)?;
+            let reader = open_reader(&profile.output)?;
             let projection = reader.read_review_projection()?;
             let profile_index = profiles.len();
             for function in &projection.functions {

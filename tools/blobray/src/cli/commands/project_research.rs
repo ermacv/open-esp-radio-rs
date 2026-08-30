@@ -766,6 +766,10 @@ fn finding_lines(finding: &research::ResearchFinding, number: usize, details: bo
         ));
     }
     lines.push(format!("     Knowledge: {}", finding.knowledge_required));
+    lines.push(format!(
+        "     Resolution owner: {}",
+        finding.resolution_owner.label()
+    ));
     if let Some(route) = &finding.blocker_resolution_route {
         lines.push(format!(
             "     Resolution: owner {}, effect {}",
@@ -1018,6 +1022,7 @@ mod tests {
             },
             consumers: Vec::new(),
             blocker_resolution_route: None,
+            resolution_owner: crate::BlockerResolutionOwner::Unsupported,
             actionability: research::ResearchActionability::InspectionOnly,
             prerequisite_ids: Vec::new(),
             evidence_sites: Vec::new(),
@@ -1203,6 +1208,8 @@ mod tests {
             ]),
             estimated_cost: "low".to_owned(),
             confidence: "medium".to_owned(),
+            resolution_owner: crate::BlockerResolutionOwner::Unsupported,
+            required_model: "reviewed semantic model".to_owned(),
             score_breakdown: research::ResearchScoreBreakdown {
                 guaranteed_weight: 0,
                 optimistic_weight: 0,
@@ -1298,6 +1305,8 @@ mod tests {
             ]),
             estimated_cost: "low".to_owned(),
             confidence: "medium".to_owned(),
+            resolution_owner: crate::BlockerResolutionOwner::Unsupported,
+            required_model: "reviewed semantic model".to_owned(),
             score_breakdown: research::ResearchScoreBreakdown {
                 guaranteed_weight: 0,
                 optimistic_weight: 0,

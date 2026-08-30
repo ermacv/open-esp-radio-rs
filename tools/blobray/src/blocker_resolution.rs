@@ -76,6 +76,7 @@ pub enum BlockerResolutionRecordKind {
 #[serde(rename_all = "kebab-case")]
 pub enum BlockerCompletionKind {
     DiagnosticRootAbsent,
+    EventRouteBlockerAbsent,
     DelegatedRootsAbsent,
     DownstreamEvidenceAccepted,
     InformationalMarker,
@@ -86,6 +87,7 @@ impl BlockerCompletionKind {
     pub const fn label(self) -> &'static str {
         match self {
             Self::DiagnosticRootAbsent => "diagnostic-root-absent",
+            Self::EventRouteBlockerAbsent => "event-route-blocker-absent",
             Self::DelegatedRootsAbsent => "delegated-roots-absent",
             Self::DownstreamEvidenceAccepted => "downstream-evidence-accepted",
             Self::InformationalMarker => "informational-marker",
@@ -122,6 +124,27 @@ pub struct BlockerResolutionRoute {
 
 impl BlockerResolutionRoute {
     pub(crate) fn validate(&self, root_id: &str) -> Result<()> {
+        self.validate_for_producer(
+            root_id,
+            "authenticated-linked-ir-review-scopes",
+            BlockerCompletionKind::DiagnosticRootAbsent,
+        )
+    }
+
+    pub(crate) fn validate_event_route(&self, route_id: &str, blocker_kind: &str) -> Result<()> {
+        self.validate_for_producer(
+            &event_route_blocker_root(route_id, blocker_kind),
+            "authenticated-flow-event-route",
+            BlockerCompletionKind::EventRouteBlockerAbsent,
+        )
+    }
+
+    fn validate_for_producer(
+        &self,
+        root_id: &str,
+        producer: &str,
+        closing_completion: BlockerCompletionKind,
+    ) -> Result<()> {
         if self.required_model.is_empty()
             || self.evidence_required.is_empty()
             || self.evidence_required.iter().any(String::is_empty)
@@ -132,7 +155,7 @@ impl BlockerResolutionRoute {
             ));
         }
         if self.completion_predicate.root_id != root_id
-            || self.completion_predicate.producer != "authenticated-linked-ir-review-scopes"
+            || self.completion_predicate.producer != producer
         {
             return Err(crate::Error::invalid(
                 "blocker resolution route does not name its authenticated producer root",
@@ -157,7 +180,7 @@ impl BlockerResolutionRoute {
             ));
         }
         let expected_completion = match self.producer_effect {
-            BlockerProducerEffect::Closes => BlockerCompletionKind::DiagnosticRootAbsent,
+            BlockerProducerEffect::Closes => closing_completion,
             BlockerProducerEffect::Delegated => BlockerCompletionKind::DelegatedRootsAbsent,
             BlockerProducerEffect::DownstreamOnly => {
                 BlockerCompletionKind::DownstreamEvidenceAccepted
@@ -252,6 +275,143 @@ impl BlockerResolutionRoute {
             completion_predicate: completion_predicate(root_id, completion_kind),
             rationale: rationale.to_owned(),
         }
+    }
+}
+
+pub(crate) fn event_route_blocker_root(route_id: &str, blocker_kind: &str) -> String {
+    format!("event-route:{route_id}:{blocker_kind}")
+}
+
+pub(crate) fn event_route_blocker_resolution_route(
+    route_id: &str,
+    blocker_kind: &str,
+) -> BlockerResolutionRoute {
+    if blocker_kind == "analysis-limit" {
+        return unsupported_event_route_resolution(
+            route_id,
+            blocker_kind,
+            "preserve the exact adjustable limit and required larger bound before proposing a resolution action",
+            "a generic analysis-limit label does not prove which invocation bound can advance the route",
+        );
+    }
+    let (owner, required_model, rationale) = match blocker_kind {
+        "event-replay-invalid" | "event-delivery-not-replayed" => (
+            BlockerResolutionOwner::RuntimeScenario,
+            "obtain a current scenario-owned replay for the exact reviewed event route",
+            "only current replay evidence can close this typed delivery blocker",
+        ),
+        "dispatch-evidence-mismatch" | "delivery-call-mismatch" => (
+            BlockerResolutionOwner::ReviewedKnowledge,
+            "review the exact route stage against current authenticated linked IR",
+            "the reviewed route and current generated evidence must agree before the route can advance",
+        ),
+        "case-handler-unreviewed" | "terminal-without-handler" => (
+            BlockerResolutionOwner::ProjectFunctionFact,
+            "publish the exact reviewed event handler or terminal identity consumed by the route",
+            "the configured function facts must name the current selector-specific route stage",
+        ),
+        "unknown-delivery-output-role" | "delivery-not-executable" => (
+            BlockerResolutionOwner::AnalysisAddon,
+            "model the delivery operation output role and executable write effect",
+            "the route needs a reusable typed output contract rather than a message-derived project hint",
+        ),
+        "case-dispatch-not-executable" => (
+            BlockerResolutionOwner::AnalysisAddon,
+            "model the reviewed selector-indexed dispatch target in generated control-flow evidence",
+            "the generic route can advance only after the indirect case edge is generated",
+        ),
+        "broker-prior-listener-result-unproven" => (
+            BlockerResolutionOwner::AnalysisAddon,
+            "model selector-specific callback return flow for every prior broker listener",
+            "a typed callback-return model is required to prove that earlier listeners cannot stop delivery",
+        ),
+        "incomplete-sink" => (
+            BlockerResolutionOwner::GenericBackend,
+            "complete the reached sink body, call targets, and transitive generated effects",
+            "the event route inherits the exact sink completeness produced by linked IR",
+        ),
+        "event-receive-result-flow-unproven" => (
+            BlockerResolutionOwner::GenericBackend,
+            "preserve typed receive-call return provenance into the reached event.run argument",
+            "the current route report recomputes the exact receive-result relation from generated evidence",
+        ),
+        "event-receive-run-order-unproven" => (
+            BlockerResolutionOwner::GenericBackend,
+            "preserve a complete CFG witness that receive must execute before event.run",
+            "the current route report recomputes the required ordering from generated CFG evidence",
+        ),
+        "event-queue-instance-unresolved" => (
+            BlockerResolutionOwner::GenericBackend,
+            "preserve exact enqueue producer identity through the queue argument and receive queue value",
+            "the current route report recomputes queue-instance equality from typed value provenance",
+        ),
+        "callback-store-dominance-unproven" => (
+            BlockerResolutionOwner::GenericBackend,
+            "preserve a complete CFG dominance witness from callback store to subscription",
+            "the current route report recomputes callback publication ordering from generated CFG evidence",
+        ),
+        "broker-subscriber-lifetime-unproven" => (
+            BlockerResolutionOwner::GenericBackend,
+            "join subscription insertion and removal into the exact publisher epoch",
+            "the current route report recomputes broker subscriber lifetime from typed generated evidence",
+        ),
+        "rust-boundary-unmapped" => (
+            BlockerResolutionOwner::VerificationDisposition,
+            "bind the reached vendor boundary to current production verification evidence or an exact reviewed disposition",
+            "the route remains incomplete until its reached replacement boundary is explicitly accounted for",
+        ),
+        _ => {
+            return unsupported_event_route_resolution(
+                route_id,
+                blocker_kind,
+                &format!(
+                    "classify typed event-route blocker kind {blocker_kind:?} before proposing a writable record"
+                ),
+                "no typed event-route owner mapping exists for this blocker kind",
+            );
+        }
+    };
+    BlockerResolutionRoute {
+        owner,
+        required_model: required_model.to_owned(),
+        evidence_required: owner_evidence(owner),
+        destination: None,
+        record_kind: None,
+        record_action: None,
+        producer_effect: BlockerProducerEffect::Closes,
+        closes_producer: true,
+        completion_predicate: BlockerCompletionPredicate {
+            kind: BlockerCompletionKind::EventRouteBlockerAbsent,
+            producer: "authenticated-flow-event-route".to_owned(),
+            root_id: event_route_blocker_root(route_id, blocker_kind),
+        },
+        rationale: format!(
+            "{rationale}; completion is recomputed for route {route_id:?} and requires blocker {blocker_kind:?} to be absent"
+        ),
+    }
+}
+
+fn unsupported_event_route_resolution(
+    route_id: &str,
+    blocker_kind: &str,
+    required_model: &str,
+    rationale: &str,
+) -> BlockerResolutionRoute {
+    BlockerResolutionRoute {
+        owner: BlockerResolutionOwner::Unsupported,
+        required_model: required_model.to_owned(),
+        evidence_required: owner_evidence(BlockerResolutionOwner::Unsupported),
+        destination: None,
+        record_kind: None,
+        record_action: None,
+        producer_effect: BlockerProducerEffect::Unsupported,
+        closes_producer: false,
+        completion_predicate: BlockerCompletionPredicate {
+            kind: BlockerCompletionKind::Unsupported,
+            producer: "authenticated-flow-event-route".to_owned(),
+            root_id: event_route_blocker_root(route_id, blocker_kind),
+        },
+        rationale: rationale.to_owned(),
     }
 }
 
@@ -882,5 +1042,48 @@ mod tests {
             blocker_resolution_route(&project_spec(), "budget-root", "analysis-budget", "budget");
         route.closes_producer = false;
         assert!(route.validate("budget-root").is_err());
+    }
+
+    #[test]
+    fn event_route_blockers_use_typed_owners_and_exact_absence_predicates() {
+        let queue =
+            event_route_blocker_resolution_route("route-a", "event-queue-instance-unresolved");
+        assert_eq!(queue.owner, BlockerResolutionOwner::GenericBackend);
+        assert_eq!(
+            queue.completion_predicate.kind,
+            BlockerCompletionKind::EventRouteBlockerAbsent
+        );
+        queue
+            .validate_event_route("route-a", "event-queue-instance-unresolved")
+            .unwrap();
+
+        let listener = event_route_blocker_resolution_route(
+            "route-a",
+            "broker-prior-listener-result-unproven",
+        );
+        assert_eq!(listener.owner, BlockerResolutionOwner::AnalysisAddon);
+        assert_ne!(listener.required_model, queue.required_model);
+        listener
+            .validate_event_route("route-a", "broker-prior-listener-result-unproven")
+            .unwrap();
+
+        let unknown = event_route_blocker_resolution_route("route-a", "future-blocker");
+        assert_eq!(unknown.owner, BlockerResolutionOwner::Unsupported);
+        assert_eq!(unknown.producer_effect, BlockerProducerEffect::Unsupported);
+        unknown
+            .validate_event_route("route-a", "future-blocker")
+            .unwrap();
+
+        let limit = event_route_blocker_resolution_route("route-a", "analysis-limit");
+        assert_eq!(limit.owner, BlockerResolutionOwner::Unsupported);
+        assert_eq!(limit.producer_effect, BlockerProducerEffect::Unsupported);
+        assert!(!limit.closes_producer);
+        assert_eq!(
+            limit.completion_predicate.kind,
+            BlockerCompletionKind::Unsupported
+        );
+        limit
+            .validate_event_route("route-a", "analysis-limit")
+            .unwrap();
     }
 }

@@ -31,7 +31,7 @@ cost, then by co-blockers and impact. `--strategy frontier` (also accepted as
 benefit and no more effort, with one strict improvement. Frontier results are
 then ordered by the impact score.
 
-The machine report uses schema 15. It separates the complete backlog from the
+The machine report uses schema 16. It separates the complete backlog from the
 bounded recommendation and exposes reviewed labels for referenced functions:
 
 - `inventory.findings` contains every typed finding exactly once;
@@ -56,9 +56,10 @@ from the project files. `destination`, `record_kind`, and `record_action` are
 present only when Blobray already consumes that exact record. The
 `producer_effect` distinguishes direct closure, delegated child closure,
 downstream-only evidence, informational markers, and unsupported causes.
-`completion_predicate.root_id` is checked against the authenticated regenerated
-review-scope producer; editing a project file is never itself a completion
-claim.
+`completion_predicate.root_id` is checked against its authenticated regenerated
+producer: linked-IR blockers name the review-scope diagnostic root, while
+event-route blockers name the exact route and blocker kind in the current
+event-flow report. Editing a project file is never itself a completion claim.
 
 For an exact register lookup, interpret the states in this order:
 
@@ -77,8 +78,11 @@ For an exact register lookup, interpret the states in this order:
 - `not-present`: no typed attribution supports a stronger conclusion. A
   base-model identity or an unknown arbitrary ID is not resolution proof.
 
-An action is one typed `next_action` and may coalesce several findings
-without duplicating them. A finding retains its typed `subject`, typed
+An action is one typed `next_action` plus its typed resolution owner and exact
+required model. Findings coalesce only when all three are equal; the same
+inspection command remains multiple actions when it exposes work owned by
+different components or requiring different models. This keeps action identity
+and ranking from hiding distinct causal work. A finding retains its typed `subject`, typed
 executable `consumers`, exact evidence sites/channels, causal inspection
 functions, impacted functions, context links, required knowledge,
 finding-level `actionability`, prerequisite IDs, an exact `requery_action` and
@@ -89,8 +93,9 @@ ID-sorted catalogs. It is independent of strategy, limit and budget, so two
 selections over the same backlog share one identity. The digest is
 invocation-context-bound: action IDs hash a canonical execution key containing
 exact argv boundaries, absolute working directory, context level and resolved
-project overrides. Use the same invocation directory and project-path spelling
-for reproducible `--check` output. Human output renders argv only at the
+project overrides, followed by the typed resolution owner and exact required
+model. Use the same invocation directory and project-path spelling for
+reproducible `--check` output. Human output renders argv only at the
 presentation boundary. The digest identifies inventory content; it never replaces full report
 validation or byte comparison.
 
@@ -103,6 +108,19 @@ durable consumer remain honestly `inspection-only`. `coverage-blocked` is
 reserved for a typed producer cause and is never inferred from diagnostic
 text. The report never turns a suggested consumer or a revalidation command
 into a completion claim; `completion_claim` is always `false`.
+
+Incomplete typed event routes are a dedicated inspection-only case. Their
+subject carries `route_id` and `blocker_kind`, and their executable action is
+exactly `inspect flow --event-route ID` in the resolved project context. Scope
+membership and `inspection_function_ids` provide navigation, but
+`affected_scope_roots`, direct functions, and guaranteed/optimistic/marginal
+unlock sets stay empty until the producer emits separate typed impact evidence;
+publication scopes are also empty rather than inferred from scope membership.
+Consequently event-route findings receive no root, publication, or
+function-unlock weight.
+Their completion predicate is satisfied only when that exact blocker kind is
+absent from the current authenticated report for that exact route; Blobray does
+not parse blocker messages to derive identity, ownership, completion or impact.
 
 If the configured interface capability context is missing, malformed, belongs
 to another project or has a stale input digest, the report fails closed only

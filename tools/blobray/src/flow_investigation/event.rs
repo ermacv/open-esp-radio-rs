@@ -4,7 +4,11 @@
 //! reviewed selector mapping.  A reviewed mapping is useful navigation but is
 //! never silently promoted to an executable queue or jump-table model.
 
-use std::collections::BTreeSet;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use crate::{ProjectSpec, Result, artifact, artifacts, interfaces::SemanticCatalogs};
 
@@ -34,47 +38,158 @@ pub(super) fn investigate(
         &reports,
         &workspace_paths.pack,
     )?;
-    let pack = &workspace.pack;
-    let matches = pack
-        .event_routes
+    let mut context = EventRouteEvaluationContext::new(project, &workspace);
+    context.investigate(request)
+}
+
+pub(super) fn investigate_many_with_workspace(
+    route_ids: &[String],
+    max_depth: usize,
+    project: &ProjectSpec,
+    workspace: &crate::function_workspace::FunctionWorkspace,
+) -> Result<Vec<FlowInvestigationReport>> {
+    let mut context = EventRouteEvaluationContext::new(project, workspace);
+    route_ids
         .iter()
-        .filter(|route| route.id() == request.route)
-        .collect::<Vec<_>>();
-    let route = match matches.as_slice() {
-        [] => {
-            return Err(crate::Error::invalid(format!(
-                "reviewed event route {:?} is not configured in {}",
-                request.route,
-                workspace_paths.pack.display()
-            )));
+        .map(|route| context.investigate(EventRouteFlowRequest { route, max_depth }))
+        .collect()
+}
+
+struct EventRouteEvaluationContext<'project> {
+    project: &'project ProjectSpec,
+    workspace: &'project crate::function_workspace::FunctionWorkspace,
+    artifacts: EventRouteArtifacts,
+    graph: Option<super::project_graph::ProjectGraph<'project>>,
+}
+
+#[derive(Default)]
+struct EventRouteArtifacts {
+    readers: BTreeMap<PathBuf, Arc<artifacts::LinkedIrReader>>,
+    catalogs: Option<Arc<SemanticCatalogs>>,
+}
+
+impl EventRouteArtifacts {
+    fn reader(&mut self, path: &Path) -> Result<Arc<artifacts::LinkedIrReader>> {
+        if let Some(reader) = self.readers.get(path) {
+            return Ok(Arc::clone(reader));
         }
-        [route] => *route,
-        _ => {
-            return Err(crate::Error::invalid(format!(
-                "reviewed event route {:?} is duplicated in {}",
-                request.route,
-                workspace_paths.pack.display()
-            )));
+        let reader = Arc::new(artifacts::LinkedIrReader::open(path)?);
+        self.readers.insert(path.to_owned(), Arc::clone(&reader));
+        Ok(reader)
+    }
+
+    fn catalogs(&mut self, project: &ProjectSpec) -> Result<Arc<SemanticCatalogs>> {
+        self.catalogs_with(|| load_semantic_catalogs(project))
+    }
+
+    fn catalogs_with(
+        &mut self,
+        load: impl FnOnce() -> Result<SemanticCatalogs>,
+    ) -> Result<Arc<SemanticCatalogs>> {
+        if let Some(catalogs) = &self.catalogs {
+            return Ok(Arc::clone(catalogs));
         }
-    };
-    match route {
-        crate::function_workspace::ReviewedEventRoute::SelectorDelivery(route) => {
-            investigate_selector(request, project, route)
+        let catalogs = Arc::new(load()?);
+        self.catalogs = Some(Arc::clone(&catalogs));
+        Ok(catalogs)
+    }
+}
+
+impl<'project> EventRouteEvaluationContext<'project> {
+    fn new(
+        project: &'project ProjectSpec,
+        workspace: &'project crate::function_workspace::FunctionWorkspace,
+    ) -> Self {
+        Self {
+            project,
+            workspace,
+            artifacts: EventRouteArtifacts::default(),
+            graph: None,
         }
-        crate::function_workspace::ReviewedEventRoute::StaticEventCallback(route) => {
-            investigate_static_event_callback(request, project, route)
+    }
+
+    fn reader(&mut self, path: &Path) -> Result<Arc<artifacts::LinkedIrReader>> {
+        self.artifacts.reader(path)
+    }
+
+    fn catalogs(&mut self) -> Result<Arc<SemanticCatalogs>> {
+        self.artifacts.catalogs(self.project)
+    }
+
+    fn investigate_target(
+        &mut self,
+        request: TargetFlowRequest<'_>,
+    ) -> Result<FlowInvestigationReport> {
+        if self.graph.is_none() {
+            let graph = super::project_graph::ProjectGraph::open_with(self.project, |path| {
+                self.artifacts.reader(path)
+            })?;
+            self.graph = Some(graph);
         }
-        crate::function_workspace::ReviewedEventRoute::BrokerSubscription(route) => {
-            investigate_broker_subscription(request, project, route)
+        super::target::investigate_with_graph(
+            request,
+            self.graph.as_ref().expect("graph initialized above"),
+        )
+    }
+
+    fn investigate(
+        &mut self,
+        request: EventRouteFlowRequest<'_>,
+    ) -> Result<FlowInvestigationReport> {
+        let workspace_path = &self
+            .project
+            .functions
+            .as_ref()
+            .ok_or_else(|| {
+                crate::Error::invalid(
+                    "inspect flow --event-route requires a configured [functions] workspace",
+                )
+            })?
+            .pack;
+        let matches = self
+            .workspace
+            .pack
+            .event_routes
+            .iter()
+            .filter(|route| route.id() == request.route)
+            .collect::<Vec<_>>();
+        let route = match matches.as_slice() {
+            [] => {
+                return Err(crate::Error::invalid(format!(
+                    "reviewed event route {:?} is not configured in {}",
+                    request.route,
+                    workspace_path.display()
+                )));
+            }
+            [route] => *route,
+            _ => {
+                return Err(crate::Error::invalid(format!(
+                    "reviewed event route {:?} is duplicated in {}",
+                    request.route,
+                    workspace_path.display()
+                )));
+            }
+        };
+        match route {
+            crate::function_workspace::ReviewedEventRoute::SelectorDelivery(route) => {
+                investigate_selector(request, self, route)
+            }
+            crate::function_workspace::ReviewedEventRoute::StaticEventCallback(route) => {
+                investigate_static_event_callback(request, self, route)
+            }
+            crate::function_workspace::ReviewedEventRoute::BrokerSubscription(route) => {
+                investigate_broker_subscription(request, self, route)
+            }
         }
     }
 }
 
 fn investigate_selector(
     request: EventRouteFlowRequest<'_>,
-    project: &ProjectSpec,
+    context: &mut EventRouteEvaluationContext<'_>,
     route: &crate::function_workspace::ReviewedSelectorEventRoute,
 ) -> Result<FlowInvestigationReport> {
+    let project = context.project;
     let workspace = project.functions.as_ref().ok_or_else(|| {
         crate::Error::invalid(
             "inspect flow --event-route requires a configured [functions] workspace",
@@ -94,7 +209,7 @@ fn investigate_selector(
     };
 
     let dispatcher_profile = profile(project, &route.profile)?;
-    let dispatcher_reader = artifacts::LinkedIrReader::open(&dispatcher_profile.output)?;
+    let dispatcher_reader = context.reader(&dispatcher_profile.output)?;
     let dispatcher = dispatcher_reader
         .get_function_by_identity(&route.dispatcher)?
         .ok_or_else(|| {
@@ -110,7 +225,7 @@ fn investigate_selector(
         )));
     }
 
-    let catalogs = semantic_catalogs(project)?;
+    let catalogs = context.catalogs()?;
     let selector = format!("const:{:#010x}", route.selector_value);
     let matching_dispatches = dispatcher
         .effect_summary
@@ -150,7 +265,7 @@ fn investigate_selector(
     }
 
     let consumer_profile = profile(project, &route.consumer_profile)?;
-    let consumer_reader = artifacts::LinkedIrReader::open(&consumer_profile.output)?;
+    let consumer_reader = context.reader(&consumer_profile.output)?;
     let consumer = consumer_reader
         .get_function_by_identity(&route.consumer_entry)?
         .ok_or_else(|| {
@@ -442,7 +557,7 @@ fn investigate_selector(
     if request.max_depth >= 3 {
         if let Some(handler) = &route.case_handler {
             let handler_profile = profile(project, &handler.profile)?;
-            let handler_reader = artifacts::LinkedIrReader::open(&handler_profile.output)?;
+            let handler_reader = context.reader(&handler_profile.output)?;
             let handler_function = handler_reader
                 .get_function_by_identity(&handler.function)?
                 .ok_or_else(|| {
@@ -539,17 +654,14 @@ fn investigate_selector(
         if let Some(handler) = route.case_handler.as_ref() {
             if request.max_depth >= 4 {
                 let remaining_depth = request.max_depth.saturating_sub(3).max(1);
-                let mut segment = super::target::investigate(
-                    TargetFlowRequest {
-                        source: &handler.source,
-                        root_symbol: identity_symbol(&handler.function),
-                        target: FlowTargetRequest::Function(&terminal.function),
-                        max_depth: remaining_depth,
-                        max_loaded_functions: super::MAX_LOADED_FUNCTIONS
-                            .saturating_sub(loaded_functions),
-                    },
-                    project,
-                )?;
+                let mut segment = context.investigate_target(TargetFlowRequest {
+                    source: &handler.source,
+                    root_symbol: identity_symbol(&handler.function),
+                    target: FlowTargetRequest::Function(&terminal.function),
+                    max_depth: remaining_depth,
+                    max_loaded_functions: super::MAX_LOADED_FUNCTIONS
+                        .saturating_sub(loaded_functions),
+                })?;
                 let ordinal_base = steps.len();
                 for (index, step) in segment.steps.iter_mut().enumerate() {
                     step.ordinal = ordinal_base + index;
@@ -560,7 +672,7 @@ fn investigate_selector(
                 loaded_functions += segment.limits.loaded_functions;
 
                 let terminal_profile = profile(project, &terminal.profile)?;
-                let terminal_reader = artifacts::LinkedIrReader::open(&terminal_profile.output)?;
+                let terminal_reader = context.reader(&terminal_profile.output)?;
                 let terminal_function = terminal_reader
                     .get_function_by_identity(&terminal.function)?
                     .ok_or_else(|| {
@@ -666,9 +778,10 @@ fn investigate_selector(
 
 fn investigate_static_event_callback(
     request: EventRouteFlowRequest<'_>,
-    project: &ProjectSpec,
+    context: &mut EventRouteEvaluationContext<'_>,
     route: &crate::function_workspace::ReviewedStaticEventCallbackRoute,
 ) -> Result<FlowInvestigationReport> {
+    let project = context.project;
     let _workspace = project.functions.as_ref().ok_or_else(|| {
         crate::Error::invalid("callback event route requires a [functions] workspace")
     })?;
@@ -683,7 +796,7 @@ fn investigate_static_event_callback(
         ));
     }
     let dispatch_profile = profile(project, &route.profile)?;
-    let reader = artifacts::LinkedIrReader::open(&dispatch_profile.output)?;
+    let reader = context.reader(&dispatch_profile.output)?;
     let dispatcher = route_function(
         &reader,
         &route.id,
@@ -692,7 +805,7 @@ fn investigate_static_event_callback(
         "dispatcher",
     )?;
     let binding_profile = profile(project, &route.binding_profile)?;
-    let binding_reader = artifacts::LinkedIrReader::open(&binding_profile.output)?;
+    let binding_reader = context.reader(&binding_profile.output)?;
     let binding = route_function(
         &binding_reader,
         &route.id,
@@ -701,7 +814,7 @@ fn investigate_static_event_callback(
         "binding entry",
     )?;
     let callback_profile = profile(project, &route.callback_profile)?;
-    let callback_reader = artifacts::LinkedIrReader::open(&callback_profile.output)?;
+    let callback_reader = context.reader(&callback_profile.output)?;
     let callback = route_function(
         &callback_reader,
         &route.id,
@@ -742,7 +855,7 @@ fn investigate_static_event_callback(
         ));
     }
     let delivery_profile = profile(project, &route.delivery_profile)?;
-    let delivery_reader = artifacts::LinkedIrReader::open(&delivery_profile.output)?;
+    let delivery_reader = context.reader(&delivery_profile.output)?;
     let delivery = route_function(
         &delivery_reader,
         &route.id,
@@ -1021,11 +1134,12 @@ fn investigate_static_event_callback(
 
 fn investigate_broker_subscription(
     request: EventRouteFlowRequest<'_>,
-    project: &ProjectSpec,
+    context: &mut EventRouteEvaluationContext<'_>,
     route: &crate::function_workspace::ReviewedBrokerSubscriptionRoute,
 ) -> Result<FlowInvestigationReport> {
+    let project = context.project;
     let dispatch_profile = profile(project, &route.profile)?;
-    let reader = artifacts::LinkedIrReader::open(&dispatch_profile.output)?;
+    let reader = context.reader(&dispatch_profile.output)?;
     let dispatcher = route_function(
         &reader,
         &route.id,
@@ -1060,7 +1174,7 @@ fn investigate_broker_subscription(
         return Err(route_mismatch(&route.id, "broker payload changed"));
     }
     let domain_profile = profile(project, &route.domain.profile)?;
-    let domain_reader = artifacts::LinkedIrReader::open(&domain_profile.output)?;
+    let domain_reader = context.reader(&domain_profile.output)?;
     let domain_owner = route_function(
         &domain_reader,
         &route.id,
@@ -1098,7 +1212,7 @@ fn investigate_broker_subscription(
         ));
     }
     let binding_profile = profile(project, &route.binding_profile)?;
-    let binding_reader = artifacts::LinkedIrReader::open(&binding_profile.output)?;
+    let binding_reader = context.reader(&binding_profile.output)?;
     let binding = route_function(
         &binding_reader,
         &route.id,
@@ -1132,7 +1246,7 @@ fn investigate_broker_subscription(
         ));
     }
     let callback_profile = profile(project, &route.callback_profile)?;
-    let callback_reader = artifacts::LinkedIrReader::open(&callback_profile.output)?;
+    let callback_reader = context.reader(&callback_profile.output)?;
     let callback = route_function(
         &callback_reader,
         &route.id,
@@ -1297,17 +1411,13 @@ fn investigate_broker_subscription(
                 "increase --max-depth to inspect the terminal continuation",
             ));
         } else {
-            let mut segment = super::target::investigate(
-                TargetFlowRequest {
-                    source: &route.case_handler.source,
-                    root_symbol: identity_symbol(&route.case_handler.function),
-                    target: FlowTargetRequest::Function(&terminal.function),
-                    max_depth: remaining_depth,
-                    max_loaded_functions: super::MAX_LOADED_FUNCTIONS
-                        .saturating_sub(loaded_functions),
-                },
-                project,
-            )?;
+            let mut segment = context.investigate_target(TargetFlowRequest {
+                source: &route.case_handler.source,
+                root_symbol: identity_symbol(&route.case_handler.function),
+                target: FlowTargetRequest::Function(&terminal.function),
+                max_depth: remaining_depth,
+                max_loaded_functions: super::MAX_LOADED_FUNCTIONS.saturating_sub(loaded_functions),
+            })?;
             let base = steps.len();
             for (index, step) in segment.steps.iter_mut().enumerate() {
                 step.ordinal = base + index;
@@ -1879,7 +1989,7 @@ fn profile<'a>(
     Ok(profile)
 }
 
-fn semantic_catalogs(project: &ProjectSpec) -> Result<SemanticCatalogs> {
+fn load_semantic_catalogs(project: &ProjectSpec) -> Result<SemanticCatalogs> {
     let paths = project.interfaces.as_ref().map_or_else(
         || {
             project
@@ -2029,6 +2139,32 @@ mod tests {
             value: None,
             origin_path: None,
         }
+    }
+
+    #[test]
+    fn bulk_event_route_artifacts_open_each_linked_ir_bundle_once() {
+        let directory = replay_test_directory();
+        let bundle = directory.join("linked-ir");
+        crate::artifacts::write_fixture_bundle(
+            &bundle,
+            &crate::artifacts::render_linked_ir_fixture(Vec::new(), Vec::new()),
+        )
+        .unwrap();
+        let mut artifacts = EventRouteArtifacts::default();
+
+        let first = artifacts.reader(&bundle).unwrap();
+        let second = artifacts.reader(&bundle).unwrap();
+        let catalogs = artifacts
+            .catalogs_with(|| Ok(SemanticCatalogs::default()))
+            .unwrap();
+        let cached_catalogs = artifacts
+            .catalogs_with(|| panic!("cached semantic catalogs must not be loaded again"))
+            .unwrap();
+
+        assert!(Arc::ptr_eq(&first, &second));
+        assert!(Arc::ptr_eq(&catalogs, &cached_catalogs));
+        assert_eq!(artifacts.readers.len(), 1);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

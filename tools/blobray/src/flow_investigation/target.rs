@@ -15,6 +15,13 @@ pub(super) fn investigate(
     project: &ProjectSpec,
 ) -> Result<FlowInvestigationReport> {
     let graph = ProjectGraph::open(project)?;
+    investigate_with_graph(request, &graph)
+}
+
+pub(super) fn investigate_with_graph(
+    request: TargetFlowRequest<'_>,
+    graph: &ProjectGraph<'_>,
+) -> Result<FlowInvestigationReport> {
     let roots = graph.root_identities(request.source, request.root_symbol);
     if roots.len() != 1 {
         return Err(crate::Error::invalid(format!(
@@ -28,7 +35,7 @@ pub(super) fn investigate(
     let targets = graph.target_identities(&request.target)?;
     if targets.is_empty() {
         return Ok(not_reached(
-            &graph,
+            graph,
             root,
             &request.target,
             request.max_depth,
@@ -38,7 +45,7 @@ pub(super) fn investigate(
     let search = graph.shortest_path(root, &targets, request.max_depth)?;
     let Some(path) = search.path.as_ref() else {
         let mut report = not_reached(
-            &graph,
+            graph,
             root,
             &request.target,
             request.max_depth,
@@ -54,7 +61,7 @@ pub(super) fn investigate(
         return Ok(report);
     };
     compose_path(
-        &graph,
+        graph,
         root,
         &request.target,
         path,

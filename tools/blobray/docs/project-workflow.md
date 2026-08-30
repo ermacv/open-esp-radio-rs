@@ -211,11 +211,13 @@ cargo blobray project research next --scope ieee802154-baseband-leaves \
 
 The command is read-only unless `--output` is supplied. Each candidate names
 the missing knowledge, confidence, affected scopes, expected impact and a
-typed next action. Report schema 15 ranks unique user actions, exposes the
+typed next action. Report schema 16 ranks unique user actions, exposes the
 reviewed names and roles of referenced functions, and includes required public
 analysis-surface coverage gates:
-independent findings that lead to the same inspection command remain listed as
-`related_findings` instead of consuming duplicate top-N slots. Impact is
+independent findings coalesce only when they lead to the same executable action
+and have the same typed resolution owner and exact required model. Findings
+with one command but different ownership or models remain separate actions, so
+the ranking never hides distinct work behind a shared inspection target. Impact is
 aggregated across the complete action before ranking, not inherited from the
 single highest-scoring finding. Every research packet includes exact direct,
 guaranteed, optimistic, marginal and co-blocker identities together with the
@@ -223,6 +225,15 @@ required evidence, reviewed destination and completion condition. Low
 confidence on write semantics is
 intentional: W1C, self-clear and hardware-owned behavior require reviewed HIL
 or authoritative documentation and are not inferred from vendor writes.
+
+Schema 16 also imports typed incomplete event-route blockers. These findings
+retain the route ID, blocker kind, matching review scope and exact causal inspection
+functions, and execute `inspect flow --event-route ID`. They are
+`inspection-only`: until the event-flow producer publishes typed impact
+evidence, their direct, guaranteed, optimistic, marginal, affected-root and
+publication-scope sets remain empty and contribute no unlock weight. Completion requires the exact
+route/blocker pair to be absent from the current authenticated event-route
+report; a human message or a successful inspection command is not proof.
 
 Preview the exact stage order and cache work before a large analysis:
 

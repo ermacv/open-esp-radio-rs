@@ -18,8 +18,9 @@
 //! [`classify_le_controller_command`] joins those two portable policies at a
 //! finite command boundary: valid bootstrap and DTM commands become owned
 //! semantic tokens, malformed known commands become owned error responses,
-//! and every other command remains borrowed for an outer router. Classification
-//! never advances bootstrap state, leaving Reset and other bootstrap commands
+//! and every other opcode becomes an owned Unknown Command completion.
+//! Classification never advances bootstrap state, leaves no result borrowing
+//! receive scratch storage, and keeps Reset plus other bootstrap commands
 //! available to session-aware policy before explicit dispatch.
 //! [`LeControllerHciResources`] binds transport storage and bootstrap state to
 //! one affine Controller epoch. Its sole split exposes disjoint Host, raw
@@ -61,7 +62,9 @@ pub use dtm::{
 pub use resources::{
     LeControllerHciEndpoints, LeControllerHciResources, LeControllerHciResourcesError,
 };
-pub use response::{HciControllerResponse, LeControllerCommandComplete};
+pub use response::{
+    HciControllerResponse, LeControllerCommandComplete, UnknownCommandCompleteEvent,
+};
 
 use bt_hci::{ControllerToHostPacket, FromHciBytesError, PacketKind};
 

@@ -1164,8 +1164,8 @@ mod tests {
             LeControllerCommandClassification::MalformedDtm(response) => {
                 command_error(response.opcode(), HciError::UNKNOWN_CMD)
             }
-            LeControllerCommandClassification::Unsupported(command) => {
-                command_error(command.opcode(), HciError::UNKNOWN_CMD)
+            LeControllerCommandClassification::Unsupported(response) => {
+                command_error(response.opcode(), HciError::UNKNOWN_CMD)
             }
         }
     }

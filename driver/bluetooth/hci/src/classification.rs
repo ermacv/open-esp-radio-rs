@@ -4,7 +4,7 @@ use bt_hci::cmd::Opcode;
 
 use crate::{
     BootstrapCommandCompleteEvent, HciCommandPacket, LeDtmCommand, LeDtmCommandCompleteEvent,
-    OwnedBootstrapCommand,
+    OwnedBootstrapCommand, UnknownCommandCompleteEvent,
     bootstrap::{BootstrapCommandDecodeError, invalid_parameters},
 };
 
@@ -13,11 +13,11 @@ use crate::{
 /// Bootstrap and valid DTM commands are owned semantic tokens that may be
 /// retained across asynchronous session transitions. Malformed responses are
 /// complete owned packets that may be retained across Controller-to-Host
-/// backpressure. Only [`Self::Unsupported`] borrows the receive buffer: an
-/// outer router must inspect or consume it before that buffer is reused.
+/// backpressure. An opcode outside the closed table becomes an owned Unknown
+/// Command response, so no classification result borrows receive storage.
 #[derive(Debug, Eq, PartialEq)]
 #[must_use = "a classified HCI command must be routed or answered exactly once"]
-pub enum LeControllerCommandClassification<'packet> {
+pub enum LeControllerCommandClassification {
     /// A decoded bootstrap command awaits session-aware software dispatch.
     Bootstrap(OwnedBootstrapCommand),
     /// A known bootstrap opcode had malformed parameters and produced this response.
@@ -26,13 +26,11 @@ pub enum LeControllerCommandClassification<'packet> {
     Dtm(LeDtmCommand),
     /// A known DTM opcode had malformed parameters and produced this response.
     MalformedDtm(LeDtmCommandCompleteEvent),
-    /// This portable command set did not claim the packet.
-    ///
-    /// The exact opcode and parameters remain available to an outer router.
-    Unsupported(HciCommandPacket<'packet>),
+    /// This closed Controller command table did not claim the opcode.
+    Unsupported(UnknownCommandCompleteEvent),
 }
 
-impl LeControllerCommandClassification<'_> {
+impl LeControllerCommandClassification {
     /// Opcode retained by this exact classification result.
     pub const fn opcode(&self) -> Opcode {
         match self {
@@ -40,7 +38,7 @@ impl LeControllerCommandClassification<'_> {
             Self::MalformedBootstrap(response) => response.opcode(),
             Self::Dtm(command) => command.kind().opcode(),
             Self::MalformedDtm(response) => response.opcode(),
-            Self::Unsupported(command) => command.opcode(),
+            Self::Unsupported(response) => response.opcode(),
         }
     }
 }
@@ -50,12 +48,12 @@ impl LeControllerCommandClassification<'_> {
 /// DTM decoding runs first because it distinguishes malformed input for its
 /// three known opcodes from an opcode outside that command family. The latter
 /// is decoded only when it belongs to the closed bootstrap table; otherwise
-/// the unchanged packet is returned to the outer router. Classification never
-/// observes or advances a bootstrap epoch. No branch waits, publishes a
-/// response, or claims hardware readiness.
-pub fn classify_le_controller_command<'packet>(
-    command: HciCommandPacket<'packet>,
-) -> LeControllerCommandClassification<'packet> {
+/// classification builds its terminal owned Unknown Command response.
+/// Classification never observes or advances a bootstrap epoch. No branch
+/// waits, publishes a response, or claims hardware readiness.
+pub fn classify_le_controller_command(
+    command: HciCommandPacket<'_>,
+) -> LeControllerCommandClassification {
     match LeDtmCommand::decode(command) {
         Ok(command) => LeControllerCommandClassification::Dtm(command),
         Err(error) => match error.into_invalid_parameters_command_complete() {
@@ -68,7 +66,9 @@ pub fn classify_le_controller_command<'packet>(
                     ))
                 }
                 Err(BootstrapCommandDecodeError::Unsupported) => {
-                    LeControllerCommandClassification::Unsupported(command)
+                    LeControllerCommandClassification::Unsupported(
+                        UnknownCommandCompleteEvent::new(command.opcode()),
+                    )
                 }
             },
         },
@@ -229,32 +229,34 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_packet_is_returned_unchanged_for_outer_routing() {
-        let parameters = [1];
+    fn unsupported_response_is_owned_across_receive_storage_reuse() {
+        let mut parameters = [1];
         let classified = classify_le_controller_command(HciCommandPacket::for_test(
             LeSetAdvEnable::OPCODE,
             &parameters,
         ));
+        parameters.fill(0);
 
         assert_eq!(classified.opcode(), LeSetAdvEnable::OPCODE);
-        let LeControllerCommandClassification::Unsupported(command) = classified else {
-            panic!("an unsupported command was claimed by a closed command family");
+        let LeControllerCommandClassification::Unsupported(response) = classified else {
+            panic!("an unsupported command did not produce its owned response");
         };
-        assert_eq!(command.opcode(), LeSetAdvEnable::OPCODE);
-        assert_eq!(command.parameters(), &parameters);
+        assert_eq!(response.opcode(), LeSetAdvEnable::OPCODE);
+        assert_eq!(response.status(), HciError::UNKNOWN_CMD.to_status());
     }
 
     #[test]
-    fn unrelated_opcode_group_is_not_collapsed_into_a_bootstrap_error() {
+    fn unrelated_opcode_group_produces_an_exact_unknown_command_completion() {
         let opcode = Opcode::new(OpcodeGroup::VENDOR_SPECIFIC, 7);
         let classified =
             classify_le_controller_command(HciCommandPacket::for_test(opcode, &[2, 3, 5]));
 
-        let LeControllerCommandClassification::Unsupported(command) = classified else {
-            panic!("outer command family was claimed by the portable LE classifier");
+        let LeControllerCommandClassification::Unsupported(response) = classified else {
+            panic!("unclaimed opcode did not produce an owned terminal response");
         };
-        assert_eq!(command.opcode(), opcode);
-        assert_eq!(command.parameters(), &[2, 3, 5]);
+        assert_eq!(response.opcode(), opcode);
+        assert_eq!(response.status(), HciError::UNKNOWN_CMD.to_status());
+        assert_eq!(response.as_bytes().len(), 6);
     }
 
     fn bootstrap() -> LeControllerBootstrap {

@@ -2720,16 +2720,6 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub(crate) const fn primary_interrupt_publications(
-        &self,
-    ) -> (
-        &crate::BluetoothSchedulerWakeCell,
-        &crate::BluetoothSchedulerLockModifyEventCell,
-    ) {
-        self.runtime.primary_interrupt_publications()
-    }
-
-    #[cfg(target_arch = "riscv32")]
     pub(crate) const fn modem_lp_timer_worker_wake(
         &self,
     ) -> &crate::BluetoothModemLpTimerWorkerWakeCell {

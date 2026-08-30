@@ -5,7 +5,7 @@
 //! Interface.
 //!
 //! [`InProcessHciChannel`] splits into a Host transport accepted by
-//! `bt_hci::ExternalController` and one affine Controller-worker endpoint. It
+//! `bt_hci::ExternalController` and one affine raw Controller endpoint. It
 //! carries HCI packet bodies with a separate typed packet kind, so no UART/H4
 //! framing exists inside the process. Both directions have statically bounded
 //! storage, wake-driven backpressure and cancellation-safe waits.
@@ -14,11 +14,13 @@
 //! The separate closed LE DTM codec validates Receiver Test v1, Transmitter
 //! Test v1 and Test End into owned semantic commands and builds their staged
 //! Command Complete events; it does not dispatch them or claim radio work.
-//! [`LeControllerBootstrapWorker`] is its sole executor-neutral endpoint owner;
-//! it preserves accepted responses across shutdown and backpressure. This crate
-//! also provides [`LeControllerHciResources`], which binds the transport storage
-//! and bootstrap dispatcher to one affine Controller epoch and rejects profiles
-//! whose advertised ACL capacity exceeds that storage. This crate
+//! [`LeControllerHciResources`] binds transport storage and bootstrap state to
+//! one affine Controller epoch. Its sole split exposes disjoint Host, raw
+//! Controller and bootstrap endpoints so a hardware session runner can retain
+//! an accepted command across asynchronous radio transitions and output
+//! backpressure without a synchronous-dispatch compatibility layer. Resource
+//! construction rejects profiles whose advertised ACL capacity exceeds that
+//! storage. This crate
 //! contains no Link Layer, radio, MMIO, interrupt, executor, allocator, or
 //! readiness substitute.
 
@@ -29,7 +31,7 @@ mod bootstrap;
 mod channel;
 mod dtm;
 mod resources;
-mod worker;
+mod response;
 
 pub use bootstrap::{
     BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY, BluetoothPublicDeviceAddress, BootstrapCommand,
@@ -48,12 +50,9 @@ pub use dtm::{
     LeTestEndCommand, LeTransmitterTestV1Command,
 };
 pub use resources::{
-    LeControllerHciResources, LeControllerHciResourcesError, LeControllerHciRuntimeWorker,
+    LeControllerHciEndpoints, LeControllerHciResources, LeControllerHciResourcesError,
 };
-pub use worker::{
-    BootstrapWorkerError, BootstrapWorkerExit, HciCommandDispatcher, HciCommandWorker,
-    HciControllerResponse, LeControllerBootstrapWorker,
-};
+pub use response::{HciControllerResponse, LeControllerCommandComplete};
 
 use bt_hci::{ControllerToHostPacket, FromHciBytesError, PacketKind};
 

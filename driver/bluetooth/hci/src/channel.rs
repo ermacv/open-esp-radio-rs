@@ -189,6 +189,13 @@ where
         self.state.lock(|state| state.borrow().length == 0)
     }
 
+    fn is_pristine(&self) -> bool {
+        self.state.lock(|state| {
+            let state = state.borrow();
+            state.length == 0 && !state.has_published_packet
+        })
+    }
+
     #[cfg(test)]
     fn vacant_storage_is_zeroed(&self) -> bool {
         self.state.lock(|state| {
@@ -205,6 +212,7 @@ struct AsyncPacketQueueState<const DEPTH: usize, const PACKET_CAPACITY: usize> {
     slots: [PacketSlot<PACKET_CAPACITY>; DEPTH],
     head: usize,
     length: usize,
+    has_published_packet: bool,
     receiver_waker: WakerRegistration,
     sender_waker: WakerRegistration,
 }
@@ -217,6 +225,7 @@ impl<const DEPTH: usize, const PACKET_CAPACITY: usize>
             slots: [PacketSlot::EMPTY; DEPTH],
             head: 0,
             length: 0,
+            has_published_packet: false,
             receiver_waker: WakerRegistration::new(),
             sender_waker: WakerRegistration::new(),
         }
@@ -229,6 +238,7 @@ impl<const DEPTH: usize, const PACKET_CAPACITY: usize>
         let tail = (self.head + self.length) % DEPTH;
         self.slots[tail] = packet;
         self.length += 1;
+        self.has_published_packet = true;
         self.receiver_waker.wake();
         true
     }
@@ -259,7 +269,7 @@ impl HostToControllerFrame<'_> {
     }
 }
 
-/// Two bounded packet queues joining an HCI Host and one Controller worker.
+/// Two bounded packet queues joining an HCI Host and one raw Controller owner.
 ///
 /// Packet indicators are retained as typed [`PacketKind`] values and are never
 /// serialized as UART/H4 bytes. Calling [`Self::split`] requires exclusive
@@ -308,7 +318,7 @@ where
         }
     }
 
-    /// Split into the Host transport and sole Controller worker endpoint.
+    /// Split into the Host transport and sole raw Controller endpoint.
     pub fn split(
         &mut self,
     ) -> (
@@ -345,6 +355,15 @@ where
     /// are published. It does not reserve the channel against concurrent use.
     pub fn is_empty(&self) -> bool {
         self.host_to_controller.is_empty() && self.controller_to_host.is_empty()
+    }
+
+    /// Whether no packet has ever entered either direction of this channel.
+    ///
+    /// Unlike [`Self::is_empty`], draining a packet cannot make the channel
+    /// pristine again. Lifecycle owners use this monotonic observation before
+    /// binding the channel to a powered Controller epoch.
+    pub fn is_pristine(&self) -> bool {
+        self.host_to_controller.is_pristine() && self.controller_to_host.is_pristine()
     }
 }
 
@@ -431,7 +450,7 @@ where
     }
 }
 
-/// Controller-worker half of the bounded in-process HCI boundary.
+/// Raw Controller half of the bounded in-process HCI boundary.
 ///
 /// The future hardware/Link-Layer owner receives Host commands and data here,
 /// then publishes only complete validated events or data. The endpoint does

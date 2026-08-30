@@ -25,12 +25,14 @@ use crate::dtm_post_unlink::{
 };
 #[cfg(target_arch = "riscv32")]
 use crate::{
-    BluetoothControllerBlePhyEngineInitialized, BluetoothModemLpTimerEventCell,
-    BluetoothModemLpTimerEventPublication, BluetoothModemLpTimerExpiration,
-    BluetoothModemLpTimerExpirationPending, BluetoothModemLpTimerPublishedInterruptStep,
-    BluetoothModemLpTimerSoftwareStep, BluetoothModemLpTimerSoftwareWork,
-    BluetoothModemLpTimerStableInterruptStep, BluetoothNrtDefaultInterruptEpoch,
-    BluetoothPrimaryInterruptStep, BluetoothPrimaryPublishedInterruptStep,
+    BluetoothControllerBlePhyEngineInitialized, BluetoothControllerInterruptRuntime,
+    BluetoothControllerPoweredTaskRuntime, BluetoothControllerRuntimeEndpoints,
+    BluetoothModemLpTimerEventCell, BluetoothModemLpTimerEventPublication,
+    BluetoothModemLpTimerExpiration, BluetoothModemLpTimerExpirationPending,
+    BluetoothModemLpTimerPublishedInterruptStep, BluetoothModemLpTimerSoftwareStep,
+    BluetoothModemLpTimerSoftwareWork, BluetoothModemLpTimerStableInterruptStep,
+    BluetoothNrtDefaultInterruptEpoch, BluetoothPrimaryInterruptStep,
+    BluetoothPrimaryPublishedInterruptStep,
 };
 
 /// Powered Controller after IRQ-output preparation and runtime-timer start.
@@ -470,6 +472,53 @@ pub struct BluetoothControllerInterruptOwnersPublished<
     post_unlink_mailbox: BluetoothDtmPostUnlinkMailbox,
     runtime_control: BluetoothLowPowerRuntimeControlObservation,
     scheduler_epoch: Option<crate::BluetoothControllerSchedulerEpoch>,
+}
+
+/// Disjoint runtime endpoints borrowed from one statically placed final
+/// Controller owner.
+///
+/// The task endpoint owns all mutable scheduler workers, the interrupt service
+/// owns only stable platform dispatch plus shared publication cells, and HCI
+/// exposes raw Controller/bootstrap endpoints. Keeping the backing final owner
+/// in caller-owned stable storage prevents a self-referential runtime object.
+#[must_use = "the final Controller endpoints must remain in one live runtime epoch"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothControllerPublishedRuntimeEndpoints<
+    'runtime,
+    M,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+> where
+    M: RawMutex,
+{
+    /// Finite hard-handler service over the stable PAC/HAL owners.
+    pub interrupt: BluetoothControllerPublishedInterruptService<'runtime, S>,
+    /// Sole powered scheduler task endpoint.
+    pub task: BluetoothControllerPoweredTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
+    /// Disjoint Host transport, raw Controller endpoint and bootstrap state.
+    pub hci: open_esp_radio_bluetooth_hci::LeControllerHciEndpoints<
+        'runtime,
+        M,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >,
+}
+
+/// Stable interrupt service for a materialized final Controller epoch.
+///
+/// This value cannot prepare DTM descriptors or mutate task-owned scheduler
+/// state. It can only execute the three bounded hardware dispositions and
+/// publish their durable events into the matching runtime resources.
+#[must_use = "interrupt service must remain paired with its task runtime"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothControllerPublishedInterruptService<'runtime, S> {
+    storage: &'runtime S,
+    runtime: BluetoothControllerInterruptRuntime<'runtime>,
+    mailbox: &'runtime BluetoothDtmPostUnlinkMailbox,
 }
 
 /// Why an affine post-enable controller-time acquisition did not start.
@@ -2590,6 +2639,44 @@ impl<
 where
     M: RawMutex,
 {
+    /// Borrow the complete final Controller as disjoint interrupt, task and
+    /// HCI endpoints.
+    ///
+    /// The caller must retain this owner in stable storage for the complete
+    /// routed lifetime. No endpoint contains or moves that backing owner.
+    pub fn split_runtime(
+        &mut self,
+    ) -> BluetoothControllerPublishedRuntimeEndpoints<
+        '_,
+        M,
+        S,
+        SCHEDULER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    > {
+        let Self {
+            initialized,
+            _storage,
+            post_unlink_mailbox,
+            ..
+        } = self;
+        let BluetoothControllerRuntimeEndpoints {
+            interrupt,
+            task,
+            hci,
+        } = initialized.split_runtime();
+        BluetoothControllerPublishedRuntimeEndpoints {
+            interrupt: BluetoothControllerPublishedInterruptService {
+                storage: _storage,
+                runtime: interrupt,
+                mailbox: post_unlink_mailbox,
+            },
+            task,
+            hci,
+        }
+    }
+
     /// Inspect the BLE PHY input retained by this exact powered epoch.
     pub const fn ble_phy_report(&self) -> crate::BluetoothBlePhyInitializationReport {
         self.initialized.report()
@@ -3086,7 +3173,10 @@ where
     ) -> crate::BluetoothDtmSchedulerRxSuccessRecycleStep {
         self.initialized.recycle_dtm_receiver_success(ready)
     }
+}
 
+#[cfg(target_arch = "riscv32")]
+impl<S> BluetoothControllerPublishedInterruptService<'_, S> {
     /// Service, durably publish and route one primary source-124 epoch through
     /// the Controller-owned post-unlink mailbox.
     ///
@@ -3101,13 +3191,12 @@ where
         S: BluetoothSharedInterruptDispatchStorage,
     {
         critical_section::with(|critical_section| {
-            let step = self._storage.service_primary_interrupt()?;
-            let (scheduler_wake, lock_modify_events) =
-                self.initialized.primary_interrupt_publications();
-            let published = step.publish(scheduler_wake, lock_modify_events);
-            Ok(self
-                .post_unlink_mailbox
-                .publish(critical_section, published))
+            let step = self.storage.service_primary_interrupt()?;
+            let published = step.publish(
+                self.runtime.scheduler_wake(),
+                self.runtime.scheduler_lock_modify_events(),
+            );
+            Ok(self.mailbox.publish(critical_section, published))
         })
     }
 
@@ -3122,8 +3211,8 @@ where
     where
         S: BluetoothModemLpTimerInterruptDispatchStorage,
     {
-        let step = self._storage.service_modem_lp_timer_interrupt()?;
-        Ok(step.publish(self.initialized.modem_lp_timer_worker_wake()))
+        let step = self.storage.service_modem_lp_timer_interrupt()?;
+        Ok(step.publish(self.runtime.modem_lp_timer_worker_wake()))
     }
 
     /// Service one opaque default-profile NRT source-133 epoch.
@@ -3136,7 +3225,7 @@ where
     where
         S: BluetoothSharedInterruptDispatchStorage,
     {
-        self._storage.service_nrt_default_interrupt()
+        self.storage.service_nrt_default_interrupt()
     }
 }
 

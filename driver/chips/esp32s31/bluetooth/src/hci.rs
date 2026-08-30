@@ -2,8 +2,7 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_bluetooth_hci::{
-    InProcessHciHostTransport, LeControllerBootstrapConfig, LeControllerHciResources,
-    LeControllerHciRuntimeWorker,
+    LeControllerBootstrapConfig, LeControllerHciEndpoints, LeControllerHciResources,
 };
 
 use crate::{
@@ -216,8 +215,9 @@ where
 
 /// All borrowed runtime endpoints from one powered Controller epoch.
 ///
-/// Named fields keep interrupt, task and HCI roles explicit. The mutable task
-/// and HCI-worker borrows prevent a second split while this value is alive.
+/// Named fields keep interrupt, task and HCI roles explicit. The mutable task,
+/// raw Controller and bootstrap borrows prevent a second split while this
+/// value is alive.
 #[must_use = "all runtime endpoints belong to one powered Controller epoch"]
 pub struct BluetoothControllerRuntimeEndpoints<
     'runtime,
@@ -233,16 +233,8 @@ pub struct BluetoothControllerRuntimeEndpoints<
     pub interrupt: BluetoothControllerInterruptRuntime<'runtime>,
     /// Task-side scheduler workers.
     pub task: BluetoothControllerPoweredTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
-    /// Host-facing typed HCI transport.
-    pub hci_host: InProcessHciHostTransport<
-        'runtime,
-        M,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >,
-    /// Sole conservative HCI bootstrap worker.
-    pub hci_worker: LeControllerHciRuntimeWorker<
+    /// Disjoint Host, raw Controller and bootstrap endpoints.
+    pub hci: LeControllerHciEndpoints<
         'runtime,
         M,
         HOST_TO_CONTROLLER_DEPTH,
@@ -314,12 +306,11 @@ where
         PACKET_CAPACITY,
     > {
         let (interrupt, task) = self.scheduler.split_runtime();
-        let (hci_host, hci_worker) = self.hci.split();
+        let hci = self.hci.split();
         BluetoothControllerRuntimeEndpoints {
             interrupt,
             task,
-            hci_host,
-            hci_worker,
+            hci,
         }
     }
 
@@ -740,16 +731,6 @@ where
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub(crate) const fn primary_interrupt_publications(
-        &self,
-    ) -> (
-        &crate::BluetoothSchedulerWakeCell,
-        &crate::BluetoothSchedulerLockModifyEventCell,
-    ) {
-        self.controller.scheduler.primary_interrupt_publications()
-    }
-
-    #[cfg(target_arch = "riscv32")]
     pub(crate) const fn modem_lp_timer_worker_wake(
         &self,
     ) -> &crate::BluetoothModemLpTimerWorkerWakeCell {
@@ -829,8 +810,9 @@ mod tests {
     use embassy_futures::block_on;
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use open_esp_radio_bluetooth_hci::{
-        BluetoothPublicDeviceAddress, LeControllerBootstrapConfig, LeControllerHciResources,
-        bt_hci::{cmd::controller_baseband::Reset, transport::Transport},
+        BluetoothPublicDeviceAddress, HostToControllerFrame, LeControllerBootstrapConfig,
+        LeControllerHciEndpoints, LeControllerHciResources,
+        bt_hci::{PacketKind, cmd::controller_baseband::Reset, transport::Transport},
     };
     use open_esp_radio_esp32s31_pac::RadioHardware;
 
@@ -872,21 +854,34 @@ mod tests {
         let BluetoothControllerRuntimeEndpoints {
             interrupt,
             task,
-            hci_host,
-            mut hci_worker,
+            hci,
         } = controller.split_runtime();
         assert!(core::ptr::eq(
             interrupt.scheduler_wake(),
             task.scheduler_wake()
         ));
+        let LeControllerHciEndpoints {
+            host,
+            controller,
+            bootstrap,
+        } = hci;
         block_on(async {
-            let (sent, processed) = embassy_futures::join::join(
-                hci_host.write(&Reset::new()),
-                hci_worker.process_one(),
-            )
-            .await;
-            sent.expect("Reset enters the matching Host queue");
-            processed.expect("the matching bootstrap worker publishes a response");
+            host.write(&Reset::new())
+                .await
+                .expect("Reset enters the matching Host queue");
+            let mut command_buffer = [0; 31];
+            let HostToControllerFrame::Command(command) = controller
+                .receive(&mut command_buffer)
+                .await
+                .expect("raw Controller receives the matching Reset")
+            else {
+                panic!("Reset changed HCI packet class");
+            };
+            let response = bootstrap.dispatch(command);
+            controller
+                .publish(PacketKind::Event, response.as_bytes())
+                .await
+                .expect("raw Controller publishes the bootstrap response");
         });
     }
 
@@ -894,13 +889,28 @@ mod tests {
     fn used_hci_epoch_is_rejected_without_losing_either_owner() {
         let mut used_hci = hci();
         {
-            let (host, mut worker) = used_hci.split();
+            let LeControllerHciEndpoints {
+                host,
+                controller,
+                bootstrap,
+            } = used_hci.split();
             block_on(async {
-                let (sent, processed) =
-                    embassy_futures::join::join(host.write(&Reset::new()), worker.process_one())
-                        .await;
-                sent.expect("Reset enters the test queue");
-                processed.expect("the test worker publishes a response");
+                host.write(&Reset::new())
+                    .await
+                    .expect("Reset enters the test queue");
+                let mut command_buffer = [0; 31];
+                let HostToControllerFrame::Command(command) = controller
+                    .receive(&mut command_buffer)
+                    .await
+                    .expect("raw Controller receives Reset")
+                else {
+                    panic!("Reset changed HCI packet class");
+                };
+                let response = bootstrap.dispatch(command);
+                controller
+                    .publish(PacketKind::Event, response.as_bytes())
+                    .await
+                    .expect("raw Controller publishes Reset completion");
             });
         }
 

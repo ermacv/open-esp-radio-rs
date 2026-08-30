@@ -137,6 +137,7 @@ pub use controller_start::{
     BluetoothControllerInterruptOwnersPublished, BluetoothControllerInterruptOwnersReady,
     BluetoothControllerModemLpTimerRestoreFailure, BluetoothControllerModemLpTimerSoftwareStep,
     BluetoothControllerModemLpTimerSoftwareWork, BluetoothControllerOutputTimerStarted,
+    BluetoothControllerPublishedInterruptService, BluetoothControllerPublishedRuntimeEndpoints,
     BluetoothControllerSchedulerCurrentBeginError, BluetoothControllerSchedulerCurrentError,
     BluetoothControllerSchedulerCurrentPending, BluetoothControllerSchedulerCurrentStep,
     BluetoothControllerSchedulerEpochRetained, BluetoothControllerSchedulerEpochUnavailable,

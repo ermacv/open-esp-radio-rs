@@ -26,7 +26,7 @@ use bt_hci::{
 
 use crate::HciCommandPacket;
 
-/// Maximum complete HCI Event body emitted by the bootstrap dispatcher.
+/// Maximum complete HCI Event body emitted by the bootstrap state machine.
 ///
 /// This includes the two-byte Event header. The largest supported response is
 /// LE Read Local Supported Features: six Command Complete bytes plus eight
@@ -141,7 +141,7 @@ pub struct BootstrapHostBuffers {
     pub total_acl_data_packets: u16,
 }
 
-/// Commands implemented by the software-only bootstrap dispatcher.
+/// Commands implemented by the software-only bootstrap state machine.
 ///
 /// This is the source-owned capability table. Absence from this enum means the
 /// command receives Unknown HCI Command; it does not fall through to guessed
@@ -205,7 +205,7 @@ impl BootstrapCommand {
     }
 }
 
-/// Complete, validated Command Complete HCI Event emitted by the dispatcher.
+/// Complete, validated Command Complete HCI Event emitted by bootstrap.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BootstrapCommandCompleteEvent {
     bytes: [u8; BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY],
@@ -268,7 +268,7 @@ pub struct LeControllerBootstrap {
 }
 
 impl LeControllerBootstrap {
-    /// Construct a cold dispatcher which accepts only a valid Reset first.
+    /// Construct cold bootstrap state which accepts only a valid Reset first.
     pub fn new(config: LeControllerBootstrapConfig) -> Self {
         Self {
             config,
@@ -333,7 +333,7 @@ impl LeControllerBootstrap {
     /// Dispatch an opcode and its exact HCI parameter bytes.
     ///
     /// This raw entry is useful to unit-test malformed known commands without
-    /// creating a shadow packet parser. Normal Controller workers use
+    /// creating a shadow packet parser. Controller owners normally use
     /// [`Self::dispatch`].
     pub fn dispatch_raw(
         &mut self,
@@ -499,8 +499,8 @@ mod tests {
     use trouble_host::{BleHostError, Error as TroubleError, HostResources, Packet, PacketPool};
 
     use crate::{
-        BootstrapWorkerExit, HostToControllerFrame, InProcessHciChannel,
-        InProcessHciControllerEndpoint, InProcessHciHostTransport, LeControllerBootstrapWorker,
+        HostToControllerFrame, InProcessHciChannel, InProcessHciControllerEndpoint,
+        InProcessHciHostTransport,
     };
 
     use super::{
@@ -781,8 +781,7 @@ mod tests {
         .unwrap();
         let mut channel = TestChannel::new();
         let (host, controller) = channel.split();
-        let mut worker =
-            LeControllerBootstrapWorker::new(controller, LeControllerBootstrap::new(config));
+        let mut bootstrap = LeControllerBootstrap::new(config);
         let external = ExternalController::<_, 2>::new(host);
         let mut resources = HostResources::<_, TestPacketPool, 1, 1>::new();
         let stack = trouble_host::new(external, &mut resources).build();
@@ -799,16 +798,18 @@ mod tests {
 
             // This public Trouble operation cannot emit its command until the
             // Runner has completed its initial ACL/mask bootstrap and published
-            // the internal initialized state. The conservative dispatcher then
+            // the internal initialized state. The conservative bootstrap then
             // rejects the operational command because no filter-list owner or
             // Link Layer exists yet.
-            let worker_and_probe = join(worker.run_until(stop.wait()), initialized_probe);
-            match select(runner.run(), worker_and_probe).await {
+            let controller_and_probe = join(
+                drive_bootstrap_until(&controller, &mut bootstrap, &stop),
+                initialized_probe,
+            );
+            match select(runner.run(), controller_and_probe).await {
                 Either::First(result) => {
                     panic!("Trouble Runner stopped during bootstrap: {result:?}")
                 }
-                Either::Second((worker_result, probe_result)) => {
-                    assert_eq!(worker_result.unwrap(), BootstrapWorkerExit::StoppedIdle);
+                Either::Second(((), probe_result)) => {
                     assert!(matches!(
                         probe_result,
                         Err(BleHostError::BleHost(TroubleError::Hci(
@@ -819,15 +820,37 @@ mod tests {
             }
         });
 
-        assert_eq!(worker.bootstrap().phase(), BootstrapPhase::Configuring);
+        assert_eq!(bootstrap.phase(), BootstrapPhase::Configuring);
         assert_eq!(
-            worker.bootstrap().host_buffers(),
+            bootstrap.host_buffers(),
             Some(BootstrapHostBuffers {
                 acl_data_packet_length: 255,
                 total_acl_data_packets: 1,
             })
         );
-        assert!(!worker.has_pending_response());
+    }
+
+    async fn drive_bootstrap_until(
+        controller: &TestController<'_>,
+        bootstrap: &mut LeControllerBootstrap,
+        stop: &Signal<NoopRawMutex, ()>,
+    ) {
+        let mut command_buffer = [0; 32];
+        loop {
+            let command = match select(stop.wait(), controller.receive(&mut command_buffer)).await {
+                Either::First(()) => return,
+                Either::Second(Ok(HostToControllerFrame::Command(command))) => command,
+                Either::Second(Ok(frame)) => {
+                    panic!("bootstrap received unsupported {:?} packet", frame.kind())
+                }
+                Either::Second(Err(error)) => panic!("bootstrap receive failed: {error:?}"),
+            };
+            let response = bootstrap.dispatch(command);
+            controller
+                .publish(bt_hci::PacketKind::Event, response.as_bytes())
+                .await
+                .expect("bootstrap response enters the raw Controller endpoint");
+        }
     }
 
     #[test]

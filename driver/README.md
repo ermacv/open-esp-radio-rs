@@ -33,10 +33,11 @@ application -> Trouble Host -> bt-hci -> portable LE Controller
 ```
 
 Only the bounded bidirectional HCI transport, conservative Host-bootstrap
-dispatcher, its executor-neutral bootstrap worker and hardware-foundation
-pieces exist today. A real Trouble Runner crosses that production software
-worker in host tests, but no ESP32-S31 Controller worker or on-air operation
-exists. The first Wi-Fi-style split is now physical in the workspace:
+state and affine Host/raw-Controller/bootstrap endpoint split plus the
+hardware-foundation pieces exist today. A real Trouble Runner crosses that
+same transport and bootstrap state in host tests, but no ESP32-S31 operational
+session runner or on-air operation exists. The first Wi-Fi-style split is now
+physical in the workspace:
 positional MMIO stays in the restricted PAC, while
 `chips/esp32s31/bluetooth/memory` owns the no-heap DTM controller-memory
 geometry, physical-SRAM binding, allocation-time private links and result
@@ -57,7 +58,7 @@ module for the former vendor-derived `wdev` naming.
 
 - `radio`: public requests and typed role lifecycle.
 - `bluetooth/hci`: portable allocation-free async typed HCI transport, closed
-  pre-Link-Layer Host bootstrap and cancellation-safe bootstrap worker.
+  pre-Link-Layer Host bootstrap and affine Host/raw-Controller/bootstrap split.
 - `ieee802154`: portable allocation-free frames, normalized metadata,
   capabilities and finite command/event state transitions.
 - `wifi/{ieee80211,softmac,sta,wpa2}`: portable Wi-Fi protocol logic.

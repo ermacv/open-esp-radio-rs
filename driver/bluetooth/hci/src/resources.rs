@@ -3,8 +3,9 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use crate::{
-    BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY, HciCommandWorker, InProcessHciChannel,
-    InProcessHciHostTransport, LeControllerBootstrap, LeControllerBootstrapConfig,
+    BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY, InProcessHciChannel, InProcessHciControllerEndpoint,
+    InProcessHciHostTransport, LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY, LeControllerBootstrap,
+    LeControllerBootstrapConfig,
 };
 
 const HCI_ACL_HEADER_BYTES: usize = 4;
@@ -30,28 +31,48 @@ pub enum LeControllerHciResourcesError {
     },
 }
 
-/// Complete borrowed HCI worker produced by one runtime-resource split.
-pub type LeControllerHciRuntimeWorker<
+/// Complete disjoint endpoints borrowed from one HCI resource epoch.
+///
+/// The raw Controller endpoint and bootstrap state are deliberately separate.
+/// An operational runner may dispatch a pure bootstrap command immediately or
+/// retain a semantic hardware command while it advances another subsystem. The
+/// shared lifetime prevents a second split until every endpoint is returned.
+#[must_use = "all HCI endpoints belong to one resource epoch"]
+pub struct LeControllerHciEndpoints<
     'resources,
     M,
     const HOST_TO_CONTROLLER_DEPTH: usize,
     const CONTROLLER_TO_HOST_DEPTH: usize,
     const PACKET_CAPACITY: usize,
-> = HciCommandWorker<
-    'resources,
-    M,
-    &'resources mut LeControllerBootstrap,
-    HOST_TO_CONTROLLER_DEPTH,
-    CONTROLLER_TO_HOST_DEPTH,
-    PACKET_CAPACITY,
->;
+> where
+    M: RawMutex,
+{
+    /// Host-facing typed HCI transport.
+    pub host: InProcessHciHostTransport<
+        'resources,
+        M,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >,
+    /// Sole raw Controller endpoint for command/data receive and response publication.
+    pub controller: InProcessHciControllerEndpoint<
+        'resources,
+        M,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >,
+    /// Sole mutable software-bootstrap state for this exact epoch.
+    pub bootstrap: &'resources mut LeControllerBootstrap,
+}
 
 /// Allocation-free transport and bootstrap state for exactly one HCI epoch.
 ///
 /// The aggregate replaces a vendor packet mempool, global HCI environment and
-/// callback-broker node with bounded packet queues and one typed dispatcher.
+/// callback-broker node with bounded packet queues and typed bootstrap state.
 /// It is neither `Copy` nor `Clone`; splitting requires a unique mutable borrow
-/// and yields the only Host transport and Controller worker for that epoch.
+/// and yields the only Host, Controller and bootstrap endpoints for that epoch.
 #[must_use = "HCI runtime resources must remain owned by their Controller epoch"]
 pub struct LeControllerHciResources<
     M,
@@ -80,7 +101,9 @@ where
     pub fn new(config: LeControllerBootstrapConfig) -> Result<Self, LeControllerHciResourcesError> {
         let acl_packet_capacity =
             usize::from(config.le_acl_data_packet_length()).saturating_add(HCI_ACL_HEADER_BYTES);
-        let required = acl_packet_capacity.max(BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY);
+        let required = acl_packet_capacity
+            .max(BOOTSTRAP_COMMAND_COMPLETE_EVENT_CAPACITY)
+            .max(LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY);
         if PACKET_CAPACITY < required {
             return Err(LeControllerHciResourcesError::PacketCapacityTooSmall {
                 required,
@@ -109,42 +132,47 @@ where
 
     /// Whether no packet or successful HCI command has entered this epoch.
     pub fn is_pristine(&self) -> bool {
-        self.channel.is_empty() && self.bootstrap.is_pristine()
+        self.channel.is_pristine() && self.bootstrap.is_pristine()
     }
 
-    /// Borrow the only Host transport and Controller bootstrap worker.
+    /// Borrow the only Host transport, raw Controller endpoint and bootstrap state.
     pub fn split(
         &mut self,
-    ) -> (
-        InProcessHciHostTransport<
-            '_,
-            M,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
-        LeControllerHciRuntimeWorker<
-            '_,
-            M,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
-    ) {
+    ) -> LeControllerHciEndpoints<
+        '_,
+        M,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    > {
         let (host, controller) = self.channel.split();
-        let worker = HciCommandWorker::new(controller, &mut self.bootstrap);
-        (host, worker)
+        LeControllerHciEndpoints {
+            host,
+            controller,
+            bootstrap: &mut self.bootstrap,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use bt_hci::{cmd::controller_baseband::Reset, transport::Transport};
+    use bt_hci::{
+        ControllerToHostPacket, FromHciBytes, PacketKind,
+        cmd::{Cmd, controller_baseband::Reset},
+        event::{CommandComplete, CommandCompleteWithStatus, EventKind},
+        param::Status,
+        transport::Transport,
+    };
     use embassy_futures::block_on;
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
     use super::{LeControllerHciResources, LeControllerHciResourcesError};
-    use crate::{BluetoothPublicDeviceAddress, LeControllerBootstrapConfig};
+    use crate::{
+        BluetoothPublicDeviceAddress, HciChannelError, HostToControllerFrame,
+        LeControllerBootstrapConfig,
+    };
+
+    const HARDWARE_ERROR: [u8; 3] = [0x10, 0x01, 0x42];
 
     fn config(payload: u16, credits: u8) -> LeControllerBootstrapConfig {
         LeControllerBootstrapConfig::new(
@@ -174,22 +202,158 @@ mod tests {
     }
 
     #[test]
-    fn one_split_joins_the_host_to_the_same_pristine_bootstrap_epoch() {
+    fn one_split_exposes_raw_endpoints_and_the_matching_bootstrap_epoch() {
         let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 31>::new(config(27, 1))
             .expect("profile fits its source-owned storage");
         assert!(resources.is_pristine());
 
         {
-            let (host, mut worker) = resources.split();
+            let endpoints = resources.split();
             block_on(async {
-                let reset = Reset::new();
-                let (sent, processed) =
-                    embassy_futures::join::join(host.write(&reset), worker.process_one()).await;
-                sent.expect("Reset enters the bounded queue");
-                processed.expect("the matching worker publishes its response");
+                endpoints
+                    .host
+                    .write(&Reset::new())
+                    .await
+                    .expect("Reset enters the bounded queue");
+                let mut command_buffer = [0; 31];
+                let HostToControllerFrame::Command(command) = endpoints
+                    .controller
+                    .receive(&mut command_buffer)
+                    .await
+                    .expect("the raw Controller endpoint receives Reset")
+                else {
+                    panic!("Reset changed HCI packet class");
+                };
+                let response = endpoints.bootstrap.dispatch(command);
+                endpoints
+                    .controller
+                    .publish(PacketKind::Event, response.as_bytes())
+                    .await
+                    .expect("the raw Controller endpoint publishes completion");
+
+                let mut event_buffer = [0; 31];
+                let packet = endpoints
+                    .host
+                    .read(&mut event_buffer)
+                    .await
+                    .expect("Host receives matching completion");
+                assert_command_complete(packet, Reset::OPCODE, Status::SUCCESS);
             });
         }
 
         assert!(!resources.is_pristine());
+    }
+
+    #[test]
+    fn draining_a_raw_command_cannot_reclassify_the_epoch_as_pristine() {
+        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 31>::new(config(27, 1))
+            .expect("profile fits its source-owned storage");
+
+        {
+            let endpoints = resources.split();
+            block_on(endpoints.host.write(&Reset::new())).expect("Reset enters the input queue");
+            let mut command_buffer = [0; 31];
+            let HostToControllerFrame::Command(command) = endpoints
+                .controller
+                .try_receive(&mut command_buffer)
+                .expect("raw Controller drains Reset without dispatching it")
+            else {
+                panic!("Reset changed HCI packet class");
+            };
+            assert_eq!(command.opcode(), Reset::OPCODE);
+        }
+
+        assert!(!resources.is_pristine());
+    }
+
+    #[test]
+    fn draining_a_controller_event_cannot_reclassify_the_epoch_as_pristine() {
+        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 31>::new(config(27, 1))
+            .expect("profile fits its source-owned storage");
+
+        {
+            let endpoints = resources.split();
+            endpoints
+                .controller
+                .try_publish(PacketKind::Event, &HARDWARE_ERROR)
+                .expect("Controller event enters the output queue");
+            let mut event_buffer = [0; 31];
+            let ControllerToHostPacket::Event(hardware_error) =
+                block_on(endpoints.host.read(&mut event_buffer))
+                    .expect("Host drains the Controller event")
+            else {
+                panic!("Hardware Error changed HCI packet class");
+            };
+            assert_eq!(hardware_error.data, &[0x42]);
+        }
+
+        assert!(!resources.is_pristine());
+    }
+
+    #[test]
+    fn raw_controller_retry_preserves_a_response_across_output_backpressure() {
+        let mut resources = LeControllerHciResources::<NoopRawMutex, 1, 1, 31>::new(config(27, 1))
+            .expect("profile fits its source-owned storage");
+        let endpoints = resources.split();
+
+        endpoints
+            .controller
+            .try_publish(PacketKind::Event, &HARDWARE_ERROR)
+            .expect("the output slot starts empty");
+        block_on(endpoints.host.write(&Reset::new())).expect("Reset enters the input queue");
+        let mut command_buffer = [0; 31];
+        let HostToControllerFrame::Command(command) = endpoints
+            .controller
+            .try_receive(&mut command_buffer)
+            .expect("raw endpoint retains the queued Reset")
+        else {
+            panic!("Reset changed HCI packet class");
+        };
+        let response = endpoints.bootstrap.dispatch(command);
+
+        assert_eq!(
+            endpoints
+                .controller
+                .try_publish(PacketKind::Event, response.as_bytes()),
+            Err(HciChannelError::Full)
+        );
+
+        let mut event_buffer = [0; 31];
+        let ControllerToHostPacket::Event(hardware_error) =
+            block_on(endpoints.host.read(&mut event_buffer))
+                .expect("Host drains the pre-existing event")
+        else {
+            panic!("Hardware Error changed HCI packet class");
+        };
+        assert_eq!(hardware_error.data, &[0x42]);
+
+        endpoints
+            .controller
+            .try_publish(PacketKind::Event, response.as_bytes())
+            .expect("the exact retained response can be retried");
+        assert_command_complete(
+            block_on(endpoints.host.read(&mut event_buffer))
+                .expect("Host receives the retried response"),
+            Reset::OPCODE,
+            Status::SUCCESS,
+        );
+    }
+
+    fn assert_command_complete(
+        packet: ControllerToHostPacket<'_>,
+        opcode: bt_hci::cmd::Opcode,
+        status: Status,
+    ) {
+        let ControllerToHostPacket::Event(event) = packet else {
+            panic!("Command Complete changed HCI packet class");
+        };
+        assert_eq!(event.kind, EventKind::CommandComplete);
+        let complete = CommandComplete::from_hci_bytes_complete(event.data)
+            .expect("event retains a complete Command Complete body");
+        let complete: CommandCompleteWithStatus<'_> = complete
+            .try_into()
+            .expect("Command Complete retains status");
+        assert_eq!(complete.cmd_opcode, opcode);
+        assert_eq!(complete.status, status);
     }
 }

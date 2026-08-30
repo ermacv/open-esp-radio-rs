@@ -20,7 +20,7 @@ required-capabilities = [
   "scheduler-finished-list-drain",
   "hci-handoff-storage",
   "hci-bootstrap",
-  "hci-bootstrap-worker",
+  "hci-controller-endpoints",
   "packet-dataplane",
   "le-link-layer",
   "typed-hci-controller",
@@ -315,16 +315,16 @@ gaps = [
 ]
 
 [[capabilities]]
-id = "hci-bootstrap-worker"
-title = "RTOS-free HCI bootstrap Controller worker"
-scope = "Sole affine Controller endpoint with ordered async stop retained backpressured responses and terminal rejection of pre-Link-Layer Host data"
+id = "hci-controller-endpoints"
+title = "RTOS-free affine HCI Controller endpoints"
+scope = "One bounded HCI epoch split into disjoint Host raw Controller and mutable bootstrap owners for an operational session runner"
 implementation = "complete"
 host = "covered"
 async = "bounded"
 depends-on = ["hci-handoff-storage", "hci-bootstrap"]
-vendor-not-applicable = "portable-bootstrap-worker-lifecycle"
+vendor-not-applicable = "portable-hci-endpoint-ownership"
 gaps = [
-  { axis = "hil", id = "hci-bootstrap-worker-hardware-cell-missing" },
+  { axis = "hil", id = "hci-controller-endpoint-hardware-cell-missing" },
 ]
 
 [[capabilities]]
@@ -409,12 +409,12 @@ scope = "HCI command event ACL credit and error semantics for the implemented ES
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-depends-on = ["hci-handoff-storage", "hci-bootstrap", "hci-bootstrap-worker", "le-link-layer"]
+depends-on = ["hci-handoff-storage", "hci-bootstrap", "hci-controller-endpoints", "le-link-layer"]
 vendor-anchors = [
   "verification/vendor/targets/esp32s31/vendor-project.toml",
 ]
 gaps = [
-  { axis = "implementation", id = "dtm-command-dispatch-session-worker-and-controller-traits-missing" },
+  { axis = "implementation", id = "dtm-command-dispatch-session-runner-and-controller-traits-missing" },
   { axis = "host", id = "dtm-dispatch-session-state-and-backpressure-tests-missing" },
   { axis = "vendor", id = "hci-command-and-acl-production-contracts-missing" },
   { axis = "hil", id = "external-hci-interoperability-cell-missing" },
@@ -428,13 +428,13 @@ scope = "Sole affine hardware owner bounded ISR handoff timer events run-to-quie
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
-depends-on = ["interrupt-runtime", "packet-dataplane", "hci-bootstrap-worker"]
+depends-on = ["interrupt-runtime", "packet-dataplane", "hci-controller-endpoints"]
 vendor-anchors = [
   "verification/vendor/targets/esp32s31/README.md",
 ]
 gaps = [
   { axis = "implementation", id = "link-layer-runtime-and-powered-embassy-hardware-owner-missing" },
-  { axis = "host", id = "bootstrap-worker-tests-have-no-virtual-time-link-layer-runtime" },
+  { axis = "host", id = "controller-endpoint-tests-have-no-virtual-time-link-layer-runtime" },
   { axis = "vendor", id = "controller-task-order-and-event-contracts-missing" },
   { axis = "hil", id = "controller-runtime-latency-and-soak-cells-missing" },
   { axis = "async", id = "powered-runtime-owner-and-controller-event-loop-missing" },

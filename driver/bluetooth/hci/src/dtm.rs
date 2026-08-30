@@ -9,7 +9,7 @@
 use bt_hci::{
     PacketKind,
     cmd::{Opcode, OpcodeGroup},
-    param::Status,
+    param::{Error as HciError, Status},
 };
 
 use crate::{HciCommandPacket, HciControllerResponse};
@@ -112,7 +112,7 @@ impl LeDtmCommand {
 
     /// Decode an opcode and the complete command-parameter body.
     ///
-    /// This entry point is useful for dispatchers which already split the HCI
+    /// This entry point is useful for Controller owners which already split the HCI
     /// command header and for focused malformed-body tests. It applies the same
     /// closed opcode and exact-length policy as [`Self::decode`].
     pub fn decode_body(opcode: Opcode, parameters: &[u8]) -> Result<Self, LeDtmCommandDecodeError> {
@@ -120,6 +120,7 @@ impl LeDtmCommand {
             require_parameter_length(LeDtmCommandKind::ReceiverTestV1, parameters, 1)?;
             let channel = LeDtmChannel::from_hci_parameter(parameters[0]).ok_or(
                 LeDtmCommandDecodeError::ChannelOutsideTestDomain {
+                    command: LeDtmCommandKind::ReceiverTestV1,
                     channel: parameters[0],
                 },
             )?;
@@ -128,11 +129,13 @@ impl LeDtmCommand {
             require_parameter_length(LeDtmCommandKind::TransmitterTestV1, parameters, 3)?;
             let channel = LeDtmChannel::from_hci_parameter(parameters[0]).ok_or(
                 LeDtmCommandDecodeError::ChannelOutsideTestDomain {
+                    command: LeDtmCommandKind::TransmitterTestV1,
                     channel: parameters[0],
                 },
             )?;
             let pattern = LeDtmPayloadPattern::from_hci_parameter(parameters[2]).ok_or(
                 LeDtmCommandDecodeError::UnsupportedPayloadPattern {
+                    command: LeDtmCommandKind::TransmitterTestV1,
                     selector: parameters[2],
                 },
             )?;
@@ -170,6 +173,17 @@ pub enum LeDtmCommandKind {
     TestEnd,
 }
 
+impl LeDtmCommandKind {
+    /// Exact HCI opcode represented by this semantic command kind.
+    pub const fn opcode(self) -> Opcode {
+        match self {
+            Self::ReceiverTestV1 => LE_RECEIVER_TEST_V1_OPCODE,
+            Self::TransmitterTestV1 => LE_TRANSMITTER_TEST_V1_OPCODE,
+            Self::TestEnd => LE_TEST_END_OPCODE,
+        }
+    }
+}
+
 /// Why a semantic LE DTM command body was rejected.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LeDtmCommandDecodeError {
@@ -189,14 +203,40 @@ pub enum LeDtmCommandDecodeError {
     },
     /// The channel parameter is reserved rather than an LE test channel.
     ChannelOutsideTestDomain {
+        /// Known command whose channel was rejected.
+        command: LeDtmCommandKind,
         /// Rejected HCI channel value.
         channel: u8,
     },
     /// The transmitter pattern selector is outside the standard domain.
     UnsupportedPayloadPattern {
+        /// Known command whose payload selector was rejected.
+        command: LeDtmCommandKind,
         /// Rejected HCI selector value.
         selector: u8,
     },
+}
+
+impl LeDtmCommandDecodeError {
+    /// Convert malformed input for a known DTM opcode into its required
+    /// Invalid HCI Command Parameters completion.
+    ///
+    /// An unsupported opcode remains owned by the error so the outer Controller
+    /// router can dispatch another command family or return Unknown HCI Command.
+    pub fn into_invalid_parameters_command_complete(
+        self,
+    ) -> Result<LeDtmCommandCompleteEvent, Self> {
+        let command = match self {
+            Self::UnsupportedOpcode { .. } => return Err(self),
+            Self::InvalidParameterLength { command, .. }
+            | Self::ChannelOutsideTestDomain { command, .. }
+            | Self::UnsupportedPayloadPattern { command, .. } => command,
+        };
+        Ok(LeDtmCommandCompleteEvent::without_return_parameters(
+            command.opcode(),
+            HciError::INVALID_HCI_PARAMETERS.to_status(),
+        ))
+    }
 }
 
 /// Validated LE Receiver Test v1 command awaiting controller execution.
@@ -446,16 +486,53 @@ mod tests {
     fn reserved_semantic_values_are_not_forwarded_to_a_chip() {
         assert_eq!(
             LeDtmCommand::decode_body(LE_RECEIVER_TEST_V1_OPCODE, &[40]),
-            Err(LeDtmCommandDecodeError::ChannelOutsideTestDomain { channel: 40 })
+            Err(LeDtmCommandDecodeError::ChannelOutsideTestDomain {
+                command: LeDtmCommandKind::ReceiverTestV1,
+                channel: 40,
+            })
         );
         assert_eq!(
             LeDtmCommand::decode_body(LE_TRANSMITTER_TEST_V1_OPCODE, &[0, 1, 8]),
-            Err(LeDtmCommandDecodeError::UnsupportedPayloadPattern { selector: 8 })
+            Err(LeDtmCommandDecodeError::UnsupportedPayloadPattern {
+                command: LeDtmCommandKind::TransmitterTestV1,
+                selector: 8,
+            })
         );
         assert!(matches!(
             LeDtmCommand::decode_body(Opcode::UNSOLICITED, &[]),
             Err(LeDtmCommandDecodeError::UnsupportedOpcode { .. })
         ));
+    }
+
+    #[test]
+    fn malformed_known_opcodes_build_invalid_parameters_completions() {
+        for (opcode, parameters) in [
+            (LE_RECEIVER_TEST_V1_OPCODE, &[][..]),
+            (LE_RECEIVER_TEST_V1_OPCODE, &[40][..]),
+            (LE_TRANSMITTER_TEST_V1_OPCODE, &[0, 1, 8][..]),
+            (LE_TEST_END_OPCODE, &[0][..]),
+        ] {
+            let response = LeDtmCommand::decode_body(opcode, parameters)
+                .expect_err("malformed known command must fail closed")
+                .into_invalid_parameters_command_complete()
+                .expect("known DTM opcode must retain its response identity");
+            let observed = parse_command_complete(response.as_bytes());
+            assert_eq!(observed.cmd_opcode, opcode);
+            assert_eq!(
+                observed.status,
+                HciError::INVALID_HCI_PARAMETERS.to_status()
+            );
+            assert!(observed.return_param_bytes.is_empty());
+        }
+
+        let unsupported = LeDtmCommand::decode_body(Opcode::UNSOLICITED, &[])
+            .expect_err("unsupported opcode remains outside the DTM response scope");
+        assert_eq!(
+            unsupported.into_invalid_parameters_command_complete(),
+            Err(LeDtmCommandDecodeError::UnsupportedOpcode {
+                opcode: Opcode::UNSOLICITED,
+            })
+        );
     }
 
     #[test]

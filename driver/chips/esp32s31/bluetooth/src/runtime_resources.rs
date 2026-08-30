@@ -301,16 +301,6 @@ impl<const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub(crate) const fn primary_interrupt_publications(
-        &self,
-    ) -> (
-        &BluetoothSchedulerWakeCell,
-        &BluetoothSchedulerLockModifyEventCell,
-    ) {
-        (&self.scheduler_wake, &self.scheduler_lock_modify_events)
-    }
-
-    #[cfg(target_arch = "riscv32")]
     pub(crate) const fn modem_lp_timer_worker_wake(&self) -> &BluetoothModemLpTimerWorkerWakeCell {
         &self.modem_lp_timer_worker_wake
     }

@@ -199,18 +199,6 @@ where
             .modem_lp_timer_software_parts_mut()
     }
 
-    pub(crate) const fn primary_interrupt_publications(
-        &self,
-    ) -> (
-        &crate::BluetoothSchedulerWakeCell,
-        &crate::BluetoothSchedulerLockModifyEventCell,
-    ) {
-        self.initialized
-            .initialized
-            .controller
-            .primary_interrupt_publications()
-    }
-
     pub(crate) const fn modem_lp_timer_worker_wake(
         &self,
     ) -> &crate::BluetoothModemLpTimerWorkerWakeCell {
@@ -222,6 +210,21 @@ where
 
     pub(crate) fn task_mut(&mut self) -> &mut crate::resources::BluetoothTaskResources {
         self.initialized.initialized.controller.task_mut()
+    }
+
+    /// Split the already initialized scheduler and HCI resources after this
+    /// complete BLE-PHY owner has reached stable final placement.
+    pub(crate) fn split_runtime(
+        &mut self,
+    ) -> crate::BluetoothControllerRuntimeEndpoints<
+        '_,
+        M,
+        SCHEDULER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    > {
+        self.initialized.initialized.controller.split_runtime()
     }
 
     /// Borrow the sole scheduler owner for upper phase-ordered DTM preparation.

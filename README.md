@@ -20,9 +20,9 @@ remain future work. The ESP32-S31 Bluetooth tree now also carries an explicit
 portable bounded asynchronous HCI transport; neither is an on-air readiness
 claim. Its closed Host-bootstrap command table rejects every Link-Layer
 operation until a real controller backend owns it.
-Host tests also run the released Trouble Runner through the executor-neutral
-bootstrap worker; this is software integration evidence, not an ESP32-S31 task
-or hardware capability.
+Host tests also run the released Trouble Runner through the same raw Controller
+endpoint and bootstrap state exposed to a future hardware session runner; this
+is software integration evidence, not an ESP32-S31 task or hardware capability.
 The normal workspace and HIL
 do not link `esp-wifi-sys`, vendor Wi-Fi
 archives, or a radio/Wi-Fi ROM ABI. The isolated vendor-oracle workspace is the
@@ -34,7 +34,7 @@ only opt-in exception.
 | --- | --- |
 | [`driver/`](driver/README.md) | All shipping driver code and its architecture map |
 | `driver/radio` | Public requests and typed radio/Wi-Fi lifecycle |
-| `driver/bluetooth/hci` | Portable allocation-free async `bt-hci` transport, fail-closed Host bootstrap and bootstrap worker |
+| `driver/bluetooth/hci` | Portable allocation-free async `bt-hci` transport, fail-closed Host bootstrap and affine Controller endpoints |
 | `driver/common/dma` | Shared audited DMA ownership primitives |
 | `driver/wifi/` | Chip-independent Wi-Fi protocols and policy |
 | `driver/wifi/softmac` | Executor-independent SoftMAC service, VIF and status contract |

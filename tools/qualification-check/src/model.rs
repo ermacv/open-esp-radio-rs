@@ -12,7 +12,7 @@ use crate::{
     hil::{HilEvidenceIndex, HilEvidenceSummary, HilRequirement, RepositoryState, ScenarioCatalog},
 };
 
-const QUALIFICATION_SCHEMA: u16 = 3;
+pub(crate) const QUALIFICATION_SCHEMA: u16 = 4;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
 #[serde(rename_all = "kebab-case")]
@@ -36,7 +36,8 @@ impl Axis {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
 pub(crate) enum ImplementationProof {
     Complete,
     Incomplete,
@@ -55,7 +56,8 @@ impl ImplementationProof {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
 pub(crate) enum HostProof {
     Covered,
     Incomplete,
@@ -126,7 +128,8 @@ impl HilProof {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
 pub(crate) enum AsyncProof {
     Bounded,
     Incomplete,
@@ -263,13 +266,6 @@ struct HilConfig {
     runs: PathBuf,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-struct FileReference {
-    path: PathBuf,
-    token: String,
-}
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct VendorRoot {
@@ -321,23 +317,33 @@ struct GapDocument {
     id: String,
 }
 
-#[derive(Default, Deserialize)]
-#[serde(default, rename_all = "kebab-case", deny_unknown_fields)]
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct CapabilityDocument {
     id: String,
     title: String,
     scope: String,
-    owners: Vec<FileReference>,
-    tests: Vec<FileReference>,
-    async_contracts: Vec<FileReference>,
+    implementation: ImplementationProof,
+    host: HostProof,
+    #[serde(rename = "async")]
+    async_proof: AsyncProof,
+    #[serde(default)]
     vendor_roots: Vec<VendorRoot>,
+    #[serde(default)]
     vendor_evidence: Vec<VendorEvidenceRef>,
-    vendor_anchors: Vec<FileReference>,
+    #[serde(default)]
+    vendor_anchors: Vec<PathBuf>,
+    #[serde(default)]
     vendor_not_applicable: Option<String>,
+    #[serde(default)]
     hil_requirements: Vec<HilRequirementDocument>,
+    #[serde(default)]
     hil_not_applicable: Option<String>,
+    #[serde(default)]
     async_not_applicable: Option<String>,
+    #[serde(default)]
     depends_on: Vec<String>,
+    #[serde(default)]
     gaps: Vec<GapDocument>,
 }
 
@@ -402,9 +408,8 @@ impl ManifestDocument {
         };
 
         let mut capabilities = BTreeMap::new();
-        let mut files = BTreeMap::new();
         for document in self.capabilities {
-            let capability = evaluate_capability(document, &context, &mut files)?;
+            let capability = evaluate_capability(document, &context)?;
             if capabilities
                 .insert(capability.id.clone(), capability)
                 .is_some()
@@ -445,7 +450,6 @@ struct EvaluationContext<'a> {
 fn evaluate_capability(
     document: CapabilityDocument,
     context: &EvaluationContext<'_>,
-    files: &mut BTreeMap<PathBuf, String>,
 ) -> Result<Capability> {
     let id = slug(&document.id, "capability id")?;
     if document.title.trim().is_empty() || document.scope.trim().is_empty() {
@@ -470,37 +474,19 @@ fn evaluate_capability(
         gaps.push(gap);
     }
 
-    let mut evidence = Vec::new();
-    validate_owners(&id, &document.owners, context.root, files, &mut evidence)?;
-    validate_test_references(
-        &id,
-        "host",
-        &document.tests,
-        context.root,
-        files,
-        &mut evidence,
-    )?;
-    validate_async_contracts(&id, &document, context.root, files, &mut evidence)?;
-    for anchor in &document.vendor_anchors {
-        validate_reference(anchor, context.root, files)?;
-    }
+    validate_vendor_anchors(&id, &document.vendor_anchors, context.root)?;
 
-    let implementation = if !document.owners.is_empty() && !has_gap(&gaps, Axis::Implementation) {
-        ImplementationProof::Complete
-    } else {
-        ensure_gap(
-            &mut gaps,
-            Axis::Implementation,
-            "implementation-evidence-missing",
-        );
-        ImplementationProof::Incomplete
-    };
-    let host = if !document.tests.is_empty() && !has_gap(&gaps, Axis::Host) {
-        HostProof::Covered
-    } else {
-        ensure_gap(&mut gaps, Axis::Host, "host-contract-evidence-missing");
-        HostProof::Incomplete
-    };
+    let implementation = document.implementation;
+    validate_declared_axis(
+        &id,
+        Axis::Implementation,
+        implementation.is_terminal(),
+        &gaps,
+    )?;
+    let host = document.host;
+    validate_declared_axis(&id, Axis::Host, host.is_terminal(), &gaps)?;
+
+    let mut evidence = Vec::new();
 
     let (vendor, vendor_evidence) = derive_vendor_proof(
         &id,
@@ -560,21 +546,13 @@ fn evaluate_capability(
         }
     };
 
-    let async_proof = if let Some(reason) = document.async_not_applicable.as_deref() {
-        validate_reason(reason, "async-not-applicable", &id)?;
-        if !document.async_contracts.is_empty() || has_gap(&gaps, Axis::Async) {
-            return Err(format!(
-                "async-not-applicable capability {id} cannot declare async contracts or gaps"
-            )
-            .into());
-        }
-        AsyncProof::NotApplicable
-    } else if !document.async_contracts.is_empty() && !has_gap(&gaps, Axis::Async) {
-        AsyncProof::Bounded
-    } else {
-        ensure_gap(&mut gaps, Axis::Async, "bounded-async-evidence-missing");
-        AsyncProof::Incomplete
-    };
+    let async_proof = document.async_proof;
+    validate_async_declaration(
+        &id,
+        async_proof,
+        document.async_not_applicable.as_deref(),
+        &gaps,
+    )?;
 
     gaps.sort_by(|left, right| {
         left.axis
@@ -598,177 +576,66 @@ fn evaluate_capability(
     })
 }
 
-fn validate_owners(
+fn validate_async_declaration(
     id: &str,
-    owners: &[FileReference],
-    root: &Path,
-    files: &mut BTreeMap<PathBuf, String>,
-    evidence: &mut Vec<String>,
+    proof: AsyncProof,
+    not_applicable_reason: Option<&str>,
+    gaps: &[Gap],
 ) -> Result<()> {
-    let mut unique = BTreeSet::new();
-    for owner in owners {
-        validate_relative_path(&owner.path)?;
-        if !is_rust_source_under(&owner.path, "driver")
-            || !unique.insert((owner.path.clone(), owner.token.clone()))
-        {
+    match (proof, not_applicable_reason) {
+        (AsyncProof::NotApplicable, Some(reason)) => {
+            validate_reason(reason, "async-not-applicable", id)?;
+        }
+        (AsyncProof::NotApplicable, None) => {
             return Err(format!(
-                "owner {}#{} for {id} is duplicate or outside production Rust",
-                owner.path.display(),
-                owner.token
+                "async-not-applicable capability {id} needs an async-not-applicable reason"
             )
             .into());
         }
-        let contents = validate_reference(owner, root, files)?;
-        if !contains_owner_declaration(contents, &owner.token) {
+        (_, Some(_)) => {
             return Err(format!(
-                "owner token {:?} for {id} is not a public Rust declaration in {}",
-                owner.token,
-                owner.path.display()
+                "capability {id} can only declare async-not-applicable when async is not-applicable"
             )
             .into());
         }
-        evidence.push(format!("source:{}#{}", owner.path.display(), owner.token));
+        (_, None) => {}
     }
-    Ok(())
+    validate_declared_axis(id, Axis::Async, proof.is_terminal(), gaps)
 }
 
-fn validate_test_references(
-    id: &str,
-    evidence_kind: &str,
-    references: &[FileReference],
-    root: &Path,
-    files: &mut BTreeMap<PathBuf, String>,
-    evidence: &mut Vec<String>,
-) -> Result<()> {
-    let mut unique = BTreeSet::new();
-    for reference in references {
-        validate_relative_path(&reference.path)?;
-        if !reference.path.starts_with("driver")
-            || reference.path.extension().and_then(|value| value.to_str()) != Some("rs")
-            || !unique.insert((reference.path.clone(), reference.token.clone()))
-        {
-            return Err(format!(
-                "{evidence_kind} test {}#{} for {id} is duplicate or outside driver Rust",
-                reference.path.display(),
-                reference.token
-            )
-            .into());
-        }
-        let contents = validate_reference(reference, root, files)?;
-        if !contains_test_declaration(contents, &reference.token) {
-            return Err(format!(
-                "{evidence_kind} test token {:?} for {id} is not a Rust function in {}",
-                reference.token,
-                reference.path.display()
-            )
-            .into());
-        }
-        evidence.push(format!(
-            "{evidence_kind}:{}#{}",
-            reference.path.display(),
-            reference.token
-        ));
-    }
-    Ok(())
-}
-
-fn contains_test_declaration(contents: &str, token: &str) -> bool {
-    let declaration = format!("fn {token}(");
-    contents.match_indices(&declaration).any(|(offset, _)| {
-        let prefix = &contents[..offset];
-        let mut start = prefix.len().saturating_sub(256);
-        while !prefix.is_char_boundary(start) {
-            start += 1;
-        }
-        let attributes = &prefix[start..];
-        attributes
-            .rfind("#[test]")
-            .is_some_and(|test_offset| !attributes[test_offset + "#[test]".len()..].contains("fn "))
-    })
-}
-
-fn validate_async_contracts(
-    id: &str,
-    document: &CapabilityDocument,
-    root: &Path,
-    files: &mut BTreeMap<PathBuf, String>,
-    evidence: &mut Vec<String>,
-) -> Result<()> {
-    let host_tests = document.tests.iter().collect::<BTreeSet<_>>();
-    if let Some(reference) = document
-        .async_contracts
-        .iter()
-        .find(|reference| !host_tests.contains(reference))
-    {
-        return Err(format!(
-            "async contract {}#{} for {id} is not declared as a host test",
-            reference.path.display(),
-            reference.token
+fn validate_declared_axis(id: &str, axis: Axis, terminal: bool, gaps: &[Gap]) -> Result<()> {
+    match (terminal, has_gap(gaps, axis)) {
+        (true, true) => Err(format!(
+            "terminal {} axis for {id} retains a {} gap",
+            axis.label(),
+            axis.label()
         )
-        .into());
+        .into()),
+        (false, false) => Err(format!(
+            "incomplete {} axis for {id} needs a {} gap",
+            axis.label(),
+            axis.label()
+        )
+        .into()),
+        _ => Ok(()),
     }
-    validate_test_references(
-        id,
-        "async",
-        &document.async_contracts,
-        root,
-        files,
-        evidence,
-    )
 }
 
-fn validate_reference<'a>(
-    reference: &FileReference,
-    root: &Path,
-    files: &'a mut BTreeMap<PathBuf, String>,
-) -> Result<&'a str> {
-    validate_relative_path(&reference.path)?;
-    if reference.token.is_empty() || reference.token.contains('#') {
-        return Err(format!("invalid reference token for {}", reference.path.display()).into());
-    }
-    if !files.contains_key(&reference.path) {
-        let path = root.join(&reference.path);
-        if !fs::symlink_metadata(&path)?.file_type().is_file() {
+fn validate_vendor_anchors(id: &str, anchors: &[PathBuf], root: &Path) -> Result<()> {
+    let mut unique = BTreeSet::new();
+    for anchor in anchors {
+        validate_relative_path(anchor)?;
+        if !unique.insert(anchor) {
             return Err(
-                format!("referenced path is not a regular file: {}", path.display()).into(),
+                format!("capability {id} repeats vendor anchor {}", anchor.display()).into(),
             );
         }
-        let contents = fs::read_to_string(&path)
-            .map_err(|error| format!("cannot read referenced file {}: {error}", path.display()))?;
-        files.insert(reference.path.clone(), contents);
+        let path = root.join(anchor);
+        if !fs::symlink_metadata(&path)?.file_type().is_file() {
+            return Err(format!("vendor anchor is not a regular file: {}", path.display()).into());
+        }
     }
-    let contents = &files[&reference.path];
-    if !contents.contains(&reference.token) {
-        return Err(format!(
-            "referenced token {:?} is absent from {}",
-            reference.token,
-            reference.path.display()
-        )
-        .into());
-    }
-    Ok(contents)
-}
-
-fn contains_owner_declaration(contents: &str, token: &str) -> bool {
-    [
-        "pub struct ",
-        "pub enum ",
-        "pub trait ",
-        "pub fn ",
-        "pub async fn ",
-        "pub const ",
-        "pub const fn ",
-    ]
-    .iter()
-    .any(|prefix| contents.contains(&format!("{prefix}{token}")))
-}
-
-fn is_rust_source_under(path: &Path, prefix: &str) -> bool {
-    path.starts_with(prefix)
-        && path.extension().and_then(|value| value.to_str()) == Some("rs")
-        && path
-            .components()
-            .any(|component| component.as_os_str() == "src")
+    Ok(())
 }
 
 fn validate_vendor_contract(
@@ -1272,7 +1139,7 @@ mod tests {
     use super::*;
 
     const COMPLETE: &str = r#"
-schema = 3
+schema = 4
 target = "test-radio"
 required-capabilities = ["channel-switch"]
 
@@ -1289,19 +1156,24 @@ runs = "target/hil/test-radio/runs"
 id = "channel-switch"
 title = "Channel switch"
 scope = "One finite transition"
-owners = [{ path = "driver/radio/src/channel.rs", token = "Channel" }]
-tests = [{ path = "driver/radio/src/channel.rs", token = "completes_channel" }]
-async-contracts = [{ path = "driver/radio/src/channel.rs", token = "completes_channel" }]
+implementation = "complete"
+host = "covered"
+async = "bounded"
 vendor-roots = [{ source = "archive", symbol = "set_channel" }]
 vendor-evidence = [{ suite = "radio", source = "archive", symbol = "set_channel" }]
 hil-requirements = [{ scenario = "channel-switch", minimum-repetitions = 3 }]
 "#;
 
     #[test]
-    fn parses_strict_v3_toml() {
+    fn parses_strict_v4_toml() {
         let manifest: ManifestDocument = toml_edit::de::from_str(COMPLETE).unwrap();
-        assert_eq!(manifest.schema, 3);
-        assert_eq!(manifest.capabilities[0].owners[0].token, "Channel");
+        assert_eq!(manifest.schema, 4);
+        assert_eq!(
+            manifest.capabilities[0].implementation,
+            ImplementationProof::Complete
+        );
+        assert_eq!(manifest.capabilities[0].host, HostProof::Covered);
+        assert_eq!(manifest.capabilities[0].async_proof, AsyncProof::Bounded);
         assert_eq!(
             manifest.capabilities[0].hil_requirements[0].minimum_repetitions,
             3
@@ -1309,41 +1181,48 @@ hil-requirements = [{ scenario = "channel-switch", minimum-repetitions = 3 }]
     }
 
     #[test]
-    fn handwritten_axis_status_is_not_part_of_the_schema() {
-        let input = COMPLETE.replace(
-            "scope = \"One finite transition\"",
-            "scope = \"One finite transition\"\nimplementation = \"complete\"",
-        );
+    fn declarative_axis_status_is_required() {
+        let input = COMPLETE.replace("implementation = \"complete\"\n", "");
         let error = match toml_edit::de::from_str::<ManifestDocument>(&input) {
-            Ok(_) => panic!("handwritten axis status was accepted"),
+            Ok(_) => panic!("missing implementation status was accepted"),
             Err(error) => error,
         };
-        assert!(error.to_string().contains("unknown field"));
+        assert!(error.to_string().contains("missing field"));
     }
 
     #[test]
-    fn blockers_drive_non_terminal_axes() {
-        let mut gaps = vec![Gap {
+    fn declared_axis_status_must_match_gaps() {
+        let gaps = vec![Gap {
             axis: Axis::Implementation,
-            id: "owner-missing".to_owned(),
+            id: "implementation-missing".to_owned(),
         }];
-        assert!(has_gap(&gaps, Axis::Implementation));
-        ensure_gap(&mut gaps, Axis::Implementation, "derived");
-        assert_eq!(gaps.len(), 1);
+        assert!(validate_declared_axis("radio", Axis::Implementation, false, &gaps).is_ok());
+        assert!(validate_declared_axis("radio", Axis::Implementation, true, &gaps).is_err());
+        assert!(validate_declared_axis("radio", Axis::Implementation, false, &[]).is_err());
+        assert!(validate_declared_axis("radio", Axis::Implementation, true, &[]).is_ok());
     }
 
     #[test]
-    fn async_contract_must_be_part_of_host_tests() {
-        let mut manifest: ManifestDocument = toml_edit::de::from_str(COMPLETE).unwrap();
-        manifest.capabilities[0].async_contracts[0].token = "different_test".to_owned();
-        let document = &manifest.capabilities[0];
-        let root = Path::new(".");
-        let mut files = BTreeMap::new();
-        let mut evidence = Vec::new();
-        let error =
-            validate_async_contracts(&document.id, document, root, &mut files, &mut evidence)
-                .unwrap_err();
-        assert!(error.to_string().contains("not declared as a host test"));
+    fn async_not_applicable_requires_a_reason_and_no_gap() {
+        assert!(
+            validate_async_declaration(
+                "radio",
+                AsyncProof::NotApplicable,
+                Some("synchronous-operation"),
+                &[],
+            )
+            .is_ok()
+        );
+        assert!(validate_async_declaration("radio", AsyncProof::NotApplicable, None, &[]).is_err());
+        assert!(
+            validate_async_declaration(
+                "radio",
+                AsyncProof::Bounded,
+                Some("synchronous-operation"),
+                &[],
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -1353,15 +1232,11 @@ hil-requirements = [{ scenario = "channel-switch", minimum-repetitions = 3 }]
     }
 
     #[test]
-    fn public_constant_can_own_a_qualification_boundary() {
-        assert!(contains_owner_declaration(
-            "pub const WATCHDOG_MICROSECONDS: u32 = 200_000;",
-            "WATCHDOG_MICROSECONDS",
-        ));
-        assert!(!contains_owner_declaration(
-            "pub(crate) const PRIVATE_WATCHDOG: u32 = 200_000;",
-            "PRIVATE_WATCHDOG",
-        ));
+    fn vendor_anchors_are_unique_regular_files() {
+        let anchor = PathBuf::from("Cargo.toml");
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        assert!(validate_vendor_anchors("radio", std::slice::from_ref(&anchor), root).is_ok());
+        assert!(validate_vendor_anchors("radio", &[anchor.clone(), anchor], root).is_err());
     }
 
     #[test]

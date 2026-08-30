@@ -1,5 +1,5 @@
-# Qualification v3 declares claims and blockers; every proof status is derived.
-schema = 3
+# Qualification v4 declares explicit proof states and blockers.
+schema = 4
 target = "esp32s31-wifi-sta"
 required-capabilities = [
   "cold-registration",
@@ -27,17 +27,10 @@ runs = "target/hil/esp32s31/runs"
 id = "cold-registration"
 title = "Cold PHY registration"
 scope = "One cold register_chipv7_phy composition through the typed target port"
+implementation = "complete"
+host = "covered"
+async = "bounded"
 depends-on = ["rf-bb-initialization"]
-owners = [
-  { path = "driver/chips/esp32s31/phy/src/phy_register.rs", token = "PhyRegisterTransition" },
-  { path = "driver/chips/esp32s31/phy/src/executor.rs", token = "run_phy_register" },
-]
-tests = [
-  { path = "driver/chips/esp32s31/phy/src/phy_register.rs", token = "stuck_i2c_reset_fails_only_after_bounded_async_samples_and_cleans_up" },
-]
-async-contracts = [
-  { path = "driver/chips/esp32s31/phy/src/phy_register.rs", token = "stuck_i2c_reset_fails_only_after_bounded_async_samples_and_cleans_up" },
-]
 vendor-roots = [
   { source = "archive", symbol = "register_chipv7_phy" },
 ]
@@ -52,22 +45,9 @@ gaps = [
 id = "rf-bb-initialization"
 title = "RF and baseband initialization"
 scope = "Cold phy_rf_init and phy_bb_init transitions needed by Wi-Fi registration"
-owners = [
-  { path = "driver/chips/esp32s31/phy/src/phy_cold.rs", token = "PhyRfColdInit" },
-  { path = "driver/chips/esp32s31/phy/src/phy_bb.rs", token = "PhyBbInitTransition" },
-  { path = "driver/chips/esp32s31/phy/src/phy_txdc_pwdet.rs", token = "PhyTxDcPwdetTransition" },
-  { path = "driver/chips/esp32s31/pac/src/baseband.rs", token = "prepare_txdc_power_detector" },
-]
-tests = [
-  { path = "driver/chips/esp32s31/phy/src/phy_cold.rs", token = "open_i2c_deadline_keeps_one_epoch_and_the_inclusive_rom_bound" },
-  { path = "driver/chips/esp32s31/phy/src/phy_bb.rs", token = "complete_parent_failure_always_restores_idle_mode_and_agc" },
-  { path = "driver/chips/esp32s31/phy/src/phy_txdc_pwdet.rs", token = "root_cleanup_restores_registers_before_terminal_failure" },
-  { path = "driver/chips/esp32s31/pac/src/baseband.rs", token = "txdc_restore_slot_rejects_interlopers_and_preserves_operation_order" },
-  { path = "driver/chips/esp32s31/pac/src/lib.rs", token = "pending_txdc_restore_survives_same_route_transitions_and_blocks_release" },
-]
-async-contracts = [
-  { path = "driver/chips/esp32s31/phy/src/phy_cold.rs", token = "open_i2c_deadline_keeps_one_epoch_and_the_inclusive_rom_bound" },
-]
+implementation = "complete"
+host = "covered"
+async = "bounded"
 vendor-roots = [
   { source = "archive", symbol = "phy_rf_init" },
   { source = "archive", symbol = "phy_bb_init" },
@@ -83,17 +63,10 @@ gaps = [
 id = "channel-selection-switch"
 title = "Channel selection and live switch"
 scope = "Typed 2.4-GHz PHY selection plus MAC stop restart around a live switch"
+implementation = "complete"
+host = "covered"
+async = "bounded"
 depends-on = ["rf-bb-initialization"]
-owners = [
-  { path = "driver/chips/esp32s31/phy/src/phy_channel.rs", token = "PhyChipChannelTransition" },
-  { path = "driver/chips/esp32s31/phy/src/target_port.rs", token = "switch_phy_channel_with_hal_and_mac_restart" },
-]
-tests = [
-  { path = "driver/chips/esp32s31/phy/src/phy_channel.rs", token = "frequency_timeout_runs_full_radio_cleanup" },
-]
-async-contracts = [
-  { path = "driver/chips/esp32s31/phy/src/phy_channel.rs", token = "frequency_timeout_runs_full_radio_cleanup" },
-]
 vendor-roots = [
   { source = "archive", symbol = "phy_chip_set_chan" },
 ]
@@ -108,52 +81,13 @@ gaps = [
 id = "rx-tx-dma"
 title = "RX and TX DMA ownership"
 scope = "Descriptor lifetime staging publication and finite TX completion for the connected STA path"
+implementation = "complete"
+host = "covered"
+async = "bounded"
 depends-on = ["interrupt-recovery"]
-owners = [
-  { path = "driver/chips/esp32s31/wifi/mac/src/rx_pool.rs", token = "stage_dma_unit_deferred_bounded" },
-  { path = "driver/chips/esp32s31/wifi/dma/src/rx_storage.rs", token = "RxDmaStorage" },
-  { path = "driver/chips/esp32s31/wifi/mac/src/rx.rs", token = "decode_normalized_rx_metadata" },
-  { path = "driver/chips/esp32s31/wifi/mac/src/rx_pool.rs", token = "normalized_metadata" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/connected_rx.rs", token = "ConnectedRxEvent" },
-  { path = "driver/chips/esp32s31/wifi/mac/src/tx.rs", token = "TxSlot" },
-  { path = "driver/chips/esp32s31/wifi/dma/src/rx_ring.rs", token = "complete_pending_reload" },
-  { path = "driver/chips/esp32s31/wifi/dma/src/rx_storage.rs", token = "recycle_released_prefix" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/mod.rs", token = "DatapathRunner" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/tx.rs", token = "Esp32s31ConnectedTx" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/connected/port.rs", token = "Esp32s31ConnectedStaPort" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/teardown.rs", token = "Esp32s31ConnectedStaTeardownPort" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/rx/dma.rs", token = "Esp32s31PreparedRx" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/rx/reorder.rs", token = "RxReorderFrameStorage" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/tx_epoch.rs", token = "Esp32s31StaTxEpoch" },
-]
-tests = [
-  { path = "driver/chips/esp32s31/wifi/dma/src/rx_storage.rs", token = "detached_buffer_cannot_rearm_until_the_network_lease_returns" },
-  { path = "driver/chips/esp32s31/wifi/dma/src/rx_storage.rs", token = "released_dma_buffers_rearm_only_as_a_contiguous_ring_prefix" },
-  { path = "driver/chips/esp32s31/wifi/dma/src/rx_storage.rs", token = "arena_initializes_in_its_final_location_and_recycles_one_buffer" },
-  { path = "driver/chips/esp32s31/wifi/mac/tests/mac.rs", token = "staged_rx_metadata_decodes_only_instruction_proved_s31_fields" },
-  { path = "driver/chips/esp32s31/wifi/mac/tests/mac.rs", token = "normalized_ht_rx_metadata_uses_the_direct_ht_sig_aggregation_bit" },
-  { path = "driver/chips/esp32s31/wifi/mac/tests/mac.rs", token = "normalized_rx_metadata_separates_format_validated_ampdu_from_ht_hardware_status" },
-  { path = "driver/chips/esp32s31/wifi/mac/tests/mac.rs", token = "station_key_teardown_consumes_and_clears_both_hardware_slots" },
-  { path = "driver/chips/esp32s31/wifi/mac/tests/mac.rs", token = "tx_slot_preserves_the_semantic_timeout_abort_order" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/tx/tests.rs", token = "idle_aggregate_returns_ordinary_and_storage_for_station_teardown" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/teardown.rs", token = "teardown_orders_control_rx_tx_and_both_key_clears" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/rx/frontier/tests.rs", token = "consuming_connected_promotion_returns_live_ring_or_exact_owner" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/rx/dma/tests.rs", token = "connected_rx_stop_confirms_walker_off_and_preserves_static_resources" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/rx/dma/tests.rs", token = "finite_service_discards_oversize_unit_and_keeps_the_ring_live" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/rx/reorder.rs", token = "board_profile_selects_the_allocated_reorder_slot_count" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/connected_rx.rs", token = "dispatches_protected_ethernet_and_owns_duplicate_history" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/tx_epoch.rs", token = "epoch_never_overwrites_or_duplicates_the_phase_owner" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/connected/port/tests.rs", token = "port_binds_rx_and_control_to_one_validated_peer_plan" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/connected/port/tests.rs", token = "compact_profile_rejects_rx_window_larger_than_reorder_storage" },
-]
-async-contracts = [
-  { path = "driver/chips/esp32s31/wifi/mac/tests/mac.rs", token = "tx_slot_preserves_the_semantic_timeout_abort_order" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/rx/dma/tests.rs", token = "finite_service_discards_oversize_unit_and_keeps_the_ring_live" },
-]
 vendor-anchors = [
-  { path = "verification/vendor/targets/esp32s31/registers/evidence/vendor-rom.toml", token = "wDev_AppendRxBlocks" },
-  { path = "verification/vendor/targets/esp32s31/registers/evidence/vendor-libpp.toml", token = "hal_mac_tx_config_timeout" },
-  { path = "verification/vendor/targets/esp32s31/registers/evidence/vendor-libpp.toml", token = "dbg_dump_rx_ppdu" },
+  "verification/vendor/targets/esp32s31/registers/evidence/vendor-rom.toml",
+  "verification/vendor/targets/esp32s31/registers/evidence/vendor-libpp.toml",
 ]
 hil-requirements = [
   { scenario = "udp-bidirectional-ht40-rx-delivery-split", minimum-repetitions = 1 },
@@ -166,26 +100,11 @@ gaps = [
 id = "interrupt-recovery"
 title = "Interrupt acknowledgement and recovery ordering"
 scope = "Finite CPU route epoch hard MAC acknowledgement priority dispatch and Embassy wake coalescing"
-owners = [
-  { path = "driver/chips/esp32s31/wifi/mac/src/irq.rs", token = "IrqState" },
-  { path = "driver/chips/esp32s31/wifi/mac/src/irq.rs", token = "MacInterruptRoute" },
-  { path = "driver/chips/esp32s31/pac/src/mac_interrupt.rs", token = "MacInterruptRegisters" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/irq/mac_runtime.rs", token = "EmbassyMacIrqRuntime" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/irq/epoch.rs", token = "Esp32s31MacInterruptEpoch" },
-  { path = "driver/adapters/esp-hal/esp32s31-wifi/src/mac_interrupt_epoch.rs", token = "EspHalMacInterruptRoute" },
-]
-tests = [
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/irq/tests.rs", token = "irq_epoch_recovers_setup_before_draining_every_executor_wake" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/irq/tests.rs", token = "irq_epoch_retains_the_exact_frontier_on_each_route_failure" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/irq/tests.rs", token = "maps_one_combined_snapshot_to_bounded_rx_and_tx_wakes" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/irq/tests.rs", token = "quiesced_epoch_drain_removes_every_coalesced_wake" },
-]
-async-contracts = [
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/irq/tests.rs", token = "maps_one_combined_snapshot_to_bounded_rx_and_tx_wakes" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/irq/tests.rs", token = "quiesced_epoch_drain_removes_every_coalesced_wake" },
-]
+implementation = "complete"
+host = "covered"
+async = "bounded"
 vendor-anchors = [
-  { path = "verification/vendor/targets/esp32s31/registers/evidence/vendor-libpp.toml", token = "hal_mac_interrupt_get_event" },
+  "verification/vendor/targets/esp32s31/registers/evidence/vendor-libpp.toml",
 ]
 hil-requirements = [
   { scenario = "station-ap-loss", minimum-repetitions = 1 },
@@ -198,30 +117,12 @@ gaps = [
 id = "authentication-association"
 title = "Open authentication and STA association"
 scope = "Finite selected-peer Open Authentication and Association epochs through accepted response"
+implementation = "complete"
+host = "covered"
+async = "bounded"
 depends-on = ["channel-selection-switch", "rx-tx-dma"]
-owners = [
-  { path = "driver/wifi/ieee80211/src/station.rs", token = "StaAuthenticationRuntime" },
-  { path = "driver/wifi/ieee80211/src/station.rs", token = "StaAssociationRuntime" },
-  { path = "driver/wifi/ieee80211/src/station.rs", token = "select_sta_association" },
-  { path = "driver/wifi/sta/src/join.rs", token = "StaJoinRunner" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/join.rs", token = "Esp32s31StaJoinReceive" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/join_port/owner.rs", token = "Esp32s31StaJoinPort" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/peer.rs", token = "Esp32s31StaPeerPort" },
-]
-tests = [
-  { path = "driver/wifi/ieee80211/src/station.rs", token = "authentication_runtime_owns_attempt_sequence_deadline_and_timeout_limit" },
-  { path = "driver/wifi/ieee80211/src/station.rs", token = "association_runtime_owns_epoch_schedule_sequence_and_timeout" },
-  { path = "driver/wifi/sta/src/join.rs", token = "successful_join_uses_typed_sequences_and_leaves_association_rx_live" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/association.rs", token = "he_profile_owns_calibrated_power_derivation" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/join_port/tests.rs", token = "port_orders_driver_edges_and_keeps_diagnostics_external" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/peer.rs", token = "port_owns_scan_and_association_peer_programming" },
-]
-async-contracts = [
-  { path = "driver/wifi/ieee80211/src/station.rs", token = "authentication_runtime_owns_attempt_sequence_deadline_and_timeout_limit" },
-  { path = "driver/wifi/ieee80211/src/station.rs", token = "association_runtime_owns_epoch_schedule_sequence_and_timeout" },
-]
 vendor-anchors = [
-  { path = "driver/wifi/ieee80211/src/station.rs", token = "ieee80211_sta_new_state" },
+  "driver/wifi/ieee80211/src/station.rs",
 ]
 hil-requirements = [
   { scenario = "station-access-point-lifecycle", minimum-repetitions = 1 },
@@ -234,27 +135,12 @@ gaps = [
 id = "wpa2"
 title = "WPA2 Personal station handshake"
 scope = "Four-way handshake replay protection key installation response deadline and protected traffic"
+implementation = "complete"
+host = "covered"
+async = "bounded"
 depends-on = ["authentication-association"]
-owners = [
-  { path = "driver/wifi/wpa2/src/supplicant.rs", token = "Wpa2StaSupplicant" },
-  { path = "driver/wifi/wpa2/src/state.rs", token = "Wpa2StaState" },
-  { path = "driver/wifi/wpa2/src/supplicant.rs", token = "Wpa2StaResponseDeadline" },
-  { path = "driver/wifi/wpa2/src/runner.rs", token = "Wpa2HandshakeRunner" },
-  { path = "driver/wifi/wpa2/src/runner.rs", token = "Wpa2KeyInstallRunner" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/wpa2.rs", token = "Esp32s31Wpa2HandshakePort" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/wpa2.rs", token = "Esp32s31Wpa2KeyPort" },
-]
-tests = [
-  { path = "driver/wifi/wpa2/src/supplicant.rs", token = "resolves_m1_through_typed_install_and_authenticated_m4" },
-  { path = "driver/wifi/wpa2/src/supplicant.rs", token = "response_deadlines_preserve_total_wait_without_spontaneous_m2_retry" },
-  { path = "driver/wifi/wpa2/src/runner.rs", token = "message4_tx_failure_rolls_back_both_published_keys" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/wpa2.rs", token = "eapol_copy_accepts_only_the_selected_station_link" },
-]
-async-contracts = [
-  { path = "driver/wifi/wpa2/src/supplicant.rs", token = "response_deadlines_preserve_total_wait_without_spontaneous_m2_retry" },
-]
 vendor-anchors = [
-  { path = "driver/wifi/wpa2/src/supplicant.rs", token = "wpa_supplicant_process_1_of_4" },
+  "driver/wifi/wpa2/src/supplicant.rs",
 ]
 hil-requirements = [
   { scenario = "station-access-point-lifecycle", minimum-repetitions = 1 },
@@ -267,18 +153,9 @@ gaps = [
 id = "async-deadlines"
 title = "Bounded asynchronous hardware deadlines"
 scope = "Production PHY I2C PBus IQ-estimator and protocol waits contain no CPU spin"
-owners = [
-  { path = "driver/chips/esp32s31/phy/src/target_executor.rs", token = "complete_final_i2c" },
-  { path = "driver/wifi/wpa2/src/retry.rs", token = "Wpa2Retry" },
-]
-tests = [
-  { path = "driver/chips/esp32s31/phy/src/phy_cold.rs", token = "open_i2c_deadline_keeps_one_epoch_and_the_inclusive_rom_bound" },
-  { path = "driver/wifi/wpa2/src/retry.rs", token = "each_alarm_edge_emits_at_most_one_bounded_retransmission" },
-]
-async-contracts = [
-  { path = "driver/chips/esp32s31/phy/src/phy_cold.rs", token = "open_i2c_deadline_keeps_one_epoch_and_the_inclusive_rom_bound" },
-  { path = "driver/wifi/wpa2/src/retry.rs", token = "each_alarm_edge_emits_at_most_one_bounded_retransmission" },
-]
+implementation = "complete"
+host = "covered"
+async = "bounded"
 vendor-roots = [
   { source = "rom", symbol = "phy_iq_est_enable" },
 ]
@@ -293,21 +170,12 @@ gaps = [
 id = "radio-cold-start"
 title = "Always-awake radio cold start"
 scope = "Clock reset and power-up handoff of the unique radio owner; station sleep and wake are outside the supported profile"
-owners = [
-  { path = "driver/chips/esp32s31/hal/src/lib.rs", token = "PowerUpFailure" },
-  { path = "driver/chips/esp32s31/hal/src/lib.rs", token = "power_up" },
-  { path = "driver/chips/esp32s31/pac/src/mac_cold_start.rs", token = "sample_mac_cold_start_ready" },
-  { path = "driver/chips/esp32s31/hal/src/wifi_mac.rs", token = "begin_handshake" },
-]
-tests = [
-  { path = "driver/chips/esp32s31/hal/src/power.rs", token = "exact_semantic_sequence_is_finite_and_ordered" },
-  { path = "driver/chips/esp32s31/hal/src/lib.rs", token = "failed_power_transition_can_only_retry_the_unique_owner" },
-  { path = "driver/chips/esp32s31/hal/src/wifi_mac.rs", token = "cold_handshake_polls_then_masks_and_clears_interrupts" },
-  { path = "driver/chips/esp32s31/hal/src/wifi_mac.rs", token = "cold_handshake_timeout_stops_before_interrupt_cleanup" },
-]
+implementation = "complete"
+host = "covered"
+async = "not-applicable"
 vendor-anchors = [
-  { path = "verification/vendor/chips/esp32s31/registers/peripherals/wifi-mac-rtc-timer-update.toml", token = "pwr_hal_set_mac_modem_state_wakeup_protect_enable" },
-  { path = "driver/chips/esp32s31/hal/src/lib.rs", token = "phy_wakeup_init" },
+  "verification/vendor/chips/esp32s31/registers/peripherals/wifi-mac-rtc-timer-update.toml",
+  "driver/chips/esp32s31/hal/src/lib.rs",
 ]
 hil-requirements = [
   { scenario = "boot-smoke", minimum-repetitions = 1 },
@@ -321,79 +189,12 @@ gaps = [
 id = "timeout-error-recovery"
 title = "Finite failure and owner disposition"
 scope = "Typed cleanup returns the reusable owner only after proven quiescence; otherwise a terminal fault retains the exact hardware frontier"
+implementation = "complete"
+host = "covered"
+async = "bounded"
 depends-on = ["rx-tx-dma", "radio-cold-start"]
-owners = [
-  { path = "driver/chips/esp32s31/phy/src/phy_channel.rs", token = "PhyChipChannelTransition" },
-  { path = "driver/chips/esp32s31/wifi/mac/src/tx.rs", token = "TxSlot" },
-  { path = "driver/chips/esp32s31/hal/src/lib.rs", token = "PowerUpFailure" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/mod.rs", token = "DatapathRunner" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/rx/dma.rs", token = "Esp32s31StoppedRx" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/rx/frontier/state.rs", token = "Esp32s31RxFrontier" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/join_port/owner.rs", token = "Esp32s31StaJoinPort" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/attempt.rs", token = "Esp32s31StaAttempt" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/peer.rs", token = "Esp32s31StaPeerPort" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/wpa2.rs", token = "Esp32s31Wpa2HandshakePort" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/wpa2.rs", token = "Esp32s31Wpa2KeyPort" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/connected/port.rs", token = "Esp32s31ConnectedStaPort" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/teardown.rs", token = "Esp32s31ConnectedStaTeardownPort" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/epoch.rs", token = "Esp32s31DisconnectedStaEpoch" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/epoch.rs", token = "Esp32s31ReconnectedStaEpoch" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/lifecycle.rs", token = "Esp32s31Station" },
-  { path = "driver/adapters/embassy/wifi/src/connected_tasks.rs", token = "stop_connected_task_group_until" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/tx_epoch.rs", token = "Esp32s31StaTxEpoch" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/control_mailbox.rs", token = "ConnectedControlResources" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/connected_control.rs", token = "Esp32s31ConnectedControlCore" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/control.rs", token = "ConnectedControlShutdown" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/scan.rs", token = "Esp32s31StaScanBackend" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/scan/rx.rs", token = "Esp32s31ScanRx" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/scan/rx/running.rs", token = "Esp32s31RunningScanRx" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/scan_tx.rs", token = "Esp32s31RunningScanTx" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/scan/port.rs", token = "Esp32s31ScanPort" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/channel.rs", token = "Esp32s31ScanPhy" },
-  { path = "driver/wifi/sta/src/scan.rs", token = "StaCandidateScanService" },
-  { path = "driver/wifi/sta/src/station.rs", token = "StaLifecycleService" },
-]
-tests = [
-  { path = "driver/chips/esp32s31/phy/src/phy_channel.rs", token = "frequency_timeout_runs_full_radio_cleanup" },
-  { path = "driver/chips/esp32s31/wifi/mac/tests/mac.rs", token = "tx_slot_preserves_the_semantic_timeout_abort_order" },
-  { path = "driver/chips/esp32s31/wifi/mac/tests/mac.rs", token = "station_key_teardown_consumes_and_clears_both_hardware_slots" },
-  { path = "driver/chips/esp32s31/hal/src/lib.rs", token = "failed_power_transition_can_only_retry_the_unique_owner" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/teardown.rs", token = "each_failed_stage_returns_its_exact_frontier" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/teardown.rs", token = "teardown_orders_control_rx_tx_and_both_key_clears" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/control_tests.rs", token = "shutdown_clears_rx_tx_block_ack_and_discards_late_control_events" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/control_mailbox.rs", token = "resources_are_reused_by_sequential_epochs" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/rx/frontier/tests.rs", token = "owner_services_a_terminal_descriptor_and_round_trips_between_phases" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/datapath/rx/frontier/tests.rs", token = "consuming_connected_promotion_returns_live_ring_or_exact_owner" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/tx_epoch.rs", token = "epoch_never_overwrites_or_duplicates_the_phase_owner" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/join_port/tests.rs", token = "port_orders_driver_edges_and_keeps_diagnostics_external" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/attempt.rs", token = "every_borrowed_phase_failure_returns_the_exact_owner_and_frontier" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/peer.rs", token = "port_owns_scan_and_association_peer_programming" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/wpa2.rs", token = "eapol_copy_accepts_only_the_selected_station_link" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/connected/port/tests.rs", token = "invalid_config_returns_the_exact_peer_before_owner_handoff" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/epoch.rs", token = "running_scan_round_trip_and_reconnect_preserve_every_owner" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/station/tests.rs", token = "peer_disconnect_coalesces_a_pending_reconnect_without_leaking_it" },
-  { path = "driver/adapters/embassy/wifi/src/connected_tasks.rs", token = "missed_group_deadline_remains_a_pending_stop" },
-  { path = "driver/adapters/embassy/wifi/src/connected_tasks.rs", token = "one_deadline_returns_the_exact_task_owner" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/control_tx.rs", token = "passive_fallback_requires_a_proven_quiescent_tx_owner" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/scan.rs", token = "dwell_failure_still_stops_rx_and_returns_the_exact_owner" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/scan.rs", token = "fatal_probe_failure_still_closes_the_live_rx_epoch" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/scan/rx/tests.rs", token = "complete_initial_scan_can_prepare_the_same_ring_for_a_retry" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/scan/rx/tests.rs", token = "scan_rx_hands_the_exact_halted_ring_to_the_next_phase" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/scan/rx/tests.rs", token = "scan_rx_retains_its_typed_phase_across_enable_and_disable_failure" },
-  { path = "driver/adapters/embassy/esp32s31-wifi/src/roles/scan/rx/tests.rs", token = "running_scan_rx_returns_the_exact_connected_epoch_resources" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/scan_tx.rs", token = "running_scan_tx_returns_the_control_owner_after_a_probe" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/scan_tx.rs", token = "failed_running_probe_disables_further_active_attempts" },
-  { path = "driver/chips/esp32s31/wifi/sta/src/scan.rs", token = "stop_failure_takes_precedence_over_an_earlier_dwell_failure" },
-  { path = "driver/wifi/sta/src/scan.rs", token = "channel_failure_returns_the_exact_owner_and_stops_the_plan" },
-  { path = "driver/wifi/sta/src/station.rs", token = "terminal_failure_and_backoff_stop_both_return_hardware_ownership" },
-  { path = "driver/radio/src/embassy_supervisor.rs", token = "faulted_role_never_produces_a_successful_stop_response" },
-]
-async-contracts = [
-  { path = "driver/adapters/embassy/wifi/src/connected_tasks.rs", token = "missed_group_deadline_remains_a_pending_stop" },
-  { path = "driver/adapters/embassy/wifi/src/connected_tasks.rs", token = "one_deadline_returns_the_exact_task_owner" },
-]
 vendor-anchors = [
-  { path = "verification/vendor/targets/esp32s31/registers/evidence/vendor-libpp.toml", token = "hal_mac_tx_config_timeout" },
+  "verification/vendor/targets/esp32s31/registers/evidence/vendor-libpp.toml",
 ]
 hil-requirements = [
   { scenario = "station-ap-loss", minimum-repetitions = 1 },

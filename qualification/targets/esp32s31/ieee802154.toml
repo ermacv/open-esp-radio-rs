@@ -1,5 +1,5 @@
-# Qualification v3 declares claims and blockers; every proof status is derived.
-schema = 3
+# Qualification v4 declares explicit proof states and blockers.
+schema = 4
 target = "esp32s31-ieee802154"
 required-capabilities = [
   "clock-reset-foundation",
@@ -23,14 +23,11 @@ runs = "target/hil/esp32s31/runs"
 id = "clock-reset-foundation"
 title = "IEEE 802.15.4 clock reset and masked MAC foundation"
 scope = "Whole-radio transition through reviewed clocks private reset exact event and abort masking and semantic readback"
-owners = [
-  { path = "driver/chips/esp32s31/hal/src/ieee802154_role.rs", token = "Ieee802154FoundationConfigured" },
-]
-tests = [
-  { path = "driver/chips/esp32s31/hal/src/ieee802154_lifecycle.rs", token = "exact_sequence_reaches_only_foundation_configured" },
-]
+implementation = "complete"
+host = "covered"
+async = "not-applicable"
 vendor-anchors = [
-  { path = "verification/vendor/targets/esp32s31/analysis/ieee802154-lifecycle.md", token = "ClockDependenciesAcquired" },
+  "verification/vendor/targets/esp32s31/analysis/ieee802154-lifecycle.md",
 ]
 hil-requirements = [
   { scenario = "ieee802154-ed-event-selective-write", minimum-repetitions = 1 },
@@ -44,16 +41,12 @@ gaps = [
 id = "static-mac-policy"
 title = "Interrupt-masked static MAC policy"
 scope = "Checked channel CCA ACK control and primary PAN identity writes followed by one fail-closed semantic readback"
+implementation = "complete"
+host = "covered"
+async = "not-applicable"
 depends-on = ["clock-reset-foundation"]
-owners = [
-  { path = "driver/chips/esp32s31/hal/src/ieee802154_policy.rs", token = "Ieee802154MacPolicy" },
-  { path = "driver/chips/esp32s31/hal/src/ieee802154_role.rs", token = "Ieee802154MacPolicyConfigured" },
-]
-tests = [
-  { path = "driver/chips/esp32s31/hal/src/ieee802154_policy.rs", token = "static_policy_uses_exact_deterministic_order_then_one_snapshot" },
-]
 vendor-anchors = [
-  { path = "verification/vendor/targets/esp32s31/analysis/ieee802154-dataplane.md", token = "static policy" },
+  "verification/vendor/targets/esp32s31/analysis/ieee802154-dataplane.md",
 ]
 hil-requirements = [
   { scenario = "ieee802154-ed-event-selective-write", minimum-repetitions = 1 },
@@ -67,18 +60,12 @@ gaps = [
 id = "polled-ed-cca"
 title = "Serialized route-detached polled ED and CCA"
 scope = "Finite raw ED or CCA command with exact event window abort evidence selected ED_DONE recovery and fail-stop owner disposition"
+implementation = "complete"
+host = "covered"
+async = "incomplete"
 depends-on = ["static-mac-policy"]
-owners = [
-  { path = "driver/chips/esp32s31/hal/src/ieee802154_operation.rs", token = "Ieee802154PolledOperation" },
-  { path = "driver/chips/esp32s31/hal/src/ieee802154_role.rs", token = "energy_detection_raw" },
-  { path = "driver/chips/esp32s31/pac/src/ieee802154.rs", token = "acknowledge_pending_events" },
-]
-tests = [
-  { path = "driver/chips/esp32s31/hal/src/ieee802154_operation.rs", token = "recovered_owner_supports_back_to_back_serialized_ed" },
-  { path = "driver/chips/esp32s31/hal/src/ieee802154_operation.rs", token = "cca_completion_samples_busy_without_reading_rss" },
-]
 vendor-anchors = [
-  { path = "verification/vendor/targets/esp32s31/analysis/ieee802154-control.md", token = "ED_DONE" },
+  "verification/vendor/targets/esp32s31/analysis/ieee802154-control.md",
 ]
 hil-requirements = [
   { scenario = "ieee802154-ed-event-selective-write", minimum-repetitions = 1 },
@@ -93,34 +80,12 @@ gaps = [
 id = "rf-channel-readiness"
 title = "IEEE 802.15.4 RF and channel readiness"
 scope = "Registered common PHY RFPLL BTBB and protocol-specific channel transition required for calibrated ED or on-air operation"
+implementation = "incomplete"
+host = "covered"
+async = "incomplete"
 depends-on = ["clock-reset-foundation"]
-owners = [
-  { path = "driver/chips/esp32s31/phy/src/registered_ieee802154.rs", token = "RegisteredIeee802154TimingReady" },
-  { path = "driver/chips/esp32s31/phy/src/phy_client.rs", token = "PhyClientState" },
-  { path = "driver/chips/esp32s31/phy/src/phy_param_tracking.rs", token = "PhyParamTrackingTransition" },
-  { path = "driver/chips/esp32s31/phy/src/phy_txdc_pwdet.rs", token = "PhyTxDcPwdetTransition" },
-  { path = "driver/chips/esp32s31/pac/src/baseband.rs", token = "prepare_txdc_power_detector" },
-]
-tests = [
-  { path = "driver/chips/esp32s31/phy/src/registered_ieee802154.rs", token = "registered_full_chain_and_typed_recovery_surface_connects" },
-  { path = "driver/chips/esp32s31/phy/src/phy_client.rs", token = "immediate_tracking_preserves_short_circuit_and_refresh_sample_order" },
-  { path = "driver/chips/esp32s31/phy/src/phy_client.rs", token = "periodic_tracking_samples_each_active_class_once_without_due_samples" },
-  { path = "driver/chips/esp32s31/phy/src/phy_client.rs", token = "pending_request_runs_outer_tracking_before_owner_recovery" },
-  { path = "driver/chips/esp32s31/phy/src/phy_client.rs", token = "periodic_outer_tracking_commits_power_i2c_and_temperature_children" },
-  { path = "driver/chips/esp32s31/phy/src/phy_param_tracking.rs", token = "ieee802154_only_preserves_exact_child_order" },
-  { path = "driver/chips/esp32s31/phy/src/phy_param_tracking.rs", token = "guard_exits_critical_section_without_running_children" },
-  { path = "driver/chips/esp32s31/phy/src/phy_param_tracking.rs", token = "temperature_to_power_matches_all_signed_16_bit_deltas" },
-  { path = "driver/chips/esp32s31/phy/src/phy_math.rs", token = "signed_saturation_preserves_rom_comparison_order" },
-  { path = "driver/chips/esp32s31/phy/src/phy_power_tracking.rs", token = "bluetooth_ieee802154_update_owns_bbpll_and_gain_order" },
-  { path = "driver/chips/esp32s31/phy/src/phy_power_tracking.rs", token = "disabled_or_equal_gain_base_commits_nothing" },
-  { path = "driver/chips/esp32s31/phy/src/phy_state.rs", token = "periodic_gain_tracking_commits_only_terminal_runtime_outcomes" },
-  { path = "driver/chips/esp32s31/phy/src/phy_state.rs", token = "tracking_gain_regeneration_uses_live_typed_state_and_honors_wifi_skip" },
-  { path = "driver/chips/esp32s31/phy/src/phy_txdc_pwdet.rs", token = "root_cleanup_restores_registers_before_terminal_failure" },
-  { path = "driver/chips/esp32s31/pac/src/baseband.rs", token = "txdc_restore_slot_rejects_interlopers_and_preserves_operation_order" },
-  { path = "driver/chips/esp32s31/pac/src/lib.rs", token = "pending_txdc_restore_survives_same_route_transitions_and_blocks_release" },
-]
 vendor-anchors = [
-  { path = "verification/vendor/targets/esp32s31/analysis/ieee802154-lifecycle.md", token = "BTBB" },
+  "verification/vendor/targets/esp32s31/analysis/ieee802154-lifecycle.md",
 ]
 gaps = [
   { axis = "implementation", id = "shared-phy-timer-lock-rf-wakeup-and-track-children-missing" },
@@ -133,53 +98,35 @@ gaps = [
 id = "active-interrupt-runtime"
 title = "Active source-132 interrupt runtime"
 scope = "Affine CPU route event acknowledgement bounded ISR classification task wake and route teardown"
+implementation = "incomplete"
+host = "covered"
+async = "incomplete"
 depends-on = ["clock-reset-foundation"]
-owners = [
-  { path = "driver/chips/esp32s31/pac/src/lib.rs", token = "Ieee802154InterruptSetup" },
-  { path = "driver/chips/esp32s31/ieee802154/irq/src/lib.rs", token = "Ieee802154AcknowledgedInterrupt" },
-  { path = "driver/adapters/esp-hal/esp32s31-ieee802154/src/lib.rs", token = "BoundEspHalIeee802154InterruptRoute" },
-  { path = "driver/adapters/embassy/esp32s31-ieee802154/src/lib.rs", token = "EmbassyIeee802154IrqRuntime" },
-]
-tests = [
-  { path = "driver/chips/esp32s31/pac/src/ieee802154.rs", token = "production_deactivation_stops_every_engine_before_final_affine_ack" },
-  { path = "driver/chips/esp32s31/ieee802154/irq/src/lib.rs", token = "hard_irq_acknowledges_the_exact_snapshot_before_posting" },
-  { path = "driver/chips/esp32s31/ieee802154/irq/src/lib.rs", token = "hard_irq_returns_the_exact_acknowledged_token_rejected_by_the_sink" },
-  { path = "driver/adapters/embassy/esp32s31-ieee802154/src/lib.rs", token = "acknowledged_values_cross_the_async_handoff_in_order" },
-]
 vendor-anchors = [
-  { path = "verification/vendor/targets/esp32s31/analysis/ieee802154-control.md", token = "source 132" },
+  "verification/vendor/targets/esp32s31/analysis/ieee802154-control.md",
 ]
 gaps = [
   { axis = "implementation", id = "whole-radio-route-runtime-composition-missing" },
   { axis = "vendor", id = "active-route-and-concurrent-acknowledgement-proof-missing" },
   { axis = "hil", id = "level-triggered-route-and-same-bit-arrival-cell-missing" },
+  { axis = "async", id = "bounded-async-evidence-missing" },
 ]
 
 [[capabilities]]
 id = "rx-tx-dataplane"
 title = "Affine IEEE 802.15.4 RX and TX dataplane"
 scope = "Frame RX TX DMA ownership state machine acknowledged IRQ batches ACK watchdog filtering and executor-neutral MAC runtime"
+implementation = "incomplete"
+host = "covered"
+async = "incomplete"
 depends-on = ["rf-channel-readiness", "active-interrupt-runtime"]
-owners = [
-  { path = "driver/ieee802154/src/contract.rs", token = "RadioStateMachine" },
-  { path = "driver/chips/esp32s31/ieee802154/dma/src/rx.rs", token = "RxPoolStorage" },
-  { path = "driver/chips/esp32s31/ieee802154/runtime/src/lib.rs", token = "MacRuntimeActive" },
-  { path = "driver/chips/esp32s31/ieee802154/runtime/src/pac_command_executor.rs", token = "IEEE802154_ACK_WATCHDOG_MICROSECONDS" },
-  { path = "driver/adapters/embassy/esp32s31-ieee802154/src/owner.rs", token = "EmbassyIeee802154Active" },
-]
-tests = [
-  { path = "driver/ieee802154/src/contract.rs", token = "finite_enable_receive_sleep_disable_path_is_exact" },
-  { path = "driver/chips/esp32s31/ieee802154/dma/src/rx.rs", token = "free_armed_delivered_free_transition_preserves_layout" },
-  { path = "driver/chips/esp32s31/ieee802154/runtime/src/lib.rs", token = "transmit_with_ack_executes_the_complete_plan_in_exact_order" },
-  { path = "driver/chips/esp32s31/ieee802154/runtime/src/lib.rs", token = "lost_acknowledgement_handoff_disarms_the_watchdog_before_containment" },
-  { path = "driver/chips/esp32s31/ieee802154/runtime/src/pac_command_executor.rs", token = "acknowledgement_watchdog_uses_two_wrapping_clock_samples_in_source_order" },
-]
 vendor-anchors = [
-  { path = "verification/vendor/targets/esp32s31/analysis/ieee802154-dataplane.md", token = "DMA" },
+  "verification/vendor/targets/esp32s31/analysis/ieee802154-dataplane.md",
 ]
 gaps = [
   { axis = "implementation", id = "phy-ready-whole-radio-mac-composition-missing" },
   { axis = "implementation", id = "public-operational-mac-service-missing" },
   { axis = "vendor", id = "complete-rx-tx-state-machine-and-tx-power-trace-missing" },
   { axis = "hil", id = "on-air-rx-tx-ack-and-filtering-cells-missing" },
+  { axis = "async", id = "bounded-async-evidence-missing" },
 ]

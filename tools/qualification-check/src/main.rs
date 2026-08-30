@@ -4,7 +4,7 @@ mod report;
 
 use std::{env, error::Error, path::PathBuf, process::ExitCode};
 
-use model::Qualification;
+use model::{QUALIFICATION_SCHEMA, Qualification};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -109,7 +109,10 @@ fn execute(arguments: Arguments) -> Result<()> {
         .into());
     }
     if arguments.command == Command::Validate {
-        println!("VALID\ttarget={}\tschema=3", qualification.target);
+        println!(
+            "VALID\ttarget={}\tschema={QUALIFICATION_SCHEMA}",
+            qualification.target
+        );
     }
     Ok(())
 }

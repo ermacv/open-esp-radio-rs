@@ -15,6 +15,7 @@ extern crate std;
 mod dtm_active;
 #[cfg(target_arch = "riscv32")]
 mod dtm_first;
+mod dtm_session_task;
 #[cfg(any(target_arch = "riscv32", test))]
 mod dtm_stopping;
 
@@ -31,6 +32,12 @@ pub use dtm_first::{
     EmbassyBluetoothDtmFirstControllerTimeWait, EmbassyBluetoothDtmFirstDrive,
     EmbassyBluetoothDtmFirstResume, drive_dtm_first_ready,
 };
+
+pub use dtm_session_task::{
+    EmbassyBluetoothDtmControllerTimeRecheck, EmbassyBluetoothDtmSessionRetry,
+};
+#[cfg(target_arch = "riscv32")]
+pub use dtm_session_task::{EmbassyBluetoothDtmSessionBoundary, EmbassyBluetoothDtmSessionTask};
 
 #[cfg(any(target_arch = "riscv32", test))]
 pub use dtm_stopping::{

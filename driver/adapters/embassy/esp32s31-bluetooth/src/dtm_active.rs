@@ -14,11 +14,6 @@ use embassy_futures::select::{Either, select};
 use embassy_sync::blocking_mutex::raw::RawMutex;
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_bluetooth_hci::InProcessHciControllerEndpoint;
-#[cfg(any(target_arch = "riscv32", test))]
-use open_esp_radio_bluetooth_hci::{
-    HciChannelError, HciEpochBound, HciEpochBoundCommandReceiveError, HostToControllerFrame,
-    LeControllerCommandClassification,
-};
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_bluetooth::{
     BluetoothDtmActiveRadioWait, BluetoothDtmActiveSession, BluetoothDtmResponsePending,
@@ -50,19 +45,16 @@ pub enum EmbassyBluetoothDtmActivePendingSignal {
 
 /// Next signal after the previous DTM response entered HCI.
 ///
-/// Host packets remain bound to their exact Controller epoch. A non-command
-/// frame is returned intact for the future Link Layer/ACL router rather than
-/// being discarded by the DTM task.
-#[must_use = "route the radio edge, classified command, retained frame, or channel fault"]
-pub enum EmbassyBluetoothDtmActiveCommandSignal<'epoch, 'packet> {
+/// Host readiness is deliberately non-consuming. The sole task owner performs
+/// a later synchronous receive, so a radio-first tie, cancellation, or this
+/// signal itself can neither classify nor borrow the oldest packet.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[must_use = "route the radio edge or synchronously receive the ready Host packet"]
+pub enum EmbassyBluetoothDtmActiveCommandSignal {
     /// Radio progress won the wait, including a simultaneous-ready tie.
     Radio(EmbassyBluetoothDtmActiveRadioSignal),
-    /// One command was consumed, classified and bound to its source HCI epoch.
-    Command(HciEpochBound<'epoch, LeControllerCommandClassification>),
-    /// The oldest Host packet is data and remains bound to its source epoch.
-    NonCommand(HciEpochBound<'epoch, HostToControllerFrame<'packet>>),
-    /// A packet boundary failed without creating a semantic command token.
-    ChannelFault(HciChannelError),
+    /// Host-to-Controller storage was observed non-empty without consuming it.
+    HostReady,
 }
 
 /// Failure to compose a pending response or command intake with an HCI endpoint.
@@ -203,14 +195,14 @@ where
     S: BluetoothSchedulerRunInterruptStorage,
     M: RawMutex,
 {
-    /// Race radio progress against endpoint-bound Host command intake.
+    /// Race radio progress against non-consuming Host packet readiness.
     ///
     /// Radio remains the first `select` operand and wins a simultaneous-ready
-    /// tie. Cancelling the receive future before it wins consumes no Host
-    /// packet and creates no epoch token.
+    /// tie. The readiness future neither borrows a packet buffer nor consumes,
+    /// classifies or reserves the oldest packet. After `HostReady`, the sole
+    /// task owner finishes with a synchronous receive and handles `Empty`
+    /// losslessly because readiness is only a hint.
     pub async fn wait_next<
-        'channel,
-        'packet,
         HciMutex: RawMutex,
         const HOST_TO_CONTROLLER_DEPTH: usize,
         const CONTROLLER_TO_HOST_DEPTH: usize,
@@ -219,18 +211,14 @@ where
     >(
         &self,
         controller: &InProcessHciControllerEndpoint<
-            'channel,
+            '_,
             HciMutex,
             HOST_TO_CONTROLLER_DEPTH,
             CONTROLLER_TO_HOST_DEPTH,
             PACKET_CAPACITY,
         >,
-        packet: &'packet mut [u8],
         controller_time_recheck: R,
-    ) -> Result<
-        EmbassyBluetoothDtmActiveCommandSignal<'channel, 'packet>,
-        EmbassyBluetoothDtmActiveWaitError,
-    >
+    ) -> Result<EmbassyBluetoothDtmActiveCommandSignal, EmbassyBluetoothDtmActiveWaitError>
     where
         R: Future<Output = ()>,
     {
@@ -238,35 +226,17 @@ where
             return Err(EmbassyBluetoothDtmActiveWaitError::EndpointMismatch);
         }
 
-        Ok(into_active_command_signal(
-            select_radio_first(
+        Ok(
+            match select_radio_first(
                 self.wait_radio(controller_time_recheck),
-                controller.receive_classified_command(packet),
+                controller.wait_receive_ready(),
             )
-            .await,
-        ))
-    }
-}
-
-#[cfg(any(target_arch = "riscv32", test))]
-fn into_active_command_signal<'epoch, 'packet>(
-    selected: RadioFirst<
-        EmbassyBluetoothDtmActiveRadioSignal,
-        Result<
-            HciEpochBound<'epoch, LeControllerCommandClassification>,
-            HciEpochBoundCommandReceiveError<'epoch, 'packet>,
-        >,
-    >,
-) -> EmbassyBluetoothDtmActiveCommandSignal<'epoch, 'packet> {
-    match selected {
-        RadioFirst::Radio(signal) => EmbassyBluetoothDtmActiveCommandSignal::Radio(signal),
-        RadioFirst::Other(Ok(command)) => EmbassyBluetoothDtmActiveCommandSignal::Command(command),
-        RadioFirst::Other(Err(HciEpochBoundCommandReceiveError::NonCommand(frame))) => {
-            EmbassyBluetoothDtmActiveCommandSignal::NonCommand(frame)
-        }
-        RadioFirst::Other(Err(HciEpochBoundCommandReceiveError::Channel(error))) => {
-            EmbassyBluetoothDtmActiveCommandSignal::ChannelFault(error)
-        }
+            .await
+            {
+                RadioFirst::Radio(signal) => EmbassyBluetoothDtmActiveCommandSignal::Radio(signal),
+                RadioFirst::Other(()) => EmbassyBluetoothDtmActiveCommandSignal::HostReady,
+            },
+        )
     }
 }
 
@@ -290,8 +260,6 @@ where
 mod tests {
     use core::{
         future::{Future, pending, ready},
-        pin::Pin,
-        sync::atomic::{AtomicBool, AtomicUsize, Ordering},
         task::{Context, Poll},
     };
 
@@ -304,34 +272,13 @@ mod tests {
     use embassy_futures::block_on;
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use open_esp_radio_bluetooth_hci::{
-        HciChannelError, InProcessHciChannel, LeControllerCommandClassification, LeDtmCommand,
+        HostToControllerFrame, InProcessHciChannel, LeControllerCommandClassification, LeDtmCommand,
     };
     use std::{boxed::Box, task::Waker};
 
-    use super::{
-        EmbassyBluetoothDtmActiveCommandSignal, EmbassyBluetoothDtmActiveRadioSignal, RadioFirst,
-        into_active_command_signal, select_radio_first,
-    };
+    use super::{EmbassyBluetoothDtmActiveRadioSignal, RadioFirst, select_radio_first};
 
     type TestChannel = InProcessHciChannel<NoopRawMutex, 2, 1, 16>;
-
-    struct BorrowedReadiness<'a> {
-        ready: &'a AtomicBool,
-        polls: &'a AtomicUsize,
-    }
-
-    impl Future for BorrowedReadiness<'_> {
-        type Output = ();
-
-        fn poll(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Self::Output> {
-            self.polls.fetch_add(1, Ordering::Relaxed);
-            if self.ready.load(Ordering::Acquire) {
-                Poll::Ready(())
-            } else {
-                Poll::Pending
-            }
-        }
-    }
 
     #[test]
     fn radio_wins_a_simultaneous_ready_tie() {
@@ -350,65 +297,30 @@ mod tests {
     }
 
     #[test]
-    fn cancelling_a_borrowed_select_consumes_no_readiness() {
-        let radio_ready = AtomicBool::new(false);
-        let capacity_ready = AtomicBool::new(false);
-        let radio_polls = AtomicUsize::new(0);
-        let capacity_polls = AtomicUsize::new(0);
-        let task_waker = Waker::noop();
-
-        let radio = BorrowedReadiness {
-            ready: &radio_ready,
-            polls: &radio_polls,
-        };
-        let capacity = BorrowedReadiness {
-            ready: &capacity_ready,
-            polls: &capacity_polls,
-        };
-        let mut selected = Box::pin(select_radio_first(radio, capacity));
-        let mut context = Context::from_waker(task_waker);
-        assert!(selected.as_mut().poll(&mut context).is_pending());
-        drop(selected);
-
-        radio_ready.store(true, Ordering::Release);
-        let replacement = BorrowedReadiness {
-            ready: &radio_ready,
-            polls: &radio_polls,
-        };
-        assert!(matches!(
-            block_on(select_radio_first(replacement, pending::<()>())),
-            RadioFirst::Radio(())
-        ));
-        assert!(radio_polls.load(Ordering::Relaxed) >= 2);
-        assert_eq!(capacity_polls.load(Ordering::Relaxed), 1);
-    }
-
-    #[test]
-    fn production_receive_keeps_command_on_radio_tie_then_classifies_it() {
+    fn production_readiness_keeps_command_on_radio_tie_then_sync_classifies_it() {
         let mut channel = TestChannel::new();
         let (host, controller) = channel.split();
         block_on(host.write(&LeTestEnd::new())).unwrap();
-        let mut packet = [0; 16];
 
         let first = block_on(select_radio_first(
             ready(EmbassyBluetoothDtmActiveRadioSignal::Scheduler),
-            controller.receive_classified_command(&mut packet),
+            controller.wait_receive_ready(),
         ));
         assert!(matches!(
-            into_active_command_signal(first),
-            EmbassyBluetoothDtmActiveCommandSignal::Radio(
-                EmbassyBluetoothDtmActiveRadioSignal::Scheduler
-            )
+            first,
+            RadioFirst::Radio(EmbassyBluetoothDtmActiveRadioSignal::Scheduler)
         ));
 
         let second = block_on(select_radio_first(
             pending::<EmbassyBluetoothDtmActiveRadioSignal>(),
-            controller.receive_classified_command(&mut packet),
+            controller.wait_receive_ready(),
         ));
-        let EmbassyBluetoothDtmActiveCommandSignal::Command(command) =
-            into_active_command_signal(second)
-        else {
-            panic!("the queued Test End must remain for replacement command intake");
+        assert!(matches!(second, RadioFirst::Other(())));
+
+        let mut packet = [0; 16];
+        let command = match controller.try_receive_classified_command(&mut packet) {
+            Ok(command) => command,
+            Err(_) => panic!("Host readiness must leave Test End for synchronous classification"),
         };
         assert!(matches!(
             command.value(),
@@ -418,7 +330,7 @@ mod tests {
     }
 
     #[test]
-    fn production_receive_retains_non_command_and_maps_preconsume_fault() {
+    fn production_readiness_leaves_exact_acl_for_synchronous_receive() {
         let mut channel = TestChannel::new();
         let (host, controller) = channel.split();
         let acl = AclPacket::new(
@@ -428,28 +340,59 @@ mod tests {
             &[7, 8],
         );
         block_on(host.write(&acl)).unwrap();
+
+        let selected = block_on(select_radio_first(
+            pending::<EmbassyBluetoothDtmActiveRadioSignal>(),
+            controller.wait_receive_ready(),
+        ));
+        assert!(matches!(selected, RadioFirst::Other(())));
+
         let mut packet = [0; 16];
-
-        let selected = block_on(select_radio_first(
-            pending::<EmbassyBluetoothDtmActiveRadioSignal>(),
-            controller.receive_classified_command(&mut packet),
-        ));
-        let EmbassyBluetoothDtmActiveCommandSignal::NonCommand(frame) =
-            into_active_command_signal(selected)
+        let HostToControllerFrame::Acl(received) = controller
+            .try_receive(&mut packet)
+            .expect("Host readiness must leave ACL for the synchronous router")
         else {
-            panic!("ACL must leave DTM as an epoch-bound non-command frame");
+            panic!("the exact Host ACL packet changed kind");
         };
-        assert!(frame.originates_from(&controller));
+        assert_eq!(received.handle(), ConnHandle::new(1));
+        assert_eq!(received.boundary_flag(), AclPacketBoundary::Complete);
+        assert_eq!(received.broadcast_flag(), AclBroadcastFlag::PointToPoint);
+        assert_eq!(received.data(), &[7, 8]);
+    }
 
-        let selected = block_on(select_radio_first(
+    #[test]
+    fn cancelling_notified_production_readiness_leaves_exact_command() {
+        let mut channel = TestChannel::new();
+        let (host, controller) = channel.split();
+        let mut selected = Box::pin(select_radio_first(
             pending::<EmbassyBluetoothDtmActiveRadioSignal>(),
-            controller.receive_classified_command(&mut []),
+            controller.wait_receive_ready(),
         ));
+        let mut context = Context::from_waker(Waker::noop());
         assert!(matches!(
-            into_active_command_signal(selected),
-            EmbassyBluetoothDtmActiveCommandSignal::ChannelFault(
-                HciChannelError::DestinationTooSmall { .. }
-            )
+            selected.as_mut().poll(&mut context),
+            Poll::Pending
         ));
+
+        block_on(host.write(&LeTestEnd::new())).unwrap();
+        drop(selected);
+
+        assert!(matches!(
+            block_on(select_radio_first(
+                pending::<EmbassyBluetoothDtmActiveRadioSignal>(),
+                controller.wait_receive_ready(),
+            )),
+            RadioFirst::Other(())
+        ));
+        let mut packet = [0; 16];
+        let command = match controller.try_receive_classified_command(&mut packet) {
+            Ok(command) => command,
+            Err(_) => panic!("cancelling readiness must retain the exact queued command"),
+        };
+        assert!(matches!(
+            command.value(),
+            LeControllerCommandClassification::Dtm(LeDtmCommand::TestEnd(_))
+        ));
+        assert!(command.originates_from(&controller));
     }
 }

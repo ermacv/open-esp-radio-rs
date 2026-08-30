@@ -240,6 +240,32 @@ pub enum HciEpochBoundCommandReceiveError<'epoch, 'packet> {
     NonCommand(HciEpochBound<'epoch, HostToControllerFrame<'packet>>),
 }
 
+/// One non-blocking classified intake that preserves receive-buffer ownership.
+///
+/// Command and stale-readiness branches return the caller's buffer so an event
+/// loop can immediately reuse it. Only a non-command frame borrows the buffer,
+/// transferring that exact packet to the outer data router. A malformed
+/// retained packet fails closed and ends the intake call.
+#[must_use = "route the packet or recover the receive buffer"]
+pub enum HciClassifiedCommandIntake<'epoch, 'packet> {
+    /// An owned command classification plus the reusable receive buffer.
+    Command {
+        /// Semantic command bound to the source Controller epoch.
+        command: HciEpochBound<'epoch, LeControllerCommandClassification>,
+        /// Scratch storage no longer borrowed by the owned classification.
+        buffer: &'packet mut [u8],
+    },
+    /// A readiness hint became stale before the sole intake owner consumed it.
+    Empty {
+        /// Scratch storage remains available for the replacement wait.
+        buffer: &'packet mut [u8],
+    },
+    /// A non-retryable packet boundary failure.
+    Channel(HciChannelError),
+    /// The oldest Host packet is data and retains its buffer borrow.
+    NonCommand(HciEpochBound<'epoch, HostToControllerFrame<'packet>>),
+}
+
 struct AsyncPacketQueue<M, const DEPTH: usize, const PACKET_CAPACITY: usize>
 where
     M: RawMutex,
@@ -304,6 +330,21 @@ where
                 let mut state = state.borrow_mut();
                 if let Some(packet) = state.try_receive() {
                     Poll::Ready(packet)
+                } else {
+                    state.receiver_waker.register(context.waker());
+                    Poll::Pending
+                }
+            })
+        })
+        .await
+    }
+
+    async fn wait_receive_ready(&self) {
+        poll_fn(|context| {
+            self.state.lock(|state| {
+                let mut state = state.borrow_mut();
+                if state.length > 0 {
+                    Poll::Ready(())
                 } else {
                     state.receiver_waker.register(context.waker());
                     Poll::Pending
@@ -652,6 +693,18 @@ where
         decode_host_slot(slot, buffer)
     }
 
+    /// Wait until Host-to-Controller storage is observed with a packet.
+    ///
+    /// This operation neither borrows a packet buffer nor consumes or reserves
+    /// the oldest packet. It is a cancellation-safe readiness hint: callers
+    /// finish with [`Self::try_receive`] or
+    /// [`Self::try_receive_classified_command`] and handle `Empty` losslessly.
+    /// The affine Controller endpoint is designed for one logical intake waiter
+    /// at a time.
+    pub async fn wait_receive_ready(&self) {
+        self.host_to_controller.wait_receive_ready().await;
+    }
+
     /// Await, consume and production-classify the oldest Host command.
     ///
     /// Classification is synchronous after queue consumption, so cancellation
@@ -685,6 +738,45 @@ where
             .try_receive(buffer)
             .map_err(HciEpochBoundCommandReceiveError::Channel)?;
         self.bind_classified_command(frame)
+    }
+
+    /// Consume and classify one Host packet while returning reusable storage.
+    ///
+    /// This is the event-loop form of [`Self::try_receive_classified_command`].
+    /// An owned command and a stale `Empty` hint return `buffer`; a data packet
+    /// instead transfers its borrow to the outer packet router. Other channel
+    /// failures are returned to the supervisor and end this intake call.
+    pub fn try_receive_classified_command_with_buffer<'buffer>(
+        &self,
+        buffer: &'buffer mut [u8],
+    ) -> HciClassifiedCommandIntake<'channel, 'buffer> {
+        if let Err(error) = require_profile_buffer::<PACKET_CAPACITY>(buffer.len()) {
+            return HciClassifiedCommandIntake::Channel(error);
+        }
+        let mut slot = match self.host_to_controller.try_receive() {
+            Ok(slot) => slot,
+            Err(()) => return HciClassifiedCommandIntake::Empty { buffer },
+        };
+
+        if slot.kind == PacketKind::Cmd {
+            let bytes = &slot.bytes[..slot.length];
+            if validate_host_packet(slot.kind, bytes).is_err() {
+                slot.bytes[..slot.length].fill(0);
+                return HciClassifiedCommandIntake::Channel(HciChannelError::CorruptRetainedPacket);
+            }
+            let command = command_from_validated_bytes(bytes);
+            let command =
+                HciEpochBound::bind(self.identity, classify_le_controller_command(command));
+            slot.bytes[..slot.length].fill(0);
+            return HciClassifiedCommandIntake::Command { command, buffer };
+        }
+
+        match decode_host_slot(slot, buffer) {
+            Ok(frame) => {
+                HciClassifiedCommandIntake::NonCommand(HciEpochBound::bind(self.identity, frame))
+            }
+            Err(error) => HciClassifiedCommandIntake::Channel(error),
+        }
     }
 
     fn bind_classified_command<'buffer>(
@@ -914,14 +1006,9 @@ fn decode_host_slot<'buffer, const PACKET_CAPACITY: usize>(
     validate_host_packet(slot.kind, bytes).map_err(|_| HciChannelError::CorruptRetainedPacket)?;
 
     match slot.kind {
-        PacketKind::Cmd => {
-            let raw = u16::from_le_bytes([bytes[0], bytes[1]]);
-            let opcode = Opcode::new(OpcodeGroup::new((raw >> 10) as u8), raw & 0x03ff);
-            Ok(HostToControllerFrame::Command(HciCommandPacket {
-                opcode,
-                parameters: &bytes[3..],
-            }))
-        }
+        PacketKind::Cmd => Ok(HostToControllerFrame::Command(
+            command_from_validated_bytes(bytes),
+        )),
         PacketKind::AclData => AclPacket::from_hci_bytes(bytes)
             .map(|(packet, _)| HostToControllerFrame::Acl(packet))
             .map_err(|_| HciChannelError::CorruptRetainedPacket),
@@ -932,6 +1019,14 @@ fn decode_host_slot<'buffer, const PACKET_CAPACITY: usize>(
             .map(|(packet, _)| HostToControllerFrame::Iso(packet))
             .map_err(|_| HciChannelError::CorruptRetainedPacket),
         PacketKind::Event => Err(HciChannelError::CorruptRetainedPacket),
+    }
+}
+
+fn command_from_validated_bytes(bytes: &[u8]) -> HciCommandPacket<'_> {
+    let raw = u16::from_le_bytes([bytes[0], bytes[1]]);
+    HciCommandPacket {
+        opcode: Opcode::new(OpcodeGroup::new((raw >> 10) as u8), raw & 0x03ff),
+        parameters: &bytes[3..],
     }
 }
 
@@ -984,6 +1079,8 @@ mod tests {
         ControllerToHostPacket, PacketKind,
         cmd::{Cmd, SyncCmd, controller_baseband::Reset, le::LeTestEnd},
         controller::{Controller, ExternalController},
+        data::{AclBroadcastFlag, AclPacket, AclPacketBoundary},
+        param::ConnHandle,
         transport::Transport,
     };
     use embassy_futures::{
@@ -993,8 +1090,8 @@ mod tests {
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
     use super::{
-        HciChannelError, HciEpochBoundCommandReceiveError, HostToControllerFrame,
-        InProcessHciChannel,
+        HciChannelError, HciClassifiedCommandIntake, HciEpochBoundCommandReceiveError,
+        HostToControllerFrame, InProcessHciChannel,
     };
     use crate::{LE_TEST_END_OPCODE, LeControllerCommandClassification, LeDtmCommand};
 
@@ -1140,6 +1237,114 @@ mod tests {
         controller
             .try_publish(PacketKind::Event, &RESET_COMMAND_COMPLETE)
             .expect("readiness did not manufacture or reserve a packet");
+    }
+
+    #[test]
+    fn receive_readiness_wait_is_side_effect_free_and_wakes_after_publish() {
+        let mut channel = TestChannel::new();
+        let (host, controller) = channel.split();
+
+        {
+            let mut wait = pin!(controller.wait_receive_ready());
+            assert_pending(wait.as_mut());
+            block_on(host.write(&LeTestEnd::new())).unwrap();
+            let mut context = Context::from_waker(Waker::noop());
+            assert!(matches!(wait.as_mut().poll(&mut context), Poll::Ready(())));
+        }
+
+        let mut buffer = [0; 16];
+        let command = match controller.try_receive_classified_command(&mut buffer) {
+            Ok(command) => command,
+            Err(_) => panic!("readiness must leave the exact oldest packet queued"),
+        };
+        assert_eq!(command.value().opcode(), LE_TEST_END_OPCODE);
+        assert!(matches!(
+            controller.try_receive_classified_command(&mut buffer),
+            Err(HciEpochBoundCommandReceiveError::Channel(
+                HciChannelError::Empty
+            ))
+        ));
+    }
+
+    #[test]
+    fn cancelled_receive_readiness_wait_consumes_and_reserves_nothing() {
+        let mut channel = TestChannel::new();
+        let (host, controller) = channel.split();
+
+        {
+            let mut cancelled = pin!(controller.wait_receive_ready());
+            assert_pending(cancelled.as_mut());
+        }
+
+        block_on(host.write(&LeTestEnd::new())).unwrap();
+        block_on(controller.wait_receive_ready());
+        block_on(controller.wait_receive_ready());
+
+        let mut buffer = [0; 16];
+        let command = match controller.try_receive_classified_command(&mut buffer) {
+            Ok(command) => command,
+            Err(_) => {
+                panic!("cancelled and repeated readiness waits must not consume the packet")
+            }
+        };
+        assert_eq!(command.value().opcode(), LE_TEST_END_OPCODE);
+    }
+
+    #[test]
+    fn event_loop_intake_returns_buffer_for_commands_and_stale_empty() {
+        type FifoChannel = InProcessHciChannel<NoopRawMutex, 2, 1, 16>;
+
+        let mut channel = FifoChannel::new();
+        let (host, controller) = channel.split();
+        block_on(async {
+            host.write(&LeTestEnd::new()).await.unwrap();
+            host.write(&Reset::new()).await.unwrap();
+        });
+
+        let mut storage = [0; 16];
+        let (first, buffer) =
+            match controller.try_receive_classified_command_with_buffer(&mut storage) {
+                HciClassifiedCommandIntake::Command { command, buffer } => (command, buffer),
+                _ => panic!("the first command must return reusable storage"),
+            };
+        assert_eq!(first.value().opcode(), LE_TEST_END_OPCODE);
+
+        let (second, buffer) = match controller.try_receive_classified_command_with_buffer(buffer) {
+            HciClassifiedCommandIntake::Command { command, buffer } => (command, buffer),
+            _ => panic!("the second command must reuse the same storage"),
+        };
+        assert_eq!(second.value().opcode(), Reset::OPCODE);
+
+        let buffer = match controller.try_receive_classified_command_with_buffer(buffer) {
+            HciClassifiedCommandIntake::Empty { buffer } => buffer,
+            _ => panic!("stale readiness must return storage for another wait"),
+        };
+        assert_eq!(buffer.len(), storage.len());
+    }
+
+    #[test]
+    fn event_loop_intake_transfers_exact_data_frame_to_outer_router() {
+        let mut channel = TestChannel::new();
+        let (host, controller) = channel.split();
+        let acl = AclPacket::new(
+            ConnHandle::new(7),
+            AclPacketBoundary::Complete,
+            AclBroadcastFlag::PointToPoint,
+            &[11, 13],
+        );
+        block_on(host.write(&acl)).unwrap();
+
+        let mut storage = [0; 16];
+        let frame = match controller.try_receive_classified_command_with_buffer(&mut storage) {
+            HciClassifiedCommandIntake::NonCommand(frame) => frame,
+            _ => panic!("the data packet must transfer its exact borrowed frame"),
+        };
+        assert!(frame.originates_from(&controller));
+        let HostToControllerFrame::Acl(received) = frame.value() else {
+            panic!("the outer router must receive the original ACL kind");
+        };
+        assert_eq!(received.handle(), ConnHandle::new(7));
+        assert_eq!(received.data(), &[11, 13]);
     }
 
     #[test]

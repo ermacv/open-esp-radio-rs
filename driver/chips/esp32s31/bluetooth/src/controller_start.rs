@@ -2462,6 +2462,69 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>
 {
+    /// Consume the sole idle task and one endpoint-bound DTM command.
+    ///
+    /// Both this task's composition-time HCI epoch and the command's opaque
+    /// source epoch must match `controller`. Only then can RX/TX enter the
+    /// first-event hardware runner. Idle Test End instead enters the portable
+    /// zero-count response transaction without touching radio state.
+    pub fn route_idle_dtm_command<
+        'command,
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        self,
+        controller: &open_esp_radio_bluetooth_hci::InProcessHciControllerEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+        command: open_esp_radio_bluetooth_hci::HciEpochBound<
+            'command,
+            open_esp_radio_bluetooth_hci::LeDtmCommand,
+        >,
+    ) -> crate::BluetoothDtmIdleCommandRoute<'runtime, 'command, S, SCHEDULER_CAPACITY>
+    where
+        S: BluetoothSchedulerRunInterruptStorage,
+    {
+        let hci_epoch = self.hci_epoch_identity();
+        match open_esp_radio_bluetooth_hci::route_idle_dtm_command(
+            self, hci_epoch, controller, command,
+        ) {
+            open_esp_radio_bluetooth_hci::LeDtmIdleCommandRoute::StartReceiver {
+                owner: task,
+                command,
+            } => match crate::BluetoothDtmFirstRunner::begin(
+                task,
+                crate::BluetoothDtmFirstCommand::Receiver(command),
+            ) {
+                Ok(runner) => crate::BluetoothDtmIdleCommandRoute::Start(runner),
+                Err(failure) => crate::BluetoothDtmIdleCommandRoute::StartFailed(failure),
+            },
+            open_esp_radio_bluetooth_hci::LeDtmIdleCommandRoute::StartTransmitter {
+                owner: task,
+                command,
+            } => match crate::BluetoothDtmFirstRunner::begin(
+                task,
+                crate::BluetoothDtmFirstCommand::Transmitter(command),
+            ) {
+                Ok(runner) => crate::BluetoothDtmIdleCommandRoute::Start(runner),
+                Err(failure) => crate::BluetoothDtmIdleCommandRoute::StartFailed(failure),
+            },
+            open_esp_radio_bluetooth_hci::LeDtmIdleCommandRoute::ResponsePending(pending) => {
+                crate::BluetoothDtmIdleCommandRoute::ResponsePending(pending)
+            }
+            open_esp_radio_bluetooth_hci::LeDtmIdleCommandRoute::EndpointMismatch {
+                owner: task,
+                command,
+            } => crate::BluetoothDtmIdleCommandRoute::EndpointMismatch { task, command },
+        }
+    }
+
     pub(crate) const fn hci_epoch_identity(
         &self,
     ) -> open_esp_radio_bluetooth_hci::HciEpochIdentity<'runtime> {

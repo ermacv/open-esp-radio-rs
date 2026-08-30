@@ -81,7 +81,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-controller-boundary.md",
 ]
 gaps = [
-  { axis = "implementation", id = "live-route-and-long-lived-dtm-session-pump-missing" },
+  { axis = "implementation", id = "live-route-and-idle-to-active-session-composition-missing" },
   { axis = "vendor", id = "complete-controller-init-production-trace-missing" },
   { axis = "hil", id = "initialized-controller-cell-missing" },
   { axis = "async", id = "stable-route-and-controller-task-wake-composition-missing" },
@@ -99,7 +99,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "autonomous-dtm-session-task-missing" },
+  { axis = "implementation", id = "powered-absolute-deadline-recheck-provider-missing" },
   { axis = "vendor", id = "effective-counter-width-physical-unit-and-wake-source-missing" },
   { axis = "hil", id = "controller-time-latch-and-wrap-cell-missing" },
   { axis = "async", id = "live-controller-task-and-recheck-deadline-policy-missing" },
@@ -193,7 +193,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "autonomous-session-owner-integration-missing" },
+  { axis = "implementation", id = "idle-to-active-session-owner-integration-missing" },
   { axis = "vendor", id = "remaining-hardware-consumed-descriptor-semantics-missing" },
   { axis = "hil", id = "dtm-static-graph-placement-and-mutation-cell-missing" },
 ]
@@ -211,7 +211,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "autonomous-live-session-loop-missing" },
+  { axis = "implementation", id = "idle-to-active-powered-session-composition-missing" },
   { axis = "vendor", id = "rx-result-high-byte-length-crc-and-rssi-semantics-missing" },
   { axis = "hil", id = "dtm-rx-count-and-append-rearm-cell-missing" },
 ]
@@ -265,7 +265,7 @@ vendor-anchors = [
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
-  { axis = "implementation", id = "autonomous-live-session-loop-missing" },
+  { axis = "implementation", id = "idle-to-active-powered-session-composition-missing" },
   { axis = "vendor", id = "packet-engine-header-consumer-and-publication-order-missing" },
   { axis = "hil", id = "dtm-tx-payload-and-pattern-rf-cell-missing" },
 ]
@@ -283,7 +283,7 @@ vendor-anchors = [
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
-  { axis = "implementation", id = "live-session-recheck-and-event-publication-loop-missing" },
+  { axis = "implementation", id = "powered-deadline-recheck-provider-and-idle-session-composition-missing" },
   { axis = "vendor", id = "sleep-enabled-rf-wake-helper-contract-missing" },
   { axis = "hil", id = "dtm-tx-interval-tick-and-deadline-cell-missing" },
 ]
@@ -339,7 +339,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "autonomous-powered-controller-session-runner-missing" },
+  { axis = "implementation", id = "idle-to-active-powered-controller-composition-missing" },
   { axis = "vendor", id = "source-3-current-revision-trigger-proof-missing" },
   { axis = "hil", id = "scheduler-lock-modify-live-hardware-trace-missing" },
 ]
@@ -357,11 +357,11 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/functions/reviewed.toml",
 ]
 gaps = [
-  { axis = "implementation", id = "unrelated-finished-list-dispatch-and-autonomous-session-loop-missing" },
+  { axis = "implementation", id = "unrelated-finished-list-dispatch-and-idle-session-entry-missing" },
   { axis = "vendor", id = "raw-interrupt-origin-and-finished-list-acknowledge-rule-missing" },
   { axis = "vendor", id = "post-unlink-command-ready-source-124-causality-missing" },
   { axis = "hil", id = "scheduler-finished-list-drain-cell-missing" },
-  { axis = "async", id = "active-completion-wait-selection-and-unrelated-list-dispatch-missing" },
+  { axis = "async", id = "outer-finished-list-dispatch-and-powered-task-composition-missing" },
 ]
 
 [[capabilities]]
@@ -376,11 +376,11 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/README.md",
 ]
 gaps = [
-  { axis = "implementation", id = "autonomous-command-and-wake-selection-loop-missing" },
-  { axis = "host", id = "concrete-dtm-session-pump-and-owner-continuity-missing" },
+  { axis = "implementation", id = "idle-command-intake-and-non-dtm-session-router-missing" },
+  { axis = "host", id = "hardware-radio-axis-and-session-task-integration-tests-missing" },
   { axis = "vendor", id = "sleep-enabled-rf-wake-and-test-end-stop-order-proof-missing" },
   { axis = "hil", id = "direct-test-mode-rf-cell-missing" },
-  { axis = "async", id = "completion-wake-selection-and-session-stop-contract-missing" },
+  { axis = "async", id = "idle-to-active-task-composition-and-unrelated-dispatch-missing" },
 ]
 
 [[capabilities]]
@@ -405,7 +405,7 @@ gaps = [
 [[capabilities]]
 id = "typed-hci-controller"
 title = "Typed bt-hci Controller implementation"
-scope = "HCI command event ACL credit and error semantics plus owned semantic Receiver and Transmitter Test v1 progression through the ESP32-S31 first-event hardware RUN boundary"
+scope = "HCI command event ACL credit and error semantics plus endpoint-bound idle DTM start ordered active busy and Test End response progression through one sole ESP32-S31 active-session task"
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
@@ -414,11 +414,11 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/vendor-project.toml",
 ]
 gaps = [
-  { axis = "implementation", id = "sole-hci-command-loop-and-non-dtm-routing-missing" },
+  { axis = "implementation", id = "sole-idle-hci-command-loop-and-non-dtm-routing-missing" },
   { axis = "host", id = "hardware-radio-axis-and-command-intake-integration-tests-missing" },
   { axis = "vendor", id = "hci-command-and-acl-production-contracts-missing" },
   { axis = "hil", id = "external-hci-interoperability-cell-missing" },
-  { axis = "async", id = "autonomous-session-task-and-acl-credit-selection-missing" },
+  { axis = "async", id = "outer-session-policy-and-acl-credit-selection-missing" },
 ]
 
 [[capabilities]]

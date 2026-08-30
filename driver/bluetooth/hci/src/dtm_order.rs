@@ -12,8 +12,86 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use crate::{
     HciChannelError, HciControllerResponse, HciEpochBound, HciEpochIdentity,
     InProcessHciControllerEndpoint, LeDtmActiveSessionDisposition, LeDtmCommand,
-    LeDtmCommandCompleteEvent, LeTestEndCommand,
+    LeDtmCommandCompleteEvent, LeDtmIdleSessionDisposition, LeReceiverTestV1Command,
+    LeTestEndCommand, LeTransmitterTestV1Command,
 };
+
+/// Route one endpoint-bound command while no DTM test is active.
+///
+/// `owner_epoch` binds the caller's idle owner to its live HCI resources. Both
+/// that affinity and the command's opaque origin must match `controller` before
+/// the semantic command can be released. Idle Test End immediately becomes an
+/// ordered zero-count response retaining `Owner` through backpressure.
+pub fn route_idle_dtm_command<
+    'epoch,
+    'command,
+    Owner,
+    M: RawMutex,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+>(
+    owner: Owner,
+    owner_epoch: HciEpochIdentity<'epoch>,
+    controller: &InProcessHciControllerEndpoint<
+        '_,
+        M,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >,
+    command: HciEpochBound<'command, LeDtmCommand>,
+) -> LeDtmIdleCommandRoute<'epoch, 'command, Owner> {
+    if !owner_epoch.same_epoch(controller.epoch_identity()) {
+        return LeDtmIdleCommandRoute::EndpointMismatch { owner, command };
+    }
+    match command.try_into_for_endpoint(controller) {
+        Ok(command) => match command.into_idle_session_disposition() {
+            LeDtmIdleSessionDisposition::StartReceiver(command) => {
+                LeDtmIdleCommandRoute::StartReceiver { owner, command }
+            }
+            LeDtmIdleSessionDisposition::StartTransmitter(command) => {
+                LeDtmIdleCommandRoute::StartTransmitter { owner, command }
+            }
+            LeDtmIdleSessionDisposition::CompleteNoTest(response) => {
+                LeDtmIdleCommandRoute::ResponsePending(LeDtmResponsePending::new(
+                    owner,
+                    response,
+                    owner_epoch,
+                ))
+            }
+        },
+        Err(command) => LeDtmIdleCommandRoute::EndpointMismatch { owner, command },
+    }
+}
+
+/// Portable result of routing one endpoint-bound command while DTM is idle.
+#[must_use = "start hardware, publish idle Test End, or retain the epoch mismatch"]
+pub enum LeDtmIdleCommandRoute<'epoch, 'command, Owner> {
+    /// Begin one receiver test with the exact idle owner.
+    StartReceiver {
+        /// Unchanged idle owner whose epoch admitted the command.
+        owner: Owner,
+        /// Validated receiver command released after both epoch checks.
+        command: LeReceiverTestV1Command,
+    },
+    /// Begin one transmitter test with the exact idle owner.
+    StartTransmitter {
+        /// Unchanged idle owner whose epoch admitted the command.
+        owner: Owner,
+        /// Validated transmitter command released after both epoch checks.
+        command: LeTransmitterTestV1Command,
+    },
+    /// Idle Test End became the standard zero-count response.
+    ResponsePending(LeDtmResponsePending<'epoch, Owner>),
+    /// Either idle owner or command belongs to another live Controller epoch.
+    EndpointMismatch {
+        /// Unchanged idle owner.
+        owner: Owner,
+        /// Unchanged semantic command retaining its source-epoch proof.
+        command: HciEpochBound<'command, LeDtmCommand>,
+    },
+}
 
 /// A radio owner paired with one exact not-yet-published DTM response.
 ///
@@ -321,10 +399,14 @@ mod tests {
     use embassy_futures::block_on;
     use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 
-    use super::{LeDtmResponsePending, LeDtmResponsePublication, LeDtmResponsePublished};
+    use super::{
+        LeDtmIdleCommandRoute, LeDtmResponsePending, LeDtmResponsePublication,
+        LeDtmResponsePublished, route_idle_dtm_command,
+    };
     use crate::{
         HciChannelError, InProcessHciChannel, LE_RECEIVER_TEST_V1_OPCODE, LE_TEST_END_OPCODE,
-        LeDtmActiveCommandRoute, LeDtmCommand, LeReceiverTestV1Command, LeTestEndCommand,
+        LE_TRANSMITTER_TEST_V1_OPCODE, LeDtmActiveCommandRoute, LeDtmCommand,
+        LeReceiverTestV1Command, LeTestEndCommand,
     };
 
     const HARDWARE_ERROR: [u8; 3] = [0x10, 0x01, 0x42];
@@ -504,6 +586,178 @@ mod tests {
     }
 
     #[test]
+    fn idle_route_retains_zero_count_response_and_owner_through_backpressure() {
+        type Channel = InProcessHciChannel<NoopRawMutex, 1, 1, 16>;
+
+        let mut channel = Channel::new();
+        let (host, controller) = channel.split();
+        controller
+            .try_publish(PacketKind::Event, &HARDWARE_ERROR)
+            .expect("the output queue starts empty");
+        block_on(host.write(&LeTestEnd::new())).expect("Test End enters the real Host queue");
+        let mut command_buffer = [0; 16];
+        let classified = match controller.try_receive_classified_command(&mut command_buffer) {
+            Ok(classified) => classified,
+            Err(_) => panic!("the real Controller endpoint must classify Test End"),
+        };
+        let command = match classified.try_into_dtm() {
+            Ok(command) => command,
+            Err(_) => panic!("Test End must refine to DTM"),
+        };
+
+        let LeDtmIdleCommandRoute::ResponsePending(pending) = route_idle_dtm_command(
+            RadioOwner(67),
+            controller.epoch_identity(),
+            &controller,
+            command,
+        ) else {
+            panic!("idle Test End must produce the standard zero-count response");
+        };
+        let LeDtmResponsePublication::Pending(pending) = pending.try_publish(&controller) else {
+            panic!("the full queue must retain the exact idle owner and response");
+        };
+        assert_eq!(pending.radio(), &RadioOwner(67));
+
+        let mut response_buffer = [0; 16];
+        let ControllerToHostPacket::Event(older) =
+            block_on(host.read(&mut response_buffer)).expect("the Host drains the older event")
+        else {
+            panic!("the retained older packet changed kind");
+        };
+        assert_eq!(older.kind, EventKind::HardwareError);
+        let LeDtmResponsePublication::Published(published) = pending.try_publish(&controller)
+        else {
+            panic!("idle Test End must publish once capacity returns");
+        };
+        assert_eq!(published.into_radio(), RadioOwner(67));
+        assert_test_end_packet_count(
+            block_on(host.read(&mut response_buffer)).expect("Test End response remains queued"),
+            0,
+        );
+    }
+
+    #[test]
+    fn idle_route_releases_both_validated_start_kinds_only_to_the_matching_endpoint() {
+        type Channel = InProcessHciChannel<NoopRawMutex, 1, 1, 16>;
+
+        let mut receiver_channel = Channel::new();
+        let (receiver_host, receiver_controller) = receiver_channel.split();
+        block_on(receiver_host.write(&LeTestEnd::new()))
+            .expect("the epoch source enters the real Host queue");
+        let mut receiver_buffer = [0; 16];
+        let receiver =
+            match receiver_controller.try_receive_classified_command(&mut receiver_buffer) {
+                Ok(classified) => classified,
+                Err(_) => panic!("the receiver endpoint must classify its command"),
+            };
+        let receiver = match receiver.try_into_dtm() {
+            Ok(command) => command,
+            Err(_) => panic!("the receiver epoch source must refine to DTM"),
+        }
+        .map(|_| {
+            LeDtmCommand::decode_body(LE_RECEIVER_TEST_V1_OPCODE, &[13])
+                .expect("the reviewed receiver request is valid")
+        });
+        let LeDtmIdleCommandRoute::StartReceiver { owner, command } = route_idle_dtm_command(
+            RadioOwner(71),
+            receiver_controller.epoch_identity(),
+            &receiver_controller,
+            receiver,
+        ) else {
+            panic!("the matching receiver command must be released for hardware start");
+        };
+        assert_eq!(owner, RadioOwner(71));
+        assert_eq!(command.channel().index(), 13);
+
+        let mut transmitter_channel = Channel::new();
+        let (transmitter_host, transmitter_controller) = transmitter_channel.split();
+        block_on(transmitter_host.write(&LeTestEnd::new()))
+            .expect("the epoch source enters the real Host queue");
+        let mut transmitter_buffer = [0; 16];
+        let transmitter =
+            match transmitter_controller.try_receive_classified_command(&mut transmitter_buffer) {
+                Ok(classified) => classified,
+                Err(_) => panic!("the transmitter endpoint must classify its command"),
+            };
+        let transmitter = match transmitter.try_into_dtm() {
+            Ok(command) => command,
+            Err(_) => panic!("the transmitter epoch source must refine to DTM"),
+        }
+        .map(|_| {
+            LeDtmCommand::decode_body(LE_TRANSMITTER_TEST_V1_OPCODE, &[17, 23, 2])
+                .expect("the reviewed transmitter request is valid")
+        });
+        let LeDtmIdleCommandRoute::StartTransmitter { owner, command } = route_idle_dtm_command(
+            RadioOwner(73),
+            transmitter_controller.epoch_identity(),
+            &transmitter_controller,
+            transmitter,
+        ) else {
+            panic!("the matching transmitter command must be released for hardware start");
+        };
+        assert_eq!(owner, RadioOwner(73));
+        assert_eq!(command.channel().index(), 17);
+        assert_eq!(command.payload_length(), 23);
+        assert_eq!(command.payload_pattern().hci_parameter(), 2);
+    }
+
+    #[test]
+    fn idle_route_cross_epoch_rejections_retain_the_exact_owner_and_command() {
+        type Channel = InProcessHciChannel<NoopRawMutex, 1, 1, 16>;
+
+        let mut first_channel = Channel::new();
+        let (_first_host, first_controller) = first_channel.split();
+        let mut second_channel = Channel::new();
+        let (second_host, second_controller) = second_channel.split();
+        block_on(second_host.write(&LeTestEnd::new()))
+            .expect("the foreign command enters its own Host queue");
+        let mut command_buffer = [0; 16];
+        let classified = match second_controller.try_receive_classified_command(&mut command_buffer)
+        {
+            Ok(classified) => classified,
+            Err(_) => panic!("the foreign endpoint must classify its command"),
+        };
+        let command = match classified.try_into_dtm() {
+            Ok(command) => command,
+            Err(_) => panic!("the foreign command must retain its endpoint proof"),
+        };
+
+        let LeDtmIdleCommandRoute::EndpointMismatch { owner, command } = route_idle_dtm_command(
+            RadioOwner(79),
+            first_controller.epoch_identity(),
+            &first_controller,
+            command,
+        ) else {
+            panic!("a foreign command must not consume the idle owner");
+        };
+        assert_eq!(owner, RadioOwner(79));
+        assert!(command.originates_from(&second_controller));
+        assert!(!command.originates_from(&first_controller));
+
+        block_on(second_host.write(&LeTestEnd::new()))
+            .expect("the second foreign command enters its own Host queue");
+        let classified = match second_controller.try_receive_classified_command(&mut command_buffer)
+        {
+            Ok(classified) => classified,
+            Err(_) => panic!("the foreign endpoint must classify its second command"),
+        };
+        let command = match classified.try_into_dtm() {
+            Ok(command) => command,
+            Err(_) => panic!("the second command must retain its endpoint proof"),
+        };
+        let LeDtmIdleCommandRoute::EndpointMismatch { owner, command } = route_idle_dtm_command(
+            RadioOwner(83),
+            first_controller.epoch_identity(),
+            &second_controller,
+            command,
+        ) else {
+            panic!("a foreign owner epoch must retain both axes");
+        };
+        assert_eq!(owner, RadioOwner(83));
+        assert!(command.originates_from(&second_controller));
+    }
+
+    #[test]
     fn active_route_retains_radio_and_fifo_through_busy_backpressure() {
         type Channel = InProcessHciChannel<NoopRawMutex, 1, 1, 16>;
 
@@ -647,6 +901,10 @@ mod tests {
     }
 
     fn assert_test_end_response(packet: ControllerToHostPacket<'_>) {
+        assert_test_end_packet_count(packet, 0x3412);
+    }
+
+    fn assert_test_end_packet_count(packet: ControllerToHostPacket<'_>, packet_count: u16) {
         let ControllerToHostPacket::Event(event) = packet else {
             panic!("DTM Test End response changed packet kind");
         };
@@ -656,7 +914,7 @@ mod tests {
             .try_into()
             .expect("response contains standard status");
         assert_eq!(complete.status, Status::SUCCESS);
-        assert_eq!(complete.return_params::<LeTestEnd>().unwrap(), 0x3412);
+        assert_eq!(complete.return_params::<LeTestEnd>().unwrap(), packet_count);
     }
 
     fn assert_controller_busy(packet: ControllerToHostPacket<'_>) {

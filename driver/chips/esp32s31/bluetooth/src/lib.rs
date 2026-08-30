@@ -230,6 +230,7 @@ pub use dtm_runner::{
     BluetoothDtmFirstPreparationCleanupStep, BluetoothDtmFirstRunner,
     BluetoothDtmFirstRunnerCancel, BluetoothDtmFirstRunnerFailure, BluetoothDtmFirstRunnerRetry,
     BluetoothDtmFirstRunnerRetryCause, BluetoothDtmFirstRunnerStep, BluetoothDtmFirstRunning,
+    BluetoothDtmIdleCommandRoute,
 };
 pub use dtm_rx_completion::{
     BLUETOOTH_DTM_RX_INITIAL_RETURNED_BYTE, BluetoothDtmReceiverSession,

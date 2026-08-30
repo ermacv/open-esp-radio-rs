@@ -9,8 +9,8 @@
 #![forbid(unsafe_code)]
 
 use open_esp_radio_bluetooth_hci::{
-    HciEpochIdentity, LeDtmCommandCompleteEvent, LeReceiverTestV1Command,
-    LeTransmitterTestV1Command,
+    HciEpochBound, HciEpochIdentity, LeDtmCommand, LeDtmCommandCompleteEvent, LeDtmResponsePending,
+    LeReceiverTestV1Command, LeTransmitterTestV1Command,
 };
 
 use crate::{
@@ -39,6 +39,37 @@ pub enum BluetoothDtmFirstCommand {
     Transmitter(LeTransmitterTestV1Command),
     /// Begin an LE 1M receiver test.
     Receiver(LeReceiverTestV1Command),
+}
+
+/// Endpoint-checked disposition of one DTM command while the chip graph is idle.
+///
+/// Every branch retains the sole task service: a start moves it into the first
+/// runner (or that runner's lossless begin failure), Test End moves it into the
+/// portable zero-count response transaction, and an endpoint mismatch returns
+/// it directly beside the unchanged bound command.
+#[must_use = "start the first event, publish idle Test End, or retain the mismatch"]
+pub enum BluetoothDtmIdleCommandRoute<'runtime, 'command, S, const SCHEDULER_CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    /// A validated RX/TX command entered the sole first-event runner.
+    Start(BluetoothDtmFirstRunner<'runtime, S, SCHEDULER_CAPACITY>),
+    /// Initial Controller-time acquisition failed without losing any owner.
+    StartFailed(BluetoothDtmFirstRunnerFailure<'runtime, S, SCHEDULER_CAPACITY>),
+    /// Idle Test End became an ordered standard zero-count response.
+    ResponsePending(
+        LeDtmResponsePending<
+            'runtime,
+            BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        >,
+    ),
+    /// The task or command belongs to another live HCI endpoint.
+    EndpointMismatch {
+        /// Unchanged sole chip task service.
+        task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        /// Unchanged semantic command retaining its source-epoch proof.
+        command: HciEpochBound<'command, LeDtmCommand>,
+    },
 }
 
 /// Bounded first-event Controller runner.
@@ -560,7 +591,7 @@ where
         clippy::result_large_err,
         reason = "no-alloc begin failure retains exact command and Controller owners"
     )]
-    pub fn begin(
+    pub(crate) fn begin(
         task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         command: BluetoothDtmFirstCommand,
     ) -> Result<Self, BluetoothDtmFirstRunnerFailure<'runtime, S, SCHEDULER_CAPACITY>> {

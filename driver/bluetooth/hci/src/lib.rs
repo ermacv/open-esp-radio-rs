@@ -52,9 +52,9 @@ pub use bootstrap::{
 };
 pub use bt_hci;
 pub use channel::{
-    HciChannelError, HciCommandPacket, HciEpochBound, HciEpochBoundCommandReceiveError,
-    HciEpochIdentity, HostToControllerFrame, InProcessHciChannel, InProcessHciControllerEndpoint,
-    InProcessHciHostTransport,
+    HciChannelError, HciClassifiedCommandIntake, HciCommandPacket, HciEpochBound,
+    HciEpochBoundCommandReceiveError, HciEpochIdentity, HostToControllerFrame, InProcessHciChannel,
+    InProcessHciControllerEndpoint, InProcessHciHostTransport,
 };
 pub use classification::{LeControllerCommandClassification, classify_le_controller_command};
 pub use dtm::{
@@ -65,7 +65,8 @@ pub use dtm::{
     LeTransmitterTestV1Command,
 };
 pub use dtm_order::{
-    LeDtmActiveCommandRoute, LeDtmResponsePending, LeDtmResponsePublication, LeDtmResponsePublished,
+    LeDtmActiveCommandRoute, LeDtmIdleCommandRoute, LeDtmResponsePending, LeDtmResponsePublication,
+    LeDtmResponsePublished, route_idle_dtm_command,
 };
 pub use resources::{
     LeControllerHciEndpoints, LeControllerHciResources, LeControllerHciResourcesError,

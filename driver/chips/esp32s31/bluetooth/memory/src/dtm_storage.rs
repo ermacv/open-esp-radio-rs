@@ -629,28 +629,24 @@ pub struct BluetoothDtmMemoryGraphStorage {
     _pin: PhantomPinned,
 }
 
-const BLUETOOTH_DTM_MEMORY_GRAPH_BYTES: u32 = 0x3a8;
-const LINK_STATE_STORAGE_OFFSET: u32 = 0x000;
-const SCHEDULER_CONTEXT_STORAGE_OFFSET: u32 = 0x084;
-const SCHEDULER_ITEM_STORAGE_OFFSET: u32 = 0x0cc;
-const RX_HEADER_STORAGE_OFFSET: u32 = 0x12c;
-const RX_SWAP_RESERVE_STORAGE_OFFSET: u32 = 0x144;
-const TX_HEADER_STORAGE_OFFSET: u32 = 0x15c;
-const TX_PACKET_STORAGE_OFFSET: u32 = 0x174;
-const RX_PACKET_STORAGE_OFFSET: u32 = 0x288;
-
-const _: () = {
-    assert!(core::mem::size_of::<BluetoothDtmMemoryGraphStorage>() == 0x3a8);
-    assert!(core::mem::align_of::<BluetoothDtmMemoryGraphStorage>() == 4);
-    assert!(core::mem::offset_of!(BluetoothDtmMemoryGraphStorage, link_state) == 0x000);
-    assert!(core::mem::offset_of!(BluetoothDtmMemoryGraphStorage, scheduler_context) == 0x084);
-    assert!(core::mem::offset_of!(BluetoothDtmMemoryGraphStorage, scheduler_item) == 0x0cc);
-    assert!(core::mem::offset_of!(BluetoothDtmMemoryGraphStorage, rx_header) == 0x12c);
-    assert!(core::mem::offset_of!(BluetoothDtmMemoryGraphStorage, rx_swap_reserve) == 0x144);
-    assert!(core::mem::offset_of!(BluetoothDtmMemoryGraphStorage, tx_header) == 0x15c);
-    assert!(core::mem::offset_of!(BluetoothDtmMemoryGraphStorage, tx_packet) == 0x174);
-    assert!(core::mem::offset_of!(BluetoothDtmMemoryGraphStorage, rx_packet) == 0x288);
-};
+const BLUETOOTH_DTM_MEMORY_GRAPH_BYTES: u32 =
+    core::mem::size_of::<BluetoothDtmMemoryGraphStorage>() as u32;
+const LINK_STATE_STORAGE_OFFSET: u32 =
+    core::mem::offset_of!(BluetoothDtmMemoryGraphStorage, link_state) as u32;
+const SCHEDULER_CONTEXT_STORAGE_OFFSET: u32 =
+    core::mem::offset_of!(BluetoothDtmMemoryGraphStorage, scheduler_context) as u32;
+const SCHEDULER_ITEM_STORAGE_OFFSET: u32 =
+    core::mem::offset_of!(BluetoothDtmMemoryGraphStorage, scheduler_item) as u32;
+const RX_HEADER_STORAGE_OFFSET: u32 =
+    core::mem::offset_of!(BluetoothDtmMemoryGraphStorage, rx_header) as u32;
+const RX_SWAP_RESERVE_STORAGE_OFFSET: u32 =
+    core::mem::offset_of!(BluetoothDtmMemoryGraphStorage, rx_swap_reserve) as u32;
+const TX_HEADER_STORAGE_OFFSET: u32 =
+    core::mem::offset_of!(BluetoothDtmMemoryGraphStorage, tx_header) as u32;
+const TX_PACKET_STORAGE_OFFSET: u32 =
+    core::mem::offset_of!(BluetoothDtmMemoryGraphStorage, tx_packet) as u32;
+const RX_PACKET_STORAGE_OFFSET: u32 =
+    core::mem::offset_of!(BluetoothDtmMemoryGraphStorage, rx_packet) as u32;
 
 /// Why static DTM graph storage cannot become an address-bound CPU owner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

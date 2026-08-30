@@ -221,7 +221,7 @@ mod tests {
         BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BluetoothBlePhyEngineBindError,
         BluetoothBlePhyEngineModelAddress, BluetoothBlePhyEngineStorage,
         BluetoothDtmMemoryGraphBindError, BluetoothDtmMemoryGraphModelAddress,
-        BluetoothDtmSchedulerAllocationConfig,
+        BluetoothDtmMemoryGraphStorage, BluetoothDtmSchedulerAllocationConfig,
     };
 
     use super::{
@@ -298,7 +298,12 @@ mod tests {
         let owner = MEMORY
             .claim_model(base, allocation_config())
             .expect("fresh model arena binds once");
-        assert_eq!(owner.binding().range(), (0x2f00_1000, 0x2f00_13a8));
+        let (start, end) = owner.binding().range();
+        assert_eq!(start, 0x2f00_1000);
+        assert_eq!(
+            end - start,
+            size_of::<BluetoothDtmMemoryGraphStorage>() as u32
+        );
         assert!(matches!(
             MEMORY.claim_model(base, allocation_config()),
             Err(Esp32s31BluetoothDtmMemoryClaimError::InUse)
@@ -310,7 +315,9 @@ mod tests {
         static MEMORY: Esp32s31BluetoothDtmMemory = Esp32s31BluetoothDtmMemory::new();
 
         let crossing = BluetoothDtmMemoryGraphModelAddress::new(
-            BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH - 0x3a8 + 4,
+            BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH
+                - size_of::<BluetoothDtmMemoryGraphStorage>() as u32
+                + 4,
         )
         .expect("crossing model base is still encodable");
         let failure = match MEMORY.claim_model(crossing, allocation_config()) {

@@ -19,9 +19,6 @@ use sha2::{Digest, Sha256};
 
 use super::*;
 
-// Hard-cut whenever direct structural exploration or its projection changes.
-// Project-stage revisions do not invalidate these content-addressed facts.
-const FUNCTION_FACT_DOMAIN: &[u8] = b"blobray/direct-function-facts/v17\0";
 const MAX_CACHED_CALL_VARIANTS: usize = 1_024;
 const MAX_COMPRESSED_FACT_BYTES: usize = 4 * 1024 * 1024;
 
@@ -339,7 +336,7 @@ fn function_fact_key(
     namespace_identities: bool,
 ) -> String {
     let mut hash = Sha256::new();
-    hash.update(FUNCTION_FACT_DOMAIN);
+    hash.update(FUNCTION_FACT_CACHE_DOMAIN);
     hash.update(mmio_fingerprint);
     hash.update(resolver_fingerprint);
     hash.update([u8::from(namespace_identities)]);

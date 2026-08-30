@@ -8,6 +8,8 @@ use crate::{
     cli::{ResearchNextArgs, ResearchRankingArg, output, table},
 };
 
+const IMPACT_LEGEND: &str = "G = functions for which this is the sole observed blocker and analyzed dependencies are complete; O = optimistic reverse-call reachability within the current analyzed graph; M = directly affected functions counted after co-blockers close; Co = other observed blocker roots. Sets overlap; these estimates rank research and do not prove runtime behavior or completion.";
+
 pub(super) fn run(
     arguments: ResearchNextArgs,
     session: &crate::application::ProjectSession,
@@ -174,6 +176,7 @@ fn render(report: &research::ResearchNextReport) {
             ]),
         )
     );
+    outputln!("Impact legend: {IMPACT_LEGEND}");
     let first = &actions[0];
     outputln!(
         "\n{}",
@@ -192,7 +195,7 @@ fn render(report: &research::ResearchNextReport) {
     let optimistic = union_finding_ids(&first.findings, |finding| &finding.optimistic_function_ids);
     let marginal = union_finding_ids(&first.findings, |finding| &finding.marginal_function_ids);
     outputln!(
-        "Impact: {} direct; {} guaranteed / {} optimistic / {} marginal",
+        "Impact estimates (overlapping): {} direct; {} guaranteed / {} optimistic / {} marginal",
         direct.len(),
         guaranteed.len(),
         optimistic.len(),
@@ -1393,5 +1396,13 @@ mod tests {
         );
         assert!(rendered.contains("33/34/34"), "{rendered}");
         assert!(rendered.contains("high"), "{rendered}");
+    }
+
+    #[test]
+    fn impact_legend_fails_closed_about_unlock_estimates() {
+        assert!(IMPACT_LEGEND.contains("within the current analyzed graph"));
+        assert!(!IMPACT_LEGEND.contains("upper bound"));
+        assert!(IMPACT_LEGEND.contains("Sets overlap"));
+        assert!(IMPACT_LEGEND.contains("do not prove runtime behavior or completion"));
     }
 }

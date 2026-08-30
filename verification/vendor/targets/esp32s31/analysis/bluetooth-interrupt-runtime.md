@@ -17,17 +17,23 @@ the hardware-list-to-item relation, NRT feature meanings and the live async ISR
 owner remain unresolved, so neither CPU route may yet form a live production
 interrupt epoch.
 
-Blobray schema 10 records the two callback mechanisms separately. The
+Blobray schema 11 records the two callback mechanisms separately and gives
+static event routes an explicit receive/run delivery contract. The
 source-124 path proves the exact `R9 -> iEs -> gs5` call chain, static event
-initialization and both enqueue sites, but remains `INCOMPLETE` until
-`eventq_get -> event.run` return-pointer and stored-callback execution are
-modeled. The finished-list path proves source-zero attachment, the exact
-subscriber callback-pointer store, selector `0x8000_0004` and its merged-mask
-payload, plus the guarded `uwrf -> rmN` continuation; it remains `INCOMPLETE`
-because dominance of the callback store over subscription and the indirect
-broker walk's listener order/stop semantics are not executable evidence.
-Neither route closes source-124 readiness causality or post-unlink retry
-liveness.
+initialization, both enqueue sites and conservative CFG ordering from the
+generic `eventq_get` call to `event.run`. This ordering is structural and does
+not claim path feasibility. The route remains `INCOMPLETE` because the
+enqueue-side queue producer is not yet resolved to the exact consumer queue
+instance, linked IR does not yet preserve the `eventq_get` result token into
+the `event.run` argument, and no replay proves delivery. The finished-list
+path proves
+source-zero attachment and a conservative CFG witness from the exact
+subscriber callback-pointer store to subscription, plus selector
+`0x8000_0004` and its merged-mask payload, plus the guarded `uwrf -> rmN`
+continuation; it remains `INCOMPLETE` until subscriber lifetime and every
+preceding listener's selector-specific continue result are joined into the
+same broker epoch. Neither route closes source-124 readiness causality or
+post-unlink retry liveness.
 
 This review separates silicon behavior from the internal callback and RTOS
 architecture of the reference Controller. The Rust driver does not reproduce
@@ -204,7 +210,9 @@ its role-specific callback at `item+0x58`. For DTM this is the mapped
 `r_ble_lll_dtm_recycle_sch_item` body. Thus the lock/modify request result is
 not a completion signal; finished-mask selection plus item recycle is the
 reference software ownership-return path. Blobray does not label the broker
-delivery complete until the indirect listener walk is modeled.
+delivery complete until subscriber lifetime is joined to the publisher epoch
+and every preceding listener is proven to continue for this selector, or the
+exact broker epoch is replayed.
 
 An open Controller must therefore define its own typed scheduler item
 lifecycle and bounded completion queue, with an explicit hardware-finished to

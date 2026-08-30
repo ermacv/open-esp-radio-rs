@@ -1,5 +1,5 @@
 # Human-reviewed function and context names. Generated linked IR stays separate.
-schema = 10
+schema = 11
 id = "esp32s31-radio-rev0"
 
 [[inputs]]
@@ -163,12 +163,14 @@ replay-state-observation = "signal-23-count"
 replay-state-model = "counted-latch"
 rationale = "lmacPostTxComplete posts signal 0x17 to the reviewed pp-task receiver; the relocated ppTask jump table maps selector 0x17 to lmacProcessTxComplete, and the bound replay must execute that exact queue and case transition."
 
-# Generated linked IR proves the exact R9 -> iEs -> gs5 direct-call chain and
-# both dispatcher call sites carrying the same static object that scheduler
-# initialization binds to the task callback. Associating the R9 entry with
-# controller source 124 and assigning event-init/enqueue roles to the callees
-# remain reviewed knowledge. This route stops before claiming
-# eventq_get/event.run delivery.
+# Generated linked IR proves the exact R9 -> iEs -> gs5 direct-call chain, both
+# dispatcher call sites carrying the same static object that scheduler
+# initialization binds to the task callback, and the generic controller loop's
+# eventq_get/event.run calls. Associating the R9 entry with controller source
+# 124 and the receive-return-to-run state transition remain reviewed knowledge.
+# The enqueue-side queue producer is not yet resolved to the exact queue value
+# consumed by eventq_get, and generated IR does not preserve the receive result
+# token into event.run, so concrete delivery still fails closed.
 [[event-routes]]
 kind = "static-event-callback"
 id = "btdm-source124-to-recycle-event-binding"
@@ -186,6 +188,7 @@ upstream-chain = [
 ]
 upstream-sites = [0x10055f8c, 0x1005514a]
 dispatch-object-argument = 1
+dispatch-queue-argument = 0
 binding-profile = "ble-controller-all"
 binding-source = "ble-controller"
 binding-entry = "ble-controller::r_sym_bt_XPuqTHliEO5V9xpR7aJR"
@@ -193,10 +196,19 @@ binding-operation = "rtos.event.init"
 binding-site = 0x10051b50
 binding-object-argument = 0
 binding-callback-argument = 1
+delivery-profile = "ble-controller-all"
+delivery-source = "ble-controller"
+delivery-entry = "ble-controller::r_sym_bt_UcYENg1R6iLtJMFYwNLq"
+receive-operation = "rtos.event-queue.receive"
+receive-site = 0x1005df22
+receive-queue-argument = 0
+run-operation = "rtos.event.run"
+run-site = 0x1005df36
+run-event-argument = 0
 callback-profile = "ble-controller-all"
 callback-source = "ble-controller"
 callback-function = "ble-controller::r_sym_bt_uNi9OHmE7XdXfGqTelU5"
-rationale = "Current linked IR proves the exact R9 -> iEs -> gs5 direct-call chain, both downstream calls carrying one static object, and the scheduler-init call carrying that object plus the exact callback address. The R9-to-controller-source-124 association and the event-init/enqueue/callback roles are reviewed knowledge, not generated observations. eventq_get return flow and event.run callback execution remain unmodeled."
+rationale = "Current linked IR proves the exact R9 -> iEs -> gs5 direct-call chain, both downstream calls carrying one static object, the scheduler-init binding to the exact callback, direct generic eventq_get/event.run sites, and conservative CFG ordering from receive to run. The R9-to-controller-source-124 association and receive-return-to-run callback semantics are reviewed knowledge; the concrete enqueue-to-receive queue identity, typed receive-result-to-run-argument relation, and execution replay remain unresolved."
 
 # Finished-list publication uses broker source zero. Scheduler init attaches
 # that exact source object, while base-stack enable contains the reviewed
@@ -246,7 +258,7 @@ case-handler-site = 0x100572b8
 terminal-profile = "ble-controller-all"
 terminal-source = "ble-controller"
 terminal-function = "ble-controller::r_sym_bt_FCfM3hAXphsk1qERleGZ"
-rationale = "Current linked IR proves source-zero attachment, exact selector publication, callback storage in the subscribed object, the source-zero subscription argument, and the selector-guarded BLE scheduler continuation; callback-store dominance plus broker listener ordering and stop semantics remain unmodeled."
+rationale = "Current linked IR proves source-zero attachment, exact selector publication, callback storage in the subscribed object, conservative CFG ordering from the callback store to subscription, the source-zero subscription argument, and the selector-guarded BLE scheduler continuation. Subscriber lifetime across the publisher epoch and every preceding listener's selector-specific continue result remain unproven."
 
 [[functions]]
 profile = "archive-all"

@@ -747,6 +747,10 @@ impl StoredCall {
         self.direct
     }
 
+    pub(crate) const fn result_modeled(&self) -> bool {
+        self.result_modeled
+    }
+
     pub(crate) fn argument_is_exact(&self, position: usize) -> bool {
         self.argument_exact.get(position).copied() == Some(true)
     }

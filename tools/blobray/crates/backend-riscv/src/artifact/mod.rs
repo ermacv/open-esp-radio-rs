@@ -29,7 +29,7 @@ pub use function_body::{
     FunctionControlFlowKind, FunctionCountedLoop, FunctionInstruction,
     FunctionInstructionRelocation, FunctionLabel, FunctionLoop, FunctionLoopKind,
     basic_block_ids_for_sites, inspect_function_body, inspect_function_body_at,
-    inspect_function_definition,
+    inspect_function_body_at_data, inspect_function_definition,
 };
 pub use indexed_dispatch::recover_indexed_dispatches;
 pub use inventory::{inspect_artifact, inspect_artifact_container};

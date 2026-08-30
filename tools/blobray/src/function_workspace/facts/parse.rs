@@ -240,6 +240,7 @@ pub(super) fn parse_review_projection(
                         kind: call.kind,
                         target: call.target,
                         direct: call.direct,
+                        result_modeled: false,
                         semantic_operation: call.semantic_operation,
                         site: call.site,
                         arguments: Vec::new(),
@@ -301,6 +302,7 @@ pub(super) fn parse_review_projection(
 
 fn call_fact(call: crate::artifacts::StoredCall) -> FunctionCallFact {
     let direct = call.direct();
+    let result_modeled = call.result_modeled();
     let argument_exact = (0..call.arguments.len())
         .map(|position| call.argument_is_exact(position))
         .collect();
@@ -308,6 +310,7 @@ fn call_fact(call: crate::artifacts::StoredCall) -> FunctionCallFact {
         kind: call.kind,
         target: call.target,
         direct,
+        result_modeled,
         semantic_operation: call.semantic_operation,
         site: call.site,
         arguments: call.arguments,

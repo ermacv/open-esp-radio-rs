@@ -47,7 +47,7 @@ pub use blocker_resolution::{
     BlockerResolutionOwner, BlockerResolutionRecordKind, BlockerResolutionRoute,
 };
 use cli::run;
-pub(crate) use digest::{artifact_path_sha256, artifact_sha256};
+pub(crate) use digest::{artifact_path_sha256, artifact_sha256, bytes_sha256};
 use error::BlobrayError;
 pub use function_investigation::{
     CallArgumentEvidence, CallGraphEdgeEvidence, CallKnowledgeEvidence,

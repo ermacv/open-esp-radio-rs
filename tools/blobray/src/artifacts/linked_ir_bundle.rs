@@ -110,6 +110,12 @@ pub(crate) struct LinkedIrReader {
     graph: OnceLock<GraphIndex>,
 }
 
+#[derive(Debug)]
+pub(crate) struct AuthenticatedSourceArtifact {
+    pub(crate) path: PathBuf,
+    pub(crate) bytes: Vec<u8>,
+}
+
 struct GraphIndex {
     edges: Vec<StoredGraphEdge>,
     outgoing: BTreeMap<String, Vec<usize>>,
@@ -211,6 +217,38 @@ impl LinkedIrReader {
 
     pub(crate) fn summary(&self) -> &super::linked_ir_read::schema::StoredReportSummary {
         &self.manifest.summary
+    }
+
+    /// Resolve the authoritative live artifact for `source` and authenticate
+    /// it against the digest persisted in this linked-IR bundle.
+    ///
+    /// Focused CFG evidence is derived from the returned immutable snapshot,
+    /// so returning a merely existing path after the input changed would mix
+    /// revisions.
+    pub(crate) fn authenticated_source_artifact(
+        &self,
+        source: &str,
+    ) -> Result<AuthenticatedSourceArtifact> {
+        let matches = self
+            .manifest
+            .artifacts
+            .iter()
+            .filter(|artifact| artifact.source == source)
+            .map(|artifact| {
+                (
+                    PathBuf::from(&artifact.artifact.path),
+                    artifact.artifact.sha256.as_str(),
+                )
+            })
+            .collect::<Vec<_>>();
+        match matches.as_slice() {
+            [(path, expected)] => read_authenticated_source_artifact(path, expected),
+            _ => Err(crate::Error::invalid(format!(
+                "linked-IR bundle {} contains {} source artifacts named {source:?}, expected one",
+                self.root.display(),
+                matches.len()
+            ))),
+        }
     }
 
     pub(crate) fn get_function(
@@ -781,6 +819,24 @@ impl LinkedIrReader {
     }
 }
 
+fn read_authenticated_source_artifact(
+    path: &Path,
+    expected: &str,
+) -> Result<AuthenticatedSourceArtifact> {
+    let bytes = fs::read(path)?;
+    let actual = crate::bytes_sha256(&bytes);
+    if actual != expected {
+        return Err(crate::Error::invalid(format!(
+            "linked-IR source artifact {} changed: expected sha256 {expected}, got {actual}",
+            path.display()
+        )));
+    }
+    Ok(AuthenticatedSourceArtifact {
+        path: path.to_owned(),
+        bytes,
+    })
+}
+
 impl GraphIndex {
     fn has_traversable_outgoing(&self, identity: &str) -> bool {
         self.outgoing
@@ -1004,4 +1060,31 @@ fn fixture_function_overview(encoded: &str) -> Result<String> {
     });
     let strict: StoredFunctionReviewProjection = serde_json::from_value(overview)?;
     Ok(serde_json::to_string(&strict)?)
+}
+
+#[cfg(test)]
+mod source_artifact_tests {
+    use super::*;
+
+    #[test]
+    fn live_source_artifact_must_match_the_persisted_digest() {
+        let directory = std::env::temp_dir().join(format!(
+            "blobray-linked-ir-source-auth-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("vendor.bin");
+        fs::write(&path, b"reviewed-vendor-revision").unwrap();
+        let expected = crate::artifact_sha256(&path).unwrap();
+
+        let artifact = read_authenticated_source_artifact(&path, &expected).unwrap();
+        assert_eq!(artifact.path, path);
+        assert_eq!(artifact.bytes, b"reviewed-vendor-revision");
+
+        fs::write(&path, b"different-vendor-revision").unwrap();
+        let error = read_authenticated_source_artifact(&path, &expected)
+            .expect_err("changed source artifact must fail closed");
+        assert!(error.to_string().contains("changed"));
+        fs::remove_dir_all(directory).unwrap();
+    }
 }

@@ -24,6 +24,10 @@ pub(crate) fn artifact_sha256(path: &Path) -> Result<String> {
     Ok(format!("{:x}", digest.finalize()))
 }
 
+pub(crate) fn bytes_sha256(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
 /// Content identity for either one artifact or a deterministic generated tree.
 /// Directory entries are ordered and their relative paths are part of the
 /// digest, so moving the tree does not change its identity while renaming a

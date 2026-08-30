@@ -3,6 +3,7 @@
 //! The report is navigation evidence. Structural reachability, reviewed event
 //! routes and executable equivalence remain distinct claims.
 
+mod cfg;
 mod effects;
 mod event;
 mod model;

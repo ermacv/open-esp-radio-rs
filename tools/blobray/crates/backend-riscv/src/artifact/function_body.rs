@@ -15,9 +15,10 @@ use rv_asm::{Inst, Reg};
 
 use crate::{Error, Result};
 
+use super::symbols::load_code_symbols_from_data;
 use super::{
     AnalysisInstruction, ArtifactSymbolDefinition, CodeSymbolSelection, RelocationKind,
-    decode_symbol_for_analysis, load_code_symbols, unsupported_instruction_mnemonic,
+    decode_symbol_for_analysis, unsupported_instruction_mnemonic,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
@@ -169,7 +170,23 @@ pub fn inspect_function_body_at(
     symbol: &str,
     address: Option<u64>,
 ) -> Result<FunctionBody> {
-    let mut candidates = load_code_symbols(artifact, symbol, CodeSymbolSelection::All)?
+    let data = crate::read_artifact(artifact)?;
+    inspect_function_body_at_data(artifact, &data, member, symbol, address)
+}
+
+/// Inspect one exact symbol from one caller-owned immutable byte snapshot.
+///
+/// The display path is diagnostic provenance only. Symbol selection, labels,
+/// instruction bytes and CFG construction all consume `data`, so a caller can
+/// authenticate one snapshot without a later path reopen mixing revisions.
+pub fn inspect_function_body_at_data(
+    artifact: &Path,
+    data: &[u8],
+    member: Option<&str>,
+    symbol: &str,
+    address: Option<u64>,
+) -> Result<FunctionBody> {
+    let mut candidates = load_code_symbols_from_data(data, symbol, CodeSymbolSelection::All)?
         .into_iter()
         .filter(|candidate| {
             candidate.name == symbol
@@ -204,7 +221,7 @@ pub fn inspect_function_body_at(
         )));
     }
     let definition = candidates.pop().expect("one candidate");
-    let labels = load_labels(artifact, &definition)?;
+    let labels = load_labels(data, &definition)?;
     build_body(artifact, definition, labels)
 }
 
@@ -990,23 +1007,19 @@ fn integer_destination(instruction: AnalysisInstruction) -> Option<Option<Reg>> 
     }
 }
 
-fn load_labels(
-    artifact: &Path,
-    definition: &ArtifactSymbolDefinition,
-) -> Result<Vec<FunctionLabel>> {
-    let data = crate::read_artifact(artifact)?;
-    match FileKind::parse(data.as_slice())? {
+fn load_labels(data: &[u8], definition: &ArtifactSymbolDefinition) -> Result<Vec<FunctionLabel>> {
+    match FileKind::parse(data)? {
         FileKind::Archive => {
-            let archive = ArchiveFile::parse(data.as_slice())?;
+            let archive = ArchiveFile::parse(data)?;
             for member in archive.members() {
                 let member = member?;
                 if Some(member.name()) == definition.member.as_deref().map(str::as_bytes) {
-                    return collect_labels(member.data(data.as_slice())?, definition);
+                    return collect_labels(member.data(data)?, definition);
                 }
             }
             Ok(Vec::new())
         }
-        FileKind::Elf32 => collect_labels(&data, definition),
+        FileKind::Elf32 => collect_labels(data, definition),
         kind => Err(format!("unsupported artifact kind: {kind:?}").into()),
     }
 }
@@ -1087,6 +1100,60 @@ mod tests {
             memory_regions: Arc::default(),
             relocations: Vec::new(),
         }
+    }
+
+    #[test]
+    fn authenticated_bytes_select_exact_symbol_and_supply_labels_without_path_reopen() {
+        use object::{
+            Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind,
+            SymbolScope,
+            write::{Object, Symbol, SymbolSection},
+        };
+
+        let mut object = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+        let section = object.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+        let first = object.append_section_data(section, &0x0000_0013_u32.to_le_bytes(), 4);
+        let second = object.append_section_data(section, &0x0000_8067_u32.to_le_bytes(), 4);
+        for value in [first, second] {
+            object.add_symbol(Symbol {
+                name: b"duplicate".to_vec(),
+                value,
+                size: 4,
+                kind: SymbolKind::Text,
+                scope: SymbolScope::Compilation,
+                weak: false,
+                section: SymbolSection::Section(section),
+                flags: SymbolFlags::None,
+            });
+        }
+        object.add_symbol(Symbol {
+            name: b"selected_label".to_vec(),
+            value: second,
+            size: 0,
+            kind: SymbolKind::Label,
+            scope: SymbolScope::Compilation,
+            weak: false,
+            section: SymbolSection::Section(section),
+            flags: SymbolFlags::None,
+        });
+        let data = object.write().expect("fixture ELF");
+        let diagnostic_path = Path::new("authenticated-snapshot-does-not-exist.o");
+
+        let body =
+            inspect_function_body_at_data(diagnostic_path, &data, None, "duplicate", Some(second))
+                .expect("body from authenticated bytes");
+
+        assert_eq!(body.artifact, diagnostic_path.display().to_string());
+        assert_eq!(body.address, second);
+        assert_eq!(body.instructions.len(), 1);
+        assert_eq!(body.instructions[0].text, "ret");
+        assert!(
+            body.labels
+                .iter()
+                .any(|label| label.offset == 0 && label.name == "selected_label"),
+            "{:?}",
+            body.labels
+        );
     }
 
     #[test]

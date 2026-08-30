@@ -6,7 +6,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::{ProjectSpec, Result, artifacts, interfaces::SemanticCatalogs};
+use crate::{ProjectSpec, Result, artifact, artifacts, interfaces::SemanticCatalogs};
 
 mod replay;
 
@@ -741,6 +741,57 @@ fn investigate_static_event_callback(
             "event initializer callback no longer resolves to the reviewed function",
         ));
     }
+    let delivery_profile = profile(project, &route.delivery_profile)?;
+    let delivery_reader = artifacts::LinkedIrReader::open(&delivery_profile.output)?;
+    let delivery = route_function(
+        &delivery_reader,
+        &route.id,
+        &route.delivery_source,
+        &route.delivery_entry,
+        "event delivery loop",
+    )?;
+    let receive_call = stored_exact_call(
+        &delivery,
+        &route.receive_call,
+        route.receive_site,
+        &route.id,
+        "event receive",
+    )?;
+    if !receive_call.result_modeled() {
+        return Err(route_mismatch(
+            &route.id,
+            "event receive does not expose a modeled return pointer",
+        ));
+    }
+    let receive_queue = stored_exact_argument(
+        receive_call,
+        route.receive_queue_argument,
+        &route.id,
+        "receive queue",
+    )?;
+    let run_call = stored_exact_call(
+        &delivery,
+        &route.run_call,
+        route.run_site,
+        &route.id,
+        "event run",
+    )?;
+    let run_event = run_call
+        .arguments
+        .get(usize::from(route.run_event_argument))
+        .ok_or_else(|| route_mismatch(&route.id, "event run argument is absent"))?;
+    let delivery_artifact =
+        delivery_reader.authenticated_source_artifact(&route.delivery_source)?;
+    let delivery_body = artifact::inspect_function_body_at_data(
+        &delivery_artifact.path,
+        &delivery_artifact.bytes,
+        delivery.member.as_deref(),
+        &delivery.symbol,
+        delivery.address.map(u64::from),
+    )?;
+    let delivery_order =
+        super::cfg::must_execute_before(&delivery_body, route.receive_site, route.run_site);
+    let run_event_exact = run_call.argument_is_exact(usize::from(route.run_event_argument));
     let mut steps = Vec::new();
     for (edge, site) in route.upstream_chain.windows(2).zip(&route.upstream_sites) {
         let owner = route_function(
@@ -790,9 +841,10 @@ fn investigate_static_event_callback(
         width: Some(32),
         address: Some(callback_address),
         register: None,
-        value: Some(expected_callback),
+        value: Some(expected_callback.clone()),
         origin_path: None,
     }];
+    let mut dispatch_queues = BTreeSet::new();
     for site in &route.dispatch_sites {
         let call = stored_exact_call(
             &dispatcher,
@@ -813,6 +865,15 @@ fn investigate_static_event_callback(
                 "event enqueue object differs from initialized callback object",
             ));
         }
+        dispatch_queues.insert(
+            stored_exact_argument(
+                call,
+                route.dispatch_queue_argument,
+                &route.id,
+                "dispatch queue",
+            )?
+            .to_owned(),
+        );
         steps.push(observed_direct_call_step(
             &route.execution_context,
             &route.dispatcher,
@@ -838,13 +899,80 @@ fn investigate_static_event_callback(
             origin_path: None,
         });
     }
-    let mut blockers = vec![FlowBlocker::manual(
-        "static-event-delivery-unmodeled",
-        "event initialization and enqueue are exact, but eventq_get return-pointer flow through event.run into the stored callback is not modeled",
-        "model the generic eventq_get return pointer plus stateful event.init/event.run callback dispatch, then replay the exact queue instance",
-    )];
+    steps.push(observed_direct_call_step(
+        &route.execution_context,
+        &route.delivery_entry,
+        &receive_call.target,
+        receive_call,
+        &delivery_profile.output,
+    ));
+    steps.push(observed_direct_call_step(
+        &route.execution_context,
+        &route.delivery_entry,
+        &run_call.target,
+        run_call,
+        &delivery_profile.output,
+    ));
+    steps.push(reviewed_stateful_callback_step(
+        route,
+        run_call.site,
+        run_event,
+        run_event_exact,
+        &delivery_profile.output,
+    ));
+    effects.extend([
+        FlowEffectEvidence {
+            kind: "queue".to_owned(),
+            evidence: EvidenceLevel::Reviewed,
+            function: route.delivery_entry.clone(),
+            site: receive_call.site,
+            operation: receive_call.semantic_operation.clone(),
+            detail: format!(
+                "reviewed stateful delivery contract receives an event pointer from queue {receive_queue}"
+            ),
+            constant: parse_constant(receive_queue).map(u64::from),
+            access: Some("receive".to_owned()),
+            width: Some(32),
+            address: parse_constant(receive_queue),
+            register: None,
+            value: Some(receive_queue.to_owned()),
+            origin_path: None,
+        },
+        FlowEffectEvidence {
+            kind: "event".to_owned(),
+            evidence: EvidenceLevel::Reviewed,
+            function: route.delivery_entry.clone(),
+            site: run_call.site,
+            operation: run_call.semantic_operation.clone(),
+            detail: delivery_order.as_ref().map_or_else(
+                || format!(
+                    "reviewed receive/run contract dispatches the callback stored by event.init; current CFG does not prove receive before run, and generated run argument is {run_event}"
+                ),
+                |order| format!(
+                    "reviewed receive/run contract dispatches the callback stored by event.init; {} proves receive block {} precedes run block {}, and generated run argument is {run_event}",
+                    order.proof,
+                    order.earlier_block,
+                    order.later_block,
+                ),
+            ),
+            constant: None,
+            access: Some("dispatch".to_owned()),
+            width: Some(32),
+            address: Some(callback_address),
+            register: None,
+            value: Some(expected_callback.clone()),
+            origin_path: None,
+        },
+    ]);
+    let mut blockers = vec![
+        stateful_delivery_blocker(&dispatch_queues, receive_queue),
+        receive_result_flow_blocker(run_event, run_event_exact),
+    ];
+    if let Some(blocker) = receive_run_order_blocker(delivery_order.is_some()) {
+        blockers.push(blocker);
+    }
     let examined_edges = steps.len();
-    let loaded_functions = route.upstream_chain.len() + 2;
+    let loaded_functions = route.upstream_chain.len() + 3;
     let analysis_limited =
         enforce_reviewed_route_limit(&mut steps, &mut effects, request.max_depth, &mut blockers);
     finalize_event_route_semantic_evidence(&route.id, &mut effects)?;
@@ -867,12 +995,7 @@ fn investigate_static_event_callback(
         target_kind: Some("static-event-callback".to_owned()),
         target,
         route: Some(route.id.clone()),
-        claims: FlowClaims {
-            structural_navigation: !analysis_limited,
-            path_feasibility: false,
-            event_delivery: false,
-            executable_equivalence: false,
-        },
+        claims: reviewed_callback_route_claims(!analysis_limited),
         limits: FlowLimits {
             max_depth: request.max_depth,
             visited_nodes: loaded_functions,
@@ -1036,6 +1159,19 @@ fn investigate_broker_subscription(
             ),
         ));
     }
+    let binding_artifact = binding_reader.authenticated_source_artifact(&route.binding_source)?;
+    let binding_body = artifact::inspect_function_body_at_data(
+        &binding_artifact.path,
+        &binding_artifact.bytes,
+        binding.member.as_deref(),
+        &binding.symbol,
+        binding.address.map(u64::from),
+    )?;
+    let callback_store_order = super::cfg::must_execute_before(
+        &binding_body,
+        route.binding_callback_store_site,
+        route.binding_site,
+    );
     let case = stored_exact_direct_call(
         &callback,
         &route.case_handler.function,
@@ -1088,9 +1224,23 @@ fn investigate_broker_subscription(
             function: route.binding_entry.clone(),
             site: Some(route.binding_callback_store_site),
             operation: Some("callback-pointer-store".to_owned()),
-            detail: format!(
-                "store {} into the exact subscribed object at offset {:#x}",
-                route.callback_function, route.binding_callback_store_offset
+            detail: callback_store_order.as_ref().map_or_else(
+                || {
+                    format!(
+                        "store {} into the exact subscribed object at offset {:#x}",
+                        route.callback_function, route.binding_callback_store_offset
+                    )
+                },
+                |order| {
+                    format!(
+                        "store {} into the exact subscribed object at offset {:#x}; {} proves store block {} precedes subscription block {}",
+                        route.callback_function,
+                        route.binding_callback_store_offset,
+                        order.proof,
+                        order.earlier_block,
+                        order.later_block,
+                    )
+                },
             ),
             constant: Some(u64::from(callback_address)),
             access: Some("write".to_owned()),
@@ -1165,11 +1315,9 @@ fn investigate_broker_subscription(
             target = Some(terminal.function.clone());
         }
     }
-    blockers.push(FlowBlocker::manual(
-        "callback-store-dominance-unproven",
-        "the callback store and subscription object are exact, but the reviewed structural facts do not prove that the store dominates every subscription path",
-        "preserve a common CFG/path witness for the callback store and subscription call",
-    ));
+    if let Some(blocker) = callback_store_dominance_blocker(callback_store_order.is_some()) {
+        blockers.push(blocker);
+    }
     let examined_edges = steps.len();
     analysis_limited |=
         enforce_reviewed_route_limit(&mut steps, &mut effects, request.max_depth, &mut blockers);
@@ -1177,11 +1325,7 @@ fn investigate_broker_subscription(
     if analysis_limited {
         target = steps.last().map(|step| step.callee.clone());
     }
-    blockers.push(FlowBlocker::manual(
-        "broker-listener-order-unproven",
-        "attach, subscription, selector guard and continuation are exact, but listener ordering and callback stop/continue semantics of the indirect broker walk are not executable evidence",
-        "model or replay the generic broker listener walk with the reviewed source domain and registered listener object",
-    ));
+    blockers.extend(broker_delivery_blockers());
     for (ordinal, step) in steps.iter_mut().enumerate() {
         step.ordinal = ordinal;
     }
@@ -1196,12 +1340,7 @@ fn investigate_broker_subscription(
         target_kind: Some("broker-subscription".to_owned()),
         target,
         route: Some(route.id.clone()),
-        claims: FlowClaims {
-            structural_navigation: !analysis_limited,
-            path_feasibility: false,
-            event_delivery: false,
-            executable_equivalence: false,
-        },
+        claims: reviewed_callback_route_claims(!analysis_limited),
         limits: FlowLimits {
             max_depth: request.max_depth,
             visited_nodes: loaded_functions,
@@ -1215,6 +1354,21 @@ fn investigate_broker_subscription(
         rust_boundaries: Vec::new(),
         blockers,
     })
+}
+
+fn broker_delivery_blockers() -> [FlowBlocker; 2] {
+    [
+        FlowBlocker::manual(
+            "broker-subscriber-lifetime-unproven",
+            "attach, callback store and subscription are exact, but initialization, insertion lifetime and unsubscribe ordering are not joined into one broker epoch",
+            "join the exact subscribe and unsubscribe paths to the publisher epoch, or replay that broker epoch",
+        ),
+        FlowBlocker::manual(
+            "broker-prior-listener-result-unproven",
+            "the selector guard and callback continuation are exact, but earlier listeners in the broker walk can stop delivery and their selector-specific return values are not modeled",
+            "prove every preceding listener continues for this selector, or replay the exact listener ordering and return values",
+        ),
+    ]
 }
 
 fn route_function(
@@ -1498,6 +1652,115 @@ fn observed_direct_call_step(
         guards: call.guard_expressions(),
         origin: origin.display().to_string(),
     }
+}
+
+/// Project the reviewed NPL state transition without pretending that the
+/// opaque platform boundary is an observed indirect call. `event.init` owns
+/// the callback binding, while the generated IR currently exposes the
+/// `event.run` argument without proving that it is the result token returned
+/// by `eventq_get`. Queue identity and receive-result dataflow remain separate
+/// obligations handled by the caller.
+fn reviewed_stateful_callback_step(
+    route: &crate::function_workspace::ReviewedStaticEventCallbackRoute,
+    site: Option<u32>,
+    run_event: &str,
+    run_event_exact: bool,
+    origin: &std::path::Path,
+) -> FlowStepEvidence {
+    FlowStepEvidence {
+        ordinal: 0,
+        evidence: EvidenceLevel::Reviewed,
+        context_evidence: EvidenceLevel::Reviewed,
+        context: route.execution_context.clone(),
+        caller: route.delivery_entry.clone(),
+        callee: route.callback_function.clone(),
+        site,
+        kind: "stateful-callback-dispatch".to_owned(),
+        tail: false,
+        argument_shapes: 1,
+        arguments: vec![FlowArgumentEvidence {
+            position: usize::from(route.run_event_argument),
+            local: "event-run-argument".to_owned(),
+            resolved: run_event.to_owned(),
+            constants: Vec::new(),
+            provenance: if run_event_exact {
+                "generated-linked-ir-exact; receive-result relation unproven"
+            } else {
+                "generated-linked-ir-non-exact; receive-result relation unproven"
+            },
+            pointee: Vec::new(),
+        }],
+        guards: Vec::new(),
+        origin: origin.display().to_string(),
+    }
+}
+
+fn receive_result_flow_blocker(run_event: &str, run_event_exact: bool) -> FlowBlocker {
+    let precision = if run_event_exact {
+        "exact"
+    } else {
+        "non-exact"
+    };
+    FlowBlocker::manual(
+        "event-receive-result-flow-unproven",
+        format!(
+            "event.run argument is generated {precision} value {run_event}, but linked IR does not prove that it is the result token returned by eventq_get"
+        ),
+        "preserve result-token identity through eventq_get and event.run in linked IR, then validate the exact receive-to-run argument relation",
+    )
+}
+
+fn receive_run_order_blocker(proven: bool) -> Option<FlowBlocker> {
+    (!proven).then(|| {
+        FlowBlocker::manual(
+            "event-receive-run-order-unproven",
+            "the current conservative CFG does not prove that eventq_get executes before the reached event.run call",
+            "preserve a complete common CFG witness for eventq_get and event.run",
+        )
+    })
+}
+
+fn reviewed_callback_route_claims(structural_navigation: bool) -> FlowClaims {
+    FlowClaims {
+        structural_navigation,
+        path_feasibility: false,
+        event_delivery: false,
+        executable_equivalence: false,
+    }
+}
+
+fn stateful_delivery_blocker(
+    dispatch_queues: &BTreeSet<String>,
+    receive_queue: &str,
+) -> FlowBlocker {
+    if dispatch_queues.len() == 1 && dispatch_queues.contains(receive_queue) {
+        FlowBlocker::manual(
+            "event-delivery-not-replayed",
+            format!(
+                "the stateful callback contract and exact queue value {receive_queue} join enqueue to receive/run, but no execution replay proves this queue instance"
+            ),
+            "replay this exact queue instance and retain enqueue, receive, run, and callback evidence",
+        )
+    } else {
+        FlowBlocker::manual(
+            "event-queue-instance-unresolved",
+            format!(
+                "stateful event.init/receive/run callback dispatch is modeled, but enqueue queue values {:?} do not resolve to receive queue {receive_queue}",
+                dispatch_queues
+            ),
+            "resolve the enqueue-side queue producer to the exact receive queue value, then replay that queue instance",
+        )
+    }
+}
+
+fn callback_store_dominance_blocker(proven: bool) -> Option<FlowBlocker> {
+    (!proven).then(|| {
+        FlowBlocker::manual(
+            "callback-store-dominance-unproven",
+            "the callback store and subscription object are exact, but the current conservative CFG does not prove that the store executes before every reached subscription",
+            "preserve a complete common CFG witness for the callback store and subscription call",
+        )
+    })
 }
 
 /// Semantic operation names in an event-route report originate in reviewed
@@ -1797,6 +2060,79 @@ mod tests {
         assert_eq!(steps.len(), 1);
         assert_eq!(blockers.len(), 1);
         assert_eq!(blockers[0].kind, "analysis-limit");
+    }
+
+    #[test]
+    fn stateful_delivery_fails_closed_when_queue_instances_do_not_join() {
+        let dispatch_queues = BTreeSet::from([
+            "result_of_fixture__queue_0x00001000".to_owned(),
+            "result_of_fixture__queue_0x00001004".to_owned(),
+        ]);
+
+        let blocker = stateful_delivery_blocker(&dispatch_queues, "memory:fixture::queue+0x8");
+
+        assert_eq!(blocker.kind, "event-queue-instance-unresolved");
+    }
+
+    #[test]
+    fn stateful_delivery_requires_replay_after_exact_queue_join() {
+        let queue = "memory:fixture::queue+0x8";
+        let dispatch_queues = BTreeSet::from([queue.to_owned()]);
+
+        let blocker = stateful_delivery_blocker(&dispatch_queues, queue);
+
+        assert_eq!(blocker.kind, "event-delivery-not-replayed");
+    }
+
+    #[test]
+    fn stateful_delivery_requires_typed_receive_result_flow() {
+        let exact = receive_result_flow_blocker("memory:fixture::event", true);
+        assert_eq!(exact.kind, "event-receive-result-flow-unproven");
+        assert!(exact.message.contains("generated exact value"));
+
+        let non_exact = receive_result_flow_blocker("varies-across-2-shapes", false);
+        assert_eq!(non_exact.kind, "event-receive-result-flow-unproven");
+        assert!(non_exact.message.contains("generated non-exact value"));
+    }
+
+    #[test]
+    fn stateful_delivery_order_closes_only_after_a_cfg_witness() {
+        assert!(receive_run_order_blocker(true).is_none());
+        assert_eq!(
+            receive_run_order_blocker(false)
+                .expect("missing witness must retain a blocker")
+                .kind,
+            "event-receive-run-order-unproven"
+        );
+    }
+
+    #[test]
+    fn reviewed_callback_routes_never_claim_delivery_or_path_feasibility() {
+        for structural_navigation in [false, true] {
+            let claims = reviewed_callback_route_claims(structural_navigation);
+            assert_eq!(claims.structural_navigation, structural_navigation);
+            assert!(!claims.path_feasibility);
+            assert!(!claims.event_delivery);
+            assert!(!claims.executable_equivalence);
+        }
+    }
+
+    #[test]
+    fn broker_dominance_blocker_closes_only_after_a_cfg_witness() {
+        assert!(callback_store_dominance_blocker(true).is_none());
+        assert_eq!(
+            callback_store_dominance_blocker(false)
+                .expect("missing witness must retain a blocker")
+                .kind,
+            "callback-store-dominance-unproven"
+        );
+    }
+
+    #[test]
+    fn broker_delivery_reports_lifetime_and_prior_listener_obligations_separately() {
+        let blockers = broker_delivery_blockers();
+        assert_eq!(blockers[0].kind, "broker-subscriber-lifetime-unproven");
+        assert_eq!(blockers[1].kind, "broker-prior-listener-result-unproven");
     }
 
     #[test]

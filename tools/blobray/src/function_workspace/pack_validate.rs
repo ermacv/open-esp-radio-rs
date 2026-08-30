@@ -333,6 +333,41 @@ fn validate_static_event_callback(
         &route.id,
         "dispatch",
     )?;
+    let delivery = require_function(
+        facts,
+        &route.delivery_profile,
+        &route.delivery_source,
+        &route.delivery_entry,
+        &route.id,
+    )?;
+    let receive = exact_call(
+        delivery,
+        &route.receive_call,
+        route.receive_site,
+        &route.id,
+        "event receive",
+    )?;
+    require_modeled_result(receive, &route.id, "event receive")?;
+    exact_argument(
+        receive,
+        route.receive_queue_argument,
+        &route.id,
+        "receive queue",
+    )?;
+    let run = exact_call(
+        delivery,
+        &route.run_call,
+        route.run_site,
+        &route.id,
+        "event run",
+    )?;
+    if run
+        .arguments
+        .get(usize::from(route.run_event_argument))
+        .is_none()
+    {
+        return Err(event_route_error(&route.id, "event run argument is absent"));
+    }
     let callback = require_function(
         facts,
         &route.callback_profile,
@@ -360,6 +395,14 @@ fn validate_static_event_callback(
         &route.id,
         "dispatch object",
     )?;
+    for dispatch in &dispatches {
+        exact_argument(
+            dispatch,
+            route.dispatch_queue_argument,
+            &route.id,
+            "dispatch queue",
+        )?;
+    }
     if dispatches.iter().skip(1).any(|call| {
         call.arguments
             .get(usize::from(route.dispatch_object_argument))
@@ -404,6 +447,18 @@ fn validate_static_event_callback_shape(
         return Err(event_route_error(
             &route.id,
             "binding object and callback arguments must be distinct",
+        ));
+    }
+    if route.dispatch_object_argument == route.dispatch_queue_argument {
+        return Err(event_route_error(
+            &route.id,
+            "dispatch queue and event-object arguments must be distinct",
+        ));
+    }
+    if route.receive_site == route.run_site {
+        return Err(event_route_error(
+            &route.id,
+            "event receive and run sites must be distinct",
         ));
     }
     if route.upstream_chain.len() < 2
@@ -936,6 +991,21 @@ fn event_route_error(route: &str, message: impl Into<String>) -> ValidationError
     )
 }
 
+fn require_modeled_result(
+    call: &super::FunctionCallFact,
+    route: &str,
+    role: &str,
+) -> ValidationResult<()> {
+    if call.result_modeled {
+        Ok(())
+    } else {
+        Err(event_route_error(
+            route,
+            format!("{role} does not expose a modeled return value"),
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -945,6 +1015,7 @@ mod tests {
             kind: "direct".to_owned(),
             target: "fixture::target".to_owned(),
             direct: true,
+            result_modeled: true,
             semantic_operation: None,
             site: Some(0x1000),
             arguments: arguments.into_iter().map(str::to_owned).collect(),
@@ -1026,6 +1097,15 @@ mod tests {
             .unwrap(),
             "const:0x00000004"
         );
+    }
+
+    #[test]
+    fn stateful_receive_requires_a_modeled_return_value() {
+        let mut receive = call(vec!["const:0x00002000"], vec![true]);
+        receive.result_modeled = false;
+        let error = require_modeled_result(&receive, "fixture", "event receive")
+            .expect_err("opaque receive result must fail closed");
+        assert!(error.to_string().contains("modeled return value"));
     }
 
     #[test]

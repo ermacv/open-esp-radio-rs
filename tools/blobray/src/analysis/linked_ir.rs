@@ -29,6 +29,12 @@ const LINKED_CONTEXT_ARGUMENTS: u8 = 16;
 const MAX_LINKED_IR_JOBS: usize = 8;
 const LINKED_IR_WORKER_STACK_BYTES: usize = 16 * 1024 * 1024;
 
+// Hard-cut whenever direct structural exploration or its projection changes.
+// The project-stage cache fingerprints this domain as well as the per-function
+// store, so a semantic cut cannot leave a previously generated linked-IR
+// bundle looking current.
+pub(crate) const FUNCTION_FACT_CACHE_DOMAIN: &[u8] = b"blobray/direct-function-facts/v17\0";
+
 mod model;
 
 pub(crate) use model::*;

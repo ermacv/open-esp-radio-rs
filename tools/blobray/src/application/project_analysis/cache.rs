@@ -835,6 +835,12 @@ impl ProjectAnalysisCache {
             digest.update([0]);
             digest.update(schema.command.as_bytes());
         }
+        if let Some(domain) = stage_analysis_domain(stage) {
+            digest.update([0]);
+            digest.update(b"analysis-domain");
+            digest.update([0]);
+            digest.update(domain);
+        }
         if stage_uses_compiled_knowledge(stage) {
             digest.update([0]);
             digest.update(self.compiled_knowledge_identity.as_bytes());
@@ -1072,6 +1078,14 @@ fn stage_artifact_schema(stage: &str) -> Option<crate::artifacts::ArtifactSchema
     }
 }
 
+fn stage_analysis_domain(stage: &str) -> Option<&'static [u8]> {
+    let owner = stage.split_once(':').map_or(stage, |(owner, _)| owner);
+    match owner {
+        "linked-ir" => Some(crate::analysis::FUNCTION_FACT_CACHE_DOMAIN),
+        _ => None,
+    }
+}
+
 /// Explicit semantic revision of each cached generator.
 ///
 /// A digest of the whole executable made presentation-only changes invalidate
@@ -1093,15 +1107,15 @@ fn stage_revision(stage: &str) -> Result<u32> {
         "navigation-index" => Ok(2),
         "code-boundary-review" => Ok(1),
         "register-review" => Ok(1),
-        "function-review" => Ok(1),
+        "function-review" => Ok(2),
         "code-boundary-validation:deny-unreviewed=false"
         | "code-boundary-validation:deny-unreviewed=true"
         | "register-validation:deny-unreviewed=false"
         | "register-validation:deny-unreviewed=true"
-        | "function-validation:deny-unreviewed=false"
-        | "function-validation:deny-unreviewed=true"
         | "interface-validation:deny-unreviewed=false"
         | "interface-validation:deny-unreviewed=true" => Ok(1),
+        "function-validation:deny-unreviewed=false"
+        | "function-validation:deny-unreviewed=true" => Ok(2),
         _ => Err(crate::Error::invalid(format!(
             "analysis cache has no semantic revision for stage {stage:?}"
         ))),
@@ -1823,6 +1837,19 @@ mod tests {
             Some(crate::artifacts::REPLAY_EVIDENCE)
         );
         assert_eq!(stage_artifact_schema("register-review"), None);
+    }
+
+    #[test]
+    fn linked_ir_stage_fingerprints_the_function_fact_analysis_domain() {
+        assert_eq!(
+            stage_analysis_domain("linked-ir"),
+            Some(crate::analysis::FUNCTION_FACT_CACHE_DOMAIN)
+        );
+        assert_eq!(
+            stage_analysis_domain("linked-ir:any-profile"),
+            Some(crate::analysis::FUNCTION_FACT_CACHE_DOMAIN)
+        );
+        assert_eq!(stage_analysis_domain("function-review"), None);
     }
 
     #[test]

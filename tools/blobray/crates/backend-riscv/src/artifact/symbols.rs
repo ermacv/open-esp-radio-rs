@@ -139,14 +139,22 @@ pub fn load_code_symbols(
     selection: CodeSymbolSelection,
 ) -> Result<Vec<ArtifactSymbolDefinition>> {
     let data = crate::read_artifact(path)?;
+    load_code_symbols_from_data(&data, prefix, selection)
+}
+
+pub(super) fn load_code_symbols_from_data(
+    data: &[u8],
+    prefix: &str,
+    selection: CodeSymbolSelection,
+) -> Result<Vec<ArtifactSymbolDefinition>> {
     let mut symbols = Vec::new();
-    match FileKind::parse(data.as_slice())? {
+    match FileKind::parse(data)? {
         FileKind::Archive => {
-            let archive = ArchiveFile::parse(data.as_slice())?;
+            let archive = ArchiveFile::parse(data)?;
             for member in archive.members() {
                 let member = member?;
                 let name = String::from_utf8_lossy(member.name()).into_owned();
-                let member_data = member.data(data.as_slice())?;
+                let member_data = member.data(data)?;
                 if matches!(FileKind::parse(member_data), Ok(FileKind::Elf32)) {
                     collect_object_symbols(
                         member_data,
@@ -158,7 +166,7 @@ pub fn load_code_symbols(
                 }
             }
         }
-        FileKind::Elf32 => collect_object_symbols(&data, None, prefix, selection, &mut symbols)?,
+        FileKind::Elf32 => collect_object_symbols(data, None, prefix, selection, &mut symbols)?,
         kind => return Err(format!("unsupported artifact kind: {kind:?}").into()),
     }
     symbols.sort_by(|left, right| {

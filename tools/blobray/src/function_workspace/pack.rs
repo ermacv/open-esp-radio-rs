@@ -124,6 +124,7 @@ impl ReviewedEventRoute {
             Self::StaticEventCallback(route) => {
                 require(&route.profile, &route.dispatcher);
                 require(&route.binding_profile, &route.binding_entry);
+                require(&route.delivery_profile, &route.delivery_entry);
                 require(&route.callback_profile, &route.callback_function);
             }
             Self::BrokerSubscription(route) => {
@@ -170,6 +171,7 @@ pub(crate) struct ReviewedStaticEventCallbackRoute {
     pub(crate) upstream_chain: Vec<String>,
     pub(crate) upstream_sites: Vec<u32>,
     pub(crate) dispatch_object_argument: u8,
+    pub(crate) dispatch_queue_argument: u8,
     pub(crate) binding_profile: String,
     pub(crate) binding_source: String,
     pub(crate) binding_entry: String,
@@ -177,6 +179,15 @@ pub(crate) struct ReviewedStaticEventCallbackRoute {
     pub(crate) binding_site: u32,
     pub(crate) binding_object_argument: u8,
     pub(crate) binding_callback_argument: u8,
+    pub(crate) delivery_profile: String,
+    pub(crate) delivery_source: String,
+    pub(crate) delivery_entry: String,
+    pub(crate) receive_call: ReviewedEventCallMatcher,
+    pub(crate) receive_site: u32,
+    pub(crate) receive_queue_argument: u8,
+    pub(crate) run_call: ReviewedEventCallMatcher,
+    pub(crate) run_site: u32,
+    pub(crate) run_event_argument: u8,
     pub(crate) callback_profile: String,
     pub(crate) callback_source: String,
     pub(crate) callback_function: String,
@@ -462,12 +473,12 @@ impl FunctionPack {
             )
         })?;
         let document: DocumentMut = source_document.clone().into_mut();
-        if document.get("schema").and_then(Item::as_integer) != Some(10) {
+        if document.get("schema").and_then(Item::as_integer) != Some(11) {
             return Err(crate::error::BlobrayError::manifest_source(
                 "function pack",
                 path,
                 &input,
-                "requires schema = 10",
+                "requires schema = 11",
                 source_document.get("schema").and_then(Item::span),
             ));
         }

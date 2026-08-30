@@ -76,6 +76,7 @@ pub(crate) struct FunctionCallFact {
     pub(crate) kind: String,
     pub(crate) target: String,
     pub(crate) direct: bool,
+    pub(crate) result_modeled: bool,
     pub(crate) semantic_operation: Option<String>,
     pub(crate) site: Option<u32>,
     pub(crate) arguments: Vec<String>,

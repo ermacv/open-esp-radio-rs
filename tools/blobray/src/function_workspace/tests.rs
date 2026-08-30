@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn schema_v10_parses_reviewed_event_delivery_and_case_handler() {
+fn schema_v11_parses_reviewed_event_delivery_and_case_handler() {
     let directory = std::env::temp_dir().join(format!(
         "blobray-function-event-route-{}",
         std::process::id()
@@ -10,7 +10,7 @@ fn schema_v10_parses_reviewed_event_delivery_and_case_handler() {
     let pack_path = directory.join("functions.toml");
     std::fs::write(
         &pack_path,
-        r#"schema = 10
+        r#"schema = 11
 id = "fixture"
 
 [[event-routes]]
@@ -62,7 +62,7 @@ rationale = "Reviewed scheduler table maps signal 25 to the worker entry."
 }
 
 #[test]
-fn schema_v10_parses_distinct_callback_route_kinds() {
+fn schema_v11_parses_distinct_callback_route_kinds() {
     let directory = std::env::temp_dir().join(format!(
         "blobray-function-callback-routes-{}",
         std::process::id()
@@ -71,7 +71,7 @@ fn schema_v10_parses_distinct_callback_route_kinds() {
     let pack_path = directory.join("functions.toml");
     std::fs::write(
         &pack_path,
-        r#"schema = 10
+        r#"schema = 11
 id = "fixture"
 
 [[event-routes]]
@@ -87,6 +87,7 @@ dispatch-sites = [0x1010, 0x1020]
 upstream-chain = ["vendor::isr", "vendor::enqueue"]
 upstream-sites = [0x1010]
 dispatch-object-argument = 1
+dispatch-queue-argument = 0
 binding-profile = "controller"
 binding-source = "vendor"
 binding-entry = "vendor::init"
@@ -94,6 +95,15 @@ binding-operation = "event.init"
 binding-site = 0x1030
 binding-object-argument = 0
 binding-callback-argument = 1
+delivery-profile = "controller"
+delivery-source = "vendor"
+delivery-entry = "vendor::event_loop"
+receive-operation = "event.receive"
+receive-site = 0x1040
+receive-queue-argument = 0
+run-operation = "event.run"
+run-site = 0x1050
+run-event-argument = 0
 callback-profile = "controller"
 callback-source = "vendor"
 callback-function = "vendor::callback"
@@ -150,7 +160,11 @@ rationale = "The reviewed source domain, subscription, selector and handler are 
     assert!(matches!(
         &pack.event_routes[0],
         ReviewedEventRoute::StaticEventCallback(route)
-            if route.dispatch_sites.len() == 2 && route.callback_function == "vendor::callback"
+            if route.dispatch_sites.len() == 2
+                && route.callback_function == "vendor::callback"
+                && route.delivery_entry == "vendor::event_loop"
+                && route.receive_site == 0x1040
+                && route.run_site == 0x1050
     ));
     assert!(matches!(
         &pack.event_routes[1],
@@ -162,14 +176,14 @@ rationale = "The reviewed source domain, subscription, selector and handler are 
 }
 
 #[test]
-fn schema_v9_is_rejected_without_a_compatibility_path() {
+fn schema_v10_is_rejected_without_a_compatibility_path() {
     let directory = std::env::temp_dir().join(format!(
         "blobray-function-schema-cutover-{}",
         std::process::id()
     ));
     std::fs::create_dir_all(&directory).unwrap();
     let pack_path = directory.join("functions.toml");
-    std::fs::write(&pack_path, "schema = 9\nid = \"fixture\"\n").unwrap();
+    std::fs::write(&pack_path, "schema = 10\nid = \"fixture\"\n").unwrap();
     assert!(FunctionPack::load_reviewed(&pack_path).is_err());
     std::fs::remove_dir_all(directory).unwrap();
 }
@@ -487,7 +501,7 @@ fn reviewed_names_require_matching_digest_and_complete_explicit_claims() {
     let pack = directory.join("functions.toml");
     write_ir(&report);
     let reports = vec![("rom-phy".to_owned(), report)];
-    let reviewed = r#"schema = 10
+    let reviewed = r#"schema = 11
 id = "fixture"
 
 [[inputs]]
@@ -711,7 +725,7 @@ fn ignored_context_covers_its_observed_fields_without_claiming_names() {
     let pack = directory.join("functions.toml");
     write_ir(&report);
     let reports = vec![("rom-phy".to_owned(), report)];
-    let ignored = r#"schema = 10
+    let ignored = r#"schema = 11
 id = "fixture"
 
 [[inputs]]

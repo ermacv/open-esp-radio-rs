@@ -8,7 +8,7 @@ use core::marker::PhantomData;
 
 use open_esp_radio_esp32s31_hal::{
     Ieee802154Clocked, PhyInitializationAccess, Radio, SharedPhyAccess, SharedPhyContext,
-    state::Powered,
+    SharedPhyHal, state::Powered,
 };
 
 use crate::{
@@ -99,6 +99,10 @@ use crate::{
         PhyTxIqCoverExternalBinding, PhyTxIqInitCompletion, PhyTxIqInitExternalBinding,
         PhyTxIqLinearPowerCompletion, PhyTxIqLinearPowerExternalBinding, PhyTxIqLoopbackCompletion,
         PhyTxIqLoopbackExternalBinding, PhyTxIqMisPowerCompletion, PhyTxIqMisPowerExternalBinding,
+    },
+    registered_bluetooth::{
+        RegisteredBluetoothPhy, RegisteredBluetoothPhyClient,
+        RegisteredBluetoothPhyPendingTracking, RegisteredBluetoothPhyTrackPoisoned,
     },
     registered_radio::{
         RegisteredIeee802154Client, RegisteredIeee802154Clocked,
@@ -232,6 +236,122 @@ pub struct TargetPhyRegisterSuccess<P> {
     calibration_cache: Option<PhyCalibrationCache>,
     outcome: PhyRegisterOutcome,
     counters: PhyTargetPortCounters,
+}
+
+/// Caller-owned inputs for one borrowed Bluetooth common-PHY registration.
+///
+/// The runner creates its transition internally and borrows the outer
+/// Controller's platform and shared-PHY capabilities only for the duration of
+/// the target operation.
+pub struct TargetBluetoothPhyRegisterConfig {
+    calibration_identity: PhyCalibrationIdentity,
+    calibration_cache: Option<PhyCalibrationCache>,
+}
+
+impl TargetBluetoothPhyRegisterConfig {
+    /// Request one fresh full target registration and calibration cache.
+    pub const fn new(calibration_identity: PhyCalibrationIdentity) -> Self {
+        Self {
+            calibration_identity,
+            calibration_cache: None,
+        }
+    }
+
+    /// Supply a retained cache as validation input to the same full run.
+    pub fn with_calibration_cache(mut self, calibration_cache: PhyCalibrationCache) -> Self {
+        self.calibration_cache = Some(calibration_cache);
+        self
+    }
+}
+
+/// Successful borrowed Bluetooth target registration.
+///
+/// The registered owner contains the target-issued proof and a fresh private
+/// PHY client set. It does not retain or expose the borrowed outer Controller.
+#[must_use = "successful Bluetooth PHY registration retains its unique proof"]
+pub struct TargetBluetoothPhyRegisterSuccess {
+    registered_owner: RegisteredBluetoothPhy,
+    calibration_cache: Option<PhyCalibrationCache>,
+    outcome: PhyRegisterOutcome,
+    counters: PhyTargetPortCounters,
+}
+
+impl TargetBluetoothPhyRegisterSuccess {
+    /// Borrow the indivisible target-registered Bluetooth PHY owner.
+    pub const fn registered_owner(&self) -> &RegisteredBluetoothPhy {
+        &self.registered_owner
+    }
+
+    /// Borrow the fresh cache produced by this target run, when requested.
+    pub const fn calibration_cache(&self) -> Option<&PhyCalibrationCache> {
+        self.calibration_cache.as_ref()
+    }
+
+    /// Inspect the terminal source-owned registration result.
+    pub const fn outcome(&self) -> PhyRegisterOutcome {
+        self.outcome
+    }
+
+    /// Inspect concrete target operation counts for diagnostics.
+    pub const fn counters(&self) -> PhyTargetPortCounters {
+        self.counters
+    }
+
+    /// Move all successful outputs without exposing the registration proof.
+    pub fn into_parts(
+        self,
+    ) -> (
+        RegisteredBluetoothPhy,
+        Option<PhyCalibrationCache>,
+        PhyRegisterOutcome,
+        PhyTargetPortCounters,
+    ) {
+        (
+            self.registered_owner,
+            self.calibration_cache,
+            self.outcome,
+            self.counters,
+        )
+    }
+}
+
+/// Exact reason borrowed Bluetooth target registration did not mint a proof.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TargetBluetoothPhyRegisterError {
+    /// The recovered registration graph or one concrete target edge failed.
+    Run(PhyRegisterRunError<PhyTargetPortError>),
+    /// The runner reported success without its terminal semantic state owner.
+    MissingCompletedModelOwner,
+}
+
+/// Fail-stop result from borrowed Bluetooth PHY registration.
+///
+/// The borrowed platform and register capabilities return to their outer
+/// Controller, but this type exposes no retry or state extractor. Any failure
+/// may follow an ambiguous hardware edge; the outer Controller must retain its
+/// own fail-stop state until reset.
+#[must_use = "failed Bluetooth PHY registration retains the poisoned transition"]
+pub struct TargetBluetoothPhyRegisterFailure {
+    transition: PhyRegisterTransition,
+    counters: PhyTargetPortCounters,
+    error: TargetBluetoothPhyRegisterError,
+}
+
+impl TargetBluetoothPhyRegisterFailure {
+    /// Inspect the exact terminal failure.
+    pub const fn error(&self) -> TargetBluetoothPhyRegisterError {
+        self.error
+    }
+
+    /// Inspect concrete target operations completed before failure.
+    pub const fn counters(&self) -> PhyTargetPortCounters {
+        self.counters
+    }
+
+    /// Inspect the last semantic state for fail-stop diagnostics only.
+    pub fn state(&self) -> Option<&PhyState> {
+        self.transition.state()
+    }
 }
 
 /// Caller-owned persistence inputs for one dedicated IEEE 802.15.4 common-PHY
@@ -575,6 +695,49 @@ pub enum TargetPhyParamTrackingError {
 pub struct TargetPhyParamTrackingFailure<P> {
     poisoned: RegisteredPhyTrackPoisoned<P>,
     error: TargetPhyParamTrackingError,
+}
+
+/// Terminal successful tracking for the borrowed Bluetooth PHY owner.
+#[must_use = "successful Bluetooth PHY tracking returns its settled client owner"]
+pub struct TargetBluetoothPhyParamTrackingSuccess {
+    owner: RegisteredBluetoothPhyClient,
+    outcome: PhyParamTrackingOutcome,
+}
+
+impl TargetBluetoothPhyParamTrackingSuccess {
+    /// Borrow the settled Bluetooth PHY client owner.
+    pub const fn owner(&self) -> &RegisteredBluetoothPhyClient {
+        &self.owner
+    }
+
+    /// Inspect the exact source-owned tracking outcome.
+    pub const fn outcome(&self) -> PhyParamTrackingOutcome {
+        self.outcome
+    }
+
+    /// Move the settled owner and semantic outcome together.
+    pub fn into_parts(self) -> (RegisteredBluetoothPhyClient, PhyParamTrackingOutcome) {
+        (self.owner, self.outcome)
+    }
+}
+
+/// Fail-stop result from borrowed Bluetooth PHY tracking.
+#[must_use = "failed Bluetooth PHY tracking poisons its registered epoch"]
+pub struct TargetBluetoothPhyParamTrackingFailure {
+    poisoned: RegisteredBluetoothPhyTrackPoisoned,
+    error: TargetPhyParamTrackingError,
+}
+
+impl TargetBluetoothPhyParamTrackingFailure {
+    /// Inspect the exact target or completion failure.
+    pub const fn error(&self) -> TargetPhyParamTrackingError {
+        self.error
+    }
+
+    /// Borrow the poisoned owner for terminal diagnostics.
+    pub const fn poisoned(&self) -> &RegisteredBluetoothPhyTrackPoisoned {
+        &self.poisoned
+    }
 }
 
 /// Terminal successful periodic tracking on the dedicated IEEE route.
@@ -2327,6 +2490,56 @@ where
     }
 }
 
+/// Execute one pending Bluetooth-client tracking request with borrowed target
+/// capabilities.
+///
+/// The target-issued registration proof, live PHY state, Bluetooth client bit
+/// and scheduler request remain inside `tracking`. The outer Controller lends
+/// its platform and shared-PHY HAL only for this terminal operation. Any error
+/// consumes the request into [`RegisteredBluetoothPhyTrackPoisoned`].
+///
+/// # Cancellation
+///
+/// Once polled, this future must be driven to a terminal result. Cancellation
+/// drops the unique pending owner and requires an out-of-band hardware reset.
+#[must_use = "Bluetooth PHY tracking must be driven to a terminal result"]
+#[allow(
+    clippy::result_large_err,
+    reason = "the allocation-free failure retains the poisoned Bluetooth PHY epoch"
+)]
+pub async fn run_target_bluetooth_phy_param_tracking<P, D, O>(
+    platform: &mut P,
+    registers: &mut SharedPhyHal<'_>,
+    mut tracking: RegisteredBluetoothPhyPendingTracking,
+    observer: O,
+) -> Result<TargetBluetoothPhyParamTrackingSuccess, TargetBluetoothPhyParamTrackingFailure>
+where
+    D: PhyAsyncDelay,
+    O: PhyTargetObserver,
+{
+    let result = {
+        let (state, pending) = tracking.target_tracking_parts();
+        let mut port = TargetPhyParamTrackingPort::<_, _, D, _>::new(platform, registers, observer);
+        run_phy_param_tracking(pending, state, &mut port).await
+    };
+    let outcome = match result {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            return Err(TargetBluetoothPhyParamTrackingFailure {
+                poisoned: tracking.fail(),
+                error: TargetPhyParamTrackingError::Run(error),
+            });
+        }
+    };
+    match tracking.into_client_owner() {
+        Ok(owner) => Ok(TargetBluetoothPhyParamTrackingSuccess { owner, outcome }),
+        Err(tracking) => Err(TargetBluetoothPhyParamTrackingFailure {
+            poisoned: tracking.fail(),
+            error: TargetPhyParamTrackingError::MissingCompletedOwner,
+        }),
+    }
+}
+
 /// Execute one immediate or periodic tracking request on the dedicated IEEE
 /// 802.15.4 route.
 ///
@@ -2440,6 +2653,83 @@ impl<P, R: PhyInitializationAccess, D: PhyAsyncDelay, O: PhyTargetObserver> PhyR
         }
         result
     }
+}
+
+/// Run one fresh Bluetooth common-PHY registration through borrowed target
+/// capabilities.
+///
+/// This is the sole production mint path for [`RegisteredBluetoothPhy`]. The
+/// transition is created internally, every completion comes from the concrete
+/// ESP32-S31 target port, and the private registration witness is issued only
+/// after terminal success. The platform and shared-PHY HAL stay owned by the
+/// outer Bluetooth Controller and are never stored in the returned owner.
+///
+/// # Cancellation
+///
+/// Integrations must drive this future to a terminal result. Once polled,
+/// cancellation may strand a partially applied hardware edge; the outer
+/// Controller must then retain fail-stop ownership until hardware reset.
+#[must_use = "Bluetooth PHY registration must be driven to a terminal result"]
+#[allow(
+    clippy::result_large_err,
+    reason = "fail-stop error retains the allocation-free Bluetooth PHY transition"
+)]
+pub async fn run_target_bluetooth_phy_register<P, D, O>(
+    platform: &mut P,
+    registers: &mut SharedPhyHal<'_>,
+    config: TargetBluetoothPhyRegisterConfig,
+    observer: O,
+) -> Result<TargetBluetoothPhyRegisterSuccess, TargetBluetoothPhyRegisterFailure>
+where
+    D: PhyAsyncDelay,
+    O: PhyTargetObserver,
+{
+    let TargetBluetoothPhyRegisterConfig {
+        calibration_identity,
+        calibration_cache,
+    } = config;
+    let mut transition = PhyRegisterTransition::with_production_config_and_calibration(
+        calibration_identity,
+        calibration_cache,
+    );
+
+    let (result, counters) = {
+        let mut port = TargetPhyRegisterPort::<_, _, D, _>::new(platform, registers, observer);
+        let result = run_phy_register(&mut transition, &mut port).await;
+        (result, port.counters())
+    };
+
+    let outcome = match result {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            return Err(TargetBluetoothPhyRegisterFailure {
+                transition,
+                counters,
+                error: TargetBluetoothPhyRegisterError::Run(error),
+            });
+        }
+    };
+
+    let (state, calibration_cache) = match transition.into_model_parts() {
+        Ok(parts) => parts,
+        Err(transition) => {
+            return Err(TargetBluetoothPhyRegisterFailure {
+                transition,
+                counters,
+                error: TargetBluetoothPhyRegisterError::MissingCompletedModelOwner,
+            });
+        }
+    };
+
+    Ok(TargetBluetoothPhyRegisterSuccess {
+        registered_owner: RegisteredBluetoothPhy::from_target_completion(
+            state,
+            TargetRegistrationWitness::new(),
+        ),
+        calibration_cache,
+        outcome,
+        counters,
+    })
 }
 
 /// Drive the dedicated IEEE 802.15.4 owner through the recovered common-PHY

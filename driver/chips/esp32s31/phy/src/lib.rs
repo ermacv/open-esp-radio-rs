@@ -50,6 +50,7 @@ pub mod phy_txdc;
 pub mod phy_txdc_pwdet;
 pub mod phy_txiq;
 pub mod phy_xtal_duty;
+mod registered_bluetooth;
 mod registered_radio;
 mod size_limits;
 #[cfg(feature = "validation-probes")]
@@ -70,6 +71,11 @@ pub use phy_state::{
     PhyCalibrationSnapshot, PhyCommonCalibration, PhyConfig, PhyState, PhyWifiCalibration,
 };
 pub use phy_tx_power::{PhyTxTargetPowerPair, PhyTxTargetPowerProfile};
+pub use registered_bluetooth::{
+    RegisteredBluetoothPhy, RegisteredBluetoothPhyClient, RegisteredBluetoothPhyClientAcquire,
+    RegisteredBluetoothPhyClientAcquireFailure, RegisteredBluetoothPhyPendingTrack,
+    RegisteredBluetoothPhyPendingTracking, RegisteredBluetoothPhyTrackPoisoned,
+};
 pub use registered_radio::{
     RegisteredIeee802154Client, RegisteredIeee802154ClientAcquire,
     RegisteredIeee802154ClientAcquireFailure, RegisteredIeee802154Clocked,
@@ -93,6 +99,9 @@ pub use target_executor::{PhyAsyncDelay, PhyTargetPortError};
 #[cfg(target_arch = "riscv32")]
 pub use target_port::{
     NoopPhyTargetObserver, PhyRfBoundary, PhyTargetObserver, PhyTargetPortCounters,
+    TargetBluetoothPhyParamTrackingFailure, TargetBluetoothPhyParamTrackingSuccess,
+    TargetBluetoothPhyRegisterConfig, TargetBluetoothPhyRegisterError,
+    TargetBluetoothPhyRegisterFailure, TargetBluetoothPhyRegisterSuccess,
     TargetIeee802154PhyParamTrackingFailure, TargetIeee802154PhyParamTrackingSuccess,
     TargetIeee802154PhyRegisterConfig, TargetIeee802154PhyRegisterError,
     TargetIeee802154PhyRegisterFailure, TargetIeee802154PhyRegisterSuccess,
@@ -100,6 +109,7 @@ pub use target_port::{
     TargetPhyParamTrackingPort, TargetPhyParamTrackingSuccess, TargetPhyRegisterAttempt,
     TargetPhyRegisterError, TargetPhyRegisterFailure, TargetPhyRegisterPort,
     TargetPhyRegisterSuccess, TargetPhyRegisterTerminalParts,
+    run_target_bluetooth_phy_param_tracking, run_target_bluetooth_phy_register,
     run_target_ieee802154_phy_param_tracking, run_target_ieee802154_phy_register,
     run_target_phy_param_tracking, run_target_phy_register, select_phy_channel_with_hal,
     switch_phy_channel_with_hal_and_mac_restart,

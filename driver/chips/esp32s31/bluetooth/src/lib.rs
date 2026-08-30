@@ -32,20 +32,22 @@
 //! fresh primary scheduler event drives the finite post-unlink return gate;
 //! busy or command-pending events retain ownership without polling, while
 //! ready permits TX and RX-non-success recycle to release the exact timeline
-//! reservation before returning the CPU graph. RX success remains
-//! hardware-owned until its returned-header and swap-reserve ownership is
-//! closed.
+//! reservation before returning the CPU graph. A specialized RX-success path
+//! validates the bounded returned-header pair, accounts its graph-bound typed
+//! result, performs the corresponding append/re-arm rotation, releases the
+//! timeline and source list, and returns one non-copyable receiver session.
 //! Controller-SRAM allocation geometry and result parsing live in the separate
 //! `open-esp-radio-esp32s31-bluetooth-memory` layer below this LLL boundary;
-//! one bounded DTM RX transition accounts a result word without claiming its
-//! still-missing completed-header ownership or visibility fence.
+//! one bounded DTM RX transaction now owns the completed-header visibility and
+//! exact `observe -> account -> append/re-arm` sequence.
 //! The initialized scheduler now joins its software task endpoint to the exact
 //! task-side HAL owner, so one lock/modify event step can reach the restricted
 //! PAC without exporting register authority. The remaining components are not
-//! connected across the missing selector-6 invariant, RX-success recycle owner,
-//! live primary-ISR/executor composition,
+//! connected across the missing selector-6 invariant and live
+//! primary-ISR/executor composition,
 //! feature-specific NRT classification and live-route
-//! prerequisites. Stable two-owner ISR publication is connected, but no
+//! prerequisites. Recurring event publication and Test-End quiescence remain
+//! absent. Stable two-owner ISR publication is connected, but no
 //! current finite state
 //! claims that the complete controller lifecycle, HCI transport, task or live
 //! interrupt epoch has completed.
@@ -132,14 +134,15 @@ pub use controller_time::{
     BluetoothControllerTimeRequest, BluetoothControllerTimeRequestError,
     BluetoothControllerTimeWorkerPhase,
 };
-#[cfg(target_arch = "riscv32")]
-pub use dtm_event_prepare::BluetoothDtmRecycledEvent;
 pub use dtm_event_prepare::{
-    BluetoothDtmReceiverEvent, BluetoothDtmReviewedEventPrepareFailure,
+    BluetoothDtmReceiverCpuOwned, BluetoothDtmReceiverEvent,
+    BluetoothDtmReceiverEventPrepareFailure, BluetoothDtmReviewedEventPrepareFailure,
     BluetoothDtmReviewedEventWordsPlan, BluetoothDtmReviewedEventWordsPlanError,
     BluetoothDtmReviewedEventWordsPlanFailure, BluetoothDtmReviewedEventWordsPrepared,
     BluetoothDtmSchedulerBookkeepingPrepared, BluetoothDtmTransmitterEvent,
 };
+#[cfg(target_arch = "riscv32")]
+pub use dtm_event_prepare::{BluetoothDtmRecycledEvent, BluetoothDtmRxRearmedEvent};
 pub use dtm_event_timing::{
     BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerMargin, BluetoothDtmTxEventAdvance,
     BluetoothDtmTxEventWindow,
@@ -157,8 +160,8 @@ pub use dtm_payload::{
     BluetoothDtmPayloadPreparationError, BluetoothDtmPreparedPayload,
 };
 pub use dtm_rx_completion::{
-    BLUETOOTH_DTM_RX_INITIAL_RETURNED_BYTE, BluetoothDtmRxAccountingOutcome,
-    BluetoothDtmRxCompletionState,
+    BLUETOOTH_DTM_RX_INITIAL_RETURNED_BYTE, BluetoothDtmReceiverSession,
+    BluetoothDtmRxCompletionOutcome,
 };
 pub use dtm_scheduler_item::{
     BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerItemEventError,
@@ -243,8 +246,8 @@ pub use scheduler::{BluetoothDtmSchedulerCompletionObserved, BluetoothDtmSchedul
 pub use scheduler::{
     BluetoothDtmSchedulerHardwareHeadEmptyObserved,
     BluetoothDtmSchedulerHardwareHeadRetirementStep, BluetoothDtmSchedulerRecycleStep,
-    BluetoothDtmSchedulerSoftwareListRemovalReady, BluetoothDtmSchedulerSoftwareListUnlinkStep,
-    BluetoothDtmSchedulerSoftwareListUnlinked,
+    BluetoothDtmSchedulerRxSuccessRecycleStep, BluetoothDtmSchedulerSoftwareListRemovalReady,
+    BluetoothDtmSchedulerSoftwareListUnlinkStep, BluetoothDtmSchedulerSoftwareListUnlinked,
 };
 pub use scheduler_config::BluetoothSchedulerSoftwareConfig;
 pub use scheduler_finished_lists::{

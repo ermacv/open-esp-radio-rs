@@ -1553,108 +1553,189 @@ impl BluetoothDtmMemoryGraphRxSuccessRecyclePrepared {
         self.recycle
     }
 
-    /// Recycle scheduler links and perform the infallible RX two-slot suffix.
-    pub fn commit(self) -> BluetoothDtmMemoryGraphRxSuccessRecycleCleaned {
+    /// Commit generic scheduler cleanup and consume the validated returned-list
+    /// read into one affine observation.
+    ///
+    /// This clears only the already-retired scheduler links. The returned owner
+    /// alone can perform the RX append/re-arm suffix after the upper session
+    /// consumes the observation. No fallible operation may follow this edge.
+    pub fn observe(self) -> BluetoothDtmMemoryGraphRxSuccessObserved {
         let Self { recycle, plan } = self;
-        let mut memory = recycle.commit();
-        let observation = match plan {
+        let memory = recycle.commit();
+        match plan {
             BluetoothDtmRxRotationPlan::NoReturnedPacket { predecessor } => {
-                if let Some(predecessor) = predecessor {
-                    let storage = memory.storage.as_mut().project();
-                    let header = match predecessor {
-                        BluetoothDtmRxHeaderSlot::Primary => storage.rx_header,
-                        BluetoothDtmRxHeaderSlot::Swap => storage.rx_swap_reserve,
-                    };
-                    header.write_word(4, header.read_word(4) | 1);
+                BluetoothDtmMemoryGraphRxSuccessObserved {
+                    kind: BluetoothDtmMemoryGraphRxSuccessObservedKind::NoReturnedPacket(
+                        BluetoothDtmMemoryGraphRxNoReturnedPacketObserved {
+                            memory,
+                            predecessor,
+                        },
+                    ),
                 }
-                BluetoothDtmRxReturnedPacketObservation::NoReturnedPacket
             }
             BluetoothDtmRxRotationPlan::Rotate {
                 returned,
                 copy_target,
                 steady,
                 result_word,
-            } => {
-                let storage = memory.storage.as_mut().project();
-                let primary = &*storage.rx_header;
-                let swap = &*storage.rx_swap_reserve;
-                let returned_header = match returned {
-                    BluetoothDtmRxHeaderSlot::Primary => primary,
-                    BluetoothDtmRxHeaderSlot::Swap => swap,
-                };
-                let copy_header = match copy_target {
-                    BluetoothDtmRxHeaderSlot::Primary => primary,
-                    BluetoothDtmRxHeaderSlot::Swap => swap,
-                };
-                let returned_address = match returned {
-                    BluetoothDtmRxHeaderSlot::Primary => {
-                        memory.binding.rx_header.controller_address().address()
-                    }
-                    BluetoothDtmRxHeaderSlot::Swap => memory
-                        .binding
-                        .rx_swap_reserve
-                        .controller_address()
-                        .address(),
-                };
-                let copy_address = match copy_target {
-                    BluetoothDtmRxHeaderSlot::Primary => {
-                        memory.binding.rx_header.controller_address().address()
-                    }
-                    BluetoothDtmRxHeaderSlot::Swap => memory
-                        .binding
-                        .rx_swap_reserve
-                        .controller_address()
-                        .address(),
-                };
-                let copy_link = match copy_target {
-                    BluetoothDtmRxHeaderSlot::Primary => {
-                        memory.binding.rx_header.compressed_image()
-                    }
-                    BluetoothDtmRxHeaderSlot::Swap => {
-                        memory.binding.rx_swap_reserve.compressed_image()
-                    }
-                };
-
-                if steady {
-                    storage
-                        .link_state
-                        .write_word(LINK_STATE_RX_SWAP_RESERVE_OFFSET, copy_address);
-                    storage
-                        .link_state
-                        .write_word(LINK_STATE_RX_HEAD_OFFSET, returned_address);
-                    returned_header.write_word(5, 0);
-                }
-                returned_header.write_word(4, returned_header.read_word(4) & !1);
-                let returned_image = returned_header.snapshot_words();
-                copy_header.install(returned_image);
-                returned_header.write_word(1, returned_header.read_word(1) & !LOW_TWENTY_MASK);
-                storage
-                    .link_state
-                    .write_word(LINK_STATE_RX_SWAP_RESERVE_OFFSET, 0);
-                copy_header.write_word(5, 0);
-                storage.rx_packet.rearm_reviewed_packet_fields();
-                copy_header.write_word(3, copy_header.read_word(3) & !0x8000_0000);
-                copy_header.write_word(0, copy_header.read_word(0) & !LOW_TWENTY_MASK);
-                copy_header.write_word(5, 0);
-                returned_header.write_word(
-                    0,
-                    (returned_header.read_word(0) & !LOW_TWENTY_MASK) | copy_link,
-                );
-                storage
-                    .link_state
-                    .write_word(LINK_STATE_RX_TAIL_OFFSET, copy_address);
-                returned_header.write_word(4, returned_header.read_word(4) | 1);
-                copy_header.write_word(5, returned_address);
-
-                BluetoothDtmRxReturnedPacketObservation::Returned {
-                    projection: BluetoothDtmRxResultProjection::from_word(result_word),
-                }
-            }
-        };
-        BluetoothDtmMemoryGraphRxSuccessRecycleCleaned {
-            memory,
-            observation,
+            } => BluetoothDtmMemoryGraphRxSuccessObserved {
+                kind: BluetoothDtmMemoryGraphRxSuccessObservedKind::ReturnedPacket(
+                    BluetoothDtmMemoryGraphRxReturnedPacketObserved {
+                        memory,
+                        returned,
+                        copy_target,
+                        steady,
+                        projection: BluetoothDtmRxResultProjection::from_word(result_word),
+                    },
+                ),
+            },
         }
+    }
+}
+
+/// Affine result of the bounded RX returned-list observation.
+#[must_use = "the observed RX-success graph must be accounted and re-armed"]
+pub struct BluetoothDtmMemoryGraphRxSuccessObserved {
+    kind: BluetoothDtmMemoryGraphRxSuccessObservedKind,
+}
+
+enum BluetoothDtmMemoryGraphRxSuccessObservedKind {
+    NoReturnedPacket(BluetoothDtmMemoryGraphRxNoReturnedPacketObserved),
+    ReturnedPacket(BluetoothDtmMemoryGraphRxReturnedPacketObserved),
+}
+
+impl BluetoothDtmMemoryGraphRxSuccessObserved {
+    /// Consume the semantic observation before the infallible RX re-arm.
+    ///
+    /// The callback result is retained while this method consumes the sole
+    /// graph token. There is no public path that can re-arm either variant
+    /// without first executing the callback.
+    pub fn consume_then_commit<ResultValue>(
+        self,
+        consume: impl FnOnce(
+            Option<Result<BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError>>,
+        ) -> ResultValue,
+    ) -> (BluetoothDtmMemoryGraphRecycleCleaned, ResultValue) {
+        match self.kind {
+            BluetoothDtmMemoryGraphRxSuccessObservedKind::NoReturnedPacket(observed) => {
+                let result = consume(None);
+                (observed.commit_rearm(), result)
+            }
+            BluetoothDtmMemoryGraphRxSuccessObservedKind::ReturnedPacket(observed) => {
+                let result = consume(Some(observed.projection()));
+                (observed.commit_rotation(), result)
+            }
+        }
+    }
+}
+
+/// RX-success graph proving that no packet was returned by this event.
+#[must_use = "the no-packet RX graph must execute its infallible re-arm suffix"]
+struct BluetoothDtmMemoryGraphRxNoReturnedPacketObserved {
+    memory: BluetoothDtmMemoryGraphRecycleCleaned,
+    predecessor: Option<BluetoothDtmRxHeaderSlot>,
+}
+
+impl BluetoothDtmMemoryGraphRxNoReturnedPacketObserved {
+    fn commit_rearm(mut self) -> BluetoothDtmMemoryGraphRecycleCleaned {
+        if let Some(predecessor) = self.predecessor {
+            let storage = self.memory.storage.as_mut().project();
+            let header = match predecessor {
+                BluetoothDtmRxHeaderSlot::Primary => storage.rx_header,
+                BluetoothDtmRxHeaderSlot::Swap => storage.rx_swap_reserve,
+            };
+            header.write_word(4, header.read_word(4) | 1);
+        }
+        self.memory
+    }
+}
+
+/// RX-success graph binding one result projection to its exact rotation owner.
+#[must_use = "the returned packet must be accounted before its rotation owner is consumed"]
+struct BluetoothDtmMemoryGraphRxReturnedPacketObserved {
+    memory: BluetoothDtmMemoryGraphRecycleCleaned,
+    returned: BluetoothDtmRxHeaderSlot,
+    copy_target: BluetoothDtmRxHeaderSlot,
+    steady: bool,
+    projection: Result<BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError>,
+}
+
+impl BluetoothDtmMemoryGraphRxReturnedPacketObserved {
+    const fn projection(
+        &self,
+    ) -> Result<BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError> {
+        self.projection
+    }
+
+    fn commit_rotation(mut self) -> BluetoothDtmMemoryGraphRecycleCleaned {
+        let memory = &mut self.memory;
+        let storage = memory.storage.as_mut().project();
+        let primary = &*storage.rx_header;
+        let swap = &*storage.rx_swap_reserve;
+        let returned_header = match self.returned {
+            BluetoothDtmRxHeaderSlot::Primary => primary,
+            BluetoothDtmRxHeaderSlot::Swap => swap,
+        };
+        let copy_header = match self.copy_target {
+            BluetoothDtmRxHeaderSlot::Primary => primary,
+            BluetoothDtmRxHeaderSlot::Swap => swap,
+        };
+        let returned_address = match self.returned {
+            BluetoothDtmRxHeaderSlot::Primary => {
+                memory.binding.rx_header.controller_address().address()
+            }
+            BluetoothDtmRxHeaderSlot::Swap => memory
+                .binding
+                .rx_swap_reserve
+                .controller_address()
+                .address(),
+        };
+        let copy_address = match self.copy_target {
+            BluetoothDtmRxHeaderSlot::Primary => {
+                memory.binding.rx_header.controller_address().address()
+            }
+            BluetoothDtmRxHeaderSlot::Swap => memory
+                .binding
+                .rx_swap_reserve
+                .controller_address()
+                .address(),
+        };
+        let copy_link = match self.copy_target {
+            BluetoothDtmRxHeaderSlot::Primary => memory.binding.rx_header.compressed_image(),
+            BluetoothDtmRxHeaderSlot::Swap => memory.binding.rx_swap_reserve.compressed_image(),
+        };
+
+        if self.steady {
+            storage
+                .link_state
+                .write_word(LINK_STATE_RX_SWAP_RESERVE_OFFSET, copy_address);
+            storage
+                .link_state
+                .write_word(LINK_STATE_RX_HEAD_OFFSET, returned_address);
+            returned_header.write_word(5, 0);
+        }
+        returned_header.write_word(4, returned_header.read_word(4) & !1);
+        let returned_image = returned_header.snapshot_words();
+        copy_header.install(returned_image);
+        returned_header.write_word(1, returned_header.read_word(1) & !LOW_TWENTY_MASK);
+        storage
+            .link_state
+            .write_word(LINK_STATE_RX_SWAP_RESERVE_OFFSET, 0);
+        copy_header.write_word(5, 0);
+        storage.rx_packet.rearm_reviewed_packet_fields();
+        copy_header.write_word(3, copy_header.read_word(3) & !0x8000_0000);
+        copy_header.write_word(0, copy_header.read_word(0) & !LOW_TWENTY_MASK);
+        copy_header.write_word(5, 0);
+        returned_header.write_word(
+            0,
+            (returned_header.read_word(0) & !LOW_TWENTY_MASK) | copy_link,
+        );
+        storage
+            .link_state
+            .write_word(LINK_STATE_RX_TAIL_OFFSET, copy_address);
+        returned_header.write_word(4, returned_header.read_word(4) | 1);
+        copy_header.write_word(5, returned_address);
+        self.memory
     }
 }
 
@@ -1718,37 +1799,6 @@ impl core::fmt::Debug for BluetoothDtmMemoryGraphRxSuccessRecycleFailure {
             .debug_struct("BluetoothDtmMemoryGraphRxSuccessRecycleFailure")
             .field("error", &self.error)
             .finish_non_exhaustive()
-    }
-}
-
-/// Result of the bounded RX returned-list drain.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothDtmRxReturnedPacketObservation {
-    /// The successful scheduler event returned no completed RX packet.
-    NoReturnedPacket,
-    /// One returned packet was rotated and its reviewed result was observed.
-    Returned {
-        /// Accepted high-byte projection or valid non-counting result.
-        projection: Result<BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError>,
-    },
-}
-
-/// RX-success graph after scheduler cleanup and any required header rotation.
-#[must_use = "the cleaned RX graph and observation must reach the role owner"]
-pub struct BluetoothDtmMemoryGraphRxSuccessRecycleCleaned {
-    memory: BluetoothDtmMemoryGraphRecycleCleaned,
-    observation: BluetoothDtmRxReturnedPacketObservation,
-}
-
-impl BluetoothDtmMemoryGraphRxSuccessRecycleCleaned {
-    /// Recover the cleaned memory transaction and its bounded RX observation.
-    pub fn into_parts(
-        self,
-    ) -> (
-        BluetoothDtmMemoryGraphRecycleCleaned,
-        BluetoothDtmRxReturnedPacketObservation,
-    ) {
-        (self.memory, self.observation)
     }
 }
 
@@ -2286,12 +2336,13 @@ mod tests {
         BluetoothDtmLinkStateStorage, BluetoothDtmMemoryGraphBindError,
         BluetoothDtmMemoryGraphCompletionObservation, BluetoothDtmMemoryGraphCpuOwned,
         BluetoothDtmMemoryGraphHardwareOwned, BluetoothDtmMemoryGraphModelAddress,
-        BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphRecycleError,
-        BluetoothDtmMemoryGraphRecyclePrepared, BluetoothDtmMemoryGraphRxSuccessRecycleError,
+        BluetoothDtmMemoryGraphPrepareError, BluetoothDtmMemoryGraphRecycleCleaned,
+        BluetoothDtmMemoryGraphRecycleError, BluetoothDtmMemoryGraphRecyclePrepared,
+        BluetoothDtmMemoryGraphRxSuccessObserved, BluetoothDtmMemoryGraphRxSuccessRecycleError,
         BluetoothDtmMemoryGraphStorage, BluetoothDtmPositionalEventSeed,
         BluetoothDtmPositionalEventWords, BluetoothDtmRxBufferHeaderImage,
         BluetoothDtmRxPacketAddress, BluetoothDtmRxPacketAddressError, BluetoothDtmRxPacketStorage,
-        BluetoothDtmRxResultProjection, BluetoothDtmRxReturnedPacketObservation,
+        BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError,
         BluetoothDtmSchedulerAllocationConfig, BluetoothDtmSchedulerContextStorage,
         BluetoothDtmSchedulerItemCompletionStatus, BluetoothDtmSchedulerItemReviewedWords,
         BluetoothDtmSchedulerItemStorage, BluetoothDtmTxBufferHeaderImage,
@@ -2386,6 +2437,15 @@ mod tests {
         storage
             .rx_packet
             .write_word(RX_PACKET_METADATA_WORD, u32::from(metadata));
+    }
+
+    fn commit_rx_observed(
+        observed: BluetoothDtmMemoryGraphRxSuccessObserved,
+    ) -> (
+        BluetoothDtmMemoryGraphRecycleCleaned,
+        Option<Result<BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError>>,
+    ) {
+        observed.consume_then_commit(core::convert::identity)
     }
 
     fn rx_success_recycle_prepared(
@@ -2812,12 +2872,9 @@ mod tests {
         let prepared = rx_success_recycle_prepared(owner)
             .prepare_receiver_success()
             .expect("an incomplete initial tail is a valid empty RX result");
-        let (cleaned, observation) = prepared.commit().into_parts();
+        let (cleaned, projection) = commit_rx_observed(prepared.observe());
 
-        assert_eq!(
-            observation,
-            BluetoothDtmRxReturnedPacketObservation::NoReturnedPacket
-        );
+        assert_eq!(projection, None);
         let (owner, status) = cleaned.into_cpu_owned().into_parts();
         assert_eq!(status, BluetoothDtmSchedulerItemCompletionStatus::Success);
         let _prepared = owner
@@ -2829,31 +2886,29 @@ mod tests {
     fn rx_success_rotates_both_headers_across_recurring_events() {
         let first = hardware_owner_with_status(0x2f00_2d00, 0);
         script_current_rx_tail_returned(&first, 0xa500_0000, 0);
-        let (cleaned, first_observation) = rx_success_recycle_prepared(first)
-            .prepare_receiver_success()
-            .expect("the first completed tail has a valid swap plan")
-            .commit()
-            .into_parts();
+        let (cleaned, first_projection) = commit_rx_observed(
+            rx_success_recycle_prepared(first)
+                .prepare_receiver_success()
+                .expect("the first completed tail has a valid swap plan")
+                .observe(),
+        );
         assert_eq!(
-            first_observation,
-            BluetoothDtmRxReturnedPacketObservation::Returned {
-                projection: BluetoothDtmRxResultProjection::from_word(0xa500_0000),
-            }
+            first_projection,
+            Some(BluetoothDtmRxResultProjection::from_word(0xa500_0000))
         );
 
         let (owner, _) = cleaned.into_cpu_owned().into_parts();
         let second = hardware_owner_from_cpu(owner, 0);
         script_current_rx_tail_returned(&second, 0x3100_0001, 7);
-        let (cleaned, second_observation) = rx_success_recycle_prepared(second)
-            .prepare_receiver_success()
-            .expect("the alternate completed tail rotates back to the first slot")
-            .commit()
-            .into_parts();
+        let (cleaned, second_projection) = commit_rx_observed(
+            rx_success_recycle_prepared(second)
+                .prepare_receiver_success()
+                .expect("the alternate completed tail rotates back to the first slot")
+                .observe(),
+        );
         assert_eq!(
-            second_observation,
-            BluetoothDtmRxReturnedPacketObservation::Returned {
-                projection: BluetoothDtmRxResultProjection::from_word(0x3100_0001),
-            }
+            second_projection,
+            Some(BluetoothDtmRxResultProjection::from_word(0x3100_0001))
         );
 
         let (owner, _) = cleaned.into_cpu_owned().into_parts();
@@ -2866,36 +2921,33 @@ mod tests {
     fn steady_empty_event_preserves_the_chain_for_the_next_return() {
         let first = hardware_owner_with_status(0x2f00_3100, 0);
         script_current_rx_tail_returned(&first, 0, 0);
-        let (cleaned, _) = rx_success_recycle_prepared(first)
-            .prepare_receiver_success()
-            .expect("the first return is valid")
-            .commit()
-            .into_parts();
+        let (cleaned, _) = commit_rx_observed(
+            rx_success_recycle_prepared(first)
+                .prepare_receiver_success()
+                .expect("the first return is valid")
+                .observe(),
+        );
 
         let (owner, _) = cleaned.into_cpu_owned().into_parts();
         let empty = hardware_owner_from_cpu(owner, 0);
-        let (cleaned, observation) = rx_success_recycle_prepared(empty)
-            .prepare_receiver_success()
-            .expect("an incomplete steady tail is a valid empty event")
-            .commit()
-            .into_parts();
-        assert_eq!(
-            observation,
-            BluetoothDtmRxReturnedPacketObservation::NoReturnedPacket
+        let (cleaned, projection) = commit_rx_observed(
+            rx_success_recycle_prepared(empty)
+                .prepare_receiver_success()
+                .expect("an incomplete steady tail is a valid empty event")
+                .observe(),
         );
+        assert_eq!(projection, None);
 
         let (owner, _) = cleaned.into_cpu_owned().into_parts();
         let returned = hardware_owner_from_cpu(owner, 0);
         script_current_rx_tail_returned(&returned, 0x4200_0000, 3);
-        let (cleaned, observation) = rx_success_recycle_prepared(returned)
-            .prepare_receiver_success()
-            .expect("the tail after an empty recurrence remains returnable")
-            .commit()
-            .into_parts();
-        assert!(matches!(
-            observation,
-            BluetoothDtmRxReturnedPacketObservation::Returned { .. }
-        ));
+        let (cleaned, projection) = commit_rx_observed(
+            rx_success_recycle_prepared(returned)
+                .prepare_receiver_success()
+                .expect("the tail after an empty recurrence remains returnable")
+                .observe(),
+        );
+        assert!(projection.is_some());
         let _owner = cleaned.into_cpu_owned();
     }
 

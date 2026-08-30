@@ -14,7 +14,7 @@ use core::{convert::Infallible, marker::PhantomData};
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmMemoryGraphCompletionObservation, BluetoothDtmMemoryGraphCompletionObserved,
     BluetoothDtmMemoryGraphRecycleCleaned, BluetoothDtmMemoryGraphRecycleError,
-    BluetoothDtmSchedulerItemCompletionStatus,
+    BluetoothDtmMemoryGraphRxSuccessRecycleError, BluetoothDtmSchedulerItemCompletionStatus,
 };
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphPositionalEventPrepared,
@@ -37,7 +37,8 @@ use open_esp_radio_esp32s31_hal::{
 use crate::{
     BluetoothDtmLinkStateReset, BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern,
     BluetoothDtmPreparedTxGraph, BluetoothDtmRole, BluetoothSchedulerReservation,
-    BluetoothSchedulerSequenceReady, dtm_scheduler_item::apply_overlap_insertion_power,
+    BluetoothSchedulerSequenceReady, dtm_rx_completion::BluetoothDtmReceiverSession,
+    dtm_scheduler_item::apply_overlap_insertion_power,
 };
 
 /// Type marker for a transmitter event with a prepared packet prerequisite.
@@ -223,7 +224,7 @@ impl BluetoothDtmReviewedEventWordsPlan<BluetoothDtmTransmitterEvent> {
 
         Ok(BluetoothDtmReviewedEventWordsPrepared {
             memory: prepared,
-            packet: BluetoothDtmEventPacket::Transmitter { pattern, length },
+            context: BluetoothDtmEventContext::Transmitter { pattern, length },
             reservation: plan.reservation,
             _role: PhantomData,
         })
@@ -239,44 +240,123 @@ impl BluetoothDtmReviewedEventWordsPlan<BluetoothDtmReceiverEvent> {
         Self::new_for_role(link_state, reservation, BluetoothDtmRole::Receiver)
     }
 
-    /// Apply this RX plan to one exact ordinary CPU-owned graph.
+    /// Apply this RX plan to one exact graph/session aggregate.
     #[expect(
         clippy::result_large_err,
         reason = "no-alloc failure retains both the unchanged SRAM graph and affine reservation"
     )]
     pub fn prepare(
         self,
-        owner: BluetoothDtmMemoryGraphCpuOwned,
+        owner: BluetoothDtmReceiverCpuOwned,
     ) -> Result<
         BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmReceiverEvent>,
-        BluetoothDtmReviewedEventPrepareFailure<BluetoothDtmReceiverEvent>,
+        BluetoothDtmReceiverEventPrepareFailure,
     > {
         let plan = self;
-        let prepared = match owner
+        let BluetoothDtmReceiverCpuOwned { memory, session } = owner;
+        let prepared = match memory
             .try_prepare_positional_event(|seed| Ok::<_, Infallible>(plan.apply_to_seed(seed)))
         {
             Ok(prepared) => prepared,
             Err(memory) => {
-                return Err(BluetoothDtmReviewedEventPrepareFailure { memory, plan });
+                return Err(BluetoothDtmReceiverEventPrepareFailure {
+                    memory,
+                    plan,
+                    session,
+                });
             }
         };
 
         Ok(BluetoothDtmReviewedEventWordsPrepared {
             memory: prepared,
-            packet: BluetoothDtmEventPacket::Receiver,
+            context: BluetoothDtmEventContext::Receiver { session },
             reservation: plan.reservation,
             _role: PhantomData,
         })
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum BluetoothDtmEventPacket {
+/// CPU-owned receiver graph bound to one non-copyable DTM test session.
+#[must_use = "the receiver graph and its accumulated test state must stay together"]
+pub struct BluetoothDtmReceiverCpuOwned {
+    memory: BluetoothDtmMemoryGraphCpuOwned,
+    session: BluetoothDtmReceiverSession,
+}
+
+impl BluetoothDtmReceiverCpuOwned {
+    /// Start one fresh receiver session on an ordinary CPU-owned graph.
+    pub fn new(memory: BluetoothDtmMemoryGraphCpuOwned) -> Self {
+        Self {
+            memory,
+            session: BluetoothDtmReceiverSession::new(),
+        }
+    }
+
+    /// Current received-packet count retained for LE Test End.
+    pub const fn received_packet_count(&self) -> u16 {
+        self.session.received_packet_count()
+    }
+
+    /// Split an idle receiver aggregate into its memory and accumulated count.
+    ///
+    /// This is only an ownership operation. It does not issue LE Test End,
+    /// stop hardware or prove controller quiescence.
+    pub fn into_memory_and_packet_count(self) -> (BluetoothDtmMemoryGraphCpuOwned, u16) {
+        (self.memory, self.session.received_packet_count())
+    }
+}
+
+/// Failed RX graph preparation retaining the exact session and plan.
+#[must_use = "RX preparation failure retains the graph, session and reservation plan"]
+pub struct BluetoothDtmReceiverEventPrepareFailure {
+    memory: BluetoothDtmMemoryGraphPrepareFailure,
+    plan: BluetoothDtmReviewedEventWordsPlan<BluetoothDtmReceiverEvent>,
+    session: BluetoothDtmReceiverSession,
+}
+
+impl BluetoothDtmReceiverEventPrepareFailure {
+    /// Borrow the lower graph-preparation reason.
+    pub const fn error(&self) -> &BluetoothDtmMemoryGraphPrepareError {
+        self.memory.error()
+    }
+
+    /// Recover the unchanged aggregate, error and reservation plan for retry.
+    pub fn into_retry(
+        self,
+    ) -> (
+        BluetoothDtmReceiverCpuOwned,
+        BluetoothDtmMemoryGraphPrepareError,
+        BluetoothDtmReviewedEventWordsPlan<BluetoothDtmReceiverEvent>,
+    ) {
+        let (memory, error) = self.memory.into_parts();
+        (
+            BluetoothDtmReceiverCpuOwned {
+                memory,
+                session: self.session,
+            },
+            error,
+            self.plan,
+        )
+    }
+}
+
+impl core::fmt::Debug for BluetoothDtmReceiverEventPrepareFailure {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothDtmReceiverEventPrepareFailure")
+            .field("error", self.memory.error())
+            .finish_non_exhaustive()
+    }
+}
+
+enum BluetoothDtmEventContext {
     Transmitter {
         pattern: BluetoothDtmPayloadPattern,
         length: BluetoothDtmPayloadLength,
     },
-    Receiver,
+    Receiver {
+        session: BluetoothDtmReceiverSession,
+    },
 }
 
 /// CPU-owned bound graph containing one role-consistent reviewed word image.
@@ -285,7 +365,7 @@ enum BluetoothDtmEventPacket {
 /// event. This type exposes no packet mutation or publication operation.
 pub struct BluetoothDtmReviewedEventWordsPrepared<Role> {
     memory: BluetoothDtmMemoryGraphPositionalEventPrepared,
-    packet: BluetoothDtmEventPacket,
+    context: BluetoothDtmEventContext,
     reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
     _role: PhantomData<Role>,
 }
@@ -293,9 +373,9 @@ pub struct BluetoothDtmReviewedEventWordsPrepared<Role> {
 impl<Role> BluetoothDtmReviewedEventWordsPrepared<Role> {
     /// Return the role shared by both applied transforms.
     pub const fn role(&self) -> BluetoothDtmRole {
-        match self.packet {
-            BluetoothDtmEventPacket::Transmitter { .. } => BluetoothDtmRole::Transmitter,
-            BluetoothDtmEventPacket::Receiver => BluetoothDtmRole::Receiver,
+        match &self.context {
+            BluetoothDtmEventContext::Transmitter { .. } => BluetoothDtmRole::Transmitter,
+            BluetoothDtmEventContext::Receiver { .. } => BluetoothDtmRole::Receiver,
         }
     }
 
@@ -320,13 +400,31 @@ impl<Role> BluetoothDtmReviewedEventWordsPrepared<Role> {
     pub fn prepare_scheduler_bookkeeping(self) -> BluetoothDtmSchedulerBookkeepingPrepared<Role> {
         BluetoothDtmSchedulerBookkeepingPrepared {
             memory: self.memory.prepare_scheduler_bookkeeping(),
-            packet: self.packet,
+            context: self.context,
             reservation: self.reservation,
             _role: PhantomData,
         }
     }
+}
 
-    /// Cancel before publication and recover both CPU-owned resources.
+impl BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmTransmitterEvent> {
+    /// Return the exact standard pattern retained from packet preparation.
+    pub const fn packet_pattern(&self) -> BluetoothDtmPayloadPattern {
+        match &self.context {
+            BluetoothDtmEventContext::Transmitter { pattern, .. } => *pattern,
+            BluetoothDtmEventContext::Receiver { .. } => unreachable!(),
+        }
+    }
+
+    /// Return the exact payload length retained from packet preparation.
+    pub const fn packet_length(&self) -> BluetoothDtmPayloadLength {
+        match &self.context {
+            BluetoothDtmEventContext::Transmitter { length, .. } => *length,
+            BluetoothDtmEventContext::Receiver { .. } => unreachable!(),
+        }
+    }
+
+    /// Cancel before publication and recover both TX CPU-owned resources.
     pub fn cancel(
         self,
     ) -> (
@@ -337,21 +435,24 @@ impl<Role> BluetoothDtmReviewedEventWordsPrepared<Role> {
     }
 }
 
-impl BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmTransmitterEvent> {
-    /// Return the exact standard pattern retained from packet preparation.
-    pub const fn packet_pattern(&self) -> BluetoothDtmPayloadPattern {
-        match self.packet {
-            BluetoothDtmEventPacket::Transmitter { pattern, .. } => pattern,
-            BluetoothDtmEventPacket::Receiver => unreachable!(),
-        }
-    }
-
-    /// Return the exact payload length retained from packet preparation.
-    pub const fn packet_length(&self) -> BluetoothDtmPayloadLength {
-        match self.packet {
-            BluetoothDtmEventPacket::Transmitter { length, .. } => length,
-            BluetoothDtmEventPacket::Receiver => unreachable!(),
-        }
+impl BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmReceiverEvent> {
+    /// Cancel before publication without detaching the RX session from memory.
+    pub fn cancel(
+        self,
+    ) -> (
+        BluetoothDtmReceiverCpuOwned,
+        BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
+    ) {
+        let BluetoothDtmEventContext::Receiver { session } = self.context else {
+            unreachable!()
+        };
+        (
+            BluetoothDtmReceiverCpuOwned {
+                memory: self.memory.cancel(),
+                session,
+            },
+            self.reservation,
+        )
     }
 }
 
@@ -363,7 +464,7 @@ impl BluetoothDtmReviewedEventWordsPrepared<BluetoothDtmTransmitterEvent> {
 #[must_use = "the scheduler-prepared DTM graph must remain owned or be cancelled"]
 pub struct BluetoothDtmSchedulerBookkeepingPrepared<Role> {
     memory: BluetoothDtmMemoryGraphSchedulerBookkeepingPrepared,
-    packet: BluetoothDtmEventPacket,
+    context: BluetoothDtmEventContext,
     reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
     _role: PhantomData<Role>,
 }
@@ -371,9 +472,9 @@ pub struct BluetoothDtmSchedulerBookkeepingPrepared<Role> {
 impl<Role> BluetoothDtmSchedulerBookkeepingPrepared<Role> {
     /// Return the role shared by the retained DTM transforms.
     pub const fn role(&self) -> BluetoothDtmRole {
-        match self.packet {
-            BluetoothDtmEventPacket::Transmitter { .. } => BluetoothDtmRole::Transmitter,
-            BluetoothDtmEventPacket::Receiver => BluetoothDtmRole::Receiver,
+        match &self.context {
+            BluetoothDtmEventContext::Transmitter { .. } => BluetoothDtmRole::Transmitter,
+            BluetoothDtmEventContext::Receiver { .. } => BluetoothDtmRole::Receiver,
         }
     }
 
@@ -391,7 +492,7 @@ impl<Role> BluetoothDtmSchedulerBookkeepingPrepared<Role> {
     pub(crate) fn prepare_empty_list_link(self) -> BluetoothDtmEmptyListLinkPrepared<Role> {
         BluetoothDtmEmptyListLinkPrepared {
             memory: self.memory.prepare_empty_list_link(),
-            packet: self.packet,
+            context: self.context,
             reservation: self.reservation,
             _role: PhantomData,
         }
@@ -401,7 +502,7 @@ impl<Role> BluetoothDtmSchedulerBookkeepingPrepared<Role> {
     pub fn cancel(self) -> BluetoothDtmReviewedEventWordsPrepared<Role> {
         BluetoothDtmReviewedEventWordsPrepared {
             memory: self.memory.cancel(),
-            packet: self.packet,
+            context: self.context,
             reservation: self.reservation,
             _role: PhantomData,
         }
@@ -416,7 +517,7 @@ impl<Role> BluetoothDtmSchedulerBookkeepingPrepared<Role> {
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) struct BluetoothDtmEmptyListLinkPrepared<Role> {
     memory: BluetoothDtmMemoryGraphEmptyListLinkPrepared,
-    packet: BluetoothDtmEventPacket,
+    context: BluetoothDtmEventContext,
     reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
     _role: PhantomData<Role>,
 }
@@ -424,9 +525,9 @@ pub(crate) struct BluetoothDtmEmptyListLinkPrepared<Role> {
 #[cfg(any(target_arch = "riscv32", test))]
 impl<Role> BluetoothDtmEmptyListLinkPrepared<Role> {
     pub(crate) const fn role(&self) -> BluetoothDtmRole {
-        match self.packet {
-            BluetoothDtmEventPacket::Transmitter { .. } => BluetoothDtmRole::Transmitter,
-            BluetoothDtmEventPacket::Receiver => BluetoothDtmRole::Receiver,
+        match &self.context {
+            BluetoothDtmEventContext::Transmitter { .. } => BluetoothDtmRole::Transmitter,
+            BluetoothDtmEventContext::Receiver { .. } => BluetoothDtmRole::Receiver,
         }
     }
 
@@ -445,7 +546,7 @@ impl<Role> BluetoothDtmEmptyListLinkPrepared<Role> {
     ) -> BluetoothDtmHardwareOwnedEvent<Role> {
         BluetoothDtmHardwareOwnedEvent {
             memory: self.memory.into_hardware_owned(publication),
-            packet: self.packet,
+            context: self.context,
             _reservation: self.reservation,
             _role: PhantomData,
         }
@@ -454,7 +555,7 @@ impl<Role> BluetoothDtmEmptyListLinkPrepared<Role> {
     pub(crate) fn cancel(self) -> BluetoothDtmSchedulerBookkeepingPrepared<Role> {
         BluetoothDtmSchedulerBookkeepingPrepared {
             memory: self.memory.cancel(),
-            packet: self.packet,
+            context: self.context,
             reservation: self.reservation,
             _role: PhantomData,
         }
@@ -469,7 +570,7 @@ impl<Role> BluetoothDtmEmptyListLinkPrepared<Role> {
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) struct BluetoothDtmHardwareOwnedEvent<Role> {
     memory: BluetoothDtmMemoryGraphHardwareOwned,
-    packet: BluetoothDtmEventPacket,
+    context: BluetoothDtmEventContext,
     _reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
     _role: PhantomData<Role>,
 }
@@ -477,9 +578,9 @@ pub(crate) struct BluetoothDtmHardwareOwnedEvent<Role> {
 #[cfg(any(target_arch = "riscv32", test))]
 impl<Role> BluetoothDtmHardwareOwnedEvent<Role> {
     pub(crate) const fn role(&self) -> BluetoothDtmRole {
-        match self.packet {
-            BluetoothDtmEventPacket::Transmitter { .. } => BluetoothDtmRole::Transmitter,
-            BluetoothDtmEventPacket::Receiver => BluetoothDtmRole::Receiver,
+        match &self.context {
+            BluetoothDtmEventContext::Transmitter { .. } => BluetoothDtmRole::Transmitter,
+            BluetoothDtmEventContext::Receiver { .. } => BluetoothDtmRole::Receiver,
         }
     }
 
@@ -494,7 +595,7 @@ impl<Role> BluetoothDtmHardwareOwnedEvent<Role> {
     ) -> BluetoothDtmHardwareOwnedEventCompletionObservation<Role> {
         let Self {
             memory,
-            packet,
+            context,
             _reservation: reservation,
             _role: _,
         } = self;
@@ -503,7 +604,7 @@ impl<Role> BluetoothDtmHardwareOwnedEvent<Role> {
                 BluetoothDtmHardwareOwnedEventCompletionObservation::ListMismatch {
                     item: Self {
                         memory: owner,
-                        packet,
+                        context,
                         _reservation: reservation,
                         _role: PhantomData,
                     },
@@ -513,7 +614,7 @@ impl<Role> BluetoothDtmHardwareOwnedEvent<Role> {
             BluetoothDtmMemoryGraphCompletionObservation::StillInFlight(memory) => {
                 BluetoothDtmHardwareOwnedEventCompletionObservation::StillInFlight(Self {
                     memory,
-                    packet,
+                    context,
                     _reservation: reservation,
                     _role: PhantomData,
                 })
@@ -522,7 +623,7 @@ impl<Role> BluetoothDtmHardwareOwnedEvent<Role> {
                 BluetoothDtmHardwareOwnedEventCompletionObservation::CompletionObserved(
                     BluetoothDtmCompletionObservedEvent {
                         memory,
-                        packet,
+                        context,
                         _reservation: reservation,
                         _role: PhantomData,
                     },
@@ -546,7 +647,7 @@ pub(crate) enum BluetoothDtmHardwareOwnedEventCompletionObservation<Role> {
 #[cfg(target_arch = "riscv32")]
 pub(crate) struct BluetoothDtmCompletionObservedEvent<Role> {
     memory: BluetoothDtmMemoryGraphCompletionObserved,
-    packet: BluetoothDtmEventPacket,
+    context: BluetoothDtmEventContext,
     _reservation: BluetoothSchedulerReservation<BluetoothSchedulerSequenceReady>,
     _role: PhantomData<Role>,
 }
@@ -554,9 +655,9 @@ pub(crate) struct BluetoothDtmCompletionObservedEvent<Role> {
 #[cfg(target_arch = "riscv32")]
 impl<Role> BluetoothDtmCompletionObservedEvent<Role> {
     pub(crate) const fn role(&self) -> BluetoothDtmRole {
-        match self.packet {
-            BluetoothDtmEventPacket::Transmitter { .. } => BluetoothDtmRole::Transmitter,
-            BluetoothDtmEventPacket::Receiver => BluetoothDtmRole::Receiver,
+        match &self.context {
+            BluetoothDtmEventContext::Transmitter { .. } => BluetoothDtmRole::Transmitter,
+            BluetoothDtmEventContext::Receiver { .. } => BluetoothDtmRole::Receiver,
         }
     }
 
@@ -578,7 +679,7 @@ impl<Role> BluetoothDtmCompletionObservedEvent<Role> {
     > {
         let Self {
             memory,
-            packet,
+            context,
             _reservation: reservation,
             _role: _,
         } = self;
@@ -591,7 +692,7 @@ impl<Role> BluetoothDtmCompletionObservedEvent<Role> {
                     error: BluetoothDtmCompletionRecycleError::MemoryIdentity(error),
                     item: BluetoothDtmCompletionObservedEvent {
                         memory,
-                        packet,
+                        context,
                         _reservation: reservation,
                         _role: PhantomData,
                     },
@@ -608,7 +709,7 @@ impl<Role> BluetoothDtmCompletionObservedEvent<Role> {
                     error: BluetoothDtmCompletionRecycleError::ReservationIdentityMismatch,
                     item: BluetoothDtmCompletionObservedEvent {
                         memory,
-                        packet,
+                        context,
                         _reservation: reservation,
                         _role: PhantomData,
                     },
@@ -620,8 +721,93 @@ impl<Role> BluetoothDtmCompletionObservedEvent<Role> {
         release.commit();
         Ok(BluetoothDtmRecycleTimelineReleasedEvent {
             memory,
-            packet,
+            context,
             _role: PhantomData,
+        })
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothDtmCompletionObservedEvent<BluetoothDtmReceiverEvent> {
+    pub(crate) fn recycle_receiver_success<const CAPACITY: usize>(
+        self,
+        timeline: &mut crate::BluetoothSchedulerTimeline<CAPACITY>,
+        removal: BluetoothSchedulerSoftwareListRemovalReady,
+    ) -> Result<
+        BluetoothDtmRxSuccessRecycleTimelineReleasedEvent,
+        BluetoothDtmCompletionRecycleFailure<BluetoothDtmReceiverEvent>,
+    > {
+        let Self {
+            memory,
+            context,
+            _reservation: reservation,
+            _role: _,
+        } = self;
+        let prepared = match memory.prepare_recycle_after_software_list_removal(removal) {
+            Ok(prepared) => prepared,
+            Err(failure) => {
+                let error = failure.error();
+                let (memory, removal) = failure.into_parts();
+                return Err(BluetoothDtmCompletionRecycleFailure {
+                    error: BluetoothDtmCompletionRecycleError::MemoryIdentity(error),
+                    item: BluetoothDtmCompletionObservedEvent {
+                        memory,
+                        context,
+                        _reservation: reservation,
+                        _role: PhantomData,
+                    },
+                    removal,
+                });
+            }
+        };
+        let rx_prepared = match prepared.prepare_receiver_success() {
+            Ok(prepared) => prepared,
+            Err(failure) => {
+                let error = failure.error();
+                let (memory, removal) = failure.into_recycle_prepared().into_parts();
+                return Err(BluetoothDtmCompletionRecycleFailure {
+                    error: BluetoothDtmCompletionRecycleError::ReceiverSuccessMemory(error),
+                    item: BluetoothDtmCompletionObservedEvent {
+                        memory,
+                        context,
+                        _reservation: reservation,
+                        _role: PhantomData,
+                    },
+                    removal,
+                });
+            }
+        };
+        let release = match timeline.prepare_release(reservation) {
+            Ok(release) => release,
+            Err(failure) => {
+                let reservation = failure.into_reservation();
+                let (memory, removal) = rx_prepared.into_recycle_prepared().into_parts();
+                return Err(BluetoothDtmCompletionRecycleFailure {
+                    error: BluetoothDtmCompletionRecycleError::ReservationIdentityMismatch,
+                    item: BluetoothDtmCompletionObservedEvent {
+                        memory,
+                        context,
+                        _reservation: reservation,
+                        _role: PhantomData,
+                    },
+                    removal,
+                });
+            }
+        };
+        let BluetoothDtmEventContext::Receiver { mut session } = context else {
+            unreachable!()
+        };
+        let (memory, outcome) = rx_prepared.observe().consume_then_commit(|projection| {
+            projection.map_or(
+                crate::BluetoothDtmRxCompletionOutcome::NoReturnedPacket,
+                |result| session.account_projection(result),
+            )
+        });
+        release.commit();
+        Ok(BluetoothDtmRxSuccessRecycleTimelineReleasedEvent {
+            memory,
+            session,
+            outcome,
         })
     }
 }
@@ -631,6 +817,7 @@ impl<Role> BluetoothDtmCompletionObservedEvent<Role> {
 #[cfg(target_arch = "riscv32")]
 pub(crate) enum BluetoothDtmCompletionRecycleError {
     MemoryIdentity(BluetoothDtmMemoryGraphRecycleError),
+    ReceiverSuccessMemory(BluetoothDtmMemoryGraphRxSuccessRecycleError),
     ReservationIdentityMismatch,
 }
 
@@ -662,7 +849,7 @@ impl<Role> BluetoothDtmCompletionRecycleFailure<Role> {
 #[cfg(target_arch = "riscv32")]
 pub(crate) struct BluetoothDtmRecycleTimelineReleasedEvent<Role> {
     memory: BluetoothDtmMemoryGraphRecycleCleaned,
-    packet: BluetoothDtmEventPacket,
+    context: BluetoothDtmEventContext,
     _role: PhantomData<Role>,
 }
 
@@ -672,9 +859,28 @@ impl<Role> BluetoothDtmRecycleTimelineReleasedEvent<Role> {
         let (memory, status) = self.memory.into_cpu_owned().into_parts();
         BluetoothDtmRecycledEvent {
             memory,
-            packet: self.packet,
+            context: self.context,
             status,
             _role: PhantomData,
+        }
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct BluetoothDtmRxSuccessRecycleTimelineReleasedEvent {
+    memory: BluetoothDtmMemoryGraphRecycleCleaned,
+    session: BluetoothDtmReceiverSession,
+    outcome: crate::BluetoothDtmRxCompletionOutcome,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothDtmRxSuccessRecycleTimelineReleasedEvent {
+    pub(crate) fn finish_source_list_release(self) -> BluetoothDtmRxRearmedEvent {
+        let (memory, _) = self.memory.into_cpu_owned().into_parts();
+        BluetoothDtmRxRearmedEvent {
+            memory,
+            session: self.session,
+            outcome: self.outcome,
         }
     }
 }
@@ -684,7 +890,7 @@ impl<Role> BluetoothDtmRecycleTimelineReleasedEvent<Role> {
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothDtmRecycledEvent<Role> {
     memory: BluetoothDtmMemoryGraphCpuOwned,
-    packet: BluetoothDtmEventPacket,
+    context: BluetoothDtmEventContext,
     status: BluetoothDtmSchedulerItemCompletionStatus,
     _role: PhantomData<Role>,
 }
@@ -693,9 +899,9 @@ pub struct BluetoothDtmRecycledEvent<Role> {
 impl<Role> BluetoothDtmRecycledEvent<Role> {
     /// Role retained by the recycled event.
     pub const fn role(&self) -> BluetoothDtmRole {
-        match self.packet {
-            BluetoothDtmEventPacket::Transmitter { .. } => BluetoothDtmRole::Transmitter,
-            BluetoothDtmEventPacket::Receiver => BluetoothDtmRole::Receiver,
+        match &self.context {
+            BluetoothDtmEventContext::Transmitter { .. } => BluetoothDtmRole::Transmitter,
+            BluetoothDtmEventContext::Receiver { .. } => BluetoothDtmRole::Receiver,
         }
     }
 
@@ -703,28 +909,72 @@ impl<Role> BluetoothDtmRecycledEvent<Role> {
     pub const fn status(&self) -> BluetoothDtmSchedulerItemCompletionStatus {
         self.status
     }
-
-    /// Recover the ordinary CPU-owned graph for a later event or shutdown.
-    pub fn into_memory(self) -> BluetoothDtmMemoryGraphCpuOwned {
-        self.memory
-    }
 }
 
 #[cfg(target_arch = "riscv32")]
 impl BluetoothDtmRecycledEvent<BluetoothDtmTransmitterEvent> {
     /// Transmitter packet pattern retained by the recycled event.
     pub const fn packet_pattern(&self) -> BluetoothDtmPayloadPattern {
-        match self.packet {
-            BluetoothDtmEventPacket::Transmitter { pattern, .. } => pattern,
-            BluetoothDtmEventPacket::Receiver => unreachable!(),
+        match &self.context {
+            BluetoothDtmEventContext::Transmitter { pattern, .. } => *pattern,
+            BluetoothDtmEventContext::Receiver { .. } => unreachable!(),
         }
     }
 
     /// Transmitter payload length retained by the recycled event.
     pub const fn packet_length(&self) -> BluetoothDtmPayloadLength {
-        match self.packet {
-            BluetoothDtmEventPacket::Transmitter { length, .. } => length,
-            BluetoothDtmEventPacket::Receiver => unreachable!(),
+        match &self.context {
+            BluetoothDtmEventContext::Transmitter { length, .. } => *length,
+            BluetoothDtmEventContext::Receiver { .. } => unreachable!(),
+        }
+    }
+
+    /// Recover the TX graph for a later packet preparation or shutdown.
+    pub fn into_memory(self) -> BluetoothDtmMemoryGraphCpuOwned {
+        self.memory
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothDtmRecycledEvent<BluetoothDtmReceiverEvent> {
+    /// Recover the unchanged RX session after a non-success scheduler event.
+    pub fn into_next(self) -> BluetoothDtmReceiverCpuOwned {
+        let BluetoothDtmEventContext::Receiver { session } = self.context else {
+            unreachable!()
+        };
+        BluetoothDtmReceiverCpuOwned {
+            memory: self.memory,
+            session,
+        }
+    }
+}
+
+/// RX graph/session after one successful bounded drain and re-arm.
+#[must_use = "the re-armed receiver session must continue or finish explicitly"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothDtmRxRearmedEvent {
+    memory: BluetoothDtmMemoryGraphCpuOwned,
+    session: BluetoothDtmReceiverSession,
+    outcome: crate::BluetoothDtmRxCompletionOutcome,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothDtmRxRearmedEvent {
+    /// Semantic result of this event's bounded returned-buffer drain.
+    pub const fn outcome(&self) -> crate::BluetoothDtmRxCompletionOutcome {
+        self.outcome
+    }
+
+    /// Accumulated packet count retained for LE Test End.
+    pub const fn received_packet_count(&self) -> u16 {
+        self.session.received_packet_count()
+    }
+
+    /// Consume this re-arm proof into the sole next-event aggregate.
+    pub fn into_next(self) -> BluetoothDtmReceiverCpuOwned {
+        BluetoothDtmReceiverCpuOwned {
+            memory: self.memory,
+            session: self.session,
         }
     }
 }
@@ -732,17 +982,17 @@ impl BluetoothDtmRecycledEvent<BluetoothDtmTransmitterEvent> {
 impl BluetoothDtmSchedulerBookkeepingPrepared<BluetoothDtmTransmitterEvent> {
     /// Return the exact standard pattern retained through bookkeeping.
     pub const fn packet_pattern(&self) -> BluetoothDtmPayloadPattern {
-        match self.packet {
-            BluetoothDtmEventPacket::Transmitter { pattern, .. } => pattern,
-            BluetoothDtmEventPacket::Receiver => unreachable!(),
+        match &self.context {
+            BluetoothDtmEventContext::Transmitter { pattern, .. } => *pattern,
+            BluetoothDtmEventContext::Receiver { .. } => unreachable!(),
         }
     }
 
     /// Return the exact payload length retained through bookkeeping.
     pub const fn packet_length(&self) -> BluetoothDtmPayloadLength {
-        match self.packet {
-            BluetoothDtmEventPacket::Transmitter { length, .. } => length,
-            BluetoothDtmEventPacket::Receiver => unreachable!(),
+        match &self.context {
+            BluetoothDtmEventContext::Transmitter { length, .. } => *length,
+            BluetoothDtmEventContext::Receiver { .. } => unreachable!(),
         }
     }
 }
@@ -756,7 +1006,10 @@ mod tests {
     use open_esp_radio_esp32s31_hal::BluetoothSchedulerHardwareListIndex;
     use open_esp_radio_esp32s31_pac::BluetoothControllerHalInitConfig;
 
-    use super::{BluetoothDtmReviewedEventWordsPlan, BluetoothDtmReviewedEventWordsPlanError};
+    use super::{
+        BluetoothDtmReceiverCpuOwned, BluetoothDtmReviewedEventWordsPlan,
+        BluetoothDtmReviewedEventWordsPlanError,
+    };
     use crate::{
         BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample, BluetoothDtmChannel,
         BluetoothDtmLinkStateReset, BluetoothDtmPayloadLength, BluetoothDtmPayloadPattern,
@@ -892,7 +1145,7 @@ mod tests {
         .expect("both transforms encode RX");
 
         let prepared = plan
-            .prepare(owner(0x2f00_0100))
+            .prepare(BluetoothDtmReceiverCpuOwned::new(owner(0x2f00_0100)))
             .expect("current graph anchors satisfy the generated RX image");
         assert_eq!(prepared.role(), BluetoothDtmRole::Receiver);
         let words = prepared.words();
@@ -932,7 +1185,7 @@ mod tests {
         let plan = BluetoothDtmReviewedEventWordsPlan::new_receiver(reset, resolved)
             .expect("the resolved event and reset share the RX role");
         let prepared = plan
-            .prepare(owner(0x2f00_1100))
+            .prepare(BluetoothDtmReceiverCpuOwned::new(owner(0x2f00_1100)))
             .expect("the bound graph accepts the resolved event");
         let scheduler_words = prepared.words().scheduler_item();
 

@@ -816,13 +816,26 @@ where
     /// Return TX or RX-non-success completion ownership to source-owned CPU
     /// state after the exact removal-ready transition.
     ///
-    /// RX success remains retained because its returned buffer header and
-    /// swap-reserve branch are not yet represented by affine owners.
+    /// RX success is rejected into its separate drain/account/re-arm method.
     pub fn recycle_dtm_completed<Role>(
         &mut self,
         ready: crate::BluetoothDtmSchedulerSoftwareListRemovalReady<Role>,
     ) -> crate::BluetoothDtmSchedulerRecycleStep<Role> {
         self.initialized.recycle_dtm_completed(ready)
+    }
+
+    /// Drain, account and re-arm one successful removal-ready receiver event.
+    ///
+    /// The returned chain is validated before mutation. Every rejection keeps
+    /// the exact graph/session owner; success releases memory, timeline and
+    /// source-list ownership before exposing the re-armed session.
+    pub fn recycle_dtm_receiver_success(
+        &mut self,
+        ready: crate::BluetoothDtmSchedulerSoftwareListRemovalReady<
+            crate::BluetoothDtmReceiverEvent,
+        >,
+    ) -> crate::BluetoothDtmSchedulerRxSuccessRecycleStep {
+        self.initialized.recycle_dtm_receiver_success(ready)
     }
 
     /// Service and durably publish one primary source-124 epoch.

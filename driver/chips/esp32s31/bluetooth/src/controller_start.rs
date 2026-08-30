@@ -2898,6 +2898,40 @@ where
         self.initialized.observe_dtm_completion(running)
     }
 
+    /// Continue an already captured finished-list drain while the DTM graph
+    /// remains running.
+    ///
+    /// The opaque input proves that the same capture retains another list. No
+    /// new hardware transfer occurs, and one retained list is returned per
+    /// call together with the unchanged running or newly completed graph.
+    pub fn continue_dtm_running_finished_list_drain<Role>(
+        &mut self,
+        pending: crate::BluetoothDtmSchedulerFinishedListDrainPending<
+            crate::BluetoothDtmSchedulerRunning<Role>,
+        >,
+    ) -> crate::BluetoothDtmSchedulerRunningDrainStep<Role> {
+        self.initialized
+            .dtm_scheduler_mut()
+            .continue_dtm_running_finished_list_drain(pending)
+    }
+
+    /// Continue the captured finished-list drain after DTM completion was
+    /// observed while unrelated list tokens remained.
+    ///
+    /// The opaque input proves affinity to that exact capture. This consumes no
+    /// new hardware observation and returns every unrelated affine list token
+    /// losslessly.
+    pub fn continue_dtm_completed_finished_list_drain<Role>(
+        &mut self,
+        pending: crate::BluetoothDtmSchedulerFinishedListDrainPending<
+            crate::BluetoothDtmSchedulerCompletionObserved<Role>,
+        >,
+    ) -> crate::BluetoothDtmSchedulerCompletionObservedDrainStep<Role> {
+        self.initialized
+            .dtm_scheduler_mut()
+            .continue_dtm_completed_finished_list_drain(pending)
+    }
+
     /// Observe the post-picker hardware-list retirement barrier.
     ///
     /// This operation never clears or republishes the head. It performs one

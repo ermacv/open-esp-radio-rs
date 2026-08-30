@@ -756,6 +756,57 @@ impl<Role> BluetoothDtmSchedulerCompletionObserved<Role> {
     }
 }
 
+/// Affine proof that one specific captured finished-list set remains pending.
+///
+/// This token is created only by a bounded drain step which consumed one list
+/// and observed that the same capture retained another list. It cannot be
+/// constructed, copied or detached from the DTM graph owner it protects.
+#[must_use = "the retained finished-list capture must be continued or preserved"]
+#[cfg(any(test, target_arch = "riscv32"))]
+pub struct BluetoothDtmSchedulerFinishedListDrainPending<Owner> {
+    owner: Owner,
+}
+
+#[cfg(any(test, target_arch = "riscv32"))]
+impl<Owner> BluetoothDtmSchedulerFinishedListDrainPending<Owner> {
+    const fn new(owner: Owner) -> Self {
+        Self { owner }
+    }
+
+    const fn owner(&self) -> &Owner {
+        &self.owner
+    }
+
+    fn into_owner(self) -> Owner {
+        self.owner
+    }
+}
+
+/// Resulting ownership state after exactly one captured list was consumed.
+///
+/// `Drained` contains the ordinary graph owner only when the captured set is
+/// exhausted. `Pending` retains both that owner and the provenance required to
+/// consume the next list from the same capture.
+#[must_use = "the DTM graph and any pending finished-list capture must be retained"]
+#[cfg(any(test, target_arch = "riscv32"))]
+pub enum BluetoothDtmSchedulerFinishedListDrainState<Owner> {
+    /// The captured set is exhausted; no continuation is permitted.
+    Drained(Owner),
+    /// The same captured set retains another list.
+    Pending(BluetoothDtmSchedulerFinishedListDrainPending<Owner>),
+}
+
+#[cfg(any(test, target_arch = "riscv32"))]
+impl<Owner> BluetoothDtmSchedulerFinishedListDrainState<Owner> {
+    fn from_worker_step(owner: Owner, more: bool) -> Self {
+        if more {
+            Self::Pending(BluetoothDtmSchedulerFinishedListDrainPending::new(owner))
+        } else {
+            Self::Drained(owner)
+        }
+    }
+}
+
 /// One bounded Controller-owned DTM completion attempt.
 #[must_use = "the returned DTM graph and any unrelated affine list must be retained"]
 #[cfg(target_arch = "riscv32")]
@@ -768,26 +819,92 @@ pub enum BluetoothDtmSchedulerCompletionStep<Role> {
     NoFinishedList(BluetoothDtmSchedulerRunning<Role>),
     /// The selected list is not DTM list zero and remains available to dispatch.
     UnrelatedList {
-        /// Unchanged running DTM graph.
-        running: BluetoothDtmSchedulerRunning<Role>,
+        /// Running graph, paired with continuation provenance only when needed.
+        drain: BluetoothDtmSchedulerFinishedListDrainState<BluetoothDtmSchedulerRunning<Role>>,
         /// Affine observation for the actual list owner.
         observed: BluetoothSchedulerFinishedHardwareListObserved,
-        /// Whether the captured transfer retains another list.
-        more: bool,
     },
     /// DTM list zero was reported but its status remains the in-flight sentinel.
-    StillInFlight {
-        /// Unchanged running DTM graph; a later attempt requires a fresh transfer.
-        running: BluetoothDtmSchedulerRunning<Role>,
-        /// Whether the captured transfer retains another list.
-        more: bool,
-    },
+    StillInFlight(BluetoothDtmSchedulerFinishedListDrainState<BluetoothDtmSchedulerRunning<Role>>),
     /// One non-sentinel status was observed without returning CPU ownership.
-    CompletionObserved {
-        /// Hardware-owned completion observation retaining every graph owner.
-        completed: BluetoothDtmSchedulerCompletionObserved<Role>,
-        /// Whether the captured transfer retains another list.
-        more: bool,
+    CompletionObserved(
+        BluetoothDtmSchedulerFinishedListDrainState<BluetoothDtmSchedulerCompletionObserved<Role>>,
+    ),
+}
+
+/// One bounded continuation of an already captured finished-list drain while
+/// the DTM graph is still running.
+///
+/// This operation never captures a new hardware observation. It consumes at
+/// most one list from the Controller's retained drain and returns every affine
+/// owner, including an unrelated list observation, to the caller.
+#[must_use = "the running graph and every drained list observation must be retained"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothDtmSchedulerRunningDrainStep<Role> {
+    /// The supplied running graph does not belong to this Controller epoch.
+    SchedulerIdentityMismatch(
+        BluetoothDtmSchedulerFinishedListDrainPending<BluetoothDtmSchedulerRunning<Role>>,
+    ),
+    /// The capture identified by the token is no longer active. The token and
+    /// graph owner are retained losslessly for fail-stop handling.
+    DrainLost(BluetoothDtmSchedulerFinishedListDrainPending<BluetoothDtmSchedulerRunning<Role>>),
+    /// One non-DTM list remains available to its owning dispatcher.
+    UnrelatedList {
+        /// Running graph, paired with continuation provenance only when needed.
+        drain: BluetoothDtmSchedulerFinishedListDrainState<BluetoothDtmSchedulerRunning<Role>>,
+        /// Affine observation for the actual list owner.
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    /// DTM list zero was selected but its item remains in flight.
+    StillInFlight(BluetoothDtmSchedulerFinishedListDrainState<BluetoothDtmSchedulerRunning<Role>>),
+    /// DTM completion was observed while the same captured transfer may still
+    /// retain unrelated lists.
+    CompletionObserved(
+        BluetoothDtmSchedulerFinishedListDrainState<BluetoothDtmSchedulerCompletionObserved<Role>>,
+    ),
+}
+
+/// One bounded continuation of a captured finished-list drain after DTM list
+/// zero already produced a completion observation.
+///
+/// The captured set cannot contain list zero twice. Every ordinary result is
+/// therefore an unrelated affine list token paired with the unchanged DTM
+/// completion owner. A repeated list-zero token is retained explicitly as a
+/// fail-stop invariant violation instead of being discarded.
+#[must_use = "the completed graph and every remaining list observation must be retained"]
+#[cfg(target_arch = "riscv32")]
+pub enum BluetoothDtmSchedulerCompletionObservedDrainStep<Role> {
+    /// The supplied completion does not belong to this Controller epoch.
+    SchedulerIdentityMismatch(
+        BluetoothDtmSchedulerFinishedListDrainPending<
+            BluetoothDtmSchedulerCompletionObserved<Role>,
+        >,
+    ),
+    /// The capture identified by the token is no longer active. The token and
+    /// completion owner are retained losslessly for fail-stop handling.
+    DrainLost(
+        BluetoothDtmSchedulerFinishedListDrainPending<
+            BluetoothDtmSchedulerCompletionObserved<Role>,
+        >,
+    ),
+    /// One unrelated list remains available to its owning dispatcher.
+    UnrelatedList {
+        /// Completion owner, paired with continuation provenance only when needed.
+        drain: BluetoothDtmSchedulerFinishedListDrainState<
+            BluetoothDtmSchedulerCompletionObserved<Role>,
+        >,
+        /// Affine observation for the actual list owner.
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
+    },
+    /// The supposedly remaining set repeated DTM list zero. Both owners are
+    /// retained for fail-stop handling.
+    RepeatedDtmList {
+        /// Completion owner, paired with continuation provenance only when needed.
+        drain: BluetoothDtmSchedulerFinishedListDrainState<
+            BluetoothDtmSchedulerCompletionObserved<Role>,
+        >,
+        /// Impossible repeated list-zero observation.
+        observed: BluetoothSchedulerFinishedHardwareListObserved,
     },
 }
 
@@ -2181,23 +2298,139 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
                 item,
                 observed,
             } => BluetoothDtmSchedulerCompletionStep::UnrelatedList {
-                running: BluetoothDtmSchedulerRunning { item, run },
+                drain: BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(
+                    BluetoothDtmSchedulerRunning { item, run },
+                    more,
+                ),
                 observed,
-                more,
             },
             BluetoothDtmHardwareOwnedEventCompletionObservation::StillInFlight(item) => {
-                BluetoothDtmSchedulerCompletionStep::StillInFlight {
-                    running: BluetoothDtmSchedulerRunning { item, run },
-                    more,
-                }
+                BluetoothDtmSchedulerCompletionStep::StillInFlight(
+                    BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(
+                        BluetoothDtmSchedulerRunning { item, run },
+                        more,
+                    ),
+                )
             }
             BluetoothDtmHardwareOwnedEventCompletionObservation::CompletionObserved(item) => {
                 self._scheduler_list
                     .retain_completion_observed_first_item(address);
-                BluetoothDtmSchedulerCompletionStep::CompletionObserved {
-                    completed: BluetoothDtmSchedulerCompletionObserved { item, run },
+                BluetoothDtmSchedulerCompletionStep::CompletionObserved(
+                    BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(
+                        BluetoothDtmSchedulerCompletionObserved { item, run },
+                        more,
+                    ),
+                )
+            }
+        }
+    }
+
+    /// Continue one already captured finished-list drain for a running DTM
+    /// graph without performing another hardware transfer.
+    ///
+    /// The caller can reach this edge only with the opaque provenance token
+    /// returned by the preceding step. Exactly one list from that same capture
+    /// is consumed. This operation never performs a fresh capture.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn continue_dtm_running_finished_list_drain<Role>(
+        &mut self,
+        pending: BluetoothDtmSchedulerFinishedListDrainPending<BluetoothDtmSchedulerRunning<Role>>,
+    ) -> BluetoothDtmSchedulerRunningDrainStep<Role> {
+        let address = pending.owner().scheduler_item_address();
+        if pending.owner().hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || !self._scheduler_list.retains_running_first_item(address)
+        {
+            return BluetoothDtmSchedulerRunningDrainStep::SchedulerIdentityMismatch(pending);
+        }
+        if !self.runtime.scheduler_finished_lists_mut().is_active() {
+            return BluetoothDtmSchedulerRunningDrainStep::DrainLost(pending);
+        }
+
+        let step = self.runtime.scheduler_finished_lists_mut().step();
+        let crate::BluetoothSchedulerFinishedListWorkerStep::List { observed, more } = step else {
+            return BluetoothDtmSchedulerRunningDrainStep::DrainLost(pending);
+        };
+
+        let running = pending.into_owner();
+        let BluetoothDtmSchedulerRunning { item, run } = running;
+        match item.observe_completion(observed) {
+            BluetoothDtmHardwareOwnedEventCompletionObservation::ListMismatch {
+                item,
+                observed,
+            } => BluetoothDtmSchedulerRunningDrainStep::UnrelatedList {
+                drain: BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(
+                    BluetoothDtmSchedulerRunning { item, run },
                     more,
-                }
+                ),
+                observed,
+            },
+            BluetoothDtmHardwareOwnedEventCompletionObservation::StillInFlight(item) => {
+                BluetoothDtmSchedulerRunningDrainStep::StillInFlight(
+                    BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(
+                        BluetoothDtmSchedulerRunning { item, run },
+                        more,
+                    ),
+                )
+            }
+            BluetoothDtmHardwareOwnedEventCompletionObservation::CompletionObserved(item) => {
+                self._scheduler_list
+                    .retain_completion_observed_first_item(address);
+                BluetoothDtmSchedulerRunningDrainStep::CompletionObserved(
+                    BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(
+                        BluetoothDtmSchedulerCompletionObserved { item, run },
+                        more,
+                    ),
+                )
+            }
+        }
+    }
+
+    /// Continue the same captured finished-list drain after DTM list zero has
+    /// already yielded a non-sentinel completion.
+    ///
+    /// This operation never captures hardware. Its opaque input proves that
+    /// the same capture retained another list. It returns one unrelated list
+    /// token and either the ordinary completion owner or a new continuation
+    /// token for the same capture.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn continue_dtm_completed_finished_list_drain<Role>(
+        &mut self,
+        pending: BluetoothDtmSchedulerFinishedListDrainPending<
+            BluetoothDtmSchedulerCompletionObserved<Role>,
+        >,
+    ) -> BluetoothDtmSchedulerCompletionObservedDrainStep<Role> {
+        let address = pending.owner().scheduler_item_address();
+        if pending.owner().hardware_list_index() != BluetoothSchedulerHardwareListIndex::ZERO
+            || !self
+                ._scheduler_list
+                .retains_completion_observed_first_item(address)
+        {
+            return BluetoothDtmSchedulerCompletionObservedDrainStep::SchedulerIdentityMismatch(
+                pending,
+            );
+        }
+        if !self.runtime.scheduler_finished_lists_mut().is_active() {
+            return BluetoothDtmSchedulerCompletionObservedDrainStep::DrainLost(pending);
+        }
+
+        let step = self.runtime.scheduler_finished_lists_mut().step();
+        let crate::BluetoothSchedulerFinishedListWorkerStep::List { observed, more } = step else {
+            return BluetoothDtmSchedulerCompletionObservedDrainStep::DrainLost(pending);
+        };
+        let completed = pending.into_owner();
+        if observed.index() == BluetoothSchedulerHardwareListIndex::ZERO {
+            BluetoothDtmSchedulerCompletionObservedDrainStep::RepeatedDtmList {
+                drain: BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(
+                    completed, more,
+                ),
+                observed,
+            }
+        } else {
+            BluetoothDtmSchedulerCompletionObservedDrainStep::UnrelatedList {
+                drain: BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(
+                    completed, more,
+                ),
+                observed,
             }
         }
     }
@@ -2589,7 +2822,8 @@ mod tests {
 
     use super::{
         BluetoothDtmControllerEventPreparationError, BluetoothDtmEmptySchedulerMergeError,
-        BluetoothSchedulerExclusiveListEpoch, BluetoothSchedulerHardwareListsCleared,
+        BluetoothDtmSchedulerFinishedListDrainState, BluetoothSchedulerExclusiveListEpoch,
+        BluetoothSchedulerHardwareListsCleared,
     };
 
     static PLATFORM_DROPS: AtomicUsize = AtomicUsize::new(0);
@@ -2600,6 +2834,28 @@ mod tests {
         fn drop(&mut self) {
             PLATFORM_DROPS.fetch_add(1, Ordering::Relaxed);
         }
+    }
+
+    #[test]
+    fn finished_list_drain_exposes_owner_only_after_the_capture_is_exhausted() {
+        let drained_owner = Rc::new(());
+        let drained_identity = Rc::clone(&drained_owner);
+        let drained =
+            BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(drained_owner, false);
+        let BluetoothDtmSchedulerFinishedListDrainState::Drained(drained_owner) = drained else {
+            panic!("an exhausted capture must return the ordinary owner");
+        };
+        assert!(Rc::ptr_eq(&drained_owner, &drained_identity));
+
+        let pending_owner = Rc::new(());
+        let pending_identity = Rc::clone(&pending_owner);
+        let pending =
+            BluetoothDtmSchedulerFinishedListDrainState::from_worker_step(pending_owner, true);
+        let BluetoothDtmSchedulerFinishedListDrainState::Pending(pending) = pending else {
+            panic!("a retained capture must keep continuation provenance");
+        };
+        assert!(Rc::ptr_eq(pending.owner(), &pending_identity));
+        assert!(Rc::ptr_eq(&pending.into_owner(), &pending_identity));
     }
 
     #[test]

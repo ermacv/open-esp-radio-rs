@@ -279,7 +279,11 @@ pub use scheduler::{
     BluetoothDtmSchedulerSoftwareListUnlinkStep, BluetoothDtmSchedulerSoftwareListUnlinked,
 };
 #[cfg(target_arch = "riscv32")]
-pub use scheduler::{BluetoothDtmSchedulerCompletionObserved, BluetoothDtmSchedulerCompletionStep};
+pub use scheduler::{
+    BluetoothDtmSchedulerCompletionObserved, BluetoothDtmSchedulerCompletionObservedDrainStep,
+    BluetoothDtmSchedulerCompletionStep, BluetoothDtmSchedulerFinishedListDrainPending,
+    BluetoothDtmSchedulerFinishedListDrainState, BluetoothDtmSchedulerRunningDrainStep,
+};
 pub use scheduler_config::BluetoothSchedulerSoftwareConfig;
 pub use scheduler_finished_lists::{
     BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerFinishedListCaptureError,

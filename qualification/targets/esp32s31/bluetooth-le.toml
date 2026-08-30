@@ -159,7 +159,7 @@ gaps = [
   { axis = "implementation", id = "source-127-live-route-and-feature-specific-nrt-policy-missing" },
   { axis = "vendor", id = "complete-interrupt-production-trace-missing" },
   { axis = "hil", id = "bluetooth-interrupt-epoch-hil-missing" },
-  { axis = "async", id = "live-source-127-owner-runner-and-scheduler-finished-item-drain-missing" },
+  { axis = "async", id = "live-source-127-owner-runner-and-bounded-finished-list-role-dispatch-missing" },
 ]
 
 [[capabilities]]
@@ -347,7 +347,7 @@ gaps = [
 [[capabilities]]
 id = "scheduler-finished-list-drain"
 title = "Bounded scheduler finished-list event drain"
-scope = "Typed sixteen-list hardware mask transfer one-list-per-step drain affine DTM list-zero completion join fenced head retirement software unlink and finite removal-ready observation"
+scope = "Typed sixteen-list hardware mask transfer, one-list-per-step source-owned continuation retaining affine DTM running or completion ownership, list-zero completion join, fenced head retirement, software unlink and finite removal-ready observation"
 implementation = "incomplete"
 host = "covered"
 async = "incomplete"

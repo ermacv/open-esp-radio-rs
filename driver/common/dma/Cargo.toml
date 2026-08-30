@@ -7,5 +7,12 @@ license.workspace = true
 repository.workspace = true
 description = "Audited buffer ownership boundaries for open ESP radio drivers"
 
+[features]
+default = []
+# Diagnostic-only geometry for proving external-memory DMA on ESP32-S31.
+# It isolates each candidate buffer on 64-byte cache lines; production pools
+# retain their compact layout when the probe is absent.
+tx-psram-dma-probe = []
+
 [lints]
 workspace = true

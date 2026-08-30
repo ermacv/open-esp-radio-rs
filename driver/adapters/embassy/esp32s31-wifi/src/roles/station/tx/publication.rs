@@ -327,7 +327,7 @@ where
             if !self.can_push(FRAME_CAPACITY, traffic)? {
                 break AggregateBuildStop::CapacityLimit;
             }
-            let Some(frame) = network.try_receive() else {
+            let Some(frame) = network.try_receive_direct() else {
                 break AggregateBuildStop::QueueEmpty;
             };
             if !self.frame_matches_traffic(&frame, traffic) {
@@ -408,7 +408,7 @@ where
             if !self.can_push(FRAME_CAPACITY, traffic)? {
                 break AggregateBuildStop::CapacityLimit;
             }
-            let Some(frame) = network.try_receive() else {
+            let Some(frame) = network.try_receive_direct() else {
                 break AggregateBuildStop::QueueEmpty;
             };
             if !self.frame_matches_traffic(&frame, traffic) {
@@ -501,7 +501,7 @@ where
         if network.queue_len() < minimum_frames {
             return;
         }
-        let Some(first) = network.try_receive() else {
+        let Some(first) = network.try_receive_direct() else {
             return;
         };
 
@@ -828,7 +828,7 @@ where
     ) -> Result<(), AggregateTxError> {
         if self.block_ack_amsdu(traffic.tid())
             && self.can_push_amsdu_pair(first.ethernet_length(), FRAME_CAPACITY, traffic)?
-            && let Some(second) = network.try_receive()
+            && let Some(second) = network.try_receive_direct()
         {
             if self.frame_matches_traffic(&second, traffic) {
                 return self.push_amsdu_pair(first, second, traffic);

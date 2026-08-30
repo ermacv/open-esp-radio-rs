@@ -4,14 +4,218 @@
 //! aggregate publication, retry, or completion policy.
 
 use super::*;
-#[cfg(not(any(feature = "diagnostics", test)))]
 use core::marker::PhantomData;
 
-// The default pinned TX pool has 66 leases. Retaining that many handles here
-// lets power-save backpressure consume the complete default producer frontier
-// without allocating or copying payload bytes. Custom, larger pools still
-// fail closed at this explicit bound.
+// Retention is deliberately bounded independently of the physical producer
+// pool. Active and standby aggregates own their leases outside this arena;
+// growing the DMA frontier must not multiply scheduler metadata per peer.
 const AP_POWER_SAVE_FRAME_CAPACITY: usize = 66;
+
+// Core1 publishes one immutable FIFO per VIF, but AP A-MPDU eligibility is a
+// peer/TID property. Core0 therefore owns a bounded index arena which can
+// regroup leases without moving their payload bytes. The current AP data path
+// negotiates only TID 0, so fifteen unicast peers plus one group/invalid
+// frontier are sufficient. Extending AP QoS to more TIDs must raise this
+// explicit flow bound; it must not add per-peer payload rings.
+const AP_ACTIVE_FLOW_CAPACITY: usize = AP_MAX_CLIENTS + 1;
+const AP_ACTIVE_FRAME_CAPACITY: usize = AP_POWER_SAVE_FRAME_CAPACITY;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ApTxFlowKey {
+    peer: [u8; 6],
+    tid: u8,
+}
+
+impl ApTxFlowKey {
+    const INVALID_PEER: [u8; 6] = [0; 6];
+
+    fn tid0_from_ethernet(ethernet: &[u8]) -> Self {
+        Self {
+            peer: ethernet
+                .get(..6)
+                .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok())
+                .unwrap_or(Self::INVALID_PEER),
+            tid: open_esp_radio_esp32s31_wifi_ap::protocol::AP_TX_BLOCK_ACK_TID,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ApActiveFlow {
+    key: ApTxFlowKey,
+    head: u8,
+    tail: u8,
+    len: u8,
+}
+
+/// Single physical owner of every AP-retained network lease which is not yet
+/// encoded into an A-MPDU arena or published through ordinary TX.
+///
+/// Active scheduling and both power-save policies store only indices into
+/// this arena. Their capacities therefore describe classifications of the
+/// same 66 producer credits, not three independent arrays of `B` handles.
+struct ApFrameLeaseArena<B> {
+    frames: [Option<B>; AP_ACTIVE_FRAME_CAPACITY],
+    free: [u8; AP_ACTIVE_FRAME_CAPACITY],
+    free_len: u8,
+    initialized: bool,
+}
+
+impl<B> ApFrameLeaseArena<B> {
+    const fn new() -> Self {
+        Self {
+            frames: [const { None }; AP_ACTIVE_FRAME_CAPACITY],
+            free: [0; AP_ACTIVE_FRAME_CAPACITY],
+            free_len: 0,
+            initialized: false,
+        }
+    }
+
+    fn initialize_free_list(&mut self) {
+        if self.initialized {
+            return;
+        }
+        for (index, free) in self.free.iter_mut().enumerate() {
+            *free = u8::try_from(index).expect("AP retained lease index fits u8");
+        }
+        self.free_len =
+            u8::try_from(AP_ACTIVE_FRAME_CAPACITY).expect("AP retained lease capacity fits u8");
+        self.initialized = true;
+    }
+
+    fn insert(&mut self, frame: B) -> Result<u8, B> {
+        self.initialize_free_list();
+        if self.free_len == 0 {
+            return Err(frame);
+        }
+        self.free_len -= 1;
+        let index = self.free[usize::from(self.free_len)];
+        self.frames[usize::from(index)] = Some(frame);
+        Ok(index)
+    }
+
+    fn take(&mut self, index: u8) -> B {
+        let frame = self.frames[usize::from(index)]
+            .take()
+            .expect("AP queue index names one retained lease");
+        self.free[usize::from(self.free_len)] = index;
+        self.free_len += 1;
+        frame
+    }
+}
+
+/// Intrusive per-flow FIFO links over [`ApFrameLeaseArena`].
+struct ApActiveFrameQueues {
+    next: [Option<u8>; AP_ACTIVE_FRAME_CAPACITY],
+    flows: [Option<ApActiveFlow>; AP_ACTIVE_FLOW_CAPACITY],
+    scheduler_cursor: u8,
+    len: u8,
+}
+
+impl ApActiveFrameQueues {
+    const fn new() -> Self {
+        Self {
+            next: [None; AP_ACTIVE_FRAME_CAPACITY],
+            flows: [const { None }; AP_ACTIVE_FLOW_CAPACITY],
+            scheduler_cursor: 0,
+            len: 0,
+        }
+    }
+
+    fn flow_index(&self, key: ApTxFlowKey) -> Option<usize> {
+        self.flows
+            .iter()
+            .position(|flow| flow.is_some_and(|flow| flow.key == key))
+    }
+
+    fn push(&mut self, key: ApTxFlowKey, frame_index: u8) -> Result<(), u8> {
+        let flow_index = if let Some(index) = self.flow_index(key) {
+            index
+        } else if let Some(index) = self.flows.iter().position(Option::is_none) {
+            index
+        } else {
+            return Err(frame_index);
+        };
+        debug_assert!(self.next[usize::from(frame_index)].is_none());
+        if let Some(flow) = self.flows[flow_index].as_mut() {
+            self.next[usize::from(flow.tail)] = Some(frame_index);
+            flow.tail = frame_index;
+            flow.len = flow
+                .len
+                .checked_add(1)
+                .expect("AP active flow cannot exceed bounded frame arena");
+        } else {
+            self.flows[flow_index] = Some(ApActiveFlow {
+                key,
+                head: frame_index,
+                tail: frame_index,
+                len: 1,
+            });
+        }
+        self.len = self
+            .len
+            .checked_add(1)
+            .expect("AP active frame arena length is bounded");
+        Ok(())
+    }
+
+    fn pop_flow_index(&mut self, flow_index: usize) -> Option<u8> {
+        let mut flow = self.flows.get(flow_index).copied().flatten()?;
+        let index = flow.head;
+        let next = self.next[usize::from(index)].take();
+        flow.len -= 1;
+        if flow.len == 0 {
+            self.flows[flow_index] = None;
+        } else {
+            flow.head = next.expect("nonterminal AP active frame has a successor");
+            self.flows[flow_index] = Some(flow);
+        }
+        self.len -= 1;
+        Some(index)
+    }
+
+    fn pop_key(&mut self, key: ApTxFlowKey) -> Option<u8> {
+        let flow = self.flow_index(key)?;
+        self.pop_flow_index(flow)
+    }
+
+    fn pop_scheduled(&mut self) -> Option<(ApTxFlowKey, u8)> {
+        for offset in 0..AP_ACTIVE_FLOW_CAPACITY {
+            let index = (usize::from(self.scheduler_cursor) + offset) % AP_ACTIVE_FLOW_CAPACITY;
+            let Some(flow) = self.flows[index] else {
+                continue;
+            };
+            self.scheduler_cursor =
+                u8::try_from((index + 1) % AP_ACTIVE_FLOW_CAPACITY).expect("flow index fits u8");
+            return self.pop_flow_index(index).map(|frame| (flow.key, frame));
+        }
+        None
+    }
+
+    fn len_for(&self, key: ApTxFlowKey) -> usize {
+        self.flow_index(key)
+            .and_then(|index| self.flows[index])
+            .map_or(0, |flow| usize::from(flow.len))
+    }
+
+    fn scheduled_len(&self) -> usize {
+        for offset in 0..AP_ACTIVE_FLOW_CAPACITY {
+            let index = (usize::from(self.scheduler_cursor) + offset) % AP_ACTIVE_FLOW_CAPACITY;
+            if let Some(flow) = self.flows[index] {
+                return usize::from(flow.len);
+            }
+        }
+        0
+    }
+
+    const fn len(&self) -> usize {
+        self.len as usize
+    }
+}
+
+const fn aggregate_adapter_available(ordinary_publication_pending: bool) -> bool {
+    !ordinary_publication_pending
+}
 
 struct BufferedUnicast<B> {
     peer: [u8; 6],
@@ -24,6 +228,13 @@ struct BufferedUnicastRelease<B> {
     release: ApBufferedUnicastRelease,
 }
 
+#[derive(Clone, Copy)]
+struct BufferedUnicastIndex {
+    peer: [u8; 6],
+    order: u64,
+    frame_index: u8,
+}
+
 struct BufferedGroup<B> {
     order: u64,
     frame: B,
@@ -34,13 +245,19 @@ struct BufferedGroupRelease<B> {
     release: ApBufferedGroupRelease,
 }
 
-struct ApPowerSaveFrameQueue<B> {
-    slots: [Option<BufferedUnicast<B>>; AP_POWER_SAVE_FRAME_CAPACITY],
+#[derive(Clone, Copy)]
+struct BufferedGroupIndex {
+    order: u64,
+    frame_index: u8,
+}
+
+struct ApPowerSaveFrameQueue {
+    slots: [Option<BufferedUnicastIndex>; AP_POWER_SAVE_FRAME_CAPACITY],
     next_order: u64,
     len: usize,
 }
 
-impl<B> ApPowerSaveFrameQueue<B> {
+impl ApPowerSaveFrameQueue {
     const fn new() -> Self {
         Self {
             slots: [const { None }; AP_POWER_SAVE_FRAME_CAPACITY],
@@ -49,30 +266,55 @@ impl<B> ApPowerSaveFrameQueue<B> {
         }
     }
 
-    fn push(&mut self, peer: [u8; 6], frame: B) -> Result<usize, B> {
+    fn push<B>(
+        &mut self,
+        peer: [u8; 6],
+        frame: B,
+        arena: &mut ApFrameLeaseArena<B>,
+    ) -> Result<usize, B> {
         let Some(index) = self.slots.iter().position(Option::is_none) else {
             return Err(frame);
         };
+        let frame_index = arena.insert(frame)?;
         let order = self.next_order;
         self.next_order = self.next_order.wrapping_add(1);
-        self.slots[index] = Some(BufferedUnicast { peer, order, frame });
+        self.slots[index] = Some(BufferedUnicastIndex {
+            peer,
+            order,
+            frame_index,
+        });
         self.len += 1;
         Ok(index)
     }
 
-    fn take_at(&mut self, index: usize) -> Option<BufferedUnicast<B>> {
+    fn take_at<B>(
+        &mut self,
+        index: usize,
+        arena: &mut ApFrameLeaseArena<B>,
+    ) -> Option<BufferedUnicast<B>> {
         let buffered = self.slots.get_mut(index)?.take()?;
         self.len -= 1;
-        Some(buffered)
+        Some(BufferedUnicast {
+            peer: buffered.peer,
+            order: buffered.order,
+            frame: arena.take(buffered.frame_index),
+        })
     }
 
-    fn restore(&mut self, buffered: BufferedUnicast<B>) {
+    fn restore<B>(&mut self, buffered: BufferedUnicast<B>, arena: &mut ApFrameLeaseArena<B>) {
         let slot = self
             .slots
             .iter_mut()
             .find(|slot| slot.is_none())
             .expect("a released AP power-save lease always leaves one queue slot");
-        *slot = Some(buffered);
+        let frame_index = arena
+            .insert(buffered.frame)
+            .unwrap_or_else(|_| panic!("released AP power-save lease returns to its arena slot"));
+        *slot = Some(BufferedUnicastIndex {
+            peer: buffered.peer,
+            order: buffered.order,
+            frame_index,
+        });
         self.len += 1;
     }
 
@@ -100,10 +342,15 @@ impl<B> ApPowerSaveFrameQueue<B> {
             .map(|entry| entry.peer)
     }
 
-    fn retain(&mut self, mut keep: impl FnMut([u8; 6]) -> bool) {
+    fn retain<B>(
+        &mut self,
+        arena: &mut ApFrameLeaseArena<B>,
+        mut keep: impl FnMut([u8; 6]) -> bool,
+    ) {
         for slot in &mut self.slots {
             if slot.as_ref().is_some_and(|entry| !keep(entry.peer)) {
-                let _ = slot.take();
+                let removed = slot.take().expect("checked AP power-save entry");
+                drop(arena.take(removed.frame_index));
                 self.len -= 1;
             }
         }
@@ -112,13 +359,13 @@ impl<B> ApPowerSaveFrameQueue<B> {
 
 /// Bounded caller-owned group queue. Entries are pinned network leases, not
 /// payload copies; the portable AP owns only the matching advertised count.
-struct ApGroupFrameQueue<B> {
-    slots: [Option<BufferedGroup<B>>; AP_POWER_SAVE_FRAME_CAPACITY],
+struct ApGroupFrameQueue {
+    slots: [Option<BufferedGroupIndex>; AP_POWER_SAVE_FRAME_CAPACITY],
     next_order: u64,
     len: usize,
 }
 
-impl<B> ApGroupFrameQueue<B> {
+impl ApGroupFrameQueue {
     const fn new() -> Self {
         Self {
             slots: [const { None }; AP_POWER_SAVE_FRAME_CAPACITY],
@@ -127,30 +374,44 @@ impl<B> ApGroupFrameQueue<B> {
         }
     }
 
-    fn push(&mut self, frame: B) -> Result<usize, B> {
+    fn push<B>(&mut self, frame: B, arena: &mut ApFrameLeaseArena<B>) -> Result<usize, B> {
         let Some(index) = self.slots.iter().position(Option::is_none) else {
             return Err(frame);
         };
+        let frame_index = arena.insert(frame)?;
         let order = self.next_order;
         self.next_order = self.next_order.wrapping_add(1);
-        self.slots[index] = Some(BufferedGroup { order, frame });
+        self.slots[index] = Some(BufferedGroupIndex { order, frame_index });
         self.len += 1;
         Ok(index)
     }
 
-    fn take_at(&mut self, index: usize) -> Option<BufferedGroup<B>> {
+    fn take_at<B>(
+        &mut self,
+        index: usize,
+        arena: &mut ApFrameLeaseArena<B>,
+    ) -> Option<BufferedGroup<B>> {
         let buffered = self.slots.get_mut(index)?.take()?;
         self.len -= 1;
-        Some(buffered)
+        Some(BufferedGroup {
+            order: buffered.order,
+            frame: arena.take(buffered.frame_index),
+        })
     }
 
-    fn restore(&mut self, buffered: BufferedGroup<B>) {
+    fn restore<B>(&mut self, buffered: BufferedGroup<B>, arena: &mut ApFrameLeaseArena<B>) {
         let slot = self
             .slots
             .iter_mut()
             .find(|slot| slot.is_none())
             .expect("a released AP group lease always leaves one queue slot");
-        *slot = Some(buffered);
+        let frame_index = arena
+            .insert(buffered.frame)
+            .unwrap_or_else(|_| panic!("released AP group lease returns to its arena slot"));
+        *slot = Some(BufferedGroupIndex {
+            order: buffered.order,
+            frame_index,
+        });
         self.len += 1;
     }
 
@@ -163,10 +424,12 @@ impl<B> ApGroupFrameQueue<B> {
             .map(|(index, _)| index)
     }
 
-    fn clear(&mut self) -> usize {
+    fn clear<B>(&mut self, arena: &mut ApFrameLeaseArena<B>) -> usize {
         let discarded = self.len;
         for slot in &mut self.slots {
-            let _ = slot.take();
+            if let Some(removed) = slot.take() {
+                drop(arena.take(removed.frame_index));
+            }
         }
         self.len = 0;
         discarded
@@ -181,7 +444,8 @@ struct PreparedStandby {
     preparation_micros: u64,
 }
 
-pub struct Esp32s31AccessPointNetworkTx<'observer, B> {
+pub struct Esp32s31AccessPointNetworkTx<'observer, B, N = B> {
+    dma_backing: PhantomData<B>,
     #[cfg(any(feature = "diagnostics", test))]
     observer: Option<&'observer dyn AggregateTxObserver>,
     #[cfg(not(any(feature = "diagnostics", test)))]
@@ -191,22 +455,26 @@ pub struct Esp32s31AccessPointNetworkTx<'observer, B> {
     exchange_started_micros: Option<u64>,
     #[cfg(any(feature = "diagnostics", test))]
     terminal_acknowledged: Option<u8>,
-    prepared_first: Option<B>,
-    prepared_second: Option<B>,
+    frame_arena: ApFrameLeaseArena<N>,
+    active_frames: ApActiveFrameQueues,
+    prepared_first: Option<N>,
+    prepared_first_key: Option<ApTxFlowKey>,
+    prepared_second: Option<N>,
+    prepared_second_key: Option<ApTxFlowKey>,
     prepared_standby: Option<PreparedStandby>,
-    buffered_unicast: ApPowerSaveFrameQueue<B>,
-    buffered_group: ApGroupFrameQueue<B>,
-    prepared_buffered_release: Option<BufferedUnicastRelease<B>>,
-    active_buffered_release: Option<BufferedUnicastRelease<B>>,
-    prepared_group_release: Option<BufferedGroupRelease<B>>,
-    active_group_release: Option<BufferedGroupRelease<B>>,
+    buffered_unicast: ApPowerSaveFrameQueue,
+    buffered_group: ApGroupFrameQueue,
+    prepared_buffered_release: Option<BufferedUnicastRelease<N>>,
+    active_buffered_release: Option<BufferedUnicastRelease<N>>,
+    prepared_group_release: Option<BufferedGroupRelease<N>>,
+    active_group_release: Option<BufferedGroupRelease<N>>,
     /// Remaining prefix authorized by one successful DTIM beacon. Frames
     /// retained after that beacon can never join this release window.
     dtim_group_release_remaining: u16,
     last_started_frames: usize,
 }
 
-impl<'observer, B> Esp32s31AccessPointNetworkTx<'observer, B>
+impl<'observer, B, N> Esp32s31AccessPointNetworkTx<'observer, B, N>
 where
     B: StableDmaBacking,
 {
@@ -216,6 +484,7 @@ where
         >,
     ) -> Self {
         Self {
+            dma_backing: PhantomData,
             #[cfg(any(feature = "diagnostics", test))]
             observer,
             #[cfg(not(any(feature = "diagnostics", test)))]
@@ -225,8 +494,12 @@ where
             exchange_started_micros: None,
             #[cfg(any(feature = "diagnostics", test))]
             terminal_acknowledged: None,
+            frame_arena: ApFrameLeaseArena::new(),
+            active_frames: ApActiveFrameQueues::new(),
             prepared_first: None,
+            prepared_first_key: None,
             prepared_second: None,
+            prepared_second_key: None,
             prepared_standby: None,
             buffered_unicast: ApPowerSaveFrameQueue::new(),
             buffered_group: ApGroupFrameQueue::new(),
@@ -244,7 +517,8 @@ where
     }
 
     pub(super) fn has_prepared(&self) -> bool {
-        self.prepared_first.is_some()
+        self.active_frames.len() != 0
+            || self.prepared_first.is_some()
             || self.prepared_second.is_some()
             || self.prepared_standby.is_some()
             || self.prepared_buffered_release.is_some()
@@ -255,12 +529,19 @@ where
         if self.prepared_group_release.is_some() || self.prepared_buffered_release.is_some() {
             return 1;
         }
-        self.prepared_standby.as_ref().map_or(
-            usize::from(self.prepared_first.is_some())
-                + usize::from(self.prepared_second.is_some())
-                + usize::from(self.prepared_buffered_release.is_some()),
-            |batch| batch.admitted,
-        )
+        if let Some(batch) = self.prepared_standby.as_ref() {
+            return batch.admitted;
+        }
+        if let Some(first) = self.prepared_first.as_ref() {
+            let _ = first;
+            return 1
+                + self.active_frames.len_for(
+                    self.prepared_first_key
+                        .expect("prepared AP frame retains its flow key"),
+                )
+                + usize::from(self.prepared_second.is_some());
+        }
+        self.active_frames.scheduled_len()
     }
 
     pub(super) const fn last_started_frame_count(&self) -> usize {
@@ -301,7 +582,17 @@ where
     pub(super) fn can_prepare<const SLOTS: usize, const BUFFER_SIZE: usize>(
         &self,
         aggregate: &Esp32s31AccessPointAmpdu<'_, B, SLOTS, BUFFER_SIZE>,
+        ordinary_publication_pending: bool,
     ) -> bool {
+        // A retained peer-boundary frame may coexist with an ordinary MPDU
+        // publication, but it cannot authorize claiming the next frame yet.
+        // Encoding that pair borrows the ordinary descriptor policy adapter;
+        // the adapter remains owned by the in-flight MPDU until its terminal
+        // service edge. Aggregate-active preparation is still allowed because
+        // an A-MPDU does not set the ordinary MAC publication owner.
+        if !aggregate_adapter_available(ordinary_publication_pending) {
+            return false;
+        }
         if !aggregate.has_standby() {
             return false;
         }
@@ -320,7 +611,9 @@ where
                     && batch.admitted < usize::from(batch.policy.frame_limit())
             }
             None => {
-                (self.deadline_micros.is_some() || self.prepared_first.is_some())
+                (self.deadline_micros.is_some()
+                    || self.active_frames.len() != 0
+                    || self.prepared_first.is_some())
                     && self.prepared_second.is_none()
             }
         }
@@ -328,7 +621,7 @@ where
 }
 
 #[cfg(not(any(feature = "diagnostics", test)))]
-impl<'observer, B> Default for Esp32s31AccessPointNetworkTx<'observer, B>
+impl<'observer, B> Default for Esp32s31AccessPointNetworkTx<'observer, B, B>
 where
     B: StableDmaBacking,
 {
@@ -349,16 +642,176 @@ impl<
     Esp32s31AccessPointNetworkTx<
         'observer,
         PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     >
 where
     M: RawMutex,
 {
+    fn push_active_frame(
+        &mut self,
+        key: ApTxFlowKey,
+        frame: PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+    ) -> Result<
+        (),
+        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    > {
+        let frame_index = self.frame_arena.insert(frame)?;
+        if self.active_frames.push(key, frame_index).is_err() {
+            return Err(self.frame_arena.take(frame_index));
+        }
+        Ok(())
+    }
+
+    fn pop_active_key(
+        &mut self,
+        key: ApTxFlowKey,
+    ) -> Option<
+        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    > {
+        self.active_frames
+            .pop_key(key)
+            .map(|index| self.frame_arena.take(index))
+    }
+
+    fn pop_scheduled_active(
+        &mut self,
+    ) -> Option<(
+        ApTxFlowKey,
+        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    )> {
+        self.active_frames
+            .pop_scheduled()
+            .map(|(key, index)| (key, self.frame_arena.take(index)))
+    }
+
+    fn observe_network_claim(
+        &self,
+        frame: &PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+    ) {
+        #[cfg(any(feature = "diagnostics", test))]
+        if let Some(observer) = self.observer {
+            observer.observe_access_point_network_claim(frame.as_slice());
+        }
+        #[cfg(not(any(feature = "diagnostics", test)))]
+        let _ = frame;
+    }
+
+    fn retain_active_frame(
+        &mut self,
+        engine: &mut Esp32s31ApEngine<'_>,
+        frame: PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+    ) -> Result<(), Esp32s31AccessPointDatapathError> {
+        self.observe_network_claim(&frame);
+        let Some(frame) = self.retain_power_save(engine, frame)? else {
+            return Ok(());
+        };
+        let key = ApTxFlowKey::tid0_from_ethernet(frame.as_slice());
+        // The arena owns every default producer credit which is not already
+        // held by active/standby DMA or power-save storage. A custom larger
+        // producer cannot turn this bounded Core0 classifier into unbounded
+        // retention; excess leases return to that producer immediately.
+        let _ = self.push_active_frame(key, frame);
+        Ok(())
+    }
+
+    fn take_matching_active_or_network(
+        &mut self,
+        engine: &mut Esp32s31ApEngine<'_>,
+        key: ApTxFlowKey,
+        network: &PinnedTxInterfaceConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+    ) -> Result<
+        Option<
+            PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        >,
+        Esp32s31AccessPointDatapathError,
+    > {
+        if let Some(frame) = self.pop_active_key(key) {
+            return Ok(Some(frame));
+        }
+        while let Some(frame) = network.try_receive() {
+            self.observe_network_claim(&frame);
+            let Some(frame) = self.retain_power_save(engine, frame)? else {
+                continue;
+            };
+            let frame_key = ApTxFlowKey::tid0_from_ethernet(frame.as_slice());
+            if frame_key == key {
+                return Ok(Some(frame));
+            }
+            let _ = self.push_active_frame(frame_key, frame);
+        }
+        Ok(None)
+    }
+
+    fn take_scheduled_active_or_network(
+        &mut self,
+        engine: &mut Esp32s31ApEngine<'_>,
+        network: &PinnedTxInterfaceConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+    ) -> Result<
+        Option<
+            PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        >,
+        Esp32s31AccessPointDatapathError,
+    > {
+        if let Some((_, frame)) = self.pop_scheduled_active() {
+            return Ok(Some(frame));
+        }
+        let Some(frame) = network.try_receive() else {
+            return Ok(None);
+        };
+        self.observe_network_claim(&frame);
+        self.retain_power_save(engine, frame)
+    }
+
     fn retain_power_save(
         &mut self,
         engine: &mut Esp32s31ApEngine<'_>,
-        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        frame: PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
     ) -> Result<
-        Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>,
+        Option<
+            PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        >,
         Esp32s31AccessPointDatapathError,
     > {
         let Some(peer) = frame
@@ -372,7 +825,7 @@ where
             if engine.group_downlink_disposition() == ApDownlinkDisposition::TransmitNow {
                 return Ok(Some(frame));
             }
-            let Ok(index) = self.buffered_group.push(frame) else {
+            let Ok(index) = self.buffered_group.push(frame, &mut self.frame_arena) else {
                 // The caller-owned queue is deliberately bounded. Releasing
                 // this excess lease applies backpressure at the producer pool
                 // without claiming a TIM entry for payload we did not retain.
@@ -381,7 +834,7 @@ where
             if let Err(error) = engine.commit_buffered_group() {
                 let _ = self
                     .buffered_group
-                    .take_at(index)
+                    .take_at(index, &mut self.frame_arena)
                     .expect("the just-inserted AP group lease is still owned");
                 return Err(Esp32s31AccessPointDatapathError::Control(
                     Esp32s31AccessPointControlError::from(error),
@@ -400,7 +853,10 @@ where
             return Ok(Some(frame));
         }
 
-        let Ok(index) = self.buffered_unicast.push(peer, frame) else {
+        let Ok(index) = self
+            .buffered_unicast
+            .push(peer, frame, &mut self.frame_arena)
+        else {
             // The bounded queue owns the complete default TX lease frontier.
             // A custom larger producer cannot force an allocation or an
             // unbounded retention path; its excess lease is released here.
@@ -409,7 +865,7 @@ where
         if let Err(error) = engine.commit_buffered_unicast(peer) {
             let _ = self
                 .buffered_unicast
-                .take_at(index)
+                .take_at(index, &mut self.frame_arena)
                 .expect("the just-inserted AP power-save lease is still owned");
             return Err(Esp32s31AccessPointDatapathError::Control(
                 Esp32s31AccessPointControlError::from(error),
@@ -454,7 +910,7 @@ where
             if let Some(index) = self.buffered_unicast.oldest_index_for(peer) {
                 let buffered = self
                     .buffered_unicast
-                    .take_at(index)
+                    .take_at(index, &mut self.frame_arena)
                     .expect("the PS-Poll release names one retained lease");
                 self.prepared_buffered_release = Some(BufferedUnicastRelease { buffered, release });
                 return Ok(true);
@@ -470,7 +926,7 @@ where
         // Peer teardown clears the portable counters. Release matching caller
         // leases at the same observation boundary instead of retaining stale
         // addresses into a later association generation.
-        self.buffered_unicast.retain(|peer| {
+        self.buffered_unicast.retain(&mut self.frame_arena, |peer| {
             control
                 .mac
                 .engine()
@@ -508,7 +964,7 @@ where
         };
         let buffered = self
             .buffered_unicast
-            .take_at(index)
+            .take_at(index, &mut self.frame_arena)
             .expect("the selected AP power-save lease remains retained");
         self.prepared_buffered_release = Some(BufferedUnicastRelease { buffered, release });
         Ok(true)
@@ -545,7 +1001,8 @@ where
             .mac
             .engine_mut()
             .complete_buffered_unicast_release(prepared.release, false);
-        self.buffered_unicast.restore(prepared.buffered);
+        self.buffered_unicast
+            .restore(prepared.buffered, &mut self.frame_arena);
         result
             .map(|_| ())
             .map_err(Esp32s31AccessPointControlError::from)
@@ -585,7 +1042,8 @@ where
             .engine_mut()
             .complete_buffered_unicast_release(active.release, delivered);
         if !delivered || result.is_err() {
-            self.buffered_unicast.restore(active.buffered);
+            self.buffered_unicast
+                .restore(active.buffered, &mut self.frame_arena);
         }
         result
             .map(|_| ())
@@ -720,7 +1178,7 @@ where
         };
         let buffered = self
             .buffered_group
-            .take_at(index)
+            .take_at(index, &mut self.frame_arena)
             .expect("the selected AP group lease remains retained");
         self.prepared_group_release = Some(BufferedGroupRelease { buffered, release });
         Ok(true)
@@ -758,7 +1216,8 @@ where
             .mac
             .engine_mut()
             .complete_buffered_group_release(prepared.release, false);
-        self.buffered_group.restore(prepared.buffered);
+        self.buffered_group
+            .restore(prepared.buffered, &mut self.frame_arena);
         self.dtim_group_release_remaining = 0;
         result
             .map(|_| ())
@@ -799,7 +1258,8 @@ where
             .engine_mut()
             .complete_buffered_group_release(active.release, published);
         if !published || result.is_err() {
-            self.buffered_group.restore(active.buffered);
+            self.buffered_group
+                .restore(active.buffered, &mut self.frame_arena);
             self.dtim_group_release_remaining = 0;
         } else {
             self.dtim_group_release_remaining = self
@@ -915,7 +1375,7 @@ where
             .discard_buffered_groups()
             .map_err(Esp32s31AccessPointControlError::from)
             .map_err(Esp32s31AccessPointDatapathError::Control)?;
-        let retained = self.buffered_group.clear();
+        let retained = self.buffered_group.clear(&mut self.frame_arena);
         self.dtim_group_release_remaining = 0;
         if usize::from(portable) != retained {
             return Err(Esp32s31AccessPointDatapathError::Control(
@@ -954,7 +1414,14 @@ where
             TX_BUFFER_SIZE,
         >,
         hardware: &mut H,
-        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        frame: PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
         network: &PinnedTxInterfaceConsumer<
             'resources,
             M,
@@ -974,107 +1441,73 @@ where
             + open_esp_radio_esp32s31_wifi_mac::tx_ampdu::HtAmpduHardware,
     {
         self.last_started_frames = 1;
-        #[cfg(any(feature = "diagnostics", test))]
-        if let Some(observer) = self.observer {
-            observer.observe_access_point_network_claim(frame.as_slice());
-        }
         let _ = self.stage_dtim_group_release(control)?;
+        self.retain_active_frame(control.mac.engine_mut(), frame)?;
         if self.prepared_group_release.is_some() {
-            if let Some(frame) = self.retain_power_save(control.mac.engine_mut(), frame)? {
-                if self.prepared_first.is_none() {
-                    self.prepared_first = Some(frame);
-                } else if self.prepared_second.is_none() {
-                    self.prepared_second = Some(frame);
-                } else {
-                    drop(frame);
-                }
-            }
             return self.start_prepared_group_release(control, hardware);
         }
         let _ = self.stage_awake_buffered_release(control)?;
         if self.prepared_buffered_release.is_some() {
-            if let Some(frame) = self.retain_power_save(control.mac.engine_mut(), frame)? {
-                if self.prepared_first.is_none() {
-                    self.prepared_first = Some(frame);
-                } else if self.prepared_second.is_none() {
-                    self.prepared_second = Some(frame);
-                } else {
-                    // This path is reachable only for a custom scheduler that
-                    // starts a fresh lease while two ordered leases are
-                    // already retained. Releasing the excess lease is safer
-                    // than bypassing the sleeping-peer admission decision.
-                    drop(frame);
-                }
-            }
             return self.start_prepared_buffered_release(control, hardware);
         }
-        let Some(mut frame) = self.retain_power_save(control.mac.engine_mut(), frame)? else {
+        let Some((_, frame)) = self.pop_scheduled_active() else {
             return Ok(WifiTxProgress::Complete);
         };
         let admission = control.mac.aggregate_admission(frame.as_slice());
+        let flow_key = ApTxFlowKey::tid0_from_ethernet(frame.as_slice());
         let mut retained_aggregate_second = None;
 
         // Open APs have no BlockAck owner, so they use bounded ordinary
         // A-MSDUs whenever an ordered partner is available. For WPA2+BA keep
         // saturated bursts on A-MPDU; coalesce the exact two-frame tail only
         // when the negotiated agreement echoed A-MSDU support.
-        if network.queue_len() != 0
+        let same_flow_ready = self.active_frames.len_for(flow_key);
+        let producer_ready = network.queue_len();
+        if same_flow_ready.saturating_add(producer_ready) != 0
             && (admission.is_none()
-                || (network.queue_len() == 1
+                || (same_flow_ready.saturating_add(producer_ready) == 1
                     && admission.is_some_and(Esp32s31ApAggregateAdmission::amsdu)))
-            && let Some(second) = network.try_receive()
+            && let Some(second) =
+                self.take_matching_active_or_network(control.mac.engine_mut(), flow_key, network)?
         {
-            #[cfg(any(feature = "diagnostics", test))]
-            if let Some(observer) = self.observer {
-                observer.observe_access_point_network_claim(second.as_slice());
-            }
-            if let Some(second) = self.retain_power_save(control.mac.engine_mut(), second)? {
-                match control.start_network_amsdu_pair(
-                    hardware,
-                    frame.as_slice(),
-                    second.as_slice(),
-                ) {
-                    Ok(Some(progress)) => {
-                        self.last_started_frames = 2;
-                        return Ok(progress);
+            match control.start_network_amsdu_pair(hardware, frame.as_slice(), second.as_slice()) {
+                Ok(Some(progress)) => {
+                    self.last_started_frames = 2;
+                    return Ok(progress);
+                }
+                Ok(None) => {
+                    if admission.is_some() {
+                        // The pair may be too large for the ordinary AP
+                        // scratch while both individual MPDUs still fit the
+                        // retained A-MPDU arena. Preserve the already claimed
+                        // second lease for that exact fallback.
+                        retained_aggregate_second = Some(second);
+                    } else {
+                        let _ = self.push_active_frame(flow_key, second);
                     }
-                    Ok(None) => {
-                        if admission.is_some() {
-                            // The pair may be too large for the ordinary AP
-                            // scratch while both individual MPDUs still fit
-                            // the retained A-MPDU arena. Preserve the already
-                            // claimed second lease for that exact fallback.
-                            retained_aggregate_second = Some(second);
-                        } else {
-                            debug_assert!(self.prepared_first.is_none());
-                            self.prepared_first = Some(second);
-                        }
-                    }
-                    Err(error) => {
-                        debug_assert!(self.prepared_first.is_none());
-                        debug_assert!(self.prepared_second.is_none());
-                        self.prepared_first = Some(frame);
-                        self.prepared_second = Some(second);
-                        return Err(Esp32s31AccessPointDatapathError::Control(error));
-                    }
+                }
+                Err(error) => {
+                    let _ = self.push_active_frame(flow_key, frame);
+                    let _ = self.push_active_frame(flow_key, second);
+                    return Err(Esp32s31AccessPointDatapathError::Control(error));
                 }
             }
         }
 
         if let Some(admission) = admission
-            && (retained_aggregate_second.is_some() || network.queue_len() != 0)
+            && (retained_aggregate_second.is_some()
+                || self.active_frames.len_for(flow_key) != 0
+                || network.queue_len() != 0)
         {
-            let mut second = if let Some(second) = retained_aggregate_second.take() {
+            let second = if let Some(second) = retained_aggregate_second.take() {
                 second
             } else {
-                let Some(second) = network.try_receive() else {
-                    unreachable!("nonempty AP network queue lost its sole consumer");
-                };
-                #[cfg(any(feature = "diagnostics", test))]
-                if let Some(observer) = self.observer {
-                    observer.observe_access_point_network_claim(second.as_slice());
-                }
-                let Some(second) = self.retain_power_save(control.mac.engine_mut(), second)? else {
+                let Some(second) = self.take_matching_active_or_network(
+                    control.mac.engine_mut(),
+                    flow_key,
+                    network,
+                )?
+                else {
                     return control
                         .start_network_tx(hardware, frame.as_slice())
                         .map_err(Esp32s31AccessPointDatapathError::Control);
@@ -1083,16 +1516,7 @@ where
             };
             #[cfg(any(feature = "diagnostics", test))]
             let preparation_started = self.observer.map(AggregateTxObserver::now_micros);
-            if !admission.accepts_ethernet(second.as_slice()) {
-                // This lease was older than every frame still in the network
-                // queue. Retain it locally for the next transaction; putting
-                // it on the channel tail would reorder one VIF's UDP stream.
-                debug_assert!(self.prepared_first.is_none());
-                self.prepared_first = Some(second);
-                return control
-                    .start_network_tx(hardware, frame.as_slice())
-                    .map_err(Esp32s31AccessPointDatapathError::Control);
-            }
+            debug_assert!(admission.accepts_ethernet(second.as_slice()));
 
             let peer = admission.peer();
             let (engine, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
@@ -1104,6 +1528,22 @@ where
                 .require_unprotected_ht_aggregate(admission.rate())
                 .map_err(Esp32s31ApAmpduError::Protection)
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
+            let mut frame = match network.try_promote(frame) {
+                Ok(frame) => frame,
+                Err(frame) => {
+                    let _ = self.push_active_frame(flow_key, frame);
+                    let _ = self.push_active_frame(flow_key, second);
+                    return Ok(WifiTxProgress::Complete);
+                }
+            };
+            let mut second = match network.try_promote(second) {
+                Ok(second) => second,
+                Err(second) => {
+                    let _ = self.push_active_frame(flow_key, PinnedNetworkTxFrame::Direct(frame));
+                    let _ = self.push_active_frame(flow_key, second);
+                    return Ok(WifiTxProgress::Complete);
+                }
+            };
             let first_offset = frame.ethernet_offset();
             let first_length = frame.ethernet_length();
             let first_encoded = engine
@@ -1156,21 +1596,18 @@ where
             let target = usize::from(policy.frame_limit());
             let mut admitted = 2_usize;
             while admitted < target {
-                let Some(next) = network.try_receive() else {
+                let Some(next) = self.take_matching_active_or_network(engine, flow_key, network)?
+                else {
                     break;
                 };
-                #[cfg(any(feature = "diagnostics", test))]
-                if let Some(observer) = self.observer {
-                    observer.observe_access_point_network_claim(next.as_slice());
-                }
-                let Some(mut next) = self.retain_power_save(engine, next)? else {
-                    continue;
+                debug_assert!(admission.accepts_ethernet(next.as_slice()));
+                let mut next = match network.try_promote(next) {
+                    Ok(next) => next,
+                    Err(next) => {
+                        let _ = self.push_active_frame(flow_key, next);
+                        break;
+                    }
                 };
-                if !admission.accepts_ethernet(next.as_slice()) {
-                    debug_assert!(self.prepared_first.is_none());
-                    self.prepared_first = Some(next);
-                    break;
-                }
                 let offset = next.ethernet_offset();
                 let length = next.ethernet_length();
                 let encoded = engine
@@ -1260,7 +1697,14 @@ where
             DMA_BUFFER_SIZE,
             TX_BUFFER_SIZE,
         >,
-        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        frame: PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
         network: &PinnedTxInterfaceConsumer<
             'resources,
             M,
@@ -1279,14 +1723,11 @@ where
             (self.aggregate_pending() || self.has_prepared()) && aggregate.has_standby(),
             "DATAPATH must check AP standby ownership before claiming another ordered lease"
         );
-        self.prepare_one(aggregate, control, frame)?;
+        self.retain_active_frame(control.mac.engine_mut(), frame)?;
 
-        // The AP-specific peer, power-save and key checks remain per frame,
-        // but crossing the generic DATAPATH scheduler for every immediately
-        // available lease is not an ownership boundary. Drain only the
-        // current FIFO-ready prefix, exactly as the station aggregate owner
-        // does. A peer/TID boundary is retained in `prepared_first`, while an
-        // empty producer queue returns control to the executor.
+        // The AP-specific peer, power-save and key checks remain per frame.
+        // The Core0 arena, rather than the immutable cross-core FIFO order,
+        // now defines the same-peer aggregate frontier.
         self.prepare_ready_standby(aggregate, control, network)?;
         Ok(())
     }
@@ -1331,16 +1772,30 @@ where
         E: WifiTxEntropy,
         T: WifiTxTimer,
     {
-        while self.can_prepare(aggregate) {
-            let Some(frame) = network.try_receive() else {
+        while self.can_prepare(aggregate, control.tx_pending()) {
+            let frame = if let Some(batch) = self.prepared_standby.as_ref() {
+                let key = ApTxFlowKey {
+                    peer: batch.admission.peer(),
+                    tid: open_esp_radio_esp32s31_wifi_ap::protocol::AP_TX_BLOCK_ACK_TID,
+                };
+                self.take_matching_active_or_network(control.mac.engine_mut(), key, network)?
+            } else if let Some(first) = self.prepared_first.as_ref() {
+                let key = ApTxFlowKey::tid0_from_ethernet(first.as_slice());
+                self.take_matching_active_or_network(control.mac.engine_mut(), key, network)?
+            } else {
+                self.take_scheduled_active_or_network(control.mac.engine_mut(), network)?
+            };
+            let Some(frame) = frame else {
                 break;
             };
-            self.prepare_one(aggregate, control, frame)?;
+            if !self.prepare_retained_one(aggregate, control, frame, network)? {
+                break;
+            }
         }
         Ok(())
     }
 
-    fn prepare_one<
+    fn prepare_retained_one<
         P,
         E,
         T,
@@ -1366,8 +1821,23 @@ where
             DMA_BUFFER_SIZE,
             TX_BUFFER_SIZE,
         >,
-        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-    ) -> Result<(), Esp32s31AccessPointDatapathError>
+        frame: PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+        network: &PinnedTxInterfaceConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+    ) -> Result<bool, Esp32s31AccessPointDatapathError>
     where
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
@@ -1375,20 +1845,13 @@ where
     {
         #[cfg(any(feature = "diagnostics", test))]
         let started = self.observer.map(AggregateTxObserver::now_micros);
-        #[cfg(any(feature = "diagnostics", test))]
-        if let Some(observer) = self.observer {
-            observer.observe_access_point_network_claim(frame.as_slice());
-        }
-
-        let Some(mut frame) = self.retain_power_save(control.mac.engine_mut(), frame)? else {
-            return Ok(());
-        };
-
-        if let Some(batch) = self.prepared_standby.as_mut() {
-            if !batch.admission.accepts_ethernet(frame.as_slice()) {
+        if let Some(batch) = self.prepared_standby.as_ref() {
+            let admission = batch.admission;
+            if !admission.accepts_ethernet(frame.as_slice()) {
                 debug_assert!(self.prepared_first.is_none());
+                self.prepared_first_key = Some(ApTxFlowKey::tid0_from_ethernet(frame.as_slice()));
                 self.prepared_first = Some(frame);
-                return Ok(());
+                return Ok(true);
             }
             {
                 let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
@@ -1397,18 +1860,26 @@ where
                     ))
                 })?;
                 ordinary
-                    .require_unprotected_ht_aggregate(batch.admission.rate())
+                    .require_unprotected_ht_aggregate(admission.rate())
                     .map_err(Esp32s31ApAmpduError::Protection)
                     .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
             }
-            let peer = batch.admission.peer();
+            let mut frame = match network.try_promote(frame) {
+                Ok(frame) => frame,
+                Err(frame) => {
+                    let key = ApTxFlowKey::tid0_from_ethernet(frame.as_slice());
+                    let _ = self.push_active_frame(key, frame);
+                    return Ok(false);
+                }
+            };
+            let peer = admission.peer();
             let offset = frame.ethernet_offset();
             let length = frame.ethernet_length();
             let encoded = control
                 .mac
                 .engine_mut()
                 .encode_aggregate_ethernet_in_place(
-                    batch.admission.binding(),
+                    admission.binding(),
                     frame.storage_mut(),
                     offset,
                     length,
@@ -1423,6 +1894,10 @@ where
                 .expect("checked standby arena")
                 .push(peer, frame, encoded)
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
+            let batch = self
+                .prepared_standby
+                .as_mut()
+                .expect("checked AP standby batch");
             batch.admitted += 1;
             #[cfg(any(feature = "diagnostics", test))]
             {
@@ -1432,21 +1907,28 @@ where
                         .unwrap_or(0),
                 );
             }
-            return Ok(());
+            return Ok(true);
         }
 
-        let Some(mut first) = self.prepared_first.take() else {
+        let Some(first) = self.prepared_first.take() else {
+            self.prepared_first_key = Some(ApTxFlowKey::tid0_from_ethernet(frame.as_slice()));
             self.prepared_first = Some(frame);
-            return Ok(());
+            return Ok(true);
         };
+        let first_key = self
+            .prepared_first_key
+            .take()
+            .expect("prepared AP frame retains its flow key");
         let admission = control.mac.aggregate_admission(first.as_slice());
         let Some(admission) =
             admission.filter(|admission| admission.accepts_ethernet(frame.as_slice()))
         else {
             debug_assert!(self.prepared_second.is_none());
+            self.prepared_first_key = Some(first_key);
             self.prepared_first = Some(first);
+            self.prepared_second_key = Some(ApTxFlowKey::tid0_from_ethernet(frame.as_slice()));
             self.prepared_second = Some(frame);
-            return Ok(());
+            return Ok(true);
         };
         let peer = admission.peer();
         {
@@ -1460,6 +1942,22 @@ where
                 .map_err(Esp32s31ApAmpduError::Protection)
                 .map_err(Esp32s31AccessPointDatapathError::Aggregate)?;
         }
+        let mut first = match network.try_promote(first) {
+            Ok(first) => first,
+            Err(first) => {
+                let _ = self.push_active_frame(first_key, first);
+                let _ = self.push_active_frame(first_key, frame);
+                return Ok(false);
+            }
+        };
+        let mut frame = match network.try_promote(frame) {
+            Ok(frame) => frame,
+            Err(frame) => {
+                let _ = self.push_active_frame(first_key, PinnedNetworkTxFrame::Direct(first));
+                let _ = self.push_active_frame(first_key, frame);
+                return Ok(false);
+            }
+        };
         let first_offset = first.ethernet_offset();
         let first_length = first.ethernet_length();
         let first_encoded = control
@@ -1527,7 +2025,7 @@ where
         if let Some(observer) = self.observer {
             observer.observe(AggregateTxObservation::StandbyPrepared);
         }
-        Ok(())
+        Ok(true)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1584,18 +2082,18 @@ where
         if self.prepared_buffered_release.is_some() {
             return self.start_prepared_buffered_release(control, hardware);
         }
-        while self.can_prepare(aggregate) {
-            let Some(frame) = network.try_receive() else {
-                break;
-            };
-            self.prepare(aggregate, control, frame, network)?;
-        }
+        self.prepare_ready_standby(aggregate, control, network)?;
         let Some(_batch) = self.prepared_standby.take() else {
             loop {
                 let Some(frame) = self.prepared_first.take() else {
                     return Ok(WifiTxProgress::Complete);
                 };
+                let _ = self
+                    .prepared_first_key
+                    .take()
+                    .expect("prepared AP frame retains its flow key");
                 self.prepared_first = self.prepared_second.take();
+                self.prepared_first_key = self.prepared_second_key.take();
                 let Some(frame) = self.retain_power_save(control.mac.engine_mut(), frame)? else {
                     continue;
                 };
@@ -1683,7 +2181,10 @@ where
             .rollback_pending_buffered_releases()
             .map_err(Esp32s31AccessPointDatapathError::Control)?;
         self.prepared_first = None;
+        self.prepared_first_key = None;
         self.prepared_second = None;
+        self.prepared_second_key = None;
+        while self.pop_scheduled_active().is_some() {}
         if self.prepared_standby.take().is_some() {
             aggregate
                 .standby_mut()
@@ -2045,6 +2546,7 @@ impl<
     for Esp32s31AccessPointNetworkTx<
         'observer,
         PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     >
 where
     M: RawMutex,
@@ -2090,5 +2592,114 @@ where
         >,
     ) -> Result<(), Esp32s31AccessPointDatapathError> {
         self.discard_group_buffer(control)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ApActiveFrameQueues, ApFrameLeaseArena, ApTxFlowKey, aggregate_adapter_available};
+
+    struct TestActiveArena<B> {
+        leases: ApFrameLeaseArena<B>,
+        queues: ApActiveFrameQueues,
+    }
+
+    impl<B> TestActiveArena<B> {
+        const fn new() -> Self {
+            Self {
+                leases: ApFrameLeaseArena::new(),
+                queues: ApActiveFrameQueues::new(),
+            }
+        }
+
+        fn push(&mut self, key: ApTxFlowKey, frame: B) -> Result<(), B> {
+            let index = self.leases.insert(frame)?;
+            if self.queues.push(key, index).is_err() {
+                return Err(self.leases.take(index));
+            }
+            Ok(())
+        }
+
+        fn pop_key(&mut self, key: ApTxFlowKey) -> Option<B> {
+            self.queues
+                .pop_key(key)
+                .map(|index| self.leases.take(index))
+        }
+
+        fn pop_scheduled(&mut self) -> Option<(ApTxFlowKey, B)> {
+            self.queues
+                .pop_scheduled()
+                .map(|(key, index)| (key, self.leases.take(index)))
+        }
+
+        fn len_for(&self, key: ApTxFlowKey) -> usize {
+            self.queues.len_for(key)
+        }
+
+        fn len(&self) -> usize {
+            self.queues.len()
+        }
+    }
+
+    const FLOW_A: ApTxFlowKey = ApTxFlowKey {
+        peer: [0x02, 0, 0, 0, 0, 1],
+        tid: 0,
+    };
+    const FLOW_B: ApTxFlowKey = ApTxFlowKey {
+        peer: [0x02, 0, 0, 0, 0, 2],
+        tid: 0,
+    };
+
+    #[test]
+    fn ordinary_publication_blocks_aggregate_adapter_borrow() {
+        assert!(aggregate_adapter_available(false));
+        assert!(!aggregate_adapter_available(true));
+    }
+
+    #[test]
+    fn active_arena_regroups_interleaved_frames_without_reordering_a_flow() {
+        let mut arena = TestActiveArena::new();
+        for sequence in 0..16_u8 {
+            arena.push(FLOW_A, sequence * 2).unwrap();
+            arena.push(FLOW_B, sequence * 2 + 1).unwrap();
+        }
+
+        assert_eq!(arena.len_for(FLOW_A), 16);
+        assert_eq!(arena.len_for(FLOW_B), 16);
+        for sequence in 0..16_u8 {
+            assert_eq!(arena.pop_key(FLOW_A), Some(sequence * 2));
+        }
+        for sequence in 0..16_u8 {
+            assert_eq!(arena.pop_key(FLOW_B), Some(sequence * 2 + 1));
+        }
+        assert_eq!(arena.len(), 0);
+    }
+
+    #[test]
+    fn active_arena_schedules_nonempty_flows_round_robin() {
+        let mut arena = TestActiveArena::new();
+        arena.push(FLOW_A, 10).unwrap();
+        arena.push(FLOW_A, 11).unwrap();
+        arena.push(FLOW_B, 20).unwrap();
+        arena.push(FLOW_B, 21).unwrap();
+
+        assert_eq!(arena.pop_scheduled(), Some((FLOW_A, 10)));
+        assert_eq!(arena.pop_scheduled(), Some((FLOW_B, 20)));
+        assert_eq!(arena.pop_scheduled(), Some((FLOW_A, 11)));
+        assert_eq!(arena.pop_scheduled(), Some((FLOW_B, 21)));
+    }
+
+    #[test]
+    fn active_arena_reuses_every_bounded_frame_slot() {
+        let mut arena = TestActiveArena::new();
+        for value in 0..super::AP_ACTIVE_FRAME_CAPACITY {
+            arena.push(FLOW_A, value).unwrap();
+        }
+        assert_eq!(arena.push(FLOW_A, usize::MAX), Err(usize::MAX));
+        for value in 0..super::AP_ACTIVE_FRAME_CAPACITY {
+            assert_eq!(arena.pop_key(FLOW_A), Some(value));
+        }
+        arena.push(FLOW_B, 42).unwrap();
+        assert_eq!(arena.pop_key(FLOW_B), Some(42));
     }
 }

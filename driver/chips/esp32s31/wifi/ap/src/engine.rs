@@ -1008,7 +1008,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         };
         let sequence_number = if peer_qos {
             self.service
-                .current_qos_sequence(open_esp_radio_wifi_ap::AP_TX_BLOCK_ACK_TID)
+                .current_qos_sequence(destination, open_esp_radio_wifi_ap::AP_TX_BLOCK_ACK_TID)
                 .expect("AP TX data TID is representable")
         } else {
             self.service.current_data_sequence()
@@ -1067,7 +1067,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         let consumed_sequence_number = match prepared.sequence_space {
             Esp32s31ApDataSequenceSpace::Qos => self
                 .service
-                .next_qos_sequence(open_esp_radio_wifi_ap::AP_TX_BLOCK_ACK_TID)
+                .next_qos_sequence(prepared.peer, open_esp_radio_wifi_ap::AP_TX_BLOCK_ACK_TID)
                 .expect("AP TX data TID is representable"),
             Esp32s31ApDataSequenceSpace::NonQos => self.service.next_data_sequence(),
         };
@@ -1123,7 +1123,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
 
         let sequence_number = self
             .service
-            .current_qos_sequence(open_esp_radio_wifi_ap::AP_TX_BLOCK_ACK_TID)
+            .current_qos_sequence(destination, open_esp_radio_wifi_ap::AP_TX_BLOCK_ACK_TID)
             .expect("AP A-MSDU TID is representable");
         let ethernet_frames = [first, second];
         let placeholder_ccmp = protected.then_some([0; 8]);
@@ -1178,7 +1178,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         }
         let consumed = self
             .service
-            .next_qos_sequence(open_esp_radio_wifi_ap::AP_TX_BLOCK_ACK_TID)
+            .next_qos_sequence(prepared.peer, open_esp_radio_wifi_ap::AP_TX_BLOCK_ACK_TID)
             .expect("AP A-MSDU TID is representable");
         debug_assert_eq!(consumed, prepared.sequence_number);
         Ok(Esp32s31ApProtectedFrame {
@@ -1220,7 +1220,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         let hardware_key_selector = binding.security.hardware_index();
         let sequence_number = self
             .service
-            .current_qos_sequence(open_esp_radio_wifi_ap::AP_TX_BLOCK_ACK_TID)
+            .current_qos_sequence(peer, open_esp_radio_wifi_ap::AP_TX_BLOCK_ACK_TID)
             .expect("AP TX data TID is representable");
         let encoded = ApProtectedDataFrame {
             access_point: self.service.address(),
@@ -1240,7 +1240,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         storage[ccmp_offset..ccmp_offset + ccmp_header.len()].copy_from_slice(&ccmp_header);
         let consumed = self
             .service
-            .next_qos_sequence(open_esp_radio_wifi_ap::AP_TX_BLOCK_ACK_TID)
+            .next_qos_sequence(peer, open_esp_radio_wifi_ap::AP_TX_BLOCK_ACK_TID)
             .expect("AP TX data TID is representable");
         debug_assert_eq!(consumed, sequence_number);
         Ok(Esp32s31ApAggregateFrame {
@@ -1265,8 +1265,8 @@ impl<'storage> Esp32s31ApEngine<'storage> {
     }
 
     #[cfg(test)]
-    pub(crate) fn current_qos_sequence(&self, tid: u8) -> Option<u16> {
-        self.service.current_qos_sequence(tid)
+    pub(crate) fn current_qos_sequence(&self, peer: [u8; 6], tid: u8) -> Option<u16> {
+        self.service.current_qos_sequence(peer, tid)
     }
 
     pub fn peer_status(&self, peer: [u8; 6]) -> Option<ApPeerStatus> {
@@ -2336,7 +2336,7 @@ mod tests {
         assert_eq!(&protected[26..34], &[3, 0, 0, 0x20, 0, 0, 0, 0]);
         assert_eq!(&protected[42..46], &[1, 2, 3, 4]);
         assert_eq!(engine.service.current_data_sequence(), 1);
-        assert_eq!(engine.service.current_qos_sequence(0), Some(1));
+        assert_eq!(engine.service.current_qos_sequence(peer, 0), Some(1));
 
         let request = engine
             .service
@@ -2362,7 +2362,7 @@ mod tests {
         second[6..12].copy_from_slice(&[2, 0, 0, 0, 0, 7]);
         second[12..14].copy_from_slice(&0x0806_u16.to_be_bytes());
         second[14..].copy_from_slice(&[5, 6, 7, 8]);
-        let qos_sequence = engine.service.current_qos_sequence(0);
+        let qos_sequence = engine.service.current_qos_sequence(peer, 0);
         let mut short_amsdu = [0xa5; 64];
         assert_eq!(
             engine
@@ -2371,13 +2371,13 @@ mod tests {
             None
         );
         assert_eq!(short_amsdu, [0xa5; 64]);
-        assert_eq!(engine.service.current_qos_sequence(0), qos_sequence);
+        assert_eq!(engine.service.current_qos_sequence(peer, 0), qos_sequence);
         let mut amsdu = [0_u8; 128];
         let prepared_amsdu = engine
             .encode_amsdu_ethernet_pair(&ethernet, &second, &mut amsdu)
             .unwrap()
             .expect("negotiated pair fits the bounded AP scratch");
-        assert_eq!(engine.service.current_qos_sequence(0), qos_sequence);
+        assert_eq!(engine.service.current_qos_sequence(peer, 0), qos_sequence);
         assert_eq!(&amsdu[26..34], &[0; 8]);
         let encoded_amsdu = engine
             .commit_prepared_amsdu(prepared_amsdu, &mut amsdu)
@@ -2495,12 +2495,12 @@ mod tests {
             .encode_amsdu_ethernet_pair(&first, &second, &mut output)
             .unwrap()
             .expect("Open HT/QoS pair is admitted");
-        assert_eq!(engine.service.current_qos_sequence(0), Some(0));
+        assert_eq!(engine.service.current_qos_sequence(peer, 0), Some(0));
         let encoded = engine.commit_prepared_amsdu(prepared, &mut output).unwrap();
         assert_eq!(encoded.hardware_key_selector, None);
         assert_eq!(&output[..2], &0x0288_u16.to_le_bytes());
         assert_eq!(output[24], 0x80);
-        assert_eq!(engine.service.current_qos_sequence(0), Some(1));
+        assert_eq!(engine.service.current_qos_sequence(peer, 0), Some(1));
         assert_eq!(engine.service.current_data_sequence(), 0);
         assert!(
             engine

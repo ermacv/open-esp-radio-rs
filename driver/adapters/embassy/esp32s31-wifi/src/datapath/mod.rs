@@ -17,8 +17,8 @@ use embassy_futures::{
 };
 use embassy_time::{Duration, Instant, Timer};
 use open_esp_radio_embassy_net::{
-    LinkState, NetworkInterfaceId, PinnedRxPublisher, PinnedTxFrame, PinnedTxInterfaceConsumer,
-    RawMutex,
+    LinkState, NetworkInterfaceId, PinnedNetworkTxFrame, PinnedRxPublisher,
+    PinnedTxInterfaceConsumer, RawMutex,
 };
 pub use open_esp_radio_esp32s31_wifi::datapath::{
     DatapathControlContext, DatapathControlProgress, DatapathRxProgress, DatapathRxWorkCounters,
@@ -464,7 +464,14 @@ pub trait DatapathServices<
     /// from `network`, and return all of them only after BlockAck/detach.
     fn start_tx<'a>(
         &'a mut self,
-        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        frame: PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
         network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
@@ -556,7 +563,14 @@ pub trait DatapathServices<
 
     fn prepare_tx<'a>(
         &'a mut self,
-        _frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        _frame: PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
         _network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,

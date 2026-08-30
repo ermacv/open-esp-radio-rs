@@ -11,8 +11,8 @@ use core::{
 
 use open_esp_radio_embassy_net::{
     Driver as _, DualPinnedNetworkRunner, NetworkInterfaceId, NoopRawMutex,
-    PinnedEndpointResources, PinnedNetworkRunner, PinnedTxPool, PinnedTxResources, RxEnqueueError,
-    SplitPinnedDevice, TxToken as _,
+    PinnedEndpointResources, PinnedNetworkRunner, PinnedNetworkTxFrame, PinnedTxPool,
+    PinnedTxResources, RxEnqueueError, SplitPinnedDevice, TxToken as _,
 };
 use open_esp_radio_esp32s31_wifi_mac::irq::{EVENT_RX_SUCCESS, EVENT_TX_COMPLETE};
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
@@ -385,7 +385,7 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
 
     fn start_tx<'a>(
         &'a mut self,
-        _frame: PinnedTxFrame<
+        _frame: PinnedNetworkTxFrame<
             'static,
             NoopRawMutex,
             FRAME_CAPACITY,
@@ -481,7 +481,7 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
 
     fn start_tx<'a>(
         &'a mut self,
-        _frame: PinnedTxFrame<
+        _frame: PinnedNetworkTxFrame<
             'static,
             NoopRawMutex,
             FRAME_CAPACITY,
@@ -653,7 +653,7 @@ impl
         &'a mut self,
         _hardware: &'a mut (),
         physical_tx: &'a mut PairedPhysicalTx,
-        frame: PinnedTxFrame<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 2>,
+        frame: PinnedNetworkTxFrame<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 2>,
         network: &'a PinnedTxInterfaceConsumer<
             'static,
             NoopRawMutex,
@@ -795,7 +795,7 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
 
     fn start_tx<'a>(
         &'a mut self,
-        _frame: PinnedTxFrame<
+        _frame: PinnedNetworkTxFrame<
             'static,
             NoopRawMutex,
             FRAME_CAPACITY,
@@ -851,7 +851,7 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
 
     fn start_tx<'a>(
         &'a mut self,
-        _frame: PinnedTxFrame<
+        _frame: PinnedNetworkTxFrame<
             'static,
             NoopRawMutex,
             FRAME_CAPACITY,
@@ -906,7 +906,7 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
 
     fn start_tx<'a>(
         &'a mut self,
-        _frame: PinnedTxFrame<
+        _frame: PinnedNetworkTxFrame<
             'static,
             NoopRawMutex,
             FRAME_CAPACITY,
@@ -983,7 +983,7 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
 
     fn start_tx<'a>(
         &'a mut self,
-        _frame: PinnedTxFrame<
+        _frame: PinnedNetworkTxFrame<
             'static,
             NoopRawMutex,
             FRAME_CAPACITY,
@@ -1040,7 +1040,7 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
 
     fn start_tx<'a>(
         &'a mut self,
-        _frame: PinnedTxFrame<
+        _frame: PinnedNetworkTxFrame<
             'static,
             NoopRawMutex,
             FRAME_CAPACITY,
@@ -1107,7 +1107,7 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
 
     fn start_tx<'a>(
         &'a mut self,
-        _frame: PinnedTxFrame<
+        _frame: PinnedNetworkTxFrame<
             'static,
             NoopRawMutex,
             FRAME_CAPACITY,
@@ -1159,7 +1159,7 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
 
     fn start_tx<'a>(
         &'a mut self,
-        _frame: PinnedTxFrame<
+        _frame: PinnedNetworkTxFrame<
             'static,
             NoopRawMutex,
             FRAME_CAPACITY,
@@ -1200,7 +1200,7 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
 
     fn prepare_tx<'a>(
         &'a mut self,
-        _frame: PinnedTxFrame<
+        _frame: PinnedNetworkTxFrame<
             'static,
             NoopRawMutex,
             FRAME_CAPACITY,
@@ -1261,7 +1261,7 @@ impl DatapathServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 
 
     fn start_tx<'a>(
         &'a mut self,
-        _frame: PinnedTxFrame<
+        _frame: PinnedNetworkTxFrame<
             'static,
             NoopRawMutex,
             FRAME_CAPACITY,

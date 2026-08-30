@@ -48,7 +48,17 @@ mac-irq-telemetry = [
 # executor occupancy with only the poll timer and counter overhead remaining.
 task-residence-telemetry = [
     "open-esp-radio-esp32s31-embassy-wifi/connected-datapath-cycle-telemetry",
+    "open-esp-radio-esp32s31-embassy-wifi/tx-staging-copy-probe",
+    "open-esp-radio-embassy-net/tx-staging-copy-probe",
+    "tx-psram-dma-probe",
+    "gdma-mem2mem-probe",
 ]
+tx-psram-dma-probe = [
+    "open-esp-radio-esp32s31-embassy-wifi/tx-psram-dma-probe",
+]
+# Diagnostic-only PSRAM-to-SRAM promotion benchmark. It claims AXI-GDMA
+# channel 0 before radio startup and releases it before any workload begins.
+gdma-mem2mem-probe = ["open-esp-radio-esp32s31-platform-pac/psram-dma-diagnostic"]
 # General task-poll diagnostic. Driver observation remains available for the
 # existing RX/TX/AP diagnostic scenarios, but Core0 per-phase accounting is
 # deliberately separate below.
@@ -105,6 +115,7 @@ open-esp-radio-esp32s31-platform-pac.workspace = true
 open-esp-radio-esp32s31-embassy-runtime.workspace = true
 open-esp-radio-esp32s31-wifi-esp-hal = { workspace = true, features = ["esp32s31"], optional = true }
 open-esp-radio-hil-protocol = { workspace = true, optional = true }
+open-esp-radio-hil-esp32s31-board = { path = "../board" }
 open-esp-radio-hil-esp32s31-telemetry = { workspace = true, optional = true }
 open-esp-radio-wifi-embassy = { workspace = true, optional = true }
 postcard = { workspace = true, optional = true }

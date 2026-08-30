@@ -16,15 +16,16 @@ use std::{
 
 use open_esp_radio_hil_protocol::{
     Capabilities, Command, DecodeCounters, Direction, Envelope, Event, EvidenceRecord, Finished,
-    FrameDecoder, FrameEncoder, Ieee802154EdEventProbeEvidence, Ieee802154EdEventProbeRequest,
-    Ieee802154EventStatusProbeEvidence, Ieee802154EventStatusProbeRequest, LinkHealth,
-    NetworkSchedulerEvidence, OperationStatus, RadioEvidence, RxDeliveryEvidence, RxRadioEvidence,
-    SessionConfig, SessionLinkRequirements, SessionReady, SessionState, StackUsage,
-    StartupArtifactChunk, StartupArtifactStatus, StateChange, StationEpochEvidence,
-    StationLifecycleEvent, TimebaseProbeEvidence, TimebaseProbeRequest, Transport,
-    TransportEvidence, TxAggregateTimingEvidence, TxRadioEvidence, WifiMonitorCaptureRequest,
-    WifiMonitorEvidence, WifiMonitorFrameChunk, WifiMonitorRequest, WifiNetworkInterface,
-    WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest, evidence_crc32c,
+    FlowTransportEvidence, FrameDecoder, FrameEncoder, Ieee802154EdEventProbeEvidence,
+    Ieee802154EdEventProbeRequest, Ieee802154EventStatusProbeEvidence,
+    Ieee802154EventStatusProbeRequest, LinkHealth, NetworkSchedulerEvidence, OperationStatus,
+    RadioEvidence, RxDeliveryEvidence, RxRadioEvidence, SESSION_FLOW_CAPACITY, SessionConfig,
+    SessionLinkRequirements, SessionReady, SessionState, StackUsage, StartupArtifactChunk,
+    StartupArtifactStatus, StateChange, StationEpochEvidence, StationLifecycleEvent,
+    TimebaseProbeEvidence, TimebaseProbeRequest, Transport, TransportEvidence,
+    TxAggregateTimingEvidence, TxRadioEvidence, WifiMonitorCaptureRequest, WifiMonitorEvidence,
+    WifiMonitorFrameChunk, WifiMonitorRequest, WifiNetworkInterface, WifiRoleTransitionEvidence,
+    WifiScanEvidence, WifiScanRequest, evidence_crc32c,
 };
 use zeroize::Zeroizing;
 
@@ -181,6 +182,7 @@ pub(crate) struct TcpReady {
 pub(crate) struct SessionHandle {
     session_id: u64,
     first_event: usize,
+    flow_ids: [Option<u8>; SESSION_FLOW_CAPACITY],
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -198,6 +200,7 @@ pub(crate) struct WifiCommandHandle {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SessionEvidence {
     pub(crate) transport: TransportEvidence,
+    pub(crate) flow_transport: [Option<FlowTransportEvidence>; SESSION_FLOW_CAPACITY],
     pub(crate) radio: Option<RadioEvidence>,
     pub(crate) tx_timing: Option<TxAggregateTimingEvidence>,
     pub(crate) rx_delivery: Option<RxDeliveryEvidence>,
@@ -822,6 +825,7 @@ impl SerialCapture {
                 data_plane: lab.data_plane(),
                 rx_checksum: lab.rx_checksum(),
                 tx_udp_checksum: lab.tx_udp_checksum(),
+                tx_buffer: lab.tx_buffer(),
                 rx_admission: lab.rx_admission(),
                 rx_dispatch: lab.rx_dispatch(),
                 rx_continuation: lab.rx_continuation(),
@@ -923,6 +927,7 @@ impl SerialCapture {
         let first_event = self.protocol_event_count();
         let direction = config.direction;
         let link_requirements = config.link_requirements;
+        let flow_ids = config.flows.map(|flow| flow.map(|flow| flow.flow_id));
         self.expect_accepted(
             session_id,
             Command::Configure(config),
@@ -961,6 +966,7 @@ impl SerialCapture {
         Ok(SessionHandle {
             session_id,
             first_event,
+            flow_ids,
         })
     }
 
@@ -980,6 +986,36 @@ impl SerialCapture {
             Event::Evidence(EvidenceRecord::Transport(transport)) => transport,
             _ => unreachable!("session evidence predicate accepted only transport evidence"),
         };
+        let mut flow_transport = [None; SESSION_FLOW_CAPACITY];
+        for (index, flow_id) in session.flow_ids.into_iter().enumerate() {
+            let Some(flow_id) = flow_id else {
+                continue;
+            };
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let flow_evidence = self
+                .wait_for_protocol_after(session.first_event, remaining, |message| {
+                    message.session_id == session.session_id
+                        && matches!(
+                            message.body,
+                            Event::Evidence(EvidenceRecord::FlowTransport(flow))
+                                if flow.flow_id == flow_id
+                        )
+                })
+                .ok_or_else(|| {
+                    format!("device did not publish transport evidence for flow {flow_id}")
+                })?;
+            flow_transport[index] = Some(match flow_evidence.body {
+                Event::Evidence(EvidenceRecord::FlowTransport(flow)) => flow,
+                _ => unreachable!("flow predicate accepted only flow transport evidence"),
+            });
+        }
+        let flow_total = TransportEvidence::from_flows(flow_transport);
+        if flow_total != transport {
+            return Err(format!(
+                "per-flow transport total does not match session aggregate: flows={flow_total:?} aggregate={transport:?}"
+            )
+            .into());
+        }
         let link_evidence = self
             .wait_for_protocol_after(session.first_event, timeout, |message| {
                 message.session_id == session.session_id
@@ -1063,6 +1099,7 @@ impl SerialCapture {
                 _ => unreachable!("scheduler predicate accepted only scheduler evidence"),
             });
         let expected_records = 3
+            + u16::try_from(flow_transport.iter().flatten().count())?
             + u16::from(radio.is_some())
             + u16::from(tx_timing.is_some())
             + u16::from(rx_delivery.is_some())
@@ -1076,6 +1113,9 @@ impl SerialCapture {
         }
         let mut records = Vec::with_capacity(usize::from(finished.summary.evidence_records));
         records.push(EvidenceRecord::Transport(transport));
+        for flow in flow_transport.iter().flatten().copied() {
+            records.push(EvidenceRecord::FlowTransport(flow));
+        }
         if let Some(radio) = radio {
             records.push(EvidenceRecord::Radio(radio));
         }
@@ -1099,15 +1139,22 @@ impl SerialCapture {
             )
             .into());
         }
-        Ok(SessionEvidence {
+        let session_evidence = SessionEvidence {
             transport,
+            flow_transport,
             radio,
             tx_timing,
             rx_delivery,
             network_scheduler,
             stack,
             finished,
-        })
+        };
+        if session_evidence.flow_transport.iter().flatten().count()
+            != session.flow_ids.iter().flatten().count()
+        {
+            return Err("structured session lost configured flow evidence".into());
+        }
+        Ok(session_evidence)
     }
 
     pub(crate) fn acknowledge_session(&self, session: SessionHandle) -> Result<()> {
@@ -2171,8 +2218,9 @@ pub(crate) fn await_udp_tx_ready(
 mod tests {
     use open_esp_radio_hil_protocol::{
         Capabilities, DecodeCounters, Direction, Envelope, Event, FeatureCapabilities, Finished,
-        RadioEvidence, ResultSummary, RxRadioEvidence, SessionLinkRequirements, SessionReady,
-        StackUsage, StackWatermark, StationLifecycleEvent, TransportEvidence,
+        FlowTransportEvidence, RadioEvidence, ResultSummary, RxRadioEvidence,
+        SessionLinkRequirements, SessionReady, StackUsage, StackWatermark, StationLifecycleEvent,
+        TransportEvidence,
     };
 
     use super::{
@@ -2196,6 +2244,7 @@ mod tests {
                     runtime_initialization: true,
                     runtime_configuration: true,
                     structured_evidence: true,
+                    udp_multi_flow: false,
                     startup_artifact: true,
                     station_epoch_control: true,
                     wifi_role_control: true,
@@ -2231,15 +2280,20 @@ mod tests {
     }
 
     fn session_with_rx(rx: RxRadioEvidence) -> SessionEvidence {
+        let transport = TransportEvidence {
+            rx_bytes: 0,
+            tx_bytes: 0,
+            rx_units: 0,
+            tx_units: 0,
+            elapsed_micros: 1,
+            transport_errors: 0,
+        };
         SessionEvidence {
-            transport: TransportEvidence {
-                rx_bytes: 0,
-                tx_bytes: 0,
-                rx_units: 0,
-                tx_units: 0,
-                elapsed_micros: 1,
-                transport_errors: 0,
-            },
+            transport,
+            flow_transport: [
+                Some(FlowTransportEvidence::from_session_total(0, transport)),
+                None,
+            ],
             radio: Some(RadioEvidence {
                 rx: Some(rx),
                 tx: None,

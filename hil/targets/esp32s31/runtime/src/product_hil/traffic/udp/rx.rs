@@ -6,7 +6,7 @@ use embassy_futures::{
     select::{Either, select},
     yield_now,
 };
-use embassy_net::{Stack, udp::UdpSocket};
+use embassy_net::{IpEndpoint, Ipv4Address, Stack, udp::UdpSocket};
 use embassy_time::{Duration, Instant, with_timeout};
 #[cfg(any(
     feature = "core0-rx-cycle-telemetry",
@@ -27,8 +27,9 @@ use open_esp_radio_hil_esp32s31_telemetry::{
 #[cfg(feature = "rx-delivery-telemetry")]
 use open_esp_radio_hil_protocol::RxReorderDeliveryEvidence;
 use open_esp_radio_hil_protocol::{
-    Direction as HilDirection, Event as HilEvent, RadioEvidence, RxRadioEvidence, ServiceInfo,
-    SessionReady, Transport as HilTransport, TransportEvidence,
+    Direction as HilDirection, Event as HilEvent, FlowTransportEvidence, RadioEvidence,
+    RxRadioEvidence, SESSION_FLOW_CAPACITY, ServiceInfo, SessionConfig, SessionReady,
+    Transport as HilTransport, TransportEvidence,
 };
 
 use super::UdpSocketBuffers;
@@ -75,6 +76,177 @@ pub(in crate::product_hil) struct UdpRxTelemetry {
     pub task_polls: &'static TaskPollSet,
     #[cfg(feature = "core0-rx-cycle-telemetry")]
     pub l1_cache: &'static L1CachePerformanceCounters,
+}
+
+#[derive(Clone, Copy)]
+struct MultiRxFlowState {
+    flow_id: u8,
+    endpoint: IpEndpoint,
+    expected_payload_bytes: usize,
+    started: Option<Instant>,
+    last_packet: Option<Instant>,
+    bytes: u64,
+    datagrams: u64,
+    errors: u32,
+    terminal_seen: bool,
+}
+
+struct MultiRxOutcome {
+    started: Instant,
+    last_packet: Instant,
+    bytes: u64,
+    datagrams: u64,
+    errors: u32,
+    terminal_seen: bool,
+    flows: [Option<FlowTransportEvidence>; SESSION_FLOW_CAPACITY],
+}
+
+enum MultiRxPacket {
+    Data(Instant),
+    Terminal,
+    Unknown,
+}
+
+fn multi_rx_flow_states(
+    config: SessionConfig,
+) -> [Option<MultiRxFlowState>; SESSION_FLOW_CAPACITY] {
+    config.flows.map(|flow| {
+        flow.map(|flow| {
+            let peer = flow
+                .peer
+                .expect("validated multi-flow RX session carries a peer");
+            MultiRxFlowState {
+                flow_id: flow.flow_id,
+                endpoint: (Ipv4Address::from_octets(peer.address), peer.port).into(),
+                expected_payload_bytes: usize::from(
+                    flow.target_rx
+                        .expect("validated multi-flow RX session carries an RX flow")
+                        .payload_bytes,
+                ),
+                started: None,
+                last_packet: None,
+                bytes: 0,
+                datagrams: 0,
+                errors: 0,
+                terminal_seen: false,
+            }
+        })
+    })
+}
+
+fn observe_multi_rx_packet(
+    states: &mut [Option<MultiRxFlowState>; SESSION_FLOW_CAPACITY],
+    endpoint: IpEndpoint,
+    length: usize,
+    sequence: Option<i32>,
+) -> MultiRxPacket {
+    let Some(state) = states
+        .iter_mut()
+        .flatten()
+        .find(|state| state.endpoint == endpoint)
+    else {
+        return MultiRxPacket::Unknown;
+    };
+    if sequence.is_some_and(|sequence| sequence < 0) {
+        if state.started.is_some() {
+            state.terminal_seen = true;
+        }
+        return MultiRxPacket::Terminal;
+    }
+
+    let received_at = Instant::now();
+    state.started.get_or_insert(received_at);
+    state.last_packet = Some(received_at);
+    state.bytes = state.bytes.saturating_add(length as u64);
+    state.datagrams = state.datagrams.saturating_add(1);
+    state.errors = state
+        .errors
+        .saturating_add(u32::from(length != state.expected_payload_bytes));
+    MultiRxPacket::Data(received_at)
+}
+
+fn all_multi_rx_flows_terminal(states: &[Option<MultiRxFlowState>; SESSION_FLOW_CAPACITY]) -> bool {
+    states.iter().flatten().all(|state| state.terminal_seen)
+}
+
+async fn receive_multi_flow(
+    socket: &mut UdpSocket<'_>,
+    session_config: SessionConfig,
+    idle_timeout: Duration,
+) -> MultiRxOutcome {
+    let mut states = multi_rx_flow_states(session_config);
+    let mut unknown_packets = 0_u32;
+    let started = loop {
+        let (length, sequence, endpoint) = socket
+            .recv_from_with(|packet, metadata| {
+                (packet.len(), iperf2_udp_sequence(packet), metadata.endpoint)
+            })
+            .await;
+        match observe_multi_rx_packet(&mut states, endpoint, length, sequence) {
+            MultiRxPacket::Data(started) => break started,
+            MultiRxPacket::Unknown => unknown_packets = unknown_packets.saturating_add(1),
+            MultiRxPacket::Terminal => {}
+        }
+    };
+
+    while !all_multi_rx_flows_terminal(&states) {
+        let received = with_timeout(
+            idle_timeout,
+            socket.recv_from_with(|packet, metadata| {
+                (packet.len(), iperf2_udp_sequence(packet), metadata.endpoint)
+            }),
+        )
+        .await;
+        let Ok((length, sequence, endpoint)) = received else {
+            break;
+        };
+        if matches!(
+            observe_multi_rx_packet(&mut states, endpoint, length, sequence),
+            MultiRxPacket::Unknown
+        ) {
+            unknown_packets = unknown_packets.saturating_add(1);
+        }
+    }
+
+    if let Some(primary) = states.iter_mut().flatten().next() {
+        primary.errors = primary.errors.saturating_add(unknown_packets);
+    }
+    let last_packet = states
+        .iter()
+        .flatten()
+        .filter_map(|state| state.last_packet)
+        .max()
+        .unwrap_or(started);
+    let terminal_seen = all_multi_rx_flows_terminal(&states);
+    let flows = states.map(|state| {
+        state.map(|state| {
+            let elapsed_micros = match (state.started, state.last_packet) {
+                (Some(started), Some(last)) => last.duration_since(started).as_micros().max(1),
+                _ => 1,
+            };
+            FlowTransportEvidence {
+                flow_id: state.flow_id,
+                rx_bytes: state.bytes,
+                tx_bytes: 0,
+                rx_units: state.datagrams,
+                tx_units: 0,
+                elapsed_micros,
+                transport_errors: state
+                    .errors
+                    .saturating_add(u32::from(state.started.is_none())),
+            }
+        })
+    });
+    let aggregate = TransportEvidence::from_flows(flows);
+    MultiRxOutcome {
+        started,
+        last_packet,
+        bytes: aggregate.rx_bytes,
+        datagrams: aggregate.rx_units,
+        errors: aggregate.transport_errors,
+        terminal_seen,
+        flows,
+    }
 }
 
 pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
@@ -142,7 +314,9 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             }
         };
         #[cfg(feature = "rx-delivery-telemetry")]
-        rx_qualification::HilConnectedRxObserver::begin_delivery_session(session.session_id);
+        if session.config.active_flow_count() == 1 {
+            rx_qualification::HilConnectedRxObserver::begin_delivery_session(session.session_id);
+        }
         publish_event_reliably(
             session.session_id,
             0,
@@ -187,90 +361,141 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         let s_mpdu_start = rx_qualification::RX_S_MPDU.snapshot();
         let beacon_s_mpdu_start = rx_qualification::BEACON_S_MPDU.snapshot();
         let ampdu_start = rx_qualification::RX_AMPDU.snapshot();
-        let expected_payload_bytes = usize::from(
-            session
-                .config
-                .target_rx
-                .expect("validated RX session carries an RX flow")
-                .payload_bytes,
-        );
-
-        let (first_length, first_sequence) = loop {
-            let (length, sequence) = socket
-                .recv_from_with(|packet, _| (packet.len(), iperf2_udp_sequence(packet)))
-                .await;
-            #[cfg(feature = "rx-delivery-telemetry")]
-            if let Some(sequence) = sequence {
-                rx_qualification::HilConnectedRxObserver::observe_udp_consumer(
-                    session.session_id,
-                    sequence,
-                );
-            }
-            if sequence.is_some_and(|sequence| sequence < 0) {
-                continue;
-            }
-            break (length, sequence);
-        };
-        let started = Instant::now();
-        let mut last_packet = started;
-        let mut bytes = first_length as u64;
-        let mut datagrams = 1_u64;
-        let mut receive_errors = u32::from(first_length != expected_payload_bytes);
-        let mut terminal_seen = false;
-        let mut sequence = UdpSequenceEvidence::default();
-        sequence.observe(first_sequence);
-
-        loop {
-            match with_timeout(
-                config.idle_timeout,
-                socket.recv_from_with(|packet, _| (packet.len(), iperf2_udp_sequence(packet))),
-            )
-            .await
-            {
-                Ok((_, Some(value))) if value < 0 => {
-                    #[cfg(feature = "rx-delivery-telemetry")]
+        let session_flow = session
+            .config
+            .primary_flow()
+            .expect("validated RX session carries a primary flow");
+        let (
+            started,
+            last_packet,
+            bytes,
+            datagrams,
+            mut receive_errors,
+            terminal_seen,
+            sequence,
+            mut flow_evidence,
+        ) = if session.config.active_flow_count() == 1 {
+            let expected_payload_bytes = usize::from(
+                session_flow
+                    .target_rx
+                    .expect("validated RX session carries an RX flow")
+                    .payload_bytes,
+            );
+            let (first_length, first_sequence) = loop {
+                let (length, sequence) = socket
+                    .recv_from_with(|packet, _| (packet.len(), iperf2_udp_sequence(packet)))
+                    .await;
+                #[cfg(feature = "rx-delivery-telemetry")]
+                if let Some(sequence) = sequence {
                     rx_qualification::HilConnectedRxObserver::observe_udp_consumer(
                         session.session_id,
-                        value,
+                        sequence,
                     );
-                    terminal_seen = true;
-                    #[cfg(feature = "rx-delivery-telemetry")]
-                    while let Ok(Some(sequence)) = with_timeout(
-                        config.idle_timeout,
-                        socket.recv_from_with(|packet, _| iperf2_udp_sequence(packet)),
-                    )
-                    .await
-                    {
+                }
+                if sequence.is_some_and(|sequence| sequence < 0) {
+                    continue;
+                }
+                break (length, sequence);
+            };
+            let started = Instant::now();
+            let mut last_packet = started;
+            let mut bytes = first_length as u64;
+            let mut datagrams = 1_u64;
+            let mut receive_errors = u32::from(first_length != expected_payload_bytes);
+            let mut terminal_seen = false;
+            let mut sequence = UdpSequenceEvidence::default();
+            sequence.observe(first_sequence);
+
+            loop {
+                match with_timeout(
+                    config.idle_timeout,
+                    socket.recv_from_with(|packet, _| (packet.len(), iperf2_udp_sequence(packet))),
+                )
+                .await
+                {
+                    Ok((_, Some(value))) if value < 0 => {
+                        #[cfg(feature = "rx-delivery-telemetry")]
                         rx_qualification::HilConnectedRxObserver::observe_udp_consumer(
                             session.session_id,
-                            sequence,
+                            value,
                         );
+                        terminal_seen = true;
+                        #[cfg(feature = "rx-delivery-telemetry")]
+                        while let Ok(Some(sequence)) = with_timeout(
+                            config.idle_timeout,
+                            socket.recv_from_with(|packet, _| iperf2_udp_sequence(packet)),
+                        )
+                        .await
+                        {
+                            rx_qualification::HilConnectedRxObserver::observe_udp_consumer(
+                                session.session_id,
+                                sequence,
+                            );
+                        }
+                        break;
                     }
-                    break;
-                }
-                Ok((length, packet_sequence)) => {
-                    #[cfg(feature = "rx-delivery-telemetry")]
-                    if let Some(sequence) = packet_sequence {
-                        rx_qualification::HilConnectedRxObserver::observe_udp_consumer(
-                            session.session_id,
-                            sequence,
+                    Ok((length, packet_sequence)) => {
+                        #[cfg(feature = "rx-delivery-telemetry")]
+                        if let Some(sequence) = packet_sequence {
+                            rx_qualification::HilConnectedRxObserver::observe_udp_consumer(
+                                session.session_id,
+                                sequence,
+                            );
+                        }
+                        receive_errors = receive_errors
+                            .saturating_add(u32::from(length != expected_payload_bytes));
+                        let received_at = Instant::now();
+                        sequence.observe(packet_sequence);
+                        sequence.observe_interarrival(
+                            packet_sequence,
+                            received_at.duration_since(last_packet).as_micros(),
                         );
+                        bytes = bytes.saturating_add(length as u64);
+                        datagrams = datagrams.saturating_add(1);
+                        last_packet = received_at;
                     }
-                    receive_errors =
-                        receive_errors.saturating_add(u32::from(length != expected_payload_bytes));
-                    let received_at = Instant::now();
-                    sequence.observe(packet_sequence);
-                    sequence.observe_interarrival(
-                        packet_sequence,
-                        received_at.duration_since(last_packet).as_micros(),
-                    );
-                    bytes = bytes.saturating_add(length as u64);
-                    datagrams = datagrams.saturating_add(1);
-                    last_packet = received_at;
+                    Err(_) => break,
                 }
-                Err(_) => break,
             }
-        }
+            let elapsed_us = last_packet.duration_since(started).as_micros().max(1);
+            let transport = TransportEvidence {
+                rx_bytes: bytes,
+                tx_bytes: 0,
+                rx_units: datagrams,
+                tx_units: 0,
+                elapsed_micros: elapsed_us,
+                transport_errors: receive_errors,
+            };
+            (
+                started,
+                last_packet,
+                bytes,
+                datagrams,
+                receive_errors,
+                terminal_seen,
+                sequence,
+                [
+                    Some(FlowTransportEvidence::from_session_total(
+                        session_flow.flow_id,
+                        transport,
+                    )),
+                    None,
+                ],
+            )
+        } else {
+            let outcome =
+                receive_multi_flow(&mut socket, session.config, config.idle_timeout).await;
+            (
+                outcome.started,
+                outcome.last_packet,
+                outcome.bytes,
+                outcome.datagrams,
+                outcome.errors,
+                outcome.terminal_seen,
+                UdpSequenceEvidence::default(),
+                outcome.flows,
+            )
+        };
 
         let elapsed_us = last_packet.duration_since(started).as_micros().max(1);
         let qualification_end = qualification_sample(QualificationRequester::UdpRx).await;
@@ -300,30 +525,35 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         let pipeline_end = telemetry.pipeline.snapshot();
         let pipeline_interval = pipeline_end.wrapping_delta_since(pipeline_start);
         #[cfg(feature = "rx-delivery-telemetry")]
-        let rx_delivery = {
-            let reorder = pipeline_interval;
-            rx_qualification::HilConnectedRxObserver::finish_delivery_session(
-                session.session_id,
-                RxReorderDeliveryEvidence {
-                    ingress: reorder.reorder_ingress,
-                    ingress_retries: reorder.reorder_ingress_retries,
-                    direct: reorder.reorder_direct,
-                    buffered: reorder.reorder_buffered,
-                    released: reorder.reorder_released,
-                    missing: reorder.reorder_missing,
-                    stale: reorder.reorder_stale,
-                    gap_expiries: reorder.reorder_gap_expiries,
-                    maximum_occupied: reorder.reorder_maximum_occupied,
-                    discarded: reorder.reorder_discarded,
-                },
-            )
-        };
+        let rx_delivery = (session.config.active_flow_count() == 1)
+            .then(|| {
+                let reorder = pipeline_interval;
+                rx_qualification::HilConnectedRxObserver::finish_delivery_session(
+                    session.session_id,
+                    RxReorderDeliveryEvidence {
+                        ingress: reorder.reorder_ingress,
+                        ingress_retries: reorder.reorder_ingress_retries,
+                        direct: reorder.reorder_direct,
+                        buffered: reorder.reorder_buffered,
+                        released: reorder.reorder_released,
+                        missing: reorder.reorder_missing,
+                        stale: reorder.reorder_stale,
+                        gap_expiries: reorder.reorder_gap_expiries,
+                        maximum_occupied: reorder.reorder_maximum_occupied,
+                        discarded: reorder.reorder_discarded,
+                    },
+                )
+            })
+            .flatten();
         #[cfg(not(feature = "rx-delivery-telemetry"))]
         let rx_delivery = None;
         let queue_dropped = pipeline_end
             .network_dropped
             .wrapping_sub(pipeline_start.network_dropped);
         receive_errors = receive_errors.saturating_add(queue_dropped);
+        if let Some(primary) = flow_evidence.iter_mut().flatten().next() {
+            primary.transport_errors = primary.transport_errors.saturating_add(queue_dropped);
+        }
         let throughput_kbps = bytes
             .saturating_mul(8_000)
             .checked_div(elapsed_us)
@@ -568,14 +798,6 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         log_open_radio_core0_rx_service_histogram(&core0_rx_service_start).await;
         #[cfg(feature = "core0-rx-coarse-telemetry")]
         log_open_radio_core0_rx_coarse(core0_performance_start).await;
-        let evidence = TransportEvidence {
-            rx_bytes: bytes,
-            tx_bytes: 0,
-            rx_units: datagrams,
-            tx_units: 0,
-            elapsed_micros: elapsed_us,
-            transport_errors: receive_errors,
-        };
         let passed = terminal_seen && receive_errors == 0;
         let radio = crate::product_hil::OPEN_RADIO_DRIVER_OBSERVATION.then_some(RadioEvidence {
             rx: Some(RxRadioEvidence {
@@ -650,7 +872,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             OpenRadioBidirectionalResult::new(
                 session.session_id,
                 OpenRadioBidirectionalDirection::Rx,
-                evidence,
+                flow_evidence,
                 radio,
                 None,
                 rx_delivery,

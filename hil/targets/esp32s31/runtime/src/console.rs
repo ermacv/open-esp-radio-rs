@@ -30,17 +30,17 @@ use open_esp_radio_hil_protocol::Ieee802154EdEventProbeRequest;
 #[cfg(feature = "ieee802154-event-status-probe")]
 use open_esp_radio_hil_protocol::Ieee802154EventStatusProbeRequest;
 use open_esp_radio_hil_protocol::{
-    Capabilities, Command, Completion, Direction, Envelope, Event, EvidenceRecord, FailureCode,
-    Finished, FrameDecoder, FrameEncoder, LinkHealth, NetworkCredentials, NetworkIpv4Configuration,
-    PROTOCOL_VERSION, RejectReason, ResultSummary, RxDeliveryEvidence,
-    STARTUP_ARTIFACT_CHUNK_MAX_LEN, SessionConfig, SessionState, StartupArtifactChunk,
-    StartupArtifactDisposition, StartupArtifactStatus, StateChange, StationEpochEvidence,
-    StationLifecycleEvent, TimebaseProbeEvidence, TimebaseProbeRequest, Transport,
-    TransportEvidence, WifiAccessPointEvidence, WifiAccessPointRequest, WifiMonitorCaptureRequest,
-    WifiMonitorEvidence, WifiMonitorFrameChunk, WifiMonitorRequest, WifiRole,
-    WifiRoleFailureEvidence, WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest,
-    WifiStationAccessPointRequest, WifiStationAccessPointStopEvidence, evidence_crc32c,
-    startup_artifact_crc32c,
+    Capabilities, Command, Direction, Envelope, Event, EvidenceRecord, FailureCode,
+    Finished, FlowTransportEvidence, FrameDecoder, FrameEncoder, LinkHealth, NetworkCredentials,
+    NetworkIpv4Configuration, PROTOCOL_VERSION, RejectReason, ResultSummary, RxDeliveryEvidence,
+    SESSION_FLOW_CAPACITY, STARTUP_ARTIFACT_CHUNK_MAX_LEN, SessionConfig, SessionState,
+    StartupArtifactChunk, StartupArtifactDisposition, StartupArtifactStatus, StateChange,
+    StationEpochEvidence, StationLifecycleEvent, TimebaseProbeEvidence, TimebaseProbeRequest,
+    Transport, TransportEvidence, WifiAccessPointEvidence, WifiAccessPointRequest,
+    WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorFrameChunk, WifiMonitorRequest,
+    WifiRole, WifiRoleFailureEvidence, WifiRoleTransitionEvidence, WifiScanEvidence,
+    WifiScanRequest, WifiStationAccessPointRequest, WifiStationAccessPointStopEvidence,
+    evidence_crc32c, startup_artifact_crc32c,
 };
 
 const MESSAGE_CAPACITY: usize = 384;
@@ -177,6 +177,7 @@ pub struct StartupConfiguration {
     pub data_plane: open_esp_radio_hil_protocol::WifiDataPlanePlacement,
     pub rx_checksum: open_esp_radio_hil_protocol::WifiRxChecksumPolicy,
     pub tx_udp_checksum: open_esp_radio_hil_protocol::WifiTxUdpChecksumPolicy,
+    pub tx_buffer: open_esp_radio_hil_protocol::WifiTxBufferPolicy,
     pub rx_admission: open_esp_radio_hil_protocol::WifiRxAdmissionPolicy,
     pub rx_dispatch: open_esp_radio_hil_protocol::WifiRxDispatchPolicy,
     pub rx_continuation: open_esp_radio_hil_protocol::WifiRxContinuationPolicy,
@@ -293,6 +294,7 @@ impl StartupArtifactAssembler {
 #[derive(Clone, Copy)]
 struct SessionResult {
     session_id: u64,
+    flow_evidence: [Option<FlowTransportEvidence>; SESSION_FLOW_CAPACITY],
     evidence: TransportEvidence,
     radio: Option<open_esp_radio_hil_protocol::RadioEvidence>,
     tx_timing: Option<open_esp_radio_hil_protocol::TxAggregateTimingEvidence>,
@@ -977,15 +979,17 @@ pub async fn publish_station_lifecycle(event: StationLifecycleEvent) {
 /// benchmark's measured interval.
 pub async fn complete_session(
     session_id: u64,
-    evidence: TransportEvidence,
+    flow_evidence: [Option<FlowTransportEvidence>; SESSION_FLOW_CAPACITY],
     radio: Option<open_esp_radio_hil_protocol::RadioEvidence>,
     tx_timing: Option<open_esp_radio_hil_protocol::TxAggregateTimingEvidence>,
     rx_delivery: Option<RxDeliveryEvidence>,
     passed: bool,
 ) {
+    let evidence = TransportEvidence::from_flows(flow_evidence);
     SESSION_RESULTS
         .send(SessionResult {
             session_id,
+            flow_evidence,
             evidence,
             radio,
             tx_timing,
@@ -1310,6 +1314,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                                 data_plane: configuration.data_plane,
                                 rx_checksum: configuration.rx_checksum,
                                 tx_udp_checksum: configuration.tx_udp_checksum,
+                                tx_buffer: configuration.tx_buffer,
                                 rx_admission: configuration.rx_admission,
                                 rx_dispatch: configuration.rx_dispatch,
                                 rx_continuation: configuration.rx_continuation,
@@ -1891,55 +1896,25 @@ pub async fn protocol_task(capabilities: Capabilities) {
 }
 
 fn valid_session_config(config: SessionConfig, capabilities: Capabilities) -> bool {
-    let valid_flow = |flow: open_esp_radio_hil_protocol::FlowConfig| {
-        flow.payload_bytes >= 64
-            && flow.payload_bytes <= capabilities.maximum_payload_bytes
-            && flow
-                .offered_rate_bps
-                .is_none_or(|rate| (100_000..=1_000_000_000).contains(&rate))
-    };
-    let peer_valid = match (config.transport, config.direction) {
-        (Transport::Tcp, _) | (Transport::Udp, Direction::Rx) => config.peer.is_none(),
-        (Transport::Udp, Direction::Tx | Direction::Bidirectional) => {
-            config.peer.is_some_and(|peer| peer.port != 0)
-        }
-    };
-    let direction_valid = match config.direction {
-        Direction::Rx => {
-            capabilities.features.rx
-                && config.target_rx.is_some_and(valid_flow)
-                && config.target_tx.is_none()
-        }
-        Direction::Tx => {
-            capabilities.features.tx
-                && config.target_rx.is_none()
-                && config.target_tx.is_some_and(valid_flow)
-        }
+    let direction_supported = match config.direction {
+        Direction::Rx => capabilities.features.rx,
+        Direction::Tx => capabilities.features.tx,
         Direction::Bidirectional => {
             capabilities.features.bidirectional
                 && capabilities.features.rx
                 && capabilities.features.tx
-                && config.target_rx.is_some_and(valid_flow)
-                && config.target_tx.is_some_and(valid_flow)
         }
     };
     let transport_valid = match config.transport {
         Transport::Udp => capabilities.features.udp,
         Transport::Tcp => capabilities.features.tcp,
     };
-    let link_requirements_valid = match config.link_requirements.tx_block_ack_tid {
-        None => true,
-        Some(tid) => {
-            tid < 8
-                && matches!(config.direction, Direction::Tx | Direction::Bidirectional)
-                && config.target_tx.is_some()
-        }
-    };
     transport_valid
-        && peer_valid
-        && direction_valid
-        && link_requirements_valid
-        && matches!(config.completion, Completion::DurationMillis(duration) if (1..=300_000).contains(&duration))
+        && direction_supported
+        && config.structurally_valid(
+            capabilities.maximum_payload_bytes,
+            capabilities.features.udp_multi_flow,
+        )
 }
 
 async fn transition_state(
@@ -1959,10 +1934,15 @@ async fn transition_state(
 }
 
 async fn publish_result(result: SessionResult, request_id: u32) {
-    let mut evidence = heapless::Vec::<EvidenceRecord, 7>::new();
+    let mut evidence = heapless::Vec::<EvidenceRecord, 8>::new();
     evidence
         .push(EvidenceRecord::Transport(result.evidence))
         .expect("session evidence has fixed capacity");
+    for flow in result.flow_evidence.iter().flatten().copied() {
+        evidence
+            .push(EvidenceRecord::FlowTransport(flow))
+            .expect("session evidence has fixed capacity");
+    }
     if let Some(radio) = result.radio {
         evidence
             .push(EvidenceRecord::Radio(radio))

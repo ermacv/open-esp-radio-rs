@@ -10,9 +10,9 @@ use embassy_time::{Duration, Instant, Timer, with_timeout};
 use open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounters;
 use open_esp_radio_hil_esp32s31_telemetry::rx_pipeline::RxPipelineCounters;
 use open_esp_radio_hil_protocol::{
-    Completion as HilCompletion, Direction as HilDirection, Event as HilEvent, ServiceInfo,
-    SessionReady, Transport as HilTransport, TransportEvidence, WifiNetworkInterface,
-    fill_stream_pattern, stream_pattern_matches,
+    Completion as HilCompletion, Direction as HilDirection, Event as HilEvent,
+    FlowTransportEvidence, ServiceInfo, SessionReady, Transport as HilTransport, TransportEvidence,
+    WifiNetworkInterface, fill_stream_pattern, stream_pattern_matches,
 };
 
 use crate::console::{complete_session, publish_event_reliably, runtime_log};
@@ -143,12 +143,15 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
         socket.set_nagle_enabled(false);
         let started = Instant::now();
         let (mut rx, mut tx) = (StreamResult::default(), StreamResult::default());
+        let session_flow = session
+            .config
+            .primary_flow()
+            .expect("validated TCP session carries a primary flow");
 
         if connected {
             match session.config.direction {
                 HilDirection::Rx => {
-                    let flow = session
-                        .config
+                    let flow = session_flow
                         .target_rx
                         .expect("validated TCP RX session carries an RX flow");
                     rx = receive_stream(
@@ -159,8 +162,7 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
                     .await;
                 }
                 HilDirection::Tx => {
-                    let flow = session
-                        .config
+                    let flow = session_flow
                         .target_tx
                         .expect("validated TCP TX session carries a TX flow");
                     tx = transmit_stream(
@@ -173,12 +175,10 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
                     .await;
                 }
                 HilDirection::Bidirectional => {
-                    let rx_flow = session
-                        .config
+                    let rx_flow = session_flow
                         .target_rx
                         .expect("validated bidirectional TCP session carries an RX flow");
-                    let tx_flow = session
-                        .config
+                    let tx_flow = session_flow
                         .target_tx
                         .expect("validated bidirectional TCP session carries a TX flow");
                     let (mut reader, mut writer) = socket.split();
@@ -294,16 +294,23 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
             &TASK_POLLS,
         )
         .await;
+        let transport = TransportEvidence {
+            rx_bytes: rx.bytes,
+            tx_bytes: tx.bytes,
+            rx_units: rx.units,
+            tx_units: tx.units,
+            elapsed_micros: elapsed_us,
+            transport_errors,
+        };
         complete_session(
             session.session_id,
-            TransportEvidence {
-                rx_bytes: rx.bytes,
-                tx_bytes: tx.bytes,
-                rx_units: rx.units,
-                tx_units: tx.units,
-                elapsed_micros: elapsed_us,
-                transport_errors,
-            },
+            [
+                Some(FlowTransportEvidence::from_session_total(
+                    session_flow.flow_id,
+                    transport,
+                )),
+                None,
+            ],
             aggregate_evidence.map(|(radio, _)| radio),
             aggregate_evidence.map(|(_, timing)| timing),
             None,

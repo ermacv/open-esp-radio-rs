@@ -244,9 +244,7 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_interval(
             .control_check_to_prepared_readiness
             .lifetime_max_micros,
         scheduler.prepared_readiness_to_batch.micros,
-        scheduler
-            .prepared_readiness_to_batch
-            .lifetime_max_micros,
+        scheduler.prepared_readiness_to_batch.lifetime_max_micros,
         scheduler.prepared_batch_to_entry.micros,
         scheduler.prepared_batch_to_entry.lifetime_max_micros,
         scheduler.control_check_to_prepared_entry.micros,
@@ -991,6 +989,36 @@ pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(earlier: TxPe
         performance.emit_instructions,
         performance.publication_cycles(),
         performance.publication_instructions(),
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ONTXP attempts={} successes={} no_credit={} bytes={} total_cycles={} total_instret={} credit_cycles={} credit_instret={} destination_claim_cycles={} destination_claim_instret={} copy_cycles={} copy_instret={}",
+        performance.promotion_attempts,
+        performance.promotion_successes,
+        performance.promotion_no_credit,
+        performance.promotion_bytes,
+        performance.promotion_cycles,
+        performance.promotion_instructions,
+        performance.promotion_credit_cycles,
+        performance.promotion_credit_instructions,
+        performance.promotion_destination_claim_cycles,
+        performance.promotion_destination_claim_instructions,
+        performance.promotion_copy_cycles,
+        performance.promotion_copy_instructions,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
+        "ONTXPO publication_cycles={} publication_instret={} source_release_cycles={} source_release_instret={} radio_claim_cycles={} radio_claim_instret={} unattributed_cycles={} unattributed_instret={}",
+        performance.promotion_publication_cycles,
+        performance.promotion_publication_instructions,
+        performance.promotion_source_release_cycles,
+        performance.promotion_source_release_instructions,
+        performance.promotion_radio_claim_cycles,
+        performance.promotion_radio_claim_instructions,
+        performance.promotion_unattributed_cycles(),
+        performance.promotion_unattributed_instructions(),
     ))
     .await;
     yield_now().await;

@@ -8,7 +8,8 @@ use std::{
 };
 
 use open_esp_radio_hil_protocol::{
-    Completion, Direction, FlowConfig, SessionConfig, SessionLinkRequirements, Transport,
+    Completion, Direction, FlowConfig, SessionConfig, SessionFlowConfig, SessionLinkRequirements,
+    Transport,
 };
 
 use crate::{
@@ -110,12 +111,18 @@ pub(crate) fn run(
             transport: Transport::Udp,
             direction: Direction::Rx,
             completion: Completion::DurationMillis(duration_millis),
-            peer: None,
-            target_rx: Some(FlowConfig {
-                payload_bytes: u16::try_from(options.payload)?,
-                offered_rate_bps: Some(options.rate_bps),
-            }),
-            target_tx: None,
+            flows: [
+                Some(SessionFlowConfig {
+                    flow_id: 0,
+                    peer: None,
+                    target_rx: Some(FlowConfig {
+                        payload_bytes: u16::try_from(options.payload)?,
+                        offered_rate_bps: Some(options.rate_bps),
+                    }),
+                    target_tx: None,
+                }),
+                None,
+            ],
             link_requirements: SessionLinkRequirements::NONE,
         })?;
         let host = send_paced_udp(PacedUdpConfig {
@@ -192,12 +199,18 @@ pub(crate) fn run(
         transport: Transport::Udp,
         direction: Direction::Rx,
         completion: Completion::DurationMillis(duration_millis),
-        peer: None,
-        target_rx: Some(FlowConfig {
-            payload_bytes: u16::try_from(options.payload)?,
-            offered_rate_bps: Some(options.rate_bps),
-        }),
-        target_tx: None,
+        flows: [
+            Some(SessionFlowConfig {
+                flow_id: 0,
+                peer: None,
+                target_rx: Some(FlowConfig {
+                    payload_bytes: u16::try_from(options.payload)?,
+                    offered_rate_bps: Some(options.rate_bps),
+                }),
+                target_tx: None,
+            }),
+            None,
+        ],
         link_requirements: SessionLinkRequirements::NONE,
     })?;
     let host = send_paced_udp(PacedUdpConfig {

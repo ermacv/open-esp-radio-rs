@@ -3,7 +3,14 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 70;
+pub const PROTOCOL_VERSION: u16 = 72;
+/// Maximum number of independently accounted transport flows in one network
+/// interface session.
+///
+/// Two flows are sufficient for the first physical multi-client AP cell. The
+/// fixed bound keeps the no-alloc wire contract explicit and does not change
+/// the target rule that one session owns one network interface.
+pub const SESSION_FLOW_CAPACITY: usize = 2;
 // Keep command envelopes small: startup artifacts are transferred as an
 // ordered CRC-protected stream, so a large per-command inline buffer only
 // inflates UART queues and executor futures without improving semantics.
@@ -92,6 +99,20 @@ pub struct FlowConfig {
     pub offered_rate_bps: Option<u64>,
 }
 
+/// One independently identifiable flow inside a network-interface session.
+///
+/// `peer` is the target's UDP transmit destination when `target_tx` is present.
+/// For receive-only sessions it may be absent when there is exactly one flow;
+/// multi-flow receive sessions require a peer so the target can classify the
+/// source without combining independent sequence spaces.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SessionFlowConfig {
+    pub flow_id: u8,
+    pub peer: Option<Ipv4Endpoint>,
+    pub target_rx: Option<FlowConfig>,
+    pub target_tx: Option<FlowConfig>,
+}
+
 /// Link properties that must be true before a measured transport session may
 /// advertise readiness.
 ///
@@ -127,10 +148,118 @@ pub struct SessionConfig {
     pub transport: Transport,
     pub direction: Direction,
     pub completion: Completion,
-    pub peer: Option<Ipv4Endpoint>,
-    pub target_rx: Option<FlowConfig>,
-    pub target_tx: Option<FlowConfig>,
+    /// Contiguous flow table. Slot zero is always occupied. A second occupied
+    /// slot represents another UDP peer on the same network interface and is
+    /// accepted only when [`FeatureCapabilities::udp_multi_flow`] is true.
+    pub flows: [Option<SessionFlowConfig>; SESSION_FLOW_CAPACITY],
     pub link_requirements: SessionLinkRequirements,
+}
+
+impl SessionConfig {
+    pub const fn primary_flow(self) -> Option<SessionFlowConfig> {
+        self.flows[0]
+    }
+
+    pub fn active_flow_count(self) -> usize {
+        self.flows.iter().flatten().count()
+    }
+
+    /// Validate the target-neutral bounded session shape.
+    ///
+    /// Runtime feature availability remains the target's responsibility. This
+    /// method owns the wire invariants so host/model tests exercise the same
+    /// rules as embedded admission.
+    pub fn structurally_valid(self, maximum_payload_bytes: u16, udp_multi_flow: bool) -> bool {
+        let flow_count = self.active_flow_count();
+        if flow_count == 0 || self.flows[0].is_none() {
+            return false;
+        }
+        let mut saw_empty = false;
+        for flow in self.flows {
+            match flow {
+                Some(_) if saw_empty => return false,
+                Some(_) => {}
+                None => saw_empty = true,
+            }
+        }
+        if flow_count > 1 && (self.transport != Transport::Udp || !udp_multi_flow) {
+            return false;
+        }
+
+        let valid_flow = |flow: FlowConfig| {
+            flow.payload_bytes >= 64
+                && flow.payload_bytes <= maximum_payload_bytes
+                && flow
+                    .offered_rate_bps
+                    .is_none_or(|rate| (100_000..=1_000_000_000).contains(&rate))
+        };
+        let identities_valid = self
+            .flows
+            .iter()
+            .flatten()
+            .enumerate()
+            .all(|(index, flow)| {
+                self.flows[..index]
+                    .iter()
+                    .flatten()
+                    .all(|earlier| earlier.flow_id != flow.flow_id)
+                    && flow.peer.is_none_or(|peer| {
+                        peer.port != 0
+                            && self.flows[..index]
+                                .iter()
+                                .flatten()
+                                .filter_map(|earlier| earlier.peer)
+                                .all(|earlier| earlier != peer)
+                    })
+            });
+        let peers_valid = match (self.transport, self.direction) {
+            (Transport::Tcp, _) => {
+                flow_count == 1 && self.flows.iter().flatten().all(|flow| flow.peer.is_none())
+            }
+            (Transport::Udp, Direction::Rx) if flow_count == 1 => {
+                self.flows.iter().flatten().all(|flow| flow.peer.is_none())
+            }
+            (Transport::Udp, Direction::Rx) => {
+                self.flows.iter().flatten().all(|flow| flow.peer.is_some())
+            }
+            (Transport::Udp, Direction::Tx | Direction::Bidirectional) => {
+                self.flows.iter().flatten().all(|flow| flow.peer.is_some())
+            }
+        };
+        let direction_valid = match self.direction {
+            Direction::Rx => self
+                .flows
+                .iter()
+                .flatten()
+                .all(|flow| flow.target_rx.is_some_and(valid_flow) && flow.target_tx.is_none()),
+            Direction::Tx => self
+                .flows
+                .iter()
+                .flatten()
+                .all(|flow| flow.target_rx.is_none() && flow.target_tx.is_some_and(valid_flow)),
+            Direction::Bidirectional => self.flows.iter().flatten().all(|flow| {
+                flow.target_rx.is_some_and(valid_flow) && flow.target_tx.is_some_and(valid_flow)
+            }),
+        };
+        let link_requirements_valid = match self.link_requirements.tx_block_ack_tid {
+            None => true,
+            Some(tid) => {
+                tid < 8
+                    && matches!(self.direction, Direction::Tx | Direction::Bidirectional)
+                    && self
+                        .flows
+                        .iter()
+                        .flatten()
+                        .all(|flow| flow.target_tx.is_some())
+            }
+        };
+
+        identities_valid
+            && peers_valid
+            && direction_valid
+            && link_requirements_valid
+            && matches!(self.completion, Completion::DurationMillis(duration) if (1..=300_000).contains(&duration))
+    }
 }
 
 /// Data-plane readiness together with the exact link requirement proved by
@@ -151,6 +280,10 @@ pub struct FeatureCapabilities {
     pub runtime_initialization: bool,
     pub runtime_configuration: bool,
     pub structured_evidence: bool,
+    /// One UDP session can execute and account more than one peer flow.
+    /// Merely carrying the bounded flow table on the wire does not imply this
+    /// capability.
+    pub udp_multi_flow: bool,
     /// This image accepts one opaque, host-owned startup artifact and can
     /// return its current value after initialization.
     pub startup_artifact: bool,
@@ -795,6 +928,22 @@ pub enum WifiTxUdpChecksumPolicy {
     OmitIpv4Diagnostic,
 }
 
+/// Backing selected for one same-image TX ownership-boundary experiment.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum WifiTxBufferPolicy {
+    /// Let the network stack format directly into the final DMA-visible slot.
+    #[default]
+    DirectDma,
+    /// Format in ordinary task memory, then copy once into the final DMA slot.
+    /// This measures materialization cost but does not yet add software queues.
+    PsramStagingCopyDiagnostic,
+    /// Keep Wi-Fi descriptors in internal SRAM but publish PSRAM packet-buffer
+    /// addresses after an explicit cache writeback. Hardware support is not
+    /// assumed; this value exists only for the bounded DMA-address HIL.
+    PsramDirectDmaDiagnostic,
+}
+
 /// Ordinary shared-RX admission selected before the radio stack starts.
 ///
 /// Both variants live in one diagnostic ELF. The deferred variant preserves
@@ -855,6 +1004,7 @@ pub struct InitializationConfiguration {
     pub data_plane: WifiDataPlanePlacement,
     pub rx_checksum: WifiRxChecksumPolicy,
     pub tx_udp_checksum: WifiTxUdpChecksumPolicy,
+    pub tx_buffer: WifiTxBufferPolicy,
     pub rx_admission: WifiRxAdmissionPolicy,
     pub rx_dispatch: WifiRxDispatchPolicy,
     pub rx_continuation: WifiRxContinuationPolicy,
@@ -1656,6 +1806,72 @@ pub struct TransportEvidence {
     pub transport_errors: u32,
 }
 
+/// Transport accounting for one configured [`SessionFlowConfig`].
+///
+/// The session-wide [`TransportEvidence`] remains the independently checked
+/// sum used by existing ceiling reports. Fairness verdicts consume these
+/// records and must never infer a peer split from the aggregate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct FlowTransportEvidence {
+    pub flow_id: u8,
+    pub rx_bytes: u64,
+    pub tx_bytes: u64,
+    pub rx_units: u64,
+    pub tx_units: u64,
+    pub elapsed_micros: u64,
+    pub transport_errors: u32,
+}
+
+impl FlowTransportEvidence {
+    pub const fn from_session_total(flow_id: u8, total: TransportEvidence) -> Self {
+        Self {
+            flow_id,
+            rx_bytes: total.rx_bytes,
+            tx_bytes: total.tx_bytes,
+            rx_units: total.rx_units,
+            tx_units: total.tx_units,
+            elapsed_micros: total.elapsed_micros,
+            transport_errors: total.transport_errors,
+        }
+    }
+
+    pub const fn as_session_total(self) -> TransportEvidence {
+        TransportEvidence {
+            rx_bytes: self.rx_bytes,
+            tx_bytes: self.tx_bytes,
+            rx_units: self.rx_units,
+            tx_units: self.tx_units,
+            elapsed_micros: self.elapsed_micros,
+            transport_errors: self.transport_errors,
+        }
+    }
+}
+
+impl TransportEvidence {
+    pub fn from_flows(flows: [Option<FlowTransportEvidence>; SESSION_FLOW_CAPACITY]) -> Self {
+        flows.iter().flatten().copied().fold(
+            Self {
+                rx_bytes: 0,
+                tx_bytes: 0,
+                rx_units: 0,
+                tx_units: 0,
+                elapsed_micros: 0,
+                transport_errors: 0,
+            },
+            |mut total, flow| {
+                total.rx_bytes = total.rx_bytes.saturating_add(flow.rx_bytes);
+                total.tx_bytes = total.tx_bytes.saturating_add(flow.tx_bytes);
+                total.rx_units = total.rx_units.saturating_add(flow.rx_units);
+                total.tx_units = total.tx_units.saturating_add(flow.tx_units);
+                total.elapsed_micros = total.elapsed_micros.max(flow.elapsed_micros);
+                total.transport_errors =
+                    total.transport_errors.saturating_add(flow.transport_errors);
+                total
+            },
+        )
+    }
+}
+
 /// Minimum typed radio evidence needed by ordinary UDP qualification. Richer
 /// timing histograms remain diagnostic telemetry and never decide PASS/FAIL.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -1910,6 +2126,7 @@ pub struct NetworkSchedulerEvidence {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum EvidenceRecord {
     Transport(TransportEvidence),
+    FlowTransport(FlowTransportEvidence),
     Radio(RadioEvidence),
     TxAggregateTiming(TxAggregateTimingEvidence),
     RxDelivery(RxDeliveryEvidence),
@@ -1994,4 +2211,65 @@ pub enum Event {
 
 impl WireBody for Event {
     const WIRE_KIND: WireKind = WireKind::Event;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn flow(flow_id: u8, address: [u8; 4], port: u16) -> SessionFlowConfig {
+        let traffic = FlowConfig {
+            payload_bytes: 1_472,
+            offered_rate_bps: Some(60_000_000),
+        };
+        SessionFlowConfig {
+            flow_id,
+            peer: Some(Ipv4Endpoint { address, port }),
+            target_rx: Some(traffic),
+            target_tx: Some(traffic),
+        }
+    }
+
+    fn two_flow_session() -> SessionConfig {
+        SessionConfig {
+            network_interface: WifiNetworkInterface::AccessPoint,
+            transport: Transport::Udp,
+            direction: Direction::Bidirectional,
+            completion: Completion::DurationMillis(10_000),
+            flows: [
+                Some(flow(3, [192, 168, 4, 2], 9_002)),
+                Some(flow(9, [192, 168, 4, 3], 9_003)),
+            ],
+            link_requirements: SessionLinkRequirements::NONE,
+        }
+    }
+
+    #[test]
+    fn multi_flow_structure_requires_the_explicit_capability() {
+        let session = two_flow_session();
+        assert!(!session.structurally_valid(1_472, false));
+        assert!(session.structurally_valid(1_472, true));
+    }
+
+    #[test]
+    fn multi_flow_structure_rejects_ambiguous_identities() {
+        let mut duplicate_id = two_flow_session();
+        duplicate_id.flows[1].as_mut().unwrap().flow_id = 3;
+        assert!(!duplicate_id.structurally_valid(1_472, true));
+
+        let mut duplicate_peer = two_flow_session();
+        duplicate_peer.flows[1].as_mut().unwrap().peer = duplicate_peer.flows[0].unwrap().peer;
+        assert!(!duplicate_peer.structurally_valid(1_472, true));
+    }
+
+    #[test]
+    fn multi_flow_structure_rejects_missing_peer_or_direction() {
+        let mut missing_peer = two_flow_session();
+        missing_peer.flows[1].as_mut().unwrap().peer = None;
+        assert!(!missing_peer.structurally_valid(1_472, true));
+
+        let mut missing_rx = two_flow_session();
+        missing_rx.flows[1].as_mut().unwrap().target_rx = None;
+        assert!(!missing_rx.structurally_valid(1_472, true));
+    }
 }

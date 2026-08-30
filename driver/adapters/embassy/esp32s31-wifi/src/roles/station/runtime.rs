@@ -11,7 +11,9 @@
 
 use core::future::Future;
 
-use open_esp_radio_embassy_net::{PinnedTxFrame, PinnedTxInterfaceConsumer, RawMutex};
+use open_esp_radio_embassy_net::{
+    PinnedNetworkTxFrame, PinnedTxFrame, PinnedTxInterfaceConsumer, RawMutex,
+};
 use open_esp_radio_esp32s31_wifi::{
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxResources, WifiTxTimer},
     tx::WifiTxWake,
@@ -1043,7 +1045,7 @@ where
             AMPDU_BUFFER_SIZE,
             ORDINARY_BUFFER_SIZE,
         >,
-        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
@@ -1337,7 +1339,7 @@ where
             AMPDU_BUFFER_SIZE,
             ORDINARY_BUFFER_SIZE,
         >,
-        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
@@ -1413,7 +1415,7 @@ where
     fn start<'a>(
         &'a mut self,
         hardware: &'a mut H,
-        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
@@ -1481,7 +1483,7 @@ where
 
     fn prepare<'a>(
         &'a mut self,
-        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,

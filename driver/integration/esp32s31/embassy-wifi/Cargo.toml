@@ -22,6 +22,7 @@ open-esp-radio = { path = "../../../radio", default-features = false, features =
 open-esp-radio-esp32s31-wifi = { path = "../../../chips/esp32s31/wifi" }
 open-esp-radio-esp32s31-hal = { path = "../../../chips/esp32s31/hal" }
 open-esp-radio-esp32s31-phy = { path = "../../../chips/esp32s31/phy" }
+open-esp-radio-esp32s31-platform-pac = { path = "../../../chips/esp32s31/platform-pac", optional = true, features = ["psram-dma-diagnostic"] }
 open-esp-radio-esp32s31-wifi-ap = { path = "../../../chips/esp32s31/wifi/ap" }
 open-esp-radio-esp32s31-wifi-dma = { path = "../../../chips/esp32s31/wifi/dma" }
 open-esp-radio-esp32s31-wifi-mac = { path = "../../../chips/esp32s31/wifi/mac" }
@@ -54,6 +55,14 @@ connected-datapath-cycle-telemetry = ["dep:riscv"]
 core0-rx-coarse-telemetry = [
     "open-esp-radio-esp32s31-wifi-embassy/core0-rx-coarse-telemetry",
     "open-esp-radio-esp32s31-wifi-embassy/tx-phase-telemetry",
+]
+tx-staging-copy-probe = [
+    "open-esp-radio-embassy-net/tx-staging-copy-probe",
+    "open-esp-radio-esp32s31-wifi-embassy/tx-staging-copy-probe",
+]
+tx-psram-dma-probe = [
+    "dep:open-esp-radio-esp32s31-platform-pac",
+    "open-esp-radio-esp32s31-wifi-dma/tx-psram-dma-probe",
 ]
 
 [lints.rust]

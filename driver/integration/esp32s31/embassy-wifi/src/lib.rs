@@ -148,6 +148,12 @@ pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::network::{
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 pub use open_esp_radio_esp32s31_wifi_embassy::roles::station::rx_protocol::configure_direct_immediate_rx_dispatch_for_diagnostics;
 pub use open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason;
+#[cfg(feature = "tx-psram-dma-probe")]
+pub use radio_resources::configure_direct_psram_tx_dma_probe;
+#[cfg(feature = "tx-psram-dma-probe")]
+pub use radio_resources::{
+    DirectPsramTxDmaProbeObservation, direct_psram_tx_dma_probe_observation,
+};
 pub use radio_resources::{Esp32s31WifiDevice, Esp32s31WifiDevices};
 pub use status::{
     Esp32s31AccessPointStatus, Esp32s31AccessPointStatusSnapshot, Esp32s31StationLinkState,

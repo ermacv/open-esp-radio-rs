@@ -12,8 +12,9 @@ use std::{
 use serde::Serialize;
 
 use open_esp_radio_hil_protocol::{
-    Completion, Direction as ProtocolDirection, FlowConfig, Ipv4Endpoint, SessionConfig,
-    SessionLinkRequirements, Transport, WifiAccessPointSecurity, WifiRole,
+    Completion, Direction as ProtocolDirection, FlowConfig, FlowTransportEvidence, Ipv4Endpoint,
+    SESSION_FLOW_CAPACITY, SessionConfig, SessionFlowConfig, SessionLinkRequirements, Transport,
+    WifiAccessPointSecurity, WifiRole,
 };
 
 use crate::{
@@ -29,6 +30,7 @@ use crate::{
     },
     traffic::paced_udp::{
         Config as UdpConfig, HostTransmission as UdpTransmission, send as send_udp,
+        send_on as send_udp_on,
     },
     traffic::tx_traffic::{Burst, receive_bursts},
     transport::controlled_client::ControlledClient,
@@ -45,6 +47,7 @@ use crate::{
 const UDP_RX_PORT: u16 = 4_323;
 const UDP_TX_SOURCE_PORT: u16 = 4_324;
 const UDP_HOST_PORT: u16 = 9_002;
+const UDP_SECONDARY_HOST_PORT: u16 = 9_003;
 const TCP_PORT: u16 = 4_325;
 
 #[derive(Clone)]
@@ -144,6 +147,7 @@ enum TrafficReport {
         p99_micros: u64,
     },
     Udp(SessionReport),
+    UdpMultiClient(Box<MultiClientSessionReport>),
     Tcp(SessionReport),
 }
 
@@ -155,6 +159,37 @@ struct SessionReport {
     rx_units: u64,
     tx_units: u64,
     elapsed_micros: u64,
+}
+
+#[derive(Serialize)]
+struct MultiClientSessionReport {
+    direction: Direction,
+    aggregate: SessionReport,
+    flows: [MultiClientFlowReport; SESSION_FLOW_CAPACITY],
+}
+
+#[derive(Clone, Copy, Serialize)]
+struct MultiClientFlowReport {
+    flow_id: u8,
+    peer: Ipv4Endpoint,
+    rx_bytes: u64,
+    tx_bytes: u64,
+    rx_units: u64,
+    tx_units: u64,
+    elapsed_micros: u64,
+    rx_bps: u64,
+    tx_bps: u64,
+    host_tx_started_at_zero: Option<bool>,
+    host_tx_missing: Option<u64>,
+    host_tx_reordered: Option<u64>,
+    host_tx_duplicates: Option<u64>,
+}
+
+struct MultiClientHostFlow {
+    flow_id: u8,
+    peer: Ipv4Endpoint,
+    traffic_target: Ipv4Addr,
+    socket: UdpSocket,
 }
 
 #[derive(Clone, Copy)]
@@ -310,12 +345,20 @@ fn qualify(
                 ));
             }
         };
-        let secondary_probe = clients.secondary().map(|client| {
-            client.spawn_probe(
-                lab.access_point.target_address(),
-                traffic_duration(&config.traffic),
-            )
-        });
+        // A real multi-client workload already proves both peers through
+        // independently classified transport evidence. The legacy secondary
+        // ICMP probe would add an unaccounted third workload and can perturb
+        // the exact saturation/fairness interval it is supposed to observe.
+        let secondary_probe =
+            (!matches!(config.traffic, AccessPointTraffic::UdpMultiClient { .. }))
+                .then(|| clients.secondary())
+                .flatten()
+                .map(|client| {
+                    client.spawn_probe(
+                        lab.access_point.target_address(),
+                        traffic_duration(&config.traffic),
+                    )
+                });
         let primary_link_observation = clients.begin_primary_link_observation();
         let air_output = output.join(format!("cycle-{cycle:02}"));
         let independent_air_capture = if config.capture_independent_laptop_monitor_rx {
@@ -606,13 +649,13 @@ fn validate_mcs_evidence(
         .into());
     }
     let (require_rx, require_tx) = match traffic {
-        AccessPointTraffic::Udp { direction, .. } | AccessPointTraffic::Tcp { direction, .. } => {
-            match direction {
-                Direction::Rx => (true, false),
-                Direction::Tx => (false, true),
-                Direction::Bidirectional => (true, true),
-            }
-        }
+        AccessPointTraffic::Udp { direction, .. }
+        | AccessPointTraffic::UdpMultiClient { direction, .. }
+        | AccessPointTraffic::Tcp { direction, .. } => match direction {
+            Direction::Rx => (true, false),
+            Direction::Tx => (false, true),
+            Direction::Bidirectional => (true, true),
+        },
         AccessPointTraffic::Icmp { .. } => (true, true),
         AccessPointTraffic::None => {
             return Err("AP minimum_mcs requires a data-plane workload".into());
@@ -669,6 +712,9 @@ fn traffic_duration(traffic: &AccessPointTraffic) -> Duration {
         } => Duration::from_millis(u64::from(*count) * u64::from(*interval_ms))
             .max(Duration::from_secs(2)),
         AccessPointTraffic::Udp {
+            duration_seconds, ..
+        }
+        | AccessPointTraffic::UdpMultiClient {
             duration_seconds, ..
         }
         | AccessPointTraffic::Tcp {
@@ -796,6 +842,25 @@ fn qualify_data_plane(
                 payload_bytes: usize::from(*payload_bytes),
             },
         ),
+        AccessPointTraffic::UdpMultiClient {
+            direction,
+            duration_seconds,
+            rx_rate_bps_per_flow,
+            tx_rate_bps_per_flow,
+            payload_bytes,
+        } => qualify_multi_client_udp(
+            capture,
+            config,
+            lab,
+            clients,
+            UdpWorkload {
+                direction: *direction,
+                duration: Duration::from_secs(u64::from(*duration_seconds)),
+                rx_rate_bps: *rx_rate_bps_per_flow,
+                tx_rate_bps: *tx_rate_bps_per_flow,
+                payload_bytes: usize::from(*payload_bytes),
+            },
+        ),
         AccessPointTraffic::Tcp {
             direction,
             duration_seconds,
@@ -815,6 +880,389 @@ fn qualify_data_plane(
             },
         ),
     }
+}
+
+const fn target_receives(direction: Direction) -> bool {
+    matches!(direction, Direction::Rx | Direction::Bidirectional)
+}
+
+const fn target_transmits(direction: Direction) -> bool {
+    matches!(direction, Direction::Tx | Direction::Bidirectional)
+}
+
+fn multi_client_host_flows(
+    lab: &LabConfig,
+    clients: &ConnectedClients,
+    direction: Direction,
+) -> Result<[MultiClientHostFlow; SESSION_FLOW_CAPACITY]> {
+    let ConnectedClients::Laptop {
+        secondary: Some(secondary),
+        ..
+    } = clients
+    else {
+        return Err("multi-client AP UDP requires the laptop and OpenWrt clients".into());
+    };
+    let target = lab.access_point.target_address();
+    let primary_peer = lab.access_point.client_address();
+    let secondary_peer = lab
+        .access_point
+        .secondary_client_address()
+        .ok_or("multi-client AP UDP requires access_point.secondary_client_address")?;
+    let secondary_target = secondary
+        .forward_address()
+        .ok_or("secondary OpenWrt client omitted its wired forwarding address")?;
+
+    let create = |flow_id: u8,
+                  bind_address: Ipv4Addr,
+                  port: u16,
+                  peer: Ipv4Addr,
+                  traffic_target: Ipv4Addr|
+     -> Result<_> {
+        let socket = UdpSocket::bind(SocketAddrV4::new(bind_address, port))?;
+        configure_qualification_receive_buffer(&socket)?;
+        socket.set_read_timeout(Some(Duration::from_millis(100)))?;
+        if target_transmits(direction) {
+            socket.connect(SocketAddrV4::new(traffic_target, UDP_TX_SOURCE_PORT))?;
+            open_reverse_flow(&socket)?;
+        }
+        Ok(MultiClientHostFlow {
+            flow_id,
+            peer: Ipv4Endpoint {
+                address: peer.octets(),
+                port,
+            },
+            traffic_target,
+            socket,
+        })
+    };
+
+    Ok([
+        create(0, primary_peer, UDP_HOST_PORT, primary_peer, target)?,
+        create(
+            1,
+            Ipv4Addr::UNSPECIFIED,
+            UDP_SECONDARY_HOST_PORT,
+            secondary_peer,
+            secondary_target,
+        )?,
+    ])
+}
+
+fn qualify_multi_client_udp(
+    capture: &SerialCapture,
+    config: &Config,
+    lab: &LabConfig,
+    clients: &ConnectedClients,
+    workload: UdpWorkload,
+) -> Result<TrafficReport> {
+    if config.require_rx_delivery_evidence {
+        return Err("multi-client AP UDP does not combine independent RX sequence ledgers".into());
+    }
+    let UdpWorkload {
+        direction,
+        duration,
+        rx_rate_bps,
+        tx_rate_bps,
+        payload_bytes,
+    } = workload;
+    let flows = multi_client_host_flows(lab, clients, direction)?;
+    let target = lab.access_point.target_address();
+    if target_receives(direction) {
+        for flow in &flows {
+            probe_udp_rx_ready_via(
+                capture,
+                open_esp_radio_hil_protocol::WifiNetworkInterface::AccessPoint,
+                target,
+                (flow.traffic_target != target).then_some(flow.traffic_target),
+                UDP_RX_PORT,
+                config.timeout,
+            )?;
+        }
+    }
+
+    let payload_bytes_u16 =
+        u16::try_from(payload_bytes).expect("validated multi-client UDP payload");
+    let session = capture.start_session(SessionConfig {
+        network_interface: open_esp_radio_hil_protocol::WifiNetworkInterface::AccessPoint,
+        transport: Transport::Udp,
+        direction: protocol_direction(direction),
+        completion: Completion::DurationMillis(u32::try_from(duration.as_millis())?),
+        flows: flows.each_ref().map(|flow| {
+            Some(SessionFlowConfig {
+                flow_id: flow.flow_id,
+                peer: Some(flow.peer),
+                target_rx: rx_rate_bps.map(|rate| FlowConfig {
+                    payload_bytes: payload_bytes_u16,
+                    offered_rate_bps: Some(rate),
+                }),
+                target_tx: tx_rate_bps.map(|rate| FlowConfig {
+                    payload_bytes: payload_bytes_u16,
+                    offered_rate_bps: Some(rate),
+                }),
+            })
+        }),
+        link_requirements: SessionLinkRequirements::NONE,
+    })?;
+
+    let receive_duration = duration.saturating_add(Duration::from_secs(2));
+    let mut receiver_threads = Vec::with_capacity(SESSION_FLOW_CAPACITY);
+    if target_transmits(direction) {
+        for flow in &flows {
+            let socket = flow.socket.try_clone()?;
+            let expected_target = flow.traffic_target;
+            let flow_id = flow.flow_id;
+            receiver_threads.push((
+                flow_id,
+                thread::spawn(move || {
+                    receive_bursts(&socket, expected_target, receive_duration)
+                        .map_err(|error| error.to_string())
+                }),
+            ));
+        }
+    }
+    let mut sender_threads = Vec::with_capacity(SESSION_FLOW_CAPACITY);
+    if target_receives(direction) {
+        for flow in &flows {
+            let socket = flow.socket.try_clone()?;
+            let flow_id = flow.flow_id;
+            let send_config = UdpConfig {
+                address: flow.traffic_target,
+                port: UDP_RX_PORT,
+                rate_bps: rx_rate_bps.expect("validated multi-client RX offer"),
+                duration,
+                payload: payload_bytes,
+            };
+            sender_threads.push((
+                flow_id,
+                thread::spawn(move || {
+                    send_udp_on(&socket, send_config).map_err(|error| error.to_string())
+                }),
+            ));
+        }
+    }
+
+    let mut host_tx = [None; SESSION_FLOW_CAPACITY];
+    for (flow_id, sender) in sender_threads {
+        host_tx[usize::from(flow_id)] = Some(
+            sender
+                .join()
+                .map_err(|_| format!("AP UDP flow {flow_id} sender thread panicked"))?
+                .map_err(|error| format!("AP UDP flow {flow_id} sender failed: {error}"))?,
+        );
+    }
+    let structured = capture.wait_for_session(session, config.timeout);
+    let acknowledgement = structured
+        .as_ref()
+        .map(|_| capture.acknowledge_session(session))
+        .unwrap_or(Ok(()));
+    let mut host_rx: [Option<Vec<Burst>>; SESSION_FLOW_CAPACITY] = [None, None];
+    for (flow_id, receiver) in receiver_threads {
+        host_rx[usize::from(flow_id)] = Some(
+            receiver
+                .join()
+                .map_err(|_| format!("AP UDP flow {flow_id} receiver thread panicked"))?
+                .map_err(|error| format!("AP UDP flow {flow_id} receiver failed: {error}"))?,
+        );
+    }
+    let structured = structured.map_err(|error| format!("AP UDP target failed: {error}"))?;
+    acknowledgement?;
+
+    let mut flow_reports = [MultiClientFlowReport {
+        flow_id: 0,
+        peer: Ipv4Endpoint {
+            address: [0; 4],
+            port: 0,
+        },
+        rx_bytes: 0,
+        tx_bytes: 0,
+        rx_units: 0,
+        tx_units: 0,
+        elapsed_micros: 0,
+        rx_bps: 0,
+        tx_bps: 0,
+        host_tx_started_at_zero: None,
+        host_tx_missing: None,
+        host_tx_reordered: None,
+        host_tx_duplicates: None,
+    }; SESSION_FLOW_CAPACITY];
+    for index in 0..SESSION_FLOW_CAPACITY {
+        let flow_evidence = structured.flow_transport[index]
+            .ok_or_else(|| format!("AP UDP flow {index} omitted transport evidence"))?;
+        flow_reports[index] = validate_multi_client_udp_flow(
+            flows[index].peer,
+            host_tx[index],
+            host_rx[index].as_deref(),
+            flow_evidence,
+            config.criteria.exact_delivery,
+        )?;
+    }
+    let aggregate = SessionReport {
+        direction,
+        rx_bytes: flow_reports.iter().map(|flow| flow.rx_bytes).sum(),
+        tx_bytes: flow_reports.iter().map(|flow| flow.tx_bytes).sum(),
+        rx_units: flow_reports.iter().map(|flow| flow.rx_units).sum(),
+        tx_units: flow_reports.iter().map(|flow| flow.tx_units).sum(),
+        elapsed_micros: structured.transport.elapsed_micros,
+    };
+    validate_rate_criteria(&aggregate, &config.criteria)?;
+    validate_multi_client_fairness(&flow_reports, direction, &config.criteria)?;
+    Ok(TrafficReport::UdpMultiClient(Box::new(
+        MultiClientSessionReport {
+            direction,
+            aggregate,
+            flows: flow_reports,
+        },
+    )))
+}
+
+fn validate_multi_client_udp_flow(
+    peer: Ipv4Endpoint,
+    host_tx: Option<UdpTransmission>,
+    host_rx: Option<&[Burst]>,
+    evidence: FlowTransportEvidence,
+    exact_delivery: bool,
+) -> Result<MultiClientFlowReport> {
+    if evidence.transport_errors != 0 {
+        return Err(format!(
+            "AP UDP flow {} reported {} transport errors",
+            evidence.flow_id, evidence.transport_errors,
+        )
+        .into());
+    }
+    let (rx_bytes, rx_units) = match host_tx {
+        Some(host)
+            if (exact_delivery
+                && (host.bytes != evidence.rx_bytes || host.datagrams != evidence.rx_units))
+                || (!exact_delivery
+                    && (evidence.rx_bytes > host.bytes || evidence.rx_units > host.datagrams)) =>
+        {
+            return Err(format!(
+                "AP UDP flow {} RX mismatch: host={}/{} target={}/{}",
+                evidence.flow_id, host.bytes, host.datagrams, evidence.rx_bytes, evidence.rx_units,
+            )
+            .into());
+        }
+        Some(_) => (evidence.rx_bytes, evidence.rx_units),
+        None if evidence.rx_bytes != 0 || evidence.rx_units != 0 => {
+            return Err(format!(
+                "AP UDP flow {} unexpectedly received data",
+                evidence.flow_id
+            )
+            .into());
+        }
+        None => (0, 0),
+    };
+    let (tx_bytes, tx_units, host_tx) = match host_rx {
+        Some(bursts) => {
+            if bursts.len() != 1 {
+                return Err(format!(
+                    "AP UDP flow {} produced {} TX bursts instead of one",
+                    evidence.flow_id,
+                    bursts.len(),
+                )
+                .into());
+            }
+            let host = bursts[0];
+            if (exact_delivery && (!host.started_at_zero || host.missing != 0))
+                || host.reordered != 0
+                || host.duplicates != 0
+            {
+                return Err(format!(
+                    "AP UDP flow {} TX ordering defect: started_at_zero={} missing={} reordered={} duplicates={}",
+                    evidence.flow_id,
+                    host.started_at_zero,
+                    host.missing,
+                    host.reordered,
+                    host.duplicates,
+                )
+                .into());
+            }
+            if (exact_delivery
+                && (host.bytes != evidence.tx_bytes || host.datagrams != evidence.tx_units))
+                || (!exact_delivery
+                    && (host.bytes > evidence.tx_bytes || host.datagrams > evidence.tx_units))
+            {
+                return Err(format!(
+                    "AP UDP flow {} TX mismatch: target={}/{} host={}/{}",
+                    evidence.flow_id,
+                    evidence.tx_bytes,
+                    evidence.tx_units,
+                    host.bytes,
+                    host.datagrams,
+                )
+                .into());
+            }
+            (host.bytes, host.datagrams, Some(host))
+        }
+        None if evidence.tx_bytes != 0 || evidence.tx_units != 0 => {
+            return Err(format!(
+                "AP UDP flow {} unexpectedly transmitted data",
+                evidence.flow_id
+            )
+            .into());
+        }
+        None => (0, 0, None),
+    };
+    let bitrate = |bytes: u64| {
+        bytes
+            .saturating_mul(8_000_000)
+            .checked_div(evidence.elapsed_micros.max(1))
+            .unwrap_or(0)
+    };
+    Ok(MultiClientFlowReport {
+        flow_id: evidence.flow_id,
+        peer,
+        rx_bytes,
+        tx_bytes,
+        rx_units,
+        tx_units,
+        elapsed_micros: evidence.elapsed_micros,
+        rx_bps: bitrate(rx_bytes),
+        tx_bps: bitrate(tx_bytes),
+        host_tx_started_at_zero: host_tx.map(|host| host.started_at_zero),
+        host_tx_missing: host_tx.map(|host| host.missing),
+        host_tx_reordered: host_tx.map(|host| host.reordered),
+        host_tx_duplicates: host_tx.map(|host| host.duplicates),
+    })
+}
+
+fn validate_multi_client_fairness(
+    flows: &[MultiClientFlowReport; SESSION_FLOW_CAPACITY],
+    direction: Direction,
+    criteria: &Criteria,
+) -> Result<()> {
+    let validate = |label: &str, rates: [u64; SESSION_FLOW_CAPACITY]| -> Result<()> {
+        if let Some(minimum) = criteria.minimum_bps_per_flow {
+            for (index, rate) in rates.into_iter().enumerate() {
+                if rate < minimum {
+                    return Err(format!(
+                        "AP {label} flow {index} bitrate {rate} is below required {minimum}",
+                    )
+                    .into());
+                }
+            }
+        }
+        if let Some(maximum_percent) = criteria.maximum_flow_skew_percent {
+            let minimum = rates.into_iter().min().unwrap_or(0);
+            let maximum = rates.into_iter().max().unwrap_or(0);
+            if u128::from(maximum.saturating_sub(minimum)).saturating_mul(100)
+                > u128::from(maximum).saturating_mul(u128::from(maximum_percent))
+            {
+                return Err(format!(
+                    "AP {label} flow skew exceeds {maximum_percent}%: min={minimum} max={maximum}",
+                )
+                .into());
+            }
+        }
+        Ok(())
+    };
+    if target_receives(direction) {
+        validate("RX", flows.each_ref().map(|flow| flow.rx_bps))?;
+    }
+    if target_transmits(direction) {
+        validate("TX", flows.each_ref().map(|flow| flow.tx_bps))?;
+    }
+    Ok(())
 }
 
 fn qualify_udp(
@@ -866,18 +1314,24 @@ fn qualify_udp(
         transport: Transport::Udp,
         direction: protocol_direction,
         completion: Completion::DurationMillis(duration_millis),
-        peer: tx_rate_bps.map(|_| Ipv4Endpoint {
-            address: host.octets(),
-            port: UDP_HOST_PORT,
-        }),
-        target_rx: rx_rate_bps.map(|rate| FlowConfig {
-            payload_bytes: u16::try_from(payload_bytes).expect("validated UDP payload"),
-            offered_rate_bps: Some(rate),
-        }),
-        target_tx: tx_rate_bps.map(|rate| FlowConfig {
-            payload_bytes: u16::try_from(payload_bytes).expect("validated UDP payload"),
-            offered_rate_bps: Some(rate),
-        }),
+        flows: [
+            Some(SessionFlowConfig {
+                flow_id: 0,
+                peer: tx_rate_bps.map(|_| Ipv4Endpoint {
+                    address: host.octets(),
+                    port: UDP_HOST_PORT,
+                }),
+                target_rx: rx_rate_bps.map(|rate| FlowConfig {
+                    payload_bytes: u16::try_from(payload_bytes).expect("validated UDP payload"),
+                    offered_rate_bps: Some(rate),
+                }),
+                target_tx: tx_rate_bps.map(|rate| FlowConfig {
+                    payload_bytes: u16::try_from(payload_bytes).expect("validated UDP payload"),
+                    offered_rate_bps: Some(rate),
+                }),
+            }),
+            None,
+        ],
         // Link negotiation is production state and is verified from the
         // measured interval. It is not a load-generator pacing control.
         link_requirements: SessionLinkRequirements::NONE,
@@ -1111,15 +1565,21 @@ fn qualify_tcp(
         transport: Transport::Tcp,
         direction: protocol_direction,
         completion: Completion::DurationMillis(duration_millis),
-        peer: None,
-        target_rx: rx_rate_bps.map(|rate| FlowConfig {
-            payload_bytes: u16::try_from(chunk_bytes).expect("validated TCP chunk"),
-            offered_rate_bps: Some(rate),
-        }),
-        target_tx: tx_rate_bps.map(|rate| FlowConfig {
-            payload_bytes: u16::try_from(chunk_bytes).expect("validated TCP chunk"),
-            offered_rate_bps: Some(rate),
-        }),
+        flows: [
+            Some(SessionFlowConfig {
+                flow_id: 0,
+                peer: None,
+                target_rx: rx_rate_bps.map(|rate| FlowConfig {
+                    payload_bytes: u16::try_from(chunk_bytes).expect("validated TCP chunk"),
+                    offered_rate_bps: Some(rate),
+                }),
+                target_tx: tx_rate_bps.map(|rate| FlowConfig {
+                    payload_bytes: u16::try_from(chunk_bytes).expect("validated TCP chunk"),
+                    offered_rate_bps: Some(rate),
+                }),
+            }),
+            None,
+        ],
         link_requirements: SessionLinkRequirements::NONE,
     })?;
     let tcp = TcpConfig {
@@ -1436,6 +1896,14 @@ mod tests {
     };
 
     fn evidence(rx_bytes: u64, tx_bytes: u64, rx_units: u64, tx_units: u64) -> SessionEvidence {
+        let transport = TransportEvidence {
+            rx_bytes,
+            tx_bytes,
+            rx_units,
+            tx_units,
+            elapsed_micros: 1,
+            transport_errors: 0,
+        };
         SessionEvidence {
             finished: Finished {
                 summary: ResultSummary {
@@ -1444,14 +1912,15 @@ mod tests {
                 },
                 evidence_crc32c: 0,
             },
-            transport: TransportEvidence {
-                rx_bytes,
-                tx_bytes,
-                rx_units,
-                tx_units,
-                elapsed_micros: 1,
-                transport_errors: 0,
-            },
+            transport,
+            flow_transport: [
+                Some(
+                    open_esp_radio_hil_protocol::FlowTransportEvidence::from_session_total(
+                        0, transport,
+                    ),
+                ),
+                None,
+            ],
             radio: (rx_units != 0).then_some(RadioEvidence {
                 rx: Some(RxRadioEvidence {
                     sequence_first: Some(0),

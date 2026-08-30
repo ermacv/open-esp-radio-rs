@@ -23,6 +23,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "atomic-waker"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1154,6 +1160,7 @@ dependencies = [
  "open-esp-radio-embassy-net",
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-phy",
+ "open-esp-radio-esp32s31-platform-pac",
  "open-esp-radio-esp32s31-wifi",
  "open-esp-radio-esp32s31-wifi-ap",
  "open-esp-radio-esp32s31-wifi-dma",
@@ -1209,6 +1216,15 @@ name = "open-esp-radio-esp32s31-phy"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-esp32s31-hal",
+]
+
+[[package]]
+name = "open-esp-radio-esp32s31-platform-pac"
+version = "0.1.0"
+dependencies = [
+ "atomic-waker",
+ "critical-section",
+ "esp-hal",
 ]
 
 [[package]]

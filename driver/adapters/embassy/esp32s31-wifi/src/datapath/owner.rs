@@ -215,8 +215,9 @@ where
 
     pub(super) fn try_receive_network_tx(
         &mut self,
-    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>
-    {
+    ) -> Option<
+        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    > {
         let interface = self.next_network_tx_interface()?;
         if let DatapathInterfaceScope::Pair { first, second } = self.interfaces
             && self.prepared_tx_interface.is_none()
@@ -245,7 +246,14 @@ where
 
     pub(super) fn tx_interface_for(
         &self,
-        frame: &PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        frame: &PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
     ) -> NetworkInterfaceId {
         let interface = *frame.tag();
         assert!(

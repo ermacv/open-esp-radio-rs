@@ -1392,7 +1392,7 @@ mod tests {
         second[6..12].copy_from_slice(&[2, 0, 0, 0, 0, 7]);
         second[14..].copy_from_slice(&[5, 6, 7, 8]);
         let data_sequence = mac.engine.current_data_sequence();
-        let qos_sequence = mac.engine.current_qos_sequence(0);
+        let qos_sequence = mac.engine.current_qos_sequence(target, 0);
         let mut scratch = [0_u8; 256];
 
         let ordinary = mac
@@ -1407,7 +1407,7 @@ mod tests {
         assert_eq!(request.mechanism, TxProtectionMechanism::CtsToSelf);
         assert_eq!(request.reason, TxProtectionReason::ErpUseProtection);
         assert_eq!(mac.engine.current_data_sequence(), data_sequence);
-        assert_eq!(mac.engine.current_qos_sequence(0), qos_sequence);
+        assert_eq!(mac.engine.current_qos_sequence(target, 0), qos_sequence);
 
         let amsdu = mac
             .publish_amsdu_pair(&mut hardware, &first, &second, &mut scratch)
@@ -1419,7 +1419,7 @@ mod tests {
             )))
         ));
         assert_eq!(mac.engine.current_data_sequence(), data_sequence);
-        assert_eq!(mac.engine.current_qos_sequence(0), qos_sequence);
+        assert_eq!(mac.engine.current_qos_sequence(target, 0), qos_sequence);
         assert_eq!(hardware.publications, 0);
         assert!(!mac.tx_pending());
     }

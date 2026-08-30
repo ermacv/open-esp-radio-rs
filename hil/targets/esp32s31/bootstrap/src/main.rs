@@ -88,6 +88,7 @@ fn main() -> ! {
     print(c"OPEN_RADIO_HIL bootstrap=START\r\n");
 
     let peripherals = esp_hal::init(esp_hal::Config::default());
+    print(c"OPEN_RADIO_HIL bootstrap=INIT\r\n");
     let mut flash_mmu = FlashMmu::new(peripherals.SPI0);
     let mut flash = match esp_hal::flash::Flash::from_bootloader(peripherals.FLASH) {
         Ok(flash) => flash,
@@ -100,6 +101,7 @@ fn main() -> ! {
         fail(c"OPEN_RADIO_HIL bootstrap=FAIL reason=psram-init\r\n");
     }
     verify_psram_probe(psram_base);
+    print(c"OPEN_RADIO_HIL bootstrap=PSRAM\r\n");
 
     let source = RUNTIME_PAYLOAD.as_ptr();
     let source_address = source as usize;
@@ -125,6 +127,7 @@ fn main() -> ! {
     if source_crc != layout.expected_crc32 {
         print_crc_failure(c"source-crc-80mhz", layout.expected_crc32, source_crc);
     }
+    print(c"OPEN_RADIO_HIL bootstrap=SOURCE_CRC\r\n");
 
     if layout.code_in_psram {
         unsafe {
@@ -142,6 +145,7 @@ fn main() -> ! {
     {
         fail(c"OPEN_RADIO_HIL bootstrap=FAIL reason=destination-crc\r\n");
     }
+    print(c"OPEN_RADIO_HIL bootstrap=DESTINATION_CRC\r\n");
 
     let tuning_address = FLASH_TUNING_REFERENCE.as_ptr() as usize;
     let tuning_physical_start = flash_mmu
@@ -161,6 +165,7 @@ fn main() -> ! {
     {
         fail(c"OPEN_RADIO_HIL bootstrap=FAIL reason=flash-tune\r\n");
     }
+    print(c"OPEN_RADIO_HIL bootstrap=FLASH_TUNED\r\n");
     // Do not read the tuning span again. Every candidate deliberately fetches
     // a distinct page, and rejected timings can leave corrupted cache lines
     // behind until a future S31 cache-invalidate primitive is available. The

@@ -8,7 +8,7 @@ use std::{
 
 use open_esp_radio_hil_protocol::{
     WifiAccessPointSecurity, WifiDataPlanePlacement, WifiRxAdmissionPolicy, WifiRxChecksumPolicy,
-    WifiRxContinuationPolicy, WifiRxDispatchPolicy, WifiTxUdpChecksumPolicy,
+    WifiRxContinuationPolicy, WifiRxDispatchPolicy, WifiTxBufferPolicy, WifiTxUdpChecksumPolicy,
 };
 use serde::{Deserialize, Serialize};
 
@@ -191,6 +191,13 @@ pub enum AccessPointTraffic {
         tx_rate_bps: Option<u64>,
         payload_bytes: u16,
     },
+    UdpMultiClient {
+        direction: Direction,
+        duration_seconds: u16,
+        rx_rate_bps_per_flow: Option<u64>,
+        tx_rate_bps_per_flow: Option<u64>,
+        payload_bytes: u16,
+    },
     Tcp {
         direction: Direction,
         duration_seconds: u16,
@@ -345,6 +352,9 @@ fn is_rx_only_udp_workload(workload: &Workload) -> bool {
             traffic: AccessPointTraffic::Udp {
                 direction: Direction::Rx,
                 ..
+            } | AccessPointTraffic::UdpMultiClient {
+                direction: Direction::Rx,
+                ..
             },
             ..
         } | Workload::StationAccessPoint {
@@ -361,6 +371,8 @@ pub struct Criteria {
     pub minimum_rx_bps: Option<u64>,
     pub minimum_tx_bps: Option<u64>,
     pub minimum_combined_bps: Option<u64>,
+    pub minimum_bps_per_flow: Option<u64>,
+    pub maximum_flow_skew_percent: Option<u8>,
     /// Maximum pre-workload channel utilization reported by hostapd, in the
     /// native 0..=255 BSS-load scale. This is deliberately a ceiling-scenario
     /// criterion rather than an inferred throughput failure.
@@ -415,6 +427,8 @@ pub struct Scenario {
     pub rx_checksum: WifiRxChecksumPolicy,
     #[serde(default)]
     pub tx_udp_checksum: WifiTxUdpChecksumPolicy,
+    #[serde(default)]
+    pub tx_buffer: WifiTxBufferPolicy,
     #[serde(default)]
     pub rx_admission: WifiRxAdmissionPolicy,
     #[serde(default)]
@@ -523,6 +537,32 @@ impl Scenario {
         {
             return Err(format!(
                 "{}: omit-ipv4-diagnostic TX UDP checksum policy is restricted to a UDP TX task-poll or coarse-cycle diagnostic",
+                self.source.display()
+            )
+            .into());
+        }
+        if matches!(
+            self.tx_buffer,
+            WifiTxBufferPolicy::PsramStagingCopyDiagnostic
+                | WifiTxBufferPolicy::PsramDirectDmaDiagnostic
+        ) && (!matches!(
+            self.image,
+            ImageClass::DiagnosticTaskResidence | ImageClass::DiagnosticCore0RxCoarse
+        ) || !matches!(
+            self.workload,
+            Workload::AccessPoint {
+                traffic: AccessPointTraffic::Udp {
+                    direction: Direction::Tx,
+                    ..
+                } | AccessPointTraffic::UdpMultiClient {
+                    direction: Direction::Tx,
+                    ..
+                },
+                ..
+            }
+        )) {
+            return Err(format!(
+                "{}: PSRAM TX architecture policies are restricted to an AP UDP TX task-residence or coarse-cycle diagnostic",
                 self.source.display()
             )
             .into());
@@ -998,6 +1038,18 @@ impl Scenario {
                         );
                     }
                 }
+                if matches!(traffic, AccessPointTraffic::UdpMultiClient { .. }) {
+                    if *client != AccessPointClient::Laptop {
+                        return self.criteria_error(
+                            "multi-client AP UDP requires the laptop primary client",
+                        );
+                    }
+                    if self.criteria.minimum_concurrent_ap_clients != Some(2) {
+                        return self.criteria_error(
+                            "multi-client AP UDP requires minimum_concurrent_ap_clients = 2",
+                        );
+                    }
+                }
             }
             Workload::StationAccessPoint {
                 timeout_seconds,
@@ -1074,9 +1126,15 @@ impl Scenario {
     }
 
     fn validate_criteria(&self) -> Result<()> {
-        let (rx_offer, tx_offer, udp, bidirectional_udp, icmp, station_data_plane) = match &self
-            .workload
-        {
+        let (
+            rx_offer,
+            tx_offer,
+            udp,
+            bidirectional_udp,
+            icmp,
+            station_data_plane,
+            multi_client_udp,
+        ) = match &self.workload {
             Workload::Udp {
                 direction,
                 rx_rate_bps,
@@ -1089,16 +1147,19 @@ impl Scenario {
                 *direction == Direction::Bidirectional,
                 false,
                 true,
+                false,
             ),
             Workload::Tcp {
                 rx_rate_bps,
                 tx_rate_bps,
                 ..
-            } => (*rx_rate_bps, *tx_rate_bps, false, false, false, true),
-            Workload::Icmp { .. } => (None, None, false, false, true, true),
-            Workload::StationReconnect { .. } => (None, None, false, false, false, true),
-            Workload::StationAccessPoint { .. } => (None, None, false, false, false, true),
-            Workload::StationAccessPointReconnect { .. } => (None, None, false, false, false, true),
+            } => (*rx_rate_bps, *tx_rate_bps, false, false, false, true, false),
+            Workload::Icmp { .. } => (None, None, false, false, true, true, false),
+            Workload::StationReconnect { .. } => (None, None, false, false, false, true, false),
+            Workload::StationAccessPoint { .. } => (None, None, false, false, false, true, false),
+            Workload::StationAccessPointReconnect { .. } => {
+                (None, None, false, false, false, true, false)
+            }
             Workload::AccessPoint { traffic, .. } => match traffic {
                 AccessPointTraffic::Udp {
                     direction,
@@ -1112,16 +1173,39 @@ impl Scenario {
                     *direction == Direction::Bidirectional,
                     false,
                     false,
+                    false,
+                ),
+                AccessPointTraffic::UdpMultiClient {
+                    direction,
+                    rx_rate_bps_per_flow,
+                    tx_rate_bps_per_flow,
+                    ..
+                } => (
+                    rx_rate_bps_per_flow.and_then(|rate| rate.checked_mul(2)),
+                    tx_rate_bps_per_flow.and_then(|rate| rate.checked_mul(2)),
+                    true,
+                    *direction == Direction::Bidirectional,
+                    false,
+                    false,
+                    true,
                 ),
                 AccessPointTraffic::Tcp {
                     rx_rate_bps,
                     tx_rate_bps,
                     ..
-                } => (*rx_rate_bps, *tx_rate_bps, false, false, false, false),
-                AccessPointTraffic::Icmp { .. } => (None, None, false, false, true, false),
-                AccessPointTraffic::None => (None, None, false, false, false, false),
+                } => (
+                    *rx_rate_bps,
+                    *tx_rate_bps,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                ),
+                AccessPointTraffic::Icmp { .. } => (None, None, false, false, true, false, false),
+                AccessPointTraffic::None => (None, None, false, false, false, false, false),
             },
-            _ => (None, None, false, false, false, false),
+            _ => (None, None, false, false, false, false, false),
         };
         if self.criteria.exact_delivery && !udp {
             return self.criteria_error("exact_delivery is valid only for UDP workloads");
@@ -1161,6 +1245,59 @@ impl Scenario {
             if floor > offered_sum {
                 return self
                     .criteria_error("minimum_combined_bps cannot exceed the RX+TX offered rate");
+            }
+        }
+        if let Some(floor) = self.criteria.minimum_bps_per_flow {
+            if !multi_client_udp {
+                return self.criteria_error(
+                    "minimum_bps_per_flow requires a multi-client AP UDP workload",
+                );
+            }
+            let per_flow_offer = match &self.workload {
+                Workload::AccessPoint {
+                    traffic:
+                        AccessPointTraffic::UdpMultiClient {
+                            direction: Direction::Rx,
+                            rx_rate_bps_per_flow: Some(rate),
+                            ..
+                        },
+                    ..
+                } => *rate,
+                Workload::AccessPoint {
+                    traffic:
+                        AccessPointTraffic::UdpMultiClient {
+                            direction: Direction::Tx,
+                            tx_rate_bps_per_flow: Some(rate),
+                            ..
+                        },
+                    ..
+                } => *rate,
+                Workload::AccessPoint {
+                    traffic:
+                        AccessPointTraffic::UdpMultiClient {
+                            direction: Direction::Bidirectional,
+                            rx_rate_bps_per_flow: Some(rx),
+                            tx_rate_bps_per_flow: Some(tx),
+                            ..
+                        },
+                    ..
+                } => (*rx).min(*tx),
+                _ => unreachable!("validated multi-client UDP direction has an offer"),
+            };
+            if floor == 0 || floor > per_flow_offer {
+                return self.criteria_error(
+                    "minimum_bps_per_flow must be nonzero and cannot exceed either per-flow offer",
+                );
+            }
+        }
+        if let Some(maximum) = self.criteria.maximum_flow_skew_percent {
+            if !multi_client_udp {
+                return self.criteria_error(
+                    "maximum_flow_skew_percent requires a multi-client AP UDP workload",
+                );
+            }
+            if !(1..=100).contains(&maximum) {
+                return self.criteria_error("maximum_flow_skew_percent must be within 1..=100");
             }
         }
         if let Some(maximum) = self.criteria.maximum_idle_channel_utilization_255 {
@@ -1245,6 +1382,28 @@ fn validate_access_point_traffic(traffic: &AccessPointTraffic, scenario: &Scenar
             )?;
             bounded(*payload_bytes, 64, 1472, scenario, "traffic.payload_bytes")?;
             validate_direction_rates(*direction, *rx_rate_bps, *tx_rate_bps, scenario)
+        }
+        AccessPointTraffic::UdpMultiClient {
+            direction,
+            duration_seconds,
+            rx_rate_bps_per_flow,
+            tx_rate_bps_per_flow,
+            payload_bytes,
+        } => {
+            bounded(
+                *duration_seconds,
+                5,
+                300,
+                scenario,
+                "traffic.duration_seconds",
+            )?;
+            bounded(*payload_bytes, 64, 1472, scenario, "traffic.payload_bytes")?;
+            validate_direction_rates(
+                *direction,
+                *rx_rate_bps_per_flow,
+                *tx_rate_bps_per_flow,
+                scenario,
+            )
         }
         AccessPointTraffic::Tcp {
             direction,
@@ -1930,6 +2089,31 @@ mod tests {
         assert_eq!(cycles.rx_dispatch, scenario.rx_dispatch);
         assert_eq!(cycles.rx_continuation, scenario.rx_continuation);
         assert_eq!(cycles.workload, scenario.workload);
+    }
+
+    #[test]
+    fn ap_staged_promotion_phase_probe_uses_the_coarse_core0_image() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+        let catalog = Catalog::load(&root).unwrap();
+        let scenario = catalog
+            .get("diagnostic-ap-two-client-udp-tx-promotion-phases")
+            .unwrap();
+
+        assert_eq!(scenario.image, ImageClass::DiagnosticCore0RxCoarse);
+        assert_eq!(
+            scenario.tx_buffer,
+            WifiTxBufferPolicy::PsramStagingCopyDiagnostic
+        );
+        assert!(matches!(
+            scenario.workload,
+            Workload::AccessPoint {
+                traffic: AccessPointTraffic::UdpMultiClient {
+                    direction: Direction::Tx,
+                    ..
+                },
+                ..
+            }
+        ));
     }
 
     #[test]

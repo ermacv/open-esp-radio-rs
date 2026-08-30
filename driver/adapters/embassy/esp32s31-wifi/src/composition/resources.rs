@@ -71,12 +71,12 @@ const ESP32S31_PERMANENT_NETWORK_ENDPOINTS: usize = 2;
 const ESP32S31_NETWORK_TX_PIPELINE_CREDITS: usize = 1;
 // One additional credit per permanent network endpoint is reserved for the
 // TX token paired with ingress. Combined STA+AP therefore needs two reserves.
-// Application egress needs two complete 32-MPDU arenas plus one pipeline
-// credit: `Driver::transmit` owns that credit while the network stack formats
-// a frame, before the resulting lease becomes visible to the radio consumer.
-// Without it, an instantaneous radio-side drain observes at most 63 leases
-// and saturated 32-entry BlockAck traffic alternates 31- and 32-MPDU batches.
-// TX frame backing is DMA-visible SRAM.
+// Application egress needs two complete 32-MPDU aggregate arenas and one
+// pipeline credit:
+// `Driver::transmit` owns that credit while the network stack formats a frame,
+// before the resulting lease becomes visible to the radio consumer. The
+// optional staged architecture must prove that peer classification no longer
+// consumes physical DMA credits before this pool is grown again.
 pub const ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH: usize = 2
     * ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT
     + ESP32S31_PERMANENT_NETWORK_ENDPOINTS
@@ -213,7 +213,7 @@ mod tests {
                 - ESP32S31_PERMANENT_NETWORK_ENDPOINTS
                 - ESP32S31_NETWORK_TX_PIPELINE_CREDITS,
             2 * ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT,
-            "two full aggregate arenas remain visible while Core1 owns one unpublished TX token"
+            "two aggregate arenas remain visible while Core1 owns one unpublished TX token"
         );
     }
 

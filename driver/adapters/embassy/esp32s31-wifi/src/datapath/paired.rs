@@ -14,7 +14,7 @@ use core::future::{Future, pending};
 #[cfg(any(feature = "diagnostics", test))]
 use crate::diagnostics::aggregate_tx::PreparedTxSchedulerPhase;
 use open_esp_radio_embassy_net::{
-    NetworkInterfaceId, PinnedTxFrame, PinnedTxInterfaceConsumer, RawMutex,
+    NetworkInterfaceId, PinnedNetworkTxFrame, PinnedTxInterfaceConsumer, RawMutex,
 };
 
 use super::{
@@ -526,7 +526,7 @@ pub trait DatapathPairedNetworkTxService<
         &'a mut self,
         hardware: &'a mut H,
         physical_tx: &'a mut PhysicalTx,
-        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
@@ -596,7 +596,7 @@ pub trait DatapathPairedNetworkTxService<
     fn prepare<'a>(
         &'a mut self,
         _physical_tx: &'a mut PhysicalTx,
-        _frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        _frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         _network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
@@ -940,7 +940,7 @@ where
 
     fn start_tx<'a>(
         &'a mut self,
-        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
@@ -1139,7 +1139,7 @@ where
 
     fn prepare_tx<'a>(
         &'a mut self,
-        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,

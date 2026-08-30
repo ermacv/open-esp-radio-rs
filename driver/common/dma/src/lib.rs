@@ -205,4 +205,13 @@ impl<'a> StableDmaRegion<'a> {
 )]
 pub unsafe trait StableDmaBacking {
     fn stable_dma_region(&mut self) -> StableDmaRegion<'_>;
+
+    /// Make CPU writes visible before a DMA reader receives ownership.
+    ///
+    /// Internal uncached SRAM implementations need no action. Cached external
+    /// memory implementations must write back their cache-line-isolated region
+    /// here. This is deliberately separate from [`Self::stable_dma_region`]:
+    /// upper layers mutate that region after borrowing it, so coherency belongs
+    /// at the final descriptor-publication edge.
+    fn prepare_for_dma_read(&mut self) {}
 }

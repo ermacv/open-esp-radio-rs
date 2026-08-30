@@ -60,6 +60,7 @@ pub(super) struct Esp32s31AccessPointDatapathServices<
     L,
     Q,
     B: 'ampdu,
+    N,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
@@ -84,7 +85,7 @@ pub(super) struct Esp32s31AccessPointDatapathServices<
     pub(super) hardware: &'run mut H,
     pub(super) aggregate:
         &'run mut Esp32s31AccessPointAmpdu<'ampdu, B, AMPDU_SLOTS, AMPDU_BUFFER_SIZE>,
-    pub(super) network_tx: Esp32s31AccessPointNetworkTx<'run, B>,
+    pub(super) network_tx: Esp32s31AccessPointNetworkTx<'run, B, N>,
     pub(super) status_observer: O,
     pub(super) security_material: S,
     pub(super) set_link_state: L,
@@ -118,6 +119,7 @@ impl<
     L,
     Q,
     B,
+    N,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
@@ -142,6 +144,7 @@ impl<
         L,
         Q,
         B,
+        N,
         COUNT,
         DMA_BUFFER_SIZE,
         DMA_STORAGE_SIZE,
@@ -378,6 +381,7 @@ impl<
         L,
         Q,
         PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
         COUNT,
         DMA_BUFFER_SIZE,
         DMA_STORAGE_SIZE,
@@ -760,7 +764,14 @@ where
 
     fn start_tx<'a>(
         &'a mut self,
-        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        frame: PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
         network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
@@ -819,12 +830,20 @@ where
     }
 
     fn can_prepare_tx(&self) -> bool {
-        self.network_tx.can_prepare(self.aggregate)
+        self.network_tx
+            .can_prepare(self.aggregate, self.control.tx_pending())
     }
 
     fn prepare_tx<'a>(
         &'a mut self,
-        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        frame: PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
         network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,

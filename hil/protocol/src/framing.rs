@@ -919,23 +919,71 @@ mod tests {
                 transport: Transport::Udp,
                 direction: Direction::Bidirectional,
                 completion: Completion::DurationMillis(12_000),
-                peer: Some(Ipv4Endpoint {
-                    address: [192, 0, 2, 10],
-                    port: 9_002,
-                }),
-                target_rx: Some(FlowConfig {
-                    payload_bytes: 1_200,
-                    offered_rate_bps: Some(10_000_000),
-                }),
-                target_tx: Some(FlowConfig {
-                    payload_bytes: 1_472,
-                    offered_rate_bps: None,
-                }),
+                flows: [
+                    Some(crate::SessionFlowConfig {
+                        flow_id: 7,
+                        peer: Some(Ipv4Endpoint {
+                            address: [192, 0, 2, 10],
+                            port: 9_002,
+                        }),
+                        target_rx: Some(FlowConfig {
+                            payload_bytes: 1_200,
+                            offered_rate_bps: Some(10_000_000),
+                        }),
+                        target_tx: Some(FlowConfig {
+                            payload_bytes: 1_472,
+                            offered_rate_bps: None,
+                        }),
+                    }),
+                    None,
+                ],
                 link_requirements: SessionLinkRequirements::tx_block_ack(0),
             }),
         );
         let mut encoder = FrameEncoder::new();
         let frame = encoder.encode(&expected).unwrap();
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(frame, |result| observed = Some(result.unwrap()));
+        assert_eq!(observed, Some(expected));
+    }
+
+    #[test]
+    fn two_peer_udp_session_round_trips_without_erasing_flow_identity() {
+        let flow = |flow_id, address| {
+            Some(crate::SessionFlowConfig {
+                flow_id,
+                peer: Some(Ipv4Endpoint {
+                    address,
+                    port: 9_002 + u16::from(flow_id),
+                }),
+                target_rx: Some(FlowConfig {
+                    payload_bytes: 1_472,
+                    offered_rate_bps: Some(60_000_000),
+                }),
+                target_tx: Some(FlowConfig {
+                    payload_bytes: 1_472,
+                    offered_rate_bps: Some(60_000_000),
+                }),
+            })
+        };
+        let expected = Envelope::new(
+            7,
+            2,
+            11,
+            3,
+            Command::Configure(SessionConfig {
+                network_interface: crate::WifiNetworkInterface::AccessPoint,
+                transport: Transport::Udp,
+                direction: Direction::Bidirectional,
+                completion: Completion::DurationMillis(12_000),
+                flows: [flow(3, [192, 168, 4, 2]), flow(9, [192, 168, 4, 3])],
+                link_requirements: SessionLinkRequirements::NONE,
+            }),
+        );
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder.encode(&expected).unwrap();
+        assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
         let mut decoder = FrameDecoder::new();
         let mut observed = None;
         decoder.feed(frame, |result| observed = Some(result.unwrap()));
@@ -1346,6 +1394,34 @@ mod tests {
     }
 
     #[test]
+    fn maximum_flow_transport_evidence_fits_and_round_trips() {
+        use crate::{EvidenceRecord, FlowTransportEvidence};
+
+        let expected = Envelope::new(
+            7,
+            3,
+            9,
+            2,
+            Event::Evidence(EvidenceRecord::FlowTransport(FlowTransportEvidence {
+                flow_id: u8::MAX,
+                rx_bytes: u64::MAX,
+                tx_bytes: u64::MAX,
+                rx_units: u64::MAX,
+                tx_units: u64::MAX,
+                elapsed_micros: u64::MAX,
+                transport_errors: u32::MAX,
+            })),
+        );
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder.encode(&expected).unwrap();
+        assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(frame, |result| observed = Some(result.unwrap()));
+        assert_eq!(observed, Some(expected));
+    }
+
+    #[test]
     fn startup_artifact_chunk_rejects_empty_and_out_of_range_payloads() {
         assert!(StartupArtifactChunk::try_new(0, 0, 0, &[1]).is_err());
         assert!(StartupArtifactChunk::try_new(1, 0, 0, &[]).is_err());
@@ -1368,7 +1444,8 @@ mod tests {
             rx_bytes: 2_400,
             ..match first {
                 EvidenceRecord::Transport(evidence) => evidence,
-                EvidenceRecord::Radio(_)
+                EvidenceRecord::FlowTransport(_)
+                | EvidenceRecord::Radio(_)
                 | EvidenceRecord::TxAggregateTiming(_)
                 | EvidenceRecord::RxDelivery(_)
                 | EvidenceRecord::NetworkScheduler(_)

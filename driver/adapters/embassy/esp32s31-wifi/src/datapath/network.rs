@@ -3,8 +3,8 @@
 use core::future::Future;
 
 use open_esp_radio_embassy_net::{
-    DualPinnedNetworkRunner, LinkState, NetworkInterfaceId, PinnedNetworkRunner, PinnedRxPublisher,
-    PinnedTxFrame, PinnedTxInterfaceConsumer, RawMutex, RxEnqueueError,
+    DualPinnedNetworkRunner, LinkState, NetworkInterfaceId, PinnedNetworkRunner,
+    PinnedNetworkTxFrame, PinnedRxPublisher, PinnedTxInterfaceConsumer, RawMutex, RxEnqueueError,
 };
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
 
@@ -255,12 +255,21 @@ pub trait DatapathNetwork<
     fn try_receive_tx(
         &self,
         interface: NetworkInterfaceId,
-    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>;
+    ) -> Option<
+        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    >;
     fn receive_tx(
         &self,
         interface: NetworkInterfaceId,
     ) -> impl Future<
-        Output = PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        Output = PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
     > + '_;
     fn tx_consumer(
         &self,
@@ -284,13 +293,22 @@ pub trait DatapathNetwork<
     /// Claim the next physical tagged TX lease without filtering or requeue.
     fn try_receive_physical_tx(
         &self,
-    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>;
+    ) -> Option<
+        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    >;
 
     /// Wait for and claim the next physical tagged TX lease.
     fn receive_physical_tx(
         &self,
     ) -> impl Future<
-        Output = PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        Output = PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
     > + '_;
 }
 
@@ -342,8 +360,9 @@ impl<
     fn try_receive_tx(
         &self,
         interface: NetworkInterfaceId,
-    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>
-    {
+    ) -> Option<
+        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    > {
         assert_eq!(interface, self.interface());
         PinnedNetworkRunner::try_receive_tx(self)
     }
@@ -352,7 +371,14 @@ impl<
         &self,
         interface: NetworkInterfaceId,
     ) -> impl Future<
-        Output = PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        Output = PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
     > + '_ {
         assert_eq!(interface, self.interface());
         PinnedNetworkRunner::receive_tx(self)
@@ -392,15 +418,23 @@ impl<
 
     fn try_receive_physical_tx(
         &self,
-    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>
-    {
+    ) -> Option<
+        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    > {
         PinnedNetworkRunner::try_receive_tx(self)
     }
 
     fn receive_physical_tx(
         &self,
     ) -> impl Future<
-        Output = PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        Output = PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
     > + '_ {
         PinnedNetworkRunner::receive_tx(self)
     }
@@ -443,8 +477,9 @@ impl<
     fn try_receive_tx(
         &self,
         interface: NetworkInterfaceId,
-    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>
-    {
+    ) -> Option<
+        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    > {
         DualPinnedNetworkRunner::tx_consumer(self).try_receive_for(interface)
     }
 
@@ -452,7 +487,14 @@ impl<
         &self,
         interface: NetworkInterfaceId,
     ) -> impl Future<
-        Output = PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        Output = PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
     > + '_ {
         let tx = DualPinnedNetworkRunner::tx_consumer(self);
         async move { tx.receive_for(interface).await }
@@ -494,15 +536,23 @@ impl<
 
     fn try_receive_physical_tx(
         &self,
-    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>
-    {
+    ) -> Option<
+        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    > {
         DualPinnedNetworkRunner::try_receive_tx(self)
     }
 
     fn receive_physical_tx(
         &self,
     ) -> impl Future<
-        Output = PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        Output = PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
     > + '_ {
         DualPinnedNetworkRunner::receive_tx(self)
     }
@@ -549,8 +599,9 @@ where
     fn try_receive_tx(
         &self,
         interface: NetworkInterfaceId,
-    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>
-    {
+    ) -> Option<
+        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    > {
         N::try_receive_tx(*self, interface)
     }
 
@@ -558,7 +609,14 @@ where
         &self,
         interface: NetworkInterfaceId,
     ) -> impl Future<
-        Output = PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        Output = PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
     > + '_ {
         N::receive_tx(*self, interface)
     }
@@ -593,15 +651,23 @@ where
 
     fn try_receive_physical_tx(
         &self,
-    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>
-    {
+    ) -> Option<
+        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    > {
         N::try_receive_physical_tx(*self)
     }
 
     fn receive_physical_tx(
         &self,
     ) -> impl Future<
-        Output = PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        Output = PinnedNetworkTxFrame<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
     > + '_ {
         N::receive_physical_tx(*self)
     }

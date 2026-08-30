@@ -1269,6 +1269,7 @@ pub const fn hil_capabilities() -> Capabilities {
             runtime_initialization: true,
             runtime_configuration: true,
             structured_evidence: true,
+            udp_multi_flow: true,
             startup_artifact: true,
             station_epoch_control: true,
             wifi_role_control: true,
@@ -2359,6 +2360,7 @@ pub async fn run(
         data_plane,
         rx_checksum,
         tx_udp_checksum,
+        tx_buffer,
         rx_admission,
         rx_dispatch,
         rx_continuation,
@@ -2366,6 +2368,16 @@ pub async fn run(
         phy_calibration_artifact,
     } = startup;
     L1_CACHE_COUNTERS_ENABLED.store(l1_cache_counters, Ordering::Relaxed);
+    #[cfg(feature = "task-residence-telemetry")]
+    open_esp_radio_embassy_net::configure_tx_staging_copy_probe(matches!(
+        tx_buffer,
+        open_esp_radio_hil_protocol::WifiTxBufferPolicy::PsramStagingCopyDiagnostic
+    ));
+    #[cfg(feature = "tx-psram-dma-probe")]
+    open_esp_radio_esp32s31_embassy_wifi::configure_direct_psram_tx_dma_probe(matches!(
+        tx_buffer,
+        open_esp_radio_hil_protocol::WifiTxBufferPolicy::PsramDirectDmaDiagnostic
+    ));
     #[cfg(feature = "core0-rx-coarse-telemetry")]
     open_esp_radio_esp32s31_embassy_wifi::configure_direct_immediate_rx_dispatch_for_diagnostics(
         matches!(
@@ -2652,7 +2664,7 @@ pub async fn run(
     runtime_log(format_args!(
         "OPEN_RADIO_HIL data_plane={data_plane:?} radio_core=0 \
          protocol_core=0 network_core={data_plane_core} rx_checksum={rx_checksum:?} \
-         tx_udp_checksum={tx_udp_checksum:?} \
+         tx_udp_checksum={tx_udp_checksum:?} tx_buffer={tx_buffer:?} \
          rx_admission={rx_admission:?} rx_dispatch={effective_rx_dispatch} \
          rx_continuation={effective_rx_continuation} \
          l1_cache_counters={l1_cache_counters}",
@@ -2853,6 +2865,16 @@ async fn wifi_role_task(
                 let generation = owner.generation().value();
                 match await_stack_boundary!(owner.stop()) {
                     Ok(idle) => {
+                        #[cfg(feature = "tx-psram-dma-probe")]
+                        {
+                            let observation = open_esp_radio_esp32s31_embassy_wifi::direct_psram_tx_dma_probe_observation();
+                            runtime_log(format_args!(
+                                "OPEN_RADIO_HIL psram_tx_dma prepares={} first_address={:#010x} last_address={:#010x}",
+                                observation.prepares,
+                                observation.first_address,
+                                observation.last_address,
+                            ));
+                        }
                         apply_network_config(
                             WifiNetworkInterface::AccessPoint,
                             NetworkConfigCommand::Clear,

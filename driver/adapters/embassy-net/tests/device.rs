@@ -365,7 +365,7 @@ fn pinned_tx_slot_moves_between_network_and_radio_without_copying() {
         });
     assert!(device.transmit(&mut context()).is_none());
 
-    let mut frame = radio.try_receive_tx().unwrap();
+    let mut frame = radio.try_receive_tx_direct().unwrap();
     assert_eq!(frame.ethernet_offset(), TX_HEADROOM);
     assert_eq!(frame.ethernet_length(), TEST_ETHERNET_LENGTH);
     assert_eq!(frame.ethernet()[0], 0x5a);
@@ -378,10 +378,76 @@ fn pinned_tx_slot_moves_between_network_and_radio_without_copying() {
         .transmit(&mut context())
         .unwrap()
         .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0xa6));
-    let mut frame = radio.try_receive_tx().unwrap();
+    let mut frame = radio.try_receive_tx_direct().unwrap();
     assert_eq!(frame.storage_mut().as_mut_ptr(), first_address);
     assert_eq!(&frame.storage_mut()[..TX_HEADROOM], &[0xc3; TX_HEADROOM]);
     assert_eq!(frame.ethernet(), &[0xa6; TEST_ETHERNET_LENGTH]);
+}
+
+#[cfg(feature = "tx-staging-copy-probe")]
+#[test]
+fn scheduled_staged_tx_keeps_ownership_until_one_dma_promotion_copy() {
+    type EndpointResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+
+    let station_resources = Box::leak(Box::new(EndpointResources::new()));
+    let access_point_resources = Box::leak(Box::new(EndpointResources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let station_interface = NetworkInterfaceId::new(0);
+    let access_point_interface = NetworkInterfaceId::new(1);
+    let (provider, consumer) = tx_resources.split(pool);
+    let (mut station, _station_rx) =
+        station_resources.split(provider, station_interface, [2, 0, 0, 0, 0, 1]);
+    let (access_point, _access_point_rx) =
+        access_point_resources.split(provider, access_point_interface, [2, 0, 0, 0, 0, 2]);
+    let mut access_point = access_point.with_tx_staging_copy_selected(true);
+    let station_tx = consumer.for_interface(station_interface);
+    let access_point_tx = consumer.for_interface(access_point_interface);
+
+    // Occupy the sole physical DMA credit through the direct STA endpoint.
+    station
+        .transmit(&mut context())
+        .expect("the physical DMA credit starts free")
+        .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0xd1));
+    let direct = station_tx
+        .try_receive_direct()
+        .expect("STA publishes a direct DMA owner");
+
+    // AP admission remains possible because it consumes a distinct CPU-packet
+    // credit. Scheduling sees the immutable frame even while DMA is full.
+    access_point
+        .transmit(&mut context())
+        .expect("the staged packet credit is independent of DMA")
+        .consume(TEST_ETHERNET_LENGTH, |frame| {
+            frame.fill(0xa5);
+            frame[12..14].copy_from_slice(&0x0800_u16.to_be_bytes());
+        });
+    let staged = access_point_tx
+        .try_receive()
+        .expect("AP publishes a CPU-owned packet");
+    assert_eq!(staged.ethernet()[0], 0xa5);
+    let staged = match access_point_tx.try_promote(staged) {
+        Ok(_) => panic!("promotion must respect exhausted physical DMA credits"),
+        Err(staged) => staged,
+    };
+    assert_eq!(&staged.ethernet()[12..14], &0x0800_u16.to_be_bytes());
+
+    // Once completion returns the DMA credit, promotion makes the only packet
+    // copy and releases the PSRAM/staging credit immediately.
+    drop(direct);
+    let promoted = match access_point_tx.try_promote(staged) {
+        Ok(promoted) => promoted,
+        Err(_) => panic!("returned DMA credit must allow promotion"),
+    };
+    assert_eq!(promoted.ethernet().len(), TEST_ETHERNET_LENGTH);
+    assert_eq!(promoted.ethernet()[0], 0xa5);
+    assert_eq!(&promoted.ethernet()[12..14], &0x0800_u16.to_be_bytes());
+    drop(promoted);
+
+    assert!(station.transmit(&mut context()).is_some());
+    assert!(access_point.transmit(&mut context()).is_some());
 }
 
 #[test]
@@ -466,7 +532,7 @@ fn permanent_endpoints_keep_distinct_addresses_and_share_one_tx_fabric() {
     }
     let station_tx = radio.tx_consumer().for_interface(station_interface);
     for marker in 0..4_u8 {
-        let frame = station_tx.try_receive().unwrap();
+        let frame = station_tx.try_receive_direct().unwrap();
         assert_eq!(frame.ethernet()[0], marker);
         drop(frame);
     }
@@ -517,7 +583,7 @@ fn permanent_endpoints_keep_distinct_addresses_and_share_one_tx_fabric() {
     let consumer = radio.tx_consumer();
     let station_tx = consumer.for_interface(station_interface);
     let access_point_tx = consumer.for_interface(access_point_interface);
-    let station_first = station_tx.try_receive().unwrap();
+    let station_first = station_tx.try_receive_direct().unwrap();
     assert_eq!(*station_first.tag(), station_interface);
     assert_eq!(station_first.ethernet()[0], 0x51);
     drop(station_first);
@@ -528,7 +594,7 @@ fn permanent_endpoints_keep_distinct_addresses_and_share_one_tx_fabric() {
         .transmit(&mut Context::from_waker(&access_point_waker))
         .expect("the waiting peer claims the returned credit")
         .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0xa1));
-    let access_point_first = access_point_tx.try_receive().unwrap();
+    let access_point_first = access_point_tx.try_receive_direct().unwrap();
     assert_eq!(*access_point_first.tag(), access_point_interface);
     assert_eq!(access_point_first.ethernet()[0], 0xa1);
     drop(access_point_first);
@@ -536,7 +602,7 @@ fn permanent_endpoints_keep_distinct_addresses_and_share_one_tx_fabric() {
     // Each VIF owns a FIFO. Granting the peer a returned credit must not
     // rotate the already-published station frames.
     for marker in 0x52..=0x54_u8 {
-        let frame = station_tx.try_receive().unwrap();
+        let frame = station_tx.try_receive_direct().unwrap();
         assert_eq!(frame.ethernet()[0], marker);
         drop(frame);
     }
@@ -745,7 +811,7 @@ fn pinned_rx_and_tx_depths_are_independent() {
     assert!(device.transmit(&mut context()).is_none());
     let consumer = radio.tx_consumer();
     assert_eq!(consumer.queue_len(), 1);
-    assert_eq!(consumer.try_receive().unwrap().ethernet()[0], 0xa5);
+    assert_eq!(consumer.try_receive_direct().unwrap().ethernet()[0], 0xa5);
 
     for marker in 0..3 {
         let (received, reply) = device.receive(&mut context()).unwrap();

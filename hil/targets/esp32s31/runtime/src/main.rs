@@ -51,6 +51,8 @@ use static_cell::StaticCell;
 mod boot_smoke_console;
 #[cfg(feature = "open-radio-hil")]
 mod console;
+#[cfg(feature = "gdma-mem2mem-probe")]
+mod gdma_mem2mem_probe;
 #[cfg(feature = "open-radio-hil")]
 mod phy_calibration_artifact;
 #[cfg(feature = "open-radio-hil")]
@@ -361,6 +363,12 @@ extern "C" fn runtime_main() -> ! {
 
     let peripherals =
         esp_hal::init(esp_hal::Config::default().with_cpu_clock(esp_hal::clock::CpuClock::max()));
+    // The bootstrap configured PSRAM before entering this separately linked
+    // runtime. `esp_hal::init()` cannot carry process-local mapping metadata
+    // across that ELF boundary, so stage two explicitly adopts the live
+    // hardware mapping without reinitializing the PSRAM device or MMU.
+    let _psram =
+        unsafe { open_esp_radio_hil_esp32s31_board::adopt_initialized_psram(peripherals.PSRAM) };
     #[cfg(feature = "open-radio-hil")]
     let l1_cache = L1_CACHE_PERFORMANCE.init(
         open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters::new(peripherals.CACHE),
@@ -457,7 +465,15 @@ extern "C" fn runtime_main() -> ! {
                 fail(c"OPEN_RADIO_HIL runtime=FAIL reason=protocol-allocation\r\n");
             };
             spawner.spawn(protocol);
-            let Ok(hil) = open_radio_hil_task(spawner, app_spawner, radio, trng, l1_cache) else {
+            let Ok(hil) = open_radio_hil_task(
+                spawner,
+                app_spawner,
+                radio,
+                trng,
+                l1_cache,
+                #[cfg(feature = "gdma-mem2mem-probe")]
+                peripherals.DMA_AXI_CH0,
+            ) else {
                 fail(c"OPEN_RADIO_HIL runtime=FAIL reason=radio-task-allocation\r\n");
             };
             spawner.spawn(hil);
@@ -520,7 +536,10 @@ async fn open_radio_hil_task(
     radio: open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral,
     trng: esp_hal::rng::Trng,
     l1_cache: &'static open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters,
+    #[cfg(feature = "gdma-mem2mem-probe")] gdma_channel: esp_hal::peripherals::DMA_AXI_CH0<'static>,
 ) {
+    #[cfg(feature = "gdma-mem2mem-probe")]
+    gdma_mem2mem_probe::run(gdma_channel).await;
     product_hil::run(spawner, protocol_spawner, radio, trng, l1_cache).await;
 }
 

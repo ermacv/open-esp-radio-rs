@@ -833,10 +833,11 @@ impl ProductionWifiEpochRunner {
         #[cfg(feature = "diagnostics")]
         let access_point_processor = access_point_processor
             .with_terminal_observer(super::access_point::begin_access_point_observation());
-        let access_point_network_tx = Esp32s31AccessPointNetworkTx::<RadioTxBacking>::new(
-            #[cfg(feature = "diagnostics")]
-            diagnostics.map(|hooks| hooks.aggregate_tx),
-        );
+        let access_point_network_tx =
+            Esp32s31AccessPointNetworkTx::<RadioTxBacking, RadioNetworkTxBacking>::new(
+                #[cfg(feature = "diagnostics")]
+                diagnostics.map(|hooks| hooks.aggregate_tx),
+            );
         let access_point_role = AccessPointRoleRuntime::new(
             access_point_processor,
             access_point_network_tx,

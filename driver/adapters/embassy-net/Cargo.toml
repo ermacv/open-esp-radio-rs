@@ -14,6 +14,9 @@ diagnostics = []
 # Intrusive per-datagram Core1 cycle/instruction accounting. Diagnostic HIL
 # images enable this explicitly; production adapters do not.
 tx-phase-telemetry = ["dep:riscv"]
+# Same-image HIL discriminator for the proposed contended-TX ownership
+# boundary. Production images do not compile this branch.
+tx-staging-copy-probe = []
 
 [dependencies]
 embassy-net-driver = { git = "https://github.com/ermacv/embassy.git", rev = "51c3eb0b7e64921246007af1357f3d9f44bfe466" }

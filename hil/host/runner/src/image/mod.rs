@@ -196,13 +196,21 @@ pub(crate) struct Artifacts {
 
 pub(crate) fn build(root: &Path, class: qualification::scenario::ImageClass) -> Result<Artifacts> {
     let local_esp_hal = local_esp_hal_override()?;
-    if local_esp_hal.is_none() {
-        return build_resolved(root, class, None);
+    let local_embassy = local_embassy_override()?;
+    let local_xarxa = local_xarxa_override()?;
+    if local_esp_hal.is_none() && local_embassy.is_none() && local_xarxa.is_none() {
+        return build_resolved(root, class, None, None, None);
     }
 
     let lockfile = root.join("hil/targets/esp32s31/Cargo.lock");
     let mut snapshot = TrackedFileSnapshot::capture(lockfile)?;
-    let result = build_resolved(root, class, local_esp_hal.as_deref());
+    let result = build_resolved(
+        root,
+        class,
+        local_esp_hal.as_deref(),
+        local_embassy.as_deref(),
+        local_xarxa.as_deref(),
+    );
     let restore = snapshot.restore();
     match (result, restore) {
         (Ok(artifacts), Ok(())) => Ok(artifacts),
@@ -219,6 +227,8 @@ fn build_resolved(
     root: &Path,
     class: qualification::scenario::ImageClass,
     local_esp_hal: Option<&Path>,
+    local_embassy: Option<&Path>,
+    local_xarxa: Option<&Path>,
 ) -> Result<Artifacts> {
     ensure_no_old_application_dependency(root)?;
     let manifest = root.join("hil/targets/esp32s31/Cargo.toml");
@@ -258,6 +268,8 @@ fn build_resolved(
         runtime.arg("--locked");
     }
     add_local_esp_hal_patches(&mut runtime, local_esp_hal);
+    add_local_embassy_patches(&mut runtime, local_embassy);
+    add_local_xarxa_patches(&mut runtime, local_xarxa);
     evidence::stack_audit::enable_stack_checks(&mut runtime, &stack_budget);
     run_command(&mut runtime, "build stage-two runtime")?;
     require_file(&runtime_elf, "runtime ELF")?;
@@ -293,6 +305,8 @@ fn build_resolved(
         bootstrap.arg("--locked");
     }
     add_local_esp_hal_patches(&mut bootstrap, local_esp_hal);
+    add_local_embassy_patches(&mut bootstrap, local_embassy);
+    add_local_xarxa_patches(&mut bootstrap, local_xarxa);
     evidence::stack_audit::enable_stack_checks(&mut bootstrap, &stack_budget);
     run_command(&mut bootstrap, "build Flash/SRAM bootstrap")?;
     require_file(&bootstrap_elf, "bootstrap ELF")?;
@@ -434,6 +448,48 @@ fn local_esp_hal_override() -> Result<Option<PathBuf>> {
     Ok(Some(local))
 }
 
+fn local_embassy_override() -> Result<Option<PathBuf>> {
+    let Some(local) = env::var_os("EMBASSY_ROOT").map(PathBuf::from) else {
+        return Ok(None);
+    };
+    let packages = ["embassy-net", "embassy-net-driver"];
+    let missing = packages
+        .iter()
+        .filter_map(|path| (!local.join(path).is_dir()).then_some(*path))
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Err(format!(
+            "EMBASSY_ROOT={} is missing required package directories: {}",
+            local.display(),
+            missing.join(", ")
+        )
+        .into());
+    }
+    Ok(Some(local))
+}
+
+fn local_xarxa_override() -> Result<Option<PathBuf>> {
+    // Do not use an XARXA_* name here: Xarxa's build script owns that prefix
+    // for compile-time protocol configuration and rejects unknown variables.
+    let Some(local) = env::var_os("OPEN_RADIO_XARXA_ROOT").map(PathBuf::from) else {
+        return Ok(None);
+    };
+    let packages = ["xarxa-driver"];
+    let missing = packages
+        .iter()
+        .filter_map(|path| (!local.join(path).is_dir()).then_some(*path))
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Err(format!(
+            "OPEN_RADIO_XARXA_ROOT={} is missing required package directories: {}",
+            local.display(),
+            missing.join(", ")
+        )
+        .into());
+    }
+    Ok(Some(local))
+}
+
 fn add_local_esp_hal_patches(command: &mut Command, local: Option<&Path>) {
     let Some(local) = local else {
         return;
@@ -447,6 +503,33 @@ fn add_local_esp_hal_patches(command: &mut Command, local: Option<&Path>) {
         command.arg("--config").arg(format!(
             "patch.\"https://github.com/ermacv/esp-hal\".{package}.path=\"{}\"",
             local.join(path).display()
+        ));
+    }
+}
+
+fn add_local_embassy_patches(command: &mut Command, local: Option<&Path>) {
+    let Some(local) = local else {
+        return;
+    };
+    for package in ["embassy-net", "embassy-net-driver"] {
+        command.arg("--config").arg(format!(
+            "patch.\"https://github.com/ermacv/embassy.git\".{package}.path=\"{}\"",
+            local.join(package).display()
+        ));
+    }
+}
+
+fn add_local_xarxa_patches(command: &mut Command, local: Option<&Path>) {
+    let Some(local) = local else {
+        return;
+    };
+    for (package, package_root) in [
+        ("xarxa", local.to_owned()),
+        ("xarxa-driver", local.join("xarxa-driver")),
+    ] {
+        command.arg("--config").arg(format!(
+            "patch.\"https://github.com/ermacv/xarxa.git\".{package}.path=\"{}\"",
+            package_root.display()
         ));
     }
 }

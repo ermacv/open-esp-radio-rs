@@ -511,7 +511,7 @@ fn idle_station_tx_lends_physical_owners_without_losing_role_state() {
 fn first_frame_outside_fresh_aggregate_txop_falls_back_to_ordinary_tx() {
     let (mut device, network) = make_network();
     send_frame(&mut device, 1);
-    let first = network.try_receive_tx().unwrap();
+    let first = network.try_receive_tx_direct().unwrap();
     let mut hardware = Hardware::default();
     let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
@@ -572,7 +572,7 @@ fn first_frame_outside_fresh_aggregate_txop_falls_back_to_ordinary_tx() {
 fn malformed_first_frame_reaches_ordinary_validation_before_aggregate_metadata() {
     let (mut device, network) = make_network();
     send_short_frame(&mut device);
-    let first = network.try_receive_tx().unwrap();
+    let first = network.try_receive_tx_direct().unwrap();
     let mut hardware = Hardware::default();
     let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
@@ -635,7 +635,7 @@ fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
                 frame[14..].fill(marker);
             });
     }
-    let first = network.try_receive_tx().unwrap();
+    let first = network.try_receive_tx_direct().unwrap();
     let mut hardware = Hardware::default();
     let mut slot = core::pin::pin!(TxSlot::<2_048>::new_model());
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
@@ -687,7 +687,7 @@ fn aggregate_uses_exact_ba_tid_and_defers_a_different_wmm_successor() {
     send_ipv4_dscp_frame(&mut device, 1, 40);
     send_ipv4_dscp_frame(&mut device, 2, 46);
     send_ipv4_dscp_frame(&mut device, 3, 40);
-    let first = network.try_receive_tx().unwrap();
+    let first = network.try_receive_tx_direct().unwrap();
     let mut hardware = Hardware::default();
     let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
@@ -772,7 +772,7 @@ fn negotiated_video_txop_bounds_he_aggregate_and_selects_video_queue() {
     // station downgrade to VI/UP5 before BlockAck and TXOP selection.
     send_ipv4_dscp_frame(&mut device, 1, 46);
     send_ipv4_dscp_frame(&mut device, 2, 46);
-    let first = network.try_receive_tx().unwrap();
+    let first = network.try_receive_tx_direct().unwrap();
     let mut hardware = Hardware::default();
     let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
     let mut ordinary = make_ordinary(slot.as_mut(), &mut hardware);
@@ -869,7 +869,7 @@ fn he_txop_above_rts_threshold_fails_before_aggregate_sequence_or_dma() {
     let (mut device, network) = make_network();
     send_ipv4_dscp_frame(&mut device, 1, 46);
     send_ipv4_dscp_frame(&mut device, 2, 46);
-    let first = network.try_receive_tx().unwrap();
+    let first = network.try_receive_tx_direct().unwrap();
     let mut hardware = Hardware::default();
     let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
     let mut ordinary = make_ordinary(slot.as_mut(), &mut hardware);
@@ -929,7 +929,7 @@ fn he_txop_above_rts_threshold_fails_before_aggregate_sequence_or_dma() {
 fn peer_advertised_tiny_he_txop_cannot_wrap_into_aggregate_capacity() {
     let (mut device, network) = make_network();
     send_ipv4_dscp_frame(&mut device, 1, 40);
-    let first = network.try_receive_tx().unwrap();
+    let first = network.try_receive_tx_direct().unwrap();
     let mut hardware = Hardware::default();
     let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
     let mut ordinary = make_ordinary(slot.as_mut(), &mut hardware);
@@ -1017,7 +1017,7 @@ fn negotiated_amsdu_pairs_network_frames_inside_the_block_ack_window() {
                 frame[14..].fill(marker);
             });
     }
-    let first = network.try_receive_tx().unwrap();
+    let first = network.try_receive_tx_direct().unwrap();
     let mut hardware = Hardware::default();
     let mut slot = core::pin::pin!(TxSlot::<4_096>::new_model());
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
@@ -1073,7 +1073,7 @@ fn aggregate_never_exceeds_the_peer_negotiated_block_ack_window() {
     send_frame(&mut device, 1);
     send_frame(&mut device, 2);
     send_frame(&mut device, 3);
-    let first = network.try_receive_tx().unwrap();
+    let first = network.try_receive_tx_direct().unwrap();
     let mut hardware = Hardware::default();
     let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
@@ -1148,7 +1148,7 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
                 frame[14..].fill(marker);
             });
     }
-    let first = network.try_receive_tx().unwrap();
+    let first = network.try_receive_tx_direct().unwrap();
     let mut hardware = Hardware::default();
     let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
@@ -1197,7 +1197,7 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
                 frame[14..].fill(marker);
             });
     }
-    let standby_first = network.try_receive_tx().unwrap();
+    let standby_first = network.try_receive_tx_direct().unwrap();
     tx.prepare_network_standby(standby_first, &network.tx_consumer());
     assert!(tx.has_prepared_network_tx());
     assert_eq!(network.tx_queue_len(), 0);
@@ -1212,7 +1212,7 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
             frame[12..14].copy_from_slice(&0x0800_u16.to_be_bytes());
             frame[14..].fill(6);
         });
-    let extension = network.try_receive_tx().unwrap();
+    let extension = network.try_receive_tx_direct().unwrap();
     tx.prepare_network_standby(extension, &network.tx_consumer());
     assert!(tx.has_prepared_network_tx());
     assert_eq!(hardware.ht_publications, 1);
@@ -1294,7 +1294,7 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
 fn exhausted_ba_generation_invalidates_a_software_prepared_aggregate_before_publication() {
     let (mut device, network) = make_network();
     send_frame(&mut device, 1);
-    let first = network.try_receive_tx().unwrap();
+    let first = network.try_receive_tx_direct().unwrap();
     let mut hardware = Hardware::default();
     let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
@@ -1327,7 +1327,7 @@ fn exhausted_ba_generation_invalidates_a_software_prepared_aggregate_before_publ
     assert_eq!(hardware.he_publications, 1);
 
     send_frame(&mut device, 2);
-    let standby_first = network.try_receive_tx().unwrap();
+    let standby_first = network.try_receive_tx_direct().unwrap();
     tx.prepare_network_standby(standby_first, &network.tx_consumer());
     assert!(tx.has_prepared_network_tx());
 
@@ -1414,7 +1414,7 @@ fn ordinary_control_tx_cannot_admit_a_standby_aggregate() {
     assert!(tx.active());
     assert!(!tx.can_prepare_network_tx());
 
-    let frame = network.try_receive_tx().unwrap();
+    let frame = network.try_receive_tx_direct().unwrap();
     tx.prepare_network_standby(frame, &network.tx_consumer());
     assert!(!tx.has_prepared_network_tx());
 }
@@ -1454,7 +1454,7 @@ fn rejected_standby_preparation_preserves_the_hardware_owned_primary() {
     .unwrap();
     tx.set_block_ack_window(0, Some(TEST_SLOTS as u16));
 
-    let first = network.try_receive_tx().unwrap();
+    let first = network.try_receive_tx_direct().unwrap();
     assert_eq!(
         tx.start_network(&mut hardware, first, &network.tx_consumer()),
         Ok(WifiTxProgress::Pending),
@@ -1466,7 +1466,7 @@ fn rejected_standby_preparation_preserves_the_hardware_owned_primary() {
     // A malformed immediate successor stays at the FIFO boundary without
     // mutating aggregate metadata or erasing the live primary transaction.
     send_short_frame(&mut device);
-    let short = network.try_receive_tx().unwrap();
+    let short = network.try_receive_tx_direct().unwrap();
     tx.prepare_network_standby(short, &network.tx_consumer());
 
     assert!(tx.active());
@@ -1500,7 +1500,7 @@ fn block_ack_completion_releases_all_referenced_network_leases() {
     let (mut device, network) = make_network();
     send_frame(&mut device, 1);
     send_frame(&mut device, 2);
-    let first = network.try_receive_tx().unwrap();
+    let first = network.try_receive_tx_direct().unwrap();
     let mut hardware = Hardware::default();
     let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
@@ -1558,7 +1558,7 @@ fn block_ack_completion_releases_all_referenced_network_leases() {
     assert!(device.transmit(&mut context()).is_none());
     assert_eq!(network.tx_queue_len(), TEST_QUEUE_DEPTH);
     for _ in 0..TEST_QUEUE_DEPTH {
-        drop(network.try_receive_tx().unwrap());
+        drop(network.try_receive_tx_direct().unwrap());
     }
 }
 
@@ -1568,7 +1568,7 @@ fn partial_block_ack_retains_missing_frames_across_one_republication() {
     for marker in 1..=3 {
         send_frame(&mut device, marker);
     }
-    let first = network.try_receive_tx().unwrap();
+    let first = network.try_receive_tx_direct().unwrap();
     let mut hardware = Hardware::default();
     let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
@@ -1634,7 +1634,7 @@ fn partial_block_ack_retains_missing_frames_across_one_republication() {
     assert!(device.transmit(&mut context()).is_none());
     assert_eq!(network.tx_queue_len(), TEST_QUEUE_DEPTH);
     for _ in 0..TEST_QUEUE_DEPTH {
-        drop(network.try_receive_tx().unwrap());
+        drop(network.try_receive_tx_direct().unwrap());
     }
 }
 
@@ -1643,7 +1643,7 @@ fn one_missing_wmm_ht_mpdu_keeps_tid_queue_sequence_and_pn_in_ordinary_retry() {
     let (mut device, network) = make_network();
     send_ipv4_dscp_frame(&mut device, 1, 40);
     send_ipv4_dscp_frame(&mut device, 2, 40);
-    let first = network.try_receive_tx().unwrap();
+    let first = network.try_receive_tx_direct().unwrap();
     let mut hardware = Hardware::default();
     let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
@@ -1733,6 +1733,6 @@ fn one_missing_wmm_ht_mpdu_keeps_tid_queue_sequence_and_pn_in_ordinary_retry() {
         Some(SingleMpduTxOutcome::Success(_))
     ));
     for _ in 0..TEST_QUEUE_DEPTH {
-        drop(network.try_receive_tx().unwrap());
+        drop(network.try_receive_tx_direct().unwrap());
     }
 }

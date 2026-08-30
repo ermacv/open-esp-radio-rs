@@ -380,6 +380,11 @@ struct ApPeer {
     maximum_legacy_rate_500kbps: u8,
     ht: Option<HtPeerCapabilities>,
     qos_supported: bool,
+    /// Independent QoS sequence spaces for this receiver's TIDs. TX BlockAck
+    /// and receiver reorder state are peer+TID agreements; sharing these
+    /// counters across AP clients creates artificial holes whenever the
+    /// scheduler switches peers.
+    next_qos_sequences: [u16; 8],
     tx_block_ack: TxBlockAckSession,
     power_state: ApPeerPowerState,
     buffered_unicast_frames: u16,
@@ -437,6 +442,7 @@ impl ApPeer {
             maximum_legacy_rate_500kbps: 2,
             ht: None,
             qos_supported: false,
+            next_qos_sequences: [0; 8],
             tx_block_ack: new_ap_tx_block_ack(),
             power_state: ApPeerPowerState::Active,
             buffered_unicast_frames: 0,
@@ -536,7 +542,6 @@ pub struct AccessPointService<'peers> {
     inactive_timeout: AccessPointInactiveTimeout,
     next_management_sequence: u16,
     next_data_sequence: u16,
-    next_qos_sequences: [u16; 8],
     status_revision: u32,
     associated_count: u8,
     authorized_count: u8,
@@ -575,7 +580,6 @@ impl<'peers> AccessPointService<'peers> {
             inactive_timeout,
             next_management_sequence: 0,
             next_data_sequence: 0,
-            next_qos_sequences: [0; 8],
             status_revision: 0,
             associated_count: 0,
             authorized_count: 0,
@@ -605,7 +609,6 @@ impl<'peers> AccessPointService<'peers> {
             inactive_timeout,
             next_management_sequence: 0,
             next_data_sequence: 0,
-            next_qos_sequences: [0; 8],
             status_revision: 0,
             associated_count: 0,
             authorized_count: 0,
@@ -1230,18 +1233,27 @@ impl<'peers> AccessPointService<'peers> {
         self.next_data_sequence
     }
 
-    /// Consume one per-TID sequence for protected data or the bounded Open
-    /// QoS A-MSDU path. Security mode does not partition IEEE sequence space.
-    pub fn next_qos_sequence(&mut self, tid: u8) -> Option<u16> {
-        let sequence = self.next_qos_sequences.get_mut(usize::from(tid))?;
+    /// Consume one per-peer/per-TID sequence for protected data or the
+    /// bounded Open QoS A-MSDU path. Security mode does not partition the
+    /// receiver's IEEE sequence space.
+    pub fn next_qos_sequence(&mut self, peer: [u8; 6], tid: u8) -> Option<u16> {
+        let sequence = self
+            .checked_peer_mut(peer)
+            .ok()?
+            .next_qos_sequences
+            .get_mut(usize::from(tid))?;
         let current = *sequence;
         *sequence = (current + 1) & 0x0fff;
         Some(current)
     }
 
-    /// Inspect a per-TID sequence without consuming it during frame preflight.
-    pub fn current_qos_sequence(&self, tid: u8) -> Option<u16> {
-        self.next_qos_sequences.get(usize::from(tid)).copied()
+    /// Inspect a peer/TID sequence without consuming it during preflight.
+    pub fn current_qos_sequence(&self, peer: [u8; 6], tid: u8) -> Option<u16> {
+        self.checked_peer(peer)
+            .ok()?
+            .next_qos_sequences
+            .get(usize::from(tid))
+            .copied()
     }
 
     pub fn authenticate_open(&mut self, peer: [u8; 6], now_micros: u64) -> ApMlmeAction {
@@ -1419,7 +1431,7 @@ impl<'peers> AccessPointService<'peers> {
             return Ok(None);
         }
         let starting_sequence = self
-            .current_qos_sequence(AP_TX_BLOCK_ACK_TID)
+            .current_qos_sequence(peer, AP_TX_BLOCK_ACK_TID)
             .expect("AP data TID is representable");
         let peer = self.checked_peer_mut(peer)?;
         if peer.phase != ApPeerPhase::Authorized || peer.ht.is_none() || !peer.qos_supported {
@@ -2228,6 +2240,22 @@ mod tests {
         assert_eq!(service.peers().count(), 2);
         assert_eq!(service.peer_status(PEER).unwrap().association_id, 1);
         assert_eq!(service.peer_status(OTHER).unwrap().association_id, 2);
+    }
+
+    #[test]
+    fn qos_sequence_spaces_are_independent_for_each_peer_and_tid() {
+        let mut storage = AccessPointPeerStorage::new();
+        let mut service = service(&mut storage);
+        service.authenticate_open(PEER, 0);
+        service.authenticate_open(OTHER, 0);
+
+        assert_eq!(service.next_qos_sequence(PEER, 0), Some(0));
+        assert_eq!(service.next_qos_sequence(PEER, 0), Some(1));
+        assert_eq!(service.current_qos_sequence(PEER, 0), Some(2));
+        assert_eq!(service.current_qos_sequence(OTHER, 0), Some(0));
+        assert_eq!(service.next_qos_sequence(OTHER, 0), Some(0));
+        assert_eq!(service.current_qos_sequence(PEER, 1), Some(0));
+        assert_eq!(service.next_qos_sequence([0xff; 6], 0), None);
     }
 
     #[test]

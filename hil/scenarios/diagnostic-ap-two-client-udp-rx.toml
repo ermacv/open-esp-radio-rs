@@ -1,0 +1,32 @@
+schema = 3
+id = "diagnostic-ap-two-client-udp-rx"
+description = "Two-client AP UDP RX endpoint and per-flow accounting smoke"
+repetitions = 1
+image = "correctness"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic", "wifi", "access-point", "multi-client", "udp", "rx"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "access-point"
+cycles = 2
+boots = 1
+timeout_seconds = 120
+client = "laptop"
+
+[workload.traffic]
+kind = "udp-multi-client"
+direction = "rx"
+duration_seconds = 10
+rx_rate_bps_per_flow = 16000000
+payload_bytes = 1400
+
+[criteria]
+exact_delivery = false
+minimum_rx_bps = 2000000
+minimum_bps_per_flow = 1000000
+maximum_flow_skew_percent = 50
+minimum_concurrent_ap_clients = 2

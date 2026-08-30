@@ -7,7 +7,7 @@
 
 use core::future::Future;
 
-use open_esp_radio_embassy_net::{PinnedTxFrame, PinnedTxInterfaceConsumer, RawMutex};
+use open_esp_radio_embassy_net::{PinnedNetworkTxFrame, PinnedTxInterfaceConsumer, RawMutex};
 use open_esp_radio_esp32s31_wifi_mac::tx::TxHardware;
 use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::{
     Esp32s31SingleMpduTx, SingleMpduTxError, WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer,
@@ -42,7 +42,7 @@ where
     fn start<'a>(
         &'a mut self,
         hardware: &'a mut H,
-        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         _network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
@@ -53,7 +53,7 @@ where
         >,
     ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
         async move {
-            let progress = Esp32s31SingleMpduTx::start(self, hardware, frame.ethernet())?;
+            let progress = Esp32s31SingleMpduTx::start(self, hardware, frame.as_slice())?;
             // Ordinary TX copied the complete Ethernet body into its private
             // pinned slot before publishing DMA, so the network lease is no
             // longer hardware-visible at this boundary.

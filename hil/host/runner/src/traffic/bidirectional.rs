@@ -17,8 +17,8 @@ use std::{
 
 use open_esp_radio_hil_protocol::{
     Completion, Direction, FlowConfig, Ipv4Endpoint, RxRadioEvidence, SessionConfig,
-    SessionLinkRequirements, Transport, TransportEvidence, TxAggregateTimingEvidence,
-    TxRadioEvidence,
+    SessionFlowConfig, SessionLinkRequirements, Transport, TransportEvidence,
+    TxAggregateTimingEvidence, TxRadioEvidence,
 };
 
 use crate::qualification::scenario::HtGuardIntervalExpectation;
@@ -1432,18 +1432,24 @@ pub(crate) fn run(
         transport: Transport::Udp,
         direction: Direction::Bidirectional,
         completion: Completion::DurationMillis(u32::try_from(options.duration.as_millis())?),
-        peer: Some(Ipv4Endpoint {
-            address: host_address.octets(),
-            port: options.tx_port,
-        }),
-        target_rx: Some(FlowConfig {
-            payload_bytes: u16::try_from(options.payload)?,
-            offered_rate_bps: Some(options.rate_bps),
-        }),
-        target_tx: Some(FlowConfig {
-            payload_bytes: u16::try_from(options.tx_payload)?,
-            offered_rate_bps: options.tx_rate_bps,
-        }),
+        flows: [
+            Some(SessionFlowConfig {
+                flow_id: 0,
+                peer: Some(Ipv4Endpoint {
+                    address: host_address.octets(),
+                    port: options.tx_port,
+                }),
+                target_rx: Some(FlowConfig {
+                    payload_bytes: u16::try_from(options.payload)?,
+                    offered_rate_bps: Some(options.rate_bps),
+                }),
+                target_tx: Some(FlowConfig {
+                    payload_bytes: u16::try_from(options.tx_payload)?,
+                    offered_rate_bps: options.tx_rate_bps,
+                }),
+            }),
+            None,
+        ],
         link_requirements: SessionLinkRequirements::tx_block_ack(0),
     })?;
     let receiver_duration = options.duration.saturating_add(Duration::from_secs(2));

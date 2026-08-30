@@ -59,9 +59,10 @@ core0-rx-coarse-telemetry = ["dep:riscv"]
 # Per-transaction TX phase samples used only by the coarse diagnostic image.
 # Core1 packet emission is measured at the paired embassy-net boundary.
 tx-phase-telemetry = [
-    "dep:riscv",
+    "core0-rx-coarse-telemetry",
     "open-esp-radio-embassy-net/tx-phase-telemetry",
 ]
+tx-staging-copy-probe = ["open-esp-radio-embassy-net/tx-staging-copy-probe"]
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
 riscv = { version = "0.15", optional = true }

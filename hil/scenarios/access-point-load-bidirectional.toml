@@ -1,6 +1,6 @@
 schema = 3
 id = "access-point-load-bidirectional"
-description = "Sustained balanced two-client AP baseline with exact delivery"
+description = "Sustained balanced four-flow AP fairness baseline with exact delivery"
 repetitions = 5
 image = "correctness"
 isolation = "reset"
@@ -14,15 +14,18 @@ boots = 1
 timeout_seconds = 180
 
 [workload.traffic]
-kind = "udp"
+kind = "udp-multi-client"
 direction = "bidirectional"
 duration_seconds = 60
-rx_rate_bps = 8000000
-tx_rate_bps = 8000000
+rx_rate_bps_per_flow = 8000000
+tx_rate_bps_per_flow = 8000000
 payload_bytes = 1400
 
 [criteria]
 exact_delivery = true
-minimum_rx_bps = 7600000
-minimum_tx_bps = 7600000
+minimum_rx_bps = 15200000
+minimum_tx_bps = 15200000
+minimum_combined_bps = 30400000
+minimum_bps_per_flow = 7600000
+maximum_flow_skew_percent = 20
 minimum_concurrent_ap_clients = 2

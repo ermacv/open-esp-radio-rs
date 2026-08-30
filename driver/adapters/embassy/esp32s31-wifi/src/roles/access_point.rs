@@ -16,7 +16,8 @@ use embassy_time::{Instant, Timer};
 
 use open_esp_radio_dma::StableDmaBacking;
 use open_esp_radio_embassy_net::{
-    FrameLengthError, LinkState, PinnedTxFrame, PinnedTxInterfaceConsumer, RxEnqueueError,
+    FrameLengthError, LinkState, PinnedNetworkTxFrame, PinnedTxFrame, PinnedTxInterfaceConsumer,
+    RxEnqueueError,
 };
 
 use open_esp_radio_esp32s31_wifi::{
@@ -27,7 +28,7 @@ use open_esp_radio_esp32s31_wifi::{
 #[cfg(any(feature = "diagnostics", test))]
 use open_esp_radio_esp32s31_wifi_ap::mac::Esp32s31ApMacObservation;
 use open_esp_radio_esp32s31_wifi_ap::protocol::{
-    AccessPointServiceStatus, ApBufferedGroupRelease, ApBufferedUnicastRelease,
+    AP_MAX_CLIENTS, AccessPointServiceStatus, ApBufferedGroupRelease, ApBufferedUnicastRelease,
     ApDownlinkDisposition, ApPeerClose, ApPeerPhase, ApPeerPowerState, ApPowerSaveAction,
     ApWpa2RetryProgress,
 };

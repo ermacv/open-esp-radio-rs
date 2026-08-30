@@ -219,6 +219,13 @@ SECTIONS
   {
     __runtime_data_bss_start = ABSOLUTE(.);
     _bss_start = ABSOLUTE(.);
+    /* Explicit cached-PSRAM diagnostics must be reset on every boot. Keeping
+       them inside runtime BSS prevents persistent NOLOAD ownership flags from
+       surviving the image-preflight reset. The assertion below forbids these
+       sections from silently consuming internal SRAM in another profile. */
+    __runtime_explicit_psram_bss_start = ABSOLUTE(.);
+    KEEP(*(.psram.bss .psram.bss.*));
+    __runtime_explicit_psram_bss_end = ABSOLUTE(.);
     *(.sbss .sbss.*);
     *(.bss .bss.*);
     *(.noinit .noinit.*);
@@ -267,6 +274,9 @@ ASSERT((RUNTIME_DATA_IN_PSRAM &&
        (!RUNTIME_DATA_IN_PSRAM &&
         __runtime_data_bss_end <= ORIGIN(RUNTIME_DATA) + LENGTH(RUNTIME_DATA)),
        "runtime data/BSS does not fit selected memory profile");
+ASSERT(RUNTIME_DATA_IN_PSRAM ||
+       __runtime_explicit_psram_bss_start == __runtime_explicit_psram_bss_end,
+       "explicit PSRAM BSS requires the PSRAM-data runtime profile");
 ASSERT(__runtime_data_load_start >= ORIGIN(RUNTIME_CODE) &&
        __runtime_data_load_end <= ORIGIN(RUNTIME_CODE) + LENGTH(RUNTIME_CODE),
        "runtime initialized data load image is outside payload");

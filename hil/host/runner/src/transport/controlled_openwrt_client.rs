@@ -126,11 +126,14 @@ impl ControlledOpenWrtClient {
         let address = access_point.secondary_client_cidr().ok_or(
             "the AP scenario requires a second client but secondary_client_address is absent",
         )?;
+        let client_address = access_point.secondary_client_address().ok_or(
+            "the AP scenario requires a second client but secondary_client_address is absent",
+        )?;
         Self::connect_at(
             access_point,
             fixture,
             address,
-            false,
+            client_address,
             security,
             fixed_ht_mcs,
             fixed_guard_interval,
@@ -148,7 +151,7 @@ impl ControlledOpenWrtClient {
             access_point,
             fixture,
             access_point.client_cidr(),
-            true,
+            access_point.client_address(),
             security,
             fixed_ht_mcs,
             fixed_guard_interval,
@@ -159,7 +162,7 @@ impl ControlledOpenWrtClient {
         access_point: &AccessPointConfig,
         fixture: &OpenWrtConfig,
         address: String,
-        install_host_forwarding: bool,
+        client_address: Ipv4Addr,
         security: WifiAccessPointSecurity,
         fixed_ht_mcs: Option<u8>,
         fixed_guard_interval: HtGuardIntervalExpectation,
@@ -245,12 +248,8 @@ impl ControlledOpenWrtClient {
         // Keep this outside the measured workload and give the target time to
         // publish its controlled-port state.
         thread::sleep(Duration::from_millis(250));
-        let forward_address = if install_host_forwarding {
-            match install_forwarding(
-                fixture,
-                access_point.target_address(),
-                access_point.client_address(),
-            ) {
+        let forward_address =
+            match install_forwarding(fixture, access_point.target_address(), client_address) {
                 Ok(address) => Some(address),
                 Err(error) => {
                     let restore_error = restore(fixture).err();
@@ -262,10 +261,7 @@ impl ControlledOpenWrtClient {
                         None => error,
                     });
                 }
-            }
-        } else {
-            None
-        };
+            };
         Ok(Self {
             fixture: fixture.clone(),
             forward_address,

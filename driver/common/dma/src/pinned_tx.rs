@@ -37,7 +37,8 @@ impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
     }
 }
 
-#[repr(C, align(16))]
+#[cfg_attr(feature = "tx-psram-dma-probe", repr(C, align(64)))]
+#[cfg_attr(not(feature = "tx-psram-dma-probe"), repr(C, align(16)))]
 struct PinnedTxSlot<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize> {
     bytes: UnsafeCell<PinnedTxBytes<FRAME_CAPACITY, HEADROOM, TRAILER>>,
     // Hardware only owns `bytes`. Keep a checked boundary before CPU-only
@@ -198,8 +199,11 @@ pub struct PinnedDmaTxPool<
     const QUEUE_DEPTH: usize,
 > {
     slots: [PinnedTxSlot<FRAME_CAPACITY, HEADROOM, TRAILER>; QUEUE_DEPTH],
+    prepare_for_dma_read: fn(&mut [u8]),
     _pin: PhantomPinned,
 }
+
+fn coherent_dma_read(_: &mut [u8]) {}
 
 impl<
     const FRAME_CAPACITY: usize,
@@ -211,14 +215,25 @@ impl<
     pub const fn new() -> Self {
         Self {
             slots: [const { PinnedTxSlot::new() }; QUEUE_DEPTH],
+            prepare_for_dma_read: coherent_dma_read,
             _pin: PhantomPinned,
         }
     }
 
     pub fn pin_static(storage: &'static mut Self) -> Pin<&'static mut Self> {
+        Self::pin_static_with_dma_read_prepare(storage, coherent_dma_read)
+    }
+
+    /// Pin a pool which needs target-specific cache maintenance before a DMA
+    /// reader receives ownership.
+    pub fn pin_static_with_dma_read_prepare(
+        storage: &'static mut Self,
+        prepare_for_dma_read: fn(&mut [u8]),
+    ) -> Pin<&'static mut Self> {
         for slot in &mut storage.slots {
             *slot.dma_overrun_guard.get_mut() = [DMA_OVERRUN_GUARD_BYTE; DMA_OVERRUN_GUARD_SIZE];
         }
+        storage.prepare_for_dma_read = prepare_for_dma_read;
         Pin::static_mut(storage)
     }
 
@@ -288,6 +303,7 @@ impl<
             slot,
             index,
             live: true,
+            prepare_for_dma_read: self.prepare_for_dma_read,
         }
     }
 
@@ -386,6 +402,7 @@ pub struct PinnedDmaTxRadioLease<
     slot: &'pool PinnedTxSlot<FRAME_CAPACITY, HEADROOM, TRAILER>,
     index: u8,
     live: bool,
+    prepare_for_dma_read: fn(&mut [u8]),
 }
 
 impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
@@ -458,6 +475,11 @@ unsafe impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: u
         unsafe {
             StableDmaRegion::new(self.storage_mut())
         }
+    }
+
+    fn prepare_for_dma_read(&mut self) {
+        let prepare = self.prepare_for_dma_read;
+        prepare(self.storage_mut());
     }
 }
 
@@ -532,6 +554,10 @@ unsafe impl<T, B: StableDmaBacking> StableDmaBacking for TaggedStableDmaBacking<
     fn stable_dma_region(&mut self) -> StableDmaRegion<'_> {
         self.backing.stable_dma_region()
     }
+
+    fn prepare_for_dma_read(&mut self) {
+        self.backing.prepare_for_dma_read();
+    }
 }
 
 impl<B: IndexedStableDmaLease, R: DmaIndexReturn> ReturningStableDmaBacking<B, R> {
@@ -573,6 +599,10 @@ unsafe impl<B: IndexedStableDmaLease, R: DmaIndexReturn> StableDmaBacking
     fn stable_dma_region(&mut self) -> StableDmaRegion<'_> {
         self.deref_mut().stable_dma_region()
     }
+
+    fn prepare_for_dma_read(&mut self) {
+        self.deref_mut().prepare_for_dma_read();
+    }
 }
 
 impl<B: IndexedStableDmaLease, R: DmaIndexReturn> Drop for ReturningStableDmaBacking<B, R> {
@@ -596,11 +626,18 @@ impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize> D
 
 #[cfg(test)]
 mod tests {
+    extern crate std;
+
     use core::cell::Cell;
+    use std::boxed::Box;
 
     use super::*;
 
     type TestPool = PinnedDmaTxPool<32, 8, 4, 1>;
+
+    fn mark_dma_read_prepared(storage: &mut [u8]) {
+        storage[0] = 0x5a;
+    }
 
     struct ReturnProbe<'pool> {
         pool: &'pool TestPool,
@@ -636,6 +673,18 @@ mod tests {
         drop(radio);
 
         assert_eq!(pool.claim_network(0).release(), 0);
+    }
+
+    #[test]
+    fn radio_backing_runs_target_prepare_only_at_dma_publication_edge() {
+        let pool = Box::leak(Box::new(TestPool::new()));
+        let pool = TestPool::pin_static_with_dma_read_prepare(pool, mark_dma_read_prepared);
+        let pool = pool.as_ref().get_ref();
+        let mut radio = prepared_radio(pool);
+
+        assert_eq!(radio.storage_mut()[0], 0);
+        StableDmaBacking::prepare_for_dma_read(&mut radio);
+        assert_eq!(radio.storage_mut()[0], 0x5a);
     }
 
     #[test]

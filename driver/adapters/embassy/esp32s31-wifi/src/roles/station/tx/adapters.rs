@@ -375,7 +375,7 @@ where
     fn start<'a>(
         &'a mut self,
         hardware: &'a mut H,
-        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
@@ -385,7 +385,13 @@ where
             QUEUE_DEPTH,
         >,
     ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
-        async move { self.start_network(hardware, frame, network) }
+        async move {
+            let frame = match network.try_promote(frame) {
+                Ok(frame) => frame,
+                Err(_) => panic!("station aggregate selected without a free DMA credit"),
+            };
+            self.start_network(hardware, frame, network)
+        }
     }
 
     fn last_started_frame_count(&self) -> usize {
@@ -446,7 +452,7 @@ where
 
     fn prepare<'a>(
         &'a mut self,
-        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
@@ -460,6 +466,10 @@ where
         H: 'a,
     {
         async move {
+            let frame = match network.try_promote(frame) {
+                Ok(frame) => frame,
+                Err(_) => panic!("station standby selected without a free DMA credit"),
+            };
             self.prepare_network_standby(frame, network);
             Ok(())
         }

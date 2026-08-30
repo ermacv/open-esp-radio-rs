@@ -55,11 +55,30 @@ impl HostTransmission {
 pub(crate) fn send(config: Config) -> Result<HostTransmission> {
     let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))?;
     socket.connect(SocketAddrV4::new(config.address, config.port))?;
+    socket.set_write_timeout(Some(Duration::from_secs(2)))?;
+    send_with(config, &socket, |packet| socket.send(packet))
+}
+
+/// Send one paced flow from an already-bound socket.
+///
+/// Multi-client AP qualification shares this socket with the reverse
+/// target-to-host flow so both directions retain one exact peer endpoint.
+pub(crate) fn send_on(socket: &UdpSocket, config: Config) -> Result<HostTransmission> {
+    socket.set_write_timeout(Some(Duration::from_secs(2)))?;
+    send_with(config, socket, |packet| {
+        socket.send_to(packet, SocketAddrV4::new(config.address, config.port))
+    })
+}
+
+fn send_with(
+    config: Config,
+    socket: &UdpSocket,
+    mut send_packet: impl FnMut(&[u8]) -> std::io::Result<usize>,
+) -> Result<HostTransmission> {
     let source = match socket.local_addr()? {
         SocketAddr::V4(address) => *address.ip(),
         SocketAddr::V6(_) => return Err("paced UDP sender selected an IPv6 source".into()),
     };
-    socket.set_write_timeout(Some(Duration::from_secs(2)))?;
     let mut packet = vec![0x5a; config.payload];
     let interval = packet_interval(config.payload, config.rate_bps)?;
     let maximum_catch_up = interval.saturating_mul(MAX_CATCH_UP_INTERVALS);
@@ -91,7 +110,7 @@ pub(crate) fn send(config: Config) -> Result<HostTransmission> {
         }
 
         packet[..4].copy_from_slice(&i32::try_from(datagrams & i32::MAX as u64)?.to_be_bytes());
-        let length = socket.send(&packet)?;
+        let length = send_packet(&packet)?;
         if length != packet.len() {
             return Err(format!("short UDP send: {length}/{}", packet.len()).into());
         }
@@ -101,7 +120,7 @@ pub(crate) fn send(config: Config) -> Result<HostTransmission> {
     }
 
     let elapsed = started.elapsed();
-    send_terminal_markers(&socket)?;
+    send_terminal_markers_with(&mut send_packet)?;
     Ok(HostTransmission {
         source,
         bytes,
@@ -113,18 +132,25 @@ pub(crate) fn send(config: Config) -> Result<HostTransmission> {
     })
 }
 
-fn send_terminal_markers(socket: &UdpSocket) -> Result<()> {
+fn send_terminal_markers_with(
+    send_packet: &mut impl FnMut(&[u8]) -> std::io::Result<usize>,
+) -> Result<()> {
     let marker = (-1_i32).to_be_bytes();
     for index in 0..TERMINAL_MARKERS {
         if index != 0 {
             thread::sleep(TERMINAL_MARKER_SPACING);
         }
-        let length = socket.send(&marker)?;
+        let length = send_packet(&marker)?;
         if length != marker.len() {
             return Err(format!("short UDP terminal send: {length}/{}", marker.len()).into());
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+fn send_terminal_markers(socket: &UdpSocket) -> Result<()> {
+    send_terminal_markers_with(&mut |packet| socket.send(packet))
 }
 
 fn packet_interval(payload: usize, rate_bps: u64) -> Result<Duration> {

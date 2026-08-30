@@ -11,7 +11,7 @@ use std::{
 
 use open_esp_radio_hil_protocol::{
     Completion, Direction as HilDirection, FlowConfig, Ipv4Endpoint, SessionConfig,
-    SessionLinkRequirements, Transport, WifiNetworkInterface, WifiRole,
+    SessionFlowConfig, SessionLinkRequirements, Transport, WifiNetworkInterface, WifiRole,
     WifiStationAccessPointRequest,
 };
 use serde::Serialize;
@@ -382,12 +382,18 @@ fn start_session(
         transport: Transport::Udp,
         direction,
         completion: Completion::DurationMillis(u32::try_from(duration.as_millis())?),
-        peer: target_transmits(config.direction).then_some(Ipv4Endpoint {
-            address: flow.peer.octets(),
-            port: flow.port,
-        }),
-        target_rx,
-        target_tx,
+        flows: [
+            Some(SessionFlowConfig {
+                flow_id: 0,
+                peer: target_transmits(config.direction).then_some(Ipv4Endpoint {
+                    address: flow.peer.octets(),
+                    port: flow.port,
+                }),
+                target_rx,
+                target_tx,
+            }),
+            None,
+        ],
         link_requirements: SessionLinkRequirements::NONE,
     })
 }

@@ -44,6 +44,26 @@ impl NetworkInterfaceId {
 
 const PINNED_TX_CREDIT_WAKER_SLOTS: usize = 8;
 
+#[cfg(feature = "tx-staging-copy-probe")]
+static TX_STAGING_COPY_PROBE: AtomicBool = AtomicBool::new(false);
+
+/// Select the same-image PSRAM-to-DMA TX copy discriminator.
+///
+/// The network task materializes the frame in the endpoint's persistent PSRAM
+/// scratch storage and copies it once into the existing final DMA slot. The
+/// DMA slot remains the sole published owner. This measures the lower-bound
+/// materialization cost; it does not add queues or change packet scheduling.
+#[cfg(feature = "tx-staging-copy-probe")]
+pub fn configure_tx_staging_copy_probe(enabled: bool) {
+    TX_STAGING_COPY_PROBE.store(enabled, Ordering::Release);
+}
+
+#[cfg(feature = "tx-staging-copy-probe")]
+#[inline]
+fn tx_staging_copy_enabled() -> bool {
+    TX_STAGING_COPY_PROBE.load(Ordering::Acquire)
+}
+
 /// Per-endpoint notification for one shared physical TX credit pool.
 ///
 /// `embassy_sync::Channel` intentionally stores one receiver waker. Multiple
@@ -321,10 +341,21 @@ pub struct PinnedTxResources<
     /// pool. Cross-VIF order is chosen by the physical consumer; within each
     /// VIF, publication order is immutable.
     ready_tx: [Channel<M, u8, TX_QUEUE_DEPTH>; PINNED_TX_CREDIT_WAKER_SLOTS],
+    /// CPU-owned packet tier used only by the one-copy architecture probe.
+    /// This resource follows ordinary data placement and is never exposed as
+    /// [`StableDmaBacking`].
+    #[cfg(feature = "tx-staging-copy-probe")]
+    staged_pool: RxHandoffPool<FRAME_CAPACITY, TX_QUEUE_DEPTH>,
+    #[cfg(feature = "tx-staging-copy-probe")]
+    free_staged: Channel<M, u8, TX_QUEUE_DEPTH>,
+    #[cfg(feature = "tx-staging-copy-probe")]
+    ready_staged: [Channel<M, u8, TX_QUEUE_DEPTH>; PINNED_TX_CREDIT_WAKER_SLOTS],
     next_interface: AtomicU32,
     tx_published: Signal<M, ()>,
     tx_credit_wakers: PinnedTxCreditWakers<M>,
     tx_credit_waiters: AtomicU32,
+    #[cfg(feature = "tx-staging-copy-probe")]
+    tx_staged_interfaces: AtomicU32,
     split: AtomicBool,
     /// Radio-owned link activity for each logical endpoint. A permanent
     /// network device may exist while its role is stopped, so credit sharing
@@ -373,10 +404,18 @@ impl<
         Self {
             free_tx: Channel::new(),
             ready_tx: [const { Channel::new() }; PINNED_TX_CREDIT_WAKER_SLOTS],
+            #[cfg(feature = "tx-staging-copy-probe")]
+            staged_pool: RxHandoffPool::new(),
+            #[cfg(feature = "tx-staging-copy-probe")]
+            free_staged: Channel::new(),
+            #[cfg(feature = "tx-staging-copy-probe")]
+            ready_staged: [const { Channel::new() }; PINNED_TX_CREDIT_WAKER_SLOTS],
             next_interface: AtomicU32::new(0),
             tx_published: Signal::new(),
             tx_credit_wakers: PinnedTxCreditWakers::new(),
             tx_credit_waiters: AtomicU32::new(0),
+            #[cfg(feature = "tx-staging-copy-probe")]
+            tx_staged_interfaces: AtomicU32::new(0),
             split: AtomicBool::new(false),
             tx_active: AtomicU32::new(0),
         }
@@ -403,6 +442,10 @@ impl<
             self.free_tx
                 .try_send(index as u8)
                 .expect("an empty free queue accepts every pool index");
+            #[cfg(feature = "tx-staging-copy-probe")]
+            self.free_staged
+                .try_send(index as u8)
+                .expect("an empty staged free queue accepts every pool index");
         }
         let pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH> =
             Pin::into_ref(pool).get_ref();
@@ -413,19 +456,39 @@ impl<
                 free_tx: resources.free_tx.receiver(),
                 free_tx_return: resources.free_tx.sender(),
                 ready_tx: &resources.ready_tx,
+                #[cfg(feature = "tx-staging-copy-probe")]
+                free_staged: resources.free_staged.receiver(),
+                #[cfg(feature = "tx-staging-copy-probe")]
+                free_staged_return: resources.free_staged.sender(),
+                #[cfg(feature = "tx-staging-copy-probe")]
+                ready_staged: &resources.ready_staged,
+                #[cfg(feature = "tx-staging-copy-probe")]
+                staged_pool: &resources.staged_pool,
                 tx_published: &resources.tx_published,
                 tx_credit_wakers: &resources.tx_credit_wakers,
                 tx_credit_waiters: &resources.tx_credit_waiters,
+                #[cfg(feature = "tx-staging-copy-probe")]
+                tx_staged_interfaces: &resources.tx_staged_interfaces,
                 tx_active: &resources.tx_active,
                 tx_pool: pool,
             },
             PinnedTxConsumer {
                 free_tx: resources.free_tx.sender(),
+                #[cfg(feature = "tx-staging-copy-probe")]
+                free_tx_claim: resources.free_tx.receiver(),
                 ready_tx: &resources.ready_tx,
+                #[cfg(feature = "tx-staging-copy-probe")]
+                free_staged: resources.free_staged.sender(),
+                #[cfg(feature = "tx-staging-copy-probe")]
+                ready_staged: &resources.ready_staged,
+                #[cfg(feature = "tx-staging-copy-probe")]
+                staged_pool: &resources.staged_pool,
                 next_interface: &resources.next_interface,
                 tx_published: &resources.tx_published,
                 tx_credit_wakers: &resources.tx_credit_wakers,
                 tx_credit_waiters: &resources.tx_credit_waiters,
+                #[cfg(feature = "tx-staging-copy-probe")]
+                tx_staged_interfaces: &resources.tx_staged_interfaces,
                 tx_active: &resources.tx_active,
                 tx_pool: pool,
             },
@@ -505,10 +568,20 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
                 free_tx: tx.free_tx,
                 free_tx_return: tx.free_tx_return,
                 ready_tx: tx.ready_tx,
+                #[cfg(feature = "tx-staging-copy-probe")]
+                free_staged: tx.free_staged,
+                #[cfg(feature = "tx-staging-copy-probe")]
+                free_staged_return: tx.free_staged_return,
+                #[cfg(feature = "tx-staging-copy-probe")]
+                ready_staged: tx.ready_staged,
+                #[cfg(feature = "tx-staging-copy-probe")]
+                staged_pool: tx.staged_pool,
                 interface,
                 tx_published: tx.tx_published,
                 tx_credit_wakers: tx.tx_credit_wakers,
                 tx_credit_waiters: tx.tx_credit_waiters,
+                #[cfg(feature = "tx-staging-copy-probe")]
+                tx_staged_interfaces: tx.tx_staged_interfaces,
                 tx_active: tx.tx_active,
                 tx_pool: tx.tx_pool,
                 link: &resources.link,
@@ -517,6 +590,8 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
                 application_tx: None,
                 reserve_ingress_tx: false,
                 waiting_for_tx_credit: false,
+                #[cfg(feature = "tx-staging-copy-probe")]
+                staged_tx_selected: false,
                 checksum: ChecksumCapabilities::default(),
                 tx_reservation: (),
             },
@@ -556,9 +631,19 @@ pub struct PinnedTxProvider<
     free_tx: Receiver<'resources, M, u8, QUEUE_DEPTH>,
     free_tx_return: Sender<'resources, M, u8, QUEUE_DEPTH>,
     ready_tx: &'resources [Channel<M, u8, QUEUE_DEPTH>; PINNED_TX_CREDIT_WAKER_SLOTS],
+    #[cfg(feature = "tx-staging-copy-probe")]
+    free_staged: Receiver<'resources, M, u8, QUEUE_DEPTH>,
+    #[cfg(feature = "tx-staging-copy-probe")]
+    free_staged_return: Sender<'resources, M, u8, QUEUE_DEPTH>,
+    #[cfg(feature = "tx-staging-copy-probe")]
+    ready_staged: &'resources [Channel<M, u8, QUEUE_DEPTH>; PINNED_TX_CREDIT_WAKER_SLOTS],
+    #[cfg(feature = "tx-staging-copy-probe")]
+    staged_pool: &'resources RxHandoffPool<FRAME_CAPACITY, QUEUE_DEPTH>,
     tx_published: &'resources Signal<M, ()>,
     tx_credit_wakers: &'resources PinnedTxCreditWakers<M>,
     tx_credit_waiters: &'resources AtomicU32,
+    #[cfg(feature = "tx-staging-copy-probe")]
+    tx_staged_interfaces: &'resources AtomicU32,
     tx_active: &'resources AtomicU32,
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
 }
@@ -591,10 +676,20 @@ pub struct SplitPinnedDevice<
     free_tx: Receiver<'resources, M, u8, TX_QUEUE_DEPTH>,
     free_tx_return: Sender<'resources, M, u8, TX_QUEUE_DEPTH>,
     ready_tx: &'resources [Channel<M, u8, TX_QUEUE_DEPTH>; PINNED_TX_CREDIT_WAKER_SLOTS],
+    #[cfg(feature = "tx-staging-copy-probe")]
+    free_staged: Receiver<'resources, M, u8, TX_QUEUE_DEPTH>,
+    #[cfg(feature = "tx-staging-copy-probe")]
+    free_staged_return: Sender<'resources, M, u8, TX_QUEUE_DEPTH>,
+    #[cfg(feature = "tx-staging-copy-probe")]
+    ready_staged: &'resources [Channel<M, u8, TX_QUEUE_DEPTH>; PINNED_TX_CREDIT_WAKER_SLOTS],
+    #[cfg(feature = "tx-staging-copy-probe")]
+    staged_pool: &'resources RxHandoffPool<FRAME_CAPACITY, TX_QUEUE_DEPTH>,
     interface: NetworkInterfaceId,
     tx_published: &'resources Signal<M, ()>,
     tx_credit_wakers: &'resources PinnedTxCreditWakers<M>,
     tx_credit_waiters: &'resources AtomicU32,
+    #[cfg(feature = "tx-staging-copy-probe")]
+    tx_staged_interfaces: &'resources AtomicU32,
     tx_active: &'resources AtomicU32,
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     link: &'resources SharedLinkState<M>,
@@ -605,6 +700,8 @@ pub struct SplitPinnedDevice<
     application_tx: Option<u8>,
     reserve_ingress_tx: bool,
     waiting_for_tx_credit: bool,
+    #[cfg(feature = "tx-staging-copy-probe")]
+    staged_tx_selected: bool,
     checksum: ChecksumCapabilities,
     tx_reservation: (),
 }
@@ -655,7 +752,36 @@ impl<
         self
     }
 
+    /// Select the CPU packet tier for this logical endpoint from the startup
+    /// diagnostic policy. Selection is immutable once the device starts.
+    #[cfg(feature = "tx-staging-copy-probe")]
+    pub fn with_tx_staging_copy_selected(mut self, selected: bool) -> Self {
+        self.staged_tx_selected = selected;
+        if self.staged_tx_selected {
+            self.tx_staged_interfaces
+                .fetch_or(1_u32 << self.interface.value(), Ordering::Release);
+        } else {
+            self.tx_staged_interfaces
+                .fetch_and(!(1_u32 << self.interface.value()), Ordering::Release);
+        }
+        self
+    }
+
+    /// Select the CPU packet tier for this logical endpoint from the startup
+    /// diagnostic policy. Selection is immutable once the device starts.
+    #[cfg(feature = "tx-staging-copy-probe")]
+    pub fn with_tx_staging_copy_probe_selection(self) -> Self {
+        self.with_tx_staging_copy_selected(tx_staging_copy_enabled())
+    }
+
     fn try_take_free_tx(&mut self) -> Option<u8> {
+        #[cfg(feature = "tx-staging-copy-probe")]
+        let index = if self.staged_tx_selected {
+            self.free_staged.try_receive().ok()?
+        } else {
+            self.free_tx.try_receive().ok()?
+        };
+        #[cfg(not(feature = "tx-staging-copy-probe"))]
         let index = self.free_tx.try_receive().ok()?;
         if self.waiting_for_tx_credit {
             self.tx_credit_waiters
@@ -722,10 +848,21 @@ impl<
         TRAILER,
         TX_QUEUE_DEPTH,
     > {
-        let lease = self.tx_pool.claim_network(index);
+        #[cfg(feature = "tx-staging-copy-probe")]
+        let lease = if self.staged_tx_selected {
+            PinnedTransmitLease::Staged(self.staged_pool.claim_radio(index))
+        } else {
+            PinnedTransmitLease::Direct(self.tx_pool.claim_network(index))
+        };
+        #[cfg(not(feature = "tx-staging-copy-probe"))]
+        let lease = PinnedTransmitLease::Direct(self.tx_pool.claim_network(index));
         PinnedTransmitToken {
             free_tx: self.free_tx_return,
             ready_tx: self.ready_tx,
+            #[cfg(feature = "tx-staging-copy-probe")]
+            free_staged: self.free_staged_return,
+            #[cfg(feature = "tx-staging-copy-probe")]
+            ready_staged: self.ready_staged,
             interface: self.interface,
             tx_published: self.tx_published,
             tx_credit_wakers: self.tx_credit_wakers,
@@ -984,6 +1121,15 @@ impl<
             .into_iter()
             .flatten()
         {
+            #[cfg(feature = "tx-staging-copy-probe")]
+            if self.staged_tx_selected {
+                if let Err(TrySendError::Full(_)) = self.free_staged_return.try_send(index) {
+                    unreachable!("reserved staged TX index was lost");
+                }
+            } else if let Err(TrySendError::Full(_)) = self.free_tx_return.try_send(index) {
+                unreachable!("reserved pinned TX index was lost");
+            }
+            #[cfg(not(feature = "tx-staging-copy-probe"))]
             if let Err(TrySendError::Full(_)) = self.free_tx_return.try_send(index) {
                 unreachable!("reserved pinned TX index was lost");
             }
@@ -994,6 +1140,17 @@ impl<
             );
         }
     }
+}
+
+enum PinnedTransmitLease<
+    'resources,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+> {
+    Direct(PinnedDmaTxNetworkLease<'resources, FRAME_CAPACITY, HEADROOM, TRAILER>),
+    #[cfg(feature = "tx-staging-copy-probe")]
+    Staged(RxRadioLease<'resources, FRAME_CAPACITY>),
 }
 
 pub struct PinnedTransmitToken<
@@ -1007,13 +1164,132 @@ pub struct PinnedTransmitToken<
 > {
     free_tx: Sender<'resources, M, u8, QUEUE_DEPTH>,
     ready_tx: &'resources [Channel<M, u8, QUEUE_DEPTH>; PINNED_TX_CREDIT_WAKER_SLOTS],
+    #[cfg(feature = "tx-staging-copy-probe")]
+    free_staged: Sender<'resources, M, u8, QUEUE_DEPTH>,
+    #[cfg(feature = "tx-staging-copy-probe")]
+    ready_staged: &'resources [Channel<M, u8, QUEUE_DEPTH>; PINNED_TX_CREDIT_WAKER_SLOTS],
     interface: NetworkInterfaceId,
     tx_published: &'resources Signal<M, ()>,
     tx_credit_wakers: &'resources PinnedTxCreditWakers<M>,
     tx_credit_waiters: &'resources AtomicU32,
     tx_active: &'resources AtomicU32,
-    lease: Option<PinnedDmaTxNetworkLease<'resources, FRAME_CAPACITY, HEADROOM, TRAILER>>,
+    lease: Option<PinnedTransmitLease<'resources, FRAME_CAPACITY, HEADROOM, TRAILER>>,
     _reservation: &'device mut (),
+}
+
+/// CPU-only packet owner published by the network task.
+///
+/// Its storage can live in PSRAM. The type deliberately does not implement
+/// `StableDmaBacking`; a radio aggregate must first consume it through
+/// [`PinnedTxInterfaceConsumer::try_promote`].
+#[cfg(feature = "tx-staging-copy-probe")]
+pub struct StagedTxFrame<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const QUEUE_DEPTH: usize,
+> {
+    interface: NetworkInterfaceId,
+    lease: Option<RxNetworkLease<'resources, FRAME_CAPACITY>>,
+    free_staged: Sender<'resources, M, u8, QUEUE_DEPTH>,
+    tx_credit_wakers: &'resources PinnedTxCreditWakers<M>,
+    tx_credit_waiters: &'resources AtomicU32,
+    tx_active: &'resources AtomicU32,
+}
+
+#[cfg(feature = "tx-staging-copy-probe")]
+impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
+    StagedTxFrame<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
+{
+    pub fn as_slice(&self) -> &[u8] {
+        self.lease.as_ref().expect("live staged TX frame").frame()
+    }
+
+    pub fn ethernet(&self) -> &[u8] {
+        self.as_slice()
+    }
+
+    pub const fn tag(&self) -> &NetworkInterfaceId {
+        &self.interface
+    }
+
+    fn release(mut self) {
+        let lease = self.lease.take().expect("live staged TX frame");
+        let index = lease.release();
+        if let Err(TrySendError::Full(_)) = self.free_staged.try_send(index) {
+            unreachable!("staged TX frame returns its unique PSRAM index");
+        }
+        self.tx_credit_wakers.wake_waiter_after(
+            self.interface,
+            self.tx_active,
+            self.tx_credit_waiters,
+        );
+    }
+}
+
+#[cfg(feature = "tx-staging-copy-probe")]
+impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Drop
+    for StagedTxFrame<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
+{
+    fn drop(&mut self) {
+        if let Some(lease) = self.lease.take() {
+            let index = lease.release();
+            if let Err(TrySendError::Full(_)) = self.free_staged.try_send(index) {
+                unreachable!("dropped staged TX frame returns its unique PSRAM index");
+            }
+            self.tx_credit_wakers.wake_waiter_after(
+                self.interface,
+                self.tx_active,
+                self.tx_credit_waiters,
+            );
+        }
+    }
+}
+
+/// Network-to-radio packet ownership before physical DMA admission.
+pub enum PinnedNetworkTxFrame<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> {
+    Direct(PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>),
+    #[cfg(feature = "tx-staging-copy-probe")]
+    Staged(StagedTxFrame<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH>),
+}
+
+impl<'resources, M: RawMutex, const F: usize, const H: usize, const T: usize, const Q: usize>
+    PinnedNetworkTxFrame<'resources, M, F, H, T, Q>
+{
+    pub fn as_slice(&self) -> &[u8] {
+        match self {
+            Self::Direct(frame) => frame.as_slice(),
+            #[cfg(feature = "tx-staging-copy-probe")]
+            Self::Staged(frame) => frame.as_slice(),
+        }
+    }
+
+    pub fn ethernet(&self) -> &[u8] {
+        self.as_slice()
+    }
+
+    pub fn tag(&self) -> &NetworkInterfaceId {
+        match self {
+            Self::Direct(frame) => frame.tag(),
+            #[cfg(feature = "tx-staging-copy-probe")]
+            Self::Staged(frame) => frame.tag(),
+        }
+    }
+
+    pub fn into_direct(self) -> Result<PinnedTxFrame<'resources, M, F, H, T, Q>, Self> {
+        match self {
+            Self::Direct(frame) => Ok(frame),
+            #[cfg(feature = "tx-staging-copy-probe")]
+            Self::Staged(frame) => Err(Self::Staged(frame)),
+        }
+    }
 }
 
 impl<
@@ -1038,16 +1314,44 @@ impl<
         let lease = self.lease.take().expect("TX token consumed once");
         #[cfg(feature = "tx-phase-telemetry")]
         let mut emitted = TxPerformanceSample::default();
-        let (index, result) = lease.publish(length, |buffer| {
-            #[cfg(feature = "tx-phase-telemetry")]
-            let started = TxPerformanceSample::read();
-            let result = f(buffer);
-            #[cfg(feature = "tx-phase-telemetry")]
-            {
-                emitted = TxPerformanceSample::read().wrapping_delta_since(started);
+        let (index, staged, result) = match lease {
+            PinnedTransmitLease::Direct(lease) => {
+                let (index, result) = lease.publish(length, |buffer| {
+                    #[cfg(feature = "tx-phase-telemetry")]
+                    let started = TxPerformanceSample::read();
+                    let result = f(buffer);
+                    #[cfg(feature = "tx-phase-telemetry")]
+                    {
+                        emitted = TxPerformanceSample::read().wrapping_delta_since(started);
+                    }
+                    result
+                });
+                (index, false, result)
             }
-            result
-        });
+            #[cfg(feature = "tx-staging-copy-probe")]
+            PinnedTransmitLease::Staged(lease) => {
+                let (index, result) = lease.publish(length, |buffer| {
+                    #[cfg(feature = "tx-phase-telemetry")]
+                    let started = TxPerformanceSample::read();
+                    let result = f(buffer);
+                    #[cfg(feature = "tx-phase-telemetry")]
+                    {
+                        emitted = TxPerformanceSample::read().wrapping_delta_since(started);
+                    }
+                    result
+                });
+                (index, true, result)
+            }
+        };
+        #[cfg(feature = "tx-staging-copy-probe")]
+        let ready = if staged {
+            &self.ready_staged[usize::from(self.interface.value())]
+        } else {
+            &self.ready_tx[usize::from(self.interface.value())]
+        };
+        #[cfg(not(feature = "tx-staging-copy-probe"))]
+        let _ = staged;
+        #[cfg(not(feature = "tx-staging-copy-probe"))]
         let ready = &self.ready_tx[usize::from(self.interface.value())];
         if let Err(TrySendError::Full(_)) = ready.try_send(index) {
             unreachable!("one ready entry exists per non-free pinned TX slot");
@@ -1074,10 +1378,24 @@ impl<
 {
     fn drop(&mut self) {
         if let Some(lease) = self.lease.take() {
-            let index = lease.release();
-            if let Err(TrySendError::Full(_)) = self.free_tx.try_send(index) {
-                unreachable!("dropped pinned TX token returns its unique index");
-            }
+            let index = match lease {
+                PinnedTransmitLease::Direct(lease) => {
+                    let index = lease.release();
+                    if let Err(TrySendError::Full(_)) = self.free_tx.try_send(index) {
+                        unreachable!("dropped pinned TX token returns its unique index");
+                    }
+                    index
+                }
+                #[cfg(feature = "tx-staging-copy-probe")]
+                PinnedTransmitLease::Staged(lease) => {
+                    let index = lease.release();
+                    if let Err(TrySendError::Full(_)) = self.free_staged.try_send(index) {
+                        unreachable!("dropped staged TX token returns its unique index");
+                    }
+                    index
+                }
+            };
+            let _ = index;
             self.tx_credit_wakers.wake_waiter_after(
                 self.interface,
                 self.tx_active,
@@ -1562,11 +1880,21 @@ pub struct PinnedTxConsumer<
     const QUEUE_DEPTH: usize,
 > {
     free_tx: Sender<'resources, M, u8, QUEUE_DEPTH>,
+    #[cfg(feature = "tx-staging-copy-probe")]
+    free_tx_claim: Receiver<'resources, M, u8, QUEUE_DEPTH>,
     ready_tx: &'resources [Channel<M, u8, QUEUE_DEPTH>; PINNED_TX_CREDIT_WAKER_SLOTS],
+    #[cfg(feature = "tx-staging-copy-probe")]
+    free_staged: Sender<'resources, M, u8, QUEUE_DEPTH>,
+    #[cfg(feature = "tx-staging-copy-probe")]
+    ready_staged: &'resources [Channel<M, u8, QUEUE_DEPTH>; PINNED_TX_CREDIT_WAKER_SLOTS],
+    #[cfg(feature = "tx-staging-copy-probe")]
+    staged_pool: &'resources RxHandoffPool<FRAME_CAPACITY, QUEUE_DEPTH>,
     next_interface: &'resources AtomicU32,
     tx_published: &'resources Signal<M, ()>,
     tx_credit_wakers: &'resources PinnedTxCreditWakers<M>,
     tx_credit_waiters: &'resources AtomicU32,
+    #[cfg(feature = "tx-staging-copy-probe")]
+    tx_staged_interfaces: &'resources AtomicU32,
     tx_active: &'resources AtomicU32,
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
 }
@@ -1623,6 +1951,12 @@ impl<
     const QUEUE_DEPTH: usize,
 > PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
 {
+    #[cfg(feature = "tx-staging-copy-probe")]
+    #[inline]
+    fn staging_for(&self, interface: NetworkInterfaceId) -> bool {
+        self.tx_staged_interfaces.load(Ordering::Acquire) & (1_u32 << interface.value()) != 0
+    }
+
     fn claim(
         &self,
         interface: NetworkInterfaceId,
@@ -1643,6 +1977,22 @@ impl<
         )
     }
 
+    #[cfg(feature = "tx-staging-copy-probe")]
+    fn claim_staged(
+        &self,
+        interface: NetworkInterfaceId,
+        index: u8,
+    ) -> StagedTxFrame<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH> {
+        StagedTxFrame {
+            interface,
+            lease: Some(self.staged_pool.claim_network(index)),
+            free_staged: self.free_staged,
+            tx_credit_wakers: self.tx_credit_wakers,
+            tx_credit_waiters: self.tx_credit_waiters,
+            tx_active: self.tx_active,
+        }
+    }
+
     pub const fn for_interface(
         self,
         interface: NetworkInterfaceId,
@@ -1656,17 +2006,35 @@ impl<
 
     pub fn try_receive(
         &self,
-    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>> {
+    ) -> Option<PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>>
+    {
         let start = self.next_interface.fetch_add(1, Ordering::Relaxed) as usize
             % PINNED_TX_CREDIT_WAKER_SLOTS;
         for offset in 0..PINNED_TX_CREDIT_WAKER_SLOTS {
             let interface = (start + offset) % PINNED_TX_CREDIT_WAKER_SLOTS;
-            if let Ok(index) = self.ready_tx[interface].try_receive() {
+            #[cfg(feature = "tx-staging-copy-probe")]
+            let staged = self.staging_for(NetworkInterfaceId::new(interface as u8));
+            #[cfg(feature = "tx-staging-copy-probe")]
+            let index = if staged {
+                self.ready_staged[interface].try_receive().ok()
+            } else {
+                self.ready_tx[interface].try_receive().ok()
+            };
+            #[cfg(not(feature = "tx-staging-copy-probe"))]
+            let index = self.ready_tx[interface].try_receive().ok();
+            if let Some(index) = index {
                 self.next_interface.store(
                     ((interface + 1) % PINNED_TX_CREDIT_WAKER_SLOTS) as u32,
                     Ordering::Relaxed,
                 );
-                return Some(self.claim(NetworkInterfaceId::new(interface as u8), index));
+                let interface = NetworkInterfaceId::new(interface as u8);
+                #[cfg(feature = "tx-staging-copy-probe")]
+                if staged {
+                    return Some(PinnedNetworkTxFrame::Staged(
+                        self.claim_staged(interface, index),
+                    ));
+                }
+                return Some(PinnedNetworkTxFrame::Direct(self.claim(interface, index)));
             }
         }
         None
@@ -1674,7 +2042,7 @@ impl<
 
     pub async fn receive(
         &self,
-    ) -> PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH> {
+    ) -> PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH> {
         loop {
             if let Some(frame) = self.try_receive() {
                 return frame;
@@ -1683,7 +2051,34 @@ impl<
         }
     }
 
+    /// Claim a frame from an endpoint configured for direct DMA publication.
+    ///
+    /// This compatibility-free invariant is used by the STA fast path while
+    /// the staged architecture experiment is enabled only for the AP endpoint.
+    pub fn try_receive_direct(
+        &self,
+    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>> {
+        let frame = self.try_receive()?;
+        match frame.into_direct() {
+            Ok(frame) => Some(frame),
+            Err(_) => panic!("staged TX frame reached a direct-only endpoint"),
+        }
+    }
+
     pub fn queue_len(&self) -> usize {
+        #[cfg(feature = "tx-staging-copy-probe")]
+        {
+            return (0..PINNED_TX_CREDIT_WAKER_SLOTS)
+                .map(|interface| {
+                    if self.staging_for(NetworkInterfaceId::new(interface as u8)) {
+                        self.ready_staged[interface].len()
+                    } else {
+                        self.ready_tx[interface].len()
+                    }
+                })
+                .sum();
+        }
+        #[cfg(not(feature = "tx-staging-copy-probe"))]
         self.ready_tx.iter().map(Channel::len).sum()
     }
 
@@ -1691,22 +2086,36 @@ impl<
     pub fn try_receive_for(
         &self,
         interface: NetworkInterfaceId,
-    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>> {
+    ) -> Option<PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>>
+    {
+        #[cfg(feature = "tx-staging-copy-probe")]
+        if self.staging_for(interface) {
+            let index = self.ready_staged[usize::from(interface.value())]
+                .try_receive()
+                .ok()?;
+            return Some(PinnedNetworkTxFrame::Staged(
+                self.claim_staged(interface, index),
+            ));
+        }
         let index = self.ready_tx[usize::from(interface.value())]
             .try_receive()
             .ok()?;
-        Some(self.claim(interface, index))
+        Some(PinnedNetworkTxFrame::Direct(self.claim(interface, index)))
     }
 
     /// Count the immutable FIFO frontier for one logical interface.
     pub fn queue_len_for(&self, interface: NetworkInterfaceId) -> usize {
+        #[cfg(feature = "tx-staging-copy-probe")]
+        if self.staging_for(interface) {
+            return self.ready_staged[usize::from(interface.value())].len();
+        }
         self.ready_tx[usize::from(interface.value())].len()
     }
 
     pub async fn receive_for(
         &self,
         interface: NetworkInterfaceId,
-    ) -> PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH> {
+    ) -> PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH> {
         loop {
             if let Some(frame) = self.try_receive_for(interface) {
                 return frame;
@@ -1753,7 +2162,8 @@ impl<
 
     pub fn try_receive(
         &self,
-    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>> {
+    ) -> Option<PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>>
+    {
         let frame = self.physical.try_receive_for(self.interface);
         frame.inspect(|frame| {
             assert_eq!(
@@ -1766,12 +2176,22 @@ impl<
 
     pub async fn receive(
         &self,
-    ) -> PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH> {
+    ) -> PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH> {
         loop {
             if let Some(frame) = self.try_receive() {
                 return frame;
             }
             self.physical.wait_publication().await;
+        }
+    }
+
+    pub fn try_receive_direct(
+        &self,
+    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>> {
+        let frame = self.try_receive()?;
+        match frame.into_direct() {
+            Ok(frame) => Some(frame),
+            Err(_) => panic!("staged TX frame reached a direct-only interface"),
         }
     }
 
@@ -1800,6 +2220,73 @@ impl<
                 return;
             }
             self.physical.wait_publication().await;
+        }
+    }
+
+    /// Promote one scheduled CPU packet into its final DMA-visible slot.
+    ///
+    /// `Err(frame)` means no physical DMA credit is currently free. The
+    /// caller retains the exact packet owner and may service completion before
+    /// retrying; no copy has occurred in that case.
+    pub fn try_promote(
+        &self,
+        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+    ) -> Result<
+        PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+    > {
+        match frame {
+            PinnedNetworkTxFrame::Direct(frame) => Ok(frame),
+            #[cfg(feature = "tx-staging-copy-probe")]
+            PinnedNetworkTxFrame::Staged(frame) => {
+                #[cfg(feature = "tx-phase-telemetry")]
+                let promotion_started = TxPerformanceSample::read();
+                let Ok(index) = self.physical.free_tx_claim.try_receive() else {
+                    #[cfg(feature = "tx-phase-telemetry")]
+                    TX_PERFORMANCE
+                        .record_promotion_no_credit(promotion_started, TxPerformanceSample::read());
+                    return Err(PinnedNetworkTxFrame::Staged(frame));
+                };
+                #[cfg(feature = "tx-phase-telemetry")]
+                let credit_acquired = TxPerformanceSample::read();
+                let interface = *frame.tag();
+                let length = frame.as_slice().len();
+                let lease = self.physical.tx_pool.claim_network(index);
+                #[cfg(feature = "tx-phase-telemetry")]
+                let destination_claimed = TxPerformanceSample::read();
+                #[cfg(feature = "tx-phase-telemetry")]
+                let publication_started = TxPerformanceSample::read();
+                #[cfg(feature = "tx-phase-telemetry")]
+                let mut copy = TxPerformanceSample::default();
+                let (index, ()) = lease.publish(length, |dma| {
+                    #[cfg(feature = "tx-phase-telemetry")]
+                    let copy_started = TxPerformanceSample::read();
+                    dma.copy_from_slice(frame.as_slice());
+                    #[cfg(feature = "tx-phase-telemetry")]
+                    {
+                        copy = TxPerformanceSample::read().wrapping_delta_since(copy_started);
+                    }
+                });
+                #[cfg(feature = "tx-phase-telemetry")]
+                let published = TxPerformanceSample::read();
+                frame.release();
+                #[cfg(feature = "tx-phase-telemetry")]
+                let source_released = TxPerformanceSample::read();
+                let promoted = self.physical.claim(interface, index);
+                #[cfg(feature = "tx-phase-telemetry")]
+                TX_PERFORMANCE.record_promotion(
+                    length,
+                    promotion_started,
+                    credit_acquired,
+                    destination_claimed,
+                    copy,
+                    publication_started,
+                    published,
+                    source_released,
+                    TxPerformanceSample::read(),
+                );
+                Ok(promoted)
+            }
         }
     }
 }
@@ -1936,14 +2423,16 @@ impl<
 
     pub fn try_receive_tx(
         &self,
-    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>
-    {
+    ) -> Option<
+        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    > {
         self.tx.try_receive()
     }
 
     pub async fn receive_tx(
         &self,
-    ) -> PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH> {
+    ) -> PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>
+    {
         self.tx.receive().await
     }
 
@@ -2035,14 +2524,23 @@ impl<
 
     pub fn try_receive_tx(
         &self,
+    ) -> Option<
+        PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    > {
+        self.tx_consumer().try_receive()
+    }
+
+    pub fn try_receive_tx_direct(
+        &self,
     ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>
     {
-        self.tx_consumer().try_receive()
+        self.tx_consumer().try_receive_direct()
     }
 
     pub async fn receive_tx(
         &self,
-    ) -> PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH> {
+    ) -> PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>
+    {
         self.tx_consumer().receive().await
     }
 

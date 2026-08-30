@@ -8,7 +8,8 @@ use std::{
 };
 
 use open_esp_radio_hil_protocol::{
-    Completion, Direction, FlowConfig, SessionConfig, SessionLinkRequirements, Transport,
+    Completion, Direction, FlowConfig, SessionConfig, SessionFlowConfig, SessionLinkRequirements,
+    Transport,
 };
 
 use crate::{
@@ -124,18 +125,25 @@ fn run(
         transport: Transport::Tcp,
         direction,
         completion: Completion::DurationMillis(u32::try_from(options.duration.as_millis())?),
-        // The target publishes one TCP service and accepts in every payload
-        // direction. `peer` remains a UDP datagram destination, not a hidden
-        // request for the target to reverse the TCP connection role.
-        peer: None,
-        target_rx: options.rx_rate_bps.map(|rate| FlowConfig {
-            payload_bytes: u16::try_from(options.chunk_bytes).expect("validated TCP chunk"),
-            offered_rate_bps: Some(rate),
-        }),
-        target_tx: options.tx_rate_bps.map(|rate| FlowConfig {
-            payload_bytes: u16::try_from(options.chunk_bytes).expect("validated TCP chunk"),
-            offered_rate_bps: Some(rate),
-        }),
+        flows: [
+            Some(SessionFlowConfig {
+                flow_id: 0,
+                // The target publishes one TCP service and accepts in every
+                // payload direction. `peer` remains a UDP datagram
+                // destination, not a hidden request for the target to reverse
+                // the TCP connection role.
+                peer: None,
+                target_rx: options.rx_rate_bps.map(|rate| FlowConfig {
+                    payload_bytes: u16::try_from(options.chunk_bytes).expect("validated TCP chunk"),
+                    offered_rate_bps: Some(rate),
+                }),
+                target_tx: options.tx_rate_bps.map(|rate| FlowConfig {
+                    payload_bytes: u16::try_from(options.chunk_bytes).expect("validated TCP chunk"),
+                    offered_rate_bps: Some(rate),
+                }),
+            }),
+            None,
+        ],
         link_requirements: if matches!(direction, Direction::Tx | Direction::Bidirectional) {
             SessionLinkRequirements::tx_block_ack(0)
         } else {

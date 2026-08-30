@@ -10,6 +10,7 @@ description = "Audited ESP32-S31 Wi-Fi MAC DMA ownership and descriptor ring"
 [features]
 default = []
 validation-raw-dma = []
+tx-psram-dma-probe = ["open-esp-radio-dma/tx-psram-dma-probe"]
 
 [dependencies]
 open-esp-radio-dma = { path = "../../../../common/dma" }

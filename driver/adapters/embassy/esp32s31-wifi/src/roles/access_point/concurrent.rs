@@ -814,6 +814,7 @@ impl<
         network_tx::Esp32s31AccessPointNetworkTx<
             'ampdu,
             PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+            PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         >,
         Security,
         SharedRx,
@@ -854,7 +855,7 @@ where
                 AMPDU_BUFFER_SIZE,
             >,
         >,
-        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
@@ -1082,9 +1083,10 @@ where
             >,
         >,
     ) -> bool {
-        self.protocol
-            .active()
-            .is_some_and(|active| self.network_tx.can_prepare(&active.aggregate))
+        self.protocol.active().is_some_and(|active| {
+            self.network_tx
+                .can_prepare(&active.aggregate, active.processor.tx_pending())
+        })
     }
 
     fn prepare<'a>(
@@ -1105,7 +1107,7 @@ where
                 AMPDU_BUFFER_SIZE,
             >,
         >,
-        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        frame: PinnedNetworkTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,

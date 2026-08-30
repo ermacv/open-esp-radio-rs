@@ -143,7 +143,8 @@ use crate::monitor::{
     ProductionMonitorResources, ProductionMonitorTask, initialize_monitor_resources,
 };
 use crate::radio_resources::{
-    NetworkRunner, RadioAmpduStorage, RadioTxBacking, RunningWifiNetwork, WifiNetworkResources,
+    NetworkRunner, RadioAmpduStorage, RadioNetworkTxBacking, RadioTxBacking, RunningWifiNetwork,
+    WifiNetworkResources,
 };
 #[cfg(feature = "mac-irq-diagnostics")]
 use crate::supervisor::station::configure_mac_irq_observer;

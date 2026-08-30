@@ -804,6 +804,17 @@ impl<'retention, B, const SLOTS: usize, const BUFFER_SIZE: usize>
 impl<'retention, B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
     RetainedAmpduDma<'retention, B, SLOTS, BUFFER_SIZE>
 {
+    fn prepare_backings_for_dma_read(&mut self) -> Result<(), AmpduDmaStorageError> {
+        let held = self.held;
+        for backing in &mut self.retention_mut().backings[..held] {
+            backing
+                .as_mut()
+                .ok_or(AmpduDmaStorageError::StaleBacking)?
+                .prepare_for_dma_read();
+        }
+        Ok(())
+    }
+
     /// Retain one stable allocation and issue its non-forgeable identity.
     ///
     /// [`StableDmaBacking`] guarantees that the accepted allocation remains at
@@ -1092,6 +1103,12 @@ impl<'retention, B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usi
                 .ok_or(AmpduDmaStorageError::InvalidLength)?;
         }
 
+        // The encoder mutates retained packet bytes after their stable address
+        // is sampled. Establish external-memory visibility at the last
+        // software-owned edge, before the first descriptor publishes those
+        // addresses to the Wi-Fi DMA reader.
+        self.prepare_backings_for_dma_read()?;
+
         for index in 0..entries.len() {
             let next_address = if index + 1 == entries.len() {
                 0
@@ -1144,6 +1161,10 @@ impl<'retention, B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usi
                 .ok_or(AmpduDmaStorageError::Address)?;
             *destination = Some(descriptor);
         }
+
+        // Retry compaction can also mutate retained metadata, so every
+        // publication (not only the first one) must re-establish visibility.
+        self.prepare_backings_for_dma_read()?;
 
         for (logical_index, descriptor) in descriptors[..count].iter().copied().enumerate() {
             let descriptor = descriptor.ok_or(AmpduDmaStorageError::StaleBacking)?;
@@ -1202,9 +1223,27 @@ impl<B, const SLOTS: usize, const BUFFER_SIZE: usize> Drop
 #[cfg(target_pointer_width = "32")]
 fn external_dma_address(address: usize, capacity: u32) -> Result<u32, AmpduDmaStorageError> {
     let address = u32::try_from(address).map_err(|_| AmpduDmaStorageError::Address)?;
-    dma_range_valid(address, capacity)
+    external_tx_buffer_range_valid(address, capacity)
         .then_some(address)
         .ok_or(AmpduDmaStorageError::Address)
+}
+
+#[cfg(target_pointer_width = "32")]
+const fn external_tx_buffer_range_valid(address: u32, size: u32) -> bool {
+    if dma_range_valid(address, size) {
+        return true;
+    }
+    #[cfg(feature = "tx-psram-dma-probe")]
+    {
+        const PSRAM_LOW: u32 = 0x5000_0000;
+        const PSRAM_HIGH: u32 = 0x5400_0000;
+        return size != 0
+            && address >= PSRAM_LOW
+            && address < PSRAM_HIGH
+            && size <= PSRAM_HIGH - address;
+    }
+    #[cfg(not(feature = "tx-psram-dma-probe"))]
+    false
 }
 
 #[cfg(not(target_pointer_width = "32"))]
@@ -1309,6 +1348,7 @@ mod tests {
         bytes: Box<[u8; 128]>,
         drops: Rc<Cell<usize>>,
         region_calls: Option<Rc<Cell<usize>>>,
+        prepare_calls: Option<Rc<Cell<usize>>>,
     }
 
     struct LargeTestBacking {
@@ -1321,6 +1361,7 @@ mod tests {
                 bytes: Box::new([0; 128]),
                 drops,
                 region_calls: None,
+                prepare_calls: None,
             }
         }
 
@@ -1329,6 +1370,16 @@ mod tests {
                 bytes: Box::new([0; 128]),
                 drops,
                 region_calls: Some(region_calls),
+                prepare_calls: None,
+            }
+        }
+
+        fn observing_prepare(drops: Rc<Cell<usize>>, prepare_calls: Rc<Cell<usize>>) -> Self {
+            Self {
+                bytes: Box::new([0; 128]),
+                drops,
+                region_calls: None,
+                prepare_calls: Some(prepare_calls),
             }
         }
     }
@@ -1350,6 +1401,12 @@ mod tests {
             }
             // SAFETY: moving `TestBacking` does not move its boxed allocation.
             unsafe { StableDmaRegion::new(&mut self.bytes[..]) }
+        }
+
+        fn prepare_for_dma_read(&mut self) {
+            if let Some(calls) = &self.prepare_calls {
+                calls.set(calls.get() + 1);
+            }
         }
     }
 
@@ -1655,6 +1712,41 @@ mod tests {
         owner.release_detached().unwrap();
         assert_eq!(owner.state(), AmpduDmaState::Free);
         assert_eq!(drops.get(), 2);
+    }
+
+    #[test]
+    fn external_chain_prepares_each_retained_backing_before_publication() {
+        let drops = Rc::new(Cell::new(0));
+        let prepare_calls = Rc::new(Cell::new(0));
+        let mut owner = retained_owner();
+        owner.begin().unwrap();
+        let backing = owner
+            .push_backing(TestBacking::observing_prepare(
+                drops.clone(),
+                prepare_calls.clone(),
+            ))
+            .unwrap();
+        let address = owner
+            .reserved_backing_mut(&backing)
+            .unwrap()
+            .bytes
+            .as_ptr()
+            .addr();
+        let entry = backing.external_descriptor(address, 64, 40).unwrap();
+
+        assert_eq!(prepare_calls.get(), 0);
+        owner
+            .publish_external_chain(&[entry])
+            .unwrap()
+            .commit(|_| {});
+        assert_eq!(prepare_calls.get(), 1);
+
+        owner.mark_completed().unwrap();
+        owner
+            .mark_detached(MacTxQueueDetached::new_model(DESCRIPTOR_BASE))
+            .unwrap();
+        owner.release_detached().unwrap();
+        assert_eq!(drops.get(), 1);
     }
 
     #[test]

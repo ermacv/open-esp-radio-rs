@@ -9,8 +9,8 @@ use std::{
 };
 
 use open_esp_radio_hil_protocol::{
-    Completion, Direction, FlowConfig, Ipv4Endpoint, SessionConfig, SessionLinkRequirements,
-    Transport,
+    Completion, Direction, FlowConfig, Ipv4Endpoint, SessionConfig, SessionFlowConfig,
+    SessionLinkRequirements, Transport,
 };
 
 use crate::{
@@ -267,15 +267,21 @@ pub(crate) fn run(
         transport: Transport::Udp,
         direction: Direction::Tx,
         completion: Completion::DurationMillis(u32::try_from(options.duration.as_millis())?),
-        peer: Some(Ipv4Endpoint {
-            address: host_address.octets(),
-            port: options.port,
-        }),
-        target_rx: None,
-        target_tx: Some(FlowConfig {
-            payload_bytes: u16::try_from(options.payload)?,
-            offered_rate_bps: options.offered_rate_bps,
-        }),
+        flows: [
+            Some(SessionFlowConfig {
+                flow_id: 0,
+                peer: Some(Ipv4Endpoint {
+                    address: host_address.octets(),
+                    port: options.port,
+                }),
+                target_rx: None,
+                target_tx: Some(FlowConfig {
+                    payload_bytes: u16::try_from(options.payload)?,
+                    offered_rate_bps: options.offered_rate_bps,
+                }),
+            }),
+            None,
+        ],
         link_requirements: SessionLinkRequirements::tx_block_ack(0),
     }) {
         Ok(session) => session,

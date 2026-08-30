@@ -4,10 +4,13 @@
 //! TX arena. All of that allocation belongs to the integration root, not to a
 //! station `connected` transaction.
 
+#[cfg(feature = "tx-psram-dma-probe")]
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use open_esp_radio_embassy_net::{
-    DualPinnedNetworkRunner, PinnedEndpointResources, PinnedTxFrame, PinnedTxPool,
-    PinnedTxResources, SharedPinnedRxConsumer, SharedRxSplitPinnedDevice,
+    DualPinnedNetworkRunner, PinnedEndpointResources, PinnedNetworkTxFrame, PinnedTxFrame,
+    PinnedTxPool, PinnedTxResources, SharedPinnedRxConsumer, SharedRxSplitPinnedDevice,
 };
 use open_esp_radio_esp32s31_wifi_dma::tx_ampdu_storage::AmpduDmaStorage;
 use open_esp_radio_esp32s31_wifi_embassy::{
@@ -65,6 +68,14 @@ pub(super) type RadioTxBacking = PinnedTxFrame<
     NETWORK_TX_TRAILER,
     NETWORK_TX_QUEUE_DEPTH,
 >;
+pub(super) type RadioNetworkTxBacking = PinnedNetworkTxFrame<
+    'static,
+    CriticalSectionRawMutex,
+    NETWORK_FRAME_CAPACITY,
+    NETWORK_TX_HEADROOM,
+    NETWORK_TX_TRAILER,
+    NETWORK_TX_QUEUE_DEPTH,
+>;
 type RadioAmpduRetention = RetainedAmpduDmaStorage<RadioTxBacking, TX_AMPDU_FRAME_COUNT>;
 
 pub type Esp32s31WifiDevice = SharedRxSplitPinnedDevice<
@@ -115,6 +126,77 @@ static NETWORK_RUNNER: StaticCell<RadioNetworkRunner> = StaticCell::new();
 #[unsafe(link_section = ".dma.bss.open_radio_network_tx")]
 static NETWORK_TX_POOL: ConstStaticCell<NetworkTxPool> = ConstStaticCell::new(NetworkTxPool::new());
 
+#[cfg(feature = "tx-psram-dma-probe")]
+static DIRECT_PSRAM_TX_DMA_PROBE: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "tx-psram-dma-probe")]
+static DIRECT_PSRAM_TX_DMA_PREPARES: AtomicU32 = AtomicU32::new(0);
+#[cfg(feature = "tx-psram-dma-probe")]
+static DIRECT_PSRAM_TX_DMA_FIRST_ADDRESS: AtomicU32 = AtomicU32::new(0);
+#[cfg(feature = "tx-psram-dma-probe")]
+static DIRECT_PSRAM_TX_DMA_LAST_ADDRESS: AtomicU32 = AtomicU32::new(0);
+#[cfg(feature = "tx-psram-dma-probe")]
+#[allow(
+    unsafe_code,
+    reason = "the diagnostic pool must occupy the cached PSRAM aperture before its explicit cache writeback"
+)]
+#[unsafe(link_section = ".psram.bss.open_radio_network_tx_dma_probe")]
+static PSRAM_NETWORK_TX_POOL: ConstStaticCell<NetworkTxPool> =
+    ConstStaticCell::new(NetworkTxPool::new());
+
+/// Select a same-image experiment where Wi-Fi A-MPDU descriptors reference
+/// PSRAM packet buffers directly. Descriptors remain in internal SRAM.
+#[cfg(feature = "tx-psram-dma-probe")]
+pub fn configure_direct_psram_tx_dma_probe(enabled: bool) {
+    DIRECT_PSRAM_TX_DMA_PREPARES.store(0, Ordering::Relaxed);
+    DIRECT_PSRAM_TX_DMA_FIRST_ADDRESS.store(0, Ordering::Relaxed);
+    DIRECT_PSRAM_TX_DMA_LAST_ADDRESS.store(0, Ordering::Relaxed);
+    DIRECT_PSRAM_TX_DMA_PROBE.store(enabled, Ordering::Release);
+}
+
+#[cfg(feature = "tx-psram-dma-probe")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DirectPsramTxDmaProbeObservation {
+    pub prepares: u32,
+    pub first_address: u32,
+    pub last_address: u32,
+}
+
+#[cfg(feature = "tx-psram-dma-probe")]
+pub fn direct_psram_tx_dma_probe_observation() -> DirectPsramTxDmaProbeObservation {
+    DirectPsramTxDmaProbeObservation {
+        prepares: DIRECT_PSRAM_TX_DMA_PREPARES.load(Ordering::Acquire),
+        first_address: DIRECT_PSRAM_TX_DMA_FIRST_ADDRESS.load(Ordering::Acquire),
+        last_address: DIRECT_PSRAM_TX_DMA_LAST_ADDRESS.load(Ordering::Acquire),
+    }
+}
+
+#[cfg(feature = "tx-psram-dma-probe")]
+fn prepare_psram_for_wifi_dma_read(storage: &mut [u8]) {
+    let address = storage.as_ptr() as usize;
+    let end = address
+        .checked_add(storage.len())
+        .expect("direct Wi-Fi TX DMA probe range must not wrap");
+    assert!(
+        address >= 0x5000_0000 && end <= 0x5400_0000,
+        "direct Wi-Fi TX DMA probe backing must reside in PSRAM"
+    );
+    // The diagnostic pool isolates every slot on 64-byte cache-line
+    // boundaries. The ownership callback writes dirty CPU data back and
+    // writes those complete lines back before they become DMA-owned.
+    open_esp_radio_esp32s31_platform_pac::writeback_psram_for_dma_read(storage)
+        .expect("direct Wi-Fi TX DMA probe cache writeback must accept its PSRAM slot");
+    let address = address as u32;
+    let _ = DIRECT_PSRAM_TX_DMA_FIRST_ADDRESS.compare_exchange(
+        0,
+        address,
+        Ordering::AcqRel,
+        Ordering::Acquire,
+    );
+    DIRECT_PSRAM_TX_DMA_LAST_ADDRESS.store(address, Ordering::Release);
+    DIRECT_PSRAM_TX_DMA_PREPARES.fetch_add(1, Ordering::Relaxed);
+    core::sync::atomic::fence(core::sync::atomic::Ordering::Release);
+}
+
 static TX_AMPDU_STORAGE: ConstStaticCell<
     HtAmpduTxStorage<TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>,
 > = ConstStaticCell::new(HtAmpduTxStorage::new());
@@ -160,6 +242,16 @@ pub(super) fn initialize_network(
     let station_resources = NETWORK_RESOURCES.take();
     let access_point_resources = ACCESS_POINT_NETWORK_RESOURCES.take();
     let network_tx_resources = NETWORK_TX_RESOURCES.take();
+    #[cfg(feature = "tx-psram-dma-probe")]
+    let tx_pool = if DIRECT_PSRAM_TX_DMA_PROBE.load(Ordering::Acquire) {
+        NetworkTxPool::pin_static_with_dma_read_prepare(
+            PSRAM_NETWORK_TX_POOL.take(),
+            prepare_psram_for_wifi_dma_read,
+        )
+    } else {
+        NetworkTxPool::pin_static(NETWORK_TX_POOL.take())
+    };
+    #[cfg(not(feature = "tx-psram-dma-probe"))]
     let tx_pool = NetworkTxPool::pin_static(NETWORK_TX_POOL.take());
     let (tx_provider, tx_consumer) = network_tx_resources.split(tx_pool);
     let (station_device, station_rx) = station_resources.split(
@@ -181,6 +273,8 @@ pub(super) fn initialize_network(
     )
     .with_shared_rx_ordering(&station_shared, &access_point_shared);
     let runner = NETWORK_RUNNER.init(runner);
+    #[cfg(feature = "tx-staging-copy-probe")]
+    let access_point_device = access_point_device.with_tx_staging_copy_probe_selection();
     (
         Esp32s31WifiDevices {
             station: station_device

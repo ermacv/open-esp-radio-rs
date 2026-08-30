@@ -10,7 +10,7 @@ use std::{
 use open_esp_radio_hil_protocol::{
     NetworkCredentials, NetworkIpv4Configuration, WifiAccessPointSecurity, WifiChannelWidth,
     WifiDataPlanePlacement, WifiRxAdmissionPolicy, WifiRxChecksumPolicy, WifiRxContinuationPolicy,
-    WifiRxDispatchPolicy, WifiTxUdpChecksumPolicy,
+    WifiRxDispatchPolicy, WifiTxBufferPolicy, WifiTxUdpChecksumPolicy,
 };
 use serde::Deserialize;
 use zeroize::{Zeroize, Zeroizing};
@@ -27,6 +27,7 @@ pub(crate) struct LabConfig {
     data_plane: Cell<WifiDataPlanePlacement>,
     rx_checksum: Cell<WifiRxChecksumPolicy>,
     tx_udp_checksum: Cell<WifiTxUdpChecksumPolicy>,
+    tx_buffer: Cell<WifiTxBufferPolicy>,
     rx_admission: Cell<WifiRxAdmissionPolicy>,
     rx_dispatch: Cell<WifiRxDispatchPolicy>,
     rx_continuation: Cell<WifiRxContinuationPolicy>,
@@ -339,6 +340,7 @@ impl LabConfig {
             data_plane: Cell::new(WifiDataPlanePlacement::SplitRadioNetwork),
             rx_checksum: Cell::new(WifiRxChecksumPolicy::Software),
             tx_udp_checksum: Cell::new(WifiTxUdpChecksumPolicy::Software),
+            tx_buffer: Cell::new(WifiTxBufferPolicy::DirectDma),
             rx_admission: Cell::new(WifiRxAdmissionPolicy::SynchronousShared),
             rx_dispatch: Cell::new(WifiRxDispatchPolicy::Asynchronous),
             rx_continuation: Cell::new(WifiRxContinuationPolicy::ImmediateSoftwareProbe),
@@ -391,6 +393,7 @@ impl LabConfig {
             data_plane: Cell::new(WifiDataPlanePlacement::SplitRadioNetwork),
             rx_checksum: Cell::new(WifiRxChecksumPolicy::Software),
             tx_udp_checksum: Cell::new(WifiTxUdpChecksumPolicy::Software),
+            tx_buffer: Cell::new(WifiTxBufferPolicy::DirectDma),
             rx_admission: Cell::new(WifiRxAdmissionPolicy::SynchronousShared),
             rx_dispatch: Cell::new(WifiRxDispatchPolicy::Asynchronous),
             rx_continuation: Cell::new(WifiRxContinuationPolicy::ImmediateSoftwareProbe),
@@ -420,6 +423,14 @@ impl LabConfig {
 
     pub(crate) fn tx_udp_checksum(&self) -> WifiTxUdpChecksumPolicy {
         self.tx_udp_checksum.get()
+    }
+
+    pub(crate) fn set_tx_buffer(&self, policy: WifiTxBufferPolicy) {
+        self.tx_buffer.set(policy);
+    }
+
+    pub(crate) fn tx_buffer(&self) -> WifiTxBufferPolicy {
+        self.tx_buffer.get()
     }
 
     pub(crate) fn set_rx_admission(&self, policy: WifiRxAdmissionPolicy) {
@@ -550,6 +561,10 @@ impl AccessPointConfig {
 
     pub(crate) const fn client_address(&self) -> Ipv4Addr {
         self.client_address
+    }
+
+    pub(crate) const fn secondary_client_address(&self) -> Option<Ipv4Addr> {
+        self.secondary_client_address
     }
 
     pub(crate) fn client_cidr(&self) -> String {

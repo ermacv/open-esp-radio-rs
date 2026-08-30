@@ -23,8 +23,7 @@ use open_esp_radio_esp32s31_bluetooth::{
     BluetoothModemLpTimerEventPublication, BluetoothModemLpTimerExpiration,
     BluetoothModemLpTimerExpirationPending, BluetoothModemLpTimerSoftwareWork,
     BluetoothNrtDefaultInterruptEpoch, BluetoothPrimaryControllerFault,
-    BluetoothPrimaryInterruptStep, BluetoothPrimaryNoSchedulerWork,
-    BluetoothPrimaryReferenceRecoveryRequired, BluetoothPrimarySchedulerEvent,
+    BluetoothPrimaryInterruptStep, BluetoothPrimaryNoSchedulerWork, BluetoothPrimarySchedulerEvent,
     BluetoothSchedulerLockModifyEvent, BluetoothSchedulerLockModifyEventPublication,
     BluetoothSchedulerLockModifyInterruptObservation, BluetoothSchedulerLockModifyWorkerStep,
     BluetoothSchedulerWakeBatch, BluetoothSchedulerWakePublication,
@@ -130,8 +129,7 @@ impl<M: RawMutex> EmbassyBluetoothIrqPublisher<'_, M> {
     /// scheduler handoffs when the classifier reaches ordinary work.
     ///
     /// The scheduler wake and lock/modify BUSY value come from the same later
-    /// scheduler-state observation. Fault and selector-6 recovery paths do not
-    /// publish ordinary work.
+    /// scheduler-state observation. Fault paths do not publish ordinary work.
     pub fn capture_and_publish_primary(
         &self,
         interrupts: &mut BluetoothInterruptRegistersOwner,
@@ -142,9 +140,6 @@ impl<M: RawMutex> EmbassyBluetoothIrqPublisher<'_, M> {
             }
             BluetoothPrimaryInterruptStep::NoSchedulerWork(epoch) => {
                 EmbassyBluetoothPrimaryInterruptStep::NoSchedulerWork(epoch)
-            }
-            BluetoothPrimaryInterruptStep::ReferenceRecoveryRequired(required) => {
-                EmbassyBluetoothPrimaryInterruptStep::ReferenceRecoveryRequired(required)
             }
             BluetoothPrimaryInterruptStep::Scheduler(event) => {
                 let scheduler = self.publish_scheduler(event.wake().class());
@@ -220,8 +215,6 @@ pub enum EmbassyBluetoothPrimaryInterruptStep {
     Fault(BluetoothPrimaryControllerFault),
     /// No reviewed dynamic scheduler source was present.
     NoSchedulerWork(BluetoothPrimaryNoSchedulerWork),
-    /// The missing selector-6 invariant prevents further IRQ progression.
-    ReferenceRecoveryRequired(BluetoothPrimaryReferenceRecoveryRequired),
     /// Both durable task handoffs were updated from one scheduler event.
     Scheduler {
         /// Lossless primary classification and scheduler-state projection.

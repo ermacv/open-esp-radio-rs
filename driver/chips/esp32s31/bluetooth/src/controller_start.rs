@@ -249,13 +249,6 @@ pub enum BluetoothDtmSoftwareListRemovalPublishedStep<Role> {
         /// Exact acknowledged empty primary epoch.
         epoch: crate::BluetoothPrimaryNoSchedulerWork,
     },
-    /// Selector-6 recovery blocked the later fresh scheduler-state read.
-    ReferenceRecoveryRequired {
-        /// Already-unlinked graph retained while recovery remains blocked.
-        unlinked: crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
-        /// Exact affine selector-6 recovery requirement.
-        required: crate::BluetoothPrimaryReferenceRecoveryRequired,
-    },
     /// The fresh scheduler sample or task command statuses were not ready.
     Pending {
         /// Already-unlinked graph re-armed before leaving the serialization boundary.
@@ -3027,12 +3020,6 @@ where
                             unlinked,
                             epoch,
                         },
-                    }
-                }
-                BluetoothPrimaryPublishedInterruptStep::ReferenceRecoveryRequired(required) => {
-                    BluetoothDtmSoftwareListRemovalPublishedStep::ReferenceRecoveryRequired {
-                        unlinked,
-                        required,
                     }
                 }
                 BluetoothPrimaryPublishedInterruptStep::Scheduler { event, .. } => {

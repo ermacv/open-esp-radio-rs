@@ -45,8 +45,7 @@
 //! The initialized scheduler now joins its software task endpoint to the exact
 //! task-side HAL owner, so one lock/modify event step can reach the restricted
 //! PAC without exporting register authority. The remaining components are not
-//! connected across the missing selector-6 invariant and live
-//! primary-ISR/executor composition,
+//! connected across the missing live primary-ISR/executor composition,
 //! feature-specific NRT classification and live-route
 //! prerequisites. Recurring event preparation now retains exact active role
 //! ownership, while live timing, the concrete session pump and in-flight
@@ -257,8 +256,7 @@ pub use phy::{
 };
 pub use primary_interrupt::{
     BluetoothPrimaryInterruptStep, BluetoothPrimaryNoSchedulerWork,
-    BluetoothPrimaryPublishedInterruptStep, BluetoothPrimaryReferenceRecoveryRequired,
-    BluetoothPrimarySchedulerEvent, step_primary_interrupt,
+    BluetoothPrimaryPublishedInterruptStep, BluetoothPrimarySchedulerEvent, step_primary_interrupt,
 };
 pub use resources::{BluetoothStopped, BluetoothStoppedReleaseFailure};
 #[cfg(any(target_arch = "riscv32", test))]

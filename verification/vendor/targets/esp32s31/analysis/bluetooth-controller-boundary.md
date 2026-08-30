@@ -289,7 +289,9 @@ The exact S31 command-to-scheduler path, the initial link-state image and the
 separation between scanner resume and scheduler consistency are recorded in
 [`bluetooth-direct-test-mode.md`](bluetooth-direct-test-mode.md). In
 particular, selector 4 is now known to be scanner-role software and is not a
-DTM prerequisite; selector 6 becomes an invariant of the open scheduler.
+DTM prerequisite. Selector 6 validates the vendor's private intrusive
+transaction container and therefore has no runtime successor in the affine
+open scheduler.
 The implementation order is:
 
 1. finish restricted PAC access for the remaining scheduler command/status
@@ -312,8 +314,8 @@ The implementation order is:
    unlink-and-arm prevents
    a pre-arm event from entering the DTM gate, but command-ready causality and
    retry liveness after mailbox-full delivery remain unproven. Live handler
-   notification, feature-specific NRT policy and the selector-6 invariant are
-   still absent, so this is not a live interrupt epoch;
+   notification and feature-specific NRT policy are still absent, so this is
+   not a live interrupt epoch;
 2. recover a hardware-only init transition from the composite task/BLE init
    functions, with read-back or bounded postconditions and exact rollback up
    to every fallible edge;
@@ -360,8 +362,7 @@ The decisive gaps are not HCI packet syntax. They are:
   identities, level-3 policy, exact masks, coalesced marker contract, affine
   ISR scheduler MMIO and shared clear-bank prefix are no longer unknown, but
   live route composition and handler-to-executor notification remain absent;
-- an affine open scheduler and bounded completion lifecycle, including the
-  selector-6 consistency invariant; selector-4 is now classified as scanner
+- an affine open scheduler and bounded completion lifecycle; selector-4 is now classified as scanner
   resume and is deferred with the scanning ULL role rather than DTM;
 - remaining scheduler command opcodes, any operational meaning of the
   lock/modify diagnostic result, the raw-status-to-finished-list mapping,

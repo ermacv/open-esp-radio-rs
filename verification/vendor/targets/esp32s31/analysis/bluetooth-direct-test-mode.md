@@ -30,8 +30,7 @@ serialization boundary, and only the exact first post-arm event can join the
 unlinked owner. No-work and command-pending outcomes re-arm the same mailbox
 identity and generation before returning.
 This still does not provide the sleep-enabled RF wake branch, proven source-124
-command-ready causality or retry liveness after a Pending removal gate,
-selector-6 recovery, an autonomous DTM
+command-ready causality or retry liveness after a Pending removal gate, an autonomous DTM
 session loop, Test End quiescence
 for an in-flight request, or an operational HCI dispatcher/session worker and
 response publication. At the fully recycled CPU-owned boundary, active TX and
@@ -945,8 +944,9 @@ The remaining work should proceed in narrow, testable increments:
    wake dispositions are delivered once by primary service, not repeated by
    late consumption. Add a proven command-ready wake and a
    bounded policy that cannot miss a later ready edge while that capacity-one
-   slot holds an earlier event. Model selector 6 as an internal fail-stop
-   invariant and keep scan resume outside the DTM feature graph.
+   slot holds an earlier event. The vendor selector-6 callback validates only
+   its private intrusive transaction container and has no open-driver runtime
+   equivalent; keep scan resume outside the DTM feature graph.
 6. **Compose the ISR epoch with the session owner.** The level-3 hard handler
    captures/acknowledges a bounded snapshot and publishes a lost-wake-safe
    token. The executor-neutral session consumes those finite events and drives
@@ -993,7 +993,7 @@ now-classified scan-resume path.
 
 The operational blockers are live timing ownership, guaranteed post-unlink
 Pending-removal progress including recovery of a later ready edge while the
-mailbox is full, selector-6 recovery, the autonomous session loop, Test End
+mailbox is full, the autonomous session loop, Test End
 quiescence for in-flight ownership and the DTM HCI dispatcher/session worker
 with backpressured response publication.
 Trouble integration and an RTOS abstraction are not prerequisites.

@@ -155,7 +155,6 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/registers/evidence/vendor-radio-libraries.toml",
 ]
 gaps = [
-  { axis = "implementation", id = "selector-6-scheduler-invariant-missing" },
   { axis = "implementation", id = "scanner-resume-action-deferred-until-scan-ull" },
   { axis = "implementation", id = "source-127-live-route-and-feature-specific-nrt-policy-missing" },
   { axis = "vendor", id = "complete-interrupt-production-trace-missing" },
@@ -340,8 +339,8 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "powered-controller-runner-and-selector-6-recovery-missing" },
-  { axis = "vendor", id = "selector-6-current-revision-trigger-and-recovery-proof-missing" },
+  { axis = "implementation", id = "powered-controller-runner-missing" },
+  { axis = "vendor", id = "source-3-current-revision-trigger-proof-missing" },
   { axis = "hil", id = "scheduler-lock-modify-live-hardware-trace-missing" },
 ]
 
@@ -358,7 +357,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/functions/reviewed.toml",
 ]
 gaps = [
-  { axis = "implementation", id = "post-unlink-command-ready-retry-liveness-mailbox-full-ready-edge-recovery-and-selector-6-recovery-missing" },
+  { axis = "implementation", id = "post-unlink-command-ready-retry-liveness-and-mailbox-full-ready-edge-recovery-missing" },
   { axis = "vendor", id = "raw-interrupt-origin-and-finished-list-acknowledge-rule-missing" },
   { axis = "vendor", id = "post-unlink-command-ready-source-124-causality-missing" },
   { axis = "hil", id = "scheduler-finished-list-drain-cell-missing" },

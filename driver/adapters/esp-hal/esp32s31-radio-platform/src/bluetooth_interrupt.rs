@@ -3,8 +3,8 @@
 //! Stable publication is deliberately separate from a live interrupt epoch.
 //! Both unique HAL owners are installed atomically before any CPU route can be
 //! enabled. All three finite Controller dispositions can now reuse those
-//! stable owners, but handler notification, selector-6 recovery and the
-//! scheduler-list drain still block a live route epoch.
+//! stable owners, but handler notification and the scheduler-list drain still
+//! block a live route epoch.
 
 #![forbid(unsafe_code)]
 #![allow(

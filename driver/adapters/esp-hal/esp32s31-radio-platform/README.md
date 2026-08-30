@@ -23,9 +23,9 @@ The pinned ESP32-S31 PAC names all three Controller sources as `BT_MAC`,
 `MODEM_LP_TIMER`, and `BT_MAC_INT1`. This adapter compile-checks those
 identities against the reviewed source-124/source-127/source-133 policies and
 contains one same-core, level-three bind/disable set. The primitives remain
-crate-private: scheduler-list drain, executor notification and selector-6
-recovery must be composed before a public live interrupt epoch can safely
-enable any route. Both unique register owners are already published atomically
+crate-private: scheduler-list drain and executor notification must be composed
+before a public live interrupt epoch can safely enable any route. Both unique
+register owners are already published atomically
 in stable process-wide slots. The published lease can run the finite primary
 classifier, opaque default NRT acknowledgement and timer register disposition
 while retaining their owners in those slots. The chip Controller consumes

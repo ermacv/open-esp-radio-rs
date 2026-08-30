@@ -35,11 +35,11 @@ impl BluetoothSchedulerReferenceGateObservation {
 /// Affine proof that the source-124 reference-clear MMIO and trailing device
 /// fence completed.
 ///
-/// This value carries no scheduler-consistency claim. The Controller must
-/// consume it immediately in its post-clear selector-6 invariant action
-/// before making the later scheduler-work observation.
+/// The vendor follows this hardware edge with a check of its private intrusive
+/// scheduler lists. The open scheduler represents that software invariant with
+/// affine states instead, so this token proves only the ordered hardware edge.
 #[derive(Debug, Eq, PartialEq)]
-#[must_use = "the completed reference clear must feed the post-clear scheduler invariant"]
+#[must_use = "the completed reference clear must precede the later scheduler observation"]
 pub struct BluetoothSchedulerReferenceCleared {
     _private: (),
 }
@@ -446,8 +446,9 @@ impl BluetoothInterruptRegisters {
     ///
     /// The primary classifier authorizes this only after bank-one source 3
     /// observed `SCHEDULER_STATE.BUSY == 0` at the reference gate. This MMIO
-    /// operation does not perform the mandatory post-clear scheduler action;
-    /// the future live interrupt owner must compose both in order.
+    /// operation deliberately does not reproduce the vendor's following
+    /// intrusive-list assertion; the open scheduler has no such mutable list
+    /// representation.
     pub fn clear_scheduler_reference(&mut self) -> BluetoothSchedulerReferenceCleared {
         let mut control = HardwareSchedulerInterruptControl {
             registers: &self.peripherals.bluetooth_scheduler_interrupt_runtime,

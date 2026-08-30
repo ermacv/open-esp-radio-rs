@@ -268,8 +268,7 @@ impl BluetoothPrimaryOrdinaryPublication {
                 lock_modify: *lock_modify,
             },
             BluetoothPrimaryPublishedInterruptStep::Fault(_)
-            | BluetoothPrimaryPublishedInterruptStep::NoSchedulerWork(_)
-            | BluetoothPrimaryPublishedInterruptStep::ReferenceRecoveryRequired(_) => Self::None,
+            | BluetoothPrimaryPublishedInterruptStep::NoSchedulerWork(_) => Self::None,
         }
     }
 }

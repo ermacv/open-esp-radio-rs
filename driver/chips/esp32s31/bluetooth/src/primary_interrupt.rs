@@ -33,9 +33,6 @@ pub enum BluetoothPrimaryInterruptStep {
     NoSchedulerWork(BluetoothPrimaryNoSchedulerWork),
     /// A scheduler wake and matching BUSY observation are ready for publication.
     Scheduler(BluetoothPrimarySchedulerEvent),
-    /// The reference gate requires the still-missing affine selector-6
-    /// consistency action before the later scheduler observation is legal.
-    ReferenceRecoveryRequired(BluetoothPrimaryReferenceRecoveryRequired),
 }
 
 /// Acknowledged primary epoch with no reviewed scheduler work.
@@ -65,8 +62,6 @@ pub enum BluetoothPrimaryPublishedInterruptStep {
     Fault(BluetoothPrimaryControllerFault),
     /// The epoch contained no reviewed dynamic scheduler work.
     NoSchedulerWork(BluetoothPrimaryNoSchedulerWork),
-    /// Selector-6 recovery is required before the later work observation.
-    ReferenceRecoveryRequired(BluetoothPrimaryReferenceRecoveryRequired),
     /// Both durable scheduler cells accepted the same temporal event.
     Scheduler {
         /// Exact classified primary event.
@@ -81,9 +76,9 @@ pub enum BluetoothPrimaryPublishedInterruptStep {
 impl BluetoothPrimaryInterruptStep {
     /// Publish one classified primary result into its matching Controller cells.
     ///
-    /// Fault, empty and selector-6 recovery outcomes never publish ordinary
-    /// scheduler work. A scheduler outcome updates both cells from the same
-    /// later hardware observation before returning their wake dispositions.
+    /// Fault and empty outcomes never publish ordinary scheduler work. A
+    /// scheduler outcome updates both cells from the same later hardware
+    /// observation before returning their wake dispositions.
     pub fn publish(
         self,
         scheduler_wake: &BluetoothSchedulerWakeCell,
@@ -93,9 +88,6 @@ impl BluetoothPrimaryInterruptStep {
             Self::Fault(fault) => BluetoothPrimaryPublishedInterruptStep::Fault(fault),
             Self::NoSchedulerWork(epoch) => {
                 BluetoothPrimaryPublishedInterruptStep::NoSchedulerWork(epoch)
-            }
-            Self::ReferenceRecoveryRequired(required) => {
-                BluetoothPrimaryPublishedInterruptStep::ReferenceRecoveryRequired(required)
             }
             Self::Scheduler(event) => {
                 let scheduler = scheduler_wake.publish_from_interrupt(event.wake().class());
@@ -139,29 +131,10 @@ impl BluetoothPrimarySchedulerEvent {
     }
 }
 
-/// Fail-closed primary epoch awaiting the open selector-6 invariant.
-///
-/// The PAC has acknowledged the interrupt banks, but this step deliberately
-/// does not clear `SCHEDULER_REFERENCE`: the reference implementation executes
-/// a mandatory scheduler transaction/list check immediately after that write.
-/// Returning the affine classification prevents the later work read from
-/// moving ahead of an action that the open scheduler cannot yet perform.
-#[derive(Debug, Eq, PartialEq)]
-pub struct BluetoothPrimaryReferenceRecoveryRequired {
-    classification: BluetoothPrimaryInterruptClassification,
-    gate: BluetoothSchedulerReferenceGateObservation,
-}
-
-impl BluetoothPrimaryReferenceRecoveryRequired {
-    /// Return the semantic gate observation that required recovery.
-    pub const fn gate_observation(&self) -> BluetoothSchedulerReferenceGateObservation {
-        self.gate
-    }
-}
-
 trait BluetoothPrimaryInterruptBackend {
     fn capture_primary_and_acknowledge(&mut self) -> BluetoothPrimaryInterruptEpoch;
     fn capture_scheduler_reference_gate(&mut self) -> BluetoothSchedulerReferenceGateObservation;
+    fn clear_scheduler_reference(&mut self);
     fn capture_scheduler_work(&mut self) -> BluetoothSchedulerWorkObservation;
 }
 
@@ -172,6 +145,10 @@ impl BluetoothPrimaryInterruptBackend for BluetoothInterruptRegistersOwner {
 
     fn capture_scheduler_reference_gate(&mut self) -> BluetoothSchedulerReferenceGateObservation {
         self.capture_scheduler_reference_gate()
+    }
+
+    fn clear_scheduler_reference(&mut self) {
+        let _cleared = BluetoothInterruptRegistersOwner::clear_scheduler_reference(self);
     }
 
     fn capture_scheduler_work(&mut self) -> BluetoothSchedulerWorkObservation {
@@ -192,14 +169,9 @@ fn execute_primary_interrupt_step(
     if let Some(gate) = classification.reference_gate() {
         let observation = backend.capture_scheduler_reference_gate();
         if gate.classify(observation)
-            == BluetoothSchedulerReferenceAction::ClearReferenceAndRunPostClearSchedulerAction
+            == BluetoothSchedulerReferenceAction::ClearReferenceAndContinue
         {
-            return BluetoothPrimaryInterruptStep::ReferenceRecoveryRequired(
-                BluetoothPrimaryReferenceRecoveryRequired {
-                    classification,
-                    gate: observation,
-                },
-            );
+            backend.clear_scheduler_reference();
         }
     }
 
@@ -241,6 +213,7 @@ mod tests {
     enum Operation {
         PrimaryEpoch,
         ReferenceGate,
+        ReferenceClear,
         Work,
     }
 
@@ -306,6 +279,10 @@ mod tests {
             self.gate
         }
 
+        fn clear_scheduler_reference(&mut self) {
+            self.operations.push(Operation::ReferenceClear);
+        }
+
         fn capture_scheduler_work(&mut self) -> BluetoothSchedulerWorkObservation {
             self.operations.push(Operation::Work);
             self.work.take().expect("one scheduler work observation")
@@ -336,19 +313,24 @@ mod tests {
     }
 
     #[test]
-    fn idle_reference_gate_stops_before_clear_and_later_work_read() {
+    fn idle_reference_gate_clears_before_fresh_work_read() {
         let mut backend = Backend::dynamic(false, true, true, false, true, true);
 
-        let BluetoothPrimaryInterruptStep::ReferenceRecoveryRequired(required) =
+        let BluetoothPrimaryInterruptStep::Scheduler(event) =
             execute_primary_interrupt_step(&mut backend)
         else {
-            panic!("idle reference gate must fail closed");
+            panic!("idle reference gate must continue after the ordered clear");
         };
 
-        assert!(!required.gate_observation().is_busy());
+        assert!(event.lock_modify_observation().is_busy());
         assert_eq!(
             backend.operations,
-            [Operation::PrimaryEpoch, Operation::ReferenceGate,]
+            [
+                Operation::PrimaryEpoch,
+                Operation::ReferenceGate,
+                Operation::ReferenceClear,
+                Operation::Work,
+            ]
         );
     }
 

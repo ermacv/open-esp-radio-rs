@@ -181,7 +181,7 @@ impl BluetoothSchedulerReferenceGate {
         observation: BluetoothSchedulerReferenceGateObservation,
     ) -> BluetoothSchedulerReferenceAction {
         if !observation.is_busy() {
-            BluetoothSchedulerReferenceAction::ClearReferenceAndRunPostClearSchedulerAction
+            BluetoothSchedulerReferenceAction::ClearReferenceAndContinue
         } else {
             BluetoothSchedulerReferenceAction::PreserveReference
         }
@@ -191,13 +191,14 @@ impl BluetoothSchedulerReferenceGate {
 /// Required reference-path disposition selected after the first state read.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothSchedulerReferenceAction {
-    /// Write zero to `SCHEDULER_REFERENCE`, then run the mandatory open
-    /// equivalent of the reviewed selector-6 scheduler action.
+    /// Write zero to `SCHEDULER_REFERENCE` before the later work observation.
     ///
-    /// The register write alone is not a complete disposition. The pinned BLE
-    /// consumer immediately checks scheduler transaction/list consistency.
-    /// That typed open action is still a publication blocker.
-    ClearReferenceAndRunPostClearSchedulerAction,
+    /// The vendor's following selector-6 callback validates fields in its own
+    /// intrusive transaction/list implementation. The open DTM scheduler does
+    /// not create that container: its sole-item lifecycle is represented by
+    /// affine Rust states, so that software-only callback has no applicable
+    /// member and is not reproduced.
+    ClearReferenceAndContinue,
     /// Leave `SCHEDULER_REFERENCE` unchanged while the busy bit is set.
     PreserveReference,
 }
@@ -381,7 +382,7 @@ mod tests {
             gate.classify(
                 BluetoothSchedulerReferenceGateObservation::from_busy_for_validation(false)
             ),
-            BluetoothSchedulerReferenceAction::ClearReferenceAndRunPostClearSchedulerAction
+            BluetoothSchedulerReferenceAction::ClearReferenceAndContinue
         );
         assert_eq!(
             gate.classify(

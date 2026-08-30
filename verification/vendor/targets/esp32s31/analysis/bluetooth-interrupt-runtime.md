@@ -125,8 +125,11 @@ reads `SCHEDULER_STATE` at `0x2010_107c`; when bit 31 is clear it writes zero
 to `SCHEDULER_REFERENCE` at `0x2010_1078` and dispatches selector 6. The
 default BLE selector-6 consumer immediately performs a scheduler
 transaction/list consistency action. The typed classifier therefore returns
-`ClearReferenceAndRunPostClearSchedulerAction`: executing only the register
-write is deliberately not representable as a complete disposition. Any
+`ClearReferenceAndContinue`. The callback has no MMIO or hardware mutation: it
+walks and asserts over the vendor's private intrusive transaction nodes. The
+open DTM scheduler does not create that container; its sole-item lifecycle is
+affine, so reproducing that vendor callback would
+add an artificial runtime ABI rather than a hardware invariant. Any
 dynamic branch then makes a later, independent `SCHEDULER_STATE` read. The
 derived reference state is `bit31 && bit29`. Deferred work is marked only when
 the first work input and that derived state are both true. Selector 4 receives
@@ -237,8 +240,9 @@ named C61 body `r_ble_lll_scan_chk_resume` classifies the 102-byte S31
 `r_sym_ble_q4hMJ7XLGGCzxwmAKSge` retry body as scanner-role resume. An open
 DTM-only scheduler therefore has no selector-4 successor at all; a later scan
 ULL owner must provide the typed collision/resume policy. Selector 6 remains
-the active-transaction consistency action and becomes an internal affine
-scheduler invariant plus fail-stop disposition. The current wake cell retains
+evidence about the vendor's active-transaction container, but has no runtime
+successor in the open scheduler: the corresponding list consistency is
+structural in its affine owners. The current wake cell retains
 only the proven pending/marked coalescing contract; it intentionally does not
 pretend to implement either higher-level action. The DTM-specific consequence
 and evidence chain are recorded in
@@ -270,8 +274,8 @@ them.
 
 - feature-specific meanings and mask/re-arm policy for NRT snapshot status beyond
   the pinned default lifecycle's acknowledge-only callback graph;
-- typed open equivalents for the selector-6 post-clear consistency action and
-  selector-4 reference-state-driven scheduler retry;
+- the selector-4 reference-state-driven scheduler retry for the later scanner
+  role; the selector-6 vendor-container assertion is not an open-driver ABI;
 - an affine scheduler item lifecycle and bounded completion queue that replace
   the recovered software intrusive list, including the semantic
   item ordering/selection within each hardware list, plus the status-to-

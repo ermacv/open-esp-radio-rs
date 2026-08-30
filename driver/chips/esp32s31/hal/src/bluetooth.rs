@@ -732,9 +732,9 @@ impl BluetoothInterruptRegistersOwner {
 
     /// Clear the scheduler reference selected by the source-124 gate.
     ///
-    /// The returned affine token proves only the ordered PAC write and device
-    /// fence. The controller must still consume it in the mandatory post-clear
-    /// scheduler invariant before taking the later work observation.
+    /// The returned affine token proves the ordered PAC write and device fence.
+    /// The open scheduler's software consistency is structural and does not
+    /// reproduce the vendor's intrusive-list callback.
     pub fn clear_scheduler_reference(&mut self) -> BluetoothSchedulerReferenceCleared {
         self.registers.clear_scheduler_reference()
     }

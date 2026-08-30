@@ -603,6 +603,18 @@ impl BluetoothControllerSchedulerEpoch {
     /// Project a later or earlier wrapping raw sample into the scheduler epoch.
     #[cfg(test)]
     pub(crate) const fn project(self, sample: BluetoothControllerTimeSample) -> u32 {
+        self.project_without_reanchor(&sample)
+    }
+
+    /// Project one completed live sample while retaining the exact epoch.
+    ///
+    /// RF-ready observation is a separate scheduler-time read in the reviewed
+    /// standalone flow. It must use the retained epoch, but unlike a task-run
+    /// current-time update it does not advance either epoch anchor.
+    pub(crate) const fn project_without_reanchor(
+        self,
+        sample: &BluetoothControllerTimeSample,
+    ) -> u32 {
         self.project_raw_time(sample.raw_time())
     }
 
@@ -1308,5 +1320,15 @@ mod tests {
         );
         assert_eq!(first_epoch.raw_time_for_scheduler_time(4), 1);
         assert_eq!(reanchored.raw_time_for_scheduler_time(4), 0x4000_0001);
+    }
+
+    #[test]
+    fn rf_ready_projection_retains_the_existing_scheduler_epoch() {
+        let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+        let epoch = BluetoothControllerSchedulerEpoch::new(sample(100), 1_000, scale);
+        let rf_ready_sample = sample(103);
+
+        assert_eq!(epoch.project_without_reanchor(&rf_ready_sample), 1_012);
+        assert_eq!(epoch.raw_time_for_scheduler_time(1_012), 103);
     }
 }

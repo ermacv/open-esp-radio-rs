@@ -63,6 +63,36 @@ pub struct BluetoothBlePhyInitializationReport {
     pub config: BluetoothBlePhyInitializationConfig,
 }
 
+/// One standalone RF-ready observation in the retained scheduler epoch.
+///
+/// Only a completed generation-keyed controller-time request owned by an
+/// initialized BLE PHY can create this affine token. It deliberately cannot be
+/// copied or manufactured from a detached scheduler image.
+#[must_use = "the RF-ready observation must be consumed by DTM scheduling"]
+#[cfg(target_arch = "riscv32")]
+pub(crate) struct BluetoothDtmRfReady {
+    scheduler_instant: crate::BluetoothDtmSchedulerInstant,
+}
+
+#[cfg(target_arch = "riscv32")]
+impl BluetoothDtmRfReady {
+    fn from_completed_sample(
+        epoch: crate::BluetoothControllerSchedulerEpoch,
+        sample: crate::BluetoothControllerTimeSample,
+    ) -> Self {
+        Self {
+            scheduler_instant: crate::BluetoothDtmSchedulerInstant::from_image(
+                epoch.project_without_reanchor(&sample),
+            ),
+        }
+    }
+
+    /// Consume the RF-ready proof into its scheduler-domain instant.
+    pub(crate) const fn into_scheduler_instant(self) -> crate::BluetoothDtmSchedulerInstant {
+        self.scheduler_instant
+    }
+}
+
 /// Powered Controller after the complete BLE PHY register transaction.
 ///
 /// The address-bound environment and resolving-list storage remain nested for
@@ -392,6 +422,36 @@ where
             .initialized
             .controller
             .request_controller_time()
+    }
+
+    /// Request the fresh controller-time observation used by standalone DTM
+    /// RF readiness.
+    ///
+    /// The returned identity remains generation-keyed by the sole durable time
+    /// worker. Completion must pass its affine sample back to
+    /// [`Self::complete_standalone_dtm_rf_ready`].
+    pub(crate) fn request_standalone_dtm_rf_ready_time(
+        &mut self,
+    ) -> Result<
+        crate::controller_time::BluetoothControllerTimeRequest,
+        crate::controller_time::BluetoothControllerTimeRequestError,
+    > {
+        self.initialized
+            .initialized
+            .controller
+            .request_controller_time()
+    }
+
+    /// Mint the affine standalone RF-ready token from one completed request.
+    ///
+    /// Projection uses the retained scheduler epoch exactly as observed and
+    /// intentionally does not perform the task-run reanchor transition.
+    pub(crate) fn complete_standalone_dtm_rf_ready(
+        &mut self,
+        epoch: crate::BluetoothControllerSchedulerEpoch,
+        sample: crate::BluetoothControllerTimeSample,
+    ) -> BluetoothDtmRfReady {
+        BluetoothDtmRfReady::from_completed_sample(epoch, sample)
     }
 
     #[expect(

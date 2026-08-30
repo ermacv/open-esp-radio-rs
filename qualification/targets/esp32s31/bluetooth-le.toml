@@ -71,7 +71,7 @@ gaps = [
 [[capabilities]]
 id = "controller-initialization"
 title = "Complete LE Controller initialization"
-scope = "Powered controller initialization through BLE PHY controller-output preparation runtime-timer start and stable interrupt-owner publication while retaining a private affine standalone always-awake selection and exposing only a Controller-bound post-enable time observation rather than RF-ready authority"
+scope = "Powered controller initialization through BLE PHY controller-output preparation runtime-timer start and stable interrupt-owner publication while retaining a private affine standalone always-awake selection whose terminal powered BLE-PHY owner can compose a later completed Controller-bound time request into opaque RF-ready authority"
 implementation = "incomplete"
 host = "covered"
 async = "incomplete"
@@ -90,7 +90,7 @@ gaps = [
 [[capabilities]]
 id = "controller-timebase"
 title = "Event-driven controller scheduler timebase"
-scope = "Live bounded always-awake latch MMIO with keyed affine request ownership same-Controller Waiting rechecks cold first-live epoch initialization repeated borrowed scheduler-current acquisition vendor-equivalent epoch reanchoring private initial admission before reservation private sequence after reservation and sample-discarding cancellation drain"
+scope = "Live bounded always-awake latch MMIO with keyed affine request ownership same-Controller Waiting rechecks cold first-live epoch initialization repeated borrowed scheduler-current acquisition vendor-equivalent epoch reanchoring opaque non-Copy standalone RF-ready projection exact initial current-before-RF recurring-RX RF-before-current recurring-TX current-only ordering private initial admission before reservation private sequence after reservation and sample-discarding cancellation drain"
 implementation = "incomplete"
 host = "covered"
 async = "incomplete"
@@ -99,7 +99,6 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "source-owned-rf-ready-producer-missing" },
   { axis = "vendor", id = "effective-counter-width-physical-unit-and-wake-source-missing" },
   { axis = "hil", id = "controller-time-latch-and-wrap-cell-missing" },
   { axis = "async", id = "live-controller-runner-and-proven-absolute-recheck-source-missing" },
@@ -270,7 +269,7 @@ gaps = [
 [[capabilities]]
 id = "dtm-tx-timing"
 title = "DTM transmitter interval and scheduler timing"
-scope = "Exact four-PHY duration interval tick conversion maximum-capacity TX windows and constant-time phase-preserving late-event catch-up"
+scope = "Exact four-PHY duration interval tick conversion maximum-capacity TX windows constant-time phase-preserving late-event catch-up source-owned standalone RF-ready projection initial-TX current-before-RF and recurring-TX current-only acquisition order"
 implementation = "incomplete"
 host = "covered"
 async = "not-applicable"
@@ -280,7 +279,6 @@ vendor-anchors = [
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
-  { axis = "implementation", id = "standalone-rf-ready-policy-not-composed" },
   { axis = "vendor", id = "sleep-enabled-rf-wake-helper-contract-missing" },
   { axis = "hil", id = "dtm-tx-interval-tick-and-deadline-cell-missing" },
 ]

@@ -112,6 +112,8 @@ pub mod validation;
 pub use baseband::{BluetoothBasebandInitializationReport, BluetoothControllerBasebandInitialized};
 #[cfg(target_arch = "riscv32")]
 pub use ble_phy::BluetoothControllerBlePhyEngineInitialized;
+#[cfg(target_arch = "riscv32")]
+pub(crate) use ble_phy::BluetoothDtmRfReady;
 pub use ble_phy::{BluetoothBlePhyInitializationConfig, BluetoothBlePhyInitializationReport};
 pub use clock::{
     BluetoothClockCheckpoint, BluetoothClockEnableFailure, BluetoothClockError,
@@ -156,15 +158,14 @@ pub use dtm_event_prepare::{
 };
 #[cfg(any(target_arch = "riscv32", test))]
 pub use dtm_event_prepare::{
-    BluetoothDtmReceiverCpuOwned, BluetoothDtmReceiverEvent, BluetoothDtmRxCommittedWindow,
-    BluetoothDtmSchedulerItemPhase, BluetoothDtmTransmitterEvent,
+    BluetoothDtmReceiverCpuOwned, BluetoothDtmReceiverEvent, BluetoothDtmSchedulerItemPhase,
+    BluetoothDtmTransmitterEvent,
+};
+pub(crate) use dtm_event_timing::{
+    BluetoothDtmRxInitialEventWindow, BluetoothDtmRxRecurringEventWindow, BluetoothDtmTxEventWindow,
 };
 #[cfg(any(target_arch = "riscv32", test))]
-pub(crate) use dtm_event_timing::BluetoothDtmSchedulerMargin;
-pub use dtm_event_timing::{
-    BluetoothDtmRxInitialEventWindow, BluetoothDtmRxRecurringEventWindow,
-    BluetoothDtmSchedulerInstant, BluetoothDtmTxEventAdvance, BluetoothDtmTxEventWindow,
-};
+pub(crate) use dtm_event_timing::{BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerMargin};
 pub use dtm_link_state::{
     BluetoothDtmLinkStateReset, BluetoothDtmLinkStateResetError,
     BluetoothDtmLinkStateReviewedWords, BluetoothDtmRole,

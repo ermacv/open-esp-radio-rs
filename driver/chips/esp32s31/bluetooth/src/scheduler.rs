@@ -237,10 +237,10 @@ pub enum BluetoothDtmEmptySchedulerMergeError {
 
 /// Why one private DTM controller-time phase could not complete.
 ///
-/// Admission and sequence samples are acquired by the Controller and never
-/// cross the public DTM preparation boundary. This finite error retains only
-/// the logical acquisition outcome; the role-specific preparation failure
-/// continues to own every retry resource.
+/// RF-ready, recurring-RX current, admission and sequence samples are acquired
+/// by the Controller and never cross the public DTM preparation boundary. This
+/// finite error retains only the logical acquisition outcome; the role-specific
+/// preparation failure continues to own every retry resource.
 #[cfg(any(target_arch = "riscv32", test))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BluetoothDtmControllerTimeAcquisitionError {
@@ -282,7 +282,7 @@ pub enum BluetoothDtmControllerEventPreparationError {
     Reservation(BluetoothSchedulerReservationError),
     /// The phase-appropriate fresh Controller-time sample closed the sequence gate.
     SequenceAuthorization(BluetoothSchedulerSequenceAuthorizationError),
-    /// A private admission or sequence acquisition did not complete.
+    /// A private RF-ready, current, admission or sequence acquisition failed.
     ControllerTime(BluetoothDtmControllerTimeAcquisitionError),
     /// The bound SRAM graph rejected the positional event transaction.
     #[cfg(target_arch = "riscv32")]
@@ -1197,6 +1197,19 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
             .expect("a reservation created by this Controller must release into the same timeline");
     }
 
+    /// Reject initial TX before RF readiness can form a scheduler candidate.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn reject_dtm_transmitter_first_before_stage(
+        &mut self,
+        owner: BluetoothDtmPreparedTxGraph,
+        error: BluetoothDtmControllerTimeAcquisitionError,
+    ) -> BluetoothDtmControllerTxPreparationFailure {
+        BluetoothDtmControllerTxPreparationFailure::from_prepared(
+            BluetoothDtmControllerEventPreparationError::ControllerTime(error),
+            owner,
+        )
+    }
+
     /// Form one initial transmitter candidate from a private fresh current.
     #[cfg(target_arch = "riscv32")]
     #[expect(
@@ -1211,7 +1224,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         phy: BluetoothDtmPhy,
         requested_interval_micros: u16,
         now: BluetoothControllerSchedulerNow,
-        rf_ready: BluetoothDtmSchedulerInstant,
+        rf_ready: crate::BluetoothDtmRfReady,
     ) -> Result<BluetoothDtmTransmitterFirstStaged, BluetoothDtmControllerTxPreparationFailure>
     {
         if link_state.role() != BluetoothDtmRole::Transmitter {
@@ -1228,7 +1241,8 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
                 .scheduler_timing();
         let margin = self.config.dtm_scheduler_margin();
         let current = dtm_scheduler_current(&now);
-        let window = timing.initial_event_window(self.config, current, rf_ready);
+        let window =
+            timing.initial_event_window(self.config, current, rf_ready.into_scheduler_instant());
         let event = match BluetoothDtmSchedulerItemEvent::new_transmitter(channel, phy, window) {
             Ok(event) => event,
             Err(error) => {
@@ -1283,10 +1297,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         staged: BluetoothDtmTransmitterFirstStaged,
         error: BluetoothDtmControllerTimeAcquisitionError,
     ) -> BluetoothDtmControllerTxPreparationFailure {
-        BluetoothDtmControllerTxPreparationFailure::from_prepared(
-            BluetoothDtmControllerEventPreparationError::ControllerTime(error),
-            staged.owner,
-        )
+        self.reject_dtm_transmitter_first_before_stage(staged.owner, error)
     }
 
     /// Release initial TX admission and return every retry resource.
@@ -1387,6 +1398,19 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         }
     }
 
+    /// Reject initial RX before RF readiness can form a scheduler candidate.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn reject_dtm_receiver_first_before_stage(
+        &mut self,
+        owner: BluetoothDtmReceiverCpuOwned,
+        error: BluetoothDtmControllerTimeAcquisitionError,
+    ) -> BluetoothDtmControllerRxPreparationFailure {
+        BluetoothDtmControllerRxPreparationFailure {
+            error: BluetoothDtmControllerEventPreparationError::ControllerTime(error),
+            owner,
+        }
+    }
+
     /// Form one initial receiver candidate from a private fresh current.
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn stage_dtm_receiver_first_item(
@@ -1396,7 +1420,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         channel: BluetoothDtmChannel,
         phy: BluetoothDtmPhy,
         now: BluetoothControllerSchedulerNow,
-        rf_ready: BluetoothDtmSchedulerInstant,
+        rf_ready: crate::BluetoothDtmRfReady,
     ) -> Result<BluetoothDtmReceiverFirstStaged, BluetoothDtmControllerRxPreparationFailure> {
         if link_state.role() != BluetoothDtmRole::Receiver {
             return Err(BluetoothDtmControllerRxPreparationFailure {
@@ -1409,7 +1433,11 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         }
         let margin = self.config.dtm_scheduler_margin();
         let current = dtm_scheduler_current(&now);
-        let window = crate::BluetoothDtmRxInitialEventWindow::new(self.config, current, rf_ready);
+        let window = crate::BluetoothDtmRxInitialEventWindow::new(
+            self.config,
+            current,
+            rf_ready.into_scheduler_instant(),
+        );
         let event = match BluetoothDtmSchedulerItemEvent::new_initial_receiver(channel, phy, window)
         {
             Ok(event) => event,
@@ -1464,10 +1492,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         staged: BluetoothDtmReceiverFirstStaged,
         error: BluetoothDtmControllerTimeAcquisitionError,
     ) -> BluetoothDtmControllerRxPreparationFailure {
-        BluetoothDtmControllerRxPreparationFailure {
-            error: BluetoothDtmControllerEventPreparationError::ControllerTime(error),
-            owner: staged.owner,
-        }
+        self.reject_dtm_receiver_first_before_stage(staged.owner, error)
     }
 
     /// Release initial RX admission and return every retry resource.
@@ -1721,19 +1746,36 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         }
     }
 
+    /// Reject recurring RX before ordered RF/current inputs can form a candidate.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn reject_dtm_receiver_recurring_before_stage(
+        &mut self,
+        owner: BluetoothDtmActiveReceiverCpuOwned,
+        error: BluetoothDtmControllerTimeAcquisitionError,
+    ) -> BluetoothDtmControllerRxRecurringPreparationFailure {
+        BluetoothDtmControllerRxRecurringPreparationFailure {
+            error: BluetoothDtmControllerEventPreparationError::ControllerTime(error),
+            owner,
+        }
+    }
+
     /// Form one recurring receiver candidate from private fresh timing inputs.
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn stage_dtm_receiver_recurring_item(
         &self,
         owner: BluetoothDtmActiveReceiverCpuOwned,
         now: BluetoothControllerSchedulerNow,
-        rf_ready: BluetoothDtmSchedulerInstant,
+        rf_ready: crate::BluetoothDtmRfReady,
     ) -> Result<
         BluetoothDtmReceiverRecurringStaged,
         BluetoothDtmControllerRxRecurringPreparationFailure,
     > {
         let current = dtm_scheduler_current(&now);
-        let next_window = BluetoothDtmRxRecurringEventWindow::new(self.config, current, rf_ready);
+        let next_window = BluetoothDtmRxRecurringEventWindow::new(
+            self.config,
+            current,
+            rf_ready.into_scheduler_instant(),
+        );
         let event = match BluetoothDtmSchedulerItemEvent::new_recurring_receiver(
             owner.channel(),
             owner.phy(),
@@ -1787,10 +1829,7 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         staged: BluetoothDtmReceiverRecurringStaged,
         error: BluetoothDtmControllerTimeAcquisitionError,
     ) -> BluetoothDtmControllerRxRecurringPreparationFailure {
-        BluetoothDtmControllerRxRecurringPreparationFailure {
-            error: BluetoothDtmControllerEventPreparationError::ControllerTime(error),
-            owner: staged.owner,
-        }
+        self.reject_dtm_receiver_recurring_before_stage(staged.owner, error)
     }
 
     /// Release recurring RX reservation and return the unchanged active owner.

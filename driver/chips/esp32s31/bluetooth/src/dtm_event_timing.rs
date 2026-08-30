@@ -34,7 +34,7 @@ impl BluetoothDtmSchedulerInstant {
     }
 
     /// Return the complete positional scheduler-time image.
-    pub const fn image(self) -> u32 {
+    pub(crate) const fn image(self) -> u32 {
         self.0
     }
 }
@@ -66,36 +66,40 @@ pub struct BluetoothDtmTxEventWindow {
 
 impl BluetoothDtmTxEventWindow {
     /// Return the phase anchor retained for the next transmitter event.
-    pub const fn anchor(self) -> BluetoothDtmSchedulerInstant {
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) const fn anchor(self) -> BluetoothDtmSchedulerInstant {
         self.anchor
     }
 
     /// Return the scheduler window start before raw-time projection.
-    pub const fn start(self) -> BluetoothDtmSchedulerInstant {
+    pub(crate) const fn start(self) -> BluetoothDtmSchedulerInstant {
         self.start
     }
 
     /// Return the scheduler window end before raw-time projection.
-    pub const fn end(self) -> BluetoothDtmSchedulerInstant {
+    pub(crate) const fn end(self) -> BluetoothDtmSchedulerInstant {
         self.end
     }
 }
 
 /// Constant-time result of advancing one recurring DTM transmitter event.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(any(target_arch = "riscv32", test))]
 pub struct BluetoothDtmTxEventAdvance {
     window: BluetoothDtmTxEventWindow,
     intervals_advanced: u32,
 }
 
+#[cfg(any(target_arch = "riscv32", test))]
 impl BluetoothDtmTxEventAdvance {
     /// Return the next phase-preserving scheduler window.
-    pub const fn window(self) -> BluetoothDtmTxEventWindow {
+    pub(crate) const fn window(self) -> BluetoothDtmTxEventWindow {
         self.window
     }
 
     /// Return one plus the number of intervals skipped to catch up.
-    pub const fn intervals_advanced(self) -> u32 {
+    #[cfg(test)]
+    pub(crate) const fn intervals_advanced(self) -> u32 {
         self.intervals_advanced
     }
 }
@@ -154,17 +158,18 @@ impl BluetoothDtmRxInitialEventWindow {
     }
 
     /// Return the first receiver phase anchor retained for publication.
-    pub const fn anchor(self) -> BluetoothDtmSchedulerInstant {
+    #[cfg(test)]
+    pub(crate) const fn anchor(self) -> BluetoothDtmSchedulerInstant {
         self.0.anchor
     }
 
     /// Return the scheduler window start before raw-time projection.
-    pub const fn start(self) -> BluetoothDtmSchedulerInstant {
+    pub(crate) const fn start(self) -> BluetoothDtmSchedulerInstant {
         self.0.start
     }
 
     /// Return the scheduler window end before raw-time projection.
-    pub const fn end(self) -> BluetoothDtmSchedulerInstant {
+    pub(crate) const fn end(self) -> BluetoothDtmSchedulerInstant {
         self.0.end
     }
 }
@@ -202,17 +207,18 @@ impl BluetoothDtmRxRecurringEventWindow {
     }
 
     /// Return the recurring receiver phase anchor retained for publication.
-    pub const fn anchor(self) -> BluetoothDtmSchedulerInstant {
+    #[cfg(test)]
+    pub(crate) const fn anchor(self) -> BluetoothDtmSchedulerInstant {
         self.0.anchor
     }
 
     /// Return the scheduler window start before raw-time projection.
-    pub const fn start(self) -> BluetoothDtmSchedulerInstant {
+    pub(crate) const fn start(self) -> BluetoothDtmSchedulerInstant {
         self.0.start
     }
 
     /// Return the scheduler window end before raw-time projection.
-    pub const fn end(self) -> BluetoothDtmSchedulerInstant {
+    pub(crate) const fn end(self) -> BluetoothDtmSchedulerInstant {
         self.0.end
     }
 }

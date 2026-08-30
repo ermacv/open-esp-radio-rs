@@ -51,8 +51,4 @@ where
     {
         self.protocol_rx.queued_frames()
     }
-
-    pub(super) fn rx_block_ack_maximum_window(&self) -> usize {
-        usize::from(self.rx_block_ack.maximum_window())
-    }
 }

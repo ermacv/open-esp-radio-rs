@@ -76,11 +76,13 @@ fn recycled_rx_probe_delay_for_diagnostics() -> Option<Duration> {
 
 /// Bound a masked post-append probe by the packet-rate implied by the last
 /// physical batch. Small-frame streams use 512 us against the 96-entry
-/// physical ring. Long-frame streams ramp through 128/256/512 us; their byte
-/// rate bounds packet pressure well below the same reserve and may extend a
-/// proven long-frame burst to 1024 us. A recycle-only confirmation retains the
-/// class established earlier in the same masked drain epoch instead of
-/// collapsing a sustained stream back to the 64-us bootstrap interval.
+/// physical ring. A completed long frame immediately proves that its byte
+/// rate bounds packet pressure well below the same reserve, so it uses 1024
+/// us without a 128/256/512-us training ramp. The ramp created a rate cliff:
+/// at 30 Mbit/s each short probe observed an empty frontier and unmasked RX
+/// before the next packet, while 40 Mbit/s happened to reach the 1024-us
+/// state. A recycle-only confirmation retains the class established earlier
+/// in the same masked drain epoch.
 fn adaptive_recycled_rx_probe_delay(
     work: DatapathRxWorkCounters,
     current_level: u8,
@@ -102,19 +104,7 @@ fn adaptive_recycled_rx_probe_delay(
     if average_bytes < 1_024 {
         return (Duration::from_micros(512), 3);
     }
-    let next_level = if work.completed_units >= 4 {
-        4
-    } else {
-        current_level.saturating_add(1).min(4)
-    };
-    let micros = match next_level {
-        0 => 64,
-        1 => 128,
-        2 => 256,
-        3 => 512,
-        _ => 1_024,
-    };
-    (Duration::from_micros(micros), next_level)
+    (Duration::from_micros(1_024), 4)
 }
 
 #[cfg(feature = "core0-rx-coarse-telemetry")]

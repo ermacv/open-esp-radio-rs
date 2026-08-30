@@ -886,7 +886,6 @@ impl<'peers> AccessPointService<'peers> {
         observation: ApPowerSaveObservation,
         now_micros: u64,
     ) -> Result<ApPowerSaveAction, ApServiceError> {
-        let inactive_timeout_micros = self.inactive_timeout.micros();
         match observation {
             ApPowerSaveObservation::Sleeping { peer } | ApPowerSaveObservation::Active { peer } => {
                 let requested = if matches!(observation, ApPowerSaveObservation::Sleeping { .. }) {
@@ -894,31 +893,14 @@ impl<'peers> AccessPointService<'peers> {
                 } else {
                     ApPeerPowerState::Active
                 };
-                let (changed, buffered_frames) = {
-                    let existing = self.checked_peer_mut(peer)?;
-                    if existing.phase != ApPeerPhase::Authorized {
-                        return Err(ApServiceError::WrongPeerPhase);
-                    }
-                    let changed = existing.power_state != requested;
-                    existing.power_state = requested;
-                    existing.last_activity_micros = now_micros;
-                    existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
-                    (changed, existing.buffered_unicast_frames)
-                };
-                if !changed {
-                    return Ok(ApPowerSaveAction::None);
-                }
-                self.status_revision = self.status_revision.wrapping_add(1);
-                Ok(ApPowerSaveAction::StateChanged {
-                    peer,
-                    state: requested,
-                    buffered_frames,
-                })
+                let binding = self.bind_peer(peer).ok_or(ApServiceError::UnknownPeer)?;
+                self.observe_bound_power_state(binding, requested, now_micros)
             }
             ApPowerSaveObservation::PsPoll {
                 peer,
                 association_id,
             } => {
+                let inactive_timeout_micros = self.inactive_timeout.micros();
                 let release_already_pending = {
                     let existing = self.checked_peer_mut(peer)?;
                     if existing.phase != ApPeerPhase::Authorized
@@ -946,6 +928,86 @@ impl<'peers> AccessPointService<'peers> {
                 })
             }
         }
+    }
+
+    /// Apply one admitted PM state through a generation-bound O(1) peer
+    /// identity.
+    ///
+    /// The data dispatcher has already resolved this binding for controlled
+    /// port and key admission. Reusing it avoids a second scan of the AP peer
+    /// table for every received data MPDU while preserving slot-reuse fencing.
+    pub fn observe_bound_power_state(
+        &mut self,
+        binding: ApPeerBinding,
+        requested: ApPeerPowerState,
+        now_micros: u64,
+    ) -> Result<ApPowerSaveAction, ApServiceError> {
+        let inactive_timeout_micros = self.inactive_timeout.micros();
+        let (peer, changed, buffered_frames) = {
+            let existing = self
+                .bound_peer_mut(binding)
+                .ok_or(ApServiceError::UnknownPeer)?;
+            if existing.phase != ApPeerPhase::Authorized {
+                return Err(ApServiceError::WrongPeerPhase);
+            }
+            let changed = existing.power_state != requested;
+            existing.power_state = requested;
+            existing.last_activity_micros = now_micros;
+            existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
+            (existing.address, changed, existing.buffered_unicast_frames)
+        };
+        if !changed {
+            return Ok(ApPowerSaveAction::None);
+        }
+        self.status_revision = self.status_revision.wrapping_add(1);
+        Ok(ApPowerSaveAction::StateChanged {
+            peer,
+            state: requested,
+            buffered_frames,
+        })
+    }
+
+    /// Apply activity from the saturated admitted-data path without rewriting
+    /// the peer deadline for every MPDU.
+    ///
+    /// A PM transition remains an immediate control-plane edge. When the PM
+    /// state is unchanged, refreshing at half of the inactivity interval keeps
+    /// the deadline at least half an interval in the future while avoiding
+    /// shared peer-state writes on every received packet.
+    pub fn observe_bound_data_power_state(
+        &mut self,
+        binding: ApPeerBinding,
+        requested: ApPeerPowerState,
+        now_micros: u64,
+    ) -> Result<ApPowerSaveAction, ApServiceError> {
+        let inactive_timeout_micros = self.inactive_timeout.micros();
+        let refresh_margin_micros = inactive_timeout_micros / 2;
+        let (peer, changed, buffered_frames) = {
+            let existing = self
+                .bound_peer_mut(binding)
+                .ok_or(ApServiceError::UnknownPeer)?;
+            if existing.phase != ApPeerPhase::Authorized {
+                return Err(ApServiceError::WrongPeerPhase);
+            }
+            let changed = existing.power_state != requested;
+            let refresh_due =
+                existing.deadline_micros <= now_micros.saturating_add(refresh_margin_micros);
+            if changed || refresh_due {
+                existing.power_state = requested;
+                existing.last_activity_micros = now_micros;
+                existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
+            }
+            (existing.address, changed, existing.buffered_unicast_frames)
+        };
+        if !changed {
+            return Ok(ApPowerSaveAction::None);
+        }
+        self.status_revision = self.status_revision.wrapping_add(1);
+        Ok(ApPowerSaveAction::StateChanged {
+            peer,
+            state: requested,
+            buffered_frames,
+        })
     }
 
     /// Complete typed TIM bitmap for the public AP AID range 1..=15.
@@ -1810,8 +1872,24 @@ impl<'peers> AccessPointService<'peers> {
         peer: [u8; 6],
         now_micros: u64,
     ) -> Result<(), ApServiceError> {
+        let binding = self.bind_peer(peer).ok_or(ApServiceError::UnknownPeer)?;
+        self.observe_bound_activity(binding, now_micros)
+    }
+
+    /// Refresh activity through a generation-bound O(1) peer identity.
+    ///
+    /// The RX data path resolves a transmitter once and reuses this capability
+    /// across an in-order burst. Slot reuse invalidates the binding before any
+    /// replacement peer can inherit the previous activity deadline.
+    pub fn observe_bound_activity(
+        &mut self,
+        binding: ApPeerBinding,
+        now_micros: u64,
+    ) -> Result<(), ApServiceError> {
         let inactive_timeout_micros = self.inactive_timeout.micros();
-        let existing = self.checked_peer_mut(peer)?;
+        let existing = self
+            .bound_peer_mut(binding)
+            .ok_or(ApServiceError::UnknownPeer)?;
         if !matches!(
             existing.phase,
             ApPeerPhase::Securing | ApPeerPhase::Authorized
@@ -1820,6 +1898,31 @@ impl<'peers> AccessPointService<'peers> {
         }
         existing.last_activity_micros = now_micros;
         existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
+        Ok(())
+    }
+
+    /// Coalesced equivalent of [`Self::observe_bound_activity`] for admitted
+    /// data frames whose only role is keeping an already-associated peer live.
+    pub fn observe_bound_data_activity(
+        &mut self,
+        binding: ApPeerBinding,
+        now_micros: u64,
+    ) -> Result<(), ApServiceError> {
+        let inactive_timeout_micros = self.inactive_timeout.micros();
+        let refresh_margin_micros = inactive_timeout_micros / 2;
+        let existing = self
+            .bound_peer_mut(binding)
+            .ok_or(ApServiceError::UnknownPeer)?;
+        if !matches!(
+            existing.phase,
+            ApPeerPhase::Securing | ApPeerPhase::Authorized
+        ) {
+            return Err(ApServiceError::WrongPeerPhase);
+        }
+        if existing.deadline_micros <= now_micros.saturating_add(refresh_margin_micros) {
+            existing.last_activity_micros = now_micros;
+            existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
+        }
         Ok(())
     }
 
@@ -1932,6 +2035,17 @@ impl<'peers> AccessPointService<'peers> {
             .peers
             .get(usize::from(binding.index))?
             .as_ref()
+            .filter(|peer| peer.address == binding.address)
+    }
+
+    fn bound_peer_mut(&mut self, binding: ApPeerBinding) -> Option<&mut ApPeer> {
+        if self.storage().generation != binding.generation {
+            return None;
+        }
+        self.storage_mut()
+            .peers
+            .get_mut(usize::from(binding.index))?
+            .as_mut()
             .filter(|peer| peer.address == binding.address)
     }
 
@@ -2133,6 +2247,149 @@ mod tests {
     }
 
     #[test]
+    fn bound_power_state_matches_general_semantics_and_rejects_slot_reuse() {
+        let mut storage = AccessPointPeerStorage::new();
+        let mut service = AccessPointService::new_open(
+            AP,
+            AccessPointClientLimit::new(2).unwrap(),
+            AccessPointInactiveTimeout::new(10).unwrap(),
+            &mut storage,
+        );
+        service.authenticate_open(PEER, 0);
+        service
+            .associate_open(
+                PEER,
+                ApAssociationSecurityObservation {
+                    privacy: false,
+                    rsn_ie: None,
+                    rsn_ie_count: 0,
+                    rsnxe: None,
+                    rsnxe_count: 0,
+                    legacy_wpa_present: false,
+                    malformed_elements: false,
+                },
+                LEGACY_CAPABILITIES,
+                1_000,
+            )
+            .unwrap();
+        let binding = service.bind_peer(PEER).unwrap();
+        let initial_revision = service.status_revision();
+
+        assert_eq!(
+            service
+                .observe_bound_power_state(binding, ApPeerPowerState::Active, 2_000)
+                .unwrap(),
+            ApPowerSaveAction::None,
+        );
+        assert_eq!(service.status_revision(), initial_revision);
+        assert_eq!(
+            service.peer_status(PEER).unwrap().deadline_micros,
+            10_002_000
+        );
+
+        assert_eq!(
+            service
+                .observe_bound_power_state(binding, ApPeerPowerState::Sleeping, 3_000)
+                .unwrap(),
+            ApPowerSaveAction::StateChanged {
+                peer: PEER,
+                state: ApPeerPowerState::Sleeping,
+                buffered_frames: 0,
+            },
+        );
+        assert_eq!(service.status_revision(), initial_revision.wrapping_add(1));
+        assert_eq!(
+            service.peer_status(PEER).unwrap().deadline_micros,
+            10_003_000
+        );
+
+        service.remove_peer(PEER).unwrap();
+        service.authenticate_open(OTHER, 4_000);
+        assert_eq!(
+            service.observe_bound_power_state(binding, ApPeerPowerState::Active, 5_000),
+            Err(ApServiceError::UnknownPeer),
+            "a recycled table slot cannot inherit the old peer's PM update"
+        );
+    }
+
+    #[test]
+    fn admitted_data_activity_is_coalesced_but_pm_edges_are_immediate() {
+        let mut storage = AccessPointPeerStorage::new();
+        let mut service = AccessPointService::new_open(
+            AP,
+            AccessPointClientLimit::new(2).unwrap(),
+            AccessPointInactiveTimeout::new(10).unwrap(),
+            &mut storage,
+        );
+        service.authenticate_open(PEER, 0);
+        service
+            .associate_open(
+                PEER,
+                ApAssociationSecurityObservation {
+                    privacy: false,
+                    rsn_ie: None,
+                    rsn_ie_count: 0,
+                    rsnxe: None,
+                    rsnxe_count: 0,
+                    legacy_wpa_present: false,
+                    malformed_elements: false,
+                },
+                LEGACY_CAPABILITIES,
+                1_000,
+            )
+            .unwrap();
+        let binding = service.bind_peer(PEER).unwrap();
+        let associated = service.peer_status(PEER).unwrap();
+
+        assert_eq!(
+            service
+                .observe_bound_data_power_state(binding, ApPeerPowerState::Active, 2_000)
+                .unwrap(),
+            ApPowerSaveAction::None,
+        );
+        assert_eq!(
+            service.peer_status(PEER).unwrap().deadline_micros,
+            associated.deadline_micros,
+            "an unchanged data PM state must not rewrite the peer on every MPDU"
+        );
+
+        service
+            .observe_bound_data_activity(binding, 5_001_000)
+            .unwrap();
+        assert_eq!(
+            service.peer_status(PEER).unwrap().deadline_micros,
+            15_001_000,
+            "the half-timeout guard refreshes before expiry"
+        );
+
+        let revision = service.status_revision();
+        assert_eq!(
+            service
+                .observe_bound_data_power_state(binding, ApPeerPowerState::Sleeping, 5_002_000)
+                .unwrap(),
+            ApPowerSaveAction::StateChanged {
+                peer: PEER,
+                state: ApPeerPowerState::Sleeping,
+                buffered_frames: 0,
+            },
+        );
+        assert_eq!(service.status_revision(), revision.wrapping_add(1));
+        assert_eq!(
+            service.peer_status(PEER).unwrap().deadline_micros,
+            15_002_000,
+            "a PM transition is never delayed by activity coalescing"
+        );
+
+        service.remove_peer(PEER).unwrap();
+        service.authenticate_open(OTHER, 6_000_000);
+        assert_eq!(
+            service.observe_bound_data_activity(binding, 6_001_000),
+            Err(ApServiceError::UnknownPeer),
+            "coalescing must not weaken the slot-generation fence"
+        );
+    }
+
+    #[test]
     fn client_limit_rejects_zero_and_values_above_the_owned_tables() {
         assert_eq!(AccessPointClientLimit::new(0).unwrap_err().value(), 0,);
         assert_eq!(AccessPointClientLimit::new(16).unwrap_err().value(), 16,);
@@ -2202,7 +2459,8 @@ mod tests {
             )
             .unwrap();
         assert_eq!(service.next_peer_deadline(), Some(10_002_000));
-        service.observe_activity(PEER, 5_000_000).unwrap();
+        let binding = service.bind_peer(PEER).expect("associated peer binding");
+        service.observe_bound_activity(binding, 5_000_000).unwrap();
         assert_eq!(service.next_peer_deadline(), Some(15_000_000));
         assert_eq!(service.begin_due_peer_close(14_999_999), None);
         assert_eq!(

@@ -144,21 +144,6 @@ const fn ap_rx_progress_while_protocol_tx_blocked(dma: DatapathRxProgress) -> Da
     }
 }
 
-/// Preserve software-runnable staged work after the active-TX quantum's
-/// mandatory DMA refill. In particular, a capacity-blocked DMA observation
-/// cannot make the scheduler wait for a future credit when protocol work
-/// already retained by this same owner can advance the frontier.
-const fn ap_active_rx_turn_completion(
-    dma: DatapathRxProgress,
-    queued_frames: usize,
-) -> DatapathRxProgress {
-    if queued_frames != 0 {
-        DatapathRxProgress::BudgetExhausted
-    } else {
-        dma
-    }
-}
-
 /// An active TX keeps hardware out of the protocol consumer. The enclosing
 /// radio owner remains responsible for executing the consumer's typed mailbox
 /// actions after the protocol borrow ends.
@@ -168,24 +153,12 @@ const fn rx_protocol_consumer_has_hardware(tx_pending: bool) -> bool {
 
 /// Keep one reorder release on a single ordered publication path after an
 /// older cold frame has entered the deferred batch.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum AccessPointRxPublication {
-    /// Lend the SRAM staging owner directly to the sole standalone endpoint.
-    SharedStaging,
-    /// Copy into the paired endpoint's PSRAM pool and release SRAM immediately.
-    OwnedNetworkPool,
-}
-
 const fn can_publish_ap_rx_in_place(
-    publication: AccessPointRxPublication,
     current_staging_owner: bool,
     current_is_amsdu: bool,
     deferred_bytes: usize,
 ) -> bool {
-    matches!(publication, AccessPointRxPublication::SharedStaging)
-        && current_staging_owner
-        && !current_is_amsdu
-        && deferred_bytes == 0
+    current_staging_owner && !current_is_amsdu && deferred_bytes == 0
 }
 
 mod ampdu;

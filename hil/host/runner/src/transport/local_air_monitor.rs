@@ -59,7 +59,34 @@ impl LocalAirMonitorCapture {
             );
         }
         let target_mac = resolve_station_mac(config, target)?;
-        helper_action(resolve_observer_action(config)?)?;
+        Self::start_for_target(
+            target_mac,
+            duration,
+            output,
+            resolve_observer_action(config)?,
+            true,
+        )
+    }
+
+    /// Observe an AP while the laptop's managed interface remains its traffic
+    /// client. The compatibility monitor joins the existing channel instead
+    /// of replacing `wlan0` with a standalone monitor wdev.
+    pub(crate) fn start_associated(
+        target_mac: String,
+        duration: Duration,
+        output: &Path,
+    ) -> Result<Self> {
+        Self::start_for_target(target_mac, duration, output, "monitor", false)
+    }
+
+    fn start_for_target(
+        target_mac: String,
+        duration: Duration,
+        output: &Path,
+        observer_action: &str,
+        restore_managed: bool,
+    ) -> Result<Self> {
+        helper_action(observer_action)?;
         let capture_path = output.join("independent-air.pcapng");
         let timeout = duration.saturating_add(Duration::from_secs(3));
         let child = Command::new("dumpcap")
@@ -78,13 +105,17 @@ impl LocalAirMonitorCapture {
         let mut child = match child {
             Ok(child) => child,
             Err(error) => {
-                let _ = helper_action("managed");
+                if restore_managed {
+                    let _ = helper_action("managed");
+                }
                 return Err(format!("cannot start independent laptop capture: {error}").into());
             }
         };
         thread::sleep(Duration::from_millis(500));
         if let Some(status) = child.try_wait()? {
-            let _ = helper_action("managed");
+            if restore_managed {
+                let _ = helper_action("managed");
+            }
             return Err(format!(
                 "independent laptop capture exited before the session started: {status}"
             )
@@ -94,7 +125,7 @@ impl LocalAirMonitorCapture {
             output: capture_path,
             target_mac,
             child: Some(child),
-            owns_monitor: true,
+            owns_monitor: restore_managed,
         })
     }
 

@@ -15,7 +15,6 @@ use open_esp_radio_ieee80211::security::WifiSecurityMode;
 #[cfg(any(feature = "diagnostics", test))]
 use crate::diagnostics::rx_pipeline::RxPipelineObserver;
 use crate::{
-    datapath::DatapathRxProgress,
     datapath::rx::dma::{Esp32s31RxDmaStorage, Esp32s31StagedRxEpoch},
     datapath::rx::frontier::Esp32s31RxFrontierSchedulerSnapshot,
     datapath::rx::hardware::RxDmaObservationDelay,
@@ -23,6 +22,7 @@ use crate::{
         Esp32s31StagedRxFrame, Esp32s31StagedRxQueue, Esp32s31StagedRxReceiver,
         StagedEthernetPublication,
     },
+    datapath::{DatapathRxProgress, DatapathRxWorkCounters},
 };
 
 #[doc(hidden)]
@@ -57,6 +57,10 @@ impl<const CAPACITY: usize, const SLOTS: usize> AccessPointStagedRxFrame
 
 #[doc(hidden)]
 pub trait AccessPointRxProtocolConsumer {
+    /// Maximum number of descriptor-backed frame owners this consumer can
+    /// retain independently of the physical DMA ring.
+    const MAXIMUM_RETAINED_FRAMES: usize;
+
     fn try_receive(&mut self) -> Option<Self::Frame>;
     /// Consume frames which cannot require the ordinary-TX capability while
     /// the radio owner has an active transaction. Management and WPA2
@@ -71,6 +75,13 @@ pub trait AccessPointRxProtocolConsumer {
 #[doc(hidden)]
 pub trait AccessPointRxProducerObservation<const COUNT: usize> {
     fn serviced_descriptors(&self) -> u64;
+    /// Monotonic physical work completed by the AP DMA producer.
+    ///
+    /// The common DATAPATH continuation policy computes a before/after delta
+    /// from these counters. Returning the role-trait default here would make
+    /// every AP recycled-append continuation look empty and permanently pin
+    /// adaptive coalescing to its 64-us bootstrap delay.
+    fn work_counters(&self) -> DatapathRxWorkCounters;
     fn descriptor_snapshot(&self, index: usize) -> Option<RxDescriptorSnapshot>;
     fn scheduler_snapshot(&self) -> Option<Esp32s31RxFrontierSchedulerSnapshot>;
 }
@@ -436,6 +447,10 @@ where
         self.inner.serviced_descriptors()
     }
 
+    fn work_counters(&self) -> DatapathRxWorkCounters {
+        self.inner.work_counters()
+    }
+
     fn descriptor_snapshot(&self, index: usize) -> Option<RxDescriptorSnapshot> {
         self.inner.descriptor_snapshot(index)
     }
@@ -501,6 +516,8 @@ impl<
 > AccessPointRxProtocolConsumer
     for Esp32s31AccessPointRxConsumer<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>
 {
+    const MAXIMUM_RETAINED_FRAMES: usize = STAGE_SLOTS;
+
     type Frame = Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>;
 
     #[inline(always)]
@@ -541,6 +558,17 @@ impl<
 #[cfg(test)]
 mod classification_tests {
     use super::*;
+    use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+
+    #[test]
+    fn protocol_consumer_reports_its_retained_owner_capacity() {
+        type Consumer = Esp32s31AccessPointRxConsumer<'static, 'static, NoopRawMutex, 32, 1700, 32>;
+
+        assert_eq!(
+            <Consumer as AccessPointRxProtocolConsumer>::MAXIMUM_RETAINED_FRAMES,
+            32
+        );
+    }
 
     #[test]
     fn active_tx_admits_data_and_observation_only_control_frames() {

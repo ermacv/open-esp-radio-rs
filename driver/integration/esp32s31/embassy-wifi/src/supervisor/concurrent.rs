@@ -73,6 +73,7 @@ use open_esp_radio_wifi_embassy::station_network::RunningStationNetwork;
 use crate::supervisor::station::{
     ConnectedStationReplaySetupFailure, IRQ_RUNTIME, RX_REORDER_COMMANDS, RX_REORDER_STORAGE,
     RX_STAGE_POOL, STA_AP_STAGED_RX_QUEUE, STA_CCMP_RX_REPLAY, STAGED_RX_QUEUE,
+    publish_station_shared_network_rx,
 };
 
 /// Result of advancing the finite station lifecycle to its paired cutover
@@ -635,7 +636,11 @@ impl ProductionWifiEpochRunner {
             diagnostics,
         } = board;
         let (control_publisher, control_receiver) = control_resources.split();
-        let station_sink = Esp32s31StaApStationRxSink::new(sta_ap_rx_batch, control_publisher);
+        let station_sink = Esp32s31StaApStationRxSink::new(
+            sta_ap_rx_batch,
+            control_publisher,
+            publish_station_shared_network_rx as fn(u8),
+        );
         let (reorder_sender, reorder_receiver) = RX_REORDER_COMMANDS.split();
         let station_rx = Esp32s31ConnectedStaPort::build_rx_processor(
             &mut plan,
@@ -1043,7 +1048,8 @@ impl ProductionWifiEpochRunner {
             }
         };
         let (stopped_protocol, station_sink) = station_protocol.into_stopped_with_sink();
-        let (sta_ap_rx_batch, _control_publisher) = station_sink.into_parts();
+        let (sta_ap_rx_batch, _control_publisher, _publish_station_shared_rx) =
+            station_sink.into_parts();
         let (frame, ethernet, rx_protocol_runtime) = stopped_protocol.into_parts();
         let teardown = Esp32s31ConnectedStaTeardownPort::try_teardown(
             SingleRoleServices::with_control(

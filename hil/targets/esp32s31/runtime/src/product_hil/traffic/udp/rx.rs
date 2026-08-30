@@ -8,15 +8,17 @@ use embassy_futures::{
 };
 use embassy_net::{Stack, udp::UdpSocket};
 use embassy_time::{Duration, Instant, with_timeout};
-#[cfg(feature = "core0-rx-cycle-telemetry")]
-use open_esp_radio_esp32s31_embassy_wifi::{
-    CORE0_AP_RX_CYCLES, CORE0_REORDER_CYCLES, CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM,
-};
 #[cfg(any(
     feature = "core0-rx-cycle-telemetry",
     feature = "core0-rx-coarse-telemetry"
 ))]
 use open_esp_radio_esp32s31_embassy_wifi::CORE0_PERFORMANCE;
+#[cfg(feature = "core0-rx-cycle-telemetry")]
+use open_esp_radio_esp32s31_embassy_wifi::{
+    CORE0_AP_RX_CYCLES, CORE0_REORDER_CYCLES, CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM,
+};
+#[cfg(feature = "core0-rx-cycle-telemetry")]
+use open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters;
 use open_esp_radio_hil_esp32s31_telemetry::{
     rx_evidence::{RX_HE_MCS_BUCKETS, RX_HT_MCS_BUCKETS},
     rx_pipeline::RxPipelineCounters,
@@ -28,10 +30,14 @@ use open_esp_radio_hil_protocol::{
     Direction as HilDirection, Event as HilEvent, RadioEvidence, RxRadioEvidence, ServiceInfo,
     SessionReady, Transport as HilTransport, TransportEvidence,
 };
-#[cfg(feature = "core0-rx-cycle-telemetry")]
-use open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters;
 
 use super::UdpSocketBuffers;
+#[cfg(feature = "core0-rx-coarse-telemetry")]
+use crate::product_hil::traffic::log_open_radio_core0_rx_coarse;
+#[cfg(feature = "core0-rx-cycle-telemetry")]
+use crate::product_hil::traffic::{
+    log_open_radio_core0_rx_cycles, log_open_radio_core0_rx_service_histogram,
+};
 use crate::{
     console::{publish_event_reliably, runtime_log},
     product_hil::{
@@ -44,12 +50,6 @@ use crate::{
         },
     },
 };
-#[cfg(feature = "core0-rx-cycle-telemetry")]
-use crate::product_hil::traffic::{
-    log_open_radio_core0_rx_cycles, log_open_radio_core0_rx_service_histogram,
-};
-#[cfg(feature = "core0-rx-coarse-telemetry")]
-use crate::product_hil::traffic::log_open_radio_core0_rx_coarse;
 
 #[derive(Clone, Copy)]
 pub(in crate::product_hil) struct UdpRxSessionSource {
@@ -479,12 +479,10 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         ));
         yield_now().await;
         let ht40_long_gi_mcs = core::array::from_fn::<_, RX_HT_MCS_BUCKETS, _>(|index| {
-            phy_end.ht40_long_gi_mcs[index]
-                .wrapping_sub(phy_start.ht40_long_gi_mcs[index])
+            phy_end.ht40_long_gi_mcs[index].wrapping_sub(phy_start.ht40_long_gi_mcs[index])
         });
         let ht40_short_gi_mcs = core::array::from_fn::<_, RX_HT_MCS_BUCKETS, _>(|index| {
-            phy_end.ht40_short_gi_mcs[index]
-                .wrapping_sub(phy_start.ht40_short_gi_mcs[index])
+            phy_end.ht40_short_gi_mcs[index].wrapping_sub(phy_start.ht40_short_gi_mcs[index])
         });
         let ht20_mcs = core::array::from_fn::<_, RX_HT_MCS_BUCKETS, _>(|index| {
             phy_end.ht20_mcs[index].wrapping_sub(phy_start.ht20_mcs[index])

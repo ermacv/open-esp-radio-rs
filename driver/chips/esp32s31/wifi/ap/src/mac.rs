@@ -259,7 +259,19 @@ pub struct Esp32s31ApMacParts<'beacon, 'slot, P, E, T, const BUFFER_SIZE: usize>
     pub transmit: WifiTxResources<'slot, P, E, T, BUFFER_SIZE>,
 }
 
-impl Esp32s31ApMacParked<'_> {
+impl<'beacon> Esp32s31ApMacParked<'beacon> {
+    /// Borrow role-local protocol state without recovering the shared
+    /// ordinary-TX capability.
+    pub const fn engine(&self) -> &Esp32s31ApEngine<'beacon> {
+        &self.engine
+    }
+
+    /// Mutate role-local peer/RX state without granting descriptor or MMIO
+    /// publication authority.
+    pub fn engine_mut(&mut self) -> &mut Esp32s31ApEngine<'beacon> {
+        &mut self.engine
+    }
+
     /// Observe the role-local beacon schedule without recovering the shared
     /// ordinary-TX capability.
     pub const fn beacon_publication_due(&self, now_micros: u32) -> bool {

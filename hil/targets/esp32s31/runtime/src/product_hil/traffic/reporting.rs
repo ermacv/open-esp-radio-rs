@@ -6,18 +6,18 @@ use embassy_futures::yield_now;
 use embassy_time::Instant;
 #[cfg(feature = "core0-rx-coarse-telemetry")]
 use open_esp_radio_embassy_net::{TX_PERFORMANCE, TxPerformanceSnapshot};
+#[cfg(feature = "core0-rx-cycle-telemetry")]
+use open_esp_radio_esp32s31_embassy_wifi::{
+    CORE0_AP_RX_CYCLES, CORE0_REORDER_CYCLES, CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM,
+    Core0ApRxCycleSnapshot, Core0ReorderSnapshot, Core0RxCycleSnapshot,
+    Core0RxServiceHistogramSnapshot,
+};
 #[cfg(any(
     feature = "core0-rx-cycle-telemetry",
     feature = "core0-rx-coarse-telemetry"
 ))]
 use open_esp_radio_esp32s31_embassy_wifi::{
     CORE0_PERFORMANCE, Core0PerformanceSample, Core0PerformanceSnapshot,
-};
-#[cfg(feature = "core0-rx-cycle-telemetry")]
-use open_esp_radio_esp32s31_embassy_wifi::{
-    CORE0_AP_RX_CYCLES, CORE0_REORDER_CYCLES, CORE0_RX_CYCLES, CORE0_RX_SERVICE_HISTOGRAM,
-    Core0ApRxCycleSnapshot, Core0ReorderSnapshot, Core0RxCycleSnapshot,
-    Core0RxServiceHistogramSnapshot,
 };
 use open_esp_radio_hil_esp32s31_telemetry::{
     aggregate_tx::{AggregateTxCounterSnapshot, AggregateTxCounters},
@@ -225,9 +225,7 @@ pub(in crate::product_hil) async fn log_open_radio_ampdu_interval(
         scheduler
             .completion_to_active_service_return
             .lifetime_max_micros,
-        scheduler
-            .active_service_return_to_scheduler_loop
-            .micros,
+        scheduler.active_service_return_to_scheduler_loop.micros,
         scheduler
             .active_service_return_to_scheduler_loop
             .lifetime_max_micros,
@@ -547,6 +545,25 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_cycles(
     .await;
     yield_now().await;
     runtime_log_reliably(format_args!(
+        "ORC0AP in_place_eligible={} in_place_published={} deferred_published={} reorder_buffered={} turn_calls={} turn_frames={} initial_batch={} initial_reorder={} mailbox_blocked={} tx_blocked={} batch_pending={} reorder_pending={} drained={} budget={}",
+        ap.in_place_eligible,
+        ap.in_place_published,
+        ap.deferred_published,
+        ap.reorder_buffered,
+        ap.turn_calls,
+        ap.turn_frames,
+        ap.turn_initial_batch,
+        ap.turn_initial_reorder,
+        ap.turn_mailbox_blocked,
+        ap.turn_tx_blocked,
+        ap.turn_batch_pending,
+        ap.turn_reorder_pending,
+        ap.turn_drained,
+        ap.turn_budget_exhausted,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
         "ORC0 services={} units={} total={} setup={} frontier={} admission={} \
          stage_total={} stage_take={} stage_pool={} recycle={} reload={} publish={} tail={}",
         cycles.services,
@@ -838,9 +855,7 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_cycles(
 pub(in crate::product_hil) async fn log_open_radio_core0_rx_coarse(
     earlier: Core0PerformanceSnapshot,
 ) {
-    let performance = CORE0_PERFORMANCE
-        .snapshot()
-        .wrapping_delta_since(earlier);
+    let performance = CORE0_PERFORMANCE.snapshot().wrapping_delta_since(earlier);
     runtime_log_reliably(format_args!(
         "ORC0C rx_irq_posts={} radio_polls={} radio_cycles={} radio_instret={} poll_to_runner_cycles={} poll_to_runner_instret={} runner_to_exit_cycles={} runner_to_exit_instret={} runner_calls={} runner_cycles={} runner_instret={}",
         performance.rx_interrupt_posts,
@@ -944,9 +959,7 @@ pub(in crate::product_hil) async fn log_open_radio_core0_rx_coarse(
 
 /// Emit Core1 packet-emission and driver-publication phase costs for TX.
 #[cfg(feature = "core0-rx-coarse-telemetry")]
-pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(
-    earlier: TxPerformanceSnapshot,
-) {
+pub(in crate::product_hil) async fn log_open_radio_core1_tx_phases(earlier: TxPerformanceSnapshot) {
     let performance = TX_PERFORMANCE.snapshot().wrapping_delta_since(earlier);
     runtime_log_reliably(format_args!(
         "ONTX admission_attempts={} admission_successes={} admission_cycles={} admission_instret={} consume_calls={} consume_bytes={} consume_cycles={} consume_instret={} emit_cycles={} emit_instret={} publication_cycles={} publication_instret={}",

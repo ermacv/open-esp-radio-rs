@@ -10,8 +10,9 @@ use std::{
 };
 
 use open_esp_radio_hil_protocol::{
-    Completion, Direction, FlowConfig, Ipv4Endpoint, SessionConfig, SessionLinkRequirements,
-    Transport, WifiNetworkInterface, WifiRole, WifiStationAccessPointRequest,
+    Completion, Direction as HilDirection, FlowConfig, Ipv4Endpoint, SessionConfig,
+    SessionLinkRequirements, Transport, WifiNetworkInterface, WifiRole,
+    WifiStationAccessPointRequest,
 };
 use serde::Serialize;
 
@@ -22,6 +23,7 @@ use crate::{
     traffic::tx_traffic::{Burst, receive_bursts},
     transport::controlled_client::ControlledClient,
     transport::lab_config::LabConfig,
+    transport::local_air_monitor::{LocalAirMonitorCapture, LocalAirMonitorEvidence},
     transport::udp_socket::{configure_qualification_receive_buffer, open_reverse_flow},
     transport::wifi_control::{report_stack, require_transition, stop_station},
 };
@@ -35,35 +37,45 @@ const ACCESS_POINT_HOST_PORT: u16 = 9_102;
 pub(crate) struct Config {
     pub(crate) timeout: Duration,
     pub(crate) duration: Duration,
+    pub(crate) direction: crate::qualification::scenario::Direction,
     pub(crate) rate_bps_per_flow: u64,
     pub(crate) minimum_bps_per_flow: u64,
     pub(crate) maximum_fairness_skew_percent: u8,
     pub(crate) payload_bytes: usize,
+    pub(crate) require_driver_observation: bool,
+    pub(crate) capture_independent_laptop_monitor_rx: bool,
 }
 
 #[derive(Serialize)]
 struct Report {
     schema: u8,
+    direction: crate::qualification::scenario::Direction,
     offered_bps_per_flow: u64,
     minimum_bps_per_flow: u64,
     maximum_fairness_skew_percent: u8,
     station: InterfaceReport,
     access_point: InterfaceReport,
-    access_point_epoch: open_esp_radio_hil_protocol::WifiAccessPointEvidence,
+    access_point_epoch: Option<open_esp_radio_hil_protocol::WifiAccessPointEvidence>,
+    access_point_air: Option<LocalAirMonitorEvidence>,
+}
+
+struct QualificationOutcome {
+    report: Report,
+    verdict: Result<()>,
 }
 
 #[derive(Serialize)]
 struct InterfaceReport {
-    target_rx_bps: u64,
-    host_rx_bps: u64,
-    host_tx_datagrams: u64,
-    host_rx_datagrams: u64,
-    host_rx_missing: u64,
-    host_rx_reordered: u64,
-    host_rx_duplicates: u64,
+    target_rx_bps: Option<u64>,
+    host_rx_bps: Option<u64>,
+    host_tx_datagrams: Option<u64>,
+    host_rx_datagrams: Option<u64>,
+    host_rx_missing: Option<u64>,
+    host_rx_reordered: Option<u64>,
+    host_rx_duplicates: Option<u64>,
     host_rx_first_reordered_after: Option<u32>,
     host_rx_first_reordered_sequence: Option<u32>,
-    host_rx_maximum_reorder_distance: u32,
+    host_rx_maximum_reorder_distance: Option<u32>,
 }
 
 struct HostFlow {
@@ -73,22 +85,43 @@ struct HostFlow {
     socket: UdpSocket,
 }
 
+const fn target_receives(direction: crate::qualification::scenario::Direction) -> bool {
+    matches!(
+        direction,
+        crate::qualification::scenario::Direction::Rx
+            | crate::qualification::scenario::Direction::Bidirectional
+    )
+}
+
+const fn target_transmits(direction: crate::qualification::scenario::Direction) -> bool {
+    matches!(
+        direction,
+        crate::qualification::scenario::Direction::Tx
+            | crate::qualification::scenario::Direction::Bidirectional
+    )
+}
+
 pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> {
     fs::create_dir_all(output)?;
     let capture = SerialCapture::start_with_reset(&lab.device.serial);
-    let result = qualify(&capture, config, lab).and_then(|report| {
+    let result = qualify(&capture, config, lab, output).and_then(|outcome| {
         fs::write(
             output.join("station-access-point-report.json"),
-            serde_json::to_vec_pretty(&report)?,
+            serde_json::to_vec_pretty(&outcome.report)?,
         )?;
-        Ok(())
+        outcome.verdict
     });
     let capture_result = capture.finish_to(output);
     result?;
     capture_result.map(|_| ())
 }
 
-fn qualify(capture: &SerialCapture, config: Config, lab: &LabConfig) -> Result<Report> {
+fn qualify(
+    capture: &SerialCapture,
+    config: Config,
+    lab: &LabConfig,
+    output: &Path,
+) -> Result<QualificationOutcome> {
     let capabilities = capture.prepare_station(lab, config.timeout)?;
     if !capabilities.features.simultaneous_station_access_point {
         return Err("firmware does not advertise simultaneous STA+AP".into());
@@ -154,8 +187,12 @@ fn qualify(capture: &SerialCapture, config: Config, lab: &LabConfig) -> Result<R
         access_point_target,
     )?;
     let receiver_duration = config.duration.saturating_add(Duration::from_secs(5));
-    let station_receiver = spawn_receiver(&station_flow, receiver_duration)?;
-    let access_point_receiver = spawn_receiver(&access_point_flow, receiver_duration)?;
+    let station_receiver = target_transmits(config.direction)
+        .then(|| spawn_receiver(&station_flow, receiver_duration))
+        .transpose()?;
+    let access_point_receiver = target_transmits(config.direction)
+        .then(|| spawn_receiver(&access_point_flow, receiver_duration))
+        .transpose()?;
 
     // Give both target sessions two seconds beyond the simultaneous host
     // offer. This absorbs sequential command/readiness setup without making
@@ -163,21 +200,41 @@ fn qualify(capture: &SerialCapture, config: Config, lab: &LabConfig) -> Result<R
     let target_duration = config.duration.saturating_add(Duration::from_secs(2));
     let station_session = start_session(capture, &station_flow, config, target_duration)?;
     let access_point_session = start_session(capture, &access_point_flow, config, target_duration)?;
+    let access_point_air_capture = config
+        .capture_independent_laptop_monitor_rx
+        .then(|| LocalAirMonitorCapture::start_associated(client.bssid()?, config.duration, output))
+        .transpose()?;
 
-    let barrier = Arc::new(Barrier::new(3));
-    let station_sender = spawn_sender(&station_flow, config, Arc::clone(&barrier));
-    let access_point_sender = spawn_sender(&access_point_flow, config, Arc::clone(&barrier));
-    barrier.wait();
-    let station_host_tx = join_sender(station_sender, "station")?;
-    let access_point_host_tx = join_sender(access_point_sender, "access-point")?;
+    let (station_sender, access_point_sender) = if target_receives(config.direction) {
+        let barrier = Arc::new(Barrier::new(3));
+        let station_sender = spawn_sender(&station_flow, config, Arc::clone(&barrier));
+        let access_point_sender = spawn_sender(&access_point_flow, config, Arc::clone(&barrier));
+        barrier.wait();
+        (Some(station_sender), Some(access_point_sender))
+    } else {
+        (None, None)
+    };
+    let station_host_tx = station_sender
+        .map(|sender| join_sender(sender, "station"))
+        .transpose()?;
+    let access_point_host_tx = access_point_sender
+        .map(|sender| join_sender(sender, "access-point"))
+        .transpose()?;
 
     let station_evidence = capture.wait_for_session(station_session, config.timeout)?;
     let access_point_evidence = capture.wait_for_session(access_point_session, config.timeout)?;
     capture.acknowledge_session(station_session)?;
     capture.acknowledge_session(access_point_session)?;
+    let access_point_air = access_point_air_capture
+        .map(LocalAirMonitorCapture::finish)
+        .transpose()?;
 
-    let station_host_rx = join_receiver(station_receiver, "station")?;
-    let access_point_host_rx = join_receiver(access_point_receiver, "access-point")?;
+    let station_host_rx = station_receiver
+        .map(|receiver| join_receiver(receiver, "station"))
+        .transpose()?;
+    let access_point_host_rx = access_point_receiver
+        .map(|receiver| join_receiver(receiver, "access-point"))
+        .transpose()?;
     let station = interface_report(station_evidence, station_host_tx, station_host_rx)?;
     let access_point = interface_report(
         access_point_evidence,
@@ -191,18 +248,25 @@ fn qualify(capture: &SerialCapture, config: Config, lab: &LabConfig) -> Result<R
     let data_plane_verdict = (|| {
         validate_interface("station", &station, config.minimum_bps_per_flow)?;
         validate_interface("access-point", &access_point, config.minimum_bps_per_flow)?;
-        validate_fairness(
-            "target RX",
-            station.target_rx_bps,
-            access_point.target_rx_bps,
-            config.maximum_fairness_skew_percent,
-        )?;
-        validate_fairness(
-            "host RX",
-            station.host_rx_bps,
-            access_point.host_rx_bps,
-            config.maximum_fairness_skew_percent,
-        )?;
+        if let (Some(station), Some(access_point)) =
+            (station.target_rx_bps, access_point.target_rx_bps)
+        {
+            validate_fairness(
+                "target RX",
+                station,
+                access_point,
+                config.maximum_fairness_skew_percent,
+            )?;
+        }
+        if let (Some(station), Some(access_point)) = (station.host_rx_bps, access_point.host_rx_bps)
+        {
+            validate_fairness(
+                "host RX",
+                station,
+                access_point,
+                config.maximum_fairness_skew_percent,
+            )?;
+        }
         Ok::<(), Box<dyn std::error::Error>>(())
     })();
 
@@ -219,23 +283,34 @@ fn qualify(capture: &SerialCapture, config: Config, lab: &LabConfig) -> Result<R
         if stopped.transition.generation != started.generation {
             return Err("paired start/stop generations differ".into());
         }
-        validate_access_point_epoch(stopped.access_point)
+        if config.require_driver_observation {
+            validate_access_point_epoch(stopped.access_point)
+        } else {
+            Ok(())
+        }
     })();
     let restore = client.restore();
     let stack = report_stack(capture, config.timeout, "sta-ap-load-stopped");
     restore?;
-    terminal_verdict?;
     stack?;
-    data_plane_verdict?;
-
-    Ok(Report {
-        schema: 1,
-        offered_bps_per_flow: config.rate_bps_per_flow,
-        minimum_bps_per_flow: config.minimum_bps_per_flow,
-        maximum_fairness_skew_percent: config.maximum_fairness_skew_percent,
-        station,
-        access_point,
-        access_point_epoch: stopped.access_point,
+    Ok(QualificationOutcome {
+        report: Report {
+            schema: 2,
+            direction: config.direction,
+            offered_bps_per_flow: config.rate_bps_per_flow,
+            minimum_bps_per_flow: config.minimum_bps_per_flow,
+            maximum_fairness_skew_percent: config.maximum_fairness_skew_percent,
+            station,
+            access_point,
+            access_point_epoch: config
+                .require_driver_observation
+                .then_some(stopped.access_point),
+            access_point_air,
+        },
+        // Persist the complete transport and terminal evidence before
+        // returning a qualification failure. A failed ceiling/fairness run
+        // is precisely the case where the report is needed for diagnosis.
+        verdict: terminal_verdict.and(data_plane_verdict),
     })
 }
 
@@ -285,23 +360,34 @@ fn start_session(
     } else {
         WifiNetworkInterface::AccessPoint
     };
+    let flow_config = || FlowConfig {
+        payload_bytes: u16::try_from(config.payload_bytes).expect("validated payload fits u16"),
+        offered_rate_bps: Some(config.rate_bps_per_flow),
+    };
+    let (direction, target_rx, target_tx) = match config.direction {
+        crate::qualification::scenario::Direction::Rx => {
+            (HilDirection::Rx, Some(flow_config()), None)
+        }
+        crate::qualification::scenario::Direction::Tx => {
+            (HilDirection::Tx, None, Some(flow_config()))
+        }
+        crate::qualification::scenario::Direction::Bidirectional => (
+            HilDirection::Bidirectional,
+            Some(flow_config()),
+            Some(flow_config()),
+        ),
+    };
     capture.start_session(SessionConfig {
         network_interface,
         transport: Transport::Udp,
-        direction: Direction::Bidirectional,
+        direction,
         completion: Completion::DurationMillis(u32::try_from(duration.as_millis())?),
-        peer: Some(Ipv4Endpoint {
+        peer: target_transmits(config.direction).then_some(Ipv4Endpoint {
             address: flow.peer.octets(),
             port: flow.port,
         }),
-        target_rx: Some(FlowConfig {
-            payload_bytes: u16::try_from(config.payload_bytes)?,
-            offered_rate_bps: Some(config.rate_bps_per_flow),
-        }),
-        target_tx: Some(FlowConfig {
-            payload_bytes: u16::try_from(config.payload_bytes)?,
-            offered_rate_bps: Some(config.rate_bps_per_flow),
-        }),
+        target_rx,
+        target_tx,
         link_requirements: SessionLinkRequirements::NONE,
     })
 }
@@ -357,29 +443,40 @@ fn join_receiver(
 
 fn interface_report(
     evidence: SessionEvidence,
-    host_tx: HostTransmission,
-    host_rx: Vec<Burst>,
+    host_tx: Option<HostTransmission>,
+    host_rx: Option<Vec<Burst>>,
 ) -> Result<InterfaceReport> {
     let burst = host_rx
-        .into_iter()
-        .filter(|burst| burst.started_at_zero)
-        .max_by_key(|burst| burst.datagrams)
-        .ok_or("target TX did not produce a zero-started UDP burst")?;
-    let target_rx_bps = throughput_bps(
-        evidence.transport.rx_bytes,
-        evidence.transport.elapsed_micros,
-    );
+        .map(|host_rx| {
+            host_rx
+                .into_iter()
+                .filter(|burst| burst.started_at_zero)
+                .max_by_key(|burst| burst.datagrams)
+                .ok_or("target TX did not produce a zero-started UDP burst")
+        })
+        .transpose()?;
     Ok(InterfaceReport {
-        target_rx_bps,
-        host_rx_bps: burst.throughput_kbps().saturating_mul(1_000),
-        host_tx_datagrams: host_tx.datagrams,
-        host_rx_datagrams: burst.datagrams,
-        host_rx_missing: burst.missing,
-        host_rx_reordered: burst.reordered,
-        host_rx_duplicates: burst.duplicates,
-        host_rx_first_reordered_after: burst.first_reordered_after,
-        host_rx_first_reordered_sequence: burst.first_reordered_sequence,
-        host_rx_maximum_reorder_distance: burst.maximum_reorder_distance,
+        target_rx_bps: host_tx.as_ref().map(|_| {
+            throughput_bps(
+                evidence.transport.rx_bytes,
+                evidence.transport.elapsed_micros,
+            )
+        }),
+        host_rx_bps: burst
+            .as_ref()
+            .map(|burst| burst.throughput_kbps().saturating_mul(1_000)),
+        host_tx_datagrams: host_tx.as_ref().map(|host_tx| host_tx.datagrams),
+        host_rx_datagrams: burst.as_ref().map(|burst| burst.datagrams),
+        host_rx_missing: burst.as_ref().map(|burst| burst.missing),
+        host_rx_reordered: burst.as_ref().map(|burst| burst.reordered),
+        host_rx_duplicates: burst.as_ref().map(|burst| burst.duplicates),
+        host_rx_first_reordered_after: burst.as_ref().and_then(|burst| burst.first_reordered_after),
+        host_rx_first_reordered_sequence: burst
+            .as_ref()
+            .and_then(|burst| burst.first_reordered_sequence),
+        host_rx_maximum_reorder_distance: burst
+            .as_ref()
+            .map(|burst| burst.maximum_reorder_distance),
     })
 }
 
@@ -392,25 +489,27 @@ fn throughput_bps(bytes: u64, elapsed_micros: u64) -> u64 {
 }
 
 fn validate_interface(name: &str, report: &InterfaceReport, minimum: u64) -> Result<()> {
-    if report.target_rx_bps < minimum || report.host_rx_bps < minimum {
+    if report.target_rx_bps.is_some_and(|value| value < minimum)
+        || report.host_rx_bps.is_some_and(|value| value < minimum)
+    {
         return Err(format!(
-            "{name} fairness cell below {minimum} bps: target_rx={} host_rx={}",
+            "{name} fairness cell below {minimum} bps: target_rx={:?} host_rx={:?}",
             report.target_rx_bps, report.host_rx_bps,
         )
         .into());
     }
-    if report.host_rx_reordered != 0 || report.host_rx_duplicates != 0 {
+    if report.host_rx_reordered.unwrap_or(0) != 0 || report.host_rx_duplicates.unwrap_or(0) != 0 {
         return Err(format!(
             "{name} target TX ordering defect: reordered={} duplicates={} first={} after={} maximum_distance={}",
-            report.host_rx_reordered,
-            report.host_rx_duplicates,
+            report.host_rx_reordered.unwrap_or(0),
+            report.host_rx_duplicates.unwrap_or(0),
             report
                 .host_rx_first_reordered_sequence
                 .map_or_else(|| "none".into(), |value| value.to_string()),
             report
                 .host_rx_first_reordered_after
                 .map_or_else(|| "none".into(), |value| value.to_string()),
-            report.host_rx_maximum_reorder_distance,
+            report.host_rx_maximum_reorder_distance.unwrap_or(0),
         )
         .into());
     }

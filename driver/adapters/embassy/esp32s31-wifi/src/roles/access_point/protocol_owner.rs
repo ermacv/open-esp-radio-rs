@@ -45,18 +45,10 @@ impl PendingApBufferedReleases {
     }
 }
 
-/// Control-plane owner for one active AP role.
-pub struct Esp32s31AccessPointProtocolProcessor<
-    'storage,
-    'beacon,
-    'slot,
-    P,
-    E,
-    T,
-    const DMA_BUFFER_SIZE: usize,
-    const TX_BUFFER_SIZE: usize,
-> {
-    mac: Esp32s31ApMac<'beacon, 'slot, P, E, T, TX_BUFFER_SIZE>,
+/// AP protocol state whose lifetime is independent of the shared physical TX
+/// capability. Active and parked AP owners carry this exact value unchanged.
+#[doc(hidden)]
+pub struct Esp32s31AccessPointProtocolState<'storage, const DMA_BUFFER_SIZE: usize> {
     rx_frame: &'storage mut [u8],
     tx_frame: &'storage mut [u8],
     data_rx: &'storage mut Esp32s31ApRxDispatcher,
@@ -86,6 +78,21 @@ pub struct Esp32s31AccessPointProtocolProcessor<
     terminal_observer: Option<&'static dyn AccessPointTerminalObserver>,
 }
 
+/// Control-plane owner for one active AP role.
+pub struct Esp32s31AccessPointProtocolProcessor<
+    'storage,
+    'beacon,
+    'slot,
+    P,
+    E,
+    T,
+    const DMA_BUFFER_SIZE: usize,
+    const TX_BUFFER_SIZE: usize,
+> {
+    mac: Esp32s31ApMac<'beacon, 'slot, P, E, T, TX_BUFFER_SIZE>,
+    state: Esp32s31AccessPointProtocolState<'storage, DMA_BUFFER_SIZE>,
+}
+
 /// AP protocol state with the unique ordinary-TX resource removed.
 ///
 /// This value retains peer, beacon, BlockAck, reorder, mailbox and report
@@ -97,35 +104,70 @@ pub struct Esp32s31AccessPointProtocolProcessorParked<
     const DMA_BUFFER_SIZE: usize,
 > {
     mac: Esp32s31ApMacParked<'beacon>,
-    rx_frame: &'storage mut [u8],
-    tx_frame: &'storage mut [u8],
-    data_rx: &'storage mut Esp32s31ApRxDispatcher,
-    rx_block_ack: &'storage Esp32s31StaApRxBlockAck,
-    rx_reorder: &'storage mut Esp32s31AccessPointRxReorder<'storage, DMA_BUFFER_SIZE>,
-    rx_reorder_storage:
-        &'storage RxReorderFrameStorage<DMA_BUFFER_SIZE, RX_REORDER_BACKING_SLOT_COUNT>,
-    rx_addba_in_flight: Option<RxBlockAckActivation>,
-    protocol_actions: Esp32s31AccessPointProtocolMailbox<AP_PROTOCOL_ACTION_CAPACITY>,
-    pending_buffered_releases: PendingApBufferedReleases,
-    pending_dtim_group_frames: Option<u16>,
-    rx_batch_used: usize,
-    rx_batch_offset: usize,
-    serviced_rx_frames: u64,
-    serviced_rx_descriptors: u64,
-    last_terminal_tx_succeeded: Option<bool>,
-    #[cfg(feature = "diagnostics")]
-    observer: &'static mut AccessPointObservationStorage,
-    #[cfg(all(test, not(feature = "diagnostics")))]
-    observer: AccessPointObservationStorage,
-    #[cfg(any(feature = "diagnostics", test))]
-    terminal_observer: Option<&'static dyn AccessPointTerminalObserver>,
+    state: Esp32s31AccessPointProtocolState<'storage, DMA_BUFFER_SIZE>,
+}
+
+impl<'storage, 'beacon, 'slot, P, E, T, const DMA_BUFFER_SIZE: usize, const TX_BUFFER_SIZE: usize>
+    core::ops::Deref
+    for Esp32s31AccessPointProtocolProcessor<
+        'storage,
+        'beacon,
+        'slot,
+        P,
+        E,
+        T,
+        DMA_BUFFER_SIZE,
+        TX_BUFFER_SIZE,
+    >
+{
+    type Target = Esp32s31AccessPointProtocolState<'storage, DMA_BUFFER_SIZE>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.state
+    }
+}
+
+impl<'storage, 'beacon, 'slot, P, E, T, const DMA_BUFFER_SIZE: usize, const TX_BUFFER_SIZE: usize>
+    core::ops::DerefMut
+    for Esp32s31AccessPointProtocolProcessor<
+        'storage,
+        'beacon,
+        'slot,
+        P,
+        E,
+        T,
+        DMA_BUFFER_SIZE,
+        TX_BUFFER_SIZE,
+    >
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.state
+    }
+}
+
+impl<'storage, 'beacon, const DMA_BUFFER_SIZE: usize> core::ops::Deref
+    for Esp32s31AccessPointProtocolProcessorParked<'storage, 'beacon, DMA_BUFFER_SIZE>
+{
+    type Target = Esp32s31AccessPointProtocolState<'storage, DMA_BUFFER_SIZE>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.state
+    }
+}
+
+impl<'storage, 'beacon, const DMA_BUFFER_SIZE: usize> core::ops::DerefMut
+    for Esp32s31AccessPointProtocolProcessorParked<'storage, 'beacon, DMA_BUFFER_SIZE>
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.state
+    }
 }
 
 impl<'storage, 'beacon, const DMA_BUFFER_SIZE: usize>
     Esp32s31AccessPointProtocolProcessorParked<'storage, 'beacon, DMA_BUFFER_SIZE>
 {
     pub const fn rx_batch_pending(&self) -> bool {
-        self.rx_batch_offset < self.rx_batch_used
+        self.state.rx_batch_offset < self.state.rx_batch_used
     }
 
     fn rx_batch_record(
@@ -135,20 +177,20 @@ impl<'storage, 'beacon, const DMA_BUFFER_SIZE: usize>
         Esp32s31AccessPointControlError,
     > {
         crate::datapath::rx::ethernet::record_at(
-            self.rx_frame,
-            self.rx_batch_used,
-            self.rx_batch_offset,
+            self.state.rx_frame,
+            self.state.rx_batch_used,
+            self.state.rx_batch_offset,
         )
         .map_err(|_| Esp32s31AccessPointControlError::ReceiveBatchCapacity)
     }
 
     fn commit_rx_batch_record(&mut self, next_offset: usize) {
-        debug_assert!(next_offset > self.rx_batch_offset);
-        debug_assert!(next_offset <= self.rx_batch_used);
-        self.rx_batch_offset = next_offset;
-        if self.rx_batch_offset == self.rx_batch_used {
-            self.rx_batch_offset = 0;
-            self.rx_batch_used = 0;
+        debug_assert!(next_offset > self.state.rx_batch_offset);
+        debug_assert!(next_offset <= self.state.rx_batch_used);
+        self.state.rx_batch_offset = next_offset;
+        if self.state.rx_batch_offset == self.state.rx_batch_used {
+            self.state.rx_batch_offset = 0;
+            self.state.rx_batch_used = 0;
         }
     }
 
@@ -170,7 +212,7 @@ impl<'storage, 'beacon, const DMA_BUFFER_SIZE: usize>
             .mac
             .next_control_deadline()
             .into_iter()
-            .chain(self.rx_reorder.next_deadline())
+            .chain(self.state.rx_reorder.next_deadline())
             .fold(beacon_deadline, u64::min))
     }
 

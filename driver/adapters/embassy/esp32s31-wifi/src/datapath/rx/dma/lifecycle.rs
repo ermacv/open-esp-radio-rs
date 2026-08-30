@@ -703,6 +703,15 @@ impl<
         self.serviced_descriptors
     }
 
+    /// Monotonic completed-unit and byte totals independent of the hardware
+    /// type used to service this producer.
+    pub const fn work_counters(&self) -> DatapathRxWorkCounters {
+        DatapathRxWorkCounters {
+            completed_units: self.serviced_units,
+            staged_bytes: self.serviced_bytes,
+        }
+    }
+
     /// Confirm that DMA released the ring and return a stopped RX owner.
     ///
     /// On failure the complete live owner is returned together with the

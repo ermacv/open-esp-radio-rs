@@ -299,6 +299,8 @@ impl DatapathNetworkRxSet for PairedNetworkRx {
 #[derive(Default)]
 struct PairedStationRole {
     frames: usize,
+    publish_pending_calls: usize,
+    pending: bool,
 }
 
 impl<'pool, const CAPACITY: usize, const SLOTS: usize>
@@ -312,6 +314,8 @@ impl<'pool, const CAPACITY: usize, const SLOTS: usize>
         &mut self,
         _network: &mut dyn DatapathNetworkRx,
     ) -> Result<DatapathRxProgress, Self::Error> {
+        self.publish_pending_calls += 1;
+        self.pending = false;
         Ok(DatapathRxProgress::Drained)
     }
 
@@ -331,7 +335,7 @@ impl<'pool, const CAPACITY: usize, const SLOTS: usize>
     }
 
     fn has_pending_rx(&self) -> bool {
-        false
+        self.pending
     }
 }
 
@@ -339,6 +343,7 @@ impl<'pool, const CAPACITY: usize, const SLOTS: usize>
 struct PairedAccessPointRole {
     frames: usize,
     tx_pending: bool,
+    publish_pending_calls: usize,
 }
 
 impl<'pool, H, PhysicalTx, const CAPACITY: usize, const SLOTS: usize>
@@ -352,6 +357,7 @@ impl<'pool, H, PhysicalTx, const CAPACITY: usize, const SLOTS: usize>
         _physical_tx: &mut PhysicalTx,
         _network: &mut dyn DatapathNetworkRx,
     ) -> Result<DatapathRxProgress, Self::Error> {
+        self.publish_pending_calls += 1;
         Ok(DatapathRxProgress::Drained)
     }
 
@@ -466,7 +472,10 @@ fn paired_datapath_rx_uses_one_dma_epoch_and_two_narrow_role_capabilities() {
     }
     hardware.release_through(1, None);
 
-    let mut station = PairedStationRole::default();
+    let mut station = PairedStationRole {
+        pending: true,
+        ..PairedStationRole::default()
+    };
     let mut access_point = PairedAccessPointRole::default();
     let mut station_network = PairedNetworkRx::default();
     let mut access_point_network = PairedNetworkRx::default();
@@ -493,10 +502,22 @@ fn paired_datapath_rx_uses_one_dma_epoch_and_two_narrow_role_capabilities() {
     );
     assert_eq!(station.frames, 1);
     assert_eq!(access_point.frames, 1);
+    assert_eq!(station.publish_pending_calls, 1);
+    assert_eq!(access_point.publish_pending_calls, 0);
     assert_eq!(pool.claimed_slots(), 0);
     assert_eq!(service.serviced_frames(), 2);
+    let paired_work = DatapathPairedRxService::<
+        MockRxDma,
+        (),
+        PairedStationRole,
+        PairedAccessPointRole,
+    >::work_counters(&service);
+    assert_eq!(paired_work.completed_units, 2);
+    assert!(paired_work.staged_bytes >= (2 * RECEIVED) as u64);
 
     let (mut epoch, consumer) = service.into_parts();
+    assert_eq!(epoch.work_counters().completed_units, 2);
+    assert!(epoch.work_counters().staged_bytes >= (2 * RECEIVED) as u64);
     assert_eq!(consumer.queued_frames(), 0);
     epoch.stop(&mut hardware).unwrap();
     drop(consumer);

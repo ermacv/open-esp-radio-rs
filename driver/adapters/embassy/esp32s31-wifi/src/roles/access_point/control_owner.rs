@@ -254,18 +254,22 @@ where
         self.receive.scheduler_snapshot()
     }
 
-    /// Process at most one already-staged AP frame without observing DMA.
+    /// Process one bounded batch of already-staged AP frames without
+    /// observing DMA.
     ///
     /// The enclosing DATAPATH turn owns the station-style transaction order:
     /// drain existing protocol owners, refill DMA once, then consume newly
-    /// staged owners with the remaining budget. Keeping this leaf synchronous
-    /// prevents one MPDU from manufacturing an extra executor or MMIO pass.
-    pub(super) fn service_rx_protocol<H, Q, S>(
+    /// staged owners with the remaining budget. The complete batch remains a
+    /// synchronous Core0 transaction. Management/TX publication, deferred
+    /// Ethernet output, reorder expiry and active-TX mailbox pressure are
+    /// terminal batch boundaries.
+    pub(super) fn service_rx_protocol_bounded<H, Q, S>(
         &mut self,
         hardware: &mut H,
         tx_domain: AccessPointRxTxDomain,
+        maximum_frames: usize,
         security_material: &mut S,
-        now_micros: u64,
+        mut now_micros: u64,
         publish_shared_rx: &mut Q,
         #[cfg(feature = "diagnostics")] delivery_observer: Option<&dyn RxNetworkDeliveryObserver>,
     ) -> Result<DatapathRxProgress, Esp32s31AccessPointControlError>
@@ -275,85 +279,137 @@ where
         Q: FnMut(u8),
         S: FnMut() -> ([u8; 32], u64),
     {
-        let tx_pending = tx_domain.tx_pending(self.mac.tx_pending());
+        let maximum_frames = maximum_frames.max(1);
+        let mut serviced_frames = 0_usize;
         if !tx_domain.is_externally_owned() {
             #[cfg(feature = "diagnostics")]
             self.sample_rx_block_ack_hardware(hardware);
             self.apply_protocol_actions(hardware)?;
         }
         if self.rx_batch_pending() {
+            #[cfg(feature = "task-poll-telemetry")]
+            crate::diagnostics::core0_ap_rx_cycles::CORE0_AP_RX_CYCLES.record_turn(
+                serviced_frames,
+                crate::diagnostics::core0_ap_rx_cycles::Core0ApRxTurnExit::InitialBatch,
+            );
             return Ok(DatapathRxProgress::NetworkBackpressured);
         }
         if self.service_rx_reorder_expiry(now_micros)? {
+            #[cfg(feature = "task-poll-telemetry")]
+            crate::diagnostics::core0_ap_rx_cycles::CORE0_AP_RX_CYCLES.record_turn(
+                serviced_frames,
+                crate::diagnostics::core0_ap_rx_cycles::Core0ApRxTurnExit::InitialReorder,
+            );
             return Ok(DatapathRxProgress::ProbePending);
         }
 
-        // An active retained A-MPDU keeps the radio-side mailbox consumer
-        // behind the physical TX boundary. Preserve the exact staged head
-        // until one complete frame's worst-case action set fits; consuming it
-        // first would turn bounded backpressure into ProtocolActionCapacity.
-        if !tx_domain.protocol_mailbox_ready(self.protocol_actions.remaining_capacity()) {
-            return Ok(DatapathRxProgress::ProtocolBlockedByTx);
-        }
+        while serviced_frames < maximum_frames {
+            let tx_pending = tx_domain.tx_pending(self.mac.tx_pending());
 
-        let staged_frame = if tx_pending {
-            self.protocol_rx
-                .try_receive_during_tx(self.mac.engine().security_mode())
-        } else {
-            self.protocol_rx.try_receive()
-        };
-        let Some(staged_frame) = staged_frame else {
-            // `try_receive_during_tx` preserves a management/EAPOL head which
-            // cannot borrow the ordinary-TX capability until the live
-            // aggregate completes.
-            if tx_domain.is_externally_owned() && self.protocol_rx.queued_frames() != 0 {
+            // An active retained A-MPDU keeps the radio-side mailbox consumer
+            // behind the physical TX boundary. Preserve the exact staged head
+            // until one complete frame's worst-case action set fits; consuming
+            // it first would turn bounded backpressure into a role fault.
+            if !tx_domain.protocol_mailbox_ready(self.protocol_actions.remaining_capacity()) {
+                #[cfg(feature = "task-poll-telemetry")]
+                crate::diagnostics::core0_ap_rx_cycles::CORE0_AP_RX_CYCLES.record_turn(
+                    serviced_frames,
+                    crate::diagnostics::core0_ap_rx_cycles::Core0ApRxTurnExit::MailboxBlocked,
+                );
                 return Ok(DatapathRxProgress::ProtocolBlockedByTx);
             }
-            return Ok(DatapathRxProgress::Drained);
-        };
-        self.serviced_rx_frames = self.serviced_rx_frames.saturating_add(1);
-        #[cfg(feature = "diagnostics")]
-        let protocol_started = Instant::now().as_micros();
-        let protocol_class = self.service_staged_rx(
-            if rx_protocol_consumer_has_hardware(tx_pending) {
-                Some(hardware)
-            } else {
-                None
-            },
-            staged_frame,
-            AccessPointRxPublication::SharedStaging,
-            security_material,
-            now_micros,
-            publish_shared_rx,
-            #[cfg(feature = "diagnostics")]
-            delivery_observer,
-        )?;
-        // `service_staged_rx` receives no hardware capability while TX is
-        // active. Keep its value-only mailbox requests queued until the
-        // physical aggregate returns the ordinary-TX owner. Executing them
-        // here would let standalone AP RX manufacture a second MAC
-        // transaction inside `DatapathRunner::drive_active_tx`.
-        if !tx_domain.is_externally_owned() {
-            self.apply_protocol_actions(hardware)?;
-        }
-        #[cfg(not(feature = "diagnostics"))]
-        let _ = protocol_class;
-        #[cfg(feature = "diagnostics")]
-        self.observe_rx_protocol_service(
-            protocol_class,
-            Instant::now().as_micros().saturating_sub(protocol_started),
-        );
 
-        Ok(
-            if self.protocol_rx.queued_frames() != 0
-                || self.rx_batch_pending()
-                || tx_pending
-            {
-                DatapathRxProgress::ProbePending
+            let staged_frame = if tx_pending {
+                self.protocol_rx
+                    .try_receive_during_tx(self.mac.engine().security_mode())
             } else {
-                DatapathRxProgress::Drained
-            },
-        )
+                self.protocol_rx.try_receive()
+            };
+            let Some(staged_frame) = staged_frame else {
+                // `try_receive_during_tx` preserves a management/EAPOL head
+                // which cannot borrow the ordinary-TX capability until the
+                // live aggregate completes.
+                if tx_domain.is_externally_owned() && self.protocol_rx.queued_frames() != 0 {
+                    #[cfg(feature = "task-poll-telemetry")]
+                    crate::diagnostics::core0_ap_rx_cycles::CORE0_AP_RX_CYCLES.record_turn(
+                        serviced_frames,
+                        crate::diagnostics::core0_ap_rx_cycles::Core0ApRxTurnExit::TxBlocked,
+                    );
+                    return Ok(DatapathRxProgress::ProtocolBlockedByTx);
+                }
+                #[cfg(feature = "task-poll-telemetry")]
+                crate::diagnostics::core0_ap_rx_cycles::CORE0_AP_RX_CYCLES.record_turn(
+                    serviced_frames,
+                    crate::diagnostics::core0_ap_rx_cycles::Core0ApRxTurnExit::Drained,
+                );
+                return Ok(DatapathRxProgress::Drained);
+            };
+            self.serviced_rx_frames = self.serviced_rx_frames.saturating_add(1);
+            serviced_frames = serviced_frames.saturating_add(1);
+            #[cfg(feature = "diagnostics")]
+            let protocol_started = Instant::now().as_micros();
+            let protocol_class = self.service_staged_rx(
+                if rx_protocol_consumer_has_hardware(tx_pending) {
+                    Some(hardware)
+                } else {
+                    None
+                },
+                staged_frame,
+                security_material,
+                now_micros,
+                publish_shared_rx,
+                #[cfg(feature = "diagnostics")]
+                delivery_observer,
+            )?;
+            // `service_staged_rx` receives no hardware capability while TX is
+            // active. Keep its value-only mailbox requests queued until the
+            // physical aggregate returns the ordinary-TX owner. Executing them
+            // here would let standalone AP RX manufacture a second MAC
+            // transaction inside `DatapathRunner::drive_active_tx`.
+            if !tx_domain.is_externally_owned() && !self.protocol_actions.is_empty() {
+                self.apply_protocol_actions(hardware)?;
+            }
+            #[cfg(not(feature = "diagnostics"))]
+            let _ = protocol_class;
+            #[cfg(feature = "diagnostics")]
+            self.observe_rx_protocol_service(
+                protocol_class,
+                Instant::now().as_micros().saturating_sub(protocol_started),
+            );
+
+            if self.rx_batch_pending() {
+                #[cfg(feature = "task-poll-telemetry")]
+                crate::diagnostics::core0_ap_rx_cycles::CORE0_AP_RX_CYCLES.record_turn(
+                    serviced_frames,
+                    crate::diagnostics::core0_ap_rx_cycles::Core0ApRxTurnExit::BatchPending,
+                );
+                return Ok(DatapathRxProgress::ProbePending);
+            }
+            if self.mac.tx_pending() {
+                #[cfg(feature = "task-poll-telemetry")]
+                crate::diagnostics::core0_ap_rx_cycles::CORE0_AP_RX_CYCLES.record_turn(
+                    serviced_frames,
+                    crate::diagnostics::core0_ap_rx_cycles::Core0ApRxTurnExit::TxBlocked,
+                );
+                return Ok(DatapathRxProgress::ProbePending);
+            }
+            now_micros = Instant::now().as_micros();
+            if self.service_rx_reorder_expiry(now_micros)? {
+                #[cfg(feature = "task-poll-telemetry")]
+                crate::diagnostics::core0_ap_rx_cycles::CORE0_AP_RX_CYCLES.record_turn(
+                    serviced_frames,
+                    crate::diagnostics::core0_ap_rx_cycles::Core0ApRxTurnExit::ReorderPending,
+                );
+                return Ok(DatapathRxProgress::ProbePending);
+            }
+        }
+
+        #[cfg(feature = "task-poll-telemetry")]
+        crate::diagnostics::core0_ap_rx_cycles::CORE0_AP_RX_CYCLES.record_turn(
+            serviced_frames,
+            crate::diagnostics::core0_ap_rx_cycles::Core0ApRxTurnExit::BudgetExhausted,
+        );
+        Ok(DatapathRxProgress::BudgetExhausted)
     }
 
     /// Drain the hardware RX completion frontier into independently owned
@@ -393,5 +449,14 @@ where
         }
         self.serviced_rx_descriptors = self.receive.serviced_descriptors();
         Ok(progress)
+    }
+
+    /// Report the exact monotonic DMA work counters used by the role-neutral
+    /// recycled-append continuation policy.
+    pub fn rx_work_counters(&self) -> crate::datapath::DatapathRxWorkCounters
+    where
+        R: AccessPointRxProducerObservation<COUNT>,
+    {
+        self.receive.work_counters()
     }
 }

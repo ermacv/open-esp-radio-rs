@@ -1,0 +1,23 @@
+schema = 3
+id = "station-access-point-rx-core0-coarse"
+description = "Coarse Core0 ownership accounting during simultaneous STA and AP UDP ingress"
+image = "diagnostic-core0-rx-coarse"
+repetitions = 3
+isolation = "reset"
+data_plane = "split-radio-network"
+rx_dispatch = "direct-immediate-diagnostic"
+rx_continuation = "adaptive-probe-diagnostic"
+tags = ["diagnostic", "wifi", "sta-ap", "udp", "rx", "core0", "coarse", "psram-stack"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "station-access-point"
+timeout_seconds = 30
+duration_seconds = 12
+direction = "rx"
+rate_bps_per_flow = 32500000
+minimum_bps_per_flow = 5000000
+maximum_fairness_skew_percent = 50
+payload_bytes = 1472

@@ -494,6 +494,16 @@ where
         }
     }
 
+    /// Preserve physical work accounting across the halted/live role wrapper.
+    pub fn work_counters(&self) -> DatapathRxWorkCounters {
+        match &self.state {
+            Esp32s31StagedRxEpochState::Live(owner) => owner.work_counters(),
+            Esp32s31StagedRxEpochState::Stopped(_)
+            | Esp32s31StagedRxEpochState::Prepared(_)
+            | Esp32s31StagedRxEpochState::Vacant => DatapathRxWorkCounters::default(),
+        }
+    }
+
     pub fn descriptor_snapshot(&self, index: usize) -> Option<RxDescriptorSnapshot> {
         match &self.state {
             Esp32s31StagedRxEpochState::Stopped(owner) => owner.ring().descriptor_snapshot(index),

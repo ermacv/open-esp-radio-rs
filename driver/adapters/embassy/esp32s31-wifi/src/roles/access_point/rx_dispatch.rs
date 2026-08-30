@@ -137,32 +137,22 @@ mod in_place_rx_sink_tests {
     #[test]
     fn current_frame_joins_an_older_deferred_reorder_release() {
         assert!(can_publish_ap_rx_in_place(
-            AccessPointRxPublication::SharedStaging,
             true,
             false,
             0
         ));
         assert!(!can_publish_ap_rx_in_place(
-            AccessPointRxPublication::SharedStaging,
             true,
             false,
             64
         ));
         assert!(!can_publish_ap_rx_in_place(
-            AccessPointRxPublication::SharedStaging,
             true,
             true,
             0
         ));
         assert!(!can_publish_ap_rx_in_place(
-            AccessPointRxPublication::SharedStaging,
             false,
-            false,
-            0
-        ));
-        assert!(!can_publish_ap_rx_in_place(
-            AccessPointRxPublication::OwnedNetworkPool,
-            true,
             false,
             0
         ));
@@ -268,7 +258,6 @@ impl AccessPointProtectedFrameDispatch {
         ordered: open_esp_radio_esp32s31_wifi_mac::rx::RxSegment<'_>,
         mut admit: impl FnMut(Esp32s31ApRxAdmissionRequest) -> Esp32s31ApRxAdmission,
         peer: Option<[u8; 6]>,
-        publication: AccessPointRxPublication,
         current_buffer: usize,
         current_is_amsdu: bool,
         now_micros: u64,
@@ -290,13 +279,11 @@ impl AccessPointProtectedFrameDispatch {
             now
         };
         let current = ordered.buffer.as_ptr() as usize == current_buffer;
-        let current_can_publish_in_place = can_publish_ap_rx_in_place(
-            publication,
-            current,
-            current_is_amsdu,
-            deferred.used(),
-        );
+        let current_can_publish_in_place =
+            can_publish_ap_rx_in_place(current, current_is_amsdu, deferred.used());
         let may_publish_in_place = data_rx.may_publish_in_place(ordered);
+        #[cfg(feature = "task-poll-telemetry")]
+        let deferred_before = deferred.used();
         #[cfg(feature = "task-poll-telemetry")]
         let body_started = {
             let now = crate::diagnostics::core0_rx_cycles::cycle_count();
@@ -323,6 +310,13 @@ impl AccessPointProtectedFrameDispatch {
             data_rx.dispatch_at(ordered, now_micros, &mut measured_admit, deferred)
         };
         #[cfg(feature = "task-poll-telemetry")]
+        crate::diagnostics::core0_ap_rx_cycles::CORE0_AP_RX_CYCLES.record_ingress_path(
+            may_publish_in_place && current_can_publish_in_place,
+            in_place.publication.is_some(),
+            deferred.used() != deferred_before,
+            false,
+        );
+        #[cfg(feature = "task-poll-telemetry")]
         let observe_started = {
             let now = crate::diagnostics::core0_rx_cycles::cycle_count();
             core0_ap_rx.record_leaf_body(now.wrapping_sub(body_started));
@@ -336,6 +330,75 @@ impl AccessPointProtectedFrameDispatch {
             report,
             activity_peer,
         );
+        #[cfg(feature = "task-poll-telemetry")]
+        core0_ap_rx.record_leaf_observe(
+            crate::diagnostics::core0_rx_cycles::cycle_count().wrapping_sub(observe_started),
+        );
+    }
+
+    #[cfg_attr(
+        all(target_arch = "riscv32", not(feature = "task-poll-telemetry")),
+        unsafe(link_section = ".hot.text.open_radio_ap_rx_dispatch")
+    )]
+    #[inline(never)]
+    fn dispatch_ordinary(
+        data_rx: &mut Esp32s31ApRxDispatcher,
+        ordered: open_esp_radio_esp32s31_wifi_mac::rx::RxSegment<'_>,
+        mut admit: impl FnMut(
+            open_esp_radio_esp32s31_wifi_ap::rx::Esp32s31ApOrdinaryPairwiseRxRequest,
+        ) -> Esp32s31ApRxAdmission,
+        _peer: [u8; 6],
+        in_place: &mut InPlaceAccessPointRxSink,
+        #[cfg(any(feature = "diagnostics", test))] report: &mut Esp32s31AccessPointControlObservation,
+        #[cfg(any(feature = "diagnostics", test))] produced_data: &mut bool,
+        #[cfg(feature = "task-poll-telemetry")]
+        core0_ap_rx: &mut crate::diagnostics::core0_ap_rx_cycles::Core0ApRxCycleProfile,
+    ) {
+        #[cfg(feature = "task-poll-telemetry")]
+        let body_started = crate::diagnostics::core0_rx_cycles::cycle_count();
+        #[cfg(feature = "task-poll-telemetry")]
+        let mut admission_cycles = 0_u32;
+        let mut measured_admit = |request| {
+            #[cfg(feature = "task-poll-telemetry")]
+            let started = crate::diagnostics::core0_rx_cycles::cycle_count();
+            let outcome = admit(request);
+            #[cfg(feature = "task-poll-telemetry")]
+            {
+                admission_cycles = admission_cycles.wrapping_add(
+                    crate::diagnostics::core0_rx_cycles::cycle_count().wrapping_sub(started),
+                );
+            }
+            outcome
+        };
+        let outcome = data_rx
+            .try_dispatch_ordinary_pairwise(ordered, &mut measured_admit, in_place)
+            .expect("ordinary AP preflight and dispatch share one synchronous owner");
+        #[cfg(feature = "task-poll-telemetry")]
+        crate::diagnostics::core0_ap_rx_cycles::CORE0_AP_RX_CYCLES.record_ingress_path(
+            true,
+            in_place.publication.is_some(),
+            false,
+            false,
+        );
+        #[cfg(feature = "task-poll-telemetry")]
+        let observe_started = {
+            let now = crate::diagnostics::core0_rx_cycles::cycle_count();
+            core0_ap_rx.record_leaf_body(now.wrapping_sub(body_started));
+            core0_ap_rx.record_leaf_admission(admission_cycles);
+            now
+        };
+        #[cfg(any(feature = "diagnostics", test))]
+        {
+            let mut activity_peer = None;
+            *produced_data |= observe_protected_dispatch(
+                outcome,
+                Some(_peer),
+                report,
+                &mut activity_peer,
+            );
+        }
+        #[cfg(not(any(feature = "diagnostics", test)))]
+        let _ = outcome;
         #[cfg(feature = "task-poll-telemetry")]
         core0_ap_rx.record_leaf_observe(
             crate::diagnostics::core0_rx_cycles::cycle_count().wrapping_sub(observe_started),

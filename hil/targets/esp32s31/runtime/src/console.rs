@@ -463,11 +463,7 @@ pub fn panic_interrupt_route(interrupt: u8) {
 /// masks bound the actual unhandled-source candidates without mistaking an
 /// unrelated, disabled pending source for the interrupt that dispatched.
 #[unsafe(link_section = ".rwtext.logging")]
-pub fn panic_interrupt_dispatch_context(
-    mcause: usize,
-    hart_id: usize,
-    pending: [u32; 6],
-) {
+pub fn panic_interrupt_dispatch_context(mcause: usize, hart_id: usize, pending: [u32; 6]) {
     const CORE0_INTERRUPT_MAP: usize = 0x2058_5000;
     const CORE_STRIDE: usize = 0x800;
     const INTERRUPT_COUNT: usize = 168;
@@ -484,9 +480,9 @@ pub fn panic_interrupt_dispatch_context(
     for source in 0..INTERRUPT_COUNT {
         // SAFETY: panic-only observation of the reviewed interrupt-matrix
         // route array for the current core.
-        let route = unsafe {
-            ((route_base + source * size_of::<u32>()) as *const u32).read_volatile()
-        } & 0x3f;
+        let route =
+            unsafe { ((route_base + source * size_of::<u32>()) as *const u32).read_volatile() }
+                & 0x3f;
         if route as usize != cpu_vector {
             continue;
         }
@@ -514,9 +510,8 @@ pub fn panic_interrupt_dispatch_context(
     }
     // SAFETY: MTVT is the active 32-bit CLIC hardware-vector table and the
     // mcause vector is bounded by the controller's 48 entries.
-    let mtvt_handler = unsafe {
-        ((mtvt + cpu_vector * size_of::<u32>()) as *const u32).read_volatile()
-    };
+    let mtvt_handler =
+        unsafe { ((mtvt + cpu_vector * size_of::<u32>()) as *const u32).read_volatile() };
 
     unsafe {
         ets_printf(

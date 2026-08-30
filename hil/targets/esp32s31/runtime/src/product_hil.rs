@@ -96,22 +96,15 @@ use open_esp_radio_hil_esp32s31_telemetry::{
     rx_pipeline::RxPipelineCounters, task_poll::TaskPollSet,
 };
 use open_esp_radio_hil_protocol::{
-    Capabilities, Event as HilEvent, FeatureCapabilities, MAX_WIRE_FRAME_BYTES,
-    NetworkCredentials, NetworkInfo, NetworkIpv4Configuration, StartupArtifactDisposition,
-    StationDisconnectReason, StationEpochEvidence, WIFI_MONITOR_FRAME_CHUNK_MAX_LEN,
-    WifiAccessPointEvidence, WifiAccessPointSecurity as HilWifiAccessPointSecurity,
-    WifiChannelWidth as HilWifiChannelWidth, WifiDataPlanePlacement, WifiMacRxHardwareEvidence,
-    WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorEvidenceSource, WifiMonitorFrameChunk,
-    WifiMonitorObserved, WifiMonitorPhyEvidence, WifiMonitorPhyFormat, WifiNetworkInterface,
-    WifiRole, WifiRoleFailureEvidence, WifiRoleFailureReason, WifiRoleOperation,
-    WifiRoleTransitionEvidence, WifiScanEvidence, WifiStationAccessPointStopEvidence,
-};
-#[cfg(any(
-    feature = "ieee802154-event-status-probe",
-    feature = "ieee802154-ed-event-probe"
-))]
-use open_esp_radio_hil_protocol::{
-    Ieee802154ObservedEventState, Ieee802154ValidationEventEnableState,
+    Capabilities, Event as HilEvent, FeatureCapabilities, MAX_WIRE_FRAME_BYTES, NetworkCredentials,
+    NetworkInfo, NetworkIpv4Configuration, StartupArtifactDisposition, StationDisconnectReason,
+    StationEpochEvidence, WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, WifiAccessPointEvidence,
+    WifiAccessPointSecurity as HilWifiAccessPointSecurity, WifiChannelWidth as HilWifiChannelWidth,
+    WifiDataPlanePlacement, WifiMacRxHardwareEvidence, WifiMonitorCaptureRequest,
+    WifiMonitorEvidence, WifiMonitorEvidenceSource, WifiMonitorFrameChunk, WifiMonitorObserved,
+    WifiMonitorPhyEvidence, WifiMonitorPhyFormat, WifiNetworkInterface, WifiRole,
+    WifiRoleFailureEvidence, WifiRoleFailureReason, WifiRoleOperation, WifiRoleTransitionEvidence,
+    WifiScanEvidence, WifiStationAccessPointStopEvidence,
 };
 #[cfg(feature = "ieee802154-ed-event-probe")]
 use open_esp_radio_hil_protocol::{
@@ -124,6 +117,13 @@ use open_esp_radio_hil_protocol::{
 use open_esp_radio_hil_protocol::{
     Ieee802154EventStatusProbeEvidence, Ieee802154EventStatusProbeRequest,
     Ieee802154EventStatusProbeStop,
+};
+#[cfg(any(
+    feature = "ieee802154-event-status-probe",
+    feature = "ieee802154-ed-event-probe"
+))]
+use open_esp_radio_hil_protocol::{
+    Ieee802154ObservedEventState, Ieee802154ValidationEventEnableState,
 };
 #[cfg(feature = "driver-observation")]
 use open_esp_radio_hil_protocol::{StationAttemptFailureReason, StationFailureStage};
@@ -139,24 +139,23 @@ use crate::console::{
     complete_wifi_scan, publish_event_reliably, publish_monitor_frame, publish_startup_artifact,
     receive_wifi_control_request, runtime_log, set_wifi_role,
 };
-use open_esp_radio_hil_protocol::StationLifecycleEvent;
 use open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters;
+use open_esp_radio_hil_protocol::StationLifecycleEvent;
 
 mod rx_qualification;
 mod traffic;
 
-use traffic::{observe_open_radio_task_polls, start_connected_traffic, start_traffic_dispatcher};
 #[cfg(any(
     feature = "core0-rx-cycle-telemetry",
     feature = "core0-rx-coarse-telemetry"
 ))]
 use traffic::observe_open_radio_core0_task_polls;
+use traffic::{observe_open_radio_task_polls, start_connected_traffic, start_traffic_dispatcher};
 
 const NETWORK_SOCKET_COUNT: usize = 5;
 const SCAN_DWELL_MS: u16 = 200;
 const MAXIMUM_TX_POWER_QUARTER_DBM: i8 = 80;
-pub(crate) const OPEN_RADIO_TASK_POLL_TELEMETRY: bool =
-    cfg!(feature = "task-residence-telemetry");
+pub(crate) const OPEN_RADIO_TASK_POLL_TELEMETRY: bool = cfg!(feature = "task-residence-telemetry");
 pub(crate) const OPEN_RADIO_MAC_IRQ_TELEMETRY: bool = cfg!(feature = "mac-irq-telemetry");
 pub(crate) const OPEN_RADIO_RX_DELIVERY_TELEMETRY: bool = cfg!(feature = "rx-delivery-telemetry");
 pub(crate) const OPEN_RADIO_DRIVER_OBSERVATION: bool = cfg!(feature = "driver-observation");
@@ -235,18 +234,15 @@ pub(in crate::product_hil) struct ObservedRxStatistics {
 impl ObservedRxStatistics {
     pub fn wrapping_delta_since(self, earlier: Self) -> Self {
         const DECODE_MASK: u16 = 0x03ff;
-        let decode_delta = |current: u16, previous: u16| {
-            current.wrapping_sub(previous) & DECODE_MASK
-        };
+        let decode_delta =
+            |current: u16, previous: u16| current.wrapping_sub(previous) & DECODE_MASK;
         Self {
             mpdu_count: self.mpdu_count.wrapping_sub(earlier.mpdu_count),
             data_success: self.data_success.wrapping_sub(earlier.data_success),
             fcs_error: self.fcs_error.wrapping_sub(earlier.fcs_error),
             abort: self.abort.wrapping_sub(earlier.abort),
             abort_fcs_pass: self.abort_fcs_pass.wrapping_sub(earlier.abort_fcs_pass),
-            power_drop_error: self
-                .power_drop_error
-                .wrapping_sub(earlier.power_drop_error),
+            power_drop_error: self.power_drop_error.wrapping_sub(earlier.power_drop_error),
             he_sig_b_error: self.he_sig_b_error.wrapping_sub(earlier.he_sig_b_error),
             same_bm_error: self.same_bm_error.wrapping_sub(earlier.same_bm_error),
             signal_field: self.signal_field.wrapping_sub(earlier.signal_field),
@@ -277,10 +273,7 @@ impl ObservedRxStatistics {
             nrx_unsupported: decode_delta(self.nrx_unsupported, earlier.nrx_unsupported),
             nrx_he_format: decode_delta(self.nrx_he_format, earlier.nrx_he_format),
             nrx_ht_sig: decode_delta(self.nrx_ht_sig, earlier.nrx_ht_sig),
-            nrx_he_unsupported: decode_delta(
-                self.nrx_he_unsupported,
-                earlier.nrx_he_unsupported,
-            ),
+            nrx_he_unsupported: decode_delta(self.nrx_he_unsupported, earlier.nrx_he_unsupported),
             nrx_he_sig_a_crc: decode_delta(self.nrx_he_sig_a_crc, earlier.nrx_he_sig_a_crc),
             rx_hang: self.rx_hang.wrapping_sub(earlier.rx_hang),
             tx_hang: self.tx_hang.wrapping_sub(earlier.tx_hang),
@@ -2929,7 +2922,9 @@ async fn wifi_role_task(
                     DIAGNOSTIC_STAGE.store(40, Ordering::Release);
                     let channel = request.channel;
                     let bandwidth_mhz = request.channel_width.bandwidth_mhz();
-                    runtime_log(format_args!("OPEN_RADIO_HIL AP start request entering supervisor"));
+                    runtime_log(format_args!(
+                        "OPEN_RADIO_HIL AP start request entering supervisor"
+                    ));
                     match await_stack_boundary!(
                         idle.start_access_point(access_point_request(&request))
                     ) {

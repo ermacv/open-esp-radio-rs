@@ -526,6 +526,11 @@ pub(super) fn publish_access_point_shared_network_rx(index: u8) {
         .publish(index);
 }
 
+#[inline(always)]
+pub(super) fn publish_station_shared_network_rx(index: u8) {
+    STATION_SHARED_NETWORK_RX_QUEUE.publisher().publish(index);
+}
+
 #[inline(never)]
 fn notify_shared_network_rx_release() {
     IRQ_RUNTIME.notify_rx_capacity();

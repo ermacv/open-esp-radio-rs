@@ -85,6 +85,39 @@ pub struct Esp32s31ApRxAdmissionRequest {
     operation: Esp32s31ApRxAdmissionOperation,
 }
 
+/// Minimal request for the complete WPA2 pairwise ordinary-data leaf.
+///
+/// Fragment preparation/commit state cannot be represented by this type, so
+/// the saturated path does not carry or branch on the general operation enum.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31ApOrdinaryPairwiseRxRequest {
+    peer: [u8; 6],
+    lane: CcmpReplayLane,
+    ccmp_header: CcmpHeader,
+}
+
+impl Esp32s31ApOrdinaryPairwiseRxRequest {
+    pub(crate) const fn new(peer: [u8; 6], lane: CcmpReplayLane, ccmp_header: CcmpHeader) -> Self {
+        Self {
+            peer,
+            lane,
+            ccmp_header,
+        }
+    }
+
+    pub const fn peer(self) -> [u8; 6] {
+        self.peer
+    }
+
+    pub const fn lane(self) -> CcmpReplayLane {
+        self.lane
+    }
+
+    pub const fn ccmp_header(self) -> CcmpHeader {
+        self.ccmp_header
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Esp32s31ApRxAdmissionOperation {
     Ordinary,
@@ -249,6 +282,15 @@ impl Esp32s31ApRxAdmission {
             outcome: Esp32s31ApRxAdmissionOutcome::Rejected(error),
         }
     }
+
+    pub(crate) const fn authorized_owner(self) -> Option<Esp32s31ApRxDuplicateOwner> {
+        match self.outcome {
+            Esp32s31ApRxAdmissionOutcome::Authorized(owner) => Some(owner),
+            Esp32s31ApRxAdmissionOutcome::Prepared(_)
+            | Esp32s31ApRxAdmissionOutcome::Unauthorized
+            | Esp32s31ApRxAdmissionOutcome::Rejected(_) => None,
+        }
+    }
 }
 
 struct ApPeerDuplicateState {
@@ -357,6 +399,40 @@ impl Esp32s31ApRxDispatcher {
             .is_some_and(|mpdu| !fragmented_mpdu(mpdu))
     }
 
+    /// Return whether the immutable public header selects the complete
+    /// ordinary WPA2 QoS-data leaf.
+    ///
+    /// This is only a path-selection hint. The selected leaf still performs
+    /// normalized hardware/CCMP validation, AP address validation, controlled
+    /// port admission, replay, duplicate filtering and Ethernet decapsulation.
+    /// Any fragment epoch, A-MSDU or non-QoS subtype stays on the complete AP
+    /// role graph.
+    pub fn may_dispatch_ordinary_pairwise(&self, segment: RxSegment<'_>) -> bool {
+        if self.config.security != WifiSecurityMode::Wpa2Personal || self.fragment_admission_active
+        {
+            return false;
+        }
+        let Some(mpdu) = segment.buffer.get(PUBLIC_HEADER_SIZE..) else {
+            return false;
+        };
+        let Some(frame_control) = mpdu
+            .get(..2)
+            .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+        else {
+            return false;
+        };
+        // Type=Data, subtype=QoS Data, Protected=1.
+        if frame_control & 0x00fc != 0x0088 || frame_control & 0x4000 == 0 {
+            return false;
+        }
+        if fragmented_mpdu(mpdu) {
+            return false;
+        }
+        let qos_control_offset = 24 + usize::from(frame_control & 0x0300 == 0x0300) * 6;
+        mpdu.get(qos_control_offset)
+            .is_some_and(|control| control & 0x80 == 0)
+    }
+
     /// Extract the same public ordering key used by connected-station RX.
     /// Peer authorization and active-agreement lookup remain with the AP
     /// owner because multiple stations can use the same TID concurrently.
@@ -368,6 +444,7 @@ impl Esp32s31ApRxDispatcher {
         rx_block_ack_mpdu_key(segment.buffer, self.config.access_point, None)
     }
 
+    #[inline(never)]
     pub fn dispatch<S, A>(
         &mut self,
         segment: RxSegment<'_>,
@@ -382,6 +459,7 @@ impl Esp32s31ApRxDispatcher {
     }
 
     /// Dispatch with the runtime timestamp used for bounded fragment expiry.
+    #[inline(never)]
     pub fn dispatch_at<S, A>(
         &mut self,
         segment: RxSegment<'_>,
@@ -396,6 +474,125 @@ impl Esp32s31ApRxDispatcher {
         self.dispatch_inner(segment, Some(now_micros), admit, sink)
     }
 
+    /// Dispatch the common complete WPA2 pairwise MPDU without entering the
+    /// fragment/open/general role graph.
+    ///
+    /// The adapter selects this only after immutable public-header preflight
+    /// has proved one ordinary current-buffer publication. This function still
+    /// performs the complete hardware-CCMP, AP-address, controlled-port,
+    /// replay-generation, duplicate and Ethernet validation. If a previous
+    /// fragment activated the exceptional ownership graph, it falls back
+    /// before mutating any state.
+    #[inline(never)]
+    pub fn try_dispatch_ordinary_pairwise<S, A>(
+        &mut self,
+        segment: RxSegment<'_>,
+        admit: A,
+        sink: &mut S,
+    ) -> Option<Esp32s31ApRxDispatch>
+    where
+        S: Esp32s31ApRxSink,
+        A: FnMut(Esp32s31ApOrdinaryPairwiseRxRequest) -> Esp32s31ApRxAdmission,
+    {
+        if self.config.security != WifiSecurityMode::Wpa2Personal || self.fragment_admission_active
+        {
+            return None;
+        }
+        let data = match view_protected_data(segment, self.config.ingress) {
+            Ok(data) => data,
+            Err(error) => {
+                return Some(Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Radio(
+                    error,
+                )));
+            }
+        };
+        Some(self.dispatch_ordinary_pairwise_view(data, admit, sink))
+    }
+
+    #[inline(never)]
+    fn dispatch_ordinary_pairwise_view<S, A>(
+        &mut self,
+        data: ProtectedDataRxView<'_>,
+        mut admit: A,
+        sink: &mut S,
+    ) -> Esp32s31ApRxDispatch
+    where
+        S: Esp32s31ApRxSink,
+        A: FnMut(Esp32s31ApOrdinaryPairwiseRxRequest) -> Esp32s31ApRxAdmission,
+    {
+        if data.mpdu[4..10] != self.config.access_point {
+            return Esp32s31ApRxDispatch::ForeignPeer;
+        }
+        let peer: [u8; 6] = data.mpdu[10..16]
+            .try_into()
+            .expect("validated 802.11 address width");
+        if data.ccmp_header.key_id() != CcmpKeyId::PAIRWISE {
+            return Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::PairwiseKeyId(
+                data.ccmp_header.key_id().value(),
+            ));
+        }
+        let retry = data.retry;
+        let sequence_control = data.sequence_control;
+        let tid = data.tid;
+        let ccmp_header = data.ccmp_header;
+        let data = match data.decapsulate(DataInterfaceRole::AccessPoint) {
+            Ok(data) => data,
+            Err(error) => return rejected_data(error),
+        };
+        let lane = tid.map_or(CcmpReplayLane::NonQos, CcmpReplayLane::Tid);
+        let duplicate_owner = match admit(Esp32s31ApOrdinaryPairwiseRxRequest::new(
+            peer,
+            lane,
+            ccmp_header,
+        ))
+        .outcome
+        {
+            Esp32s31ApRxAdmissionOutcome::Authorized(owner) => owner,
+            Esp32s31ApRxAdmissionOutcome::Prepared(_) => {
+                return Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::KeyGenerationMismatch);
+            }
+            Esp32s31ApRxAdmissionOutcome::Unauthorized => {
+                return Esp32s31ApRxDispatch::Unauthorized;
+            }
+            Esp32s31ApRxAdmissionOutcome::Rejected(error) => {
+                return Esp32s31ApRxDispatch::Rejected(error);
+            }
+        };
+        self.bind_duplicate_owner(peer, duplicate_owner);
+        let duplicates = self.duplicates[duplicate_owner.slot()]
+            .as_mut()
+            .map(|state| &mut state.filter)
+            .expect("bound duplicate owner materializes its exact slot");
+        if duplicates.is_duplicate(retry, sequence_control, tid) {
+            return Esp32s31ApRxDispatch::Duplicate;
+        }
+        let mut frames = data.frames;
+        let amsdu = data.amsdu;
+        let mut count = 0_u8;
+        for frame in &mut frames {
+            let frame = match frame {
+                Ok(frame) => frame,
+                Err(error) => return rejected_data(error),
+            };
+            sink.publish(Esp32s31ApRxEvent {
+                frame,
+                raw: data.raw,
+                amsdu,
+                metadata: data.metadata,
+            });
+            count = count.saturating_add(1);
+        }
+        Esp32s31ApRxDispatch::Data {
+            ethernet_frames: count,
+            amsdu,
+        }
+    }
+
+    // Keep the open/fragment/reassembly graph out of ordinary pairwise
+    // callers. Without this boundary LLVM duplicates the complete exceptional
+    // graph into every admission/sink monomorph, making the common AP leaf an
+    // order of magnitude larger than its actual fast body.
+    #[inline(never)]
     fn dispatch_inner<S, A>(
         &mut self,
         segment: RxSegment<'_>,
@@ -1103,6 +1300,112 @@ mod tests {
         );
         frame[32..32 + payload.len()].copy_from_slice(payload);
         192 | (((PUBLIC_HEADER_SIZE + signal_length) as u32) << LENGTH_SHIFT) | BIT_30 | BIT_31
+    }
+
+    #[test]
+    fn ordinary_pairwise_fast_path_matches_general_dispatch_and_duplicate_state() {
+        let payload = [0xaa, 0xaa, 3, 0, 0, 0, 0x08, 0x00, 1, 2, 3, 4];
+        let mut storage = [0_u8; 192];
+        let descriptor =
+            protected_fragment(&mut storage, 17, 0, false, false, 3, DESTINATION, &payload);
+        let owner = duplicate_owner(1, 9).with_key_generation(4);
+        let mut general = Esp32s31ApRxDispatcher::new(config());
+        let mut fast = Esp32s31ApRxDispatcher::new(config());
+        let mut general_sink = Sink::default();
+        let mut fast_sink = Sink::default();
+
+        let general_result = general.dispatch_at(
+            segment(&storage, descriptor),
+            1,
+            |_| Esp32s31ApRxAdmission::authorized(owner),
+            &mut general_sink,
+        );
+        let fast_result = fast
+            .try_dispatch_ordinary_pairwise(
+                segment(&storage, descriptor),
+                |_| Esp32s31ApRxAdmission::authorized(owner),
+                &mut fast_sink,
+            )
+            .expect("ordinary pairwise path is available");
+
+        assert_eq!(fast_result, general_result);
+        assert_eq!(fast_sink.ethernet, general_sink.ethernet);
+        assert_eq!(
+            fast_result,
+            Esp32s31ApRxDispatch::Data {
+                ethernet_frames: 1,
+                amsdu: false,
+            }
+        );
+
+        storage[PUBLIC_HEADER_SIZE + 1] |= 0x08;
+        assert_eq!(
+            general.dispatch_at(
+                segment(&storage, descriptor),
+                2,
+                |_| Esp32s31ApRxAdmission::authorized(owner),
+                &mut general_sink,
+            ),
+            Esp32s31ApRxDispatch::Duplicate
+        );
+        assert_eq!(
+            fast.try_dispatch_ordinary_pairwise(
+                segment(&storage, descriptor),
+                |_| Esp32s31ApRxAdmission::authorized(owner),
+                &mut fast_sink,
+            ),
+            Some(Esp32s31ApRxDispatch::Duplicate)
+        );
+    }
+
+    #[test]
+    fn ordinary_pairwise_fallback_preserves_fragment_clock() {
+        let payload = [0xaa, 0xaa, 3, 0, 0, 0, 0x08, 0x00, 1, 2, 3, 4];
+        let mut storage = [0_u8; 192];
+        let descriptor =
+            protected_fragment(&mut storage, 18, 0, false, false, 4, DESTINATION, &payload);
+        let owner = duplicate_owner(1, 10).with_key_generation(5);
+        let mut general = Esp32s31ApRxDispatcher::new(config());
+        let mut fast = Esp32s31ApRxDispatcher::new(config());
+        // Model the exceptional state left after any earlier fragment. The
+        // typed ordinary leaf must decline without mutation; the caller then
+        // enters the complete graph with its fragment clock.
+        general.fragment_admission_active = true;
+        fast.fragment_admission_active = true;
+        let mut general_sink = Sink::default();
+        let mut fast_sink = Sink::default();
+
+        let mut admit = |_: Esp32s31ApRxAdmissionRequest| Esp32s31ApRxAdmission::authorized(owner);
+        let general_result = general.dispatch_at(
+            segment(&storage, descriptor),
+            77,
+            &mut admit,
+            &mut general_sink,
+        );
+        assert_eq!(
+            fast.try_dispatch_ordinary_pairwise(
+                segment(&storage, descriptor),
+                |_| Esp32s31ApRxAdmission::authorized(owner),
+                &mut fast_sink,
+            ),
+            None
+        );
+        let fast_result = fast.dispatch_at(
+            segment(&storage, descriptor),
+            77,
+            &mut admit,
+            &mut fast_sink,
+        );
+
+        assert_eq!(fast_result, general_result);
+        assert_eq!(fast_sink.ethernet, general_sink.ethernet);
+        assert_eq!(
+            fast_result,
+            Esp32s31ApRxDispatch::Data {
+                ethernet_frames: 1,
+                amsdu: false,
+            }
+        );
     }
 
     #[test]

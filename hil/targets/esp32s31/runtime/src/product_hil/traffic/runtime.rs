@@ -4,8 +4,8 @@ use embassy_executor::Spawner;
 use embassy_net::{Stack, udp::PacketMetadata};
 use embassy_sync::channel::Channel;
 use embassy_time::Duration;
-use static_cell::{ConstStaticCell, StaticCell};
 use open_esp_radio_esp32s31_platform_pac::L1CachePerformanceCounters;
+use static_cell::{ConstStaticCell, StaticCell};
 
 use super::{
     BidirectionalResultChannel, BidirectionalSessionChannel, SessionChannel, TcpBenchmarkConfig,

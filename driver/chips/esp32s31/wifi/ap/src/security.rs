@@ -322,6 +322,25 @@ impl<'storage> Esp32s31ApSecurity<'storage> {
         Ok(())
     }
 
+    /// Admit and commit one ordinary pairwise MPDU in the replay owner's
+    /// synchronous transaction.
+    ///
+    /// Fragment reassembly keeps the split prepare/commit API above because
+    /// its candidate survives an ownership boundary. Ordinary post-reorder
+    /// delivery has no such boundary, so validating the same binding twice
+    /// only adds work to every AP data frame.
+    #[inline(always)]
+    pub fn commit_bound_pairwise_rx_immediate(
+        &mut self,
+        binding: Esp32s31ApPairwiseBinding,
+        lane: CcmpReplayLane,
+        packet_number: CcmpPacketNumber,
+    ) -> Result<(), Esp32s31ApSecurityError> {
+        let index = self.validate_pairwise_binding(binding)?;
+        self.storage_mut().rx_replay[index].commit_immediate(lane, packet_number)?;
+        Ok(())
+    }
+
     pub fn next_bound_pairwise_tx_ccmp_header(
         &mut self,
         binding: Esp32s31ApPairwiseBinding,
@@ -638,10 +657,17 @@ mod tests {
         );
 
         for lane in [CcmpReplayLane::Tid(1), CcmpReplayLane::Tid(7)] {
-            let candidate = security
-                .prepare_bound_pairwise_rx(first_generation, lane, pn1)
+            security
+                .commit_bound_pairwise_rx_immediate(first_generation, lane, pn1)
                 .unwrap();
-            security.commit_bound_pairwise_rx(candidate).unwrap();
+            assert_eq!(
+                security.commit_bound_pairwise_rx_immediate(first_generation, lane, pn1),
+                Err(Esp32s31ApSecurityError::Replay(CcmpReplayError::Replayed {
+                    packet_number: pn1,
+                    highest: pn1,
+                })),
+                "ordinary replay admission advances exactly the selected lane"
+            );
         }
 
         let prepared_before_clear = security
@@ -661,6 +687,15 @@ mod tests {
         assert_eq!(
             security.prepare_bound_pairwise_rx(first_generation, CcmpReplayLane::NonQos, pn5,),
             Err(Esp32s31ApSecurityError::WrongPeer),
+        );
+        assert_eq!(
+            security.commit_bound_pairwise_rx_immediate(
+                first_generation,
+                CcmpReplayLane::Tid(3),
+                pn5,
+            ),
+            Err(Esp32s31ApSecurityError::WrongPeer),
+            "the immediate path cannot mutate a replacement key through a stale binding"
         );
 
         let replacement = security

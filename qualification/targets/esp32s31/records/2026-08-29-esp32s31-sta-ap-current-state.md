@@ -1,6 +1,6 @@
 # ESP32-S31 STA, AP and STA+AP datapath state
 
-Date: 2026-08-29.
+Date: 2026-08-29; updated 2026-08-30 after standalone-AP RX parity.
 
 This record captures the source and HIL state after the split-radio/network
 cutover and the first standalone-AP RX-service correction. Its purpose is to
@@ -91,7 +91,7 @@ which reduced the former 95%+ Core0 residence to approximately 35%.
 
 The current standalone AP path in
 `driver/adapters/embassy/esp32s31-wifi/src/roles/access_point/datapath.rs` has
-received the following correctness and ownership changes:
+received the following correctness, ownership and scheduling changes:
 
 - AP DMA staging and AP protocol handling are explicit phases;
 - AP protocol admission is synchronous inside the Core0 owner;
@@ -105,23 +105,109 @@ received the following correctness and ownership changes:
 - association entropy and nonce material are generated for a fresh WPA2
   association rather than for each received data MPDU;
 - ordinary RX preflight is in-place and avoids a duplicate AP peer/reorder
-  parse.
+  parse;
+- STA and AP use the same role-neutral `FusedRxTurn` budget/result mapping;
+- empty AP protocol probes are gated by one complete readiness predicate and
+  no longer consume frame budget;
+- the ordinary WPA2 QoS frame uses a synchronous AP-specific short leaf while
+  management, EAPOL, fragmentation, A-MSDU and reorder gaps retain the full
+  correctness path;
+- AP exports the same monotonic DMA completed-unit and staged-byte counters as
+  STA to the common recycled-append continuation policy.
 
-These changes corrected a severe AP overload failure. They did not yet make
-the AP service geometry identical to STA:
-
-- `ap_rx_protocol_turn_limit()` restricts an idle turn to half of the
-  negotiated BA window, so BA16 gives only eight protocol frames;
-- `BoundedRxTurn` charges both observation passes and serviced frames against
-  that bound, so a pass which services no frame still consumes turn budget;
-- returning `BudgetExhausted` at this narrow boundary can force immediate
-  continuation and prevent the recycled-append adaptive coalescer from
-  accumulating a wide DMA frontier.
-
-This is the leading measured architectural difference, not yet a proven sole
-cause of the remaining AP CPU/load gap.
+The final item fixed the dominant remaining scheduling defect. The AP adapter
+had inherited the default zero `DatapathRxWorkCounters`, even though its DMA
+producer had completed real work. Every `RecycledAppendPending` therefore
+looked like an empty confirmation to the common adaptive policy. The policy
+reselected its 64-us bootstrap delay indefinitely instead of advancing to the
+bounded 1024-us long-frame level. This was an integration error, not an RF,
+PSRAM, BA-width or PHY limitation.
 
 ## Standalone AP evidence
+
+### RX parity result, 2026-08-30
+
+Before exporting AP DMA work counters, coarse same-image run
+`1788040809460-001b8462` delivered approximately 109 Mbit/s but performed
+41,150 DMA calls for 111,680 MPDUs. It returned 38,369
+`RecycledAppendPending` results; all 38,369 adaptive decisions falsely
+reported zero completed units and zero staged bytes, so every decision used
+64 us. Core0 radio cycles occupied approximately 90.3% of one 320-MHz core in
+that lower-overhead coarse image. The more intrusive phase image measured
+approximately 94.6%.
+
+After the role-neutral counter correction, same-image run
+`1788041102086-001b8e1a` produced this result:
+
+| Counter | Before | Corrected |
+| --- | ---: | ---: |
+| delivered RX | ~109 Mbit/s | 109.0 Mbit/s |
+| DMA calls | 41,150 | 7,736 |
+| completed MPDUs | 111,680 | 111,718 |
+| MPDUs per DMA call | 2.71 | 14.44 |
+| calls with at least 8 MPDUs | 3 | 6,356 |
+| real RX IRQ posts | 2,673 | 301 |
+| Core0 coarse radio load | ~90.3% | 46.95% |
+
+The corrected adaptive decisions observed 108,507 MPDUs and 174,455,768
+staged bytes. Only 96 empty confirmations used 64 us; 6,462 decisions selected
+the 1024-us class. Hardware `BUFFER_FULL`, FIFO overflow and transport errors
+were zero.
+
+The independent production-style task-residence image then passed two cycles
+in run `1788041259260-001b90da`:
+
+| Cycle | Delivered RX | Radio-task residence |
+| --- | ---: | ---: |
+| 1 | 109.4 Mbit/s | 6.303029 / 16.062447 s = 39.24% |
+| 2 | 109.3 Mbit/s | 6.338854 / 16.058205 s = 39.47% |
+
+This satisfies the initial standalone-AP RX parity gate: wide batches,
+ceiling-class throughput and less than 40% Core0 task residence. No PSRAM or
+PHY placement change was part of the causal correction.
+
+### Typed ordinary-data parity update, 2026-08-30
+
+A later same-image-class comparison isolated a remaining AP-specific cost.
+Task-residence image CRC `472a5ac8` delivered 110.985 and 112.447 Mbit/s in AP
+run `1788055115367-00202358`, but occupied 43.806% and 44.213% Core0. The same
+CRC delivered 114.080 Mbit/s in STA run `1788055291761-00202bf2` at 36.280%
+Core0. OpenWrt reported MCS7/40 MHz and at most two retries in the AP run and
+one retry in the STA run. This proved an AP software-path delta under matched
+DMA, scheduler and memory placement; it was not evidence for an RF or PSRAM
+limitation.
+
+The AP ordinary-data path was then cut over to a compact typed transaction:
+
+- `Esp32s31ApOrdinaryPairwiseRxRequest` carries only peer, replay lane and
+  CCMP header; fragment prepare/commit state is absent by construction;
+- the fast dispatcher declines non-ordinary or active-fragment state without
+  mutation, and the caller explicitly enters the complete slow graph;
+- peer/key replay admission and admitted-data activity use the same
+  generation-bound AP peer binding;
+- the current staged owner publishes directly in place; the copying/reorder
+  path remains reserved for A-MSDU, fragments and gaps;
+- success-only role observation is compiled out of the production ordinary
+  leaf while remaining present in diagnostics and tests.
+
+No DMA ring, retained-owner cap, BA width, PSRAM placement, PHY or checksum
+setting changed in this cutover. The final task-residence image CRC
+`f4d832db` passed standalone AP run `1788057272037-00209cb0`:
+
+| Cycle | Delivered RX | Core0 radio | Core1 network | OpenWrt retries/failed |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 112.514 Mbit/s | 38.858% | 37.438% | 0 / 0 |
+| 2 | 112.300 Mbit/s | 38.792% | 37.427% | 0 / 0 |
+
+The same CRC passed three concurrent STA+AP RX repetitions in run
+`1788057035885-0020927e`. Each role received approximately 32.5 Mbit/s; Core0
+radio residence was 39.553%, 39.774% and 39.681% (39.669% mean), and Core1
+network residence was 27.601%, 27.705% and 27.711%. This closes the current
+RX-only `<40%` residence gate for both standalone AP ceiling traffic and the
+measured paired ingress workload. TX and four-flow duplex still require their
+own budgets.
+
+### Earlier correctness checkpoint
 
 The first corrected 42/40 Mbit/s duplex run was
 `1788031620404-0018f648`:
@@ -159,11 +245,14 @@ A low-overhead task-residence build was attempted with
 8-KiB bootstrap handoff margin. Increasing flash capacity to 4 MiB does not
 resolve that internal-SRAM placement conflict.
 
-Consequently, two facts are established:
+Consequently, the current evidence establishes:
 
 1. the AP packet-loss/`BUFFER_FULL` failure was a software service defect and
    is corrected in the measured workloads;
-2. AP has not yet demonstrated STA-class Core0 residence or DMA batching.
+2. the remaining high runner frequency was a second software integration
+   defect: AP hid DMA work from the common adaptive continuation;
+3. standalone AP now demonstrates STA-class DMA batching and less than 40%
+   production radio-task residence at approximately 109 Mbit/s RX.
 
 It is not established that the remaining gap is caused by RF conditions,
 cache layout, checksum, BA width or an irreducible AP protocol cost.
@@ -172,21 +261,18 @@ cache layout, checksum, BA width or an irreducible AP protocol cost.
 
 The paired owner in
 `driver/adapters/embassy/esp32s31-wifi/src/roles/concurrent/rx_service.rs`
-already shares the split-radio/network resources and routes staged ownership
-to the station or AP role. Its service algorithm is nevertheless older than
-the current standalone paths:
+shares the split-radio/network resources, routes staged ownership to the
+station or AP role and now uses the same role-neutral `FusedRxTurn` accounting
+as the standalone owners. The active-TX quantum remains four frames; the idle
+turn uses the full staged-owner bound. The paired classifier still performs
+per-frame role routing, but ordinary AP frames enter the same compact typed
+leaf measured by standalone AP.
 
-- it services DMA before draining existing protocol backlog;
-- it performs per-frame role dispatch through the paired consumer;
-- when staging is saturated, it re-enters DMA after each four consumed frames;
-- its classifier performs a normalized parse before the chosen role parses
-  the frame again;
-- the standalone AP fused-turn correction has not yet been extracted as a
-  common primitive and applied here.
-
-The per-four-frame refill is a bounded correctness policy, but it is not the
-STA adaptive batching architecture. Paired STA+AP must therefore not be
-declared performance-equivalent merely because it uses the same ring and SPSC.
+Run `1788057035885-0020927e` is the current low-overhead paired RX gate. It
+shows that the shared orchestration is no longer a blocker at the measured
+65-Mbit/s aggregate ingress offer. This does not establish four-flow duplex or
+TX parity; those paths exercise physical TX ownership and completion cadence
+which are absent from the RX-only gate.
 
 ## Current assessment
 
@@ -201,37 +287,31 @@ The architectural direction is correct:
 - AP correctness was improved without introducing copying or a second
   cross-core allocator.
 
-The implementation is not yet fully unified. Standalone AP and concurrent
-STA+AP still encode different turn limits and service ordering from STA. The
-remaining work should remove those role-specific orchestration differences
-before micro-optimizing AP parsing, changing BA width or attributing the gap
-to cache/RF behavior.
+Standalone STA, AP and concurrent STA+AP now share the physical turn and
+continuation facts which determine saturated RX batching. Their control-plane
+leaves remain intentionally role-specific: AP resolves peer, controlled port,
+replay generation and power-save state, while STA owns one associated peer.
+The ordinary Ethernet transaction is compact and synchronous in both cases.
 
 ## Next work and proof gates
 
 The next sequence is:
 
-1. Repair the diagnostic-task-poll linker layout by reducing or relocating
-   diagnostic-only internal-SRAM ownership. Do not alter the production
-   datapath to make the profiler link.
-2. Add a matched, low-overhead standalone AP RX-only ceiling/residence run.
-   Compare AP and STA on the same free channel, HT40/MCS7 policy, payload,
-   duration, route and instrumentation class.
-3. Replace the AP idle half-BA limit and observation-pass accounting with the
-   same 32-frame fused budget used by STA, while retaining the four-frame
-   active-TX fairness bound.
-4. Extract the fused `pre-drain -> DMA -> post-drain` lifecycle and result
-   mapping into one role-neutral primitive used by both STA and AP. Role code
-   should provide admission/dispatch, not redefine DMA continuation policy.
-5. Move concurrent STA+AP to that primitive; remove its DMA-first/per-four
-   refill special case and avoid the duplicate normalized parse.
-6. Re-measure before optimizing `admit_rx_data`, peer accounting or security
+1. Keep the low-overhead paired STA+AP RX gate and add a separate duplex
+   residence gate so functional routing success cannot be mistaken for TX
+   ownership parity.
+2. Avoid the paired classifier's duplicate normalized parse without merging
+   STA/AP control-plane state.
+3. Re-measure before further optimizing `admit_rx_data`, peer accounting or security
    parsing. Optimize only components which remain expensive in normalized
    cycles per serviced MPDU.
-7. Characterize AP TX separately. Historical AP TX is about 113 Mbit/s versus
+4. Characterize AP TX separately. Historical AP TX is about 113 Mbit/s versus
    STA near 120 Mbit/s; measure terminal completion to next aggregate
    publication rather than inferring a blocker from throughput alone.
-8. Consider RX BA32 only after the common lifecycle is proven. BA32 may change
+5. Validate monitor and scanner work accounting at their finite service
+   boundaries; they need the same truthful physical counters but not the
+   saturated network protocol leaf.
+6. Consider RX BA32 only after the common lifecycle is proven. BA32 may change
    airtime or burst tolerance, but it is not a substitute for fixing service
    cadence.
 
@@ -245,7 +325,7 @@ For standalone AP RX parity, require all of the following in matched HIL:
 - independent air and route evidence so a quiet AP, laptop WLAN route or host
   bottleneck cannot masquerade as a target optimization.
 
-Until these gates pass, the correct current statement is: standalone AP is
-functionally stable under the measured ceiling load, but its Core0 batching
-and production residence are not yet equivalent to STA; concurrent STA+AP is
-still one lifecycle revision behind standalone STA/AP.
+The correct current statement is: standalone AP RX has reached the requested
+STA performance class in the measured HT40 ceiling workload, and concurrent
+STA+AP RX is below 40% Core0 at the measured 65-Mbit/s aggregate offer. AP TX
+and duplex retain independent performance budgets.

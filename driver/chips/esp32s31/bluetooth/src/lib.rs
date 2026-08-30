@@ -144,13 +144,13 @@ pub use controller_start::{
     BluetoothControllerSchedulerCurrentFailure, BluetoothControllerSchedulerCurrentPending,
     BluetoothControllerSchedulerCurrentStep, BluetoothControllerSchedulerEpochRetained,
     BluetoothControllerSchedulerEpochUnavailable, BluetoothControllerSchedulerNowReady,
-    BluetoothControllerTimeOrphanDrainStep, BluetoothDtmControllerPreparationOutcome,
-    BluetoothDtmControllerPreparationPending, BluetoothDtmControllerPreparationStep,
-    BluetoothDtmControllerPreparationTerminal, BluetoothDtmPostUnlinkArmStep,
-    BluetoothDtmSchedulerStartFailure, BluetoothDtmSoftwareListRemovalPublishedStep,
-    BluetoothInterruptOwnerStorage, BluetoothModemLpTimerInterruptDispatchStorage,
-    BluetoothModemLpTimerSoftwareOwnerStorage, BluetoothSchedulerRunInterruptStorage,
-    BluetoothSharedInterruptDispatchStorage,
+    BluetoothControllerTimeOrphanDrainStep, BluetoothDtmControllerInitialPreparationFailure,
+    BluetoothDtmControllerPreparationOutcome, BluetoothDtmControllerPreparationPending,
+    BluetoothDtmControllerPreparationStep, BluetoothDtmControllerPreparationTerminal,
+    BluetoothDtmPostUnlinkArmStep, BluetoothDtmSchedulerStartFailure,
+    BluetoothDtmSoftwareListRemovalPublishedStep, BluetoothInterruptOwnerStorage,
+    BluetoothModemLpTimerInterruptDispatchStorage, BluetoothModemLpTimerSoftwareOwnerStorage,
+    BluetoothSchedulerRunInterruptStorage, BluetoothSharedInterruptDispatchStorage,
 };
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) use controller_time::{
@@ -172,9 +172,10 @@ pub(crate) use dtm_event_timing::{
 };
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) use dtm_event_timing::{BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerMargin};
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) use dtm_link_state::BluetoothDtmLinkStateReset;
 pub use dtm_link_state::{
-    BluetoothDtmDefaultTxPowerDbm, BluetoothDtmLinkStateReset, BluetoothDtmLinkStateReviewedWords,
-    BluetoothDtmRole,
+    BluetoothDtmDefaultTxPowerDbm, BluetoothDtmLinkStateReviewedWords, BluetoothDtmRole,
 };
 pub use dtm_parameters::{
     BluetoothDtmChannel, BluetoothDtmChannelError, BluetoothDtmPhy, BluetoothDtmPhyError,
@@ -200,7 +201,10 @@ pub use dtm_scheduler_item::{
 };
 #[cfg(any(target_arch = "riscv32", test))]
 pub use dtm_session::BluetoothDtmSessionStopping;
-pub use dtm_session::{BluetoothDtmSessionGraphReady, BluetoothDtmSessionIdle};
+pub use dtm_session::{
+    BluetoothDtmRuntimeConfig, BluetoothDtmRuntimeResources, BluetoothDtmRuntimeSessionBeginError,
+    BluetoothDtmSessionIdle,
+};
 pub use dtm_timing::{BluetoothDtmTxSchedulerTiming, BluetoothDtmTxTimingMicros};
 pub use dtm_tx_packet::{
     BLUETOOTH_DTM_TX_MAX_PAYLOAD_BYTES, BLUETOOTH_DTM_TX_PACKET_PREFIX_BYTES,

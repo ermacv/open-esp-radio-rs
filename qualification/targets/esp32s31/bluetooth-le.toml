@@ -184,7 +184,7 @@ gaps = [
 [[capabilities]]
 id = "dtm-memory-graph"
 title = "Static DTM controller-memory graph"
-scope = "One-time production SRAM ownership and non-movable no-heap storage for every reviewed per-event DTM allocation with target-address binding distinct head-published and RUN-admitted ownership affine first-and-recurring completion recycle fail-closed RX append/re-arm and a CPU-owned reclaimed epoch that can reinitialize the same pinned graph"
+scope = "One-time production SRAM ownership and non-movable no-heap storage for every reviewed per-event DTM allocation with target-address binding composition-owned allocator and default-power configuration exact-pinned-storage identity-checked exclusive session checkout and restore distinct head-published and RUN-admitted ownership affine first-and-recurring completion recycle fail-closed RX append/re-arm and a CPU-owned reclaimed epoch that can reinitialize the same pinned graph"
 implementation = "incomplete"
 host = "covered"
 async = "not-applicable"
@@ -193,7 +193,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "operational-session-owner-continuity-and-reclamation-missing" },
+  { axis = "implementation", id = "operational-session-runner-continuity-missing" },
   { axis = "vendor", id = "remaining-hardware-consumed-descriptor-semantics-missing" },
   { axis = "hil", id = "dtm-static-graph-placement-and-mutation-cell-missing" },
 ]
@@ -220,7 +220,7 @@ async-not-applicable = "bounded-synchronous-account-append-rearm-transition"
 [[capabilities]]
 id = "dtm-link-state-reset"
 title = "DTM controller-SRAM link-state reset region"
-scope = "Exact positional transforms for the eight completely reviewed words without allocator layout or publication claims"
+scope = "Exact positional transforms for the eight completely reviewed words with chip-private reset construction from one composition-owned physical default-power request and typed role without allocator layout or publication claims"
 implementation = "incomplete"
 host = "covered"
 async = "not-applicable"

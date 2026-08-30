@@ -43,8 +43,15 @@ Controller software are recorded in
 
 DTM admission ownership is now narrower than the table's historical summary:
 the published task service is the sole owner of the bounded Timeline and its
-exclusive scheduler-list identity. Its preparation operations never expose
-the Timeline itself; HCI and interrupt endpoints cannot reserve or release
+exclusive scheduler-list identity. The final split also retains the unique
+mutable borrow of one composition-owned DTM runtime, so graph checkout and the
+default-power profile cannot be cross-wired with another Controller task. The
+production claim binds allocator configuration into the graph itself; checkout
+is exclusive and restore rejects any graph from another exact pinned storage
+identity, even when a host model uses the same SRAM range. Initial TX/RX
+link-state reset is constructed privately from that physical power request and
+the typed role rather than accepted from an upper layer. Its preparation
+operations never expose the Timeline itself; HCI and interrupt endpoints cannot reserve or release
 slots, callers cannot build a raw epoch or event plan, and
 `BluetoothControllerTimeSample` is crate-private. A private authority minted
 only while splitting the terminal powered BLE-PHY owner lets that same task
@@ -114,7 +121,7 @@ publication therefore remain fail-closed.
 
 | Capability | Status | Current production boundary |
 | --- | --- | --- |
-| Executor-neutral controller core | PARTIAL | One final Controller owner now splits into disjoint finite ISR service, movable DTM/scheduler task service and raw HCI/bootstrap endpoints. The task service and every post-enable/current/preparation pending state own the sole HAL task owner by value, eliminating the self-reference that previously prevented a concrete async session task. They retain the exclusive list identity, finished-list worker, scheduler timeline, scheduler epoch, post-unlink mailbox and private BLE-PHY RF-ready authority. The service can acquire controller time, prepare first or recurring TX/RX ownership, publish the exact head, perform dynamic interrupt preparation and RUN, then drive completion drain, head retirement, unlink/rearm and role-specific recycle without recovering the monolithic owner. Lock-free scheduler, lock/modify and timer cells replace RTOS broker objects; every hardware-owned wait returns control. The remaining executor-neutral DTM blocker is a concrete session pump which binds semantic HCI commands to these affine operations while preserving hardware progress under response backpressure and Test End. Lock/modify admission remains an explicit unsafe boundary outside that first empty-list path. Selector-6 policy, session ownership of the registered time and post-unlink waits, Link Layer and live radio input remain absent. The Embassy adapter supplies the post-unlink register-before-recheck wake but owns no controller behavior. |
+| Executor-neutral controller core | PARTIAL | One final Controller owner plus one production DTM runtime now split into disjoint finite ISR service, movable DTM/scheduler task service and raw HCI/bootstrap endpoints. The task service and every post-enable/current/preparation pending state own the sole HAL task owner by value while retaining the unique DTM-runtime borrow, eliminating the self-reference that previously prevented a concrete async session task. They retain the exclusive list identity, finished-list worker, scheduler timeline, scheduler epoch, post-unlink mailbox, private BLE-PHY RF-ready authority, graph slot and default-power policy. The service can acquire controller time, prepare first or recurring TX/RX ownership, publish the exact head, perform dynamic interrupt preparation and RUN, then drive completion drain, head retirement, unlink/rearm and role-specific recycle without recovering the monolithic owner. Lock-free scheduler, lock/modify and timer cells replace RTOS broker objects; every hardware-owned wait returns control. The remaining executor-neutral DTM blocker is a concrete session pump which binds semantic HCI commands to these affine operations while preserving hardware progress under response backpressure and Test End. Lock/modify admission remains an explicit unsafe boundary outside that first empty-list path. Selector-6 policy, session ownership of the registered time and post-unlink waits, Link Layer and live radio input remain absent. The Embassy adapter supplies the post-unlink register-before-recheck wake but owns no controller behavior. |
 | Executor-neutral HCI transport | LIVE | Packet arrival and capacity are wake edges; cancelled reads, writes and publications cannot consume or publish a packet. The mutex domain is selected by the platform and requires no RTOS. |
 | Embassy controller owner | ABSENT | No composed sole hardware task, ISR route binding, timer adapter or powered shutdown exists. The portable HCI endpoints deliberately own none of these platform concerns. |
 | Standalone coexistence hooks | PARTIAL | The source-owned coexistence core and Embassy mailbox accept Bluetooth requests, but are not attached to Bluetooth lifecycle. |

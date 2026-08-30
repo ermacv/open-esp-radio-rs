@@ -8,6 +8,7 @@ repository.workspace = true
 description = "Production ESP32-S31 Bluetooth controller composition"
 
 [dependencies]
+open-esp-radio-esp32s31-bluetooth = { path = "../../../chips/esp32s31/bluetooth" }
 open-esp-radio-esp32s31-bluetooth-memory = { path = "../../../chips/esp32s31/bluetooth/memory" }
 static_cell = "2.1.1"
 

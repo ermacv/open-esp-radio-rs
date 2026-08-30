@@ -472,6 +472,7 @@ pub struct BluetoothControllerInterruptOwnersPublished<
     post_unlink_mailbox: BluetoothDtmPostUnlinkMailbox,
     runtime_control: BluetoothLowPowerRuntimeControlObservation,
     scheduler_epoch: Option<crate::BluetoothControllerSchedulerEpoch>,
+    dtm_resources: crate::BluetoothDtmRuntimeResources,
 }
 
 /// Disjoint runtime endpoints borrowed from one statically placed final
@@ -524,15 +525,18 @@ pub struct BluetoothControllerPublishedInterruptService<'runtime, S> {
 /// Task-side hardware service for one published Controller epoch.
 ///
 /// The service owns the mutable scheduler workers, the task-side HAL owner and
-/// the exclusive scheduler-list identity. Stable interrupt storage is borrowed
-/// only for finite task-context preparations; hard-handler dispatch remains in
-/// the disjoint interrupt service.
+/// the exclusive scheduler-list identity. It also holds the unique mutable
+/// borrow of the composition-owned DTM graph and physical default-power
+/// profile. Stable interrupt storage is borrowed only for finite task-context
+/// preparations; hard-handler dispatch remains in the disjoint interrupt
+/// service.
 #[must_use = "the DTM task service owns the powered scheduler epoch"]
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothControllerPublishedTaskService<'runtime, S, const SCHEDULER_CAPACITY: usize> {
     storage: &'runtime S,
     runtime: BluetoothControllerPoweredTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
     mailbox: &'runtime BluetoothDtmPostUnlinkMailbox,
+    dtm_resources: &'runtime mut crate::BluetoothDtmRuntimeResources,
     rf_ready: crate::ble_phy::BluetoothDtmRfReadyAuthority,
     scheduler_epoch: &'runtime mut Option<crate::BluetoothControllerSchedulerEpoch>,
 }
@@ -1053,6 +1057,29 @@ pub struct BluetoothDtmControllerPreparationTerminal<'runtime, S, const SCHEDULE
     outcome: BluetoothDtmControllerPreparationOutcome,
 }
 
+/// Lossless rejection of an initial DTM preparation.
+///
+/// `SessionActive` retains the unused source-owned current together with the
+/// task service whose sole graph is already checked out. A lower preparation
+/// failure instead remains a complete terminal transaction: its role-specific
+/// outcome retains the checked-out graph for the session runner.
+#[must_use = "the source-owned current or lower terminal transaction must be handled"]
+#[cfg(target_arch = "riscv32")]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "both no-alloc variants retain their complete affine Controller owner"
+)]
+pub enum BluetoothDtmControllerInitialPreparationFailure<
+    'runtime,
+    S,
+    const SCHEDULER_CAPACITY: usize,
+> {
+    /// Another DTM session already owns the composition graph.
+    SessionActive(BluetoothControllerSchedulerNowReady<'runtime, S, SCHEDULER_CAPACITY>),
+    /// The checked-out graph reached a lower preparation terminal.
+    PreparationTerminal(BluetoothDtmControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>),
+}
+
 /// Result of one bounded DTM controller-time phase observation.
 #[must_use = "retain Pending or consume the terminal Controller and DTM result"]
 #[cfg(target_arch = "riscv32")]
@@ -1533,6 +1560,31 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>
 {
+    /// Return the exact cancelled or stopped session graph to this Controller.
+    ///
+    /// The embedded runtime rejects an occupied slot or a graph minted from
+    /// another pinned storage object and returns that owner unchanged. This is
+    /// the only public graph-return edge after final Controller publication;
+    /// initial checkout remains private to the typed TX/RX start operations.
+    pub fn restore_dtm_session_idle(
+        &mut self,
+        idle: crate::BluetoothDtmSessionIdle,
+    ) -> Result<(), crate::BluetoothDtmSessionIdle> {
+        self.dtm_resources.restore_idle(idle)
+    }
+
+    fn new_dtm_link_state_reset(
+        &self,
+        role: crate::BluetoothDtmRole,
+    ) -> crate::BluetoothDtmLinkStateReset {
+        crate::BluetoothDtmLinkStateReset::new(
+            None,
+            None,
+            self.dtm_resources.default_tx_power_dbm(),
+            role,
+        )
+    }
+
     fn cancel_dtm_preparation_phase(
         &mut self,
         phase: BluetoothDtmControllerPreparationPhase,
@@ -1877,26 +1929,42 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     )]
     pub fn begin_dtm_transmitter_first_item(
         self,
-        owner: crate::BluetoothDtmPreparedTxGraph,
-        link_state: crate::BluetoothDtmLinkStateReset,
+        pattern: crate::BluetoothDtmPayloadPattern,
+        length: crate::BluetoothDtmPayloadLength,
         channel: crate::BluetoothDtmChannel,
         phy: crate::BluetoothDtmPhy,
         requested_interval_micros: u16,
     ) -> Result<
         BluetoothDtmControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>,
-        BluetoothDtmControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothDtmControllerInitialPreparationFailure<'runtime, S, SCHEDULER_CAPACITY>,
     > {
+        let graph = match self.controller.dtm_resources.begin_session_epoch() {
+            Ok(graph) => graph,
+            Err(crate::BluetoothDtmRuntimeSessionBeginError::SessionActive) => {
+                return Err(BluetoothDtmControllerInitialPreparationFailure::SessionActive(self));
+            }
+        };
+        let owner = crate::BluetoothDtmTxGraphPrepare::prepare_dtm_tx_packet(
+            graph.into_graph(),
+            pattern,
+            length,
+        );
+        let link_state = self
+            .controller
+            .new_dtm_link_state_reset(crate::BluetoothDtmRole::Transmitter);
         let (controller, now) = self.into_parts();
-        controller.begin_dtm_rf_ready_time(
-            BluetoothDtmControllerPreparationPhase::TransmitterFirstRfReady {
-                owner,
-                link_state,
-                channel,
-                phy,
-                requested_interval_micros,
-                now,
-            },
-        )
+        controller
+            .begin_dtm_rf_ready_time(
+                BluetoothDtmControllerPreparationPhase::TransmitterFirstRfReady {
+                    owner,
+                    link_state,
+                    channel,
+                    phy,
+                    requested_interval_micros,
+                    now,
+                },
+            )
+            .map_err(BluetoothDtmControllerInitialPreparationFailure::PreparationTerminal)
     }
 
     /// Begin source-ordered initial receiver preparation.
@@ -1910,24 +1978,34 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     )]
     pub fn begin_dtm_receiver_first_item(
         self,
-        owner: crate::BluetoothDtmReceiverCpuOwned,
-        link_state: crate::BluetoothDtmLinkStateReset,
         channel: crate::BluetoothDtmChannel,
         phy: crate::BluetoothDtmPhy,
     ) -> Result<
         BluetoothDtmControllerPreparationPending<'runtime, S, SCHEDULER_CAPACITY>,
-        BluetoothDtmControllerPreparationTerminal<'runtime, S, SCHEDULER_CAPACITY>,
+        BluetoothDtmControllerInitialPreparationFailure<'runtime, S, SCHEDULER_CAPACITY>,
     > {
+        let graph = match self.controller.dtm_resources.begin_session_epoch() {
+            Ok(graph) => graph,
+            Err(crate::BluetoothDtmRuntimeSessionBeginError::SessionActive) => {
+                return Err(BluetoothDtmControllerInitialPreparationFailure::SessionActive(self));
+            }
+        };
+        let owner = crate::BluetoothDtmReceiverCpuOwned::new(graph.into_graph());
+        let link_state = self
+            .controller
+            .new_dtm_link_state_reset(crate::BluetoothDtmRole::Receiver);
         let (controller, now) = self.into_parts();
-        controller.begin_dtm_rf_ready_time(
-            BluetoothDtmControllerPreparationPhase::ReceiverFirstRfReady {
-                owner,
-                link_state,
-                channel,
-                phy,
-                now,
-            },
-        )
+        controller
+            .begin_dtm_rf_ready_time(
+                BluetoothDtmControllerPreparationPhase::ReceiverFirstRfReady {
+                    owner,
+                    link_state,
+                    channel,
+                    phy,
+                    now,
+                },
+            )
+            .map_err(BluetoothDtmControllerInitialPreparationFailure::PreparationTerminal)
     }
 
     /// Reserve and begin source-ordered recurring transmitter preparation.
@@ -1980,7 +2058,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
     }
 }
 
-/// Failed stable publication retaining the complete Controller and storage.
+/// Failed stable publication retaining the Controller, storage and DTM runtime.
 #[must_use = "failed ISR publication returns every affine owner for inspection or retry"]
 #[cfg(target_arch = "riscv32")]
 pub struct BluetoothControllerInterruptOwnerPublicationFailure<
@@ -2006,6 +2084,7 @@ pub struct BluetoothControllerInterruptOwnerPublicationFailure<
         PACKET_CAPACITY,
     >,
     storage: S,
+    dtm_resources: crate::BluetoothDtmRuntimeResources,
     error: S::Error,
 }
 
@@ -2076,15 +2155,16 @@ impl<
 where
     M: RawMutex,
 {
-    /// Borrow the complete final Controller as disjoint interrupt, task and
-    /// HCI endpoints.
+    /// Borrow the complete final Controller and DTM runtime as disjoint
+    /// interrupt, task and HCI endpoints.
     ///
     /// The caller must retain this owner in stable storage for the complete
-    /// routed lifetime. No endpoint contains or moves that backing owner.
-    pub fn split_runtime(
-        &mut self,
+    /// routed lifetime. The task endpoint uniquely borrows its embedded DTM
+    /// runtime; no endpoint can cross-wire a graph from another composition.
+    pub fn split_runtime<'runtime>(
+        &'runtime mut self,
     ) -> BluetoothControllerPublishedRuntimeEndpoints<
-        '_,
+        'runtime,
         M,
         S,
         SCHEDULER_CAPACITY,
@@ -2097,6 +2177,7 @@ where
             _storage,
             post_unlink_mailbox,
             scheduler_epoch,
+            dtm_resources,
             ..
         } = self;
         let (
@@ -2117,6 +2198,7 @@ where
                 storage: _storage,
                 runtime: task,
                 mailbox: post_unlink_mailbox,
+                dtm_resources,
                 rf_ready,
                 scheduler_epoch,
             },
@@ -2746,7 +2828,7 @@ where
         &self.error
     }
 
-    /// Recover the complete pre-publication Controller and storage value.
+    /// Recover the complete pre-publication Controller, storage and DTM runtime.
     pub fn into_parts(
         self,
     ) -> (
@@ -2760,9 +2842,15 @@ where
             PACKET_CAPACITY,
         >,
         S,
+        crate::BluetoothDtmRuntimeResources,
         S::Error,
     ) {
-        (self.controller, self.storage, self.error)
+        (
+            self.controller,
+            self.storage,
+            self.dtm_resources,
+            self.error,
+        )
     }
 }
 
@@ -2811,7 +2899,8 @@ where
     /// Atomically publish both owners in caller-selected stable ISR storage.
     ///
     /// Rejection occurs before publication and returns this exact state plus
-    /// the storage capability. Success still leaves every CPU route inactive.
+    /// the storage capability and unmodified DTM runtime. Success still leaves
+    /// every CPU route inactive.
     #[expect(
         clippy::result_large_err,
         reason = "the no-alloc failure must return every affine powered owner"
@@ -2823,6 +2912,7 @@ where
     pub fn publish_interrupt_owners<S>(
         self,
         storage: S,
+        dtm_resources: crate::BluetoothDtmRuntimeResources,
     ) -> Result<
         BluetoothControllerInterruptOwnersPublished<
             P,
@@ -2861,6 +2951,7 @@ where
                 post_unlink_mailbox: BluetoothDtmPostUnlinkMailbox::new(),
                 runtime_control,
                 scheduler_epoch: None,
+                dtm_resources,
             }),
             Err((error, storage, interrupts, timer)) => {
                 Err(BluetoothControllerInterruptOwnerPublicationFailure {
@@ -2871,6 +2962,7 @@ where
                         runtime_control,
                     },
                     storage,
+                    dtm_resources,
                     error,
                 })
             }

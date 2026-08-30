@@ -2,18 +2,19 @@
 //!
 //! This crate owns placement and one-time acquisition for both the BLE PHY
 //! environment and one DTM event graph. Controller-memory layout and address
-//! validation remain in the chip memory crate; a future async runner will
-//! aggregate the returned CPU owners with HAL and IRQ owners.
+//! validation remain in the chip memory crate. A successful DTM claim binds
+//! the graph directly to its immutable runtime configuration and idle-session
+//! owner for later composition with HAL, HCI and IRQ owners.
 
 #![no_std]
 #![deny(unsafe_code)]
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use open_esp_radio_esp32s31_bluetooth::{BluetoothDtmRuntimeConfig, BluetoothDtmRuntimeResources};
 use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothBlePhyEngineBindFailure, BluetoothBlePhyEngineCpuOwned, BluetoothBlePhyEngineStorage,
-    BluetoothDtmMemoryGraphBindFailure, BluetoothDtmMemoryGraphCpuOwned,
-    BluetoothDtmMemoryGraphStorage, BluetoothDtmSchedulerAllocationConfig,
+    BluetoothDtmMemoryGraphBindFailure, BluetoothDtmMemoryGraphStorage,
 };
 #[cfg(not(target_arch = "riscv32"))]
 use open_esp_radio_esp32s31_bluetooth_memory::{
@@ -152,14 +153,14 @@ impl Esp32s31BluetoothDtmMemory {
     ///
     /// The caller must supply the controller limits and reviewed private fact
     /// from the source configuration associated with this firmware build. The
-    /// returned graph remains CPU-owned and unreachable by hardware.
+    /// returned runtime retains an idle CPU-owned graph unreachable by hardware.
     #[cfg(target_arch = "riscv32")]
     pub fn claim(
         &'static self,
-        config: BluetoothDtmSchedulerAllocationConfig,
-    ) -> Result<BluetoothDtmMemoryGraphCpuOwned, Esp32s31BluetoothDtmMemoryClaimError> {
+        config: BluetoothDtmRuntimeConfig,
+    ) -> Result<BluetoothDtmRuntimeResources, Esp32s31BluetoothDtmMemoryClaimError> {
         let storage = self.begin_claim()?;
-        BluetoothDtmMemoryGraphStorage::pin_static(storage, config)
+        BluetoothDtmRuntimeResources::claim_static(storage, config)
             .map_err(Esp32s31BluetoothDtmMemoryClaimError::Placement)
     }
 
@@ -169,10 +170,10 @@ impl Esp32s31BluetoothDtmMemory {
     pub fn claim_model(
         &'static self,
         base: BluetoothDtmMemoryGraphModelAddress,
-        config: BluetoothDtmSchedulerAllocationConfig,
-    ) -> Result<BluetoothDtmMemoryGraphCpuOwned, Esp32s31BluetoothDtmMemoryClaimError> {
+        config: BluetoothDtmRuntimeConfig,
+    ) -> Result<BluetoothDtmRuntimeResources, Esp32s31BluetoothDtmMemoryClaimError> {
         let storage = self.begin_claim()?;
-        BluetoothDtmMemoryGraphStorage::pin_static_model(storage, base, config)
+        BluetoothDtmRuntimeResources::claim_static_model(storage, base, config)
             .map_err(Esp32s31BluetoothDtmMemoryClaimError::Placement)
     }
 }
@@ -195,15 +196,15 @@ pub enum Esp32s31BluetoothDtmMemoryClaimError {
     Placement(BluetoothDtmMemoryGraphBindFailure),
 }
 
-/// Claim the sole production DTM controller-memory graph.
+/// Claim the sole production DTM runtime and controller-memory graph.
 ///
 /// The section name is consumed by the board linker, which must place all
 /// `.dma.bss.*` inputs in available internal SRAM. Runtime address validation
 /// remains mandatory and fails closed if that contract drifts.
 #[cfg(target_arch = "riscv32")]
-pub fn claim_production_dtm_memory(
-    config: BluetoothDtmSchedulerAllocationConfig,
-) -> Result<BluetoothDtmMemoryGraphCpuOwned, Esp32s31BluetoothDtmMemoryClaimError> {
+pub fn claim_production_dtm_runtime(
+    config: BluetoothDtmRuntimeConfig,
+) -> Result<BluetoothDtmRuntimeResources, Esp32s31BluetoothDtmMemoryClaimError> {
     PRODUCTION_DTM_MEMORY.claim(config)
 }
 
@@ -217,6 +218,9 @@ static PRODUCTION_DTM_MEMORY: Esp32s31BluetoothDtmMemory = Esp32s31BluetoothDtmM
 
 #[cfg(test)]
 mod tests {
+    use open_esp_radio_esp32s31_bluetooth::{
+        BluetoothDtmDefaultTxPowerDbm, BluetoothDtmRuntimeConfig,
+    };
     use open_esp_radio_esp32s31_bluetooth_memory::{
         BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_HIGH, BluetoothBlePhyEngineBindError,
         BluetoothBlePhyEngineModelAddress, BluetoothBlePhyEngineStorage,
@@ -229,8 +233,11 @@ mod tests {
         Esp32s31BluetoothDtmMemory, Esp32s31BluetoothDtmMemoryClaimError,
     };
 
-    const fn allocation_config() -> BluetoothDtmSchedulerAllocationConfig {
-        BluetoothDtmSchedulerAllocationConfig::new(2, 3, 5, 4)
+    const fn runtime_config() -> BluetoothDtmRuntimeConfig {
+        BluetoothDtmRuntimeConfig::new(
+            BluetoothDtmSchedulerAllocationConfig::new(2, 3, 5, 4),
+            BluetoothDtmDefaultTxPowerDbm::new(6),
+        )
     }
 
     #[test]
@@ -295,17 +302,14 @@ mod tests {
 
         let base =
             BluetoothDtmMemoryGraphModelAddress::new(0x2f00_1000).expect("model base is encodable");
-        let owner = MEMORY
-            .claim_model(base, allocation_config())
+        let runtime = MEMORY
+            .claim_model(base, runtime_config())
             .expect("fresh model arena binds once");
-        let (start, end) = owner.binding().range();
-        assert_eq!(start, 0x2f00_1000);
-        assert_eq!(
-            end - start,
-            size_of::<BluetoothDtmMemoryGraphStorage>() as u32
-        );
+        assert_eq!(runtime.config(), runtime_config());
+        assert_eq!(runtime.default_tx_power_dbm().dbm(), 6);
+        assert!(runtime.session_is_idle());
         assert!(matches!(
-            MEMORY.claim_model(base, allocation_config()),
+            MEMORY.claim_model(base, runtime_config()),
             Err(Esp32s31BluetoothDtmMemoryClaimError::InUse)
         ));
     }
@@ -320,7 +324,7 @@ mod tests {
                 + 4,
         )
         .expect("crossing model base is still encodable");
-        let failure = match MEMORY.claim_model(crossing, allocation_config()) {
+        let failure = match MEMORY.claim_model(crossing, runtime_config()) {
             Err(Esp32s31BluetoothDtmMemoryClaimError::Placement(failure)) => failure,
             Err(Esp32s31BluetoothDtmMemoryClaimError::InUse) => {
                 panic!("fresh arena cannot already be in use")
@@ -340,7 +344,7 @@ mod tests {
         let valid = BluetoothDtmMemoryGraphModelAddress::new(0x2f00_1000)
             .expect("valid retry address is encodable");
         assert!(matches!(
-            MEMORY.claim_model(valid, allocation_config()),
+            MEMORY.claim_model(valid, runtime_config()),
             Err(Esp32s31BluetoothDtmMemoryClaimError::InUse)
         ));
     }

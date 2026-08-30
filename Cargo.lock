@@ -2303,6 +2303,7 @@ dependencies = [
 name = "open-esp-radio-esp32s31-bluetooth-integration"
 version = "0.1.0"
 dependencies = [
+ "open-esp-radio-esp32s31-bluetooth",
  "open-esp-radio-esp32s31-bluetooth-memory",
  "static_cell",
 ]

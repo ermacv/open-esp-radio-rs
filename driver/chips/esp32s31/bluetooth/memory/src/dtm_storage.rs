@@ -741,6 +741,29 @@ impl BluetoothDtmMemoryGraphModelAddress {
     }
 }
 
+/// Opaque identity of one exact statically pinned DTM graph storage object.
+///
+/// This value is an equality witness only: it exposes neither the storage
+/// pointer nor controller-SRAM addresses and grants no access or publication
+/// authority. The memory layer mints it while consuming the unique static
+/// storage borrow, and every graph typestate retains it inside its binding.
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct BluetoothDtmMemoryGraphIdentity(usize);
+
+impl BluetoothDtmMemoryGraphIdentity {
+    fn for_storage(storage: &BluetoothDtmMemoryGraphStorage) -> Self {
+        Self(core::ptr::addr_of!(*storage).addr())
+    }
+}
+
+impl core::fmt::Debug for BluetoothDtmMemoryGraphIdentity {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("BluetoothDtmMemoryGraphIdentity")
+            .finish_non_exhaustive()
+    }
+}
+
 /// Non-forgeable address binding retained by one CPU-owned static graph.
 ///
 /// The value proves that every contained allocation lies in physical internal
@@ -748,6 +771,8 @@ impl BluetoothDtmMemoryGraphModelAddress {
 /// not `Clone` or `Copy`; obtaining compressed component addresses does not
 /// grant controller publication authority.
 pub struct BluetoothDtmMemoryGraphBinding {
+    #[cfg(not(target_arch = "riscv32"))]
+    identity: BluetoothDtmMemoryGraphIdentity,
     base: BluetoothControllerSramAddress,
     end_exclusive: u32,
     allocation_config: BluetoothDtmSchedulerAllocationConfig,
@@ -763,9 +788,12 @@ pub struct BluetoothDtmMemoryGraphBinding {
 
 impl BluetoothDtmMemoryGraphBinding {
     fn new(
+        identity: BluetoothDtmMemoryGraphIdentity,
         base: u32,
         allocation_config: BluetoothDtmSchedulerAllocationConfig,
     ) -> Result<Self, BluetoothDtmMemoryGraphBindError> {
+        #[cfg(target_arch = "riscv32")]
+        let _ = identity;
         let base_address = BluetoothControllerSramAddress::new(base)
             .map_err(BluetoothDtmMemoryGraphBindError::InvalidBase)?;
         if base < BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW
@@ -798,6 +826,8 @@ impl BluetoothDtmMemoryGraphBinding {
             .map_err(|_| BluetoothDtmMemoryGraphBindError::InvalidPacketExtent)?;
 
         Ok(Self {
+            #[cfg(not(target_arch = "riscv32"))]
+            identity,
             base: base_address,
             end_exclusive: base + BLUETOOTH_DTM_MEMORY_GRAPH_BYTES,
             allocation_config,
@@ -812,9 +842,30 @@ impl BluetoothDtmMemoryGraphBinding {
         })
     }
 
+    /// Return the opaque identity of this exact pinned storage object.
+    pub const fn identity(&self) -> BluetoothDtmMemoryGraphIdentity {
+        #[cfg(target_arch = "riscv32")]
+        {
+            BluetoothDtmMemoryGraphIdentity(self.base.address() as usize)
+        }
+        #[cfg(not(target_arch = "riscv32"))]
+        {
+            self.identity
+        }
+    }
+
     /// Return the complete physical SRAM range occupied by this graph.
     pub const fn range(&self) -> (u32, u32) {
         (self.base.address(), self.end_exclusive)
+    }
+
+    /// Return the semantic allocator inputs permanently bound to this graph.
+    ///
+    /// Reinitialization uses this retained value, so upper composition can
+    /// report the effective policy without keeping a second, cross-wireable
+    /// copy beside the graph.
+    pub const fn allocation_config(&self) -> BluetoothDtmSchedulerAllocationConfig {
+        self.allocation_config
     }
 
     /// Return the address of the private DTM link-state allocation.
@@ -2003,6 +2054,11 @@ pub struct BluetoothDtmMemoryGraphReclaimed {
 }
 
 impl BluetoothDtmMemoryGraphReclaimed {
+    /// Borrow the immutable graph binding retained across allocation epochs.
+    pub const fn binding(&self) -> &BluetoothDtmMemoryGraphBinding {
+        &self.binding
+    }
+
     /// Start a fresh CPU-owned allocation epoch in the same pinned storage.
     ///
     /// Reinitialization consumes the reclaimed token exactly once and installs
@@ -2396,7 +2452,8 @@ impl BluetoothDtmMemoryGraphStorage {
         base: u32,
         config: BluetoothDtmSchedulerAllocationConfig,
     ) -> Result<BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphBindFailure> {
-        let binding = match BluetoothDtmMemoryGraphBinding::new(base, config) {
+        let identity = BluetoothDtmMemoryGraphIdentity::for_storage(storage);
+        let binding = match BluetoothDtmMemoryGraphBinding::new(identity, base, config) {
             Ok(binding) => binding,
             Err(error) => return Err(BluetoothDtmMemoryGraphBindFailure::new(storage, error)),
         };

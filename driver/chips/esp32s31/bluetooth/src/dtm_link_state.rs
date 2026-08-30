@@ -10,6 +10,7 @@
 
 #![forbid(unsafe_code)]
 
+#[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmBoundSramLinkAddress;
 pub use open_esp_radio_esp32s31_bluetooth_memory::{
     BluetoothDtmLinkStateReviewedWords, BluetoothDtmRole,
@@ -41,10 +42,12 @@ impl BluetoothDtmDefaultTxPowerDbm {
 /// value used by the reviewed standalone profile, but not meanings for its
 /// individual bits.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(any(target_arch = "riscv32", test))]
 struct BluetoothDtmHardwareProfile {
     default_tx_power_dbm: BluetoothDtmDefaultTxPowerDbm,
 }
 
+#[cfg(any(target_arch = "riscv32", test))]
 impl BluetoothDtmHardwareProfile {
     const REVIEWED_CONFIG: u8 = 3;
 
@@ -78,19 +81,21 @@ impl BluetoothDtmHardwareProfile {
 
 /// Typed dynamic inputs to one DTM link-state reset.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothDtmLinkStateReset {
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) struct BluetoothDtmLinkStateReset {
     tx_head: Option<BluetoothDtmBoundSramLinkAddress>,
     rx_tail: Option<BluetoothDtmBoundSramLinkAddress>,
     hardware_profile: BluetoothDtmHardwareProfile,
     role: BluetoothDtmRole,
 }
 
+#[cfg(any(target_arch = "riscv32", test))]
 impl BluetoothDtmLinkStateReset {
     /// Bind semantic inputs to the reviewed ESP32-S31 hardware profile.
     ///
     /// Callers cannot supply either the private rounded-power image or the
     /// positional configuration image.
-    pub const fn new(
+    pub(crate) const fn new(
         tx_head: Option<BluetoothDtmBoundSramLinkAddress>,
         rx_tail: Option<BluetoothDtmBoundSramLinkAddress>,
         default_tx_power_dbm: BluetoothDtmDefaultTxPowerDbm,
@@ -110,7 +115,7 @@ impl BluetoothDtmLinkStateReset {
     /// first replaces its low-twenty-bit TX-head link, then transforms the
     /// halfword at byte offset `+0x02`. `WORD_08` receives the private RX tail.
     /// `WORD_34` is overwritten only for the RX role.
-    pub const fn apply(
+    pub(crate) const fn apply(
         self,
         current: BluetoothDtmLinkStateReviewedWords,
     ) -> BluetoothDtmLinkStateReviewedWords {
@@ -124,7 +129,7 @@ impl BluetoothDtmLinkStateReset {
     }
 
     /// Return the DTM role encoded by this validated reset.
-    pub const fn role(self) -> BluetoothDtmRole {
+    pub(crate) const fn role(self) -> BluetoothDtmRole {
         self.role
     }
 
@@ -133,7 +138,7 @@ impl BluetoothDtmLinkStateReset {
     /// The consuming memory-graph transaction calls this with links sampled
     /// after taking ownership, so a plan cannot retain stale links from an
     /// earlier event or another graph.
-    pub const fn with_private_links(
+    pub(crate) const fn with_private_links(
         self,
         tx_head: BluetoothDtmBoundSramLinkAddress,
         rx_tail: BluetoothDtmBoundSramLinkAddress,

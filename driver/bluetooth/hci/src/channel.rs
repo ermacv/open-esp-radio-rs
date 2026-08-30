@@ -17,6 +17,22 @@ use embedded_io::{ErrorKind, ErrorType, Write};
 
 use crate::{ControllerToHostQueueError, PacketSlot, decode_complete_packet};
 
+/// Opaque identity of one live in-process HCI resource epoch.
+///
+/// The marker can be copied for affinity checks but cannot be constructed by
+/// callers. Its borrow prevents identity from outliving the backing channel.
+#[derive(Clone, Copy)]
+pub struct HciEpochIdentity<'epoch> {
+    marker: &'epoch u8,
+}
+
+impl HciEpochIdentity<'_> {
+    /// Whether two endpoints originate from the same live channel object.
+    pub fn same_epoch(self, other: HciEpochIdentity<'_>) -> bool {
+        core::ptr::eq(self.marker, other.marker)
+    }
+}
+
 /// An error at the bounded in-process HCI boundary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HciChannelError {
@@ -290,6 +306,7 @@ pub struct InProcessHciChannel<
 > where
     M: RawMutex,
 {
+    identity: u8,
     host_to_controller: AsyncPacketQueue<M, HOST_TO_CONTROLLER_DEPTH, PACKET_CAPACITY>,
     controller_to_host: AsyncPacketQueue<M, CONTROLLER_TO_HOST_DEPTH, PACKET_CAPACITY>,
 }
@@ -318,6 +335,7 @@ where
             "an HCI channel packet slot must retain at least one byte"
         );
         Self {
+            identity: 0,
             host_to_controller: AsyncPacketQueue::new(),
             controller_to_host: AsyncPacketQueue::new(),
         }
@@ -348,6 +366,9 @@ where
                 controller_to_host: &self.controller_to_host,
             },
             InProcessHciControllerEndpoint {
+                identity: HciEpochIdentity {
+                    marker: &self.identity,
+                },
                 host_to_controller: &self.host_to_controller,
                 controller_to_host: &self.controller_to_host,
             },
@@ -469,18 +490,20 @@ pub struct InProcessHciControllerEndpoint<
 > where
     M: RawMutex,
 {
+    identity: HciEpochIdentity<'channel>,
     host_to_controller: &'channel AsyncPacketQueue<M, HOST_TO_CONTROLLER_DEPTH, PACKET_CAPACITY>,
     controller_to_host: &'channel AsyncPacketQueue<M, CONTROLLER_TO_HOST_DEPTH, PACKET_CAPACITY>,
 }
 
 impl<
+    'channel,
     M,
     const HOST_TO_CONTROLLER_DEPTH: usize,
     const CONTROLLER_TO_HOST_DEPTH: usize,
     const PACKET_CAPACITY: usize,
 >
     InProcessHciControllerEndpoint<
-        '_,
+        'channel,
         M,
         HOST_TO_CONTROLLER_DEPTH,
         CONTROLLER_TO_HOST_DEPTH,
@@ -489,6 +512,11 @@ impl<
 where
     M: RawMutex,
 {
+    /// Identity shared only by endpoints split from this exact channel epoch.
+    pub const fn epoch_identity(&self) -> HciEpochIdentity<'channel> {
+        self.identity
+    }
+
     /// Await and consume the oldest complete Host packet.
     pub async fn receive<'buffer>(
         &self,
@@ -794,6 +822,18 @@ mod tests {
     const HARDWARE_ERROR: [u8; 3] = [0x10, 0x01, 0x42];
 
     type TestChannel = InProcessHciChannel<NoopRawMutex, 1, 1, 16>;
+
+    #[test]
+    fn controller_epoch_identity_distinguishes_live_channels() {
+        let mut first = TestChannel::new();
+        let mut second = TestChannel::new();
+        let (_, first_controller) = first.split();
+        let (_, second_controller) = second.split();
+
+        let first_identity = first_controller.epoch_identity();
+        assert!(first_identity.same_epoch(first_controller.epoch_identity()));
+        assert!(!first_identity.same_epoch(second_controller.epoch_identity()));
+    }
 
     #[test]
     fn typed_reset_and_event_cross_the_direct_hci_boundary() {

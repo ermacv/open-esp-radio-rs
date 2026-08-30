@@ -536,6 +536,7 @@ pub struct BluetoothControllerPublishedTaskService<'runtime, S, const SCHEDULER_
     storage: &'runtime S,
     runtime: BluetoothControllerPoweredTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
     mailbox: &'runtime BluetoothDtmPostUnlinkMailbox,
+    hci_epoch: open_esp_radio_bluetooth_hci::HciEpochIdentity<'runtime>,
     dtm_resources: &'runtime mut crate::BluetoothDtmRuntimeResources,
     rf_ready: crate::ble_phy::BluetoothDtmRfReadyAuthority,
     scheduler_epoch: &'runtime mut Option<crate::BluetoothControllerSchedulerEpoch>,
@@ -1927,7 +1928,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         clippy::result_large_err,
         reason = "no-alloc begin failure retains the Controller and complete TX retry owner"
     )]
-    pub fn begin_dtm_transmitter_first_item(
+    pub(crate) fn begin_dtm_transmitter_first_item(
         self,
         pattern: crate::BluetoothDtmPayloadPattern,
         length: crate::BluetoothDtmPayloadLength,
@@ -1976,7 +1977,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         clippy::result_large_err,
         reason = "no-alloc begin failure retains the Controller and complete RX retry owner"
     )]
-    pub fn begin_dtm_receiver_first_item(
+    pub(crate) fn begin_dtm_receiver_first_item(
         self,
         channel: crate::BluetoothDtmChannel,
         phy: crate::BluetoothDtmPhy,
@@ -2188,6 +2189,7 @@ where
             },
             rf_ready,
         ) = initialized.split_runtime();
+        let hci_epoch = hci.controller.epoch_identity();
         BluetoothControllerPublishedRuntimeEndpoints {
             interrupt: BluetoothControllerPublishedInterruptService {
                 storage: _storage,
@@ -2198,6 +2200,7 @@ where
                 storage: _storage,
                 runtime: task,
                 mailbox: post_unlink_mailbox,
+                hci_epoch,
                 dtm_resources,
                 rf_ready,
                 scheduler_epoch,
@@ -2441,7 +2444,7 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
         clippy::result_large_err,
         reason = "pre-MMIO rejection returns the complete affine DTM graph"
     )]
-    pub fn publish_dtm_scheduler_head<Role, Phase>(
+    pub(crate) fn publish_dtm_scheduler_head<Role, Phase>(
         &mut self,
         merged: crate::BluetoothDtmEmptySchedulerMergePrepared<Role, Phase>,
     ) -> Result<
@@ -2459,6 +2462,12 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 impl<S, const SCHEDULER_CAPACITY: usize>
     BluetoothControllerPublishedTaskService<'_, S, SCHEDULER_CAPACITY>
 {
+    pub(crate) const fn hci_epoch_identity(
+        &self,
+    ) -> open_esp_radio_bluetooth_hci::HciEpochIdentity<'_> {
+        self.hci_epoch
+    }
+
     /// Durable general scheduler handoff for this powered epoch.
     pub const fn scheduler_wake(&self) -> &crate::BluetoothSchedulerWakeCell {
         self.runtime.scheduler_wake()
@@ -2512,7 +2521,7 @@ impl<S, const SCHEDULER_CAPACITY: usize>
         clippy::result_large_err,
         reason = "a start rejection must return the complete affine published graph"
     )]
-    pub fn start_dtm_scheduler<Role>(
+    pub(crate) fn start_dtm_scheduler<Role>(
         &mut self,
         head: crate::BluetoothDtmSchedulerHeadPublished<Role>,
     ) -> Result<

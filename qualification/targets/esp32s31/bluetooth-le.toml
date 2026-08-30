@@ -81,7 +81,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-controller-boundary.md",
 ]
 gaps = [
-  { axis = "implementation", id = "live-route-and-concrete-dtm-session-runner-missing" },
+  { axis = "implementation", id = "live-route-and-long-lived-dtm-session-pump-missing" },
   { axis = "vendor", id = "complete-controller-init-production-trace-missing" },
   { axis = "hil", id = "initialized-controller-cell-missing" },
   { axis = "async", id = "stable-route-and-controller-task-wake-composition-missing" },
@@ -99,10 +99,10 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "live-controller-session-pump-missing" },
+  { axis = "implementation", id = "completion-recurring-and-test-end-session-pump-missing" },
   { axis = "vendor", id = "effective-counter-width-physical-unit-and-wake-source-missing" },
   { axis = "hil", id = "controller-time-latch-and-wrap-cell-missing" },
-  { axis = "async", id = "live-controller-runner-and-proven-absolute-recheck-source-missing" },
+  { axis = "async", id = "embassy-cooperative-recheck-and-live-controller-task-missing" },
 ]
 
 [[capabilities]]
@@ -193,7 +193,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "operational-session-runner-continuity-missing" },
+  { axis = "implementation", id = "recurring-and-test-end-runner-continuity-missing" },
   { axis = "vendor", id = "remaining-hardware-consumed-descriptor-semantics-missing" },
   { axis = "hil", id = "dtm-static-graph-placement-and-mutation-cell-missing" },
 ]
@@ -339,7 +339,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "powered-controller-runner-missing" },
+  { axis = "implementation", id = "autonomous-powered-controller-session-runner-missing" },
   { axis = "vendor", id = "source-3-current-revision-trigger-proof-missing" },
   { axis = "hil", id = "scheduler-lock-modify-live-hardware-trace-missing" },
 ]
@@ -405,7 +405,7 @@ gaps = [
 [[capabilities]]
 id = "typed-hci-controller"
 title = "Typed bt-hci Controller implementation"
-scope = "HCI command event ACL credit and error semantics for the implemented ESP32-S31 LE capability set"
+scope = "HCI command event ACL credit and error semantics plus owned semantic Receiver and Transmitter Test v1 progression through the ESP32-S31 first-event hardware RUN boundary"
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
@@ -414,7 +414,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/vendor-project.toml",
 ]
 gaps = [
-  { axis = "implementation", id = "concrete-dtm-session-runner-missing" },
+  { axis = "implementation", id = "hci-command-loop-recurring-and-test-end-runner-missing" },
   { axis = "host", id = "dtm-session-state-and-hardware-response-backpressure-tests-missing" },
   { axis = "vendor", id = "hci-command-and-acl-production-contracts-missing" },
   { axis = "hil", id = "external-hci-interoperability-cell-missing" },

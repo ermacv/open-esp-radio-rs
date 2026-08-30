@@ -49,8 +49,8 @@ pub use bootstrap::{
 };
 pub use bt_hci;
 pub use channel::{
-    HciChannelError, HciCommandPacket, HostToControllerFrame, InProcessHciChannel,
-    InProcessHciControllerEndpoint, InProcessHciHostTransport,
+    HciChannelError, HciCommandPacket, HciEpochIdentity, HostToControllerFrame,
+    InProcessHciChannel, InProcessHciControllerEndpoint, InProcessHciHostTransport,
 };
 pub use classification::{LeControllerCommandClassification, classify_le_controller_command};
 pub use dtm::{

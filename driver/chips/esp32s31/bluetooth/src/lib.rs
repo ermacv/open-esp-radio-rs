@@ -75,12 +75,16 @@ mod controller_hal;
 mod controller_start;
 mod controller_time;
 #[cfg(any(target_arch = "riscv32", test))]
+mod dtm_command;
+#[cfg(any(target_arch = "riscv32", test))]
 mod dtm_event_prepare;
 mod dtm_event_timing;
 mod dtm_link_state;
 mod dtm_parameters;
 mod dtm_payload;
 mod dtm_post_unlink;
+#[cfg(target_arch = "riscv32")]
+mod dtm_runner;
 mod dtm_rx_completion;
 mod dtm_scheduler_item;
 mod dtm_session;
@@ -190,6 +194,16 @@ pub use dtm_post_unlink::{BluetoothDtmPostUnlinkAwaiting, BluetoothDtmPostUnlink
 pub use dtm_post_unlink::{
     BluetoothDtmPostUnlinkMailboxPublication, BluetoothDtmPostUnlinkWakeCell,
     BluetoothPrimaryOrdinaryPublication, BluetoothPrimarySerializedServiceStep,
+};
+#[cfg(target_arch = "riscv32")]
+pub use dtm_runner::{
+    BluetoothDtmFirstActive, BluetoothDtmFirstCommand, BluetoothDtmFirstIdleRestore,
+    BluetoothDtmFirstIdleRestoreStep, BluetoothDtmFirstInvariantFault,
+    BluetoothDtmFirstPreparationCleanup, BluetoothDtmFirstPreparationCleanupStep,
+    BluetoothDtmFirstResponsePending, BluetoothDtmFirstResponsePublication,
+    BluetoothDtmFirstRunner, BluetoothDtmFirstRunnerCancel, BluetoothDtmFirstRunnerFailure,
+    BluetoothDtmFirstRunnerRetry, BluetoothDtmFirstRunnerRetryCause, BluetoothDtmFirstRunnerStep,
+    BluetoothDtmFirstRunning,
 };
 pub use dtm_rx_completion::{
     BLUETOOTH_DTM_RX_INITIAL_RETURNED_BYTE, BluetoothDtmReceiverSession,

@@ -222,31 +222,24 @@ impl<Role, E> BluetoothDtmSchedulerStartFailure<Role, E> {
     }
 }
 
-/// Stable-dispatch failure retaining the already-unlinked DTM graph.
-#[must_use = "a dispatch failure must retain the unlinked graph for a later event"]
+/// Opaque pairing of one already-unlinked DTM graph with a later durably
+/// published primary event.
+///
+/// There is deliberately no public constructor. The pending session pump must
+/// first provide a cutoff or armed-mailbox proof that the event was published
+/// after this exact unlink before it may mint the pair. A retained pre-unlink
+/// event therefore cannot reach the removal gate through safe public code.
+#[must_use = "the paired post-unlink event and DTM graph must be consumed together"]
 #[cfg(target_arch = "riscv32")]
-pub struct BluetoothDtmSoftwareListRemovalObservationFailure<Role, E> {
-    error: E,
+pub struct BluetoothDtmSoftwareListRemovalPublishedEvent<Role> {
     unlinked: crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
+    published: BluetoothPrimaryPublishedInterruptStep,
 }
 
-#[cfg(target_arch = "riscv32")]
-impl<Role, E> BluetoothDtmSoftwareListRemovalObservationFailure<Role, E> {
-    /// Inspect the exact stable-dispatch rejection.
-    pub const fn error(&self) -> &E {
-        &self.error
-    }
-
-    /// Recover the error and unchanged unlinked DTM graph.
-    pub fn into_parts(self) -> (E, crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>) {
-        (self.error, self.unlinked)
-    }
-}
-
-/// Controller result of one fresh post-unlink primary-event observation.
+/// Controller result of consuming one opaque post-unlink event pair.
 #[must_use = "every outcome retains the exact unlinked or removal-ready graph"]
 #[cfg(target_arch = "riscv32")]
-pub enum BluetoothDtmSoftwareListRemovalObservationStep<Role> {
+pub enum BluetoothDtmSoftwareListRemovalPublishedStep<Role> {
     /// The primary epoch reported a baseline or unclassified fault.
     Fault {
         /// Already-unlinked graph retained for fail-stop handling.
@@ -281,6 +274,8 @@ pub enum BluetoothDtmSoftwareListRemovalObservationStep<Role> {
     SchedulerIdentityMismatch {
         /// Unchanged already-unlinked graph.
         unlinked: crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
+        /// Exact classified event which was not consumed by the mismatched graph.
+        event: crate::BluetoothPrimarySchedulerEvent,
         /// Durable scheduler-wake publication from this exact event.
         scheduler: crate::BluetoothSchedulerWakePublication,
         /// Durable lock/modify publication from this exact event.
@@ -2958,56 +2953,33 @@ where
         self.initialized.unlink_dtm_software_list(observed)
     }
 
-    /// Service one fresh primary epoch after software-list unlink and join its
-    /// exact scheduler-state sample to the finite task-side return gate.
+    /// Consume one already-published primary epoch after software-list unlink.
     ///
-    /// Busy and command-pending outcomes consume the event and return the
-    /// already-unlinked graph. Retry therefore requires another external
-    /// event; this method never polls. Selector-6 recovery remains fail-closed.
-    #[expect(
-        clippy::result_large_err,
-        reason = "dispatch failure retains the complete unlinked graph and stable-owner error"
-    )]
-    pub fn observe_dtm_software_list_removal<Role>(
+    /// This method never services interrupt storage, acknowledges hardware or
+    /// publishes either Controller cell. The consumed value proves those steps
+    /// already completed. A scheduler-idle event may authorize the finite
+    /// task-side command-status observation; every pending outcome requires a
+    /// later independently published primary event.
+    pub fn consume_published_dtm_software_list_removal<Role>(
         &mut self,
-        unlinked: crate::BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
-    ) -> Result<
-        BluetoothDtmSoftwareListRemovalObservationStep<Role>,
-        BluetoothDtmSoftwareListRemovalObservationFailure<Role, S::Error>,
-    >
-    where
-        S: BluetoothSharedInterruptDispatchStorage,
-    {
-        let step = match self._storage.service_primary_interrupt() {
-            Ok(step) => step,
-            Err(error) => {
-                return Err(BluetoothDtmSoftwareListRemovalObservationFailure { error, unlinked });
-            }
-        };
-        let (scheduler_wake, lock_modify_events) =
-            self.initialized.primary_interrupt_publications();
-        match step.publish(scheduler_wake, lock_modify_events) {
+        pending: BluetoothDtmSoftwareListRemovalPublishedEvent<Role>,
+    ) -> BluetoothDtmSoftwareListRemovalPublishedStep<Role> {
+        let BluetoothDtmSoftwareListRemovalPublishedEvent {
+            unlinked,
+            published,
+        } = pending;
+        match published {
             BluetoothPrimaryPublishedInterruptStep::Fault(fault) => {
-                Ok(BluetoothDtmSoftwareListRemovalObservationStep::Fault {
-                    unlinked,
-                    fault,
-                })
+                BluetoothDtmSoftwareListRemovalPublishedStep::Fault { unlinked, fault }
             }
             BluetoothPrimaryPublishedInterruptStep::NoSchedulerWork(epoch) => {
-                Ok(
-                    BluetoothDtmSoftwareListRemovalObservationStep::NoSchedulerWork {
-                        unlinked,
-                        epoch,
-                    },
-                )
+                BluetoothDtmSoftwareListRemovalPublishedStep::NoSchedulerWork { unlinked, epoch }
             }
             BluetoothPrimaryPublishedInterruptStep::ReferenceRecoveryRequired(required) => {
-                Ok(
-                    BluetoothDtmSoftwareListRemovalObservationStep::ReferenceRecoveryRequired {
-                        unlinked,
-                        required,
-                    },
-                )
+                BluetoothDtmSoftwareListRemovalPublishedStep::ReferenceRecoveryRequired {
+                    unlinked,
+                    required,
+                }
             }
             BluetoothPrimaryPublishedInterruptStep::Scheduler {
                 event,
@@ -3017,28 +2989,28 @@ where
                 .initialized
                 .join_dtm_software_list_removal(unlinked, event)
             {
-                crate::scheduler::BluetoothDtmSchedulerSoftwareListRemovalJoin::SchedulerIdentityMismatch(
+                crate::scheduler::BluetoothDtmSchedulerSoftwareListRemovalJoin::SchedulerIdentityMismatch {
                     unlinked,
-                ) => Ok(
-                    BluetoothDtmSoftwareListRemovalObservationStep::SchedulerIdentityMismatch {
-                        unlinked,
-                        scheduler,
-                        lock_modify,
-                    },
-                ),
+                    event,
+                } => BluetoothDtmSoftwareListRemovalPublishedStep::SchedulerIdentityMismatch {
+                    unlinked,
+                    event,
+                    scheduler,
+                    lock_modify,
+                },
                 crate::scheduler::BluetoothDtmSchedulerSoftwareListRemovalJoin::Pending(
                     unlinked,
-                ) => Ok(BluetoothDtmSoftwareListRemovalObservationStep::Pending {
+                ) => BluetoothDtmSoftwareListRemovalPublishedStep::Pending {
                     unlinked,
                     scheduler,
                     lock_modify,
-                }),
+                },
                 crate::scheduler::BluetoothDtmSchedulerSoftwareListRemovalJoin::Ready(ready) => {
-                    Ok(BluetoothDtmSoftwareListRemovalObservationStep::Ready {
+                    BluetoothDtmSoftwareListRemovalPublishedStep::Ready {
                         ready,
                         scheduler,
                         lock_modify,
-                    })
+                    }
                 }
             },
         }

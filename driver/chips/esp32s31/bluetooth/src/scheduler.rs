@@ -1084,12 +1084,18 @@ pub enum BluetoothDtmSchedulerRxSuccessRecycleStep {
     Rearmed(crate::BluetoothDtmRxRearmedEvent),
 }
 
-/// Internal result of joining one fresh primary scheduler event to an already
+/// Internal result of joining one primary scheduler event to an already
 /// unlinked DTM graph.
+///
+/// The outer sealed consumer remains responsible for admitting only an event
+/// whose publication followed this exact unlink.
 #[must_use = "the unlinked or removal-ready graph must remain owned"]
 #[cfg(target_arch = "riscv32")]
 pub(crate) enum BluetoothDtmSchedulerSoftwareListRemovalJoin<Role> {
-    SchedulerIdentityMismatch(BluetoothDtmSchedulerSoftwareListUnlinked<Role>),
+    SchedulerIdentityMismatch {
+        unlinked: BluetoothDtmSchedulerSoftwareListUnlinked<Role>,
+        event: crate::BluetoothPrimarySchedulerEvent,
+    },
     Pending(BluetoothDtmSchedulerSoftwareListUnlinked<Role>),
     Ready(BluetoothDtmSchedulerSoftwareListRemovalReady<Role>),
 }
@@ -2533,9 +2539,10 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
             || self.runtime.scheduler_finished_lists_mut().is_active()
             || !self._scheduler_list.retains_unlinked_first_item(address)
         {
-            return BluetoothDtmSchedulerSoftwareListRemovalJoin::SchedulerIdentityMismatch(
+            return BluetoothDtmSchedulerSoftwareListRemovalJoin::SchedulerIdentityMismatch {
                 unlinked,
-            );
+                event,
+            };
         }
 
         let idle = match event.into_software_list_removal_gate() {

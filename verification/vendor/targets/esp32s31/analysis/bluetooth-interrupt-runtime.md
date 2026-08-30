@@ -124,6 +124,22 @@ The two reads cannot be folded into one observation: the reference clear and
 selector-6 software path occur between their positions. The Rust classifier
 therefore uses distinct reference-gate and work-observation types.
 
+The post-unlink DTM removal gate does not authorize a second primary
+capture/acknowledgement. Its conservative open carrier is an opaque pair of the
+unlinked graph and the complete `BluetoothPrimaryPublishedInterruptStep`
+already returned after the hard handler captured and acknowledged the epoch
+and durably published both Controller cells. There is no public constructor:
+the missing session owner must first prove that publication followed the exact
+unlink. The later consumer may project BUSY from its scheduler event and, only
+when idle, perform the separate task-owned command-zero then conditional
+command-one reads. A pre-unlink event is temporally stale; the coalesced wake
+cell retains only notification state and cannot recreate that event or prove
+its ordering. Complete vendor removal bodies directly re-read
+BUSY and the command fields, so they prove neither command-ready-to-source-124
+causality nor a guaranteed Pending retry wake. Enforcing post-unlink delivery
+and retry remains session-runtime work rather than an interrupt-classifier
+claim.
+
 ## Event multiplicity and RTOS-free replacement
 
 The exact public OSAL refuses a second insertion while the same static event

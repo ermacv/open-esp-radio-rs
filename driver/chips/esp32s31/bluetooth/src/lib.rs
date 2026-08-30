@@ -28,11 +28,13 @@
 //! running DTM epoch; a non-sentinel status advances to a hardware-owned
 //! completion observation. A second affine operation performs the mandatory
 //! fresh post-picker head read and advances only after list zero is empty.
-//! The exact item can then leave the source-owned software list once and a
-//! fresh primary scheduler event drives the finite post-unlink return gate;
-//! busy or command-pending events retain ownership without polling, while
-//! ready permits TX and RX-non-success recycle to release the exact timeline
-//! reservation before returning the CPU graph. A specialized RX-success path
+//! The exact item can then leave the source-owned software list once. A sealed
+//! lower consumer accepts only an opaque pairing of that graph with an already
+//! published later primary event; no public constructor exists until the
+//! session runtime can prove the post-unlink cutoff. Busy or command-pending
+//! events retain ownership without polling, while ready permits TX and
+//! RX-non-success recycle to release the exact timeline reservation before
+//! returning the CPU graph. A specialized RX-success path
 //! validates the bounded returned-header pair, accounts its graph-bound typed
 //! result, performs the corresponding append/re-arm rotation, releases the
 //! timeline and source list, and returns one non-copyable receiver session.
@@ -141,8 +143,8 @@ pub use controller_start::{
     BluetoothControllerSchedulerNowReady, BluetoothControllerTimeOrphanDrainStep,
     BluetoothDtmControllerPreparationOutcome, BluetoothDtmControllerPreparationPending,
     BluetoothDtmControllerPreparationStep, BluetoothDtmControllerPreparationTerminal,
-    BluetoothDtmSchedulerStartFailure, BluetoothDtmSoftwareListRemovalObservationFailure,
-    BluetoothDtmSoftwareListRemovalObservationStep, BluetoothInterruptOwnerStorage,
+    BluetoothDtmSchedulerStartFailure, BluetoothDtmSoftwareListRemovalPublishedEvent,
+    BluetoothDtmSoftwareListRemovalPublishedStep, BluetoothInterruptOwnerStorage,
     BluetoothModemLpTimerInterruptDispatchStorage, BluetoothModemLpTimerSoftwareOwnerStorage,
     BluetoothSchedulerRunInterruptStorage, BluetoothSharedInterruptDispatchStorage,
 };

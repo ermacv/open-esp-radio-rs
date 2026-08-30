@@ -110,9 +110,18 @@ the second feeds this sequence lead through `r_btdm_hal_util_us_to_ticks`.
 The Rust scheduler derives its typed raw lead from the source-owned scheduler
 config and retained Controller time scale instead of accepting an unrelated
 raw image. A fixed-capacity timeline owns affine, generation-safe software
-reservations and reproduces the strict signed wrapping overlap predicate. The
-timeline is retained by the powered Controller runtime with an independent
-capacity, and only the matching task endpoint can borrow it mutably. Its
+reservations and reproduces the strict signed wrapping overlap predicate.
+
+The phase split at scheduler-item `+0x2c` is now explicit. Complete initial
+body `r_sym_ble_G4zC4UNjJYmyjOsZ3vNq` writes `0x000f0001`; the receiver branch
+of complete recurring helper
+`r_sym_ble_huwoa5WRTRrAierQfN3B.part.1` replaces that word with literal one
+after the same item has returned from completion. No other reviewed descriptor
+word changes solely because of this phase; the timing words change because the
+two phase-specific window policies differ.
+
+The timeline is retained by the powered Controller runtime with an independent
+capacity; neither executor nor task endpoints can borrow it mutably. Its
 retained timing policy consumes the first fresh Controller-time sample and
 rejects a start at or before the guarded current time, matching the initial
 deadline gate at the top of complete `r_btdm_sched_check_overlap_in_list`.
@@ -270,9 +279,18 @@ until it catches up. The open transition computes the equivalent ceiling-
 division skip count in constant time, preserves the original phase and reports
 how many intervals advanced. This removes a potentially long CPU loop from the
 future async bottom half without changing the positional start/end images.
-The initial and recurring windows compose directly into the reviewed DTM
-scheduler-item transform. A live ordered clock sample, RF-ready result,
-scheduler-margin owner and publication transition remain intentionally absent.
+The initial TX window and both RX phases now compose directly into the reviewed
+DTM scheduler-item transform. Initial RX shares the `440 + 500 + margin`
+anchor lead and uses the body's literal 1000-tick end. In the receiver branch
+of complete recurring helper `r_sym_ble_huwoa5WRTRrAierQfN3B.part.1`, a fresh
+current sample, the scheduler configuration's `+0x2a` guard value, the retained
+margin and literal 15 form the nominal anchor; fresh RF-ready wins under the
+same signed wrapping comparison, and the end again adds literal 1000. The
+window privately retains `Initial` or `Recurring`, and the
+memory codec selects the corresponding full-initial or reuse configuration.
+Distinct Rust window types prevent either phase from entering the other's
+Controller edge. The Controller-time sample itself is non-copyable, but live
+composition with an RF-ready result and scheduler-margin owner remains absent.
 
 The RX callback signature and result projection are also narrower than the
 vendor memory manager. Complete S31 allocation and RX bodies, plus the named
@@ -411,9 +429,11 @@ is the common scheduler head to scheduler-item `+0x08`, then the already bound
 link state and its private TX/RX links. The adjacent
 `r_sym_ble_4QeP6vZAoSzLLHdFgwD0` wrapper only composes two common BT/RF wake
 helpers before scheduler insertion. Thus a separate software latch is not a
-publication prerequisite. Hardware current/next rotation, the undocumented
-engine interpretation of the graph, and the point at which either chain
-becomes CPU-owned remain unproven.
+publication prerequisite. Hardware current/next interpretation and the
+undocumented engine meaning of the graph remain unproven. Completion-side CPU
+ownership is now explicit: the graph crosses back only after fresh head
+retirement, software unlink, the post-unlink return gate, descriptor recycle
+and exact Timeline/list release.
 
 ## Bottom-to-top execution path
 
@@ -749,9 +769,12 @@ The remaining work should proceed in narrow, testable increments:
    graph without cloning the vendor intrusive manager. RX success additionally
    drains the bounded returned list, accounts its graph-bound result and
    performs the exact two-header append/re-arm rotation before returning the
-   retained LLL session. Compose that CPU aggregate into the next timed event
-   and hardware publication. A proven external wake/recheck source for Pending
-   remains required.
+   retained LLL session. Initial and recurring RX timing and descriptor phases
+   are now distinct, and first-event reservation/authorization is private to
+   the terminal Controller. Add a non-copyable Active TX/RX aggregate that
+   retains immutable command inputs and committed phase, then compose the
+   recycled owner into one bounded retryable next-event admission. A proven
+   external wake/recheck source for Pending remains required.
 2. **Close the controller timebase source.** The latch address/order,
    standalone scale arithmetic, affine nonblocking request phases, pure
    wrapping epoch projection and sole powered task-side MMIO owner now exist.
@@ -768,23 +791,18 @@ The remaining work should proceed in narrow, testable increments:
    link. The complete event body proves there is no separate software latch;
    retain the published `item -> link state -> private links` chain and trace
    only the undocumented hardware interpretation still needed for completion.
-4. **Advance the running graph through completion.** The no-heap aligned
-   capacity, non-forgeable physical-SRAM binding, exact allocation-time links,
-   consuming TX packet readiness, role-specific event preparation and affine
-   `Running` owner now exist. Add `Completed/Recycled` only after the
-   finished-list selection and acquire-side rules are proven; prevent reuse
-   before callback, abort or quiescence. The exact wrapping receive count and
-   append-decision outcome may be consumed only by the completed owner; the
-   lower two-header rotation now supplies that owner, while the upper RX
-   session still needs to retain it through recurrence.
-5. **Implement the open scheduler model.** Use a fixed-capacity ordered queue,
-   explicit `Prepared/Scheduled/Running/Completed/Recycled/Aborted` states and
-   a single hardware-head owner. Retain each request's typed list index beside
-   its affine item; DTM uses the now-proven list zero. Feed a finished-list bit
-   into an item-selection/recycle transition only after proving ordering within
-   that list. The interrupt-time current index is not a completion token. Model
-   selector-6 as an internal invariant. Keep scan resume outside the DTM
-   feature graph.
+4. **Retain active command identity across recurrence.** Completion and recycle
+   now return CPU ownership only after exact list and Timeline release, and RX
+   success preserves its non-copyable accounting session through rotation.
+   Add an equivalent TX aggregate retaining channel, PHY, pattern, length,
+   timing and packet-ready proof; extend RX with immutable channel/PHY and a
+   committed phase. Cancellation before head publication must return the whole
+   aggregate without advancing that phase.
+5. **Complete the open scheduler wake model.** The fixed-capacity Timeline,
+   explicit prepared/running/completed/recycled owners and single hardware-head
+   owner now exist. Add the proven wake that retries a Pending post-unlink gate,
+   and model selector 6 as an internal fail-stop invariant. Keep scan resume
+   outside the DTM feature graph.
 6. **Compose the ISR epoch.** The level-3 hard handler captures/acknowledges a
    bounded snapshot, advances only deadline-critical LLL state and publishes a
    lost-wake-safe token. The executor-neutral owner drains completions and HCI

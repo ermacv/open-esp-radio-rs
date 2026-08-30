@@ -16,6 +16,8 @@ const LINK_STATE_CONFIG_MASK: u32 = 0x3f00_0000;
 const SCHEDULER_FREQUENCY_MASK: u32 = 0x0000_7f00;
 const SCHEDULER_RATE_LANES_MASK: u32 = 0xf000_0000;
 const SCHEDULER_ROUNDED_POWER_REGION_MASK: u32 = 0x0ff0_0000;
+const INITIAL_RECEIVER_CONFIGURATION_IMAGE: u32 = 0x000f_0001;
+const RECURRING_RECEIVER_CONFIGURATION_IMAGE: u32 = 0x0000_0001;
 
 /// DTM role shared by the CPU-owned link-state and scheduler-item formats.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -24,6 +26,50 @@ pub enum BluetoothDtmRole {
     Transmitter,
     /// Repeated receiver-test events use role image two.
     Receiver,
+}
+
+/// Phase selecting the role-private receiver configuration for one DTM event.
+///
+/// The initial event establishes the complete receiver configuration. After
+/// one completion has returned the private graph, the recurring vendor path
+/// deliberately replaces it with the narrower re-use configuration.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothDtmReceiverEventPhase {
+    /// First receiver event in one active test session.
+    Initial,
+    /// Receiver event prepared from a recycled active-session graph.
+    Recurring,
+}
+
+/// Role and phase selecting one reviewed scheduler-item event transform.
+///
+/// Transmitter events have no phase-dependent scheduler-item configuration.
+/// Nesting the receiver phase in the receiver variant prevents a caller from
+/// attaching receiver-only phase semantics to a transmitter descriptor.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothDtmSchedulerItemEventType {
+    /// One transmitter-test scheduler item.
+    Transmitter,
+    /// One receiver-test scheduler item in its explicit session phase.
+    Receiver(BluetoothDtmReceiverEventPhase),
+}
+
+impl BluetoothDtmSchedulerItemEventType {
+    /// Return the DTM role selected by this event type.
+    pub const fn role(self) -> BluetoothDtmRole {
+        match self {
+            Self::Transmitter => BluetoothDtmRole::Transmitter,
+            Self::Receiver(_) => BluetoothDtmRole::Receiver,
+        }
+    }
+
+    /// Return the receiver phase, or `None` for a transmitter event.
+    pub const fn receiver_phase(self) -> Option<BluetoothDtmReceiverEventPhase> {
+        match self {
+            Self::Transmitter => None,
+            Self::Receiver(phase) => Some(phase),
+        }
+    }
 }
 
 /// The eight link-state words whose reset behavior is complete.
@@ -151,15 +197,18 @@ impl BluetoothDtmSchedulerItemReviewedWords {
     /// Apply every complete reviewed DTM event transform before insertion.
     ///
     /// `frequency` and `rate` are already validated controller images;
-    /// scheduler times are raw values derived from the owned epoch.
+    /// `event_type` carries the role and the receiver's initial/recurring
+    /// configuration choice; scheduler times are raw values derived from the
+    /// owned epoch.
     pub const fn apply_event(
         self,
         frequency: u8,
         rate: u8,
-        role: BluetoothDtmRole,
+        event_type: BluetoothDtmSchedulerItemEventType,
         scheduler_start: u32,
         scheduler_end: u32,
     ) -> Self {
+        let role = event_type.role();
         let current_role_byte = ((self.word_00 >> 16) & 0xff) as u8;
         let role_byte = (current_role_byte & 0xaf)
             | match role {
@@ -178,9 +227,14 @@ impl BluetoothDtmSchedulerItemReviewedWords {
             word_18: (self.word_18 & !(SCHEDULER_FREQUENCY_MASK | 0x0f))
                 | ((frequency as u32) << 8)
                 | 0x03,
-            word_2c: match role {
-                BluetoothDtmRole::Transmitter => self.word_2c,
-                BluetoothDtmRole::Receiver => 0x000f_0001,
+            word_2c: match event_type {
+                BluetoothDtmSchedulerItemEventType::Transmitter => self.word_2c,
+                BluetoothDtmSchedulerItemEventType::Receiver(
+                    BluetoothDtmReceiverEventPhase::Initial,
+                ) => INITIAL_RECEIVER_CONFIGURATION_IMAGE,
+                BluetoothDtmSchedulerItemEventType::Receiver(
+                    BluetoothDtmReceiverEventPhase::Recurring,
+                ) => RECURRING_RECEIVER_CONFIGURATION_IMAGE,
             },
             word_44: scheduler_start,
             word_48: scheduler_end,

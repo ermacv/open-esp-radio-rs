@@ -41,6 +41,14 @@ are recorded in
 | BLE PHY register initialization | PARTIAL | `BluetoothControllerBasebandInitialized::initialize_ble_phy_engine` consumes an address-bound `BluetoothBlePhyEngineCpuOwned`, derives both pointers from its pinned static allocation and retains that owner in `BluetoothControllerBlePhyEngineInitialized`. The complete reviewed MMIO body is reached only through PAC accessors; upper layers pass typed storage addresses and three explicit source-owned positional configuration values, never register images or vendor configuration layouts. The memory owner replaces the vendor allocator with one static graph containing the complete `0x68`-byte environment, its `0x28/0x08/0x04` auxiliary allocations and one `0x40`-byte resolving-list hardware object; binding installs the three internal pointers and reviewed initial list head before publication. Production integration owns a unique `.dma.bss` arena and exposes only a one-shot CPU-owned claim; the following consuming state prepares Controller output and starts the runtime timer while retaining that storage. Environment word semantics, stable live IRQ routes and physical qualification remain missing, so this is hardware initialization rather than operational BLE. |
 | Powered teardown | PARTIAL | Opaque HAL owners retain task and interrupt affinity fail-stop. The disconnected bounded scheduler-disable leaf consumes its task owner, writes the exact command image `1`, fences publication, and—only after CPU routes are already disabled—permits one terminal observation of the `BUSY` bit. Its powered lifecycle prerequisite is intentionally not faked by a PAC `assume_satisfied` token; no production controller state reaches the leaf yet. Both busy and idle observations are terminal: there is no recheck/wake source, packet/bottom-half quiescence, IRQ-output release, BTBB/PHY/clock teardown, or cold reconstruction. No comparison or HIL claim is made. |
 
+DTM admission ownership is now narrower than the table's historical summary:
+the terminal Controller is the sole owner of the bounded Timeline. Executor
+and task endpoints cannot reserve or release slots, and callers cannot build a
+raw epoch or event plan. Role-specific TX/RX admission performs both deadline
+gates, graph preparation and the first-item merge as one lossless operation.
+Distinct initial and recurring RX-window types select the matching memory-codec
+phase; the first-event edge cannot accept a recurring window.
+
 ## Interrupts, timing and packet storage
 
 | Capability | Status | Current production boundary |
@@ -69,6 +77,11 @@ are recorded in
 | Typed HCI Controller | ABSENT | The in-process transport and bootstrap worker serve the closed initialization command subset through `bt-hci::ExternalController`, but no ESP32-S31 worker implements operational commands, events or ACL semantics. |
 | Trouble Host integration | ABSENT | A real Trouble 0.7 Runner completes its no-security software bootstrap through the production bootstrap worker in host tests. A post-initialization filter-list command is observed and rejected fail-closed. No composed production Runner task, ESP32-S31 Controller worker, GATT example or hardware path exists. |
 
+The current DTM frontier includes exact initial and recurring RX timing and the
+phase-specific descriptor configuration. It does not yet include an affine
+Active TX/RX aggregate that retains immutable command inputs across recycle,
+so recurring publication remains fail-closed.
+
 ## Async runtime and coexistence
 
 | Capability | Status | Current production boundary |
@@ -79,6 +92,9 @@ are recorded in
 | Standalone coexistence hooks | PARTIAL | The source-owned coexistence core and Embassy mailbox accept Bluetooth requests, but are not attached to Bluetooth lifecycle. |
 | Concurrent Wi-Fi + BLE | ABSENT | Wi-Fi still owns the platform singletons independently. Safe joint composition is intentionally impossible until it migrates to the common coordinator. |
 | Bluetooth low power | ABSENT | Low-power clock setup is not sleep ownership. Retention, wake compare, clock drift and exact resume/rollback are absent. |
+
+The software Timeline remains inside the Controller runtime across the whole
+powered epoch. It is no longer exposed through the executor-facing task split.
 
 ## First operational profile
 

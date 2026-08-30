@@ -35,7 +35,8 @@ pub use ble_phy_engine::{
 };
 
 pub use dtm_event_image::{
-    BluetoothDtmLinkStateReviewedWords, BluetoothDtmPositionalEventWords, BluetoothDtmRole,
+    BluetoothDtmLinkStateReviewedWords, BluetoothDtmPositionalEventWords,
+    BluetoothDtmReceiverEventPhase, BluetoothDtmRole, BluetoothDtmSchedulerItemEventType,
     BluetoothDtmSchedulerItemReviewedWords,
 };
 pub use dtm_rx_result::{BluetoothDtmRxResultProjection, BluetoothDtmRxResultProjectionError};

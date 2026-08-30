@@ -10,7 +10,7 @@
 use open_esp_radio_esp32s31_pac::{BluetoothControllerLatchedTime, BluetoothControllerTimeScale};
 
 /// One ordered controller-time sample from the always-awake latch path.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct BluetoothControllerTimeSample {
     latched_time: BluetoothControllerLatchedTime,
 }
@@ -27,7 +27,7 @@ impl BluetoothControllerTimeSample {
     }
 
     /// Return the complete wrapping raw-time image.
-    pub const fn raw_time(self) -> u32 {
+    pub const fn raw_time(&self) -> u32 {
         self.latched_time.bits()
     }
 }
@@ -110,7 +110,7 @@ mod worker {
     }
 
     /// Result of exactly one controller-time recheck event.
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    #[derive(Debug, Eq, PartialEq)]
     #[must_use = "the worker event outcome must drive the next controller action"]
     pub enum BluetoothControllerTimeEventStep {
         /// No transaction was active; no MMIO occurred.
@@ -326,7 +326,8 @@ pub struct BluetoothControllerSchedulerEpoch {
 
 impl BluetoothControllerSchedulerEpoch {
     /// Bind one ordered controller sample to one scheduler-domain anchor.
-    pub const fn new(
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) const fn new(
         sample: BluetoothControllerTimeSample,
         scheduler_anchor: u32,
         scale: BluetoothControllerTimeScale,

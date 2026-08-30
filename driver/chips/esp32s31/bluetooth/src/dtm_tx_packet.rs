@@ -82,6 +82,7 @@ impl BluetoothDtmPreparedTxGraph {
         self.memory.discard_packet_readiness()
     }
 
+    #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) fn into_parts(
         self,
     ) -> (

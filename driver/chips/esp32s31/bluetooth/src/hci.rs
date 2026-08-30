@@ -481,6 +481,112 @@ where
     }
 
     #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each typed input is a distinct reviewed DTM or fresh-time authority"
+    )]
+    pub(crate) fn prepare_dtm_transmitter_first_item(
+        &mut self,
+        owner: crate::BluetoothDtmPreparedTxGraph,
+        link_state: crate::BluetoothDtmLinkStateReset,
+        channel: crate::BluetoothDtmChannel,
+        phy: crate::BluetoothDtmPhy,
+        window: crate::BluetoothDtmTxEventWindow,
+        epoch_sample: crate::BluetoothControllerTimeSample,
+        scheduler_anchor: crate::BluetoothDtmSchedulerInstant,
+        admission_sample: crate::BluetoothControllerTimeSample,
+        sequence_sample: crate::BluetoothControllerTimeSample,
+    ) -> Result<
+        crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmTransmitterEvent>,
+        crate::BluetoothDtmControllerTxPreparationFailure,
+    > {
+        self.controller
+            .scheduler
+            .prepare_dtm_transmitter_first_item(
+                owner,
+                link_state,
+                channel,
+                phy,
+                window,
+                epoch_sample,
+                scheduler_anchor,
+                admission_sample,
+                sequence_sample,
+            )
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each typed input is a distinct reviewed DTM or fresh-time authority"
+    )]
+    pub(crate) fn prepare_dtm_receiver_first_item(
+        &mut self,
+        owner: crate::BluetoothDtmReceiverCpuOwned,
+        link_state: crate::BluetoothDtmLinkStateReset,
+        channel: crate::BluetoothDtmChannel,
+        phy: crate::BluetoothDtmPhy,
+        window: crate::BluetoothDtmRxInitialEventWindow,
+        epoch_sample: crate::BluetoothControllerTimeSample,
+        scheduler_anchor: crate::BluetoothDtmSchedulerInstant,
+        admission_sample: crate::BluetoothControllerTimeSample,
+        sequence_sample: crate::BluetoothControllerTimeSample,
+    ) -> Result<
+        crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmReceiverEvent>,
+        crate::BluetoothDtmControllerRxPreparationFailure,
+    > {
+        self.controller.scheduler.prepare_dtm_receiver_first_item(
+            owner,
+            link_state,
+            channel,
+            phy,
+            window,
+            epoch_sample,
+            scheduler_anchor,
+            admission_sample,
+            sequence_sample,
+        )
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "the internal no-alloc delegation preserves the complete rejected graph"
+    )]
+    pub(crate) fn cancel_dtm_transmitter_first_item(
+        &mut self,
+        merged: crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmTransmitterEvent>,
+    ) -> Result<
+        (
+            open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmMemoryGraphCpuOwned,
+            crate::BluetoothDtmPayloadPattern,
+            crate::BluetoothDtmPayloadLength,
+        ),
+        crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmTransmitterEvent>,
+    > {
+        self.controller
+            .scheduler
+            .cancel_dtm_transmitter_first_item(merged)
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    #[expect(
+        clippy::result_large_err,
+        reason = "the internal no-alloc delegation preserves the complete rejected graph"
+    )]
+    pub(crate) fn cancel_dtm_receiver_first_item(
+        &mut self,
+        merged: crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmReceiverEvent>,
+    ) -> Result<
+        crate::BluetoothDtmReceiverCpuOwned,
+        crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmReceiverEvent>,
+    > {
+        self.controller
+            .scheduler
+            .cancel_dtm_receiver_first_item(merged)
+    }
+
+    #[cfg(target_arch = "riscv32")]
     pub(crate) fn retain_running_dtm_first_item(
         &mut self,
         address: open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress,

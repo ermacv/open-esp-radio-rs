@@ -644,6 +644,122 @@ where
         self.initialized.recheck_controller_time()
     }
 
+    /// Prepare one transmitter graph through the terminal Controller's private
+    /// timeline and exclusive empty scheduler list.
+    ///
+    /// The three time samples represent the epoch anchor, first admission gate
+    /// and second sequence gate respectively. A recoverable failure releases
+    /// any private reservation before returning the graph and TX program.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each typed input is a distinct reviewed DTM or fresh-time authority"
+    )]
+    pub fn prepare_dtm_transmitter_first_item(
+        &mut self,
+        owner: crate::BluetoothDtmPreparedTxGraph,
+        link_state: crate::BluetoothDtmLinkStateReset,
+        channel: crate::BluetoothDtmChannel,
+        phy: crate::BluetoothDtmPhy,
+        window: crate::BluetoothDtmTxEventWindow,
+        epoch_sample: crate::BluetoothControllerTimeSample,
+        scheduler_anchor: crate::BluetoothDtmSchedulerInstant,
+        admission_sample: crate::BluetoothControllerTimeSample,
+        sequence_sample: crate::BluetoothControllerTimeSample,
+    ) -> Result<
+        crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmTransmitterEvent>,
+        crate::BluetoothDtmControllerTxPreparationFailure,
+    > {
+        self.initialized.prepare_dtm_transmitter_first_item(
+            owner,
+            link_state,
+            channel,
+            phy,
+            window,
+            epoch_sample,
+            scheduler_anchor,
+            admission_sample,
+            sequence_sample,
+        )
+    }
+
+    /// Prepare one receiver graph/session through the terminal Controller's
+    /// private timeline and exclusive empty scheduler list.
+    ///
+    /// RX window formation remains an upper LLL responsibility. This first
+    /// admission edge accepts only the typed initial window, so a recurring
+    /// window cannot reach it.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each typed input is a distinct reviewed DTM or fresh-time authority"
+    )]
+    pub fn prepare_dtm_receiver_first_item(
+        &mut self,
+        owner: crate::BluetoothDtmReceiverCpuOwned,
+        link_state: crate::BluetoothDtmLinkStateReset,
+        channel: crate::BluetoothDtmChannel,
+        phy: crate::BluetoothDtmPhy,
+        window: crate::BluetoothDtmRxInitialEventWindow,
+        epoch_sample: crate::BluetoothControllerTimeSample,
+        scheduler_anchor: crate::BluetoothDtmSchedulerInstant,
+        admission_sample: crate::BluetoothControllerTimeSample,
+        sequence_sample: crate::BluetoothControllerTimeSample,
+    ) -> Result<
+        crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmReceiverEvent>,
+        crate::BluetoothDtmControllerRxPreparationFailure,
+    > {
+        self.initialized.prepare_dtm_receiver_first_item(
+            owner,
+            link_state,
+            channel,
+            phy,
+            window,
+            epoch_sample,
+            scheduler_anchor,
+            admission_sample,
+            sequence_sample,
+        )
+    }
+
+    /// Cancel one not-yet-published TX item through the same Controller.
+    ///
+    /// Success releases both the exclusive list and private timeline slot,
+    /// returning ordinary graph ownership plus the complete TX program.
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc identity failure retains the complete affine merged graph"
+    )]
+    pub fn cancel_dtm_transmitter_first_item(
+        &mut self,
+        merged: crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmTransmitterEvent>,
+    ) -> Result<
+        (
+            open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmMemoryGraphCpuOwned,
+            crate::BluetoothDtmPayloadPattern,
+            crate::BluetoothDtmPayloadLength,
+        ),
+        crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmTransmitterEvent>,
+    > {
+        self.initialized.cancel_dtm_transmitter_first_item(merged)
+    }
+
+    /// Cancel one not-yet-published RX item through the same Controller.
+    ///
+    /// Success releases both scheduling owners and returns the non-copyable
+    /// graph/session aggregate unchanged.
+    #[expect(
+        clippy::result_large_err,
+        reason = "the no-alloc identity failure retains the complete affine merged graph"
+    )]
+    pub fn cancel_dtm_receiver_first_item(
+        &mut self,
+        merged: crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmReceiverEvent>,
+    ) -> Result<
+        crate::BluetoothDtmReceiverCpuOwned,
+        crate::BluetoothDtmEmptySchedulerMergePrepared<crate::BluetoothDtmReceiverEvent>,
+    > {
+        self.initialized.cancel_dtm_receiver_first_item(merged)
+    }
+
     /// Publish the exact first DTM scheduler head while every CPU route is
     /// still inactive and both register owners reside in stable storage.
     ///

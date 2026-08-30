@@ -71,6 +71,7 @@ mod common_phy_state;
 mod controller_hal;
 mod controller_start;
 mod controller_time;
+#[cfg(any(target_arch = "riscv32", test))]
 mod dtm_event_prepare;
 mod dtm_event_timing;
 mod dtm_link_state;
@@ -98,6 +99,7 @@ mod scheduler_config;
 mod scheduler_finished_lists;
 mod scheduler_insertion;
 mod scheduler_lock_modify;
+#[cfg(any(target_arch = "riscv32", test))]
 mod scheduler_timeline;
 #[cfg(feature = "validation-probes")]
 #[doc(hidden)]
@@ -134,16 +136,17 @@ pub use controller_time::{
     BluetoothControllerTimeRequest, BluetoothControllerTimeRequestError,
     BluetoothControllerTimeWorkerPhase,
 };
-pub use dtm_event_prepare::{
-    BluetoothDtmReceiverCpuOwned, BluetoothDtmReceiverEvent,
-    BluetoothDtmReceiverEventPrepareFailure, BluetoothDtmReviewedEventPrepareFailure,
-    BluetoothDtmReviewedEventWordsPlan, BluetoothDtmReviewedEventWordsPlanError,
-    BluetoothDtmReviewedEventWordsPlanFailure, BluetoothDtmReviewedEventWordsPrepared,
-    BluetoothDtmSchedulerBookkeepingPrepared, BluetoothDtmTransmitterEvent,
-};
 #[cfg(target_arch = "riscv32")]
-pub use dtm_event_prepare::{BluetoothDtmRecycledEvent, BluetoothDtmRxRearmedEvent};
+pub use dtm_event_prepare::{
+    BluetoothDtmActiveReceiverCpuOwned, BluetoothDtmActiveTransmitterCpuOwned,
+    BluetoothDtmRecycledEvent, BluetoothDtmRxRearmedEvent,
+};
+#[cfg(any(target_arch = "riscv32", test))]
+pub use dtm_event_prepare::{
+    BluetoothDtmReceiverCpuOwned, BluetoothDtmReceiverEvent, BluetoothDtmTransmitterEvent,
+};
 pub use dtm_event_timing::{
+    BluetoothDtmRxInitialEventWindow, BluetoothDtmRxRecurringEventWindow,
     BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerMargin, BluetoothDtmTxEventAdvance,
     BluetoothDtmTxEventWindow,
 };
@@ -235,20 +238,21 @@ pub use runtime_resources::{
 };
 #[cfg(any(target_arch = "riscv32", test))]
 pub use scheduler::{
-    BluetoothDtmEmptySchedulerMergeError, BluetoothDtmEmptySchedulerMergeFailure,
+    BluetoothDtmControllerEventPreparationError, BluetoothDtmEmptySchedulerMergeError,
     BluetoothDtmEmptySchedulerMergePrepared, BluetoothDtmSchedulerHeadPublicationError,
     BluetoothDtmSchedulerHeadPublicationFailure, BluetoothDtmSchedulerHeadPublished,
     BluetoothDtmSchedulerRunning, BluetoothSchedulerInitialized,
 };
 #[cfg(target_arch = "riscv32")]
-pub use scheduler::{BluetoothDtmSchedulerCompletionObserved, BluetoothDtmSchedulerCompletionStep};
-#[cfg(target_arch = "riscv32")]
 pub use scheduler::{
+    BluetoothDtmControllerRxPreparationFailure, BluetoothDtmControllerTxPreparationFailure,
     BluetoothDtmSchedulerHardwareHeadEmptyObserved,
     BluetoothDtmSchedulerHardwareHeadRetirementStep, BluetoothDtmSchedulerRecycleStep,
     BluetoothDtmSchedulerRxSuccessRecycleStep, BluetoothDtmSchedulerSoftwareListRemovalReady,
     BluetoothDtmSchedulerSoftwareListUnlinkStep, BluetoothDtmSchedulerSoftwareListUnlinked,
 };
+#[cfg(target_arch = "riscv32")]
+pub use scheduler::{BluetoothDtmSchedulerCompletionObserved, BluetoothDtmSchedulerCompletionStep};
 pub use scheduler_config::BluetoothSchedulerSoftwareConfig;
 pub use scheduler_finished_lists::{
     BluetoothSchedulerFinishedHardwareListObserved, BluetoothSchedulerFinishedListCaptureError,
@@ -268,10 +272,10 @@ pub use scheduler_lock_modify::{
     BluetoothSchedulerLockModifyPublicationResult, BluetoothSchedulerLockModifyWorker,
     BluetoothSchedulerLockModifyWorkerStep,
 };
+#[cfg(any(target_arch = "riscv32", test))]
 pub use scheduler_timeline::{
     BluetoothSchedulerOverlapResolved, BluetoothSchedulerRawWindow, BluetoothSchedulerReservation,
     BluetoothSchedulerReservationError, BluetoothSchedulerReservationReleaseError,
     BluetoothSchedulerReservationReleaseFailure, BluetoothSchedulerSequenceAuthorizationError,
     BluetoothSchedulerSequenceAuthorizationFailure, BluetoothSchedulerSequenceReady,
-    BluetoothSchedulerTimeline,
 };

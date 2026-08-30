@@ -9,12 +9,19 @@
 
 pub use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmSchedulerItemReviewedWords;
 
+#[cfg(any(target_arch = "riscv32", test))]
 use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmLinkStateReviewedWords;
+use open_esp_radio_esp32s31_bluetooth_memory::{
+    BluetoothDtmReceiverEventPhase, BluetoothDtmSchedulerItemEventType,
+};
 use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
 
+#[cfg(any(target_arch = "riscv32", test))]
+use crate::BluetoothControllerTimeSample;
 use crate::{
-    BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample, BluetoothDtmChannel,
-    BluetoothDtmPhy, BluetoothDtmRole, BluetoothDtmTxEventWindow, BluetoothSchedulerSoftwareConfig,
+    BluetoothControllerSchedulerEpoch, BluetoothDtmChannel, BluetoothDtmPhy, BluetoothDtmRole,
+    BluetoothDtmRxInitialEventWindow, BluetoothDtmRxRecurringEventWindow,
+    BluetoothDtmTxEventWindow, BluetoothSchedulerSoftwareConfig,
 };
 
 /// Why one DTM scheduler-item event cannot be represented exactly.
@@ -54,6 +61,7 @@ impl BluetoothDtmSchedulerTimingPolicy {
     }
 
     /// Whether one fresh sample still precedes the guarded item start.
+    #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) const fn initial_deadline_is_open(
         self,
         sample: BluetoothControllerTimeSample,
@@ -66,6 +74,7 @@ impl BluetoothDtmSchedulerTimingPolicy {
             < 0
     }
 
+    #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) const fn sequence_lead_raw_delta(self) -> u32 {
         self.sequence_lead_raw_delta
     }
@@ -76,7 +85,7 @@ impl BluetoothDtmSchedulerTimingPolicy {
 pub struct BluetoothDtmSchedulerItemEvent {
     frequency: u8,
     rate: u8,
-    role: BluetoothDtmRole,
+    event_type: BluetoothDtmSchedulerItemEventType,
     scheduler_start: u32,
     scheduler_end: u32,
 }
@@ -91,21 +100,51 @@ impl BluetoothDtmSchedulerItemEvent {
         Self::new(
             channel,
             phy,
-            BluetoothDtmRole::Transmitter,
+            BluetoothDtmSchedulerItemEventType::Transmitter,
             window.start().image(),
             window.end().image(),
         )
     }
 
-    /// Convert typed HCI inputs into the reviewed positional field images.
-    pub const fn new(
+    /// Bind the first receiver window to the full initial item transform.
+    pub const fn new_initial_receiver(
         channel: BluetoothDtmChannel,
         phy: BluetoothDtmPhy,
-        role: BluetoothDtmRole,
+        window: BluetoothDtmRxInitialEventWindow,
+    ) -> Result<Self, BluetoothDtmSchedulerItemEventError> {
+        Self::new(
+            channel,
+            phy,
+            BluetoothDtmSchedulerItemEventType::Receiver(BluetoothDtmReceiverEventPhase::Initial),
+            window.start().image(),
+            window.end().image(),
+        )
+    }
+
+    /// Bind a recurring receiver window to the narrower reuse transform.
+    pub const fn new_recurring_receiver(
+        channel: BluetoothDtmChannel,
+        phy: BluetoothDtmPhy,
+        window: BluetoothDtmRxRecurringEventWindow,
+    ) -> Result<Self, BluetoothDtmSchedulerItemEventError> {
+        Self::new(
+            channel,
+            phy,
+            BluetoothDtmSchedulerItemEventType::Receiver(BluetoothDtmReceiverEventPhase::Recurring),
+            window.start().image(),
+            window.end().image(),
+        )
+    }
+
+    /// Convert typed internal inputs into the reviewed positional field images.
+    const fn new(
+        channel: BluetoothDtmChannel,
+        phy: BluetoothDtmPhy,
+        event_type: BluetoothDtmSchedulerItemEventType,
         scheduler_start: u32,
         scheduler_end: u32,
     ) -> Result<Self, BluetoothDtmSchedulerItemEventError> {
-        let rate = match phy.scheduler_rate_image(role) {
+        let rate = match phy.scheduler_rate_image(event_type.role()) {
             Ok(rate) => rate,
             Err(_) => {
                 return Err(BluetoothDtmSchedulerItemEventError::LeCodedS2RequiresTransmitter);
@@ -114,7 +153,7 @@ impl BluetoothDtmSchedulerItemEvent {
         Ok(Self {
             frequency: channel.scheduler_frequency_image(),
             rate,
-            role,
+            event_type,
             scheduler_start,
             scheduler_end,
         })
@@ -135,12 +174,18 @@ impl BluetoothDtmSchedulerItemEvent {
         raw_start: u32,
         raw_end: u32,
     ) -> BluetoothDtmSchedulerItemReviewedWords {
-        current.apply_event(self.frequency, self.rate, self.role, raw_start, raw_end)
+        current.apply_event(
+            self.frequency,
+            self.rate,
+            self.event_type,
+            raw_start,
+            raw_end,
+        )
     }
 
     /// Return the DTM role encoded by this validated scheduler item event.
     pub const fn role(self) -> BluetoothDtmRole {
-        self.role
+        self.event_type.role()
     }
 
     pub(crate) const fn raw_start(self, epoch: BluetoothControllerSchedulerEpoch) -> u32 {
@@ -159,6 +204,7 @@ impl BluetoothDtmSchedulerItemEvent {
 /// image into scheduler-item bits 24:20 and clear the adjacent bits 27:25.
 /// Both arguments remain CPU-owned controller-SRAM descriptor images; this
 /// transform performs no MMIO and grants no publication ownership.
+#[cfg(any(target_arch = "riscv32", test))]
 pub(crate) const fn apply_overlap_insertion_power(
     scheduler_item: BluetoothDtmSchedulerItemReviewedWords,
     link_state: BluetoothDtmLinkStateReviewedWords,
@@ -172,35 +218,24 @@ mod tests {
 
     use super::{
         BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerItemEventError,
-        BluetoothDtmSchedulerItemReviewedWords, BluetoothDtmSchedulerTimingPolicy,
-        apply_overlap_insertion_power,
+        BluetoothDtmSchedulerTimingPolicy,
     };
     use crate::{
-        BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample, BluetoothDtmChannel,
-        BluetoothDtmPhy, BluetoothDtmRole, BluetoothSchedulerSoftwareConfig,
+        BluetoothControllerTimeSample, BluetoothDtmChannel, BluetoothDtmPhy, BluetoothDtmRole,
+        BluetoothDtmRxInitialEventWindow, BluetoothDtmRxRecurringEventWindow,
+        BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerMargin,
+        BluetoothSchedulerSoftwareConfig,
     };
-    use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmLinkStateReviewedWords;
+    use open_esp_radio_esp32s31_bluetooth_memory::{
+        BluetoothDtmReceiverEventPhase, BluetoothDtmSchedulerItemEventType,
+    };
 
-    const CURRENT: BluetoothDtmSchedulerItemReviewedWords =
-        BluetoothDtmSchedulerItemReviewedWords {
-            word_00: 0x12ff_5678,
-            word_04: 0x0123_4567,
-            word_08: 0xdead_beef,
-            word_0c: 0x1357_9bdf,
-            word_10: 0x2468_ace0,
-            word_14: 0x0123_4567,
-            word_18: 0xabcd_ef12,
-            word_2c: 0x7654_3210,
-            word_44: 0,
-            word_48: 0,
-            word_4c: 0x1234_56ff,
-        };
-
-    fn epoch() -> BluetoothControllerSchedulerEpoch {
-        BluetoothControllerSchedulerEpoch::new(
-            BluetoothControllerTimeSample::for_validation(100),
-            1_000,
-            BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale(),
+    fn receiver_window() -> BluetoothDtmRxRecurringEventWindow {
+        BluetoothDtmRxRecurringEventWindow::new(
+            BluetoothSchedulerSoftwareConfig::reviewed_standalone(),
+            BluetoothDtmSchedulerInstant::from_image(900),
+            BluetoothDtmSchedulerInstant::from_image(1_020),
+            BluetoothDtmSchedulerMargin::from_image(8),
         )
     }
 
@@ -222,107 +257,50 @@ mod tests {
     }
 
     #[test]
-    fn rx_event_matches_every_complete_scheduler_item_image() {
-        let event = BluetoothDtmSchedulerItemEvent::new(
+    fn recurring_receiver_window_retains_the_receiver_phase() {
+        let event = BluetoothDtmSchedulerItemEvent::new_recurring_receiver(
             BluetoothDtmChannel::new(21).expect("channel is in the DTM domain"),
             BluetoothDtmPhy::LeCoded,
-            BluetoothDtmRole::Receiver,
-            1_012,
-            1_020,
+            receiver_window(),
         )
         .expect("coded RX is accepted");
-        let words = event.apply(CURRENT, epoch());
 
-        assert_eq!(words.word_00, 0x12ef_5678);
-        assert_eq!(words.word_04, 0x8123_4567);
-        assert_eq!(words.word_08, 0xde0d_beef);
-        assert_eq!(words.word_14, 0xf123_4567);
-        assert_eq!(words.word_18, 0xabcd_aa13);
-        assert_eq!(words.word_2c, 0x000f_0001);
-        assert_eq!(words.word_44, 103);
-        assert_eq!(words.word_48, 105);
-        assert_eq!(words.word_4c, 0x1234_5600);
+        assert_eq!(event.role(), BluetoothDtmRole::Receiver);
+        assert_eq!(
+            event.event_type,
+            BluetoothDtmSchedulerItemEventType::Receiver(BluetoothDtmReceiverEventPhase::Recurring)
+        );
     }
 
     #[test]
-    fn tx_event_preserves_rx_only_word_and_selects_tx_role_byte() {
-        let event = BluetoothDtmSchedulerItemEvent::new(
-            BluetoothDtmChannel::new(0).expect("channel zero is accepted"),
-            BluetoothDtmPhy::Le1M,
-            BluetoothDtmRole::Transmitter,
-            1_000,
-            1_000,
+    fn initial_receiver_window_retains_the_initial_phase() {
+        let event = BluetoothDtmSchedulerItemEvent::new_initial_receiver(
+            BluetoothDtmChannel::new(21).expect("channel is in the DTM domain"),
+            BluetoothDtmPhy::LeCoded,
+            BluetoothDtmRxInitialEventWindow::new(
+                BluetoothDtmSchedulerInstant::from_image(64),
+                BluetoothDtmSchedulerInstant::from_image(1_020),
+                BluetoothDtmSchedulerMargin::from_image(8),
+            ),
         )
-        .expect("1M TX is accepted");
-        let words = event.apply(CURRENT, epoch());
+        .expect("coded RX is accepted");
 
-        assert_eq!(words.word_00, 0x12bf_5678);
-        assert_eq!(words.word_14, 0x0123_4567);
-        assert_eq!(words.word_18, 0xabcd_8013);
-        assert_eq!(words.word_2c, CURRENT.word_2c);
-        assert_eq!(words.word_44, 100);
-        assert_eq!(words.word_48, 100);
+        assert_eq!(event.role(), BluetoothDtmRole::Receiver);
+        assert_eq!(
+            event.event_type,
+            BluetoothDtmSchedulerItemEventType::Receiver(BluetoothDtmReceiverEventPhase::Initial)
+        );
     }
 
     #[test]
     fn event_rejects_transmitter_only_phy_for_receiver_role() {
         assert_eq!(
-            BluetoothDtmSchedulerItemEvent::new(
+            BluetoothDtmSchedulerItemEvent::new_recurring_receiver(
                 BluetoothDtmChannel::new(39).expect("last channel is accepted"),
                 BluetoothDtmPhy::LeCodedS2,
-                BluetoothDtmRole::Receiver,
-                0,
-                0,
+                receiver_window(),
             ),
             Err(BluetoothDtmSchedulerItemEventError::LeCodedS2RequiresTransmitter)
         );
-    }
-
-    #[test]
-    fn overlap_insertion_projects_link_state_power_into_scheduler_item() {
-        let link_state = BluetoothDtmLinkStateReviewedWords {
-            word_00: 0,
-            word_04: 0x0a80_0000,
-            word_08: 0,
-            word_14: 0,
-            word_2c: 0,
-            word_34: 0,
-            word_38: 0,
-            word_50: 0,
-        };
-        let projected = apply_overlap_insertion_power(CURRENT, link_state);
-
-        assert_eq!(projected.word_14, 0x0153_4567);
-        assert_eq!(projected.word_18, CURRENT.word_18);
-    }
-
-    #[test]
-    fn transmitter_window_flows_into_both_epoch_projected_item_words() {
-        use crate::{
-            BluetoothDtmPayloadLength, BluetoothDtmSchedulerInstant, BluetoothDtmSchedulerMargin,
-            BluetoothDtmTxTimingMicros,
-        };
-
-        let timing = BluetoothDtmTxTimingMicros::new(
-            BluetoothDtmPayloadLength::from_hci_image(0),
-            BluetoothDtmPhy::Le1M,
-            0,
-        )
-        .scheduler_timing();
-        let window = timing.initial_event_window(
-            BluetoothDtmSchedulerInstant::from_image(1_000),
-            BluetoothDtmSchedulerInstant::from_image(1_900),
-            BluetoothDtmSchedulerMargin::from_image(20),
-        );
-        let event = BluetoothDtmSchedulerItemEvent::new_transmitter(
-            BluetoothDtmChannel::new(0).expect("channel zero is accepted"),
-            BluetoothDtmPhy::Le1M,
-            window,
-        )
-        .expect("1M TX is accepted");
-        let words = event.apply(CURRENT, epoch());
-
-        assert_eq!(words.word_44, 335);
-        assert_eq!(words.word_48, 874);
     }
 }

@@ -7,7 +7,9 @@
 
 #![forbid(unsafe_code)]
 
-use open_esp_radio_esp32s31_pac::{BluetoothControllerLatchedTime, BluetoothControllerTimeScale};
+use open_esp_radio_esp32s31_pac::BluetoothControllerLatchedTime;
+#[cfg(any(target_arch = "riscv32", test))]
+use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
 
 /// One ordered controller-time sample from the always-awake latch path.
 #[derive(Debug, Eq, PartialEq)]
@@ -27,7 +29,8 @@ impl BluetoothControllerTimeSample {
     }
 
     /// Return the complete wrapping raw-time image.
-    pub const fn raw_time(&self) -> u32 {
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) const fn raw_time(&self) -> u32 {
         self.latched_time.bits()
     }
 }
@@ -371,58 +374,58 @@ pub(crate) use worker::{
 };
 
 #[cfg(any(target_arch = "riscv32", test))]
-pub(crate) trait BluetoothPostEnableTimeOwner {
-    fn recheck_owned_post_enable_time(
+pub(crate) trait BluetoothControllerTimePendingOwner {
+    fn recheck_owned_controller_time(
         &mut self,
         request: BluetoothControllerTimeRequest,
-    ) -> Result<BluetoothPostEnableTimeOwnerStep, BluetoothControllerTimeEventError>;
+    ) -> Result<BluetoothControllerTimePendingOwnerStep, BluetoothControllerTimeEventError>;
 
-    fn cancel_owned_post_enable_time(
+    fn cancel_owned_controller_time(
         &mut self,
         request: BluetoothControllerTimeRequest,
     ) -> Result<(), BluetoothControllerTimeEventError>;
 
-    fn drain_orphan_post_enable_time(
+    fn drain_orphan_controller_time(
         &mut self,
-    ) -> Result<BluetoothPostEnableTimeOrphanStep, BluetoothControllerTimeEventError>;
+    ) -> Result<BluetoothControllerTimePendingOrphanStep, BluetoothControllerTimeEventError>;
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
-impl<T> BluetoothPostEnableTimeOwner for &mut T
+impl<T> BluetoothControllerTimePendingOwner for &mut T
 where
-    T: BluetoothPostEnableTimeOwner + ?Sized,
+    T: BluetoothControllerTimePendingOwner + ?Sized,
 {
-    fn recheck_owned_post_enable_time(
+    fn recheck_owned_controller_time(
         &mut self,
         request: BluetoothControllerTimeRequest,
-    ) -> Result<BluetoothPostEnableTimeOwnerStep, BluetoothControllerTimeEventError> {
-        T::recheck_owned_post_enable_time(self, request)
+    ) -> Result<BluetoothControllerTimePendingOwnerStep, BluetoothControllerTimeEventError> {
+        T::recheck_owned_controller_time(self, request)
     }
 
-    fn cancel_owned_post_enable_time(
+    fn cancel_owned_controller_time(
         &mut self,
         request: BluetoothControllerTimeRequest,
     ) -> Result<(), BluetoothControllerTimeEventError> {
-        T::cancel_owned_post_enable_time(self, request)
+        T::cancel_owned_controller_time(self, request)
     }
 
-    fn drain_orphan_post_enable_time(
+    fn drain_orphan_controller_time(
         &mut self,
-    ) -> Result<BluetoothPostEnableTimeOrphanStep, BluetoothControllerTimeEventError> {
-        T::drain_orphan_post_enable_time(self)
+    ) -> Result<BluetoothControllerTimePendingOrphanStep, BluetoothControllerTimeEventError> {
+        T::drain_orphan_controller_time(self)
     }
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
 #[derive(Debug)]
-pub(crate) enum BluetoothPostEnableTimeOwnerStep {
+pub(crate) enum BluetoothControllerTimePendingOwnerStep {
     Waiting,
     Ready(BluetoothControllerTimeSample),
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum BluetoothPostEnableTimeOrphanStep {
+pub(crate) enum BluetoothControllerTimePendingOrphanStep {
     Idle,
     Waiting,
     Drained,
@@ -430,9 +433,9 @@ pub(crate) enum BluetoothPostEnableTimeOrphanStep {
 
 #[cfg(any(target_arch = "riscv32", test))]
 #[derive(Debug)]
-pub(crate) struct BluetoothPostEnableTimePendingCore<O>
+pub(crate) struct BluetoothControllerTimePendingCore<O>
 where
-    O: BluetoothPostEnableTimeOwner,
+    O: BluetoothControllerTimePendingOwner,
 {
     owner: Option<O>,
     request: Option<BluetoothControllerTimeRequest>,
@@ -440,11 +443,11 @@ where
 
 #[cfg(any(target_arch = "riscv32", test))]
 #[derive(Debug)]
-pub(crate) enum BluetoothPostEnableTimePendingCoreStep<O>
+pub(crate) enum BluetoothControllerTimePendingCoreStep<O>
 where
-    O: BluetoothPostEnableTimeOwner,
+    O: BluetoothControllerTimePendingOwner,
 {
-    Waiting(BluetoothPostEnableTimePendingCore<O>),
+    Waiting(BluetoothControllerTimePendingCore<O>),
     Ready {
         owner: O,
         sample: BluetoothControllerTimeSample,
@@ -453,18 +456,18 @@ where
 
 #[cfg(any(target_arch = "riscv32", test))]
 #[derive(Debug)]
-pub(crate) struct BluetoothPostEnableTimePendingCoreFailure<O>
+pub(crate) struct BluetoothControllerTimePendingCoreFailure<O>
 where
-    O: BluetoothPostEnableTimeOwner,
+    O: BluetoothControllerTimePendingOwner,
 {
     owner: O,
     error: BluetoothControllerTimeEventError,
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
-impl<O> BluetoothPostEnableTimePendingCoreFailure<O>
+impl<O> BluetoothControllerTimePendingCoreFailure<O>
 where
-    O: BluetoothPostEnableTimeOwner,
+    O: BluetoothControllerTimePendingOwner,
 {
     pub(crate) fn into_parts(self) -> (O, BluetoothControllerTimeEventError) {
         (self.owner, self.error)
@@ -472,9 +475,9 @@ where
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
-impl<O> BluetoothPostEnableTimePendingCore<O>
+impl<O> BluetoothControllerTimePendingCore<O>
 where
-    O: BluetoothPostEnableTimeOwner,
+    O: BluetoothControllerTimePendingOwner,
 {
     pub(crate) const fn new(owner: O, request: BluetoothControllerTimeRequest) -> Self {
         Self {
@@ -486,8 +489,8 @@ where
     pub(crate) fn recheck(
         mut self,
     ) -> Result<
-        BluetoothPostEnableTimePendingCoreStep<O>,
-        BluetoothPostEnableTimePendingCoreFailure<O>,
+        BluetoothControllerTimePendingCoreStep<O>,
+        BluetoothControllerTimePendingCoreFailure<O>,
     > {
         let mut owner = self
             .owner
@@ -498,18 +501,18 @@ where
             .take()
             .expect("private pending-time core retains the exact request");
 
-        match owner.recheck_owned_post_enable_time(request) {
-            Ok(BluetoothPostEnableTimeOwnerStep::Waiting) => Ok(
-                BluetoothPostEnableTimePendingCoreStep::Waiting(Self::new(owner, request)),
+        match owner.recheck_owned_controller_time(request) {
+            Ok(BluetoothControllerTimePendingOwnerStep::Waiting) => Ok(
+                BluetoothControllerTimePendingCoreStep::Waiting(Self::new(owner, request)),
             ),
-            Ok(BluetoothPostEnableTimeOwnerStep::Ready(sample)) => {
-                Ok(BluetoothPostEnableTimePendingCoreStep::Ready { owner, sample })
+            Ok(BluetoothControllerTimePendingOwnerStep::Ready(sample)) => {
+                Ok(BluetoothControllerTimePendingCoreStep::Ready { owner, sample })
             }
-            Err(error) => Err(BluetoothPostEnableTimePendingCoreFailure { owner, error }),
+            Err(error) => Err(BluetoothControllerTimePendingCoreFailure { owner, error }),
         }
     }
 
-    pub(crate) fn cancel(mut self) -> Result<O, BluetoothPostEnableTimePendingCoreFailure<O>> {
+    pub(crate) fn cancel(mut self) -> Result<O, BluetoothControllerTimePendingCoreFailure<O>> {
         let mut owner = self
             .owner
             .take()
@@ -519,30 +522,30 @@ where
             .take()
             .expect("private pending-time core retains the exact request");
 
-        match owner.cancel_owned_post_enable_time(request) {
+        match owner.cancel_owned_controller_time(request) {
             Ok(()) => Ok(owner),
-            Err(error) => Err(BluetoothPostEnableTimePendingCoreFailure { owner, error }),
+            Err(error) => Err(BluetoothControllerTimePendingCoreFailure { owner, error }),
         }
     }
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
-impl<O> Drop for BluetoothPostEnableTimePendingCore<O>
+impl<O> Drop for BluetoothControllerTimePendingCore<O>
 where
-    O: BluetoothPostEnableTimeOwner,
+    O: BluetoothControllerTimePendingOwner,
 {
     fn drop(&mut self) {
         if let (Some(mut owner), Some(request)) = (self.owner.take(), self.request.take()) {
-            let _result = owner.cancel_owned_post_enable_time(request);
+            let _result = owner.cancel_owned_controller_time(request);
         }
     }
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
-pub(crate) fn drain_post_enable_time_orphan(
-    owner: &mut impl BluetoothPostEnableTimeOwner,
-) -> Result<BluetoothPostEnableTimeOrphanStep, BluetoothControllerTimeEventError> {
-    owner.drain_orphan_post_enable_time()
+pub(crate) fn drain_controller_time_orphan(
+    owner: &mut impl BluetoothControllerTimePendingOwner,
+) -> Result<BluetoothControllerTimePendingOrphanStep, BluetoothControllerTimeEventError> {
+    owner.drain_orphan_controller_time()
 }
 
 /// Raw-time anchor paired with the BLE scheduler's positional epoch.
@@ -551,12 +554,14 @@ pub(crate) fn drain_post_enable_time_orphan(
 /// branch geometry. Every reviewed S31 HAL configuration has a positive scale
 /// image, so the helper's optional negative-side remainder is always zero.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BluetoothControllerSchedulerEpoch {
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) struct BluetoothControllerSchedulerEpoch {
     raw_anchor: u32,
     scheduler_anchor: u32,
     scale: BluetoothControllerTimeScale,
 }
 
+#[cfg(any(target_arch = "riscv32", test))]
 impl BluetoothControllerSchedulerEpoch {
     /// Establish the source-owned epoch from its first live raw-time update.
     ///
@@ -595,8 +600,24 @@ impl BluetoothControllerSchedulerEpoch {
     }
 
     /// Project a later or earlier wrapping raw sample into the scheduler epoch.
-    pub const fn project(self, sample: BluetoothControllerTimeSample) -> u32 {
+    #[cfg(test)]
+    pub(crate) const fn project(self, sample: BluetoothControllerTimeSample) -> u32 {
         self.project_raw_time(sample.raw_time())
+    }
+
+    /// Advance the raw anchor while preserving this sample's scheduler image.
+    ///
+    /// The Controller does this after every live task-run reference update.
+    /// Re-anchoring is required even when the forward image is unchanged:
+    /// shifting scales have wrapping aliases that the inverse projection can
+    /// distinguish only through the latest raw anchor.
+    pub(crate) const fn reanchor(self, sample: &BluetoothControllerTimeSample) -> Self {
+        let raw_anchor = sample.raw_time();
+        Self {
+            raw_anchor,
+            scheduler_anchor: self.project_raw_time(raw_anchor),
+            scale: self.scale,
+        }
     }
 
     const fn project_raw_time(self, raw_time: u32) -> u32 {
@@ -686,12 +707,12 @@ mod tests {
     use super::{
         BluetoothControllerSchedulerEpoch, BluetoothControllerSchedulerNow,
         BluetoothControllerTimeEventError, BluetoothControllerTimeEventStep,
-        BluetoothControllerTimeHardware, BluetoothControllerTimeRequest,
-        BluetoothControllerTimeRequestError, BluetoothControllerTimeSample,
-        BluetoothControllerTimeWorker, BluetoothControllerTimeWorkerPhase,
-        BluetoothPostEnableTimeOrphanStep, BluetoothPostEnableTimeOwner,
-        BluetoothPostEnableTimeOwnerStep, BluetoothPostEnableTimePendingCore,
-        BluetoothPostEnableTimePendingCoreStep, drain_post_enable_time_orphan,
+        BluetoothControllerTimeHardware, BluetoothControllerTimePendingCore,
+        BluetoothControllerTimePendingCoreStep, BluetoothControllerTimePendingOrphanStep,
+        BluetoothControllerTimePendingOwner, BluetoothControllerTimePendingOwnerStep,
+        BluetoothControllerTimeRequest, BluetoothControllerTimeRequestError,
+        BluetoothControllerTimeSample, BluetoothControllerTimeWorker,
+        BluetoothControllerTimeWorkerPhase, drain_controller_time_orphan,
     };
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -752,11 +773,13 @@ mod tests {
         identity: u8,
         rechecks: Vec<BluetoothControllerTimeRequest>,
         cancellations: Vec<BluetoothControllerTimeRequest>,
-        recheck_steps:
-            VecDeque<Result<BluetoothPostEnableTimeOwnerStep, BluetoothControllerTimeEventError>>,
+        recheck_steps: VecDeque<
+            Result<BluetoothControllerTimePendingOwnerStep, BluetoothControllerTimeEventError>,
+        >,
         cancel_error: Option<BluetoothControllerTimeEventError>,
-        orphan_steps:
-            VecDeque<Result<BluetoothPostEnableTimeOrphanStep, BluetoothControllerTimeEventError>>,
+        orphan_steps: VecDeque<
+            Result<BluetoothControllerTimePendingOrphanStep, BluetoothControllerTimeEventError>,
+        >,
     }
 
     impl PendingOwnerModel {
@@ -772,18 +795,19 @@ mod tests {
         }
     }
 
-    impl BluetoothPostEnableTimeOwner for PendingOwnerModel {
-        fn recheck_owned_post_enable_time(
+    impl BluetoothControllerTimePendingOwner for PendingOwnerModel {
+        fn recheck_owned_controller_time(
             &mut self,
             request: BluetoothControllerTimeRequest,
-        ) -> Result<BluetoothPostEnableTimeOwnerStep, BluetoothControllerTimeEventError> {
+        ) -> Result<BluetoothControllerTimePendingOwnerStep, BluetoothControllerTimeEventError>
+        {
             self.rechecks.push(request);
             self.recheck_steps
                 .pop_front()
                 .expect("pending-owner model needs one recheck step")
         }
 
-        fn cancel_owned_post_enable_time(
+        fn cancel_owned_controller_time(
             &mut self,
             request: BluetoothControllerTimeRequest,
         ) -> Result<(), BluetoothControllerTimeEventError> {
@@ -794,9 +818,10 @@ mod tests {
             }
         }
 
-        fn drain_orphan_post_enable_time(
+        fn drain_orphan_controller_time(
             &mut self,
-        ) -> Result<BluetoothPostEnableTimeOrphanStep, BluetoothControllerTimeEventError> {
+        ) -> Result<BluetoothControllerTimePendingOrphanStep, BluetoothControllerTimeEventError>
+        {
             self.orphan_steps
                 .pop_front()
                 .expect("pending-owner model needs one orphan-drain step")
@@ -812,24 +837,24 @@ mod tests {
         let request = BluetoothControllerTimeRequest::for_validation(41);
         let mut owner = PendingOwnerModel::new(1);
         owner.orphan_steps.extend([
-            Ok(BluetoothPostEnableTimeOrphanStep::Waiting),
-            Ok(BluetoothPostEnableTimeOrphanStep::Drained),
-            Ok(BluetoothPostEnableTimeOrphanStep::Idle),
+            Ok(BluetoothControllerTimePendingOrphanStep::Waiting),
+            Ok(BluetoothControllerTimePendingOrphanStep::Drained),
+            Ok(BluetoothControllerTimePendingOrphanStep::Idle),
         ]);
 
-        drop(BluetoothPostEnableTimePendingCore::new(&mut owner, request));
+        drop(BluetoothControllerTimePendingCore::new(&mut owner, request));
         assert_eq!(owner.cancellations, [request]);
         assert_eq!(
-            drain_post_enable_time_orphan(&mut owner),
-            Ok(BluetoothPostEnableTimeOrphanStep::Waiting)
+            drain_controller_time_orphan(&mut owner),
+            Ok(BluetoothControllerTimePendingOrphanStep::Waiting)
         );
         assert_eq!(
-            drain_post_enable_time_orphan(&mut owner),
-            Ok(BluetoothPostEnableTimeOrphanStep::Drained)
+            drain_controller_time_orphan(&mut owner),
+            Ok(BluetoothControllerTimePendingOrphanStep::Drained)
         );
         assert_eq!(
-            drain_post_enable_time_orphan(&mut owner),
-            Ok(BluetoothPostEnableTimeOrphanStep::Idle)
+            drain_controller_time_orphan(&mut owner),
+            Ok(BluetoothControllerTimePendingOrphanStep::Idle)
         );
     }
 
@@ -838,22 +863,24 @@ mod tests {
         let request = BluetoothControllerTimeRequest::for_validation(42);
         let mut owner = PendingOwnerModel::new(7);
         owner.recheck_steps.extend([
-            Ok(BluetoothPostEnableTimeOwnerStep::Waiting),
-            Ok(BluetoothPostEnableTimeOwnerStep::Ready(sample(0x1234))),
+            Ok(BluetoothControllerTimePendingOwnerStep::Waiting),
+            Ok(BluetoothControllerTimePendingOwnerStep::Ready(sample(
+                0x1234,
+            ))),
         ]);
 
-        let pending = BluetoothPostEnableTimePendingCore::new(&mut owner, request);
+        let pending = BluetoothControllerTimePendingCore::new(&mut owner, request);
         let waiting = match pending.recheck().expect("first recheck waits") {
-            BluetoothPostEnableTimePendingCoreStep::Waiting(waiting) => waiting,
-            BluetoothPostEnableTimePendingCoreStep::Ready { .. } => {
+            BluetoothControllerTimePendingCoreStep::Waiting(waiting) => waiting,
+            BluetoothControllerTimePendingCoreStep::Ready { .. } => {
                 panic!("first recheck unexpectedly completed")
             }
         };
         let (identity, observed) = match waiting.recheck().expect("second recheck completes") {
-            BluetoothPostEnableTimePendingCoreStep::Ready { owner, sample } => {
+            BluetoothControllerTimePendingCoreStep::Ready { owner, sample } => {
                 (owner.identity, sample.raw_time())
             }
-            BluetoothPostEnableTimePendingCoreStep::Waiting(_) => {
+            BluetoothControllerTimePendingCoreStep::Waiting(_) => {
                 panic!("second recheck unexpectedly waited")
             }
         };
@@ -870,21 +897,23 @@ mod tests {
         let mut owner = PendingOwnerModel::new(2);
         owner
             .recheck_steps
-            .push_back(Ok(BluetoothPostEnableTimeOwnerStep::Ready(sample(9))));
+            .push_back(Ok(BluetoothControllerTimePendingOwnerStep::Ready(sample(
+                9,
+            ))));
 
         {
-            let ready = BluetoothPostEnableTimePendingCore::new(&mut owner, request)
+            let ready = BluetoothControllerTimePendingCore::new(&mut owner, request)
                 .recheck()
                 .expect("recheck completes");
             match ready {
-                BluetoothPostEnableTimePendingCoreStep::Ready {
+                BluetoothControllerTimePendingCoreStep::Ready {
                     owner: returned,
                     sample,
                 } => {
                     assert_eq!(sample.raw_time(), 9);
                     let _ = returned;
                 }
-                BluetoothPostEnableTimePendingCoreStep::Waiting(_) => {
+                BluetoothControllerTimePendingCoreStep::Waiting(_) => {
                     panic!("recheck unexpectedly waited")
                 }
             }
@@ -892,6 +921,25 @@ mod tests {
 
         assert_eq!(owner.rechecks, [request]);
         assert!(owner.cancellations.is_empty());
+    }
+
+    #[test]
+    fn pending_core_recheck_failure_returns_exact_owner_without_cancellation() {
+        let request = BluetoothControllerTimeRequest::for_validation(44);
+        let mut owner = PendingOwnerModel::new(9);
+        owner
+            .recheck_steps
+            .push_back(Err(BluetoothControllerTimeEventError::OwnershipLost));
+
+        let failure = BluetoothControllerTimePendingCore::new(owner, request)
+            .recheck()
+            .expect_err("model rejects the exact recheck");
+        let (returned, error) = failure.into_parts();
+
+        assert_eq!(returned.identity, 9);
+        assert_eq!(error, BluetoothControllerTimeEventError::OwnershipLost);
+        assert_eq!(returned.rechecks, [request]);
+        assert!(returned.cancellations.is_empty());
     }
 
     #[test]
@@ -904,7 +952,7 @@ mod tests {
             let mut owner = PendingOwnerModel::new(3);
             owner.cancel_error = Some(expected);
 
-            let failure = BluetoothPostEnableTimePendingCore::new(&mut owner, request)
+            let failure = BluetoothControllerTimePendingCore::new(&mut owner, request)
                 .cancel()
                 .expect_err("model rejects explicit cancellation");
             let (returned, error) = failure.into_parts();
@@ -1241,5 +1289,23 @@ mod tests {
         assert_eq!(now.epoch(), epoch);
         assert_eq!(now.sample().raw_time(), 0x4000_0000);
         assert_eq!(now.scheduler_image(), 0);
+    }
+
+    #[test]
+    fn live_reanchor_preserves_forward_time_and_updates_inverse_wrap_alias() {
+        let scale = BluetoothControllerHalInitConfig::reviewed_standalone().controller_time_scale();
+        let first_sample = sample(0);
+        let first_epoch =
+            BluetoothControllerSchedulerEpoch::from_first_live_update(&first_sample, scale);
+        let later_sample = sample(0x4000_0000);
+        let later_scheduler_image = first_epoch.project_raw_time(later_sample.raw_time());
+        let reanchored = first_epoch.reanchor(&later_sample);
+
+        assert_eq!(
+            reanchored.project_raw_time(later_sample.raw_time()),
+            later_scheduler_image
+        );
+        assert_eq!(first_epoch.raw_time_for_scheduler_time(4), 1);
+        assert_eq!(reanchored.raw_time_for_scheduler_time(4), 0x4000_0001);
     }
 }

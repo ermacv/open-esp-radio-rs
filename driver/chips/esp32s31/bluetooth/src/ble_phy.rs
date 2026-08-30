@@ -493,7 +493,7 @@ where
             .recycle_dtm_receiver_success(ready)
     }
 
-    pub(crate) fn request_post_enable_controller_time(
+    pub(crate) fn request_controller_time(
         &mut self,
     ) -> Result<
         crate::controller_time::BluetoothControllerTimeRequest,
@@ -502,7 +502,7 @@ where
         self.initialized
             .initialized
             .controller
-            .request_post_enable_controller_time()
+            .request_controller_time()
     }
 
     #[expect(
@@ -525,17 +525,17 @@ where
             .publish_dtm_scheduler_head(merged)
     }
 
-    pub(crate) fn cancel_owned_post_enable_controller_time(
+    pub(crate) fn cancel_owned_controller_time(
         &mut self,
         request: crate::controller_time::BluetoothControllerTimeRequest,
     ) -> Result<(), crate::controller_time::BluetoothControllerTimeEventError> {
         self.initialized
             .initialized
             .controller
-            .cancel_owned_post_enable_controller_time(request)
+            .cancel_owned_controller_time(request)
     }
 
-    pub(crate) fn recheck_owned_post_enable_controller_time(
+    pub(crate) fn recheck_owned_controller_time(
         &mut self,
         request: crate::controller_time::BluetoothControllerTimeRequest,
     ) -> Result<
@@ -545,10 +545,10 @@ where
         self.initialized
             .initialized
             .controller
-            .recheck_owned_post_enable_controller_time(request)
+            .recheck_owned_controller_time(request)
     }
 
-    pub(crate) fn drain_orphan_post_enable_controller_time(
+    pub(crate) fn drain_orphan_controller_time(
         &mut self,
     ) -> Result<
         crate::controller_time::BluetoothControllerTimeEventStep,
@@ -557,7 +557,7 @@ where
         self.initialized
             .initialized
             .controller
-            .drain_orphan_post_enable_controller_time()
+            .drain_orphan_controller_time()
     }
 }
 

@@ -34,7 +34,7 @@ impl BluetoothStandaloneAlwaysAwake {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub(crate) const fn gate_post_enable_time_request(&self) {
+    pub(crate) const fn gate_controller_time_request(&self) {
         // Presence of this private affine value in the structural owner is the
         // gate. The marker never accepts an independently supplied task owner.
     }

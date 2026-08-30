@@ -775,29 +775,27 @@ where
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn request_post_enable_controller_time(
+    pub(crate) fn request_controller_time(
         &mut self,
     ) -> Result<
         crate::controller_time::BluetoothControllerTimeRequest,
         crate::controller_time::BluetoothControllerTimeRequestError,
     > {
-        self.controller
-            .scheduler
-            .request_post_enable_controller_time()
+        self.controller.scheduler.request_controller_time()
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn cancel_owned_post_enable_controller_time(
+    pub(crate) fn cancel_owned_controller_time(
         &mut self,
         request: crate::controller_time::BluetoothControllerTimeRequest,
     ) -> Result<(), crate::controller_time::BluetoothControllerTimeEventError> {
         self.controller
             .scheduler
-            .cancel_owned_post_enable_controller_time(request)
+            .cancel_owned_controller_time(request)
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn recheck_owned_post_enable_controller_time(
+    pub(crate) fn recheck_owned_controller_time(
         &mut self,
         request: crate::controller_time::BluetoothControllerTimeRequest,
     ) -> Result<
@@ -806,19 +804,17 @@ where
     > {
         self.controller
             .scheduler
-            .recheck_owned_post_enable_controller_time(request)
+            .recheck_owned_controller_time(request)
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn drain_orphan_post_enable_controller_time(
+    pub(crate) fn drain_orphan_controller_time(
         &mut self,
     ) -> Result<
         crate::controller_time::BluetoothControllerTimeEventStep,
         crate::controller_time::BluetoothControllerTimeEventError,
     > {
-        self.controller
-            .scheduler
-            .drain_orphan_post_enable_controller_time()
+        self.controller.scheduler.drain_orphan_controller_time()
     }
 
     #[cfg(target_arch = "riscv32")]

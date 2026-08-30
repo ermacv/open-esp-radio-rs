@@ -90,7 +90,7 @@ gaps = [
 [[capabilities]]
 id = "controller-timebase"
 title = "Event-driven controller scheduler timebase"
-scope = "Live bounded always-awake latch MMIO with keyed affine request ownership same-Controller Waiting rechecks non-decomposable time-observed-after-enable proof sample-discarding cancellation drain and bidirectional wrapping raw scheduler epoch projection"
+scope = "Live bounded always-awake latch MMIO with keyed affine request ownership same-Controller Waiting rechecks cold first-live epoch initialization repeated borrowed scheduler-current acquisition vendor-equivalent epoch reanchoring sample-discarding cancellation drain and one-shot DTM preparation consumption"
 implementation = "incomplete"
 host = "covered"
 async = "incomplete"
@@ -99,7 +99,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "controller-bound-post-enable-observation-not-yet-consumed-by-phase-specific-scheduling" },
+  { axis = "implementation", id = "phase-specific-admission-sequence-rf-ready-and-margin-producers-missing" },
   { axis = "vendor", id = "effective-counter-width-physical-unit-and-wake-source-missing" },
   { axis = "hil", id = "controller-time-latch-and-wrap-cell-missing" },
   { axis = "async", id = "live-controller-runner-and-proven-absolute-recheck-source-missing" },

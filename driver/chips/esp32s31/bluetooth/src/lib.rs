@@ -129,17 +129,22 @@ pub use controller_start::{
     BluetoothAlwaysAwakePostEnableTimeBeginError, BluetoothAlwaysAwakePostEnableTimeError,
     BluetoothAlwaysAwakePostEnableTimeOrphanDrainStep, BluetoothAlwaysAwakePostEnableTimePending,
     BluetoothAlwaysAwakePostEnableTimeStep, BluetoothAlwaysAwakeTimeObservedAfterEnable,
-    BluetoothControllerInterruptOwnerPublicationFailure,
+    BluetoothControllerFreshSchedulerNowReady, BluetoothControllerInterruptOwnerPublicationFailure,
     BluetoothControllerInterruptOwnersPublished, BluetoothControllerInterruptOwnersReady,
     BluetoothControllerModemLpTimerRestoreFailure, BluetoothControllerModemLpTimerSoftwareStep,
     BluetoothControllerModemLpTimerSoftwareWork, BluetoothControllerOutputTimerStarted,
-    BluetoothControllerSchedulerEpochRetained, BluetoothControllerSchedulerNowReady,
+    BluetoothControllerSchedulerCurrentBeginError, BluetoothControllerSchedulerCurrentError,
+    BluetoothControllerSchedulerCurrentOrphanDrainStep, BluetoothControllerSchedulerCurrentPending,
+    BluetoothControllerSchedulerCurrentStep, BluetoothControllerSchedulerEpochRetained,
+    BluetoothControllerSchedulerEpochUnavailable, BluetoothControllerSchedulerNowReady,
     BluetoothDtmSchedulerStartFailure, BluetoothDtmSoftwareListRemovalObservationFailure,
     BluetoothDtmSoftwareListRemovalObservationStep, BluetoothInterruptOwnerStorage,
     BluetoothModemLpTimerInterruptDispatchStorage, BluetoothModemLpTimerSoftwareOwnerStorage,
     BluetoothSchedulerRunInterruptStorage, BluetoothSharedInterruptDispatchStorage,
 };
-pub use controller_time::{BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample};
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) use controller_time::BluetoothControllerSchedulerEpoch;
+pub use controller_time::BluetoothControllerTimeSample;
 #[cfg(target_arch = "riscv32")]
 pub use dtm_event_prepare::{
     BluetoothDtmActiveReceiverCpuOwned, BluetoothDtmActiveTransmitterCpuOwned,

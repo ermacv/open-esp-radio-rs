@@ -17,11 +17,11 @@ use open_esp_radio_esp32s31_bluetooth_memory::{
 use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
 
 #[cfg(any(target_arch = "riscv32", test))]
-use crate::BluetoothControllerTimeSample;
+use crate::{BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample};
 use crate::{
-    BluetoothControllerSchedulerEpoch, BluetoothDtmChannel, BluetoothDtmPhy, BluetoothDtmRole,
-    BluetoothDtmRxInitialEventWindow, BluetoothDtmRxRecurringEventWindow,
-    BluetoothDtmTxEventWindow, BluetoothSchedulerSoftwareConfig,
+    BluetoothDtmChannel, BluetoothDtmPhy, BluetoothDtmRole, BluetoothDtmRxInitialEventWindow,
+    BluetoothDtmRxRecurringEventWindow, BluetoothDtmTxEventWindow,
+    BluetoothSchedulerSoftwareConfig,
 };
 
 /// Why one DTM scheduler-item event cannot be represented exactly.
@@ -159,15 +159,7 @@ impl BluetoothDtmSchedulerItemEvent {
         })
     }
 
-    /// Apply every complete reviewed transform preceding scheduler insertion.
-    pub const fn apply(
-        self,
-        current: BluetoothDtmSchedulerItemReviewedWords,
-        epoch: BluetoothControllerSchedulerEpoch,
-    ) -> BluetoothDtmSchedulerItemReviewedWords {
-        self.apply_raw_window(current, self.raw_start(epoch), self.raw_end(epoch))
-    }
-
+    #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) const fn apply_raw_window(
         self,
         current: BluetoothDtmSchedulerItemReviewedWords,
@@ -188,10 +180,12 @@ impl BluetoothDtmSchedulerItemEvent {
         self.event_type.role()
     }
 
+    #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) const fn raw_start(self, epoch: BluetoothControllerSchedulerEpoch) -> u32 {
         epoch.raw_time_for_scheduler_time(self.scheduler_start)
     }
 
+    #[cfg(any(target_arch = "riscv32", test))]
     pub(crate) const fn raw_end(self, epoch: BluetoothControllerSchedulerEpoch) -> u32 {
         epoch.raw_time_for_scheduler_time(self.scheduler_end)
     }

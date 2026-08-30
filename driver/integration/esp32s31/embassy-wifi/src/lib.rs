@@ -162,6 +162,55 @@ pub use supervisor::station::{
 pub use supervisor::{Esp32s31RadioRunner, Esp32s31RadioRunners, Esp32s31RadioSystem, new};
 pub use wifi_network::Esp32s31WifiNetworkRunner;
 
+/// One low-overhead batch of Core0 connected-DATAPATH poll residence.
+///
+/// The diagnostic image supplies the CPU frequency used to convert `mcycle`
+/// deltas. Batching keeps atomic/reporting work out of the per-poll hot path.
+#[cfg(feature = "connected-datapath-cycle-telemetry")]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Esp32s31ConnectedDatapathPollBatch {
+    pub polls: u32,
+    pub poll_micros: u32,
+    pub maximum_poll_micros: u32,
+    pub over_100_micros: u32,
+    pub over_500_micros: u32,
+    pub over_1_000_micros: u32,
+    pub over_5_000_micros: u32,
+}
+
+/// Value-only sink for connected-DATAPATH executor residence.
+///
+/// This hook exists only in the dedicated diagnostic build. It cannot access
+/// the runner or alter wake/ownership semantics.
+#[cfg(feature = "connected-datapath-cycle-telemetry")]
+#[derive(Clone, Copy)]
+pub struct Esp32s31ConnectedDatapathPollObserver {
+    cycles_per_micro: u32,
+    record: fn(Esp32s31ConnectedDatapathPollBatch),
+}
+
+#[cfg(feature = "connected-datapath-cycle-telemetry")]
+impl Esp32s31ConnectedDatapathPollObserver {
+    pub const fn new(
+        cycles_per_micro: u32,
+        record: fn(Esp32s31ConnectedDatapathPollBatch),
+    ) -> Self {
+        assert!(cycles_per_micro != 0, "CPU clock must be non-zero");
+        Self {
+            cycles_per_micro,
+            record,
+        }
+    }
+
+    pub(crate) const fn cycles_per_micro(self) -> u32 {
+        self.cycles_per_micro
+    }
+
+    pub(crate) fn record(self, batch: Esp32s31ConnectedDatapathPollBatch) {
+        (self.record)(batch);
+    }
+}
+
 /// Board-derived radio identity. Reading eFuse remains an application
 /// responsibility; credentials are supplied separately to `start_station`.
 pub struct Esp32s31RadioConfig {
@@ -171,6 +220,8 @@ pub struct Esp32s31RadioConfig {
     pub(crate) initial_channel: open_esp_radio_ieee80211::channel::WifiChannel,
     pub(crate) calibration_cache: Option<open_esp_radio_esp32s31_phy::PhyCalibrationCache>,
     pub(crate) maximum_tx_power_quarter_dbm: Option<i8>,
+    #[cfg(feature = "connected-datapath-cycle-telemetry")]
+    pub(crate) connected_datapath_poll_observer: Option<Esp32s31ConnectedDatapathPollObserver>,
     #[cfg(feature = "diagnostics")]
     pub(crate) diagnostics: Option<Esp32s31DiagnosticObservers>,
 }
@@ -189,6 +240,8 @@ impl Esp32s31RadioConfig {
             initial_channel,
             calibration_cache: None,
             maximum_tx_power_quarter_dbm: None,
+            #[cfg(feature = "connected-datapath-cycle-telemetry")]
+            connected_datapath_poll_observer: None,
             #[cfg(feature = "diagnostics")]
             diagnostics: None,
         }
@@ -207,6 +260,16 @@ impl Esp32s31RadioConfig {
     /// Apply the board/regulatory TX ceiling to the calibrated power profile.
     pub const fn with_maximum_tx_power_quarter_dbm(mut self, maximum: i8) -> Self {
         self.maximum_tx_power_quarter_dbm = Some(maximum);
+        self
+    }
+
+    /// Attach the dedicated Core0 connected-DATAPATH residence sink.
+    #[cfg(feature = "connected-datapath-cycle-telemetry")]
+    pub const fn with_connected_datapath_poll_observer(
+        mut self,
+        observer: Esp32s31ConnectedDatapathPollObserver,
+    ) -> Self {
+        self.connected_datapath_poll_observer = Some(observer);
         self
     }
 

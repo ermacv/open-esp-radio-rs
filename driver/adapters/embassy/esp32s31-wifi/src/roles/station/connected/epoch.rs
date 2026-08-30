@@ -183,6 +183,41 @@ pub(in crate::roles::station) fn complete_connected_station_command<E, M: RawMut
     }
 }
 
+/// Classify a finite DATAPATH result after an outer execution boundary has
+/// independently consumed an optional station command.
+///
+/// This is the common semantic join used by both the inline transaction and
+/// an executor-affine active-DATAPATH actor. In particular, peer loss and a
+/// command observed on the same scheduling edge cannot leak that command into
+/// the next connected epoch.
+pub fn complete_esp32s31_connected_datapath_exit<E, M: RawMutex>(
+    control: &mut Esp32s31StationCommandReceiver<'_, M>,
+    result: Result<DatapathRunnerExit<ConnectedDisconnectReason>, E>,
+    requested_command: Option<Esp32s31StationCommand>,
+) -> Esp32s31ConnectedStationExit<E> {
+    match (result, requested_command) {
+        (Ok(DatapathRunnerExit::Role(reason)), None) => {
+            coalesce_disconnected_station_command(control, reason)
+        }
+        (Ok(DatapathRunnerExit::Stopped), Some(command)) => {
+            complete_connected_station_command(command, control)
+        }
+        (Ok(DatapathRunnerExit::Role(_)), Some(command)) => match command {
+            Esp32s31StationCommand::Reconnect => Esp32s31ConnectedStationExit::ReconnectRequested {
+                source: Esp32s31StationReconnectSource::CoalescedDisconnect,
+            },
+            command @ (Esp32s31StationCommand::Disconnect | Esp32s31StationCommand::Stop) => {
+                control.record_terminal(command);
+                Esp32s31ConnectedStationExit::StationStopped(command)
+            }
+        },
+        (Ok(DatapathRunnerExit::Stopped), None) => {
+            unreachable!("a stopped station runner consumed one controller command")
+        }
+        (Err(error), _) => Esp32s31ConnectedStationExit::HardwareFailure(error),
+    }
+}
+
 /// Run one connected hardware owner until peer loss or a station command.
 ///
 /// `DatapathRunner` observes the stop future only at a transaction-safe boundary.
@@ -241,16 +276,6 @@ where
     let station_stop = async {
         requested_command.set(Some(control.wait().await));
     };
-    match runner.run_until(station_stop).await {
-        Ok(DatapathRunnerExit::Role(reason)) => {
-            coalesce_disconnected_station_command(control, reason)
-        }
-        Ok(DatapathRunnerExit::Stopped) => {
-            let command = requested_command
-                .get()
-                .expect("a stopped station runner consumed one controller command");
-            complete_connected_station_command(command, control)
-        }
-        Err(error) => Esp32s31ConnectedStationExit::HardwareFailure(error),
-    }
+    let result = runner.run_until(station_stop).await;
+    complete_esp32s31_connected_datapath_exit(control, result, requested_command.get())
 }

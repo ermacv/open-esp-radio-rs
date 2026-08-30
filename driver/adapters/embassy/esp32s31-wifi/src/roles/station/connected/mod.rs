@@ -21,7 +21,7 @@ pub use epoch::{
     Esp32s31ConnectedEpochResources, Esp32s31ConnectedServiceParts,
     Esp32s31ConnectedServiceResources, Esp32s31ConnectedStationExit,
     Esp32s31StationReconnectSource, activate_esp32s31_connected_epoch,
-    run_esp32s31_connected_station_epoch,
+    complete_esp32s31_connected_datapath_exit, run_esp32s31_connected_station_epoch,
 };
 #[cfg(test)]
 pub(in crate::roles::station) use epoch::{
@@ -60,7 +60,7 @@ pub use transaction::{
     Esp32s31ConnectedEpochCompleted, Esp32s31ConnectedEpochStopped, Esp32s31ConnectedRunObserver,
     Esp32s31ConnectedRunQuiesceFailure, Esp32s31ConnectedServiceTeardownFailure,
     Esp32s31ConnectedStationRunner, NoopEsp32s31ConnectedRunObserver,
-    run_and_quiesce_esp32s31_connected_epoch,
+    quiesce_completed_esp32s31_connected_epoch, run_and_quiesce_esp32s31_connected_epoch,
 };
 
 pub use super::command::{Esp32s31StationCommand, Esp32s31StationCommandReceiver};

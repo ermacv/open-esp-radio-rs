@@ -354,6 +354,40 @@ where
     // Without this boundary fat LTO combines both unrelated call chains into
     // one 10-KiB CPU stack frame.
     let raw_exit = await_stack_boundary!(observer.observe(runner.run_station_epoch(control)));
+    quiesce_completed_esp32s31_connected_epoch(interrupt, platform, runner, raw_exit, classify)
+        .await
+}
+
+/// Quiesce a connected runner whose finite datapath future has already
+/// returned.
+///
+/// Keeping this terminal transaction separate permits a composition root to
+/// execute the long-lived datapath in its own executor task without moving
+/// IRQ teardown or reusable owners across that task boundary. The runner is
+/// returned only after admission, the MAC frontend and the interrupt route
+/// have reached the same ordered stop frontier as the inline transaction.
+#[allow(clippy::too_many_arguments)]
+pub async fn quiesce_completed_esp32s31_connected_epoch<'runtime, R, IM, CM, C, X>(
+    interrupt: Esp32s31MacInterruptEpoch<'runtime, R, IM>,
+    platform: &R::Platform,
+    mut runner: C,
+    raw_exit: Esp32s31ConnectedStationExit<C::Error>,
+    classify: impl FnOnce(Esp32s31ConnectedStationExit<C::Error>, &C) -> X,
+) -> Result<
+    Esp32s31ConnectedEpochStopped<
+        X,
+        Esp32s31MacInterruptEpoch<'runtime, R, IM>,
+        C::Network,
+        C::Services,
+    >,
+    Esp32s31ConnectedRunQuiesceFailure<X, Esp32s31MacInterruptEpoch<'runtime, R, IM>, C, R::Error>,
+>
+where
+    R: MacInterruptRoute,
+    IM: RawMutex,
+    CM: RawMutex,
+    C: Esp32s31ConnectedStationRunner<CM>,
+{
     let exit = classify(raw_exit, &runner);
     runner.close_station_rx_admission();
     // Let already-accepted RX/TX work leave the MAC pipeline before closing

@@ -46,7 +46,9 @@ mac-irq-telemetry = [
 # residence. It intentionally does not enable driver observation or any
 # per-phase cycle accounting: the point of this image is to bound production
 # executor occupancy with only the poll timer and counter overhead remaining.
-task-residence-telemetry = []
+task-residence-telemetry = [
+    "open-esp-radio-esp32s31-embassy-wifi/connected-datapath-cycle-telemetry",
+]
 # General task-poll diagnostic. Driver observation remains available for the
 # existing RX/TX/AP diagnostic scenarios, but Core0 per-phase accounting is
 # deliberately separate below.

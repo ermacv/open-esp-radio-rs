@@ -1,7 +1,7 @@
 # ESP32-S31 STA, AP and STA+AP datapath state
 
-Date: 2026-08-29; updated 2026-08-30 after standalone-AP RX parity and the AP
-TX aggregate-owner cutover.
+Date: 2026-08-29; updated 2026-08-30 after standalone-AP RX parity, the AP TX
+aggregate-owner cutover and the STA active-DATAPATH execution cutover.
 
 This record captures the source and HIL state after the split-radio/network
 cutover and the first standalone-AP RX-service correction. Its purpose is to
@@ -34,13 +34,13 @@ and less than 40% Core0 radio-task residence. This target must be demonstrated
 by matched, low-overhead HIL; a deep-profile cycle sum is not interchangeable
 with top-level task residence.
 
-The existing STA evidence must also be stated precisely. STA has demonstrated
-112.005 Mbit/s RX at 35.05% Core0 in run `1787925121968-003f9d82`. It has not
-demonstrated every 120+ Mbit/s workload below 40% Core0: STA TX reaches about
-120 Mbit/s with roughly 69.4% Core0, and a 42/40 Mbit/s duplex diagnostic used
-about 59% radio-task residence. Therefore the AP acceptance goal is initially
-an RX-only comparison against STA in the same lab and ELF class. TX and duplex
-need independent residence budgets.
+The current one-direction evidence must be stated precisely. STA has
+demonstrated 112.005 Mbit/s RX at 35.05% Core0 in run
+`1787925121968-003f9d82`, and the active-DATAPATH cutover below demonstrated
+124.139 Mbit/s TX at 34.30--34.39% Core0 in runs
+`1788086992979-00279b2d` and `1788087158341-00279d4f`. Standalone AP has
+independently demonstrated both RX and TX below 40%. Duplex still has its own
+workload and residence budget; one-direction headroom is not a duplex claim.
 
 ## Common architecture already present
 
@@ -56,6 +56,9 @@ The shipping role integrations now share these fundamentals:
   unmasks it only after a proven terminal drain;
 - negotiated RX BlockAck is BA16;
 - AP TX may build aggregates up to 32 MPDUs when peer credit permits it.
+- standalone STA and AP both execute the common `DatapathRunner` directly at
+  a flat Core0 execution boundary; only their role-specific lifecycle and
+  protocol leaves differ.
 
 The 96/32 storage geometry and BA width are different concepts. The ring and
 retained cap bound physical buffering. BA16 is the negotiated reorder window.
@@ -328,6 +331,94 @@ per-frame hot path and the fail-closed HIL catalog intentionally forbids a
 fixed-MCS/GI claim from an observer-free image. No ring-size, SRAM-placement,
 copy or replacement-buffer change is justified by this evidence alone.
 
+### STA active-DATAPATH execution cutover, 2026-08-30
+
+Matched phase counters did not localize the remaining standalone-STA TX cost
+to A-MPDU preparation or publication. In task-residence runs before the
+cutover, STA delivered 120.5--122.3 Mbit/s while the Core0 radio task occupied
+47.2--48.0% of the 16-second interval. The same common TX primitives in AP
+delivered approximately 122.1 Mbit/s at 34.9--35.1% Core0. The complete STA
+runner retained roughly 5,000 additional cycles per datagram outside the
+instrumented aggregate phases. Those counters alone did not exclude checksum,
+airtime or another uninstrumented leaf; the controlled execution-boundary A/B
+below established the causal component.
+
+The causal difference was execution topology. AP creates one
+`DatapathRunner` and awaits it near the physical supervisor root. STA formerly
+polled the same long-lived runner through connected transaction, connected
+phase, attempt runner and reconnect lifecycle futures on every wake. The
+post-LTO connected STA future was approximately 162 KiB of code, compared
+with an approximately 27-KiB AP service future. A controlled child-task A/B
+removed only that repeated parent poll chain and raised TX while reducing
+measured Core0 work.
+
+The production design is therefore a hybrid, not a duplicate AP stack:
+
+1. scan, authentication, association, WPA2 and reconnect/backoff remain owned
+   by the existing finite STA lifecycle;
+2. after the lifecycle constructs the exact connected `DatapathRunner`, it
+   transfers that non-`Send` owner to one executor-affine Core0 active actor;
+3. the parent waits only for actor completion or a station command and never
+   polls the packet runner while it is active;
+4. the actor returns the complete runner before any teardown is attempted;
+5. the original parent synchronously classifies simultaneous command/link
+   exits, revokes RX admission, drains the MAC frontend, parks the IRQ route
+   and restores every reusable owner in the original order.
+
+The actor does not move radio work to another core, add a packet queue, change
+DMA-buffer lifetime or create an alternate datapath. It is a poll-topology
+boundary around the already-common `DatapathRunner`. AP remains direct because
+its active service is already flat; forcing AP through an unnecessary mailbox
+would add ownership machinery without removing a measured parent chain.
+
+The first causal task-boundary image CRC `11ae9491` provided this same-ELF
+result before the terminal classifier was moved into the common adapter:
+
+| Role/cycle | Delivered TX | Core0 radio residence | Average hot poll |
+| --- | ---: | ---: | ---: |
+| STA | 123.849 Mbit/s | 5.018300 / 16.001258 s = 31.36% | 34.21 us |
+| AP cycle 1 | 122.984 Mbit/s | 5.370918 / 16.000529 s = 33.57% | 36.46 us |
+| AP cycle 2 | 122.868 Mbit/s | 5.364921 / 16.000246 s = 33.53% | 36.46 us |
+
+The STA host floor was 123.767 Mbit/s, with zero missing, reordered or
+duplicate datagrams. The diagnostic sink samples `mcycle` locally and merges
+one batch per 256 polls into the existing HIL task counters; it does not log or
+perform cross-module atomics per packet poll. Hardware reported the configured
+320-MHz CPU clock during the run.
+
+The final source image CRC `0ef27cee` repeated both roles after the common
+classifier refactor:
+
+| Role/cycle | Delivered TX | Core0 radio residence |
+| --- | ---: | ---: |
+| STA run 1 | 124.139 Mbit/s | 5.488235 / 16.000358 s = 34.30% |
+| STA run 2 | 124.139 Mbit/s | 5.502680 / 16.000333 s = 34.39% |
+| AP cycle 1 | 123.163 Mbit/s | 5.312207 / 16.001769 s = 33.20% |
+| AP cycle 2 | 123.237 Mbit/s | 5.302982 / 16.001290 s = 33.14% |
+
+Both final STA runs delivered the exact same byte/datagram count, and both
+host floors were above 124 Mbit/s. The 2.9-point difference between the first
+and final STA actor ELF is real and repeatable for these layouts, but no cache
+counter experiment isolated its cause. It is recorded as layout sensitivity,
+not attributed to cache or treated as a reason to pin a magic function offset.
+The architectural acceptance fact is the stable reduction from approximately
+48% to 34.3--34.4% with higher throughput, while AP remains at 33.1--33.2% in
+the exact same final ELF.
+
+The final production correctness image (CRC `7007324e`, with the diagnostic
+feature absent) then passed run `1788087347746-0027a3e4`: ten cold boots and
+three teardown/reassociation cycles per boot, 30/30 reconnects total. CPU0
+minimum free stack remained 25,516 bytes in every epoch. This proves repeated
+task-slot reuse and exact owner restoration; the throughput run alone would
+not prove that lifecycle property.
+
+The cutover increases the diagnostic application image to 3,161,072 bytes and
+the correctness image to 3,292,144 bytes, both inside the reviewed 4-MiB
+application partition. The code-size cost is accepted only together with the
+measured 16-point Core0 reduction and the reconnect proof. A future reduction
+must preserve both HIL gates; merging the actor back into the nested STA
+lifecycle is not an acceptable size optimization.
+
 ## Concurrent STA+AP path
 
 The paired owner in
@@ -356,7 +447,9 @@ The architectural direction is correct:
 - interrupt moderation and delayed recycled-append continuation amortize
   service boundaries without early unmasking;
 - AP correctness was improved without introducing copying or a second
-  cross-core allocator.
+  cross-core allocator;
+- STA lifecycle policy remains explicit, but its long-lived active packet
+  runner no longer pays for the complete lifecycle poll topology.
 
 Standalone STA, AP and concurrent STA+AP now share the physical turn and
 continuation facts which determine saturated RX batching. Their control-plane
@@ -379,10 +472,13 @@ The next sequence is:
 4. Keep AP TX as an independent gate: observer-free throughput must remain at
    least 120 Mbit/s and low-overhead Core0 task residence below 40%. Do not
    infer duplex headroom from this one-direction result.
-5. Validate monitor and scanner work accounting at their finite service
+5. Keep the new STA TX task-residence gate at 120 Mbit/s or higher and below
+   40% Core0, plus the 10-boot/30-reconnect ownership gate. Treat either
+   failure as an active-DATAPATH execution regression.
+6. Validate monitor and scanner work accounting at their finite service
    boundaries; they need the same truthful physical counters but not the
    saturated network protocol leaf.
-6. Consider RX BA32 only after the common lifecycle is proven. BA32 may change
+7. Consider RX BA32 only after the common lifecycle is proven. BA32 may change
    airtime or burst tolerance, but it is not a substitute for fixing service
    cadence.
 
@@ -396,8 +492,8 @@ For standalone AP RX parity, require all of the following in matched HIL:
 - independent air and route evidence so a quiet AP, laptop WLAN route or host
   bottleneck cannot masquerade as a target optimization.
 
-The correct current statement is: standalone AP RX has reached the requested
-STA performance class in the measured HT40 ceiling workload; standalone AP TX
-has independently demonstrated 120+ Mbit/s at less than 40% Core0; and
-concurrent STA+AP RX is below 40% Core0 at the measured 65-Mbit/s aggregate
-offer. Duplex retains its own performance and residence budget.
+The correct current statement is: standalone STA and AP TX both demonstrate
+123+ Mbit/s at 33.1--34.4% Core0 in the final same ELF; standalone AP RX
+has reached the requested STA performance class; and concurrent STA+AP RX is
+below 40% Core0 at the measured 65-Mbit/s aggregate offer. Duplex retains its
+own performance and residence budget.

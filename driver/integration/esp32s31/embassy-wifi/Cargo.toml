@@ -17,6 +17,7 @@ embassy-sync = "0.8.0"
 embassy-time = "0.5.1"
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "7f914782f5c689a74f37df83b89a0827d3800323", default-features = false, features = ["esp32s31", "rt", "unstable"] }
 log = { version = "0.4.29", optional = true }
+riscv = { version = "0.15", optional = true }
 open-esp-radio = { path = "../../../radio", default-features = false, features = ["wifi-embassy"] }
 open-esp-radio-esp32s31-wifi = { path = "../../../chips/esp32s31/wifi" }
 open-esp-radio-esp32s31-hal = { path = "../../../chips/esp32s31/hal" }
@@ -49,6 +50,7 @@ task-poll-telemetry = [
     "diagnostics",
     "open-esp-radio-esp32s31-wifi-embassy/task-poll-telemetry",
 ]
+connected-datapath-cycle-telemetry = ["dep:riscv"]
 core0-rx-coarse-telemetry = [
     "open-esp-radio-esp32s31-wifi-embassy/core0-rx-coarse-telemetry",
     "open-esp-radio-esp32s31-wifi-embassy/tx-phase-telemetry",

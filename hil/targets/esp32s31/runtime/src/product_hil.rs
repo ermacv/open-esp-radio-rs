@@ -40,6 +40,10 @@ use open_esp_radio_esp32s31_embassy_wifi::{
     Esp32s31StationStatus, Esp32s31WifiControl, Esp32s31WifiDevice, Esp32s31WifiNetworkRunner,
     Esp32s31WifiParts,
 };
+#[cfg(feature = "task-residence-telemetry")]
+use open_esp_radio_esp32s31_embassy_wifi::{
+    Esp32s31ConnectedDatapathPollBatch, Esp32s31ConnectedDatapathPollObserver,
+};
 #[cfg(feature = "driver-observation")]
 use open_esp_radio_esp32s31_embassy_wifi::{
     Esp32s31AccessPointObservation, Esp32s31DiagnosticObservers, Esp32s31DiagnosticSnapshot,
@@ -1015,6 +1019,22 @@ pub(crate) static AGGREGATE_TX: AggregateTxCounters = AggregateTxCounters::with_
 pub(crate) static MAC_IRQ: MacIrqClassificationCounters = MacIrqClassificationCounters::new();
 #[unsafe(link_section = ".critical.data.open_radio_task_poll_telemetry")]
 pub(crate) static TASK_POLLS: TaskPollSet = TaskPollSet::new();
+
+#[cfg(feature = "task-residence-telemetry")]
+fn record_connected_datapath_poll_batch(batch: Esp32s31ConnectedDatapathPollBatch) {
+    open_esp_radio_hil_esp32s31_telemetry::task_poll::TaskPollCounters::record_batch(
+        TASK_POLLS.radio(),
+        open_esp_radio_hil_esp32s31_telemetry::task_poll::TaskPollSnapshot {
+            polls: batch.polls,
+            poll_micros: batch.poll_micros,
+            lifetime_max_micros: batch.maximum_poll_micros,
+            over_100_micros: batch.over_100_micros,
+            over_500_micros: batch.over_500_micros,
+            over_1_000_micros: batch.over_1_000_micros,
+            over_5_000_micros: batch.over_5_000_micros,
+        },
+    );
+}
 fn now_micros() -> u64 {
     Instant::now().as_micros()
 }
@@ -1281,18 +1301,18 @@ pub const fn hil_capabilities() -> Capabilities {
     large_assignments,
     reason = "the unique production radio runner is moved once into its static Embassy task arena; the linked-image stack audit remains authoritative"
 )]
-async fn radio_runner_task(runner: Esp32s31RadioRunner) {
+async fn radio_runner_task(spawner: Spawner, runner: Esp32s31RadioRunner) {
     #[cfg(any(
         feature = "core0-rx-cycle-telemetry",
         feature = "core0-rx-coarse-telemetry"
     ))]
-    observe_open_radio_core0_task_polls(runner.run(), TASK_POLLS.radio()).await;
+    observe_open_radio_core0_task_polls(runner.run(spawner), TASK_POLLS.radio()).await;
     #[cfg(not(any(
         feature = "core0-rx-cycle-telemetry",
         feature = "core0-rx-coarse-telemetry"
     )))]
     observe_open_radio_task_polls(
-        runner.run(),
+        runner.run(spawner),
         TASK_POLLS.radio(),
         OPEN_RADIO_TASK_POLL_TELEMETRY,
     )
@@ -2407,6 +2427,10 @@ pub async fn run(
         WifiChannel::mhz20(1).expect("initial channel is valid"),
     )
     .with_maximum_tx_power_quarter_dbm(MAXIMUM_TX_POWER_QUARTER_DBM);
+    #[cfg(feature = "task-residence-telemetry")]
+    let config = config.with_connected_datapath_poll_observer(
+        Esp32s31ConnectedDatapathPollObserver::new(320, record_connected_datapath_poll_batch),
+    );
     #[cfg(feature = "driver-observation")]
     let config = config.with_diagnostic_observers(Esp32s31DiagnosticObservers {
         rx_admission: match rx_admission {
@@ -2491,7 +2515,10 @@ pub async fn run(
     // before the asynchronous artifact publication so its large unique owner
     // graph is moved into the task arena instead of retained in this future.
     spawner
-        .spawn(radio_runner_task(runner).expect("production radio runner task must allocate once"));
+        .spawn(
+            radio_runner_task(spawner, runner)
+                .expect("production radio runner task must allocate once"),
+        );
     if let Some(cache) = initialization.calibration_cache {
         let disposition = match initialization.start.wifi.registration.calibration_path {
             PhyCalibrationPath::FullAfterRejectedCache => StartupArtifactDisposition::Replaced,

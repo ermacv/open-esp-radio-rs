@@ -18,6 +18,7 @@ use open_esp_radio_wifi_sta::station::{
 use super::connected::{
     Esp32s31ConnectedStationExit, Esp32s31StationReconnectSource,
     coalesce_disconnected_station_command, complete_connected_station_command,
+    complete_esp32s31_connected_datapath_exit,
 };
 use super::*;
 
@@ -111,6 +112,43 @@ fn terminal_connected_command_records_the_public_stop_reason() {
     let (_controller, mut receiver) = resources.split().unwrap();
     assert!(matches!(
         complete_connected_station_command::<(), _>(Esp32s31StationCommand::Stop, &mut receiver,),
+        Esp32s31ConnectedStationExit::StationStopped(Esp32s31StationCommand::Stop)
+    ));
+    assert_eq!(receiver.take_terminal(), Some(Esp32s31StationCommand::Stop));
+}
+
+#[test]
+fn detached_datapath_exit_coalesces_an_already_consumed_reconnect() {
+    let resources = Esp32s31StationControlResources::<NoopRawMutex>::new();
+    let (_controller, mut receiver) = resources.split().unwrap();
+    let exit = complete_esp32s31_connected_datapath_exit::<(), _>(
+        &mut receiver,
+        Ok(crate::datapath::DatapathRunnerExit::Role(
+            open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::BeaconLoss,
+        )),
+        Some(Esp32s31StationCommand::Reconnect),
+    );
+    assert!(matches!(
+        exit,
+        Esp32s31ConnectedStationExit::ReconnectRequested {
+            source: Esp32s31StationReconnectSource::CoalescedDisconnect,
+        }
+    ));
+}
+
+#[test]
+fn detached_datapath_exit_records_an_already_consumed_stop() {
+    let resources = Esp32s31StationControlResources::<NoopRawMutex>::new();
+    let (_controller, mut receiver) = resources.split().unwrap();
+    let exit = complete_esp32s31_connected_datapath_exit::<(), _>(
+        &mut receiver,
+        Ok(crate::datapath::DatapathRunnerExit::Role(
+            open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::BeaconLoss,
+        )),
+        Some(Esp32s31StationCommand::Stop),
+    );
+    assert!(matches!(
+        exit,
         Esp32s31ConnectedStationExit::StationStopped(Esp32s31StationCommand::Stop)
     ));
     assert_eq!(receiver.take_terminal(), Some(Esp32s31StationCommand::Stop));

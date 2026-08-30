@@ -76,7 +76,7 @@ fn main() -> ! {
 }
 
 #[embassy_executor::task]
-async fn station_task(_spawner: Spawner, radio: EspHalRadioPeripheral, trng: Trng) {
+async fn station_task(spawner: Spawner, radio: EspHalRadioPeripheral, trng: Trng) {
     let mut station_address = [0; 6];
     station_address
         .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::Station).as_bytes());
@@ -179,6 +179,6 @@ async fn station_task(_spawner: Spawner, radio: EspHalRadioPeripheral, trng: Trn
         core::future::pending::<()>().await;
     };
     let (_application, hardware_never, _network) =
-        embassy_futures::join::join3(application, radio_runner.run(), network).await;
+        embassy_futures::join::join3(application, radio_runner.run(spawner), network).await;
     match hardware_never {}
 }

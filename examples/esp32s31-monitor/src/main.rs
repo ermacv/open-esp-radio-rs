@@ -57,7 +57,7 @@ fn main() -> ! {
 
 #[embassy_executor::task]
 async fn monitor_task(
-    _spawner: embassy_executor::Spawner,
+    spawner: embassy_executor::Spawner,
     platform: EspHalRadioPeripheral,
     trng: Trng,
 ) {
@@ -124,6 +124,6 @@ async fn monitor_task(
         }
     };
     let (_application, hardware_never) =
-        embassy_futures::join::join(application, radio_runner.run()).await;
+        embassy_futures::join::join(application, radio_runner.run(spawner)).await;
     match hardware_never {}
 }

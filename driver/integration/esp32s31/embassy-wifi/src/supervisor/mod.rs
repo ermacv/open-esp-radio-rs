@@ -23,6 +23,7 @@
 
 use core::{future::Future, marker::PhantomData, pin::Pin};
 
+use embassy_executor::Spawner;
 use crate::composition::start::{Esp32s31RadioStartConfig, start_esp32s31_radio};
 use crate::composition::supervisor::{
     Esp32s31RadioSupervisorTask, Esp32s31StationSupervisorEpoch, Esp32s31StationSupervisorHooks,
@@ -152,7 +153,8 @@ use crate::supervisor::station::{
     ConnectedStationFault, ConnectedStationOutcome, ConnectedStationResources,
     ConnectedStationRunExit, ControlResources, InitialConnectedStaticResources, MacInterruptEpoch,
     ProductionAccessPointRxConsumer, ProductionAccessPointRxProducer, access_point_rx_pipeline,
-    connected_config, initialize_connected_rx_protocol_runtime,
+    connected_config, initialize_connected_datapath_mailbox,
+    initialize_connected_rx_protocol_runtime,
     initialize_connected_static_resources, initialize_ethernet_frame,
     initialize_sta_ap_station_rx_batch, initialize_station_network, mac_interrupt_epoch,
     publish_access_point_shared_network_rx, run_connected,
@@ -499,6 +501,7 @@ struct ProductionWifiEpochRunner {
 pub struct Esp32s31RadioRunner {
     supervisor:
         Esp32s31RadioSupervisorTask<'static, CriticalSectionRawMutex, ProductionWifiEpochRunner>,
+    connected_datapath: &'static station::ConnectedDatapathMailbox,
 }
 
 /// Eternal hardware/radio runner returned by [`new`].
@@ -513,7 +516,8 @@ pub struct Esp32s31RadioSystem {
 }
 
 impl Esp32s31RadioRunner {
-    pub async fn run(self) -> ! {
+    pub async fn run(self, spawner: Spawner) -> ! {
+        self.connected_datapath.bind(spawner);
         await_stack_boundary!(self.supervisor.run())
     }
 }
@@ -747,6 +751,7 @@ fn try_reclaim_production_station<'security>(
 
 pub(super) struct ProductionStationBoardResources {
     pub(super) interface: BoundVirtualInterface,
+    pub(super) connected_datapath: &'static station::ConnectedDatapathMailbox,
     pub(super) rx_protocol_runtime: &'static mut ConnectedRxProtocolStorage,
     pub(super) sta_ap_rx_batch: &'static mut [u8],
     pub(super) initial_connected: Option<InitialConnectedStaticResources>,
@@ -783,6 +788,8 @@ pub async fn new(
         initial_channel,
         calibration_cache,
         maximum_tx_power_quarter_dbm,
+        #[cfg(feature = "connected-datapath-cycle-telemetry")]
+        connected_datapath_poll_observer,
         #[cfg(feature = "diagnostics")]
         diagnostics,
     } = config;
@@ -870,6 +877,10 @@ pub async fn new(
         initialize_station_network(station_address, access_point_mac.bytes());
     let monitor = initialize_monitor_resources(monitor_memory)
         .map_err(|MonitorResourcesError::InUse| Esp32s31NewError::MonitorResources)?;
+    let connected_datapath = initialize_connected_datapath_mailbox(
+        #[cfg(feature = "connected-datapath-cycle-telemetry")]
+        connected_datapath_poll_observer,
+    );
     let initial_resources = ProductionWifiStoppedResources::Fresh(ProductionWifiFreshResources {
         dma: Esp32s31StationDmaResources::new(
             monitor_memory.storage(),
@@ -884,6 +895,7 @@ pub async fn new(
         network: station_network,
         board: ProductionStationBoardResources {
             interface: station_interface,
+            connected_datapath,
             rx_protocol_runtime: initialize_connected_rx_protocol_runtime(),
             sta_ap_rx_batch: initialize_sta_ap_station_rx_batch(),
             initial_connected: Some(initial_connected),
@@ -964,7 +976,10 @@ pub async fn new(
             initialization,
         ),
         runners: Esp32s31RadioRunners {
-            hardware: Esp32s31RadioRunner { supervisor },
+            hardware: Esp32s31RadioRunner {
+                supervisor,
+                connected_datapath,
+            },
         },
     })
 }

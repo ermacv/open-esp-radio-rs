@@ -629,6 +629,7 @@ impl ProductionWifiEpochRunner {
 
         let ProductionStationBoardResources {
             interface,
+            connected_datapath,
             rx_protocol_runtime,
             sta_ap_rx_batch,
             initial_connected,
@@ -1100,6 +1101,7 @@ impl ProductionWifiEpochRunner {
                 ethernet,
                 ProductionStationBoardResources {
                     interface,
+                    connected_datapath,
                     rx_protocol_runtime,
                     sta_ap_rx_batch,
                     initial_connected,

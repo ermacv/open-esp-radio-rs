@@ -11,14 +11,23 @@ use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmSchedulerItemCompletio
 
 use crate::dtm_runner::BluetoothDtmFirstActiveParts;
 use crate::{
-    BluetoothControllerPublishedTaskService, BluetoothDtmActiveReceiverCpuOwned,
-    BluetoothDtmActiveTransmitterCpuOwned, BluetoothDtmFirstActive, BluetoothDtmPostUnlinkArmStep,
-    BluetoothDtmPostUnlinkAwaiting, BluetoothDtmReceiverEvent, BluetoothDtmRole,
+    BluetoothControllerPublishedTaskService, BluetoothControllerSchedulerCurrentBeginError,
+    BluetoothControllerSchedulerCurrentBeginFailure, BluetoothControllerSchedulerCurrentError,
+    BluetoothControllerSchedulerCurrentFailure, BluetoothControllerSchedulerCurrentPending,
+    BluetoothControllerSchedulerCurrentStep, BluetoothControllerSchedulerEpochRetained,
+    BluetoothControllerSchedulerNowReady, BluetoothControllerTimeOrphanDrainStep,
+    BluetoothDtmActiveReceiverCpuOwned, BluetoothDtmActiveTransmitterCpuOwned,
+    BluetoothDtmControllerEventPreparationError, BluetoothDtmControllerPreparationOutcome,
+    BluetoothDtmControllerPreparationPending, BluetoothDtmControllerPreparationStep,
+    BluetoothDtmControllerPreparationTerminal, BluetoothDtmEmptySchedulerMergePrepared,
+    BluetoothDtmFirstActive, BluetoothDtmPostUnlinkArmStep, BluetoothDtmPostUnlinkAwaiting,
+    BluetoothDtmReceiverEvent, BluetoothDtmRecurringSchedulerItemPhase, BluetoothDtmRole,
     BluetoothDtmRxCompletionOutcome, BluetoothDtmSchedulerCompletionObserved,
     BluetoothDtmSchedulerCompletionObservedDrainStep, BluetoothDtmSchedulerCompletionStep,
     BluetoothDtmSchedulerFinishedListDrainPending, BluetoothDtmSchedulerFinishedListDrainState,
     BluetoothDtmSchedulerHardwareHeadEmptyObserved,
-    BluetoothDtmSchedulerHardwareHeadRetirementStep, BluetoothDtmSchedulerRecycleStep,
+    BluetoothDtmSchedulerHardwareHeadRetirementStep, BluetoothDtmSchedulerHeadPublicationError,
+    BluetoothDtmSchedulerHeadPublished, BluetoothDtmSchedulerRecycleStep,
     BluetoothDtmSchedulerRunning, BluetoothDtmSchedulerRunningDrainStep,
     BluetoothDtmSchedulerRxSuccessRecycleStep, BluetoothDtmSchedulerSoftwareListRemovalReady,
     BluetoothDtmSoftwareListRemovalPublishedStep, BluetoothDtmTransmitterEvent,
@@ -251,8 +260,10 @@ where
     ) -> (
         Task<'runtime, S, CAPACITY>,
         BluetoothDtmActiveReceiverCpuOwned,
+        BluetoothDtmSchedulerItemCompletionStatus,
+        Option<BluetoothDtmRxCompletionOutcome>,
     ) {
-        (self._task, self.owner)
+        (self._task, self.owner, self.status, self.outcome)
     }
 }
 
@@ -784,6 +795,28 @@ impl<'runtime, S, const CAPACITY: usize> BluetoothDtmActiveCompletion<'runtime, 
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
+    fn from_transmitter_running(
+        task: Task<'runtime, S, CAPACITY>,
+        running: BluetoothDtmSchedulerRunning<BluetoothDtmTransmitterEvent>,
+    ) -> Self {
+        Self {
+            phase: BluetoothDtmActiveCompletionPhase::Transmitter(
+                BluetoothDtmRoleCompletionPhase::Running { task, running },
+            ),
+        }
+    }
+
+    fn from_receiver_running(
+        task: Task<'runtime, S, CAPACITY>,
+        running: BluetoothDtmSchedulerRunning<BluetoothDtmReceiverEvent>,
+    ) -> Self {
+        Self {
+            phase: BluetoothDtmActiveCompletionPhase::Receiver(
+                BluetoothDtmRoleCompletionPhase::Running { task, running },
+            ),
+        }
+    }
+
     /// Role of the exact graph retained by this completion owner.
     pub const fn role(&self) -> BluetoothDtmRole {
         match self.phase {
@@ -1009,5 +1042,899 @@ fn rx_success_recycle_fault_cause(
             BluetoothDtmActiveCompletionFaultCause::ReservationIdentityMismatch
         }
         BluetoothDtmSchedulerRxSuccessRecycleStep::Rearmed(_) => unreachable!(),
+    }
+}
+
+type BluetoothDtmRecurringTxMerge = BluetoothDtmEmptySchedulerMergePrepared<
+    BluetoothDtmTransmitterEvent,
+    BluetoothDtmRecurringSchedulerItemPhase,
+>;
+type BluetoothDtmRecurringRxMerge = BluetoothDtmEmptySchedulerMergePrepared<
+    BluetoothDtmReceiverEvent,
+    BluetoothDtmRecurringSchedulerItemPhase,
+>;
+
+#[derive(Clone, Copy)]
+struct BluetoothDtmRecurringReceiverMetadata {
+    status: BluetoothDtmSchedulerItemCompletionStatus,
+    outcome: Option<BluetoothDtmRxCompletionOutcome>,
+}
+
+enum BluetoothDtmRecurringPhase<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    TransmitterCpu(BluetoothDtmActiveTransmitterReady<'runtime, S, CAPACITY>),
+    ReceiverCpu(BluetoothDtmActiveReceiverReady<'runtime, S, CAPACITY>),
+    TransmitterEpoch {
+        epoch: BluetoothControllerSchedulerEpochRetained<'runtime, S, CAPACITY>,
+        owner: BluetoothDtmActiveTransmitterCpuOwned,
+    },
+    ReceiverEpoch {
+        epoch: BluetoothControllerSchedulerEpochRetained<'runtime, S, CAPACITY>,
+        owner: BluetoothDtmActiveReceiverCpuOwned,
+        metadata: BluetoothDtmRecurringReceiverMetadata,
+    },
+    TransmitterCurrent {
+        pending: BluetoothControllerSchedulerCurrentPending<'runtime, S, CAPACITY>,
+        owner: BluetoothDtmActiveTransmitterCpuOwned,
+    },
+    TransmitterNow {
+        current: BluetoothControllerSchedulerNowReady<'runtime, S, CAPACITY>,
+        owner: BluetoothDtmActiveTransmitterCpuOwned,
+    },
+    TransmitterPreparation(BluetoothDtmControllerPreparationPending<'runtime, S, CAPACITY>),
+    ReceiverPreparation {
+        pending: BluetoothDtmControllerPreparationPending<'runtime, S, CAPACITY>,
+        metadata: BluetoothDtmRecurringReceiverMetadata,
+    },
+    TransmitterPrepared {
+        task: Task<'runtime, S, CAPACITY>,
+        merged: BluetoothDtmRecurringTxMerge,
+    },
+    ReceiverPrepared {
+        task: Task<'runtime, S, CAPACITY>,
+        merged: BluetoothDtmRecurringRxMerge,
+        metadata: BluetoothDtmRecurringReceiverMetadata,
+    },
+    TransmitterHead {
+        task: Task<'runtime, S, CAPACITY>,
+        head: BluetoothDtmSchedulerHeadPublished<BluetoothDtmTransmitterEvent>,
+    },
+    ReceiverHead {
+        task: Task<'runtime, S, CAPACITY>,
+        head: BluetoothDtmSchedulerHeadPublished<BluetoothDtmReceiverEvent>,
+    },
+}
+
+/// Executor-neutral owner of one recurring TX or RX preparation and `RUN`.
+#[must_use = "the recurring graph must reach RUN, a cooperative wait, retry or fail-stop"]
+pub struct BluetoothDtmRecurringRunner<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    phase: BluetoothDtmRecurringPhase<'runtime, S, CAPACITY>,
+}
+
+/// Result of one bounded recurring transition.
+#[must_use = "retain every recurring owner until it reaches RUN or explicit failure handling"]
+pub enum BluetoothDtmRecurringRunnerStep<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    /// One ownership-only or completed lower transition permits immediate progress.
+    Continue(BluetoothDtmRecurringRunner<'runtime, S, CAPACITY>),
+    /// An exact Controller-time request must be rechecked cooperatively later.
+    WaitControllerTime(BluetoothDtmRecurringControllerTimeWait<'runtime, S, CAPACITY>),
+    /// The recurring item reached scheduler `RUN` and re-enters active completion.
+    Running(BluetoothDtmActiveCompletion<'runtime, S, CAPACITY>),
+    /// A pre-`RUN` transition returned an unchanged, safely retryable owner.
+    Retryable(BluetoothDtmRecurringRetry<'runtime, S, CAPACITY>),
+    /// A fail-closed transition retained every owner without exposing reconstruction.
+    Fault(BluetoothDtmRecurringFault<'runtime, S, CAPACITY>),
+}
+
+/// Parked recurring Controller-time owner outside any executor future.
+#[must_use = "await one cooperative recheck opportunity, resume, or retain the exact owner"]
+pub struct BluetoothDtmRecurringControllerTimeWait<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    runner: BluetoothDtmRecurringRunner<'runtime, S, CAPACITY>,
+}
+
+impl<'runtime, S, const CAPACITY: usize>
+    BluetoothDtmRecurringControllerTimeWait<'runtime, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    /// Consume the parked owner before one later bounded Controller-time recheck.
+    pub fn resume(self) -> BluetoothDtmRecurringRunner<'runtime, S, CAPACITY> {
+        self.runner
+    }
+
+    /// Cancel the exact private time request instead of dropping its affine owner.
+    pub fn cancel(self) -> BluetoothDtmRecurringRunnerCancel<'runtime, S, CAPACITY> {
+        self.runner.cancel()
+    }
+}
+
+/// Finite reason a recurring owner can be retried without reconstruction.
+#[must_use = "inspect the retry cause before advancing the unchanged runner"]
+pub enum BluetoothDtmRecurringRetryCause<E> {
+    /// CPU-owned preparation rejected after returning the unchanged active role.
+    Preparation(BluetoothDtmControllerEventPreparationError),
+    /// The prepared merge remained CPU-owned because head publication was rejected.
+    HeadPublication(BluetoothDtmSchedulerHeadPublicationError),
+    /// Dynamic interrupt preparation rejected the unchanged published head.
+    SchedulerStart(E),
+}
+
+/// Opaque retry owner retaining the exact role-consistent task and graph.
+#[must_use = "retry or retain the exact pre-RUN owner"]
+pub struct BluetoothDtmRecurringRetry<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    cause: BluetoothDtmRecurringRetryCause<S::Error>,
+    runner: BluetoothDtmRecurringRunner<'runtime, S, CAPACITY>,
+}
+
+impl<'runtime, S, const CAPACITY: usize> BluetoothDtmRecurringRetry<'runtime, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    /// Exact finite rejection paired with the unchanged retry owner.
+    pub const fn cause(&self) -> &BluetoothDtmRecurringRetryCause<S::Error> {
+        &self.cause
+    }
+
+    /// Recover the unchanged runner for an explicit caller-selected retry.
+    pub fn retry(self) -> BluetoothDtmRecurringRunner<'runtime, S, CAPACITY> {
+        self.runner
+    }
+}
+
+/// Fail-closed reason recurring ownership cannot advance normally.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothDtmRecurringFaultCause {
+    SchedulerEpochUnavailable,
+    SchedulerCurrentBegin(BluetoothControllerSchedulerCurrentBeginError),
+    SchedulerCurrent(BluetoothControllerSchedulerCurrentError),
+    Preparation(BluetoothDtmControllerEventPreparationError),
+    UnexpectedPreparationOutcome,
+}
+
+#[allow(
+    dead_code,
+    reason = "opaque recurring faults deliberately retain all graph and Controller owners"
+)]
+enum BluetoothDtmRecurringFaultOwner<'runtime, S, const CAPACITY: usize> {
+    TransmitterEpochUnavailable {
+        task: Task<'runtime, S, CAPACITY>,
+        owner: BluetoothDtmActiveTransmitterCpuOwned,
+    },
+    ReceiverEpochUnavailable {
+        task: Task<'runtime, S, CAPACITY>,
+        owner: BluetoothDtmActiveReceiverCpuOwned,
+        metadata: BluetoothDtmRecurringReceiverMetadata,
+    },
+    TransmitterCurrentBegin {
+        failure: BluetoothControllerSchedulerCurrentBeginFailure<'runtime, S, CAPACITY>,
+        owner: BluetoothDtmActiveTransmitterCpuOwned,
+    },
+    TransmitterCurrent {
+        failure: BluetoothControllerSchedulerCurrentFailure<'runtime, S, CAPACITY>,
+        owner: BluetoothDtmActiveTransmitterCpuOwned,
+    },
+    TransmitterOrphanDrain {
+        epoch: BluetoothControllerSchedulerEpochRetained<'runtime, S, CAPACITY>,
+        owner: BluetoothDtmActiveTransmitterCpuOwned,
+    },
+    ReceiverOrphanDrain {
+        epoch: BluetoothControllerSchedulerEpochRetained<'runtime, S, CAPACITY>,
+        owner: BluetoothDtmActiveReceiverCpuOwned,
+        metadata: BluetoothDtmRecurringReceiverMetadata,
+    },
+    TransmitterPreparation {
+        task: Task<'runtime, S, CAPACITY>,
+        owner: BluetoothDtmActiveTransmitterCpuOwned,
+    },
+    ReceiverPreparation {
+        task: Task<'runtime, S, CAPACITY>,
+        owner: BluetoothDtmActiveReceiverCpuOwned,
+        metadata: BluetoothDtmRecurringReceiverMetadata,
+    },
+    UnexpectedPreparation {
+        epoch: BluetoothControllerSchedulerEpochRetained<'runtime, S, CAPACITY>,
+        outcome: BluetoothDtmControllerPreparationOutcome,
+        receiver_metadata: Option<BluetoothDtmRecurringReceiverMetadata>,
+    },
+}
+
+enum BluetoothDtmRecurringCancellationDrainPhase<'runtime, S, const CAPACITY: usize> {
+    Transmitter {
+        epoch: BluetoothControllerSchedulerEpochRetained<'runtime, S, CAPACITY>,
+        owner: BluetoothDtmActiveTransmitterCpuOwned,
+    },
+    Receiver {
+        epoch: BluetoothControllerSchedulerEpochRetained<'runtime, S, CAPACITY>,
+        owner: BluetoothDtmActiveReceiverCpuOwned,
+        metadata: BluetoothDtmRecurringReceiverMetadata,
+    },
+}
+
+/// Cancelled recurring time request whose abandoned latch must be drained.
+#[must_use = "drain the exact orphan before reusing this Controller epoch"]
+pub struct BluetoothDtmRecurringCancellationDrain<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    phase: BluetoothDtmRecurringCancellationDrainPhase<'runtime, S, CAPACITY>,
+}
+
+/// One bounded orphan-drain observation after recurring cancellation.
+#[must_use = "retain Waiting, recovered CPU ownership or the opaque fail-stop owner"]
+pub enum BluetoothDtmRecurringCancellationDrainStep<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    Waiting(BluetoothDtmRecurringCancellationDrain<'runtime, S, CAPACITY>),
+    CpuOwned(BluetoothDtmActiveCpuOwned<'runtime, S, CAPACITY>),
+    Fault(BluetoothDtmRecurringFault<'runtime, S, CAPACITY>),
+}
+
+/// Lossless disposition of explicit recurring cancellation.
+#[must_use = "retain recovered ownership, drain the orphan or preserve an irreversible head"]
+pub enum BluetoothDtmRecurringRunnerCancel<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    /// No Controller-time request or prepared merge remains.
+    CpuOwned(BluetoothDtmActiveCpuOwned<'runtime, S, CAPACITY>),
+    /// A cancelled time request must be drained before the Controller is reusable.
+    NeedsControllerTimeDrain(BluetoothDtmRecurringCancellationDrain<'runtime, S, CAPACITY>),
+    /// Lower empty-list identity rejected pre-head cancellation unchanged.
+    CancellationRejected(BluetoothDtmRecurringRunner<'runtime, S, CAPACITY>),
+    /// The scheduler head is already visible and CPU cancellation is impossible.
+    HeadPublished(BluetoothDtmRecurringRunner<'runtime, S, CAPACITY>),
+    /// Cancellation found a fail-stop ownership mismatch.
+    Fault(BluetoothDtmRecurringFault<'runtime, S, CAPACITY>),
+}
+
+/// Opaque fail-stop owner for a recurring invariant or timing failure.
+#[must_use = "retain the exact fail-stop owner for diagnostic shutdown"]
+pub struct BluetoothDtmRecurringFault<'runtime, S, const CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    role: BluetoothDtmRole,
+    cause: BluetoothDtmRecurringFaultCause,
+    _owner: BluetoothDtmRecurringFaultOwner<'runtime, S, CAPACITY>,
+}
+
+impl<S, const CAPACITY: usize> BluetoothDtmRecurringFault<'_, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    pub const fn role(&self) -> BluetoothDtmRole {
+        self.role
+    }
+
+    pub const fn cause(&self) -> BluetoothDtmRecurringFaultCause {
+        self.cause
+    }
+}
+
+impl<'runtime, S, const CAPACITY: usize> BluetoothDtmActiveCpuOwned<'runtime, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    /// Begin the exact role-specific recurring transaction without HCI policy.
+    pub fn begin_recurring(self) -> BluetoothDtmRecurringRunner<'runtime, S, CAPACITY> {
+        let phase = match self {
+            Self::Transmitter(ready) => BluetoothDtmRecurringPhase::TransmitterCpu(ready),
+            Self::Receiver(ready) => BluetoothDtmRecurringPhase::ReceiverCpu(ready),
+        };
+        BluetoothDtmRecurringRunner { phase }
+    }
+}
+
+impl<'runtime, S, const CAPACITY: usize> BluetoothDtmRecurringRunner<'runtime, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    /// Execute exactly one ownership, Controller-time, publication or RUN transition.
+    pub fn step(self) -> BluetoothDtmRecurringRunnerStep<'runtime, S, CAPACITY> {
+        match self.phase {
+            BluetoothDtmRecurringPhase::TransmitterCpu(ready) => {
+                let (task, owner) = ready.into_parts();
+                match task.retain_scheduler_epoch() {
+                    Ok(epoch) => {
+                        Self::continue_with(BluetoothDtmRecurringPhase::TransmitterEpoch {
+                            epoch,
+                            owner,
+                        })
+                    }
+                    Err(unavailable) => {
+                        BluetoothDtmRecurringRunnerStep::Fault(BluetoothDtmRecurringFault {
+                            role: BluetoothDtmRole::Transmitter,
+                            cause: BluetoothDtmRecurringFaultCause::SchedulerEpochUnavailable,
+                            _owner: BluetoothDtmRecurringFaultOwner::TransmitterEpochUnavailable {
+                                task: unavailable.into_task_service(),
+                                owner,
+                            },
+                        })
+                    }
+                }
+            }
+            BluetoothDtmRecurringPhase::ReceiverCpu(ready) => {
+                let (task, owner, status, outcome) = ready.into_parts();
+                let metadata = BluetoothDtmRecurringReceiverMetadata { status, outcome };
+                match task.retain_scheduler_epoch() {
+                    Ok(epoch) => Self::continue_with(BluetoothDtmRecurringPhase::ReceiverEpoch {
+                        epoch,
+                        owner,
+                        metadata,
+                    }),
+                    Err(unavailable) => {
+                        BluetoothDtmRecurringRunnerStep::Fault(BluetoothDtmRecurringFault {
+                            role: BluetoothDtmRole::Receiver,
+                            cause: BluetoothDtmRecurringFaultCause::SchedulerEpochUnavailable,
+                            _owner: BluetoothDtmRecurringFaultOwner::ReceiverEpochUnavailable {
+                                task: unavailable.into_task_service(),
+                                owner,
+                                metadata,
+                            },
+                        })
+                    }
+                }
+            }
+            BluetoothDtmRecurringPhase::TransmitterEpoch { epoch, owner } => {
+                match epoch.begin_fresh_scheduler_current() {
+                    Ok(pending) => {
+                        Self::wait_with(BluetoothDtmRecurringPhase::TransmitterCurrent {
+                            pending,
+                            owner,
+                        })
+                    }
+                    Err(failure) => {
+                        let cause =
+                            BluetoothDtmRecurringFaultCause::SchedulerCurrentBegin(failure.error());
+                        BluetoothDtmRecurringRunnerStep::Fault(BluetoothDtmRecurringFault {
+                            role: BluetoothDtmRole::Transmitter,
+                            cause,
+                            _owner: BluetoothDtmRecurringFaultOwner::TransmitterCurrentBegin {
+                                failure,
+                                owner,
+                            },
+                        })
+                    }
+                }
+            }
+            BluetoothDtmRecurringPhase::ReceiverEpoch {
+                epoch,
+                owner,
+                metadata,
+            } => match epoch.begin_dtm_receiver_recurring_item(owner) {
+                Ok(pending) => Self::wait_with(BluetoothDtmRecurringPhase::ReceiverPreparation {
+                    pending,
+                    metadata,
+                }),
+                Err(terminal) => finish_receiver_recurring(terminal, metadata),
+            },
+            BluetoothDtmRecurringPhase::TransmitterCurrent { pending, owner } => {
+                match pending.recheck() {
+                    Ok(BluetoothControllerSchedulerCurrentStep::Waiting(pending)) => {
+                        Self::wait_with(BluetoothDtmRecurringPhase::TransmitterCurrent {
+                            pending,
+                            owner,
+                        })
+                    }
+                    Ok(BluetoothControllerSchedulerCurrentStep::Ready(current)) => {
+                        Self::continue_with(BluetoothDtmRecurringPhase::TransmitterNow {
+                            current,
+                            owner,
+                        })
+                    }
+                    Err(failure) => {
+                        let cause =
+                            BluetoothDtmRecurringFaultCause::SchedulerCurrent(failure.error());
+                        BluetoothDtmRecurringRunnerStep::Fault(BluetoothDtmRecurringFault {
+                            role: BluetoothDtmRole::Transmitter,
+                            cause,
+                            _owner: BluetoothDtmRecurringFaultOwner::TransmitterCurrent {
+                                failure,
+                                owner,
+                            },
+                        })
+                    }
+                }
+            }
+            BluetoothDtmRecurringPhase::TransmitterNow { current, owner } => {
+                match current.begin_dtm_transmitter_recurring_item(owner) {
+                    Ok(pending) => {
+                        Self::wait_with(BluetoothDtmRecurringPhase::TransmitterPreparation(pending))
+                    }
+                    Err(terminal) => finish_transmitter_recurring(terminal),
+                }
+            }
+            BluetoothDtmRecurringPhase::TransmitterPreparation(pending) => {
+                match pending.recheck() {
+                    BluetoothDtmControllerPreparationStep::Pending(pending) => {
+                        Self::wait_with(BluetoothDtmRecurringPhase::TransmitterPreparation(pending))
+                    }
+                    BluetoothDtmControllerPreparationStep::Terminal(terminal) => {
+                        finish_transmitter_recurring(terminal)
+                    }
+                }
+            }
+            BluetoothDtmRecurringPhase::ReceiverPreparation { pending, metadata } => {
+                match pending.recheck() {
+                    BluetoothDtmControllerPreparationStep::Pending(pending) => {
+                        Self::wait_with(BluetoothDtmRecurringPhase::ReceiverPreparation {
+                            pending,
+                            metadata,
+                        })
+                    }
+                    BluetoothDtmControllerPreparationStep::Terminal(terminal) => {
+                        finish_receiver_recurring(terminal, metadata)
+                    }
+                }
+            }
+            BluetoothDtmRecurringPhase::TransmitterPrepared { mut task, merged } => {
+                match task.publish_dtm_scheduler_head(merged) {
+                    Ok(head) => Self::continue_with(BluetoothDtmRecurringPhase::TransmitterHead {
+                        task,
+                        head,
+                    }),
+                    Err(failure) => {
+                        let cause =
+                            BluetoothDtmRecurringRetryCause::HeadPublication(failure.error());
+                        Self::retry_with(
+                            BluetoothDtmRecurringPhase::TransmitterPrepared {
+                                task,
+                                merged: failure.into_merged(),
+                            },
+                            cause,
+                        )
+                    }
+                }
+            }
+            BluetoothDtmRecurringPhase::ReceiverPrepared {
+                mut task,
+                merged,
+                metadata,
+            } => match task.publish_dtm_scheduler_head(merged) {
+                Ok(head) => {
+                    Self::continue_with(BluetoothDtmRecurringPhase::ReceiverHead { task, head })
+                }
+                Err(failure) => {
+                    let cause = BluetoothDtmRecurringRetryCause::HeadPublication(failure.error());
+                    Self::retry_with(
+                        BluetoothDtmRecurringPhase::ReceiverPrepared {
+                            task,
+                            merged: failure.into_merged(),
+                            metadata,
+                        },
+                        cause,
+                    )
+                }
+            },
+            BluetoothDtmRecurringPhase::TransmitterHead { mut task, head } => {
+                match task.start_dtm_scheduler(head) {
+                    Ok(running) => BluetoothDtmRecurringRunnerStep::Running(
+                        BluetoothDtmActiveCompletion::from_transmitter_running(task, running),
+                    ),
+                    Err(failure) => {
+                        let (error, head) = failure.into_parts();
+                        Self::retry_with(
+                            BluetoothDtmRecurringPhase::TransmitterHead { task, head },
+                            BluetoothDtmRecurringRetryCause::SchedulerStart(error),
+                        )
+                    }
+                }
+            }
+            BluetoothDtmRecurringPhase::ReceiverHead { mut task, head } => {
+                match task.start_dtm_scheduler(head) {
+                    Ok(running) => BluetoothDtmRecurringRunnerStep::Running(
+                        BluetoothDtmActiveCompletion::from_receiver_running(task, running),
+                    ),
+                    Err(failure) => {
+                        let (error, head) = failure.into_parts();
+                        Self::retry_with(
+                            BluetoothDtmRecurringPhase::ReceiverHead { task, head },
+                            BluetoothDtmRecurringRetryCause::SchedulerStart(error),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fn continue_with(
+        phase: BluetoothDtmRecurringPhase<'runtime, S, CAPACITY>,
+    ) -> BluetoothDtmRecurringRunnerStep<'runtime, S, CAPACITY> {
+        BluetoothDtmRecurringRunnerStep::Continue(Self { phase })
+    }
+
+    fn wait_with(
+        phase: BluetoothDtmRecurringPhase<'runtime, S, CAPACITY>,
+    ) -> BluetoothDtmRecurringRunnerStep<'runtime, S, CAPACITY> {
+        BluetoothDtmRecurringRunnerStep::WaitControllerTime(
+            BluetoothDtmRecurringControllerTimeWait {
+                runner: Self { phase },
+            },
+        )
+    }
+
+    fn retry_with(
+        phase: BluetoothDtmRecurringPhase<'runtime, S, CAPACITY>,
+        cause: BluetoothDtmRecurringRetryCause<S::Error>,
+    ) -> BluetoothDtmRecurringRunnerStep<'runtime, S, CAPACITY> {
+        BluetoothDtmRecurringRunnerStep::Retryable(BluetoothDtmRecurringRetry {
+            cause,
+            runner: Self { phase },
+        })
+    }
+
+    /// Cancel only while the graph is still CPU-owned or owns a cancellable time request.
+    ///
+    /// Once `HEAD` has been published this returns `HeadPublished` unchanged;
+    /// there is no fabricated rollback from hardware-visible ownership.
+    pub fn cancel(self) -> BluetoothDtmRecurringRunnerCancel<'runtime, S, CAPACITY> {
+        match self.phase {
+            BluetoothDtmRecurringPhase::TransmitterCpu(ready) => {
+                BluetoothDtmRecurringRunnerCancel::CpuOwned(
+                    BluetoothDtmActiveCpuOwned::Transmitter(ready),
+                )
+            }
+            BluetoothDtmRecurringPhase::ReceiverCpu(ready) => {
+                BluetoothDtmRecurringRunnerCancel::CpuOwned(BluetoothDtmActiveCpuOwned::Receiver(
+                    ready,
+                ))
+            }
+            BluetoothDtmRecurringPhase::TransmitterEpoch { epoch, owner } => {
+                BluetoothDtmRecurringRunnerCancel::CpuOwned(
+                    BluetoothDtmActiveCpuOwned::Transmitter(BluetoothDtmActiveTransmitterReady {
+                        _task: epoch.into_task_service(),
+                        owner,
+                    }),
+                )
+            }
+            BluetoothDtmRecurringPhase::ReceiverEpoch {
+                epoch,
+                owner,
+                metadata,
+            } => BluetoothDtmRecurringRunnerCancel::CpuOwned(BluetoothDtmActiveCpuOwned::Receiver(
+                BluetoothDtmActiveReceiverReady {
+                    _task: epoch.into_task_service(),
+                    owner,
+                    status: metadata.status,
+                    outcome: metadata.outcome,
+                },
+            )),
+            BluetoothDtmRecurringPhase::TransmitterCurrent { pending, owner } => {
+                match pending.cancel() {
+                    Ok(epoch) => BluetoothDtmRecurringRunnerCancel::NeedsControllerTimeDrain(
+                        BluetoothDtmRecurringCancellationDrain {
+                            phase: BluetoothDtmRecurringCancellationDrainPhase::Transmitter {
+                                epoch,
+                                owner,
+                            },
+                        },
+                    ),
+                    Err(failure) => {
+                        let cause =
+                            BluetoothDtmRecurringFaultCause::SchedulerCurrent(failure.error());
+                        BluetoothDtmRecurringRunnerCancel::Fault(BluetoothDtmRecurringFault {
+                            role: BluetoothDtmRole::Transmitter,
+                            cause,
+                            _owner: BluetoothDtmRecurringFaultOwner::TransmitterCurrent {
+                                failure,
+                                owner,
+                            },
+                        })
+                    }
+                }
+            }
+            BluetoothDtmRecurringPhase::TransmitterNow { current, owner } => {
+                let epoch = current.into_retained_epoch();
+                BluetoothDtmRecurringRunnerCancel::CpuOwned(
+                    BluetoothDtmActiveCpuOwned::Transmitter(BluetoothDtmActiveTransmitterReady {
+                        _task: epoch.into_task_service(),
+                        owner,
+                    }),
+                )
+            }
+            BluetoothDtmRecurringPhase::TransmitterPreparation(pending) => {
+                cancel_transmitter_preparation(pending.cancel())
+            }
+            BluetoothDtmRecurringPhase::ReceiverPreparation { pending, metadata } => {
+                cancel_receiver_preparation(pending.cancel(), metadata)
+            }
+            BluetoothDtmRecurringPhase::TransmitterPrepared { mut task, merged } => {
+                match task.cancel_dtm_transmitter_recurring_item(merged) {
+                    Ok(owner) => BluetoothDtmRecurringRunnerCancel::CpuOwned(
+                        BluetoothDtmActiveCpuOwned::Transmitter(
+                            BluetoothDtmActiveTransmitterReady { _task: task, owner },
+                        ),
+                    ),
+                    Err(merged) => BluetoothDtmRecurringRunnerCancel::CancellationRejected(Self {
+                        phase: BluetoothDtmRecurringPhase::TransmitterPrepared { task, merged },
+                    }),
+                }
+            }
+            BluetoothDtmRecurringPhase::ReceiverPrepared {
+                mut task,
+                merged,
+                metadata,
+            } => match task.cancel_dtm_receiver_recurring_item(merged) {
+                Ok(owner) => BluetoothDtmRecurringRunnerCancel::CpuOwned(
+                    BluetoothDtmActiveCpuOwned::Receiver(BluetoothDtmActiveReceiverReady {
+                        _task: task,
+                        owner,
+                        status: metadata.status,
+                        outcome: metadata.outcome,
+                    }),
+                ),
+                Err(merged) => BluetoothDtmRecurringRunnerCancel::CancellationRejected(Self {
+                    phase: BluetoothDtmRecurringPhase::ReceiverPrepared {
+                        task,
+                        merged,
+                        metadata,
+                    },
+                }),
+            },
+            phase @ (BluetoothDtmRecurringPhase::TransmitterHead { .. }
+            | BluetoothDtmRecurringPhase::ReceiverHead { .. }) => {
+                BluetoothDtmRecurringRunnerCancel::HeadPublished(Self { phase })
+            }
+        }
+    }
+}
+
+impl<'runtime, S, const CAPACITY: usize>
+    BluetoothDtmRecurringCancellationDrain<'runtime, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    /// Perform one bounded orphan-drain observation.
+    pub fn step(mut self) -> BluetoothDtmRecurringCancellationDrainStep<'runtime, S, CAPACITY> {
+        match &mut self.phase {
+            BluetoothDtmRecurringCancellationDrainPhase::Transmitter { epoch, .. }
+            | BluetoothDtmRecurringCancellationDrainPhase::Receiver { epoch, .. } => {
+                match epoch.drain_abandoned_controller_time() {
+                    Ok(BluetoothControllerTimeOrphanDrainStep::Waiting) => {
+                        BluetoothDtmRecurringCancellationDrainStep::Waiting(self)
+                    }
+                    Ok(BluetoothControllerTimeOrphanDrainStep::Idle)
+                    | Ok(BluetoothControllerTimeOrphanDrainStep::Drained) => self.into_cpu_owned(),
+                    Err(error) => self.into_fault(error),
+                }
+            }
+        }
+    }
+
+    fn into_cpu_owned(self) -> BluetoothDtmRecurringCancellationDrainStep<'runtime, S, CAPACITY> {
+        let ready = match self.phase {
+            BluetoothDtmRecurringCancellationDrainPhase::Transmitter { epoch, owner } => {
+                BluetoothDtmActiveCpuOwned::Transmitter(BluetoothDtmActiveTransmitterReady {
+                    _task: epoch.into_task_service(),
+                    owner,
+                })
+            }
+            BluetoothDtmRecurringCancellationDrainPhase::Receiver {
+                epoch,
+                owner,
+                metadata,
+            } => BluetoothDtmActiveCpuOwned::Receiver(BluetoothDtmActiveReceiverReady {
+                _task: epoch.into_task_service(),
+                owner,
+                status: metadata.status,
+                outcome: metadata.outcome,
+            }),
+        };
+        BluetoothDtmRecurringCancellationDrainStep::CpuOwned(ready)
+    }
+
+    fn into_fault(
+        self,
+        error: BluetoothControllerSchedulerCurrentError,
+    ) -> BluetoothDtmRecurringCancellationDrainStep<'runtime, S, CAPACITY> {
+        let (role, owner) = match self.phase {
+            BluetoothDtmRecurringCancellationDrainPhase::Transmitter { epoch, owner } => (
+                BluetoothDtmRole::Transmitter,
+                BluetoothDtmRecurringFaultOwner::TransmitterOrphanDrain { epoch, owner },
+            ),
+            BluetoothDtmRecurringCancellationDrainPhase::Receiver {
+                epoch,
+                owner,
+                metadata,
+            } => (
+                BluetoothDtmRole::Receiver,
+                BluetoothDtmRecurringFaultOwner::ReceiverOrphanDrain {
+                    epoch,
+                    owner,
+                    metadata,
+                },
+            ),
+        };
+        BluetoothDtmRecurringCancellationDrainStep::Fault(BluetoothDtmRecurringFault {
+            role,
+            cause: BluetoothDtmRecurringFaultCause::SchedulerCurrent(error),
+            _owner: owner,
+        })
+    }
+}
+
+fn cancel_transmitter_preparation<'runtime, S, const CAPACITY: usize>(
+    terminal: BluetoothDtmControllerPreparationTerminal<'runtime, S, CAPACITY>,
+) -> BluetoothDtmRecurringRunnerCancel<'runtime, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    let (epoch, outcome) = terminal.into_parts();
+    match outcome {
+        BluetoothDtmControllerPreparationOutcome::TransmitterRecurring(Err(failure)) => {
+            BluetoothDtmRecurringRunnerCancel::NeedsControllerTimeDrain(
+                BluetoothDtmRecurringCancellationDrain {
+                    phase: BluetoothDtmRecurringCancellationDrainPhase::Transmitter {
+                        epoch,
+                        owner: failure.into_owner(),
+                    },
+                },
+            )
+        }
+        outcome => BluetoothDtmRecurringRunnerCancel::Fault(BluetoothDtmRecurringFault {
+            role: BluetoothDtmRole::Transmitter,
+            cause: BluetoothDtmRecurringFaultCause::UnexpectedPreparationOutcome,
+            _owner: BluetoothDtmRecurringFaultOwner::UnexpectedPreparation {
+                epoch,
+                outcome,
+                receiver_metadata: None,
+            },
+        }),
+    }
+}
+
+fn cancel_receiver_preparation<'runtime, S, const CAPACITY: usize>(
+    terminal: BluetoothDtmControllerPreparationTerminal<'runtime, S, CAPACITY>,
+    metadata: BluetoothDtmRecurringReceiverMetadata,
+) -> BluetoothDtmRecurringRunnerCancel<'runtime, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    let (epoch, outcome) = terminal.into_parts();
+    match outcome {
+        BluetoothDtmControllerPreparationOutcome::ReceiverRecurring(Err(failure)) => {
+            BluetoothDtmRecurringRunnerCancel::NeedsControllerTimeDrain(
+                BluetoothDtmRecurringCancellationDrain {
+                    phase: BluetoothDtmRecurringCancellationDrainPhase::Receiver {
+                        epoch,
+                        owner: failure.into_owner(),
+                        metadata,
+                    },
+                },
+            )
+        }
+        outcome => BluetoothDtmRecurringRunnerCancel::Fault(BluetoothDtmRecurringFault {
+            role: BluetoothDtmRole::Receiver,
+            cause: BluetoothDtmRecurringFaultCause::UnexpectedPreparationOutcome,
+            _owner: BluetoothDtmRecurringFaultOwner::UnexpectedPreparation {
+                epoch,
+                outcome,
+                receiver_metadata: Some(metadata),
+            },
+        }),
+    }
+}
+
+fn finish_transmitter_recurring<'runtime, S, const CAPACITY: usize>(
+    terminal: BluetoothDtmControllerPreparationTerminal<'runtime, S, CAPACITY>,
+) -> BluetoothDtmRecurringRunnerStep<'runtime, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    let (epoch, outcome) = terminal.into_parts();
+    match outcome {
+        BluetoothDtmControllerPreparationOutcome::TransmitterRecurring(Ok(merged)) => {
+            BluetoothDtmRecurringRunner::continue_with(
+                BluetoothDtmRecurringPhase::TransmitterPrepared {
+                    task: epoch.into_task_service(),
+                    merged,
+                },
+            )
+        }
+        BluetoothDtmControllerPreparationOutcome::TransmitterRecurring(Err(failure)) => {
+            let error = failure.error();
+            let task = epoch.into_task_service();
+            let owner = failure.into_owner();
+            if matches!(
+                error,
+                BluetoothDtmControllerEventPreparationError::ControllerTime(_)
+            ) {
+                BluetoothDtmRecurringRunnerStep::Fault(BluetoothDtmRecurringFault {
+                    role: BluetoothDtmRole::Transmitter,
+                    cause: BluetoothDtmRecurringFaultCause::Preparation(error),
+                    _owner: BluetoothDtmRecurringFaultOwner::TransmitterPreparation { task, owner },
+                })
+            } else {
+                BluetoothDtmRecurringRunner::retry_with(
+                    BluetoothDtmRecurringPhase::TransmitterCpu(
+                        BluetoothDtmActiveTransmitterReady { _task: task, owner },
+                    ),
+                    BluetoothDtmRecurringRetryCause::Preparation(error),
+                )
+            }
+        }
+        outcome => BluetoothDtmRecurringRunnerStep::Fault(BluetoothDtmRecurringFault {
+            role: BluetoothDtmRole::Transmitter,
+            cause: BluetoothDtmRecurringFaultCause::UnexpectedPreparationOutcome,
+            _owner: BluetoothDtmRecurringFaultOwner::UnexpectedPreparation {
+                epoch,
+                outcome,
+                receiver_metadata: None,
+            },
+        }),
+    }
+}
+
+fn finish_receiver_recurring<'runtime, S, const CAPACITY: usize>(
+    terminal: BluetoothDtmControllerPreparationTerminal<'runtime, S, CAPACITY>,
+    metadata: BluetoothDtmRecurringReceiverMetadata,
+) -> BluetoothDtmRecurringRunnerStep<'runtime, S, CAPACITY>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    let (epoch, outcome) = terminal.into_parts();
+    match outcome {
+        BluetoothDtmControllerPreparationOutcome::ReceiverRecurring(Ok(merged)) => {
+            BluetoothDtmRecurringRunner::continue_with(
+                BluetoothDtmRecurringPhase::ReceiverPrepared {
+                    task: epoch.into_task_service(),
+                    merged,
+                    metadata,
+                },
+            )
+        }
+        BluetoothDtmControllerPreparationOutcome::ReceiverRecurring(Err(failure)) => {
+            let error = failure.error();
+            let task = epoch.into_task_service();
+            let owner = failure.into_owner();
+            if matches!(
+                error,
+                BluetoothDtmControllerEventPreparationError::ControllerTime(_)
+            ) {
+                BluetoothDtmRecurringRunnerStep::Fault(BluetoothDtmRecurringFault {
+                    role: BluetoothDtmRole::Receiver,
+                    cause: BluetoothDtmRecurringFaultCause::Preparation(error),
+                    _owner: BluetoothDtmRecurringFaultOwner::ReceiverPreparation {
+                        task,
+                        owner,
+                        metadata,
+                    },
+                })
+            } else {
+                BluetoothDtmRecurringRunner::retry_with(
+                    BluetoothDtmRecurringPhase::ReceiverCpu(BluetoothDtmActiveReceiverReady {
+                        _task: task,
+                        owner,
+                        status: metadata.status,
+                        outcome: metadata.outcome,
+                    }),
+                    BluetoothDtmRecurringRetryCause::Preparation(error),
+                )
+            }
+        }
+        outcome => BluetoothDtmRecurringRunnerStep::Fault(BluetoothDtmRecurringFault {
+            role: BluetoothDtmRole::Receiver,
+            cause: BluetoothDtmRecurringFaultCause::UnexpectedPreparationOutcome,
+            _owner: BluetoothDtmRecurringFaultOwner::UnexpectedPreparation {
+                epoch,
+                outcome,
+                receiver_metadata: Some(metadata),
+            },
+        }),
     }
 }

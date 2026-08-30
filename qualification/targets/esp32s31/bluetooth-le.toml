@@ -99,7 +99,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "completion-recurring-and-test-end-session-pump-missing" },
+  { axis = "implementation", id = "long-lived-dtm-session-pump-and-test-end-missing" },
   { axis = "vendor", id = "effective-counter-width-physical-unit-and-wake-source-missing" },
   { axis = "hil", id = "controller-time-latch-and-wrap-cell-missing" },
   { axis = "async", id = "live-controller-task-and-recheck-deadline-policy-missing" },
@@ -357,7 +357,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/functions/reviewed.toml",
 ]
 gaps = [
-  { axis = "implementation", id = "unrelated-finished-list-dispatch-and-recurring-session-loop-missing" },
+  { axis = "implementation", id = "unrelated-finished-list-dispatch-and-autonomous-session-loop-missing" },
   { axis = "vendor", id = "raw-interrupt-origin-and-finished-list-acknowledge-rule-missing" },
   { axis = "vendor", id = "post-unlink-command-ready-source-124-causality-missing" },
   { axis = "hil", id = "scheduler-finished-list-drain-cell-missing" },
@@ -367,7 +367,7 @@ gaps = [
 [[capabilities]]
 id = "packet-dataplane"
 title = "BLE packet TX and RX dataplane"
-scope = "First and recurring bounded PHY events from owned storage through typed publication completion receive accounting append-rearm and active-owner recovery"
+scope = "First and recurring bounded PHY events from owned storage through typed publication completion receive accounting append-rearm active-owner recovery and role-specific bounded recurrence back to hardware RUN"
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
@@ -376,7 +376,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/README.md",
 ]
 gaps = [
-  { axis = "implementation", id = "recurring-dtm-session-loop-and-test-end-command-ownership-missing" },
+  { axis = "implementation", id = "two-axis-dtm-session-and-test-end-command-ownership-missing" },
   { axis = "host", id = "concrete-dtm-session-pump-and-owner-continuity-missing" },
   { axis = "vendor", id = "sleep-enabled-rf-wake-and-test-end-stop-order-proof-missing" },
   { axis = "hil", id = "direct-test-mode-rf-cell-missing" },

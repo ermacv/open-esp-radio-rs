@@ -168,6 +168,11 @@ pub use dtm_active::{
     BluetoothDtmActiveCompletionFaultCause, BluetoothDtmActiveCompletionStep,
     BluetoothDtmActiveCpuOwned, BluetoothDtmActivePostUnlinkWait, BluetoothDtmActiveReceiverReady,
     BluetoothDtmActiveSchedulerWait, BluetoothDtmActiveTransmitterReady,
+    BluetoothDtmRecurringCancellationDrain, BluetoothDtmRecurringCancellationDrainStep,
+    BluetoothDtmRecurringControllerTimeWait, BluetoothDtmRecurringFault,
+    BluetoothDtmRecurringFaultCause, BluetoothDtmRecurringRetry, BluetoothDtmRecurringRetryCause,
+    BluetoothDtmRecurringRunner, BluetoothDtmRecurringRunnerCancel,
+    BluetoothDtmRecurringRunnerStep,
 };
 #[cfg(target_arch = "riscv32")]
 pub use dtm_event_prepare::{

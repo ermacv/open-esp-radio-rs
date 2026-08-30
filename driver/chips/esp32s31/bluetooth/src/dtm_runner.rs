@@ -167,6 +167,20 @@ where
     },
 }
 
+pub(crate) enum BluetoothDtmFirstActiveParts<'runtime, S, const SCHEDULER_CAPACITY: usize>
+where
+    S: BluetoothSchedulerRunInterruptStorage,
+{
+    Transmitter {
+        task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        running: BluetoothDtmSchedulerRunning<BluetoothDtmTransmitterEvent>,
+    },
+    Receiver {
+        task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
+        running: BluetoothDtmSchedulerRunning<BluetoothDtmReceiverEvent>,
+    },
+}
+
 /// Running first event with its successful Command Complete awaiting durable
 /// Controller-to-Host publication.
 #[must_use = "publish the response before releasing active-session ownership"]
@@ -320,7 +334,8 @@ where
     }
 }
 
-impl<S, const SCHEDULER_CAPACITY: usize> BluetoothDtmFirstActive<'_, S, SCHEDULER_CAPACITY>
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothDtmFirstActive<'runtime, S, SCHEDULER_CAPACITY>
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
@@ -337,6 +352,19 @@ where
         match &self.active {
             BluetoothDtmFirstActivePhase::Transmitter { task, .. }
             | BluetoothDtmFirstActivePhase::Receiver { task, .. } => task.scheduler_wake(),
+        }
+    }
+
+    pub(crate) fn into_parts(
+        self,
+    ) -> BluetoothDtmFirstActiveParts<'runtime, S, SCHEDULER_CAPACITY> {
+        match self.active {
+            BluetoothDtmFirstActivePhase::Transmitter { task, running } => {
+                BluetoothDtmFirstActiveParts::Transmitter { task, running }
+            }
+            BluetoothDtmFirstActivePhase::Receiver { task, running } => {
+                BluetoothDtmFirstActiveParts::Receiver { task, running }
+            }
         }
     }
 }

@@ -357,11 +357,11 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/functions/reviewed.toml",
 ]
 gaps = [
-  { axis = "implementation", id = "session-owned-post-unlink-retry-loop-missing" },
+  { axis = "implementation", id = "unrelated-finished-list-dispatch-and-recurring-session-loop-missing" },
   { axis = "vendor", id = "raw-interrupt-origin-and-finished-list-acknowledge-rule-missing" },
   { axis = "vendor", id = "post-unlink-command-ready-source-124-causality-missing" },
   { axis = "hil", id = "scheduler-finished-list-drain-cell-missing" },
-  { axis = "async", id = "session-owned-post-unlink-wait-and-bounded-role-dispatch-missing" },
+  { axis = "async", id = "active-completion-wait-selection-and-unrelated-list-dispatch-missing" },
 ]
 
 [[capabilities]]
@@ -376,11 +376,11 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/README.md",
 ]
 gaps = [
-  { axis = "implementation", id = "autonomous-dtm-session-loop-and-test-end-quiescence-missing" },
+  { axis = "implementation", id = "recurring-dtm-session-loop-and-test-end-command-ownership-missing" },
   { axis = "host", id = "concrete-dtm-session-pump-and-owner-continuity-missing" },
   { axis = "vendor", id = "sleep-enabled-rf-wake-and-test-end-stop-order-proof-missing" },
   { axis = "hil", id = "direct-test-mode-rf-cell-missing" },
-  { axis = "async", id = "pending-removal-wake-and-session-stop-contract-missing" },
+  { axis = "async", id = "completion-wake-selection-and-session-stop-contract-missing" },
 ]
 
 [[capabilities]]

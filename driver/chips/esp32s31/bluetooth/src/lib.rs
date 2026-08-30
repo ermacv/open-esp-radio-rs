@@ -74,6 +74,8 @@ mod common_phy_state;
 mod controller_hal;
 mod controller_start;
 mod controller_time;
+#[cfg(target_arch = "riscv32")]
+mod dtm_active;
 #[cfg(any(target_arch = "riscv32", test))]
 mod dtm_command;
 #[cfg(any(target_arch = "riscv32", test))]
@@ -159,6 +161,13 @@ pub use controller_start::{
 #[cfg(any(target_arch = "riscv32", test))]
 pub(crate) use controller_time::{
     BluetoothControllerSchedulerEpoch, BluetoothControllerTimeSample,
+};
+#[cfg(target_arch = "riscv32")]
+pub use dtm_active::{
+    BluetoothDtmActiveCompletion, BluetoothDtmActiveCompletionFault,
+    BluetoothDtmActiveCompletionFaultCause, BluetoothDtmActiveCompletionStep,
+    BluetoothDtmActiveCpuOwned, BluetoothDtmActivePostUnlinkWait, BluetoothDtmActiveReceiverReady,
+    BluetoothDtmActiveSchedulerWait, BluetoothDtmActiveTransmitterReady,
 };
 #[cfg(target_arch = "riscv32")]
 pub use dtm_event_prepare::{

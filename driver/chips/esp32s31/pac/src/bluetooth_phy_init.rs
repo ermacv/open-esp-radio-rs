@@ -12,6 +12,38 @@ use super::{BluetoothControllerSramAddress, BluetoothTaskRegisters, device_fence
 
 const ENVIRONMENT_LAST_OFFSET: u32 = 0x40;
 
+trait BleBaseStackOnTaskEnableHardwareTransaction {
+    fn enable_access_address_low_correlation(&mut self);
+    fn initialize_ble_phy_registers(&mut self);
+}
+
+fn execute_base_stack_on_task_enable_hardware(
+    transaction: &mut impl BleBaseStackOnTaskEnableHardwareTransaction,
+) {
+    transaction.enable_access_address_low_correlation();
+    transaction.initialize_ble_phy_registers();
+}
+
+struct HardwareBleBaseStackOnTaskEnableTransaction<'registers> {
+    registers: &'registers mut BluetoothTaskRegisters,
+    inputs: BluetoothPhyRegisterInitInputs,
+}
+
+impl BleBaseStackOnTaskEnableHardwareTransaction
+    for HardwareBleBaseStackOnTaskEnableTransaction<'_>
+{
+    fn enable_access_address_low_correlation(&mut self) {
+        super::generated::enable_ble_phy_access_address_low_correlation(
+            &self.registers.bluetooth.bt_v3_2_baseband,
+        );
+    }
+
+    fn initialize_ble_phy_registers(&mut self) {
+        self.registers
+            .initialize_ble_phy_registers_leaf(self.inputs);
+    }
+}
+
 /// Typed base of the linked BLE PHY environment.
 ///
 /// This proves only word alignment and representability of the last published
@@ -88,7 +120,14 @@ impl BluetoothPhyRegisterInitInputs {
 }
 
 impl BluetoothTaskRegisters {
-    /// Execute the exact MMIO body of the recovered BLE PHY register init.
+    /// Execute the complete hardware component of BLE base-stack task enable.
+    ///
+    /// The registered external-baseband callback first enables access-address
+    /// low-correlation handling through one fresh field RMW. The exact BLE PHY
+    /// register-initialization body follows without an intervening MMIO edge.
+    /// Source-owned memory tracking replaces the preceding vendor software
+    /// publication; the standalone profile does not enter the optional BQB
+    /// branch.
     ///
     /// Every read-modify-write below performs a fresh volatile read. In
     /// particular, repeated updates to `0x20101650`, `0x20101654`, and the four
@@ -114,6 +153,14 @@ impl BluetoothTaskRegisters {
         reason = "the unsafe signature retains unmodeled lifecycle and pointed-storage prerequisites"
     )]
     pub unsafe fn initialize_ble_phy_registers(&mut self, inputs: BluetoothPhyRegisterInitInputs) {
+        let mut transaction = HardwareBleBaseStackOnTaskEnableTransaction {
+            registers: self,
+            inputs,
+        };
+        execute_base_stack_on_task_enable_hardware(&mut transaction);
+    }
+
+    fn initialize_ble_phy_registers_leaf(&mut self, inputs: BluetoothPhyRegisterInitInputs) {
         let timing_byte = inputs.private_configuration_byte_0x10.wrapping_sub(1);
         let environment = inputs.environment.address();
         let environment_member = inputs.environment.compressed_member(0x2c);
@@ -241,5 +288,51 @@ impl BluetoothTaskRegisters {
         // One ordering boundary is a reviewed Rust-side addition. It does not
         // replace, merge, or reorder any vendor MMIO edge above.
         device_fence();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::vec::Vec;
+
+    use super::{
+        BleBaseStackOnTaskEnableHardwareTransaction, execute_base_stack_on_task_enable_hardware,
+    };
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum Operation {
+        EnableAccessAddressLowCorrelation,
+        InitializeBlePhyRegisters,
+    }
+
+    #[derive(Default)]
+    struct Recorder {
+        operations: Vec<Operation>,
+    }
+
+    impl BleBaseStackOnTaskEnableHardwareTransaction for Recorder {
+        fn enable_access_address_low_correlation(&mut self) {
+            self.operations
+                .push(Operation::EnableAccessAddressLowCorrelation);
+        }
+
+        fn initialize_ble_phy_registers(&mut self) {
+            self.operations.push(Operation::InitializeBlePhyRegisters);
+        }
+    }
+
+    #[test]
+    fn base_stack_on_task_enable_orders_baseband_before_phy_initialization() {
+        let mut recorder = Recorder::default();
+
+        execute_base_stack_on_task_enable_hardware(&mut recorder);
+
+        assert_eq!(
+            recorder.operations,
+            [
+                Operation::EnableAccessAddressLowCorrelation,
+                Operation::InitializeBlePhyRegisters,
+            ]
+        );
     }
 }

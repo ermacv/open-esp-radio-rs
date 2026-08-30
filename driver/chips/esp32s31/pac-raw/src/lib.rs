@@ -63165,6 +63165,17 @@ pub mod field_replace_modify {
         });
     }
 
+    /// Replace BT_V3_2_BASEBAND.LE_CORRELATION_THRESHOLD_0 fields [AA_LC_ENABLE] from one reviewed logical image while preserving every other bit.
+    #[inline]
+    pub fn enable_ble_phy_access_address_low_correlation(registers: &crate::BtV3_2Baseband) {
+        registers.le_correlation_threshold_0().modify(|_, writer| {
+            let input = 0x00000001_u32;
+            // SAFETY: generator validation proves every logical input projection
+            // fits its named SVD field; no whole-register image crosses this API.
+            writer.aa_lc_enable().bit((input & 0x00000001) != 0)
+        });
+    }
+
     /// Replace BTMAC_BLE_PHY_INIT.INIT_BYTES_0254 fields [INIT_BYTE_0, INIT_BYTE_1] from one reviewed logical image while preserving every other bit.
     #[inline]
     pub fn clear_ble_phy_init_low_byte_pair(registers: &crate::BtmacBlePhyInit) {

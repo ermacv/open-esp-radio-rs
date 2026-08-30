@@ -3275,6 +3275,15 @@ exposure = "facade"
 sources = ["BLOB_LIBBLE_PHY_INIT_REGISTERS"]
 
 [[field-replace-modifies]]
+name = "enable_ble_phy_access_address_low_correlation"
+peripheral = "BT_V3_2_BASEBAND"
+register = "LE_CORRELATION_THRESHOLD_0"
+fields = [{ field = "AA_LC_ENABLE", source-bit-offset = 0 }]
+value = 1
+exposure = "facade"
+sources = ["BLOB_LIBBLE_BASE_STACK_TASK_ENABLE"]
+
+[[field-replace-modifies]]
 name = "clear_ble_phy_init_low_byte_pair"
 peripheral = "BTMAC_BLE_PHY_INIT"
 register = "INIT_BYTES_0254"

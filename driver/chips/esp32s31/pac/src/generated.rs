@@ -3318,6 +3318,14 @@ pub(crate) fn publish_ble_phy_le_tx_on_delay(
     crate::svd::field_replace_modify::publish_ble_phy_le_tx_on_delay(registers, value.get());
 }
 
+/// Typed bridge for the reviewed `enable_ble_phy_access_address_low_correlation` fixed field-replacement transaction.
+#[inline]
+pub(crate) fn enable_ble_phy_access_address_low_correlation(
+    registers: &crate::svd::BtV3_2Baseband,
+) {
+    crate::svd::field_replace_modify::enable_ble_phy_access_address_low_correlation(registers);
+}
+
 /// Typed bridge for the reviewed `clear_ble_phy_init_low_byte_pair` fixed field-replacement transaction.
 #[inline]
 pub(crate) fn clear_ble_phy_init_low_byte_pair(registers: &crate::svd::BtmacBlePhyInit) {

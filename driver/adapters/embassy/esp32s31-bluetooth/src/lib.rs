@@ -11,6 +11,16 @@
 #[cfg(test)]
 extern crate std;
 
+#[cfg(target_arch = "riscv32")]
+mod dtm_first;
+
+#[cfg(target_arch = "riscv32")]
+pub use dtm_first::{
+    EmbassyBluetoothDtmFirstControllerTimeWait, EmbassyBluetoothDtmFirstDrive,
+    EmbassyBluetoothDtmFirstResponseTask, EmbassyBluetoothDtmFirstResponseTaskPublication,
+    EmbassyBluetoothDtmFirstResponseWait, EmbassyBluetoothDtmFirstResume, drive_dtm_first_ready,
+};
+
 use core::{
     future::{Future, poll_fn},
     task::Poll,

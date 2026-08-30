@@ -176,6 +176,21 @@ where
         .await
     }
 
+    async fn wait_send_ready(&self) {
+        poll_fn(|context| {
+            self.state.lock(|state| {
+                let mut state = state.borrow_mut();
+                if state.length < DEPTH {
+                    Poll::Ready(())
+                } else {
+                    state.sender_waker.register(context.waker());
+                    Poll::Pending
+                }
+            })
+        })
+        .await
+    }
+
     fn try_send(&self, packet: PacketSlot<PACKET_CAPACITY>) -> Result<(), ()> {
         self.state.lock(|state| {
             if state.borrow_mut().try_send(packet) {
@@ -547,6 +562,17 @@ where
         Ok(())
     }
 
+    /// Wait until Controller-to-Host storage is observed with free capacity.
+    ///
+    /// This operation does not reserve a slot or retain packet bytes. It is a
+    /// cancellation-safe readiness hint: after it returns, another producer
+    /// may still win the slot, so callers must finish with [`Self::try_publish`]
+    /// and handle `Full` losslessly. The affine Controller endpoint is designed
+    /// for one logical publication waiter at a time.
+    pub async fn wait_publish_ready(&self) {
+        self.controller_to_host.wait_send_ready().await;
+    }
+
     /// Publish immediately or return [`HciChannelError::Full`] without overwrite.
     pub fn try_publish(&self, kind: PacketKind, bytes: &[u8]) -> Result<(), HciChannelError> {
         let slot = controller_slot::<PACKET_CAPACITY>(kind, bytes)?;
@@ -833,6 +859,49 @@ mod tests {
         let first_identity = first_controller.epoch_identity();
         assert!(first_identity.same_epoch(first_controller.epoch_identity()));
         assert!(!first_identity.same_epoch(second_controller.epoch_identity()));
+    }
+
+    #[test]
+    fn publish_readiness_wait_is_side_effect_free_and_wakes_after_drain() {
+        let mut channel = TestChannel::new();
+        let (host, controller) = channel.split();
+
+        block_on(controller.wait_publish_ready());
+        controller
+            .try_publish(PacketKind::Event, &HARDWARE_ERROR)
+            .unwrap();
+
+        let mut wait = pin!(controller.wait_publish_ready());
+        assert_pending(wait.as_mut());
+        let mut event_buffer = [0; 16];
+        block_on(host.read(&mut event_buffer)).unwrap();
+        let mut context = Context::from_waker(Waker::noop());
+        assert!(matches!(wait.as_mut().poll(&mut context), Poll::Ready(())));
+
+        controller
+            .try_publish(PacketKind::Event, &RESET_COMMAND_COMPLETE)
+            .expect("readiness did not manufacture or reserve a packet");
+    }
+
+    #[test]
+    fn cancelled_publish_readiness_wait_leaves_capacity_for_replacement() {
+        let mut channel = TestChannel::new();
+        let (host, controller) = channel.split();
+        controller
+            .try_publish(PacketKind::Event, &HARDWARE_ERROR)
+            .unwrap();
+
+        {
+            let mut cancelled = pin!(controller.wait_publish_ready());
+            assert_pending(cancelled.as_mut());
+        }
+
+        let mut event_buffer = [0; 16];
+        block_on(host.read(&mut event_buffer)).unwrap();
+        block_on(controller.wait_publish_ready());
+        controller
+            .try_publish(PacketKind::Event, &RESET_COMMAND_COMPLETE)
+            .expect("cancelled readiness did not consume the released slot");
     }
 
     #[test]

@@ -102,7 +102,7 @@ gaps = [
   { axis = "implementation", id = "completion-recurring-and-test-end-session-pump-missing" },
   { axis = "vendor", id = "effective-counter-width-physical-unit-and-wake-source-missing" },
   { axis = "hil", id = "controller-time-latch-and-wrap-cell-missing" },
-  { axis = "async", id = "embassy-cooperative-recheck-and-live-controller-task-missing" },
+  { axis = "async", id = "live-controller-task-and-recheck-deadline-policy-missing" },
 ]
 
 [[capabilities]]
@@ -418,7 +418,7 @@ gaps = [
   { axis = "host", id = "dtm-session-state-and-hardware-response-backpressure-tests-missing" },
   { axis = "vendor", id = "hci-command-and-acl-production-contracts-missing" },
   { axis = "hil", id = "external-hci-interoperability-cell-missing" },
-  { axis = "async", id = "command-response-and-acl-credit-wakes-missing" },
+  { axis = "async", id = "command-intake-active-session-and-acl-credit-wake-selection-missing" },
 ]
 
 [[capabilities]]

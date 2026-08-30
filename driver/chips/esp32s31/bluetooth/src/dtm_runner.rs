@@ -256,6 +256,26 @@ where
         }
     }
 
+    /// Whether a raw Controller endpoint belongs to this running event's HCI epoch.
+    pub fn matches_hci_endpoint<
+        M: RawMutex,
+        const HOST_TO_CONTROLLER_DEPTH: usize,
+        const CONTROLLER_TO_HOST_DEPTH: usize,
+        const PACKET_CAPACITY: usize,
+    >(
+        &self,
+        controller: &InProcessHciControllerEndpoint<
+            '_,
+            M,
+            HOST_TO_CONTROLLER_DEPTH,
+            CONTROLLER_TO_HOST_DEPTH,
+            PACKET_CAPACITY,
+        >,
+    ) -> bool {
+        self.hci_epoch_identity()
+            .same_epoch(controller.epoch_identity())
+    }
+
     fn into_active(self) -> BluetoothDtmFirstActive<'runtime, S, SCHEDULER_CAPACITY> {
         BluetoothDtmFirstActive {
             active: self.active,
@@ -282,10 +302,7 @@ where
             PACKET_CAPACITY,
         >,
     ) -> BluetoothDtmFirstResponsePublication<'runtime, S, SCHEDULER_CAPACITY> {
-        if !self
-            .hci_epoch_identity()
-            .same_epoch(controller.epoch_identity())
-        {
+        if !self.matches_hci_endpoint(controller) {
             return BluetoothDtmFirstResponsePublication::EndpointMismatch(self);
         }
         let result = {

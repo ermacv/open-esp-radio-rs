@@ -613,7 +613,7 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 [[package]]
 name = "esp-config"
 version = "0.7.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=7f914782f5c689a74f37df83b89a0827d3800323#7f914782f5c689a74f37df83b89a0827d3800323"
+source = "git+https://github.com/ermacv/esp-hal?rev=81cd5c341f71f9d070b5d2b115d3ab2c7595a4df#81cd5c341f71f9d070b5d2b115d3ab2c7595a4df"
 dependencies = [
  "document-features",
  "esp-metadata-generated",
@@ -625,7 +625,7 @@ dependencies = [
 [[package]]
 name = "esp-hal"
 version = "1.1.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=7f914782f5c689a74f37df83b89a0827d3800323#7f914782f5c689a74f37df83b89a0827d3800323"
+source = "git+https://github.com/ermacv/esp-hal?rev=81cd5c341f71f9d070b5d2b115d3ab2c7595a4df#81cd5c341f71f9d070b5d2b115d3ab2c7595a4df"
 dependencies = [
  "bitfield",
  "bytemuck",
@@ -684,7 +684,7 @@ dependencies = [
 [[package]]
 name = "esp-hal-procmacros"
 version = "0.22.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=7f914782f5c689a74f37df83b89a0827d3800323#7f914782f5c689a74f37df83b89a0827d3800323"
+source = "git+https://github.com/ermacv/esp-hal?rev=81cd5c341f71f9d070b5d2b115d3ab2c7595a4df#81cd5c341f71f9d070b5d2b115d3ab2c7595a4df"
 dependencies = [
  "document-features",
  "proc-macro-crate",
@@ -697,12 +697,12 @@ dependencies = [
 [[package]]
 name = "esp-metadata-generated"
 version = "0.4.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=7f914782f5c689a74f37df83b89a0827d3800323#7f914782f5c689a74f37df83b89a0827d3800323"
+source = "git+https://github.com/ermacv/esp-hal?rev=81cd5c341f71f9d070b5d2b115d3ab2c7595a4df#81cd5c341f71f9d070b5d2b115d3ab2c7595a4df"
 
 [[package]]
 name = "esp-riscv-rt"
 version = "0.14.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=7f914782f5c689a74f37df83b89a0827d3800323#7f914782f5c689a74f37df83b89a0827d3800323"
+source = "git+https://github.com/ermacv/esp-hal?rev=81cd5c341f71f9d070b5d2b115d3ab2c7595a4df#81cd5c341f71f9d070b5d2b115d3ab2c7595a4df"
 dependencies = [
  "document-features",
  "riscv 0.15.0",
@@ -712,7 +712,7 @@ dependencies = [
 [[package]]
 name = "esp-rom-sys"
 version = "0.1.4"
-source = "git+https://github.com/ermacv/esp-hal?rev=7f914782f5c689a74f37df83b89a0827d3800323#7f914782f5c689a74f37df83b89a0827d3800323"
+source = "git+https://github.com/ermacv/esp-hal?rev=81cd5c341f71f9d070b5d2b115d3ab2c7595a4df#81cd5c341f71f9d070b5d2b115d3ab2c7595a4df"
 dependencies = [
  "document-features",
  "esp-metadata-generated",
@@ -722,7 +722,7 @@ dependencies = [
 [[package]]
 name = "esp-sync"
 version = "0.2.1"
-source = "git+https://github.com/ermacv/esp-hal?rev=7f914782f5c689a74f37df83b89a0827d3800323#7f914782f5c689a74f37df83b89a0827d3800323"
+source = "git+https://github.com/ermacv/esp-hal?rev=81cd5c341f71f9d070b5d2b115d3ab2c7595a4df#81cd5c341f71f9d070b5d2b115d3ab2c7595a4df"
 dependencies = [
  "document-features",
  "embassy-sync 0.6.2",
@@ -2000,7 +2000,7 @@ source = "git+https://github.com/ermacv/xarxa.git?rev=77b371632d259c1c5f57b766e2
 [[package]]
 name = "xtensa-lx"
 version = "0.13.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=7f914782f5c689a74f37df83b89a0827d3800323#7f914782f5c689a74f37df83b89a0827d3800323"
+source = "git+https://github.com/ermacv/esp-hal?rev=81cd5c341f71f9d070b5d2b115d3ab2c7595a4df#81cd5c341f71f9d070b5d2b115d3ab2c7595a4df"
 dependencies = [
  "critical-section",
 ]
@@ -2008,7 +2008,7 @@ dependencies = [
 [[package]]
 name = "xtensa-lx-rt"
 version = "0.22.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=7f914782f5c689a74f37df83b89a0827d3800323#7f914782f5c689a74f37df83b89a0827d3800323"
+source = "git+https://github.com/ermacv/esp-hal?rev=81cd5c341f71f9d070b5d2b115d3ab2c7595a4df#81cd5c341f71f9d070b5d2b115d3ab2c7595a4df"
 dependencies = [
  "document-features",
  "xtensa-lx",
@@ -2018,7 +2018,7 @@ dependencies = [
 [[package]]
 name = "xtensa-lx-rt-proc-macros"
 version = "0.5.0"
-source = "git+https://github.com/ermacv/esp-hal?rev=7f914782f5c689a74f37df83b89a0827d3800323#7f914782f5c689a74f37df83b89a0827d3800323"
+source = "git+https://github.com/ermacv/esp-hal?rev=81cd5c341f71f9d070b5d2b115d3ab2c7595a4df#81cd5c341f71f9d070b5d2b115d3ab2c7595a4df"
 dependencies = [
  "proc-macro2",
  "quote",

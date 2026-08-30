@@ -17,8 +17,7 @@ mod dtm_first;
 #[cfg(target_arch = "riscv32")]
 pub use dtm_first::{
     EmbassyBluetoothDtmFirstControllerTimeWait, EmbassyBluetoothDtmFirstDrive,
-    EmbassyBluetoothDtmFirstResponseTask, EmbassyBluetoothDtmFirstResponseTaskPublication,
-    EmbassyBluetoothDtmFirstResponseWait, EmbassyBluetoothDtmFirstResume, drive_dtm_first_ready,
+    EmbassyBluetoothDtmFirstResume, drive_dtm_first_ready,
 };
 
 use core::{
@@ -39,12 +38,12 @@ use open_esp_radio_esp32s31_bluetooth::{
     BluetoothPrimarySerializedServiceStep, BluetoothSchedulerLockModifyEvent,
     BluetoothSchedulerLockModifyEventPublication, BluetoothSchedulerLockModifyInterruptObservation,
     BluetoothSchedulerLockModifyWorkerStep, BluetoothSchedulerWakeBatch,
-    BluetoothSchedulerWakePublication, BluetoothSchedulerWorkerWakeClass,
-    step_nrt_default_interrupt, step_primary_interrupt,
+    BluetoothSchedulerWakeCell, BluetoothSchedulerWakePublication,
+    BluetoothSchedulerWorkerWakeClass, step_nrt_default_interrupt, step_primary_interrupt,
 };
 use open_esp_radio_esp32s31_hal::{BluetoothControllerHal, BluetoothInterruptRegistersOwner};
 
-fn poll_post_unlink_ready<M: RawMutex>(
+fn poll_borrowed_ready<M: RawMutex>(
     waker: &GenericAtomicWaker<M>,
     context: &mut core::task::Context<'_>,
     is_pending: impl FnOnce() -> bool,
@@ -80,6 +79,23 @@ impl<M: RawMutex> EmbassyBluetoothRuntimeWakers<M> {
             timer_event_waker: GenericAtomicWaker::new(M::INIT),
             post_unlink_waker: GenericAtomicWaker::new(M::INIT),
         }
+    }
+
+    /// Wait until the borrowed scheduler cell contains durable work.
+    ///
+    /// Unlike [`EmbassyBluetoothWakeReceiver::wait_scheduler`], this future
+    /// owns neither the task runtime nor the scheduler batch. It can therefore
+    /// be selected beside HCI capacity while an affine DTM session remains in
+    /// the caller. Successful completion is only a readiness hint; the core
+    /// session transition remains responsible for consuming the exact batch.
+    pub async fn wait_scheduler_ready(&self, wake: &BluetoothSchedulerWakeCell) {
+        poll_fn(|context| poll_borrowed_ready(&self.scheduler_waker, context, || wake.is_pending()))
+            .await
+    }
+
+    /// Whether the borrowed scheduler cell contains durable work.
+    pub fn scheduler_pending(&self, wake: &BluetoothSchedulerWakeCell) -> bool {
+        wake.is_pending()
     }
 
     fn notify_post_unlink(
@@ -141,7 +157,7 @@ impl<M: RawMutex> EmbassyBluetoothRuntimeWakers<M> {
     /// readiness; only successful mailbox consumption performs that transition.
     pub async fn wait_post_unlink_ready(&self, wake: &BluetoothDtmPostUnlinkWakeCell) {
         poll_fn(|context| {
-            poll_post_unlink_ready(&self.post_unlink_waker, context, || wake.is_pending())
+            poll_borrowed_ready(&self.post_unlink_waker, context, || wake.is_pending())
         })
         .await
     }
@@ -697,6 +713,43 @@ mod tests {
     }
 
     #[test]
+    fn borrowed_scheduler_wait_observes_without_consuming() {
+        let wakers = EmbassyBluetoothRuntimeWakers::<NoopRawMutex>::new();
+        let wake = BluetoothSchedulerWakeCell::new();
+
+        assert_eq!(
+            wake.publish_from_interrupt(BluetoothSchedulerWorkerWakeClass::Ordinary),
+            BluetoothSchedulerWakePublication::WakeWorker
+        );
+        block_on(wakers.wait_scheduler_ready(&wake));
+        assert!(wakers.scheduler_pending(&wake));
+        assert!(wake.take().is_some());
+    }
+
+    #[test]
+    fn cancelled_borrowed_scheduler_wait_preserves_replacement_readiness() {
+        let wakers = EmbassyBluetoothRuntimeWakers::<NoopRawMutex>::new();
+        let wake = BluetoothSchedulerWakeCell::new();
+        let (_counter, task_waker) = counting_waker();
+        let mut cancelled = Box::pin(wakers.wait_scheduler_ready(&wake));
+
+        assert!(poll_once(cancelled.as_mut(), &task_waker).is_pending());
+        drop(cancelled);
+        assert_eq!(
+            wake.publish_from_interrupt(BluetoothSchedulerWorkerWakeClass::Marked),
+            BluetoothSchedulerWakePublication::WakeWorker
+        );
+        wakers.scheduler_waker.wake();
+
+        block_on(wakers.wait_scheduler_ready(&wake));
+        assert!(
+            wake.take()
+                .expect("published batch remains durable")
+                .is_marked()
+        );
+    }
+
+    #[test]
     fn post_unlink_publication_before_wait_is_rechecked_without_loss() {
         let wakers = EmbassyBluetoothRuntimeWakers::<NoopRawMutex>::new();
         let ready = AtomicBool::new(true);
@@ -706,7 +759,7 @@ mod tests {
             BluetoothDtmPostUnlinkMailboxPublication::WakeConsumer
         );
         block_on(poll_fn(|context| {
-            poll_post_unlink_ready(&wakers.post_unlink_waker, context, || {
+            poll_borrowed_ready(&wakers.post_unlink_waker, context, || {
                 ready.load(Ordering::Acquire)
             })
         }));
@@ -718,7 +771,7 @@ mod tests {
         let ready = AtomicBool::new(false);
         let (counter, waker) = counting_waker();
         let mut wait = Box::pin(poll_fn(|context| {
-            poll_post_unlink_ready(&wakers.post_unlink_waker, context, || {
+            poll_borrowed_ready(&wakers.post_unlink_waker, context, || {
                 ready.load(Ordering::Acquire)
             })
         }));
@@ -741,7 +794,7 @@ mod tests {
         let ready = AtomicBool::new(false);
         let (_counter, waker) = counting_waker();
         let mut cancelled = Box::pin(poll_fn(|context| {
-            poll_post_unlink_ready(&wakers.post_unlink_waker, context, || {
+            poll_borrowed_ready(&wakers.post_unlink_waker, context, || {
                 ready.load(Ordering::Acquire)
             })
         }));
@@ -752,7 +805,7 @@ mod tests {
         wakers.notify_post_unlink(BluetoothDtmPostUnlinkMailboxPublication::WakeConsumer);
 
         block_on(poll_fn(|context| {
-            poll_post_unlink_ready(&wakers.post_unlink_waker, context, || {
+            poll_borrowed_ready(&wakers.post_unlink_waker, context, || {
                 ready.load(Ordering::Acquire)
             })
         }));

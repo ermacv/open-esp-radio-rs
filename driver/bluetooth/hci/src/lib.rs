@@ -41,6 +41,7 @@ mod bootstrap;
 mod channel;
 mod classification;
 mod dtm;
+mod dtm_order;
 mod resources;
 mod response;
 
@@ -61,6 +62,9 @@ pub use dtm::{
     LeDtmCommandCompleteEvent, LeDtmCommandDecodeError, LeDtmCommandKind,
     LeDtmIdleSessionDisposition, LeDtmPayloadPattern, LeReceiverTestV1Command, LeTestEndCommand,
     LeTransmitterTestV1Command,
+};
+pub use dtm_order::{
+    LeDtmStartResponsePending, LeDtmStartResponsePublication, LeDtmStartResponsePublished,
 };
 pub use resources::{
     LeControllerHciEndpoints, LeControllerHciResources, LeControllerHciResourcesError,

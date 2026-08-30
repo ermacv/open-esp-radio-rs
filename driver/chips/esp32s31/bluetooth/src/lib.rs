@@ -76,6 +76,8 @@ mod controller_start;
 mod controller_time;
 #[cfg(target_arch = "riscv32")]
 mod dtm_active;
+#[cfg(target_arch = "riscv32")]
+mod dtm_active_session;
 #[cfg(any(target_arch = "riscv32", test))]
 mod dtm_command;
 #[cfg(any(target_arch = "riscv32", test))]
@@ -175,6 +177,14 @@ pub use dtm_active::{
     BluetoothDtmRecurringRunnerStep,
 };
 #[cfg(target_arch = "riscv32")]
+pub use dtm_active_session::{
+    BluetoothDtmActiveRadioWait, BluetoothDtmActiveSession, BluetoothDtmActiveSessionFault,
+    BluetoothDtmActiveSessionFaultCause, BluetoothDtmActiveSessionRadioStep,
+    BluetoothDtmCommandReadySession, BluetoothDtmStartResponsePending,
+    BluetoothDtmStartResponsePendingSession, BluetoothDtmStartResponsePublication,
+    BluetoothDtmStartResponsePublished,
+};
+#[cfg(target_arch = "riscv32")]
 pub use dtm_event_prepare::{
     BluetoothDtmActiveReceiverCpuOwned, BluetoothDtmActiveTransmitterCpuOwned,
     BluetoothDtmRecycledEvent, BluetoothDtmRxRearmedEvent, BluetoothDtmTestEndReport,
@@ -211,13 +221,11 @@ pub use dtm_post_unlink::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use dtm_runner::{
-    BluetoothDtmFirstActive, BluetoothDtmFirstCommand, BluetoothDtmFirstIdleRestore,
-    BluetoothDtmFirstIdleRestoreStep, BluetoothDtmFirstInvariantFault,
-    BluetoothDtmFirstPreparationCleanup, BluetoothDtmFirstPreparationCleanupStep,
-    BluetoothDtmFirstResponsePending, BluetoothDtmFirstResponsePublication,
-    BluetoothDtmFirstRunner, BluetoothDtmFirstRunnerCancel, BluetoothDtmFirstRunnerFailure,
-    BluetoothDtmFirstRunnerRetry, BluetoothDtmFirstRunnerRetryCause, BluetoothDtmFirstRunnerStep,
-    BluetoothDtmFirstRunning,
+    BluetoothDtmFirstCommand, BluetoothDtmFirstIdleRestore, BluetoothDtmFirstIdleRestoreStep,
+    BluetoothDtmFirstInvariantFault, BluetoothDtmFirstPreparationCleanup,
+    BluetoothDtmFirstPreparationCleanupStep, BluetoothDtmFirstRunner,
+    BluetoothDtmFirstRunnerCancel, BluetoothDtmFirstRunnerFailure, BluetoothDtmFirstRunnerRetry,
+    BluetoothDtmFirstRunnerRetryCause, BluetoothDtmFirstRunnerStep, BluetoothDtmFirstRunning,
 };
 pub use dtm_rx_completion::{
     BLUETOOTH_DTM_RX_INITIAL_RETURNED_BYTE, BluetoothDtmReceiverSession,

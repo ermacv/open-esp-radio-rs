@@ -2459,12 +2459,12 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 }
 
 #[cfg(target_arch = "riscv32")]
-impl<S, const SCHEDULER_CAPACITY: usize>
-    BluetoothControllerPublishedTaskService<'_, S, SCHEDULER_CAPACITY>
+impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>
 {
     pub(crate) const fn hci_epoch_identity(
         &self,
-    ) -> open_esp_radio_bluetooth_hci::HciEpochIdentity<'_> {
+    ) -> open_esp_radio_bluetooth_hci::HciEpochIdentity<'runtime> {
         self.hci_epoch
     }
 

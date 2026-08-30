@@ -99,7 +99,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "long-lived-dtm-session-pump-and-test-end-missing" },
+  { axis = "implementation", id = "autonomous-dtm-session-task-and-test-end-missing" },
   { axis = "vendor", id = "effective-counter-width-physical-unit-and-wake-source-missing" },
   { axis = "hil", id = "controller-time-latch-and-wrap-cell-missing" },
   { axis = "async", id = "live-controller-task-and-recheck-deadline-policy-missing" },
@@ -193,7 +193,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "recurring-and-test-end-runner-continuity-missing" },
+  { axis = "implementation", id = "test-end-runner-continuity-missing" },
   { axis = "vendor", id = "remaining-hardware-consumed-descriptor-semantics-missing" },
   { axis = "hil", id = "dtm-static-graph-placement-and-mutation-cell-missing" },
 ]
@@ -367,7 +367,7 @@ gaps = [
 [[capabilities]]
 id = "packet-dataplane"
 title = "BLE packet TX and RX dataplane"
-scope = "First and recurring bounded PHY events from owned storage through typed publication completion receive accounting append-rearm active-owner recovery and role-specific bounded recurrence back to hardware RUN"
+scope = "First and recurring bounded PHY events from owned storage through typed publication completion receive accounting append-rearm active-owner recovery role-specific bounded recurrence back to hardware RUN and HCI-backpressure-independent active-session progression"
 implementation = "incomplete"
 host = "incomplete"
 async = "incomplete"
@@ -376,7 +376,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/README.md",
 ]
 gaps = [
-  { axis = "implementation", id = "two-axis-dtm-session-and-test-end-command-ownership-missing" },
+  { axis = "implementation", id = "endpoint-bound-command-intake-and-test-end-runner-missing" },
   { axis = "host", id = "concrete-dtm-session-pump-and-owner-continuity-missing" },
   { axis = "vendor", id = "sleep-enabled-rf-wake-and-test-end-stop-order-proof-missing" },
   { axis = "hil", id = "direct-test-mode-rf-cell-missing" },
@@ -415,7 +415,7 @@ vendor-anchors = [
 ]
 gaps = [
   { axis = "implementation", id = "hci-command-loop-recurring-and-test-end-runner-missing" },
-  { axis = "host", id = "dtm-session-state-and-hardware-response-backpressure-tests-missing" },
+  { axis = "host", id = "hardware-radio-axis-and-command-intake-integration-tests-missing" },
   { axis = "vendor", id = "hci-command-and-acl-production-contracts-missing" },
   { axis = "hil", id = "external-hci-interoperability-cell-missing" },
   { axis = "async", id = "command-intake-active-session-and-acl-credit-wake-selection-missing" },

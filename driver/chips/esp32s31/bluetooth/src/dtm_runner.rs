@@ -8,10 +8,9 @@
 
 #![forbid(unsafe_code)]
 
-use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_bluetooth_hci::{
-    HciChannelError, HciControllerResponse, InProcessHciControllerEndpoint,
-    LeDtmCommandCompleteEvent, LeReceiverTestV1Command, LeTransmitterTestV1Command,
+    HciEpochIdentity, LeDtmCommandCompleteEvent, LeReceiverTestV1Command,
+    LeTransmitterTestV1Command,
 };
 
 use crate::{
@@ -152,72 +151,21 @@ where
     },
 }
 
-enum BluetoothDtmFirstActivePhase<'runtime, S, const SCHEDULER_CAPACITY: usize>
+pub(crate) enum BluetoothDtmFirstRunningParts<'runtime, S, const SCHEDULER_CAPACITY: usize>
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
     Transmitter {
+        response: LeDtmCommandCompleteEvent,
+        hci_epoch: HciEpochIdentity<'runtime>,
         task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         running: BluetoothDtmSchedulerRunning<BluetoothDtmTransmitterEvent>,
     },
     Receiver {
+        response: LeDtmCommandCompleteEvent,
+        hci_epoch: HciEpochIdentity<'runtime>,
         task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
         running: BluetoothDtmSchedulerRunning<BluetoothDtmReceiverEvent>,
-    },
-}
-
-pub(crate) enum BluetoothDtmFirstActiveParts<'runtime, S, const SCHEDULER_CAPACITY: usize>
-where
-    S: BluetoothSchedulerRunInterruptStorage,
-{
-    Transmitter {
-        task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-        running: BluetoothDtmSchedulerRunning<BluetoothDtmTransmitterEvent>,
-    },
-    Receiver {
-        task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
-        running: BluetoothDtmSchedulerRunning<BluetoothDtmReceiverEvent>,
-    },
-}
-
-/// Running first event with its successful Command Complete awaiting durable
-/// Controller-to-Host publication.
-#[must_use = "publish the response before releasing active-session ownership"]
-pub struct BluetoothDtmFirstResponsePending<'runtime, S, const SCHEDULER_CAPACITY: usize>
-where
-    S: BluetoothSchedulerRunInterruptStorage,
-{
-    response: LeDtmCommandCompleteEvent,
-    active: BluetoothDtmFirstActivePhase<'runtime, S, SCHEDULER_CAPACITY>,
-}
-
-/// Active first DTM event after its start response was durably published.
-#[must_use = "the active DTM graph must progress through completion or Test End"]
-pub struct BluetoothDtmFirstActive<'runtime, S, const SCHEDULER_CAPACITY: usize>
-where
-    S: BluetoothSchedulerRunInterruptStorage,
-{
-    active: BluetoothDtmFirstActivePhase<'runtime, S, SCHEDULER_CAPACITY>,
-}
-
-/// Result of attempting the sole durable publication of a DTM start response.
-#[must_use = "retain response ownership across Controller-to-Host backpressure"]
-pub enum BluetoothDtmFirstResponsePublication<'runtime, S, const SCHEDULER_CAPACITY: usize>
-where
-    S: BluetoothSchedulerRunInterruptStorage,
-{
-    /// The exact response entered the queue and the active graph may advance.
-    Published(BluetoothDtmFirstActive<'runtime, S, SCHEDULER_CAPACITY>),
-    /// The bounded queue was full; the unchanged publication owner is retained.
-    Pending(BluetoothDtmFirstResponsePending<'runtime, S, SCHEDULER_CAPACITY>),
-    /// The supplied HCI endpoint belongs to another Controller epoch.
-    EndpointMismatch(BluetoothDtmFirstResponsePending<'runtime, S, SCHEDULER_CAPACITY>),
-    /// A non-backpressure boundary fault retained the unchanged publication owner.
-    Fault {
-        /// Exact response and active hardware owner which were not published.
-        pending: BluetoothDtmFirstResponsePending<'runtime, S, SCHEDULER_CAPACITY>,
-        /// Exact HCI validation or transport-boundary failure.
-        error: HciChannelError,
     },
 }
 
@@ -226,144 +174,30 @@ impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
-    /// Consume the exact semantic command into its successful Command Complete
-    /// while retaining task and hardware ownership beside the response.
-    pub fn into_response_pending(
+    pub(crate) fn into_parts(
         self,
-    ) -> BluetoothDtmFirstResponsePending<'runtime, S, SCHEDULER_CAPACITY> {
-        let (response, active) = match self.running {
+    ) -> BluetoothDtmFirstRunningParts<'runtime, S, SCHEDULER_CAPACITY> {
+        match self.running {
             BluetoothDtmFirstRunningPhase::Transmitter {
                 command,
                 task,
                 running,
-            } => (
-                command.into_started_command_complete(),
-                BluetoothDtmFirstActivePhase::Transmitter { task, running },
-            ),
+            } => BluetoothDtmFirstRunningParts::Transmitter {
+                response: command.into_started_command_complete(),
+                hci_epoch: task.hci_epoch_identity(),
+                task,
+                running,
+            },
             BluetoothDtmFirstRunningPhase::Receiver {
                 command,
                 task,
                 running,
-            } => (
-                command.into_started_command_complete(),
-                BluetoothDtmFirstActivePhase::Receiver { task, running },
-            ),
-        };
-        BluetoothDtmFirstResponsePending { response, active }
-    }
-}
-
-impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
-    BluetoothDtmFirstResponsePending<'runtime, S, SCHEDULER_CAPACITY>
-where
-    S: BluetoothSchedulerRunInterruptStorage,
-{
-    const fn response(&self) -> &LeDtmCommandCompleteEvent {
-        &self.response
-    }
-
-    const fn hci_epoch_identity(&self) -> open_esp_radio_bluetooth_hci::HciEpochIdentity<'_> {
-        match &self.active {
-            BluetoothDtmFirstActivePhase::Transmitter { task, .. }
-            | BluetoothDtmFirstActivePhase::Receiver { task, .. } => task.hci_epoch_identity(),
-        }
-    }
-
-    /// Whether a raw Controller endpoint belongs to this running event's HCI epoch.
-    pub fn matches_hci_endpoint<
-        M: RawMutex,
-        const HOST_TO_CONTROLLER_DEPTH: usize,
-        const CONTROLLER_TO_HOST_DEPTH: usize,
-        const PACKET_CAPACITY: usize,
-    >(
-        &self,
-        controller: &InProcessHciControllerEndpoint<
-            '_,
-            M,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
-    ) -> bool {
-        self.hci_epoch_identity()
-            .same_epoch(controller.epoch_identity())
-    }
-
-    fn into_active(self) -> BluetoothDtmFirstActive<'runtime, S, SCHEDULER_CAPACITY> {
-        BluetoothDtmFirstActive {
-            active: self.active,
-        }
-    }
-
-    /// Attempt the sole durable publication without awaiting queue capacity.
-    ///
-    /// `Full` returns the exact unchanged owner for a later retry. The response
-    /// bytes are never exposed, and only a successful queue insertion releases
-    /// the active-session state.
-    pub fn try_publish<
-        M: RawMutex,
-        const HOST_TO_CONTROLLER_DEPTH: usize,
-        const CONTROLLER_TO_HOST_DEPTH: usize,
-        const PACKET_CAPACITY: usize,
-    >(
-        self,
-        controller: &InProcessHciControllerEndpoint<
-            '_,
-            M,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
-    ) -> BluetoothDtmFirstResponsePublication<'runtime, S, SCHEDULER_CAPACITY> {
-        if !self.matches_hci_endpoint(controller) {
-            return BluetoothDtmFirstResponsePublication::EndpointMismatch(self);
-        }
-        let result = {
-            let response = self.response();
-            controller.try_publish(response.kind(), response.as_bytes())
-        };
-        match result {
-            Ok(()) => BluetoothDtmFirstResponsePublication::Published(self.into_active()),
-            Err(HciChannelError::Full) => BluetoothDtmFirstResponsePublication::Pending(self),
-            Err(error) => BluetoothDtmFirstResponsePublication::Fault {
-                pending: self,
-                error,
+            } => BluetoothDtmFirstRunningParts::Receiver {
+                response: command.into_started_command_complete(),
+                hci_epoch: task.hci_epoch_identity(),
+                task,
+                running,
             },
-        }
-    }
-}
-
-impl<'runtime, S, const SCHEDULER_CAPACITY: usize>
-    BluetoothDtmFirstActive<'runtime, S, SCHEDULER_CAPACITY>
-where
-    S: BluetoothSchedulerRunInterruptStorage,
-{
-    /// Role of the exact graph currently owned by hardware.
-    pub const fn role(&self) -> crate::BluetoothDtmRole {
-        match &self.active {
-            BluetoothDtmFirstActivePhase::Transmitter { running, .. } => running.role(),
-            BluetoothDtmFirstActivePhase::Receiver { running, .. } => running.role(),
-        }
-    }
-
-    /// Durable scheduler notification source for the exact active Controller.
-    pub const fn scheduler_wake(&self) -> &crate::BluetoothSchedulerWakeCell {
-        match &self.active {
-            BluetoothDtmFirstActivePhase::Transmitter { task, .. }
-            | BluetoothDtmFirstActivePhase::Receiver { task, .. } => task.scheduler_wake(),
-        }
-    }
-
-    pub(crate) fn into_parts(
-        self,
-    ) -> BluetoothDtmFirstActiveParts<'runtime, S, SCHEDULER_CAPACITY> {
-        match self.active {
-            BluetoothDtmFirstActivePhase::Transmitter { task, running } => {
-                BluetoothDtmFirstActiveParts::Transmitter { task, running }
-            }
-            BluetoothDtmFirstActivePhase::Receiver { task, running } => {
-                BluetoothDtmFirstActiveParts::Receiver { task, running }
-            }
         }
     }
 }

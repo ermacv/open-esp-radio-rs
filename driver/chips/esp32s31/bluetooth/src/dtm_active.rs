@@ -9,7 +9,7 @@
 
 use open_esp_radio_esp32s31_bluetooth_memory::BluetoothDtmSchedulerItemCompletionStatus;
 
-use crate::dtm_runner::BluetoothDtmFirstActiveParts;
+use crate::dtm_runner::BluetoothDtmFirstRunningParts;
 use crate::{
     BluetoothControllerPublishedTaskService, BluetoothControllerSchedulerCurrentBeginError,
     BluetoothControllerSchedulerCurrentBeginFailure, BluetoothControllerSchedulerCurrentError,
@@ -20,12 +20,11 @@ use crate::{
     BluetoothDtmControllerEventPreparationError, BluetoothDtmControllerPreparationOutcome,
     BluetoothDtmControllerPreparationPending, BluetoothDtmControllerPreparationStep,
     BluetoothDtmControllerPreparationTerminal, BluetoothDtmEmptySchedulerMergePrepared,
-    BluetoothDtmFirstActive, BluetoothDtmPostUnlinkArmStep, BluetoothDtmPostUnlinkAwaiting,
-    BluetoothDtmReceiverEvent, BluetoothDtmRecurringSchedulerItemPhase, BluetoothDtmRole,
-    BluetoothDtmRxCompletionOutcome, BluetoothDtmSchedulerCompletionObserved,
-    BluetoothDtmSchedulerCompletionObservedDrainStep, BluetoothDtmSchedulerCompletionStep,
-    BluetoothDtmSchedulerFinishedListDrainPending, BluetoothDtmSchedulerFinishedListDrainState,
-    BluetoothDtmSchedulerHardwareHeadEmptyObserved,
+    BluetoothDtmPostUnlinkArmStep, BluetoothDtmPostUnlinkAwaiting, BluetoothDtmReceiverEvent,
+    BluetoothDtmRecurringSchedulerItemPhase, BluetoothDtmRole, BluetoothDtmRxCompletionOutcome,
+    BluetoothDtmSchedulerCompletionObserved, BluetoothDtmSchedulerCompletionObservedDrainStep,
+    BluetoothDtmSchedulerCompletionStep, BluetoothDtmSchedulerFinishedListDrainPending,
+    BluetoothDtmSchedulerFinishedListDrainState, BluetoothDtmSchedulerHardwareHeadEmptyObserved,
     BluetoothDtmSchedulerHardwareHeadRetirementStep, BluetoothDtmSchedulerHeadPublicationError,
     BluetoothDtmSchedulerHeadPublished, BluetoothDtmSchedulerRecycleStep,
     BluetoothDtmSchedulerRunning, BluetoothDtmSchedulerRunningDrainStep,
@@ -769,32 +768,41 @@ where
     }
 }
 
-impl<'runtime, S, const CAPACITY: usize> BluetoothDtmFirstActive<'runtime, S, CAPACITY>
-where
-    S: BluetoothSchedulerRunInterruptStorage,
-{
-    /// Consume the role-erased first-event endpoint into its exact completion owner.
-    pub fn into_completion(self) -> BluetoothDtmActiveCompletion<'runtime, S, CAPACITY> {
-        let phase = match self.into_parts() {
-            BluetoothDtmFirstActiveParts::Transmitter { task, running } => {
-                BluetoothDtmActiveCompletionPhase::Transmitter(
-                    BluetoothDtmRoleCompletionPhase::Running { task, running },
-                )
-            }
-            BluetoothDtmFirstActiveParts::Receiver { task, running } => {
-                BluetoothDtmActiveCompletionPhase::Receiver(
-                    BluetoothDtmRoleCompletionPhase::Running { task, running },
-                )
-            }
-        };
-        BluetoothDtmActiveCompletion { phase }
-    }
-}
-
 impl<'runtime, S, const CAPACITY: usize> BluetoothDtmActiveCompletion<'runtime, S, CAPACITY>
 where
     S: BluetoothSchedulerRunInterruptStorage,
 {
+    pub(crate) fn from_first_running(
+        parts: BluetoothDtmFirstRunningParts<'runtime, S, CAPACITY>,
+    ) -> (
+        open_esp_radio_bluetooth_hci::LeDtmCommandCompleteEvent,
+        open_esp_radio_bluetooth_hci::HciEpochIdentity<'runtime>,
+        Self,
+    ) {
+        match parts {
+            BluetoothDtmFirstRunningParts::Transmitter {
+                response,
+                hci_epoch,
+                task,
+                running,
+            } => (
+                response,
+                hci_epoch,
+                Self::from_transmitter_running(task, running),
+            ),
+            BluetoothDtmFirstRunningParts::Receiver {
+                response,
+                hci_epoch,
+                task,
+                running,
+            } => (
+                response,
+                hci_epoch,
+                Self::from_receiver_running(task, running),
+            ),
+        }
+    }
+
     fn from_transmitter_running(
         task: Task<'runtime, S, CAPACITY>,
         running: BluetoothDtmSchedulerRunning<BluetoothDtmTransmitterEvent>,

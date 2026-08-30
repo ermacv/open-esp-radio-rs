@@ -14,6 +14,11 @@
 //! The separate closed LE DTM codec validates Receiver Test v1, Transmitter
 //! Test v1 and Test End into owned semantic commands and builds their staged
 //! Command Complete events; it does not dispatch them or claim radio work.
+//! [`classify_le_controller_command`] joins those two portable policies at a
+//! finite command boundary: bootstrap commands become owned software
+//! responses, accepted DTM commands become owned semantic tokens, malformed
+//! known DTM commands become owned error responses, and every other command
+//! remains borrowed for an outer router.
 //! [`LeControllerHciResources`] binds transport storage and bootstrap state to
 //! one affine Controller epoch. Its sole split exposes disjoint Host, raw
 //! Controller and bootstrap endpoints so a hardware session runner can retain
@@ -29,6 +34,7 @@ extern crate std;
 
 mod bootstrap;
 mod channel;
+mod classification;
 mod dtm;
 mod resources;
 mod response;
@@ -43,6 +49,7 @@ pub use channel::{
     HciChannelError, HciCommandPacket, HostToControllerFrame, InProcessHciChannel,
     InProcessHciControllerEndpoint, InProcessHciHostTransport,
 };
+pub use classification::{LeControllerCommandClassification, classify_le_controller_command};
 pub use dtm::{
     LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY, LE_RECEIVER_TEST_V1_OPCODE, LE_TEST_END_OPCODE,
     LE_TRANSMITTER_TEST_V1_OPCODE, LeDtmChannel, LeDtmCommand, LeDtmCommandCompleteEvent,

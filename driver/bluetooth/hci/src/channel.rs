@@ -107,6 +107,11 @@ impl HciCommandPacket<'_> {
     pub const fn parameters(&self) -> &[u8] {
         self.parameters
     }
+
+    #[cfg(test)]
+    pub(crate) const fn for_test(opcode: Opcode, parameters: &[u8]) -> HciCommandPacket<'_> {
+        HciCommandPacket { opcode, parameters }
+    }
 }
 
 /// One complete packet emitted by the Host and consumed by the Controller.

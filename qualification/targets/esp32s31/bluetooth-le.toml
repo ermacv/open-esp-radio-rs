@@ -414,8 +414,8 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/vendor-project.toml",
 ]
 gaps = [
-  { axis = "implementation", id = "dtm-command-dispatch-session-runner-and-controller-traits-missing" },
-  { axis = "host", id = "dtm-dispatch-session-state-and-backpressure-tests-missing" },
+  { axis = "implementation", id = "dtm-session-runner-and-controller-traits-missing" },
+  { axis = "host", id = "dtm-session-state-and-hardware-response-backpressure-tests-missing" },
   { axis = "vendor", id = "hci-command-and-acl-production-contracts-missing" },
   { axis = "hil", id = "external-hci-interoperability-cell-missing" },
   { axis = "async", id = "command-response-and-acl-credit-wakes-missing" },

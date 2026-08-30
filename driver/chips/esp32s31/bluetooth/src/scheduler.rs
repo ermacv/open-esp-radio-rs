@@ -65,7 +65,7 @@ use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
 /// The PAC proof establishes that no hardware-list head remains published.
 /// This owner adds the independently constructed source-owned software list,
 /// which starts empty and cannot be aliased through a vendor container.
-struct BluetoothSchedulerExclusiveListEpoch {
+pub(crate) struct BluetoothSchedulerExclusiveListEpoch {
     _hardware_lists_cleared: BluetoothSchedulerHardwareListsCleared,
     state: BluetoothSchedulerExclusiveListState,
 }
@@ -140,7 +140,7 @@ impl BluetoothSchedulerExclusiveListEpoch {
         self.state = BluetoothSchedulerExclusiveListState::FirstItemHeadPublished { address };
     }
 
-    fn retain_running_first_item(&mut self, address: BluetoothControllerSramAddress) {
+    pub(crate) fn retain_running_first_item(&mut self, address: BluetoothControllerSramAddress) {
         assert_eq!(
             self.state,
             BluetoothSchedulerExclusiveListState::FirstItemHeadPublished { address },
@@ -2259,15 +2259,6 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         Ok(BluetoothDtmSchedulerHeadPublished { item, publication })
     }
 
-    /// Retain that the exact published first item crossed the final RUN edge.
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn retain_running_dtm_first_item(
-        &mut self,
-        address: BluetoothControllerSramAddress,
-    ) {
-        self._scheduler_list.retain_running_first_item(address);
-    }
-
     /// Perform one fresh, bounded DTM completion observation.
     ///
     /// The affine list token never crosses this Controller operation before it
@@ -2701,10 +2692,11 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         BluetoothControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY>,
     ) {
         let task = &mut self.task;
+        let scheduler_list = &mut self._scheduler_list;
         let (interrupt, software) = self.runtime.split();
         (
             interrupt,
-            BluetoothControllerPoweredTaskRuntime::new(software, task),
+            BluetoothControllerPoweredTaskRuntime::new(software, task, scheduler_list),
         )
     }
 
@@ -2923,6 +2915,41 @@ mod tests {
         );
         list.commit_recycled_first_item();
         assert_eq!(list.prepare_first_item(other), Ok(()));
+    }
+
+    #[test]
+    fn powered_task_split_retains_the_same_running_list_identity() {
+        struct TaskSplitPlatform;
+
+        let stopped =
+            BluetoothStopped::from_hardware(TaskSplitPlatform, RadioHardware::for_validation());
+        let (registers, platform) = stopped.into_parts();
+        let clocked = BluetoothClockedResources::for_validation(registers, platform);
+        let initialized = clocked.initialize_controller_hal_with(|_, _| {});
+        let mut scheduler =
+            initialized
+                .initialize_scheduler_for_validation(
+                    BluetoothControllerRuntimeResources::<1, 1>::new(),
+                );
+        let address = open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress::new(0x2f00_0100)
+            .expect("test item lies in Controller SRAM");
+        scheduler
+            ._scheduler_list
+            .prepare_first_item(address)
+            .expect("exclusive list starts empty");
+        scheduler
+            ._scheduler_list
+            .retain_published_first_item(address);
+
+        let (interrupt, mut task) = scheduler.split_runtime();
+        task.retain_running_dtm_first_item(address);
+        drop((interrupt, task));
+
+        assert!(
+            scheduler
+                ._scheduler_list
+                .retains_running_first_item(address)
+        );
     }
 
     #[test]

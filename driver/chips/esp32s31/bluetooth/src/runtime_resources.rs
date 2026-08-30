@@ -9,9 +9,16 @@
 #![forbid(unsafe_code)]
 
 use open_esp_radio_esp32s31_hal::BluetoothModemLpTimerEpoch;
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_esp32s31_hal::{
+    BluetoothSchedulerHardwareListHeadPublished, BluetoothSchedulerHardwareRunCommandPublished,
+    BluetoothSchedulerRunEventPublished, BluetoothSchedulerRunInterruptsPrepared,
+};
 
 #[cfg(any(target_arch = "riscv32", test))]
 use crate::resources::BluetoothTaskResources;
+#[cfg(any(target_arch = "riscv32", test))]
+use crate::scheduler::BluetoothSchedulerExclusiveListEpoch;
 #[cfg(any(target_arch = "riscv32", test))]
 use crate::scheduler_timeline::BluetoothSchedulerTimeline;
 use crate::{
@@ -138,6 +145,7 @@ impl<const SCHEDULER_CAPACITY: usize> BluetoothControllerTaskRuntime<'_, SCHEDUL
 pub struct BluetoothControllerPoweredTaskRuntime<'runtime, const SCHEDULER_CAPACITY: usize = 4> {
     software: BluetoothControllerTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
     hardware: &'runtime mut BluetoothTaskResources,
+    scheduler_list: &'runtime mut BluetoothSchedulerExclusiveListEpoch,
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
@@ -147,8 +155,13 @@ impl<const SCHEDULER_CAPACITY: usize>
     pub(crate) const fn new<'runtime>(
         software: BluetoothControllerTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
         hardware: &'runtime mut BluetoothTaskResources,
+        scheduler_list: &'runtime mut BluetoothSchedulerExclusiveListEpoch,
     ) -> BluetoothControllerPoweredTaskRuntime<'runtime, SCHEDULER_CAPACITY> {
-        BluetoothControllerPoweredTaskRuntime { software, hardware }
+        BluetoothControllerPoweredTaskRuntime {
+            software,
+            hardware,
+            scheduler_list,
+        }
     }
 
     #[cfg(test)]
@@ -200,6 +213,40 @@ impl<const SCHEDULER_CAPACITY: usize>
     ) -> crate::BluetoothSchedulerLockModifyWorkerStep {
         self.hardware
             .step_scheduler_lock_modify(self.software.scheduler_lock_modify_worker, event)
+    }
+
+    /// Publish the synchronous scheduler event after the matching hardware head
+    /// and dynamic-interrupt preparation proofs have both been obtained.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn publish_scheduler_run_event(
+        &mut self,
+        head: BluetoothSchedulerHardwareListHeadPublished,
+        interrupts: BluetoothSchedulerRunInterruptsPrepared,
+    ) -> BluetoothSchedulerRunEventPublished {
+        self.hardware.publish_scheduler_run_event(head, interrupts)
+    }
+
+    /// Consume one scheduler-event proof into the typed hardware RUN command.
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn publish_scheduler_hardware_run_command(
+        &mut self,
+        event: BluetoothSchedulerRunEventPublished,
+    ) -> BluetoothSchedulerHardwareRunCommandPublished {
+        self.hardware.publish_scheduler_hardware_run_command(event)
+    }
+
+    /// Advance the exclusive source-owned list identity across the matching RUN
+    /// edge.
+    ///
+    /// The list owner is borrowed into this task endpoint by the same scheduler
+    /// split as the HAL task owner. A mismatched address therefore fails closed
+    /// against the retained published-head identity.
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) fn retain_running_dtm_first_item(
+        &mut self,
+        address: open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress,
+    ) {
+        self.scheduler_list.retain_running_first_item(address);
     }
 }
 

@@ -208,10 +208,6 @@ where
             .modem_lp_timer_worker_wake()
     }
 
-    pub(crate) fn task_mut(&mut self) -> &mut crate::resources::BluetoothTaskResources {
-        self.initialized.initialized.controller.task_mut()
-    }
-
     /// Split the already initialized scheduler and HCI resources after this
     /// complete BLE-PHY owner has reached stable final placement.
     pub(crate) fn split_runtime(
@@ -333,17 +329,6 @@ where
             .initialized
             .controller
             .cancel_dtm_receiver_recurring_item(merged)
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn retain_running_dtm_first_item(
-        &mut self,
-        address: open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress,
-    ) {
-        self.initialized
-            .initialized
-            .controller
-            .retain_running_dtm_first_item(address);
     }
 
     #[cfg(target_arch = "riscv32")]

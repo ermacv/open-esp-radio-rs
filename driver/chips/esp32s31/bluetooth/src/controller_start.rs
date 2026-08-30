@@ -496,8 +496,8 @@ pub struct BluetoothControllerPublishedRuntimeEndpoints<
 {
     /// Finite hard-handler service over the stable PAC/HAL owners.
     pub interrupt: BluetoothControllerPublishedInterruptService<'runtime, S>,
-    /// Sole powered scheduler task endpoint.
-    pub task: BluetoothControllerPoweredTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
+    /// Sole powered scheduler and DTM task service.
+    pub task: BluetoothControllerPublishedTaskService<'runtime, S, SCHEDULER_CAPACITY>,
     /// Disjoint Host transport, raw Controller endpoint and bootstrap state.
     pub hci: open_esp_radio_bluetooth_hci::LeControllerHciEndpoints<
         'runtime,
@@ -519,6 +519,19 @@ pub struct BluetoothControllerPublishedInterruptService<'runtime, S> {
     storage: &'runtime S,
     runtime: BluetoothControllerInterruptRuntime<'runtime>,
     mailbox: &'runtime BluetoothDtmPostUnlinkMailbox,
+}
+
+/// Task-side hardware service for one published Controller epoch.
+///
+/// The service owns the mutable scheduler workers, the task-side HAL owner and
+/// the exclusive scheduler-list identity. Stable interrupt storage is borrowed
+/// only for finite task-context preparations; hard-handler dispatch remains in
+/// the disjoint interrupt service.
+#[must_use = "the DTM task service owns the powered scheduler epoch"]
+#[cfg(target_arch = "riscv32")]
+pub struct BluetoothControllerPublishedTaskService<'runtime, S, const SCHEDULER_CAPACITY: usize> {
+    storage: &'runtime S,
+    runtime: BluetoothControllerPoweredTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
 }
 
 /// Why an affine post-enable controller-time acquisition did not start.
@@ -2672,7 +2685,10 @@ where
                 runtime: interrupt,
                 mailbox: post_unlink_mailbox,
             },
-            task,
+            task: BluetoothControllerPublishedTaskService {
+                storage: _storage,
+                runtime: task,
+            },
             hci,
         }
     }
@@ -2934,38 +2950,6 @@ where
         self.initialized.publish_dtm_scheduler_head(merged)
     }
 
-    /// Admit one published DTM graph through the complete scheduler-run suffix.
-    ///
-    /// The exact order is dynamic interrupt preparation, synchronous BTMAC
-    /// scheduler-event publication and the final RUN command. The returned
-    /// state retains the graph and grants no CPU-side completion access.
-    #[expect(
-        clippy::result_large_err,
-        reason = "a start rejection must return the complete affine published graph"
-    )]
-    pub fn start_dtm_scheduler<Role>(
-        &mut self,
-        head: crate::BluetoothDtmSchedulerHeadPublished<Role>,
-    ) -> Result<
-        crate::BluetoothDtmSchedulerRunning<Role>,
-        BluetoothDtmSchedulerStartFailure<Role, S::Error>,
-    >
-    where
-        S: BluetoothSchedulerRunInterruptStorage,
-    {
-        let interrupts = match self._storage.prepare_scheduler_run_interrupts() {
-            Ok(interrupts) => interrupts,
-            Err(error) => return Err(BluetoothDtmSchedulerStartFailure { error, head }),
-        };
-        let address = head.scheduler_item_address();
-        let (item, publication) = head.into_parts();
-        let task = self.initialized.task_mut();
-        let event = task.publish_scheduler_run_event(publication, interrupts);
-        let run = task.publish_scheduler_hardware_run_command(event);
-        self.initialized.retain_running_dtm_first_item(address);
-        Ok(crate::BluetoothDtmSchedulerRunning::new(item, run))
-    }
-
     /// Perform one fresh fenced completion-list transfer and immediately join
     /// its affine result to this exact running DTM graph.
     ///
@@ -3172,6 +3156,79 @@ where
         >,
     ) -> crate::BluetoothDtmSchedulerRxSuccessRecycleStep {
         self.initialized.recycle_dtm_receiver_success(ready)
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<S, const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerPublishedTaskService<'_, S, SCHEDULER_CAPACITY>
+{
+    /// Durable general scheduler handoff for this powered epoch.
+    pub const fn scheduler_wake(&self) -> &crate::BluetoothSchedulerWakeCell {
+        self.runtime.scheduler_wake()
+    }
+
+    /// Durable scheduler lock/modify handoff for this powered epoch.
+    pub const fn scheduler_lock_modify_events(
+        &self,
+    ) -> &crate::BluetoothSchedulerLockModifyEventCell {
+        self.runtime.scheduler_lock_modify_events()
+    }
+
+    /// Sole bounded finished-list worker for task-side draining.
+    pub fn scheduler_finished_lists(&mut self) -> &mut crate::BluetoothSchedulerFinishedListWorker {
+        self.runtime.scheduler_finished_lists()
+    }
+
+    /// Durable source-127 task-readiness handoff.
+    pub const fn modem_lp_timer_worker_wake(&self) -> &crate::BluetoothModemLpTimerWorkerWakeCell {
+        self.runtime.modem_lp_timer_worker_wake()
+    }
+
+    /// Durable modem low-power timer expiration handoff.
+    pub const fn modem_lp_timer_events(&self) -> &crate::BluetoothModemLpTimerEventCell {
+        self.runtime.modem_lp_timer_events()
+    }
+
+    /// Advance one finite scheduler lock/modify transaction.
+    pub fn step_scheduler_lock_modify(
+        &mut self,
+        event: crate::BluetoothSchedulerLockModifyEvent,
+    ) -> crate::BluetoothSchedulerLockModifyWorkerStep {
+        self.runtime.step_scheduler_lock_modify(event)
+    }
+
+    /// Admit one published DTM graph through the complete scheduler-run suffix.
+    ///
+    /// The exact order is dynamic interrupt preparation, synchronous BTMAC
+    /// scheduler-event publication and the final RUN command. The returned
+    /// state retains the graph and grants no CPU-side completion access.
+    #[expect(
+        clippy::result_large_err,
+        reason = "a start rejection must return the complete affine published graph"
+    )]
+    pub fn start_dtm_scheduler<Role>(
+        &mut self,
+        head: crate::BluetoothDtmSchedulerHeadPublished<Role>,
+    ) -> Result<
+        crate::BluetoothDtmSchedulerRunning<Role>,
+        BluetoothDtmSchedulerStartFailure<Role, S::Error>,
+    >
+    where
+        S: BluetoothSchedulerRunInterruptStorage,
+    {
+        let interrupts = match self.storage.prepare_scheduler_run_interrupts() {
+            Ok(interrupts) => interrupts,
+            Err(error) => return Err(BluetoothDtmSchedulerStartFailure { error, head }),
+        };
+        let address = head.scheduler_item_address();
+        let (item, publication) = head.into_parts();
+        let event = self
+            .runtime
+            .publish_scheduler_run_event(publication, interrupts);
+        let run = self.runtime.publish_scheduler_hardware_run_command(event);
+        self.runtime.retain_running_dtm_first_item(address);
+        Ok(crate::BluetoothDtmSchedulerRunning::new(item, run))
     }
 }
 

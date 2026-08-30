@@ -576,16 +576,6 @@ where
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub(crate) fn retain_running_dtm_first_item(
-        &mut self,
-        address: open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress,
-    ) {
-        self.controller
-            .scheduler
-            .retain_running_dtm_first_item(address);
-    }
-
-    #[cfg(target_arch = "riscv32")]
     pub(crate) fn observe_dtm_completion<Role>(
         &mut self,
         running: crate::BluetoothDtmSchedulerRunning<Role>,

@@ -118,7 +118,10 @@ pub use clock::{
     BluetoothClockState, BluetoothClockedResources,
 };
 #[cfg(target_arch = "riscv32")]
-pub use common_phy_state::{BluetoothControllerPhyInitialized, BluetoothPhyInitializationReport};
+pub use common_phy_state::{
+    BluetoothControllerPhyInitialized, BluetoothControllerPhyRegistered,
+    BluetoothPhyInitializationReport,
+};
 #[cfg(target_arch = "riscv32")]
 pub use controller_hal::BluetoothControllerHalInitialized;
 #[cfg(target_arch = "riscv32")]
@@ -229,8 +232,10 @@ pub use open_esp_radio_esp32s31_bluetooth_memory::{
 };
 #[cfg(target_arch = "riscv32")]
 pub use phy::{
-    BluetoothControllerPhyInitializationFailure, BluetoothPhyInitializationConfig,
-    BluetoothPhyInitializationError,
+    BluetoothControllerPhyClientAcquire, BluetoothControllerPhyClientAcquireFailure,
+    BluetoothControllerPhyInitializationFailure, BluetoothControllerPhyPendingTrack,
+    BluetoothControllerPhyPendingTracking, BluetoothControllerPhyTrackingFailure,
+    BluetoothPhyInitializationConfig,
 };
 pub use primary_interrupt::{
     BluetoothPrimaryInterruptStep, BluetoothPrimaryNoSchedulerWork,

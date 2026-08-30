@@ -1,22 +1,41 @@
-//! Full common-PHY prerequisite for the standalone Bluetooth lifecycle.
+//! Proof-preserving common-PHY prerequisite for standalone Bluetooth.
 //!
-//! The vendor Bluetooth enable path enters the same `register_chipv7_phy`
-//! transition used by Wi-Fi before it touches BTBB or controller state. This
-//! module reuses that one recovered transition and its target port; it does
-//! not maintain a Bluetooth-specific shadow of common PHY initialization.
+//! Registration, Bluetooth-client acquisition and any due immediate tracking
+//! are separate affine transitions. BTBB is reachable only after all lower
+//! obligations have settled.
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
-#[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_phy::{
-    PhyAsyncDelay, PhyRegisterRunError, PhyRegisterTransition, PhyTargetObserver,
-    PhyTargetPortCounters, PhyTargetPortError, TargetPhyRegisterPort, run_phy_register,
+    PhyAsyncDelay, PhyCalibrationCache, PhyCalibrationIdentity, PhyTargetObserver,
+    PhyTargetPortCounters, RegisteredBluetoothPhyClientAcquire,
+    RegisteredBluetoothPhyClientAcquireFailure, RegisteredBluetoothPhyPendingTrack,
+    RegisteredBluetoothPhyPendingTracking, TargetBluetoothPhyParamTrackingFailure,
+    TargetBluetoothPhyRegisterConfig, TargetBluetoothPhyRegisterError,
+    TargetBluetoothPhyRegisterFailure, TargetPhyParamTrackingError,
+    run_target_bluetooth_phy_param_tracking, run_target_bluetooth_phy_register,
 };
-use open_esp_radio_esp32s31_phy::{PhyCalibrationCache, PhyCalibrationIdentity};
+use open_esp_radio_esp32s31_phy::{
+    phy_client::{PhyClientAcquireError, PhyClientAcquireOrdering, PhyPllTrackClock},
+    phy_param_tracking::{PhyParamTrackRequest, PhyParamTrackingParameters},
+};
 
 use crate::{
-    common_phy_state::{BluetoothControllerPhyInitialized, BluetoothPhyInitializationReport},
+    common_phy_state::{
+        BluetoothControllerPhyInitialized, BluetoothControllerPhyRegistered,
+        BluetoothPhyInitializationReport,
+    },
     hci::BluetoothControllerLowPowerHardwareInitialized,
 };
+
+type Controller<
+    P,
+    M,
+    const MT: usize,
+    const SC: usize,
+    const H2C: usize,
+    const C2H: usize,
+    const PC: usize,
+> = BluetoothControllerLowPowerHardwareInitialized<P, M, MT, SC, H2C, C2H, PC>;
 
 /// Caller-owned inputs for one full common-PHY registration.
 pub struct BluetoothPhyInitializationConfig {
@@ -25,7 +44,7 @@ pub struct BluetoothPhyInitializationConfig {
 }
 
 impl BluetoothPhyInitializationConfig {
-    /// Request a fresh full calibration and retain its resulting cache.
+    /// Request a fresh full target registration and calibration cache.
     pub const fn new(calibration_identity: PhyCalibrationIdentity) -> Self {
         Self {
             calibration_identity,
@@ -33,14 +52,18 @@ impl BluetoothPhyInitializationConfig {
         }
     }
 
-    /// Supply a caller-owned retained cache as validation input.
-    ///
-    /// The common transition currently performs full calibration even when a
-    /// cache is supplied; it never silently treats retained data as hardware
-    /// truth before complete replay is implemented.
+    /// Supply retained calibration data as validation input to the full run.
     pub fn with_calibration_cache(mut self, cache: PhyCalibrationCache) -> Self {
         self.calibration_cache = Some(cache);
         self
+    }
+
+    fn into_target(self) -> TargetBluetoothPhyRegisterConfig {
+        let target = TargetBluetoothPhyRegisterConfig::new(self.calibration_identity);
+        match self.calibration_cache {
+            Some(cache) => target.with_calibration_cache(cache),
+            None => target,
+        }
     }
 }
 
@@ -60,183 +83,385 @@ impl BluetoothPhyInitializationReport {
     }
 }
 
-/// Exact reason the common-PHY transition did not produce its typestate.
-#[cfg(target_arch = "riscv32")]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BluetoothPhyInitializationError {
-    /// A recovered external edge or the shared state machine failed.
-    Registration(PhyRegisterRunError<PhyTargetPortError>),
-    /// The transition reported success but did not return its unique state.
-    MissingPhyOwner,
-}
-
-/// Failed common-PHY initialization retaining every unique hardware owner.
-///
-/// No recovery method is exposed yet. A partially executed common-PHY
-/// transition cannot be represented as cold radio ownership until the full
-/// PHY teardown transaction is recovered and verified. Dropping the failure
-/// is likewise fail-stop and does not release the platform lease.
-#[cfg(target_arch = "riscv32")]
-#[must_use = "failed common PHY initialization still owns Bluetooth hardware"]
+/// Failed target registration retaining the complete outer Controller.
+#[must_use = "failed common PHY registration still owns Bluetooth hardware"]
 pub struct BluetoothControllerPhyInitializationFailure<
     P,
     M,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
+    const MT: usize,
+    const SC: usize,
+    const H2C: usize,
+    const C2H: usize,
+    const PC: usize,
 > where
     M: RawMutex,
 {
-    _controller: BluetoothControllerLowPowerHardwareInitialized<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >,
-    _transition: PhyRegisterTransition,
-    port_counters: PhyTargetPortCounters,
-    error: BluetoothPhyInitializationError,
+    _controller: Controller<P, M, MT, SC, H2C, C2H, PC>,
+    failure: TargetBluetoothPhyRegisterFailure,
 }
 
-#[cfg(target_arch = "riscv32")]
-impl<
-    P,
-    M,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothControllerPhyInitializationFailure<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
+impl<P, M, const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const PC: usize>
+    BluetoothControllerPhyInitializationFailure<P, M, MT, SC, H2C, C2H, PC>
 where
     M: RawMutex,
 {
-    /// Inspect the exact typed failure without releasing an owner.
-    pub const fn error(&self) -> BluetoothPhyInitializationError {
-        self.error
+    /// Inspect the exact lower target-registration failure.
+    pub const fn error(&self) -> TargetBluetoothPhyRegisterError {
+        self.failure.error()
     }
 
-    /// Inspect target operation counts completed before cleanup terminated.
+    /// Inspect target operations completed before failure.
     pub const fn port_counters(&self) -> PhyTargetPortCounters {
-        self.port_counters
+        self.failure.counters()
     }
 }
 
-/// Complete common-PHY initialization for this exact powered Controller.
-///
-/// The future must be driven to a terminal result. Once polled, cancellation
-/// can strand a partially applied hardware edge; reset the chip before trying
-/// to construct another radio owner.
-impl<
+/// Successful client acquisition before its tracking continuation is settled.
+#[must_use = "Bluetooth client acquisition must advance or retain pending tracking"]
+pub struct BluetoothControllerPhyClientAcquire<
     P,
     M,
-    const MODEM_TIMER_CAPACITY: usize,
-    const SCHEDULER_CAPACITY: usize,
-    const HOST_TO_CONTROLLER_DEPTH: usize,
-    const CONTROLLER_TO_HOST_DEPTH: usize,
-    const PACKET_CAPACITY: usize,
->
-    BluetoothControllerLowPowerHardwareInitialized<
-        P,
-        M,
-        MODEM_TIMER_CAPACITY,
-        SCHEDULER_CAPACITY,
-        HOST_TO_CONTROLLER_DEPTH,
-        CONTROLLER_TO_HOST_DEPTH,
-        PACKET_CAPACITY,
-    >
+    const MT: usize,
+    const SC: usize,
+    const H2C: usize,
+    const C2H: usize,
+    const PC: usize,
+> where
+    M: RawMutex,
+{
+    controller: Controller<P, M, MT, SC, H2C, C2H, PC>,
+    acquisition: RegisteredBluetoothPhyClientAcquire,
+    calibration_cache: Option<PhyCalibrationCache>,
+    report: BluetoothPhyInitializationReport,
+}
+
+impl<P, M, const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const PC: usize>
+    BluetoothControllerPhyClientAcquire<P, M, MT, SC, H2C, C2H, PC>
 where
     M: RawMutex,
 {
-    #[must_use = "common PHY initialization must be driven to a terminal result"]
-    pub async fn initialize_common_phy<D, O>(
-        mut self,
-        config: BluetoothPhyInitializationConfig,
+    /// Return the source-reviewed first-client acquisition ordering.
+    pub const fn ordering(&self) -> PhyClientAcquireOrdering {
+        self.acquisition.ordering()
+    }
+
+    /// Borrow the immediate tracking request, when one is due.
+    pub const fn request(&self) -> Option<&PhyParamTrackRequest> {
+        self.acquisition.request()
+    }
+
+    /// Settle the client owner or retain the exact pending tracking request.
+    #[allow(
+        clippy::result_large_err,
+        reason = "pending work retains the complete allocation-free Controller epoch"
+    )]
+    pub fn into_owner(
+        self,
+    ) -> Result<
+        BluetoothControllerPhyInitialized<P, M, MT, SC, H2C, C2H, PC>,
+        BluetoothControllerPhyPendingTrack<P, M, MT, SC, H2C, C2H, PC>,
+    > {
+        let Self {
+            controller,
+            acquisition,
+            calibration_cache,
+            report,
+        } = self;
+        match acquisition.into_owner() {
+            Ok(phy) => Ok(BluetoothControllerPhyInitialized {
+                controller,
+                phy,
+                calibration_cache,
+                report,
+            }),
+            Err(pending) => Err(BluetoothControllerPhyPendingTrack {
+                controller,
+                pending,
+                calibration_cache,
+                report,
+            }),
+        }
+    }
+}
+
+/// Rejected client acquisition retaining the complete powered epoch.
+///
+/// This is fail-stop and exposes no lower recovery edge.
+#[must_use = "failed Bluetooth client acquisition retains the powered Controller"]
+pub struct BluetoothControllerPhyClientAcquireFailure<
+    P,
+    M,
+    const MT: usize,
+    const SC: usize,
+    const H2C: usize,
+    const C2H: usize,
+    const PC: usize,
+> where
+    M: RawMutex,
+{
+    _controller: Controller<P, M, MT, SC, H2C, C2H, PC>,
+    failure: RegisteredBluetoothPhyClientAcquireFailure,
+    _calibration_cache: Option<PhyCalibrationCache>,
+    _report: BluetoothPhyInitializationReport,
+}
+
+impl<P, M, const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const PC: usize>
+    BluetoothControllerPhyClientAcquireFailure<P, M, MT, SC, H2C, C2H, PC>
+where
+    M: RawMutex,
+{
+    /// Inspect the exact source-owned acquisition rejection.
+    pub const fn error(&self) -> PhyClientAcquireError {
+        self.failure.error()
+    }
+}
+
+/// Pending immediate tracking retaining the complete Controller epoch.
+#[must_use = "pending Bluetooth PHY tracking must begin"]
+pub struct BluetoothControllerPhyPendingTrack<
+    P,
+    M,
+    const MT: usize,
+    const SC: usize,
+    const H2C: usize,
+    const C2H: usize,
+    const PC: usize,
+> where
+    M: RawMutex,
+{
+    controller: Controller<P, M, MT, SC, H2C, C2H, PC>,
+    pending: RegisteredBluetoothPhyPendingTrack,
+    calibration_cache: Option<PhyCalibrationCache>,
+    report: BluetoothPhyInitializationReport,
+}
+
+impl<P, M, const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const PC: usize>
+    BluetoothControllerPhyPendingTrack<P, M, MT, SC, H2C, C2H, PC>
+where
+    M: RawMutex,
+{
+    /// Borrow the exact immediate tracking request.
+    pub const fn request(&self) -> &PhyParamTrackRequest {
+        self.pending.request()
+    }
+
+    /// Bind reviewed tracking parameters and enter the in-flight owner state.
+    pub fn begin_tracking(
+        self,
+        parameters: PhyParamTrackingParameters,
+    ) -> BluetoothControllerPhyPendingTracking<P, M, MT, SC, H2C, C2H, PC> {
+        BluetoothControllerPhyPendingTracking {
+            controller: self.controller,
+            tracking: self.pending.begin_tracking(parameters),
+            calibration_cache: self.calibration_cache,
+            report: self.report,
+        }
+    }
+}
+
+/// In-flight immediate tracking retaining the complete Controller epoch.
+#[must_use = "Bluetooth PHY tracking must be driven to a terminal result"]
+pub struct BluetoothControllerPhyPendingTracking<
+    P,
+    M,
+    const MT: usize,
+    const SC: usize,
+    const H2C: usize,
+    const C2H: usize,
+    const PC: usize,
+> where
+    M: RawMutex,
+{
+    controller: Controller<P, M, MT, SC, H2C, C2H, PC>,
+    tracking: RegisteredBluetoothPhyPendingTracking,
+    calibration_cache: Option<PhyCalibrationCache>,
+    report: BluetoothPhyInitializationReport,
+}
+
+/// Failed tracking retaining the outer Controller and poisoned lower owner.
+#[must_use = "failed Bluetooth PHY tracking retains the poisoned powered epoch"]
+pub struct BluetoothControllerPhyTrackingFailure<
+    P,
+    M,
+    const MT: usize,
+    const SC: usize,
+    const H2C: usize,
+    const C2H: usize,
+    const PC: usize,
+> where
+    M: RawMutex,
+{
+    _controller: Controller<P, M, MT, SC, H2C, C2H, PC>,
+    failure: TargetBluetoothPhyParamTrackingFailure,
+    _calibration_cache: Option<PhyCalibrationCache>,
+    _report: BluetoothPhyInitializationReport,
+}
+
+impl<P, M, const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const PC: usize>
+    BluetoothControllerPhyTrackingFailure<P, M, MT, SC, H2C, C2H, PC>
+where
+    M: RawMutex,
+{
+    /// Inspect the exact target tracking failure.
+    pub const fn error(&self) -> TargetPhyParamTrackingError {
+        self.failure.error()
+    }
+
+    /// Borrow the poisoned lower owner without obtaining recovery authority.
+    pub const fn lower_failure(&self) -> &TargetBluetoothPhyParamTrackingFailure {
+        &self.failure
+    }
+}
+
+impl<P, M, const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const PC: usize>
+    BluetoothControllerPhyPendingTracking<P, M, MT, SC, H2C, C2H, PC>
+where
+    M: RawMutex,
+{
+    /// Complete due tracking through the borrowed concrete target port.
+    ///
+    /// Once polled, cancellation releases no reusable Controller state; an
+    /// out-of-band hardware reset is required.
+    #[allow(
+        clippy::result_large_err,
+        reason = "failure retains the complete allocation-free Controller epoch"
+    )]
+    pub async fn complete_tracking<D, O>(
+        self,
         observer: O,
     ) -> Result<
-        BluetoothControllerPhyInitialized<
-            P,
-            M,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
-        BluetoothControllerPhyInitializationFailure<
-            P,
-            M,
-            MODEM_TIMER_CAPACITY,
-            SCHEDULER_CAPACITY,
-            HOST_TO_CONTROLLER_DEPTH,
-            CONTROLLER_TO_HOST_DEPTH,
-            PACKET_CAPACITY,
-        >,
+        BluetoothControllerPhyInitialized<P, M, MT, SC, H2C, C2H, PC>,
+        BluetoothControllerPhyTrackingFailure<P, M, MT, SC, H2C, C2H, PC>,
     >
     where
         D: PhyAsyncDelay,
         O: PhyTargetObserver,
     {
-        let mut transition = PhyRegisterTransition::with_production_config_and_calibration(
-            config.calibration_identity,
-            config.calibration_cache,
-        );
-
-        let registration = {
-            let (task, platform) = self.common_phy_parts_mut();
+        let Self {
+            mut controller,
+            tracking,
+            calibration_cache,
+            report,
+        } = self;
+        let result = {
+            let (task, platform) = controller.common_phy_parts_mut();
             let mut shared_phy = task.shared_phy_hal();
-            let mut port =
-                TargetPhyRegisterPort::<_, _, D, _>::new(platform, &mut shared_phy, observer);
-            let result = run_phy_register(&mut transition, &mut port).await;
-            let port_counters = port.counters();
-            match result {
-                Ok(registration) => Ok((registration, port_counters)),
-                Err(error) => Err((error, port_counters)),
-            }
+            run_target_bluetooth_phy_param_tracking::<P, D, O>(
+                platform,
+                &mut shared_phy,
+                tracking,
+                observer,
+            )
+            .await
         };
+        match result {
+            Ok(success) => {
+                let (phy, _outcome) = success.into_parts();
+                Ok(BluetoothControllerPhyInitialized {
+                    controller,
+                    phy,
+                    calibration_cache,
+                    report,
+                })
+            }
+            Err(failure) => Err(BluetoothControllerPhyTrackingFailure {
+                _controller: controller,
+                failure,
+                _calibration_cache: calibration_cache,
+                _report: report,
+            }),
+        }
+    }
+}
 
-        let (registration, port_counters) = match registration {
-            Ok(result) => result,
-            Err((error, port_counters)) => {
-                return Err(BluetoothControllerPhyInitializationFailure {
-                    _controller: self,
-                    _transition: transition,
-                    port_counters,
-                    error: BluetoothPhyInitializationError::Registration(error),
-                });
-            }
-        };
-        let (phy, calibration_cache) = match transition.into_model_parts() {
-            Ok(parts) => parts,
-            Err(transition) => {
-                return Err(BluetoothControllerPhyInitializationFailure {
-                    _controller: self,
-                    _transition: transition,
-                    port_counters,
-                    error: BluetoothPhyInitializationError::MissingPhyOwner,
-                });
-            }
-        };
-
-        Ok(BluetoothControllerPhyInitialized {
-            controller: self,
+impl<P, M, const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const PC: usize>
+    BluetoothControllerPhyRegistered<P, M, MT, SC, H2C, C2H, PC>
+where
+    M: RawMutex,
+{
+    /// Acquire the source-owned Bluetooth PHY client without skipping tracking.
+    #[allow(
+        clippy::result_large_err,
+        reason = "failure retains the complete allocation-free Controller epoch"
+    )]
+    pub fn acquire_phy_client(
+        self,
+        clock: &mut impl PhyPllTrackClock,
+    ) -> Result<
+        BluetoothControllerPhyClientAcquire<P, M, MT, SC, H2C, C2H, PC>,
+        BluetoothControllerPhyClientAcquireFailure<P, M, MT, SC, H2C, C2H, PC>,
+    > {
+        let BluetoothControllerPhyRegistered {
+            controller,
             phy,
             calibration_cache,
-            report: BluetoothPhyInitializationReport::from_target(registration, port_counters),
-        })
+            report,
+        } = self;
+        match phy.acquire_phy_client(clock) {
+            Ok(acquisition) => Ok(BluetoothControllerPhyClientAcquire {
+                controller,
+                acquisition,
+                calibration_cache,
+                report,
+            }),
+            Err(failure) => Err(BluetoothControllerPhyClientAcquireFailure {
+                _controller: controller,
+                failure,
+                _calibration_cache: calibration_cache,
+                _report: report,
+            }),
+        }
+    }
+}
+
+impl<P, M, const MT: usize, const SC: usize, const H2C: usize, const C2H: usize, const PC: usize>
+    Controller<P, M, MT, SC, H2C, C2H, PC>
+where
+    M: RawMutex,
+{
+    /// Run target registration without treating it as Bluetooth-client enable.
+    #[allow(
+        clippy::result_large_err,
+        reason = "failure retains the complete allocation-free Controller epoch"
+    )]
+    #[must_use = "common PHY registration must be driven to a terminal result"]
+    pub async fn initialize_common_phy<D, O>(
+        mut self,
+        config: BluetoothPhyInitializationConfig,
+        observer: O,
+    ) -> Result<
+        BluetoothControllerPhyRegistered<P, M, MT, SC, H2C, C2H, PC>,
+        BluetoothControllerPhyInitializationFailure<P, M, MT, SC, H2C, C2H, PC>,
+    >
+    where
+        D: PhyAsyncDelay,
+        O: PhyTargetObserver,
+    {
+        let result = {
+            let (task, platform) = self.common_phy_parts_mut();
+            let mut shared_phy = task.shared_phy_hal();
+            run_target_bluetooth_phy_register::<P, D, O>(
+                platform,
+                &mut shared_phy,
+                config.into_target(),
+                observer,
+            )
+            .await
+        };
+        match result {
+            Ok(success) => {
+                let (phy, calibration_cache, registration, counters) = success.into_parts();
+                Ok(BluetoothControllerPhyRegistered {
+                    controller: self,
+                    phy,
+                    calibration_cache,
+                    report: BluetoothPhyInitializationReport::from_target(registration, counters),
+                })
+            }
+            Err(failure) => Err(BluetoothControllerPhyInitializationFailure {
+                _controller: self,
+                failure,
+            }),
+        }
     }
 }

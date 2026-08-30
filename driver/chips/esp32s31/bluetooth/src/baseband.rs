@@ -145,7 +145,7 @@ where
             calibration_cache,
             report,
         } = self;
-        let baseband_report = apply_baseband_input(&phy, |gain_parameter| {
+        let baseband_report = apply_baseband_input(phy.phy_state(), |gain_parameter| {
             // SAFETY: this consuming state retains the powered Controller, the
             // matching task partition and the terminal common-PHY owner from
             // which the only input was projected.

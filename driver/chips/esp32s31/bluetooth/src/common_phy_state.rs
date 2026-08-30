@@ -1,14 +1,16 @@
 //! Retained Controller ownership after common PHY initialization.
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use open_esp_radio_esp32s31_phy::{PhyCalibrationCache, PhyRegisterOutcome, PhyState};
+use open_esp_radio_esp32s31_phy::{
+    PhyCalibrationCache, PhyRegisterOutcome, RegisteredBluetoothPhy, RegisteredBluetoothPhyClient,
+};
 
 use crate::hci::BluetoothControllerLowPowerHardwareInitialized;
 
 /// Observable, value-only result of the full common-PHY transition.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BluetoothPhyInitializationReport {
-    /// Terminal result returned by the shared `register_chipv7_phy` model.
+    /// Terminal registration result returned by the concrete target runner.
     pub registration: PhyRegisterOutcome,
     /// Number of recovered MMIO actions completed by the target port.
     pub mmio_operations: u16,
@@ -22,18 +24,88 @@ pub struct BluetoothPhyInitializationReport {
     pub baseband_operations: u32,
 }
 
-/// Powered Controller after complete shared PHY registration/calibration.
+/// Powered Controller after complete target shared-PHY registration.
 ///
 /// Construction is possible only from the state that already retains the
 /// scheduler, HCI resources and completed modem low-power hardware component.
-/// The unique PHY state remains coupled to that exact powered Controller
-/// epoch. Later BTBB/controller transitions may borrow its private task
-/// partition only inside this crate and must retain this whole state by value.
+/// The target-issued registration proof remains coupled to that exact powered
+/// Controller epoch, but the Bluetooth client has not yet been acquired. This
+/// state therefore cannot enter BTBB initialization.
 ///
 /// There is deliberately no conversion back to cold ownership: complete
 /// last-owner common-PHY shutdown is not yet recovered. Dropping this value is
 /// fail-stop and does not run an unverified implicit teardown.
-#[must_use = "initialized common PHY state retains every Bluetooth hardware owner"]
+#[must_use = "registered common PHY state retains every Bluetooth hardware owner"]
+pub struct BluetoothControllerPhyRegistered<
+    P,
+    M,
+    const MODEM_TIMER_CAPACITY: usize,
+    const SCHEDULER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+> where
+    M: RawMutex,
+{
+    pub(crate) controller: BluetoothControllerLowPowerHardwareInitialized<
+        P,
+        M,
+        MODEM_TIMER_CAPACITY,
+        SCHEDULER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >,
+    pub(crate) phy: RegisteredBluetoothPhy,
+    pub(crate) calibration_cache: Option<PhyCalibrationCache>,
+    pub(crate) report: BluetoothPhyInitializationReport,
+}
+
+impl<
+    P,
+    M,
+    const MODEM_TIMER_CAPACITY: usize,
+    const SCHEDULER_CAPACITY: usize,
+    const HOST_TO_CONTROLLER_DEPTH: usize,
+    const CONTROLLER_TO_HOST_DEPTH: usize,
+    const PACKET_CAPACITY: usize,
+>
+    BluetoothControllerPhyRegistered<
+        P,
+        M,
+        MODEM_TIMER_CAPACITY,
+        SCHEDULER_CAPACITY,
+        HOST_TO_CONTROLLER_DEPTH,
+        CONTROLLER_TO_HOST_DEPTH,
+        PACKET_CAPACITY,
+    >
+where
+    M: RawMutex,
+{
+    /// Inspect the value-only registration result without obtaining hardware authority.
+    pub const fn report(&self) -> BluetoothPhyInitializationReport {
+        self.report
+    }
+
+    /// Borrow the retained calibration cache for caller-selected persistence.
+    pub const fn calibration_cache(&self) -> Option<&PhyCalibrationCache> {
+        self.calibration_cache.as_ref()
+    }
+}
+
+/// Powered Controller after target registration and settled Bluetooth-client
+/// acquisition.
+///
+/// The lower owner retains both [`open_esp_radio_esp32s31_phy::RegisteredPhyState`]
+/// and the source-owned Bluetooth client bit. A due immediate tracking request
+/// must complete through the concrete target runner before this state can be
+/// constructed. It is the sole common-PHY predecessor accepted by BTBB
+/// initialization.
+///
+/// There is deliberately no conversion back to registered-only or cold
+/// ownership. Complete Bluetooth-client, BTBB and common-PHY teardown is not
+/// yet recovered, so dropping this value remains fail-stop.
+#[must_use = "settled Bluetooth PHY client retains every powered Controller owner"]
 pub struct BluetoothControllerPhyInitialized<
     P,
     M,
@@ -54,7 +126,7 @@ pub struct BluetoothControllerPhyInitialized<
         CONTROLLER_TO_HOST_DEPTH,
         PACKET_CAPACITY,
     >,
-    pub(crate) phy: PhyState,
+    pub(crate) phy: RegisteredBluetoothPhyClient,
     pub(crate) calibration_cache: Option<PhyCalibrationCache>,
     pub(crate) report: BluetoothPhyInitializationReport,
 }
@@ -80,7 +152,7 @@ impl<
 where
     M: RawMutex,
 {
-    /// Inspect the value-only result without obtaining hardware authority.
+    /// Inspect the value-only target registration result.
     pub const fn report(&self) -> BluetoothPhyInitializationReport {
         self.report
     }

@@ -60,19 +60,21 @@ pub fn configure_and_select_phy_i2c_host(block: u8) -> u32 {
 ///
 /// This validation-only bridge cannot bypass the production Bluetooth
 /// lifecycle in an ordinary build because it is absent there. The production
-/// edge consumes `BluetoothControllerPhyInitialized` after common-PHY
-/// calibration and projects this byte from the owned PHY state; no pre-PHY
+/// edge consumes `BluetoothControllerPhyInitialized` after target common-PHY
+/// registration, Bluetooth-client acquisition and any required initial
+/// tracking, then projects this byte from the owned PHY state; no earlier
 /// production transition is exposed.
 ///
 /// # Safety
 ///
 /// The caller must be an isolated compiled-production probe that models a
-/// completed common-PHY transition. It must not use another radio owner after
-/// this call because the powered owners remain retained until verified
-/// teardown exists.
+/// target-registered common-PHY transition with a settled Bluetooth client and
+/// completed initial tracking. It must not use another radio owner after this
+/// call because the powered owners remain retained until verified teardown
+/// exists.
 #[allow(
     unsafe_code,
-    reason = "the validation-only API preserves the PAC common-PHY prerequisite"
+    reason = "the validation-only API preserves the settled Bluetooth PHY-client prerequisite"
 )]
 #[inline(always)]
 pub unsafe fn initialize_baseband_v2(gain_parameter: u8) {

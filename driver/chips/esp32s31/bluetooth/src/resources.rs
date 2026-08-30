@@ -406,7 +406,8 @@ impl BluetoothTaskResources {
     ///
     /// # Safety
     ///
-    /// The caller must retain the matching completed common-PHY owner, derive
+    /// The caller must retain the matching target-registered common-PHY owner
+    /// with a settled Bluetooth client and completed initial tracking, derive
     /// `gain_parameter` from that terminal state, and preserve every hardware
     /// owner until verified last-owner teardown.
     #[cfg(target_arch = "riscv32")]

@@ -107,19 +107,21 @@ gaps = [
 
 [[capabilities]]
 id = "common-phy-baseband"
-title = "Common PHY and Bluetooth baseband enable"
-scope = "Ordered common PHY registration followed by the finite Bluetooth baseband initialization transaction"
-implementation = "complete"
+title = "Registered common PHY, Bluetooth client, and baseband gate"
+scope = "Borrowed target common-PHY registration explicit Bluetooth-client acquisition terminal initial tracking and settled-client-only entry into the finite Bluetooth baseband transaction"
+implementation = "incomplete"
 host = "covered"
 async = "incomplete"
 depends-on = ["controller-initialization"]
 vendor-anchors = [
   "verification/vendor/targets/esp32s31/README.md",
+  "verification/vendor/targets/esp32s31/analysis/bluetooth-controller-boundary.md",
 ]
 gaps = [
-  { axis = "vendor", id = "common-phy-baseband-composed-trace-missing" },
-  { axis = "hil", id = "bluetooth-phy-baseband-cell-missing" },
-  { axis = "async", id = "bounded-async-evidence-missing" },
+  { axis = "implementation", id = "periodic-bluetooth-client-tracking-and-last-owner-phy-release-missing" },
+  { axis = "vendor", id = "registered-client-tracking-and-baseband-composed-trace-missing" },
+  { axis = "hil", id = "bluetooth-registered-phy-client-tracking-and-baseband-cell-missing" },
+  { axis = "async", id = "periodic-tracking-wake-cancellation-and-teardown-contract-missing" },
 ]
 
 [[capabilities]]

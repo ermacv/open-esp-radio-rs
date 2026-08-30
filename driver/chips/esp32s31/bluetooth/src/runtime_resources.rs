@@ -97,6 +97,8 @@ pub struct BluetoothControllerTaskRuntime<'runtime, const SCHEDULER_CAPACITY: us
     scheduler_lock_modify_events: &'runtime BluetoothSchedulerLockModifyEventCell,
     scheduler_lock_modify_worker: &'runtime mut BluetoothSchedulerLockModifyWorker,
     scheduler_finished_lists: &'runtime mut BluetoothSchedulerFinishedListWorker,
+    #[cfg(any(target_arch = "riscv32", test))]
+    scheduler_timeline: &'runtime mut BluetoothSchedulerTimeline<SCHEDULER_CAPACITY>,
     modem_lp_timer_worker_wake: &'runtime BluetoothModemLpTimerWorkerWakeCell,
     modem_lp_timer_events: &'runtime BluetoothModemLpTimerEventCell,
 }
@@ -122,6 +124,20 @@ impl<const SCHEDULER_CAPACITY: usize> BluetoothControllerTaskRuntime<'_, SCHEDUL
         self.scheduler_finished_lists
     }
 
+    #[cfg(target_arch = "riscv32")]
+    pub(crate) fn scheduler_finished_lists_mut(
+        &mut self,
+    ) -> &mut BluetoothSchedulerFinishedListWorker {
+        self.scheduler_finished_lists
+    }
+
+    #[cfg(any(target_arch = "riscv32", test))]
+    pub(crate) fn scheduler_timeline_mut(
+        &mut self,
+    ) -> &mut BluetoothSchedulerTimeline<SCHEDULER_CAPACITY> {
+        self.scheduler_timeline
+    }
+
     /// Durable source-127 task-readiness handoff for this epoch.
     pub const fn modem_lp_timer_worker_wake(&self) -> &BluetoothModemLpTimerWorkerWakeCell {
         self.modem_lp_timer_worker_wake
@@ -143,9 +159,9 @@ impl<const SCHEDULER_CAPACITY: usize> BluetoothControllerTaskRuntime<'_, SCHEDUL
 #[must_use = "the powered task endpoint retains the Controller task owner"]
 #[cfg(any(target_arch = "riscv32", test))]
 pub struct BluetoothControllerPoweredTaskRuntime<'runtime, const SCHEDULER_CAPACITY: usize = 4> {
-    software: BluetoothControllerTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
-    hardware: &'runtime mut BluetoothTaskResources,
-    scheduler_list: &'runtime mut BluetoothSchedulerExclusiveListEpoch,
+    pub(crate) runtime: BluetoothControllerTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
+    pub(crate) task: &'runtime mut BluetoothTaskResources,
+    pub(crate) _scheduler_list: &'runtime mut BluetoothSchedulerExclusiveListEpoch,
 }
 
 #[cfg(any(target_arch = "riscv32", test))]
@@ -153,14 +169,14 @@ impl<const SCHEDULER_CAPACITY: usize>
     BluetoothControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY>
 {
     pub(crate) const fn new<'runtime>(
-        software: BluetoothControllerTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
-        hardware: &'runtime mut BluetoothTaskResources,
+        runtime: BluetoothControllerTaskRuntime<'runtime, SCHEDULER_CAPACITY>,
+        task: &'runtime mut BluetoothTaskResources,
         scheduler_list: &'runtime mut BluetoothSchedulerExclusiveListEpoch,
     ) -> BluetoothControllerPoweredTaskRuntime<'runtime, SCHEDULER_CAPACITY> {
         BluetoothControllerPoweredTaskRuntime {
-            software,
-            hardware,
-            scheduler_list,
+            runtime,
+            task,
+            _scheduler_list: scheduler_list,
         }
     }
 
@@ -168,37 +184,37 @@ impl<const SCHEDULER_CAPACITY: usize>
     pub(crate) const fn controller_time_phase(
         &self,
     ) -> crate::controller_time::BluetoothControllerTimeWorkerPhase {
-        self.hardware.controller_time_phase()
+        self.task.controller_time_phase()
     }
 
     #[cfg(test)]
     pub(crate) const fn controller_time_needs_recheck(&self) -> bool {
-        self.hardware.controller_time_needs_recheck()
+        self.task.controller_time_needs_recheck()
     }
 
     /// Durable general scheduler handoff for this epoch.
     pub const fn scheduler_wake(&self) -> &BluetoothSchedulerWakeCell {
-        self.software.scheduler_wake()
+        self.runtime.scheduler_wake()
     }
 
     /// Durable scheduler lock/modify handoff for this epoch.
     pub const fn scheduler_lock_modify_events(&self) -> &BluetoothSchedulerLockModifyEventCell {
-        self.software.scheduler_lock_modify_events()
+        self.runtime.scheduler_lock_modify_events()
     }
 
     /// The sole bounded finished-list worker for this powered epoch.
     pub fn scheduler_finished_lists(&mut self) -> &mut BluetoothSchedulerFinishedListWorker {
-        self.software.scheduler_finished_lists()
+        self.runtime.scheduler_finished_lists()
     }
 
     /// Durable source-127 task-readiness handoff for this epoch.
     pub const fn modem_lp_timer_worker_wake(&self) -> &BluetoothModemLpTimerWorkerWakeCell {
-        self.software.modem_lp_timer_worker_wake()
+        self.runtime.modem_lp_timer_worker_wake()
     }
 
     /// Durable modem LP timer expiration handoff for this epoch.
     pub const fn modem_lp_timer_events(&self) -> &BluetoothModemLpTimerEventCell {
-        self.software.modem_lp_timer_events()
+        self.runtime.modem_lp_timer_events()
     }
 
     /// Advance one scheduler lock/modify transaction using the matching HAL
@@ -211,8 +227,8 @@ impl<const SCHEDULER_CAPACITY: usize>
         &mut self,
         event: crate::BluetoothSchedulerLockModifyEvent,
     ) -> crate::BluetoothSchedulerLockModifyWorkerStep {
-        self.hardware
-            .step_scheduler_lock_modify(self.software.scheduler_lock_modify_worker, event)
+        self.task
+            .step_scheduler_lock_modify(self.runtime.scheduler_lock_modify_worker, event)
     }
 
     /// Publish the synchronous scheduler event after the matching hardware head
@@ -223,7 +239,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         head: BluetoothSchedulerHardwareListHeadPublished,
         interrupts: BluetoothSchedulerRunInterruptsPrepared,
     ) -> BluetoothSchedulerRunEventPublished {
-        self.hardware.publish_scheduler_run_event(head, interrupts)
+        self.task.publish_scheduler_run_event(head, interrupts)
     }
 
     /// Consume one scheduler-event proof into the typed hardware RUN command.
@@ -232,7 +248,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         &mut self,
         event: BluetoothSchedulerRunEventPublished,
     ) -> BluetoothSchedulerHardwareRunCommandPublished {
-        self.hardware.publish_scheduler_hardware_run_command(event)
+        self.task.publish_scheduler_hardware_run_command(event)
     }
 
     /// Advance the exclusive source-owned list identity across the matching RUN
@@ -246,7 +262,7 @@ impl<const SCHEDULER_CAPACITY: usize>
         &mut self,
         address: open_esp_radio_esp32s31_hal::BluetoothControllerSramAddress,
     ) {
-        self.scheduler_list.retain_running_first_item(address);
+        self._scheduler_list.retain_running_first_item(address);
     }
 }
 
@@ -341,6 +357,8 @@ impl<const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
                 scheduler_lock_modify_events,
                 scheduler_lock_modify_worker: &mut self.scheduler_lock_modify_worker,
                 scheduler_finished_lists: &mut self.scheduler_finished_lists,
+                #[cfg(any(target_arch = "riscv32", test))]
+                scheduler_timeline: &mut self.scheduler_timeline,
                 modem_lp_timer_worker_wake,
                 modem_lp_timer_events,
             },
@@ -365,13 +383,6 @@ impl<const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
             &mut self.modem_lp_timer_epoch,
             &self.modem_lp_timer_events,
         )
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn scheduler_finished_lists_mut(
-        &mut self,
-    ) -> &mut BluetoothSchedulerFinishedListWorker {
-        &mut self.scheduler_finished_lists
     }
 }
 
@@ -439,6 +450,7 @@ mod tests {
         ));
         assert!(task.scheduler_lock_modify_worker().is_idle());
         assert!(!task.scheduler_finished_lists().is_active());
+        assert!(task.scheduler_timeline_mut().is_empty());
         drop((interrupt, task));
         assert!(resources.scheduler_timeline_mut().is_empty());
     }

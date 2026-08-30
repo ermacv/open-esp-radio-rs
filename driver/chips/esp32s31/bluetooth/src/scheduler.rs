@@ -2258,7 +2258,12 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
         self._scheduler_list.retain_published_first_item(address);
         Ok(BluetoothDtmSchedulerHeadPublished { item, publication })
     }
+}
 
+#[cfg(target_arch = "riscv32")]
+impl<const SCHEDULER_CAPACITY: usize>
+    BluetoothControllerPoweredTaskRuntime<'_, SCHEDULER_CAPACITY>
+{
     /// Perform one fresh, bounded DTM completion observation.
     ///
     /// The affine list token never crosses this Controller operation before it
@@ -2678,7 +2683,11 @@ impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
             }
         }
     }
+}
 
+impl<P, const MODEM_TIMER_CAPACITY: usize, const SCHEDULER_CAPACITY: usize>
+    BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
+{
     /// Borrow the matching interrupt and task runtime endpoints from this
     /// initialized hardware epoch.
     ///

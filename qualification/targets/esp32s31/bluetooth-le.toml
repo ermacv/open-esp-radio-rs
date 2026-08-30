@@ -370,7 +370,7 @@ vendor-anchors = [
 ]
 gaps = [
   { axis = "implementation", id = "autonomous-dtm-session-loop-and-test-end-quiescence-missing" },
-  { axis = "host", id = "executor-neutral-dtm-session-model-missing" },
+  { axis = "host", id = "concrete-dtm-session-pump-and-owner-continuity-missing" },
   { axis = "vendor", id = "live-rf-ready-margin-and-test-end-stop-order-proof-missing" },
   { axis = "hil", id = "direct-test-mode-rf-cell-missing" },
   { axis = "async", id = "pending-removal-wake-and-session-stop-contract-missing" },
@@ -407,8 +407,8 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/vendor-project.toml",
 ]
 gaps = [
-  { axis = "implementation", id = "dtm-command-parser-staged-completion-and-controller-traits-missing" },
-  { axis = "host", id = "dtm-command-state-and-staged-response-tests-missing" },
+  { axis = "implementation", id = "dtm-command-dispatch-session-worker-and-controller-traits-missing" },
+  { axis = "host", id = "dtm-dispatch-session-state-and-backpressure-tests-missing" },
   { axis = "vendor", id = "hci-command-and-acl-production-contracts-missing" },
   { axis = "hil", id = "external-hci-interoperability-cell-missing" },
   { axis = "async", id = "command-response-and-acl-credit-wakes-missing" },

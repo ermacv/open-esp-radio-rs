@@ -749,6 +749,7 @@ impl BluetoothDtmMemoryGraphModelAddress {
 pub struct BluetoothDtmMemoryGraphBinding {
     base: BluetoothControllerSramAddress,
     end_exclusive: u32,
+    allocation_config: BluetoothDtmSchedulerAllocationConfig,
     link_state: BluetoothDtmBoundSramLinkAddress,
     scheduler_context: BluetoothControllerSramAddress,
     scheduler_item: BluetoothDtmBoundSramLinkAddress,
@@ -760,7 +761,10 @@ pub struct BluetoothDtmMemoryGraphBinding {
 }
 
 impl BluetoothDtmMemoryGraphBinding {
-    fn new(base: u32) -> Result<Self, BluetoothDtmMemoryGraphBindError> {
+    fn new(
+        base: u32,
+        allocation_config: BluetoothDtmSchedulerAllocationConfig,
+    ) -> Result<Self, BluetoothDtmMemoryGraphBindError> {
         let base_address = BluetoothControllerSramAddress::new(base)
             .map_err(BluetoothDtmMemoryGraphBindError::InvalidBase)?;
         if base < BLUETOOTH_CONTROLLER_PHYSICAL_SRAM_LOW
@@ -795,6 +799,7 @@ impl BluetoothDtmMemoryGraphBinding {
         Ok(Self {
             base: base_address,
             end_exclusive: base + BLUETOOTH_DTM_MEMORY_GRAPH_BYTES,
+            allocation_config,
             link_state,
             scheduler_context,
             scheduler_item,
@@ -1944,12 +1949,12 @@ impl BluetoothDtmMemoryGraphReclaimed {
     /// Start a fresh CPU-owned allocation epoch in the same pinned storage.
     ///
     /// Reinitialization consumes the reclaimed token exactly once and installs
-    /// the complete reviewed allocation defaults. It performs no MMIO, fence,
-    /// hardware publication, heap allocation or vendor `free`/`alloc` call.
-    pub fn reinitialize(
-        self,
-        config: BluetoothDtmSchedulerAllocationConfig,
-    ) -> BluetoothDtmMemoryGraphCpuOwned {
+    /// the complete reviewed allocation defaults from the configuration bound
+    /// to this graph's first epoch. No caller can cross-wire a configuration
+    /// from another graph. This performs no MMIO, fence, hardware publication,
+    /// heap allocation or vendor `free`/`alloc` call.
+    pub fn reinitialize(self) -> BluetoothDtmMemoryGraphCpuOwned {
+        let config = self.binding.allocation_config;
         let mut owner = BluetoothDtmMemoryGraphCpuOwned {
             storage: self.storage,
             binding: self.binding,
@@ -2334,7 +2339,7 @@ impl BluetoothDtmMemoryGraphStorage {
         base: u32,
         config: BluetoothDtmSchedulerAllocationConfig,
     ) -> Result<BluetoothDtmMemoryGraphCpuOwned, BluetoothDtmMemoryGraphBindFailure> {
-        let binding = match BluetoothDtmMemoryGraphBinding::new(base) {
+        let binding = match BluetoothDtmMemoryGraphBinding::new(base, config) {
             Ok(binding) => binding,
             Err(error) => return Err(BluetoothDtmMemoryGraphBindFailure::new(storage, error)),
         };
@@ -2826,10 +2831,10 @@ mod tests {
     #[test]
     fn reclaimed_cpu_graph_can_start_another_affine_epoch() {
         let reclaimed = model_owner(0x2f00_4100).into_reclaimed();
-        let owner = reclaimed.reinitialize(allocation_config());
+        let owner = reclaimed.reinitialize();
 
         let reclaimed = owner.into_reclaimed();
-        let _owner = reclaimed.reinitialize(allocation_config());
+        let _owner = reclaimed.reinitialize();
     }
 
     #[test]

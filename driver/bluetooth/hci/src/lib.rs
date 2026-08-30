@@ -11,6 +11,9 @@
 //! storage, wake-driven backpressure and cancellation-safe waits.
 //! [`LeControllerBootstrap`] implements a closed software-only HCI command
 //! subset for Host initialization and rejects Link-Layer commands.
+//! The separate closed LE DTM codec validates Receiver Test v1, Transmitter
+//! Test v1 and Test End into owned semantic commands and builds their staged
+//! Command Complete events; it does not dispatch them or claim radio work.
 //! [`LeControllerBootstrapWorker`] is its sole executor-neutral endpoint owner;
 //! it preserves accepted responses across shutdown and backpressure. This crate
 //! also provides [`LeControllerHciResources`], which binds the transport storage
@@ -24,6 +27,7 @@ extern crate std;
 
 mod bootstrap;
 mod channel;
+mod dtm;
 mod resources;
 mod worker;
 
@@ -36,6 +40,12 @@ pub use bt_hci;
 pub use channel::{
     HciChannelError, HciCommandPacket, HostToControllerFrame, InProcessHciChannel,
     InProcessHciControllerEndpoint, InProcessHciHostTransport,
+};
+pub use dtm::{
+    LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY, LE_RECEIVER_TEST_V1_OPCODE, LE_TEST_END_OPCODE,
+    LE_TRANSMITTER_TEST_V1_OPCODE, LeDtmChannel, LeDtmCommand, LeDtmCommandCompleteEvent,
+    LeDtmCommandDecodeError, LeDtmCommandKind, LeDtmPayloadPattern, LeReceiverTestV1Command,
+    LeTestEndCommand, LeTransmitterTestV1Command,
 };
 pub use resources::{
     LeControllerHciResources, LeControllerHciResourcesError, LeControllerHciRuntimeWorker,

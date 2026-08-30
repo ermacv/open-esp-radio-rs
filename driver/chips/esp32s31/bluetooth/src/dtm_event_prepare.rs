@@ -1969,11 +1969,10 @@ mod tests {
             status: BluetoothDtmSchedulerItemCompletionStatus::Success,
         };
         let ended = tx.into_test_ended();
-        assert_eq!(ended.report(), BluetoothDtmTestEndReport::Transmitter);
-        assert_eq!(ended.report().reported_packet_count(), 0);
-        let _next_graph = ended
-            .into_reclaimed_graph()
-            .reinitialize(allocation_config());
+        let stopping = crate::BluetoothDtmSessionStopping::new(ended);
+        assert_eq!(stopping.report(), BluetoothDtmTestEndReport::Transmitter);
+        assert_eq!(stopping.report().reported_packet_count(), 0);
+        let _next_graph = stopping.response_published().begin_epoch().into_graph();
 
         let mut session = crate::dtm_rx_completion::BluetoothDtmReceiverSession::new();
         assert!(matches!(
@@ -1998,16 +1997,15 @@ mod tests {
             last_committed_window: BluetoothDtmRxCommittedWindow::Initial(rx_initial_window()),
         };
         let ended = rx.into_test_ended();
+        let stopping = crate::BluetoothDtmSessionStopping::new(ended);
         assert_eq!(
-            ended.report(),
+            stopping.report(),
             BluetoothDtmTestEndReport::Receiver {
                 received_packets: 1
             }
         );
-        assert_eq!(ended.report().reported_packet_count(), 1);
-        let _next_graph = ended
-            .into_reclaimed_graph()
-            .reinitialize(allocation_config());
+        assert_eq!(stopping.report().reported_packet_count(), 1);
+        let _next_graph = stopping.response_published().begin_epoch().into_graph();
     }
 
     #[test]

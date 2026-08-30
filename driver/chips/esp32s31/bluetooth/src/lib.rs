@@ -46,8 +46,10 @@
 //! connected across the missing selector-6 invariant and live
 //! primary-ISR/executor composition,
 //! feature-specific NRT classification and live-route
-//! prerequisites. Recurring event publication and Test-End quiescence remain
-//! absent. Stable two-owner ISR publication is connected, but no
+//! prerequisites. Recurring event preparation now retains exact active role
+//! ownership, while live timing, the concrete session pump and in-flight
+//! Test-End quiescence remain absent. Stable two-owner ISR publication is
+//! connected, but no
 //! current finite state
 //! claims that the complete controller lifecycle, HCI transport, task or live
 //! interrupt epoch has completed.
@@ -79,6 +81,7 @@ mod dtm_parameters;
 mod dtm_payload;
 mod dtm_rx_completion;
 mod dtm_scheduler_item;
+mod dtm_session;
 mod dtm_timing;
 mod dtm_tx_packet;
 #[cfg(any(target_arch = "riscv32", test))]
@@ -171,6 +174,9 @@ pub use dtm_scheduler_item::{
     BluetoothDtmSchedulerItemEvent, BluetoothDtmSchedulerItemEventError,
     BluetoothDtmSchedulerItemReviewedWords, BluetoothDtmSchedulerTimingPolicy,
 };
+#[cfg(any(target_arch = "riscv32", test))]
+pub use dtm_session::BluetoothDtmSessionStopping;
+pub use dtm_session::{BluetoothDtmSessionGraphReady, BluetoothDtmSessionIdle};
 pub use dtm_timing::{BluetoothDtmTxSchedulerTiming, BluetoothDtmTxTimingMicros};
 pub use dtm_tx_packet::{
     BLUETOOTH_DTM_TX_MAX_PAYLOAD_BYTES, BLUETOOTH_DTM_TX_PACKET_PREFIX_BYTES,

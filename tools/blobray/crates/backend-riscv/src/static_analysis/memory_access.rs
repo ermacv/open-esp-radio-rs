@@ -469,20 +469,42 @@ pub(super) fn apply_memory_instruction(
                     SymbolicValue::memory_read(read_token, width, signed)
                 }
                 (_, Some(StructuralAddress::IndexedMemory(address))) => {
-                    let read_token = state.next_memory_read_token;
-                    state.next_memory_read_token += 1;
-                    remember_pointer_read_source(state, read_token, width, &address);
-                    state.push_reference_event(
-                        pc as u32,
-                        DraftReferenceEvent::Memory {
-                            access: MemoryAccess::Read,
-                            width,
-                            address,
-                            region: "indexed RAM object".to_owned(),
-                            value: None,
-                        },
-                    );
-                    SymbolicValue::memory_read(read_token, width, signed)
+                    // An affine absolute address may denote either RAM or a
+                    // typed register bank.  Preserve MMIO identity whenever
+                    // the register catalog proves a domain; its optional
+                    // guard records the selector range for which that proof
+                    // holds.
+                    if let Some(domain) = indexed_mmio_domain(&address, svd) {
+                        let read_token = state.next_mmio_read_token;
+                        state.next_mmio_read_token += 1;
+                        state.push_reference_event(
+                            pc as u32,
+                            DraftReferenceEvent::IndexedMmio {
+                                access: MemoryAccess::Read,
+                                width,
+                                address,
+                                registers: domain.registers,
+                                guard: domain.guard,
+                                value: None,
+                            },
+                        );
+                        SymbolicValue::indexed_register_read(read_token, width, signed)
+                    } else {
+                        let read_token = state.next_memory_read_token;
+                        state.next_memory_read_token += 1;
+                        remember_pointer_read_source(state, read_token, width, &address);
+                        state.push_reference_event(
+                            pc as u32,
+                            DraftReferenceEvent::Memory {
+                                access: MemoryAccess::Read,
+                                width,
+                                address,
+                                region: "indexed RAM object".to_owned(),
+                                value: None,
+                            },
+                        );
+                        SymbolicValue::memory_read(read_token, width, signed)
+                    }
                 }
                 (_, Some(StructuralAddress::DynamicMemory(address))) => {
                     let read_token = state.next_memory_read_token;
@@ -762,22 +784,44 @@ pub(super) fn apply_memory_instruction(
                     );
                 }
                 Some(StructuralAddress::IndexedMemory(address)) => {
-                    state.observe_nonstatic_memory_write(&address);
-                    if !value.is_resolved() {
-                        state
-                            .reference_blockers
-                            .push(format!("unresolved-memory-write at {pc:#x}: {instruction}"));
+                    // Keep the same MMIO-before-RAM classification as loads so
+                    // read/modify/write provenance cannot change address
+                    // spaces between the two instructions.
+                    if let Some(domain) = indexed_mmio_domain(&address, svd) {
+                        if !value.is_resolved() {
+                            state.reference_blockers.push(format!(
+                                "unresolved indexed MMIO write value at {pc:#x}: {instruction}"
+                            ));
+                        }
+                        state.push_reference_event(
+                            pc as u32,
+                            DraftReferenceEvent::IndexedMmio {
+                                access: MemoryAccess::Write,
+                                width,
+                                address,
+                                registers: domain.registers,
+                                guard: domain.guard,
+                                value: Some(value),
+                            },
+                        );
+                    } else {
+                        state.observe_nonstatic_memory_write(&address);
+                        if !value.is_resolved() {
+                            state
+                                .reference_blockers
+                                .push(format!("unresolved-memory-write at {pc:#x}: {instruction}"));
+                        }
+                        state.push_reference_event(
+                            pc as u32,
+                            DraftReferenceEvent::Memory {
+                                access: MemoryAccess::Write,
+                                width,
+                                address,
+                                region: "indexed RAM object".to_owned(),
+                                value: Some(value),
+                            },
+                        );
                     }
-                    state.push_reference_event(
-                        pc as u32,
-                        DraftReferenceEvent::Memory {
-                            access: MemoryAccess::Write,
-                            width,
-                            address,
-                            region: "indexed RAM object".to_owned(),
-                            value: Some(value),
-                        },
-                    );
                 }
                 Some(StructuralAddress::DynamicMemory(address)) => {
                     state.observe_nonstatic_memory_write(&address);

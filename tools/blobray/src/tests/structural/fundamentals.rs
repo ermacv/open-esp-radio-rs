@@ -115,6 +115,123 @@ fn shifted_argument_index_preserves_absolute_table_read() {
 }
 
 #[test]
+fn indexed_absolute_mmio_prefers_a_typed_register_domain() {
+    let slli_a2_a0_3 = (3_u32 << 20) | (10 << 15) | (1 << 12) | (12 << 7) | 0x13;
+    let lui_a3 = (0x50002_u32 << 12) | (13 << 7) | 0x37;
+    let add_a2_a2_a3 = (13_u32 << 20) | (12 << 15) | (12 << 7) | 0x33;
+    let sw_a1_0_a2 = (11_u32 << 20) | (12 << 15) | (2 << 12) | 0x23;
+    let symbol = artifact::ArtifactSymbolDefinition {
+        member: Some("table.o".to_owned()),
+        name: "write_table_entry".to_owned(),
+        address: 0x1000_0000,
+        bytes: [slli_a2_a0_3, lui_a3, add_a2_a2_a3, sw_a1_0_a2, 0x0000_8067]
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect(),
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let typed_domain = indexed_map(0x5000_2000, 8, 6, "SYNTHETIC.TABLE_ENTRY");
+    let trace = trace_binary_symbol(
+        &symbol,
+        &typed_domain,
+        &direct::StructuralRelocatedCalls::new(),
+        &StructuralPointerContext::default(),
+        None,
+    )
+    .unwrap();
+
+    let [
+        DraftReferenceEvent::IndexedMmio {
+            access: MemoryAccess::Write,
+            width: 32,
+            address,
+            registers,
+            guard: Some(guard),
+            value: Some(value),
+        },
+    ] = trace.reference_events.as_slice()
+    else {
+        panic!("expected one indexed MMIO write: {trace:#?}");
+    };
+    assert_eq!(registers.len(), 6);
+    assert_eq!(guard.selector, SymbolicValue::input(0));
+    assert_eq!(guard.maximum, 5);
+    assert_eq!(value, &SymbolicValue::input(1));
+    assert_eq!(
+        address.memory_object_location_with_reads(&BTreeMap::new()),
+        Some(MemoryObjectLocation {
+            root: MemoryObjectRoot::Indexed {
+                root: std::sync::Arc::new(MemoryObjectRoot::Absolute {
+                    address: 0x5000_2000,
+                }),
+                argument: 0,
+                stride: 8,
+            },
+            offset: 0,
+        })
+    );
+
+    let unproven_bank = indexed_map(0x5000_2000, 8, 1, "SYNTHETIC.TABLE_ENTRY");
+    let fallback = trace_binary_symbol(
+        &symbol,
+        &unproven_bank,
+        &direct::StructuralRelocatedCalls::new(),
+        &StructuralPointerContext::default(),
+        None,
+    )
+    .unwrap();
+    let [DraftReferenceEvent::Memory { region, .. }] = fallback.reference_events.as_slice() else {
+        panic!("one register cannot prove an indexed MMIO domain: {fallback:#?}");
+    };
+    assert_eq!(region, "indexed RAM object");
+}
+
+#[test]
+fn indexed_absolute_mmio_read_retains_indexed_register_provenance() {
+    let slli_a1_a0_3 = (3_u32 << 20) | (10 << 15) | (1 << 12) | (11 << 7) | 0x13;
+    let lui_a2 = (0x50002_u32 << 12) | (12 << 7) | 0x37;
+    let add_a1_a1_a2 = (12_u32 << 20) | (11 << 15) | (11 << 7) | 0x33;
+    let lw_a0_0_a1 = (11_u32 << 15) | (2 << 12) | (10 << 7) | 0x03;
+    let symbol = artifact::ArtifactSymbolDefinition {
+        member: Some("table.o".to_owned()),
+        name: "read_table_entry".to_owned(),
+        address: 0x1000_0000,
+        bytes: [slli_a1_a0_3, lui_a2, add_a1_a1_a2, lw_a0_0_a1, 0x0000_8067]
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect(),
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let trace = trace_binary_symbol(
+        &symbol,
+        &indexed_map(0x5000_2000, 8, 6, "SYNTHETIC.TABLE_ENTRY"),
+        &direct::StructuralRelocatedCalls::new(),
+        &StructuralPointerContext::default(),
+        None,
+    )
+    .unwrap();
+
+    assert!(matches!(
+        trace.reference_events.as_slice(),
+        [DraftReferenceEvent::IndexedMmio {
+            access: MemoryAccess::Read,
+            width: 32,
+            guard: Some(_),
+            value: None,
+            ..
+        }]
+    ));
+    assert!(matches!(
+        trace.return_value,
+        SymbolicValue::IndexedRegisterImage { .. }
+    ));
+}
+
+#[test]
 fn unsigned_set_less_than_keeps_snez_dataflow_codegen_ready() {
     let symbol = artifact::ArtifactSymbolDefinition {
         member: None,

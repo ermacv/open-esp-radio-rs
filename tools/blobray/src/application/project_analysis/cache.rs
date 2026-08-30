@@ -1094,14 +1094,14 @@ fn stage_analysis_domain(stage: &str) -> Option<&'static [u8]> {
 /// hashes continue to protect project and caller-owned state.
 fn stage_revision(stage: &str) -> Result<u32> {
     if stage.starts_with("linked-ir:") {
-        return Ok(50);
+        return Ok(56);
     }
     match stage {
         "symbol-inventory" => Ok(2),
         "mmio-discovery" => Ok(6),
         "interface-discovery" => Ok(7),
         "interface-capability-context" => Ok(1),
-        "linked-ir" => Ok(50),
+        "linked-ir" => Ok(56),
         "event-replays" => Ok(1),
         "review-scopes" => Ok(5),
         "navigation-index" => Ok(2),
@@ -1806,8 +1806,8 @@ mod tests {
             assert!(stage_revision(stage).unwrap() > 0);
         }
         assert!(stage_revision("new-unversioned-stage").is_err());
-        assert_eq!(stage_revision("linked-ir").unwrap(), 50);
-        assert_eq!(stage_revision("linked-ir:any-profile").unwrap(), 50);
+        assert_eq!(stage_revision("linked-ir").unwrap(), 56);
+        assert_eq!(stage_revision("linked-ir:any-profile").unwrap(), 56);
     }
 
     #[test]

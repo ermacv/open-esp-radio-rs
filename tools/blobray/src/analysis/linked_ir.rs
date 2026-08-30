@@ -33,7 +33,7 @@ const LINKED_IR_WORKER_STACK_BYTES: usize = 16 * 1024 * 1024;
 // The project-stage cache fingerprints this domain as well as the per-function
 // store, so a semantic cut cannot leave a previously generated linked-IR
 // bundle looking current.
-pub(crate) const FUNCTION_FACT_CACHE_DOMAIN: &[u8] = b"blobray/direct-function-facts/v18\0";
+pub(crate) const FUNCTION_FACT_CACHE_DOMAIN: &[u8] = b"blobray/direct-function-facts/v20\0";
 
 mod model;
 
@@ -82,6 +82,9 @@ fn bit_range_mask(lsb: u8, width: u8) -> u32 {
 mod provenance;
 
 use provenance::*;
+mod return_frontier;
+
+use return_frontier::*;
 
 mod effects;
 
@@ -942,6 +945,18 @@ fn build_linked_functions_for_roots(
                     direct_calls
                 };
                 annotate_direct_semantic_calls(&mut calls, symbol, resolver, &identities);
+                let call_result_frontiers = publish_guarded_call_result_frontiers(
+                    &trace,
+                    &function_identity,
+                    &mut calls,
+                    resolver,
+                    &identities,
+                    svd,
+                );
+                let return_frontier = trace
+                    .reference_flow
+                    .as_ref()
+                    .map(|flow| guarded_return_frontier(flow, resolver, &identities, svd));
                 let flow_kind = if trace.reference_flow.is_some() {
                     "structured"
                 } else if trace.is_reference_eligible() {
@@ -989,6 +1004,8 @@ fn build_linked_functions_for_roots(
                     exact: trace.is_exact(),
                     return_value: trace.return_value.canonical(),
                     return_provenance,
+                    return_frontier,
+                    call_result_frontiers,
                     dependencies: trace
                         .reference_dependencies
                         .iter()
@@ -1052,6 +1069,8 @@ fn build_linked_functions_for_roots(
                         &BTreeMap::new(),
                         svd,
                     ),
+                    return_frontier: None,
+                    call_result_frontiers: Vec::new(),
                     dependencies: Vec::new(),
                     projected_relocations: projected_relocations(symbol, resolver),
                     local_value_flow: Vec::new(),

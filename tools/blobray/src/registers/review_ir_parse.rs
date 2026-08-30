@@ -1,4 +1,4 @@
-//! Typed projection of schema-v64 linked-IR into register-review evidence.
+//! Typed projection of schema-v65 linked-IR into register-review evidence.
 
 use std::{
     collections::{BTreeMap, BTreeSet},

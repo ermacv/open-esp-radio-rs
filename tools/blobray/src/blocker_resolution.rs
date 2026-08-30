@@ -340,10 +340,25 @@ pub(crate) fn event_route_blocker_resolution_route(
             "preserve a complete CFG witness that receive must execute before event.run",
             "the current route report recomputes the required ordering from generated CFG evidence",
         ),
-        "event-queue-instance-unresolved" => (
+        "event-queue-producer-frontier-incomplete" => (
             BlockerResolutionOwner::GenericBackend,
-            "preserve exact enqueue producer identity through the queue argument and receive queue value",
-            "the current route report recomputes queue-instance equality from typed value provenance",
+            "complete and persist exact call-result provenance and every guarded returning leaf of the enqueue-side queue producer",
+            "the route can compare queue identities only after the generic linked IR publishes a complete typed producer frontier",
+        ),
+        "event-queue-producer-frontier-no-match" => (
+            BlockerResolutionOwner::GenericBackend,
+            "recover a typed canonical value relation between the complete producer return frontier and the receive queue",
+            "canonical linked-value evidence must establish the join; differing rendered expressions are not promoted into a semantic mismatch claim",
+        ),
+        "event-queue-producer-precondition-unproven" => (
+            BlockerResolutionOwner::GenericBackend,
+            "preserve the exact caller-side state or guard that selects the matching queue-producer return leaf",
+            "a possible guarded return is not a path claim until typed generated evidence selects that leaf at the enqueue site",
+        ),
+        "event-queue-producer-lifetime-unproven" => (
+            BlockerResolutionOwner::RuntimeScenario,
+            "join the mutable queue selection to one initialization and delivery epoch, or replay that exact epoch",
+            "a site-local RAM or volatile MMIO observation does not prove that enqueue and receive use the same queue object lifetime",
         ),
         "callback-store-dominance-unproven" => (
             BlockerResolutionOwner::GenericBackend,
@@ -1046,15 +1061,47 @@ mod tests {
 
     #[test]
     fn event_route_blockers_use_typed_owners_and_exact_absence_predicates() {
-        let queue =
-            event_route_blocker_resolution_route("route-a", "event-queue-instance-unresolved");
+        let queue = event_route_blocker_resolution_route(
+            "route-a",
+            "event-queue-producer-frontier-incomplete",
+        );
         assert_eq!(queue.owner, BlockerResolutionOwner::GenericBackend);
         assert_eq!(
             queue.completion_predicate.kind,
             BlockerCompletionKind::EventRouteBlockerAbsent
         );
         queue
-            .validate_event_route("route-a", "event-queue-instance-unresolved")
+            .validate_event_route("route-a", "event-queue-producer-frontier-incomplete")
+            .unwrap();
+
+        let precondition = event_route_blocker_resolution_route(
+            "route-a",
+            "event-queue-producer-precondition-unproven",
+        );
+        assert_eq!(precondition.owner, BlockerResolutionOwner::GenericBackend);
+        assert_ne!(precondition.required_model, queue.required_model);
+        precondition
+            .validate_event_route("route-a", "event-queue-producer-precondition-unproven")
+            .unwrap();
+
+        let no_match = event_route_blocker_resolution_route(
+            "route-a",
+            "event-queue-producer-frontier-no-match",
+        );
+        assert_eq!(no_match.owner, BlockerResolutionOwner::GenericBackend);
+        assert_ne!(no_match.required_model, queue.required_model);
+        no_match
+            .validate_event_route("route-a", "event-queue-producer-frontier-no-match")
+            .unwrap();
+
+        let lifetime = event_route_blocker_resolution_route(
+            "route-a",
+            "event-queue-producer-lifetime-unproven",
+        );
+        assert_eq!(lifetime.owner, BlockerResolutionOwner::RuntimeScenario);
+        assert_ne!(lifetime.required_model, precondition.required_model);
+        lifetime
+            .validate_event_route("route-a", "event-queue-producer-lifetime-unproven")
             .unwrap();
 
         let listener = event_route_blocker_resolution_route(

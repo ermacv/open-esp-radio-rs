@@ -401,10 +401,18 @@ pub(super) fn call_result_identity(
             *token,
             format!("{}@{site:#010x}", identities.target(*target)),
         )),
-        DraftReferenceEvent::ComposedCall { token, symbol, .. }
-        | DraftReferenceEvent::ComposedCallWithScratch { token, symbol, .. } => {
-            Some((*token, symbol.clone()))
+        DraftReferenceEvent::ComposedCall {
+            token,
+            site,
+            symbol,
+            ..
         }
+        | DraftReferenceEvent::ComposedCallWithScratch {
+            token,
+            site,
+            symbol,
+            ..
+        } => Some((*token, format!("{symbol}@{site:#010x}"))),
         DraftReferenceEvent::ReviewedExternalCall {
             token,
             site,
@@ -588,7 +596,7 @@ fn memory_root_name(root: &open_radio_vendor_analysis_model::MemoryObjectRoot) -
     }
 }
 
-fn name_memory_reads(
+pub(super) fn name_memory_reads(
     expression: &str,
     read_sources: &BTreeMap<u32, open_radio_vendor_analysis_model::MemoryObjectLocation>,
     resolver: &ReferenceResolver,

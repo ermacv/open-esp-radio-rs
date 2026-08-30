@@ -62,13 +62,13 @@ mod tests {
         assert_eq!(summary.field_candidates, 4);
 
         let mut stale = document();
-        stale["schema_version"] = serde_json::json!(34);
+        stale["schema_version"] = serde_json::json!(64);
         std::fs::write(path.join("manifest.json"), stale.to_string()).unwrap();
         assert!(
             inspect_linked_ir(&path)
                 .unwrap_err()
                 .to_string()
-                .contains("expected schema_version 64")
+                .contains("expected schema_version 65")
         );
         std::fs::remove_dir_all(path).unwrap();
     }

@@ -6816,17 +6816,17 @@ locator = "RADIO.STATUS"
     }
 
     #[test]
-    fn event_route_blocker_is_visible_to_dtm_without_claiming_function_unlocks() {
-        let route_id = "btdm-source124-to-recycle-event-binding";
-        let blocker_kind = "event-queue-instance-unresolved";
-        let root = "ble-controller::dtm-root";
-        let producer = "ble-controller::r_sym_bt_gs5";
+    fn event_route_blocker_is_visible_without_claiming_function_unlocks() {
+        let route_id = "route-a";
+        let blocker_kind = "event-queue-producer-precondition-unproven";
+        let root = "fixture::root";
+        let producer = "fixture::producer";
         let mut graph = ScopeGraph::default();
         graph.nodes.insert(
             root.to_owned(),
             GraphNode {
-                source: "ble-controller".to_owned(),
-                symbol: "dtm-root".to_owned(),
+                source: "fixture".to_owned(),
+                symbol: "root".to_owned(),
                 dependencies: [producer.to_owned()].into(),
                 direct_diagnostic_roots: BTreeSet::new(),
                 complete: true,
@@ -6835,8 +6835,8 @@ locator = "RADIO.STATUS"
         graph.nodes.insert(
             producer.to_owned(),
             GraphNode {
-                source: "ble-controller".to_owned(),
-                symbol: "r_sym_bt_gs5".to_owned(),
+                source: "fixture".to_owned(),
+                symbol: "producer".to_owned(),
                 dependencies: BTreeSet::new(),
                 direct_diagnostic_roots: BTreeSet::new(),
                 complete: true,
@@ -6857,8 +6857,8 @@ locator = "RADIO.STATUS"
             crate::blocker_resolution::event_route_blocker_resolution_route(route_id, blocker_kind),
         );
         candidate.inspection = inspection;
-        candidate.scopes = ["ble-direct-test-mode".to_owned()].into();
-        candidate.publication_scopes = ["ble-direct-test-mode".to_owned()].into();
+        candidate.scopes = ["fixture-scope".to_owned()].into();
+        candidate.publication_scopes = ["fixture-scope".to_owned()].into();
         assert_eq!(
             next_action_tokens(&candidate),
             ["inspect", "flow", "--event-route", route_id]
@@ -6872,7 +6872,7 @@ locator = "RADIO.STATUS"
         );
         let finding = &action.findings[0];
         assert!(finding.affected_scope_roots.is_empty());
-        assert_eq!(finding.scopes, ["ble-direct-test-mode"]);
+        assert_eq!(finding.scopes, ["fixture-scope"]);
         assert!(finding.direct_function_ids.is_empty());
         assert!(finding.guaranteed_function_ids.is_empty());
         assert!(finding.optimistic_function_ids.is_empty());
@@ -6898,11 +6898,11 @@ locator = "RADIO.STATUS"
 
     #[test]
     fn one_event_route_action_does_not_coalesce_distinct_resolution_models() {
-        let mut first = accumulator("first", "event-queue-instance-unresolved");
+        let mut first = accumulator("first", "event-queue-producer-lifetime-unproven");
         first.blocker_resolution_route = Some(
             crate::blocker_resolution::event_route_blocker_resolution_route(
                 "route-a",
-                "event-queue-instance-unresolved",
+                "event-queue-producer-lifetime-unproven",
             ),
         );
         let mut second = accumulator("second", "event-receive-run-order-unproven");

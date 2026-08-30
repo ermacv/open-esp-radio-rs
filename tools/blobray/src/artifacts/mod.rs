@@ -35,9 +35,10 @@ pub(crate) use linked_ir_document::{
     StagedLinkedIrBundle, build_linked_ir_document, stage_linked_ir_bundle,
 };
 pub(crate) use linked_ir_read::{
-    LinkedIrStoredDocument, StoredCall, StoredDataObject, StoredFlowValue, StoredFunction,
-    StoredInstructionEffect, StoredLocalValueFlow, StoredMemoryObject, StoredMmioAccess,
-    StoredMmioRegister, StoredReviewCall, StoredReviewDirectEffect, parse_linked_ir,
+    GuardedReturnClassification, GuardedReturnMatch, LinkedIrStoredDocument, StoredCall,
+    StoredDataObject, StoredFlowValue, StoredFunction, StoredInstructionEffect,
+    StoredLocalValueFlow, StoredMemoryObject, StoredMmioAccess, StoredMmioRegister,
+    StoredReviewCall, StoredReviewDirectEffect, parse_linked_ir,
 };
 pub(crate) use mmio_facts::{MmioFactsDocument, build_mmio_facts};
 pub(crate) use mmio_facts_read::parse_mmio_facts;
@@ -83,7 +84,7 @@ pub(crate) const CAPABILITY_CONTEXT: ArtifactSchema = ArtifactSchema {
 };
 
 pub(crate) const LINKED_IR: ArtifactSchema = ArtifactSchema {
-    version: 64,
+    version: 65,
     command: "ir export",
 };
 
@@ -146,7 +147,7 @@ mod tests {
         assert_eq!(
             LINKED_IR,
             ArtifactSchema {
-                version: 64,
+                version: 65,
                 command: "ir export",
             }
         );

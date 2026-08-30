@@ -106,6 +106,57 @@ pub(crate) struct LinkedReturnProvenance {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub(crate) struct LinkedReturnGuard {
+    pub(crate) site: u32,
+    pub(crate) operation: &'static str,
+    pub(crate) taken: bool,
+    pub(crate) left: String,
+    pub(crate) right: String,
+    pub(crate) left_exact: bool,
+    pub(crate) right_exact: bool,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub(crate) struct LinkedReturnGuardPath {
+    pub(crate) guards: Vec<LinkedReturnGuard>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub(crate) struct LinkedGuardedReturnLeaf {
+    pub(crate) value: String,
+    /// The canonical symbolic expression contains no unknown input.
+    pub(crate) exact: bool,
+    /// The expression transitively depends on a RAM or volatile MMIO epoch.
+    pub(crate) epoch_sensitive_dependency: bool,
+    pub(crate) provenance: LinkedReturnProvenance,
+    pub(crate) guard_path: LinkedReturnGuardPath,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub(crate) struct LinkedGuardedFailStop {
+    pub(crate) site: u32,
+    pub(crate) function: String,
+    pub(crate) guard_path: LinkedReturnGuardPath,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub(crate) struct LinkedGuardedReturnFrontier {
+    /// Every structurally reachable terminal was enumerated within the
+    /// published traversal limits. This says nothing about expression
+    /// exactness, path feasibility, or mutable-object lifetime.
+    pub(crate) structurally_complete: bool,
+    pub(crate) leaves: Vec<LinkedGuardedReturnLeaf>,
+    pub(crate) fail_stops: Vec<LinkedGuardedFailStop>,
+    pub(crate) blockers: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub(crate) struct LinkedCallResultFrontier {
+    pub(crate) producer: LinkedCallResultProvenance,
+    pub(crate) frontier: LinkedGuardedReturnFrontier,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedCallGuardMmioSource {
     pub(crate) address: u32,
     pub(crate) register: String,
@@ -992,6 +1043,8 @@ pub(crate) struct LinkedIrFunction {
     pub(crate) exact: bool,
     pub(crate) return_value: String,
     pub(crate) return_provenance: LinkedReturnProvenance,
+    pub(crate) return_frontier: Option<LinkedGuardedReturnFrontier>,
+    pub(crate) call_result_frontiers: Vec<LinkedCallResultFrontier>,
     pub(crate) dependencies: Vec<String>,
     pub(crate) projected_relocations: Vec<LinkedProjectedRelocation>,
     pub(crate) local_value_flow: Vec<LinkedLocalValueFlow>,

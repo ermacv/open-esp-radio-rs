@@ -167,11 +167,12 @@ rationale = "lmacPostTxComplete posts signal 0x17 to the reviewed pp-task receiv
 # dispatcher call sites carrying the same static object that scheduler
 # initialization binds to the task callback, and the generic controller loop's
 # eventq_get/event.run calls. Associating the R9 entry with controller source
-# 124 remains reviewed knowledge. Schema-v64 linked IR independently preserves
+# 124 remains reviewed knowledge. Schema-v65 linked IR independently preserves
 # the direct eventq_get result into the event.run argument, and the conservative
-# CFG places both calls in one ordered basic-block sequence.
-# The enqueue-side queue producer is not yet resolved to the exact queue value
-# consumed by eventq_get, so concrete delivery still fails closed.
+# CFG places both calls in one ordered basic-block sequence. Its guarded-return
+# frontier exposes the enqueue-side queue choice as conditional on mutable
+# controller state; the caller precondition and common object lifetime/epoch
+# remain explicit generated blockers, so concrete delivery still fails closed.
 [[event-routes]]
 kind = "static-event-callback"
 id = "btdm-source124-to-recycle-event-binding"

@@ -3,9 +3,10 @@
 pub(super) mod schema;
 
 pub(crate) use schema::{
-    LinkedIrStoredDocument, StoredCall, StoredDataObject, StoredFlowValue, StoredFunction,
-    StoredInstructionEffect, StoredLocalValueFlow, StoredMemoryObject, StoredMmioAccess,
-    StoredMmioRegister, StoredReviewCall, StoredReviewDirectEffect,
+    GuardedReturnClassification, GuardedReturnMatch, LinkedIrStoredDocument, StoredCall,
+    StoredDataObject, StoredFlowValue, StoredFunction, StoredInstructionEffect,
+    StoredLocalValueFlow, StoredMemoryObject, StoredMmioAccess, StoredMmioRegister,
+    StoredReviewCall, StoredReviewDirectEffect,
 };
 
 use crate::Result;
@@ -21,6 +22,7 @@ pub(crate) fn parse_linked_ir(input: &str) -> Result<LinkedIrStoredDocument> {
     for function in &document.functions {
         schema::validate_function_loops(&function.identity, &function.loops)?;
         schema::validate_call_arguments(&function.identity, &function.calls)?;
+        schema::validate_return_frontiers(function)?;
     }
     Ok(document)
 }

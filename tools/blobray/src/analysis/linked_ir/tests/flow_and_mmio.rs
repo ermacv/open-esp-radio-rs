@@ -330,6 +330,132 @@ fn context_map_recovers_argument_offsets_branch_paths_and_rmw_masks() {
 }
 
 #[test]
+fn memory_read_source_names_fail_closed_across_branch_local_tokens() {
+    let branch = |address| DraftReferenceFlow {
+        events: vec![DraftReferenceEvent::Memory {
+            access: MemoryAccess::Read,
+            width: 32,
+            address: SymbolicValue::Constant(address),
+            region: "dram".to_owned(),
+            value: None,
+        }],
+        terminator: DraftReferenceTerminator::Return(SymbolicValue::memory_read(0, 32, false)),
+    };
+    let trace = FunctionAnalysis {
+        symbol: "branch_reads".to_owned(),
+        events: Vec::new(),
+        located_events: Vec::new(),
+        located_reference_events: Vec::new(),
+        reference_events: Vec::new(),
+        reference_dependencies: Vec::new(),
+        blockers: Vec::new(),
+        reference_blockers: Vec::new(),
+        return_value: SymbolicValue::Unknown,
+        reference_flow: Some(DraftReferenceFlow {
+            events: Vec::new(),
+            terminator: DraftReferenceTerminator::Branch {
+                condition: BranchCondition {
+                    site: 0x100,
+                    operation: BranchOperation::Equal,
+                    left: SymbolicValue::input(0),
+                    right: SymbolicValue::Constant(0),
+                },
+                taken: Box::new(branch(0x3fca_1000)),
+                not_taken: Box::new(branch(0x3fca_2000)),
+            },
+        }),
+        unresolved_branch: None,
+    };
+
+    assert!(memory_read_sources_for_trace(&trace).is_empty());
+}
+
+#[test]
+fn memory_read_source_names_do_not_import_composed_callee_tokens() {
+    let callee = DraftReferenceFlow {
+        events: vec![
+            DraftReferenceEvent::Memory {
+                access: MemoryAccess::Read,
+                width: 32,
+                address: SymbolicValue::Constant(0x3fca_1000),
+                region: "callee-dram".to_owned(),
+                value: None,
+            },
+            DraftReferenceEvent::Memory {
+                access: MemoryAccess::Write,
+                width: 32,
+                address: SymbolicValue::memory_read(0, 32, false).add_constant(4),
+                region: "callee-pointee".to_owned(),
+                value: Some(SymbolicValue::Constant(7)),
+            },
+        ],
+        terminator: DraftReferenceTerminator::Return(SymbolicValue::memory_read(0, 32, false)),
+    };
+    let trace = FunctionAnalysis {
+        symbol: "caller_read".to_owned(),
+        events: Vec::new(),
+        located_events: Vec::new(),
+        located_reference_events: Vec::new(),
+        reference_events: Vec::new(),
+        reference_dependencies: Vec::new(),
+        blockers: Vec::new(),
+        reference_blockers: Vec::new(),
+        return_value: SymbolicValue::memory_read(0, 32, false),
+        reference_flow: Some(DraftReferenceFlow {
+            events: vec![
+                DraftReferenceEvent::ComposedCall {
+                    token: 0,
+                    site: 0x100,
+                    symbol: "callee".to_owned(),
+                    direct: true,
+                    tail: false,
+                    arguments: Vec::new().into_boxed_slice(),
+                    flow: Box::new(callee),
+                    result_modeled: true,
+                },
+                DraftReferenceEvent::Memory {
+                    access: MemoryAccess::Read,
+                    width: 32,
+                    address: SymbolicValue::Constant(0x3fca_2000),
+                    region: "caller-dram".to_owned(),
+                    value: None,
+                },
+            ],
+            terminator: DraftReferenceTerminator::Return(SymbolicValue::memory_read(0, 32, false)),
+        }),
+        unresolved_branch: None,
+    };
+
+    assert_eq!(
+        memory_read_sources_for_trace(&trace)
+            .get(&0)
+            .expect("caller token")
+            .root,
+        MemoryObjectRoot::Absolute {
+            address: 0x3fca_2000
+        }
+    );
+    let accesses = memory_object_accesses_for_trace(&trace);
+    let callee_pointee = accesses
+        .iter()
+        .find(|access| {
+            access.path.contains("call callee")
+                && matches!(access.object, LinkedMemoryObject::Dereferenced { .. })
+        })
+        .expect("callee-local pointer dereference");
+    assert!(matches!(
+        &callee_pointee.object,
+        LinkedMemoryObject::Dereferenced {
+            pointer,
+            pointer_offset: 0,
+        } if matches!(
+            pointer.as_ref(),
+            LinkedMemoryObject::Absolute { address, .. } if *address == 0x3fca_1000
+        )
+    ));
+}
+
+#[test]
 fn memory_object_map_keeps_relocated_global_symbol_identity() {
     let trace = FunctionAnalysis {
         symbol: "update_global".to_owned(),

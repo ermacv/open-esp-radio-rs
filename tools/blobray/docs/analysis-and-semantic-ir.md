@@ -123,6 +123,21 @@ candidate as `unresolved`. This is a navigation association only:
 `linker_resolution_claim` remains false and no callee body is transitively
 inlined across profiles.
 
+## Guarded return frontiers
+
+Schema 65 can preserve every bounded return/fail-stop terminal together with
+typed branch predicates and full producer identity. Consumers classify a
+call-result relation as exact, conditional, no-match, or incomplete without
+parsing the displayed pseudo-expression. Conflicting specializations of the
+same producer are suppressed instead of selecting one by traversal order.
+
+Structural completeness is intentionally separate from value exactness. A
+frontier may enumerate all terminals while retaining an unresolved value or
+predicate; such a frontier remains useful for research but cannot close a
+proof obligation. A value derived from RAM or volatile MMIO can never establish
+an exact cross-call object identity from canonical spelling alone: research
+must also prove one lifetime/epoch or retain an execution replay.
+
 ## Completeness
 
 “Readable” and “complete” are different properties. A function can have useful

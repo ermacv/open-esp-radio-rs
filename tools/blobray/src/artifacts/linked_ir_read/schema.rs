@@ -1,4 +1,4 @@
-//! Complete owned DTO for linked-IR schema v64.
+//! Complete owned DTO for linked-IR schema v65.
 
 #![allow(
     dead_code,
@@ -6,6 +6,14 @@
 )]
 
 use serde::{Deserialize, Serialize};
+
+fn deserialize_required_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer)
+}
 
 mod mmio;
 pub(crate) use mmio::*;
@@ -205,6 +213,9 @@ pub(crate) struct StoredFunction {
     exact: bool,
     return_value: String,
     return_provenance: StoredReturnProvenance,
+    #[serde(deserialize_with = "deserialize_required_option")]
+    return_frontier: Option<StoredGuardedReturnFrontier>,
+    call_result_frontiers: Vec<StoredCallResultFrontier>,
     dependencies: Vec<String>,
     pub(crate) projected_relocations: Vec<StoredProjectedRelocation>,
     pub(crate) local_value_flow: Vec<StoredLocalValueFlow>,
@@ -673,7 +684,7 @@ pub(crate) struct StoredDecodeBlocker {
     pub(crate) linear_control_flow: bool,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredReturnProvenance {
     exact: bool,
@@ -683,7 +694,7 @@ struct StoredReturnProvenance {
     sources: Vec<StoredReturnBitSource>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredReturnBitSource {
     kind: String,
@@ -698,6 +709,158 @@ struct StoredReturnBitSource {
     target: Option<String>,
     address: Option<u32>,
     register: Option<String>,
+}
+
+impl StoredReturnProvenance {
+    fn has_epoch_sensitive_source(&self) -> bool {
+        self.sources.iter().any(|source| {
+            matches!(
+                source.kind.as_str(),
+                "memory-read" | "mmio-read" | "indexed-mmio-read"
+            )
+        })
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredReturnGuard {
+    pub(crate) site: u32,
+    pub(crate) operation: String,
+    pub(crate) taken: bool,
+    pub(crate) left: String,
+    pub(crate) right: String,
+    pub(crate) left_exact: bool,
+    pub(crate) right_exact: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredReturnGuardPath {
+    pub(crate) guards: Vec<StoredReturnGuard>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredGuardedReturnLeaf {
+    pub(crate) value: String,
+    pub(crate) exact: bool,
+    epoch_sensitive_dependency: bool,
+    provenance: StoredReturnProvenance,
+    pub(crate) guard_path: StoredReturnGuardPath,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredGuardedFailStop {
+    pub(crate) site: u32,
+    pub(crate) function: String,
+    pub(crate) guard_path: StoredReturnGuardPath,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredGuardedReturnFrontier {
+    pub(crate) structurally_complete: bool,
+    pub(crate) leaves: Vec<StoredGuardedReturnLeaf>,
+    pub(crate) fail_stops: Vec<StoredGuardedFailStop>,
+    pub(crate) blockers: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredCallResultFrontier {
+    producer: StoredCallResultProvenance,
+    pub(crate) frontier: StoredGuardedReturnFrontier,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum GuardedReturnClassification {
+    Exact,
+    Conditional,
+    NoMatch,
+    Incomplete,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct GuardedReturnMatch {
+    pub(crate) classification: GuardedReturnClassification,
+    /// The value structurally depends on a RAM or volatile MMIO observation.
+    /// Its site-local token is not an object-lifetime or cross-call epoch proof.
+    pub(crate) epoch_sensitive_dependency: bool,
+}
+
+impl StoredGuardedReturnFrontier {
+    pub(crate) fn classify_call_argument(
+        &self,
+        call: &StoredCall,
+        position: usize,
+    ) -> GuardedReturnMatch {
+        let epoch_sensitive_dependency = self.leaves.iter().any(|leaf| {
+            leaf.epoch_sensitive_dependency || leaf.provenance.has_epoch_sensitive_source()
+        });
+        let Some(expected) = call.arguments.get(position) else {
+            return GuardedReturnMatch {
+                classification: GuardedReturnClassification::Incomplete,
+                epoch_sensitive_dependency,
+            };
+        };
+        if !call.argument_is_exact(position)
+            || !self.structurally_complete
+            || !self.blockers.is_empty()
+            || self.leaves.is_empty()
+            || self.leaves.iter().any(|leaf| !leaf.exact)
+        {
+            return GuardedReturnMatch {
+                classification: GuardedReturnClassification::Incomplete,
+                epoch_sensitive_dependency,
+            };
+        }
+        let matches = self
+            .leaves
+            .iter()
+            .filter(|leaf| leaf.value == expected.as_str())
+            .count();
+        let classification = if matches == self.leaves.len() {
+            if epoch_sensitive_dependency {
+                // A canonical value match at two sites does not prove that a
+                // mutable object was observed in the same lifetime/epoch.
+                GuardedReturnClassification::Incomplete
+            } else {
+                GuardedReturnClassification::Exact
+            }
+        } else if matches == 0 {
+            GuardedReturnClassification::NoMatch
+        } else {
+            GuardedReturnClassification::Conditional
+        };
+        GuardedReturnMatch {
+            classification,
+            epoch_sensitive_dependency,
+        }
+    }
+}
+
+impl StoredFunction {
+    pub(crate) fn return_frontier(&self) -> Option<&StoredGuardedReturnFrontier> {
+        self.return_frontier.as_ref()
+    }
+
+    pub(crate) fn call_result_frontier(
+        &self,
+        producer: (&str, &str, u32, &str, Option<&str>),
+    ) -> Option<&StoredGuardedReturnFrontier> {
+        self.call_result_frontiers
+            .iter()
+            .find(|candidate| {
+                candidate.producer.kind == producer.0
+                    && candidate.producer.function == producer.1
+                    && candidate.producer.site == producer.2
+                    && candidate.producer.target == producer.3
+                    && candidate.producer.operation.as_deref() == producer.4
+            })
+            .map(|candidate| &candidate.frontier)
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -958,6 +1121,231 @@ pub(crate) fn validate_call_arguments(identity: &str, calls: &[StoredCall]) -> c
     Ok(())
 }
 
+fn validate_guard_path(identity: &str, path: &StoredReturnGuardPath) -> crate::Result<()> {
+    if path.guards.len() > 32 {
+        return Err(crate::Error::invalid(format!(
+            "linked-IR function {identity:?} exceeds the guarded-return predicate limit"
+        )));
+    }
+    for guard in &path.guards {
+        if !matches!(
+            guard.operation.as_str(),
+            "equal"
+                | "not-equal"
+                | "less-signed"
+                | "greater-equal-signed"
+                | "less-unsigned"
+                | "greater-equal-unsigned"
+        ) {
+            return Err(crate::Error::invalid(format!(
+                "linked-IR function {identity:?} has an unknown guarded-return operation {:?}",
+                guard.operation
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_return_frontier(
+    identity: &str,
+    frontier: &StoredGuardedReturnFrontier,
+    producer_result: bool,
+) -> crate::Result<()> {
+    const MAX_TERMINALS: usize = 64;
+    let leaves_are_ordered = frontier.leaves.windows(2).all(|pair| pair[0] < pair[1]);
+    let fail_stops_are_ordered = frontier.fail_stops.windows(2).all(|pair| pair[0] < pair[1]);
+    let blockers_are_ordered = frontier.blockers.windows(2).all(|pair| pair[0] < pair[1]);
+    if !leaves_are_ordered || !fail_stops_are_ordered || !blockers_are_ordered {
+        return Err(crate::Error::invalid(format!(
+            "linked-IR function {identity:?} has unsorted or duplicate guarded-return records"
+        )));
+    }
+    let terminal_count = frontier.leaves.len() + frontier.fail_stops.len();
+    if (frontier.structurally_complete && terminal_count == 0) || terminal_count > MAX_TERMINALS {
+        return Err(crate::Error::invalid(format!(
+            "linked-IR function {identity:?} has an empty or over-limit guarded-return frontier"
+        )));
+    }
+    if producer_result && frontier.leaves.is_empty() {
+        return Err(crate::Error::invalid(format!(
+            "linked-IR function {identity:?} attaches a guarded-return frontier with no returning leaf to a call result"
+        )));
+    }
+    let mut terminal_paths = std::collections::BTreeSet::new();
+    for leaf in &frontier.leaves {
+        if leaf.provenance.exact != (leaf.provenance.unknown_bits == 0)
+            || (leaf.provenance.has_epoch_sensitive_source() && !leaf.epoch_sensitive_dependency)
+        {
+            return Err(crate::Error::invalid(format!(
+                "linked-IR function {identity:?} has contradictory guarded-return leaf exactness"
+            )));
+        }
+        validate_return_provenance(identity, &leaf.provenance)?;
+        validate_guard_path(identity, &leaf.guard_path)?;
+        if !terminal_paths.insert(leaf.guard_path.clone()) {
+            return Err(crate::Error::invalid(format!(
+                "linked-IR function {identity:?} attaches conflicting terminals to one guarded-return path"
+            )));
+        }
+    }
+    for fail_stop in &frontier.fail_stops {
+        validate_guard_path(identity, &fail_stop.guard_path)?;
+        if !terminal_paths.insert(fail_stop.guard_path.clone()) {
+            return Err(crate::Error::invalid(format!(
+                "linked-IR function {identity:?} attaches conflicting terminals to one guarded-return path"
+            )));
+        }
+    }
+    if frontier.structurally_complete != frontier.blockers.is_empty() {
+        return Err(crate::Error::invalid(format!(
+            "linked-IR function {identity:?} has contradictory guarded-return structural completeness"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_return_provenance(
+    identity: &str,
+    provenance: &StoredReturnProvenance,
+) -> crate::Result<()> {
+    let fixed_bits = provenance.known_zero_bits | provenance.known_one_bits;
+    if provenance.known_zero_bits & provenance.known_one_bits != 0
+        || fixed_bits & provenance.unknown_bits != 0
+    {
+        return Err(crate::Error::invalid(format!(
+            "linked-IR function {identity:?} has overlapping return-provenance bit classes"
+        )));
+    }
+    let mut covered = fixed_bits | provenance.unknown_bits;
+    let mut previous_end = 0_u8;
+    for source in &provenance.sources {
+        let Some(end) = source.output_lsb.checked_add(source.width) else {
+            return Err(crate::Error::invalid(format!(
+                "linked-IR function {identity:?} has an invalid return-provenance source range"
+            )));
+        };
+        let Some(source_end) = source.source_lsb.checked_add(source.width) else {
+            return Err(crate::Error::invalid(format!(
+                "linked-IR function {identity:?} has an invalid return-provenance source range"
+            )));
+        };
+        if source.width == 0
+            || end > 32
+            || source_end > 32
+            || source.output_lsb < previous_end
+            || source.output_bits != bit_range_mask(source.output_lsb, source.width)
+            || source.source_bits != bit_range_mask(source.source_lsb, source.width)
+            || covered & source.output_bits != 0
+        {
+            return Err(crate::Error::invalid(format!(
+                "linked-IR function {identity:?} has contradictory return-provenance source bits"
+            )));
+        }
+        let fields_valid = match source.kind.as_str() {
+            "argument" => {
+                source.argument.is_some()
+                    && source.token.is_none()
+                    && source.target.is_none()
+                    && source.address.is_none()
+                    && source.register.is_none()
+            }
+            "mmio-read" => {
+                source.argument.is_none()
+                    && source.token.is_some()
+                    && source.target.is_none()
+                    && source.address.is_some()
+                    && source.register.is_some()
+            }
+            "indexed-mmio-read" | "memory-read" | "private-stack-read" => {
+                source.argument.is_none()
+                    && source.token.is_some()
+                    && source.target.is_none()
+                    && source.address.is_none()
+                    && source.register.is_none()
+            }
+            "call-result" | "external-result" | "external-result-high" => {
+                source.argument.is_none()
+                    && source.token.is_some()
+                    && source.address.is_none()
+                    && source.register.is_none()
+            }
+            "external-output" => {
+                source.argument.is_some()
+                    && source.token.is_some()
+                    && source.address.is_none()
+                    && source.register.is_none()
+            }
+            _ => false,
+        };
+        if !fields_valid {
+            return Err(crate::Error::invalid(format!(
+                "linked-IR function {identity:?} has an invalid return-provenance source"
+            )));
+        }
+        covered |= source.output_bits;
+        previous_end = end;
+    }
+    if covered != u32::MAX {
+        return Err(crate::Error::invalid(format!(
+            "linked-IR function {identity:?} has incomplete return-provenance bit coverage"
+        )));
+    }
+    Ok(())
+}
+
+const fn bit_range_mask(lsb: u8, width: u8) -> u32 {
+    if width == 32 {
+        u32::MAX
+    } else {
+        ((1_u32 << width) - 1) << lsb
+    }
+}
+
+pub(crate) fn validate_return_frontiers(function: &StoredFunction) -> crate::Result<()> {
+    if let Some(frontier) = &function.return_frontier {
+        validate_return_frontier(&function.identity, frontier, false)?;
+    }
+    validate_call_result_frontiers(
+        &function.identity,
+        &function.calls,
+        &function.call_result_frontiers,
+    )
+}
+
+fn validate_call_result_frontiers(
+    identity: &str,
+    calls: &[StoredCall],
+    frontiers: &[StoredCallResultFrontier],
+) -> crate::Result<()> {
+    let producers = calls
+        .iter()
+        .filter_map(|call| call.result_provenance.as_ref())
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut previous = None;
+    for result in frontiers {
+        if previous
+            .as_ref()
+            .is_some_and(|value| value >= &result.producer)
+            || !producers.contains(&result.producer)
+        {
+            return Err(crate::Error::invalid(format!(
+                "linked-IR function {identity:?} has duplicate or orphaned call-result frontier"
+            )));
+        }
+        validate_return_frontier(identity, &result.frontier, true)?;
+        previous = Some(result.producer.clone());
+    }
+    if producers.iter().any(|producer| {
+        producer.kind == "call-result"
+            && !frontiers.iter().any(|result| &result.producer == *producer)
+    }) {
+        return Err(crate::Error::invalid(format!(
+            "linked-IR function {identity:?} has an internal call-result provenance without its guarded-return frontier"
+        )));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod call_provenance_tests {
     use super::*;
@@ -1061,6 +1449,278 @@ mod call_provenance_tests {
         let mut unmodeled = modeled_producer();
         unmodeled.result_modeled = false;
         assert!(!matching.argument_is_result_of(0, &unmodeled));
+    }
+
+    fn constant_provenance() -> StoredReturnProvenance {
+        StoredReturnProvenance {
+            exact: true,
+            known_zero_bits: u32::MAX,
+            known_one_bits: 0,
+            unknown_bits: 0,
+            sources: Vec::new(),
+        }
+    }
+
+    fn exact_frontier(values: &[&str]) -> StoredGuardedReturnFrontier {
+        StoredGuardedReturnFrontier {
+            structurally_complete: true,
+            leaves: values
+                .iter()
+                .map(|value| StoredGuardedReturnLeaf {
+                    value: (*value).to_owned(),
+                    exact: true,
+                    epoch_sensitive_dependency: false,
+                    provenance: constant_provenance(),
+                    guard_path: StoredReturnGuardPath { guards: Vec::new() },
+                })
+                .collect(),
+            fail_stops: Vec::new(),
+            blockers: Vec::new(),
+        }
+    }
+
+    fn exact_argument(value: &str, exact: bool) -> StoredCall {
+        let mut call = modeled_producer();
+        call.arguments = vec![value.to_owned()];
+        call.argument_exact = vec![exact];
+        call
+    }
+
+    #[test]
+    fn classifier_distinguishes_exact_conditional_no_match_and_incomplete() {
+        let exact = exact_frontier(&["queue-a"]);
+        assert_eq!(
+            exact
+                .classify_call_argument(&exact_argument("queue-a", true), 0)
+                .classification,
+            GuardedReturnClassification::Exact
+        );
+        let conditional = exact_frontier(&["queue-a", "queue-b"]);
+        assert_eq!(
+            conditional
+                .classify_call_argument(&exact_argument("queue-a", true), 0)
+                .classification,
+            GuardedReturnClassification::Conditional
+        );
+        assert_eq!(
+            conditional
+                .classify_call_argument(&exact_argument("queue-c", true), 0)
+                .classification,
+            GuardedReturnClassification::NoMatch
+        );
+        assert_eq!(
+            exact
+                .classify_call_argument(&exact_argument("queue-a", false), 0)
+                .classification,
+            GuardedReturnClassification::Incomplete
+        );
+        assert_eq!(
+            exact_frontier(&[])
+                .classify_call_argument(&exact_argument("queue-a", true), 0)
+                .classification,
+            GuardedReturnClassification::Incomplete
+        );
+        let mut unresolved_leaf = exact_frontier(&["unknown"]);
+        unresolved_leaf.leaves[0].exact = false;
+        assert_eq!(
+            unresolved_leaf
+                .classify_call_argument(&exact_argument("unknown", true), 0)
+                .classification,
+            GuardedReturnClassification::Incomplete
+        );
+    }
+
+    #[test]
+    fn epoch_sensitive_reads_are_typed_evidence_and_fail_closed() {
+        let mut frontier = exact_frontier(&["queue-a", "queue-b"]);
+        frontier.leaves[0]
+            .provenance
+            .sources
+            .push(StoredReturnBitSource {
+                kind: "memory-read".to_owned(),
+                output_lsb: 0,
+                source_lsb: 0,
+                width: 32,
+                output_bits: u32::MAX,
+                source_bits: u32::MAX,
+                inverted: false,
+                argument: None,
+                token: Some(7),
+                target: None,
+                address: None,
+                register: None,
+            });
+        frontier.leaves[0].provenance.known_zero_bits = 0;
+        frontier.leaves[0].epoch_sensitive_dependency = true;
+        let classification = frontier.classify_call_argument(&exact_argument("queue-a", true), 0);
+        assert_eq!(
+            classification.classification,
+            GuardedReturnClassification::Conditional
+        );
+        assert!(classification.epoch_sensitive_dependency);
+
+        let mut all_matching = exact_frontier(&["queue-a"]);
+        all_matching.leaves[0]
+            .provenance
+            .sources
+            .push(frontier.leaves[0].provenance.sources[0].clone());
+        all_matching.leaves[0].provenance.known_zero_bits = 0;
+        all_matching.leaves[0].epoch_sensitive_dependency = true;
+        let classification =
+            all_matching.classify_call_argument(&exact_argument("queue-a", true), 0);
+        assert_eq!(
+            classification.classification,
+            GuardedReturnClassification::Incomplete
+        );
+        assert!(classification.epoch_sensitive_dependency);
+    }
+
+    #[test]
+    fn volatile_mmio_and_unknown_ram_require_an_object_epoch_witness() {
+        for kind in ["mmio-read", "indexed-mmio-read", "memory-read"] {
+            let mut frontier = exact_frontier(&["queue-a"]);
+            frontier.leaves[0]
+                .provenance
+                .sources
+                .push(StoredReturnBitSource {
+                    kind: kind.to_owned(),
+                    output_lsb: 0,
+                    source_lsb: 0,
+                    width: 32,
+                    output_bits: u32::MAX,
+                    source_bits: u32::MAX,
+                    inverted: false,
+                    argument: None,
+                    token: Some(9),
+                    target: None,
+                    address: (kind == "mmio-read").then_some(0x6000_1000),
+                    register: (kind == "mmio-read").then(|| "QUEUE.SELECT".to_owned()),
+                });
+            frontier.leaves[0].provenance.known_zero_bits = 0;
+            if kind == "memory-read" {
+                frontier.leaves[0].epoch_sensitive_dependency = true;
+            }
+
+            let result = frontier.classify_call_argument(&exact_argument("queue-a", true), 0);
+            assert_eq!(
+                result.classification,
+                GuardedReturnClassification::Incomplete,
+                "{kind} must not establish a cross-site queue epoch"
+            );
+            assert!(
+                result.epoch_sensitive_dependency,
+                "missing {kind} dependency"
+            );
+        }
+    }
+
+    #[test]
+    fn frontier_validation_rejects_contradictions_and_duplicate_producers() {
+        let mut contradictory = exact_frontier(&["queue-a"]);
+        contradictory.leaves[0].provenance.exact = false;
+        assert!(validate_return_frontier("fixture::worker", &contradictory, true).is_err());
+
+        let producer = modeled_producer();
+        let provenance = producer
+            .result_provenance
+            .clone()
+            .expect("fixture provenance");
+        let result = StoredCallResultFrontier {
+            producer: provenance,
+            frontier: exact_frontier(&["queue-a"]),
+        };
+        assert!(
+            validate_call_result_frontiers(
+                "fixture::worker",
+                &[producer],
+                &[result.clone(), result]
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn frontier_validation_rejects_impossible_structural_and_provenance_states() {
+        let mut empty = exact_frontier(&[]);
+        assert!(validate_return_frontier("fixture::worker", &empty, false).is_err());
+
+        let mut blocked_empty = empty.clone();
+        blocked_empty.structurally_complete = false;
+        blocked_empty.blockers = vec!["structured flow unavailable".to_owned()];
+        assert!(validate_return_frontier("fixture::worker", &blocked_empty, false).is_ok());
+
+        empty.leaves.push(StoredGuardedReturnLeaf {
+            value: "queue-a".to_owned(),
+            exact: true,
+            epoch_sensitive_dependency: false,
+            provenance: constant_provenance(),
+            guard_path: StoredReturnGuardPath { guards: Vec::new() },
+        });
+        empty.structurally_complete = false;
+        assert!(validate_return_frontier("fixture::worker", &empty, false).is_err());
+
+        let mut conflicting = exact_frontier(&["queue-a", "queue-b"]);
+        assert!(validate_return_frontier("fixture::worker", &conflicting, false).is_err());
+        conflicting.leaves.truncate(1);
+        conflicting.leaves[0].guard_path.guards = (0..33)
+            .map(|site| StoredReturnGuard {
+                site,
+                operation: "equal".to_owned(),
+                taken: true,
+                left: "arg0".to_owned(),
+                right: "const:0x00000000".to_owned(),
+                left_exact: true,
+                right_exact: true,
+            })
+            .collect();
+        assert!(validate_return_frontier("fixture::worker", &conflicting, false).is_err());
+
+        let mut invalid_source = exact_frontier(&["queue-a"]);
+        invalid_source.leaves[0].provenance.known_zero_bits = 0;
+        invalid_source.leaves[0]
+            .provenance
+            .sources
+            .push(StoredReturnBitSource {
+                kind: "forged-memory".to_owned(),
+                output_lsb: 0,
+                source_lsb: 0,
+                width: 32,
+                output_bits: u32::MAX,
+                source_bits: u32::MAX,
+                inverted: false,
+                argument: None,
+                token: Some(7),
+                target: None,
+                address: None,
+                register: None,
+            });
+        assert!(validate_return_frontier("fixture::worker", &invalid_source, false).is_err());
+
+        let mut internal = modeled_producer();
+        internal.kind = "internal".to_owned();
+        internal
+            .result_provenance
+            .as_mut()
+            .expect("fixture provenance")
+            .kind = "call-result".to_owned();
+        assert!(validate_call_result_frontiers("fixture::worker", &[internal], &[]).is_err());
+    }
+
+    #[test]
+    fn optional_frontier_field_requires_explicit_null() {
+        #[derive(Deserialize)]
+        struct Fixture {
+            #[serde(deserialize_with = "deserialize_required_option")]
+            frontier: Option<u8>,
+        }
+
+        assert!(serde_json::from_str::<Fixture>(r#"{}"#).is_err());
+        assert!(
+            serde_json::from_str::<Fixture>(r#"{"frontier":null}"#)
+                .unwrap()
+                .frontier
+                .is_none()
+        );
     }
 }
 

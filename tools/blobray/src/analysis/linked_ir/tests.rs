@@ -62,6 +62,8 @@ fn linked_test_function(
             unknown_bits: u32::MAX,
             sources: Vec::new(),
         },
+        return_frontier: None,
+        call_result_frontiers: Vec::new(),
         dependencies: Vec::new(),
         projected_relocations: Vec::new(),
         local_value_flow: Vec::new(),
@@ -83,6 +85,57 @@ fn linked_test_function(
         decode_blockers: Vec::new(),
         pseudo: format!("// vendor symbol: {source}::{symbol}\n"),
     }
+}
+
+#[test]
+fn schema_v65_requires_frontier_fields_and_rejects_unknown_nested_frontier_data() {
+    let render = || {
+        crate::artifacts::render_linked_ir_fixture(
+            vec![linked_test_function("rom", "worker", "global", Vec::new())],
+            Vec::new(),
+        )
+    };
+    let mut missing: serde_json::Value = serde_json::from_str(&render()).unwrap();
+    missing["functions"][0]
+        .as_object_mut()
+        .expect("function object")
+        .remove("return_frontier");
+    let error = crate::artifacts::parse_linked_ir(&missing.to_string()).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("missing field `return_frontier`"),
+        "{error}"
+    );
+
+    let mut missing: serde_json::Value = serde_json::from_str(&render()).unwrap();
+    missing["functions"][0]
+        .as_object_mut()
+        .expect("function object")
+        .remove("call_result_frontiers");
+    let error = crate::artifacts::parse_linked_ir(&missing.to_string()).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("missing field `call_result_frontiers`"),
+        "{error}"
+    );
+
+    let mut unknown: serde_json::Value = serde_json::from_str(&render()).unwrap();
+    unknown["functions"][0]["return_frontier"] = serde_json::json!({
+        "structurally_complete": false,
+        "leaves": [],
+        "fail_stops": [],
+        "blockers": ["fixture structural blocker"],
+        "legacy_text_guard": "arg0 == 0"
+    });
+    let error = crate::artifacts::parse_linked_ir(&unknown.to_string()).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("unknown field `legacy_text_guard`"),
+        "{error}"
+    );
 }
 
 fn projected_argument(

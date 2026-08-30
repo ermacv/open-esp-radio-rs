@@ -578,6 +578,7 @@ impl LinkedIrReader {
                     &function.identity,
                     &function.calls,
                 )?;
+                super::linked_ir_read::schema::validate_return_frontiers(&function)?;
                 functions.push(function);
             }
         }
@@ -749,6 +750,7 @@ impl LinkedIrReader {
             &function.identity,
             &function.calls,
         )?;
+        super::linked_ir_read::schema::validate_return_frontiers(&function)?;
         if function.identity != record.identity
             || function.source != record.source
             || function.member != record.member

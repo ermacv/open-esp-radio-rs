@@ -961,7 +961,7 @@ fn investigate_static_event_callback(
         value: Some(expected_callback.clone()),
         origin_path: None,
     }];
-    let mut dispatch_queues = BTreeSet::new();
+    let mut dispatch_queue_resolutions = Vec::new();
     for site in &route.dispatch_sites {
         let call = stored_exact_call(
             &dispatcher,
@@ -982,15 +982,15 @@ fn investigate_static_event_callback(
                 "event enqueue object differs from initialized callback object",
             ));
         }
-        dispatch_queues.insert(
-            stored_exact_argument(
-                call,
-                route.dispatch_queue_argument,
-                &route.id,
-                "dispatch queue",
-            )?
-            .to_owned(),
-        );
+        dispatch_queue_resolutions.push(resolve_dispatch_queue(
+            &dispatcher,
+            call,
+            route.dispatch_queue_argument,
+            receive_call,
+            route.receive_queue_argument,
+            *site,
+            &route.id,
+        )?);
         steps.push(observed_direct_call_step(
             &route.execution_context,
             &route.dispatcher,
@@ -1083,7 +1083,7 @@ fn investigate_static_event_callback(
             origin_path: None,
         },
     ]);
-    let mut blockers = vec![stateful_delivery_blocker(&dispatch_queues, receive_queue)];
+    let mut blockers = stateful_delivery_blockers(&dispatch_queue_resolutions, receive_queue);
     if let Some(blocker) =
         receive_result_flow_blocker(run_event, run_event_exact, receive_result_flow_proven)
     {
@@ -1857,28 +1857,152 @@ fn reviewed_callback_route_claims(structural_navigation: bool) -> FlowClaims {
     }
 }
 
-fn stateful_delivery_blocker(
-    dispatch_queues: &BTreeSet<String>,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct DispatchQueueResolution {
+    site: u32,
+    classification: artifacts::GuardedReturnClassification,
+    epoch_sensitive_dependency: bool,
+}
+
+fn resolve_dispatch_queue(
+    dispatcher: &artifacts::StoredFunction,
+    call: &artifacts::StoredCall,
+    argument: u8,
+    receive_call: &artifacts::StoredCall,
+    receive_argument: u8,
+    site: u32,
+    route: &str,
+) -> Result<DispatchQueueResolution> {
+    let position = usize::from(argument);
+    let receive_position = usize::from(receive_argument);
+    let dispatch_queue = call
+        .arguments
+        .get(position)
+        .ok_or_else(|| route_mismatch(route, "dispatch queue argument is absent"))?;
+    let receive_queue = receive_call
+        .arguments
+        .get(receive_position)
+        .ok_or_else(|| route_mismatch(route, "receive queue argument is absent"))?;
+
+    if let Some(producer) = call.argument_result_provenance(position) {
+        let result = dispatcher
+            .call_result_frontier(producer)
+            .map(|frontier| frontier.classify_call_argument(receive_call, receive_position))
+            .unwrap_or(artifacts::GuardedReturnMatch {
+                classification: artifacts::GuardedReturnClassification::Incomplete,
+                epoch_sensitive_dependency: false,
+            });
+        return Ok(DispatchQueueResolution {
+            site,
+            classification: result.classification,
+            epoch_sensitive_dependency: result.epoch_sensitive_dependency,
+        });
+    }
+
+    Ok(unproven_dispatch_queue_resolution(
+        site,
+        (dispatch_queue, call.argument_is_exact(position)),
+        (
+            receive_queue,
+            receive_call.argument_is_exact(receive_position),
+        ),
+    ))
+}
+
+fn unproven_dispatch_queue_resolution(
+    site: u32,
+    _dispatch_observation: (&str, bool),
+    _receive_observation: (&str, bool),
+) -> DispatchQueueResolution {
+    // Canonical rendering and local exactness describe values at their own
+    // sites. Without typed producer provenance they cannot establish that the
+    // enqueue and receive arguments denote one queue object or object epoch,
+    // even when the strings happen to be identical.
+    DispatchQueueResolution {
+        site,
+        classification: artifacts::GuardedReturnClassification::Incomplete,
+        epoch_sensitive_dependency: false,
+    }
+}
+
+fn stateful_delivery_blockers(
+    resolutions: &[DispatchQueueResolution],
     receive_queue: &str,
-) -> FlowBlocker {
-    if dispatch_queues.len() == 1 && dispatch_queues.contains(receive_queue) {
-        FlowBlocker::manual(
+) -> Vec<FlowBlocker> {
+    if resolutions.is_empty() {
+        return vec![FlowBlocker::manual(
+            "event-queue-producer-frontier-incomplete",
+            "the reviewed route contains no enqueue site to compare with the receive queue",
+            "publish at least one exact reviewed enqueue site and its generated queue evidence",
+        )];
+    }
+    let sites = |classification| {
+        resolutions
+            .iter()
+            .filter(|resolution| resolution.classification == classification)
+            .map(|resolution| format!("{:#010x}", resolution.site))
+            .collect::<Vec<_>>()
+    };
+    let incomplete = sites(artifacts::GuardedReturnClassification::Incomplete);
+    let no_match = sites(artifacts::GuardedReturnClassification::NoMatch);
+    let conditional = sites(artifacts::GuardedReturnClassification::Conditional);
+    let epoch_sensitive = resolutions
+        .iter()
+        .filter(|resolution| resolution.epoch_sensitive_dependency)
+        .map(|resolution| format!("{:#010x}", resolution.site))
+        .collect::<Vec<_>>();
+
+    if resolutions.iter().all(|resolution| {
+        resolution.classification == artifacts::GuardedReturnClassification::Exact
+            && !resolution.epoch_sensitive_dependency
+    }) {
+        return vec![FlowBlocker::manual(
             "event-delivery-not-replayed",
             format!(
-                "the stateful callback contract and exact queue value {receive_queue} join enqueue to receive/run, but no execution replay proves this queue instance"
+                "the stateful callback contract and exact queue value {receive_queue} join every enqueue site to receive/run, but no execution replay proves this queue instance"
             ),
             "replay this exact queue instance and retain enqueue, receive, run, and callback evidence",
-        )
-    } else {
-        FlowBlocker::manual(
-            "event-queue-instance-unresolved",
-            format!(
-                "stateful event.init/receive/run callback dispatch is modeled, but enqueue queue values {:?} do not resolve to receive queue {receive_queue}",
-                dispatch_queues
-            ),
-            "resolve the enqueue-side queue producer to the exact receive queue value, then replay that queue instance",
-        )
+        )];
     }
+
+    let mut blockers = Vec::new();
+    if !incomplete.is_empty() {
+        blockers.push(FlowBlocker::manual(
+            "event-queue-producer-frontier-incomplete",
+            format!(
+                "enqueue sites {incomplete:?} do not have a complete exact guarded-return frontier that can be compared with receive queue {receive_queue}"
+            ),
+            "complete and persist exact call-result provenance and every returning leaf of these queue producers",
+        ));
+    }
+    if !no_match.is_empty() {
+        blockers.push(FlowBlocker::manual(
+            "event-queue-producer-frontier-no-match",
+            format!(
+                "complete exact producer frontiers at enqueue sites {no_match:?} have no returning leaf canonically equal to receive queue {receive_queue}"
+            ),
+            "recover a typed canonical value relation between the producer return and receive queue, or review the route against current authenticated linked IR",
+        ));
+    }
+    if !conditional.is_empty() {
+        blockers.push(FlowBlocker::manual(
+            "event-queue-producer-precondition-unproven",
+            format!(
+                "producer frontiers at enqueue sites {conditional:?} contain both a returning leaf equal to receive queue {receive_queue} and other returning leaves, but no typed caller-side precondition selects the matching leaf"
+            ),
+            "prove the exact producer guard in the enqueue caller state, or replay that state without promoting a possible return into a path claim",
+        ));
+    }
+    if !epoch_sensitive.is_empty() {
+        blockers.push(FlowBlocker::manual(
+            "event-queue-producer-lifetime-unproven",
+            format!(
+                "queue producer frontiers at enqueue sites {epoch_sensitive:?} depend on RAM or volatile MMIO observations; site-local values do not prove that enqueue and receive use the same object epoch"
+            ),
+            "join the epoch-sensitive queue selection to one initialization and delivery epoch, or replay that exact epoch",
+        ));
+    }
+    blockers
 }
 
 fn callback_store_dominance_blocker(proven: bool) -> Option<FlowBlocker> {
@@ -2217,25 +2341,123 @@ mod tests {
     }
 
     #[test]
-    fn stateful_delivery_fails_closed_when_queue_instances_do_not_join() {
-        let dispatch_queues = BTreeSet::from([
-            "result_of_fixture__queue_0x00001000".to_owned(),
-            "result_of_fixture__queue_0x00001004".to_owned(),
-        ]);
+    fn stateful_delivery_fails_closed_for_mixed_exact_and_incomplete_sites() {
+        let resolutions = [
+            DispatchQueueResolution {
+                site: 0x1000,
+                classification: artifacts::GuardedReturnClassification::Exact,
+                epoch_sensitive_dependency: false,
+            },
+            DispatchQueueResolution {
+                site: 0x1004,
+                classification: artifacts::GuardedReturnClassification::Incomplete,
+                epoch_sensitive_dependency: false,
+            },
+        ];
 
-        let blocker = stateful_delivery_blocker(&dispatch_queues, "memory:fixture::queue+0x8");
+        let blockers = stateful_delivery_blockers(&resolutions, "queue-a");
 
-        assert_eq!(blocker.kind, "event-queue-instance-unresolved");
+        assert_eq!(blockers.len(), 1);
+        assert_eq!(blockers[0].kind, "event-queue-producer-frontier-incomplete");
+    }
+
+    #[test]
+    fn identical_exact_queue_strings_without_producer_provenance_stay_incomplete() {
+        let resolution = unproven_dispatch_queue_resolution(
+            0x1000,
+            ("memory:fixture::queue+0x8", true),
+            ("memory:fixture::queue+0x8", true),
+        );
+
+        assert_eq!(
+            resolution.classification,
+            artifacts::GuardedReturnClassification::Incomplete
+        );
+        let blockers = stateful_delivery_blockers(&[resolution], "memory:fixture::queue+0x8");
+        assert_eq!(blockers.len(), 1);
+        assert_eq!(blockers[0].kind, "event-queue-producer-frontier-incomplete");
+    }
+
+    #[test]
+    fn stateful_delivery_fails_closed_without_enqueue_evidence() {
+        let blockers = stateful_delivery_blockers(&[], "queue-a");
+
+        assert_eq!(blockers.len(), 1);
+        assert_eq!(blockers[0].kind, "event-queue-producer-frontier-incomplete");
     }
 
     #[test]
     fn stateful_delivery_requires_replay_after_exact_queue_join() {
-        let queue = "memory:fixture::queue+0x8";
-        let dispatch_queues = BTreeSet::from([queue.to_owned()]);
+        let resolutions = [DispatchQueueResolution {
+            site: 0x1000,
+            classification: artifacts::GuardedReturnClassification::Exact,
+            epoch_sensitive_dependency: false,
+        }];
 
-        let blocker = stateful_delivery_blocker(&dispatch_queues, queue);
+        let blockers = stateful_delivery_blockers(&resolutions, "queue-a");
 
-        assert_eq!(blocker.kind, "event-delivery-not-replayed");
+        assert_eq!(blockers.len(), 1);
+        assert_eq!(blockers[0].kind, "event-delivery-not-replayed");
+    }
+
+    #[test]
+    fn conditional_mutable_queue_producer_retains_precondition_and_lifetime_blockers() {
+        let resolutions = [
+            DispatchQueueResolution {
+                site: 0x1000,
+                classification: artifacts::GuardedReturnClassification::Exact,
+                epoch_sensitive_dependency: false,
+            },
+            DispatchQueueResolution {
+                site: 0x1004,
+                classification: artifacts::GuardedReturnClassification::Conditional,
+                epoch_sensitive_dependency: true,
+            },
+        ];
+
+        let blockers = stateful_delivery_blockers(&resolutions, "queue-a");
+        let kinds = blockers
+            .iter()
+            .map(|blocker| blocker.kind.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            kinds,
+            [
+                "event-queue-producer-precondition-unproven",
+                "event-queue-producer-lifetime-unproven",
+            ]
+        );
+        assert!(!kinds.contains(&"event-delivery-not-replayed"));
+    }
+
+    #[test]
+    fn exact_mutable_queue_producer_does_not_claim_a_replay_ready_join() {
+        let resolutions = [DispatchQueueResolution {
+            site: 0x1000,
+            classification: artifacts::GuardedReturnClassification::Exact,
+            epoch_sensitive_dependency: true,
+        }];
+
+        let blockers = stateful_delivery_blockers(&resolutions, "queue-a");
+
+        assert_eq!(blockers.len(), 1);
+        assert_eq!(blockers[0].kind, "event-queue-producer-lifetime-unproven");
+    }
+
+    #[test]
+    fn queue_producer_with_no_canonical_leaf_match_stays_unjoined() {
+        let resolutions = [DispatchQueueResolution {
+            site: 0x1000,
+            classification: artifacts::GuardedReturnClassification::NoMatch,
+            epoch_sensitive_dependency: false,
+        }];
+
+        let blockers = stateful_delivery_blockers(&resolutions, "queue-a");
+
+        assert_eq!(blockers.len(), 1);
+        assert_eq!(blockers[0].kind, "event-queue-producer-frontier-no-match");
+        assert!(blockers[0].message.contains("canonically equal"));
     }
 
     #[test]

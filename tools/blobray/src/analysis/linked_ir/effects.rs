@@ -70,26 +70,28 @@ fn collect_memory_object_access_from_event(
         DraftReferenceEvent::BoundedPoll {
             body, on_exhausted, ..
         } => {
+            let nested_read_sources = memory_read_sources_for_flow(body);
             collect_memory_object_access_from_flow(
                 body,
                 &nested_path(path, "bounded-poll"),
-                read_sources,
+                &nested_read_sources,
                 output,
             );
             if let Some(event) = on_exhausted.as_deref() {
                 collect_memory_object_access_from_event(
                     event,
                     &nested_path(path, "poll-exhausted"),
-                    read_sources,
+                    &BTreeMap::new(),
                     output,
                 );
             }
         }
         DraftReferenceEvent::PollFlow { body, .. } => {
+            let nested_read_sources = memory_read_sources_for_flow(body);
             collect_memory_object_access_from_flow(
                 body,
                 &nested_path(path, "poll"),
-                read_sources,
+                &nested_read_sources,
                 output,
             );
         }
@@ -106,20 +108,22 @@ fn collect_memory_object_access_from_event(
                 ("calibration-write-candidate", write_candidate),
                 ("calibration-sample", sample),
             ] {
+                let nested_read_sources = memory_read_sources_for_flow(flow);
                 collect_memory_object_access_from_flow(
                     flow,
                     &nested_path(path, scope),
-                    read_sources,
+                    &nested_read_sources,
                     output,
                 );
             }
         }
         DraftReferenceEvent::ComposedCall { symbol, flow, .. }
         | DraftReferenceEvent::ComposedCallWithScratch { symbol, flow, .. } => {
+            let nested_read_sources = memory_read_sources_for_flow(flow);
             collect_memory_object_access_from_flow(
                 flow,
                 &nested_path(path, &format!("call {symbol}")),
-                read_sources,
+                &nested_read_sources,
                 output,
             );
         }
@@ -246,83 +250,94 @@ pub(super) fn attribute_data_symbols(
     }
 }
 
+#[derive(Clone, Default)]
+struct PathMemoryReads {
+    next_token: u32,
+    sources: BTreeMap<u32, MemoryObjectLocation>,
+}
+
+fn collect_memory_read_on_path(
+    event: &DraftReferenceEvent,
+    path: &mut PathMemoryReads,
+    candidates: &mut BTreeMap<u32, BTreeSet<Option<MemoryObjectLocation>>>,
+) {
+    let DraftReferenceEvent::Memory {
+        access: MemoryAccess::Read,
+        address,
+        ..
+    } = event
+    else {
+        // Embedded poll, calibration and composed-call bodies own token
+        // namespaces that cannot be joined to the containing flow.
+        return;
+    };
+    let token = path.next_token;
+    path.next_token = path.next_token.wrapping_add(1);
+    let location = address.memory_object_location_with_reads(&path.sources);
+    candidates
+        .entry(token)
+        .or_default()
+        .insert(location.clone());
+    if let Some(location) = location {
+        path.sources.insert(token, location);
+    } else {
+        path.sources.remove(&token);
+    }
+}
+
+fn collect_memory_read_flow_paths(
+    flow: &DraftReferenceFlow,
+    mut path: PathMemoryReads,
+    candidates: &mut BTreeMap<u32, BTreeSet<Option<MemoryObjectLocation>>>,
+) {
+    for event in &flow.events {
+        collect_memory_read_on_path(event, &mut path, candidates);
+    }
+    if let DraftReferenceTerminator::Branch {
+        taken, not_taken, ..
+    } = &flow.terminator
+    {
+        collect_memory_read_flow_paths(taken, path.clone(), candidates);
+        collect_memory_read_flow_paths(not_taken, path, candidates);
+    }
+}
+
+fn unambiguous_memory_read_sources(
+    mut candidates: BTreeMap<u32, BTreeSet<Option<MemoryObjectLocation>>>,
+) -> BTreeMap<u32, MemoryObjectLocation> {
+    candidates
+        .iter_mut()
+        .filter_map(|(token, locations)| {
+            if locations.len() != 1 {
+                return None;
+            }
+            locations
+                .pop_first()
+                .flatten()
+                .map(|location| (*token, location))
+        })
+        .collect()
+}
+
+fn memory_read_sources_for_flow(flow: &DraftReferenceFlow) -> BTreeMap<u32, MemoryObjectLocation> {
+    let mut candidates = BTreeMap::new();
+    collect_memory_read_flow_paths(flow, PathMemoryReads::default(), &mut candidates);
+    unambiguous_memory_read_sources(candidates)
+}
+
 pub(super) fn memory_read_sources_for_trace(
     trace: &FunctionAnalysis,
 ) -> BTreeMap<u32, MemoryObjectLocation> {
-    fn collect_event(
-        event: &DraftReferenceEvent,
-        next_token: &mut u32,
-        sources: &mut BTreeMap<u32, MemoryObjectLocation>,
-    ) {
-        match event {
-            DraftReferenceEvent::Memory {
-                access: MemoryAccess::Read,
-                address,
-                ..
-            } => {
-                let token = *next_token;
-                *next_token = (*next_token).wrapping_add(1);
-                if let Some(location) = address.memory_object_location_with_reads(sources) {
-                    sources.insert(token, location);
-                }
-            }
-            DraftReferenceEvent::BoundedPoll {
-                body, on_exhausted, ..
-            } => {
-                collect_flow(body, next_token, sources);
-                if let Some(event) = on_exhausted.as_deref() {
-                    collect_event(event, next_token, sources);
-                }
-            }
-            DraftReferenceEvent::PollFlow { body, .. } => {
-                collect_flow(body, next_token, sources);
-            }
-            DraftReferenceEvent::SymmetricCalibrationSearch {
-                initial_read,
-                setup,
-                write_candidate,
-                sample,
-                ..
-            } => {
-                for flow in [initial_read, setup, write_candidate, sample] {
-                    collect_flow(flow, next_token, sources);
-                }
-            }
-            DraftReferenceEvent::ComposedCall { flow, .. }
-            | DraftReferenceEvent::ComposedCallWithScratch { flow, .. } => {
-                collect_flow(flow, next_token, sources);
-            }
-            _ => {}
-        }
-    }
-
-    fn collect_flow(
-        flow: &DraftReferenceFlow,
-        next_token: &mut u32,
-        sources: &mut BTreeMap<u32, MemoryObjectLocation>,
-    ) {
-        for event in &flow.events {
-            collect_event(event, next_token, sources);
-        }
-        if let DraftReferenceTerminator::Branch {
-            taken, not_taken, ..
-        } = &flow.terminator
-        {
-            collect_flow(taken, next_token, sources);
-            collect_flow(not_taken, next_token, sources);
-        }
-    }
-
-    let mut sources = BTreeMap::new();
-    let mut next_token = 0;
     if let Some(flow) = trace.reference_flow.as_ref() {
-        collect_flow(flow, &mut next_token, &mut sources);
+        memory_read_sources_for_flow(flow)
     } else {
+        let mut candidates = BTreeMap::new();
+        let mut path = PathMemoryReads::default();
         for event in &trace.reference_events {
-            collect_event(event, &mut next_token, &mut sources);
+            collect_memory_read_on_path(event, &mut path, &mut candidates);
         }
+        unambiguous_memory_read_sources(candidates)
     }
-    sources
 }
 
 pub(super) fn memory_object_fields_for_accesses(

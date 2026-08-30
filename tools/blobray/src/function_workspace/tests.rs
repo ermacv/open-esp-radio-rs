@@ -340,6 +340,8 @@ fn write_ir(path: &std::path::Path) {
         exact: true,
         return_value: "?".to_owned(),
         return_provenance: provenance(),
+        return_frontier: None,
+        call_result_frontiers: Vec::new(),
         dependencies: Vec::new(),
         projected_relocations: Vec::new(),
         local_value_flow: Vec::new(),
@@ -448,6 +450,39 @@ fn split_linked_ir_rejects_call_argument_proof_drift() {
     assert!(one_error.to_string().contains("exactness records"));
 
     std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn split_linked_ir_rejects_missing_frontier_fields_in_bulk_and_random_access() {
+    for field in ["return_frontier", "call_result_frontiers"] {
+        let directory = std::env::temp_dir().join(format!(
+            "blobray-function-missing-{field}-{}",
+            std::process::id()
+        ));
+        write_ir(&directory);
+        let functions_path = directory.join("functions.jsonl");
+        let marker = if field == "return_frontier" {
+            "\"return_frontier\":null,"
+        } else {
+            "\"call_result_frontiers\":[],"
+        };
+        let replacement = " ".repeat(marker.len());
+        let functions =
+            std::fs::read_to_string(&functions_path)
+                .unwrap()
+                .replacen(marker, &replacement, 1);
+        std::fs::write(&functions_path, functions).unwrap();
+
+        let reader = crate::artifacts::LinkedIrReader::open(&directory).unwrap();
+        let all_error = reader.read_all_functions().unwrap_err();
+        assert!(all_error.to_string().contains(field), "{all_error}");
+        let one_error = reader
+            .get_function_by_identity("rom::vendor_irq")
+            .unwrap_err();
+        assert!(one_error.to_string().contains(field), "{one_error}");
+
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 }
 
 #[test]

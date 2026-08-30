@@ -34,7 +34,8 @@ use open_esp_radio_esp32s31_bluetooth::{
     BluetoothModemLpTimerEventPublication, BluetoothModemLpTimerExpiration,
     BluetoothModemLpTimerExpirationPending, BluetoothModemLpTimerSoftwareWork,
     BluetoothNrtDefaultInterruptEpoch, BluetoothPrimaryControllerFault,
-    BluetoothPrimaryInterruptStep, BluetoothPrimaryNoSchedulerWork, BluetoothPrimarySchedulerEvent,
+    BluetoothPrimaryInterruptStep, BluetoothPrimaryNoSchedulerWork,
+    BluetoothPrimaryOrdinaryPublication, BluetoothPrimarySchedulerEvent,
     BluetoothPrimarySerializedServiceStep, BluetoothSchedulerLockModifyEvent,
     BluetoothSchedulerLockModifyEventPublication, BluetoothSchedulerLockModifyInterruptObservation,
     BluetoothSchedulerLockModifyWorkerStep, BluetoothSchedulerWakeBatch,
@@ -91,21 +92,46 @@ impl<M: RawMutex> EmbassyBluetoothRuntimeWakers<M> {
         publication
     }
 
-    /// Deliver any post-unlink notification carried by one exact serialized
+    fn notify_ordinary(
+        &self,
+        publication: BluetoothPrimaryOrdinaryPublication,
+    ) -> BluetoothPrimaryOrdinaryPublication {
+        if let BluetoothPrimaryOrdinaryPublication::Scheduler {
+            scheduler,
+            lock_modify,
+        } = publication
+        {
+            if scheduler == BluetoothSchedulerWakePublication::WakeWorker {
+                self.scheduler_waker.wake();
+            }
+            if lock_modify == BluetoothSchedulerLockModifyEventPublication::WakeWorker {
+                self.lock_modify_waker.wake();
+            }
+        }
+        publication
+    }
+
+    /// Deliver every executor notification carried by one exact serialized
     /// primary-service result.
     ///
-    /// General primary work has no post-unlink consumer. Both the first stored
-    /// event and a full mailbox are routed through the same coalescing notifier.
+    /// Ordinary scheduler and lock/modify publications are notified for all
+    /// variants. Both the first stored post-unlink event and a full mailbox are
+    /// additionally routed through the same coalescing mailbox notifier.
     pub fn notify_primary_service(
         &self,
         step: &BluetoothPrimarySerializedServiceStep,
     ) -> Option<BluetoothDtmPostUnlinkMailboxPublication> {
-        let publication = match step {
-            BluetoothPrimarySerializedServiceStep::General { .. } => return None,
-            BluetoothPrimarySerializedServiceStep::DtmStored { mailbox, .. }
-            | BluetoothPrimarySerializedServiceStep::MailboxFull { mailbox, .. } => *mailbox,
+        let (ordinary, mailbox) = match step {
+            BluetoothPrimarySerializedServiceStep::General { ordinary, .. } => (*ordinary, None),
+            BluetoothPrimarySerializedServiceStep::DtmStored {
+                mailbox, ordinary, ..
+            }
+            | BluetoothPrimarySerializedServiceStep::MailboxFull {
+                mailbox, ordinary, ..
+            } => (*ordinary, Some(*mailbox)),
         };
-        Some(self.notify_post_unlink(publication))
+        self.notify_ordinary(ordinary);
+        mailbox.map(|publication| self.notify_post_unlink(publication))
     }
 
     /// Wait until the Controller-owned post-unlink mailbox becomes ready.
@@ -624,6 +650,50 @@ mod tests {
         );
 
         assert!(block_on(receiver.wait_scheduler()).is_marked());
+    }
+
+    #[test]
+    fn serialized_primary_notification_wakes_both_fresh_ordinary_consumers() {
+        let wakers = EmbassyBluetoothRuntimeWakers::<NoopRawMutex>::new();
+        let (scheduler_counter, scheduler_waker) = counting_waker();
+        let (lock_modify_counter, lock_modify_waker) = counting_waker();
+        wakers.scheduler_waker.register(&scheduler_waker);
+        wakers.lock_modify_waker.register(&lock_modify_waker);
+
+        assert_eq!(
+            wakers.notify_ordinary(BluetoothPrimaryOrdinaryPublication::Scheduler {
+                scheduler: BluetoothSchedulerWakePublication::WakeWorker,
+                lock_modify: BluetoothSchedulerLockModifyEventPublication::WakeWorker,
+            }),
+            BluetoothPrimaryOrdinaryPublication::Scheduler {
+                scheduler: BluetoothSchedulerWakePublication::WakeWorker,
+                lock_modify: BluetoothSchedulerLockModifyEventPublication::WakeWorker,
+            }
+        );
+        assert_eq!(scheduler_counter.0.load(Ordering::Relaxed), 1);
+        assert_eq!(lock_modify_counter.0.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn serialized_primary_notification_does_not_wake_coalesced_consumers() {
+        let wakers = EmbassyBluetoothRuntimeWakers::<NoopRawMutex>::new();
+        let (scheduler_counter, scheduler_waker) = counting_waker();
+        let (lock_modify_counter, lock_modify_waker) = counting_waker();
+        wakers.scheduler_waker.register(&scheduler_waker);
+        wakers.lock_modify_waker.register(&lock_modify_waker);
+
+        assert_eq!(
+            wakers.notify_ordinary(BluetoothPrimaryOrdinaryPublication::Scheduler {
+                scheduler: BluetoothSchedulerWakePublication::Coalesced,
+                lock_modify: BluetoothSchedulerLockModifyEventPublication::Coalesced,
+            }),
+            BluetoothPrimaryOrdinaryPublication::Scheduler {
+                scheduler: BluetoothSchedulerWakePublication::Coalesced,
+                lock_modify: BluetoothSchedulerLockModifyEventPublication::Coalesced,
+            }
+        );
+        assert_eq!(scheduler_counter.0.load(Ordering::Relaxed), 0);
+        assert_eq!(lock_modify_counter.0.load(Ordering::Relaxed), 0);
     }
 
     #[test]

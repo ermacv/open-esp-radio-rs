@@ -54,6 +54,7 @@ pub(super) type DirectGuardState = BTreeMap<(u32, String), DirectGuardEvidence>;
 pub(super) struct DirectTraceEvidence {
     pub(super) guards: DirectGuardState,
     pub(super) call_results: BTreeMap<u32, String>,
+    pub(super) result_origins: BTreeMap<(&'static str, u32), LinkedCallResultProvenance>,
     pub(super) calls: BTreeSet<LinkedCall>,
     pub(super) direct_mmio_predicates: BTreeSet<LinkedDirectMmioPredicate>,
 }
@@ -420,8 +421,100 @@ pub(super) fn call_result_identity(
                     .join(" | ")
             ),
         )),
+        DraftReferenceEvent::ModeledDirectCall {
+            token,
+            site,
+            function,
+            ..
+        } => Some((*token, format!("{}@{site:#010x}", function.name))),
         _ => None,
     }
+}
+
+pub(super) fn call_result_origin(
+    event: &DraftReferenceEvent,
+    owner: &str,
+    _identities: &IrIdentityCatalog,
+) -> Option<((&'static str, u32), LinkedCallResultProvenance)> {
+    let (kind, token, site, target, operation, modeled) = match event {
+        DraftReferenceEvent::ModeledDirectCall {
+            token,
+            site,
+            function,
+            ..
+        } => (
+            "external-result",
+            *token,
+            *site,
+            function.name.clone(),
+            Some(function.operation.clone()),
+            external_return_is_modeled(function.return_model),
+        ),
+        DraftReferenceEvent::ReviewedExternalCall {
+            token,
+            site,
+            candidates,
+            ..
+        } => {
+            let models = candidates
+                .iter()
+                .filter_map(|candidate| candidate.execution_model.as_ref())
+                .collect::<BTreeSet<_>>();
+            let model = (candidates.len() == 1 && models.len() == 1)
+                .then(|| *models.first().expect("one execution model"));
+            (
+                "external-result",
+                *token,
+                *site,
+                candidates
+                    .iter()
+                    .map(|candidate| format!("{}::{}", candidate.contract, candidate.name))
+                    .collect::<Vec<_>>()
+                    .join(" | "),
+                candidates
+                    .iter()
+                    .filter_map(|candidate| candidate.semantic_operation.clone())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .next(),
+                model.is_some_and(|model| external_return_is_modeled(model.return_model)),
+            )
+        }
+        DraftReferenceEvent::ComposedCall {
+            token,
+            site,
+            symbol,
+            result_modeled,
+            ..
+        }
+        | DraftReferenceEvent::ComposedCallWithScratch {
+            token,
+            site,
+            symbol,
+            result_modeled,
+            ..
+        } => (
+            "call-result",
+            *token,
+            *site,
+            symbol.clone(),
+            None,
+            *result_modeled,
+        ),
+        _ => return None,
+    };
+    modeled.then(|| {
+        (
+            (kind, token),
+            LinkedCallResultProvenance {
+                kind,
+                function: owner.to_owned(),
+                site,
+                target,
+                operation,
+            },
+        )
+    })
 }
 
 pub(super) fn name_call_results(expression: &str, call_results: &BTreeMap<u32, String>) -> String {
@@ -547,6 +640,7 @@ fn name_memory_reads(
 
 pub(super) fn collect_guarded_direct_event(
     event: &DraftReferenceEvent,
+    owner: &str,
     resolver: &ReferenceResolver,
     identities: &IrIdentityCatalog,
     svd: &MmioMap,
@@ -580,7 +674,14 @@ pub(super) fn collect_guarded_direct_event(
     }
 
     let mut event_calls = BTreeSet::new();
-    collect_call_event(event, resolver, identities, &mut event_calls);
+    collect_call_event(
+        event,
+        resolver,
+        identities,
+        Some(owner),
+        &evidence.result_origins,
+        &mut event_calls,
+    );
     for mut call in event_calls {
         for argument in &mut call.arguments {
             *argument = name_call_results(argument, &evidence.call_results);
@@ -595,6 +696,9 @@ pub(super) fn collect_guarded_direct_event(
     }
     if let Some((token, target)) = call_result_identity(event, identities) {
         evidence.call_results.insert(token, target);
+    }
+    if let Some((key, provenance)) = call_result_origin(event, owner, identities) {
+        evidence.result_origins.insert(key, provenance);
     }
 }
 
@@ -626,6 +730,7 @@ pub(super) fn explore_direct_calls(
     }
 
     let mut result = DirectCallGraph::default();
+    let owner = identities.symbol(symbol);
     let program = match direct::StructuralProgram::decode(symbol) {
         Ok(program) => program,
         Err(error) => {
@@ -669,6 +774,7 @@ pub(super) fn explore_direct_calls(
             for event in &trace.reference_events {
                 collect_guarded_direct_event(
                     event,
+                    &owner,
                     resolver,
                     identities,
                     svd,
@@ -703,6 +809,7 @@ pub(super) fn explore_direct_calls(
                         tail: artifact::relocated_call_is_tail(symbol, relocation.address)
                             .unwrap_or(false),
                         result_modeled: false,
+                        result_provenance: None,
                         execution_model: None,
                         semantics: Some(
                             "unresolved call relocation; arguments and callee effects are unavailable"
@@ -717,6 +824,7 @@ pub(super) fn explore_direct_calls(
                         argument_shapes: 1,
                         arguments: Vec::new(),
                         argument_exact: Vec::new(),
+                        argument_result_provenance: Vec::new(),
                         argument_bindings: Vec::new(),
                         typed_arguments: Vec::new(),
                         guard_paths: Some(vec![current_guard_path(&evidence.guards)]),
@@ -752,7 +860,7 @@ pub(super) fn collect_calls_from_event(
     identities: &IrIdentityCatalog,
     calls: &mut BTreeSet<LinkedCall>,
 ) {
-    collect_call_event(event, resolver, identities, calls);
+    collect_call_event(event, resolver, identities, None, &BTreeMap::new(), calls);
     match event {
         DraftReferenceEvent::BoundedPoll {
             body, on_exhausted, ..

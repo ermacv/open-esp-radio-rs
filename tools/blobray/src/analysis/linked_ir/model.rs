@@ -24,6 +24,21 @@ pub(crate) struct LinkedArgumentBinding {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub(crate) struct LinkedCallResultProvenance {
+    pub(crate) kind: &'static str,
+    pub(crate) function: String,
+    pub(crate) site: u32,
+    pub(crate) target: String,
+    pub(crate) operation: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub(crate) struct LinkedCallArgumentResultProvenance {
+    pub(crate) position: usize,
+    pub(crate) producer: LinkedCallResultProvenance,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedTrampoline {
     pub(crate) table: String,
     pub(crate) pointer_symbol: String,
@@ -182,6 +197,7 @@ pub(crate) struct LinkedCall {
     pub(crate) direct: bool,
     pub(crate) tail: bool,
     pub(crate) result_modeled: bool,
+    pub(crate) result_provenance: Option<LinkedCallResultProvenance>,
     pub(crate) execution_model: Option<LinkedExternalExecutionModel>,
     pub(crate) semantics: Option<String>,
     pub(crate) semantic_operation: Option<String>,
@@ -193,6 +209,7 @@ pub(crate) struct LinkedCall {
     pub(crate) argument_shapes: usize,
     pub(crate) arguments: Vec<String>,
     pub(crate) argument_exact: Vec<bool>,
+    pub(crate) argument_result_provenance: Vec<LinkedCallArgumentResultProvenance>,
     pub(crate) argument_bindings: Vec<LinkedArgumentBinding>,
     pub(crate) typed_arguments: Vec<LinkedCallArgument>,
     pub(crate) guard_paths: Option<Vec<LinkedCallGuardPath>>,

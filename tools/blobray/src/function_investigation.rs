@@ -582,7 +582,7 @@ fn callback_route_evidence(
                     "static-event-enqueue-sites",
                 ],
                 blockers: vec![
-                    "this is a parsed review declaration, not validated evidence; run inspect flow to validate current structural facts; eventq-get/event-run callback delivery is unmodeled",
+                    "this is a parsed review declaration, not validated evidence; run inspect flow to validate the current binding, delivery facts, and remaining blockers",
                 ],
                 rationale: route.rationale.clone(),
             })

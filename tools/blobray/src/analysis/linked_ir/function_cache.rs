@@ -656,15 +656,58 @@ struct PortableCall {
     direct: bool,
     tail: bool,
     result_modeled: bool,
+    result_provenance: Option<PortableCallResultProvenance>,
     semantics: Option<String>,
     semantic_operation: Option<String>,
     replacement_hint: Option<String>,
     argument_shapes: usize,
     arguments: Vec<String>,
     argument_exact: Vec<bool>,
+    argument_result_provenance: Vec<PortableCallArgumentResultProvenance>,
     argument_bindings: Vec<PortableArgumentBinding>,
     typed_arguments: Vec<PortableCallArgument>,
     guard_paths: Option<Vec<Vec<u32>>>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct PortableCallResultProvenance {
+    kind: String,
+    function: String,
+    site_offset: u32,
+    target: String,
+    operation: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct PortableCallArgumentResultProvenance {
+    position: usize,
+    producer: PortableCallResultProvenance,
+}
+
+impl PortableCallResultProvenance {
+    fn capture(
+        base: u32,
+        namespace: &str,
+        provenance: &LinkedCallResultProvenance,
+    ) -> Option<Self> {
+        Some(Self {
+            kind: provenance.kind.to_owned(),
+            function: hide_namespace(&provenance.function, namespace),
+            site_offset: provenance.site.checked_sub(base)?,
+            target: hide_namespace(&provenance.target, namespace),
+            operation: provenance.operation.clone(),
+        })
+    }
+
+    fn materialize(&self, base: u32, namespace: &str) -> Option<LinkedCallResultProvenance> {
+        Some(LinkedCallResultProvenance {
+            kind: static_vocabulary(&self.kind)?,
+            function: show_namespace(&self.function, namespace),
+            site: base.checked_add(self.site_offset)?,
+            target: show_namespace(&self.target, namespace),
+            operation: self.operation.clone(),
+        })
+    }
 }
 
 impl PortableCall {
@@ -684,6 +727,12 @@ impl PortableCall {
             direct: call.direct,
             tail: call.tail,
             result_modeled: call.result_modeled,
+            result_provenance: match &call.result_provenance {
+                Some(provenance) => Some(PortableCallResultProvenance::capture(
+                    base, namespace, provenance,
+                )?),
+                None => None,
+            },
             semantics: call
                 .semantics
                 .as_deref()
@@ -697,6 +746,20 @@ impl PortableCall {
                 .map(|value| hide_namespace(value, namespace))
                 .collect(),
             argument_exact: call.argument_exact.clone(),
+            argument_result_provenance: call
+                .argument_result_provenance
+                .iter()
+                .map(|provenance| {
+                    Some(PortableCallArgumentResultProvenance {
+                        position: provenance.position,
+                        producer: PortableCallResultProvenance::capture(
+                            base,
+                            namespace,
+                            &provenance.producer,
+                        )?,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?,
             argument_bindings: call
                 .argument_bindings
                 .iter()
@@ -760,6 +823,10 @@ impl PortableCall {
             direct: self.direct,
             tail: self.tail,
             result_modeled: self.result_modeled,
+            result_provenance: match &self.result_provenance {
+                Some(provenance) => Some(provenance.materialize(base, namespace)?),
+                None => None,
+            },
             execution_model: None,
             semantics: self
                 .semantics
@@ -778,6 +845,16 @@ impl PortableCall {
                 .map(|value| show_namespace(value, namespace))
                 .collect(),
             argument_exact: self.argument_exact.clone(),
+            argument_result_provenance: self
+                .argument_result_provenance
+                .iter()
+                .map(|provenance| {
+                    Some(LinkedCallArgumentResultProvenance {
+                        position: provenance.position,
+                        producer: provenance.producer.materialize(base, namespace)?,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?,
             argument_bindings: self
                 .argument_bindings
                 .iter()
@@ -1379,28 +1456,71 @@ mod tests {
             function_fact_key(&second, &fingerprint, &[0; 32], true)
         );
         let graph = DirectCallGraph {
-            calls: BTreeSet::from([LinkedCall {
-                kind: "internal",
-                target: "first::callee".to_owned(),
-                site: Some(0x4000),
-                direct: true,
-                tail: false,
-                result_modeled: false,
-                execution_model: None,
-                semantics: None,
-                semantic_operation: None,
-                semantic_contract: None,
-                replacement_hint: None,
-                project_symbol: None,
-                project_candidates: Vec::new(),
-                trampoline: None,
-                argument_shapes: 1,
-                arguments: vec!["first::callee(arg0)".to_owned()],
-                argument_exact: vec![true],
-                argument_bindings: Vec::new(),
-                typed_arguments: Vec::new(),
-                guard_paths: Some(vec![LinkedCallGuardPath { guards: Vec::new() }]),
-            }]),
+            calls: BTreeSet::from([
+                LinkedCall {
+                    kind: "internal",
+                    target: "first::callee".to_owned(),
+                    site: Some(0x4004),
+                    direct: true,
+                    tail: false,
+                    result_modeled: false,
+                    result_provenance: None,
+                    execution_model: None,
+                    semantics: None,
+                    semantic_operation: None,
+                    semantic_contract: None,
+                    replacement_hint: None,
+                    project_symbol: None,
+                    project_candidates: Vec::new(),
+                    trampoline: None,
+                    argument_shapes: 1,
+                    arguments: vec!["first::callee(arg0)".to_owned()],
+                    argument_exact: vec![true],
+                    argument_result_provenance: vec![LinkedCallArgumentResultProvenance {
+                        position: 0,
+                        producer: LinkedCallResultProvenance {
+                            kind: "call-result",
+                            function: "first::owner".to_owned(),
+                            site: 0x4000,
+                            target: "first::receive".to_owned(),
+                            operation: None,
+                        },
+                    }],
+                    argument_bindings: Vec::new(),
+                    typed_arguments: Vec::new(),
+                    guard_paths: Some(vec![LinkedCallGuardPath { guards: Vec::new() }]),
+                },
+                LinkedCall {
+                    kind: "internal",
+                    target: "first::receive".to_owned(),
+                    site: Some(0x4000),
+                    direct: true,
+                    tail: false,
+                    result_modeled: true,
+                    result_provenance: Some(LinkedCallResultProvenance {
+                        kind: "call-result",
+                        function: "first::owner".to_owned(),
+                        site: 0x4000,
+                        target: "first::receive".to_owned(),
+                        operation: None,
+                    }),
+                    execution_model: None,
+                    semantics: None,
+                    semantic_operation: None,
+                    semantic_contract: None,
+                    replacement_hint: None,
+                    project_symbol: None,
+                    project_candidates: Vec::new(),
+                    trampoline: None,
+                    argument_shapes: 1,
+                    arguments: Vec::new(),
+                    argument_exact: Vec::new(),
+                    argument_result_provenance: Vec::new(),
+                    argument_bindings: Vec::new(),
+                    typed_arguments: Vec::new(),
+                    guard_paths: Some(vec![LinkedCallGuardPath { guards: Vec::new() }]),
+                },
+            ]),
             direct_mmio_predicates: BTreeSet::new(),
             blockers: BTreeSet::from([
                 "branch at 0x00004000 is incomplete".to_owned(),
@@ -1427,10 +1547,32 @@ mod tests {
         let rebound = fact.materialize(&second, "second").unwrap();
         assert_eq!(rebound.site_effects.iter().next().unwrap().site(), 0x8002);
         let call = rebound.calls.iter().next().unwrap();
-        assert_eq!(call.site, Some(0x8000));
+        assert_eq!(call.site, Some(0x8004));
         assert_eq!(call.target, "second::callee");
         assert_eq!(call.arguments, ["second::callee(arg0)"]);
         assert_eq!(call.argument_exact, [true]);
+        assert_eq!(
+            call.argument_result_provenance,
+            [LinkedCallArgumentResultProvenance {
+                position: 0,
+                producer: LinkedCallResultProvenance {
+                    kind: "call-result",
+                    function: "second::owner".to_owned(),
+                    site: 0x8000,
+                    target: "second::receive".to_owned(),
+                    operation: None,
+                },
+            }]
+        );
+        let producer = rebound
+            .calls
+            .iter()
+            .find(|call| call.target == "second::receive")
+            .expect("rebound result producer");
+        assert_eq!(
+            producer.result_provenance,
+            Some(call.argument_result_provenance[0].producer.clone())
+        );
         assert_eq!(
             rebound.blockers,
             BTreeSet::from([

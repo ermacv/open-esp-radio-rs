@@ -76,7 +76,9 @@ pub(in crate::analysis::linked_ir) fn external_return_model(model: ExternalRetur
     }
 }
 
-pub(super) fn external_return_is_modeled(model: ExternalReturnModel) -> bool {
+pub(in crate::analysis::linked_ir) fn external_return_is_modeled(
+    model: ExternalReturnModel,
+) -> bool {
     matches!(
         model,
         ExternalReturnModel::Constant(_)

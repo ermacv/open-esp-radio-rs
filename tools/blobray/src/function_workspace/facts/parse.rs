@@ -5,10 +5,11 @@ use std::collections::BTreeSet;
 use crate::{Result, artifacts::StoredMemoryObject};
 
 use super::{
-    FunctionCallFact, FunctionContextFieldFact, FunctionDecodeBlockerFact,
-    FunctionEventDispatchFact, FunctionFact, FunctionInputFact, FunctionMemoryFieldFact,
-    FunctionMemoryObjectFact, FunctionMemoryWriteFact, ScenarioArgumentFact, ScenarioMmioReadFact,
-    ScenarioSuggestionFact, ScenarioSuggestionVariantFact,
+    FunctionCallArgumentResultProvenance, FunctionCallFact, FunctionCallResultProvenance,
+    FunctionContextFieldFact, FunctionDecodeBlockerFact, FunctionEventDispatchFact, FunctionFact,
+    FunctionInputFact, FunctionMemoryFieldFact, FunctionMemoryObjectFact, FunctionMemoryWriteFact,
+    ScenarioArgumentFact, ScenarioMmioReadFact, ScenarioSuggestionFact,
+    ScenarioSuggestionVariantFact,
 };
 
 pub(super) fn parse_document(
@@ -241,10 +242,12 @@ pub(super) fn parse_review_projection(
                         target: call.target,
                         direct: call.direct,
                         result_modeled: false,
+                        result_provenance: None,
                         semantic_operation: call.semantic_operation,
                         site: call.site,
                         arguments: Vec::new(),
                         argument_exact: Vec::new(),
+                        argument_result_provenance: Vec::new(),
                         guard_paths: None,
                     })
                     .collect(),
@@ -305,16 +308,45 @@ fn call_fact(call: crate::artifacts::StoredCall) -> FunctionCallFact {
     let result_modeled = call.result_modeled();
     let argument_exact = (0..call.arguments.len())
         .map(|position| call.argument_is_exact(position))
+        .collect::<Vec<_>>();
+    let result_provenance =
+        call.result_provenance()
+            .map(
+                |(kind, function, site, target, operation)| FunctionCallResultProvenance {
+                    kind: kind.to_owned(),
+                    function: function.to_owned(),
+                    site,
+                    target: target.to_owned(),
+                    operation: operation.map(str::to_owned),
+                },
+            );
+    let argument_result_provenance = (0..call.arguments.len())
+        .filter_map(|position| {
+            let (kind, function, site, target, operation) =
+                call.argument_result_provenance(position)?;
+            Some(FunctionCallArgumentResultProvenance {
+                position,
+                producer: FunctionCallResultProvenance {
+                    kind: kind.to_owned(),
+                    function: function.to_owned(),
+                    site,
+                    target: target.to_owned(),
+                    operation: operation.map(str::to_owned),
+                },
+            })
+        })
         .collect();
     FunctionCallFact {
         kind: call.kind,
         target: call.target,
         direct,
         result_modeled,
+        result_provenance,
         semantic_operation: call.semantic_operation,
         site: call.site,
         arguments: call.arguments,
         argument_exact,
+        argument_result_provenance,
         guard_paths: call.guard_paths.map(|paths| {
             paths
                 .into_iter()

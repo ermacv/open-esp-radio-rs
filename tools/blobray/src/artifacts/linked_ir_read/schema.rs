@@ -1,4 +1,4 @@
-//! Complete owned DTO for linked-IR schema v63.
+//! Complete owned DTO for linked-IR schema v64.
 
 #![allow(
     dead_code,
@@ -709,6 +709,7 @@ pub(crate) struct StoredCall {
     direct: bool,
     tail: bool,
     result_modeled: bool,
+    result_provenance: Option<StoredCallResultProvenance>,
     execution_model: Option<StoredExternalExecutionModel>,
     semantics: Option<String>,
     pub(crate) semantic_operation: Option<String>,
@@ -720,9 +721,27 @@ pub(crate) struct StoredCall {
     argument_shapes: usize,
     pub(crate) arguments: Vec<String>,
     argument_exact: Vec<bool>,
+    argument_result_provenance: Vec<StoredCallArgumentResultProvenance>,
     argument_bindings: Vec<StoredArgumentBinding>,
     typed_arguments: Vec<StoredCallArgument>,
     pub(crate) guard_paths: Option<Vec<StoredGuardPath>>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
+struct StoredCallResultProvenance {
+    kind: String,
+    function: String,
+    site: u32,
+    target: String,
+    operation: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct StoredCallArgumentResultProvenance {
+    position: usize,
+    producer: StoredCallResultProvenance,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -749,6 +768,45 @@ impl StoredCall {
 
     pub(crate) const fn result_modeled(&self) -> bool {
         self.result_modeled
+    }
+
+    pub(crate) fn result_provenance(&self) -> Option<(&str, &str, u32, &str, Option<&str>)> {
+        self.result_provenance.as_ref().map(|provenance| {
+            (
+                provenance.kind.as_str(),
+                provenance.function.as_str(),
+                provenance.site,
+                provenance.target.as_str(),
+                provenance.operation.as_deref(),
+            )
+        })
+    }
+
+    pub(crate) fn argument_result_provenance(
+        &self,
+        position: usize,
+    ) -> Option<(&str, &str, u32, &str, Option<&str>)> {
+        self.argument_result_provenance
+            .iter()
+            .find(|provenance| provenance.position == position)
+            .map(|provenance| {
+                (
+                    provenance.producer.kind.as_str(),
+                    provenance.producer.function.as_str(),
+                    provenance.producer.site,
+                    provenance.producer.target.as_str(),
+                    provenance.producer.operation.as_deref(),
+                )
+            })
+    }
+
+    pub(crate) fn argument_is_result_of(&self, position: usize, producer: &Self) -> bool {
+        producer.result_modeled
+            && producer.result_provenance.as_ref().is_some_and(|expected| {
+                self.argument_result_provenance.iter().any(|provenance| {
+                    provenance.position == position && provenance.producer == *expected
+                })
+            })
     }
 
     pub(crate) fn argument_is_exact(&self, position: usize) -> bool {
@@ -847,6 +905,16 @@ impl StoredCall {
 }
 
 pub(crate) fn validate_call_arguments(identity: &str, calls: &[StoredCall]) -> crate::Result<()> {
+    let producers = calls
+        .iter()
+        .filter_map(|call| call.result_provenance.clone())
+        .fold(
+            std::collections::BTreeMap::new(),
+            |mut output, provenance| {
+                *output.entry(provenance).or_insert(0_usize) += 1;
+                output
+            },
+        );
     for call in calls {
         if call.argument_exact.len() != call.arguments.len() {
             return Err(crate::Error::invalid(format!(
@@ -856,8 +924,144 @@ pub(crate) fn validate_call_arguments(identity: &str, calls: &[StoredCall]) -> c
                 call.argument_exact.len()
             )));
         }
+        if let Some(provenance) = &call.result_provenance
+            && (!call.result_modeled
+                || !matches!(provenance.kind.as_str(), "call-result" | "external-result")
+                || provenance.function != identity
+                || call.site != Some(provenance.site)
+                || provenance.target != call.target
+                || provenance.operation != call.semantic_operation)
+        {
+            return Err(crate::Error::invalid(format!(
+                "linked-IR function {identity:?} call to {:?} has invalid modeled-result provenance",
+                call.target
+            )));
+        }
+        let mut previous = None;
+        for provenance in &call.argument_result_provenance {
+            if provenance.position >= call.arguments.len()
+                || previous.is_some_and(|position| position >= provenance.position)
+                || !matches!(
+                    provenance.producer.kind.as_str(),
+                    "call-result" | "external-result"
+                )
+                || producers.get(&provenance.producer).copied() != Some(1)
+            {
+                return Err(crate::Error::invalid(format!(
+                    "linked-IR function {identity:?} call to {:?} has invalid argument-result provenance at position {}",
+                    call.target, provenance.position
+                )));
+            }
+            previous = Some(provenance.position);
+        }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod call_provenance_tests {
+    use super::*;
+
+    fn modeled_producer() -> StoredCall {
+        StoredCall {
+            kind: "modeled-direct-external".to_owned(),
+            target: "receive".to_owned(),
+            site: Some(0x120),
+            direct: true,
+            tail: false,
+            result_modeled: true,
+            result_provenance: Some(StoredCallResultProvenance {
+                kind: "external-result".to_owned(),
+                function: "fixture::worker".to_owned(),
+                site: 0x120,
+                target: "receive".to_owned(),
+                operation: Some("queue.receive".to_owned()),
+            }),
+            execution_model: None,
+            semantics: None,
+            semantic_operation: Some("queue.receive".to_owned()),
+            semantic_contract: None,
+            replacement_hint: None,
+            project_symbol: None,
+            project_candidates: Vec::new(),
+            trampoline: None,
+            argument_shapes: 1,
+            arguments: Vec::new(),
+            argument_exact: Vec::new(),
+            argument_result_provenance: Vec::new(),
+            argument_bindings: Vec::new(),
+            typed_arguments: Vec::new(),
+            guard_paths: None,
+        }
+    }
+
+    fn consumer(producer: StoredCallResultProvenance) -> StoredCall {
+        StoredCall {
+            kind: "modeled-direct-external".to_owned(),
+            target: "run".to_owned(),
+            site: Some(0x180),
+            direct: true,
+            tail: false,
+            result_modeled: false,
+            result_provenance: None,
+            execution_model: None,
+            semantics: None,
+            semantic_operation: Some("event.run".to_owned()),
+            semantic_contract: None,
+            replacement_hint: None,
+            project_symbol: None,
+            project_candidates: Vec::new(),
+            trampoline: None,
+            argument_shapes: 146,
+            arguments: vec!["varies-across-146-shapes".to_owned()],
+            argument_exact: vec![false],
+            argument_result_provenance: vec![StoredCallArgumentResultProvenance {
+                position: 0,
+                producer,
+            }],
+            argument_bindings: Vec::new(),
+            typed_arguments: Vec::new(),
+            guard_paths: None,
+        }
+    }
+
+    #[test]
+    fn modeled_result_provenance_must_describe_its_containing_call() {
+        let valid = modeled_producer();
+        assert!(validate_call_arguments("fixture::worker", &[valid]).is_ok());
+
+        let mut wrong_site = modeled_producer();
+        wrong_site
+            .result_provenance
+            .as_mut()
+            .expect("fixture provenance")
+            .site = 0x124;
+        assert!(validate_call_arguments("fixture::worker", &[wrong_site]).is_err());
+    }
+
+    #[test]
+    fn consumer_matches_only_the_complete_modeled_producer_identity() {
+        let producer = modeled_producer();
+        let matching = consumer(
+            producer
+                .result_provenance
+                .clone()
+                .expect("fixture provenance"),
+        );
+        assert!(matching.argument_is_result_of(0, &producer));
+        assert!(!matching.argument_is_result_of(1, &producer));
+
+        let mut wrong_identity = producer
+            .result_provenance
+            .clone()
+            .expect("fixture provenance");
+        wrong_identity.operation = Some("different.receive".to_owned());
+        assert!(!consumer(wrong_identity).argument_is_result_of(0, &producer));
+
+        let mut unmodeled = modeled_producer();
+        unmodeled.result_modeled = false;
+        assert!(!matching.argument_is_result_of(0, &unmodeled));
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]

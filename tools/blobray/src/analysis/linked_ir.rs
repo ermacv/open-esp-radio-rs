@@ -33,7 +33,7 @@ const LINKED_IR_WORKER_STACK_BYTES: usize = 16 * 1024 * 1024;
 // The project-stage cache fingerprints this domain as well as the per-function
 // store, so a semantic cut cannot leave a previously generated linked-IR
 // bundle looking current.
-pub(crate) const FUNCTION_FACT_CACHE_DOMAIN: &[u8] = b"blobray/direct-function-facts/v17\0";
+pub(crate) const FUNCTION_FACT_CACHE_DOMAIN: &[u8] = b"blobray/direct-function-facts/v18\0";
 
 mod model;
 
@@ -168,6 +168,7 @@ fn add_lossless_relocation_calls(
             direct: true,
             tail: false,
             result_modeled: false,
+            result_provenance: None,
             execution_model: None,
             semantics: Some(
                 "lossless direct-call relocation; structural reachability only".to_owned(),
@@ -181,6 +182,7 @@ fn add_lossless_relocation_calls(
             argument_shapes: 0,
             arguments: Vec::new(),
             argument_exact: Vec::new(),
+            argument_result_provenance: Vec::new(),
             argument_bindings: Vec::new(),
             typed_arguments: Vec::new(),
             guard_paths: None,
@@ -247,6 +249,7 @@ fn add_projected_origin_calls(
                 direct: true,
                 tail: false,
                 result_modeled: false,
+                result_provenance: None,
                 execution_model: None,
                 semantics: Some(
                     "archive direct-call relocation projected through conservative instruction correspondence; structural reachability only"
@@ -261,6 +264,7 @@ fn add_projected_origin_calls(
                 argument_shapes: 0,
                 arguments: Vec::new(),
                 argument_exact: Vec::new(),
+                argument_result_provenance: Vec::new(),
                 argument_bindings: Vec::new(),
                 typed_arguments: Vec::new(),
                 guard_paths: None,
@@ -314,6 +318,7 @@ fn indexed_dispatch_calls(
                     direct: false,
                     tail: true,
                     result_modeled: false,
+                    result_provenance: None,
                     execution_model: None,
                     semantics: Some(format!(
                         "bounded indexed dispatch; table={}; selector={}; stride={}; case={}@{:#010x}; handler-call={:#010x}",
@@ -333,6 +338,7 @@ fn indexed_dispatch_calls(
                     argument_shapes: 1,
                     arguments: vec![format!("selector={}", entry.selector)],
                     argument_exact: vec![true],
+                    argument_result_provenance: Vec::new(),
                     argument_bindings: Vec::new(),
                     typed_arguments: Vec::new(),
                     guard_paths: None,
@@ -858,6 +864,7 @@ fn build_linked_functions_for_roots(
         let direct_mmio_predicates = direct_mmio_predicates.into_iter().collect::<Vec<_>>();
         let mut direct_calls = compact_calls(direct_calls);
         annotate_direct_semantic_calls(&mut direct_calls, symbol, resolver, &identities);
+        refresh_call_result_provenance(&mut direct_calls);
         if include_reachable {
             let mut discovered = Vec::new();
             for call in direct_calls.iter().filter(|call| {

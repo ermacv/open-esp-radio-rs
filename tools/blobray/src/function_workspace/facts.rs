@@ -72,15 +72,32 @@ pub(crate) struct FunctionMemoryFieldFact {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct FunctionCallResultProvenance {
+    pub(crate) kind: String,
+    pub(crate) function: String,
+    pub(crate) site: u32,
+    pub(crate) target: String,
+    pub(crate) operation: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct FunctionCallArgumentResultProvenance {
+    pub(crate) position: usize,
+    pub(crate) producer: FunctionCallResultProvenance,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct FunctionCallFact {
     pub(crate) kind: String,
     pub(crate) target: String,
     pub(crate) direct: bool,
     pub(crate) result_modeled: bool,
+    pub(crate) result_provenance: Option<FunctionCallResultProvenance>,
     pub(crate) semantic_operation: Option<String>,
     pub(crate) site: Option<u32>,
     pub(crate) arguments: Vec<String>,
     pub(crate) argument_exact: Vec<bool>,
+    pub(crate) argument_result_provenance: Vec<FunctionCallArgumentResultProvenance>,
     pub(crate) guard_paths: Option<Vec<String>>,
 }
 

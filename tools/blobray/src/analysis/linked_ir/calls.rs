@@ -4,12 +4,11 @@ use super::*;
 
 mod abi;
 
+pub(super) use abi::external_return_is_modeled;
 pub(super) use abi::{
     direct_semantic_typed_arguments, external_return_model, linked_event_dispatch_contract,
 };
-use abi::{
-    external_return_is_modeled, linked_external_execution_model, reviewed_external_typed_arguments,
-};
+use abi::{linked_external_execution_model, reviewed_external_typed_arguments};
 
 pub(super) fn canonical_arguments(arguments: &[SymbolicValue]) -> Vec<String> {
     arguments.iter().map(SymbolicValue::canonical).collect()
@@ -17,6 +16,29 @@ pub(super) fn canonical_arguments(arguments: &[SymbolicValue]) -> Vec<String> {
 
 pub(super) fn argument_exactness(arguments: &[SymbolicValue]) -> Vec<bool> {
     arguments.iter().map(SymbolicValue::is_resolved).collect()
+}
+
+fn argument_result_provenance(
+    arguments: &[SymbolicValue],
+    producers: &BTreeMap<(&'static str, u32), LinkedCallResultProvenance>,
+) -> Vec<LinkedCallArgumentResultProvenance> {
+    arguments
+        .iter()
+        .enumerate()
+        .filter_map(|(position, value)| {
+            let key = match value {
+                SymbolicValue::CallResult(token) => ("call-result", *token),
+                SymbolicValue::ExternalResult(token) => {
+                    ("external-result", external_result_call_token(*token))
+                }
+                _ => return None,
+            };
+            Some(LinkedCallArgumentResultProvenance {
+                position,
+                producer: producers.get(&key)?.clone(),
+            })
+        })
+        .collect()
 }
 
 fn linked_flow_value(value: &SymbolicValue) -> LinkedFlowValue {
@@ -182,6 +204,7 @@ pub(super) struct LinkedCallIdentity {
     direct: bool,
     tail: bool,
     result_modeled: bool,
+    result_provenance: Option<LinkedCallResultProvenance>,
     execution_model: Option<LinkedExternalExecutionModel>,
     semantics: Option<String>,
     semantic_operation: Option<String>,
@@ -202,6 +225,7 @@ impl From<&LinkedCall> for LinkedCallIdentity {
             direct: call.direct,
             tail: call.tail,
             result_modeled: call.result_modeled,
+            result_provenance: call.result_provenance.clone(),
             execution_model: call.execution_model.clone(),
             semantics: call.semantics.clone(),
             semantic_operation: call.semantic_operation.clone(),
@@ -368,6 +392,7 @@ pub(super) fn distinct_argument_shape_count(calls: &[LinkedCall]) -> usize {
             Vec<String>,
             Vec<bool>,
             Vec<LinkedArgumentBinding>,
+            Vec<LinkedCallArgumentResultProvenance>,
             Vec<(usize, String)>,
         ),
         usize,
@@ -377,6 +402,7 @@ pub(super) fn distinct_argument_shape_count(calls: &[LinkedCall]) -> usize {
             call.arguments.clone(),
             call.argument_exact.clone(),
             call.argument_bindings.clone(),
+            call.argument_result_provenance.clone(),
             call.typed_arguments
                 .iter()
                 .map(|argument| (argument.position, argument.value.clone()))
@@ -399,7 +425,7 @@ pub(super) fn compact_calls(calls: impl IntoIterator<Item = LinkedCall>) -> Vec<
             .push(call);
     }
 
-    groups
+    let mut calls = groups
         .into_values()
         .map(|calls| {
             let argument_shapes = distinct_argument_shape_count(&calls);
@@ -429,6 +455,16 @@ pub(super) fn compact_calls(calls: impl IntoIterator<Item = LinkedCall>) -> Vec<
                 })
                 .cloned()
                 .collect();
+            let argument_result_provenance = calls[0]
+                .argument_result_provenance
+                .iter()
+                .filter(|provenance| {
+                    calls[1..]
+                        .iter()
+                        .all(|call| call.argument_result_provenance.contains(provenance))
+                })
+                .cloned()
+                .collect();
             let mut call = calls[0].clone();
             for argument in &mut call.typed_arguments {
                 argument.value =
@@ -438,18 +474,70 @@ pub(super) fn compact_calls(calls: impl IntoIterator<Item = LinkedCall>) -> Vec<
             call.arguments = arguments;
             call.argument_exact = argument_exact;
             call.argument_bindings = argument_bindings;
+            call.argument_result_provenance = argument_result_provenance;
             call.guard_paths = merged_guard_paths(&calls);
             call
         })
-        .collect()
+        .collect::<Vec<_>>();
+    let mut producers = BTreeMap::<LinkedCallResultProvenance, usize>::new();
+    for call in &calls {
+        if let Some(provenance) = &call.result_provenance
+            && call.result_modeled
+        {
+            *producers.entry(provenance.clone()).or_default() += 1;
+        }
+    }
+    for call in &mut calls {
+        call.argument_result_provenance
+            .retain(|provenance| producers.get(&provenance.producer).copied() == Some(1));
+    }
+    calls
+}
+
+pub(super) fn refresh_call_result_provenance(calls: &mut [LinkedCall]) {
+    let replacements = calls
+        .iter_mut()
+        .filter_map(|call| {
+            let previous = call.result_provenance.clone()?;
+            let mut current = previous.clone();
+            current.site = call.site?;
+            current.target = call.target.clone();
+            current.operation = call.semantic_operation.clone();
+            call.result_provenance = Some(current.clone());
+            Some((previous, current))
+        })
+        .collect::<BTreeMap<_, _>>();
+    for call in calls.iter_mut() {
+        for provenance in &mut call.argument_result_provenance {
+            if let Some(current) = replacements.get(&provenance.producer) {
+                provenance.producer = current.clone();
+            }
+        }
+    }
+    let producer_counts = calls
+        .iter()
+        .filter_map(|call| call.result_provenance.clone())
+        .fold(BTreeMap::new(), |mut counts, provenance| {
+            *counts.entry(provenance).or_insert(0_usize) += 1;
+            counts
+        });
+    for call in calls {
+        call.argument_result_provenance
+            .retain(|provenance| producer_counts.get(&provenance.producer) == Some(&1));
+    }
 }
 
 pub(super) fn collect_call_event(
     event: &DraftReferenceEvent,
     resolver: &ReferenceResolver,
     identities: &IrIdentityCatalog,
+    owner: Option<&str>,
+    producers: &BTreeMap<(&'static str, u32), LinkedCallResultProvenance>,
     calls: &mut BTreeSet<LinkedCall>,
 ) {
+    let result_provenance = owner.and_then(|owner| {
+        call_result_origin(event, owner, identities).map(|(_, provenance)| provenance)
+    });
     let call = match event {
         DraftReferenceEvent::ReviewedExternalCall {
             site,
@@ -495,6 +583,7 @@ pub(super) fn collect_call_event(
                 tail: tails.len() == 1 && *tails.first().expect("one reviewed call shape"),
                 result_modeled: execution_model
                     .is_some_and(|model| external_return_is_modeled(model.return_model)),
+                result_provenance: result_provenance.clone(),
                 execution_model: execution_model.map(linked_external_execution_model),
                 semantics: Some(format!(
                     "reviewed ABI; candidates={}; executable-model={}",
@@ -536,6 +625,7 @@ pub(super) fn collect_call_event(
                 argument_shapes: 1,
                 arguments: canonical_arguments(arguments),
                 argument_exact: argument_exactness(arguments),
+                argument_result_provenance: argument_result_provenance(arguments, producers),
                 argument_bindings: affine_argument_bindings(arguments),
                 typed_arguments: reviewed_external_typed_arguments(candidates, arguments),
                 guard_paths: None,
@@ -553,6 +643,7 @@ pub(super) fn collect_call_event(
             direct: true,
             tail: false,
             result_modeled: external_return_is_modeled(function.return_model),
+            result_provenance: result_provenance.clone(),
             execution_model: None,
             semantics: Some(format!(
                 "reviewed direct platform ABI; args={}; return={}; model={}; operation={}",
@@ -576,6 +667,7 @@ pub(super) fn collect_call_event(
             argument_shapes: 1,
             arguments: canonical_arguments(arguments),
             argument_exact: argument_exactness(arguments),
+            argument_result_provenance: argument_result_provenance(arguments, producers),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
             guard_paths: None,
@@ -592,6 +684,7 @@ pub(super) fn collect_call_event(
             direct: false,
             tail: false,
             result_modeled: false,
+            result_provenance: None,
             execution_model: None,
             semantics: Some("diagnostic/logging boundary".to_owned()),
             semantic_operation: Some("diagnostic.emit".to_owned()),
@@ -609,6 +702,7 @@ pub(super) fn collect_call_event(
             argument_shapes: 1,
             arguments: canonical_arguments(arguments),
             argument_exact: argument_exactness(arguments),
+            argument_result_provenance: argument_result_provenance(arguments, producers),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
             guard_paths: None,
@@ -630,6 +724,7 @@ pub(super) fn collect_call_event(
             direct: *direct,
             tail: false,
             result_modeled: false,
+            result_provenance: None,
             execution_model: None,
             semantics: None,
             semantic_operation: None,
@@ -641,6 +736,7 @@ pub(super) fn collect_call_event(
             argument_shapes: 1,
             arguments: canonical_arguments(arguments),
             argument_exact: argument_exactness(arguments),
+            argument_result_provenance: argument_result_provenance(arguments, producers),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
             guard_paths: None,
@@ -662,6 +758,7 @@ pub(super) fn collect_call_event(
             direct: *direct,
             tail: true,
             result_modeled: false,
+            result_provenance: None,
             execution_model: None,
             semantics: None,
             semantic_operation: None,
@@ -673,6 +770,7 @@ pub(super) fn collect_call_event(
             argument_shapes: 1,
             arguments: canonical_arguments(arguments),
             argument_exact: argument_exactness(arguments),
+            argument_result_provenance: argument_result_provenance(arguments, producers),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
             guard_paths: None,
@@ -692,6 +790,7 @@ pub(super) fn collect_call_event(
             direct: *direct,
             tail: *tail,
             result_modeled: *result_modeled,
+            result_provenance: result_provenance.clone(),
             execution_model: None,
             semantics: Some("callee body was composed by the reference resolver".to_owned()),
             semantic_operation: None,
@@ -703,6 +802,7 @@ pub(super) fn collect_call_event(
             argument_shapes: 1,
             arguments: canonical_arguments(arguments),
             argument_exact: argument_exactness(arguments),
+            argument_result_provenance: argument_result_provenance(arguments, producers),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
             guard_paths: None,
@@ -726,6 +826,7 @@ pub(super) fn collect_call_event(
             direct: *direct,
             tail: false,
             result_modeled: false,
+            result_provenance: None,
             execution_model: None,
             semantics: Some(format!(
                 "scratch argument={scratch_argument} size={scratch_size}"
@@ -739,6 +840,7 @@ pub(super) fn collect_call_event(
             argument_shapes: 1,
             arguments: canonical_arguments(arguments),
             argument_exact: argument_exactness(arguments),
+            argument_result_provenance: argument_result_provenance(arguments, producers),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
             guard_paths: None,
@@ -759,6 +861,7 @@ pub(super) fn collect_call_event(
             direct: *direct,
             tail: false,
             result_modeled: *result_modeled,
+            result_provenance,
             execution_model: None,
             semantics: Some(format!(
                 "composed callee with scratch argument={scratch_argument} size={scratch_size}"
@@ -772,6 +875,7 @@ pub(super) fn collect_call_event(
             argument_shapes: 1,
             arguments: canonical_arguments(arguments),
             argument_exact: argument_exactness(arguments),
+            argument_result_provenance: argument_result_provenance(arguments, producers),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
             guard_paths: None,

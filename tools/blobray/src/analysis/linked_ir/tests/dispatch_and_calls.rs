@@ -101,7 +101,14 @@ fn composed_call_keeps_original_site_and_directness_in_linked_ir() {
     let identities = IrIdentityCatalog::new(&resolver, None);
     let mut calls = BTreeSet::new();
 
-    collect_call_event(&event, &resolver, &identities, &mut calls);
+    collect_call_event(
+        &event,
+        &resolver,
+        &identities,
+        None,
+        &BTreeMap::new(),
+        &mut calls,
+    );
 
     let call = calls.first().expect("one composed call");
     assert_eq!(call.kind, "internal");
@@ -330,6 +337,7 @@ fn authoritative_link_unit_symbol_names_and_types_a_direct_external_call() {
         direct: true,
         tail: false,
         result_modeled: false,
+        result_provenance: None,
         execution_model: None,
         semantics: None,
         semantic_operation: None,
@@ -341,6 +349,7 @@ fn authoritative_link_unit_symbol_names_and_types_a_direct_external_call() {
         argument_shapes: 1,
         arguments: vec!["const:0x0000000a".to_owned()],
         argument_exact: vec![true],
+        argument_result_provenance: Vec::new(),
         argument_bindings: Vec::new(),
         typed_arguments: Vec::new(),
         guard_paths: None,
@@ -390,6 +399,7 @@ fn unique_archive_origin_can_name_a_relaxed_internal_definition() {
         direct: true,
         tail: false,
         result_modeled: false,
+        result_provenance: None,
         execution_model: None,
         semantics: None,
         semantic_operation: None,
@@ -401,6 +411,7 @@ fn unique_archive_origin_can_name_a_relaxed_internal_definition() {
         argument_shapes: 1,
         arguments: vec!["arg0".to_owned()],
         argument_exact: vec![true],
+        argument_result_provenance: Vec::new(),
         argument_bindings: Vec::new(),
         typed_arguments: Vec::new(),
         guard_paths: None,
@@ -1014,7 +1025,14 @@ fn external_call_keeps_reviewed_table_slot_semantics() {
     let identities = IrIdentityCatalog::new(&resolver, None);
     let mut pseudo = String::new();
 
-    collect_call_event(&event, &resolver, &identities, &mut calls);
+    collect_call_event(
+        &event,
+        &resolver,
+        &identities,
+        None,
+        &BTreeMap::new(),
+        &mut calls,
+    );
     render_event(&event, &mut pseudo, 1, &mut RenderState::default());
     let call = calls.iter().next().unwrap();
 
@@ -1099,7 +1117,14 @@ fn indexed_dispatch_standard_memory_call_is_a_semantic_boundary_independent_of_i
     let identities = IrIdentityCatalog::new(&resolver, None);
     let mut calls = BTreeSet::new();
 
-    collect_call_event(&event, &resolver, &identities, &mut calls);
+    collect_call_event(
+        &event,
+        &resolver,
+        &identities,
+        None,
+        &BTreeMap::new(),
+        &mut calls,
+    );
     let mut calls = calls.into_iter().collect::<Vec<_>>();
     calls[0].kind = "indexed-dispatch";
     annotate_direct_semantic_calls(&mut calls, &owner, &resolver, &identities);
@@ -1146,6 +1171,7 @@ fn call_compaction_keeps_only_bindings_shared_by_every_argument_shape() {
         direct: true,
         tail: false,
         result_modeled: false,
+        result_provenance: None,
         execution_model: None,
         semantics: None,
         semantic_operation: None,
@@ -1157,6 +1183,7 @@ fn call_compaction_keeps_only_bindings_shared_by_every_argument_shape() {
         argument_shapes: 1,
         arguments: vec!["arg0".to_owned(), second_argument.to_owned()],
         argument_exact: vec![true, true],
+        argument_result_provenance: Vec::new(),
         argument_bindings: vec![
             LinkedArgumentBinding {
                 position: 0,
@@ -1230,6 +1257,7 @@ fn call_compaction_never_merges_conflicting_instruction_provenance() {
         direct,
         tail: false,
         result_modeled: false,
+        result_provenance: None,
         execution_model: None,
         semantics: None,
         semantic_operation: None,
@@ -1241,6 +1269,7 @@ fn call_compaction_never_merges_conflicting_instruction_provenance() {
         argument_shapes: 1,
         arguments: vec!["arg0".to_owned()],
         argument_exact: vec![true],
+        argument_result_provenance: Vec::new(),
         argument_bindings: Vec::new(),
         typed_arguments: Vec::new(),
         guard_paths: None,
@@ -1257,6 +1286,141 @@ fn call_compaction_never_merges_conflicting_instruction_provenance() {
         BTreeSet::from([false, true])
     );
     assert!(calls.iter().all(|call| call.argument_shapes == 1));
+}
+
+fn modeled_result_flow_calls(producer_token: u32, argument: SymbolicValue) -> Vec<LinkedCall> {
+    let modeled_call = |token: u32,
+                        site: u32,
+                        name: &str,
+                        operation: &str,
+                        return_model: ExternalReturnModel,
+                        arguments: Vec<SymbolicValue>| {
+        DraftReferenceEvent::ModeledDirectCall {
+            token,
+            site,
+            function: open_radio_vendor_analysis_model::ModeledDirectCall {
+                id: format!("fixture::{name}"),
+                name: name.to_owned(),
+                argument_count: u8::try_from(arguments.len()).expect("fixture argument count"),
+                return_model,
+                operation: operation.to_owned(),
+                return_type: "usize".to_owned(),
+                replacement_hint: None,
+                evidence: "focused generic provenance fixture".to_owned(),
+            },
+            arguments: arguments.into_boxed_slice(),
+        }
+    };
+    let producer = modeled_call(
+        producer_token,
+        0x120,
+        "receive",
+        "queue.receive",
+        ExternalReturnModel::Constant(0),
+        Vec::new(),
+    );
+    let consumer = modeled_call(
+        producer_token + 1,
+        0x180,
+        "dispatch",
+        "callback.run",
+        ExternalReturnModel::Unmodeled,
+        vec![argument],
+    );
+    let resolver = empty_resolver();
+    let identities = IrIdentityCatalog::new(&resolver, None);
+    let svd = MmioMap {
+        registers: Vec::new(),
+        regions: Vec::new(),
+    };
+    let mut evidence = DirectTraceEvidence::default();
+    for event in [&producer, &consumer] {
+        collect_guarded_direct_event(
+            event,
+            "fixture::worker",
+            &resolver,
+            &identities,
+            &svd,
+            &BTreeMap::new(),
+            &mut evidence,
+        );
+    }
+    evidence.calls.into_iter().collect()
+}
+
+#[test]
+fn direct_modeled_result_origin_survives_token_renumbering_across_shapes() {
+    let mut calls = modeled_result_flow_calls(7, SymbolicValue::ExternalResult(7));
+    calls.extend(modeled_result_flow_calls(
+        91,
+        SymbolicValue::ExternalResult(91),
+    ));
+
+    let calls = compact_calls(calls);
+    let consumer = calls
+        .iter()
+        .find(|call| call.semantic_operation.as_deref() == Some("callback.run"))
+        .expect("consumer call");
+    assert_eq!(
+        consumer.argument_result_provenance,
+        [LinkedCallArgumentResultProvenance {
+            position: 0,
+            producer: LinkedCallResultProvenance {
+                kind: "external-result",
+                function: "fixture::worker".to_owned(),
+                site: 0x120,
+                target: "receive".to_owned(),
+                operation: Some("queue.receive".to_owned()),
+            },
+        }]
+    );
+}
+
+#[test]
+fn transformed_or_missing_result_origin_fails_closed_across_shapes() {
+    let mut calls = modeled_result_flow_calls(7, SymbolicValue::ExternalResult(7));
+    calls.extend(modeled_result_flow_calls(
+        91,
+        SymbolicValue::ExternalResultHigh(91),
+    ));
+
+    let calls = compact_calls(calls);
+    let consumer = calls
+        .iter()
+        .find(|call| call.semantic_operation.as_deref() == Some("callback.run"))
+        .expect("consumer call");
+    assert!(consumer.argument_result_provenance.is_empty());
+}
+
+#[test]
+fn semantic_annotation_renames_producer_and_consumer_provenance_together() {
+    let mut calls = compact_calls(modeled_result_flow_calls(
+        7,
+        SymbolicValue::ExternalResult(7),
+    ));
+    let producer = calls
+        .iter_mut()
+        .find(|call| call.semantic_operation.as_deref() == Some("queue.receive"))
+        .expect("producer call");
+    producer.target = "reviewed::receive".to_owned();
+    producer.semantic_operation = Some("queue.receive.reviewed".to_owned());
+
+    refresh_call_result_provenance(&mut calls);
+
+    let producer = calls
+        .iter()
+        .find_map(|call| call.result_provenance.as_ref())
+        .expect("producer provenance");
+    let consumer = calls
+        .iter()
+        .find(|call| call.semantic_operation.as_deref() == Some("callback.run"))
+        .expect("consumer call");
+    assert_eq!(consumer.argument_result_provenance[0].producer, *producer);
+    assert_eq!(producer.target, "reviewed::receive");
+    assert_eq!(
+        producer.operation.as_deref(),
+        Some("queue.receive.reviewed")
+    );
 }
 
 #[test]

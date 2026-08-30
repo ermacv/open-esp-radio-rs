@@ -123,6 +123,7 @@ fn direct_mmio_branch_is_inventoried_without_a_guarded_call() {
 
     collect_guarded_direct_event(
         &event,
+        "fixture::owner",
         &resolver,
         &identities,
         &svd,

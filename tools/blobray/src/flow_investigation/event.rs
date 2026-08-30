@@ -792,6 +792,10 @@ fn investigate_static_event_callback(
     let delivery_order =
         super::cfg::must_execute_before(&delivery_body, route.receive_site, route.run_site);
     let run_event_exact = run_call.argument_is_exact(usize::from(route.run_event_argument));
+    let receive_result_flow_proven = delivery_order.as_ref().is_some_and(|order| {
+        order.earlier_block == order.later_block
+            && run_call.argument_is_result_of(usize::from(route.run_event_argument), receive_call)
+    });
     let mut steps = Vec::new();
     for (edge, site) in route.upstream_chain.windows(2).zip(&route.upstream_sites) {
         let owner = route_function(
@@ -918,6 +922,8 @@ fn investigate_static_event_callback(
         run_call.site,
         run_event,
         run_event_exact,
+        run_call.argument_shapes(),
+        receive_result_flow_proven,
         &delivery_profile.output,
     ));
     effects.extend([
@@ -964,10 +970,12 @@ fn investigate_static_event_callback(
             origin_path: None,
         },
     ]);
-    let mut blockers = vec![
-        stateful_delivery_blocker(&dispatch_queues, receive_queue),
-        receive_result_flow_blocker(run_event, run_event_exact),
-    ];
+    let mut blockers = vec![stateful_delivery_blocker(&dispatch_queues, receive_queue)];
+    if let Some(blocker) =
+        receive_result_flow_blocker(run_event, run_event_exact, receive_result_flow_proven)
+    {
+        blockers.push(blocker);
+    }
     if let Some(blocker) = receive_run_order_blocker(delivery_order.is_some()) {
         blockers.push(blocker);
     }
@@ -1657,14 +1665,15 @@ fn observed_direct_call_step(
 /// Project the reviewed NPL state transition without pretending that the
 /// opaque platform boundary is an observed indirect call. `event.init` owns
 /// the callback binding, while the generated IR currently exposes the
-/// `event.run` argument without proving that it is the result token returned
-/// by `eventq_get`. Queue identity and receive-result dataflow remain separate
-/// obligations handled by the caller.
+/// `event.run` argument. Queue identity, receive-result dataflow, and delivery
+/// remain separate obligations handled by the caller.
 fn reviewed_stateful_callback_step(
     route: &crate::function_workspace::ReviewedStaticEventCallbackRoute,
     site: Option<u32>,
     run_event: &str,
     run_event_exact: bool,
+    run_argument_shapes: usize,
+    receive_result_flow_proven: bool,
     origin: &std::path::Path,
 ) -> FlowStepEvidence {
     FlowStepEvidence {
@@ -1677,13 +1686,15 @@ fn reviewed_stateful_callback_step(
         site,
         kind: "stateful-callback-dispatch".to_owned(),
         tail: false,
-        argument_shapes: 1,
+        argument_shapes: run_argument_shapes,
         arguments: vec![FlowArgumentEvidence {
             position: usize::from(route.run_event_argument),
             local: "event-run-argument".to_owned(),
             resolved: run_event.to_owned(),
             constants: Vec::new(),
-            provenance: if run_event_exact {
+            provenance: if receive_result_flow_proven {
+                "generated-linked-ir typed direct receive-result provenance; same-basic-block CFG witness"
+            } else if run_event_exact {
                 "generated-linked-ir-exact; receive-result relation unproven"
             } else {
                 "generated-linked-ir-non-exact; receive-result relation unproven"
@@ -1695,19 +1706,26 @@ fn reviewed_stateful_callback_step(
     }
 }
 
-fn receive_result_flow_blocker(run_event: &str, run_event_exact: bool) -> FlowBlocker {
+fn receive_result_flow_blocker(
+    run_event: &str,
+    run_event_exact: bool,
+    proven: bool,
+) -> Option<FlowBlocker> {
+    if proven {
+        return None;
+    }
     let precision = if run_event_exact {
         "exact"
     } else {
         "non-exact"
     };
-    FlowBlocker::manual(
+    Some(FlowBlocker::manual(
         "event-receive-result-flow-unproven",
         format!(
-            "event.run argument is generated {precision} value {run_event}, but linked IR does not prove that it is the result token returned by eventq_get"
+            "event.run argument is generated {precision} value {run_event}, but linked IR and the local CFG do not prove that it is the direct result returned by eventq_get"
         ),
-        "preserve result-token identity through eventq_get and event.run in linked IR, then validate the exact receive-to-run argument relation",
-    )
+        "preserve typed result identity through eventq_get and event.run and require a same-basic-block CFG witness for the receive-to-run relation",
+    ))
 }
 
 fn receive_run_order_blocker(proven: bool) -> Option<FlowBlocker> {
@@ -2086,13 +2104,17 @@ mod tests {
 
     #[test]
     fn stateful_delivery_requires_typed_receive_result_flow() {
-        let exact = receive_result_flow_blocker("memory:fixture::event", true);
+        let exact = receive_result_flow_blocker("memory:fixture::event", true, false)
+            .expect("missing provenance must retain blocker");
         assert_eq!(exact.kind, "event-receive-result-flow-unproven");
         assert!(exact.message.contains("generated exact value"));
 
-        let non_exact = receive_result_flow_blocker("varies-across-2-shapes", false);
+        let non_exact = receive_result_flow_blocker("varies-across-2-shapes", false, false)
+            .expect("missing provenance must retain blocker");
         assert_eq!(non_exact.kind, "event-receive-result-flow-unproven");
         assert!(non_exact.message.contains("generated non-exact value"));
+
+        assert!(receive_result_flow_blocker("varies-across-146-shapes", false, true).is_none());
     }
 
     #[test]

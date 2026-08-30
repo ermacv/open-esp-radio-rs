@@ -22,10 +22,11 @@ static event routes an explicit receive/run delivery contract. The
 source-124 path proves the exact `R9 -> iEs -> gs5` call chain, static event
 initialization, both enqueue sites and conservative CFG ordering from the
 generic `eventq_get` call to `event.run`. This ordering is structural and does
-not claim path feasibility. The route remains `INCOMPLETE` because the
-enqueue-side queue producer is not yet resolved to the exact consumer queue
-instance, linked IR does not yet preserve the `eventq_get` result token into
-the `event.run` argument, and no replay proves delivery. The finished-list
+not claim path feasibility. Schema-v64 linked IR also preserves typed direct
+result provenance from that exact `eventq_get` call into the `event.run`
+argument across every recovered argument shape. The route remains `INCOMPLETE`
+because the enqueue-side queue producer is not yet resolved to the exact
+consumer queue instance and no replay proves delivery. The finished-list
 path proves
 source-zero attachment and a conservative CFG witness from the exact
 subscriber callback-pointer store to subscription, plus selector

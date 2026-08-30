@@ -11,6 +11,7 @@ fn recursive_effect_summary_reaches_a_fixed_point() {
         direct: true,
         tail: false,
         result_modeled: false,
+        result_provenance: None,
         execution_model: None,
         semantics: None,
         semantic_operation: None,
@@ -22,6 +23,7 @@ fn recursive_effect_summary_reaches_a_fixed_point() {
         argument_shapes: 1,
         arguments: vec!["arg0".to_owned()],
         argument_exact: vec![true],
+        argument_result_provenance: Vec::new(),
         argument_bindings: vec![LinkedArgumentBinding {
             position: 0,
             caller_argument: 0,

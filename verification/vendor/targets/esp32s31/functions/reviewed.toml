@@ -167,10 +167,11 @@ rationale = "lmacPostTxComplete posts signal 0x17 to the reviewed pp-task receiv
 # dispatcher call sites carrying the same static object that scheduler
 # initialization binds to the task callback, and the generic controller loop's
 # eventq_get/event.run calls. Associating the R9 entry with controller source
-# 124 and the receive-return-to-run state transition remain reviewed knowledge.
+# 124 remains reviewed knowledge. Schema-v64 linked IR independently preserves
+# the direct eventq_get result into the event.run argument, and the conservative
+# CFG places both calls in one ordered basic-block sequence.
 # The enqueue-side queue producer is not yet resolved to the exact queue value
-# consumed by eventq_get, and generated IR does not preserve the receive result
-# token into event.run, so concrete delivery still fails closed.
+# consumed by eventq_get, so concrete delivery still fails closed.
 [[event-routes]]
 kind = "static-event-callback"
 id = "btdm-source124-to-recycle-event-binding"
@@ -208,7 +209,7 @@ run-event-argument = 0
 callback-profile = "ble-controller-all"
 callback-source = "ble-controller"
 callback-function = "ble-controller::r_sym_bt_uNi9OHmE7XdXfGqTelU5"
-rationale = "Current linked IR proves the exact R9 -> iEs -> gs5 direct-call chain, both downstream calls carrying one static object, the scheduler-init binding to the exact callback, direct generic eventq_get/event.run sites, and conservative CFG ordering from receive to run. The R9-to-controller-source-124 association and receive-return-to-run callback semantics are reviewed knowledge; the concrete enqueue-to-receive queue identity, typed receive-result-to-run-argument relation, and execution replay remain unresolved."
+rationale = "Current linked IR proves the exact R9 -> iEs -> gs5 direct-call chain, both downstream calls carrying one static object, the scheduler-init binding to the exact callback, direct generic eventq_get/event.run sites, typed direct receive-result provenance into event.run, and same-basic-block CFG ordering from receive to run. The R9-to-controller-source-124 association and callback semantics are reviewed knowledge; the concrete enqueue-to-receive queue identity and execution replay remain unresolved."
 
 # Finished-list publication uses broker source zero. Scheduler init attaches
 # that exact source object, while base-stack enable contains the reviewed

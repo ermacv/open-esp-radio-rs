@@ -1016,10 +1016,12 @@ mod tests {
             target: "fixture::target".to_owned(),
             direct: true,
             result_modeled: true,
+            result_provenance: None,
             semantic_operation: None,
             site: Some(0x1000),
             arguments: arguments.into_iter().map(str::to_owned).collect(),
             argument_exact: exact,
+            argument_result_provenance: Vec::new(),
             guard_paths: None,
         }
     }

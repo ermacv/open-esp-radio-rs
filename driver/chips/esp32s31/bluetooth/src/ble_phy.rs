@@ -194,123 +194,12 @@ where
         self.initialized.initialized.controller.task_mut()
     }
 
-    #[cfg(target_arch = "riscv32")]
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "each typed input is a distinct reviewed DTM or fresh-time authority"
-    )]
-    pub(crate) fn prepare_dtm_transmitter_first_item(
+    /// Borrow the sole scheduler owner for upper phase-ordered DTM preparation.
+    pub(crate) fn dtm_scheduler_mut(
         &mut self,
-        owner: crate::BluetoothDtmPreparedTxGraph,
-        link_state: crate::BluetoothDtmLinkStateReset,
-        channel: crate::BluetoothDtmChannel,
-        phy: crate::BluetoothDtmPhy,
-        requested_interval_micros: u16,
-        margin: crate::BluetoothDtmSchedulerMargin,
-        now: crate::controller_time::BluetoothControllerSchedulerNow,
-        rf_ready: crate::BluetoothDtmSchedulerInstant,
-        admission_sample: crate::BluetoothControllerTimeSample,
-        sequence_sample: crate::BluetoothControllerTimeSample,
-    ) -> Result<
-        crate::BluetoothDtmEmptySchedulerMergePrepared<
-            crate::BluetoothDtmTransmitterEvent,
-            crate::BluetoothDtmInitialSchedulerItemPhase,
-        >,
-        crate::BluetoothDtmControllerTxPreparationFailure,
-    > {
-        self.initialized
-            .initialized
-            .controller
-            .prepare_dtm_transmitter_first_item(
-                owner,
-                link_state,
-                channel,
-                phy,
-                requested_interval_micros,
-                margin,
-                now,
-                rf_ready,
-                admission_sample,
-                sequence_sample,
-            )
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "each typed input is a distinct reviewed DTM or fresh-time authority"
-    )]
-    pub(crate) fn prepare_dtm_receiver_first_item(
-        &mut self,
-        owner: crate::BluetoothDtmReceiverCpuOwned,
-        link_state: crate::BluetoothDtmLinkStateReset,
-        channel: crate::BluetoothDtmChannel,
-        phy: crate::BluetoothDtmPhy,
-        margin: crate::BluetoothDtmSchedulerMargin,
-        now: crate::controller_time::BluetoothControllerSchedulerNow,
-        rf_ready: crate::BluetoothDtmSchedulerInstant,
-        admission_sample: crate::BluetoothControllerTimeSample,
-        sequence_sample: crate::BluetoothControllerTimeSample,
-    ) -> Result<
-        crate::BluetoothDtmEmptySchedulerMergePrepared<
-            crate::BluetoothDtmReceiverEvent,
-            crate::BluetoothDtmInitialSchedulerItemPhase,
-        >,
-        crate::BluetoothDtmControllerRxPreparationFailure,
-    > {
-        self.initialized
-            .initialized
-            .controller
-            .prepare_dtm_receiver_first_item(
-                owner,
-                link_state,
-                channel,
-                phy,
-                margin,
-                now,
-                rf_ready,
-                admission_sample,
-                sequence_sample,
-            )
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn prepare_dtm_transmitter_recurring_item(
-        &mut self,
-        owner: crate::BluetoothDtmActiveTransmitterCpuOwned,
-        now: crate::controller_time::BluetoothControllerSchedulerNow,
-        sequence_sample: crate::BluetoothControllerTimeSample,
-    ) -> Result<
-        crate::BluetoothDtmEmptySchedulerMergePrepared<
-            crate::BluetoothDtmTransmitterEvent,
-            crate::BluetoothDtmRecurringSchedulerItemPhase,
-        >,
-        crate::BluetoothDtmControllerTxRecurringPreparationFailure,
-    > {
-        self.initialized
-            .initialized
-            .controller
-            .prepare_dtm_transmitter_recurring_item(owner, now, sequence_sample)
-    }
-
-    #[cfg(target_arch = "riscv32")]
-    pub(crate) fn prepare_dtm_receiver_recurring_item(
-        &mut self,
-        owner: crate::BluetoothDtmActiveReceiverCpuOwned,
-        now: crate::controller_time::BluetoothControllerSchedulerNow,
-        rf_ready: crate::BluetoothDtmSchedulerInstant,
-        sequence_sample: crate::BluetoothControllerTimeSample,
-    ) -> Result<
-        crate::BluetoothDtmEmptySchedulerMergePrepared<
-            crate::BluetoothDtmReceiverEvent,
-            crate::BluetoothDtmRecurringSchedulerItemPhase,
-        >,
-        crate::BluetoothDtmControllerRxRecurringPreparationFailure,
-    > {
-        self.initialized
-            .initialized
-            .controller
-            .prepare_dtm_receiver_recurring_item(owner, now, rf_ready, sequence_sample)
+    ) -> &mut crate::BluetoothSchedulerInitialized<P, MODEM_TIMER_CAPACITY, SCHEDULER_CAPACITY>
+    {
+        self.initialized.initialized.controller.dtm_scheduler_mut()
     }
 
     #[cfg(target_arch = "riscv32")]

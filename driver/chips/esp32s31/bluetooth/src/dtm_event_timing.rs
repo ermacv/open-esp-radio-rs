@@ -40,7 +40,8 @@ pub struct BluetoothDtmSchedulerMargin(u8);
 
 impl BluetoothDtmSchedulerMargin {
     /// Preserve the complete scheduler-environment byte image.
-    pub const fn from_image(image: u8) -> Self {
+    #[cfg(test)]
+    pub(crate) const fn from_image(image: u8) -> Self {
         Self(image)
     }
 

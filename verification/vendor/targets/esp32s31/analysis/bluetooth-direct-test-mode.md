@@ -153,7 +153,13 @@ rejected sequence gate returns either exact phase owner for explicit release.
 Only the resulting common sequence-ready typestate
 can enter a DTM plan, which forms both sequence words from the phase-bound
 retained window and retains the reservation through graph and bookkeeping
-preparation. Before
+preparation. The target Controller now drives this split with the same private
+generation-keyed latch worker: initial TX/RX publish admission, reserve only
+after that exact sample completes, and publish sequence only after reservation;
+recurring TX/RX reserve first and publish only sequence. The sample type and
+all constructors are crate-private. Cancellation and Drop release an occupied
+reservation through its exact scheduler owner before a late latch result can
+only enter the common orphan drain. Before
 common scheduler bookkeeping,
 complete current `r_sym_ble_iHRqSCIgChmgSHj5W8W3` and named same-chip
 `r_sched_txn_rmOverlapInsert` copy the link-state five-bit rounded-power image
@@ -281,6 +287,31 @@ tick-to-usec leaves, are both identity returns. The DTM body consequently
 stores `interval_ticks = interval_usecs`, computes a zero one-byte remainder
 and never takes its `remainder == unit` correction branch.
 
+The scheduler-margin source is closed for the reviewed standalone profile.
+Current member `66.o` function `r_sym_ble_TtdgZbQxHLEPeNfBtjqO` is
+instruction-identical to named same-chip `r_ble_lll_sched_init`. It stores the
+low byte of `usecs_to_ticks(config[1] + ll_tick_unit +
+private_options[0x10] - 1)` in the LLL scheduler environment. Reviewed
+`config[1]` is 46, the tick unit and conversion are one, and committed current
+data object `r_sym_ble_Me5fSEJ6D19ZRNyzFooG` contains halfword 60 at private
+offset `+0x10`. The exact standalone margin is therefore
+`46 + 1 + 60 - 1 = 106`. The separate scheduler guard remains 40; neither 40
+nor 46 alone is margin.
+
+Current member `64.o` wrapper `r_sym_ble_4QeP6vZAoSzLLHdFgwD0` calls
+`r_sym_bt_Ceh2khbCcopEBybBO6Z5` and converts its result through
+`r_sym_ble_3ISuZaEAZjklAjtGLFxW`. Named same-chip roles are
+`r_btdm_sleep_enable_now` followed by `r_sched_timer_convertTimeToUs`. The null
+or disabled sleep-environment branch performs no RF MMIO and obtains a fresh
+controller tick; the sleep-enabled branch first crosses still-open wake helpers
+and then also obtains a fresh tick. RF-ready is therefore the scheduler-domain
+instant returned after synchronous RF-enable-now policy, not a PHY status bit
+or caller timestamp. Complete initial TX/RX bodies acquire current before
+RF-ready; recurring RX acquires RF-ready before current; recurring TX has no
+RF-ready call. The reviewed always-awake branch can be composed without new
+register access, while the sleep-enabled wake branch remains outside the
+current implementation.
+
 The open timing types reproduce the complete arithmetic and positional
 tick/remainder images for every HCI length and TX PHY. This still does not
 sample a live controller clock, form an absolute deadline or grant scheduler
@@ -314,10 +345,11 @@ same signed wrapping comparison, and the end again adds literal 1000. The
 window privately retains `Initial` or `Recurring`, and the
 memory codec selects the corresponding full-initial or reuse configuration.
 Distinct Rust window types prevent either phase from entering the other's
-Controller edge. The Controller-time sample itself is non-copyable, but live
-composition with an ordered RF-ready result and scheduler-margin owner remains
-absent. The recurrence core accepts typed timing facts; it does not claim to
-acquire or order them from live hardware.
+Controller edge. Controller-time admission and sequence samples are now
+non-public affine phases. Live composition with the ordered RF-ready result and
+the reviewed standalone scheduler-margin owner remains absent. The recurrence
+core accepts typed timing facts; it does not yet claim to acquire RF-ready from
+the retained always-awake policy.
 
 The RX callback signature and result projection are also narrower than the
 vendor memory manager. Complete S31 allocation and RX bodies, plus the named
@@ -780,7 +812,7 @@ equivalent execution point or that its software recheck latency is bounded.
 | HAL | Powered controller epoch, common RF wake, cache/device fences, timer conversion, same-core IRQ routing and bounded stop/quiesce | The HAL forwards the finite insertion execution publications and observations without exposing raw PAC access. It also forwards the safe typed scheduler run-event and RUN chain; no upper layer passes an address, mask or register image. The powered Controller retains the unique repeatable live latch owner and exposes finite generation-keyed request/recheck operations with cancellation drain. The first completed observation initializes the scheduler epoch; later borrowed observations reanchor the same epoch and can be consumed by exactly one DTM preparation. The stable ESP-HAL storage lease can synchronously lend its interrupt owner for dynamic scheduler preparation while routes remain inactive. A proven wake/recheck source, physical counter contract, live-route lifecycle, affine completion worker and powered rollback remain absent. |
 | Scheduler core | Affine event item, ordered deadline queue, insert/abort/complete states, hardware-head replacement and consistency check | DTM list zero now has an exclusive empty epoch, exact first-item merge and terminal pre-route publication transition. The Controller rejects a merge from another epoch before head MMIO and retains the unchanged graph on failure. Success immediately consumes every memory rollback image against the exact affine PAC head token and records the scheduler epoch as head-published. It then consumes that head through stable-owner dynamic interrupt preparation, synchronous source-14 event publication and RUN as one typed suffix, moving the source-owned epoch to its distinct running phase. Storage rejection returns the unchanged hardware-owned head before suffix MMIO; success returns an affine running graph and no CPU mutation surface. The same Controller now performs a fresh finished-list transfer, immediately joins only list zero to the retained running address, reads volatile status and advances non-sentinel completion without granting CPU ownership. A second bounded operation refuses an active remainder, consumes the exact RUN provenance into a fresh fenced hardware-head observation and advances the source epoch only on empty; expected or changed nonempty heads are distinct fail-stop diagnostics. The sole-item source list then advances exactly once to `SoftwareListUnlinked`. A separate Controller call obtains a fresh post-unlink primary scheduler sample and consumes it through the task-side return predicate; Pending retains that unlinked owner and Ready advances the same graph. Ready TX and RX non-success then consume the exact reservation and return the exclusive list to Empty only after memory recycle succeeds. Successful RX enters a specialized fail-closed drain/account/re-arm transaction and returns the same non-copyable session only after memory, timeline and source-list release. Recurring TX and RX consume their active owners, derive the next phase, prepare a new affine merge and feed the same head/RUN path; every rejection returns the prior owner without committing the candidate phase. A guaranteed Pending-removal wake, selector-6 recovery and autonomous session driver remain absent. |
 | Packet memory | Static aligned TX/RX/link-state slots with `CPU -> prepared -> hardware -> completed -> CPU -> reclaimed` ownership | A no-heap memory crate owns the complete 936-byte DTM graph, validates physical placement and installs full private software-list pointers separately from compressed hardware links. TX readiness and role-specific event/bookkeeping transforms remain affine through first and recurring merges. The exact list-zero PAC publication token consumes that CPU-owned preparation into a hard `HardwareOwned` memory state. Scheduler items, link-state, RX headers and hardware-written RX packet words use volatile semantic accessors. The direct internal DMA-RAM aperture and trailing PAC device fence establish visibility. The lower recycle transition consumes exact empty-head/removal proofs; RX success validates the deterministic two-header topology, accounts the typed result and commits append/re-arm before returning an active owner that recurrence can consume. Only an ordinary CPU owner can enter `Reclaimed`; it retains the same pinned graph and its inseparable allocation configuration, exposes no event preparation and can reinitialize a fresh CPU-owned epoch without caller-supplied configuration. No equivalent edge exists on an intermediate owner. |
-| LLL DTM | Parameter validation, channel/PHY/pattern image, TX/RX event state machine and receive counter | The complete channel domain, composed frequency lookup, role-dependent PHY/rate mapping, all eight bounded TX payload patterns, packet-duration/minimum-interval/tick arithmetic, constant-time event catch-up and RX accounting transition are typed. Active TX/RX owners retain immutable command identity, committed phase and, for RX, the non-copyable accounting session across recurrence and its lossless failure paths. First and repeated scheduler-current acquisition is Controller-bound, affine and consumed by one role/phase preparation. Admission, sequence, RF-ready and margin still lack ordered source-owned producers. Either fully recycled role can enter `TestEnded`, retaining the reclaimed graph with a transmitter report of zero packets or the accumulated RX count. Executor-neutral `Idle/GraphReady` and `TestEnded/Stopping` bookends retain the graph and terminal report through response backpressure, but no concrete pump proves continuity between those bookends or stops an in-flight owner. Autonomous recurrence policy, remaining field meanings, abort, in-flight Test End quiescence and operational response publication are incomplete. |
+| LLL DTM | Parameter validation, channel/PHY/pattern image, TX/RX event state machine and receive counter | The complete channel domain, composed frequency lookup, role-dependent PHY/rate mapping, all eight bounded TX payload patterns, packet-duration/minimum-interval/tick arithmetic, constant-time event catch-up and RX accounting transition are typed. Active TX/RX owners retain immutable command identity, committed phase and, for RX, the non-copyable accounting session across recurrence and its lossless failure paths. First and repeated scheduler-current acquisition is Controller-bound and affine. Initial admission and sequence are private generation-keyed requests separated by reservation; recurring paths reserve before their sole sequence request. RF-ready and standalone margin still lack composed source-owned producers. Either fully recycled role can enter `TestEnded`, retaining the reclaimed graph with a transmitter report of zero packets or the accumulated RX count. Executor-neutral `Idle/GraphReady` and `TestEnded/Stopping` bookends retain the graph and terminal report through response backpressure, but no concrete pump proves continuity between those bookends or stops an in-flight owner. Autonomous recurrence policy, remaining field meanings, abort, in-flight Test End quiescence and operational response publication are incomplete. |
 | HCI | LE Receiver Test v1, LE Transmitter Test v1 and LE Test End command/event semantics | A closed generic codec validates exact command bodies, typed channel/pattern domains and staged Command Complete events, including the Test End count. Bootstrap transport exists, but no dispatcher/session worker connects these tokens to the chip owner or publishes their responses; operational DTM opcodes remain unsupported. |
 
 No ULL advertising, scanning, connection, ACL or LLCP implementation is
@@ -819,10 +851,12 @@ The remaining work should proceed in narrow, testable increments:
    gates a terminal affine first-live time request. Its completed sample
    initializes the persistent scheduler epoch, and repeated borrowed requests
    reanchor that epoch before one role/phase preparation consumes the private
-   current. Neither path is RF-ready or deadline-ready. Add staged private
-   admission and sequence acquisitions plus typed RF-ready and scheduler-margin
-   facts while preserving initial TX/RX and recurring RX acquisition order. A
-   caller-supplied instant is not proof of that live order.
+   current. Initial admission and later sequence acquisition are now distinct
+   private requests separated by reservation; recurring preparation reserves
+   before its sequence request. Add the reviewed standalone margin policy and
+   typed RF-ready acquisition while preserving current-before-RF for initial
+   TX/RX and RF-before-current for recurring RX. A caller-supplied instant is
+   not proof of that live order.
 2. **Close the controller timebase source.** The latch address/order,
    standalone scale arithmetic, affine nonblocking request phases, pure
    wrapping epoch projection and sole powered task-side MMIO owner now exist.

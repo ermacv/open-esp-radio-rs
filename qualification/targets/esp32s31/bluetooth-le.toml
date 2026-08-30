@@ -90,7 +90,7 @@ gaps = [
 [[capabilities]]
 id = "controller-timebase"
 title = "Event-driven controller scheduler timebase"
-scope = "Live bounded always-awake latch MMIO with keyed affine request ownership same-Controller Waiting rechecks cold first-live epoch initialization repeated borrowed scheduler-current acquisition vendor-equivalent epoch reanchoring sample-discarding cancellation drain and one-shot DTM preparation consumption"
+scope = "Live bounded always-awake latch MMIO with keyed affine request ownership same-Controller Waiting rechecks cold first-live epoch initialization repeated borrowed scheduler-current acquisition vendor-equivalent epoch reanchoring private initial admission before reservation private sequence after reservation and sample-discarding cancellation drain"
 implementation = "incomplete"
 host = "covered"
 async = "incomplete"
@@ -99,7 +99,7 @@ vendor-anchors = [
   "verification/vendor/targets/esp32s31/analysis/bluetooth-direct-test-mode.md",
 ]
 gaps = [
-  { axis = "implementation", id = "phase-specific-admission-sequence-rf-ready-and-margin-producers-missing" },
+  { axis = "implementation", id = "source-owned-rf-ready-and-standalone-margin-producers-missing" },
   { axis = "vendor", id = "effective-counter-width-physical-unit-and-wake-source-missing" },
   { axis = "hil", id = "controller-time-latch-and-wrap-cell-missing" },
   { axis = "async", id = "live-controller-runner-and-proven-absolute-recheck-source-missing" },
@@ -280,8 +280,8 @@ vendor-anchors = [
 ]
 async-not-applicable = "pure-synchronous-transform"
 gaps = [
-  { axis = "implementation", id = "live-ordered-rf-ready-and-scheduler-margin-owners-missing" },
-  { axis = "vendor", id = "scheduler-margin-runtime-source-and-rf-ready-order-proof-missing" },
+  { axis = "implementation", id = "standalone-rf-ready-and-margin-policy-not-composed" },
+  { axis = "vendor", id = "sleep-enabled-rf-wake-helper-contract-missing" },
   { axis = "hil", id = "dtm-tx-interval-tick-and-deadline-cell-missing" },
 ]
 
@@ -373,7 +373,7 @@ vendor-anchors = [
 gaps = [
   { axis = "implementation", id = "autonomous-dtm-session-loop-and-test-end-quiescence-missing" },
   { axis = "host", id = "concrete-dtm-session-pump-and-owner-continuity-missing" },
-  { axis = "vendor", id = "live-rf-ready-margin-and-test-end-stop-order-proof-missing" },
+  { axis = "vendor", id = "sleep-enabled-rf-wake-and-test-end-stop-order-proof-missing" },
   { axis = "hil", id = "direct-test-mode-rf-cell-missing" },
   { axis = "async", id = "pending-removal-wake-and-session-stop-contract-missing" },
 ]

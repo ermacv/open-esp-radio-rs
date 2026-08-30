@@ -7,16 +7,17 @@
 
 #![forbid(unsafe_code)]
 
-use open_esp_radio_esp32s31_pac::BluetoothControllerLatchedTime;
 #[cfg(any(target_arch = "riscv32", test))]
-use open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale;
+use open_esp_radio_esp32s31_pac::{BluetoothControllerLatchedTime, BluetoothControllerTimeScale};
 
 /// One ordered controller-time sample from the always-awake latch path.
 #[derive(Debug, Eq, PartialEq)]
-pub struct BluetoothControllerTimeSample {
+#[cfg(any(target_arch = "riscv32", test))]
+pub(crate) struct BluetoothControllerTimeSample {
     latched_time: BluetoothControllerLatchedTime,
 }
 
+#[cfg(any(target_arch = "riscv32", test))]
 impl BluetoothControllerTimeSample {
     #[cfg(any(target_arch = "riscv32", test, feature = "validation-probes"))]
     const fn from_live_latch(latched_time: BluetoothControllerLatchedTime) -> Self {

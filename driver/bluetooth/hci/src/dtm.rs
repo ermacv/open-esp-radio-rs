@@ -160,6 +160,70 @@ impl LeDtmCommand {
             Self::TestEnd(_) => LeDtmCommandKind::TestEnd,
         }
     }
+
+    /// Apply the reviewed command policy for an idle DTM session.
+    ///
+    /// A start command remains an owned semantic request for the hardware
+    /// runner. Test End succeeds without starting or stopping hardware and
+    /// reports the idle session's zero packet count. The policy exposes no
+    /// caller-selected HCI status.
+    pub fn into_idle_session_disposition(self) -> LeDtmIdleSessionDisposition {
+        match self {
+            Self::ReceiverTestV1(command) => LeDtmIdleSessionDisposition::StartReceiver(command),
+            Self::TransmitterTestV1(command) => {
+                LeDtmIdleSessionDisposition::StartTransmitter(command)
+            }
+            Self::TestEnd(command) => {
+                LeDtmIdleSessionDisposition::CompleteNoTest(command.into_ended_command_complete(0))
+            }
+        }
+    }
+
+    /// Apply the reviewed command policy for an active DTM session.
+    ///
+    /// Test End remains owned until the chip-specific runner has quiesced the
+    /// active graph and obtained its terminal packet count. A second receiver
+    /// or transmitter start is rejected as Controller Busy without replacing
+    /// or mutating that active session.
+    pub fn into_active_session_disposition(self) -> LeDtmActiveSessionDisposition {
+        match self {
+            Self::ReceiverTestV1(_) => LeDtmActiveSessionDisposition::RejectControllerBusy(
+                LeDtmCommandCompleteEvent::without_return_parameters(
+                    LE_RECEIVER_TEST_V1_OPCODE,
+                    HciError::CONTROLLER_BUSY.to_status(),
+                ),
+            ),
+            Self::TransmitterTestV1(_) => LeDtmActiveSessionDisposition::RejectControllerBusy(
+                LeDtmCommandCompleteEvent::without_return_parameters(
+                    LE_TRANSMITTER_TEST_V1_OPCODE,
+                    HciError::CONTROLLER_BUSY.to_status(),
+                ),
+            ),
+            Self::TestEnd(command) => LeDtmActiveSessionDisposition::End(command),
+        }
+    }
+}
+
+/// Reviewed outcome of routing one DTM command while no test is active.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "the idle DTM command must start hardware or publish its response"]
+pub enum LeDtmIdleSessionDisposition {
+    /// Start one receiver test through the chip-specific hardware runner.
+    StartReceiver(LeReceiverTestV1Command),
+    /// Start one transmitter test through the chip-specific hardware runner.
+    StartTransmitter(LeTransmitterTestV1Command),
+    /// Publish the successful zero-count response for Test End without a test.
+    CompleteNoTest(LeDtmCommandCompleteEvent),
+}
+
+/// Reviewed outcome of routing one DTM command while a test is active.
+#[derive(Debug, Eq, PartialEq)]
+#[must_use = "the active DTM command must enter Test End or publish its rejection"]
+pub enum LeDtmActiveSessionDisposition {
+    /// Quiesce the active hardware owner before completing this Test End.
+    End(LeTestEndCommand),
+    /// Publish the fixed Controller Busy response while retaining the session.
+    RejectControllerBusy(LeDtmCommandCompleteEvent),
 }
 
 /// Closed command identity used in decode diagnostics.
@@ -251,9 +315,12 @@ impl LeReceiverTestV1Command {
         self.channel
     }
 
-    /// Consume the pending command after the controller supplies its result.
-    pub fn into_command_complete(self, status: Status) -> LeDtmCommandCompleteEvent {
-        LeDtmCommandCompleteEvent::without_return_parameters(LE_RECEIVER_TEST_V1_OPCODE, status)
+    /// Consume the command after its first receiver event reached hardware.
+    pub fn into_started_command_complete(self) -> LeDtmCommandCompleteEvent {
+        LeDtmCommandCompleteEvent::without_return_parameters(
+            LE_RECEIVER_TEST_V1_OPCODE,
+            Status::SUCCESS,
+        )
     }
 }
 
@@ -281,9 +348,12 @@ impl LeTransmitterTestV1Command {
         self.pattern
     }
 
-    /// Consume the pending command after the controller supplies its result.
-    pub fn into_command_complete(self, status: Status) -> LeDtmCommandCompleteEvent {
-        LeDtmCommandCompleteEvent::without_return_parameters(LE_TRANSMITTER_TEST_V1_OPCODE, status)
+    /// Consume the command after its first transmitter event reached hardware.
+    pub fn into_started_command_complete(self) -> LeDtmCommandCompleteEvent {
+        LeDtmCommandCompleteEvent::without_return_parameters(
+            LE_TRANSMITTER_TEST_V1_OPCODE,
+            Status::SUCCESS,
+        )
     }
 }
 
@@ -294,18 +364,18 @@ pub struct LeTestEndCommand {
 }
 
 impl LeTestEndCommand {
-    /// Consume the pending command after the controller supplies its result.
+    /// Consume the pending command after the controller has ended the test.
     ///
     /// `packet_count` is deliberately not inferred here. The chip-specific
     /// terminal owner supplies zero for a transmitter test or the accumulated
     /// accepted count for a receiver test. This codec only serializes that
     /// semantic report in HCI little-endian order.
-    pub fn into_command_complete(
-        self,
-        status: Status,
-        packet_count: u16,
-    ) -> LeDtmCommandCompleteEvent {
-        LeDtmCommandCompleteEvent::with_packet_count(LE_TEST_END_OPCODE, status, packet_count)
+    pub fn into_ended_command_complete(self, packet_count: u16) -> LeDtmCommandCompleteEvent {
+        LeDtmCommandCompleteEvent::with_packet_count(
+            LE_TEST_END_OPCODE,
+            Status::SUCCESS,
+            packet_count,
+        )
     }
 }
 
@@ -413,7 +483,8 @@ mod tests {
 
     use super::{
         LE_RECEIVER_TEST_V1_OPCODE, LE_TEST_END_OPCODE, LE_TRANSMITTER_TEST_V1_OPCODE,
-        LeDtmCommand, LeDtmCommandDecodeError, LeDtmCommandKind, LeDtmPayloadPattern,
+        LeDtmActiveSessionDisposition, LeDtmCommand, LeDtmCommandDecodeError, LeDtmCommandKind,
+        LeDtmIdleSessionDisposition, LeDtmPayloadPattern,
     };
 
     type TestChannel = InProcessHciChannel<NoopRawMutex, 1, 1, 16>;
@@ -536,13 +607,13 @@ mod tests {
     }
 
     #[test]
-    fn staged_completions_roundtrip_through_bt_hci_event_types() {
+    fn successful_starts_roundtrip_through_bt_hci_event_types() {
         let LeDtmCommand::ReceiverTestV1(receiver) =
             LeDtmCommand::decode_body(LE_RECEIVER_TEST_V1_OPCODE, &[3]).unwrap()
         else {
             unreachable!()
         };
-        let receiver_complete = receiver.into_command_complete(Status::SUCCESS);
+        let receiver_complete = receiver.into_started_command_complete();
         let observed = parse_command_complete(receiver_complete.as_bytes());
         assert_eq!(observed.cmd_opcode, LE_RECEIVER_TEST_V1_OPCODE);
         assert_eq!(observed.status, Status::SUCCESS);
@@ -553,22 +624,79 @@ mod tests {
         else {
             unreachable!()
         };
-        let transmitter_complete =
-            transmitter.into_command_complete(HciError::CMD_DISALLOWED.to_status());
+        let transmitter_complete = transmitter.into_started_command_complete();
         let observed = parse_command_complete(transmitter_complete.as_bytes());
         assert_eq!(observed.cmd_opcode, LE_TRANSMITTER_TEST_V1_OPCODE);
-        assert_eq!(observed.status, HciError::CMD_DISALLOWED.to_status());
+        assert_eq!(observed.status, Status::SUCCESS);
         assert!(observed.return_param_bytes.is_empty());
+    }
 
-        let LeDtmCommand::TestEnd(test_end) =
-            LeDtmCommand::decode_body(LE_TEST_END_OPCODE, &[]).unwrap()
+    #[test]
+    fn idle_policy_retains_starts_and_completes_empty_test_end() {
+        let receiver = LeDtmCommand::decode_body(LE_RECEIVER_TEST_V1_OPCODE, &[17]).unwrap();
+        let LeDtmIdleSessionDisposition::StartReceiver(receiver) =
+            receiver.into_idle_session_disposition()
         else {
-            unreachable!()
+            panic!("an idle receiver start did not retain its command")
         };
-        let test_end_complete = test_end.into_command_complete(Status::SUCCESS, 0x3412);
-        assert_eq!(test_end_complete.packet_count(), Some(0x3412));
-        let observed = parse_command_complete(test_end_complete.as_bytes());
+        assert_eq!(receiver.channel().index(), 17);
+
+        let transmitter =
+            LeDtmCommand::decode_body(LE_TRANSMITTER_TEST_V1_OPCODE, &[9, 31, 2]).unwrap();
+        let LeDtmIdleSessionDisposition::StartTransmitter(transmitter) =
+            transmitter.into_idle_session_disposition()
+        else {
+            panic!("an idle transmitter start did not retain its command")
+        };
+        assert_eq!(transmitter.channel().index(), 9);
+        assert_eq!(transmitter.payload_length(), 31);
+
+        let test_end = cross_hci_boundary(&LeTestEnd::new());
+        let LeDtmIdleSessionDisposition::CompleteNoTest(response) =
+            test_end.into_idle_session_disposition()
+        else {
+            panic!("idle Test End did not produce its terminal response")
+        };
+        let observed = parse_command_complete(response.as_bytes());
         assert_eq!(observed.cmd_opcode, LeTestEnd::OPCODE);
+        assert_eq!(observed.status, Status::SUCCESS);
+        assert_eq!(observed.return_params::<LeTestEnd>().unwrap(), 0);
+    }
+
+    #[test]
+    fn active_policy_rejects_both_starts_as_controller_busy() {
+        for (command, expected_opcode) in [
+            (
+                LeDtmCommand::decode_body(LE_RECEIVER_TEST_V1_OPCODE, &[3]).unwrap(),
+                LE_RECEIVER_TEST_V1_OPCODE,
+            ),
+            (
+                LeDtmCommand::decode_body(LE_TRANSMITTER_TEST_V1_OPCODE, &[5, 37, 2]).unwrap(),
+                LE_TRANSMITTER_TEST_V1_OPCODE,
+            ),
+        ] {
+            let LeDtmActiveSessionDisposition::RejectControllerBusy(response) =
+                command.into_active_session_disposition()
+            else {
+                panic!("a second active-session start escaped busy rejection")
+            };
+            let observed = parse_command_complete(response.as_bytes());
+            assert_eq!(observed.cmd_opcode, expected_opcode);
+            assert_eq!(observed.status, HciError::CONTROLLER_BUSY.to_status());
+            assert!(observed.return_param_bytes.is_empty());
+        }
+    }
+
+    #[test]
+    fn active_test_end_stays_owned_until_terminal_count_is_available() {
+        let command = cross_hci_boundary(&LeTestEnd::new());
+        let LeDtmActiveSessionDisposition::End(command) = command.into_active_session_disposition()
+        else {
+            panic!("active Test End was completed before hardware quiescence")
+        };
+
+        let response = command.into_ended_command_complete(0x3412);
+        let observed = parse_command_complete(response.as_bytes());
         assert_eq!(observed.status, Status::SUCCESS);
         assert_eq!(observed.return_params::<LeTestEnd>().unwrap(), 0x3412);
     }

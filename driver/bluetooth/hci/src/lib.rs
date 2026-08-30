@@ -13,8 +13,10 @@
 //! subset for Host initialization; Link-Layer commands remain owned by an
 //! outer router.
 //! The separate closed LE DTM codec validates Receiver Test v1, Transmitter
-//! Test v1 and Test End into owned semantic commands and builds their staged
-//! Command Complete events; it does not dispatch them or claim radio work.
+//! Test v1 and Test End into owned semantic commands. Its reviewed idle/active
+//! session policy retains start/Test End ownership for a hardware runner and
+//! builds only the exact no-test success or active-start busy responses; it
+//! does not dispatch commands or claim radio work.
 //! [`classify_le_controller_command`] joins those two portable policies at a
 //! finite command boundary: valid bootstrap and DTM commands become owned
 //! semantic tokens, malformed known commands become owned error responses,
@@ -55,9 +57,10 @@ pub use channel::{
 pub use classification::{LeControllerCommandClassification, classify_le_controller_command};
 pub use dtm::{
     LE_DTM_COMMAND_COMPLETE_EVENT_CAPACITY, LE_RECEIVER_TEST_V1_OPCODE, LE_TEST_END_OPCODE,
-    LE_TRANSMITTER_TEST_V1_OPCODE, LeDtmChannel, LeDtmCommand, LeDtmCommandCompleteEvent,
-    LeDtmCommandDecodeError, LeDtmCommandKind, LeDtmPayloadPattern, LeReceiverTestV1Command,
-    LeTestEndCommand, LeTransmitterTestV1Command,
+    LE_TRANSMITTER_TEST_V1_OPCODE, LeDtmActiveSessionDisposition, LeDtmChannel, LeDtmCommand,
+    LeDtmCommandCompleteEvent, LeDtmCommandDecodeError, LeDtmCommandKind,
+    LeDtmIdleSessionDisposition, LeDtmPayloadPattern, LeReceiverTestV1Command, LeTestEndCommand,
+    LeTransmitterTestV1Command,
 };
 pub use resources::{
     LeControllerHciEndpoints, LeControllerHciResources, LeControllerHciResourcesError,

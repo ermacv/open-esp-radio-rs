@@ -12,7 +12,6 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_bluetooth_hci::{
     HciChannelError, HciControllerResponse, InProcessHciControllerEndpoint,
     LeDtmCommandCompleteEvent, LeReceiverTestV1Command, LeTransmitterTestV1Command,
-    bt_hci::param::Status,
 };
 
 use crate::{
@@ -238,7 +237,7 @@ where
                 task,
                 running,
             } => (
-                command.into_command_complete(Status::SUCCESS),
+                command.into_started_command_complete(),
                 BluetoothDtmFirstActivePhase::Transmitter { task, running },
             ),
             BluetoothDtmFirstRunningPhase::Receiver {
@@ -246,7 +245,7 @@ where
                 task,
                 running,
             } => (
-                command.into_command_complete(Status::SUCCESS),
+                command.into_started_command_complete(),
                 BluetoothDtmFirstActivePhase::Receiver { task, running },
             ),
         };

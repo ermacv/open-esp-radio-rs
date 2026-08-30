@@ -134,6 +134,16 @@ where
         self.initialized.phy_report()
     }
 
+    /// Scheduler scale retained by this exact initialized Controller epoch.
+    pub(crate) const fn controller_time_scale(
+        &self,
+    ) -> open_esp_radio_esp32s31_pac::BluetoothControllerTimeScale {
+        self.initialized
+            .initialized
+            .controller
+            .controller_time_scale()
+    }
+
     pub(crate) fn take_activation_owners(
         &mut self,
     ) -> (
@@ -197,9 +207,8 @@ where
         phy: crate::BluetoothDtmPhy,
         requested_interval_micros: u16,
         margin: crate::BluetoothDtmSchedulerMargin,
-        current: crate::BluetoothDtmSchedulerInstant,
+        now: crate::controller_time::BluetoothControllerSchedulerNow,
         rf_ready: crate::BluetoothDtmSchedulerInstant,
-        epoch_sample: crate::BluetoothControllerTimeSample,
         admission_sample: crate::BluetoothControllerTimeSample,
         sequence_sample: crate::BluetoothControllerTimeSample,
     ) -> Result<
@@ -219,9 +228,8 @@ where
                 phy,
                 requested_interval_micros,
                 margin,
-                current,
+                now,
                 rf_ready,
-                epoch_sample,
                 admission_sample,
                 sequence_sample,
             )
@@ -239,9 +247,8 @@ where
         channel: crate::BluetoothDtmChannel,
         phy: crate::BluetoothDtmPhy,
         margin: crate::BluetoothDtmSchedulerMargin,
-        current: crate::BluetoothDtmSchedulerInstant,
+        now: crate::controller_time::BluetoothControllerSchedulerNow,
         rf_ready: crate::BluetoothDtmSchedulerInstant,
-        epoch_sample: crate::BluetoothControllerTimeSample,
         admission_sample: crate::BluetoothControllerTimeSample,
         sequence_sample: crate::BluetoothControllerTimeSample,
     ) -> Result<
@@ -260,9 +267,8 @@ where
                 channel,
                 phy,
                 margin,
-                current,
+                now,
                 rf_ready,
-                epoch_sample,
                 admission_sample,
                 sequence_sample,
             )
@@ -272,8 +278,7 @@ where
     pub(crate) fn prepare_dtm_transmitter_recurring_item(
         &mut self,
         owner: crate::BluetoothDtmActiveTransmitterCpuOwned,
-        current: crate::BluetoothDtmSchedulerInstant,
-        epoch_sample: crate::BluetoothControllerTimeSample,
+        now: crate::controller_time::BluetoothControllerSchedulerNow,
         sequence_sample: crate::BluetoothControllerTimeSample,
     ) -> Result<
         crate::BluetoothDtmEmptySchedulerMergePrepared<
@@ -285,16 +290,15 @@ where
         self.initialized
             .initialized
             .controller
-            .prepare_dtm_transmitter_recurring_item(owner, current, epoch_sample, sequence_sample)
+            .prepare_dtm_transmitter_recurring_item(owner, now, sequence_sample)
     }
 
     #[cfg(target_arch = "riscv32")]
     pub(crate) fn prepare_dtm_receiver_recurring_item(
         &mut self,
         owner: crate::BluetoothDtmActiveReceiverCpuOwned,
-        current: crate::BluetoothDtmSchedulerInstant,
+        now: crate::controller_time::BluetoothControllerSchedulerNow,
         rf_ready: crate::BluetoothDtmSchedulerInstant,
-        epoch_sample: crate::BluetoothControllerTimeSample,
         sequence_sample: crate::BluetoothControllerTimeSample,
     ) -> Result<
         crate::BluetoothDtmEmptySchedulerMergePrepared<
@@ -306,13 +310,7 @@ where
         self.initialized
             .initialized
             .controller
-            .prepare_dtm_receiver_recurring_item(
-                owner,
-                current,
-                rf_ready,
-                epoch_sample,
-                sequence_sample,
-            )
+            .prepare_dtm_receiver_recurring_item(owner, now, rf_ready, sequence_sample)
     }
 
     #[cfg(target_arch = "riscv32")]

@@ -133,6 +133,7 @@ pub use controller_start::{
     BluetoothControllerInterruptOwnersPublished, BluetoothControllerInterruptOwnersReady,
     BluetoothControllerModemLpTimerRestoreFailure, BluetoothControllerModemLpTimerSoftwareStep,
     BluetoothControllerModemLpTimerSoftwareWork, BluetoothControllerOutputTimerStarted,
+    BluetoothControllerSchedulerEpochRetained, BluetoothControllerSchedulerNowReady,
     BluetoothDtmSchedulerStartFailure, BluetoothDtmSoftwareListRemovalObservationFailure,
     BluetoothDtmSoftwareListRemovalObservationStep, BluetoothInterruptOwnerStorage,
     BluetoothModemLpTimerInterruptDispatchStorage, BluetoothModemLpTimerSoftwareOwnerStorage,

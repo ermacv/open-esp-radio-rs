@@ -749,6 +749,17 @@ publication includes its device fence. A registered wake or proven bounded
 recheck source, effective counter width and physical unit remain absent, so
 this is not yet a deadline-ready production time source.
 
+The scheduler's first live reference update is exact as well. Its initializer
+zeroes both raw and scheduler reference images, and its task-enable leaf is a
+no-op. The first task-run tail-calls the reference update, which samples raw
+time, converts the wrapping delta from the prior raw reference, stores sampled
+raw time minus the conversion remainder and advances the scheduler reference
+by the converted quotient. Every accepted ESP32-S31 scale image is positive,
+so this first update has zero remainder. It therefore establishes
+`raw_anchor = sample` and
+`scheduler_anchor = sample << (shift_image - 1)` with 32-bit wrapping; the
+standalone shift image three produces `scheduler_anchor = sample << 2`.
+
 ## What belongs in each open layer
 
 | Layer | DTM responsibility | Current publication gate |
